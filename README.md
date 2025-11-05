@@ -1,100 +1,100 @@
 # newwei
 
-A pnpm + Turborepo workspace that stitches together a Next.js admin console and a NestJS backend. The stack is wired as a modular monolith featuring RBAC, authentication, queues, SQL + Mongo persistence, and dockerised local development.
+一个使用 pnpm 和 Turborepo 的工作区，将 Next.js 管理控制台与 NestJS 后端整合在一起。技术栈以模块化单体架构构建，涵盖 RBAC、认证、队列、SQL + Mongo 持久化，以及容器化的本地开发环境。
 
-## Tech Stack
+## 技术栈
 
-- **Frontend**: Next.js 15 (App Router), React 18, Ant Design 5, Apollo Client, GraphQL Code Generator, ECharts, TanStack Query, Zustand, Auth.js (NextAuth)
-- **Backend**: NestJS 11, Apollo GraphQL (code-first), Prisma (MySQL), Mongoose (MongoDB), BullMQ (Redis), class-validator, OpenAPI/Swagger
-- **Tooling**: pnpm 9, Turborepo, TypeScript strict mode, Zod env validation, Husky + lint-staged + Commitlint
+- **前端**：Next.js 15（App Router）、React 18、Ant Design 5、Apollo Client、GraphQL Code Generator、ECharts、TanStack Query、Zustand、Auth.js（NextAuth）
+- **后端**：NestJS 11、Apollo GraphQL（代码优先）、Prisma（MySQL）、Mongoose（MongoDB）、BullMQ（Redis）、class-validator、OpenAPI/Swagger
+- **工具链**：pnpm 9、Turborepo、TypeScript 严格模式、Zod 环境变量校验、Husky + lint-staged + Commitlint
 
-## Getting Started
+## 快速开始
 
 ```bash
-# Install dependencies and prepare Husky hooks
+# 安装依赖并准备 Husky 钩子
 cp .env.example .env
 cp infra/docker/.env.sample infra/docker/.env
 pnpm install
 pnpm prepare
 
-# Validate environment configuration
+# 校验环境配置
 pnpm --filter infra-scripts run env:check
 
-# Apply Prisma schema and seed sample data
+# 应用 Prisma schema 并灌入示例数据
 pnpm db:migrate
 pnpm db:seed
 
-# Start Next.js + NestJS concurrently
+# 同时启动 Next.js 与 NestJS
 pnpm dev
 ```
 
-Navigate to:
-- Frontend: http://localhost:3000/login
-- API health: http://localhost:4000/api/healthz
-- Swagger UI: http://localhost:4000/docs
-- GraphQL Playground (dev): http://localhost:4000/graphql
+访问地址：
+- 前端：http://localhost:3000/login
+- API 健康检查：http://localhost:4000/api/healthz
+- Swagger UI：http://localhost:4000/docs
+- GraphQL Playground（开发环境）：http://localhost:4000/graphql
 
-Seeded admin credentials: `admin@example.com` / `Change_me123!`
+预置管理员账号：`admin@example.com` / `Change_me123!`
 
 ### Docker Compose
 
 ```bash
 cp infra/docker/.env.sample infra/docker/.env
-pnpm docker:up   # launches MySQL, Mongo, Redis, API, Web
-pnpm docker:logs # tail the stack
+pnpm docker:up   # 启动 MySQL、Mongo、Redis、API、Web
+pnpm docker:logs # 追踪整个栈的日志
 pnpm docker:down
 ```
 
-Services are defined in `infra/docker/docker-compose.yml` with health checks and volume mounts for hot reload. Containers run `pnpm install` on boot, so the first start may take a moment.
+服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。
 
-## Workspace Scripts
+## 工作区脚本
 
-| Command | Description |
+| 命令 | 说明 |
 | --- | --- |
-| `pnpm dev` | Runs `@modular/api` and `@modular/web` in watch mode |
-| `pnpm build` | Turbo build across all packages |
-| `pnpm lint` / `pnpm typecheck` / `pnpm test` | Aggregate lint, type check, and tests |
-| `pnpm db:migrate` | Executes Prisma migrations via `packages/db` |
-| `pnpm db:seed` | Seeds default organisation, roles, and admin user |
-| `pnpm docker:*` | Wraps docker-compose lifecycle (infra/scripts) |
+| `pnpm dev` | 以监听模式运行 `@modular/api` 和 `@modular/web` |
+| `pnpm build` | 对所有包执行 Turbo 构建 |
+| `pnpm lint` / `pnpm typecheck` / `pnpm test` | 汇总执行 lint、类型检查与测试 |
+| `pnpm db:migrate` | 通过 `packages/db` 执行 Prisma 迁移 |
+| `pnpm db:seed` | 灌入默认的组织、角色与管理员账号 |
+| `pnpm docker:*` | 包装 docker-compose 全生命周期（infra/scripts） |
 
-Key package scripts:
-- `apps/api`: `dev`, `build`, `test`, `test:e2e`
-- `apps/web`: `dev`, `build`, `start`, `typecheck`
-- `infra/scripts`: `env:check`, `docker:up`, `docker:down`, `docker:logs`
+关键包脚本：
+- `apps/api`：`dev`、`build`、`test`、`test:e2e`
+- `apps/web`：`dev`、`build`、`start`、`typecheck`
+- `infra/scripts`：`env:check`、`docker:up`、`docker:down`、`docker:logs`
 
-## Code Structure
+## 代码结构
 
 ```
 apps/
-  api/   # NestJS service (auth, rbac, queue, items, swagger, graphql)
-  web/   # Next.js admin console with NextAuth credentials provider
+  api/   # NestJS 服务（认证、RBAC、队列、项目、swagger、graphql）
+  web/   # Next.js 管理控制台，使用 NextAuth 凭证模式
 packages/
-  config/  # shared tsconfig/eslint/prettier + RBAC seed data
-  db/      # Prisma schema, migrations, seed helpers
-  mongo/   # Mongoose models and connection helpers
-  utils/   # Zod env loader, logger, formatting utilities
+  config/  # 共享 tsconfig/eslint/prettier 配置 + RBAC 种子数据
+  db/      # Prisma schema、迁移、种子辅助
+  mongo/   # Mongoose 模型与连接助手
+  utils/   # Zod 环境加载器、日志器、格式化工具
 infra/
-  docker/  # docker-compose, env samples, dev Dockerfiles
-  scripts/ # helper scripts (env check, compose wrappers)
+  docker/  # docker-compose、环境样例、开发 Dockerfile
+  scripts/ # 辅助脚本（环境检查、compose 包装器）
 ```
 
-## Testing
+## 测试
 
-- Unit tests for auth and RBAC services (`pnpm --filter @modular/api test`)
-- E2E smoke tests via Supertest covering `/api/healthz` and `/api/auth/login`
+- 针对认证和 RBAC 服务的单元测试（`pnpm --filter @modular/api test`）
+- 使用 Supertest 覆盖 `/api/healthz` 与 `/api/auth/login` 的 E2E 冒烟测试
 
-## Swagger & RBAC
+## Swagger 与 RBAC
 
-- Swagger docs exposed at `/docs`
-- Global JWT and permission guards; use `@Permissions(...)` to protect routes
-- Seeded roles and permissions come from `packages/config/src/rbac.ts`
+- Swagger 文档暴露在 `/docs`
+- 全局 JWT 与权限守卫；使用 `@Permissions(...)` 保护路由
+- 预置角色与权限来自 `packages/config/src/rbac.ts`
 
-## TODO & Extension Points
+## TODO 与扩展点
 
-- [ ] Implement refresh-token blacklisting beyond simple revocation
-- [ ] Add frontend component tests (Playwright or Vitest)
-- [ ] Replace placeholder dashboard narrative card with real analytics once metrics stack is connected
-- [ ] Hook BullMQ task events into WebSockets for real-time UI updates
+- [ ] 在简单的撤销机制之外，实现刷新令牌黑名单
+- [ ] 添加前端组件测试（Playwright 或 Vitest）
+- [ ] 在指标栈接入后，用真实分析替换仪表盘占位叙事卡片
+- [ ] 将 BullMQ 任务事件接入 WebSockets，实现 UI 实时更新
 
-Feel free to adapt the docker workflow (for example, switching to production-style multi-stage images) or extend the seed data to fit your organisation model.
+欢迎根据自身组织模型调整 docker 工作流（例如改为生产模式的多阶段镜像）或扩展种子数据。
