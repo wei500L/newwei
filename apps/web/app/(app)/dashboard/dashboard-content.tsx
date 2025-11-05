@@ -1,39 +1,13 @@
 "use client";
 
 import { Card, Col, Empty, List, Row, Spin, Statistic, Typography } from "antd";
-import { useQuery } from "@tanstack/react-query";
-import { createApiClient } from "@/lib/api-client";
+import { useQueueStatsQuery } from "@/graphql/generated";
 import { QueueChart } from "./queue-chart";
 
-interface DashboardContentProps {
-  accessToken: string;
-}
+export function DashboardContent() {
+  const { data, loading, error } = useQueueStatsQuery();
 
-interface DashboardStats {
-  itemCount: number;
-  processedCount: number;
-  queue: Record<string, number>;
-  recentQueueLogs: Array<{
-    _id: string;
-    jobId: string;
-    stage: string;
-    status: string;
-    createdAt: string;
-    message?: string;
-  }>;
-}
-
-export function DashboardContent({ accessToken }: DashboardContentProps) {
-  const { data, isLoading, error } = useQuery<DashboardStats>({
-    queryKey: ["dashboard", "stats"],
-    queryFn: async () => {
-      const client = createApiClient({ accessToken });
-      const response = await client.get<DashboardStats>("/dashboard/stats");
-      return response.data;
-    }
-  });
-
-  if (isLoading) {
+  if (loading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
         <Spin size="large" />
@@ -41,26 +15,50 @@ export function DashboardContent({ accessToken }: DashboardContentProps) {
     );
   }
 
-  if (error || !data) {
+  if (error || !data?.queueStats) {
     return <Empty description="Unable to load dashboard metrics" />;
   }
+
+  const { counts, processedCount, itemCount, recentLogs } = data.queueStats;
+  const chartData: Record<string, number> = {
+    waiting: counts.waiting,
+    active: counts.active,
+    completed: counts.completed,
+    failed: counts.failed,
+    delayed: counts.delayed
+  };
+
+  const parsedLogs = recentLogs.map((log) => {
+    let parsedPayload: Record<string, unknown> | undefined;
+    if (log.data) {
+      try {
+        parsedPayload = JSON.parse(log.data);
+      } catch (err) {
+        parsedPayload = undefined;
+      }
+    }
+    return {
+      ...log,
+      payload: parsedPayload
+    };
+  });
 
   return (
     <div>
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} lg={8}>
           <Card className="content-card">
-            <Statistic title="Total Items" value={data.itemCount} />
+            <Statistic title="Total Items" value={itemCount} />
           </Card>
         </Col>
         <Col xs={24} md={12} lg={8}>
           <Card className="content-card">
-            <Statistic title="Processed Items" value={data.processedCount} />
+            <Statistic title="Processed Items" value={processedCount} />
           </Card>
         </Col>
         <Col xs={24} md={24} lg={8}>
           <Card className="content-card" title="Queue Snapshot">
-            <QueueChart data={data.queue} />
+            <QueueChart data={chartData} />
           </Card>
         </Col>
       </Row>
@@ -68,22 +66,23 @@ export function DashboardContent({ accessToken }: DashboardContentProps) {
         <Col xs={24} md={12}>
           <Card title="Recent Queue Activity" className="content-card">
             <List
-              rowKey={(item) => item._id}
-              dataSource={data.recentQueueLogs}
+              rowKey={(item) => item.jobId}
+              dataSource={parsedLogs}
               renderItem={(item) => (
                 <List.Item>
                   <List.Item.Meta
-                    title={`${item.stage.toUpperCase()} • ${item.status}`}
+                    title={`${item.event} • ${item.jobId}`}
                     description={
                       <Typography.Text type="secondary">
-                        {new Date(item.createdAt).toLocaleString()} — Job {item.jobId}
+                        {new Date(item.timestamp).toLocaleString()}
+                        {item.payload?.message ? ` — ${item.payload?.message}` : ""}
                       </Typography.Text>
                     }
                   />
                 </List.Item>
               )}
             />
-            {data.recentQueueLogs.length === 0 && <Empty description="No recent queue logs" />}
+            {parsedLogs.length === 0 && <Empty description="No recent queue logs" />}
           </Card>
         </Col>
         <Col xs={24} md={12}>

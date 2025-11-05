@@ -5,6 +5,7 @@ import { CreateItemDto } from "./dto/create-item.dto";
 import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import type { MongoConnection } from "@modular/mongo";
+import { UpdateItemDto } from "./dto/update-item.dto";
 
 @Injectable()
 export class ItemsService {
@@ -108,5 +109,63 @@ export class ItemsService {
       rawItem,
       processed
     };
+  }
+
+  async update(orgId: string, userId: string, dto: UpdateItemDto) {
+    const existing = await this.prisma.itemMeta.findFirst({
+      where: { id: dto.id, orgId }
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Item not found");
+    }
+
+    let enqueueRef: string | null = null;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedMeta = await tx.itemMeta.update({
+        where: { id: existing.id },
+        data: {
+          name: dto.name ?? existing.name,
+          status: dto.status ?? existing.status
+        }
+      });
+
+      let newRawRef = existing.mongoRef;
+      if (dto.payload) {
+        const raw = await RawItemModel.create({
+          itemMetaId: existing.id,
+          payload: dto.payload,
+          source: "graphql"
+        });
+        newRawRef = raw.id;
+        await tx.itemMeta.update({
+          where: { id: existing.id },
+          data: { mongoRef: raw.id }
+        });
+        enqueueRef = raw.id;
+      }
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorId: userId,
+          resource: "item",
+          action: "update",
+          metadata: dto
+        }
+      });
+
+      return {
+        ...updatedMeta,
+        mongoRef: newRawRef
+      };
+    });
+
+    if (enqueueRef) {
+      await this.queueService.enqueueItem(existing.id, enqueueRef);
+    }
+
+    return updated;
   }
 }

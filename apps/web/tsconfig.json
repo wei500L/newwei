@@ -5,7 +5,8 @@
     "paths": {
       "@/components/*": ["./app/(app)/components/*"],
       "@/lib/*": ["./lib/*"],
-      "@/store/*": ["./store/*"]
+      "@/store/*": ["./store/*"],
+      "@/graphql/*": ["./graphql/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],

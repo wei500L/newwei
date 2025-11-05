@@ -8,5 +8,5 @@ export default async function SettingsPage() {
     redirect("/login");
   }
 
-  return <SettingsContent accessToken={session.accessToken} />;
+  return <SettingsContent />;
 }

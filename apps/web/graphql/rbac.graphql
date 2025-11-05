@@ -1,0 +1,31 @@
+query RbacOverview {
+  roles {
+    id
+    name
+    description
+    permissions {
+      id
+      name
+      description
+    }
+  }
+  permissions {
+    id
+    name
+    description
+  }
+  memberships {
+    id
+    orgId
+    role {
+      id
+      name
+    }
+    user {
+      id
+      email
+      firstName
+      lastName
+    }
+  }
+}

@@ -12,6 +12,7 @@ import { ItemsModule } from "../modules/items/items.module";
 import { AuthModule } from "../modules/auth/auth.module";
 import { RbacModule } from "../modules/rbac/rbac.module";
 import { DashboardModule } from "../modules/dashboard/dashboard.module";
+import { QueueModule } from "../modules/queue/queue.module";
 import { CacheModule } from "../modules/cache/cache.module";
 import { DataloaderModule } from "nestjs-dataloader";
 import { UsersResolver } from "./resolvers/user.resolver";
@@ -26,6 +27,8 @@ import { ProcessedItemLoader } from "./loaders/processed-item.loader";
 import { QueueEventPublisher } from "./queue-event.publisher";
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
 import { APP_GUARD } from "@nestjs/core";
+import { GqlAuthGuard } from "../common/guards/gql-auth.guard";
+import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
 
 const logger = createLogger({ name: "graphql" });
 
@@ -36,6 +39,7 @@ const logger = createLogger({ name: "graphql" });
     ItemsModule,
     RbacModule,
     DashboardModule,
+    QueueModule,
     CacheModule,
     DataloaderModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
@@ -60,7 +64,12 @@ const logger = createLogger({ name: "graphql" });
           playground: cfg.playground,
           introspection: cfg.introspection,
           context: ({ req, res, extra }) => {
-            const request = req ?? extra?.request ?? { headers: extra?.connectionParams ?? {} };
+            const request =
+              req ??
+              extra?.request ?? {
+                headers: extra?.connectionParams ?? {},
+                ip: extra?.socket?.remoteAddress
+              };
             return {
               req: request,
               res,
@@ -77,7 +86,8 @@ const logger = createLogger({ name: "graphql" });
               onConnect: (context) => {
                 const { connectionParams, extra } = context;
                 extra.request = {
-                  headers: connectionParams ?? {}
+                  headers: connectionParams ?? {},
+                  ip: extra?.socket?.remoteAddress
                 } as any;
               }
             }
@@ -108,6 +118,8 @@ const logger = createLogger({ name: "graphql" });
     RawItemLoader,
     ProcessedItemLoader,
     QueueEventPublisher,
+    GqlAuthGuard,
+    GqlPermissionsGuard,
     {
       provide: APP_GUARD,
       useClass: GraphqlRateLimitGuard

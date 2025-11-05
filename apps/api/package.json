@@ -34,6 +34,7 @@
     "dataloader": "^2.2.2",
     "dotenv": "^16.4.5",
     "graphql": "^16.8.1",
+    "graphql-subscriptions": "^2.0.0",
     "graphql-tag": "^2.12.6",
     "graphql-ws": "^5.14.2",
     "graphql-query-complexity": "^1.1.1",

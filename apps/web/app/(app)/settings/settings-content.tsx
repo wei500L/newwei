@@ -1,68 +1,10 @@
 "use client";
 
 import { Card, Empty, List, Spin, Tabs, Tag, Typography } from "antd";
-import { useQuery } from "@tanstack/react-query";
-import { createApiClient } from "@/lib/api-client";
+import { useRbacOverviewQuery } from "@/graphql/generated";
 
-interface SettingsContentProps {
-  accessToken: string;
-}
-
-interface Permission {
-  id: string;
-  name: string;
-  description?: string;
-}
-
-interface Role {
-  id: string;
-  name: string;
-  description?: string | null;
-  permissions: Array<{ permission: Permission }>;
-}
-
-interface Member {
-  id: string;
-  user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-  };
-  role: {
-    id: string;
-    name: string;
-  };
-}
-
-export function SettingsContent({ accessToken }: SettingsContentProps) {
-  const client = createApiClient({ accessToken });
-
-  const permissionsQuery = useQuery<Permission[]>({
-    queryKey: ["rbac", "permissions"],
-    queryFn: async () => {
-      const response = await client.get<Permission[]>("/rbac/permissions");
-      return response.data;
-    }
-  });
-
-  const rolesQuery = useQuery<Role[]>({
-    queryKey: ["rbac", "roles"],
-    queryFn: async () => {
-      const response = await client.get<Role[]>("/rbac/roles");
-      return response.data;
-    }
-  });
-
-  const membersQuery = useQuery<Member[]>({
-    queryKey: ["rbac", "members"],
-    queryFn: async () => {
-      const response = await client.get<Member[]>("/rbac/members");
-      return response.data;
-    }
-  });
-
-  const loading = permissionsQuery.isLoading || rolesQuery.isLoading || membersQuery.isLoading;
+export function SettingsContent() {
+  const { data, loading } = useRbacOverviewQuery();
 
   if (loading) {
     return (
@@ -72,6 +14,10 @@ export function SettingsContent({ accessToken }: SettingsContentProps) {
     );
   }
 
+  const roles = data?.roles ?? [];
+  const permissions = data?.permissions ?? [];
+  const memberships = data?.memberships ?? [];
+
   return (
     <Card className="content-card" title="Organization Settings">
       <Tabs
@@ -80,9 +26,9 @@ export function SettingsContent({ accessToken }: SettingsContentProps) {
           {
             key: "roles",
             label: "Roles",
-            children: rolesQuery.data && rolesQuery.data.length > 0 ? (
+            children: roles.length > 0 ? (
               <List
-                dataSource={rolesQuery.data}
+                dataSource={roles}
                 renderItem={(role) => (
                   <List.Item>
                     <List.Item.Meta
@@ -93,8 +39,8 @@ export function SettingsContent({ accessToken }: SettingsContentProps) {
                             {role.description || "No description provided."}
                           </Typography.Paragraph>
                           <div>
-                            {role.permissions.map((rp) => (
-                              <Tag key={rp.permission.id}>{rp.permission.name}</Tag>
+                            {role.permissions.map((permission) => (
+                              <Tag key={permission.id}>{permission.name}</Tag>
                             ))}
                           </div>
                         </div>
@@ -110,9 +56,9 @@ export function SettingsContent({ accessToken }: SettingsContentProps) {
           {
             key: "permissions",
             label: "Permissions",
-            children: permissionsQuery.data && permissionsQuery.data.length > 0 ? (
+            children: permissions.length > 0 ? (
               <List
-                dataSource={permissionsQuery.data}
+                dataSource={permissions}
                 renderItem={(permission) => (
                   <List.Item>
                     <List.Item.Meta
@@ -129,9 +75,9 @@ export function SettingsContent({ accessToken }: SettingsContentProps) {
           {
             key: "members",
             label: "Members",
-            children: membersQuery.data && membersQuery.data.length > 0 ? (
+            children: memberships.length > 0 ? (
               <List
-                dataSource={membersQuery.data}
+                dataSource={memberships}
                 renderItem={(member) => (
                   <List.Item>
                     <List.Item.Meta

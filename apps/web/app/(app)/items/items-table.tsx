@@ -2,65 +2,48 @@
 
 import { Button, Input, Space, Table, Tag } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { createApiClient } from "@/lib/api-client";
+import { useMemo, useState } from "react";
+import { useItemsQuery } from "@/graphql/generated";
 
-interface ItemsTableProps {
-  accessToken: string;
-}
-
-interface ItemMeta {
-  id: string;
-  externalId: string;
-  name: string;
-  status: string;
-  createdAt: string;
-}
-
-interface ItemsResponse {
-  items: ItemMeta[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-export function ItemsTable({ accessToken }: ItemsTableProps) {
+export function ItemsTable() {
   const [search, setSearch] = useState("");
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
     pageSize: 10
   });
 
-  const { data, isFetching, refetch } = useQuery<ItemsResponse>({
-    queryKey: ["items", pagination.current, pagination.pageSize, search],
-    queryFn: async () => {
-      const client = createApiClient({ accessToken });
-      const response = await client.get<ItemsResponse>("/items", {
-        params: {
-          page: pagination.current,
-          pageSize: pagination.pageSize,
-          search: search || undefined
-        }
-      });
-      return response.data;
+  const first = (pagination.pageSize ?? 10) * (pagination.current ?? 1);
+
+  const { data, loading, refetch } = useItemsQuery({
+    variables: {
+      first,
+      after: null,
+      search: search || null
     }
   });
+
+  const nodes = data?.items.edges ?? [];
+  const totalCount = data?.items.totalCount ?? 0;
+
+  const pageData = useMemo(() => {
+    const startIndex = ((pagination.current ?? 1) - 1) * (pagination.pageSize ?? 10);
+    const endIndex = startIndex + (pagination.pageSize ?? 10);
+    return nodes.slice(startIndex, endIndex).map((edge) => ({
+      ...edge.node,
+      name: edge.node.title,
+      createdAt: new Date(edge.node.createdAt).toISOString()
+    }));
+  }, [nodes, pagination.current, pagination.pageSize]);
 
   const handleTableChange = (pager: TablePaginationConfig) => {
     setPagination(pager);
   };
 
-  const columns: ColumnsType<ItemMeta> = [
+  const columns: ColumnsType<{ id: string; title: string; status: string; createdAt: string; name: string }> = [
     {
       title: "Name",
       dataIndex: "name",
       key: "name"
-    },
-    {
-      title: "External ID",
-      dataIndex: "externalId",
-      key: "externalId"
     },
     {
       title: "Status",
@@ -88,19 +71,19 @@ export function ItemsTable({ accessToken }: ItemsTableProps) {
           }}
           enterButton
         />
-        <Button type="primary" onClick={() => refetch()} loading={isFetching}>
+        <Button type="primary" onClick={() => refetch()} loading={loading}>
           Refresh
         </Button>
       </Space>
       <Table
         rowKey="id"
         columns={columns}
-        dataSource={data?.items ?? []}
-        loading={isFetching}
+        dataSource={pageData}
+        loading={loading}
         pagination={{
           current: pagination.current,
           pageSize: pagination.pageSize,
-          total: data?.total,
+          total: totalCount,
           showSizeChanger: true
         }}
         onChange={handleTableChange}

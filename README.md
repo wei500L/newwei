@@ -4,8 +4,8 @@ A pnpm + Turborepo workspace that stitches together a Next.js admin console and 
 
 ## Tech Stack
 
-- **Frontend**: Next.js 15 (App Router), React 18, Ant Design 5, ECharts, TanStack Query, Zustand, Auth.js (NextAuth)
-- **Backend**: NestJS 11, Prisma (MySQL), Mongoose (MongoDB), BullMQ (Redis), class-validator, OpenAPI/Swagger
+- **Frontend**: Next.js 15 (App Router), React 18, Ant Design 5, Apollo Client, GraphQL Code Generator, ECharts, TanStack Query, Zustand, Auth.js (NextAuth)
+- **Backend**: NestJS 11, Apollo GraphQL (code-first), Prisma (MySQL), Mongoose (MongoDB), BullMQ (Redis), class-validator, OpenAPI/Swagger
 - **Tooling**: pnpm 9, Turborepo, TypeScript strict mode, Zod env validation, Husky + lint-staged + Commitlint
 
 ## Getting Started
@@ -30,8 +30,9 @@ pnpm dev
 
 Navigate to:
 - Frontend: http://localhost:3000/login
-- API: http://localhost:4000/api/healthz
+- API health: http://localhost:4000/api/healthz
 - Swagger UI: http://localhost:4000/docs
+- GraphQL Playground (dev): http://localhost:4000/graphql
 
 Seeded admin credentials: `admin@example.com` / `Change_me123!`
 
@@ -66,7 +67,7 @@ Key package scripts:
 
 ```
 apps/
-  api/   # NestJS service (auth, rbac, queue, items, swagger)
+  api/   # NestJS service (auth, rbac, queue, items, swagger, graphql)
   web/   # Next.js admin console with NextAuth credentials provider
 packages/
   config/  # shared tsconfig/eslint/prettier + RBAC seed data
