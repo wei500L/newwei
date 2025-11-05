@@ -11,7 +11,16 @@ export const apiEnvSchema = baseEnvSchema.extend({
   REDIS_USERNAME: z.string().optional(),
   BULLMQ_NAMESPACE: z.string().default("modular"),
   RATE_LIMIT_LOGIN: z.coerce.number().int().positive().default(5),
-  RATE_LIMIT_LOGIN_WINDOW: z.coerce.number().int().positive().default(60)
+  RATE_LIMIT_LOGIN_WINDOW: z.coerce.number().int().positive().default(60),
+  GRAPHQL_PLAYGROUND: z.coerce.boolean().default(
+    process.env.NODE_ENV === "production" ? false : true
+  ),
+  GRAPHQL_INTROSPECTION: z.coerce.boolean().default(
+    process.env.NODE_ENV === "production" ? false : true
+  ),
+  GRAPHQL_DEPTH_LIMIT: z.coerce.number().int().positive().default(8),
+  GRAPHQL_COMPLEXITY_LIMIT: z.coerce.number().int().positive().default(2000),
+  CORS_ORIGIN: z.string().optional()
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

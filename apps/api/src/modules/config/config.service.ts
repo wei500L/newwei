@@ -41,4 +41,14 @@ export class EnvService extends ConfigService<ApiEnv> {
       loginWindowSeconds: this.get<number>("RATE_LIMIT_LOGIN_WINDOW", { infer: true }) ?? 60
     };
   }
+
+  get graphqlConfig() {
+    return {
+      playground: this.get<boolean>("GRAPHQL_PLAYGROUND", { infer: true }) ?? false,
+      introspection: this.get<boolean>("GRAPHQL_INTROSPECTION", { infer: true }) ?? false,
+      depthLimit: this.get<number>("GRAPHQL_DEPTH_LIMIT", { infer: true }) ?? 8,
+      complexityLimit: this.get<number>("GRAPHQL_COMPLEXITY_LIMIT", { infer: true }) ?? 2000,
+      corsOrigin: this.get<string | undefined>("CORS_ORIGIN", { infer: true })
+    };
+  }
 }
