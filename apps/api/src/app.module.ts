@@ -14,6 +14,7 @@ import { CacheModule } from "./modules/cache/cache.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
+import { ApiGraphqlModule } from "./graphql/graphql.module";
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { PermissionsGuard } from "./common/guards/permissions.guard";
     RbacModule,
     ItemsModule,
     DashboardModule,
+    ApiGraphqlModule,
     HealthModule
   ],
   providers: [

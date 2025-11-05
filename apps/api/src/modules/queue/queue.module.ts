@@ -53,6 +53,6 @@ export const PIPELINE_QUEUE_EVENTS = Symbol("PIPELINE_QUEUE_EVENTS");
     QueueProcessor,
     QueueService
   ],
-  exports: [QueueService]
+  exports: [QueueService, PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS]
 })
 export class QueueModule {}

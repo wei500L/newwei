@@ -1,8 +1,10 @@
 "use client";
 
+import { ApolloProvider } from "@apollo/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App as AntApp, ConfigProvider, theme } from "antd";
 import { PropsWithChildren, useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { getApolloClient } from "@/lib/apollo-client";
 
 export function AppProviders({ children }: PropsWithChildren) {
   const [queryClient] = useState(() =>
@@ -15,6 +17,7 @@ export function AppProviders({ children }: PropsWithChildren) {
       }
     })
   );
+  const [apolloClient] = useState(() => getApolloClient());
 
   return (
     <ConfigProvider
@@ -26,7 +29,9 @@ export function AppProviders({ children }: PropsWithChildren) {
       }}
     >
       <AntApp>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <ApolloProvider client={apolloClient}>
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        </ApolloProvider>
       </AntApp>
     </ConfigProvider>
   );

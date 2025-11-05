@@ -8,5 +8,5 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  return <DashboardContent accessToken={session.accessToken} />;
+  return <DashboardContent />;
 }

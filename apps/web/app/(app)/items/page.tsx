@@ -8,5 +8,5 @@ export default async function ItemsPage() {
     redirect("/login");
   }
 
-  return <ItemsTable accessToken={session.accessToken} />;
+  return <ItemsTable />;
 }

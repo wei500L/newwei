@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "generate": "graphql-codegen --config apps/web/codegen.yml",
+    "predev": "pnpm run generate",
     "dev": "next dev",
+    "prebuild": "pnpm run generate",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

@@ -23,8 +23,11 @@ const envValues = parsed.data;
 
 const baseUrl = envValues.NEXT_PUBLIC_API_BASE_URL ?? envValues.API_BASE_URL;
 const apiBaseUrl = baseUrl.endsWith("/api") ? baseUrl : `${baseUrl.replace(/\/$/, "")}/api`;
+const apiRoot = apiBaseUrl.endsWith("/api") ? apiBaseUrl.slice(0, -4) : apiBaseUrl;
+const graphqlUrl = `${apiRoot}/graphql`;
 
 export const env = {
   ...envValues,
-  apiBaseUrl
+  apiBaseUrl,
+  graphqlUrl
 };
