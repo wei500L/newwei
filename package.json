@@ -1,0 +1,50 @@
+{
+  "name": "modular-monolith",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prepare": "husky install",
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "codegen": "graphql-codegen --config apps/web/codegen.yml",
+    "db:migrate": "pnpm --filter db run migrate",
+    "db:seed": "pnpm --filter db run seed",
+    "docker:up": "pnpm --filter infra-scripts run docker:up",
+    "docker:down": "pnpm --filter infra-scripts run docker:down",
+    "docker:logs": "pnpm --filter infra-scripts run docker:logs"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.3.0",
+    "@commitlint/config-conventional": "^19.2.2",
+    "cross-env": "^7.0.3",
+    "dotenv": "^16.4.5",
+    "eslint": "^8.57.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2",
+    "prettier": "^3.3.2",
+    "rimraf": "^5.0.5",
+    "turbo": "^2.1.1",
+    "tsx": "^4.7.2",
+    "typescript": "^5.4.5"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix"
+    ],
+    "*.{ts,tsx,js,jsx,json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  }
+}

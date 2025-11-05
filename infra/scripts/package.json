@@ -1,0 +1,20 @@
+{
+  "name": "@modular/infra-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "docker:up": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml up --build",
+    "docker:down": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml down",
+    "docker:logs": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml logs -f",
+    "env:check": "tsx src/check-env.ts"
+  },
+  "dependencies": {
+    "@modular/utils": "workspace:*",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

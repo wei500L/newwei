@@ -1,0 +1,40 @@
+{
+  "name": "@modular/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.3.6",
+    "@apollo/client": "^3.11.0",
+    "@tanstack/react-query": "^5.51.0",
+    "antd": "^5.19.0",
+    "axios": "^1.6.8",
+    "echarts": "^5.5.0",
+    "graphql": "^16.8.1",
+    "next": "15.0.0-canary.45",
+    "next-auth": "^5.0.0-beta.21",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@graphql-codegen/cli": "^5.0.3",
+    "@graphql-codegen/typescript": "^4.0.7",
+    "@graphql-codegen/typescript-operations": "^4.2.3",
+    "@graphql-codegen/typescript-react-apollo": "^4.3.1",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^15.0.0-canary.45",
+    "typescript": "^5.4.5"
+  }
+}
