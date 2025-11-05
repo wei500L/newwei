@@ -1,0 +1,31 @@
+{
+  "name": "@modular/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "files": [
+    "eslint",
+    "tsconfig",
+    "prettier.config.cjs",
+    "commitlint.config.cjs",
+    "src"
+  ],
+  "exports": {
+    "./eslint/*": "./eslint/*",
+    "./tsconfig/*": "./tsconfig/*",
+    "./prettier": "./prettier.config.cjs",
+    "./commitlint": "./commitlint.config.cjs",
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "echo \"No lint tasks for config package\"",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

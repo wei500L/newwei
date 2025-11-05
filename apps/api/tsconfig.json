@@ -1,0 +1,14 @@
+{
+  "extends": "../../packages/config/tsconfig/nest.json",
+  "compilerOptions": {
+    "baseUrl": "./",
+    "paths": {
+      "@modular/utils": ["../../packages/utils/src"],
+      "@modular/config": ["../../packages/config/src"],
+      "@modular/db": ["../../packages/db/src"],
+      "@modular/mongo": ["../../packages/mongo/src"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}

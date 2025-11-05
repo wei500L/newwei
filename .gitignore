@@ -1,0 +1,16 @@
+node_modules
+.pnpm-store
+.env
+.env.local
+.env.*
+.next
+out
+dist
+build
+coverage
+logs
+.prisma
+.pnp.*
+.DS_Store
+.idea
+.husky/_

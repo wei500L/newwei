@@ -1,0 +1,20 @@
+{
+  "name": "@modular/mongo",
+  "version": "0.1.0",
+  "private": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit"
+  },
+  "dependencies": {
+    "@modular/utils": "workspace:*",
+    "mongoose": "^8.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}
