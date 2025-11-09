@@ -20,6 +20,24 @@ export class CrawlOptionsInput {
 
   @Field(() => Boolean, { nullable: true })
   extractLinks?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  scanFullPage?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  scrollDelayMs?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  enableUndetectedBrowser?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  enableStealthMode?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  simulateUser?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  overrideNavigator?: boolean;
 }
 
 @InputType()

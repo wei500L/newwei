@@ -25,6 +25,33 @@ export class CrawlOptionsDto {
   @IsOptional()
   @IsBoolean()
   extractLinks?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  scanFullPage?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(5000)
+  scrollDelayMs?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  enableUndetectedBrowser?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  enableStealthMode?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  simulateUser?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  overrideNavigator?: boolean;
 }
 
 export class CreateCrawlTaskDto {

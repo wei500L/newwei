@@ -120,7 +120,42 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           )}
         </Descriptions.Item>
         <Descriptions.Item label="Concurrency">{task.concurrency}</Descriptions.Item>
-        <Descriptions.Item label="Run count">{task.runCount}</Descriptions.Item>
+      <Descriptions.Item label="Run count">{task.runCount}</Descriptions.Item>
+      <Descriptions.Item label="Full-page scanning">
+        {config?.scanFullPage
+          ? `Enabled (scroll delay ${config?.scrollDelayMs ?? 200} ms)`
+          : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Undetected browser">
+        {config?.enableUndetectedBrowser ? "Enabled" : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Stealth mode">
+        {config?.enableStealthMode ? "Enabled" : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="User simulation">
+        {config?.simulateUser ? "Enabled" : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Override navigator">
+        {config?.overrideNavigator ? "Enabled" : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Last server memory">
+        {task.lastServerMemoryMb != null ? `${task.lastServerMemoryMb} MB` : "—"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Last peak memory">
+        {task.lastPeakMemoryMb != null ? `${task.lastPeakMemoryMb} MB` : "—"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Last memory efficiency">
+        {task.lastMemoryEfficiency != null ? `${task.lastMemoryEfficiency}%` : "—"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Server memory">
+        {task.memoryStats?.serverMemoryMb != null ? `${task.memoryStats.serverMemoryMb} MB` : "—"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Peak memory">
+        {task.memoryStats?.peakMemoryMb != null ? `${task.memoryStats.peakMemoryMb} MB` : "—"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Efficiency">
+        {task.memoryStats?.efficiencyPercent != null ? `${task.memoryStats.efficiencyPercent}%` : "—"}
+      </Descriptions.Item>
         <Descriptions.Item label="Last success">
           {task.lastSuccessAt ? dayjs(task.lastSuccessAt).format("MMM D, HH:mm") : "Never"}
         </Descriptions.Item>

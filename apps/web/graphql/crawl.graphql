@@ -19,6 +19,8 @@ query CrawlTasks($first: Int!, $after: String, $search: String, $status: CrawlTa
         lastSuccessAt
         lastError
         createdAt
+        lastPeakMemoryMb
+        lastMemoryEfficiency
       }
     }
   }
@@ -38,12 +40,20 @@ query CrawlTask($id: ID!, $resultLimit: Int, $resultSearch: String) {
     lastResultAt
     lastError
     config
+    lastServerMemoryMb
+    lastPeakMemoryMb
+    lastMemoryEfficiency
     results {
       id
       sourceUrl
       fetchedAt
       markdown
       metadata
+    }
+    memoryStats {
+      serverMemoryMb
+      peakMemoryMb
+      efficiencyPercent
     }
   }
 }

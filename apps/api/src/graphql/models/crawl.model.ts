@@ -3,6 +3,18 @@ import { CrawlTaskStatus } from "@prisma/client";
 import { PageInfo } from "./page-info.model";
 
 @ObjectType()
+export class CrawlMemoryStatsModel {
+  @Field(() => Number, { nullable: true })
+  serverMemoryMb?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  peakMemoryMb?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  efficiencyPercent?: number | null;
+}
+
+@ObjectType()
 export class CrawlResultModel {
   @Field(() => ID)
   id!: string;
@@ -78,6 +90,18 @@ export class CrawlTaskModel {
 
   @Field(() => [CrawlResultModel], { nullable: true })
   results?: CrawlResultModel[];
+
+  @Field(() => CrawlMemoryStatsModel, { nullable: true })
+  memoryStats?: CrawlMemoryStatsModel | null;
+
+  @Field(() => Number, { nullable: true })
+  lastServerMemoryMb?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  lastPeakMemoryMb?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  lastMemoryEfficiency?: number | null;
 }
 
 @ObjectType()
