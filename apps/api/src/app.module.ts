@@ -12,6 +12,7 @@ import { ItemsModule } from "./modules/items/items.module";
 import { QueueModule } from "./modules/queue/queue.module";
 import { CacheModule } from "./modules/cache/cache.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
+import { CrawlModule } from "./modules/crawl/crawl.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { ApiGraphqlModule } from "./graphql/graphql.module";
@@ -38,6 +39,7 @@ import { ApiGraphqlModule } from "./graphql/graphql.module";
     RbacModule,
     ItemsModule,
     DashboardModule,
+    CrawlModule,
     ApiGraphqlModule,
     HealthModule
   ],

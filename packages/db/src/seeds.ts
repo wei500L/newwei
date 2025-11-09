@@ -111,6 +111,10 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
     }
   }
 
+  const seedOwner = await prisma.user.findUnique({
+    where: { email: DEFAULT_USERS[0]?.email }
+  });
+
   // Seed a demo item metadata row
   await prisma.itemMeta.upsert({
     where: { externalId: "item-001" },
@@ -126,6 +130,32 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
       mongoRef: "rawitem-001"
     }
   });
+
+  if (seedOwner) {
+    await prisma.crawlTask.upsert({
+      where: { id: "seed-crawl-task" },
+      update: {
+        targetUrl: "https://news.ycombinator.com/",
+        status: "pending"
+      },
+      create: {
+        id: "seed-crawl-task",
+        orgId: org.id,
+        createdById: seedOwner.id,
+        targetUrl: "https://news.ycombinator.com/",
+        displayName: "HN Headlines",
+        status: "pending",
+        concurrency: 2,
+        keywords: ["ai", "security"],
+        config: {
+          includeMarkdown: true
+        },
+        timeRangeFrom: new Date(Date.now() - 1000 * 60 * 60 * 24),
+        timeRangeTo: new Date(),
+        runCount: 0
+      }
+    });
+  }
 
   return org;
 };

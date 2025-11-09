@@ -14,11 +14,13 @@ import { RbacModule } from "../modules/rbac/rbac.module";
 import { DashboardModule } from "../modules/dashboard/dashboard.module";
 import { QueueModule } from "../modules/queue/queue.module";
 import { CacheModule } from "../modules/cache/cache.module";
+import { CrawlModule } from "../modules/crawl/crawl.module";
 import { DataloaderModule } from "nestjs-dataloader";
 import { UsersResolver } from "./resolvers/user.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
 import { DashboardResolver } from "./resolvers/dashboard.resolver";
+import { CrawlResolver } from "./resolvers/crawl.resolver";
 import { UserLoader } from "./loaders/user.loader";
 import { RoleLoader } from "./loaders/role.loader";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
@@ -41,6 +43,7 @@ const logger = createLogger({ name: "graphql" });
     DashboardModule,
     QueueModule,
     CacheModule,
+    CrawlModule,
     DataloaderModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       inject: [EnvService],
@@ -112,6 +115,7 @@ const logger = createLogger({ name: "graphql" });
     ItemsResolver,
     RbacResolver,
     DashboardResolver,
+    CrawlResolver,
     UserLoader,
     RoleLoader,
     ItemMetaLoader,

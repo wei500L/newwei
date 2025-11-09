@@ -1,0 +1,451 @@
+import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
+import type { CrawlResult, CrawlTask, CrawlTaskStatus, Prisma } from "@prisma/client";
+import { Queue } from "bullmq";
+import { createLogger } from "@modular/utils";
+import { PrismaService } from "../config/prisma.service";
+import { EnvService } from "../config/config.service";
+import { CRAWL_QUEUE, CRAWL_QUEUE_NAME } from "./crawl.constants";
+import { CrawlJobData, CrawlExecutionSummary } from "./crawl.types";
+import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
+import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
+import { normalizeKeywords, clampResultLimit, coerceDate, hashMarkdown } from "./crawl.utils";
+import { Crawl4aiClient, Crawl4aiArticle } from "./crawl4ai.client";
+import { Crawl4aiRequestException } from "./crawl4ai.exception";
+import { TaskLogModel, CrawlResultContentModel } from "@modular/mongo";
+import { MONGO_CONNECTION } from "../config/mongo.provider";
+import type { MongoConnection } from "@modular/mongo";
+
+const logger = createLogger({ name: "crawl-service" });
+
+type CrawlTaskRecord = Prisma.CrawlTaskGetPayload<{
+  include: {
+    _count: {
+      select: {
+        results: true;
+      };
+    };
+  };
+}>;
+
+export interface CrawlTaskResult {
+  id: string;
+  sourceUrl: string;
+  fetchedAt: Date;
+  markdown: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface CrawlTaskView {
+  id: string;
+  targetUrl: string;
+  displayName?: string | null;
+  status: CrawlTaskStatus;
+  keywords: string[];
+  concurrency: number;
+  timeRangeFrom?: Date | null;
+  timeRangeTo?: Date | null;
+  lastRunAt?: Date | null;
+  lastSuccessAt?: Date | null;
+  lastResultAt?: Date | null;
+  lastCursor?: string | null;
+  lastError?: string | null;
+  runCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  resultCount: number;
+  config?: Record<string, unknown> | null;
+  results?: CrawlTaskResult[];
+}
+
+@Injectable()
+export class CrawlService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly env: EnvService,
+    @Inject(CRAWL_QUEUE) private readonly crawlQueue: Queue<CrawlJobData>,
+    private readonly crawlClient: Crawl4aiClient,
+    @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection
+  ) {
+    void this._mongo;
+  }
+
+  async createTask(orgId: string, userId: string, dto: CreateCrawlTaskDto) {
+    const keywords = normalizeKeywords(dto.keywords);
+    const timeRangeFrom = coerceDate(dto.timeRangeFrom);
+    const timeRangeTo = coerceDate(dto.timeRangeTo);
+    if (timeRangeFrom && timeRangeTo && timeRangeFrom > timeRangeTo) {
+      throw new BadRequestException("timeRangeFrom must be earlier than timeRangeTo");
+    }
+
+    const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
+    const concurrency = Math.min(dto.concurrency ?? defaultConcurrency, defaultConcurrency);
+    const created = await this.prisma.crawlTask.create({
+      data: {
+        orgId,
+        createdById: userId,
+        targetUrl: dto.url,
+        displayName: dto.displayName,
+        status: "pending",
+        concurrency,
+        keywords,
+        timeRangeFrom,
+        timeRangeTo,
+        config: dto.options ?? {},
+        runCount: 0
+      },
+      include: { _count: { select: { results: true } } }
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        orgId,
+        actorId: userId,
+        resource: "crawlTask",
+        action: "create",
+        metadata: {
+          targetUrl: dto.url,
+          keywords,
+          concurrency
+        }
+      }
+    });
+
+    await this.enqueueTask(created.id, orgId, userId);
+    return this.toView(created);
+  }
+
+  async listTasks(orgId: string, filters: ListCrawlTaskDto) {
+    const page = filters.page ?? 1;
+    const pageSize = filters.pageSize ?? 10;
+    const where: Prisma.CrawlTaskWhereInput = {
+      orgId
+    };
+    if (filters.status) {
+      where.status = filters.status;
+    }
+    if (filters.search) {
+      where.OR = [
+        { targetUrl: { contains: filters.search, mode: "insensitive" } },
+        { displayName: { contains: filters.search, mode: "insensitive" } }
+      ];
+    }
+
+    const [tasks, total] = await Promise.all([
+      this.prisma.crawlTask.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { _count: { select: { results: true } } }
+      }),
+      this.prisma.crawlTask.count({ where })
+    ]);
+
+    return {
+      tasks: tasks.map((task) => this.toView(task)),
+      total,
+      page,
+      pageSize
+    };
+  }
+
+  async getTask(orgId: string, id: string, query: CrawlTaskDetailQueryDto) {
+    const task = await this.prisma.crawlTask.findFirst({
+      where: { id, orgId },
+      include: { _count: { select: { results: true } } }
+    });
+    if (!task) {
+      throw new NotFoundException("crawl task not found");
+    }
+
+    const limit = clampResultLimit(query.resultLimit);
+    const resultWhere: Prisma.CrawlResultWhereInput = {
+      taskId: id
+    };
+    if (query.resultSearch) {
+      resultWhere.OR = [{ sourceUrl: { contains: query.resultSearch, mode: "insensitive" } }];
+    }
+
+    const results = await this.prisma.crawlResult.findMany({
+      where: resultWhere,
+      orderBy: { fetchedAt: "desc" },
+      take: limit
+    });
+
+    const hydrated = await this.attachResultContent(results);
+
+    return {
+      task: {
+        ...this.toView(task),
+        results: hydrated
+      }
+    };
+  }
+
+  async retryTask(orgId: string, userId: string, id: string) {
+    const task = await this.prisma.crawlTask.findFirst({
+      where: { id, orgId },
+      include: { _count: { select: { results: true } } }
+    });
+    if (!task) {
+      throw new NotFoundException("crawl task not found");
+    }
+
+    await this.prisma.crawlTask.update({
+      where: { id },
+      data: {
+        status: "queued",
+        lastError: null
+      }
+    });
+    await this.enqueueTask(id, orgId, userId);
+
+    await this.prisma.auditLog.create({
+      data: {
+        orgId,
+        actorId: userId,
+        resource: "crawlTask",
+        action: "retry",
+        metadata: { id }
+      }
+    });
+
+    const refreshed = await this.prisma.crawlTask.findFirst({
+      where: { id, orgId },
+      include: { _count: { select: { results: true } } }
+    });
+
+    return this.toView(refreshed ?? task);
+  }
+
+  async enqueueTask(taskId: string, orgId: string, triggeredById?: string) {
+    await this.crawlQueue.add(
+      "crawl-task",
+      { taskId, orgId, triggeredById },
+      {
+        jobId: `${taskId}:${Date.now()}`,
+        removeOnComplete: true,
+        removeOnFail: false
+      }
+    );
+    await this.prisma.crawlTask.update({
+      where: { id: taskId },
+      data: { status: "queued" }
+    });
+  }
+
+  async runTask(taskId: string, orgId: string, triggeredById?: string): Promise<CrawlExecutionSummary> {
+    const task = await this.prisma.crawlTask.findFirst({ where: { id: taskId, orgId } });
+    if (!task) {
+      logger.warn({ taskId }, "Attempted to run missing crawl task");
+      return {
+        inserted: 0,
+        skipped: 0
+      };
+    }
+
+    await this.prisma.crawlTask.update({
+      where: { id: task.id },
+      data: {
+        status: "running",
+        lastRunAt: new Date()
+      }
+    });
+
+    await TaskLogModel.create({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: taskId,
+      stage: "start",
+      status: "processing",
+      message: "crawl task started",
+      data: { taskId, triggeredById }
+    });
+
+    try {
+      const payload = this.buildRequestPayload(task);
+      const response = await this.crawlClient.crawl(payload);
+      const summary = await this.persistResults(task, response.results ?? [], response.runId);
+
+      await this.prisma.crawlTask.update({
+        where: { id: task.id },
+        data: {
+          status: "completed",
+          runCount: { increment: 1 },
+          lastSuccessAt: new Date(),
+          lastResultAt: summary.lastFetchedAt ?? task.lastResultAt,
+          lastCursor: response.nextCursor ?? task.lastCursor,
+          lastError: null
+        }
+      });
+
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: taskId,
+        stage: "complete",
+        status: "completed",
+        data: summary
+      });
+
+      return summary;
+    } catch (error) {
+      const message =
+        error instanceof Crawl4aiRequestException ? error.message : "crawl job failed";
+      await this.prisma.crawlTask.update({
+        where: { id: task.id },
+        data: {
+          status: "failed",
+          lastError: message
+        }
+      });
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: taskId,
+        stage: "error",
+        status: "failed",
+        error: {
+          message
+        }
+      });
+      throw error;
+    }
+  }
+
+  public toView(task: CrawlTaskRecord): CrawlTaskView {
+    return {
+      id: task.id,
+      targetUrl: task.targetUrl,
+      displayName: task.displayName,
+      status: task.status,
+      keywords: this.fromJsonArray(task.keywords),
+      concurrency: task.concurrency,
+      timeRangeFrom: task.timeRangeFrom,
+      timeRangeTo: task.timeRangeTo,
+      lastRunAt: task.lastRunAt,
+      lastSuccessAt: task.lastSuccessAt,
+      lastResultAt: task.lastResultAt,
+      lastCursor: task.lastCursor,
+      lastError: task.lastError,
+      runCount: task.runCount,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      resultCount: task._count.results,
+      config: (task.config as Record<string, unknown> | null) ?? null
+    };
+  }
+
+  private fromJsonArray(value: Prisma.JsonValue | null): string[] {
+    if (!value || !Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .map((entry) => (typeof entry === "string" ? entry : null))
+      .filter((entry): entry is string => Boolean(entry));
+  }
+
+  private buildRequestPayload(task: CrawlTask) {
+    const keywords = this.fromJsonArray(task.keywords);
+    return {
+      url: task.targetUrl,
+      cursor: task.lastCursor,
+      concurrency: task.concurrency,
+      timeRange: {
+        from: task.timeRangeFrom?.toISOString(),
+        to: task.timeRangeTo?.toISOString()
+      },
+      keywords,
+      options: (task.config as Record<string, unknown> | null) ?? {}
+    };
+  }
+
+  private async persistResults(
+    task: CrawlTask,
+    items: Crawl4aiArticle[],
+    runId?: string
+  ): Promise<CrawlExecutionSummary> {
+    if (!items || items.length === 0) {
+      return {
+        inserted: 0,
+        skipped: 0,
+        runId
+      };
+    }
+    let inserted = 0;
+    let skipped = 0;
+    let latestResultAt: Date | undefined;
+
+    for (const item of items) {
+      const markdown = item.markdown ?? "";
+      if (!markdown) {
+        skipped += 1;
+        continue;
+      }
+      const hash = hashMarkdown(markdown);
+      const existing = await this.prisma.crawlResult.findFirst({
+        where: {
+          taskId: task.id,
+          contentHash: hash
+        }
+      });
+      if (existing) {
+        skipped += 1;
+        continue;
+      }
+      const fetchedAt = coerceDate(item.publishedAt) ?? new Date();
+      const created = await this.prisma.crawlResult.create({
+        data: {
+          taskId: task.id,
+          sourceUrl: item.url ?? task.targetUrl,
+          fetchedAt,
+          markdownRef: "",
+          contentHash: hash,
+          metadata: item.metadata ?? {}
+        }
+      });
+      const contentDoc = await CrawlResultContentModel.create({
+        taskId: task.id,
+        resultId: created.id,
+        markdown,
+        metadata: item.metadata ?? {},
+        sourceUrl: item.url ?? task.targetUrl,
+        crawlRunId: runId
+      });
+      await this.prisma.crawlResult.update({
+        where: { id: created.id },
+        data: { markdownRef: contentDoc.id }
+      });
+      inserted += 1;
+      if (!latestResultAt || fetchedAt > latestResultAt) {
+        latestResultAt = fetchedAt;
+      }
+    }
+
+    return {
+      inserted,
+      skipped,
+      lastFetchedAt: latestResultAt,
+      runId
+    };
+  }
+
+  private async attachResultContent(results: CrawlResult[]): Promise<CrawlTaskResult[]> {
+    if (results.length === 0) {
+      return [];
+    }
+    const ids = results.map((result) => result.id);
+    const docs = await CrawlResultContentModel.find({ resultId: { $in: ids } })
+      .lean()
+      .exec();
+    const docMap = new Map(docs.map((doc) => [doc.resultId as string, doc]));
+
+    return results.map((result) => {
+      const doc = docMap.get(result.id);
+      return {
+        id: result.id,
+        sourceUrl: result.sourceUrl,
+        fetchedAt: result.fetchedAt,
+        markdown: (doc?.markdown as string) ?? "",
+        metadata: (result.metadata as Record<string, unknown> | null) ?? doc?.metadata ?? null
+      };
+    });
+  }
+}

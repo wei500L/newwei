@@ -3,6 +3,7 @@
 import {
   DashboardOutlined,
   LogoutOutlined,
+  RadarChartOutlined,
   SettingOutlined,
   TableOutlined
 } from "@ant-design/icons";
@@ -24,6 +25,11 @@ const navigationItems = [
     key: "/items",
     icon: <TableOutlined />,
     label: "Items"
+  },
+  {
+    key: "/crawl",
+    icon: <RadarChartOutlined />,
+    label: "Crawl Tasks"
   },
   {
     key: "/settings",

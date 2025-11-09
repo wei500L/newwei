@@ -51,4 +51,14 @@ export class EnvService extends ConfigService<ApiEnv> {
       corsOrigin: this.get<string | undefined>("CORS_ORIGIN", { infer: true })
     };
   }
+
+  get crawl4aiConfig() {
+    return {
+      baseUrl: this.get<string>("CRAWL4AI_BASE_URL", { infer: true }),
+      apiKey: this.get<string | undefined>("CRAWL4AI_API_KEY", { infer: true }),
+      timeoutMs: this.get<number>("CRAWL4AI_TIMEOUT_MS", { infer: true }) ?? 120_000,
+      maxConcurrency: this.get<number>("CRAWL4AI_MAX_CONCURRENCY", { infer: true }) ?? 3,
+      maxRetries: this.get<number>("CRAWL4AI_MAX_RETRIES", { infer: true }) ?? 3
+    };
+  }
 }

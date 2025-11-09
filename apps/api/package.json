@@ -14,6 +14,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@nestjs/axios": "^4.0.0",
     "@modular/db": "workspace:*",
     "@modular/mongo": "workspace:*",
     "@modular/utils": "workspace:*",

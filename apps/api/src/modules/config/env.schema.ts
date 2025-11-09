@@ -20,7 +20,12 @@ export const apiEnvSchema = baseEnvSchema.extend({
   ),
   GRAPHQL_DEPTH_LIMIT: z.coerce.number().int().positive().default(8),
   GRAPHQL_COMPLEXITY_LIMIT: z.coerce.number().int().positive().default(2000),
-  CORS_ORIGIN: z.string().optional()
+  CORS_ORIGIN: z.string().optional(),
+  CRAWL4AI_BASE_URL: z.string().url(),
+  CRAWL4AI_API_KEY: z.string().optional(),
+  CRAWL4AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  CRAWL4AI_MAX_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3)
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
