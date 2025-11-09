@@ -10,7 +10,10 @@ import {
   CrawlExecutionSummary,
   CrawlTaskOptions,
   CrawlMemoryStats,
-  CrawlProxyConfig
+  CrawlProxyConfig,
+  CrawlMultiUrlConfig,
+  CrawlUrlMatcher,
+  CrawlStrategyOverrides
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -98,7 +101,9 @@ export class CrawlService {
       simulateUser: dto.options?.simulateUser,
       overrideNavigator: dto.options?.overrideNavigator,
       proxyUrl: dto.options?.proxyUrl,
-      proxyConfig: dto.options?.proxyConfig as CrawlProxyConfig | undefined
+      proxyConfig: dto.options?.proxyConfig as CrawlProxyConfig | undefined,
+      additionalUrls: dto.options?.additionalUrls,
+      multiUrlConfigs: dto.options?.multiUrlConfigs as CrawlMultiUrlConfig[] | undefined
     });
 
     const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
@@ -393,8 +398,10 @@ export class CrawlService {
   private buildRequestPayload(task: CrawlTask): Crawl4aiRequest {
     const keywords = this.fromJsonArray(task.keywords);
     const options = this.extractOptions(task.config);
+    const urls = this.buildUrlList(task.targetUrl, options);
     return {
       url: task.targetUrl,
+      urls,
       keywords,
       options
     };
@@ -418,7 +425,9 @@ export class CrawlService {
       simulateUser: typeof value.simulateUser === "boolean" ? value.simulateUser : undefined,
       overrideNavigator: typeof value.overrideNavigator === "boolean" ? value.overrideNavigator : undefined,
       proxyUrl: typeof value.proxyUrl === "string" ? value.proxyUrl : undefined,
-      proxyConfig: this.parseProxyConfig(value.proxyConfig)
+      proxyConfig: this.parseProxyConfig(value.proxyConfig),
+      additionalUrls: this.parseUrlArray(value.additionalUrls),
+      multiUrlConfigs: this.parseMultiUrlConfigs(value.multiUrlConfigs)
     });
   }
 
@@ -439,6 +448,8 @@ export class CrawlService {
       (options?.enableStealthMode ? true : false);
     const proxyConfig = this.normalizeProxyConfig(options?.proxyConfig);
     const proxyUrl = proxyConfig ? undefined : this.normalizeProxyUrl(options?.proxyUrl);
+    const additionalUrls = this.normalizeUrlList(options?.additionalUrls);
+    const multiUrlConfigs = this.normalizeMultiUrlConfigs(options?.multiUrlConfigs);
 
     return {
       includeImages: options?.includeImages ?? false,
@@ -452,7 +463,9 @@ export class CrawlService {
       simulateUser,
       overrideNavigator,
       proxyConfig,
-      proxyUrl
+      proxyUrl,
+      additionalUrls,
+      multiUrlConfigs
     };
   }
 
@@ -502,6 +515,128 @@ export class CrawlService {
       username: typeof record.username === "string" ? record.username : undefined,
       password: typeof record.password === "string" ? record.password : undefined
     });
+  }
+
+  private normalizeUrlList(urls?: string[] | null): string[] | undefined {
+    if (!urls || urls.length === 0) {
+      return undefined;
+    }
+    const normalized = urls
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0);
+    if (normalized.length === 0) {
+      return undefined;
+    }
+    return Array.from(new Set(normalized));
+  }
+
+  private normalizeMultiUrlConfigs(configs?: CrawlMultiUrlConfig[] | null): CrawlMultiUrlConfig[] | undefined {
+    if (!configs || configs.length === 0) {
+      return undefined;
+    }
+    const normalized = configs
+      .map((config) => this.normalizeMultiUrlConfig(config))
+      .filter((entry): entry is CrawlMultiUrlConfig => Boolean(entry));
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private normalizeMultiUrlConfig(config?: CrawlMultiUrlConfig | null): CrawlMultiUrlConfig | undefined {
+    if (!config || typeof config !== "object") {
+      return undefined;
+    }
+    const name = typeof config.name === "string" ? config.name.trim() : undefined;
+    const matcher = this.normalizeMatcher(config.matcher);
+    const urls = this.normalizeUrlList(config.urls ?? undefined);
+    const options = this.normalizeStrategyOverrides(config.options);
+    if (!matcher && (!urls || urls.length === 0)) {
+      return undefined;
+    }
+    return {
+      name,
+      matcher,
+      urls,
+      options
+    };
+  }
+
+  private normalizeMatcher(matcher?: CrawlUrlMatcher | null): CrawlUrlMatcher | undefined {
+    if (!matcher || !matcher.patterns) {
+      return undefined;
+    }
+    const patterns = matcher.patterns
+      .map((pattern) => (typeof pattern === "string" ? pattern.trim() : ""))
+      .filter((pattern) => pattern.length > 0);
+    if (patterns.length === 0) {
+      return undefined;
+    }
+    return {
+      matchMode: matcher.matchMode,
+      patterns: patterns
+    };
+  }
+
+  private normalizeStrategyOverrides(
+    overrides?: CrawlStrategyOverrides | null
+  ): CrawlStrategyOverrides | undefined {
+    if (!overrides) {
+      return undefined;
+    }
+    const normalized: CrawlStrategyOverrides = {};
+    if (overrides.cacheMode) {
+      normalized.cacheMode = overrides.cacheMode;
+    }
+    if (typeof overrides.onlyMainContent === "boolean") {
+      normalized.onlyMainContent = overrides.onlyMainContent;
+    }
+    if (typeof overrides.extractLinks === "boolean") {
+      normalized.extractLinks = overrides.extractLinks;
+    }
+    if (typeof overrides.scanFullPage === "boolean") {
+      normalized.scanFullPage = overrides.scanFullPage;
+    }
+    if (typeof overrides.scrollDelayMs === "number") {
+      normalized.scrollDelayMs = this.clampScrollDelay(overrides.scrollDelayMs);
+    }
+    if (typeof overrides.simulateUser === "boolean") {
+      normalized.simulateUser = overrides.simulateUser;
+    }
+    if (typeof overrides.overrideNavigator === "boolean") {
+      normalized.overrideNavigator = overrides.overrideNavigator;
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private parseUrlArray(value: unknown): string[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    return this.normalizeUrlList(
+      value.map((entry) => (typeof entry === "string" ? entry : "")).filter((entry): entry is string => Boolean(entry))
+    );
+  }
+
+  private parseMultiUrlConfigs(value: unknown): CrawlMultiUrlConfig[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    return this.normalizeMultiUrlConfigs(
+      value.map((entry) => (typeof entry === "object" ? (entry as CrawlMultiUrlConfig) : undefined)).filter(Boolean)
+    );
+  }
+
+  private buildUrlList(baseUrl: string, options: CrawlTaskOptions): string[] {
+    const accumulator = [baseUrl];
+    if (options.additionalUrls) {
+      accumulator.push(...options.additionalUrls);
+    }
+    if (options.multiUrlConfigs) {
+      for (const config of options.multiUrlConfigs) {
+        if (config.urls) {
+          accumulator.push(...config.urls);
+        }
+      }
+    }
+    return Array.from(new Set(accumulator.filter((entry) => typeof entry === "string" && entry.length > 0)));
   }
 
   private async persistResults(

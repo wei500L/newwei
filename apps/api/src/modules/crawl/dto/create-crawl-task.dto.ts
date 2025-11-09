@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsInt,
@@ -11,8 +12,10 @@ import {
   Max,
   Min,
   ValidateNested,
-  MaxLength
+  MaxLength,
+  IsIn
 } from "class-validator";
+import { CrawlUrlMatchMode } from "../crawl.types";
 
 export class CrawlProxyConfigDto {
   @IsString()
@@ -79,6 +82,85 @@ export class CrawlOptionsDto {
   @ValidateNested()
   @Type(() => CrawlProxyConfigDto)
   proxyConfig?: CrawlProxyConfigDto;
+
+  @IsOptional()
+  @IsArray()
+  @IsUrl(undefined, { each: true })
+  @ArrayMaxSize(25)
+  additionalUrls?: string[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CrawlMultiUrlConfigDto)
+  multiUrlConfigs?: CrawlMultiUrlConfigDto[];
+}
+
+export class CrawlUrlMatcherDto {
+  @IsOptional()
+  @IsIn(["glob", "regex", "substring", "prefix"])
+  matchMode?: CrawlUrlMatchMode;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  patterns?: string[];
+}
+
+export class CrawlStrategyOverridesDto {
+  @IsOptional()
+  @IsBoolean()
+  scanFullPage?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(5000)
+  scrollDelayMs?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  onlyMainContent?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  extractLinks?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  simulateUser?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  overrideNavigator?: boolean;
+
+  @IsOptional()
+  @IsIn(["bypass", "prefer_cache", "force_cache"])
+  cacheMode?: "bypass" | "prefer_cache" | "force_cache";
+}
+
+export class CrawlMultiUrlConfigDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsUrl(undefined, { each: true })
+  @ArrayMaxSize(25)
+  urls?: string[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlUrlMatcherDto)
+  matcher?: CrawlUrlMatcherDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlStrategyOverridesDto)
+  options?: CrawlStrategyOverridesDto;
 }
 
 export class CreateCrawlTaskDto {

@@ -14,10 +14,34 @@ export interface CrawlExecutionSummary {
 
 export type CrawlCacheMode = "bypass" | "prefer_cache" | "force_cache";
 
+export type CrawlUrlMatchMode = "glob" | "regex" | "substring" | "prefix";
+
 export interface CrawlProxyConfig {
   server: string;
   username?: string;
   password?: string;
+}
+
+export interface CrawlUrlMatcher {
+  matchMode?: CrawlUrlMatchMode;
+  patterns: string[];
+}
+
+export interface CrawlStrategyOverrides {
+  cacheMode?: CrawlCacheMode;
+  scanFullPage?: boolean;
+  scrollDelayMs?: number;
+  onlyMainContent?: boolean;
+  extractLinks?: boolean;
+  simulateUser?: boolean;
+  overrideNavigator?: boolean;
+}
+
+export interface CrawlMultiUrlConfig {
+  name?: string;
+  urls?: string[];
+  matcher?: CrawlUrlMatcher;
+  options?: CrawlStrategyOverrides;
 }
 
 export interface CrawlTaskOptions {
@@ -33,6 +57,8 @@ export interface CrawlTaskOptions {
   overrideNavigator?: boolean;
   proxyUrl?: string;
   proxyConfig?: CrawlProxyConfig;
+  additionalUrls?: string[];
+  multiUrlConfigs?: CrawlMultiUrlConfig[];
 }
 
 export interface CrawlMemoryStats {

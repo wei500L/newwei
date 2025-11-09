@@ -82,6 +82,22 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     return "Direct (no proxy)";
   }, [config]);
 
+  const additionalUrls = useMemo(() => {
+    if (!config || !Array.isArray((config as any).additionalUrls)) {
+      return [];
+    }
+    return ((config as any).additionalUrls as unknown[])
+      .map((entry) => (typeof entry === "string" ? entry : null))
+      .filter((entry): entry is string => Boolean(entry));
+  }, [config]);
+
+  const multiConfigs = useMemo(() => {
+    if (!config || !Array.isArray((config as any).multiUrlConfigs)) {
+      return [];
+    }
+    return ((config as any).multiUrlConfigs as Record<string, unknown>[]) ?? [];
+  }, [config]);
+
   const handleRetry = async () => {
     if (!task) return;
     try {
@@ -158,6 +174,19 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         {config?.overrideNavigator ? "Enabled" : "Disabled"}
       </Descriptions.Item>
       <Descriptions.Item label="Proxy route">{proxySummary}</Descriptions.Item>
+      <Descriptions.Item label="Additional URLs">
+        {additionalUrls.length ? (
+          <Space wrap>
+            {additionalUrls.map((url) => (
+              <Typography.Link key={url} href={url} target="_blank" rel="noreferrer">
+                {url}
+              </Typography.Link>
+            ))}
+          </Space>
+        ) : (
+          "—"
+        )}
+      </Descriptions.Item>
       <Descriptions.Item label="Last server memory">
         {task.lastServerMemoryMb != null ? `${task.lastServerMemoryMb} MB` : "—"}
       </Descriptions.Item>
@@ -188,6 +217,48 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           )}
         </Descriptions.Item>
       </Descriptions>
+
+      {multiConfigs.length ? (
+        <Card title="Multi-URL strategies" style={{ marginTop: 24 }}>
+          <List
+            dataSource={multiConfigs}
+            renderItem={(item, index) => {
+              const matcher = item?.matcher as { matchMode?: string; patterns?: string[] } | undefined;
+              const urls = Array.isArray(item?.urls) ? (item?.urls as string[]) : [];
+              const options = (item?.options ?? {}) as Record<string, unknown>;
+              return (
+                <List.Item key={item?.name ?? `strategy-${index}`}>
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    <Typography.Text strong>{item?.name ?? `Strategy #${index + 1}`}</Typography.Text>
+                    {matcher?.patterns?.length ? (
+                      <Typography.Text type="secondary">
+                        Patterns ({matcher.matchMode ?? "glob"}): {matcher.patterns.join(", ")}
+                      </Typography.Text>
+                    ) : null}
+                    {urls.length ? (
+                      <Space wrap>
+                        {urls.map((url) => (
+                          <Typography.Link key={url} href={url} target="_blank" rel="noreferrer">
+                            {url}
+                          </Typography.Link>
+                        ))}
+                      </Space>
+                    ) : null}
+                    {Object.keys(options).length ? (
+                      <Typography.Text>
+                        Overrides:{" "}
+                        {Object.entries(options)
+                          .map(([key, value]) => `${key}=${String(value)}`)
+                          .join(", ")}
+                      </Typography.Text>
+                    ) : null}
+                  </Space>
+                </List.Item>
+              );
+            }}
+          />
+        </Card>
+      ) : null}
 
       <Card
         title="Results"

@@ -23,6 +23,54 @@ export class CrawlProxyConfigInput {
 }
 
 @InputType()
+export class CrawlUrlMatcherInput {
+  @Field(() => String, { nullable: true })
+  matchMode?: string;
+
+  @Field(() => [String], { nullable: true })
+  patterns?: string[];
+}
+
+@InputType()
+export class CrawlStrategyOverridesInput {
+  @Field(() => Boolean, { nullable: true })
+  scanFullPage?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  scrollDelayMs?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  onlyMainContent?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  extractLinks?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  simulateUser?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  overrideNavigator?: boolean;
+
+  @Field(() => String, { nullable: true })
+  cacheMode?: string;
+}
+
+@InputType()
+export class CrawlMultiUrlStrategyInput {
+  @Field({ nullable: true })
+  name?: string;
+
+  @Field(() => [String], { nullable: true })
+  urls?: string[];
+
+  @Field(() => CrawlUrlMatcherInput, { nullable: true })
+  matcher?: CrawlUrlMatcherInput;
+
+  @Field(() => CrawlStrategyOverridesInput, { nullable: true })
+  options?: CrawlStrategyOverridesInput;
+}
+
+@InputType()
 export class CrawlOptionsInput {
   @Field(() => Boolean, { nullable: true })
   includeImages?: boolean;
@@ -56,6 +104,12 @@ export class CrawlOptionsInput {
 
   @Field(() => CrawlProxyConfigInput, { nullable: true })
   proxyConfig?: CrawlProxyConfigInput;
+
+  @Field(() => [String], { nullable: true })
+  additionalUrls?: string[];
+
+  @Field(() => [CrawlMultiUrlStrategyInput], { nullable: true })
+  multiUrlConfigs?: CrawlMultiUrlStrategyInput[];
 }
 
 @InputType()
