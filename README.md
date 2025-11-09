@@ -93,6 +93,7 @@ infra/
 - 如果目标站点启用了 Cloudflare/DataDome 等高强度检测，可勾选 “Undetected browser” 与 “Stealth mode”。这会将 crawl4ai `BrowserConfig` 的 `browser_type` 设为 `undetected` 并启用 `enable_stealth`（官方文档 `docs/md_v2/advanced/undetected-browser.md`），同时把 `magic/simulate_user/override_navigator` 等参数写入 `CrawlerRunConfig`，以更贴近真实用户（光标移动、Navigator 属性伪装等）避免被识别。
 - 依据 crawl4ai v0.7.4 发布说明中的 *Enhanced Proxy Support*（`docs/blog/release-v0.7.4.md`），创建任务时可在前端表单或 GraphQL 输入中选择字符串代理（`http://user:pass@proxy:8080`、`socks5://...`）或字典代理（`server/username/password` 分离），API 会自动将其映射为 `BrowserConfig.proxy_config`，方便在不同供应商之间切换。
 - 参考 crawl4ai 官方 *Multi-URL Configuration* 文档（`docs/md_v2/advanced/multi-url-crawling.md` / `docs/blog/release-v0.7.3.md`），创建任务时可以在 “Multi-URL strategies” 中声明不同的 URL 列表或匹配模式（glob/regex 等）及其专属 `CrawlerRunConfig` 覆盖，例如为 PDF、API、博客页面配置不同的缓存策略、滚动和提取选项；API 会自动将这些规则映射为 `crawler_configurations` 发送到 Crawl4AI，并在同一批次内抓取多条 URL。
+- 参考 crawl4ai 官方 *Markdown Generation* 指南（`docs/md_v2/core/markdown-generation.md`），创建任务时可配置 `DefaultMarkdownGenerator` 的 `content_source` 与 `options`（忽略链接、逃逸 HTML、Wrap 宽度等）以及 `PruningContentFilter` 阈值；API 会在 `CrawlerRunConfig` 中下发 `markdown_generator`，并在结果详情页展示原始 / 引用 / Fit Markdown，方便在不同渠道复用内容。
 - 参考 crawl4ai README 关于 *Memory Monitoring* 的 `MemoryMonitor` 实践，我们从 `/crawl` 响应中读取 `serverMemoryMb/peakMemoryMb/memoryEfficiency`，在后台日志与控制台详情页展示该指标，帮助排查 OOM 或批量任务的资源瓶颈。
 
 ## 测试

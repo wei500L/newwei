@@ -1,4 +1,4 @@
-import { ArgsType, Field, ID, InputType, Int, registerEnumType } from "@nestjs/graphql";
+import { ArgsType, Field, ID, InputType, Int, Float, registerEnumType } from "@nestjs/graphql";
 import { CrawlTaskStatus } from "@prisma/client";
 
 @InputType()
@@ -71,6 +71,30 @@ export class CrawlMultiUrlStrategyInput {
 }
 
 @InputType()
+export class CrawlMarkdownOptionsInput {
+  @Field(() => String, { nullable: true })
+  contentSource?: string;
+
+  @Field(() => Boolean, { nullable: true })
+  ignoreLinks?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  escapeHtml?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  bodyWidth?: number;
+}
+
+@InputType()
+export class CrawlMarkdownFilterInput {
+  @Field(() => String, { nullable: true })
+  type?: string;
+
+  @Field(() => Float, { nullable: true })
+  threshold?: number;
+}
+
+@InputType()
 export class CrawlOptionsInput {
   @Field(() => Boolean, { nullable: true })
   includeImages?: boolean;
@@ -110,6 +134,12 @@ export class CrawlOptionsInput {
 
   @Field(() => [CrawlMultiUrlStrategyInput], { nullable: true })
   multiUrlConfigs?: CrawlMultiUrlStrategyInput[];
+
+  @Field(() => CrawlMarkdownOptionsInput, { nullable: true })
+  markdownOptions?: CrawlMarkdownOptionsInput;
+
+  @Field(() => CrawlMarkdownFilterInput, { nullable: true })
+  markdownFilter?: CrawlMarkdownFilterInput;
 }
 
 @InputType()

@@ -16,6 +16,18 @@ export type CrawlTimeRangeInput = {
   to?: InputMaybe<string>;
 };
 
+export type CrawlMarkdownOptionsInput = {
+  contentSource?: InputMaybe<string>;
+  ignoreLinks?: InputMaybe<boolean>;
+  escapeHtml?: InputMaybe<boolean>;
+  bodyWidth?: InputMaybe<number>;
+};
+
+export type CrawlMarkdownFilterInput = {
+  type?: InputMaybe<string>;
+  threshold?: InputMaybe<number>;
+};
+
 export type CrawlUrlMatcherInput = {
   matchMode?: InputMaybe<string>;
   patterns?: InputMaybe<Array<string>>;
@@ -58,6 +70,8 @@ export type CrawlOptionsInput = {
   proxyConfig?: InputMaybe<CrawlProxyConfigInput>;
   additionalUrls?: InputMaybe<Array<string>>;
   multiUrlConfigs?: InputMaybe<Array<CrawlMultiUrlStrategyInput>>;
+  markdownOptions?: InputMaybe<CrawlMarkdownOptionsInput>;
+  markdownFilter?: InputMaybe<CrawlMarkdownFilterInput>;
 };
 
 export type CreateCrawlTaskInput = {
@@ -283,6 +297,9 @@ export type CrawlTaskQuery = {
       sourceUrl: string;
       fetchedAt: any;
       markdown: string;
+      markdownWithCitations?: string | null;
+      referencesMarkdown?: string | null;
+      fitMarkdown?: string | null;
       metadata?: string | null;
     }> | null;
     memoryStats?: {
@@ -447,6 +464,9 @@ export const CrawlTaskDocument = gql`
         sourceUrl
         fetchedAt
         markdown
+        markdownWithCitations
+        referencesMarkdown
+        fitMarkdown
         metadata
       }
       memoryStats {
