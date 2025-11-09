@@ -63,6 +63,25 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
   }, [task?.config]);
 
+  const proxySummary = useMemo(() => {
+    if (!config) {
+      return "Direct (no proxy)";
+    }
+    const proxyUrl =
+      typeof config.proxyUrl === "string" && config.proxyUrl.length > 0 ? config.proxyUrl : null;
+    const proxyConfig = config.proxyConfig as
+      | { server?: string; username?: string; password?: string }
+      | undefined;
+    if (proxyConfig?.server) {
+      const creds = proxyConfig.username ? ` • user ${proxyConfig.username}` : "";
+      return `Dict: ${proxyConfig.server}${creds}`;
+    }
+    if (proxyUrl) {
+      return proxyUrl;
+    }
+    return "Direct (no proxy)";
+  }, [config]);
+
   const handleRetry = async () => {
     if (!task) return;
     try {
@@ -138,6 +157,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       <Descriptions.Item label="Override navigator">
         {config?.overrideNavigator ? "Enabled" : "Disabled"}
       </Descriptions.Item>
+      <Descriptions.Item label="Proxy route">{proxySummary}</Descriptions.Item>
       <Descriptions.Item label="Last server memory">
         {task.lastServerMemoryMb != null ? `${task.lastServerMemoryMb} MB` : "—"}
       </Descriptions.Item>

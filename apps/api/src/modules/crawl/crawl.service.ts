@@ -9,7 +9,8 @@ import {
   CrawlJobData,
   CrawlExecutionSummary,
   CrawlTaskOptions,
-  CrawlMemoryStats
+  CrawlMemoryStats,
+  CrawlProxyConfig
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -89,7 +90,15 @@ export class CrawlService {
     const normalizedOptions = this.normalizeOptions({
       includeImages: dto.options?.includeImages,
       onlyMainContent: dto.options?.onlyMainContent,
-      extractLinks: dto.options?.extractLinks
+      extractLinks: dto.options?.extractLinks,
+      scanFullPage: dto.options?.scanFullPage,
+      scrollDelayMs: dto.options?.scrollDelayMs,
+      enableUndetectedBrowser: dto.options?.enableUndetectedBrowser,
+      enableStealthMode: dto.options?.enableStealthMode,
+      simulateUser: dto.options?.simulateUser,
+      overrideNavigator: dto.options?.overrideNavigator,
+      proxyUrl: dto.options?.proxyUrl,
+      proxyConfig: dto.options?.proxyConfig as CrawlProxyConfig | undefined
     });
 
     const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
@@ -407,7 +416,9 @@ export class CrawlService {
         typeof value.enableUndetectedBrowser === "boolean" ? value.enableUndetectedBrowser : undefined,
       enableStealthMode: typeof value.enableStealthMode === "boolean" ? value.enableStealthMode : undefined,
       simulateUser: typeof value.simulateUser === "boolean" ? value.simulateUser : undefined,
-      overrideNavigator: typeof value.overrideNavigator === "boolean" ? value.overrideNavigator : undefined
+      overrideNavigator: typeof value.overrideNavigator === "boolean" ? value.overrideNavigator : undefined,
+      proxyUrl: typeof value.proxyUrl === "string" ? value.proxyUrl : undefined,
+      proxyConfig: this.parseProxyConfig(value.proxyConfig)
     });
   }
 
@@ -426,6 +437,8 @@ export class CrawlService {
     const overrideNavigator =
       options?.overrideNavigator ??
       (options?.enableStealthMode ? true : false);
+    const proxyConfig = this.normalizeProxyConfig(options?.proxyConfig);
+    const proxyUrl = proxyConfig ? undefined : this.normalizeProxyUrl(options?.proxyUrl);
 
     return {
       includeImages: options?.includeImages ?? false,
@@ -437,7 +450,9 @@ export class CrawlService {
       enableUndetectedBrowser: options?.enableUndetectedBrowser ?? false,
       enableStealthMode: options?.enableStealthMode ?? false,
       simulateUser,
-      overrideNavigator
+      overrideNavigator,
+      proxyConfig,
+      proxyUrl
     };
   }
 
@@ -446,6 +461,47 @@ export class CrawlService {
       return 200;
     }
     return Math.max(0, Math.min(5000, Math.round(value)));
+  }
+
+  private normalizeProxyUrl(value?: string) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private normalizeProxyConfig(value?: CrawlProxyConfig | null): CrawlProxyConfig | undefined {
+    if (!value) {
+      return undefined;
+    }
+    const server = typeof value.server === "string" ? value.server.trim() : "";
+    if (!server) {
+      return undefined;
+    }
+    const username = typeof value.username === "string" ? value.username.trim() : "";
+    const password = typeof value.password === "string" ? value.password.trim() : "";
+    return {
+      server,
+      username: username.length > 0 ? username : undefined,
+      password: password.length > 0 ? password : undefined
+    };
+  }
+
+  private parseProxyConfig(value: unknown): CrawlProxyConfig | undefined {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const server = typeof record.server === "string" ? record.server : undefined;
+    if (!server) {
+      return undefined;
+    }
+    return this.normalizeProxyConfig({
+      server,
+      username: typeof record.username === "string" ? record.username : undefined,
+      password: typeof record.password === "string" ? record.password : undefined
+    });
   }
 
   private async persistResults(

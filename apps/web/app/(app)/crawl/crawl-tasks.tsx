@@ -51,6 +51,12 @@ interface CreateCrawlTaskFormValues {
   enableStealthMode?: boolean;
   simulateUser?: boolean;
   overrideNavigator?: boolean;
+  proxyUrl?: string;
+  proxyConfig?: {
+    server?: string;
+    username?: string;
+    password?: string;
+  };
 }
 
 export function CrawlTasksView() {
@@ -59,6 +65,10 @@ export function CrawlTasksView() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form] = Form.useForm<CreateCrawlTaskFormValues>();
   const scanFullPage = Form.useWatch("scanFullPage", form);
+  const proxyUrlValue = Form.useWatch("proxyUrl", form);
+  const proxyConfigValue = Form.useWatch("proxyConfig", form);
+  const proxyUrlActive = Boolean(proxyUrlValue?.trim().length);
+  const proxyObjectActive = Boolean(proxyConfigValue?.server?.trim().length);
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
     pageSize: 10
@@ -162,6 +172,16 @@ export function CrawlTasksView() {
 
   const handleCreate = async (values: CreateCrawlTaskFormValues) => {
     const [from, to] = values.timeRange ?? [];
+    const proxyConfigInput = values.proxyConfig;
+    const proxyServer = proxyConfigInput?.server?.trim();
+    const proxyConfig = proxyServer
+      ? {
+          server: proxyServer,
+          username: proxyConfigInput?.username?.trim() || undefined,
+          password: proxyConfigInput?.password?.trim() || undefined
+        }
+      : undefined;
+    const proxyUrl = proxyConfig ? undefined : values.proxyUrl?.trim();
     try {
       await createTask({
         variables: {
@@ -186,7 +206,9 @@ export function CrawlTasksView() {
               enableUndetectedBrowser: values.enableUndetectedBrowser ?? undefined,
               enableStealthMode: values.enableStealthMode ?? undefined,
               simulateUser: values.simulateUser ?? undefined,
-              overrideNavigator: values.overrideNavigator ?? undefined
+              overrideNavigator: values.overrideNavigator ?? undefined,
+              proxyUrl: proxyUrl ? proxyUrl : undefined,
+              proxyConfig: proxyConfig ?? undefined
             }
           }
         }
@@ -342,6 +364,26 @@ export function CrawlTasksView() {
             extra="Spoofs browser navigator properties"
           >
             <Switch />
+          </Form.Item>
+          <Form.Item
+            label="Proxy URL"
+            name="proxyUrl"
+            extra="Send a single proxy string (e.g. http://user:pass@proxy:8080 or socks5://proxy:1080)."
+          >
+            <Input placeholder="http://proxy.example.com:8080" disabled={proxyObjectActive} />
+          </Form.Item>
+          <Form.Item
+            label="Proxy server"
+            name={["proxyConfig", "server"]}
+            extra="Dict format from Crawl4AI v0.7.4+; fill this when the proxy requires separate auth fields."
+          >
+            <Input placeholder="http://proxy.example.com:8080" disabled={proxyUrlActive} />
+          </Form.Item>
+          <Form.Item label="Proxy username" name={["proxyConfig", "username"]}>
+            <Input placeholder="Optional username" disabled={proxyUrlActive} />
+          </Form.Item>
+          <Form.Item label="Proxy password" name={["proxyConfig", "password"]}>
+            <Input.Password placeholder="Optional password" disabled={proxyUrlActive} />
           </Form.Item>
           <Space style={{ width: "100%", justifyContent: "flex-end" }}>
             <Button onClick={() => setDrawerOpen(false)}>Cancel</Button>

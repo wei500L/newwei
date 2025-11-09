@@ -14,6 +14,12 @@ export interface CrawlExecutionSummary {
 
 export type CrawlCacheMode = "bypass" | "prefer_cache" | "force_cache";
 
+export interface CrawlProxyConfig {
+  server: string;
+  username?: string;
+  password?: string;
+}
+
 export interface CrawlTaskOptions {
   includeImages?: boolean;
   onlyMainContent?: boolean;
@@ -25,6 +31,8 @@ export interface CrawlTaskOptions {
   enableStealthMode?: boolean;
   simulateUser?: boolean;
   overrideNavigator?: boolean;
+  proxyUrl?: string;
+  proxyConfig?: CrawlProxyConfig;
 }
 
 export interface CrawlMemoryStats {

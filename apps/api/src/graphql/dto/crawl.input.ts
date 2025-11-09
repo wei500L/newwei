@@ -11,6 +11,18 @@ export class CrawlTimeRangeInput {
 }
 
 @InputType()
+export class CrawlProxyConfigInput {
+  @Field()
+  server!: string;
+
+  @Field({ nullable: true })
+  username?: string;
+
+  @Field({ nullable: true })
+  password?: string;
+}
+
+@InputType()
 export class CrawlOptionsInput {
   @Field(() => Boolean, { nullable: true })
   includeImages?: boolean;
@@ -38,6 +50,12 @@ export class CrawlOptionsInput {
 
   @Field(() => Boolean, { nullable: true })
   overrideNavigator?: boolean;
+
+  @Field({ nullable: true })
+  proxyUrl?: string;
+
+  @Field(() => CrawlProxyConfigInput, { nullable: true })
+  proxyConfig?: CrawlProxyConfigInput;
 }
 
 @InputType()
