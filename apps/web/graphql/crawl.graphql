@@ -48,6 +48,9 @@ query CrawlTask($id: ID!, $resultLimit: Int, $resultSearch: String) {
       sourceUrl
       fetchedAt
       markdown
+      markdownWithCitations
+      referencesMarkdown
+      fitMarkdown
       metadata
     }
     memoryStats {

@@ -13,7 +13,8 @@ import {
   Min,
   ValidateNested,
   MaxLength,
-  IsIn
+  IsIn,
+  IsNumber
 } from "class-validator";
 import { CrawlUrlMatchMode } from "../crawl.types";
 
@@ -93,6 +94,16 @@ export class CrawlOptionsDto {
   @ValidateNested({ each: true })
   @Type(() => CrawlMultiUrlConfigDto)
   multiUrlConfigs?: CrawlMultiUrlConfigDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlMarkdownOptionsDto)
+  markdownOptions?: CrawlMarkdownOptionsDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlMarkdownFilterDto)
+  markdownFilter?: CrawlMarkdownFilterDto;
 }
 
 export class CrawlUrlMatcherDto {
@@ -161,6 +172,40 @@ export class CrawlMultiUrlConfigDto {
   @ValidateNested()
   @Type(() => CrawlStrategyOverridesDto)
   options?: CrawlStrategyOverridesDto;
+}
+
+export class CrawlMarkdownOptionsDto {
+  @IsOptional()
+  @IsIn(["raw_html", "cleaned_html", "fit_html"])
+  contentSource?: "raw_html" | "cleaned_html" | "fit_html";
+
+  @IsOptional()
+  @IsBoolean()
+  ignoreLinks?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  escapeHtml?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(40)
+  @Max(200)
+  bodyWidth?: number;
+}
+
+export class CrawlMarkdownFilterDto {
+  @IsOptional()
+  @IsIn(["pruning"])
+  type?: "pruning";
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: "threshold must be a number" })
+  @Min(0)
+  @Max(1)
+  threshold?: number;
 }
 
 export class CreateCrawlTaskDto {

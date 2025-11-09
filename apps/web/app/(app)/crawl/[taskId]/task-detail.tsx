@@ -10,6 +10,7 @@ import {
   Select,
   Space,
   Spin,
+  Tabs,
   Tag,
   Typography
 } from "antd";
@@ -81,6 +82,49 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     return "Direct (no proxy)";
   }, [config]);
+
+  const markdownOptions = useMemo(() => {
+    if (!config || typeof config.markdownOptions !== "object") {
+      return null;
+    }
+    return config.markdownOptions as Record<string, unknown>;
+  }, [config]);
+
+  const markdownFilter = useMemo(() => {
+    if (!config || typeof config.markdownFilter !== "object") {
+      return null;
+    }
+    return config.markdownFilter as Record<string, unknown>;
+  }, [config]);
+
+  const markdownSummary = useMemo(() => {
+    if (!markdownOptions) {
+      return "Default (cleaned_html)";
+    }
+    const parts: string[] = [];
+    if (typeof markdownOptions.contentSource === "string") {
+      parts.push(`source ${markdownOptions.contentSource}`);
+    }
+    if (typeof markdownOptions.ignoreLinks === "boolean") {
+      parts.push(markdownOptions.ignoreLinks ? "ignore links" : "keep links");
+    }
+    if (typeof markdownOptions.escapeHtml === "boolean") {
+      parts.push(markdownOptions.escapeHtml ? "escape HTML" : "render HTML");
+    }
+    if (typeof markdownOptions.bodyWidth === "number") {
+      parts.push(`wrap ${markdownOptions.bodyWidth}`);
+    }
+    return parts.length ? parts.join(" • ") : "Default (cleaned_html)";
+  }, [markdownOptions]);
+
+  const markdownFilterSummary = useMemo(() => {
+    if (!markdownFilter || typeof markdownFilter.type !== "string") {
+      return "Disabled";
+    }
+    const threshold =
+      typeof markdownFilter.threshold === "number" ? ` (threshold ${markdownFilter.threshold})` : "";
+    return `${markdownFilter.type}${threshold}`;
+  }, [markdownFilter]);
 
   const additionalUrls = useMemo(() => {
     if (!config || !Array.isArray((config as any).additionalUrls)) {
@@ -187,6 +231,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           "—"
         )}
       </Descriptions.Item>
+      <Descriptions.Item label="Markdown generator">{markdownSummary}</Descriptions.Item>
+      <Descriptions.Item label="Markdown filter">{markdownFilterSummary}</Descriptions.Item>
       <Descriptions.Item label="Last server memory">
         {task.lastServerMemoryMb != null ? `${task.lastServerMemoryMb} MB` : "—"}
       </Descriptions.Item>
@@ -291,34 +337,62 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           <List
             dataSource={results}
             locale={{ emptyText: "No crawl results yet." }}
-            renderItem={(result) => (
-              <List.Item key={result.id}>
-                <List.Item.Meta
-                  title={
-                    <Space>
-                      <Typography.Link href={result.sourceUrl} target="_blank">
-                        {result.sourceUrl}
-                      </Typography.Link>
-                      <Typography.Text type="secondary">
-                        {dayjs(result.fetchedAt).format("MMM D, HH:mm")}
-                      </Typography.Text>
-                    </Space>
-                  }
-                  description={
-                    <>
-                      {result.metadata && (
+            renderItem={(result) => {
+              const metadata = result.metadata;
+              const variantEntries = [
+                { key: "raw", label: "Raw", content: result.markdown },
+                { key: "citations", label: "Citations", content: result.markdownWithCitations },
+                { key: "references", label: "References", content: result.referencesMarkdown },
+                { key: "fit", label: "Fit", content: result.fitMarkdown }
+              ].filter((entry) => entry.content && entry.content.length > 0);
+              const defaultContent = (
+                <pre className="markdown-preview" style={{ marginTop: 8 }}>
+                  {result.markdown}
+                </pre>
+              );
+              const tabs =
+                variantEntries.length > 1 ? (
+                  <Tabs
+                    size="small"
+                    style={{ marginTop: 8 }}
+                    items={variantEntries.map((entry) => ({
+                      key: entry.key,
+                      label: entry.label,
+                      children: (
+                        <pre className="markdown-preview" style={{ marginTop: 8 }}>
+                          {entry.content}
+                        </pre>
+                      )
+                    }))}
+                  />
+                ) : (
+                  defaultContent
+                );
+              return (
+                <List.Item key={result.id}>
+                  <List.Item.Meta
+                    title={
+                      <Space>
+                        <Typography.Link href={result.sourceUrl} target="_blank">
+                          {result.sourceUrl}
+                        </Typography.Link>
                         <Typography.Text type="secondary">
-                          {result.metadata}
+                          {dayjs(result.fetchedAt).format("MMM D, HH:mm")}
                         </Typography.Text>
-                      )}
-                      <pre className="markdown-preview" style={{ marginTop: 8 }}>
-                        {result.markdown}
-                      </pre>
-                    </>
-                  }
-                />
-              </List.Item>
-            )}
+                      </Space>
+                    }
+                    description={
+                      <>
+                        {metadata && (
+                          <Typography.Text type="secondary">{metadata}</Typography.Text>
+                        )}
+                        {tabs}
+                      </>
+                    }
+                  />
+                </List.Item>
+              );
+            }}
           />
         )}
       </Card>

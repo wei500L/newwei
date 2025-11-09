@@ -3,7 +3,14 @@ import { Injectable } from "@nestjs/common";
 import type { AxiosError } from "axios";
 import { lastValueFrom } from "rxjs";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
-import type { CrawlTaskOptions, CrawlMultiUrlConfig, CrawlUrlMatcher, CrawlStrategyOverrides } from "./crawl.types";
+import type {
+  CrawlTaskOptions,
+  CrawlMultiUrlConfig,
+  CrawlUrlMatcher,
+  CrawlStrategyOverrides,
+  CrawlMarkdownOptions,
+  CrawlMarkdownFilter
+} from "./crawl.types";
 
 export interface Crawl4aiRequest {
   url: string;
@@ -12,9 +19,23 @@ export interface Crawl4aiRequest {
   options?: CrawlTaskOptions;
 }
 
+export interface Crawl4aiMarkdownResult {
+  raw_markdown?: string;
+  rawMarkdown?: string;
+  markdown_with_citations?: string;
+  markdownWithCitations?: string;
+  references_markdown?: string;
+  referencesMarkdown?: string;
+  fit_markdown?: string;
+  fitMarkdown?: string;
+  markdown?: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
 export interface Crawl4aiArticle {
   url?: string;
-  markdown?: string;
+  markdown?: string | Crawl4aiMarkdownResult;
   publishedAt?: string;
   metadata?: Record<string, unknown>;
 }
@@ -106,6 +127,7 @@ export class Crawl4aiClient {
     const headless = options.enableUndetectedBrowser || options.enableStealthMode ? false : true;
     const proxyPayload = this.resolveProxyPayload(options);
     const multiConfigurations = this.buildMultiConfigurations(options);
+    const markdownGenerator = this.buildMarkdownGenerator(options);
     const browserConfig = {
       type: "BrowserConfig",
       params: this.compact({
@@ -127,7 +149,8 @@ export class Crawl4aiClient {
         scroll_delay: scrollDelay,
         simulate_user: options.simulateUser ?? undefined,
         override_navigator: options.overrideNavigator ?? undefined,
-        magic: options.enableStealthMode ?? undefined
+        magic: options.enableStealthMode ?? undefined,
+        markdown_generator: markdownGenerator
       })
     };
     return {
@@ -158,6 +181,47 @@ export class Crawl4aiClient {
     }
     if (options.proxyUrl) {
       return options.proxyUrl;
+    }
+    return undefined;
+  }
+
+  private buildMarkdownGenerator(options: CrawlTaskOptions) {
+    const params = this.compact({
+      content_source: options.markdownOptions?.contentSource,
+      options: this.buildMarkdownOptionsPayload(options.markdownOptions),
+      content_filter: this.buildContentFilterPayload(options.markdownFilter)
+    });
+    return Object.keys(params).length > 0
+      ? {
+          type: "DefaultMarkdownGenerator",
+          params
+        }
+      : undefined;
+  }
+
+  private buildMarkdownOptionsPayload(markdownOptions?: CrawlMarkdownOptions) {
+    if (!markdownOptions) {
+      return undefined;
+    }
+    const payload = this.compact({
+      ignore_links: markdownOptions.ignoreLinks,
+      escape_html: markdownOptions.escapeHtml,
+      body_width: markdownOptions.bodyWidth
+    });
+    return Object.keys(payload).length > 0 ? payload : undefined;
+  }
+
+  private buildContentFilterPayload(filter?: CrawlMarkdownFilter) {
+    if (!filter) {
+      return undefined;
+    }
+    if (filter.type === "pruning") {
+      return this.compact({
+        type: "PruningContentFilter",
+        params: this.compact({
+          threshold: filter.threshold
+        })
+      });
     }
     return undefined;
   }

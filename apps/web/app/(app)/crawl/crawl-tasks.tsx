@@ -61,6 +61,16 @@ interface CreateCrawlTaskFormValues {
   };
   additionalUrls?: string[];
   multiUrlConfigs?: MultiUrlStrategyFormValue[];
+  markdownOptions?: {
+    contentSource?: string;
+    ignoreLinks?: boolean;
+    escapeHtml?: boolean;
+    bodyWidth?: number;
+  };
+  markdownFilter?: {
+    type?: string;
+    threshold?: number;
+  };
 }
 
 interface MultiUrlStrategyFormValue {
@@ -91,6 +101,7 @@ export function CrawlTasksView() {
   const proxyConfigValue = Form.useWatch("proxyConfig", form);
   const proxyUrlActive = Boolean(proxyUrlValue?.trim().length);
   const proxyObjectActive = Boolean(proxyConfigValue?.server?.trim().length);
+  const markdownFilterType = Form.useWatch(["markdownFilter", "type"], form);
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
     pageSize: 10
@@ -257,6 +268,37 @@ export function CrawlTasksView() {
     return normalized.length ? normalized : undefined;
   };
 
+  const sanitizeMarkdownOptions = (options?: CreateCrawlTaskFormValues["markdownOptions"]) => {
+    if (!options) {
+      return undefined;
+    }
+    const payload: Record<string, unknown> = {};
+    if (options.contentSource) {
+      payload.contentSource = options.contentSource;
+    }
+    if (typeof options.ignoreLinks === "boolean") {
+      payload.ignoreLinks = options.ignoreLinks;
+    }
+    if (typeof options.escapeHtml === "boolean") {
+      payload.escapeHtml = options.escapeHtml;
+    }
+    if (typeof options.bodyWidth === "number") {
+      payload.bodyWidth = options.bodyWidth;
+    }
+    return Object.keys(payload).length ? payload : undefined;
+  };
+
+  const sanitizeMarkdownFilter = (filter?: CreateCrawlTaskFormValues["markdownFilter"]) => {
+    if (!filter?.type) {
+      return undefined;
+    }
+    const payload: Record<string, unknown> = { type: filter.type };
+    if (typeof filter.threshold === "number") {
+      payload.threshold = filter.threshold;
+    }
+    return payload;
+  };
+
   const handleCreate = async (values: CreateCrawlTaskFormValues) => {
     const [from, to] = values.timeRange ?? [];
     const proxyConfigInput = values.proxyConfig;
@@ -271,6 +313,8 @@ export function CrawlTasksView() {
     const proxyUrl = proxyConfig ? undefined : values.proxyUrl?.trim();
     const additionalUrls = sanitizeStringList(values.additionalUrls);
     const multiUrlConfigs = sanitizeMultiUrlConfigs(values.multiUrlConfigs);
+    const markdownOptions = sanitizeMarkdownOptions(values.markdownOptions);
+    const markdownFilter = sanitizeMarkdownFilter(values.markdownFilter);
     try {
       await createTask({
         variables: {
@@ -299,7 +343,9 @@ export function CrawlTasksView() {
               proxyUrl: proxyUrl ? proxyUrl : undefined,
               proxyConfig: proxyConfig ?? undefined,
               additionalUrls: additionalUrls && additionalUrls.length ? additionalUrls : undefined,
-              multiUrlConfigs
+              multiUrlConfigs,
+              markdownOptions: markdownOptions ?? undefined,
+              markdownFilter: markdownFilter ?? undefined
             }
           }
         }
@@ -467,6 +513,59 @@ export function CrawlTasksView() {
               placeholder="https://example.com/archive"
               style={{ width: "100%" }}
             />
+          </Form.Item>
+          <Form.Item
+            label="Markdown source"
+            name={["markdownOptions", "contentSource"]}
+            extra="Choose which HTML snapshot feeds the Markdown generator."
+          >
+            <Select
+              allowClear
+              placeholder="Default: cleaned_html"
+              options={[
+                { value: "cleaned_html", label: "Cleaned HTML (default)" },
+                { value: "raw_html", label: "Raw HTML" },
+                { value: "fit_html", label: "Fit HTML (schema optimized)" }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            label="Ignore links"
+            name={["markdownOptions", "ignoreLinks"]}
+            valuePropName="checked"
+            extra="Drop hyperlink references from generated Markdown."
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="Escape HTML"
+            name={["markdownOptions", "escapeHtml"]}
+            valuePropName="checked"
+            extra="HTML entities remain encoded when enabled."
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item label="Body width" name={["markdownOptions", "bodyWidth"]} extra="Wrap Markdown paragraphs at a custom width.">
+            <InputNumber min={40} max={200} placeholder="80" style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            label="Markdown filter"
+            name={["markdownFilter", "type"]}
+            extra="Optionally enable Crawl4AI's content filters (e.g., pruning) before Markdown output."
+          >
+            <Select
+              allowClear
+              placeholder="None"
+              options={[{ value: "pruning", label: "PruningContentFilter" }]}
+            />
+          </Form.Item>
+          <Form.Item
+            label="Pruning threshold"
+            name={["markdownFilter", "threshold"]}
+            hidden={markdownFilterType !== "pruning"}
+            extra="Keep content whose relevance score is above this threshold (0-1)."
+          >
+            <InputNumber min={0} max={1} step={0.05} style={{ width: "100%" }} placeholder="0.6" />
           </Form.Item>
           <Form.Item
             label="Proxy URL"

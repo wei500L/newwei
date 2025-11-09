@@ -16,6 +16,8 @@ export type CrawlCacheMode = "bypass" | "prefer_cache" | "force_cache";
 
 export type CrawlUrlMatchMode = "glob" | "regex" | "substring" | "prefix";
 
+export type CrawlMarkdownContentSource = "raw_html" | "cleaned_html" | "fit_html";
+
 export interface CrawlProxyConfig {
   server: string;
   username?: string;
@@ -24,7 +26,7 @@ export interface CrawlProxyConfig {
 
 export interface CrawlUrlMatcher {
   matchMode?: CrawlUrlMatchMode;
-  patterns: string[];
+  patterns?: string[];
 }
 
 export interface CrawlStrategyOverrides {
@@ -44,6 +46,18 @@ export interface CrawlMultiUrlConfig {
   options?: CrawlStrategyOverrides;
 }
 
+export interface CrawlMarkdownOptions {
+  contentSource?: CrawlMarkdownContentSource;
+  ignoreLinks?: boolean;
+  escapeHtml?: boolean;
+  bodyWidth?: number;
+}
+
+export interface CrawlMarkdownFilter {
+  type: "pruning";
+  threshold?: number;
+}
+
 export interface CrawlTaskOptions {
   includeImages?: boolean;
   onlyMainContent?: boolean;
@@ -59,6 +73,8 @@ export interface CrawlTaskOptions {
   proxyConfig?: CrawlProxyConfig;
   additionalUrls?: string[];
   multiUrlConfigs?: CrawlMultiUrlConfig[];
+  markdownOptions?: CrawlMarkdownOptions;
+  markdownFilter?: CrawlMarkdownFilter;
 }
 
 export interface CrawlMemoryStats {

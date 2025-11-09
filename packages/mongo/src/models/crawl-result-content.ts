@@ -5,6 +5,10 @@ const CrawlResultContentSchema = new Schema(
     taskId: { type: String, index: true, required: true },
     resultId: { type: String, unique: true, required: true },
     markdown: { type: String, required: true },
+    rawMarkdown: { type: String },
+    markdownWithCitations: { type: String },
+    referencesMarkdown: { type: String },
+    fitMarkdown: { type: String },
     metadata: Schema.Types.Mixed,
     sourceUrl: { type: String },
     crawlRunId: { type: String }

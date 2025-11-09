@@ -42,6 +42,9 @@ export interface CrawlTaskResult {
   fetchedAt: Date;
   markdown: string;
   metadata?: Record<string, unknown> | null;
+  markdownWithCitations?: string | null;
+  referencesMarkdown?: string | null;
+  fitMarkdown?: string | null;
 }
 
 export interface CrawlTaskView {
@@ -427,7 +430,9 @@ export class CrawlService {
       proxyUrl: typeof value.proxyUrl === "string" ? value.proxyUrl : undefined,
       proxyConfig: this.parseProxyConfig(value.proxyConfig),
       additionalUrls: this.parseUrlArray(value.additionalUrls),
-      multiUrlConfigs: this.parseMultiUrlConfigs(value.multiUrlConfigs)
+      multiUrlConfigs: this.parseMultiUrlConfigs(value.multiUrlConfigs),
+      markdownOptions: this.parseMarkdownOptions(value.markdownOptions),
+      markdownFilter: this.parseMarkdownFilter(value.markdownFilter)
     });
   }
 
@@ -450,6 +455,8 @@ export class CrawlService {
     const proxyUrl = proxyConfig ? undefined : this.normalizeProxyUrl(options?.proxyUrl);
     const additionalUrls = this.normalizeUrlList(options?.additionalUrls);
     const multiUrlConfigs = this.normalizeMultiUrlConfigs(options?.multiUrlConfigs);
+    const markdownOptions = this.normalizeMarkdownOptions(options?.markdownOptions);
+    const markdownFilter = this.normalizeMarkdownFilter(options?.markdownFilter);
 
     return {
       includeImages: options?.includeImages ?? false,
@@ -465,7 +472,9 @@ export class CrawlService {
       proxyConfig,
       proxyUrl,
       additionalUrls,
-      multiUrlConfigs
+      multiUrlConfigs,
+      markdownOptions,
+      markdownFilter
     };
   }
 
@@ -560,12 +569,14 @@ export class CrawlService {
   }
 
   private normalizeMatcher(matcher?: CrawlUrlMatcher | null): CrawlUrlMatcher | undefined {
-    if (!matcher || !matcher.patterns) {
+    if (!matcher) {
       return undefined;
     }
-    const patterns = matcher.patterns
-      .map((pattern) => (typeof pattern === "string" ? pattern.trim() : ""))
-      .filter((pattern) => pattern.length > 0);
+    const patterns = Array.isArray(matcher.patterns)
+      ? matcher.patterns
+          .map((pattern) => (typeof pattern === "string" ? pattern.trim() : ""))
+          .filter((pattern) => pattern.length > 0)
+      : [];
     if (patterns.length === 0) {
       return undefined;
     }
@@ -606,6 +617,43 @@ export class CrawlService {
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
+  private normalizeMarkdownOptions(
+    options?: CrawlMarkdownOptions | null
+  ): CrawlMarkdownOptions | undefined {
+    if (!options) {
+      return undefined;
+    }
+    const normalized: CrawlMarkdownOptions = {};
+    if (
+      options.contentSource &&
+      ["raw_html", "cleaned_html", "fit_html"].includes(options.contentSource)
+    ) {
+      normalized.contentSource = options.contentSource as CrawlMarkdownContentSource;
+    }
+    if (typeof options.ignoreLinks === "boolean") {
+      normalized.ignoreLinks = options.ignoreLinks;
+    }
+    if (typeof options.escapeHtml === "boolean") {
+      normalized.escapeHtml = options.escapeHtml;
+    }
+    if (typeof options.bodyWidth === "number" && Number.isFinite(options.bodyWidth)) {
+      const clamped = Math.max(40, Math.min(200, Math.round(options.bodyWidth)));
+      normalized.bodyWidth = clamped;
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private normalizeMarkdownFilter(filter?: CrawlMarkdownFilter | null): CrawlMarkdownFilter | undefined {
+    if (!filter || filter.type !== "pruning") {
+      return undefined;
+    }
+    const normalized: CrawlMarkdownFilter = { type: "pruning" };
+    if (typeof filter.threshold === "number" && Number.isFinite(filter.threshold)) {
+      normalized.threshold = Math.max(0, Math.min(1, filter.threshold));
+    }
+    return normalized;
+  }
+
   private parseUrlArray(value: unknown): string[] | undefined {
     if (!Array.isArray(value)) {
       return undefined;
@@ -624,6 +672,34 @@ export class CrawlService {
     );
   }
 
+  private parseMarkdownOptions(value: unknown): CrawlMarkdownOptions | undefined {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    return this.normalizeMarkdownOptions({
+      contentSource: typeof record.contentSource === "string" ? (record.contentSource as CrawlMarkdownContentSource) : undefined,
+      ignoreLinks: typeof record.ignoreLinks === "boolean" ? record.ignoreLinks : undefined,
+      escapeHtml: typeof record.escapeHtml === "boolean" ? record.escapeHtml : undefined,
+      bodyWidth: typeof record.bodyWidth === "number" ? record.bodyWidth : undefined
+    });
+  }
+
+  private parseMarkdownFilter(value: unknown): CrawlMarkdownFilter | undefined {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const type = typeof record.type === "string" ? record.type : undefined;
+    if (type !== "pruning") {
+      return undefined;
+    }
+    return this.normalizeMarkdownFilter({
+      type: "pruning",
+      threshold: typeof record.threshold === "number" ? record.threshold : undefined
+    });
+  }
+
   private buildUrlList(baseUrl: string, options: CrawlTaskOptions): string[] {
     const accumulator = [baseUrl];
     if (options.additionalUrls) {
@@ -637,6 +713,43 @@ export class CrawlService {
       }
     }
     return Array.from(new Set(accumulator.filter((entry) => typeof entry === "string" && entry.length > 0)));
+  }
+
+  private normalizeMarkdownResult(markdown: unknown) {
+    if (!markdown) {
+      return { primary: undefined };
+    }
+    if (typeof markdown === "string") {
+      return {
+        primary: markdown,
+        raw: markdown
+      };
+    }
+    if (typeof markdown !== "object") {
+      return { primary: undefined };
+    }
+    const record = markdown as Record<string, unknown>;
+    const raw =
+      this.ensureString(record.raw_markdown) ??
+      this.ensureString(record.rawMarkdown) ??
+      this.ensureString(record.markdown);
+    const citations =
+      this.ensureString(record.markdown_with_citations) ?? this.ensureString(record.markdownWithCitations);
+    const references =
+      this.ensureString(record.references_markdown) ?? this.ensureString(record.referencesMarkdown);
+    const fit = this.ensureString(record.fit_markdown) ?? this.ensureString(record.fitMarkdown);
+    const fallback = raw ?? citations ?? fit ?? references ?? this.ensureString(record.text);
+    return {
+      primary: fallback,
+      raw: raw ?? fallback,
+      citations,
+      references,
+      fit
+    };
+  }
+
+  private ensureString(value: unknown): string | undefined {
+    return typeof value === "string" && value.length > 0 ? value : undefined;
   }
 
   private async persistResults(
@@ -657,7 +770,8 @@ export class CrawlService {
     let latestResultAt: Date | undefined;
 
     for (const item of items) {
-      const markdown = item.markdown ?? "";
+      const markdownResult = this.normalizeMarkdownResult(item.markdown);
+      const markdown = markdownResult.primary ?? "";
       if (!markdown) {
         skipped += 1;
         continue;
@@ -688,6 +802,10 @@ export class CrawlService {
         taskId: task.id,
         resultId: created.id,
         markdown,
+        rawMarkdown: markdownResult.raw ?? markdown,
+        markdownWithCitations: markdownResult.citations,
+        referencesMarkdown: markdownResult.references,
+        fitMarkdown: markdownResult.fit,
         metadata: item.metadata ?? {},
         sourceUrl: item.url ?? task.targetUrl,
         crawlRunId: runId
@@ -728,7 +846,10 @@ export class CrawlService {
         sourceUrl: result.sourceUrl,
         fetchedAt: result.fetchedAt,
         markdown: (doc?.markdown as string) ?? "",
-        metadata: (result.metadata as Record<string, unknown> | null) ?? doc?.metadata ?? null
+        metadata: (result.metadata as Record<string, unknown> | null) ?? doc?.metadata ?? null,
+        markdownWithCitations: this.ensureString(doc?.markdownWithCitations),
+        referencesMarkdown: this.ensureString(doc?.referencesMarkdown),
+        fitMarkdown: this.ensureString(doc?.fitMarkdown)
       };
     });
   }
