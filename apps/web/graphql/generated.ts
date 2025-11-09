@@ -16,6 +16,28 @@ export type CrawlTimeRangeInput = {
   to?: InputMaybe<string>;
 };
 
+export type CrawlUrlMatcherInput = {
+  matchMode?: InputMaybe<string>;
+  patterns?: InputMaybe<Array<string>>;
+};
+
+export type CrawlStrategyOverridesInput = {
+  scanFullPage?: InputMaybe<boolean>;
+  scrollDelayMs?: InputMaybe<number>;
+  onlyMainContent?: InputMaybe<boolean>;
+  extractLinks?: InputMaybe<boolean>;
+  simulateUser?: InputMaybe<boolean>;
+  overrideNavigator?: InputMaybe<boolean>;
+  cacheMode?: InputMaybe<string>;
+};
+
+export type CrawlMultiUrlStrategyInput = {
+  name?: InputMaybe<string>;
+  urls?: InputMaybe<Array<string>>;
+  matcher?: InputMaybe<CrawlUrlMatcherInput>;
+  options?: InputMaybe<CrawlStrategyOverridesInput>;
+};
+
 export type CrawlProxyConfigInput = {
   server: string;
   username?: InputMaybe<string>;
@@ -34,6 +56,8 @@ export type CrawlOptionsInput = {
   overrideNavigator?: InputMaybe<boolean>;
   proxyUrl?: InputMaybe<string>;
   proxyConfig?: InputMaybe<CrawlProxyConfigInput>;
+  additionalUrls?: InputMaybe<Array<string>>;
+  multiUrlConfigs?: InputMaybe<Array<CrawlMultiUrlStrategyInput>>;
 };
 
 export type CreateCrawlTaskInput = {

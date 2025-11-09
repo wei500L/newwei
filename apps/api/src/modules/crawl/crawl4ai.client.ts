@@ -3,10 +3,11 @@ import { Injectable } from "@nestjs/common";
 import type { AxiosError } from "axios";
 import { lastValueFrom } from "rxjs";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
-import type { CrawlTaskOptions } from "./crawl.types";
+import type { CrawlTaskOptions, CrawlMultiUrlConfig, CrawlUrlMatcher, CrawlStrategyOverrides } from "./crawl.types";
 
 export interface Crawl4aiRequest {
   url: string;
+  urls?: string[];
   keywords?: string[];
   options?: CrawlTaskOptions;
 }
@@ -39,6 +40,10 @@ interface Crawl4aiHttpPayload {
     type: string;
     params: Record<string, unknown>;
   };
+  crawler_configurations?: {
+    type: string;
+    params: Record<string, unknown>;
+  }[];
 }
 
 @Injectable()
@@ -94,9 +99,13 @@ export class Crawl4aiClient {
 
   private toHttpPayload(request: Crawl4aiRequest): Crawl4aiHttpPayload {
     const options = request.options ?? {};
+    const urls = (request.urls && request.urls.length > 0 ? request.urls : [request.url]).map((entry) =>
+      entry.trim()
+    );
     const scrollDelay = typeof options.scrollDelayMs === "number" ? options.scrollDelayMs / 1000 : undefined;
     const headless = options.enableUndetectedBrowser || options.enableStealthMode ? false : true;
     const proxyPayload = this.resolveProxyPayload(options);
+    const multiConfigurations = this.buildMultiConfigurations(options);
     const browserConfig = {
       type: "BrowserConfig",
       params: this.compact({
@@ -122,10 +131,11 @@ export class Crawl4aiClient {
       })
     };
     return {
-      urls: [request.url],
+      urls,
       keywords: request.keywords && request.keywords.length > 0 ? request.keywords : undefined,
       browser_config: browserConfig,
-      crawler_config: crawlerConfig
+      crawler_config: crawlerConfig,
+      crawler_configurations: multiConfigurations && multiConfigurations.length > 0 ? multiConfigurations : undefined
     };
   }
 
@@ -150,5 +160,83 @@ export class Crawl4aiClient {
       return options.proxyUrl;
     }
     return undefined;
+  }
+
+  private buildMultiConfigurations(options: CrawlTaskOptions) {
+    const configs: CrawlMultiUrlConfig[] | undefined = options.multiUrlConfigs;
+    if (!configs || configs.length === 0) {
+      return undefined;
+    }
+    const configurations = configs
+      .map((config) => {
+        const matcher = this.normalizeMatcher(config.matcher);
+        const overrides = this.normalizeStrategyOverrides(config.options);
+        const params = this.compact({
+          url_matcher: matcher?.pattern,
+          match_mode: matcher?.matchMode,
+          cache_mode: overrides?.cacheMode,
+          only_main_content: overrides?.onlyMainContent,
+          extract_links: overrides?.extractLinks,
+          scan_full_page: overrides?.scanFullPage,
+          scroll_delay:
+            typeof overrides?.scrollDelayMs === "number" ? overrides.scrollDelayMs / 1000 : undefined,
+          simulate_user: overrides?.simulateUser,
+          override_navigator: overrides?.overrideNavigator
+        });
+        if (Object.keys(params).length === 0) {
+          return undefined;
+        }
+        return {
+          type: "CrawlerRunConfig",
+          params
+        };
+      })
+      .filter((entry): entry is { type: string; params: Record<string, unknown> } => Boolean(entry));
+    return configurations.length > 0 ? configurations : undefined;
+  }
+
+  private normalizeMatcher(matcher?: CrawlUrlMatcher) {
+    if (!matcher || !matcher.patterns || matcher.patterns.length === 0) {
+      return undefined;
+    }
+    const patterns = matcher.patterns
+      .map((pattern) => (typeof pattern === "string" ? pattern.trim() : ""))
+      .filter((pattern) => pattern.length > 0);
+    if (patterns.length === 0) {
+      return undefined;
+    }
+    return {
+      pattern: patterns.length === 1 ? patterns[0] : patterns,
+      matchMode: matcher.matchMode
+    };
+  }
+
+  private normalizeStrategyOverrides(options?: CrawlStrategyOverrides): CrawlStrategyOverrides | undefined {
+    if (!options) {
+      return undefined;
+    }
+    const normalized: CrawlStrategyOverrides = {};
+    if (options.cacheMode) {
+      normalized.cacheMode = options.cacheMode;
+    }
+    if (typeof options.onlyMainContent === "boolean") {
+      normalized.onlyMainContent = options.onlyMainContent;
+    }
+    if (typeof options.extractLinks === "boolean") {
+      normalized.extractLinks = options.extractLinks;
+    }
+    if (typeof options.scanFullPage === "boolean") {
+      normalized.scanFullPage = options.scanFullPage;
+    }
+    if (typeof options.scrollDelayMs === "number") {
+      normalized.scrollDelayMs = options.scrollDelayMs;
+    }
+    if (typeof options.simulateUser === "boolean") {
+      normalized.simulateUser = options.simulateUser;
+    }
+    if (typeof options.overrideNavigator === "boolean") {
+      normalized.overrideNavigator = options.overrideNavigator;
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 }

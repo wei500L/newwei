@@ -2,6 +2,7 @@
 
 import {
   Button,
+  Card,
   DatePicker,
   Drawer,
   Form,
@@ -17,6 +18,7 @@ import {
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import Link from "next/link";
+import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { useMemo, useState } from "react";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
@@ -56,6 +58,26 @@ interface CreateCrawlTaskFormValues {
     server?: string;
     username?: string;
     password?: string;
+  };
+  additionalUrls?: string[];
+  multiUrlConfigs?: MultiUrlStrategyFormValue[];
+}
+
+interface MultiUrlStrategyFormValue {
+  name?: string;
+  matcher?: {
+    matchMode?: string;
+    patterns?: string[];
+  };
+  urls?: string[];
+  options?: {
+    cacheMode?: string;
+    scanFullPage?: boolean;
+    scrollDelayMs?: number;
+    onlyMainContent?: boolean;
+    extractLinks?: boolean;
+    simulateUser?: boolean;
+    overrideNavigator?: boolean;
   };
 }
 
@@ -170,6 +192,71 @@ export function CrawlTasksView() {
     }
   };
 
+  const sanitizeStringList = (list?: string[]) =>
+    list
+      ?.map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value && value.length > 0));
+
+  const sanitizeStrategyOptions = (options?: MultiUrlStrategyFormValue["options"]) => {
+    if (!options) {
+      return undefined;
+    }
+    const cleaned: Record<string, unknown> = {};
+    if (options.cacheMode) {
+      cleaned.cacheMode = options.cacheMode;
+    }
+    if (typeof options.scanFullPage === "boolean") {
+      cleaned.scanFullPage = options.scanFullPage;
+    }
+    if (typeof options.scrollDelayMs === "number") {
+      cleaned.scrollDelayMs = options.scrollDelayMs;
+    }
+    if (typeof options.onlyMainContent === "boolean") {
+      cleaned.onlyMainContent = options.onlyMainContent;
+    }
+    if (typeof options.extractLinks === "boolean") {
+      cleaned.extractLinks = options.extractLinks;
+    }
+    if (typeof options.simulateUser === "boolean") {
+      cleaned.simulateUser = options.simulateUser;
+    }
+    if (typeof options.overrideNavigator === "boolean") {
+      cleaned.overrideNavigator = options.overrideNavigator;
+    }
+    return Object.keys(cleaned).length ? cleaned : undefined;
+  };
+
+  const sanitizeMultiUrlConfigs = (configs?: MultiUrlStrategyFormValue[]) => {
+    if (!configs) {
+      return undefined;
+    }
+    const normalized = configs
+      .map((config) => {
+        const name = config.name?.trim();
+        const matcherPatterns = sanitizeStringList(config.matcher?.patterns);
+        const matcher =
+          matcherPatterns && matcherPatterns.length
+            ? {
+                matchMode: config.matcher?.matchMode || undefined,
+                patterns: matcherPatterns
+              }
+            : undefined;
+        const urls = sanitizeStringList(config.urls);
+        const options = sanitizeStrategyOptions(config.options);
+        if (!matcher && (!urls || urls.length === 0)) {
+          return null;
+        }
+        return {
+          name: name || undefined,
+          matcher,
+          urls: urls && urls.length ? urls : undefined,
+          options
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+    return normalized.length ? normalized : undefined;
+  };
+
   const handleCreate = async (values: CreateCrawlTaskFormValues) => {
     const [from, to] = values.timeRange ?? [];
     const proxyConfigInput = values.proxyConfig;
@@ -182,6 +269,8 @@ export function CrawlTasksView() {
         }
       : undefined;
     const proxyUrl = proxyConfig ? undefined : values.proxyUrl?.trim();
+    const additionalUrls = sanitizeStringList(values.additionalUrls);
+    const multiUrlConfigs = sanitizeMultiUrlConfigs(values.multiUrlConfigs);
     try {
       await createTask({
         variables: {
@@ -208,7 +297,9 @@ export function CrawlTasksView() {
               simulateUser: values.simulateUser ?? undefined,
               overrideNavigator: values.overrideNavigator ?? undefined,
               proxyUrl: proxyUrl ? proxyUrl : undefined,
-              proxyConfig: proxyConfig ?? undefined
+              proxyConfig: proxyConfig ?? undefined,
+              additionalUrls: additionalUrls && additionalUrls.length ? additionalUrls : undefined,
+              multiUrlConfigs
             }
           }
         }
@@ -366,6 +457,18 @@ export function CrawlTasksView() {
             <Switch />
           </Form.Item>
           <Form.Item
+            label="Additional URLs"
+            name="additionalUrls"
+            extra="Crawl these URLs in the same batch (uses the base strategy unless overridden below)."
+          >
+            <Select
+              mode="tags"
+              tokenSeparators={[",", " "]}
+              placeholder="https://example.com/archive"
+              style={{ width: "100%" }}
+            />
+          </Form.Item>
+          <Form.Item
             label="Proxy URL"
             name="proxyUrl"
             extra="Send a single proxy string (e.g. http://user:pass@proxy:8080 or socks5://proxy:1080)."
@@ -385,6 +488,142 @@ export function CrawlTasksView() {
           <Form.Item label="Proxy password" name={["proxyConfig", "password"]}>
             <Input.Password placeholder="Optional password" disabled={proxyUrlActive} />
           </Form.Item>
+          <Form.List name="multiUrlConfigs">
+            {(fields, { add, remove }) => (
+              <Space direction="vertical" style={{ width: "100%" }} size="large">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <Typography.Text strong>Multi-URL strategies</Typography.Text>
+                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add()} size="small">
+                    Add strategy
+                  </Button>
+                </div>
+                {fields.length === 0 ? (
+                  <Typography.Text type="secondary">
+                    Optional: match additional URL patterns to custom crawler settings.
+                  </Typography.Text>
+                ) : null}
+                {fields.map((field, index) => (
+                  <Card
+                    key={field.key}
+                    size="small"
+                    title={`Strategy ${index + 1}`}
+                    extra={
+                      <Button
+                        type="link"
+                        danger
+                        icon={<MinusCircleOutlined />}
+                        onClick={() => remove(field.name)}
+                      >
+                        Remove
+                      </Button>
+                    }
+                  >
+                    <Form.Item label="Label" name={[field.name, "name"]}>
+                      <Input placeholder="e.g. PDF files" />
+                    </Form.Item>
+                    <Form.Item
+                      label="Match mode"
+                      name={[field.name, "matcher", "matchMode"]}
+                      extra="Controls how patterns below are interpreted."
+                    >
+                      <Select
+                        allowClear
+                        placeholder="glob (default)"
+                        options={[
+                          { value: "glob", label: "Glob (*.pdf)" },
+                          { value: "regex", label: "Regex" },
+                          { value: "substring", label: "Substring" },
+                          { value: "prefix", label: "Prefix" }
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="URL patterns"
+                      name={[field.name, "matcher", "patterns"]}
+                      rules={[
+                        {
+                          validator: (_, value) => {
+                            if (!value || value.length === 0) {
+                              return Promise.resolve();
+                            }
+                            return Promise.resolve();
+                          }
+                        }
+                      ]}
+                    >
+                      <Select
+                        mode="tags"
+                        tokenSeparators={[",", " "]}
+                        placeholder="*.pdf"
+                        style={{ width: "100%" }}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="Explicit URLs"
+                      name={[field.name, "urls"]}
+                      extra="Optional explicit URLs that should use this strategy."
+                    >
+                      <Select
+                        mode="tags"
+                        tokenSeparators={[",", " "]}
+                        placeholder="https://example.com/report.pdf"
+                        style={{ width: "100%" }}
+                      />
+                    </Form.Item>
+                    <Form.Item label="Cache mode" name={[field.name, "options", "cacheMode"]}>
+                      <Select
+                        allowClear
+                        placeholder="Default (bypass)"
+                        options={[
+                          { value: "bypass", label: "Bypass (fresh)" },
+                          { value: "prefer_cache", label: "Prefer cache" },
+                          { value: "force_cache", label: "Force cache" }
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="Full-page scanning"
+                      name={[field.name, "options", "scanFullPage"]}
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item label="Scroll delay (ms)" name={[field.name, "options", "scrollDelayMs"]}>
+                      <InputNumber min={0} max={5000} style={{ width: "100%" }} placeholder="Default: 200" />
+                    </Form.Item>
+                    <Form.Item
+                      label="Only main content"
+                      name={[field.name, "options", "onlyMainContent"]}
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item
+                      label="Extract links"
+                      name={[field.name, "options", "extractLinks"]}
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item
+                      label="Simulate user actions"
+                      name={[field.name, "options", "simulateUser"]}
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item
+                      label="Override navigator()"
+                      name={[field.name, "options", "overrideNavigator"]}
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                  </Card>
+                ))}
+              </Space>
+            )}
+          </Form.List>
           <Space style={{ width: "100%", justifyContent: "flex-end" }}>
             <Button onClick={() => setDrawerOpen(false)}>Cancel</Button>
             <Button type="primary" htmlType="submit" loading={creating}>
