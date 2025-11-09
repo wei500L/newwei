@@ -10,8 +10,25 @@ import {
   IsUrl,
   Max,
   Min,
-  ValidateNested
+  ValidateNested,
+  MaxLength
 } from "class-validator";
+
+export class CrawlProxyConfigDto {
+  @IsString()
+  @MaxLength(512)
+  server!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  username?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  password?: string;
+}
 
 export class CrawlOptionsDto {
   @IsOptional()
@@ -52,6 +69,16 @@ export class CrawlOptionsDto {
   @IsOptional()
   @IsBoolean()
   overrideNavigator?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  proxyUrl?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlProxyConfigDto)
+  proxyConfig?: CrawlProxyConfigDto;
 }
 
 export class CreateCrawlTaskDto {

@@ -16,6 +16,12 @@ export type CrawlTimeRangeInput = {
   to?: InputMaybe<string>;
 };
 
+export type CrawlProxyConfigInput = {
+  server: string;
+  username?: InputMaybe<string>;
+  password?: InputMaybe<string>;
+};
+
 export type CrawlOptionsInput = {
   includeImages?: InputMaybe<boolean>;
   onlyMainContent?: InputMaybe<boolean>;
@@ -26,6 +32,8 @@ export type CrawlOptionsInput = {
   enableStealthMode?: InputMaybe<boolean>;
   simulateUser?: InputMaybe<boolean>;
   overrideNavigator?: InputMaybe<boolean>;
+  proxyUrl?: InputMaybe<string>;
+  proxyConfig?: InputMaybe<CrawlProxyConfigInput>;
 };
 
 export type CreateCrawlTaskInput = {

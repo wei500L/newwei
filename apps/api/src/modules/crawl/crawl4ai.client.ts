@@ -96,6 +96,7 @@ export class Crawl4aiClient {
     const options = request.options ?? {};
     const scrollDelay = typeof options.scrollDelayMs === "number" ? options.scrollDelayMs / 1000 : undefined;
     const headless = options.enableUndetectedBrowser || options.enableStealthMode ? false : true;
+    const proxyPayload = this.resolveProxyPayload(options);
     const browserConfig = {
       type: "BrowserConfig",
       params: this.compact({
@@ -103,7 +104,8 @@ export class Crawl4aiClient {
         enable_stealth: options.enableStealthMode ?? undefined,
         browser_type: options.enableUndetectedBrowser ? "undetected" : undefined,
         disable_images: options.includeImages === false ? true : undefined,
-        emulate_mobile: false
+        emulate_mobile: false,
+        proxy_config: proxyPayload
       })
     };
     const crawlerConfig = {
@@ -134,5 +136,19 @@ export class Crawl4aiClient {
       }
       return acc;
     }, {});
+  }
+
+  private resolveProxyPayload(options: CrawlTaskOptions) {
+    if (options.proxyConfig) {
+      return this.compact({
+        server: options.proxyConfig.server,
+        username: options.proxyConfig.username ?? undefined,
+        password: options.proxyConfig.password ?? undefined
+      });
+    }
+    if (options.proxyUrl) {
+      return options.proxyUrl;
+    }
+    return undefined;
   }
 }
