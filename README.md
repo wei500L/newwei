@@ -45,7 +45,7 @@ pnpm docker:logs # 追踪整个栈的日志
 pnpm docker:down
 ```
 
-服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。
+服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。`crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它。
 
 ## 工作区脚本
 
@@ -78,6 +78,17 @@ infra/
   docker/  # docker-compose、环境样例、开发 Dockerfile
   scripts/ # 辅助脚本（环境检查、compose 包装器）
 ```
+
+## crawl4ai 新闻抓取能力
+
+- API 新增 `crawl` 模块（REST `/api/crawl-tasks` 与 GraphQL `crawlTasks`/`crawlTask`/`createCrawlTask`/`retryCrawlTask`），负责任务编排、去重、Markdown 存档（Prisma + Mongo）、超时与重试。任务状态、日志与 Markdown 内容会写入 BullMQ 队列与 `CrawlResultContent` 集合，可在 E2E 中复用。
+- 前端在 `/crawl` 下提供管理界面，包括任务列表、状态筛选、创建表单、重试按钮，以及 `/crawl/[taskId]` 的结果详情与 Markdown 预览。所有请求通过 Apollo Client 调用 GraphQL。
+- `.env` / `infra/docker/.env` 新增下列配置：
+  - `CRAWL4AI_BASE_URL`：指向容器或远程 crawl4ai 服务的 HTTP 地址。
+  - `CRAWL4AI_API_KEY`：可选 API Key，若服务启用鉴权可在 Header 传递。
+  - `CRAWL4AI_TIMEOUT_MS` / `CRAWL4AI_MAX_CONCURRENCY` / `CRAWL4AI_MAX_RETRIES`：用于 BullMQ 任务的超时、并发与重试上限。
+- `pnpm db:migrate && pnpm db:seed` 会创建 `CrawlTask` / `CrawlResult` 表并灌入一个示例任务；Mongo 中新增 `CrawlResultContent` 模型用来存储 Markdown。
+- Docker Compose 中新增 `crawl4ai` 服务（基于 `ghcr.io/unclecode/crawl4ai:latest`），默认对 API 暴露 8080 端口并有健康检查；若需要本地调试可以通过 `http://localhost:8082` 命中。
 
 ## 测试
 

@@ -14,7 +14,12 @@ export const baseEnvSchema = z.object({
   JWT_SECRET: z.string().min(16),
   NEXTAUTH_SECRET: z.string().min(16),
   NEXTAUTH_URL: z.string().url(),
-  API_BASE_URL: z.string().url()
+  API_BASE_URL: z.string().url(),
+  CRAWL4AI_BASE_URL: z.string().url(),
+  CRAWL4AI_API_KEY: z.string().optional(),
+  CRAWL4AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  CRAWL4AI_MAX_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3)
 });
 
 export type BaseEnvSchema = typeof baseEnvSchema;

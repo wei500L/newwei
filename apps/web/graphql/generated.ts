@@ -9,6 +9,28 @@ export type MakeOptional<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]?: 
 export type MakeMaybe<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]: Maybe<T[SubKey]> };
 const defaultOptions = {} as const;
 
+export type CrawlTaskStatus = "pending" | "queued" | "running" | "completed" | "failed" | "paused";
+
+export type CrawlTimeRangeInput = {
+  from?: InputMaybe<string>;
+  to?: InputMaybe<string>;
+};
+
+export type CrawlOptionsInput = {
+  includeImages?: InputMaybe<boolean>;
+  onlyMainContent?: InputMaybe<boolean>;
+  extractLinks?: InputMaybe<boolean>;
+};
+
+export type CreateCrawlTaskInput = {
+  url: string;
+  displayName?: InputMaybe<string>;
+  timeRange?: InputMaybe<CrawlTimeRangeInput>;
+  concurrency?: InputMaybe<number>;
+  keywords?: InputMaybe<Array<string>>;
+  options?: InputMaybe<CrawlOptionsInput>;
+};
+
 export type MeQueryVariables = Exact<{ [key: string]: never }>;
 
 export type MeQuery = {
@@ -163,6 +185,100 @@ export type RbacOverviewQuery = {
   }>;
 };
 
+export type CrawlTasksQueryVariables = Exact<{
+  first: number;
+  after?: InputMaybe<string>;
+  search?: InputMaybe<string>;
+  status?: InputMaybe<CrawlTaskStatus>;
+}>;
+
+export type CrawlTasksQuery = {
+  crawlTasks: {
+    totalCount: number;
+    pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+    edges: Array<{
+      cursor: string;
+      node: {
+        id: string;
+        displayName?: string | null;
+        targetUrl: string;
+        status: CrawlTaskStatus;
+        concurrency: number;
+        runCount: number;
+        resultCount: number;
+        lastRunAt?: any | null;
+        lastSuccessAt?: any | null;
+        lastError?: string | null;
+        createdAt: any;
+      };
+    }>;
+  };
+};
+
+export type CrawlTaskQueryVariables = Exact<{
+  id: string;
+  resultLimit?: InputMaybe<number>;
+  resultSearch?: InputMaybe<string>;
+}>;
+
+export type CrawlTaskQuery = {
+  crawlTask?: {
+    id: string;
+    displayName?: string | null;
+    targetUrl: string;
+    status: CrawlTaskStatus;
+    keywords: Array<string>;
+    concurrency: number;
+    runCount: number;
+    lastRunAt?: any | null;
+    lastSuccessAt?: any | null;
+    lastResultAt?: any | null;
+    lastError?: string | null;
+    config?: string | null;
+    results?: Array<{
+      id: string;
+      sourceUrl: string;
+      fetchedAt: any;
+      markdown: string;
+      metadata?: string | null;
+    }> | null;
+  } | null;
+};
+
+export type CreateCrawlTaskMutationVariables = Exact<{
+  input: CreateCrawlTaskInput;
+}>;
+
+export type CreateCrawlTaskMutation = {
+  createCrawlTask: {
+    id: string;
+    displayName?: string | null;
+    targetUrl: string;
+    status: CrawlTaskStatus;
+    concurrency: number;
+    runCount: number;
+    resultCount: number;
+    lastRunAt?: any | null;
+    lastSuccessAt?: any | null;
+    lastError?: string | null;
+    createdAt: any;
+  };
+};
+
+export type RetryCrawlTaskMutationVariables = Exact<{
+  id: string;
+}>;
+
+export type RetryCrawlTaskMutation = {
+  retryCrawlTask: {
+    id: string;
+    status: CrawlTaskStatus;
+    lastRunAt?: any | null;
+    lastError?: string | null;
+    runCount: number;
+  };
+};
+
 export const RbacOverviewDocument = gql`
   query RbacOverview {
     roles {
@@ -214,3 +330,157 @@ export function useRbacOverviewLazyQuery(
 export type RbacOverviewQueryHookResult = ReturnType<typeof useRbacOverviewQuery>;
 export type RbacOverviewLazyQueryHookResult = ReturnType<typeof useRbacOverviewLazyQuery>;
 export type RbacOverviewQueryResult = Apollo.QueryResult<RbacOverviewQuery, RbacOverviewQueryVariables>;
+export const CrawlTasksDocument = gql`
+  query CrawlTasks($first: Int!, $after: String, $search: String, $status: CrawlTaskStatus) {
+    crawlTasks(first: $first, after: $after, search: $search, status: $status) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        cursor
+        node {
+          id
+          displayName
+          targetUrl
+          status
+          concurrency
+          runCount
+          resultCount
+          lastRunAt
+          lastSuccessAt
+          lastError
+          createdAt
+        }
+      }
+    }
+  }
+`;
+
+export function useCrawlTasksQuery(
+  baseOptions: Apollo.QueryHookOptions<CrawlTasksQuery, CrawlTasksQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<CrawlTasksQuery, CrawlTasksQueryVariables>(CrawlTasksDocument, options);
+}
+
+export function useCrawlTasksLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<CrawlTasksQuery, CrawlTasksQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<CrawlTasksQuery, CrawlTasksQueryVariables>(CrawlTasksDocument, options);
+}
+export type CrawlTasksQueryHookResult = ReturnType<typeof useCrawlTasksQuery>;
+export type CrawlTasksLazyQueryHookResult = ReturnType<typeof useCrawlTasksLazyQuery>;
+export type CrawlTasksQueryResult = Apollo.QueryResult<CrawlTasksQuery, CrawlTasksQueryVariables>;
+export const CrawlTaskDocument = gql`
+  query CrawlTask($id: ID!, $resultLimit: Int, $resultSearch: String) {
+    crawlTask(id: $id, resultLimit: $resultLimit, resultSearch: $resultSearch) {
+      id
+      displayName
+      targetUrl
+      status
+      keywords
+      concurrency
+      runCount
+      lastRunAt
+      lastSuccessAt
+      lastResultAt
+      lastError
+      config
+      results {
+        id
+        sourceUrl
+        fetchedAt
+        markdown
+        metadata
+      }
+    }
+  }
+`;
+
+export function useCrawlTaskQuery(
+  baseOptions: Apollo.QueryHookOptions<CrawlTaskQuery, CrawlTaskQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<CrawlTaskQuery, CrawlTaskQueryVariables>(CrawlTaskDocument, options);
+}
+
+export function useCrawlTaskLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<CrawlTaskQuery, CrawlTaskQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<CrawlTaskQuery, CrawlTaskQueryVariables>(CrawlTaskDocument, options);
+}
+export type CrawlTaskQueryHookResult = ReturnType<typeof useCrawlTaskQuery>;
+export type CrawlTaskLazyQueryHookResult = ReturnType<typeof useCrawlTaskLazyQuery>;
+export type CrawlTaskQueryResult = Apollo.QueryResult<CrawlTaskQuery, CrawlTaskQueryVariables>;
+export const CreateCrawlTaskDocument = gql`
+  mutation CreateCrawlTask($input: CreateCrawlTaskInput!) {
+    createCrawlTask(input: $input) {
+      id
+      displayName
+      targetUrl
+      status
+      concurrency
+      runCount
+      resultCount
+      lastRunAt
+      lastSuccessAt
+      lastError
+      createdAt
+    }
+  }
+`;
+export type CreateCrawlTaskMutationFn = Apollo.MutationFunction<
+  CreateCrawlTaskMutation,
+  CreateCrawlTaskMutationVariables
+>;
+
+export function useCreateCrawlTaskMutation(
+  baseOptions?: Apollo.MutationHookOptions<CreateCrawlTaskMutation, CreateCrawlTaskMutationVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<CreateCrawlTaskMutation, CreateCrawlTaskMutationVariables>(
+    CreateCrawlTaskDocument,
+    options
+  );
+}
+export type CreateCrawlTaskMutationHookResult = ReturnType<typeof useCreateCrawlTaskMutation>;
+export type CreateCrawlTaskMutationResult = Apollo.MutationResult<CreateCrawlTaskMutation>;
+export type CreateCrawlTaskMutationOptions = Apollo.BaseMutationOptions<
+  CreateCrawlTaskMutation,
+  CreateCrawlTaskMutationVariables
+>;
+export const RetryCrawlTaskDocument = gql`
+  mutation RetryCrawlTask($id: ID!) {
+    retryCrawlTask(id: $id) {
+      id
+      status
+      lastRunAt
+      lastError
+      runCount
+    }
+  }
+`;
+export type RetryCrawlTaskMutationFn = Apollo.MutationFunction<
+  RetryCrawlTaskMutation,
+  RetryCrawlTaskMutationVariables
+>;
+
+export function useRetryCrawlTaskMutation(
+  baseOptions?: Apollo.MutationHookOptions<RetryCrawlTaskMutation, RetryCrawlTaskMutationVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<RetryCrawlTaskMutation, RetryCrawlTaskMutationVariables>(
+    RetryCrawlTaskDocument,
+    options
+  );
+}
+export type RetryCrawlTaskMutationHookResult = ReturnType<typeof useRetryCrawlTaskMutation>;
+export type RetryCrawlTaskMutationResult = Apollo.MutationResult<RetryCrawlTaskMutation>;
+export type RetryCrawlTaskMutationOptions = Apollo.BaseMutationOptions<
+  RetryCrawlTaskMutation,
+  RetryCrawlTaskMutationVariables
+>;

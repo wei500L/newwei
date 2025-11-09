@@ -22,6 +22,7 @@ model Org {
   roles       Role[]
   auditLogs   AuditLog[]
   items       ItemMeta[]
+  crawlTasks  CrawlTask[]
 }
 
 model User {
@@ -37,7 +38,8 @@ model User {
 
   memberships   Membership[]
   auditLogs     AuditLog[]
-  refreshTokens RefreshToken[]
+  refreshTokens  RefreshToken[]
+  crawlTasks     CrawlTask[] @relation("CrawlTaskCreatedBy")
 }
 
 model Role {
@@ -106,6 +108,56 @@ model ItemMeta {
   version     Int      @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model CrawlTask {
+  id             String           @id @default(cuid())
+  org            Org              @relation(fields: [orgId], references: [id])
+  orgId          String
+  createdBy      User             @relation("CrawlTaskCreatedBy", fields: [createdById], references: [id])
+  createdById    String
+  targetUrl      String
+  displayName    String?
+  status         CrawlTaskStatus  @default(pending)
+  config         Json?
+  timeRangeFrom  DateTime?
+  timeRangeTo    DateTime?
+  concurrency    Int              @default(1)
+  keywords       Json?
+  lastRunAt      DateTime?
+  lastSuccessAt  DateTime?
+  lastResultAt   DateTime?
+  lastCursor     String?
+  lastError      String?
+  runCount       Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  results        CrawlResult[]
+}
+
+model CrawlResult {
+  id          String     @id @default(cuid())
+  task        CrawlTask  @relation(fields: [taskId], references: [id])
+  taskId      String
+  sourceUrl   String
+  fetchedAt   DateTime
+  markdownRef String
+  contentHash String
+  metadata    Json?
+  createdAt   DateTime   @default(now())
+
+  @@index([taskId, fetchedAt])
+  @@unique([taskId, contentHash])
+}
+
+enum CrawlTaskStatus {
+  pending
+  queued
+  running
+  completed
+  failed
+  paused
 }
 
 model RefreshToken {

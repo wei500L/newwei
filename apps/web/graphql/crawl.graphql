@@ -1,0 +1,75 @@
+query CrawlTasks($first: Int!, $after: String, $search: String, $status: CrawlTaskStatus) {
+  crawlTasks(first: $first, after: $after, search: $search, status: $status) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    edges {
+      cursor
+      node {
+        id
+        displayName
+        targetUrl
+        status
+        concurrency
+        runCount
+        resultCount
+        lastRunAt
+        lastSuccessAt
+        lastError
+        createdAt
+      }
+    }
+  }
+}
+
+query CrawlTask($id: ID!, $resultLimit: Int, $resultSearch: String) {
+  crawlTask(id: $id, resultLimit: $resultLimit, resultSearch: $resultSearch) {
+    id
+    displayName
+    targetUrl
+    status
+    keywords
+    concurrency
+    runCount
+    lastRunAt
+    lastSuccessAt
+    lastResultAt
+    lastError
+    config
+    results {
+      id
+      sourceUrl
+      fetchedAt
+      markdown
+      metadata
+    }
+  }
+}
+
+mutation CreateCrawlTask($input: CreateCrawlTaskInput!) {
+  createCrawlTask(input: $input) {
+    id
+    displayName
+    targetUrl
+    status
+    concurrency
+    runCount
+    resultCount
+    lastRunAt
+    lastSuccessAt
+    lastError
+    createdAt
+  }
+}
+
+mutation RetryCrawlTask($id: ID!) {
+  retryCrawlTask(id: $id) {
+    id
+    status
+    lastRunAt
+    lastError
+    runCount
+  }
+}
