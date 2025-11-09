@@ -10,6 +10,15 @@ export interface CrawlExecutionSummary {
   lastFetchedAt?: Date;
   runId?: string;
   memory?: CrawlMemoryStats;
+  failures?: CrawlFailureDetail[];
+  retryableFailures?: number;
+}
+
+export interface CrawlFailureDetail {
+  url?: string;
+  statusCode?: number;
+  error?: string;
+  retryable: boolean;
 }
 
 export type CrawlCacheMode = "bypass" | "prefer_cache" | "force_cache";

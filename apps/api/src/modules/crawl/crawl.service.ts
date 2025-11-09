@@ -13,7 +13,8 @@ import {
   CrawlProxyConfig,
   CrawlMultiUrlConfig,
   CrawlUrlMatcher,
-  CrawlStrategyOverrides
+  CrawlStrategyOverrides,
+  CrawlFailureDetail
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -75,6 +76,8 @@ export interface CrawlTaskView {
 
 @Injectable()
 export class CrawlService {
+  private readonly retryableStatusCodes = new Set([408, 423, 425, 429, 500, 502, 503, 504]);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
@@ -298,6 +301,9 @@ export class CrawlService {
     try {
       const payload = this.buildRequestPayload(task);
       const response = await this.crawlClient.crawl(payload);
+      const { successes, failures } = this.partitionCrawlerResults(response.results);
+      let failureRetryableCount = 0;
+
       if (response.warnings && response.warnings.length > 0) {
         await TaskLogModel.create({
           queue: CRAWL_QUEUE_NAME,
@@ -308,12 +314,34 @@ export class CrawlService {
           data: { warnings: response.warnings }
         });
       }
+
+      if (failures.length > 0) {
+        failureRetryableCount = failures.filter((failure) => failure.retryable).length;
+        await TaskLogModel.create({
+          queue: CRAWL_QUEUE_NAME,
+          jobId: taskId,
+          stage: "crawler",
+          status: "completed",
+          message: "crawl4ai partial failures",
+          data: {
+            totalFailures: failures.length,
+            retryableFailures: failureRetryableCount,
+            samples: failures.slice(0, 10)
+          }
+        });
+      }
+
       const summary = await this.persistResults(
         task,
-        response.results ?? [],
+        successes,
         response.runId ?? undefined,
         this.extractMemoryStats(response)
       );
+
+      if (failures.length > 0) {
+        summary.failures = failures;
+        summary.retryableFailures = failureRetryableCount;
+      }
 
       await this.prisma.crawlTask.update({
         where: { id: task.id },
@@ -879,5 +907,129 @@ export class CrawlService {
       peakMemoryMb: response.peakMemoryMb,
       efficiencyPercent: response.memoryEfficiency
     };
+  }
+
+  private partitionCrawlerResults(items?: Crawl4aiArticle[]) {
+    const successes: Crawl4aiArticle[] = [];
+    const failures: CrawlFailureDetail[] = [];
+
+    if (!items || items.length === 0) {
+      return { successes, failures };
+    }
+
+    for (const item of items) {
+      if (this.isResultSuccessful(item)) {
+        successes.push(item);
+      } else {
+        failures.push(this.buildFailureDetail(item));
+      }
+    }
+
+    return { successes, failures };
+  }
+
+  private isResultSuccessful(item: Crawl4aiArticle): boolean {
+    if (typeof item.success === "boolean") {
+      return item.success;
+    }
+    const inlineSuccess = this.pickBoolean(item as Record<string, unknown>, [
+      "success",
+      "isSuccess",
+      "ok"
+    ]);
+    if (typeof inlineSuccess === "boolean") {
+      return inlineSuccess;
+    }
+    const metadataSuccess = this.pickBoolean(item.metadata as Record<string, unknown> | undefined, [
+      "success",
+      "isSuccess",
+      "ok"
+    ]);
+    if (typeof metadataSuccess === "boolean") {
+      return metadataSuccess;
+    }
+    const markdownResult = this.normalizeMarkdownResult(item.markdown);
+    return Boolean(markdownResult.primary);
+  }
+
+  private buildFailureDetail(item: Crawl4aiArticle): CrawlFailureDetail {
+    const statusCode = this.extractStatusCode(item);
+    const errorMessage = this.extractErrorMessage(item);
+    return {
+      url: item.url ?? this.pickString(item.metadata as Record<string, unknown> | undefined, ["url"]),
+      statusCode,
+      error: errorMessage ?? "Unknown crawl error",
+      retryable: this.isRetryableStatus(statusCode, errorMessage)
+    };
+  }
+
+  private extractStatusCode(item: Crawl4aiArticle): number | undefined {
+    return (
+      this.pickNumber(item as Record<string, unknown>, ["statusCode", "status_code"]) ??
+      this.pickNumber(item.metadata as Record<string, unknown> | undefined, [
+        "statusCode",
+        "status_code",
+        "status"
+      ])
+    );
+  }
+
+  private extractErrorMessage(item: Crawl4aiArticle): string | undefined {
+    return (
+      this.pickString(item as Record<string, unknown>, ["error", "errorMessage", "error_message"]) ??
+      this.pickString(item.metadata as Record<string, unknown> | undefined, ["error", "error_message", "message"])
+    );
+  }
+
+  private isRetryableStatus(statusCode?: number, errorMessage?: string): boolean {
+    if (statusCode && this.retryableStatusCodes.has(statusCode)) {
+      return true;
+    }
+    if (!errorMessage) {
+      return false;
+    }
+    const normalized = errorMessage.toLowerCase();
+    return ["timeout", "temporarily", "rate limit", "connection reset", "connection refused"].some((needle) =>
+      normalized.includes(needle)
+    );
+  }
+
+  private pickNumber(source: Record<string, unknown> | undefined, keys: string[]): number | undefined {
+    if (!source) {
+      return undefined;
+    }
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === "number") {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
+  private pickString(source: Record<string, unknown> | undefined, keys: string[]): string | undefined {
+    if (!source) {
+      return undefined;
+    }
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === "string" && value.length > 0) {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
+  private pickBoolean(source: Record<string, unknown> | undefined, keys: string[]): boolean | undefined {
+    if (!source) {
+      return undefined;
+    }
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === "boolean") {
+        return value;
+      }
+    }
+    return undefined;
   }
 }

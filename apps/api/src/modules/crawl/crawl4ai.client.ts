@@ -38,6 +38,12 @@ export interface Crawl4aiArticle {
   markdown?: string | Crawl4aiMarkdownResult;
   publishedAt?: string;
   metadata?: Record<string, unknown>;
+  success?: boolean;
+  statusCode?: number;
+  status_code?: number;
+  error?: string;
+  errorMessage?: string;
+  error_message?: string;
 }
 
 export interface Crawl4aiResponse {
