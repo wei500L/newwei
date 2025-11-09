@@ -5,11 +5,16 @@ import { createLogger } from "@modular/utils";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_NAME } from "./crawl.constants";
-import { CrawlJobData, CrawlExecutionSummary } from "./crawl.types";
+import {
+  CrawlJobData,
+  CrawlExecutionSummary,
+  CrawlTaskOptions,
+  CrawlMemoryStats
+} from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
 import { normalizeKeywords, clampResultLimit, coerceDate, hashMarkdown } from "./crawl.utils";
-import { Crawl4aiClient, Crawl4aiArticle } from "./crawl4ai.client";
+import { Crawl4aiClient, Crawl4aiArticle, Crawl4aiRequest } from "./crawl4ai.client";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { TaskLogModel, CrawlResultContentModel } from "@modular/mongo";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
@@ -55,6 +60,10 @@ export interface CrawlTaskView {
   resultCount: number;
   config?: Record<string, unknown> | null;
   results?: CrawlTaskResult[];
+  memoryStats?: CrawlMemoryStats | null;
+  lastServerMemoryMb?: number | null;
+  lastPeakMemoryMb?: number | null;
+  lastMemoryEfficiency?: number | null;
 }
 
 @Injectable()
@@ -77,6 +86,12 @@ export class CrawlService {
       throw new BadRequestException("timeRangeFrom must be earlier than timeRangeTo");
     }
 
+    const normalizedOptions = this.normalizeOptions({
+      includeImages: dto.options?.includeImages,
+      onlyMainContent: dto.options?.onlyMainContent,
+      extractLinks: dto.options?.extractLinks
+    });
+
     const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
     const concurrency = Math.min(dto.concurrency ?? defaultConcurrency, defaultConcurrency);
     const created = await this.prisma.crawlTask.create({
@@ -90,7 +105,7 @@ export class CrawlService {
         keywords,
         timeRangeFrom,
         timeRangeTo,
-        config: dto.options ?? {},
+        config: normalizedOptions,
         runCount: 0
       },
       include: { _count: { select: { results: true } } }
@@ -173,11 +188,13 @@ export class CrawlService {
     });
 
     const hydrated = await this.attachResultContent(results);
+    const memoryStats = await this.getLatestMemoryStats(id);
 
     return {
       task: {
         ...this.toView(task),
-        results: hydrated
+        results: hydrated,
+        memoryStats
       }
     };
   }
@@ -264,7 +281,22 @@ export class CrawlService {
     try {
       const payload = this.buildRequestPayload(task);
       const response = await this.crawlClient.crawl(payload);
-      const summary = await this.persistResults(task, response.results ?? [], response.runId);
+      if (response.warnings && response.warnings.length > 0) {
+        await TaskLogModel.create({
+          queue: CRAWL_QUEUE_NAME,
+          jobId: taskId,
+          stage: "crawler",
+          status: "completed",
+          message: "crawl4ai warnings",
+          data: { warnings: response.warnings }
+        });
+      }
+      const summary = await this.persistResults(
+        task,
+        response.results ?? [],
+        response.runId ?? undefined,
+        this.extractMemoryStats(response)
+      );
 
       await this.prisma.crawlTask.update({
         where: { id: task.id },
@@ -274,7 +306,10 @@ export class CrawlService {
           lastSuccessAt: new Date(),
           lastResultAt: summary.lastFetchedAt ?? task.lastResultAt,
           lastCursor: response.nextCursor ?? task.lastCursor,
-          lastError: null
+          lastError: null,
+          lastServerMemoryMb: summary.memory?.serverMemoryMb ?? task.lastServerMemoryMb,
+          lastPeakMemoryMb: summary.memory?.peakMemoryMb ?? task.lastPeakMemoryMb,
+          lastMemoryEfficiency: summary.memory?.efficiencyPercent ?? task.lastMemoryEfficiency
         }
       });
 
@@ -329,7 +364,11 @@ export class CrawlService {
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       resultCount: task._count.results,
-      config: (task.config as Record<string, unknown> | null) ?? null
+      config: (task.config as Record<string, unknown> | null) ?? null,
+      memoryStats: undefined,
+      lastServerMemoryMb: task.lastServerMemoryMb ?? null,
+      lastPeakMemoryMb: task.lastPeakMemoryMb ?? null,
+      lastMemoryEfficiency: task.lastMemoryEfficiency ?? null
     };
   }
 
@@ -342,25 +381,78 @@ export class CrawlService {
       .filter((entry): entry is string => Boolean(entry));
   }
 
-  private buildRequestPayload(task: CrawlTask) {
+  private buildRequestPayload(task: CrawlTask): Crawl4aiRequest {
     const keywords = this.fromJsonArray(task.keywords);
+    const options = this.extractOptions(task.config);
     return {
       url: task.targetUrl,
-      cursor: task.lastCursor,
-      concurrency: task.concurrency,
-      timeRange: {
-        from: task.timeRangeFrom?.toISOString(),
-        to: task.timeRangeTo?.toISOString()
-      },
       keywords,
-      options: (task.config as Record<string, unknown> | null) ?? {}
+      options
     };
+  }
+
+  private extractOptions(config: Prisma.JsonValue | null): CrawlTaskOptions {
+    if (!config || typeof config !== "object") {
+      return this.normalizeOptions();
+    }
+    const value = config as Record<string, unknown>;
+    return this.normalizeOptions({
+      includeImages: typeof value.includeImages === "boolean" ? value.includeImages : undefined,
+      onlyMainContent: typeof value.onlyMainContent === "boolean" ? value.onlyMainContent : undefined,
+      extractLinks: typeof value.extractLinks === "boolean" ? value.extractLinks : undefined,
+      cacheMode: typeof value.cacheMode === "string" ? (value.cacheMode as CrawlTaskOptions["cacheMode"]) : undefined,
+      scanFullPage: typeof value.scanFullPage === "boolean" ? value.scanFullPage : undefined,
+      scrollDelayMs: typeof value.scrollDelayMs === "number" ? value.scrollDelayMs : undefined,
+      enableUndetectedBrowser:
+        typeof value.enableUndetectedBrowser === "boolean" ? value.enableUndetectedBrowser : undefined,
+      enableStealthMode: typeof value.enableStealthMode === "boolean" ? value.enableStealthMode : undefined,
+      simulateUser: typeof value.simulateUser === "boolean" ? value.simulateUser : undefined,
+      overrideNavigator: typeof value.overrideNavigator === "boolean" ? value.overrideNavigator : undefined
+    });
+  }
+
+  private normalizeOptions(options?: Partial<CrawlTaskOptions>): CrawlTaskOptions {
+    const scanFullPage = options?.scanFullPage ?? false;
+    let scrollDelayMs: number | undefined;
+    if (scanFullPage) {
+      scrollDelayMs =
+        typeof options?.scrollDelayMs === "number"
+          ? this.clampScrollDelay(options.scrollDelayMs)
+          : 200;
+    }
+    const simulateUser =
+      options?.simulateUser ??
+      (options?.enableStealthMode ? true : false);
+    const overrideNavigator =
+      options?.overrideNavigator ??
+      (options?.enableStealthMode ? true : false);
+
+    return {
+      includeImages: options?.includeImages ?? false,
+      onlyMainContent: options?.onlyMainContent ?? true,
+      extractLinks: options?.extractLinks ?? false,
+      cacheMode: options?.cacheMode ?? "bypass",
+      scanFullPage,
+      scrollDelayMs,
+      enableUndetectedBrowser: options?.enableUndetectedBrowser ?? false,
+      enableStealthMode: options?.enableStealthMode ?? false,
+      simulateUser,
+      overrideNavigator
+    };
+  }
+
+  private clampScrollDelay(value: number) {
+    if (Number.isNaN(value)) {
+      return 200;
+    }
+    return Math.max(0, Math.min(5000, Math.round(value)));
   }
 
   private async persistResults(
     task: CrawlTask,
     items: Crawl4aiArticle[],
-    runId?: string
+    runId?: string,
+    memory?: CrawlMemoryStats
   ): Promise<CrawlExecutionSummary> {
     if (!items || items.length === 0) {
       return {
@@ -423,7 +515,8 @@ export class CrawlService {
       inserted,
       skipped,
       lastFetchedAt: latestResultAt,
-      runId
+      runId,
+      memory
     };
   }
 
@@ -447,5 +540,32 @@ export class CrawlService {
         metadata: (result.metadata as Record<string, unknown> | null) ?? doc?.metadata ?? null
       };
     });
+  }
+
+  private async getLatestMemoryStats(taskId: string): Promise<CrawlMemoryStats | null> {
+    const log = await TaskLogModel.findOne({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: taskId,
+      stage: "complete"
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    const stats = log?.data?.memory as CrawlMemoryStats | undefined;
+    return stats ?? null;
+  }
+
+  private extractMemoryStats(response: Crawl4aiResponse): CrawlMemoryStats | undefined {
+    if (
+      response.serverMemoryMb === undefined &&
+      response.peakMemoryMb === undefined &&
+      response.memoryEfficiency === undefined
+    ) {
+      return undefined;
+    }
+    return {
+      serverMemoryMb: response.serverMemoryMb,
+      peakMemoryMb: response.peakMemoryMb,
+      efficiencyPercent: response.memoryEfficiency
+    };
   }
 }

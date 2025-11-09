@@ -14,14 +14,20 @@ import { HasPermission } from "../decorators/has-permission.decorator";
 import {
   CrawlTaskConnection,
   CrawlTaskModel,
-  CrawlResultModel
+  CrawlResultModel,
+  CrawlMemoryStatsModel
 } from "../models/crawl.model";
 import {
   CrawlTaskDetailArgs,
   CrawlTasksQueryArgs,
   CreateCrawlTaskInput
 } from "../dto/crawl.input";
-import { CrawlService, CrawlTaskResult, CrawlTaskView } from "../../modules/crawl/crawl.service";
+import {
+  CrawlService,
+  CrawlTaskResult,
+  CrawlTaskView,
+  CrawlMemoryStats
+} from "../../modules/crawl/crawl.service";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { PrismaService } from "../../modules/config/prisma.service";
 import { CreateCrawlTaskDto } from "../../modules/crawl/dto/create-crawl-task.dto";
@@ -156,7 +162,8 @@ export class CrawlResolver {
     return {
       ...task,
       config: task.config ? JSON.stringify(task.config) : null,
-      results: task.results?.map((result) => this.toGraphResult(result))
+      results: task.results?.map((result) => this.toGraphResult(result)),
+      memoryStats: task.memoryStats ? this.toMemoryStats(task.memoryStats) : null
     };
   }
 
@@ -164,6 +171,14 @@ export class CrawlResolver {
     return {
       ...result,
       metadata: result.metadata ? JSON.stringify(result.metadata) : null
+    };
+  }
+
+  private toMemoryStats(stats: CrawlMemoryStats): CrawlMemoryStatsModel {
+    return {
+      serverMemoryMb: stats.serverMemoryMb ?? null,
+      peakMemoryMb: stats.peakMemoryMb ?? null,
+      efficiencyPercent: stats.efficiencyPercent ?? null
     };
   }
 }

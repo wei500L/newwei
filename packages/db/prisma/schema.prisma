@@ -130,6 +130,9 @@ model CrawlTask {
   lastCursor     String?
   lastError      String?
   runCount       Int              @default(0)
+  lastServerMemoryMb    Float?
+  lastPeakMemoryMb      Float?
+  lastMemoryEfficiency  Float?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 

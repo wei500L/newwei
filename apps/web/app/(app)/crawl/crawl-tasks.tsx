@@ -45,6 +45,12 @@ interface CreateCrawlTaskFormValues {
   includeImages?: boolean;
   onlyMainContent?: boolean;
   extractLinks?: boolean;
+  scanFullPage?: boolean;
+  scrollDelayMs?: number;
+  enableUndetectedBrowser?: boolean;
+  enableStealthMode?: boolean;
+  simulateUser?: boolean;
+  overrideNavigator?: boolean;
 }
 
 export function CrawlTasksView() {
@@ -52,6 +58,7 @@ export function CrawlTasksView() {
   const [statusFilter, setStatusFilter] = useState<CrawlTaskStatus | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form] = Form.useForm<CreateCrawlTaskFormValues>();
+  const scanFullPage = Form.useWatch("scanFullPage", form);
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
     pageSize: 10
@@ -105,6 +112,12 @@ export function CrawlTasksView() {
       dataIndex: "runCount",
       key: "runCount",
       render: (_, record) => `${record.runCount} • results: ${record.resultCount}`
+    },
+    {
+      title: "Peak Mem (MB)",
+      dataIndex: "lastPeakMemoryMb",
+      key: "lastPeakMemoryMb",
+      render: (value?: number | null) => (value != null ? value.toFixed(0) : "—")
     },
     {
       title: "Last Activity",
@@ -167,7 +180,13 @@ export function CrawlTasksView() {
             options: {
               includeImages: values.includeImages ?? undefined,
               onlyMainContent: values.onlyMainContent ?? undefined,
-              extractLinks: values.extractLinks ?? undefined
+              extractLinks: values.extractLinks ?? undefined,
+              scanFullPage: values.scanFullPage ?? undefined,
+              scrollDelayMs: values.scrollDelayMs ?? undefined,
+              enableUndetectedBrowser: values.enableUndetectedBrowser ?? undefined,
+              enableStealthMode: values.enableStealthMode ?? undefined,
+              simulateUser: values.simulateUser ?? undefined,
+              overrideNavigator: values.overrideNavigator ?? undefined
             }
           }
         }
@@ -278,6 +297,50 @@ export function CrawlTasksView() {
             <Switch defaultChecked />
           </Form.Item>
           <Form.Item label="Extract links" name="extractLinks" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item label="Full-page scanning" name="scanFullPage" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item label="Scroll delay (ms)" name="scrollDelayMs">
+            <InputNumber
+              min={0}
+              max={5000}
+              style={{ width: "100%" }}
+              placeholder="Default: 200"
+              disabled={!scanFullPage}
+            />
+          </Form.Item>
+          <Form.Item
+            label="Undetected browser"
+            name="enableUndetectedBrowser"
+            valuePropName="checked"
+            extra="Bypasses bot detection using Crawl4AI's UndetectedAdapter"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="Stealth mode"
+            name="enableStealthMode"
+            valuePropName="checked"
+            extra="Tweaks browser fingerprints for basic evasion"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="Simulate user actions"
+            name="simulateUser"
+            valuePropName="checked"
+            extra="Adds cursor movement / delays to mimic humans"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="Override navigator()"
+            name="overrideNavigator"
+            valuePropName="checked"
+            extra="Spoofs browser navigator properties"
+          >
             <Switch />
           </Form.Item>
           <Space style={{ width: "100%", justifyContent: "flex-end" }}>

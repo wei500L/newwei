@@ -89,6 +89,9 @@ infra/
   - `CRAWL4AI_TIMEOUT_MS` / `CRAWL4AI_MAX_CONCURRENCY` / `CRAWL4AI_MAX_RETRIES`：用于 BullMQ 任务的超时、并发与重试上限。
 - `pnpm db:migrate && pnpm db:seed` 会创建 `CrawlTask` / `CrawlResult` 表并灌入一个示例任务；Mongo 中新增 `CrawlResultContent` 模型用来存储 Markdown。
 - Docker Compose 中新增 `crawl4ai` 服务（基于 `ghcr.io/unclecode/crawl4ai:latest`），默认对 API 暴露 8080 端口并有健康检查；若需要本地调试可以通过 `http://localhost:8082` 命中。
+- 参考 crawl4ai 官方文档关于 *Full-Page Scanning*（见 `docs/md_v2/blog/releases/0.4.1.md`）的实现，我们在任务配置中加入 “Full-page scanning” 开关与滚动延迟，API 会在调用 `/crawl` 时自动下发 `scan_full_page` 与 `scroll_delay`，可用于处理瀑布流/无限滚动的新闻站点。
+- 如果目标站点启用了 Cloudflare/DataDome 等高强度检测，可勾选 “Undetected browser” 与 “Stealth mode”。这会将 crawl4ai `BrowserConfig` 的 `browser_type` 设为 `undetected` 并启用 `enable_stealth`（官方文档 `docs/md_v2/advanced/undetected-browser.md`），同时把 `magic/simulate_user/override_navigator` 等参数写入 `CrawlerRunConfig`，以更贴近真实用户（光标移动、Navigator 属性伪装等）避免被识别。
+- 参考 crawl4ai README 关于 *Memory Monitoring* 的 `MemoryMonitor` 实践，我们从 `/crawl` 响应中读取 `serverMemoryMb/peakMemoryMb/memoryEfficiency`，在后台日志与控制台详情页展示该指标，帮助排查 OOM 或批量任务的资源瓶颈。
 
 ## 测试
 

@@ -20,6 +20,12 @@ export type CrawlOptionsInput = {
   includeImages?: InputMaybe<boolean>;
   onlyMainContent?: InputMaybe<boolean>;
   extractLinks?: InputMaybe<boolean>;
+  scanFullPage?: InputMaybe<boolean>;
+  scrollDelayMs?: InputMaybe<number>;
+  enableUndetectedBrowser?: InputMaybe<boolean>;
+  enableStealthMode?: InputMaybe<boolean>;
+  simulateUser?: InputMaybe<boolean>;
+  overrideNavigator?: InputMaybe<boolean>;
 };
 
 export type CreateCrawlTaskInput = {
@@ -210,6 +216,8 @@ export type CrawlTasksQuery = {
         lastSuccessAt?: any | null;
         lastError?: string | null;
         createdAt: any;
+        lastPeakMemoryMb?: number | null;
+        lastMemoryEfficiency?: number | null;
       };
     }>;
   };
@@ -235,6 +243,9 @@ export type CrawlTaskQuery = {
     lastResultAt?: any | null;
     lastError?: string | null;
     config?: string | null;
+    lastServerMemoryMb?: number | null;
+    lastPeakMemoryMb?: number | null;
+    lastMemoryEfficiency?: number | null;
     results?: Array<{
       id: string;
       sourceUrl: string;
@@ -242,6 +253,11 @@ export type CrawlTaskQuery = {
       markdown: string;
       metadata?: string | null;
     }> | null;
+    memoryStats?: {
+      serverMemoryMb?: number | null;
+      peakMemoryMb?: number | null;
+      efficiencyPercent?: number | null;
+    } | null;
   } | null;
 };
 
@@ -352,6 +368,8 @@ export const CrawlTasksDocument = gql`
           lastSuccessAt
           lastError
           createdAt
+          lastPeakMemoryMb
+          lastMemoryEfficiency
         }
       }
     }
@@ -389,12 +407,20 @@ export const CrawlTaskDocument = gql`
       lastResultAt
       lastError
       config
+      lastServerMemoryMb
+      lastPeakMemoryMb
+      lastMemoryEfficiency
       results {
         id
         sourceUrl
         fetchedAt
         markdown
         metadata
+      }
+      memoryStats {
+        serverMemoryMb
+        peakMemoryMb
+        efficiencyPercent
       }
     }
   }

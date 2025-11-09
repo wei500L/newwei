@@ -148,7 +148,16 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
         concurrency: 2,
         keywords: ["ai", "security"],
         config: {
-          includeMarkdown: true
+          scanFullPage: true,
+        scrollDelayMs: 200,
+        enableUndetectedBrowser: true,
+        enableStealthMode: true,
+        simulateUser: true,
+        overrideNavigator: true
+      },
+      lastServerMemoryMb: 420.5,
+      lastPeakMemoryMb: 950.2,
+      lastMemoryEfficiency: 78.4
         },
         timeRangeFrom: new Date(Date.now() - 1000 * 60 * 60 * 24),
         timeRangeTo: new Date(),
