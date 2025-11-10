@@ -95,6 +95,42 @@ export class CrawlMarkdownFilterInput {
 }
 
 @InputType()
+export class CrawlLinkPreviewInput {
+  @Field(() => Boolean, { nullable: true })
+  includeInternal?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  includeExternal?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  includeSocial?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  maxLinks?: number;
+
+  @Field(() => Int, { nullable: true })
+  concurrency?: number;
+
+  @Field(() => Int, { nullable: true })
+  timeoutSeconds?: number;
+
+  @Field(() => String, { nullable: true })
+  query?: string;
+
+  @Field(() => Float, { nullable: true })
+  scoreThreshold?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  verbose?: boolean;
+
+  @Field(() => [String], { nullable: true })
+  includePatterns?: string[];
+
+  @Field(() => [String], { nullable: true })
+  excludePatterns?: string[];
+}
+
+@InputType()
 export class CrawlOptionsInput {
   @Field(() => Boolean, { nullable: true })
   includeImages?: boolean;
@@ -140,6 +176,12 @@ export class CrawlOptionsInput {
 
   @Field(() => CrawlMarkdownFilterInput, { nullable: true })
   markdownFilter?: CrawlMarkdownFilterInput;
+
+  @Field(() => Boolean, { nullable: true })
+  scoreLinks?: boolean;
+
+  @Field(() => CrawlLinkPreviewInput, { nullable: true })
+  linkPreview?: CrawlLinkPreviewInput;
 }
 
 @InputType()

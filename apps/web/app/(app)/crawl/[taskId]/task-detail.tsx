@@ -126,6 +126,104 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     return `${markdownFilter.type}${threshold}`;
   }, [markdownFilter]);
 
+  const linkOverview = useMemo(() => {
+    const analyses =
+      task?.results
+        ?.map((result) => result.linkAnalysis)
+        .filter((analysis): analysis is NonNullable<typeof analysis> => Boolean(analysis)) ?? [];
+    if (!analyses.length) {
+      return null;
+    }
+    const totalLinks = analyses.reduce((sum, analysis) => sum + analysis.stats.totalLinks, 0);
+    const internalLinks = analyses.reduce((sum, analysis) => sum + analysis.stats.internalLinks, 0);
+    const externalLinks = analyses.reduce((sum, analysis) => sum + analysis.stats.externalLinks, 0);
+    const highQualityLinks = analyses.reduce(
+      (sum, analysis) => sum + (analysis.stats.highQualityLinks ?? 0),
+      0
+    );
+    const lowQualityLinks = analyses.reduce(
+      (sum, analysis) => sum + (analysis.stats.lowQualityLinks ?? 0),
+      0
+    );
+    const weightedIntrinsic = analyses.reduce((sum, analysis) => {
+      const avg = analysis.stats.averageIntrinsicScore ?? 0;
+      return sum + avg * analysis.stats.totalLinks;
+    }, 0);
+    const averageIntrinsic =
+      totalLinks > 0 ? Number((weightedIntrinsic / totalLinks).toFixed(2)) : null;
+    const aggregateLinks = <T,>(items: T[]) => {
+      const seen = new Set<string>();
+      const ordered: T[] = [];
+      for (const item of items) {
+        const link = item as { href?: string };
+        const key = link.href ?? JSON.stringify(item);
+        if (!seen.has(key)) {
+          seen.add(key);
+          ordered.push(item);
+        }
+      }
+      return ordered;
+    };
+    const scoreOf = (link: {
+      totalScore?: number | null;
+      contextualScore?: number | null;
+      intrinsicScore?: number | null;
+    }) => link.totalScore ?? link.contextualScore ?? link.intrinsicScore ?? 0;
+    const topLinks = aggregateLinks(
+      analyses.flatMap((analysis) => analysis.topLinks ?? [])
+    )
+      .sort((a, b) => scoreOf(b) - scoreOf(a))
+      .slice(0, 5);
+    const lowLinks = aggregateLinks(
+      analyses.flatMap((analysis) => analysis.lowQualityLinks ?? [])
+    )
+      .sort(
+        (a, b) =>
+          (a.intrinsicScore ?? Number.POSITIVE_INFINITY) -
+          (b.intrinsicScore ?? Number.POSITIVE_INFINITY)
+      )
+      .slice(0, 5);
+    const bucketMap = new Map<
+      string,
+      { count: number; links: NonNullable<(typeof analyses)[number]["topLinks"]> }
+    >();
+    analyses.forEach((analysis) => {
+      analysis.buckets.forEach((bucket) => {
+        const existing = bucketMap.get(bucket.kind);
+        if (existing) {
+          existing.count += bucket.links.length;
+          existing.links.push(...bucket.links);
+        } else {
+          bucketMap.set(bucket.kind, { count: bucket.links.length, links: [...bucket.links] });
+        }
+      });
+    });
+    const buckets = Array.from(bucketMap.entries()).map(([kind, value]) => ({
+      kind,
+      count: value.count,
+      samples: value.links.slice(0, 4)
+    }));
+    return {
+      stats: {
+        totalLinks,
+        internalLinks,
+        externalLinks,
+        highQualityLinks,
+        lowQualityLinks,
+        averageIntrinsic
+      },
+      topLinks,
+      lowLinks,
+      buckets
+    };
+  }, [task?.results]);
+
+  const getLinkScore = (link: {
+    totalScore?: number | null;
+    contextualScore?: number | null;
+    intrinsicScore?: number | null;
+  }) => link.totalScore ?? link.contextualScore ?? link.intrinsicScore ?? 0;
+
   const additionalUrls = useMemo(() => {
     if (!config || !Array.isArray((config as any).additionalUrls)) {
       return [];
@@ -303,6 +401,93 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               );
             }}
           />
+        </Card>
+      ) : null}
+
+      {linkOverview ? (
+        <Card title="Link analysis" style={{ marginTop: 24 }}>
+          <Space size="large" wrap>
+            {[
+              { label: "Total links", value: linkOverview.stats.totalLinks },
+              { label: "Internal", value: linkOverview.stats.internalLinks },
+              { label: "External", value: linkOverview.stats.externalLinks },
+              { label: "High quality", value: linkOverview.stats.highQualityLinks },
+              { label: "Needs review", value: linkOverview.stats.lowQualityLinks },
+              {
+                label: "Avg intrinsic",
+                value:
+                  linkOverview.stats.averageIntrinsic !== null &&
+                  linkOverview.stats.averageIntrinsic !== undefined
+                    ? linkOverview.stats.averageIntrinsic.toFixed(2)
+                    : "—"
+              }
+            ].map((item) => (
+              <Space key={item.label} direction="vertical" size={0}>
+                <Typography.Text type="secondary">{item.label}</Typography.Text>
+                <Typography.Title level={4} style={{ margin: 0 }}>
+                  {item.value}
+                </Typography.Title>
+              </Space>
+            ))}
+          </Space>
+          {linkOverview.buckets.length ? (
+            <>
+              <Typography.Text strong style={{ display: "block", marginTop: 16 }}>
+                Buckets
+              </Typography.Text>
+              <Space wrap>
+                {linkOverview.buckets.map((bucket) => (
+                  <Tag key={bucket.kind}>
+                    {bucket.kind}: {bucket.count}
+                  </Tag>
+                ))}
+              </Space>
+            </>
+          ) : null}
+          <Space align="start" size="large" style={{ marginTop: 16 }} wrap>
+            <div style={{ minWidth: 280 }}>
+              <Typography.Text strong>Top links</Typography.Text>
+              <List
+                size="small"
+                dataSource={linkOverview.topLinks}
+                locale={{ emptyText: "No scored links yet." }}
+                renderItem={(link) => (
+                  <List.Item>
+                    <Space direction="vertical" size={0}>
+                      <Typography.Link href={link.href} target="_blank">
+                        {link.text || link.href}
+                      </Typography.Link>
+                      <Typography.Text type="secondary">
+                        {(link.baseDomain ?? link.type ?? "link").toString()} • Score{" "}
+                        {getLinkScore(link).toFixed(2)}
+                      </Typography.Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            </div>
+            <div style={{ minWidth: 280 }}>
+              <Typography.Text strong>Links to revisit</Typography.Text>
+              <List
+                size="small"
+                dataSource={linkOverview.lowLinks}
+                locale={{ emptyText: "No low quality links yet." }}
+                renderItem={(link) => (
+                  <List.Item>
+                    <Space direction="vertical" size={0}>
+                      <Typography.Link href={link.href} target="_blank">
+                        {link.text || link.href}
+                      </Typography.Link>
+                      <Typography.Text type="secondary">
+                        {(link.baseDomain ?? link.type ?? "link").toString()} • Intrinsic{" "}
+                        {(link.intrinsicScore ?? 0).toFixed(2)}
+                      </Typography.Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            </div>
+          </Space>
         </Card>
       ) : null}
 

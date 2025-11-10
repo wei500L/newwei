@@ -11,7 +11,8 @@ const CrawlResultContentSchema = new Schema(
     fitMarkdown: { type: String },
     metadata: Schema.Types.Mixed,
     sourceUrl: { type: String },
-    crawlRunId: { type: String }
+    crawlRunId: { type: String },
+    linkAnalysis: Schema.Types.Mixed
   },
   {
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" }

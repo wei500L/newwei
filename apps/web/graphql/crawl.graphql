@@ -52,6 +52,46 @@ query CrawlTask($id: ID!, $resultLimit: Int, $resultSearch: String) {
       referencesMarkdown
       fitMarkdown
       metadata
+      linkAnalysis {
+        stats {
+          totalLinks
+          internalLinks
+          externalLinks
+          averageIntrinsicScore
+          highQualityLinks
+          lowQualityLinks
+        }
+        topLinks {
+          href
+          text
+          title
+          baseDomain
+          type
+          intrinsicScore
+          contextualScore
+          totalScore
+        }
+        lowQualityLinks {
+          href
+          text
+          title
+          intrinsicScore
+          baseDomain
+        }
+        buckets {
+          kind
+          links {
+            href
+            text
+            title
+            baseDomain
+            type
+            intrinsicScore
+            contextualScore
+            totalScore
+          }
+        }
+      }
     }
     memoryStats {
       serverMemoryMb

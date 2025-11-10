@@ -15,7 +15,11 @@ import {
   CrawlTaskConnection,
   CrawlTaskModel,
   CrawlResultModel,
-  CrawlMemoryStatsModel
+  CrawlMemoryStatsModel,
+  CrawlLinkAnalysisModel,
+  CrawlLinkModel,
+  CrawlLinkStatsModel,
+  CrawlLinkBucketModel
 } from "../models/crawl.model";
 import {
   CrawlTaskDetailArgs,
@@ -28,6 +32,7 @@ import {
   CrawlTaskView,
   CrawlMemoryStats
 } from "../../modules/crawl/crawl.service";
+import type { CrawlLinkAnalysis, CrawlLinkAnalysisLink } from "../../modules/crawl/crawl.types";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { PrismaService } from "../../modules/config/prisma.service";
 import { CreateCrawlTaskDto } from "../../modules/crawl/dto/create-crawl-task.dto";
@@ -170,7 +175,8 @@ export class CrawlResolver {
   private toGraphResult(result: CrawlTaskResult): CrawlResultModel {
     return {
       ...result,
-      metadata: result.metadata ? JSON.stringify(result.metadata) : null
+      metadata: result.metadata ? JSON.stringify(result.metadata) : null,
+      linkAnalysis: result.linkAnalysis ? this.toGraphLinkAnalysis(result.linkAnalysis) : null
     };
   }
 
@@ -179,6 +185,43 @@ export class CrawlResolver {
       serverMemoryMb: stats.serverMemoryMb ?? null,
       peakMemoryMb: stats.peakMemoryMb ?? null,
       efficiencyPercent: stats.efficiencyPercent ?? null
+    };
+  }
+
+  private toGraphLinkAnalysis(analysis: CrawlLinkAnalysis): CrawlLinkAnalysisModel {
+    return {
+      stats: this.toGraphLinkStats(analysis.stats),
+      buckets: analysis.buckets.map((bucket) => ({
+        kind: bucket.kind,
+        links: bucket.links.map((link) => this.toGraphLink(link))
+      })),
+      topLinks: analysis.topLinks.map((link) => this.toGraphLink(link)),
+      lowQualityLinks: analysis.lowQualityLinks.map((link) => this.toGraphLink(link))
+    };
+  }
+
+  private toGraphLinkStats(stats: CrawlLinkAnalysis["stats"]): CrawlLinkStatsModel {
+    return {
+      totalLinks: stats.totalLinks,
+      internalLinks: stats.internalLinks,
+      externalLinks: stats.externalLinks,
+      averageIntrinsicScore: stats.averageIntrinsicScore ?? null,
+      highQualityLinks: stats.highQualityLinks ?? null,
+      lowQualityLinks: stats.lowQualityLinks ?? null
+    };
+  }
+
+  private toGraphLink(link: CrawlLinkAnalysisLink): CrawlLinkModel {
+    return {
+      href: link.href,
+      text: link.text ?? null,
+      title: link.title ?? null,
+      baseDomain: link.baseDomain ?? null,
+      rel: link.rel ?? null,
+      type: link.type ?? null,
+      intrinsicScore: link.intrinsicScore ?? null,
+      contextualScore: link.contextualScore ?? null,
+      totalScore: link.totalScore ?? null
     };
   }
 }

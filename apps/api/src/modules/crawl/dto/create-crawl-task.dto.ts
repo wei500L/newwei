@@ -104,6 +104,15 @@ export class CrawlOptionsDto {
   @ValidateNested()
   @Type(() => CrawlMarkdownFilterDto)
   markdownFilter?: CrawlMarkdownFilterDto;
+
+  @IsOptional()
+  @IsBoolean()
+  scoreLinks?: boolean;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlLinkPreviewOptionsDto)
+  linkPreview?: CrawlLinkPreviewOptionsDto;
 }
 
 export class CrawlUrlMatcherDto {
@@ -206,6 +215,69 @@ export class CrawlMarkdownFilterDto {
   @Min(0)
   @Max(1)
   threshold?: number;
+}
+
+export class CrawlLinkPreviewOptionsDto {
+  @IsOptional()
+  @IsBoolean()
+  includeInternal?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  includeExternal?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  includeSocial?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  maxLinks?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  concurrency?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  timeoutSeconds?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  query?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: "scoreThreshold must be a number" })
+  @Min(0)
+  @Max(1)
+  scoreThreshold?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  verbose?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(25)
+  includePatterns?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(25)
+  excludePatterns?: string[];
 }
 
 export class CreateCrawlTaskDto {
