@@ -9,7 +9,8 @@ import type {
   CrawlUrlMatcher,
   CrawlStrategyOverrides,
   CrawlMarkdownOptions,
-  CrawlMarkdownFilter
+  CrawlMarkdownFilter,
+  CrawlLinkPreviewOptions
 } from "./crawl.types";
 
 export interface Crawl4aiRequest {
@@ -38,6 +39,7 @@ export interface Crawl4aiArticle {
   markdown?: string | Crawl4aiMarkdownResult;
   publishedAt?: string;
   metadata?: Record<string, unknown>;
+  links?: Record<string, Crawl4aiLink[]>;
   success?: boolean;
   statusCode?: number;
   status_code?: number;
@@ -134,6 +136,8 @@ export class Crawl4aiClient {
     const proxyPayload = this.resolveProxyPayload(options);
     const multiConfigurations = this.buildMultiConfigurations(options);
     const markdownGenerator = this.buildMarkdownGenerator(options);
+    const linkPreviewConfig = this.buildLinkPreviewConfig(options);
+    const shouldScoreLinks = options.scoreLinks ?? Boolean(linkPreviewConfig);
     const browserConfig = {
       type: "BrowserConfig",
       params: this.compact({
@@ -156,7 +160,9 @@ export class Crawl4aiClient {
         simulate_user: options.simulateUser ?? undefined,
         override_navigator: options.overrideNavigator ?? undefined,
         magic: options.enableStealthMode ?? undefined,
-        markdown_generator: markdownGenerator
+        markdown_generator: markdownGenerator,
+        score_links: shouldScoreLinks ? true : undefined,
+        link_preview_config: linkPreviewConfig
       })
     };
     return {
@@ -215,6 +221,51 @@ export class Crawl4aiClient {
       body_width: markdownOptions.bodyWidth
     });
     return Object.keys(payload).length > 0 ? payload : undefined;
+  }
+
+  private buildLinkPreviewConfig(options: CrawlTaskOptions) {
+    const config = options.linkPreview;
+    if (!config) {
+      return undefined;
+    }
+    const params = this.compact({
+      include_internal: config.includeInternal,
+      include_external: config.includeExternal,
+      include_social: config.includeSocial,
+      max_links: config.maxLinks,
+      concurrency: config.concurrency,
+      timeout: config.timeoutSeconds,
+      query: this.normalizeQuery(config.query),
+      score_threshold: typeof config.scoreThreshold === "number" ? parseFloat(config.scoreThreshold.toFixed(3)) : undefined,
+      verbose: config.verbose,
+      include_patterns: this.normalizePatternList(config.includePatterns),
+      exclude_patterns: this.normalizePatternList(config.excludePatterns)
+    });
+    if (Object.keys(params).length === 0) {
+      return undefined;
+    }
+    return {
+      type: "LinkPreviewConfig",
+      params
+    };
+  }
+
+  private normalizePatternList(patterns?: string[]) {
+    if (!patterns || patterns.length === 0) {
+      return undefined;
+    }
+    const normalized = patterns
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0);
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private normalizeQuery(query?: string) {
+    if (!query) {
+      return undefined;
+    }
+    const trimmed = query.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   }
 
   private buildContentFilterPayload(filter?: CrawlMarkdownFilter) {
@@ -309,4 +360,20 @@ export class Crawl4aiClient {
     }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
+}
+export interface Crawl4aiLink {
+  href?: string;
+  url?: string;
+  text?: string;
+  title?: string;
+  base_domain?: string;
+  baseDomain?: string;
+  rel?: string;
+  intrinsic_score?: number;
+  intrinsicScore?: number;
+  contextual_score?: number;
+  contextualScore?: number;
+  total_score?: number;
+  totalScore?: number;
+  [key: string]: unknown;
 }

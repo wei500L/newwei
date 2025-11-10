@@ -14,7 +14,9 @@ import {
   CrawlMultiUrlConfig,
   CrawlUrlMatcher,
   CrawlStrategyOverrides,
-  CrawlFailureDetail
+  CrawlFailureDetail,
+  CrawlLinkAnalysis,
+  CrawlLinkPreviewOptions
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -24,6 +26,7 @@ import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { TaskLogModel, CrawlResultContentModel } from "@modular/mongo";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import type { MongoConnection } from "@modular/mongo";
+import { buildLinkAnalysis } from "./link-analysis";
 
 const logger = createLogger({ name: "crawl-service" });
 
@@ -46,6 +49,7 @@ export interface CrawlTaskResult {
   markdownWithCitations?: string | null;
   referencesMarkdown?: string | null;
   fitMarkdown?: string | null;
+  linkAnalysis?: CrawlLinkAnalysis | null;
 }
 
 export interface CrawlTaskView {
@@ -109,7 +113,11 @@ export class CrawlService {
       proxyUrl: dto.options?.proxyUrl,
       proxyConfig: dto.options?.proxyConfig as CrawlProxyConfig | undefined,
       additionalUrls: dto.options?.additionalUrls,
-      multiUrlConfigs: dto.options?.multiUrlConfigs as CrawlMultiUrlConfig[] | undefined
+      multiUrlConfigs: dto.options?.multiUrlConfigs as CrawlMultiUrlConfig[] | undefined,
+      markdownOptions: dto.options?.markdownOptions,
+      markdownFilter: dto.options?.markdownFilter,
+      scoreLinks: dto.options?.scoreLinks,
+      linkPreview: dto.options?.linkPreview as CrawlLinkPreviewOptions | undefined
     });
 
     const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
@@ -460,7 +468,9 @@ export class CrawlService {
       additionalUrls: this.parseUrlArray(value.additionalUrls),
       multiUrlConfigs: this.parseMultiUrlConfigs(value.multiUrlConfigs),
       markdownOptions: this.parseMarkdownOptions(value.markdownOptions),
-      markdownFilter: this.parseMarkdownFilter(value.markdownFilter)
+      markdownFilter: this.parseMarkdownFilter(value.markdownFilter),
+      scoreLinks: typeof value.scoreLinks === "boolean" ? value.scoreLinks : undefined,
+      linkPreview: this.parseLinkPreviewOptions(value.linkPreview)
     });
   }
 
@@ -485,6 +495,8 @@ export class CrawlService {
     const multiUrlConfigs = this.normalizeMultiUrlConfigs(options?.multiUrlConfigs);
     const markdownOptions = this.normalizeMarkdownOptions(options?.markdownOptions);
     const markdownFilter = this.normalizeMarkdownFilter(options?.markdownFilter);
+    const linkPreview = this.normalizeLinkPreviewOptions(options?.linkPreview);
+    const scoreLinks = options?.scoreLinks ?? Boolean(linkPreview);
 
     return {
       includeImages: options?.includeImages ?? false,
@@ -502,7 +514,9 @@ export class CrawlService {
       additionalUrls,
       multiUrlConfigs,
       markdownOptions,
-      markdownFilter
+      markdownFilter,
+      scoreLinks,
+      linkPreview
     };
   }
 
@@ -682,6 +696,55 @@ export class CrawlService {
     return normalized;
   }
 
+  private normalizeLinkPreviewOptions(
+    options?: CrawlLinkPreviewOptions | null
+  ): CrawlLinkPreviewOptions | undefined {
+    if (!options) {
+      return undefined;
+    }
+    const normalized: CrawlLinkPreviewOptions = {};
+    if (typeof options.includeInternal === "boolean") {
+      normalized.includeInternal = options.includeInternal;
+    }
+    if (typeof options.includeExternal === "boolean") {
+      normalized.includeExternal = options.includeExternal;
+    }
+    if (typeof options.includeSocial === "boolean") {
+      normalized.includeSocial = options.includeSocial;
+    }
+    if (typeof options.maxLinks === "number" && Number.isFinite(options.maxLinks)) {
+      normalized.maxLinks = Math.max(1, Math.min(500, Math.round(options.maxLinks)));
+    }
+    if (typeof options.concurrency === "number" && Number.isFinite(options.concurrency)) {
+      normalized.concurrency = Math.max(1, Math.min(50, Math.round(options.concurrency)));
+    }
+    if (typeof options.timeoutSeconds === "number" && Number.isFinite(options.timeoutSeconds)) {
+      normalized.timeoutSeconds = Math.max(1, Math.min(60, Math.round(options.timeoutSeconds)));
+    }
+    if (typeof options.query === "string") {
+      const trimmed = options.query.trim();
+      if (trimmed.length > 0 && trimmed.length <= 160) {
+        normalized.query = trimmed;
+      }
+    }
+    if (typeof options.scoreThreshold === "number" && Number.isFinite(options.scoreThreshold)) {
+      const clamped = Math.max(0, Math.min(1, options.scoreThreshold));
+      normalized.scoreThreshold = Number(clamped.toFixed(3));
+    }
+    if (typeof options.verbose === "boolean") {
+      normalized.verbose = options.verbose;
+    }
+    const includePatterns = this.normalizePatternList(options.includePatterns);
+    if (includePatterns) {
+      normalized.includePatterns = includePatterns;
+    }
+    const excludePatterns = this.normalizePatternList(options.excludePatterns);
+    if (excludePatterns) {
+      normalized.excludePatterns = excludePatterns;
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
   private parseUrlArray(value: unknown): string[] | undefined {
     if (!Array.isArray(value)) {
       return undefined;
@@ -725,6 +788,52 @@ export class CrawlService {
     return this.normalizeMarkdownFilter({
       type: "pruning",
       threshold: typeof record.threshold === "number" ? record.threshold : undefined
+    });
+  }
+
+  private normalizePatternList(patterns?: string[]) {
+    if (!patterns || patterns.length === 0) {
+      return undefined;
+    }
+    const normalized = patterns
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0);
+    if (normalized.length === 0) {
+      return undefined;
+    }
+    const unique: string[] = [];
+    for (const pattern of normalized) {
+      if (!unique.includes(pattern)) {
+        unique.push(pattern);
+      }
+      if (unique.length >= 25) {
+        break;
+      }
+    }
+    return unique;
+  }
+
+  private parseLinkPreviewOptions(value: unknown): CrawlLinkPreviewOptions | undefined {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    return this.normalizeLinkPreviewOptions({
+      includeInternal: typeof record.includeInternal === "boolean" ? record.includeInternal : undefined,
+      includeExternal: typeof record.includeExternal === "boolean" ? record.includeExternal : undefined,
+      includeSocial: typeof record.includeSocial === "boolean" ? record.includeSocial : undefined,
+      maxLinks: typeof record.maxLinks === "number" ? record.maxLinks : undefined,
+      concurrency: typeof record.concurrency === "number" ? record.concurrency : undefined,
+      timeoutSeconds: typeof record.timeoutSeconds === "number" ? record.timeoutSeconds : undefined,
+      query: typeof record.query === "string" ? record.query : undefined,
+      scoreThreshold: typeof record.scoreThreshold === "number" ? record.scoreThreshold : undefined,
+      verbose: typeof record.verbose === "boolean" ? record.verbose : undefined,
+      includePatterns: Array.isArray(record.includePatterns)
+        ? (record.includePatterns as unknown[]).map((entry) => (typeof entry === "string" ? entry : "")).filter(Boolean)
+        : undefined,
+      excludePatterns: Array.isArray(record.excludePatterns)
+        ? (record.excludePatterns as unknown[]).map((entry) => (typeof entry === "string" ? entry : "")).filter(Boolean)
+        : undefined
     });
   }
 
@@ -826,6 +935,7 @@ export class CrawlService {
           metadata: item.metadata ?? {}
         }
       });
+      const linkAnalysis = this.extractLinkAnalysisFromResult(item);
       const contentDoc = await CrawlResultContentModel.create({
         taskId: task.id,
         resultId: created.id,
@@ -836,7 +946,8 @@ export class CrawlService {
         fitMarkdown: markdownResult.fit,
         metadata: item.metadata ?? {},
         sourceUrl: item.url ?? task.targetUrl,
-        crawlRunId: runId
+        crawlRunId: runId,
+        linkAnalysis
       });
       await this.prisma.crawlResult.update({
         where: { id: created.id },
@@ -877,7 +988,8 @@ export class CrawlService {
         metadata: (result.metadata as Record<string, unknown> | null) ?? doc?.metadata ?? null,
         markdownWithCitations: this.ensureString(doc?.markdownWithCitations),
         referencesMarkdown: this.ensureString(doc?.referencesMarkdown),
-        fitMarkdown: this.ensureString(doc?.fitMarkdown)
+        fitMarkdown: this.ensureString(doc?.fitMarkdown),
+        linkAnalysis: (doc?.linkAnalysis as CrawlLinkAnalysis | undefined) ?? null
       };
     });
   }
@@ -992,6 +1104,26 @@ export class CrawlService {
     return ["timeout", "temporarily", "rate limit", "connection reset", "connection refused"].some((needle) =>
       normalized.includes(needle)
     );
+  }
+
+  private extractLinkAnalysisFromResult(item: Crawl4aiArticle): CrawlLinkAnalysis | undefined {
+    const direct = buildLinkAnalysis(item.links);
+    if (direct) {
+      return direct;
+    }
+    if (!item.metadata || typeof item.metadata !== "object") {
+      return undefined;
+    }
+    const metadata = item.metadata as Record<string, unknown>;
+    const candidateKeys = ["links", "link_summary", "linkSummary", "linkAnalysis"];
+    for (const key of candidateKeys) {
+      const entry = metadata[key];
+      const analysis = buildLinkAnalysis(entry);
+      if (analysis) {
+        return analysis;
+      }
+    }
+    return undefined;
   }
 
   private pickNumber(source: Record<string, unknown> | undefined, keys: string[]): number | undefined {

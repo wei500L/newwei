@@ -71,6 +71,20 @@ interface CreateCrawlTaskFormValues {
     type?: string;
     threshold?: number;
   };
+  scoreLinks?: boolean;
+  linkPreview?: {
+    includeInternal?: boolean;
+    includeExternal?: boolean;
+    includeSocial?: boolean;
+    maxLinks?: number;
+    concurrency?: number;
+    timeoutSeconds?: number;
+    query?: string;
+    scoreThreshold?: number;
+    verbose?: boolean;
+    includePatterns?: string[];
+    excludePatterns?: string[];
+  };
 }
 
 interface MultiUrlStrategyFormValue {
@@ -102,6 +116,8 @@ export function CrawlTasksView() {
   const proxyUrlActive = Boolean(proxyUrlValue?.trim().length);
   const proxyObjectActive = Boolean(proxyConfigValue?.server?.trim().length);
   const markdownFilterType = Form.useWatch(["markdownFilter", "type"], form);
+  const scoreLinksValue = Form.useWatch("scoreLinks", form);
+  const linkPreviewDisabled = !scoreLinksValue;
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
     pageSize: 10
@@ -299,6 +315,49 @@ export function CrawlTasksView() {
     return payload;
   };
 
+  const sanitizeLinkPreview = (preview?: CreateCrawlTaskFormValues["linkPreview"]) => {
+    if (!preview) {
+      return undefined;
+    }
+    const payload: Record<string, unknown> = {};
+    if (typeof preview.includeInternal === "boolean") {
+      payload.includeInternal = preview.includeInternal;
+    }
+    if (typeof preview.includeExternal === "boolean") {
+      payload.includeExternal = preview.includeExternal;
+    }
+    if (typeof preview.includeSocial === "boolean") {
+      payload.includeSocial = preview.includeSocial;
+    }
+    if (typeof preview.maxLinks === "number") {
+      payload.maxLinks = preview.maxLinks;
+    }
+    if (typeof preview.concurrency === "number") {
+      payload.concurrency = preview.concurrency;
+    }
+    if (typeof preview.timeoutSeconds === "number") {
+      payload.timeoutSeconds = preview.timeoutSeconds;
+    }
+    if (typeof preview.query === "string" && preview.query.trim().length > 0) {
+      payload.query = preview.query.trim();
+    }
+    if (typeof preview.scoreThreshold === "number") {
+      payload.scoreThreshold = preview.scoreThreshold;
+    }
+    if (typeof preview.verbose === "boolean") {
+      payload.verbose = preview.verbose;
+    }
+    const includePatterns = sanitizeStringList(preview.includePatterns);
+    if (includePatterns?.length) {
+      payload.includePatterns = includePatterns;
+    }
+    const excludePatterns = sanitizeStringList(preview.excludePatterns);
+    if (excludePatterns?.length) {
+      payload.excludePatterns = excludePatterns;
+    }
+    return Object.keys(payload).length ? payload : undefined;
+  };
+
   const handleCreate = async (values: CreateCrawlTaskFormValues) => {
     const [from, to] = values.timeRange ?? [];
     const proxyConfigInput = values.proxyConfig;
@@ -315,6 +374,7 @@ export function CrawlTasksView() {
     const multiUrlConfigs = sanitizeMultiUrlConfigs(values.multiUrlConfigs);
     const markdownOptions = sanitizeMarkdownOptions(values.markdownOptions);
     const markdownFilter = sanitizeMarkdownFilter(values.markdownFilter);
+    const linkPreview = sanitizeLinkPreview(values.linkPreview);
     try {
       await createTask({
         variables: {
@@ -345,7 +405,9 @@ export function CrawlTasksView() {
               additionalUrls: additionalUrls && additionalUrls.length ? additionalUrls : undefined,
               multiUrlConfigs,
               markdownOptions: markdownOptions ?? undefined,
-              markdownFilter: markdownFilter ?? undefined
+              markdownFilter: markdownFilter ?? undefined,
+              scoreLinks: typeof values.scoreLinks === "boolean" ? values.scoreLinks : undefined,
+              linkPreview: linkPreview ?? undefined
             }
           }
         }
@@ -587,6 +649,69 @@ export function CrawlTasksView() {
           <Form.Item label="Proxy password" name={["proxyConfig", "password"]}>
             <Input.Password placeholder="Optional password" disabled={proxyUrlActive} />
           </Form.Item>
+          <Card size="small" title="Link analysis" style={{ marginBottom: 16 }}>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              Enable Crawl4AI LinkPreviewConfig to pull internal/external links with quality scores.
+            </Typography.Paragraph>
+            <Form.Item
+              label="Score links"
+              name="scoreLinks"
+              valuePropName="checked"
+              extra="Turns on intrinsic/contextual scoring for extracted links."
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item label="Include internal links" name={["linkPreview", "includeInternal"]} valuePropName="checked">
+              <Switch disabled={linkPreviewDisabled} />
+            </Form.Item>
+            <Form.Item label="Include external links" name={["linkPreview", "includeExternal"]} valuePropName="checked">
+              <Switch disabled={linkPreviewDisabled} />
+            </Form.Item>
+            <Form.Item label="Include social media" name={["linkPreview", "includeSocial"]} valuePropName="checked">
+              <Switch disabled={linkPreviewDisabled} />
+            </Form.Item>
+            <Form.Item label="Max links" name={["linkPreview", "maxLinks"]}>
+              <InputNumber min={1} max={500} style={{ width: "100%" }} placeholder="200" disabled={linkPreviewDisabled} />
+            </Form.Item>
+            <Form.Item label="Concurrency" name={["linkPreview", "concurrency"]}>
+              <InputNumber min={1} max={50} style={{ width: "100%" }} placeholder="10" disabled={linkPreviewDisabled} />
+            </Form.Item>
+            <Form.Item label="Timeout (s)" name={["linkPreview", "timeoutSeconds"]}>
+              <InputNumber min={1} max={60} style={{ width: "100%" }} placeholder="5" disabled={linkPreviewDisabled} />
+            </Form.Item>
+            <Form.Item label="Context query" name={["linkPreview", "query"]}>
+              <Input placeholder="machine learning tutorials" disabled={linkPreviewDisabled} />
+            </Form.Item>
+            <Form.Item label="Score threshold" name={["linkPreview", "scoreThreshold"]}>
+              <InputNumber
+                min={0}
+                max={1}
+                step={0.05}
+                style={{ width: "100%" }}
+                placeholder="0.3"
+                disabled={linkPreviewDisabled}
+              />
+            </Form.Item>
+            <Form.Item label="Verbose logging" name={["linkPreview", "verbose"]} valuePropName="checked">
+              <Switch disabled={linkPreviewDisabled} />
+            </Form.Item>
+            <Form.Item label="Include patterns" name={["linkPreview", "includePatterns"]}>
+              <Select
+                mode="tags"
+                tokenSeparators={[",", " "]}
+                placeholder="*/docs/*"
+                disabled={linkPreviewDisabled}
+              />
+            </Form.Item>
+            <Form.Item label="Exclude patterns" name={["linkPreview", "excludePatterns"]}>
+              <Select
+                mode="tags"
+                tokenSeparators={[",", " "]}
+                placeholder="*/login*"
+                disabled={linkPreviewDisabled}
+              />
+            </Form.Item>
+          </Card>
           <Form.List name="multiUrlConfigs">
             {(fields, { add, remove }) => (
               <Space direction="vertical" style={{ width: "100%" }} size="large">

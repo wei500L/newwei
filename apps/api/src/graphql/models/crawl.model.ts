@@ -39,6 +39,84 @@ export class CrawlResultModel {
 
   @Field({ nullable: true })
   fitMarkdown?: string | null;
+
+  @Field(() => CrawlLinkAnalysisModel, { nullable: true })
+  linkAnalysis?: CrawlLinkAnalysisModel | null;
+}
+
+@ObjectType()
+export class CrawlLinkModel {
+  @Field()
+  href!: string;
+
+  @Field({ nullable: true })
+  text?: string | null;
+
+  @Field({ nullable: true })
+  title?: string | null;
+
+  @Field({ nullable: true })
+  baseDomain?: string | null;
+
+  @Field({ nullable: true })
+  rel?: string | null;
+
+  @Field({ nullable: true })
+  type?: string | null;
+
+  @Field(() => Number, { nullable: true })
+  intrinsicScore?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  contextualScore?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  totalScore?: number | null;
+}
+
+@ObjectType()
+export class CrawlLinkStatsModel {
+  @Field(() => Number)
+  totalLinks!: number;
+
+  @Field(() => Number)
+  internalLinks!: number;
+
+  @Field(() => Number)
+  externalLinks!: number;
+
+  @Field(() => Number, { nullable: true })
+  averageIntrinsicScore?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  highQualityLinks?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  lowQualityLinks?: number | null;
+}
+
+@ObjectType()
+export class CrawlLinkBucketModel {
+  @Field()
+  kind!: string;
+
+  @Field(() => [CrawlLinkModel])
+  links!: CrawlLinkModel[];
+}
+
+@ObjectType()
+export class CrawlLinkAnalysisModel {
+  @Field(() => CrawlLinkStatsModel)
+  stats!: CrawlLinkStatsModel;
+
+  @Field(() => [CrawlLinkBucketModel])
+  buckets!: CrawlLinkBucketModel[];
+
+  @Field(() => [CrawlLinkModel])
+  topLinks!: CrawlLinkModel[];
+
+  @Field(() => [CrawlLinkModel])
+  lowQualityLinks!: CrawlLinkModel[];
 }
 
 @ObjectType()

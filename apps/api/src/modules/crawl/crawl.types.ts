@@ -67,6 +67,53 @@ export interface CrawlMarkdownFilter {
   threshold?: number;
 }
 
+export interface CrawlLinkPreviewOptions {
+  includeInternal?: boolean;
+  includeExternal?: boolean;
+  includeSocial?: boolean;
+  maxLinks?: number;
+  concurrency?: number;
+  timeoutSeconds?: number;
+  query?: string;
+  scoreThreshold?: number;
+  verbose?: boolean;
+  includePatterns?: string[];
+  excludePatterns?: string[];
+}
+
+export interface CrawlLinkAnalysisLink {
+  href: string;
+  text?: string;
+  title?: string;
+  baseDomain?: string;
+  rel?: string;
+  type?: string;
+  intrinsicScore?: number;
+  contextualScore?: number;
+  totalScore?: number;
+}
+
+export interface CrawlLinkAnalysisStats {
+  totalLinks: number;
+  internalLinks: number;
+  externalLinks: number;
+  averageIntrinsicScore?: number;
+  highQualityLinks?: number;
+  lowQualityLinks?: number;
+}
+
+export interface CrawlLinkAnalysisBucket {
+  kind: string;
+  links: CrawlLinkAnalysisLink[];
+}
+
+export interface CrawlLinkAnalysis {
+  stats: CrawlLinkAnalysisStats;
+  buckets: CrawlLinkAnalysisBucket[];
+  topLinks: CrawlLinkAnalysisLink[];
+  lowQualityLinks: CrawlLinkAnalysisLink[];
+}
+
 export interface CrawlTaskOptions {
   includeImages?: boolean;
   onlyMainContent?: boolean;
@@ -84,6 +131,8 @@ export interface CrawlTaskOptions {
   multiUrlConfigs?: CrawlMultiUrlConfig[];
   markdownOptions?: CrawlMarkdownOptions;
   markdownFilter?: CrawlMarkdownFilter;
+  scoreLinks?: boolean;
+  linkPreview?: CrawlLinkPreviewOptions;
 }
 
 export interface CrawlMemoryStats {

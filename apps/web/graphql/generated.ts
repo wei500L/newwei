@@ -28,6 +28,20 @@ export type CrawlMarkdownFilterInput = {
   threshold?: InputMaybe<number>;
 };
 
+export type CrawlLinkPreviewInput = {
+  includeInternal?: InputMaybe<boolean>;
+  includeExternal?: InputMaybe<boolean>;
+  includeSocial?: InputMaybe<boolean>;
+  maxLinks?: InputMaybe<number>;
+  concurrency?: InputMaybe<number>;
+  timeoutSeconds?: InputMaybe<number>;
+  query?: InputMaybe<string>;
+  scoreThreshold?: InputMaybe<number>;
+  verbose?: InputMaybe<boolean>;
+  includePatterns?: InputMaybe<Array<string>>;
+  excludePatterns?: InputMaybe<Array<string>>;
+};
+
 export type CrawlUrlMatcherInput = {
   matchMode?: InputMaybe<string>;
   patterns?: InputMaybe<Array<string>>;
@@ -72,6 +86,8 @@ export type CrawlOptionsInput = {
   multiUrlConfigs?: InputMaybe<Array<CrawlMultiUrlStrategyInput>>;
   markdownOptions?: InputMaybe<CrawlMarkdownOptionsInput>;
   markdownFilter?: InputMaybe<CrawlMarkdownFilterInput>;
+  scoreLinks?: InputMaybe<boolean>;
+  linkPreview?: InputMaybe<CrawlLinkPreviewInput>;
 };
 
 export type CreateCrawlTaskInput = {
@@ -301,6 +317,46 @@ export type CrawlTaskQuery = {
       referencesMarkdown?: string | null;
       fitMarkdown?: string | null;
       metadata?: string | null;
+      linkAnalysis?: {
+        stats: {
+          totalLinks: number;
+          internalLinks: number;
+          externalLinks: number;
+          averageIntrinsicScore?: number | null;
+          highQualityLinks?: number | null;
+          lowQualityLinks?: number | null;
+        };
+        topLinks: Array<{
+          href: string;
+          text?: string | null;
+          title?: string | null;
+          baseDomain?: string | null;
+          type?: string | null;
+          intrinsicScore?: number | null;
+          contextualScore?: number | null;
+          totalScore?: number | null;
+        }>;
+        lowQualityLinks: Array<{
+          href: string;
+          text?: string | null;
+          title?: string | null;
+          baseDomain?: string | null;
+          intrinsicScore?: number | null;
+        }>;
+        buckets: Array<{
+          kind: string;
+          links: Array<{
+            href: string;
+            text?: string | null;
+            title?: string | null;
+            baseDomain?: string | null;
+            type?: string | null;
+            intrinsicScore?: number | null;
+            contextualScore?: number | null;
+            totalScore?: number | null;
+          }>;
+        }>;
+      } | null;
     }> | null;
     memoryStats?: {
       serverMemoryMb?: number | null;
@@ -468,6 +524,46 @@ export const CrawlTaskDocument = gql`
         referencesMarkdown
         fitMarkdown
         metadata
+        linkAnalysis {
+          stats {
+            totalLinks
+            internalLinks
+            externalLinks
+            averageIntrinsicScore
+            highQualityLinks
+            lowQualityLinks
+          }
+          topLinks {
+            href
+            text
+            title
+            baseDomain
+            type
+            intrinsicScore
+            contextualScore
+            totalScore
+          }
+          lowQualityLinks {
+            href
+            text
+            title
+            baseDomain
+            intrinsicScore
+          }
+          buckets {
+            kind
+            links {
+              href
+              text
+              title
+              baseDomain
+              type
+              intrinsicScore
+              contextualScore
+              totalScore
+            }
+          }
+        }
       }
       memoryStats {
         serverMemoryMb
