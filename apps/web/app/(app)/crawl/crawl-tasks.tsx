@@ -53,6 +53,11 @@ interface CreateCrawlTaskFormValues {
   enableStealthMode?: boolean;
   simulateUser?: boolean;
   overrideNavigator?: boolean;
+  jsCode?: string[];
+  jsOnly?: boolean;
+  waitForSelector?: string;
+  waitForScript?: string;
+  waitForTimeoutMs?: number;
   proxyUrl?: string;
   proxyConfig?: {
     server?: string;
@@ -102,6 +107,11 @@ interface MultiUrlStrategyFormValue {
     extractLinks?: boolean;
     simulateUser?: boolean;
     overrideNavigator?: boolean;
+    jsCode?: string[];
+    jsOnly?: boolean;
+    waitForSelector?: string;
+    waitForScript?: string;
+    waitForTimeoutMs?: number;
   };
 }
 
@@ -224,6 +234,11 @@ export function CrawlTasksView() {
       ?.map((value) => value?.trim())
       .filter((value): value is string => Boolean(value && value.length > 0));
 
+  const sanitizeJsCodeList = (list?: string[]) => {
+    const sanitized = sanitizeStringList(list);
+    return sanitized && sanitized.length ? sanitized.slice(0, 10) : undefined;
+  };
+
   const sanitizeStrategyOptions = (options?: MultiUrlStrategyFormValue["options"]) => {
     if (!options) {
       return undefined;
@@ -249,6 +264,24 @@ export function CrawlTasksView() {
     }
     if (typeof options.overrideNavigator === "boolean") {
       cleaned.overrideNavigator = options.overrideNavigator;
+    }
+    const jsCode = sanitizeJsCodeList(options.jsCode);
+    if (jsCode) {
+      cleaned.jsCode = jsCode;
+    }
+    if (typeof options.jsOnly === "boolean") {
+      cleaned.jsOnly = options.jsOnly;
+    }
+    const waitForSelector = options.waitForSelector?.trim();
+    if (waitForSelector) {
+      cleaned.waitForSelector = waitForSelector;
+    }
+    const waitForScript = options.waitForScript?.trim();
+    if (waitForScript) {
+      cleaned.waitForScript = waitForScript;
+    }
+    if (typeof options.waitForTimeoutMs === "number") {
+      cleaned.waitForTimeoutMs = options.waitForTimeoutMs;
     }
     return Object.keys(cleaned).length ? cleaned : undefined;
   };
@@ -375,6 +408,9 @@ export function CrawlTasksView() {
     const markdownOptions = sanitizeMarkdownOptions(values.markdownOptions);
     const markdownFilter = sanitizeMarkdownFilter(values.markdownFilter);
     const linkPreview = sanitizeLinkPreview(values.linkPreview);
+    const jsCode = sanitizeJsCodeList(values.jsCode);
+    const waitForSelector = values.waitForSelector?.trim();
+    const waitForScript = values.waitForScript?.trim();
     try {
       await createTask({
         variables: {
@@ -400,6 +436,11 @@ export function CrawlTasksView() {
               enableStealthMode: values.enableStealthMode ?? undefined,
               simulateUser: values.simulateUser ?? undefined,
               overrideNavigator: values.overrideNavigator ?? undefined,
+              jsCode: jsCode ?? undefined,
+              jsOnly: typeof values.jsOnly === "boolean" ? values.jsOnly : undefined,
+              waitForSelector: waitForSelector ? waitForSelector : undefined,
+              waitForScript: waitForScript ? waitForScript : undefined,
+              waitForTimeoutMs: values.waitForTimeoutMs ?? undefined,
               proxyUrl: proxyUrl ? proxyUrl : undefined,
               proxyConfig: proxyConfig ?? undefined,
               additionalUrls: additionalUrls && additionalUrls.length ? additionalUrls : undefined,
@@ -564,6 +605,84 @@ export function CrawlTasksView() {
           >
             <Switch />
           </Form.Item>
+          <Card
+            title="Dynamic crawling (JS + wait)"
+            size="small"
+            style={{ marginBottom: 16 }}
+            extra={
+              <Typography.Link
+                href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/advanced/session-management.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Docs
+              </Typography.Link>
+            }
+          >
+            <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+              Inject custom JavaScript (e.g., click & scroll) and block until a selector or async JS condition
+              resolves before Crawl4AI captures the HTML snapshot.
+            </Typography.Paragraph>
+            <Form.List name="jsCode">
+              {(fields, { add, remove }) => (
+                <Space direction="vertical" style={{ width: "100%" }}>
+                  {fields.map((field, index) => (
+                    <Space key={field.key} align="start">
+                      <Form.Item
+                        {...field}
+                        label={`JS step ${index + 1}`}
+                        style={{ flex: 1 }}
+                        rules={[{ required: true, message: "Provide a JS snippet" }]}
+                      >
+                        <Input.TextArea
+                          rows={3}
+                          placeholder="document.querySelector('.load-more')?.click();"
+                        />
+                      </Form.Item>
+                      <Button
+                        type="link"
+                        danger
+                        icon={<MinusCircleOutlined />}
+                        onClick={() => remove(field.name)}
+                      />
+                    </Space>
+                  ))}
+                  <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />} block>
+                    Add JS step
+                  </Button>
+                </Space>
+              )}
+            </Form.List>
+            <Form.Item
+              label="JS-only navigation"
+              name="jsOnly"
+              valuePropName="checked"
+              extra="Use when only JS mutations (no fresh navigation) are required."
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              label="Wait for selector"
+              name="waitForSelector"
+              extra="Automatically prefixed with css: when sent to Crawl4AI."
+            >
+              <Input placeholder=".article-list .item:nth-child(10)" />
+            </Form.Item>
+            <Form.Item
+              label="Wait for JS expression"
+              name="waitForScript"
+              extra="Provide the body of an async () => boolean function; we add js: for you."
+            >
+              <Input.TextArea rows={3} placeholder="() => window.dataLoaded === true" />
+            </Form.Item>
+            <Form.Item
+              label="Wait timeout (ms)"
+              name="waitForTimeoutMs"
+              extra="Defaults to Crawl4AI's internal timeout if left blank."
+            >
+              <InputNumber min={500} max={60000} style={{ width: "100%" }} placeholder="10000" />
+            </Form.Item>
+          </Card>
           <Form.Item
             label="Additional URLs"
             name="additionalUrls"
@@ -842,6 +961,54 @@ export function CrawlTasksView() {
                       valuePropName="checked"
                     >
                       <Switch />
+                    </Form.Item>
+                    <Typography.Text strong style={{ marginBottom: 8, display: "block" }}>
+                      Dynamic crawling overrides
+                    </Typography.Text>
+                    <Form.List name={[field.name, "options", "jsCode"]}>
+                      {(jsFields, { add: addJs, remove: removeJs }) => (
+                        <Space direction="vertical" style={{ width: "100%" }}>
+                          {jsFields.map((jsField, jsIndex) => (
+                            <Space key={jsField.key} align="start">
+                              <Form.Item
+                                {...jsField}
+                                label={`JS step ${jsIndex + 1}`}
+                                style={{ flex: 1 }}
+                              >
+                                <Input.TextArea
+                                  rows={2}
+                                  placeholder="document.querySelector('.load-more')?.click();"
+                                />
+                              </Form.Item>
+                              <Button
+                                type="link"
+                                danger
+                                icon={<MinusCircleOutlined />}
+                                onClick={() => removeJs(jsField.name)}
+                              />
+                            </Space>
+                          ))}
+                          <Button type="dashed" icon={<PlusOutlined />} onClick={() => addJs()}>
+                            Add JS step
+                          </Button>
+                        </Space>
+                      )}
+                    </Form.List>
+                    <Form.Item
+                      label="JS-only navigation"
+                      name={[field.name, "options", "jsOnly"]}
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item label="Wait for selector" name={[field.name, "options", "waitForSelector"]}>
+                      <Input placeholder=".feed > article:last-child" />
+                    </Form.Item>
+                    <Form.Item label="Wait for JS expression" name={[field.name, "options", "waitForScript"]}>
+                      <Input.TextArea rows={2} placeholder="() => document.querySelectorAll(...).length > 20" />
+                    </Form.Item>
+                    <Form.Item label="Wait timeout (ms)" name={[field.name, "options", "waitForTimeoutMs"]}>
+                      <InputNumber min={500} max={60000} style={{ width: "100%" }} placeholder="10000" />
                     </Form.Item>
                   </Card>
                 ))}

@@ -51,6 +51,21 @@ export class CrawlStrategyOverridesInput {
   @Field(() => Boolean, { nullable: true })
   overrideNavigator?: boolean;
 
+  @Field(() => [String], { nullable: true })
+  jsCode?: string[];
+
+  @Field(() => Boolean, { nullable: true })
+  jsOnly?: boolean;
+
+  @Field({ nullable: true })
+  waitForSelector?: string;
+
+  @Field({ nullable: true })
+  waitForScript?: string;
+
+  @Field(() => Int, { nullable: true })
+  waitForTimeoutMs?: number;
+
   @Field(() => String, { nullable: true })
   cacheMode?: string;
 }
@@ -158,6 +173,21 @@ export class CrawlOptionsInput {
 
   @Field(() => Boolean, { nullable: true })
   overrideNavigator?: boolean;
+
+  @Field(() => [String], { nullable: true })
+  jsCode?: string[];
+
+  @Field(() => Boolean, { nullable: true })
+  jsOnly?: boolean;
+
+  @Field({ nullable: true })
+  waitForSelector?: string;
+
+  @Field({ nullable: true })
+  waitForScript?: string;
+
+  @Field(() => Int, { nullable: true })
+  waitForTimeoutMs?: number;
 
   @Field({ nullable: true })
   proxyUrl?: string;

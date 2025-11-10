@@ -97,6 +97,7 @@ infra/
 - 参考 crawl4ai 官方 *Link Analysis: Extract and analyze all links for detailed data exploration*（`docs/md_v2/core/link-media.md`、`docs/blog/release-v0.7.0.md`），API 现在会根据任务中的 LinkPreviewConfig 为 Crawl4AI 注入 `link_preview_config` + `score_links`，抓取完成后将链接得分、分类统计写入 Mongo。控制台的创建侧栏提供 LinkPreviewConfig 的完整参数（include/exclude patterns、最大链接数、BM25 query、score threshold 等），任务详情页也会聚合展示顶级链接/待关注链接、桶计数和平均内在得分，辅助数据探索。
 - 参考 crawl4ai README 关于 *Memory Monitoring* 的 `MemoryMonitor` 实践，我们从 `/crawl` 响应中读取 `serverMemoryMb/peakMemoryMb/memoryEfficiency`，在后台日志与控制台详情页展示该指标，帮助排查 OOM 或批量任务的资源瓶颈。
 - 参考 crawl4ai 官方 “Error Handling: Robust error management for seamless execution” 实践（`docs/md_v2/assets/llm.txt/txt/http_based_crawler_strategy.txt` 与 `docs/md_v2/assets/llm.txt/txt/multi_urls_crawling.txt`），API 现会解析 `success/status_code/error_message` 字段，将失败 URL 收集到队列日志，并标记 429/503/timeout 等可重试错误，方便在控制台快速排查与重试部分失败的抓取任务。
+- 参考 crawl4ai 官方 *Dynamic Crawling: Execute JS and wait for async or sync for dynamic content extraction* 指南（`docs/md_v2/advanced/session-management.md` 与 `docs/md_v2/assets/llm.txt/txt/config_objects.txt`），API 与控制台现支持为基础任务或 Multi-URL 策略注入 `js_code/js_only/wait_for/wait_for_timeout`。可在抓取前执行自定义 JavaScript（滚动、点击“加载更多”）并等待 CSS 选择器或 JS 条件达成后再返回 Markdown，解决瀑布流、懒加载页面内容缺失的问题。
 
 ## 测试
 

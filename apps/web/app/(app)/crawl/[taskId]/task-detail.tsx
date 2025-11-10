@@ -126,6 +126,37 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     return `${markdownFilter.type}${threshold}`;
   }, [markdownFilter]);
 
+  const dynamicJsSteps = useMemo(() => {
+    if (!config) {
+      return [] as string[];
+    }
+    if (Array.isArray(config.jsCode)) {
+      return (config.jsCode as string[]).filter((entry) => typeof entry === "string");
+    }
+    if (typeof config.jsCode === "string") {
+      const trimmed = config.jsCode.trim();
+      return trimmed ? [trimmed] : [];
+    }
+    return [];
+  }, [config]);
+
+  const waitCondition = useMemo(() => {
+    if (!config) {
+      return null;
+    }
+    if (typeof config.waitForScript === "string" && config.waitForScript.trim().length) {
+      return `js:${config.waitForScript.trim()}`;
+    }
+    if (typeof config.waitForSelector === "string" && config.waitForSelector.trim().length) {
+      return config.waitForSelector.trim();
+    }
+    return null;
+  }, [config]);
+
+  const waitTimeoutMs = typeof config?.waitForTimeoutMs === "number" ? config.waitForTimeoutMs : null;
+  const jsOnlyMode = Boolean(config?.jsOnly);
+  const shortenScript = (value: string) => (value.length > 160 ? `${value.slice(0, 157)}…` : value);
+
   const linkOverview = useMemo(() => {
     const analyses =
       task?.results
@@ -314,6 +345,26 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       </Descriptions.Item>
       <Descriptions.Item label="Override navigator">
         {config?.overrideNavigator ? "Enabled" : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="JS-only mode">{jsOnlyMode ? "Enabled" : "Disabled"}</Descriptions.Item>
+      <Descriptions.Item label="JS steps">
+        {dynamicJsSteps.length ? (
+          <Space direction="vertical" size={0}>
+            {dynamicJsSteps.map((snippet, index) => (
+              <Typography.Text key={`js-${index}`} style={{ fontFamily: "monospace" }}>
+                {shortenScript(snippet)}
+              </Typography.Text>
+            ))}
+          </Space>
+        ) : (
+          "—"
+        )}
+      </Descriptions.Item>
+      <Descriptions.Item label="Wait condition">
+        {waitCondition ? shortenScript(waitCondition) : "—"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Wait timeout">
+        {waitTimeoutMs ? `${waitTimeoutMs} ms` : "Default"}
       </Descriptions.Item>
       <Descriptions.Item label="Proxy route">{proxySummary}</Descriptions.Item>
       <Descriptions.Item label="Additional URLs">

@@ -75,6 +75,33 @@ export class CrawlOptionsDto {
   overrideNavigator?: boolean;
 
   @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  jsCode?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  jsOnly?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  waitForSelector?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  waitForScript?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(500)
+  @Max(60000)
+  waitForTimeoutMs?: number;
+
+  @IsOptional()
   @IsString()
   @MaxLength(512)
   proxyUrl?: string;
@@ -154,6 +181,33 @@ export class CrawlStrategyOverridesDto {
   @IsOptional()
   @IsBoolean()
   overrideNavigator?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  jsCode?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  jsOnly?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  waitForSelector?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  waitForScript?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(500)
+  @Max(60000)
+  waitForTimeoutMs?: number;
 
   @IsOptional()
   @IsIn(["bypass", "prefer_cache", "force_cache"])

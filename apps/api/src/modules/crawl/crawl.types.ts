@@ -46,6 +46,11 @@ export interface CrawlStrategyOverrides {
   extractLinks?: boolean;
   simulateUser?: boolean;
   overrideNavigator?: boolean;
+  jsCode?: string[];
+  jsOnly?: boolean;
+  waitForSelector?: string;
+  waitForScript?: string;
+  waitForTimeoutMs?: number;
 }
 
 export interface CrawlMultiUrlConfig {
@@ -125,6 +130,11 @@ export interface CrawlTaskOptions {
   enableStealthMode?: boolean;
   simulateUser?: boolean;
   overrideNavigator?: boolean;
+  jsCode?: string[];
+  jsOnly?: boolean;
+  waitForSelector?: string;
+  waitForScript?: string;
+  waitForTimeoutMs?: number;
   proxyUrl?: string;
   proxyConfig?: CrawlProxyConfig;
   additionalUrls?: string[];

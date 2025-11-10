@@ -54,6 +54,11 @@ export type CrawlStrategyOverridesInput = {
   extractLinks?: InputMaybe<boolean>;
   simulateUser?: InputMaybe<boolean>;
   overrideNavigator?: InputMaybe<boolean>;
+  jsCode?: InputMaybe<Array<string>>;
+  jsOnly?: InputMaybe<boolean>;
+  waitForSelector?: InputMaybe<string>;
+  waitForScript?: InputMaybe<string>;
+  waitForTimeoutMs?: InputMaybe<number>;
   cacheMode?: InputMaybe<string>;
 };
 
@@ -80,6 +85,11 @@ export type CrawlOptionsInput = {
   enableStealthMode?: InputMaybe<boolean>;
   simulateUser?: InputMaybe<boolean>;
   overrideNavigator?: InputMaybe<boolean>;
+  jsCode?: InputMaybe<Array<string>>;
+  jsOnly?: InputMaybe<boolean>;
+  waitForSelector?: InputMaybe<string>;
+  waitForScript?: InputMaybe<string>;
+  waitForTimeoutMs?: InputMaybe<number>;
   proxyUrl?: InputMaybe<string>;
   proxyConfig?: InputMaybe<CrawlProxyConfigInput>;
   additionalUrls?: InputMaybe<Array<string>>;
