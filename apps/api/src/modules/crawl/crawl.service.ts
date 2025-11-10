@@ -463,6 +463,11 @@ export class CrawlService {
       enableStealthMode: typeof value.enableStealthMode === "boolean" ? value.enableStealthMode : undefined,
       simulateUser: typeof value.simulateUser === "boolean" ? value.simulateUser : undefined,
       overrideNavigator: typeof value.overrideNavigator === "boolean" ? value.overrideNavigator : undefined,
+      jsCode: this.parseStringArray(value.jsCode),
+      jsOnly: typeof value.jsOnly === "boolean" ? value.jsOnly : undefined,
+      waitForSelector: typeof value.waitForSelector === "string" ? value.waitForSelector : undefined,
+      waitForScript: typeof value.waitForScript === "string" ? value.waitForScript : undefined,
+      waitForTimeoutMs: typeof value.waitForTimeoutMs === "number" ? value.waitForTimeoutMs : undefined,
       proxyUrl: typeof value.proxyUrl === "string" ? value.proxyUrl : undefined,
       proxyConfig: this.parseProxyConfig(value.proxyConfig),
       additionalUrls: this.parseUrlArray(value.additionalUrls),
@@ -497,6 +502,10 @@ export class CrawlService {
     const markdownFilter = this.normalizeMarkdownFilter(options?.markdownFilter);
     const linkPreview = this.normalizeLinkPreviewOptions(options?.linkPreview);
     const scoreLinks = options?.scoreLinks ?? Boolean(linkPreview);
+    const jsCode = this.normalizeScriptList(options?.jsCode);
+    const waitForSelector = this.normalizeWaitForSelector(options?.waitForSelector);
+    const waitForScript = this.normalizeWaitForScript(options?.waitForScript);
+    const waitForTimeoutMs = this.normalizeWaitForTimeout(options?.waitForTimeoutMs);
 
     return {
       includeImages: options?.includeImages ?? false,
@@ -509,6 +518,11 @@ export class CrawlService {
       enableStealthMode: options?.enableStealthMode ?? false,
       simulateUser,
       overrideNavigator,
+      jsCode,
+      jsOnly: options?.jsOnly ?? false,
+      waitForSelector,
+      waitForScript,
+      waitForTimeoutMs,
       proxyConfig,
       proxyUrl,
       additionalUrls,
@@ -656,6 +670,25 @@ export class CrawlService {
     if (typeof overrides.overrideNavigator === "boolean") {
       normalized.overrideNavigator = overrides.overrideNavigator;
     }
+    const jsCode = this.normalizeScriptList(overrides.jsCode);
+    if (jsCode) {
+      normalized.jsCode = jsCode;
+    }
+    if (typeof overrides.jsOnly === "boolean") {
+      normalized.jsOnly = overrides.jsOnly;
+    }
+    const waitForSelector = this.normalizeWaitForSelector(overrides.waitForSelector);
+    if (waitForSelector) {
+      normalized.waitForSelector = waitForSelector;
+    }
+    const waitForScript = this.normalizeWaitForScript(overrides.waitForScript);
+    if (waitForScript) {
+      normalized.waitForScript = waitForScript;
+    }
+    const waitForTimeoutMs = this.normalizeWaitForTimeout(overrides.waitForTimeoutMs);
+    if (waitForTimeoutMs) {
+      normalized.waitForTimeoutMs = waitForTimeoutMs;
+    }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
@@ -754,6 +787,18 @@ export class CrawlService {
     );
   }
 
+  private parseStringArray(value: unknown): string[] | undefined {
+    if (typeof value === "string") {
+      return this.normalizeScriptList([value]);
+    }
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    return this.normalizeScriptList(
+      value.map((entry) => (typeof entry === "string" ? entry : "")).filter((entry): entry is string => Boolean(entry))
+    );
+  }
+
   private parseMultiUrlConfigs(value: unknown): CrawlMultiUrlConfig[] | undefined {
     if (!Array.isArray(value)) {
       return undefined;
@@ -811,6 +856,48 @@ export class CrawlService {
       }
     }
     return unique;
+  }
+
+  private normalizeScriptList(entries?: string[] | null): string[] | undefined {
+    if (!entries || entries.length === 0) {
+      return undefined;
+    }
+    const normalized = entries
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0);
+    if (normalized.length === 0) {
+      return undefined;
+    }
+    return normalized.slice(0, 10);
+  }
+
+  private normalizeWaitForSelector(selector?: string | null): string | undefined {
+    if (!selector) {
+      return undefined;
+    }
+    const trimmed = selector.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    return trimmed.slice(0, 1024);
+  }
+
+  private normalizeWaitForScript(script?: string | null): string | undefined {
+    if (!script) {
+      return undefined;
+    }
+    const trimmed = script.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    return trimmed.slice(0, 4000);
+  }
+
+  private normalizeWaitForTimeout(value?: number | null): number | undefined {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    return Math.max(500, Math.min(60000, Math.round(value)));
   }
 
   private parseLinkPreviewOptions(value: unknown): CrawlLinkPreviewOptions | undefined {

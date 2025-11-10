@@ -162,7 +162,11 @@ export class Crawl4aiClient {
         magic: options.enableStealthMode ?? undefined,
         markdown_generator: markdownGenerator,
         score_links: shouldScoreLinks ? true : undefined,
-        link_preview_config: linkPreviewConfig
+        link_preview_config: linkPreviewConfig,
+        js_code: this.normalizeJsCode(options.jsCode),
+        js_only: options.jsOnly ? true : undefined,
+        wait_for: this.buildWaitFor(options),
+        wait_for_timeout: this.normalizeWaitForTimeout(options.waitForTimeoutMs)
       })
     };
     return {
@@ -250,6 +254,53 @@ export class Crawl4aiClient {
     };
   }
 
+  private normalizeJsCode(jsCode?: string[]) {
+    if (!jsCode || jsCode.length === 0) {
+      return undefined;
+    }
+    const normalized = jsCode
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0);
+    if (normalized.length === 0) {
+      return undefined;
+    }
+    return normalized.length === 1 ? normalized[0] : normalized;
+  }
+
+  private buildWaitFor(
+    source?: {
+      waitForScript?: string;
+      waitForSelector?: string;
+    } | null
+  ) {
+    if (!source) {
+      return undefined;
+    }
+    const script = typeof source.waitForScript === "string" ? source.waitForScript.trim() : "";
+    if (script.length > 0) {
+      return script.startsWith("js:") ? script : `js:${script}`;
+    }
+    const selector = typeof source.waitForSelector === "string" ? source.waitForSelector.trim() : "";
+    if (selector.length > 0) {
+      if (
+        selector.startsWith("css:") ||
+        selector.startsWith("js:") ||
+        selector.startsWith("xpath:")
+      ) {
+        return selector;
+      }
+      return `css:${selector}`;
+    }
+    return undefined;
+  }
+
+  private normalizeWaitForTimeout(value?: number) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    return value;
+  }
+
   private normalizePatternList(patterns?: string[]) {
     if (!patterns || patterns.length === 0) {
       return undefined;
@@ -302,7 +353,11 @@ export class Crawl4aiClient {
           scroll_delay:
             typeof overrides?.scrollDelayMs === "number" ? overrides.scrollDelayMs / 1000 : undefined,
           simulate_user: overrides?.simulateUser,
-          override_navigator: overrides?.overrideNavigator
+          override_navigator: overrides?.overrideNavigator,
+          js_code: this.normalizeJsCode(overrides?.jsCode),
+          js_only: overrides?.jsOnly ? true : undefined,
+          wait_for: this.buildWaitFor(overrides),
+          wait_for_timeout: this.normalizeWaitForTimeout(overrides?.waitForTimeoutMs)
         });
         if (Object.keys(params).length === 0) {
           return undefined;
