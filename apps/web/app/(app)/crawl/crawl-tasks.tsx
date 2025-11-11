@@ -93,6 +93,14 @@ interface CreateCrawlTaskFormValues {
     includePatterns?: string[];
     excludePatterns?: string[];
   };
+  browserHeaders?: BrowserHeaderFormValue[];
+  browserCookies?: BrowserCookieFormValue[];
+  userAgent?: string;
+  userAgentMode?: "random";
+  userAgentGenerator?: UserAgentGeneratorFormValue;
+  locale?: string;
+  timezoneId?: string;
+  geolocation?: GeolocationFormValue;
 }
 
 interface MultiUrlStrategyFormValue {
@@ -118,6 +126,31 @@ interface MultiUrlStrategyFormValue {
   };
 }
 
+interface BrowserHeaderFormValue {
+  name?: string;
+  value?: string;
+}
+
+interface BrowserCookieFormValue {
+  name?: string;
+  value?: string;
+  domain?: string;
+  path?: string;
+}
+
+interface UserAgentGeneratorFormValue {
+  platform?: string;
+  browser?: string;
+  deviceType?: string;
+  locale?: string;
+}
+
+interface GeolocationFormValue {
+  latitude?: number;
+  longitude?: number;
+  accuracy?: number;
+}
+
 export function CrawlTasksView() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<CrawlTaskStatus | null>(null);
@@ -130,6 +163,7 @@ export function CrawlTasksView() {
   const proxyObjectActive = Boolean(proxyConfigValue?.server?.trim().length);
   const markdownFilterType = Form.useWatch(["markdownFilter", "type"], form);
   const scoreLinksValue = Form.useWatch("scoreLinks", form);
+  const userAgentModeValue = Form.useWatch("userAgentMode", form);
   const linkPreviewDisabled = !scoreLinksValue;
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
@@ -394,6 +428,81 @@ export function CrawlTasksView() {
     return Object.keys(payload).length ? payload : undefined;
   };
 
+  const sanitizeBrowserHeaders = (headers?: BrowserHeaderFormValue[]) => {
+    if (!headers || headers.length === 0) {
+      return undefined;
+    }
+    const normalized = headers
+      .map((header) => ({
+        name: header?.name?.trim() ?? "",
+        value: header?.value?.trim() ?? ""
+      }))
+      .filter((entry) => entry.name.length && entry.value.length)
+      .slice(0, 20);
+    return normalized.length ? normalized : undefined;
+  };
+
+  const sanitizeBrowserCookies = (cookies?: BrowserCookieFormValue[]) => {
+    if (!cookies || cookies.length === 0) {
+      return undefined;
+    }
+    const normalized = cookies
+      .map((cookie) => ({
+        name: cookie?.name?.trim() ?? "",
+        value: cookie?.value?.trim() ?? "",
+        domain: cookie?.domain?.trim() ?? "",
+        path: cookie?.path?.trim() || undefined
+      }))
+      .filter((entry) => entry.name.length && entry.value.length && entry.domain.length)
+      .slice(0, 20);
+    return normalized.length ? normalized : undefined;
+  };
+
+  const sanitizeUserAgentGenerator = (generator?: UserAgentGeneratorFormValue) => {
+    if (!generator) {
+      return undefined;
+    }
+    const normalized: UserAgentGeneratorFormValue = {};
+    const platforms = ["windows", "macos", "linux", "android", "ios"];
+    const browsers = ["chrome", "firefox", "safari", "edge"];
+    const deviceTypes = ["desktop", "mobile", "tablet"];
+    if (generator.platform && platforms.includes(generator.platform)) {
+      normalized.platform = generator.platform;
+    }
+    if (generator.browser && browsers.includes(generator.browser)) {
+      normalized.browser = generator.browser;
+    }
+    if (generator.deviceType && deviceTypes.includes(generator.deviceType)) {
+      normalized.deviceType = generator.deviceType;
+    }
+    if (generator.locale) {
+      const trimmed = generator.locale.trim();
+      if (trimmed.length) {
+        normalized.locale = trimmed.slice(0, 16);
+      }
+    }
+    return Object.keys(normalized).length ? normalized : undefined;
+  };
+
+  const sanitizeGeolocation = (geo?: GeolocationFormValue) => {
+    if (!geo) {
+      return undefined;
+    }
+    const latitude = typeof geo.latitude === "number" ? geo.latitude : undefined;
+    const longitude = typeof geo.longitude === "number" ? geo.longitude : undefined;
+    if (latitude == null || longitude == null) {
+      return undefined;
+    }
+    const normalized: GeolocationFormValue = {
+      latitude: Math.max(-90, Math.min(90, Number(latitude.toFixed(6)))),
+      longitude: Math.max(-180, Math.min(180, Number(longitude.toFixed(6))))
+    };
+    if (typeof geo.accuracy === "number" && !Number.isNaN(geo.accuracy)) {
+      normalized.accuracy = Math.max(1, Math.min(5000, Math.round(geo.accuracy)));
+    }
+    return normalized;
+  };
+
   const handleCreate = async (values: CreateCrawlTaskFormValues) => {
     const [from, to] = values.timeRange ?? [];
     const proxyConfigInput = values.proxyConfig;
@@ -416,6 +525,14 @@ export function CrawlTasksView() {
     const waitForScript = values.waitForScript?.trim();
     const sessionId = values.sessionId?.trim();
     const storageState = values.storageState?.trim();
+    const browserHeaders = sanitizeBrowserHeaders(values.browserHeaders);
+    const browserCookies = sanitizeBrowserCookies(values.browserCookies);
+    const userAgent = values.userAgent?.trim();
+    const userAgentMode = values.userAgentMode === "random" ? "random" : undefined;
+    const userAgentGenerator = sanitizeUserAgentGenerator(values.userAgentGenerator);
+    const locale = values.locale?.trim();
+    const timezoneId = values.timezoneId?.trim();
+    const geolocation = sanitizeGeolocation(values.geolocation);
     try {
       await createTask({
         variables: {
@@ -456,7 +573,15 @@ export function CrawlTasksView() {
               markdownOptions: markdownOptions ?? undefined,
               markdownFilter: markdownFilter ?? undefined,
               scoreLinks: typeof values.scoreLinks === "boolean" ? values.scoreLinks : undefined,
-              linkPreview: linkPreview ?? undefined
+              linkPreview: linkPreview ?? undefined,
+              browserHeaders: browserHeaders ?? undefined,
+              browserCookies: browserCookies ?? undefined,
+              userAgent: userAgent?.length ? userAgent : undefined,
+              userAgentMode: userAgentMode ?? undefined,
+              userAgentGenerator: userAgentGenerator ?? undefined,
+              locale: locale?.length ? locale : undefined,
+              timezoneId: timezoneId?.length ? timezoneId : undefined,
+              geolocation: geolocation ?? undefined
             }
           }
         }
@@ -698,6 +823,181 @@ export function CrawlTasksView() {
             >
               <InputNumber min={500} max={60000} style={{ width: "100%" }} placeholder="10000" />
             </Form.Item>
+          </Card>
+          <Card
+            title="Browser identity"
+            size="small"
+            style={{ marginBottom: 16 }}
+            extra={
+              <Typography.Link
+                href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/browser-crawler-config.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Docs
+              </Typography.Link>
+            }
+          >
+            <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+              Override Crawl4AI&apos;s BrowserConfig to send first-party cookies, custom headers, and rotating user
+              agents for harder-to-detect crawls.
+            </Typography.Paragraph>
+            <Form.Item
+              label="Custom user agent"
+              name="userAgent"
+              extra="Leave blank to reuse Crawl4AI defaults."
+            >
+              <Input placeholder="Mozilla/5.0 ..." maxLength={768} />
+            </Form.Item>
+            <Form.Item
+              label="User agent mode"
+              name="userAgentMode"
+              extra="Enable Crawl4AI's random generator for every navigation."
+            >
+              <Select
+                allowClear
+                placeholder="Default (static)"
+                options={[{ value: "random", label: "Random rotation" }]}
+              />
+            </Form.Item>
+            <Form.Item label="Generator platform" name={["userAgentGenerator", "platform"]}>
+              <Select
+                allowClear
+                placeholder="windows / macos / linux / android / ios"
+                disabled={userAgentModeValue !== "random"}
+                options={[
+                  { value: "windows", label: "Windows" },
+                  { value: "macos", label: "macOS" },
+                  { value: "linux", label: "Linux" },
+                  { value: "android", label: "Android" },
+                  { value: "ios", label: "iOS" }
+                ]}
+              />
+            </Form.Item>
+            <Form.Item label="Generator browser" name={["userAgentGenerator", "browser"]}>
+              <Select
+                allowClear
+                placeholder="chrome / firefox / safari / edge"
+                disabled={userAgentModeValue !== "random"}
+                options={[
+                  { value: "chrome", label: "Chrome" },
+                  { value: "firefox", label: "Firefox" },
+                  { value: "safari", label: "Safari" },
+                  { value: "edge", label: "Edge" }
+                ]}
+              />
+            </Form.Item>
+            <Form.Item label="Generator device" name={["userAgentGenerator", "deviceType"]}>
+              <Select
+                allowClear
+                placeholder="desktop / mobile / tablet"
+                disabled={userAgentModeValue !== "random"}
+                options={[
+                  { value: "desktop", label: "Desktop" },
+                  { value: "mobile", label: "Mobile" },
+                  { value: "tablet", label: "Tablet" }
+                ]}
+              />
+            </Form.Item>
+            <Form.Item
+              label="Generator locale"
+              name={["userAgentGenerator", "locale"]}
+              extra="Overrides Accept-Language inside the rotating agent."
+            >
+              <Input placeholder="en-US" maxLength={16} disabled={userAgentModeValue !== "random"} />
+            </Form.Item>
+            <Form.Item
+              label="Browser locale"
+              name="locale"
+              extra="Sets navigator.language and Accept-Language headers."
+            >
+              <Input placeholder="en-US" maxLength={16} />
+            </Form.Item>
+            <Form.Item
+              label="Timezone ID"
+              name="timezoneId"
+              extra="IANA timezone applied to the Playwright context."
+            >
+              <Input placeholder="America/New_York" maxLength={64} />
+            </Form.Item>
+            <Form.Item
+              label="Geolocation"
+              extra="Latitude / longitude (optional accuracy in meters) forwarded to the browser context."
+            >
+              <Space wrap>
+                <Form.Item name={["geolocation", "latitude"]} noStyle>
+                  <InputNumber placeholder="Latitude" min={-90} max={90} step={0.1} style={{ width: 140 }} />
+                </Form.Item>
+                <Form.Item name={["geolocation", "longitude"]} noStyle>
+                  <InputNumber placeholder="Longitude" min={-180} max={180} step={0.1} style={{ width: 140 }} />
+                </Form.Item>
+                <Form.Item name={["geolocation", "accuracy"]} noStyle>
+                  <InputNumber placeholder="Accuracy" min={1} max={5000} step={1} style={{ width: 140 }} />
+                </Form.Item>
+              </Space>
+            </Form.Item>
+            <Typography.Title level={5} style={{ marginTop: 16 }}>
+              Custom headers
+            </Typography.Title>
+            <Form.List name="browserHeaders">
+              {(fields, { add, remove }) => (
+                <Space direction="vertical" style={{ width: "100%" }}>
+                  {fields.map((field) => (
+                    <Space key={field.key} align="baseline" style={{ width: "100%" }}>
+                      <Form.Item name={[field.name, "name"]} style={{ flex: 1 }}>
+                        <Input placeholder="Header name" />
+                      </Form.Item>
+                      <Form.Item name={[field.name, "value"]} style={{ flex: 2 }}>
+                        <Input placeholder="Header value" />
+                      </Form.Item>
+                      <Button
+                        type="text"
+                        icon={<MinusCircleOutlined />}
+                        danger
+                        onClick={() => remove(field.name)}
+                      />
+                    </Space>
+                  ))}
+                  <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />} block>
+                    Add header
+                  </Button>
+                </Space>
+              )}
+            </Form.List>
+            <Typography.Title level={5} style={{ marginTop: 24 }}>
+              Cookies
+            </Typography.Title>
+            <Form.List name="browserCookies">
+              {(fields, { add, remove }) => (
+                <Space direction="vertical" style={{ width: "100%" }}>
+                  {fields.map((field) => (
+                    <Space key={field.key} align="baseline" style={{ width: "100%" }}>
+                      <Form.Item name={[field.name, "name"]} style={{ flex: 1 }}>
+                        <Input placeholder="Name" />
+                      </Form.Item>
+                      <Form.Item name={[field.name, "value"]} style={{ flex: 2 }}>
+                        <Input placeholder="Value" />
+                      </Form.Item>
+                      <Form.Item name={[field.name, "domain"]} style={{ flex: 1.3 }}>
+                        <Input placeholder="example.com" />
+                      </Form.Item>
+                      <Form.Item name={[field.name, "path"]} style={{ flex: 1 }}>
+                        <Input placeholder="/" />
+                      </Form.Item>
+                      <Button
+                        type="text"
+                        icon={<MinusCircleOutlined />}
+                        danger
+                        onClick={() => remove(field.name)}
+                      />
+                    </Space>
+                  ))}
+                  <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />} block>
+                    Add cookie
+                  </Button>
+                </Space>
+              )}
+            </Form.List>
           </Card>
           <Card
             title="Session management"

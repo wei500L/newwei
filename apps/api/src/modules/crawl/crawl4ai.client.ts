@@ -11,7 +11,11 @@ import type {
   CrawlMarkdownOptions,
   CrawlMarkdownFilter,
   CrawlLinkPreviewOptions,
-  Crawl4aiMedia
+  Crawl4aiMedia,
+  CrawlBrowserHeader,
+  CrawlBrowserCookie,
+  CrawlUserAgentGeneratorConfig,
+  CrawlGeolocationConfig
 } from "./crawl.types";
 
 export interface Crawl4aiRequest {
@@ -140,6 +144,11 @@ export class Crawl4aiClient {
     const markdownGenerator = this.buildMarkdownGenerator(options);
     const linkPreviewConfig = this.buildLinkPreviewConfig(options);
     const shouldScoreLinks = options.scoreLinks ?? Boolean(linkPreviewConfig);
+    const headers = this.buildHeaderMap(options.browserHeaders);
+    const cookies = this.buildCookieList(options.browserCookies);
+    const userAgent = this.normalizeUserAgent(options.userAgent);
+    const userAgentGenerator = this.buildUserAgentGenerator(options.userAgentGenerator);
+    const geolocation = this.buildGeolocation(options.geolocation);
     const browserConfig = {
       type: "BrowserConfig",
       params: this.compact({
@@ -148,7 +157,10 @@ export class Crawl4aiClient {
         browser_type: options.enableUndetectedBrowser ? "undetected" : undefined,
         disable_images: options.includeImages === false ? true : undefined,
         emulate_mobile: false,
-        proxy_config: proxyPayload
+        proxy_config: proxyPayload,
+        headers,
+        cookies,
+        user_agent: userAgent
       })
     };
     const crawlerConfig = {
@@ -165,6 +177,12 @@ export class Crawl4aiClient {
         markdown_generator: markdownGenerator,
         score_links: shouldScoreLinks ? true : undefined,
         link_preview_config: linkPreviewConfig,
+        user_agent: userAgent,
+        user_agent_mode: options.userAgentMode,
+        user_agent_generator_config: userAgentGenerator,
+        locale: options.locale,
+        timezone_id: options.timezoneId,
+        geolocation,
         js_code: this.normalizeJsCode(options.jsCode),
         js_only: options.jsOnly ? true : undefined,
         wait_for: this.buildWaitFor(options),
@@ -436,6 +454,68 @@ export class Crawl4aiClient {
       normalized.overrideNavigator = options.overrideNavigator;
     }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private buildHeaderMap(headers?: CrawlBrowserHeader[]) {
+    if (!headers || headers.length === 0) {
+      return undefined;
+    }
+    return headers.reduce<Record<string, string>>((acc, header) => {
+      if (header.name && header.value) {
+        acc[header.name] = header.value;
+      }
+      return acc;
+    }, {});
+  }
+
+  private buildCookieList(cookies?: CrawlBrowserCookie[]) {
+    if (!cookies || cookies.length === 0) {
+      return undefined;
+    }
+    const payload = cookies
+      .map((cookie) =>
+        this.compact({
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain,
+          path: cookie.path
+        })
+      )
+      .filter((entry) => entry.name && entry.value && entry.domain);
+    return payload.length > 0 ? payload : undefined;
+  }
+
+  private normalizeUserAgent(value?: string) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private buildUserAgentGenerator(config?: CrawlUserAgentGeneratorConfig) {
+    if (!config) {
+      return undefined;
+    }
+    const payload = this.compact({
+      platform: config.platform,
+      browser: config.browser,
+      device_type: config.deviceType,
+      locale: config.locale
+    });
+    return Object.keys(payload).length > 0 ? payload : undefined;
+  }
+
+  private buildGeolocation(config?: CrawlGeolocationConfig) {
+    if (!config) {
+      return undefined;
+    }
+    const payload = this.compact({
+      latitude: config.latitude,
+      longitude: config.longitude,
+      accuracy: config.accuracy
+    });
+    return Object.keys(payload).length > 0 ? payload : undefined;
   }
 }
 export interface Crawl4aiLink {

@@ -34,6 +34,75 @@ export class CrawlProxyConfigDto {
   password?: string;
 }
 
+export class CrawlBrowserHeaderDto {
+  @IsString()
+  @MaxLength(128)
+  name!: string;
+
+  @IsString()
+  @MaxLength(512)
+  value!: string;
+}
+
+export class CrawlBrowserCookieDto {
+  @IsString()
+  @MaxLength(128)
+  name!: string;
+
+  @IsString()
+  @MaxLength(4000)
+  value!: string;
+
+  @IsString()
+  @MaxLength(255)
+  domain!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  path?: string;
+}
+
+export class CrawlUserAgentGeneratorDto {
+  @IsOptional()
+  @IsIn(["windows", "macos", "linux", "android", "ios"])
+  platform?: "windows" | "macos" | "linux" | "android" | "ios";
+
+  @IsOptional()
+  @IsIn(["chrome", "firefox", "safari", "edge"])
+  browser?: "chrome" | "firefox" | "safari" | "edge";
+
+  @IsOptional()
+  @IsIn(["desktop", "mobile", "tablet"])
+  deviceType?: "desktop" | "mobile" | "tablet";
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  locale?: string;
+}
+
+export class CrawlGeolocationDto {
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude!: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(5000)
+  accuracy?: number;
+}
+
 export class CrawlOptionsDto {
   @IsOptional()
   @IsBoolean()
@@ -144,6 +213,59 @@ export class CrawlOptionsDto {
   @ValidateNested()
   @Type(() => CrawlLinkPreviewOptionsDto)
   linkPreview?: CrawlLinkPreviewOptionsDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => CrawlBrowserHeaderDto)
+  browserHeaders?: CrawlBrowserHeaderDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => CrawlBrowserCookieDto)
+  browserCookies?: CrawlBrowserCookieDto[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(768)
+  userAgent?: string;
+
+  @IsOptional()
+  @IsIn(["random"])
+  userAgentMode?: "random";
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlUserAgentGeneratorDto)
+  userAgentGenerator?: CrawlUserAgentGeneratorDto;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  locale?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezoneId?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlGeolocationDto)
+  geolocation?: CrawlGeolocationDto;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  sessionId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(12000)
+  storageState?: string;
 }
 
 export class CrawlUrlMatcherDto {

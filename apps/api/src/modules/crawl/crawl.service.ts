@@ -19,7 +19,11 @@ import {
   CrawlLinkPreviewOptions,
   CrawlMediaCollection,
   CrawlMediaItem,
-  CrawlMediaSource
+  CrawlMediaSource,
+  CrawlBrowserHeader,
+  CrawlBrowserCookie,
+  CrawlUserAgentGeneratorConfig,
+  CrawlGeolocationConfig
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -516,7 +520,15 @@ export class CrawlService {
       markdownOptions: this.parseMarkdownOptions(value.markdownOptions),
       markdownFilter: this.parseMarkdownFilter(value.markdownFilter),
       scoreLinks: typeof value.scoreLinks === "boolean" ? value.scoreLinks : undefined,
-      linkPreview: this.parseLinkPreviewOptions(value.linkPreview)
+      linkPreview: this.parseLinkPreviewOptions(value.linkPreview),
+      browserHeaders: this.parseBrowserHeaders(value.browserHeaders),
+      browserCookies: this.parseBrowserCookies(value.browserCookies),
+      userAgent: typeof value.userAgent === "string" ? value.userAgent : undefined,
+      userAgentMode: value.userAgentMode === "random" ? "random" : undefined,
+      userAgentGenerator: this.parseUserAgentGenerator(value.userAgentGenerator),
+      locale: typeof value.locale === "string" ? value.locale : undefined,
+      timezoneId: typeof value.timezoneId === "string" ? value.timezoneId : undefined,
+      geolocation: this.parseGeolocation(value.geolocation)
     });
   }
 
@@ -549,6 +561,14 @@ export class CrawlService {
     const waitForTimeoutMs = this.normalizeWaitForTimeout(options?.waitForTimeoutMs);
     const sessionId = this.normalizeSessionId(options?.sessionId);
     const storageState = this.normalizeStorageState(options?.storageState);
+    const browserHeaders = this.normalizeBrowserHeaders(options?.browserHeaders);
+    const browserCookies = this.normalizeBrowserCookies(options?.browserCookies);
+    const userAgent = this.normalizeUserAgent(options?.userAgent);
+    const userAgentMode = this.normalizeUserAgentMode(options?.userAgentMode);
+    const userAgentGenerator = this.normalizeUserAgentGenerator(options?.userAgentGenerator);
+    const locale = this.normalizeLocale(options?.locale);
+    const timezoneId = this.normalizeTimezone(options?.timezoneId);
+    const geolocation = this.normalizeGeolocation(options?.geolocation);
 
     return {
       includeImages: options?.includeImages ?? false,
@@ -575,6 +595,14 @@ export class CrawlService {
       markdownFilter,
       scoreLinks,
       linkPreview,
+      browserHeaders,
+      browserCookies,
+      userAgent,
+      userAgentMode,
+      userAgentGenerator,
+      locale,
+      timezoneId,
+      geolocation,
       sessionId,
       storageState
     };
@@ -847,6 +875,176 @@ export class CrawlService {
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
+  private normalizeBrowserHeaders(headers?: CrawlBrowserHeader[] | null): CrawlBrowserHeader[] | undefined {
+    if (!headers || headers.length === 0) {
+      return undefined;
+    }
+    const normalized = headers
+      .map((header) => {
+        if (!header || typeof header !== "object") {
+          return undefined;
+        }
+        const name = typeof header.name === "string" ? header.name.trim() : "";
+        const value = typeof header.value === "string" ? header.value.trim() : "";
+        if (!name || !value) {
+          return undefined;
+        }
+        return {
+          name: name.slice(0, 128),
+          value: value.slice(0, 512)
+        };
+      })
+      .filter((entry): entry is CrawlBrowserHeader => Boolean(entry));
+    if (normalized.length === 0) {
+      return undefined;
+    }
+    const seen = new Set<string>();
+    const unique: CrawlBrowserHeader[] = [];
+    for (const header of normalized) {
+      const key = header.name.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      unique.push(header);
+      if (unique.length >= 20) {
+        break;
+      }
+    }
+    return unique;
+  }
+
+  private normalizeBrowserCookies(cookies?: CrawlBrowserCookie[] | null): CrawlBrowserCookie[] | undefined {
+    if (!cookies || cookies.length === 0) {
+      return undefined;
+    }
+    const normalized = cookies
+      .map((cookie) => {
+        if (!cookie || typeof cookie !== "object") {
+          return undefined;
+        }
+        const name = typeof cookie.name === "string" ? cookie.name.trim() : "";
+        const value = typeof cookie.value === "string" ? cookie.value.trim() : "";
+        const domain = typeof cookie.domain === "string" ? cookie.domain.trim() : "";
+        const path = typeof cookie.path === "string" ? cookie.path.trim() : "";
+        if (!name || !value || !domain) {
+          return undefined;
+        }
+        return {
+          name: name.slice(0, 128),
+          value: value.slice(0, 4000),
+          domain: domain.slice(0, 255),
+          path: path ? path.slice(0, 255) : undefined
+        };
+      })
+      .filter((entry): entry is CrawlBrowserCookie => Boolean(entry));
+    if (normalized.length === 0) {
+      return undefined;
+    }
+    const deduped: CrawlBrowserCookie[] = [];
+    const seen = new Set<string>();
+    for (const cookie of normalized) {
+      const key = `${cookie.name.toLowerCase()}|${cookie.domain.toLowerCase()}|${cookie.path ?? ""}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      deduped.push(cookie);
+      if (deduped.length >= 20) {
+        break;
+      }
+    }
+    return deduped;
+  }
+
+  private normalizeUserAgent(value?: string | null) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    return trimmed.slice(0, 768);
+  }
+
+  private normalizeUserAgentMode(value?: string | null) {
+    if (value === "random") {
+      return "random";
+    }
+    return undefined;
+  }
+
+  private normalizeUserAgentGenerator(
+    config?: CrawlUserAgentGeneratorConfig | null
+  ): CrawlUserAgentGeneratorConfig | undefined {
+    if (!config || typeof config !== "object") {
+      return undefined;
+    }
+    const normalized: CrawlUserAgentGeneratorConfig = {};
+    const platforms = new Set(["windows", "macos", "linux", "android", "ios"]);
+    const browsers = new Set(["chrome", "firefox", "safari", "edge"]);
+    const deviceTypes = new Set(["desktop", "mobile", "tablet"]);
+    if (config.platform && platforms.has(config.platform)) {
+      normalized.platform = config.platform;
+    }
+    if (config.browser && browsers.has(config.browser)) {
+      normalized.browser = config.browser;
+    }
+    if (config.deviceType && deviceTypes.has(config.deviceType)) {
+      normalized.deviceType = config.deviceType;
+    }
+    if (typeof config.locale === "string") {
+      const trimmed = config.locale.trim();
+      if (trimmed.length > 0) {
+        normalized.locale = trimmed.slice(0, 16);
+      }
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private normalizeLocale(value?: string | null) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    return trimmed.slice(0, 16);
+  }
+
+  private normalizeTimezone(value?: string | null) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    return trimmed.slice(0, 64);
+  }
+
+  private normalizeGeolocation(value?: CrawlGeolocationConfig | null): CrawlGeolocationConfig | undefined {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const latitude = typeof value.latitude === "number" && Number.isFinite(value.latitude) ? value.latitude : undefined;
+    const longitude =
+      typeof value.longitude === "number" && Number.isFinite(value.longitude) ? value.longitude : undefined;
+    if (latitude === undefined || longitude === undefined) {
+      return undefined;
+    }
+    const normalized: CrawlGeolocationConfig = {
+      latitude: Math.max(-90, Math.min(90, latitude)),
+      longitude: Math.max(-180, Math.min(180, longitude))
+    };
+    if (typeof value.accuracy === "number" && Number.isFinite(value.accuracy)) {
+      normalized.accuracy = Math.max(1, Math.min(5000, value.accuracy));
+    }
+    return normalized;
+  }
+
   private parseUrlArray(value: unknown): string[] | undefined {
     if (!Array.isArray(value)) {
       return undefined;
@@ -903,6 +1101,42 @@ export class CrawlService {
       type: "pruning",
       threshold: typeof record.threshold === "number" ? record.threshold : undefined
     });
+  }
+
+  private parseBrowserHeaders(value: unknown): CrawlBrowserHeader[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    return this.normalizeBrowserHeaders(
+      value
+        .map((entry) => (typeof entry === "object" && entry ? (entry as CrawlBrowserHeader) : undefined))
+        .filter((entry): entry is CrawlBrowserHeader => Boolean(entry))
+    );
+  }
+
+  private parseBrowserCookies(value: unknown): CrawlBrowserCookie[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    return this.normalizeBrowserCookies(
+      value
+        .map((entry) => (typeof entry === "object" && entry ? (entry as CrawlBrowserCookie) : undefined))
+        .filter((entry): entry is CrawlBrowserCookie => Boolean(entry))
+    );
+  }
+
+  private parseUserAgentGenerator(value: unknown): CrawlUserAgentGeneratorConfig | undefined {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    return this.normalizeUserAgentGenerator(value as CrawlUserAgentGeneratorConfig);
+  }
+
+  private parseGeolocation(value: unknown): CrawlGeolocationConfig | undefined {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    return this.normalizeGeolocation(value as CrawlGeolocationConfig);
   }
 
   private normalizePatternList(patterns?: string[]) {

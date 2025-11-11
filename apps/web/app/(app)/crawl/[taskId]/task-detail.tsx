@@ -339,6 +339,107 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     return `${markdownFilter.type}${threshold}`;
   }, [markdownFilter]);
 
+  const browserHeaders = useMemo(() => {
+    if (!Array.isArray(config?.browserHeaders)) {
+      return [] as string[];
+    }
+    return (config?.browserHeaders as Array<{ name?: string; value?: string }>)
+      .map((header) => {
+        const name = typeof header?.name === "string" ? header.name : "";
+        const value = typeof header?.value === "string" ? header.value : "";
+        if (!name || !value) {
+          return null;
+        }
+        return `${name}: ${value}`;
+      })
+      .filter((entry): entry is string => Boolean(entry));
+  }, [config]);
+
+  const browserCookies = useMemo(() => {
+    if (!Array.isArray(config?.browserCookies)) {
+      return [] as string[];
+    }
+    return (config?.browserCookies as Array<{ name?: string; value?: string; domain?: string; path?: string }>)
+      .map((cookie) => {
+        const name = typeof cookie?.name === "string" ? cookie.name : "";
+        const value = typeof cookie?.value === "string" ? cookie.value : "";
+        const domain = typeof cookie?.domain === "string" ? cookie.domain : "";
+        const path = typeof cookie?.path === "string" ? cookie.path : "";
+        if (!name || !value || !domain) {
+          return null;
+        }
+        const target = path ? `${domain}${path}` : domain;
+        return `${name}=${value} @ ${target}`;
+      })
+      .filter((entry): entry is string => Boolean(entry));
+  }, [config]);
+
+  const userAgentValue = useMemo(() => {
+    if (!config || typeof config.userAgent !== "string") {
+      return null;
+    }
+    const trimmed = config.userAgent.trim();
+    return trimmed.length ? trimmed : null;
+  }, [config]);
+
+  const userAgentModeSummary = config?.userAgentMode === "random" ? "Random rotation" : "Default";
+
+  const userAgentGeneratorSummary = useMemo(() => {
+    if (!config || typeof config.userAgentGenerator !== "object" || !config.userAgentGenerator) {
+      return null;
+    }
+    const generator = config.userAgentGenerator as Record<string, unknown>;
+    const parts: string[] = [];
+    const platform = typeof generator.platform === "string" ? generator.platform : null;
+    if (platform) {
+      parts.push(`platform ${platform}`);
+    }
+    const browser = typeof generator.browser === "string" ? generator.browser : null;
+    if (browser) {
+      parts.push(`browser ${browser}`);
+    }
+    const deviceType = typeof generator.deviceType === "string" ? generator.deviceType : null;
+    if (deviceType) {
+      parts.push(`device ${deviceType}`);
+    }
+    const locale = typeof generator.locale === "string" ? generator.locale : null;
+    if (locale) {
+      parts.push(`locale ${locale}`);
+    }
+    return parts.length ? parts.join(" • ") : null;
+  }, [config]);
+
+  const browserLocale = useMemo(() => {
+    if (!config || typeof config.locale !== "string") {
+      return null;
+    }
+    const trimmed = config.locale.trim();
+    return trimmed.length ? trimmed : null;
+  }, [config]);
+
+  const timezonePreference = useMemo(() => {
+    if (!config || typeof config.timezoneId !== "string") {
+      return null;
+    }
+    const trimmed = config.timezoneId.trim();
+    return trimmed.length ? trimmed : null;
+  }, [config]);
+
+  const geolocationSummary = useMemo(() => {
+    if (!config || typeof config.geolocation !== "object" || !config.geolocation) {
+      return null;
+    }
+    const geo = config.geolocation as Record<string, unknown>;
+    const lat = typeof geo.latitude === "number" ? geo.latitude : null;
+    const lon = typeof geo.longitude === "number" ? geo.longitude : null;
+    if (lat == null || lon == null) {
+      return null;
+    }
+    const accuracy = typeof geo.accuracy === "number" ? geo.accuracy : null;
+    const location = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    return accuracy != null ? `${location} (±${Math.round(accuracy)}m)` : location;
+  }, [config]);
+
   const dynamicJsSteps = useMemo(() => {
     if (!config) {
       return [] as string[];
@@ -582,6 +683,44 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       </Descriptions.Item>
       <Descriptions.Item label="Override navigator">
         {config?.overrideNavigator ? "Enabled" : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="User agent">{userAgentValue ?? "Default"}</Descriptions.Item>
+      <Descriptions.Item label="User agent mode">{userAgentModeSummary}</Descriptions.Item>
+      <Descriptions.Item label="UA generator">
+        {userAgentGeneratorSummary ?? "Not configured"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Browser locale">
+        {browserLocale ?? "Server default"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Timezone">{timezonePreference ?? "Server default"}</Descriptions.Item>
+      <Descriptions.Item label="Geolocation">
+        {geolocationSummary ?? "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Custom headers">
+        {browserHeaders.length ? (
+          <Space direction="vertical" size={0}>
+            {browserHeaders.map((header) => (
+              <Typography.Text key={header} style={{ fontFamily: "monospace" }}>
+                {header}
+              </Typography.Text>
+            ))}
+          </Space>
+        ) : (
+          "—"
+        )}
+      </Descriptions.Item>
+      <Descriptions.Item label="Cookies">
+        {browserCookies.length ? (
+          <Space direction="vertical" size={0}>
+            {browserCookies.map((cookie) => (
+              <Typography.Text key={cookie} style={{ fontFamily: "monospace" }}>
+                {cookie}
+              </Typography.Text>
+            ))}
+          </Space>
+        ) : (
+          "—"
+        )}
       </Descriptions.Item>
       <Descriptions.Item label="Session ID">{sessionIdentifier ?? "—"}</Descriptions.Item>
       <Descriptions.Item label="Storage state seed">

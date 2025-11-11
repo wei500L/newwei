@@ -75,6 +75,31 @@ export type CrawlProxyConfigInput = {
   password?: InputMaybe<string>;
 };
 
+export type CrawlBrowserHeaderInput = {
+  name: string;
+  value: string;
+};
+
+export type CrawlBrowserCookieInput = {
+  name: string;
+  value: string;
+  domain: string;
+  path?: InputMaybe<string>;
+};
+
+export type CrawlUserAgentGeneratorInput = {
+  platform?: InputMaybe<string>;
+  browser?: InputMaybe<string>;
+  deviceType?: InputMaybe<string>;
+  locale?: InputMaybe<string>;
+};
+
+export type CrawlGeolocationInput = {
+  latitude: number;
+  longitude: number;
+  accuracy?: InputMaybe<number>;
+};
+
 export type CrawlOptionsInput = {
   includeImages?: InputMaybe<boolean>;
   storeMedia?: InputMaybe<boolean>;
@@ -99,6 +124,14 @@ export type CrawlOptionsInput = {
   markdownFilter?: InputMaybe<CrawlMarkdownFilterInput>;
   scoreLinks?: InputMaybe<boolean>;
   linkPreview?: InputMaybe<CrawlLinkPreviewInput>;
+  browserHeaders?: InputMaybe<Array<CrawlBrowserHeaderInput>>;
+  browserCookies?: InputMaybe<Array<CrawlBrowserCookieInput>>;
+  userAgent?: InputMaybe<string>;
+  userAgentMode?: InputMaybe<string>;
+  userAgentGenerator?: InputMaybe<CrawlUserAgentGeneratorInput>;
+  locale?: InputMaybe<string>;
+  timezoneId?: InputMaybe<string>;
+  geolocation?: InputMaybe<CrawlGeolocationInput>;
   sessionId?: InputMaybe<string>;
   storageState?: InputMaybe<string>;
 };
