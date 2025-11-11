@@ -157,6 +157,8 @@ export interface CrawlTaskOptions {
   extractLinks?: boolean;
   storeMedia?: boolean;
   cacheMode?: CrawlCacheMode;
+  sessionId?: string;
+  storageState?: string;
   scanFullPage?: boolean;
   scrollDelayMs?: number;
   enableUndetectedBrowser?: boolean;

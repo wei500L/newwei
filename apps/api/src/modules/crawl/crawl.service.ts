@@ -144,6 +144,8 @@ export class CrawlService {
       enableStealthMode: dto.options?.enableStealthMode,
       simulateUser: dto.options?.simulateUser,
       overrideNavigator: dto.options?.overrideNavigator,
+      sessionId: dto.options?.sessionId,
+      storageState: dto.options?.storageState,
       proxyUrl: dto.options?.proxyUrl,
       proxyConfig: dto.options?.proxyConfig as CrawlProxyConfig | undefined,
       additionalUrls: dto.options?.additionalUrls,
@@ -500,6 +502,8 @@ export class CrawlService {
       enableStealthMode: typeof value.enableStealthMode === "boolean" ? value.enableStealthMode : undefined,
       simulateUser: typeof value.simulateUser === "boolean" ? value.simulateUser : undefined,
       overrideNavigator: typeof value.overrideNavigator === "boolean" ? value.overrideNavigator : undefined,
+      sessionId: typeof value.sessionId === "string" ? value.sessionId : undefined,
+      storageState: typeof value.storageState === "string" ? value.storageState : undefined,
       jsCode: this.parseStringArray(value.jsCode),
       jsOnly: typeof value.jsOnly === "boolean" ? value.jsOnly : undefined,
       waitForSelector: typeof value.waitForSelector === "string" ? value.waitForSelector : undefined,
@@ -543,6 +547,8 @@ export class CrawlService {
     const waitForSelector = this.normalizeWaitForSelector(options?.waitForSelector);
     const waitForScript = this.normalizeWaitForScript(options?.waitForScript);
     const waitForTimeoutMs = this.normalizeWaitForTimeout(options?.waitForTimeoutMs);
+    const sessionId = this.normalizeSessionId(options?.sessionId);
+    const storageState = this.normalizeStorageState(options?.storageState);
 
     return {
       includeImages: options?.includeImages ?? false,
@@ -568,7 +574,9 @@ export class CrawlService {
       markdownOptions,
       markdownFilter,
       scoreLinks,
-      linkPreview
+      linkPreview,
+      sessionId,
+      storageState
     };
   }
 
@@ -585,6 +593,29 @@ export class CrawlService {
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private normalizeSessionId(value?: string | null) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    return trimmed.slice(0, 160);
+  }
+
+  private normalizeStorageState(value?: string | null) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const limit = 12000;
+    return trimmed.length > limit ? trimmed.slice(0, limit) : trimmed;
   }
 
   private normalizeProxyConfig(value?: CrawlProxyConfig | null): CrawlProxyConfig | undefined {
