@@ -77,6 +77,7 @@ export type CrawlProxyConfigInput = {
 
 export type CrawlOptionsInput = {
   includeImages?: InputMaybe<boolean>;
+  storeMedia?: InputMaybe<boolean>;
   onlyMainContent?: InputMaybe<boolean>;
   extractLinks?: InputMaybe<boolean>;
   scanFullPage?: InputMaybe<boolean>;

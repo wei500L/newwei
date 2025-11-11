@@ -135,6 +135,7 @@ export class CrawlService {
 
     const normalizedOptions = this.normalizeOptions({
       includeImages: dto.options?.includeImages,
+      storeMedia: dto.options?.storeMedia,
       onlyMainContent: dto.options?.onlyMainContent,
       extractLinks: dto.options?.extractLinks,
       scanFullPage: dto.options?.scanFullPage,
@@ -340,7 +341,8 @@ export class CrawlService {
     });
 
     try {
-      const payload = this.buildRequestPayload(task);
+      const options = this.extractOptions(task.config);
+      const payload = this.buildRequestPayload(task, options);
       const response = await this.crawlClient.crawl(payload);
       const { successes, failures } = this.partitionCrawlerResults(response.results);
       let failureRetryableCount = 0;
@@ -375,6 +377,7 @@ export class CrawlService {
       const summary = await this.persistResults(
         task,
         successes,
+        options,
         response.runId ?? undefined,
         this.extractMemoryStats(response)
       );
@@ -467,9 +470,9 @@ export class CrawlService {
       .filter((entry): entry is string => Boolean(entry));
   }
 
-  private buildRequestPayload(task: CrawlTask): Crawl4aiRequest {
+  private buildRequestPayload(task: CrawlTask, providedOptions?: CrawlTaskOptions): Crawl4aiRequest {
     const keywords = this.fromJsonArray(task.keywords);
-    const options = this.extractOptions(task.config);
+    const options = providedOptions ?? this.extractOptions(task.config);
     const urls = this.buildUrlList(task.targetUrl, options);
     return {
       url: task.targetUrl,
@@ -486,6 +489,7 @@ export class CrawlService {
     const value = config as Record<string, unknown>;
     return this.normalizeOptions({
       includeImages: typeof value.includeImages === "boolean" ? value.includeImages : undefined,
+      storeMedia: typeof value.storeMedia === "boolean" ? value.storeMedia : undefined,
       onlyMainContent: typeof value.onlyMainContent === "boolean" ? value.onlyMainContent : undefined,
       extractLinks: typeof value.extractLinks === "boolean" ? value.extractLinks : undefined,
       cacheMode: typeof value.cacheMode === "string" ? (value.cacheMode as CrawlTaskOptions["cacheMode"]) : undefined,
@@ -542,6 +546,7 @@ export class CrawlService {
 
     return {
       includeImages: options?.includeImages ?? false,
+      storeMedia: options?.storeMedia ?? false,
       onlyMainContent: options?.onlyMainContent ?? true,
       extractLinks: options?.extractLinks ?? false,
       cacheMode: options?.cacheMode ?? "bypass",
@@ -1012,6 +1017,7 @@ export class CrawlService {
   private async persistResults(
     task: CrawlTask,
     items: Crawl4aiArticle[],
+    options: CrawlTaskOptions,
     runId?: string,
     memory?: CrawlMemoryStats
   ): Promise<CrawlExecutionSummary> {
@@ -1025,6 +1031,8 @@ export class CrawlService {
     let inserted = 0;
     let skipped = 0;
     let latestResultAt: Date | undefined;
+
+    const shouldStoreMedia = options.storeMedia ?? false;
 
     for (const item of items) {
       const markdownResult = this.normalizeMarkdownResult(item.markdown);
@@ -1056,7 +1064,7 @@ export class CrawlService {
         }
       });
       const linkAnalysis = this.extractLinkAnalysisFromResult(item);
-      const media = this.normalizeMediaCollection(item.media);
+      const media = shouldStoreMedia ? this.normalizeMediaCollection(item.media) : undefined;
       const contentDoc = await CrawlResultContentModel.create({
         taskId: task.id,
         resultId: created.id,
@@ -1069,7 +1077,11 @@ export class CrawlService {
         sourceUrl: item.url ?? task.targetUrl,
         crawlRunId: runId,
         linkAnalysis,
-        media
+        ...(shouldStoreMedia
+          ? {
+              media: media ?? null
+            }
+          : {})
       });
       await this.prisma.crawlResult.update({
         where: { id: created.id },

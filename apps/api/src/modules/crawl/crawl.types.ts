@@ -155,6 +155,7 @@ export interface CrawlTaskOptions {
   includeImages?: boolean;
   onlyMainContent?: boolean;
   extractLinks?: boolean;
+  storeMedia?: boolean;
   cacheMode?: CrawlCacheMode;
   scanFullPage?: boolean;
   scrollDelayMs?: number;
