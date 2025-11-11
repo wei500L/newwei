@@ -67,6 +67,7 @@ type CrawlMediaCollection = Record<string, CrawlMediaItem[]>;
 
 const mediaDocsUrl =
   "https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/link-media.md";
+const shortenScript = (value: string) => (value.length > 160 ? `${value.slice(0, 157)}…` : value);
 
 function safeParseJson<T>(input?: string | null): T | null {
   if (!input) {
@@ -366,8 +367,24 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   }, [config]);
 
   const waitTimeoutMs = typeof config?.waitForTimeoutMs === "number" ? config.waitForTimeoutMs : null;
+  const sessionIdentifier = useMemo(() => {
+    if (!config) {
+      return null;
+    }
+    const raw = typeof (config as any).sessionId === "string" ? ((config as any).sessionId as string).trim() : "";
+    return raw.length ? raw : null;
+  }, [config]);
+  const storageStatePreview = useMemo(() => {
+    if (!config) {
+      return null;
+    }
+    const raw =
+      typeof (config as any).storageState === "string"
+        ? ((config as any).storageState as string).trim()
+        : "";
+    return raw.length ? shortenScript(raw) : null;
+  }, [config]);
   const jsOnlyMode = Boolean(config?.jsOnly);
-  const shortenScript = (value: string) => (value.length > 160 ? `${value.slice(0, 157)}…` : value);
 
   const linkOverview = useMemo(() => {
     const analyses =
@@ -565,6 +582,14 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       </Descriptions.Item>
       <Descriptions.Item label="Override navigator">
         {config?.overrideNavigator ? "Enabled" : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Session ID">{sessionIdentifier ?? "—"}</Descriptions.Item>
+      <Descriptions.Item label="Storage state seed">
+        {storageStatePreview ? (
+          <Typography.Text code>{storageStatePreview}</Typography.Text>
+        ) : (
+          "—"
+        )}
       </Descriptions.Item>
       <Descriptions.Item label="JS-only mode">{jsOnlyMode ? "Enabled" : "Disabled"}</Descriptions.Item>
       <Descriptions.Item label="JS steps">

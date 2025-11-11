@@ -216,6 +216,16 @@ export class CrawlStrategyOverridesDto {
   @IsOptional()
   @IsIn(["bypass", "prefer_cache", "force_cache"])
   cacheMode?: "bypass" | "prefer_cache" | "force_cache";
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  sessionId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(12000)
+  storageState?: string;
 }
 
 export class CrawlMultiUrlConfigDto {

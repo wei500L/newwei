@@ -54,6 +54,8 @@ interface CreateCrawlTaskFormValues {
   enableStealthMode?: boolean;
   simulateUser?: boolean;
   overrideNavigator?: boolean;
+  sessionId?: string;
+  storageState?: string;
   jsCode?: string[];
   jsOnly?: boolean;
   waitForSelector?: string;
@@ -412,6 +414,8 @@ export function CrawlTasksView() {
     const jsCode = sanitizeJsCodeList(values.jsCode);
     const waitForSelector = values.waitForSelector?.trim();
     const waitForScript = values.waitForScript?.trim();
+    const sessionId = values.sessionId?.trim();
+    const storageState = values.storageState?.trim();
     try {
       await createTask({
         variables: {
@@ -443,6 +447,8 @@ export function CrawlTasksView() {
               waitForSelector: waitForSelector ? waitForSelector : undefined,
               waitForScript: waitForScript ? waitForScript : undefined,
               waitForTimeoutMs: values.waitForTimeoutMs ?? undefined,
+              sessionId: sessionId ? sessionId : undefined,
+              storageState: storageState && storageState.length ? storageState : undefined,
               proxyUrl: proxyUrl ? proxyUrl : undefined,
               proxyConfig: proxyConfig ?? undefined,
               additionalUrls: additionalUrls && additionalUrls.length ? additionalUrls : undefined,
@@ -691,6 +697,39 @@ export function CrawlTasksView() {
               extra="Defaults to Crawl4AI's internal timeout if left blank."
             >
               <InputNumber min={500} max={60000} style={{ width: "100%" }} placeholder="10000" />
+            </Form.Item>
+          </Card>
+          <Card
+            title="Session management"
+            size="small"
+            style={{ marginBottom: 16 }}
+            extra={
+              <Typography.Link
+                href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/advanced/session-management.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Docs
+              </Typography.Link>
+            }
+          >
+            <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+              Provide a Crawl4AI session identifier to reuse the same browser tab across multiple requests,
+              and optionally preload cookies/localStorage via a storage_state JSON blob (or a path on the Crawl4AI host).
+            </Typography.Paragraph>
+            <Form.Item
+              label="Session ID"
+              name="sessionId"
+              extra="Add a human-friendly ID (letters, numbers, hyphen) to reuse this browser state later."
+            >
+              <Input placeholder="e.g. newsroom-auth-session" maxLength={160} />
+            </Form.Item>
+            <Form.Item
+              label="Storage state (JSON or path)"
+              name="storageState"
+              extra="Paste Crawl4AI storage_state JSON (cookies/localStorage) or provide an absolute path accessible to the crawler."
+            >
+              <Input.TextArea rows={4} placeholder="{ &quot;cookies&quot;: [...] }" maxLength={12000} />
             </Form.Item>
           </Card>
           <Form.Item

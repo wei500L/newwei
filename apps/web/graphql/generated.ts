@@ -99,6 +99,8 @@ export type CrawlOptionsInput = {
   markdownFilter?: InputMaybe<CrawlMarkdownFilterInput>;
   scoreLinks?: InputMaybe<boolean>;
   linkPreview?: InputMaybe<CrawlLinkPreviewInput>;
+  sessionId?: InputMaybe<string>;
+  storageState?: InputMaybe<string>;
 };
 
 export type CreateCrawlTaskInput = {

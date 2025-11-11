@@ -215,6 +215,12 @@ export class CrawlOptionsInput {
 
   @Field(() => CrawlLinkPreviewInput, { nullable: true })
   linkPreview?: CrawlLinkPreviewInput;
+
+  @Field({ nullable: true })
+  sessionId?: string;
+
+  @Field({ nullable: true })
+  storageState?: string;
 }
 
 @InputType()

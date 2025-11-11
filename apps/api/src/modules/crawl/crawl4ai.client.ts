@@ -168,7 +168,9 @@ export class Crawl4aiClient {
         js_code: this.normalizeJsCode(options.jsCode),
         js_only: options.jsOnly ? true : undefined,
         wait_for: this.buildWaitFor(options),
-        wait_for_timeout: this.normalizeWaitForTimeout(options.waitForTimeoutMs)
+        wait_for_timeout: this.normalizeWaitForTimeout(options.waitForTimeoutMs),
+        session_id: options.sessionId,
+        storage_state: this.buildStorageState(options.storageState)
       })
     };
     return {
@@ -267,6 +269,24 @@ export class Crawl4aiClient {
       return undefined;
     }
     return normalized.length === 1 ? normalized[0] : normalized;
+  }
+
+  private buildStorageState(value?: string) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
   }
 
   private buildWaitFor(
