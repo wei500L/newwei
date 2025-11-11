@@ -38,6 +38,218 @@ const limitOptions = [
   { value: 50, label: "Latest 50" }
 ];
 
+type CrawlMediaSource = {
+  src?: string;
+  srcset?: string;
+  type?: string;
+  media?: string;
+  sizes?: string;
+};
+
+type CrawlMediaItem = {
+  src?: string;
+  alt?: string;
+  title?: string;
+  desc?: string;
+  type?: string;
+  format?: string;
+  width?: number;
+  height?: number;
+  score?: number;
+  poster?: string;
+  sizes?: string;
+  srcset?: string[];
+  pictureSources?: CrawlMediaSource[];
+  responsiveSources?: CrawlMediaSource[];
+};
+
+type CrawlMediaCollection = Record<string, CrawlMediaItem[]>;
+
+const mediaDocsUrl =
+  "https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/link-media.md";
+
+function safeParseJson<T>(input?: string | null): T | null {
+  if (!input) {
+    return null;
+  }
+  try {
+    return JSON.parse(input) as T;
+  } catch {
+    return null;
+  }
+}
+
+function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
+  if (!media) {
+    return null;
+  }
+  const entries = Object.entries(media).filter(
+    ([, items]) => Array.isArray(items) && items.length > 0
+  );
+  if (!entries.length) {
+    return null;
+  }
+  return (
+    <Card
+      size="small"
+      title="Media assets"
+      style={{ marginTop: 12 }}
+      extra={
+        <Typography.Link href={mediaDocsUrl} target="_blank" rel="noreferrer">
+          Crawl4AI doc
+        </Typography.Link>
+      }
+    >
+      <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        {entries.map(([kind, items]) => {
+          const preview = items.slice(0, 4);
+          const remaining = Math.max(0, items.length - preview.length);
+          return (
+            <div key={kind}>
+              <Typography.Text strong style={{ textTransform: "capitalize" }}>
+                {kind} ({items.length})
+              </Typography.Text>
+              <List
+                size="small"
+                split={false}
+                style={{ marginTop: 8 }}
+                dataSource={preview}
+                renderItem={(item, index) => (
+                  <List.Item key={`${kind}-${index}-${item.src ?? "media"}`}>
+                    <Space align="start">
+                      {renderMediaPreview(kind, item)}
+                      <Space direction="vertical" size={4}>
+                        <Typography.Link href={item.src} target="_blank">
+                          {item.src ?? "View asset"}
+                        </Typography.Link>
+                        {item.alt || item.title ? (
+                          <Typography.Text strong>
+                            {item.alt ?? item.title}
+                          </Typography.Text>
+                        ) : null}
+                        {item.desc ? (
+                          <Typography.Paragraph style={{ marginBottom: 4 }}>
+                            {item.desc}
+                          </Typography.Paragraph>
+                        ) : null}
+                        <Typography.Text type="secondary">
+                          {[item.type, item.format, formatDimensions(item), formatScore(item)]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </Typography.Text>
+                        {item.srcset ? renderSrcset(item.srcset) : null}
+                        {renderSourceList("picture", item.pictureSources)}
+                        {renderSourceList("responsive", item.responsiveSources)}
+                      </Space>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+              {remaining > 0 ? (
+                <Typography.Text type="secondary">
+                  +{remaining} more {kind} kept in the result payload
+                </Typography.Text>
+              ) : null}
+            </div>
+          );
+        })}
+      </Space>
+    </Card>
+  );
+}
+
+function renderMediaPreview(kind: string, item: CrawlMediaItem) {
+  if (!item.src) {
+    return null;
+  }
+  const normalized = kind.toLowerCase();
+  if (normalized.includes("image")) {
+    return (
+      <img
+        src={item.src}
+        alt={item.alt || item.title || "Media thumbnail"}
+        style={{
+          width: 96,
+          height: 96,
+          objectFit: "cover",
+          borderRadius: 8,
+          border: "1px solid #f0f0f0"
+        }}
+        loading="lazy"
+      />
+    );
+  }
+  if (normalized.includes("video")) {
+    return (
+      <video
+        src={item.src}
+        poster={item.poster}
+        controls
+        style={{ width: 160, borderRadius: 8 }}
+      />
+    );
+  }
+  if (normalized.includes("audio")) {
+    return <audio src={item.src} controls style={{ minWidth: 160 }} />;
+  }
+  return null;
+}
+
+function formatDimensions(item: CrawlMediaItem) {
+  if (item.width && item.height) {
+    return `${item.width}×${item.height}px`;
+  }
+  return undefined;
+}
+
+function formatScore(item: CrawlMediaItem) {
+  if (typeof item.score === "number") {
+    return `score ${item.score.toFixed(2)}`;
+  }
+  return undefined;
+}
+
+function renderSrcset(srcset: string[]) {
+  return (
+    <div>
+      <Typography.Text type="secondary">srcset variants</Typography.Text>
+      <pre
+        style={{
+          background: "#fafafa",
+          padding: 8,
+          borderRadius: 4,
+          maxWidth: 520,
+          whiteSpace: "pre-wrap"
+        }}
+      >
+        {srcset.join("\n")}
+      </pre>
+    </div>
+  );
+}
+
+function renderSourceList(label: string, sources?: CrawlMediaSource[]) {
+  if (!sources || sources.length === 0) {
+    return null;
+  }
+  return (
+    <div>
+      <Typography.Text type="secondary">
+        {label} sources ({sources.length})
+      </Typography.Text>
+      <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
+        {sources.slice(0, 4).map((source, index) => (
+          <li key={`${label}-${index}`}>
+            <code>{source.srcset ?? source.src}</code>
+            {source.type ? ` • ${source.type}` : ""}
+            {source.media ? ` • ${source.media}` : ""}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
@@ -575,6 +787,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             locale={{ emptyText: "No crawl results yet." }}
             renderItem={(result) => {
               const metadata = result.metadata;
+              const mediaPayload = safeParseJson<CrawlMediaCollection>(result.media);
               const variantEntries = [
                 { key: "raw", label: "Raw", content: result.markdown },
                 { key: "citations", label: "Citations", content: result.markdownWithCitations },
@@ -623,6 +836,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                           <Typography.Text type="secondary">{metadata}</Typography.Text>
                         )}
                         {tabs}
+                        <MediaSection media={mediaPayload} />
                       </>
                     }
                   />

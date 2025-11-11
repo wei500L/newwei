@@ -327,6 +327,7 @@ export type CrawlTaskQuery = {
       referencesMarkdown?: string | null;
       fitMarkdown?: string | null;
       metadata?: string | null;
+      media?: string | null;
       linkAnalysis?: {
         stats: {
           totalLinks: number;
@@ -534,6 +535,7 @@ export const CrawlTaskDocument = gql`
         referencesMarkdown
         fitMarkdown
         metadata
+        media
         linkAnalysis {
           stats {
             totalLinks

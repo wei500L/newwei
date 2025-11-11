@@ -119,6 +119,38 @@ export interface CrawlLinkAnalysis {
   lowQualityLinks: CrawlLinkAnalysisLink[];
 }
 
+export interface CrawlMediaSource {
+  src?: string;
+  srcset?: string;
+  type?: string;
+  media?: string;
+  sizes?: string;
+}
+
+export interface CrawlMediaItem {
+  src?: string;
+  alt?: string;
+  title?: string;
+  desc?: string;
+  type?: string;
+  format?: string;
+  width?: number;
+  height?: number;
+  score?: number;
+  poster?: string;
+  sizes?: string;
+  srcset?: string[];
+  pictureSources?: CrawlMediaSource[];
+  responsiveSources?: CrawlMediaSource[];
+  raw?: Record<string, unknown>;
+}
+
+export type CrawlMediaCollection = Record<string, CrawlMediaItem[]>;
+
+export type Crawl4aiMediaEntry = Record<string, unknown>;
+
+export type Crawl4aiMedia = Record<string, Crawl4aiMediaEntry[]>;
+
 export interface CrawlTaskOptions {
   includeImages?: boolean;
   onlyMainContent?: boolean;

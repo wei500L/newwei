@@ -32,6 +32,9 @@ export class CrawlResultModel {
   metadata?: string;
 
   @Field({ nullable: true })
+  media?: string;
+
+  @Field({ nullable: true })
   markdownWithCitations?: string | null;
 
   @Field({ nullable: true })

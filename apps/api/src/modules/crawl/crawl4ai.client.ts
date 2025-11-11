@@ -10,7 +10,8 @@ import type {
   CrawlStrategyOverrides,
   CrawlMarkdownOptions,
   CrawlMarkdownFilter,
-  CrawlLinkPreviewOptions
+  CrawlLinkPreviewOptions,
+  Crawl4aiMedia
 } from "./crawl.types";
 
 export interface Crawl4aiRequest {
@@ -40,6 +41,7 @@ export interface Crawl4aiArticle {
   publishedAt?: string;
   metadata?: Record<string, unknown>;
   links?: Record<string, Crawl4aiLink[]>;
+  media?: Crawl4aiMedia;
   success?: boolean;
   statusCode?: number;
   status_code?: number;
