@@ -9,6 +9,7 @@ const CrawlResultContentSchema = new Schema(
     markdownWithCitations: { type: String },
     referencesMarkdown: { type: String },
     fitMarkdown: { type: String },
+    media: Schema.Types.Mixed,
     metadata: Schema.Types.Mixed,
     sourceUrl: { type: String },
     crawlRunId: { type: String },

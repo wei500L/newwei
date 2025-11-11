@@ -16,7 +16,10 @@ import {
   CrawlStrategyOverrides,
   CrawlFailureDetail,
   CrawlLinkAnalysis,
-  CrawlLinkPreviewOptions
+  CrawlLinkPreviewOptions,
+  CrawlMediaCollection,
+  CrawlMediaItem,
+  CrawlMediaSource
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -50,6 +53,7 @@ export interface CrawlTaskResult {
   referencesMarkdown?: string | null;
   fitMarkdown?: string | null;
   linkAnalysis?: CrawlLinkAnalysis | null;
+  media?: CrawlMediaCollection | null;
 }
 
 export interface CrawlTaskView {
@@ -81,6 +85,35 @@ export interface CrawlTaskView {
 @Injectable()
 export class CrawlService {
   private readonly retryableStatusCodes = new Set([408, 423, 425, 429, 500, 502, 503, 504]);
+  private readonly mediaReservedKeys = new Set([
+    "src",
+    "url",
+    "href",
+    "alt",
+    "title",
+    "desc",
+    "description",
+    "caption",
+    "type",
+    "media_type",
+    "mediaType",
+    "format",
+    "mime",
+    "mimeType",
+    "width",
+    "height",
+    "score",
+    "poster",
+    "thumbnail",
+    "sizes",
+    "srcset",
+    "srcSet",
+    "sources",
+    "picture_sources",
+    "pictureSources",
+    "responsive_images",
+    "responsiveImages"
+  ]);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1023,6 +1056,7 @@ export class CrawlService {
         }
       });
       const linkAnalysis = this.extractLinkAnalysisFromResult(item);
+      const media = this.normalizeMediaCollection(item.media);
       const contentDoc = await CrawlResultContentModel.create({
         taskId: task.id,
         resultId: created.id,
@@ -1034,7 +1068,8 @@ export class CrawlService {
         metadata: item.metadata ?? {},
         sourceUrl: item.url ?? task.targetUrl,
         crawlRunId: runId,
-        linkAnalysis
+        linkAnalysis,
+        media
       });
       await this.prisma.crawlResult.update({
         where: { id: created.id },
@@ -1076,7 +1111,8 @@ export class CrawlService {
         markdownWithCitations: this.ensureString(doc?.markdownWithCitations),
         referencesMarkdown: this.ensureString(doc?.referencesMarkdown),
         fitMarkdown: this.ensureString(doc?.fitMarkdown),
-        linkAnalysis: (doc?.linkAnalysis as CrawlLinkAnalysis | undefined) ?? null
+        linkAnalysis: (doc?.linkAnalysis as CrawlLinkAnalysis | undefined) ?? null,
+        media: (doc?.media as CrawlMediaCollection | undefined) ?? null
       };
     });
   }
@@ -1211,6 +1247,165 @@ export class CrawlService {
       }
     }
     return undefined;
+  }
+
+  private normalizeMediaCollection(media: unknown): CrawlMediaCollection | undefined {
+    if (!media || typeof media !== "object" || Array.isArray(media)) {
+      return undefined;
+    }
+    const normalized: CrawlMediaCollection = {};
+    for (const [kind, value] of Object.entries(media as Record<string, unknown>)) {
+      if (!Array.isArray(value)) {
+        continue;
+      }
+      const items = value
+        .map((entry) => this.normalizeMediaItem(entry))
+        .filter((entry): entry is CrawlMediaItem => Boolean(entry));
+      if (items.length > 0) {
+        normalized[kind] = items;
+      }
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private normalizeMediaItem(value: unknown): CrawlMediaItem | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const item: CrawlMediaItem = {};
+    const src = this.pickString(record, ["src", "url", "href"]);
+    if (src) {
+      item.src = src;
+    }
+    const alt = this.pickString(record, ["alt"]);
+    if (alt) {
+      item.alt = alt;
+    }
+    const title = this.pickString(record, ["title"]);
+    if (title) {
+      item.title = title;
+    }
+    const desc = this.pickString(record, ["desc", "description", "caption"]);
+    if (desc) {
+      item.desc = desc;
+    }
+    const type = this.pickString(record, ["type", "media_type", "mediaType"]);
+    if (type) {
+      item.type = type;
+    }
+    const format = this.pickString(record, ["format", "mime", "mimeType"]);
+    if (format) {
+      item.format = format;
+    }
+    const poster = this.pickString(record, ["poster", "thumbnail"]);
+    if (poster) {
+      item.poster = poster;
+    }
+    const sizes = this.pickString(record, ["sizes"]);
+    if (sizes) {
+      item.sizes = sizes;
+    }
+    const width = this.pickNumber(record, ["width"]);
+    if (width !== undefined) {
+      item.width = width;
+    }
+    const height = this.pickNumber(record, ["height"]);
+    if (height !== undefined) {
+      item.height = height;
+    }
+    const score = this.pickNumber(record, ["score"]);
+    if (score !== undefined) {
+      item.score = score;
+    }
+    const srcset = this.normalizeStringList(record.srcset ?? record.srcSet);
+    if (srcset) {
+      item.srcset = srcset;
+    }
+    const pictureSources = this.normalizeMediaSources(
+      record.sources ?? record.picture_sources ?? record.pictureSources
+    );
+    if (pictureSources) {
+      item.pictureSources = pictureSources;
+    }
+    const responsiveSources = this.normalizeMediaSources(
+      record.responsive_images ?? record.responsiveImages
+    );
+    if (responsiveSources) {
+      item.responsiveSources = responsiveSources;
+    }
+    const extras = this.extractMediaExtras(record);
+    if (Object.keys(extras).length > 0) {
+      item.raw = extras;
+    }
+    return Object.keys(item).length > 0 ? item : undefined;
+  }
+
+  private normalizeMediaSources(value: unknown): CrawlMediaSource[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    const sources = value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return undefined;
+        }
+        const record = entry as Record<string, unknown>;
+        const source: CrawlMediaSource = {};
+        const srcset = this.pickString(record, ["srcset", "srcSet"]);
+        if (srcset) {
+          source.srcset = srcset;
+        }
+        const src = this.pickString(record, ["src", "url", "href"]);
+        if (src) {
+          source.src = src;
+        }
+        const type = this.pickString(record, ["type"]);
+        if (type) {
+          source.type = type;
+        }
+        const media = this.pickString(record, ["media"]);
+        if (media) {
+          source.media = media;
+        }
+        const sizes = this.pickString(record, ["sizes"]);
+        if (sizes) {
+          source.sizes = sizes;
+        }
+        return Object.keys(source).length > 0 ? source : undefined;
+      })
+      .filter((entry): entry is CrawlMediaSource => Boolean(entry));
+    return sources.length > 0 ? sources : undefined;
+  }
+
+  private normalizeStringList(value: unknown): string[] | undefined {
+    if (!value) {
+      return undefined;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? [trimmed] : undefined;
+    }
+    if (Array.isArray(value)) {
+      const normalized = value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0);
+      return normalized.length > 0 ? normalized.slice(0, 20) : undefined;
+    }
+    return undefined;
+  }
+
+  private extractMediaExtras(record: Record<string, unknown>) {
+    const extras: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(record)) {
+      if (this.mediaReservedKeys.has(key)) {
+        continue;
+      }
+      if (value !== undefined) {
+        extras[key] = value;
+      }
+    }
+    return extras;
   }
 
   private pickNumber(source: Record<string, unknown> | undefined, keys: string[]): number | undefined {

@@ -176,6 +176,7 @@ export class CrawlResolver {
     return {
       ...result,
       metadata: result.metadata ? JSON.stringify(result.metadata) : null,
+      media: result.media ? JSON.stringify(result.media) : null,
       linkAnalysis: result.linkAnalysis ? this.toGraphLinkAnalysis(result.linkAnalysis) : null
     };
   }
