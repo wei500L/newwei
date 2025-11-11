@@ -45,6 +45,7 @@ interface CreateCrawlTaskFormValues {
   timeRange?: Dayjs[];
   concurrency?: number;
   includeImages?: boolean;
+  storeMedia?: boolean;
   onlyMainContent?: boolean;
   extractLinks?: boolean;
   scanFullPage?: boolean;
@@ -428,6 +429,7 @@ export function CrawlTasksView() {
                 : null,
             options: {
               includeImages: values.includeImages ?? undefined,
+              storeMedia: typeof values.storeMedia === "boolean" ? values.storeMedia : undefined,
               onlyMainContent: values.onlyMainContent ?? undefined,
               extractLinks: values.extractLinks ?? undefined,
               scanFullPage: values.scanFullPage ?? undefined,
@@ -553,6 +555,14 @@ export function CrawlTasksView() {
             <InputNumber min={1} max={10} style={{ width: "100%" }} placeholder="Default: 3" />
           </Form.Item>
           <Form.Item label="Include images" name="includeImages" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="Store media assets"
+            name="storeMedia"
+            valuePropName="checked"
+            extra="When enabled, Crawl4AI's result.media payload (images/audio/video/srcset) is persisted for later review."
+          >
             <Switch />
           </Form.Item>
           <Form.Item label="Only main content" name="onlyMainContent" valuePropName="checked">

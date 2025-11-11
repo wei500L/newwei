@@ -41,6 +41,10 @@ export class CrawlOptionsDto {
 
   @IsOptional()
   @IsBoolean()
+  storeMedia?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   onlyMainContent?: boolean;
 
   @IsOptional()

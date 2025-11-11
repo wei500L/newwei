@@ -151,6 +151,9 @@ export class CrawlOptionsInput {
   includeImages?: boolean;
 
   @Field(() => Boolean, { nullable: true })
+  storeMedia?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
   onlyMainContent?: boolean;
 
   @Field(() => Boolean, { nullable: true })

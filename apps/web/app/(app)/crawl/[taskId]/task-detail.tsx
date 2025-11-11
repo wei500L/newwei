@@ -511,6 +511,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   }
 
   const results = task.results ?? [];
+  const includeImagesEnabled = Boolean(config?.includeImages);
+  const storeMediaEnabled = Boolean(config?.storeMedia);
 
   return (
     <div className="content-card">
@@ -540,7 +542,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           )}
         </Descriptions.Item>
         <Descriptions.Item label="Concurrency">{task.concurrency}</Descriptions.Item>
-      <Descriptions.Item label="Run count">{task.runCount}</Descriptions.Item>
+        <Descriptions.Item label="Include images">
+          {includeImagesEnabled ? "Enabled" : "Disabled"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Store media assets">
+          {storeMediaEnabled ? "Enabled" : "Disabled"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Run count">{task.runCount}</Descriptions.Item>
       <Descriptions.Item label="Full-page scanning">
         {config?.scanFullPage
           ? `Enabled (scroll delay ${config?.scrollDelayMs ?? 200} ms)`
