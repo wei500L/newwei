@@ -33,6 +33,33 @@ export interface CrawlProxyConfig {
   password?: string;
 }
 
+export interface CrawlBrowserHeader {
+  name: string;
+  value: string;
+}
+
+export interface CrawlBrowserCookie {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+}
+
+export type CrawlUserAgentMode = "random";
+
+export interface CrawlUserAgentGeneratorConfig {
+  platform?: "windows" | "macos" | "linux" | "android" | "ios";
+  browser?: "chrome" | "firefox" | "safari" | "edge";
+  deviceType?: "desktop" | "mobile" | "tablet";
+  locale?: string;
+}
+
+export interface CrawlGeolocationConfig {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
 export interface CrawlUrlMatcher {
   matchMode?: CrawlUrlMatchMode;
   patterns?: string[];
@@ -178,6 +205,14 @@ export interface CrawlTaskOptions {
   markdownFilter?: CrawlMarkdownFilter;
   scoreLinks?: boolean;
   linkPreview?: CrawlLinkPreviewOptions;
+  browserHeaders?: CrawlBrowserHeader[];
+  browserCookies?: CrawlBrowserCookie[];
+  userAgent?: string;
+  userAgentMode?: CrawlUserAgentMode;
+  userAgentGenerator?: CrawlUserAgentGeneratorConfig;
+  locale?: string;
+  timezoneId?: string;
+  geolocation?: CrawlGeolocationConfig;
 }
 
 export interface CrawlMemoryStats {

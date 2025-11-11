@@ -23,6 +23,57 @@ export class CrawlProxyConfigInput {
 }
 
 @InputType()
+export class CrawlBrowserHeaderInput {
+  @Field()
+  name!: string;
+
+  @Field()
+  value!: string;
+}
+
+@InputType()
+export class CrawlBrowserCookieInput {
+  @Field()
+  name!: string;
+
+  @Field()
+  value!: string;
+
+  @Field()
+  domain!: string;
+
+  @Field({ nullable: true })
+  path?: string;
+}
+
+@InputType()
+export class CrawlUserAgentGeneratorInput {
+  @Field({ nullable: true })
+  platform?: string;
+
+  @Field({ nullable: true })
+  browser?: string;
+
+  @Field({ nullable: true })
+  deviceType?: string;
+
+  @Field({ nullable: true })
+  locale?: string;
+}
+
+@InputType()
+export class CrawlGeolocationInput {
+  @Field(() => Float)
+  latitude!: number;
+
+  @Field(() => Float)
+  longitude!: number;
+
+  @Field(() => Float, { nullable: true })
+  accuracy?: number;
+}
+
+@InputType()
 export class CrawlUrlMatcherInput {
   @Field(() => String, { nullable: true })
   matchMode?: string;
@@ -215,6 +266,30 @@ export class CrawlOptionsInput {
 
   @Field(() => CrawlLinkPreviewInput, { nullable: true })
   linkPreview?: CrawlLinkPreviewInput;
+
+  @Field(() => [CrawlBrowserHeaderInput], { nullable: true })
+  browserHeaders?: CrawlBrowserHeaderInput[];
+
+  @Field(() => [CrawlBrowserCookieInput], { nullable: true })
+  browserCookies?: CrawlBrowserCookieInput[];
+
+  @Field({ nullable: true })
+  userAgent?: string;
+
+  @Field({ nullable: true })
+  userAgentMode?: string;
+
+  @Field(() => CrawlUserAgentGeneratorInput, { nullable: true })
+  userAgentGenerator?: CrawlUserAgentGeneratorInput;
+
+  @Field({ nullable: true })
+  locale?: string;
+
+  @Field({ nullable: true })
+  timezoneId?: string;
+
+  @Field(() => CrawlGeolocationInput, { nullable: true })
+  geolocation?: CrawlGeolocationInput;
 
   @Field({ nullable: true })
   sessionId?: string;
