@@ -147,6 +147,8 @@ export class CrawlService {
       scrollDelayMs: dto.options?.scrollDelayMs,
       enableUndetectedBrowser: dto.options?.enableUndetectedBrowser,
       enableStealthMode: dto.options?.enableStealthMode,
+      useManagedBrowser: dto.options?.useManagedBrowser,
+      userDataDir: dto.options?.userDataDir,
       simulateUser: dto.options?.simulateUser,
       overrideNavigator: dto.options?.overrideNavigator,
       sessionId: dto.options?.sessionId,
@@ -507,6 +509,8 @@ export class CrawlService {
       enableUndetectedBrowser:
         typeof value.enableUndetectedBrowser === "boolean" ? value.enableUndetectedBrowser : undefined,
       enableStealthMode: typeof value.enableStealthMode === "boolean" ? value.enableStealthMode : undefined,
+      useManagedBrowser: typeof value.useManagedBrowser === "boolean" ? value.useManagedBrowser : undefined,
+      userDataDir: typeof value.userDataDir === "string" ? value.userDataDir : undefined,
       simulateUser: typeof value.simulateUser === "boolean" ? value.simulateUser : undefined,
       overrideNavigator: typeof value.overrideNavigator === "boolean" ? value.overrideNavigator : undefined,
       sessionId: typeof value.sessionId === "string" ? value.sessionId : undefined,
@@ -551,6 +555,8 @@ export class CrawlService {
     const overrideNavigator =
       options?.overrideNavigator ??
       (options?.enableStealthMode ? true : false);
+    const userDataDir = this.normalizeUserDataDir(options?.userDataDir);
+    const useManagedBrowser = options?.useManagedBrowser ?? Boolean(userDataDir);
     const proxyConfig = this.normalizeProxyConfig(options?.proxyConfig);
     const proxyUrl = proxyConfig ? undefined : this.normalizeProxyUrl(options?.proxyUrl);
     const additionalUrls = this.normalizeUrlList(options?.additionalUrls);
@@ -585,6 +591,8 @@ export class CrawlService {
       scrollDelayMs,
       enableUndetectedBrowser: options?.enableUndetectedBrowser ?? false,
       enableStealthMode: options?.enableStealthMode ?? false,
+      useManagedBrowser,
+      userDataDir,
       simulateUser,
       overrideNavigator,
       jsCode,
@@ -637,6 +645,18 @@ export class CrawlService {
       return undefined;
     }
     return trimmed.slice(0, 160);
+  }
+
+  private normalizeUserDataDir(value?: string | null) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const limit = 512;
+    return trimmed.length > limit ? trimmed.slice(0, limit) : trimmed;
   }
 
   private normalizeStorageState(value?: string | null) {

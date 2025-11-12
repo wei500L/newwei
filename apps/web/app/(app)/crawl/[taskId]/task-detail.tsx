@@ -374,6 +374,14 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       .filter((entry): entry is string => Boolean(entry));
   }, [config]);
 
+  const managedBrowserProfile = useMemo(() => {
+    if (!config || typeof config.userDataDir !== "string") {
+      return null;
+    }
+    const trimmed = config.userDataDir.trim();
+    return trimmed.length ? trimmed : null;
+  }, [config]);
+
   const userAgentValue = useMemo(() => {
     if (!config || typeof config.userAgent !== "string") {
       return null;
@@ -632,6 +640,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const includeImagesEnabled = Boolean(config?.includeImages);
   const storeMediaEnabled = Boolean(config?.storeMedia);
   const adjustViewportEnabled = Boolean(config?.adjustViewportToContent);
+  const managedBrowserEnabled = Boolean(config?.useManagedBrowser);
 
   return (
     <div className="content-card">
@@ -681,6 +690,12 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       </Descriptions.Item>
       <Descriptions.Item label="Stealth mode">
         {config?.enableStealthMode ? "Enabled" : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Managed browser">
+        {managedBrowserEnabled ? "Enabled" : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="User data dir">
+        {managedBrowserProfile ?? "—"}
       </Descriptions.Item>
       <Descriptions.Item label="User simulation">
         {config?.simulateUser ? "Enabled" : "Disabled"}

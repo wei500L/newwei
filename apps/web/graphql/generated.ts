@@ -111,6 +111,8 @@ export type CrawlOptionsInput = {
   scrollDelayMs?: InputMaybe<number>;
   enableUndetectedBrowser?: InputMaybe<boolean>;
   enableStealthMode?: InputMaybe<boolean>;
+  useManagedBrowser?: InputMaybe<boolean>;
+  userDataDir?: InputMaybe<string>;
   simulateUser?: InputMaybe<boolean>;
   overrideNavigator?: InputMaybe<boolean>;
   jsCode?: InputMaybe<Array<string>>;

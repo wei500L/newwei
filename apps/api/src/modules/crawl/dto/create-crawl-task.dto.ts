@@ -145,6 +145,15 @@ export class CrawlOptionsDto {
 
   @IsOptional()
   @IsBoolean()
+  useManagedBrowser?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  userDataDir?: string;
+
+  @IsOptional()
+  @IsBoolean()
   simulateUser?: boolean;
 
   @IsOptional()
