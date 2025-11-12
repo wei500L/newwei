@@ -341,9 +341,29 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!markdownFilter || typeof markdownFilter.type !== "string") {
       return "Disabled";
     }
-    const threshold =
-      typeof markdownFilter.threshold === "number" ? ` (threshold ${markdownFilter.threshold})` : "";
-    return `${markdownFilter.type}${threshold}`;
+    const parts = [markdownFilter.type];
+    if (typeof markdownFilter.threshold === "number") {
+      parts.push(`threshold ${markdownFilter.threshold}`);
+    }
+    const thresholdTypeValue =
+      typeof markdownFilter.thresholdType === "string"
+        ? markdownFilter.thresholdType
+        : typeof markdownFilter.threshold_type === "string"
+          ? (markdownFilter.threshold_type as string)
+          : undefined;
+    if (thresholdTypeValue) {
+      parts.push(`${thresholdTypeValue} mode`);
+    }
+    const minWordValue =
+      typeof markdownFilter.minWordThreshold === "number"
+        ? markdownFilter.minWordThreshold
+        : typeof markdownFilter.min_word_threshold === "number"
+          ? (markdownFilter.min_word_threshold as number)
+          : undefined;
+    if (typeof minWordValue === "number") {
+      parts.push(`min words ${minWordValue}`);
+    }
+    return parts.join(" • ");
   }, [markdownFilter]);
 
   const cleanMarkdownSummary = useMemo(() => {

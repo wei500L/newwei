@@ -98,6 +98,8 @@ export interface CrawlMarkdownOptions {
 export interface CrawlMarkdownFilter {
   type: "pruning";
   threshold?: number;
+  thresholdType?: "fixed" | "dynamic";
+  minWordThreshold?: number;
 }
 
 export interface CrawlCleanMarkdownOptions {

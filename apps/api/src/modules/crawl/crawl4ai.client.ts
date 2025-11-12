@@ -390,7 +390,9 @@ export class Crawl4aiClient {
       return this.compact({
         type: "PruningContentFilter",
         params: this.compact({
-          threshold: filter.threshold
+          threshold: filter.threshold,
+          threshold_type: filter.thresholdType,
+          min_word_threshold: filter.minWordThreshold
         })
       });
     }

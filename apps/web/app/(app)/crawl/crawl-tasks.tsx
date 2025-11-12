@@ -84,6 +84,8 @@ interface CreateCrawlTaskFormValues {
   markdownFilter?: {
     type?: string;
     threshold?: number;
+    thresholdType?: "fixed" | "dynamic";
+    minWordThreshold?: number;
   };
   cleanMarkdown?: {
     cssSelector?: string;
@@ -571,6 +573,12 @@ export function CrawlTasksView() {
     const payload: Record<string, unknown> = { type: filter.type };
     if (typeof filter.threshold === "number") {
       payload.threshold = filter.threshold;
+    }
+    if (filter.thresholdType === "fixed" || filter.thresholdType === "dynamic") {
+      payload.thresholdType = filter.thresholdType;
+    }
+    if (typeof filter.minWordThreshold === "number") {
+      payload.minWordThreshold = filter.minWordThreshold;
     }
     return payload;
   };
@@ -1452,6 +1460,29 @@ export function CrawlTasksView() {
             extra="Keep content whose relevance score is above this threshold (0-1)."
           >
             <InputNumber min={0} max={1} step={0.05} style={{ width: "100%" }} placeholder="0.6" />
+          </Form.Item>
+          <Form.Item
+            label="Threshold mode"
+            name={["markdownFilter", "thresholdType"]}
+            hidden={markdownFilterType !== "pruning"}
+            extra="Choose between fixed or dynamic heuristics per Crawl4AI Fit Markdown guide."
+          >
+            <Select
+              allowClear
+              placeholder="dynamic"
+              options={[
+                { value: "dynamic", label: "Dynamic (auto adjusts per page)" },
+                { value: "fixed", label: "Fixed (use provided score)" }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            label="Min words per block"
+            name={["markdownFilter", "minWordThreshold"]}
+            hidden={markdownFilterType !== "pruning"}
+            extra="Ignore nodes shorter than this count before scoring (Fit Markdown heuristic)."
+          >
+            <InputNumber min={0} max={500} step={1} style={{ width: "100%" }} placeholder="5" />
           </Form.Item>
           <Card
             size="small"
