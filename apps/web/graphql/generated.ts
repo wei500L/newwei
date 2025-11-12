@@ -49,6 +49,7 @@ export type CrawlUrlMatcherInput = {
 
 export type CrawlStrategyOverridesInput = {
   scanFullPage?: InputMaybe<boolean>;
+  adjustViewportToContent?: InputMaybe<boolean>;
   scrollDelayMs?: InputMaybe<number>;
   onlyMainContent?: InputMaybe<boolean>;
   extractLinks?: InputMaybe<boolean>;
@@ -106,6 +107,7 @@ export type CrawlOptionsInput = {
   onlyMainContent?: InputMaybe<boolean>;
   extractLinks?: InputMaybe<boolean>;
   scanFullPage?: InputMaybe<boolean>;
+  adjustViewportToContent?: InputMaybe<boolean>;
   scrollDelayMs?: InputMaybe<number>;
   enableUndetectedBrowser?: InputMaybe<boolean>;
   enableStealthMode?: InputMaybe<boolean>;

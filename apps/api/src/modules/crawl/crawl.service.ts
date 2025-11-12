@@ -143,6 +143,7 @@ export class CrawlService {
       onlyMainContent: dto.options?.onlyMainContent,
       extractLinks: dto.options?.extractLinks,
       scanFullPage: dto.options?.scanFullPage,
+      adjustViewportToContent: dto.options?.adjustViewportToContent,
       scrollDelayMs: dto.options?.scrollDelayMs,
       enableUndetectedBrowser: dto.options?.enableUndetectedBrowser,
       enableStealthMode: dto.options?.enableStealthMode,
@@ -500,6 +501,8 @@ export class CrawlService {
       extractLinks: typeof value.extractLinks === "boolean" ? value.extractLinks : undefined,
       cacheMode: typeof value.cacheMode === "string" ? (value.cacheMode as CrawlTaskOptions["cacheMode"]) : undefined,
       scanFullPage: typeof value.scanFullPage === "boolean" ? value.scanFullPage : undefined,
+      adjustViewportToContent:
+        typeof value.adjustViewportToContent === "boolean" ? value.adjustViewportToContent : undefined,
       scrollDelayMs: typeof value.scrollDelayMs === "number" ? value.scrollDelayMs : undefined,
       enableUndetectedBrowser:
         typeof value.enableUndetectedBrowser === "boolean" ? value.enableUndetectedBrowser : undefined,
@@ -534,6 +537,7 @@ export class CrawlService {
 
   private normalizeOptions(options?: Partial<CrawlTaskOptions>): CrawlTaskOptions {
     const scanFullPage = options?.scanFullPage ?? false;
+    const adjustViewportToContent = options?.adjustViewportToContent ?? false;
     let scrollDelayMs: number | undefined;
     if (scanFullPage) {
       scrollDelayMs =
@@ -577,6 +581,7 @@ export class CrawlService {
       extractLinks: options?.extractLinks ?? false,
       cacheMode: options?.cacheMode ?? "bypass",
       scanFullPage,
+      adjustViewportToContent,
       scrollDelayMs,
       enableUndetectedBrowser: options?.enableUndetectedBrowser ?? false,
       enableStealthMode: options?.enableStealthMode ?? false,
@@ -757,6 +762,9 @@ export class CrawlService {
     }
     if (typeof overrides.scanFullPage === "boolean") {
       normalized.scanFullPage = overrides.scanFullPage;
+    }
+    if (typeof overrides.adjustViewportToContent === "boolean") {
+      normalized.adjustViewportToContent = overrides.adjustViewportToContent;
     }
     if (typeof overrides.scrollDelayMs === "number") {
       normalized.scrollDelayMs = this.clampScrollDelay(overrides.scrollDelayMs);

@@ -87,6 +87,9 @@ export class CrawlStrategyOverridesInput {
   @Field(() => Boolean, { nullable: true })
   scanFullPage?: boolean;
 
+  @Field(() => Boolean, { nullable: true })
+  adjustViewportToContent?: boolean;
+
   @Field(() => Int, { nullable: true })
   scrollDelayMs?: number;
 
@@ -212,6 +215,9 @@ export class CrawlOptionsInput {
 
   @Field(() => Boolean, { nullable: true })
   scanFullPage?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  adjustViewportToContent?: boolean;
 
   @Field(() => Int, { nullable: true })
   scrollDelayMs?: number;
