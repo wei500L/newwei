@@ -16,7 +16,9 @@ import type {
   CrawlBrowserCookie,
   CrawlUserAgentGeneratorConfig,
   CrawlGeolocationConfig,
-  CrawlCleanMarkdownOptions
+  CrawlCleanMarkdownOptions,
+  CrawlTableExtractionStrategy,
+  Crawl4aiTablePayload
 } from "./crawl.types";
 
 export interface Crawl4aiRequest {
@@ -47,6 +49,7 @@ export interface Crawl4aiArticle {
   metadata?: Record<string, unknown>;
   links?: Record<string, Crawl4aiLink[]>;
   media?: Crawl4aiMedia;
+  tables?: Crawl4aiTablePayload[];
   success?: boolean;
   statusCode?: number;
   status_code?: number;
@@ -197,7 +200,9 @@ export class Crawl4aiClient {
         wait_for_timeout: this.normalizeWaitForTimeout(options.waitForTimeoutMs),
         session_id: options.sessionId,
         storage_state: this.buildStorageState(options.storageState),
-        ...(cleanMarkdown ?? {})
+        ...(cleanMarkdown ?? {}),
+        table_score_threshold: this.normalizeTableScore(options.tableScoreThreshold),
+        table_extraction: this.buildTableExtraction(options.tableExtraction)
       })
     };
     return {
@@ -256,6 +261,25 @@ export class Crawl4aiClient {
           params
         }
       : undefined;
+  }
+
+  private buildTableExtraction(strategy?: CrawlTableExtractionStrategy) {
+    if (!strategy || typeof strategy.type !== "string") {
+      return undefined;
+    }
+    const trimmed = strategy.type.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const params = this.normalizeCustomParams(strategy.params);
+    return params && Object.keys(params).length > 0
+      ? {
+          type: trimmed,
+          params
+        }
+      : {
+          type: trimmed
+        };
   }
 
   private buildMarkdownOptionsPayload(markdownOptions?: CrawlMarkdownOptions) {
@@ -385,6 +409,14 @@ export class Crawl4aiClient {
       return undefined;
     }
     return value;
+  }
+
+  private normalizeTableScore(value?: number) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    const clamped = Math.max(0, Math.min(10, value));
+    return Number(clamped.toFixed(2));
   }
 
   private normalizePatternList(patterns?: string[]) {

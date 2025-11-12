@@ -180,6 +180,15 @@ export class CrawlMarkdownStrategyInput {
 }
 
 @InputType()
+export class CrawlTableExtractionInput {
+  @Field()
+  type!: string;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  params?: Record<string, unknown>;
+}
+
+@InputType()
 export class CrawlCleanMarkdownInput {
   @Field({ nullable: true })
   cssSelector?: string;
@@ -309,6 +318,12 @@ export class CrawlOptionsInput {
 
   @Field(() => CrawlMarkdownStrategyInput, { nullable: true })
   markdownStrategy?: CrawlMarkdownStrategyInput;
+
+  @Field(() => Number, { nullable: true })
+  tableScoreThreshold?: number;
+
+  @Field(() => CrawlTableExtractionInput, { nullable: true })
+  tableExtraction?: CrawlTableExtractionInput;
 
   @Field(() => CrawlCleanMarkdownInput, { nullable: true })
   cleanMarkdown?: CrawlCleanMarkdownInput;

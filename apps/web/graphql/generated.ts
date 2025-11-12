@@ -35,6 +35,11 @@ export type CrawlMarkdownStrategyInput = {
   params?: InputMaybe<any>;
 };
 
+export type CrawlTableExtractionInput = {
+  type: string;
+  params?: InputMaybe<any>;
+};
+
 export type CrawlCleanMarkdownInput = {
   cssSelector?: InputMaybe<string>;
   targetElements?: InputMaybe<Array<string>>;
@@ -142,6 +147,8 @@ export type CrawlOptionsInput = {
   markdownOptions?: InputMaybe<CrawlMarkdownOptionsInput>;
   markdownFilter?: InputMaybe<CrawlMarkdownFilterInput>;
   markdownStrategy?: InputMaybe<CrawlMarkdownStrategyInput>;
+  tableScoreThreshold?: InputMaybe<number>;
+  tableExtraction?: InputMaybe<CrawlTableExtractionInput>;
   cleanMarkdown?: InputMaybe<CrawlCleanMarkdownInput>;
   scoreLinks?: InputMaybe<boolean>;
   linkPreview?: InputMaybe<CrawlLinkPreviewInput>;
@@ -399,6 +406,7 @@ export type CrawlTaskQuery = {
       fitMarkdown?: string | null;
       metadata?: string | null;
       media?: string | null;
+      tables?: any | null;
       linkAnalysis?: {
         stats: {
           totalLinks: number;
@@ -629,6 +637,7 @@ export const CrawlTaskDocument = gql`
         fitMarkdown
         metadata
         media
+        tables
         linkAnalysis {
           stats {
             totalLinks

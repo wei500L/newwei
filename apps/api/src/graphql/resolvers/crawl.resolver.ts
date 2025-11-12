@@ -197,7 +197,8 @@ export class CrawlResolver {
       ...result,
       metadata: result.metadata ? JSON.stringify(result.metadata) : null,
       media: result.media ? JSON.stringify(result.media) : null,
-      linkAnalysis: result.linkAnalysis ? this.toGraphLinkAnalysis(result.linkAnalysis) : null
+      linkAnalysis: result.linkAnalysis ? this.toGraphLinkAnalysis(result.linkAnalysis) : null,
+      tables: result.tables ?? null
     };
   }
 

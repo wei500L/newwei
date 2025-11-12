@@ -10,6 +10,7 @@ import {
   Select,
   Space,
   Spin,
+  Table,
   Tabs,
   Tag,
   Typography
@@ -65,8 +66,27 @@ type CrawlMediaItem = {
 
 type CrawlMediaCollection = Record<string, CrawlMediaItem[]>;
 
+type CrawlResultTableRecord = Record<string, string | number | boolean | null>;
+
+type CrawlResultTable = {
+  id: string;
+  caption?: string;
+  headers: string[];
+  rows: (string | number | boolean | null)[][];
+  rowCount: number;
+  columnCount: number;
+  source?: string;
+  metadata?: Record<string, unknown>;
+  dataFrame?: {
+    columns: string[];
+    rows: CrawlResultTableRecord[];
+  };
+};
+
 const mediaDocsUrl =
   "https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/link-media.md";
+const tableDocsUrl =
+  "https://github.com/unclecode/crawl4ai/blob/main/docs/blog/release-v0.7.3.md";
 const shortenScript = (value: string) => (value.length > 160 ? `${value.slice(0, 157)}…` : value);
 
 function safeParseJson<T>(input?: string | null): T | null {
@@ -151,6 +171,88 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
                   +{remaining} more {kind} kept in the result payload
                 </Typography.Text>
               ) : null}
+            </div>
+          );
+        })}
+      </Space>
+    </Card>
+  );
+}
+
+function buildTableRecords(table: CrawlResultTable): CrawlResultTableRecord[] {
+  if (table.dataFrame?.rows?.length) {
+    return table.dataFrame.rows;
+  }
+  return table.rows.map((row) =>
+    table.headers.reduce<CrawlResultTableRecord>((acc, header, index) => {
+      acc[header] = row[index] ?? null;
+      return acc;
+    }, {})
+  );
+}
+
+function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
+  if (!tables || !tables.length) {
+    return null;
+  }
+  return (
+    <Card
+      size="small"
+      title="Extracted tables"
+      style={{ marginTop: 12 }}
+      extra={
+        <Typography.Link href={tableDocsUrl} target="_blank" rel="noreferrer">
+          Crawl4AI release notes
+        </Typography.Link>
+      }
+    >
+      <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        {tables.map((table) => {
+          const columns = (table.dataFrame?.columns ?? table.headers).map((header) => ({
+            title: header,
+            dataIndex: header,
+            key: header,
+            ellipsis: true
+          }));
+          const records = buildTableRecords(table);
+          const previewRows = records.slice(0, 5).map((record, index) => ({
+            key: `${table.id}-${index}`,
+            ...record
+          }));
+          const remaining = Math.max(0, table.rowCount - previewRows.length);
+          return (
+            <div key={table.id}>
+              <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                <Space wrap>
+                  <Typography.Text strong>
+                    {table.caption || `Table ${table.id}`}
+                  </Typography.Text>
+                  <Tag>
+                    {table.rowCount} × {table.columnCount}
+                  </Tag>
+                  {table.source && (
+                    <Typography.Text type="secondary">Source: {table.source}</Typography.Text>
+                  )}
+                </Space>
+                {table.metadata && (
+                  <Typography.Text type="secondary">
+                    {JSON.stringify(table.metadata)}
+                  </Typography.Text>
+                )}
+              </Space>
+              <Table
+                columns={columns}
+                dataSource={previewRows}
+                size="small"
+                pagination={false}
+                style={{ marginTop: 8 }}
+                scroll={{ x: true }}
+              />
+              {remaining > 0 && (
+                <Typography.Text type="secondary">
+                  Showing first {previewRows.length} rows (remaining {remaining}).
+                </Typography.Text>
+              )}
             </div>
           );
         })}
@@ -1055,6 +1157,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             renderItem={(result) => {
               const metadata = result.metadata;
               const mediaPayload = safeParseJson<CrawlMediaCollection>(result.media);
+              const tablesPayload = (result.tables ?? null) as CrawlResultTable[] | null;
               const variantEntries = [
                 { key: "raw", label: "Raw", content: result.markdown },
                 { key: "citations", label: "Citations", content: result.markdownWithCitations },
@@ -1104,6 +1207,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                         )}
                         {tabs}
                         <MediaSection media={mediaPayload} />
+                        <TablesSection tables={tablesPayload} />
                       </>
                     }
                   />

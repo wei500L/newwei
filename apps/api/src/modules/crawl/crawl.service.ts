@@ -25,7 +25,11 @@ import {
   CrawlUserAgentGeneratorConfig,
   CrawlGeolocationConfig,
   CrawlCleanMarkdownOptions,
-  CrawlMarkdownStrategy
+  CrawlMarkdownStrategy,
+  CrawlTableExtractionStrategy,
+  CrawlResultTable,
+  CrawlTableCell,
+  Crawl4aiTablePayload
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -60,6 +64,7 @@ export interface CrawlTaskResult {
   fitMarkdown?: string | null;
   linkAnalysis?: CrawlLinkAnalysis | null;
   media?: CrawlMediaCollection | null;
+  tables?: CrawlResultTable[] | null;
 }
 
 export interface CrawlTaskView {
@@ -531,6 +536,9 @@ export class CrawlService {
       markdownOptions: this.parseMarkdownOptions(value.markdownOptions),
       markdownFilter: this.parseMarkdownFilter(value.markdownFilter),
       markdownStrategy: this.parseMarkdownStrategy(value.markdownStrategy),
+      tableScoreThreshold:
+        typeof value.tableScoreThreshold === "number" ? value.tableScoreThreshold : undefined,
+      tableExtraction: this.parseTableExtraction(value.tableExtraction),
       cleanMarkdown: this.parseCleanMarkdownOptions(value.cleanMarkdown),
       scoreLinks: typeof value.scoreLinks === "boolean" ? value.scoreLinks : undefined,
       linkPreview: this.parseLinkPreviewOptions(value.linkPreview),
@@ -570,6 +578,8 @@ export class CrawlService {
     const markdownOptions = this.normalizeMarkdownOptions(options?.markdownOptions);
     const markdownFilter = this.normalizeMarkdownFilter(options?.markdownFilter);
     const markdownStrategy = this.normalizeMarkdownStrategy(options?.markdownStrategy);
+    const tableScoreThreshold = this.normalizeTableScore(options?.tableScoreThreshold);
+    const tableExtraction = this.normalizeTableExtraction(options?.tableExtraction);
     const cleanMarkdown = this.normalizeCleanMarkdownOptions(options?.cleanMarkdown);
     const linkPreview = this.normalizeLinkPreviewOptions(options?.linkPreview);
     const scoreLinks = options?.scoreLinks ?? Boolean(linkPreview);
@@ -615,6 +625,8 @@ export class CrawlService {
       markdownOptions,
       markdownFilter,
       markdownStrategy,
+      tableScoreThreshold,
+      tableExtraction,
       cleanMarkdown,
       scoreLinks,
       linkPreview,
@@ -952,6 +964,34 @@ export class CrawlService {
     return normalized;
   }
 
+  private normalizeTableScore(value?: number) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    const clamped = Math.max(0, Math.min(10, value));
+    return Number(clamped.toFixed(2));
+  }
+
+  private normalizeTableExtraction(
+    strategy?: CrawlTableExtractionStrategy | null
+  ): CrawlTableExtractionStrategy | undefined {
+    if (!strategy || typeof strategy.type !== "string") {
+      return undefined;
+    }
+    const trimmed = strategy.type.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const normalized: CrawlTableExtractionStrategy = {
+      type: trimmed.slice(0, 128)
+    };
+    const params = this.normalizeStrategyParams(strategy.params);
+    if (params) {
+      normalized.params = params;
+    }
+    return normalized;
+  }
+
   private normalizeStrategyParams(
     params?: Record<string, unknown> | null
   ): Record<string, unknown> | undefined {
@@ -976,6 +1016,26 @@ export class CrawlService {
         ? (record.params as Record<string, unknown>)
         : undefined;
     return this.normalizeMarkdownStrategy(
+      type
+        ? {
+            type,
+            params
+          }
+        : undefined
+    );
+  }
+
+  private parseTableExtraction(value: unknown): CrawlTableExtractionStrategy | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const type = typeof record.type === "string" ? record.type : undefined;
+    const params =
+      record.params && typeof record.params === "object" && !Array.isArray(record.params)
+        ? (record.params as Record<string, unknown>)
+        : undefined;
+    return this.normalizeTableExtraction(
       type
         ? {
             type,
@@ -1519,6 +1579,7 @@ export class CrawlService {
       });
       const linkAnalysis = this.extractLinkAnalysisFromResult(item);
       const media = shouldStoreMedia ? this.normalizeMediaCollection(item.media) : undefined;
+      const tables = this.normalizeTablesFromResult(item);
       const contentDoc = await CrawlResultContentModel.create({
         taskId: task.id,
         resultId: created.id,
@@ -1531,6 +1592,7 @@ export class CrawlService {
         sourceUrl: item.url ?? task.targetUrl,
         crawlRunId: runId,
         linkAnalysis,
+        tables: tables ?? null,
         ...(shouldStoreMedia
           ? {
               media: media ?? null
@@ -1578,7 +1640,8 @@ export class CrawlService {
         referencesMarkdown: this.ensureString(doc?.referencesMarkdown),
         fitMarkdown: this.ensureString(doc?.fitMarkdown),
         linkAnalysis: (doc?.linkAnalysis as CrawlLinkAnalysis | undefined) ?? null,
-        media: (doc?.media as CrawlMediaCollection | undefined) ?? null
+        media: (doc?.media as CrawlMediaCollection | undefined) ?? null,
+        tables: (doc?.tables as CrawlResultTable[] | undefined) ?? null
       };
     });
   }
@@ -1911,5 +1974,198 @@ export class CrawlService {
       }
     }
     return undefined;
+  }
+
+  private normalizeTablesFromResult(item: Crawl4aiArticle): CrawlResultTable[] | undefined {
+    const sources = this.extractTablePayloads(item);
+    if (sources.length === 0) {
+      return undefined;
+    }
+    const normalized = sources
+      .map((table, index) => this.normalizeTablePayload(table, index))
+      .filter((entry): entry is CrawlResultTable => Boolean(entry));
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private extractTablePayloads(item: Crawl4aiArticle): Crawl4aiTablePayload[] {
+    const payloads: Crawl4aiTablePayload[] = [];
+    if (Array.isArray(item.tables)) {
+      payloads.push(
+        ...item.tables.filter((entry): entry is Crawl4aiTablePayload => Boolean(entry && typeof entry === "object"))
+      );
+    }
+    if (item.media && typeof item.media === "object" && Array.isArray((item.media as any).tables)) {
+      payloads.push(
+        ...(item.media as any).tables.filter((entry: unknown): entry is Crawl4aiTablePayload =>
+          Boolean(entry && typeof entry === "object")
+        )
+      );
+    }
+    return payloads;
+  }
+
+  private normalizeTablePayload(table: Crawl4aiTablePayload, index: number): CrawlResultTable | undefined {
+    if (!table || typeof table !== "object") {
+      return undefined;
+    }
+    const rowsResult = this.extractTableRows(table);
+    if (rowsResult.rows.length === 0) {
+      return undefined;
+    }
+    const headers = this.normalizeTableHeaders(table.headers, rowsResult.inferredHeaders, rowsResult.rows[0]?.length ?? 0);
+    const normalizedRows = rowsResult.rows.map((row) => this.alignTableRow(row, headers.length));
+    const records = normalizedRows.map((row) => this.buildTableRecord(headers, row));
+    const metadata = this.normalizeTableMetadata(table.metadata);
+    return {
+      id: table.id?.toString() ?? `table-${index + 1}`,
+      caption: this.ensureString(table.caption),
+      headers,
+      rows: normalizedRows,
+      rowCount: normalizedRows.length,
+      columnCount: headers.length,
+      source: this.ensureString(table.source_xpath ?? table.sourceXPath ?? (metadata?.source_xpath as string | undefined)),
+      metadata: metadata ?? undefined,
+      dataFrame: {
+        columns: headers,
+        rows: records
+      }
+    };
+  }
+
+  private extractTableRows(
+    table: Crawl4aiTablePayload
+  ): { rows: CrawlTableCell[][]; inferredHeaders?: string[] } {
+    if (Array.isArray(table.rows)) {
+      const normalized = table.rows
+        .map((row) => this.normalizeTableRow(row))
+        .filter((row): row is CrawlTableCell[] => row.length > 0);
+      return { rows: normalized };
+    }
+    if (Array.isArray(table.data)) {
+      const columns = this.collectColumnsFromRecords(table.data);
+      if (!columns.length) {
+        return { rows: [] };
+      }
+      const rows = table.data.map((record) =>
+        columns.map((column) => this.normalizeTableCell(record ? (record as Record<string, unknown>)[column] : undefined))
+      );
+      return { rows, inferredHeaders: columns };
+    }
+    return { rows: [] };
+  }
+
+  private normalizeTableRow(row: unknown): CrawlTableCell[] {
+    if (!Array.isArray(row)) {
+      return [];
+    }
+    return row.map((cell) => this.normalizeTableCell(cell));
+  }
+
+  private collectColumnsFromRecords(records: Record<string, CrawlTableCell>[] | undefined) {
+    if (!records) {
+      return [] as string[];
+    }
+    const columns: string[] = [];
+    for (const record of records) {
+      if (!record || typeof record !== "object") {
+        continue;
+      }
+      for (const key of Object.keys(record)) {
+        const trimmed = key.trim();
+        if (!trimmed) {
+          continue;
+        }
+        if (!columns.includes(trimmed)) {
+          columns.push(trimmed.slice(0, 64));
+        }
+      }
+      if (columns.length >= 50) {
+        break;
+      }
+    }
+    return columns;
+  }
+
+  private normalizeTableHeaders(
+    headers?: unknown,
+    inferred?: string[],
+    fallbackSize?: number
+  ): string[] {
+    const fromHeaders = Array.isArray(headers)
+      ? headers
+          .map((header) => (typeof header === "string" ? header.trim() : ""))
+          .filter((header) => header.length > 0)
+          .map((header) => header.slice(0, 64))
+      : [];
+    let base = fromHeaders;
+    if (base.length === 0 && inferred && inferred.length > 0) {
+      base = inferred;
+    }
+    if (base.length === 0 && fallbackSize && fallbackSize > 0) {
+      base = Array.from({ length: fallbackSize }, (_, idx) => `column_${idx + 1}`);
+    }
+    if (base.length === 0) {
+      base = ["column_1"];
+    }
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    base.forEach((header, idx) => {
+      const safe = header && header.length > 0 ? header : `column_${idx + 1}`;
+      let candidate = safe;
+      let suffix = 1;
+      while (seen.has(candidate)) {
+        candidate = `${safe}_${suffix}`;
+        suffix += 1;
+      }
+      seen.add(candidate);
+      normalized.push(candidate);
+    });
+    return normalized;
+  }
+
+  private alignTableRow(row: CrawlTableCell[], size: number) {
+    const next = row.slice(0, size);
+    while (next.length < size) {
+      next.push(null);
+    }
+    return next;
+  }
+
+  private buildTableRecord(headers: string[], row: CrawlTableCell[]) {
+    return headers.reduce<Record<string, CrawlTableCell>>((acc, header, index) => {
+      acc[header] = row[index] ?? null;
+      return acc;
+    }, {});
+  }
+
+  private normalizeTableMetadata(metadata?: Record<string, unknown>) {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(JSON.stringify(metadata));
+    } catch {
+      return undefined;
+    }
+  }
+
+  private normalizeTableCell(value: unknown): CrawlTableCell {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return value;
+    }
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    if (typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return "[object]";
+      }
+    }
+    return String(value);
   }
 }
