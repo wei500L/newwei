@@ -26,6 +26,8 @@ export type CrawlMarkdownOptionsInput = {
 export type CrawlMarkdownFilterInput = {
   type?: InputMaybe<string>;
   threshold?: InputMaybe<number>;
+  thresholdType?: InputMaybe<string>;
+  minWordThreshold?: InputMaybe<number>;
 };
 
 export type CrawlCleanMarkdownInput = {

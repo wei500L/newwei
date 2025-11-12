@@ -427,6 +427,17 @@ export class CrawlMarkdownFilterDto {
   @Min(0)
   @Max(1)
   threshold?: number;
+
+  @IsOptional()
+  @IsIn(["fixed", "dynamic"])
+  thresholdType?: "fixed" | "dynamic";
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(500)
+  minWordThreshold?: number;
 }
 
 export class CrawlCleanMarkdownOptionsDto {

@@ -917,6 +917,13 @@ export class CrawlService {
     if (typeof filter.threshold === "number" && Number.isFinite(filter.threshold)) {
       normalized.threshold = Math.max(0, Math.min(1, filter.threshold));
     }
+    if (filter.thresholdType === "fixed" || filter.thresholdType === "dynamic") {
+      normalized.thresholdType = filter.thresholdType;
+    }
+    if (typeof filter.minWordThreshold === "number" && Number.isFinite(filter.minWordThreshold)) {
+      const clamped = Math.max(0, Math.min(500, Math.round(filter.minWordThreshold)));
+      normalized.minWordThreshold = clamped;
+    }
     return normalized;
   }
 
@@ -1206,9 +1213,24 @@ export class CrawlService {
     if (type !== "pruning") {
       return undefined;
     }
+    const rawThresholdType =
+      typeof record.thresholdType === "string"
+        ? (record.thresholdType as string)
+        : typeof record.threshold_type === "string"
+          ? (record.threshold_type as string)
+          : undefined;
+    const rawMinWords =
+      typeof record.minWordThreshold === "number"
+        ? record.minWordThreshold
+        : typeof record.min_word_threshold === "number"
+          ? (record.min_word_threshold as number)
+          : undefined;
     return this.normalizeMarkdownFilter({
       type: "pruning",
-      threshold: typeof record.threshold === "number" ? record.threshold : undefined
+      threshold: typeof record.threshold === "number" ? record.threshold : undefined,
+      thresholdType:
+        rawThresholdType === "fixed" || rawThresholdType === "dynamic" ? (rawThresholdType as "fixed" | "dynamic") : undefined,
+      minWordThreshold: typeof rawMinWords === "number" ? rawMinWords : undefined
     });
   }
 

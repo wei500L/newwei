@@ -161,6 +161,12 @@ export class CrawlMarkdownFilterInput {
 
   @Field(() => Float, { nullable: true })
   threshold?: number;
+
+  @Field(() => String, { nullable: true })
+  thresholdType?: string;
+
+  @Field(() => Int, { nullable: true })
+  minWordThreshold?: number;
 }
 
 @InputType()
