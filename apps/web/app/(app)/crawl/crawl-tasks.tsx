@@ -52,6 +52,7 @@ interface CreateCrawlTaskFormValues {
   onlyMainContent?: boolean;
   extractLinks?: boolean;
   scanFullPage?: boolean;
+  adjustViewportToContent?: boolean;
   scrollDelayMs?: number;
   enableUndetectedBrowser?: boolean;
   enableStealthMode?: boolean;
@@ -116,6 +117,7 @@ interface MultiUrlStrategyFormValue {
   options?: {
     cacheMode?: string;
     scanFullPage?: boolean;
+    adjustViewportToContent?: boolean;
     scrollDelayMs?: number;
     onlyMainContent?: boolean;
     extractLinks?: boolean;
@@ -462,6 +464,9 @@ export function CrawlTasksView() {
     if (typeof options.scanFullPage === "boolean") {
       cleaned.scanFullPage = options.scanFullPage;
     }
+    if (typeof options.adjustViewportToContent === "boolean") {
+      cleaned.adjustViewportToContent = options.adjustViewportToContent;
+    }
     if (typeof options.scrollDelayMs === "number") {
       cleaned.scrollDelayMs = options.scrollDelayMs;
     }
@@ -729,6 +734,10 @@ export function CrawlTasksView() {
               onlyMainContent: values.onlyMainContent ?? undefined,
               extractLinks: values.extractLinks ?? undefined,
               scanFullPage: values.scanFullPage ?? undefined,
+              adjustViewportToContent:
+                typeof values.adjustViewportToContent === "boolean"
+                  ? values.adjustViewportToContent
+                  : undefined,
               scrollDelayMs: values.scrollDelayMs ?? undefined,
               enableUndetectedBrowser: values.enableUndetectedBrowser ?? undefined,
               enableStealthMode: values.enableStealthMode ?? undefined,
@@ -971,6 +980,26 @@ export function CrawlTasksView() {
               placeholder="Default: 200"
               disabled={!scanFullPage}
             />
+          </Form.Item>
+          <Form.Item
+            label="Dynamic viewport adjustment"
+            name="adjustViewportToContent"
+            valuePropName="checked"
+            extra={
+              <span>
+                Auto-resize the browser viewport to fit responsive layouts per{" "}
+                <Typography.Link
+                  href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/blog/releases/0.4.1.md"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Crawl4AI 0.4.1
+                </Typography.Link>
+                .
+              </span>
+            }
+          >
+            <Switch />
           </Form.Item>
           <Form.Item
             label="Undetected browser"
@@ -1540,6 +1569,13 @@ export function CrawlTasksView() {
                     </Form.Item>
                     <Form.Item label="Scroll delay (ms)" name={[field.name, "options", "scrollDelayMs"]}>
                       <InputNumber min={0} max={5000} style={{ width: "100%" }} placeholder="Default: 200" />
+                    </Form.Item>
+                    <Form.Item
+                      label="Dynamic viewport adjustment"
+                      name={[field.name, "options", "adjustViewportToContent"]}
+                      valuePropName="checked"
+                    >
+                      <Switch />
                     </Form.Item>
                     <Form.Item
                       label="Only main content"

@@ -125,6 +125,10 @@ export class CrawlOptionsDto {
   scanFullPage?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  adjustViewportToContent?: boolean;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -284,6 +288,10 @@ export class CrawlStrategyOverridesDto {
   @IsOptional()
   @IsBoolean()
   scanFullPage?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  adjustViewportToContent?: boolean;
 
   @IsOptional()
   @Type(() => Number)

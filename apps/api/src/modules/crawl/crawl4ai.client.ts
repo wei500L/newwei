@@ -170,6 +170,7 @@ export class Crawl4aiClient {
         only_main_content: options.onlyMainContent ?? true,
         extract_links: options.extractLinks ?? false,
         scan_full_page: options.scanFullPage ?? false,
+        adjust_viewport_to_content: options.adjustViewportToContent ? true : undefined,
         scroll_delay: scrollDelay,
         simulate_user: options.simulateUser ?? undefined,
         override_navigator: options.overrideNavigator ?? undefined,
@@ -390,6 +391,7 @@ export class Crawl4aiClient {
           only_main_content: overrides?.onlyMainContent,
           extract_links: overrides?.extractLinks,
           scan_full_page: overrides?.scanFullPage,
+          adjust_viewport_to_content: overrides?.adjustViewportToContent ? true : undefined,
           scroll_delay:
             typeof overrides?.scrollDelayMs === "number" ? overrides.scrollDelayMs / 1000 : undefined,
           simulate_user: overrides?.simulateUser,
@@ -443,6 +445,9 @@ export class Crawl4aiClient {
     }
     if (typeof options.scanFullPage === "boolean") {
       normalized.scanFullPage = options.scanFullPage;
+    }
+    if (typeof options.adjustViewportToContent === "boolean") {
+      normalized.adjustViewportToContent = options.adjustViewportToContent;
     }
     if (typeof options.scrollDelayMs === "number") {
       normalized.scrollDelayMs = options.scrollDelayMs;

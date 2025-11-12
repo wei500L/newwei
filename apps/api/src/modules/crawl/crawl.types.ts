@@ -68,6 +68,7 @@ export interface CrawlUrlMatcher {
 export interface CrawlStrategyOverrides {
   cacheMode?: CrawlCacheMode;
   scanFullPage?: boolean;
+  adjustViewportToContent?: boolean;
   scrollDelayMs?: number;
   onlyMainContent?: boolean;
   extractLinks?: boolean;
@@ -187,6 +188,7 @@ export interface CrawlTaskOptions {
   sessionId?: string;
   storageState?: string;
   scanFullPage?: boolean;
+  adjustViewportToContent?: boolean;
   scrollDelayMs?: number;
   enableUndetectedBrowser?: boolean;
   enableStealthMode?: boolean;

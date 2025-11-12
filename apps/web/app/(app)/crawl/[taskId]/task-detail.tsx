@@ -631,6 +631,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const results = task.results ?? [];
   const includeImagesEnabled = Boolean(config?.includeImages);
   const storeMediaEnabled = Boolean(config?.storeMedia);
+  const adjustViewportEnabled = Boolean(config?.adjustViewportToContent);
 
   return (
     <div className="content-card">
@@ -671,6 +672,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         {config?.scanFullPage
           ? `Enabled (scroll delay ${config?.scrollDelayMs ?? 200} ms)`
           : "Disabled"}
+      </Descriptions.Item>
+      <Descriptions.Item label="Dynamic viewport">
+        {adjustViewportEnabled ? "Enabled" : "Disabled"}
       </Descriptions.Item>
       <Descriptions.Item label="Undetected browser">
         {config?.enableUndetectedBrowser ? "Enabled" : "Disabled"}
