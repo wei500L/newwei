@@ -98,6 +98,13 @@ interface CreateCrawlTaskFormValues {
     removeOverlayElements?: boolean;
     wordCountThreshold?: number;
   };
+  tableScoreThreshold?: number;
+  tableExtraction?: {
+    type?: string;
+    params?: string;
+    minRows?: number;
+    minCols?: number;
+  };
   scoreLinks?: boolean;
   linkPreview?: {
     includeInternal?: boolean;
@@ -613,6 +620,44 @@ export function CrawlTasksView() {
     return params ? { type: normalizedType, params } : { type: normalizedType };
   };
 
+  const sanitizeTableExtraction = (strategy?: CreateCrawlTaskFormValues["tableExtraction"]) => {
+    const hasCustomParams =
+      (strategy?.params && strategy.params.trim().length > 0) ||
+      typeof strategy?.minRows === "number" ||
+      typeof strategy?.minCols === "number";
+    if (!strategy?.type && !hasCustomParams) {
+      return undefined;
+    }
+    const rawType = strategy?.type?.trim() ?? (hasCustomParams ? "DefaultTableExtraction" : "");
+    if (!rawType) {
+      return undefined;
+    }
+    const trimmedType = rawType;
+    let params: Record<string, unknown> | undefined;
+    if (strategy.params && strategy.params.trim().length) {
+      try {
+        const parsed = JSON.parse(strategy.params);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("Table extraction params must be a JSON object");
+        }
+        params = parsed as Record<string, unknown>;
+      } catch (error) {
+        throw new Error((error as Error).message ?? "Table extraction params must be valid JSON");
+      }
+    }
+    const normalizedParams: Record<string, unknown> = params ? { ...params } : {};
+    if (typeof strategy.minRows === "number") {
+      normalizedParams.min_rows = strategy.minRows;
+    }
+    if (typeof strategy.minCols === "number") {
+      normalizedParams.min_cols = strategy.minCols;
+    }
+    const normalizedType = trimmedType.slice(0, 128);
+    return Object.keys(normalizedParams).length
+      ? { type: normalizedType, params: normalizedParams }
+      : { type: normalizedType };
+  };
+
   const sanitizeCleanMarkdown = (options?: CreateCrawlTaskFormValues["cleanMarkdown"]) => {
     if (!options) {
       return undefined;
@@ -779,6 +824,13 @@ export function CrawlTasksView() {
       message.error((error as Error).message);
       return;
     }
+    let tableExtraction: { type: string; params?: Record<string, unknown> } | undefined;
+    try {
+      tableExtraction = sanitizeTableExtraction(values.tableExtraction);
+    } catch (error) {
+      message.error((error as Error).message);
+      return;
+    }
     const cleanMarkdown = sanitizeCleanMarkdown(values.cleanMarkdown);
     const linkPreview = sanitizeLinkPreview(values.linkPreview);
     const jsCode = sanitizeJsCodeList(values.jsCode);
@@ -842,6 +894,11 @@ export function CrawlTasksView() {
               markdownOptions: markdownOptions ?? undefined,
               markdownFilter: markdownFilter ?? undefined,
               markdownStrategy: markdownStrategy ?? undefined,
+              tableScoreThreshold:
+                typeof values.tableScoreThreshold === "number"
+                  ? Number(Math.max(0, Math.min(10, values.tableScoreThreshold)).toFixed(2))
+                  : undefined,
+              tableExtraction: tableExtraction ?? undefined,
               cleanMarkdown: cleanMarkdown ?? undefined,
               scoreLinks: typeof values.scoreLinks === "boolean" ? values.scoreLinks : undefined,
               linkPreview: linkPreview ?? undefined,
@@ -1620,6 +1677,61 @@ export function CrawlTasksView() {
               extra="Ignore fragments below this number of words."
             >
               <InputNumber min={0} max={2000} placeholder="10" style={{ width: "100%" }} />
+            </Form.Item>
+          </Card>
+          <Card
+            size="small"
+            title="Enhanced table extraction"
+            style={{ marginBottom: 16 }}
+            extra={
+              <Typography.Link
+                href="https://github.com/unclecode/crawl4ai/blob/main/docs/blog/release-v0.7.3.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                crawl4ai docs
+              </Typography.Link>
+            }
+          >
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+              Leverages Crawl4AI&apos;s <em>Enhanced Table Extraction: Direct DataFrame conversion from web
+              tables</em> release (v0.7.3+) so every crawl can detect HTML tables, stream them into DataFrame-ready
+              records, and expose captions/source metadata for downstream analytics.
+            </Typography.Paragraph>
+            <Form.Item
+              label="Table score threshold"
+              name="tableScoreThreshold"
+              extra="Controls CrawlerRunConfig.table_score_threshold (0-10). Higher scores keep only confident tables."
+            >
+              <InputNumber min={0} max={10} step={0.1} placeholder="7" style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label="Strategy type"
+              name={["tableExtraction", "type"]}
+              extra="Default to DefaultTableExtraction for min row/column control or switch to LLMTableExtraction for complex layouts."
+            >
+              <Input placeholder="DefaultTableExtraction" maxLength={128} />
+            </Form.Item>
+            <Form.Item
+              label="Min rows"
+              name={["tableExtraction", "minRows"]}
+              extra="Maps to DefaultTableExtraction.min_rows to filter out small snippets."
+            >
+              <InputNumber min={1} max={1000} style={{ width: "100%" }} placeholder="2" />
+            </Form.Item>
+            <Form.Item
+              label="Min columns"
+              name={["tableExtraction", "minCols"]}
+              extra="Maps to DefaultTableExtraction.min_cols."
+            >
+              <InputNumber min={1} max={50} style={{ width: "100%" }} placeholder="2" />
+            </Form.Item>
+            <Form.Item
+              label="Extra params (JSON)"
+              name={["tableExtraction", "params"]}
+              extra="Optional JSON blob merged into the Crawl4AI strategy params (e.g., chunking or provider overrides)."
+            >
+              <Input.TextArea rows={3} placeholder='{ "enable_chunking": true, "max_parallel_chunks": 5 }' />
             </Form.Item>
           </Card>
           <Form.Item

@@ -107,6 +107,11 @@ export interface CrawlMarkdownStrategy {
   params?: Record<string, unknown>;
 }
 
+export interface CrawlTableExtractionStrategy {
+  type: string;
+  params?: Record<string, unknown>;
+}
+
 export interface CrawlCleanMarkdownOptions {
   cssSelector?: string;
   targetElements?: string[];
@@ -194,6 +199,38 @@ export type Crawl4aiMediaEntry = Record<string, unknown>;
 
 export type Crawl4aiMedia = Record<string, Crawl4aiMediaEntry[]>;
 
+export type CrawlTableCell = string | number | boolean | null;
+
+export interface CrawlResultTableRecord {
+  [key: string]: CrawlTableCell;
+}
+
+export interface CrawlResultTable {
+  id: string;
+  caption?: string;
+  headers: string[];
+  rows: CrawlTableCell[][];
+  rowCount: number;
+  columnCount: number;
+  source?: string;
+  metadata?: Record<string, unknown>;
+  dataFrame: {
+    columns: string[];
+    rows: CrawlResultTableRecord[];
+  };
+}
+
+export interface Crawl4aiTablePayload {
+  id?: string;
+  caption?: string;
+  headers?: string[];
+  rows?: CrawlTableCell[][];
+  data?: Record<string, CrawlTableCell>[];
+  metadata?: Record<string, unknown>;
+  source_xpath?: string;
+  sourceXPath?: string;
+}
+
 export interface CrawlTaskOptions {
   includeImages?: boolean;
   onlyMainContent?: boolean;
@@ -223,6 +260,8 @@ export interface CrawlTaskOptions {
   markdownOptions?: CrawlMarkdownOptions;
   markdownFilter?: CrawlMarkdownFilter;
   markdownStrategy?: CrawlMarkdownStrategy;
+  tableScoreThreshold?: number;
+  tableExtraction?: CrawlTableExtractionStrategy;
   cleanMarkdown?: CrawlCleanMarkdownOptions;
   scoreLinks?: boolean;
   linkPreview?: CrawlLinkPreviewOptions;

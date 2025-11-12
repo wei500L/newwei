@@ -10,6 +10,7 @@ const CrawlResultContentSchema = new Schema(
     referencesMarkdown: { type: String },
     fitMarkdown: { type: String },
     media: Schema.Types.Mixed,
+    tables: Schema.Types.Mixed,
     metadata: Schema.Types.Mixed,
     sourceUrl: { type: String },
     crawlRunId: { type: String },

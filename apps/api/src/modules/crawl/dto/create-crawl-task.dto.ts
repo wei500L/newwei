@@ -225,6 +225,18 @@ export class CrawlOptionsDto {
   markdownStrategy?: CrawlMarkdownStrategyDto;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: "tableScoreThreshold must be a number" })
+  @Min(0)
+  @Max(10)
+  tableScoreThreshold?: number;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlTableExtractionStrategyDto)
+  tableExtraction?: CrawlTableExtractionStrategyDto;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => CrawlCleanMarkdownOptionsDto)
   cleanMarkdown?: CrawlCleanMarkdownOptionsDto;
@@ -447,6 +459,16 @@ export class CrawlMarkdownFilterDto {
 }
 
 export class CrawlMarkdownStrategyDto {
+  @IsString()
+  @MaxLength(128)
+  type!: string;
+
+  @IsOptional()
+  @IsObject()
+  params?: Record<string, unknown>;
+}
+
+export class CrawlTableExtractionStrategyDto {
   @IsString()
   @MaxLength(128)
   type!: string;
