@@ -28,6 +28,7 @@ import { RawItemLoader } from "./loaders/raw-item.loader";
 import { ProcessedItemLoader } from "./loaders/processed-item.loader";
 import { QueueEventPublisher } from "./queue-event.publisher";
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
+import { GraphQLJSONScalar } from "./scalars/json.scalar";
 import { APP_GUARD } from "@nestjs/core";
 import { GqlAuthGuard } from "../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
@@ -116,6 +117,7 @@ const logger = createLogger({ name: "graphql" });
     RbacResolver,
     DashboardResolver,
     CrawlResolver,
+    GraphQLJSONScalar,
     UserLoader,
     RoleLoader,
     ItemMetaLoader,

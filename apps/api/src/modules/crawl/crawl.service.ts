@@ -24,7 +24,8 @@ import {
   CrawlBrowserCookie,
   CrawlUserAgentGeneratorConfig,
   CrawlGeolocationConfig,
-  CrawlCleanMarkdownOptions
+  CrawlCleanMarkdownOptions,
+  CrawlMarkdownStrategy
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -160,6 +161,7 @@ export class CrawlService {
       multiUrlConfigs: dto.options?.multiUrlConfigs as CrawlMultiUrlConfig[] | undefined,
       markdownOptions: dto.options?.markdownOptions,
       markdownFilter: dto.options?.markdownFilter,
+      markdownStrategy: dto.options?.markdownStrategy as CrawlMarkdownStrategy | undefined,
       cleanMarkdown: dto.options?.cleanMarkdown,
       scoreLinks: dto.options?.scoreLinks,
       linkPreview: dto.options?.linkPreview as CrawlLinkPreviewOptions | undefined
@@ -528,6 +530,7 @@ export class CrawlService {
       multiUrlConfigs: this.parseMultiUrlConfigs(value.multiUrlConfigs),
       markdownOptions: this.parseMarkdownOptions(value.markdownOptions),
       markdownFilter: this.parseMarkdownFilter(value.markdownFilter),
+      markdownStrategy: this.parseMarkdownStrategy(value.markdownStrategy),
       cleanMarkdown: this.parseCleanMarkdownOptions(value.cleanMarkdown),
       scoreLinks: typeof value.scoreLinks === "boolean" ? value.scoreLinks : undefined,
       linkPreview: this.parseLinkPreviewOptions(value.linkPreview),
@@ -566,6 +569,7 @@ export class CrawlService {
     const multiUrlConfigs = this.normalizeMultiUrlConfigs(options?.multiUrlConfigs);
     const markdownOptions = this.normalizeMarkdownOptions(options?.markdownOptions);
     const markdownFilter = this.normalizeMarkdownFilter(options?.markdownFilter);
+    const markdownStrategy = this.normalizeMarkdownStrategy(options?.markdownStrategy);
     const cleanMarkdown = this.normalizeCleanMarkdownOptions(options?.cleanMarkdown);
     const linkPreview = this.normalizeLinkPreviewOptions(options?.linkPreview);
     const scoreLinks = options?.scoreLinks ?? Boolean(linkPreview);
@@ -610,6 +614,7 @@ export class CrawlService {
       multiUrlConfigs,
       markdownOptions,
       markdownFilter,
+      markdownStrategy,
       cleanMarkdown,
       scoreLinks,
       linkPreview,
@@ -925,6 +930,59 @@ export class CrawlService {
       normalized.minWordThreshold = clamped;
     }
     return normalized;
+  }
+
+  private normalizeMarkdownStrategy(
+    strategy?: CrawlMarkdownStrategy | null
+  ): CrawlMarkdownStrategy | undefined {
+    if (!strategy || typeof strategy.type !== "string") {
+      return undefined;
+    }
+    const trimmed = strategy.type.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const normalized: CrawlMarkdownStrategy = {
+      type: trimmed.slice(0, 128)
+    };
+    const params = this.normalizeStrategyParams(strategy.params);
+    if (params) {
+      normalized.params = params;
+    }
+    return normalized;
+  }
+
+  private normalizeStrategyParams(
+    params?: Record<string, unknown> | null
+  ): Record<string, unknown> | undefined {
+    if (!params || typeof params !== "object" || Array.isArray(params)) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(JSON.stringify(params));
+    } catch {
+      return undefined;
+    }
+  }
+
+  private parseMarkdownStrategy(value: unknown): CrawlMarkdownStrategy | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const type = typeof record.type === "string" ? record.type : undefined;
+    const params =
+      record.params && typeof record.params === "object" && !Array.isArray(record.params)
+        ? (record.params as Record<string, unknown>)
+        : undefined;
+    return this.normalizeMarkdownStrategy(
+      type
+        ? {
+            type,
+            params
+          }
+        : undefined
+    );
   }
 
   private normalizeLinkPreviewOptions(

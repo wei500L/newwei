@@ -1,4 +1,5 @@
 import { ArgsType, Field, ID, InputType, Int, Float, registerEnumType } from "@nestjs/graphql";
+import GraphQLJSON from "graphql-type-json";
 import { CrawlTaskStatus } from "@prisma/client";
 
 @InputType()
@@ -170,6 +171,15 @@ export class CrawlMarkdownFilterInput {
 }
 
 @InputType()
+export class CrawlMarkdownStrategyInput {
+  @Field()
+  type!: string;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  params?: Record<string, unknown>;
+}
+
+@InputType()
 export class CrawlCleanMarkdownInput {
   @Field({ nullable: true })
   cssSelector?: string;
@@ -296,6 +306,9 @@ export class CrawlOptionsInput {
 
   @Field(() => CrawlMarkdownFilterInput, { nullable: true })
   markdownFilter?: CrawlMarkdownFilterInput;
+
+  @Field(() => CrawlMarkdownStrategyInput, { nullable: true })
+  markdownStrategy?: CrawlMarkdownStrategyInput;
 
   @Field(() => CrawlCleanMarkdownInput, { nullable: true })
   cleanMarkdown?: CrawlCleanMarkdownInput;

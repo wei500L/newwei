@@ -102,6 +102,11 @@ export interface CrawlMarkdownFilter {
   minWordThreshold?: number;
 }
 
+export interface CrawlMarkdownStrategy {
+  type: string;
+  params?: Record<string, unknown>;
+}
+
 export interface CrawlCleanMarkdownOptions {
   cssSelector?: string;
   targetElements?: string[];
@@ -217,6 +222,7 @@ export interface CrawlTaskOptions {
   multiUrlConfigs?: CrawlMultiUrlConfig[];
   markdownOptions?: CrawlMarkdownOptions;
   markdownFilter?: CrawlMarkdownFilter;
+  markdownStrategy?: CrawlMarkdownStrategy;
   cleanMarkdown?: CrawlCleanMarkdownOptions;
   scoreLinks?: boolean;
   linkPreview?: CrawlLinkPreviewOptions;

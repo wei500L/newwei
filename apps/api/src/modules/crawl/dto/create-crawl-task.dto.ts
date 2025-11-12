@@ -14,7 +14,8 @@ import {
   ValidateNested,
   MaxLength,
   IsIn,
-  IsNumber
+  IsNumber,
+  IsObject
 } from "class-validator";
 import { CrawlUrlMatchMode } from "../crawl.types";
 
@@ -217,6 +218,11 @@ export class CrawlOptionsDto {
   @ValidateNested()
   @Type(() => CrawlMarkdownFilterDto)
   markdownFilter?: CrawlMarkdownFilterDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlMarkdownStrategyDto)
+  markdownStrategy?: CrawlMarkdownStrategyDto;
 
   @IsOptional()
   @ValidateNested()
@@ -438,6 +444,16 @@ export class CrawlMarkdownFilterDto {
   @Min(0)
   @Max(500)
   minWordThreshold?: number;
+}
+
+export class CrawlMarkdownStrategyDto {
+  @IsString()
+  @MaxLength(128)
+  type!: string;
+
+  @IsOptional()
+  @IsObject()
+  params?: Record<string, unknown>;
 }
 
 export class CrawlCleanMarkdownOptionsDto {
