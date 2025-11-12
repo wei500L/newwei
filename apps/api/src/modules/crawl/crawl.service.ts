@@ -29,7 +29,8 @@ import {
   CrawlTableExtractionStrategy,
   CrawlResultTable,
   CrawlTableCell,
-  Crawl4aiTablePayload
+  Crawl4aiTablePayload,
+  CrawlVirtualScrollConfig
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -549,7 +550,18 @@ export class CrawlService {
       userAgentGenerator: this.parseUserAgentGenerator(value.userAgentGenerator),
       locale: typeof value.locale === "string" ? value.locale : undefined,
       timezoneId: typeof value.timezoneId === "string" ? value.timezoneId : undefined,
-      geolocation: this.parseGeolocation(value.geolocation)
+      geolocation: this.parseGeolocation(value.geolocation),
+      wordCountThreshold: typeof value.wordCountThreshold === "number" ? value.wordCountThreshold : undefined,
+      excludeExternalLinks:
+        typeof value.excludeExternalLinks === "boolean" ? value.excludeExternalLinks : undefined,
+      removeOverlayElements:
+        typeof value.removeOverlayElements === "boolean" ? value.removeOverlayElements : undefined,
+      processIframes: typeof value.processIframes === "boolean" ? value.processIframes : undefined,
+      cssSelector: typeof value.cssSelector === "string" ? value.cssSelector : undefined,
+      excludedTags: this.coerceStringArray(value.excludedTags),
+      textMode: typeof value.textMode === "boolean" ? value.textMode : undefined,
+      captureScreenshot: typeof value.captureScreenshot === "boolean" ? value.captureScreenshot : undefined,
+      virtualScroll: this.parseVirtualScrollConfig(value.virtualScroll)
     });
   }
 
@@ -597,6 +609,17 @@ export class CrawlService {
     const locale = this.normalizeLocale(options?.locale);
     const timezoneId = this.normalizeTimezone(options?.timezoneId);
     const geolocation = this.normalizeGeolocation(options?.geolocation);
+    const wordCountThreshold = this.normalizeWordCountThreshold(
+      options?.wordCountThreshold ?? 80
+    );
+    const excludeExternalLinks = options?.excludeExternalLinks ?? true;
+    const removeOverlayElements = options?.removeOverlayElements ?? true;
+    const processIframes = options?.processIframes ?? true;
+    const textMode = options?.textMode ?? false;
+    const captureScreenshot = options?.captureScreenshot ?? false;
+    const cssSelector = this.normalizeCssSelector(options?.cssSelector);
+    const excludedTags = this.normalizeSelectorList(options?.excludedTags);
+    const virtualScroll = this.normalizeVirtualScrollConfig(options?.virtualScroll);
 
     return {
       includeImages: options?.includeImages ?? false,
@@ -639,7 +662,16 @@ export class CrawlService {
       timezoneId,
       geolocation,
       sessionId,
-      storageState
+      storageState,
+      wordCountThreshold,
+      excludeExternalLinks,
+      removeOverlayElements,
+      processIframes,
+      textMode,
+      captureScreenshot,
+      cssSelector,
+      excludedTags,
+      virtualScroll
     };
   }
 
@@ -836,6 +868,37 @@ export class CrawlService {
     if (waitForTimeoutMs) {
       normalized.waitForTimeoutMs = waitForTimeoutMs;
     }
+    const wordCountThreshold = this.normalizeWordCountThreshold(overrides.wordCountThreshold);
+    if (wordCountThreshold !== undefined) {
+      normalized.wordCountThreshold = wordCountThreshold;
+    }
+    if (typeof overrides.excludeExternalLinks === "boolean") {
+      normalized.excludeExternalLinks = overrides.excludeExternalLinks;
+    }
+    if (typeof overrides.removeOverlayElements === "boolean") {
+      normalized.removeOverlayElements = overrides.removeOverlayElements;
+    }
+    if (typeof overrides.processIframes === "boolean") {
+      normalized.processIframes = overrides.processIframes;
+    }
+    if (typeof overrides.textMode === "boolean") {
+      normalized.textMode = overrides.textMode;
+    }
+    if (typeof overrides.captureScreenshot === "boolean") {
+      normalized.captureScreenshot = overrides.captureScreenshot;
+    }
+    const cssSelector = this.normalizeCssSelector(overrides.cssSelector);
+    if (cssSelector) {
+      normalized.cssSelector = cssSelector;
+    }
+    const excludedTags = this.normalizeSelectorList(overrides.excludedTags);
+    if (excludedTags) {
+      normalized.excludedTags = excludedTags;
+    }
+    const virtualScroll = this.normalizeVirtualScrollConfig(overrides.virtualScroll);
+    if (virtualScroll) {
+      normalized.virtualScroll = virtualScroll;
+    }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
@@ -924,6 +987,61 @@ export class CrawlService {
       return undefined;
     }
     return Array.from(new Set(normalized));
+  }
+
+  private normalizeCssSelector(value?: string | null) {
+    if (!value || typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const limit = 512;
+    return trimmed.length > limit ? trimmed.slice(0, limit) : trimmed;
+  }
+
+  private normalizeWordCountThreshold(value?: number) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    const clamped = Math.max(0, Math.min(5000, Math.round(value)));
+    return clamped;
+  }
+
+  private normalizeVirtualScrollConfig(
+    config?: CrawlVirtualScrollConfig | null
+  ): CrawlVirtualScrollConfig | undefined {
+    if (!config || typeof config !== "object") {
+      return undefined;
+    }
+    const containerSelector = this.normalizeCssSelector(config.containerSelector);
+    const scrollCount =
+      typeof config.scrollCount === "number" && Number.isFinite(config.scrollCount)
+        ? Math.max(1, Math.min(200, Math.round(config.scrollCount)))
+        : undefined;
+    const scrollBy =
+      config.scrollBy === "container_height" || config.scrollBy === "viewport" || config.scrollBy === "pixels"
+        ? config.scrollBy
+        : undefined;
+    const waitAfterScrollMs =
+      typeof config.waitAfterScrollMs === "number" && Number.isFinite(config.waitAfterScrollMs)
+        ? Math.max(0, Math.min(10000, Math.round(config.waitAfterScrollMs)))
+        : undefined;
+    const hasValue =
+      Boolean(containerSelector) ||
+      typeof scrollCount === "number" ||
+      typeof waitAfterScrollMs === "number" ||
+      Boolean(scrollBy);
+    if (!hasValue) {
+      return undefined;
+    }
+    return {
+      containerSelector,
+      scrollCount,
+      scrollBy,
+      waitAfterScrollMs
+    };
   }
 
   private normalizeMarkdownFilter(filter?: CrawlMarkdownFilter | null): CrawlMarkdownFilter | undefined {
@@ -1040,9 +1158,23 @@ export class CrawlService {
         ? {
             type,
             params
-          }
+        }
         : undefined
     );
+  }
+
+  private parseVirtualScrollConfig(value: unknown): CrawlVirtualScrollConfig | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const scrollBy = typeof record.scrollBy === "string" ? record.scrollBy : undefined;
+    return this.normalizeVirtualScrollConfig({
+      containerSelector: typeof record.containerSelector === "string" ? record.containerSelector : undefined,
+      scrollCount: typeof record.scrollCount === "number" ? record.scrollCount : undefined,
+      scrollBy: scrollBy as CrawlVirtualScrollConfig["scrollBy"],
+      waitAfterScrollMs: typeof record.waitAfterScrollMs === "number" ? record.waitAfterScrollMs : undefined
+    });
   }
 
   private normalizeLinkPreviewOptions(

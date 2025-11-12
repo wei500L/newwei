@@ -18,7 +18,8 @@ import type {
   CrawlGeolocationConfig,
   CrawlCleanMarkdownOptions,
   CrawlTableExtractionStrategy,
-  Crawl4aiTablePayload
+  Crawl4aiTablePayload,
+  CrawlVirtualScrollConfig
 } from "./crawl.types";
 
 export interface Crawl4aiRequest {
@@ -155,6 +156,15 @@ export class Crawl4aiClient {
     const userAgent = this.normalizeUserAgent(options.userAgent);
     const userAgentGenerator = this.buildUserAgentGenerator(options.userAgentGenerator);
     const geolocation = this.buildGeolocation(options.geolocation);
+    const virtualScroll = this.buildVirtualScrollConfig(options.virtualScroll);
+    const wordCountThreshold = this.normalizeWordCountThreshold(options.wordCountThreshold ?? 80);
+    const excludeExternalLinks = options.excludeExternalLinks ?? true;
+    const removeOverlayElements = options.removeOverlayElements ?? true;
+    const processIframes = options.processIframes ?? true;
+    const cssSelector = this.normalizeCssSelector(options.cssSelector);
+    const excludedTags = this.normalizeSelectorList(options.excludedTags);
+    const textMode = options.textMode ?? false;
+    const captureScreenshot = options.captureScreenshot ?? false;
     const usePersistentContext = useManagedBrowser || Boolean(options.userDataDir);
     const browserConfig = {
       type: "BrowserConfig",
@@ -202,7 +212,16 @@ export class Crawl4aiClient {
         storage_state: this.buildStorageState(options.storageState),
         ...(cleanMarkdown ?? {}),
         table_score_threshold: this.normalizeTableScore(options.tableScoreThreshold),
-        table_extraction: this.buildTableExtraction(options.tableExtraction)
+        table_extraction: this.buildTableExtraction(options.tableExtraction),
+        word_count_threshold: wordCountThreshold,
+        exclude_external_links: excludeExternalLinks,
+        remove_overlay_elements: removeOverlayElements,
+        process_iframes: processIframes,
+        css_selector: cssSelector,
+        excluded_tags: excludedTags,
+        text_mode: textMode ? true : undefined,
+        screenshot: captureScreenshot ? true : undefined,
+        virtual_scroll_config: virtualScroll
       })
     };
     return {
@@ -319,6 +338,27 @@ export class Crawl4aiClient {
     return Object.keys(payload).length > 0 ? payload : undefined;
   }
 
+  private buildVirtualScrollConfig(config?: CrawlVirtualScrollConfig) {
+    if (!config) {
+      return undefined;
+    }
+    const params = this.compact({
+      container_selector: this.normalizeCssSelector(config.containerSelector),
+      scroll_count:
+        typeof config.scrollCount === "number" && Number.isFinite(config.scrollCount)
+          ? Math.max(1, Math.min(200, Math.round(config.scrollCount)))
+          : undefined,
+      scroll_by: this.normalizeScrollBy(config.scrollBy),
+      wait_after_scroll: this.normalizeWaitAfterScroll(config.waitAfterScrollMs)
+    });
+    return Object.keys(params).length > 0
+      ? {
+          type: "VirtualScrollConfig",
+          params
+        }
+      : undefined;
+  }
+
   private buildLinkPreviewConfig(options: CrawlTaskOptions) {
     const config = options.linkPreview;
     if (!config) {
@@ -429,6 +469,52 @@ export class Crawl4aiClient {
     return normalized.length > 0 ? normalized : undefined;
   }
 
+  private normalizeSelectorList(values?: string[]) {
+    if (!values || values.length === 0) {
+      return undefined;
+    }
+    const normalized = values
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0)
+      .slice(0, 10);
+    return normalized.length > 0 ? Array.from(new Set(normalized)) : undefined;
+  }
+
+  private normalizeCssSelector(value?: string) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const limit = 512;
+    return trimmed.length > limit ? trimmed.slice(0, limit) : trimmed;
+  }
+
+  private normalizeWordCountThreshold(value?: number) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    const clamped = Math.max(0, Math.min(5000, Math.round(value)));
+    return clamped;
+  }
+
+  private normalizeScrollBy(value?: string) {
+    if (value === "container_height" || value === "viewport" || value === "pixels") {
+      return value;
+    }
+    return undefined;
+  }
+
+  private normalizeWaitAfterScroll(value?: number) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    const clamped = Math.max(0, Math.min(10000, value));
+    return Number((clamped / 1000).toFixed(2));
+  }
+
   private normalizeQuery(query?: string) {
     if (!query) {
       return undefined;
@@ -463,6 +549,10 @@ export class Crawl4aiClient {
       .map((config) => {
         const matcher = this.normalizeMatcher(config.matcher);
         const overrides = this.normalizeStrategyOverrides(config.options);
+        const wordCount = this.normalizeWordCountThreshold(overrides?.wordCountThreshold);
+        const cssSelector = this.normalizeCssSelector(overrides?.cssSelector);
+        const excludedTags = this.normalizeSelectorList(overrides?.excludedTags);
+        const virtualScroll = this.buildVirtualScrollConfig(overrides?.virtualScroll);
         const params = this.compact({
           url_matcher: matcher?.pattern,
           match_mode: matcher?.matchMode,
@@ -478,7 +568,16 @@ export class Crawl4aiClient {
           js_code: this.normalizeJsCode(overrides?.jsCode),
           js_only: overrides?.jsOnly ? true : undefined,
           wait_for: this.buildWaitFor(overrides),
-          wait_for_timeout: this.normalizeWaitForTimeout(overrides?.waitForTimeoutMs)
+          wait_for_timeout: this.normalizeWaitForTimeout(overrides?.waitForTimeoutMs),
+          word_count_threshold: wordCount,
+          exclude_external_links: overrides?.excludeExternalLinks,
+          remove_overlay_elements: overrides?.removeOverlayElements,
+          process_iframes: overrides?.processIframes,
+          css_selector: cssSelector,
+          excluded_tags: excludedTags,
+          text_mode: overrides?.textMode ? true : undefined,
+          screenshot: overrides?.captureScreenshot ? true : undefined,
+          virtual_scroll_config: virtualScroll
         });
         if (Object.keys(params).length === 0) {
           return undefined;
@@ -536,6 +635,43 @@ export class Crawl4aiClient {
     }
     if (typeof options.overrideNavigator === "boolean") {
       normalized.overrideNavigator = options.overrideNavigator;
+    }
+    if (typeof options.wordCountThreshold === "number") {
+      const wordCount = this.normalizeWordCountThreshold(options.wordCountThreshold);
+      if (wordCount !== undefined) {
+        normalized.wordCountThreshold = wordCount;
+      }
+    }
+    if (typeof options.excludeExternalLinks === "boolean") {
+      normalized.excludeExternalLinks = options.excludeExternalLinks;
+    }
+    if (typeof options.removeOverlayElements === "boolean") {
+      normalized.removeOverlayElements = options.removeOverlayElements;
+    }
+    if (typeof options.processIframes === "boolean") {
+      normalized.processIframes = options.processIframes;
+    }
+    if (typeof options.textMode === "boolean") {
+      normalized.textMode = options.textMode;
+    }
+    if (typeof options.captureScreenshot === "boolean") {
+      normalized.captureScreenshot = options.captureScreenshot;
+    }
+    if (typeof options.cssSelector === "string") {
+      const cssSelector = this.normalizeCssSelector(options.cssSelector);
+      if (cssSelector) {
+        normalized.cssSelector = cssSelector;
+      }
+    }
+    const excludedTags = this.normalizeSelectorList(options.excludedTags);
+    if (excludedTags) {
+      normalized.excludedTags = excludedTags;
+    }
+    if (options.virtualScroll) {
+      const virtualScroll = this.buildVirtualScrollConfig(options.virtualScroll);
+      if (virtualScroll) {
+        normalized.virtualScroll = options.virtualScroll;
+      }
     }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
