@@ -123,6 +123,57 @@ export class CrawlLinkAnalysisModel {
 }
 
 @ObjectType()
+export class CrawlMetadataTagModel {
+  @Field()
+  name!: string;
+
+  @Field()
+  value!: string;
+}
+
+@ObjectType()
+export class CrawlMetadataResultModel {
+  @Field()
+  url!: string;
+
+  @Field()
+  status!: string;
+
+  @Field(() => Number, { nullable: true })
+  httpStatus?: number | null;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  fetchedAt?: Date | null;
+
+  @Field({ nullable: true })
+  title?: string | null;
+
+  @Field({ nullable: true })
+  description?: string | null;
+
+  @Field(() => [String], { nullable: true })
+  keywords?: string[] | null;
+
+  @Field({ nullable: true })
+  author?: string | null;
+
+  @Field(() => [CrawlMetadataTagModel])
+  metaTags!: CrawlMetadataTagModel[];
+
+  @Field(() => [CrawlMetadataTagModel])
+  openGraph!: CrawlMetadataTagModel[];
+
+  @Field(() => [String])
+  jsonLd!: string[];
+
+  @Field(() => Number, { nullable: true })
+  relevanceScore?: number | null;
+
+  @Field({ nullable: true })
+  error?: string | null;
+}
+
+@ObjectType()
 export class CrawlTaskModel {
   @Field(() => ID)
   id!: string;

@@ -23,8 +23,11 @@ import { useMemo, useState } from "react";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import {
+  CrawlMetadataInput,
+  CrawlMetadataQuery,
   CrawlTaskStatus,
   useCreateCrawlTaskMutation,
+  useCrawlMetadataLazyQuery,
   useCrawlTasksQuery,
   useRetryCrawlTaskMutation
 } from "@/graphql/generated";
@@ -151,11 +154,24 @@ interface GeolocationFormValue {
   accuracy?: number;
 }
 
+interface MetadataFormValues {
+  source: "sitemap" | "urls";
+  domain?: string;
+  pattern?: string;
+  maxUrls?: number;
+  query?: string;
+  scoreThreshold?: number;
+  urls?: string;
+}
+
+type MetadataResultRow = CrawlMetadataQuery["crawlMetadata"][number];
+
 export function CrawlTasksView() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<CrawlTaskStatus | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form] = Form.useForm<CreateCrawlTaskFormValues>();
+  const [metadataForm] = Form.useForm<MetadataFormValues>();
   const scanFullPage = Form.useWatch("scanFullPage", form);
   const proxyUrlValue = Form.useWatch("proxyUrl", form);
   const proxyConfigValue = Form.useWatch("proxyConfig", form);
@@ -164,6 +180,7 @@ export function CrawlTasksView() {
   const markdownFilterType = Form.useWatch(["markdownFilter", "type"], form);
   const scoreLinksValue = Form.useWatch("scoreLinks", form);
   const userAgentModeValue = Form.useWatch("userAgentMode", form);
+  const metadataSource = Form.useWatch("source", metadataForm) ?? "sitemap";
   const linkPreviewDisabled = !scoreLinksValue;
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
@@ -185,6 +202,8 @@ export function CrawlTasksView() {
 
   const [createTask, { loading: creating }] = useCreateCrawlTaskMutation();
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
+  const [fetchMetadata, { loading: metadataLoading, data: metadataData }] = useCrawlMetadataLazyQuery();
+  const metadataResults = metadataData?.crawlMetadata ?? [];
 
   const totalCount = data?.crawlTasks.totalCount ?? 0;
   const allNodes = data?.crawlTasks.edges.map((edge) => edge.node) ?? [];
@@ -255,6 +274,162 @@ export function CrawlTasksView() {
       )
     }
   ];
+
+  const metadataColumns: ColumnsType<MetadataResultRow> = useMemo(
+    () => [
+      {
+        title: "URL",
+        dataIndex: "url",
+        key: "url",
+        render: (_: unknown, record) => (
+          <Space direction="vertical" size={0}>
+            <Typography.Link href={record.url} target="_blank">
+              {record.url}
+            </Typography.Link>
+            {record.fetchedAt ? (
+              <Typography.Text type="secondary">
+                {dayjs(record.fetchedAt).format("MMM D, HH:mm")}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        )
+      },
+      {
+        title: "Status",
+        dataIndex: "status",
+        key: "status",
+        width: 120,
+        render: (_: unknown, record) => (
+          <Tag color={record.status === "success" ? "green" : "red"}>{record.status.toUpperCase()}</Tag>
+        )
+      },
+      {
+        title: "HTTP",
+        dataIndex: "httpStatus",
+        key: "httpStatus",
+        width: 90,
+        render: (value: number | undefined) => value ?? "—"
+      },
+      {
+        title: "Score",
+        dataIndex: "relevanceScore",
+        key: "relevanceScore",
+        width: 100,
+        render: (value: number | undefined | null) => (value !== null && value !== undefined ? value.toFixed(2) : "—")
+      },
+      {
+        title: "Summary",
+        key: "summary",
+        render: (_: unknown, record) => (
+          <Space direction="vertical" size={0}>
+            <Typography.Text strong>{record.title ?? "Untitled page"}</Typography.Text>
+            <Typography.Text type="secondary">
+              {record.description ?? "No meta description provided"}
+            </Typography.Text>
+          </Space>
+        )
+      },
+      {
+        title: "Keywords",
+        dataIndex: "keywords",
+        key: "keywords",
+        render: (_: unknown, record) =>
+          record.keywords && record.keywords.length > 0 ? (
+            <Space wrap>
+              {record.keywords.slice(0, 4).map((keyword) => (
+                <Tag key={`${record.url}-kw-${keyword}`}>{keyword}</Tag>
+              ))}
+            </Space>
+          ) : (
+            "—"
+          )
+      },
+      {
+        title: "Metadata",
+        key: "metadata",
+        render: (_: unknown, record) => {
+          const primaryMeta = record.metaTags.slice(0, 2);
+          const primaryOg = record.openGraph.slice(0, 2);
+          return (
+            <Space direction="vertical" size={4}>
+              {primaryMeta.length > 0 ? (
+                <Space wrap>
+                  {primaryMeta.map((tag) => (
+                    <Tag key={`${record.url}-meta-${tag.name}`} color="blue">
+                      {tag.name}: {tag.value}
+                    </Tag>
+                  ))}
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">No standard meta tags</Typography.Text>
+              )}
+              {primaryOg.length > 0 ? (
+                <Space wrap>
+                  {primaryOg.map((tag) => (
+                    <Tag key={`${record.url}-og-${tag.name}`} color="purple">
+                      {tag.name}: {tag.value}
+                    </Tag>
+                  ))}
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">No Open Graph tags</Typography.Text>
+              )}
+              {record.jsonLd.length > 0 ? (
+                <Tag color="geekblue">{record.jsonLd.length} JSON-LD block(s)</Tag>
+              ) : (
+                <Typography.Text type="secondary">No JSON-LD</Typography.Text>
+              )}
+            </Space>
+          );
+        }
+      },
+      {
+        title: "Error",
+        dataIndex: "error",
+        key: "error",
+        render: (value: string | undefined | null) => value ?? "—"
+      }
+    ],
+    []
+  );
+
+  const handleMetadataSubmit = async () => {
+    try {
+      const values = await metadataForm.validateFields();
+      const input: CrawlMetadataInput = {
+        source: values.source,
+        domain: values.domain,
+        pattern: values.pattern,
+        maxUrls: values.maxUrls,
+        query: values.query,
+        scoreThreshold: values.scoreThreshold,
+        concurrency: 5
+      };
+      if (values.source === "urls") {
+        const urls =
+          values.urls
+            ?.split(/\r?\n/)
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0) ?? [];
+        if (urls.length === 0) {
+          message.error("请输入至少一个 URL");
+          return;
+        }
+        input.urls = urls;
+      }
+      await fetchMetadata({
+        variables: {
+          input
+        }
+      });
+      message.success("Metadata extraction completed");
+    } catch (error: any) {
+      if (error?.errorFields) {
+        return;
+      }
+      message.error("无法提取 metadata，请稍后重试");
+    }
+  };
 
   const handleRetry = async (id: string) => {
     try {
@@ -648,6 +823,89 @@ export function CrawlTasksView() {
         }}
         onChange={(pager) => setPagination(pager)}
       />
+      <Card title="Metadata extraction" style={{ marginTop: 24 }}>
+        <Typography.Paragraph type="secondary">
+          Preview head metadata via sitemap seeding before creating a crawl task. Powered by{" "}
+          <Typography.Link
+            href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/url-seeding.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            crawl4ai&apos;s metadata extraction guidance
+          </Typography.Link>
+          .
+        </Typography.Paragraph>
+        <Form
+          layout="vertical"
+          form={metadataForm}
+          onFinish={handleMetadataSubmit}
+          initialValues={{ source: "sitemap", maxUrls: 10 }}
+          style={{ marginTop: 16 }}
+        >
+          <Space align="end" wrap>
+            <Form.Item
+              label="Source"
+              name="source"
+              style={{ minWidth: 200 }}
+              rules={[{ required: true, message: "请选择来源" }]}
+            >
+              <Select
+                options={[
+                  { label: "Sitemap seeding", value: "sitemap" },
+                  { label: "Manual URLs", value: "urls" }
+                ]}
+              />
+            </Form.Item>
+            {metadataSource === "sitemap" ? (
+              <>
+                <Form.Item
+                  label="Domain"
+                  name="domain"
+                  style={{ minWidth: 220 }}
+                  rules={[{ required: true, message: "请输入域名" }]}
+                >
+                  <Input placeholder="news.example.com" />
+                </Form.Item>
+                <Form.Item label="Pattern" name="pattern" style={{ minWidth: 200 }}>
+                  <Input placeholder="*/blog/*" />
+                </Form.Item>
+                <Form.Item label="Max URLs" name="maxUrls">
+                  <InputNumber min={1} max={200} style={{ width: 120 }} />
+                </Form.Item>
+              </>
+            ) : (
+              <Form.Item
+                label="URLs"
+                name="urls"
+                style={{ minWidth: 320 }}
+                rules={[{ required: true, message: "请输入 URL 列表" }]}
+              >
+                <Input.TextArea rows={4} placeholder="https://example.com/post-1" />
+              </Form.Item>
+            )}
+            <Form.Item label="Query" name="query" style={{ minWidth: 220 }}>
+              <Input placeholder="e.g. API reference" />
+            </Form.Item>
+            <Form.Item label="Score threshold" name="scoreThreshold">
+              <InputNumber min={0} max={1} step={0.1} style={{ width: 140 }} placeholder="0.3" />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit" loading={metadataLoading}>
+                Extract metadata
+              </Button>
+            </Form.Item>
+          </Space>
+        </Form>
+        <Table<MetadataResultRow>
+          style={{ marginTop: 24 }}
+          rowKey={(record) => `${record.url}-${record.fetchedAt ?? record.status}`}
+          columns={metadataColumns}
+          dataSource={metadataResults}
+          loading={metadataLoading}
+          pagination={false}
+          locale={{ emptyText: "填写上方表单以预览 metadata" }}
+        />
+      </Card>
       <Drawer
         title="New Crawl Task"
         placement="right"
