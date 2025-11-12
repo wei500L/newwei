@@ -164,6 +164,24 @@ export class CrawlMarkdownFilterInput {
 }
 
 @InputType()
+export class CrawlCleanMarkdownInput {
+  @Field({ nullable: true })
+  cssSelector?: string;
+
+  @Field(() => [String], { nullable: true })
+  targetElements?: string[];
+
+  @Field(() => [String], { nullable: true })
+  excludedTags?: string[];
+
+  @Field(() => Boolean, { nullable: true })
+  removeOverlayElements?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  wordCountThreshold?: number;
+}
+
+@InputType()
 export class CrawlLinkPreviewInput {
   @Field(() => Boolean, { nullable: true })
   includeInternal?: boolean;
@@ -272,6 +290,9 @@ export class CrawlOptionsInput {
 
   @Field(() => CrawlMarkdownFilterInput, { nullable: true })
   markdownFilter?: CrawlMarkdownFilterInput;
+
+  @Field(() => CrawlCleanMarkdownInput, { nullable: true })
+  cleanMarkdown?: CrawlCleanMarkdownInput;
 
   @Field(() => Boolean, { nullable: true })
   scoreLinks?: boolean;

@@ -100,6 +100,14 @@ export interface CrawlMarkdownFilter {
   threshold?: number;
 }
 
+export interface CrawlCleanMarkdownOptions {
+  cssSelector?: string;
+  targetElements?: string[];
+  excludedTags?: string[];
+  removeOverlayElements?: boolean;
+  wordCountThreshold?: number;
+}
+
 export interface CrawlLinkPreviewOptions {
   includeInternal?: boolean;
   includeExternal?: boolean;
@@ -207,6 +215,7 @@ export interface CrawlTaskOptions {
   multiUrlConfigs?: CrawlMultiUrlConfig[];
   markdownOptions?: CrawlMarkdownOptions;
   markdownFilter?: CrawlMarkdownFilter;
+  cleanMarkdown?: CrawlCleanMarkdownOptions;
   scoreLinks?: boolean;
   linkPreview?: CrawlLinkPreviewOptions;
   browserHeaders?: CrawlBrowserHeader[];
