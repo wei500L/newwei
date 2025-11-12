@@ -233,6 +233,18 @@ export class Crawl4aiClient {
   }
 
   private buildMarkdownGenerator(options: CrawlTaskOptions) {
+    const customStrategy = options.markdownStrategy;
+    if (customStrategy && typeof customStrategy.type === "string") {
+      const params = this.normalizeCustomParams(customStrategy.params);
+      return params && Object.keys(params).length > 0
+        ? {
+            type: customStrategy.type,
+            params
+          }
+        : {
+            type: customStrategy.type
+          };
+    }
     const params = this.compact({
       content_source: options.markdownOptions?.contentSource,
       options: this.buildMarkdownOptionsPayload(options.markdownOptions),
@@ -256,6 +268,17 @@ export class Crawl4aiClient {
       body_width: markdownOptions.bodyWidth
     });
     return Object.keys(payload).length > 0 ? payload : undefined;
+  }
+
+  private normalizeCustomParams(value?: Record<string, unknown>) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return undefined;
+    }
   }
 
   private buildCleanMarkdownOptions(options?: CrawlCleanMarkdownOptions) {

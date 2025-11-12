@@ -87,6 +87,10 @@ interface CreateCrawlTaskFormValues {
     thresholdType?: "fixed" | "dynamic";
     minWordThreshold?: number;
   };
+  markdownStrategy?: {
+    type?: string;
+    params?: string;
+  };
   cleanMarkdown?: {
     cssSelector?: string;
     targetElements?: string[];
@@ -583,6 +587,32 @@ export function CrawlTasksView() {
     return payload;
   };
 
+  const sanitizeMarkdownStrategy = (strategy?: CreateCrawlTaskFormValues["markdownStrategy"]) => {
+    if (!strategy?.type) {
+      return undefined;
+    }
+    const trimmedType = strategy.type.trim();
+    if (!trimmedType) {
+      return undefined;
+    }
+    let params: Record<string, unknown> | undefined;
+    if (strategy.params && strategy.params.trim().length) {
+      try {
+        const parsed = JSON.parse(strategy.params);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("Custom Markdown strategy params must be a JSON object");
+        }
+        params = parsed as Record<string, unknown>;
+      } catch (error) {
+        throw new Error(
+          (error as Error).message ?? "Custom Markdown strategy params must be valid JSON"
+        );
+      }
+    }
+    const normalizedType = trimmedType.slice(0, 128);
+    return params ? { type: normalizedType, params } : { type: normalizedType };
+  };
+
   const sanitizeCleanMarkdown = (options?: CreateCrawlTaskFormValues["cleanMarkdown"]) => {
     if (!options) {
       return undefined;
@@ -742,6 +772,13 @@ export function CrawlTasksView() {
     const multiUrlConfigs = sanitizeMultiUrlConfigs(values.multiUrlConfigs);
     const markdownOptions = sanitizeMarkdownOptions(values.markdownOptions);
     const markdownFilter = sanitizeMarkdownFilter(values.markdownFilter);
+    let markdownStrategy: { type: string; params?: Record<string, unknown> } | undefined;
+    try {
+      markdownStrategy = sanitizeMarkdownStrategy(values.markdownStrategy);
+    } catch (error) {
+      message.error((error as Error).message);
+      return;
+    }
     const cleanMarkdown = sanitizeCleanMarkdown(values.cleanMarkdown);
     const linkPreview = sanitizeLinkPreview(values.linkPreview);
     const jsCode = sanitizeJsCodeList(values.jsCode);
@@ -804,6 +841,7 @@ export function CrawlTasksView() {
               multiUrlConfigs,
               markdownOptions: markdownOptions ?? undefined,
               markdownFilter: markdownFilter ?? undefined,
+              markdownStrategy: markdownStrategy ?? undefined,
               cleanMarkdown: cleanMarkdown ?? undefined,
               scoreLinks: typeof values.scoreLinks === "boolean" ? values.scoreLinks : undefined,
               linkPreview: linkPreview ?? undefined,
@@ -1483,6 +1521,34 @@ export function CrawlTasksView() {
             extra="Ignore nodes shorter than this count before scoring (Fit Markdown heuristic)."
           >
             <InputNumber min={0} max={500} step={1} style={{ width: "100%" }} placeholder="5" />
+          </Form.Item>
+          <Typography.Title level={5} style={{ marginTop: 24 }}>
+            Custom Markdown strategy
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+            Provide the Crawl4AI strategy class name plus optional JSON params per the{" "}
+            <Typography.Link
+              href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/markdown-generation.md#custom-strategies"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Custom Strategies guide
+            </Typography.Link>
+            . Leave blank to use the default generator above.
+          </Typography.Paragraph>
+          <Form.Item
+            label="Strategy type"
+            name={["markdownStrategy", "type"]}
+            extra="Matches the Python class registered with Crawl4AI (e.g. MyMarkdownGenerator)."
+          >
+            <Input placeholder="MyMarkdownGenerator" maxLength={128} />
+          </Form.Item>
+          <Form.Item
+            label="Params (JSON)"
+            name={["markdownStrategy", "params"]}
+            extra="Arbitrary JSON object passed verbatim to your strategy constructor."
+          >
+            <Input.TextArea rows={4} placeholder='{ "content_source": "raw_html" }' />
           </Form.Item>
           <Card
             size="small"

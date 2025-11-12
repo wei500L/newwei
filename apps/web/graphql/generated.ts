@@ -30,6 +30,11 @@ export type CrawlMarkdownFilterInput = {
   minWordThreshold?: InputMaybe<number>;
 };
 
+export type CrawlMarkdownStrategyInput = {
+  type: string;
+  params?: InputMaybe<any>;
+};
+
 export type CrawlCleanMarkdownInput = {
   cssSelector?: InputMaybe<string>;
   targetElements?: InputMaybe<Array<string>>;
@@ -136,6 +141,7 @@ export type CrawlOptionsInput = {
   multiUrlConfigs?: InputMaybe<Array<CrawlMultiUrlStrategyInput>>;
   markdownOptions?: InputMaybe<CrawlMarkdownOptionsInput>;
   markdownFilter?: InputMaybe<CrawlMarkdownFilterInput>;
+  markdownStrategy?: InputMaybe<CrawlMarkdownStrategyInput>;
   cleanMarkdown?: InputMaybe<CrawlCleanMarkdownInput>;
   scoreLinks?: InputMaybe<boolean>;
   linkPreview?: InputMaybe<CrawlLinkPreviewInput>;

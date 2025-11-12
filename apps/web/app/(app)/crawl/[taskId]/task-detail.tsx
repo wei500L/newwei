@@ -310,6 +310,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     return config.markdownFilter as Record<string, unknown>;
   }, [config]);
 
+  const markdownStrategy = useMemo(() => {
+    if (!config || typeof config.markdownStrategy !== "object" || !config.markdownStrategy) {
+      return null;
+    }
+    return config.markdownStrategy as Record<string, unknown>;
+  }, [config]);
+
   const cleanMarkdownOptions = useMemo(() => {
     if (!config || typeof config.cleanMarkdown !== "object" || !config.cleanMarkdown) {
       return null;
@@ -365,6 +372,23 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     return parts.join(" • ");
   }, [markdownFilter]);
+
+  const markdownStrategySummary = useMemo(() => {
+    if (!markdownStrategy || typeof markdownStrategy.type !== "string") {
+      return "Default generator";
+    }
+    const type = markdownStrategy.type;
+    const params =
+      markdownStrategy.params && typeof markdownStrategy.params === "object"
+        ? (markdownStrategy.params as Record<string, unknown>)
+        : undefined;
+    if (!params) {
+      return type;
+    }
+    const json = JSON.stringify(params);
+    const snippet = json.length > 80 ? `${json.slice(0, 80)}...` : json;
+    return `${type} • ${snippet}`;
+  }, [markdownStrategy]);
 
   const cleanMarkdownSummary = useMemo(() => {
     if (!cleanMarkdownOptions) {
@@ -834,6 +858,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         )}
       </Descriptions.Item>
       <Descriptions.Item label="Markdown generator">{markdownSummary}</Descriptions.Item>
+      <Descriptions.Item label="Custom Markdown strategy">{markdownStrategySummary}</Descriptions.Item>
       <Descriptions.Item label="Markdown filter">{markdownFilterSummary}</Descriptions.Item>
       <Descriptions.Item label="Clean Markdown">{cleanMarkdownSummary}</Descriptions.Item>
       <Descriptions.Item label="Last server memory">
