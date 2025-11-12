@@ -310,6 +310,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     return config.markdownFilter as Record<string, unknown>;
   }, [config]);
 
+  const cleanMarkdownOptions = useMemo(() => {
+    if (!config || typeof config.cleanMarkdown !== "object" || !config.cleanMarkdown) {
+      return null;
+    }
+    return config.cleanMarkdown as Record<string, unknown>;
+  }, [config]);
+
   const markdownSummary = useMemo(() => {
     if (!markdownOptions) {
       return "Default (cleaned_html)";
@@ -338,6 +345,29 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       typeof markdownFilter.threshold === "number" ? ` (threshold ${markdownFilter.threshold})` : "";
     return `${markdownFilter.type}${threshold}`;
   }, [markdownFilter]);
+
+  const cleanMarkdownSummary = useMemo(() => {
+    if (!cleanMarkdownOptions) {
+      return "Disabled";
+    }
+    const parts: string[] = [];
+    if (typeof cleanMarkdownOptions.cssSelector === "string" && cleanMarkdownOptions.cssSelector.trim().length) {
+      parts.push(`scope ${cleanMarkdownOptions.cssSelector}`);
+    }
+    if (Array.isArray(cleanMarkdownOptions.targetElements) && cleanMarkdownOptions.targetElements.length) {
+      parts.push(`targets ${cleanMarkdownOptions.targetElements.join(", ")}`);
+    }
+    if (Array.isArray(cleanMarkdownOptions.excludedTags) && cleanMarkdownOptions.excludedTags.length) {
+      parts.push(`exclude ${cleanMarkdownOptions.excludedTags.join(", ")}`);
+    }
+    if (typeof cleanMarkdownOptions.wordCountThreshold === "number") {
+      parts.push(`min ${cleanMarkdownOptions.wordCountThreshold} words`);
+    }
+    if (typeof cleanMarkdownOptions.removeOverlayElements === "boolean") {
+      parts.push(cleanMarkdownOptions.removeOverlayElements ? "remove overlays" : "keep overlays");
+    }
+    return parts.length ? parts.join(" • ") : "Enabled";
+  }, [cleanMarkdownOptions]);
 
   const browserHeaders = useMemo(() => {
     if (!Array.isArray(config?.browserHeaders)) {
@@ -785,6 +815,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       </Descriptions.Item>
       <Descriptions.Item label="Markdown generator">{markdownSummary}</Descriptions.Item>
       <Descriptions.Item label="Markdown filter">{markdownFilterSummary}</Descriptions.Item>
+      <Descriptions.Item label="Clean Markdown">{cleanMarkdownSummary}</Descriptions.Item>
       <Descriptions.Item label="Last server memory">
         {task.lastServerMemoryMb != null ? `${task.lastServerMemoryMb} MB` : "—"}
       </Descriptions.Item>
@@ -983,7 +1014,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                 { key: "raw", label: "Raw", content: result.markdown },
                 { key: "citations", label: "Citations", content: result.markdownWithCitations },
                 { key: "references", label: "References", content: result.referencesMarkdown },
-                { key: "fit", label: "Fit", content: result.fitMarkdown }
+                { key: "fit", label: "Clean (fit)", content: result.fitMarkdown }
               ].filter((entry) => entry.content && entry.content.length > 0);
               const defaultContent = (
                 <pre className="markdown-preview" style={{ marginTop: 8 }}>

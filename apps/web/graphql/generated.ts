@@ -28,6 +28,14 @@ export type CrawlMarkdownFilterInput = {
   threshold?: InputMaybe<number>;
 };
 
+export type CrawlCleanMarkdownInput = {
+  cssSelector?: InputMaybe<string>;
+  targetElements?: InputMaybe<Array<string>>;
+  excludedTags?: InputMaybe<Array<string>>;
+  removeOverlayElements?: InputMaybe<boolean>;
+  wordCountThreshold?: InputMaybe<number>;
+};
+
 export type CrawlLinkPreviewInput = {
   includeInternal?: InputMaybe<boolean>;
   includeExternal?: InputMaybe<boolean>;
@@ -126,6 +134,7 @@ export type CrawlOptionsInput = {
   multiUrlConfigs?: InputMaybe<Array<CrawlMultiUrlStrategyInput>>;
   markdownOptions?: InputMaybe<CrawlMarkdownOptionsInput>;
   markdownFilter?: InputMaybe<CrawlMarkdownFilterInput>;
+  cleanMarkdown?: InputMaybe<CrawlCleanMarkdownInput>;
   scoreLinks?: InputMaybe<boolean>;
   linkPreview?: InputMaybe<CrawlLinkPreviewInput>;
   browserHeaders?: InputMaybe<Array<CrawlBrowserHeaderInput>>;

@@ -85,6 +85,13 @@ interface CreateCrawlTaskFormValues {
     type?: string;
     threshold?: number;
   };
+  cleanMarkdown?: {
+    cssSelector?: string;
+    targetElements?: string[];
+    excludedTags?: string[];
+    removeOverlayElements?: boolean;
+    wordCountThreshold?: number;
+  };
   scoreLinks?: boolean;
   linkPreview?: {
     includeInternal?: boolean;
@@ -568,6 +575,31 @@ export function CrawlTasksView() {
     return payload;
   };
 
+  const sanitizeCleanMarkdown = (options?: CreateCrawlTaskFormValues["cleanMarkdown"]) => {
+    if (!options) {
+      return undefined;
+    }
+    const payload: Record<string, unknown> = {};
+    if (typeof options.cssSelector === "string" && options.cssSelector.trim().length) {
+      payload.cssSelector = options.cssSelector.trim();
+    }
+    const targetElements = sanitizeStringList(options.targetElements)?.slice(0, 10);
+    if (targetElements?.length) {
+      payload.targetElements = targetElements;
+    }
+    const excludedTags = sanitizeStringList(options.excludedTags)?.slice(0, 10);
+    if (excludedTags?.length) {
+      payload.excludedTags = excludedTags;
+    }
+    if (typeof options.removeOverlayElements === "boolean") {
+      payload.removeOverlayElements = options.removeOverlayElements;
+    }
+    if (typeof options.wordCountThreshold === "number") {
+      payload.wordCountThreshold = options.wordCountThreshold;
+    }
+    return Object.keys(payload).length ? payload : undefined;
+  };
+
   const sanitizeLinkPreview = (preview?: CreateCrawlTaskFormValues["linkPreview"]) => {
     if (!preview) {
       return undefined;
@@ -702,6 +734,7 @@ export function CrawlTasksView() {
     const multiUrlConfigs = sanitizeMultiUrlConfigs(values.multiUrlConfigs);
     const markdownOptions = sanitizeMarkdownOptions(values.markdownOptions);
     const markdownFilter = sanitizeMarkdownFilter(values.markdownFilter);
+    const cleanMarkdown = sanitizeCleanMarkdown(values.cleanMarkdown);
     const linkPreview = sanitizeLinkPreview(values.linkPreview);
     const jsCode = sanitizeJsCodeList(values.jsCode);
     const waitForSelector = values.waitForSelector?.trim();
@@ -763,6 +796,7 @@ export function CrawlTasksView() {
               multiUrlConfigs,
               markdownOptions: markdownOptions ?? undefined,
               markdownFilter: markdownFilter ?? undefined,
+              cleanMarkdown: cleanMarkdown ?? undefined,
               scoreLinks: typeof values.scoreLinks === "boolean" ? values.scoreLinks : undefined,
               linkPreview: linkPreview ?? undefined,
               browserHeaders: browserHeaders ?? undefined,
@@ -1419,6 +1453,78 @@ export function CrawlTasksView() {
           >
             <InputNumber min={0} max={1} step={0.05} style={{ width: "100%" }} placeholder="0.6" />
           </Form.Item>
+          <Card
+            size="small"
+            title="Clean Markdown"
+            style={{ marginBottom: 16 }}
+            extra={
+              <Typography.Link
+                href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/content-selection.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                crawl4ai docs
+              </Typography.Link>
+            }
+          >
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+              Mirror Crawl4AI&apos;s Clean Markdown recipe to strip nav/footer blocks, remove overlays, and drop short
+              fragments for accurately formatted Markdown output (per the{" "}
+              <Typography.Link
+                href="https://github.com/unclecode/crawl4ai/blob/main/docs/examples/quickstart.ipynb"
+                target="_blank"
+                rel="noreferrer"
+              >
+                official quickstart
+              </Typography.Link>
+              ).
+            </Typography.Paragraph>
+            <Form.Item
+              label="Scoped CSS selector"
+              name={["cleanMarkdown", "cssSelector"]}
+              extra="Limit Markdown to a single region (e.g. #main-content)."
+            >
+              <Input placeholder="#main-content" maxLength={512} />
+            </Form.Item>
+            <Form.Item
+              label="Target elements"
+              name={["cleanMarkdown", "targetElements"]}
+              extra="Provide multiple selectors for multi-column layouts."
+            >
+              <Select
+                mode="tags"
+                tokenSeparators={[",", " "]}
+                placeholder=".article, .sidebar"
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+            <Form.Item
+              label="Excluded tags"
+              name={["cleanMarkdown", "excludedTags"]}
+              extra="Drop repeating chrome such as nav, footer, form, aside."
+            >
+              <Select
+                mode="tags"
+                tokenSeparators={[",", " "]}
+                placeholder="nav, footer, aside"
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+            <Form.Item
+              label="Remove overlay elements"
+              name={["cleanMarkdown", "removeOverlayElements"]}
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              label="Word count threshold"
+              name={["cleanMarkdown", "wordCountThreshold"]}
+              extra="Ignore fragments below this number of words."
+            >
+              <InputNumber min={0} max={2000} placeholder="10" style={{ width: "100%" }} />
+            </Form.Item>
+          </Card>
           <Form.Item
             label="Proxy URL"
             name="proxyUrl"

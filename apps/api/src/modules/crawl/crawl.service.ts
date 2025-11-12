@@ -23,7 +23,8 @@ import {
   CrawlBrowserHeader,
   CrawlBrowserCookie,
   CrawlUserAgentGeneratorConfig,
-  CrawlGeolocationConfig
+  CrawlGeolocationConfig,
+  CrawlCleanMarkdownOptions
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -159,6 +160,7 @@ export class CrawlService {
       multiUrlConfigs: dto.options?.multiUrlConfigs as CrawlMultiUrlConfig[] | undefined,
       markdownOptions: dto.options?.markdownOptions,
       markdownFilter: dto.options?.markdownFilter,
+      cleanMarkdown: dto.options?.cleanMarkdown,
       scoreLinks: dto.options?.scoreLinks,
       linkPreview: dto.options?.linkPreview as CrawlLinkPreviewOptions | undefined
     });
@@ -526,6 +528,7 @@ export class CrawlService {
       multiUrlConfigs: this.parseMultiUrlConfigs(value.multiUrlConfigs),
       markdownOptions: this.parseMarkdownOptions(value.markdownOptions),
       markdownFilter: this.parseMarkdownFilter(value.markdownFilter),
+      cleanMarkdown: this.parseCleanMarkdownOptions(value.cleanMarkdown),
       scoreLinks: typeof value.scoreLinks === "boolean" ? value.scoreLinks : undefined,
       linkPreview: this.parseLinkPreviewOptions(value.linkPreview),
       browserHeaders: this.parseBrowserHeaders(value.browserHeaders),
@@ -563,6 +566,7 @@ export class CrawlService {
     const multiUrlConfigs = this.normalizeMultiUrlConfigs(options?.multiUrlConfigs);
     const markdownOptions = this.normalizeMarkdownOptions(options?.markdownOptions);
     const markdownFilter = this.normalizeMarkdownFilter(options?.markdownFilter);
+    const cleanMarkdown = this.normalizeCleanMarkdownOptions(options?.cleanMarkdown);
     const linkPreview = this.normalizeLinkPreviewOptions(options?.linkPreview);
     const scoreLinks = options?.scoreLinks ?? Boolean(linkPreview);
     const jsCode = this.normalizeScriptList(options?.jsCode);
@@ -606,6 +610,7 @@ export class CrawlService {
       multiUrlConfigs,
       markdownOptions,
       markdownFilter,
+      cleanMarkdown,
       scoreLinks,
       linkPreview,
       browserHeaders,
@@ -817,6 +822,22 @@ export class CrawlService {
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
+  private parseCleanMarkdownOptions(value: unknown): CrawlCleanMarkdownOptions | undefined {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    return this.normalizeCleanMarkdownOptions({
+      cssSelector: typeof record.cssSelector === "string" ? record.cssSelector : undefined,
+      targetElements: this.coerceStringArray(record.targetElements),
+      excludedTags: this.coerceStringArray(record.excludedTags),
+      removeOverlayElements:
+        typeof record.removeOverlayElements === "boolean" ? record.removeOverlayElements : undefined,
+      wordCountThreshold:
+        typeof record.wordCountThreshold === "number" ? record.wordCountThreshold : undefined
+    });
+  }
+
   private normalizeMarkdownOptions(
     options?: CrawlMarkdownOptions | null
   ): CrawlMarkdownOptions | undefined {
@@ -841,6 +862,51 @@ export class CrawlService {
       normalized.bodyWidth = clamped;
     }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private normalizeCleanMarkdownOptions(
+    options?: CrawlCleanMarkdownOptions | null
+  ): CrawlCleanMarkdownOptions | undefined {
+    if (!options) {
+      return undefined;
+    }
+    const normalized: CrawlCleanMarkdownOptions = {};
+    if (typeof options.cssSelector === "string") {
+      const trimmed = options.cssSelector.trim();
+      if (trimmed.length > 0) {
+        normalized.cssSelector = trimmed.slice(0, 512);
+      }
+    }
+    const targetElements = this.normalizeSelectorList(options.targetElements);
+    if (targetElements) {
+      normalized.targetElements = targetElements;
+    }
+    const excludedTags = this.normalizeSelectorList(options.excludedTags);
+    if (excludedTags) {
+      normalized.excludedTags = excludedTags;
+    }
+    if (typeof options.removeOverlayElements === "boolean") {
+      normalized.removeOverlayElements = options.removeOverlayElements;
+    }
+    if (typeof options.wordCountThreshold === "number" && Number.isFinite(options.wordCountThreshold)) {
+      const clamped = Math.max(0, Math.min(2000, Math.round(options.wordCountThreshold)));
+      normalized.wordCountThreshold = clamped;
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private normalizeSelectorList(values?: string[] | null): string[] | undefined {
+    if (!values || values.length === 0) {
+      return undefined;
+    }
+    const normalized = values
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter((value): value is string => Boolean(value))
+      .slice(0, 10);
+    if (normalized.length === 0) {
+      return undefined;
+    }
+    return Array.from(new Set(normalized));
   }
 
   private normalizeMarkdownFilter(filter?: CrawlMarkdownFilter | null): CrawlMarkdownFilter | undefined {
@@ -1092,6 +1158,21 @@ export class CrawlService {
     return this.normalizeScriptList(
       value.map((entry) => (typeof entry === "string" ? entry : "")).filter((entry): entry is string => Boolean(entry))
     );
+  }
+
+  private coerceStringArray(value: unknown): string[] | undefined {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? [trimmed] : undefined;
+    }
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    const normalized = value
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0)
+      .slice(0, 10);
+    return normalized.length > 0 ? normalized : undefined;
   }
 
   private parseMultiUrlConfigs(value: unknown): CrawlMultiUrlConfig[] | undefined {

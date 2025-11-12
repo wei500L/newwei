@@ -15,7 +15,8 @@ import type {
   CrawlBrowserHeader,
   CrawlBrowserCookie,
   CrawlUserAgentGeneratorConfig,
-  CrawlGeolocationConfig
+  CrawlGeolocationConfig,
+  CrawlCleanMarkdownOptions
 } from "./crawl.types";
 
 export interface Crawl4aiRequest {
@@ -143,6 +144,7 @@ export class Crawl4aiClient {
     const proxyPayload = this.resolveProxyPayload(options);
     const multiConfigurations = this.buildMultiConfigurations(options);
     const markdownGenerator = this.buildMarkdownGenerator(options);
+    const cleanMarkdown = this.buildCleanMarkdownOptions(options.cleanMarkdown);
     const linkPreviewConfig = this.buildLinkPreviewConfig(options);
     const shouldScoreLinks = options.scoreLinks ?? Boolean(linkPreviewConfig);
     const headers = this.buildHeaderMap(options.browserHeaders);
@@ -194,7 +196,8 @@ export class Crawl4aiClient {
         wait_for: this.buildWaitFor(options),
         wait_for_timeout: this.normalizeWaitForTimeout(options.waitForTimeoutMs),
         session_id: options.sessionId,
-        storage_state: this.buildStorageState(options.storageState)
+        storage_state: this.buildStorageState(options.storageState),
+        ...(cleanMarkdown ?? {})
       })
     };
     return {
@@ -251,6 +254,20 @@ export class Crawl4aiClient {
       ignore_links: markdownOptions.ignoreLinks,
       escape_html: markdownOptions.escapeHtml,
       body_width: markdownOptions.bodyWidth
+    });
+    return Object.keys(payload).length > 0 ? payload : undefined;
+  }
+
+  private buildCleanMarkdownOptions(options?: CrawlCleanMarkdownOptions) {
+    if (!options) {
+      return undefined;
+    }
+    const payload = this.compact({
+      css_selector: options.cssSelector,
+      target_elements: options.targetElements && options.targetElements.length > 0 ? options.targetElements : undefined,
+      excluded_tags: options.excludedTags && options.excludedTags.length > 0 ? options.excludedTags : undefined,
+      remove_overlay_elements: options.removeOverlayElements,
+      word_count_threshold: options.wordCountThreshold
     });
     return Object.keys(payload).length > 0 ? payload : undefined;
   }

@@ -219,6 +219,11 @@ export class CrawlOptionsDto {
   markdownFilter?: CrawlMarkdownFilterDto;
 
   @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlCleanMarkdownOptionsDto)
+  cleanMarkdown?: CrawlCleanMarkdownOptionsDto;
+
+  @IsOptional()
   @IsBoolean()
   scoreLinks?: boolean;
 
@@ -422,6 +427,36 @@ export class CrawlMarkdownFilterDto {
   @Min(0)
   @Max(1)
   threshold?: number;
+}
+
+export class CrawlCleanMarkdownOptionsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cssSelector?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  targetElements?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  excludedTags?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  removeOverlayElements?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(2000)
+  wordCountThreshold?: number;
 }
 
 export class CrawlLinkPreviewOptionsDto {
