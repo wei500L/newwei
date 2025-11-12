@@ -220,3 +220,40 @@ export interface CrawlMemoryStats {
   peakMemoryMb?: number;
   efficiencyPercent?: number;
 }
+
+export type CrawlMetadataSource = "sitemap" | "urls";
+
+export interface CrawlMetadataExtractionInput {
+  source?: CrawlMetadataSource;
+  domain?: string;
+  urls?: string[];
+  pattern?: string;
+  maxUrls?: number;
+  query?: string;
+  scoreThreshold?: number;
+  extractJsonLd?: boolean;
+  extractOpenGraph?: boolean;
+  extractStandardMeta?: boolean;
+  concurrency?: number;
+}
+
+export interface CrawlMetadataTag {
+  name: string;
+  value: string;
+}
+
+export interface CrawlMetadataResult {
+  url: string;
+  status: "success" | "failed";
+  httpStatus?: number;
+  fetchedAt?: Date;
+  title?: string;
+  description?: string;
+  keywords?: string[];
+  author?: string;
+  metaTags: CrawlMetadataTag[];
+  openGraph: CrawlMetadataTag[];
+  jsonLd: string[];
+  relevanceScore?: number;
+  error?: string;
+}

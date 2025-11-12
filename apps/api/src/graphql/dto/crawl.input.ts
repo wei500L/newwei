@@ -299,6 +299,42 @@ export class CrawlOptionsInput {
 }
 
 @InputType()
+export class CrawlMetadataInput {
+  @Field({ nullable: true })
+  source?: string;
+
+  @Field({ nullable: true })
+  domain?: string;
+
+  @Field(() => [String], { nullable: true })
+  urls?: string[];
+
+  @Field({ nullable: true })
+  pattern?: string;
+
+  @Field(() => Int, { nullable: true })
+  maxUrls?: number;
+
+  @Field({ nullable: true })
+  query?: string;
+
+  @Field(() => Float, { nullable: true })
+  scoreThreshold?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  extractJsonLd?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  extractOpenGraph?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  extractStandardMeta?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  concurrency?: number;
+}
+
+@InputType()
 export class CreateCrawlTaskInput {
   @Field()
   url!: string;

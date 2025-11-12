@@ -19,12 +19,14 @@ import {
   CrawlLinkAnalysisModel,
   CrawlLinkModel,
   CrawlLinkStatsModel,
-  CrawlLinkBucketModel
+  CrawlLinkBucketModel,
+  CrawlMetadataResultModel
 } from "../models/crawl.model";
 import {
   CrawlTaskDetailArgs,
   CrawlTasksQueryArgs,
-  CreateCrawlTaskInput
+  CreateCrawlTaskInput,
+  CrawlMetadataInput
 } from "../dto/crawl.input";
 import {
   CrawlService,
@@ -32,7 +34,12 @@ import {
   CrawlTaskView,
   CrawlMemoryStats
 } from "../../modules/crawl/crawl.service";
-import type { CrawlLinkAnalysis, CrawlLinkAnalysisLink } from "../../modules/crawl/crawl.types";
+import { CrawlMetadataService } from "../../modules/crawl/crawl-metadata.service";
+import type {
+  CrawlLinkAnalysis,
+  CrawlLinkAnalysisLink,
+  CrawlMetadataResult
+} from "../../modules/crawl/crawl.types";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { PrismaService } from "../../modules/config/prisma.service";
 import { CreateCrawlTaskDto } from "../../modules/crawl/dto/create-crawl-task.dto";
@@ -50,6 +57,7 @@ function decodeCursor(cursor?: string | null) {
 export class CrawlResolver {
   constructor(
     private readonly crawlService: CrawlService,
+    private readonly metadataService: CrawlMetadataService,
     private readonly prisma: PrismaService
   ) {}
 
@@ -163,6 +171,18 @@ export class CrawlResolver {
     return this.toGraphTask(task);
   }
 
+  @HasPermission("crawl.read")
+  @Query(() => [CrawlMetadataResultModel])
+  async crawlMetadata(@Context("req") req: any, @Args("input") input: CrawlMetadataInput) {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+    const payload = input ?? {};
+    const results = await this.metadataService.extract(payload);
+    return results.map((result) => this.toGraphMetadata(result));
+  }
+
   private toGraphTask(task: CrawlTaskView): CrawlTaskModel {
     return {
       ...task,
@@ -223,6 +243,24 @@ export class CrawlResolver {
       intrinsicScore: link.intrinsicScore ?? null,
       contextualScore: link.contextualScore ?? null,
       totalScore: link.totalScore ?? null
+    };
+  }
+
+  private toGraphMetadata(result: CrawlMetadataResult): CrawlMetadataResultModel {
+    return {
+      url: result.url,
+      status: result.status,
+      httpStatus: result.httpStatus ?? null,
+      fetchedAt: result.fetchedAt ?? null,
+      title: result.title ?? null,
+      description: result.description ?? null,
+      keywords: result.keywords ?? null,
+      author: result.author ?? null,
+      metaTags: result.metaTags,
+      openGraph: result.openGraph,
+      jsonLd: result.jsonLd,
+      relevanceScore: result.relevanceScore ?? null,
+      error: result.error ?? null
     };
   }
 }

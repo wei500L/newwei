@@ -4,14 +4,19 @@ import { Permissions } from "../../common/decorators/permissions.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 import { CrawlService } from "./crawl.service";
+import { CrawlMetadataService } from "./crawl-metadata.service";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
+import { CrawlMetadataRequestDto } from "./dto/crawl-metadata.dto";
 
 @ApiTags("crawl")
 @ApiBearerAuth()
 @Controller("crawl-tasks")
 export class CrawlController {
-  constructor(private readonly crawlService: CrawlService) {}
+  constructor(
+    private readonly crawlService: CrawlService,
+    private readonly metadataService: CrawlMetadataService
+  ) {}
 
   @Permissions("crawl.read")
   @Get()
@@ -39,5 +44,16 @@ export class CrawlController {
   @Post(":id/retry")
   async retry(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
     return this.crawlService.retryTask(user.orgId, user.id, id);
+  }
+
+  @Permissions("crawl.read")
+  @Post("metadata")
+  async extractMetadata(@CurrentUser() user: AuthenticatedUser, @Body() body: CrawlMetadataRequestDto) {
+    const results = await this.metadataService.extract(body);
+    return {
+      orgId: user.orgId,
+      total: results.length,
+      results
+    };
   }
 }

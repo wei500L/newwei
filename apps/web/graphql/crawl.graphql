@@ -127,3 +127,27 @@ mutation RetryCrawlTask($id: ID!) {
     runCount
   }
 }
+
+query CrawlMetadata($input: CrawlMetadataInput!) {
+  crawlMetadata(input: $input) {
+    url
+    status
+    httpStatus
+    fetchedAt
+    title
+    description
+    keywords
+    author
+    relevanceScore
+    error
+    metaTags {
+      name
+      value
+    }
+    openGraph {
+      name
+      value
+    }
+    jsonLd
+  }
+}

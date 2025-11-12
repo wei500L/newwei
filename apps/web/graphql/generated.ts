@@ -136,6 +136,20 @@ export type CrawlOptionsInput = {
   storageState?: InputMaybe<string>;
 };
 
+export type CrawlMetadataInput = {
+  source?: InputMaybe<string>;
+  domain?: InputMaybe<string>;
+  urls?: InputMaybe<Array<string>>;
+  pattern?: InputMaybe<string>;
+  maxUrls?: InputMaybe<number>;
+  query?: InputMaybe<string>;
+  scoreThreshold?: InputMaybe<number>;
+  extractJsonLd?: InputMaybe<boolean>;
+  extractOpenGraph?: InputMaybe<boolean>;
+  extractStandardMeta?: InputMaybe<boolean>;
+  concurrency?: InputMaybe<number>;
+};
+
 export type CreateCrawlTaskInput = {
   url: string;
   displayName?: InputMaybe<string>;
@@ -447,6 +461,28 @@ export type RetryCrawlTaskMutation = {
   };
 };
 
+export type CrawlMetadataQueryVariables = Exact<{
+  input: CrawlMetadataInput;
+}>;
+
+export type CrawlMetadataQuery = {
+  crawlMetadata: Array<{
+    url: string;
+    status: string;
+    httpStatus?: number | null;
+    fetchedAt?: any | null;
+    title?: string | null;
+    description?: string | null;
+    keywords?: Array<string> | null;
+    author?: string | null;
+    relevanceScore?: number | null;
+    error?: string | null;
+    metaTags: Array<{ name: string; value: string }>;
+    openGraph: Array<{ name: string; value: string }>;
+    jsonLd: Array<string>;
+  }>;
+};
+
 export const RbacOverviewDocument = gql`
   query RbacOverview {
     roles {
@@ -705,4 +741,49 @@ export type RetryCrawlTaskMutationResult = Apollo.MutationResult<RetryCrawlTaskM
 export type RetryCrawlTaskMutationOptions = Apollo.BaseMutationOptions<
   RetryCrawlTaskMutation,
   RetryCrawlTaskMutationVariables
+>;
+export const CrawlMetadataDocument = gql`
+  query CrawlMetadata($input: CrawlMetadataInput!) {
+    crawlMetadata(input: $input) {
+      url
+      status
+      httpStatus
+      fetchedAt
+      title
+      description
+      keywords
+      author
+      relevanceScore
+      error
+      metaTags {
+        name
+        value
+      }
+      openGraph {
+        name
+        value
+      }
+      jsonLd
+    }
+  }
+`;
+
+export function useCrawlMetadataQuery(
+  baseOptions: Apollo.QueryHookOptions<CrawlMetadataQuery, CrawlMetadataQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<CrawlMetadataQuery, CrawlMetadataQueryVariables>(CrawlMetadataDocument, options);
+}
+
+export function useCrawlMetadataLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<CrawlMetadataQuery, CrawlMetadataQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<CrawlMetadataQuery, CrawlMetadataQueryVariables>(CrawlMetadataDocument, options);
+}
+export type CrawlMetadataQueryHookResult = ReturnType<typeof useCrawlMetadataQuery>;
+export type CrawlMetadataLazyQueryHookResult = ReturnType<typeof useCrawlMetadataLazyQuery>;
+export type CrawlMetadataQueryResult = Apollo.QueryResult<
+  CrawlMetadataQuery,
+  CrawlMetadataQueryVariables
 >;

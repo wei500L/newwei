@@ -101,6 +101,7 @@ infra/
 - 参考 crawl4ai 官方 *Dynamic Crawling: Execute JS and wait for async or sync for dynamic content extraction* 指南（`docs/md_v2/advanced/session-management.md` 与 `docs/md_v2/assets/llm.txt/txt/config_objects.txt`），API 与控制台现支持为基础任务或 Multi-URL 策略注入 `js_code/js_only/wait_for/wait_for_timeout`。可在抓取前执行自定义 JavaScript（滚动、点击“加载更多”）并等待 CSS 选择器或 JS 条件达成后再返回 Markdown，解决瀑布流、懒加载页面内容缺失的问题。
 - 参考 crawl4ai 官方 *Session Management: Preserve browser states and reuse them for multi-step crawling*（`docs/md_v2/advanced/session-management.md`）以及 *Storage State tutorial*（`docs/examples/storage_state_tutorial.md`）的实践，任务表单新增 “Session management” 区块。可以在 API 请求中注入 `session_id`（复用同一 Playwright 浏览器标签）与 `storage_state`（粘贴 cookies/localStorage JSON 或服务器上的 state 文件路径），方便处理需要先登录/多步跳转的站点，并支持在任务详情页回显已保存的会话参数。
 - 参考 crawl4ai 官方 *Media Support: Extract images, audio, videos, and responsive image formats like srcset and picture*（`docs/md_v2/core/link-media.md`、`docs/md_v2/core/crawler-result.md`），API 现在可在任务创建时开启 “Store media assets” 选项来持久化 `result.media`，并在控制台结果详情中渲染图像/音视频缩略图、srcset 与 picture source 等响应式信息，辅助核对素材抓取质量。
+- 参考 crawl4ai 官方 *Metadata Extraction: Retrieve structured metadata from web pages* 能力（`docs/md_v2/core/url-seeding.md`、`docs/md_v2/assets/llm.txt/txt/url_seeder.txt`），新增 “Metadata extraction” 预览卡片。后端提供 `POST /api/crawl-tasks/metadata` 与 GraphQL `crawlMetadata` 查询，使用 sitemap seeding + `<head>` 解析提取 title/description/keywords/Open Graph/JSON-LD，并支持 query + score threshold 过滤。前端可在不排队 crawl 任务的前提下先评估站点的元数据质量，辅助调参。
 
 ## 测试
 
