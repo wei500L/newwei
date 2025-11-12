@@ -123,6 +123,36 @@ export class CrawlStrategyOverridesInput {
 
   @Field(() => String, { nullable: true })
   cacheMode?: string;
+
+  @Field(() => Int, { nullable: true })
+  wordCountThreshold?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  excludeExternalLinks?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  excludeExternalImages?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  removeOverlayElements?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  processIframes?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  textMode?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  captureScreenshot?: boolean;
+
+  @Field({ nullable: true })
+  cssSelector?: string;
+
+  @Field(() => [String], { nullable: true })
+  excludedTags?: string[];
+
+  @Field(() => Boolean, { nullable: true })
+  waitForImages?: boolean;
 }
 
 @InputType()
@@ -257,6 +287,9 @@ export class CrawlOptionsInput {
   extractLinks?: boolean;
 
   @Field(() => Boolean, { nullable: true })
+  excludeExternalImages?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
   scanFullPage?: boolean;
 
   @Field(() => Boolean, { nullable: true })
@@ -363,6 +396,9 @@ export class CrawlOptionsInput {
 
   @Field({ nullable: true })
   storageState?: string;
+
+  @Field(() => Boolean, { nullable: true })
+  waitForImages?: boolean;
 }
 
 @InputType()

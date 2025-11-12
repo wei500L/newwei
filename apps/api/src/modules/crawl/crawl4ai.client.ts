@@ -165,6 +165,8 @@ export class Crawl4aiClient {
     const excludedTags = this.normalizeSelectorList(options.excludedTags);
     const textMode = options.textMode ?? false;
     const captureScreenshot = options.captureScreenshot ?? false;
+    const waitForImages = options.waitForImages ?? false;
+    const excludeExternalImages = options.excludeExternalImages ?? false;
     const usePersistentContext = useManagedBrowser || Boolean(options.userDataDir);
     const browserConfig = {
       type: "BrowserConfig",
@@ -215,10 +217,12 @@ export class Crawl4aiClient {
         table_extraction: this.buildTableExtraction(options.tableExtraction),
         word_count_threshold: wordCountThreshold,
         exclude_external_links: excludeExternalLinks,
+        exclude_external_images: excludeExternalImages,
         remove_overlay_elements: removeOverlayElements,
         process_iframes: processIframes,
         css_selector: cssSelector,
         excluded_tags: excludedTags,
+        wait_for_images: waitForImages ? true : undefined,
         text_mode: textMode ? true : undefined,
         screenshot: captureScreenshot ? true : undefined,
         virtual_scroll_config: virtualScroll
@@ -571,10 +575,12 @@ export class Crawl4aiClient {
           wait_for_timeout: this.normalizeWaitForTimeout(overrides?.waitForTimeoutMs),
           word_count_threshold: wordCount,
           exclude_external_links: overrides?.excludeExternalLinks,
+          exclude_external_images: overrides?.excludeExternalImages,
           remove_overlay_elements: overrides?.removeOverlayElements,
           process_iframes: overrides?.processIframes,
           css_selector: cssSelector,
           excluded_tags: excludedTags,
+          wait_for_images: overrides?.waitForImages ? true : undefined,
           text_mode: overrides?.textMode ? true : undefined,
           screenshot: overrides?.captureScreenshot ? true : undefined,
           virtual_scroll_config: virtualScroll
@@ -645,6 +651,9 @@ export class Crawl4aiClient {
     if (typeof options.excludeExternalLinks === "boolean") {
       normalized.excludeExternalLinks = options.excludeExternalLinks;
     }
+    if (typeof options.excludeExternalImages === "boolean") {
+      normalized.excludeExternalImages = options.excludeExternalImages;
+    }
     if (typeof options.removeOverlayElements === "boolean") {
       normalized.removeOverlayElements = options.removeOverlayElements;
     }
@@ -653,6 +662,9 @@ export class Crawl4aiClient {
     }
     if (typeof options.textMode === "boolean") {
       normalized.textMode = options.textMode;
+    }
+    if (typeof options.waitForImages === "boolean") {
+      normalized.waitForImages = options.waitForImages;
     }
     if (typeof options.captureScreenshot === "boolean") {
       normalized.captureScreenshot = options.captureScreenshot;

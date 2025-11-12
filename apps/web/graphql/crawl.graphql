@@ -53,6 +53,7 @@ query CrawlTask($id: ID!, $resultLimit: Int, $resultSearch: String) {
       fitMarkdown
       metadata
       media
+      mediaAssets
       tables
       linkAnalysis {
         stats {

@@ -58,7 +58,12 @@ export class EnvService extends ConfigService<ApiEnv> {
       apiKey: this.get<string | undefined>("CRAWL4AI_API_KEY", { infer: true }),
       timeoutMs: this.get<number>("CRAWL4AI_TIMEOUT_MS", { infer: true }) ?? 120_000,
       maxConcurrency: this.get<number>("CRAWL4AI_MAX_CONCURRENCY", { infer: true }) ?? 3,
-      maxRetries: this.get<number>("CRAWL4AI_MAX_RETRIES", { infer: true }) ?? 3
+      maxRetries: this.get<number>("CRAWL4AI_MAX_RETRIES", { infer: true }) ?? 3,
+      media: {
+        fetchTimeoutMs: this.get<number>("CRAWL_MEDIA_FETCH_TIMEOUT_MS", { infer: true }) ?? 15_000,
+        maxBytes: this.get<number>("CRAWL_MEDIA_MAX_BYTES", { infer: true }) ?? 2_097_152,
+        maxPerResult: this.get<number>("CRAWL_MEDIA_MAX_PER_RESULT", { infer: true }) ?? 6
+      }
     };
   }
 }

@@ -25,7 +25,10 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CRAWL4AI_API_KEY: z.string().optional(),
   CRAWL4AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   CRAWL4AI_MAX_CONCURRENCY: z.coerce.number().int().positive().default(3),
-  CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3)
+  CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3),
+  CRAWL_MEDIA_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  CRAWL_MEDIA_MAX_BYTES: z.coerce.number().int().positive().default(2_097_152),
+  CRAWL_MEDIA_MAX_PER_RESULT: z.coerce.number().int().positive().default(6)
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

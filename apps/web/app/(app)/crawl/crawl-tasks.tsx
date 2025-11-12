@@ -51,6 +51,7 @@ interface CreateCrawlTaskFormValues {
   storeMedia?: boolean;
   onlyMainContent?: boolean;
   extractLinks?: boolean;
+  excludeExternalImages?: boolean;
   scanFullPage?: boolean;
   adjustViewportToContent?: boolean;
   scrollDelayMs?: number;
@@ -67,6 +68,7 @@ interface CreateCrawlTaskFormValues {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  waitForImages?: boolean;
   proxyUrl?: string;
   proxyConfig?: {
     server?: string;
@@ -867,6 +869,10 @@ export function CrawlTasksView() {
               storeMedia: typeof values.storeMedia === "boolean" ? values.storeMedia : undefined,
               onlyMainContent: values.onlyMainContent ?? undefined,
               extractLinks: values.extractLinks ?? undefined,
+              excludeExternalImages:
+                typeof values.excludeExternalImages === "boolean"
+                  ? values.excludeExternalImages
+                  : undefined,
               scanFullPage: values.scanFullPage ?? undefined,
               adjustViewportToContent:
                 typeof values.adjustViewportToContent === "boolean"
@@ -885,6 +891,8 @@ export function CrawlTasksView() {
               waitForSelector: waitForSelector ? waitForSelector : undefined,
               waitForScript: waitForScript ? waitForScript : undefined,
               waitForTimeoutMs: values.waitForTimeoutMs ?? undefined,
+              waitForImages:
+                typeof values.waitForImages === "boolean" ? values.waitForImages : undefined,
               sessionId: sessionId ? sessionId : undefined,
               storageState: storageState && storageState.length ? storageState : undefined,
               proxyUrl: proxyUrl ? proxyUrl : undefined,
@@ -1099,18 +1107,34 @@ export function CrawlTasksView() {
           <Form.Item label="Include images" name="includeImages" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <Form.Item
-            label="Store media assets"
-            name="storeMedia"
-            valuePropName="checked"
-            extra="When enabled, Crawl4AI's result.media payload (images/audio/video/srcset) is persisted for later review."
-          >
+  <Form.Item
+    label="Store media assets"
+    name="storeMedia"
+    valuePropName="checked"
+    extra="Persist Crawl4AI's result.media payload and download up to 6 inline assets (tunable via CRAWL_MEDIA_* envs)."
+  >
             <Switch />
           </Form.Item>
           <Form.Item label="Only main content" name="onlyMainContent" valuePropName="checked">
             <Switch defaultChecked />
           </Form.Item>
           <Form.Item label="Extract links" name="extractLinks" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="Exclude external images"
+            name="excludeExternalImages"
+            valuePropName="checked"
+            extra="Keep remote images/videos from partner CDNs by turning this off."
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="Wait for images"
+            name="waitForImages"
+            valuePropName="checked"
+            extra="Ensures hero images and videos render before extraction—recommended when storing media."
+          >
             <Switch />
           </Form.Item>
           <Form.Item label="Full-page scanning" name="scanFullPage" valuePropName="checked">

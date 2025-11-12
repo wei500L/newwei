@@ -30,7 +30,8 @@ import {
   CrawlResultTable,
   CrawlTableCell,
   Crawl4aiTablePayload,
-  CrawlVirtualScrollConfig
+  CrawlVirtualScrollConfig,
+  CrawlStoredMediaAsset
 } from "./crawl.types";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -43,6 +44,12 @@ import type { MongoConnection } from "@modular/mongo";
 import { buildLinkAnalysis } from "./link-analysis";
 
 const logger = createLogger({ name: "crawl-service" });
+
+type CrawlMediaConfig = {
+  fetchTimeoutMs: number;
+  maxBytes: number;
+  maxPerResult: number;
+};
 
 type CrawlTaskRecord = Prisma.CrawlTaskGetPayload<{
   include: {
@@ -65,6 +72,7 @@ export interface CrawlTaskResult {
   fitMarkdown?: string | null;
   linkAnalysis?: CrawlLinkAnalysis | null;
   media?: CrawlMediaCollection | null;
+  mediaAssets?: CrawlStoredMediaAsset[] | null;
   tables?: CrawlResultTable[] | null;
 }
 
@@ -126,6 +134,7 @@ export class CrawlService {
     "responsive_images",
     "responsiveImages"
   ]);
+  private readonly mediaConfig: CrawlMediaConfig;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -135,6 +144,7 @@ export class CrawlService {
     @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection
   ) {
     void this._mongo;
+    this.mediaConfig = env.crawl4aiConfig.media;
   }
 
   async createTask(orgId: string, userId: string, dto: CreateCrawlTaskDto) {
@@ -554,6 +564,8 @@ export class CrawlService {
       wordCountThreshold: typeof value.wordCountThreshold === "number" ? value.wordCountThreshold : undefined,
       excludeExternalLinks:
         typeof value.excludeExternalLinks === "boolean" ? value.excludeExternalLinks : undefined,
+      excludeExternalImages:
+        typeof value.excludeExternalImages === "boolean" ? value.excludeExternalImages : undefined,
       removeOverlayElements:
         typeof value.removeOverlayElements === "boolean" ? value.removeOverlayElements : undefined,
       processIframes: typeof value.processIframes === "boolean" ? value.processIframes : undefined,
@@ -561,11 +573,13 @@ export class CrawlService {
       excludedTags: this.coerceStringArray(value.excludedTags),
       textMode: typeof value.textMode === "boolean" ? value.textMode : undefined,
       captureScreenshot: typeof value.captureScreenshot === "boolean" ? value.captureScreenshot : undefined,
-      virtualScroll: this.parseVirtualScrollConfig(value.virtualScroll)
+      virtualScroll: this.parseVirtualScrollConfig(value.virtualScroll),
+      waitForImages: typeof value.waitForImages === "boolean" ? value.waitForImages : undefined
     });
   }
 
   private normalizeOptions(options?: Partial<CrawlTaskOptions>): CrawlTaskOptions {
+    const includeImages = options?.includeImages ?? (options?.storeMedia ? true : false);
     const scanFullPage = options?.scanFullPage ?? false;
     const adjustViewportToContent = options?.adjustViewportToContent ?? false;
     let scrollDelayMs: number | undefined;
@@ -613,6 +627,7 @@ export class CrawlService {
       options?.wordCountThreshold ?? 80
     );
     const excludeExternalLinks = options?.excludeExternalLinks ?? true;
+    const excludeExternalImages = options?.excludeExternalImages ?? (options?.storeMedia ? false : true);
     const removeOverlayElements = options?.removeOverlayElements ?? true;
     const processIframes = options?.processIframes ?? true;
     const textMode = options?.textMode ?? false;
@@ -620,9 +635,10 @@ export class CrawlService {
     const cssSelector = this.normalizeCssSelector(options?.cssSelector);
     const excludedTags = this.normalizeSelectorList(options?.excludedTags);
     const virtualScroll = this.normalizeVirtualScrollConfig(options?.virtualScroll);
+    const waitForImages = options?.waitForImages ?? (options?.storeMedia ? true : false);
 
     return {
-      includeImages: options?.includeImages ?? false,
+      includeImages,
       storeMedia: options?.storeMedia ?? false,
       onlyMainContent: options?.onlyMainContent ?? true,
       extractLinks: options?.extractLinks ?? false,
@@ -671,7 +687,9 @@ export class CrawlService {
       captureScreenshot,
       cssSelector,
       excludedTags,
-      virtualScroll
+      virtualScroll,
+      excludeExternalImages,
+      waitForImages
     };
   }
 
@@ -875,6 +893,9 @@ export class CrawlService {
     if (typeof overrides.excludeExternalLinks === "boolean") {
       normalized.excludeExternalLinks = overrides.excludeExternalLinks;
     }
+    if (typeof overrides.excludeExternalImages === "boolean") {
+      normalized.excludeExternalImages = overrides.excludeExternalImages;
+    }
     if (typeof overrides.removeOverlayElements === "boolean") {
       normalized.removeOverlayElements = overrides.removeOverlayElements;
     }
@@ -883,6 +904,9 @@ export class CrawlService {
     }
     if (typeof overrides.textMode === "boolean") {
       normalized.textMode = overrides.textMode;
+    }
+    if (typeof overrides.waitForImages === "boolean") {
+      normalized.waitForImages = overrides.waitForImages;
     }
     if (typeof overrides.captureScreenshot === "boolean") {
       normalized.captureScreenshot = overrides.captureScreenshot;
@@ -1711,6 +1735,7 @@ export class CrawlService {
       });
       const linkAnalysis = this.extractLinkAnalysisFromResult(item);
       const media = shouldStoreMedia ? this.normalizeMediaCollection(item.media) : undefined;
+      const mediaAssets = shouldStoreMedia ? await this.collectMediaAssets(media) : undefined;
       const tables = this.normalizeTablesFromResult(item);
       const contentDoc = await CrawlResultContentModel.create({
         taskId: task.id,
@@ -1727,7 +1752,8 @@ export class CrawlService {
         tables: tables ?? null,
         ...(shouldStoreMedia
           ? {
-              media: media ?? null
+              media: media ?? null,
+              mediaAssets: mediaAssets ?? null
             }
           : {})
       });
@@ -1773,6 +1799,7 @@ export class CrawlService {
         fitMarkdown: this.ensureString(doc?.fitMarkdown),
         linkAnalysis: (doc?.linkAnalysis as CrawlLinkAnalysis | undefined) ?? null,
         media: (doc?.media as CrawlMediaCollection | undefined) ?? null,
+        mediaAssets: (doc?.mediaAssets as CrawlStoredMediaAsset[] | undefined) ?? null,
         tables: (doc?.tables as CrawlResultTable[] | undefined) ?? null
       };
     });
@@ -2067,6 +2094,169 @@ export class CrawlService {
       }
     }
     return extras;
+  }
+
+  private async collectMediaAssets(
+    media?: CrawlMediaCollection
+  ): Promise<CrawlStoredMediaAsset[] | undefined> {
+    if (!media || this.mediaConfig.maxPerResult <= 0) {
+      return undefined;
+    }
+    const entries = this.flattenMediaEntries(media);
+    if (entries.length === 0) {
+      return undefined;
+    }
+    const assets: CrawlStoredMediaAsset[] = [];
+    const seenSources = new Set<string>();
+    for (const { kind, item } of entries) {
+      if (assets.length >= this.mediaConfig.maxPerResult) {
+        break;
+      }
+      const candidate = this.pickMediaUrl(item);
+      if (!candidate) {
+        continue;
+      }
+      if (candidate.startsWith("data:")) {
+        const inlineAsset = this.buildInlineMediaAsset(candidate, kind, item);
+        if (inlineAsset) {
+          assets.push(inlineAsset);
+        }
+        continue;
+      }
+      if (!this.isHttpUrl(candidate) || seenSources.has(candidate)) {
+        continue;
+      }
+      seenSources.add(candidate);
+      const asset = await this.fetchMediaAsset(candidate, kind, item);
+      if (asset) {
+        assets.push(asset);
+      }
+    }
+    return assets.length > 0 ? assets : undefined;
+  }
+
+  private flattenMediaEntries(media: CrawlMediaCollection) {
+    const entries: { kind: string; item: CrawlMediaItem }[] = [];
+    for (const [kind, items] of Object.entries(media)) {
+      if (!Array.isArray(items)) {
+        continue;
+      }
+      for (const item of items) {
+        if (item) {
+          entries.push({ kind, item });
+        }
+      }
+    }
+    return entries;
+  }
+
+  private pickMediaUrl(item: CrawlMediaItem) {
+    if (typeof item.src === "string" && item.src.length > 0) {
+      return item.src;
+    }
+    if (typeof item.poster === "string" && item.poster.length > 0) {
+      return item.poster;
+    }
+    return undefined;
+  }
+
+  private buildInlineMediaAsset(
+    dataUri: string,
+    kind: string,
+    item: CrawlMediaItem
+  ): CrawlStoredMediaAsset | undefined {
+    const match = dataUri.match(/^data:(.*?);base64,(.+)$/);
+    if (!match) {
+      return undefined;
+    }
+    const [, mime, payload] = match;
+    try {
+      const buffer = Buffer.from(payload, "base64");
+      return {
+        id: hashMarkdown(`${dataUri.slice(0, 64)}:${buffer.length}`),
+        kind,
+        sourceUrl: dataUri,
+        bytes: buffer.length,
+        contentType: mime || undefined,
+        dataUri,
+        width: item.width,
+        height: item.height,
+        alt: item.alt,
+        title: item.title,
+        desc: item.desc,
+        poster: item.poster,
+        format: item.format,
+        metadata: item.raw
+      };
+    } catch (error) {
+      logger.warn({ error }, "Failed to parse inline media asset");
+      return undefined;
+    }
+  }
+
+  private async fetchMediaAsset(
+    url: string,
+    kind: string,
+    item: CrawlMediaItem
+  ): Promise<CrawlStoredMediaAsset | undefined> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.mediaConfig.fetchTimeoutMs);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        logger.debug({ url, status: response.status }, "Failed to download media asset");
+        return undefined;
+      }
+      const contentLengthHeader = response.headers.get("content-length");
+      if (contentLengthHeader) {
+        const contentLength = Number(contentLengthHeader);
+        if (!Number.isNaN(contentLength) && contentLength > this.mediaConfig.maxBytes) {
+          logger.debug({ url, contentLength }, "Skipped media asset exceeding max bytes");
+          return undefined;
+        }
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      if (buffer.byteLength > this.mediaConfig.maxBytes) {
+        logger.debug({ url, size: buffer.byteLength }, "Skipped media asset exceeding max bytes");
+        return undefined;
+      }
+      const contentType = response.headers.get("content-type") ?? item.format ?? undefined;
+      const dataUri = `data:${contentType ?? "application/octet-stream"};base64,${buffer.toString("base64")}`;
+      return {
+        id: hashMarkdown(`${url}:${buffer.length}`),
+        kind,
+        sourceUrl: url,
+        bytes: buffer.length,
+        contentType,
+        dataUri,
+        width: item.width,
+        height: item.height,
+        alt: item.alt,
+        title: item.title,
+        desc: item.desc,
+        poster: item.poster,
+        format: item.format,
+        metadata: item.raw
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown";
+      logger.warn({ url, error: message }, "Failed to download media asset");
+      return undefined;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private isHttpUrl(value: string) {
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
   }
 
   private pickNumber(source: Record<string, unknown> | undefined, keys: string[]): number | undefined {
