@@ -66,6 +66,22 @@ type CrawlMediaItem = {
 
 type CrawlMediaCollection = Record<string, CrawlMediaItem[]>;
 
+type CrawlStoredMediaAsset = {
+  id: string;
+  kind: string;
+  sourceUrl: string;
+  bytes: number;
+  contentType?: string;
+  dataUri?: string;
+  width?: number;
+  height?: number;
+  alt?: string;
+  title?: string;
+  desc?: string;
+  poster?: string;
+  format?: string;
+};
+
 type CrawlResultTableRecord = Record<string, string | number | boolean | null>;
 
 type CrawlResultTable = {
@@ -175,6 +191,51 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
           );
         })}
       </Space>
+    </Card>
+  );
+}
+
+function StoredMediaSection({ assets }: { assets: CrawlStoredMediaAsset[] | null }) {
+  if (!assets || assets.length === 0) {
+    return null;
+  }
+  return (
+    <Card size="small" title="Stored media blobs" style={{ marginTop: 12 }}>
+      <List
+        size="small"
+        split={false}
+        dataSource={assets}
+        renderItem={(asset) => (
+          <List.Item key={`${asset.id}-${asset.sourceUrl}`}>
+            <Space align="start">
+              {renderStoredMediaPreview(asset)}
+              <Space direction="vertical" size={4}>
+                <Typography.Text strong>{asset.title ?? asset.alt ?? asset.kind}</Typography.Text>
+                <Typography.Text type="secondary">
+                  {(asset.contentType ?? "unknown mime").toUpperCase()} • {formatBytes(asset.bytes)}
+                </Typography.Text>
+                <Typography.Paragraph style={{ marginBottom: 4 }}>
+                  {asset.desc ?? asset.sourceUrl}
+                </Typography.Paragraph>
+                <Space size="small">
+                  <Typography.Link href={asset.sourceUrl} target="_blank" rel="noreferrer">
+                    Source
+                  </Typography.Link>
+                  {asset.dataUri ? (
+                    <Typography.Link
+                      href={asset.dataUri}
+                      download={`${asset.kind}-${asset.id}`}
+                      rel="noreferrer"
+                    >
+                      Download
+                    </Typography.Link>
+                  ) : null}
+                </Space>
+              </Space>
+            </Space>
+          </List.Item>
+        )}
+      />
     </Card>
   );
 }
@@ -296,6 +357,55 @@ function renderMediaPreview(kind: string, item: CrawlMediaItem) {
     return <audio src={item.src} controls style={{ minWidth: 160 }} />;
   }
   return null;
+}
+
+function renderStoredMediaPreview(asset: CrawlStoredMediaAsset) {
+  if (asset.dataUri && asset.contentType?.startsWith("image/")) {
+    return (
+      <img
+        src={asset.dataUri}
+        alt={asset.alt ?? asset.title ?? asset.kind}
+        style={{
+          width: 96,
+          height: 96,
+          objectFit: "cover",
+          borderRadius: 8,
+          border: "1px solid #f0f0f0"
+        }}
+        loading="lazy"
+      />
+    );
+  }
+  if (asset.dataUri && asset.contentType?.startsWith("video/")) {
+    return (
+      <video
+        src={asset.dataUri}
+        controls
+        style={{ width: 160, borderRadius: 8 }}
+        preload="metadata"
+      />
+    );
+  }
+  return (
+    <div className="media-thumb" style={{ width: 80, height: 80 }}>
+      {asset.kind.slice(0, 2).toUpperCase()}
+    </div>
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  const precision = size >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${size.toFixed(precision)} ${units[unitIndex]}`;
 }
 
 function formatDimensions(item: CrawlMediaItem) {
@@ -1157,6 +1267,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             renderItem={(result) => {
               const metadata = result.metadata;
               const mediaPayload = safeParseJson<CrawlMediaCollection>(result.media);
+              const storedAssets = safeParseJson<CrawlStoredMediaAsset[]>(result.mediaAssets);
               const tablesPayload = (result.tables ?? null) as CrawlResultTable[] | null;
               const variantEntries = [
                 { key: "raw", label: "Raw", content: result.markdown },
@@ -1207,6 +1318,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                         )}
                         {tabs}
                         <MediaSection media={mediaPayload} />
+                        <StoredMediaSection assets={storedAssets} />
                         <TablesSection tables={tablesPayload} />
                       </>
                     }

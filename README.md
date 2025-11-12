@@ -87,9 +87,11 @@ infra/
   - `CRAWL4AI_BASE_URL`：指向容器或远程 crawl4ai 服务的 HTTP 地址。
   - `CRAWL4AI_API_KEY`：可选 API Key，若服务启用鉴权可在 Header 传递。
   - `CRAWL4AI_TIMEOUT_MS` / `CRAWL4AI_MAX_CONCURRENCY` / `CRAWL4AI_MAX_RETRIES`：用于 BullMQ 任务的超时、并发与重试上限。
+  - `CRAWL_MEDIA_FETCH_TIMEOUT_MS` / `CRAWL_MEDIA_MAX_BYTES` / `CRAWL_MEDIA_MAX_PER_RESULT`：控制在 `storeMedia` 打开时后端下载新闻图片/视频的网络超时、单文件最大字节与每条结果最多缓存的媒体数量。
 - `pnpm db:migrate && pnpm db:seed` 会创建 `CrawlTask` / `CrawlResult` 表并灌入一个示例任务；Mongo 中新增 `CrawlResultContent` 模型用来存储 Markdown。
 - Docker Compose 中新增 `crawl4ai` 服务（基于 `ghcr.io/unclecode/crawl4ai:latest`），默认对 API 暴露 8080 端口并有健康检查；若需要本地调试可以通过 `http://localhost:8082` 命中。
 - 参考 crawl4ai 官方文档关于 *Full-Page Scanning*（见 `docs/md_v2/blog/releases/0.4.1.md`）的实现，我们在任务配置中加入 “Full-page scanning” 开关与滚动延迟，API 会在调用 `/crawl` 时自动下发 `scan_full_page` 与 `scroll_delay`，可用于处理瀑布流/无限滚动的新闻站点。
+- 参考 crawl4ai 官方 *Link & Media Extraction* 指南（`docs/md_v2/core/link-media.md`），当 `storeMedia` 打开时 API 会自动启用 `wait_for_images`、允许跨域图片并解析 `result.media`；后端会在 `CRAWL_MEDIA_*` 限制内抓取最多 6 个图片/视频并以内联 Base64 存进 `CrawlResultContent.mediaAssets`，前端详情页可直接预览或下载这些媒体。
 - 为了匹配 crawl4ai *Simple Crawling* 指南中的新闻监控实践（`docs/md_v2/core/simple-crawling.md`），API 默认会下发 `word_count_threshold=80`、`exclude_external_links=true`、`remove_overlay_elements=true` 与 `process_iframes=true`，同时开放 REST/GraphQL 字段让你细调 `wordCountThreshold`、`textMode`、`captureScreenshot`、`cssSelector` 与 `excludedTags`。多 URL 策略也能逐条重写这些参数，以便首页/文章页套用不同的噪声过滤策略。
 - 对应 crawl4ai *Virtual Scroll* 能力（`docs/md_v2/advanced/virtual-scroll.md`），任务与策略表单新增 `virtualScroll` 配置（容器选择器、滚动次数、滚动方式、滚动后的等待时间），API 会构造 `VirtualScrollConfig` 并将其附在 `CrawlerRunConfig.virtual_scroll_config`，用于抓取虚拟列表或无限下拉的新闻流。
 - 同样来自 crawl4ai `0.4.1` 版本的 *Dynamic Viewport Adjustment*（`docs/md_v2/blog/releases/0.4.1.md`），控制台与 GraphQL/REST DTO 新增 `adjustViewportToContent` 开关，API 会把该布尔值映射到 `CrawlerRunConfig.adjust_viewport_to_content`，确保对响应式/超长页面自动缩放视口并捕获完整内容；多 URL 策略也可单独覆盖该设置。

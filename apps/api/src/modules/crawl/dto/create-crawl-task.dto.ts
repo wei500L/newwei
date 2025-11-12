@@ -123,6 +123,10 @@ export class CrawlOptionsDto {
 
   @IsOptional()
   @IsBoolean()
+  excludeExternalImages?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   scanFullPage?: boolean;
 
   @IsOptional()
@@ -321,6 +325,10 @@ export class CrawlOptionsDto {
 
   @IsOptional()
   @IsBoolean()
+  excludeExternalImages?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   removeOverlayElements?: boolean;
 
   @IsOptional()
@@ -474,6 +482,10 @@ export class CrawlStrategyOverridesDto {
   @ValidateNested()
   @Type(() => CrawlVirtualScrollConfigDto)
   virtualScroll?: CrawlVirtualScrollConfigDto;
+
+  @IsOptional()
+  @IsBoolean()
+  waitForImages?: boolean;
 }
 
 export class CrawlMultiUrlConfigDto {

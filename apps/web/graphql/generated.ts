@@ -406,6 +406,7 @@ export type CrawlTaskQuery = {
       fitMarkdown?: string | null;
       metadata?: string | null;
       media?: string | null;
+      mediaAssets?: string | null;
       tables?: any | null;
       linkAnalysis?: {
         stats: {
@@ -637,6 +638,7 @@ export const CrawlTaskDocument = gql`
         fitMarkdown
         metadata
         media
+        mediaAssets
         tables
         linkAnalysis {
           stats {

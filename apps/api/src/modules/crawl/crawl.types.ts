@@ -81,11 +81,13 @@ export interface CrawlStrategyOverrides {
   waitForTimeoutMs?: number;
   wordCountThreshold?: number;
   excludeExternalLinks?: boolean;
+  excludeExternalImages?: boolean;
   removeOverlayElements?: boolean;
   processIframes?: boolean;
   cssSelector?: string;
   excludedTags?: string[];
   textMode?: boolean;
+  waitForImages?: boolean;
   captureScreenshot?: boolean;
   virtualScroll?: CrawlVirtualScrollConfig;
 }
@@ -217,6 +219,23 @@ export type Crawl4aiMediaEntry = Record<string, unknown>;
 
 export type Crawl4aiMedia = Record<string, Crawl4aiMediaEntry[]>;
 
+export interface CrawlStoredMediaAsset {
+  id: string;
+  kind: string;
+  sourceUrl: string;
+  bytes: number;
+  contentType?: string;
+  dataUri?: string;
+  width?: number;
+  height?: number;
+  alt?: string;
+  title?: string;
+  desc?: string;
+  poster?: string;
+  format?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export type CrawlTableCell = string | number | boolean | null;
 
 export interface CrawlResultTableRecord {
@@ -300,6 +319,8 @@ export interface CrawlTaskOptions {
   textMode?: boolean;
   captureScreenshot?: boolean;
   virtualScroll?: CrawlVirtualScrollConfig;
+  excludeExternalImages?: boolean;
+  waitForImages?: boolean;
 }
 
 export interface CrawlMemoryStats {
