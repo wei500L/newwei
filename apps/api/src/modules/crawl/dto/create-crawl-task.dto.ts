@@ -242,6 +242,11 @@ export class CrawlOptionsDto {
   cleanMarkdown?: CrawlCleanMarkdownOptionsDto;
 
   @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlVirtualScrollConfigDto)
+  virtualScroll?: CrawlVirtualScrollConfigDto;
+
+  @IsOptional()
   @IsBoolean()
   scoreLinks?: boolean;
 
@@ -302,6 +307,44 @@ export class CrawlOptionsDto {
   @IsString()
   @MaxLength(12000)
   storageState?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(5000)
+  wordCountThreshold?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  excludeExternalLinks?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  removeOverlayElements?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  processIframes?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  textMode?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  captureScreenshot?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cssSelector?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  excludedTags?: string[];
 }
 
 export class CrawlUrlMatcherDto {
@@ -388,6 +431,49 @@ export class CrawlStrategyOverridesDto {
   @IsString()
   @MaxLength(12000)
   storageState?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(5000)
+  wordCountThreshold?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  excludeExternalLinks?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  removeOverlayElements?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  processIframes?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  textMode?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  captureScreenshot?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cssSelector?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  excludedTags?: string[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlVirtualScrollConfigDto)
+  virtualScroll?: CrawlVirtualScrollConfigDto;
 }
 
 export class CrawlMultiUrlConfigDto {
@@ -476,6 +562,31 @@ export class CrawlTableExtractionStrategyDto {
   @IsOptional()
   @IsObject()
   params?: Record<string, unknown>;
+}
+
+export class CrawlVirtualScrollConfigDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  containerSelector?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  scrollCount?: number;
+
+  @IsOptional()
+  @IsIn(["container_height", "viewport", "pixels"])
+  scrollBy?: "container_height" | "viewport" | "pixels";
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  waitAfterScrollMs?: number;
 }
 
 export class CrawlCleanMarkdownOptionsDto {

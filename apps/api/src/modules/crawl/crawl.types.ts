@@ -79,6 +79,15 @@ export interface CrawlStrategyOverrides {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  wordCountThreshold?: number;
+  excludeExternalLinks?: boolean;
+  removeOverlayElements?: boolean;
+  processIframes?: boolean;
+  cssSelector?: string;
+  excludedTags?: string[];
+  textMode?: boolean;
+  captureScreenshot?: boolean;
+  virtualScroll?: CrawlVirtualScrollConfig;
 }
 
 export interface CrawlMultiUrlConfig {
@@ -110,6 +119,15 @@ export interface CrawlMarkdownStrategy {
 export interface CrawlTableExtractionStrategy {
   type: string;
   params?: Record<string, unknown>;
+}
+
+export type CrawlVirtualScrollMode = "container_height" | "viewport" | "pixels";
+
+export interface CrawlVirtualScrollConfig {
+  containerSelector?: string;
+  scrollCount?: number;
+  scrollBy?: CrawlVirtualScrollMode;
+  waitAfterScrollMs?: number;
 }
 
 export interface CrawlCleanMarkdownOptions {
@@ -273,6 +291,15 @@ export interface CrawlTaskOptions {
   locale?: string;
   timezoneId?: string;
   geolocation?: CrawlGeolocationConfig;
+  wordCountThreshold?: number;
+  excludeExternalLinks?: boolean;
+  removeOverlayElements?: boolean;
+  processIframes?: boolean;
+  cssSelector?: string;
+  excludedTags?: string[];
+  textMode?: boolean;
+  captureScreenshot?: boolean;
+  virtualScroll?: CrawlVirtualScrollConfig;
 }
 
 export interface CrawlMemoryStats {
