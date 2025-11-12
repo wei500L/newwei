@@ -138,7 +138,8 @@ export class Crawl4aiClient {
       entry.trim()
     );
     const scrollDelay = typeof options.scrollDelayMs === "number" ? options.scrollDelayMs / 1000 : undefined;
-    const headless = options.enableUndetectedBrowser || options.enableStealthMode ? false : true;
+    const useManagedBrowser = options.useManagedBrowser ?? false;
+    const headless = useManagedBrowser || options.enableUndetectedBrowser || options.enableStealthMode ? false : true;
     const proxyPayload = this.resolveProxyPayload(options);
     const multiConfigurations = this.buildMultiConfigurations(options);
     const markdownGenerator = this.buildMarkdownGenerator(options);
@@ -149,6 +150,7 @@ export class Crawl4aiClient {
     const userAgent = this.normalizeUserAgent(options.userAgent);
     const userAgentGenerator = this.buildUserAgentGenerator(options.userAgentGenerator);
     const geolocation = this.buildGeolocation(options.geolocation);
+    const usePersistentContext = useManagedBrowser || Boolean(options.userDataDir);
     const browserConfig = {
       type: "BrowserConfig",
       params: this.compact({
@@ -157,6 +159,9 @@ export class Crawl4aiClient {
         browser_type: options.enableUndetectedBrowser ? "undetected" : undefined,
         disable_images: options.includeImages === false ? true : undefined,
         emulate_mobile: false,
+        use_managed_browser: useManagedBrowser ? true : undefined,
+        use_persistent_context: usePersistentContext ? true : undefined,
+        user_data_dir: options.userDataDir,
         proxy_config: proxyPayload,
         headers,
         cookies,

@@ -192,6 +192,8 @@ export interface CrawlTaskOptions {
   scrollDelayMs?: number;
   enableUndetectedBrowser?: boolean;
   enableStealthMode?: boolean;
+  useManagedBrowser?: boolean;
+  userDataDir?: string;
   simulateUser?: boolean;
   overrideNavigator?: boolean;
   jsCode?: string[];

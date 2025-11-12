@@ -56,6 +56,8 @@ interface CreateCrawlTaskFormValues {
   scrollDelayMs?: number;
   enableUndetectedBrowser?: boolean;
   enableStealthMode?: boolean;
+  useManagedBrowser?: boolean;
+  userDataDir?: string;
   simulateUser?: boolean;
   overrideNavigator?: boolean;
   sessionId?: string;
@@ -182,6 +184,7 @@ export function CrawlTasksView() {
   const markdownFilterType = Form.useWatch(["markdownFilter", "type"], form);
   const scoreLinksValue = Form.useWatch("scoreLinks", form);
   const userAgentModeValue = Form.useWatch("userAgentMode", form);
+  const useManagedBrowserValue = Form.useWatch("useManagedBrowser", form);
   const metadataSource = Form.useWatch("source", metadataForm) ?? "sitemap";
   const linkPreviewDisabled = !scoreLinksValue;
   const [pagination, setPagination] = useState<TablePaginationConfig>({
@@ -705,6 +708,7 @@ export function CrawlTasksView() {
     const waitForScript = values.waitForScript?.trim();
     const sessionId = values.sessionId?.trim();
     const storageState = values.storageState?.trim();
+    const userDataDir = values.userDataDir?.trim();
     const browserHeaders = sanitizeBrowserHeaders(values.browserHeaders);
     const browserCookies = sanitizeBrowserCookies(values.browserCookies);
     const userAgent = values.userAgent?.trim();
@@ -741,6 +745,9 @@ export function CrawlTasksView() {
               scrollDelayMs: values.scrollDelayMs ?? undefined,
               enableUndetectedBrowser: values.enableUndetectedBrowser ?? undefined,
               enableStealthMode: values.enableStealthMode ?? undefined,
+              useManagedBrowser:
+                typeof values.useManagedBrowser === "boolean" ? values.useManagedBrowser : undefined,
+              userDataDir: userDataDir && userDataDir.length ? userDataDir : undefined,
               simulateUser: values.simulateUser ?? undefined,
               overrideNavigator: values.overrideNavigator ?? undefined,
               jsCode: jsCode ?? undefined,
@@ -1016,6 +1023,34 @@ export function CrawlTasksView() {
             extra="Tweaks browser fingerprints for basic evasion"
           >
             <Switch />
+          </Form.Item>
+          <Form.Item
+            label="Managed browser"
+            name="useManagedBrowser"
+            valuePropName="checked"
+            extra={
+              <span>
+                Reuse your own browser session per
+                <Typography.Link
+                  href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/advanced/identity-based-crawling.md"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ marginLeft: 4 }}
+                >
+                  Crawl4AI managed browser docs
+                </Typography.Link>
+                .
+              </span>
+            }
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="User data directory"
+            name="userDataDir"
+            extra="Absolute path to your Chrome/Edge profile (e.g. ~/.config/chrome-profile)."
+          >
+            <Input placeholder="/home/me/.crawl4ai/profiles/news" disabled={!useManagedBrowserValue} />
           </Form.Item>
           <Form.Item
             label="Simulate user actions"

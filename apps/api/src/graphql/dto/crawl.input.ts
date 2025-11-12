@@ -229,6 +229,12 @@ export class CrawlOptionsInput {
   enableStealthMode?: boolean;
 
   @Field(() => Boolean, { nullable: true })
+  useManagedBrowser?: boolean;
+
+  @Field({ nullable: true })
+  userDataDir?: string;
+
+  @Field(() => Boolean, { nullable: true })
   simulateUser?: boolean;
 
   @Field(() => Boolean, { nullable: true })
