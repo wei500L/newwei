@@ -28,7 +28,20 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   CRAWL_MEDIA_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   CRAWL_MEDIA_MAX_BYTES: z.coerce.number().int().positive().default(2_097_152),
-  CRAWL_MEDIA_MAX_PER_RESULT: z.coerce.number().int().positive().default(6)
+  CRAWL_MEDIA_MAX_PER_RESULT: z.coerce.number().int().positive().default(6),
+  LITELLM_MODEL: z.string().min(1).default("openai/gpt-4o-mini"),
+  LITELLM_API_BASE: z.string().url().default("http://localhost:4001"),
+  LITELLM_API_KEY: z.string().optional(),
+  LITELLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  LITELLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.2),
+  LITELLM_TOP_P: z.coerce.number().min(0).max(1).default(0.9),
+  LITELLM_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(1_200),
+  LITELLM_MAX_RETRIES: z.coerce.number().int().positive().default(3),
+  LITELLM_FALLBACK_MODELS: z.string().optional(),
+  LITELLM_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
+  NEWS_PIPELINE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(3_600),
+  NEWS_PIPELINE_MAX_INPUT_CHARS: z.coerce.number().int().positive().default(48_000),
+  NEWS_PIPELINE_CONFIG_PATH: z.string().default("config/news-pipeline.config.yaml")
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

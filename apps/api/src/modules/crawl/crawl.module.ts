@@ -64,6 +64,6 @@ import type { CrawlJobData } from "./crawl.types";
       }
     }
   ],
-  exports: [CrawlService, CrawlMetadataService]
+  exports: [CrawlService, CrawlMetadataService, Crawl4aiClient]
 })
 export class CrawlModule {}

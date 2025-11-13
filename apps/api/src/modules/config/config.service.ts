@@ -2,6 +2,25 @@ import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ApiEnv } from "./env.schema";
 
+export interface LiteLlmEnvConfig {
+  model: string;
+  apiBase: string;
+  apiKey?: string;
+  timeoutMs: number;
+  temperature: number;
+  topP: number;
+  maxOutputTokens: number;
+  maxRetries: number;
+  fallbackModels: string[];
+  requestsPerMinute: number;
+}
+
+export interface NewsPipelineEnvConfig {
+  cacheTtlSeconds: number;
+  maxInputChars: number;
+  configPath: string;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -64,6 +83,33 @@ export class EnvService extends ConfigService<ApiEnv> {
         maxBytes: this.get<number>("CRAWL_MEDIA_MAX_BYTES", { infer: true }) ?? 2_097_152,
         maxPerResult: this.get<number>("CRAWL_MEDIA_MAX_PER_RESULT", { infer: true }) ?? 6
       }
+    };
+  }
+
+  get liteLlmConfig(): LiteLlmEnvConfig {
+    const fallbackModels = (this.get<string>("LITELLM_FALLBACK_MODELS", { infer: true }) ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    return {
+      model: this.get<string>("LITELLM_MODEL", { infer: true }) ?? "openai/gpt-4o-mini",
+      apiBase: this.get<string>("LITELLM_API_BASE", { infer: true }) ?? "http://localhost:4001",
+      apiKey: this.get<string | undefined>("LITELLM_API_KEY", { infer: true }),
+      timeoutMs: this.get<number>("LITELLM_TIMEOUT_MS", { infer: true }) ?? 60_000,
+      temperature: this.get<number>("LITELLM_TEMPERATURE", { infer: true }) ?? 0.2,
+      topP: this.get<number>("LITELLM_TOP_P", { infer: true }) ?? 0.9,
+      maxOutputTokens: this.get<number>("LITELLM_MAX_OUTPUT_TOKENS", { infer: true }) ?? 1_200,
+      maxRetries: this.get<number>("LITELLM_MAX_RETRIES", { infer: true }) ?? 3,
+      fallbackModels,
+      requestsPerMinute: this.get<number>("LITELLM_REQUESTS_PER_MINUTE", { infer: true }) ?? 60
+    };
+  }
+
+  get newsPipelineEnv(): NewsPipelineEnvConfig {
+    return {
+      cacheTtlSeconds: this.get<number>("NEWS_PIPELINE_CACHE_TTL_SECONDS", { infer: true }) ?? 3_600,
+      maxInputChars: this.get<number>("NEWS_PIPELINE_MAX_INPUT_CHARS", { infer: true }) ?? 48_000,
+      configPath: this.get<string>("NEWS_PIPELINE_CONFIG_PATH", { infer: true }) ?? "config/news-pipeline.config.yaml"
     };
   }
 }
