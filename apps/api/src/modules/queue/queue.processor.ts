@@ -1,10 +1,12 @@
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Worker } from "bullmq";
 import { createLogger } from "@modular/utils";
-import { ProcessedItemModel, RawItemModel, TaskLogModel } from "@modular/mongo";
+import { RawItemModel, TaskLogModel } from "@modular/mongo";
 import { EnvService } from "../config/config.service";
-import { PIPELINE_QUEUE } from "./queue.module";
+import { ITEM_PIPELINE_QUEUE_NAME, PIPELINE_QUEUE } from "./queue.module";
 import type { Queue } from "bullmq";
+import { NewsPipelineService } from "../news-pipeline/news-pipeline.service";
+import type { PipelineJobContext, RawPipelineItem } from "../news-pipeline/news-pipeline.types";
 
 const logger = createLogger({ name: "queue" });
 
@@ -14,13 +16,14 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(PIPELINE_QUEUE) private readonly queue: Queue,
-    private readonly env: EnvService
+    private readonly env: EnvService,
+    private readonly pipeline: NewsPipelineService
   ) {}
 
   async onModuleInit() {
     const config = this.env.bullmqConfig;
     this.worker = new Worker(
-      "itemPipeline",
+      ITEM_PIPELINE_QUEUE_NAME,
       async (job) => {
         const { rawItemId, itemMetaId } = job.data as {
           rawItemId: string;
@@ -31,7 +34,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         const rawItem = await RawItemModel.findById(rawItemId);
         if (!rawItem) {
           await TaskLogModel.create({
-            queue: "itemPipeline",
+            queue: ITEM_PIPELINE_QUEUE_NAME,
             jobId: job.id,
             stage: "dedupe",
             status: "failed",
@@ -42,7 +45,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         }
 
         await TaskLogModel.create({
-          queue: "itemPipeline",
+          queue: ITEM_PIPELINE_QUEUE_NAME,
           jobId: job.id,
           stage: "dedupe",
           status: "completed",
@@ -50,50 +53,30 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           data: { itemMetaId }
         });
 
-        const transformedPayload = {
-          ...rawItem.payload,
-          processedAt: new Date().toISOString()
-        };
-        await TaskLogModel.create({
-          queue: "itemPipeline",
-          jobId: job.id,
-          stage: "transform",
-          status: "completed",
-          data: transformedPayload
-        });
-
-        const tags = Array.from(
-          new Set(["sample", transformedPayload?.category, transformedPayload?.status].filter(Boolean))
-        );
-        await TaskLogModel.create({
-          queue: "itemPipeline",
-          jobId: job.id,
-          stage: "tag",
-          status: "completed",
-          data: { tags }
-        });
-
-        const score = Math.round(Math.random() * 100);
-        const processed = await ProcessedItemModel.create({
-          rawItemId,
+        const pipelineJob: PipelineJobContext = {
+          queue: ITEM_PIPELINE_QUEUE_NAME,
+          jobId: job.id ? String(job.id) : "",
           itemMetaId,
-          status: "completed",
-          tags,
-          result: {
-            ...transformedPayload,
-            score
-          }
-        });
+          rawItemId
+        };
+        const rawPayload: RawPipelineItem = {
+          id: rawItem._id.toString(),
+          itemMetaId,
+          payload: rawItem.payload,
+          source: rawItem.source ?? undefined
+        };
+
+        const processed = await this.pipeline.process(pipelineJob, rawPayload);
 
         await TaskLogModel.create({
-          queue: "itemPipeline",
+          queue: ITEM_PIPELINE_QUEUE_NAME,
           jobId: job.id,
-          stage: "score",
+          stage: "complete",
           status: "completed",
-          data: { score }
+          data: { processedId: processed.id ?? rawItemId }
         });
 
-        return processed.toJSON();
+        return processed;
       },
       {
         connection: {
@@ -110,7 +93,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
       logger.error({ jobId: job?.id, err }, "Queue job failed");
       if (job) {
         await TaskLogModel.create({
-          queue: "itemPipeline",
+          queue: ITEM_PIPELINE_QUEUE_NAME,
           jobId: job.id,
           stage: "worker",
           status: "failed",

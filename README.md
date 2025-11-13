@@ -122,6 +122,14 @@ infra/
 - 全局 JWT 与权限守卫；使用 `@Permissions(...)` 保护路由
 - 预置角色与权限来自 `packages/config/src/rbac.ts`
 
+## LiteLLM 新闻清洗流水线
+
+- BullMQ `itemPipeline` 队列现已对接 `NewsPipelineService`：任意 `items` API/GraphQL 创建的原始 payload 只要包含 `url`，就会依次完成 Crawl4AI 去重抓取、LiteLLM 清洗、Zod 校验与 `ProcessedItemModel` 存储。抓取/LLM/持久化三个阶段的日志会写入 `TaskLogModel`，可在仪表盘查看。
+- LiteLLM 与 Crawl4AI 的高级参数集中在 `config/news-pipeline.config.yaml`。文件按照 `litellm_config` 与 `crawl4ai_config` 分区，支持模型 fallback、RPM 限流、virtual scroll、cleanMarkdown CSS 选择器等，修改后会被 `NewsPipelineConfigService` 热加载。若需多环境覆盖，可通过 `NEWS_PIPELINE_CONFIG_PATH` 指向自定义文件。
+- 新增环境变量：`LITELLM_MODEL`、`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_TIMEOUT_MS`、`LITELLM_TEMPERATURE`、`LITELLM_TOP_P`、`LITELLM_MAX_OUTPUT_TOKENS`、`LITELLM_MAX_RETRIES`、`LITELLM_FALLBACK_MODELS`、`LITELLM_REQUESTS_PER_MINUTE`、`NEWS_PIPELINE_CACHE_TTL_SECONDS`、`NEWS_PIPELINE_MAX_INPUT_CHARS` 和 `NEWS_PIPELINE_CONFIG_PATH`。`pnpm --filter infra-scripts run env:check` 会同时校验。
+- LiteLLM 调用走统一的 `LiteLlmService.acompletion`，包含 Redis RPM 限流、指数退避重试与模型级 fallback。模型输出由 `CleanedNewsSchema` 验证，字段涵盖 `title/content/publish_time/source`、高亮摘要、关键词、段落结构以及 token 用量。`ProcessedItemModel` 还会记录 Crawl4AI runId、缓存命中与源域名，前端 `items` 详情页能够直接消费。
+- Crawl4AI 结果默认缓存到 Redis（TTL 由 `NEWS_PIPELINE_CACHE_TTL_SECONDS` 控制），重复 URL 不会再次耗费 Token。若在 payload 中设置 `forceRefresh: true` 可强制重新抓取；LiteLLM 解析失败时队列会抛错并写入 `TaskLogModel`，方便追踪问题。
+
 ## TODO 与扩展点
 
 - [ ] 在简单的撤销机制之外，实现刷新令牌黑名单
