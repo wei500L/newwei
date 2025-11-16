@@ -274,7 +274,9 @@ export class AkshareService implements OnModuleInit {
     return records.flatMap((record: Record<string, any>) =>
       parser.valueFields.flatMap((field) => {
         const timestamp = parser.timestampField && record[parser.timestampField] ? this.parseDate(record[parser.timestampField]) : now;
-        const key = `${timestamp.getTime()}|${field.field}`;
+        const category = parser.categoryField ? record[parser.categoryField] : undefined;
+        const sourceField = category ? `${category}:${field.field}` : field.field;
+        const key = `${timestamp.getTime()}|${sourceField}`;
         if (dedupe.has(key)) {
           return [];
         }
@@ -284,7 +286,7 @@ export class AkshareService implements OnModuleInit {
           value: this.normalizeNumber(record[field.field]),
           unit: field.unit,
           dataType: field.dataType ?? "price",
-          sourceField: field.field,
+          sourceField,
           meta: record
         };
       })
@@ -299,7 +301,9 @@ export class AkshareService implements OnModuleInit {
       const recordedAt = this.parseDate(timestampValue);
       return parser.valueFields
         .map((field) => {
-          const dedupeKey = `${recordedAt.getTime()}|${field.field}`;
+          const category = parser.categoryField ? record[parser.categoryField] : undefined;
+          const sourceField = category ? `${category}:${field.field}` : field.field;
+          const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
           if (seen.has(dedupeKey)) {
             return undefined;
           }
@@ -309,7 +313,7 @@ export class AkshareService implements OnModuleInit {
             value: this.normalizeNumber(record[field.field]),
             unit: field.unit,
             dataType: field.dataType ?? "price",
-            sourceField: field.field,
+            sourceField,
             meta: record
           };
         })
@@ -324,7 +328,9 @@ export class AkshareService implements OnModuleInit {
       const recordedAt = this.parseDate(record[parser.periodField]);
       return parser.valueFields
         .map((field) => {
-          const dedupeKey = `${recordedAt.getTime()}|${field.field}`;
+          const category = parser.categoryField ? record[parser.categoryField] : undefined;
+          const sourceField = category ? `${category}:${field.field}` : field.field;
+          const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
           if (seen.has(dedupeKey)) {
             return undefined;
           }
@@ -334,7 +340,7 @@ export class AkshareService implements OnModuleInit {
             value: this.normalizeNumber(record[field.field]),
             unit: field.unit,
             dataType: field.dataType ?? "index",
-            sourceField: field.field,
+            sourceField,
             meta: record
           };
         })
