@@ -10,6 +10,17 @@ export type MakeMaybe<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]: Mayb
 const defaultOptions = {} as const;
 
 export type CrawlTaskStatus = "pending" | "queued" | "running" | "completed" | "failed" | "paused";
+export type EconomicDataFrequency = "realtime" | "hourly" | "daily" | "weekly" | "monthly";
+export type EconomicDataValueType =
+  | "price"
+  | "index"
+  | "percent"
+  | "yield"
+  | "fx"
+  | "volume"
+  | "quantity"
+  | "spread";
+export type EconomicDataRunStatus = "pending" | "running" | "success" | "failed";
 
 export type CrawlTimeRangeInput = {
   from?: InputMaybe<string>;
@@ -164,6 +175,11 @@ export type CrawlOptionsInput = {
   storageState?: InputMaybe<string>;
 };
 
+export type DateRangeInput = {
+  start: any;
+  end: any;
+};
+
 export type CrawlMetadataInput = {
   source?: InputMaybe<string>;
   domain?: InputMaybe<string>;
@@ -186,6 +202,95 @@ export type CreateCrawlTaskInput = {
   keywords?: InputMaybe<Array<string>>;
   options?: InputMaybe<CrawlOptionsInput>;
 };
+
+export type EconomicDataItemModel = {
+  __typename?: "EconomicDataItemModel";
+  slug: string;
+  displayName: string;
+  groupLabel?: Maybe<string>;
+};
+
+export type EconomicDataPointModel = {
+  __typename?: "EconomicDataPointModel";
+  timestamp: any;
+  value: number;
+  unit?: Maybe<string>;
+  sourceField?: Maybe<string>;
+  dataType: EconomicDataValueType;
+  item: EconomicDataItemModel;
+};
+
+export type EconomicDataFetchConfigModel = {
+  __typename?: "EconomicDataFetchConfigModel";
+  id: string;
+  frequency: EconomicDataFrequency;
+  repeatCron?: Maybe<string>;
+  isEnabled: boolean;
+  lastRunAt?: Maybe<any>;
+  lastStatus?: Maybe<EconomicDataRunStatus>;
+  lastError?: Maybe<string>;
+  item: EconomicDataItemModel;
+};
+
+export type EconomicDataQueryVariables = Exact<{
+  category: string;
+  timeRange: DateRangeInput;
+}>;
+
+export type EconomicDataQuery = {
+  getEconomicData: Array<{
+    __typename?: "EconomicDataPointModel";
+    timestamp: any;
+    value: number;
+    unit?: string | null;
+    sourceField?: string | null;
+    dataType: EconomicDataValueType;
+    item: { __typename?: "EconomicDataItemModel"; slug: string; displayName: string; groupLabel?: string | null };
+  }>;
+};
+
+export type EconomicFetchConfigsQueryVariables = Exact<{ [key: string]: never }>;
+
+export type EconomicFetchConfigsQuery = {
+  economicDataFetchConfigs: Array<{
+    __typename?: "EconomicDataFetchConfigModel";
+    id: string;
+    frequency: EconomicDataFrequency;
+    repeatCron?: string | null;
+    isEnabled: boolean;
+    lastRunAt?: any | null;
+    lastStatus?: EconomicDataRunStatus | null;
+    lastError?: string | null;
+    item: { __typename?: "EconomicDataItemModel"; slug: string; displayName: string };
+  }>;
+};
+
+export type UpdateEconomicFetchConfigMutationVariables = Exact<{
+  slug: string;
+  frequency?: InputMaybe<EconomicDataFrequency>;
+  repeatCron?: InputMaybe<string>;
+  isEnabled?: InputMaybe<boolean>;
+}>;
+
+export type UpdateEconomicFetchConfigMutation = {
+  updateEconomicDataFetchConfig: {
+    __typename?: "EconomicDataFetchConfigModel";
+    id: string;
+    frequency: EconomicDataFrequency;
+    repeatCron?: string | null;
+    isEnabled: boolean;
+    lastRunAt?: any | null;
+    lastStatus?: EconomicDataRunStatus | null;
+    lastError?: string | null;
+    item: { __typename?: "EconomicDataItemModel"; slug: string; displayName: string };
+  };
+};
+
+export type TriggerEconomicDataFetchMutationVariables = Exact<{
+  slugs: Array<string> | string;
+}>;
+
+export type TriggerEconomicDataFetchMutation = { triggerDataFetch: boolean };
 
 export type MeQueryVariables = Exact<{ [key: string]: never }>;
 
@@ -818,4 +923,163 @@ export type CrawlMetadataLazyQueryHookResult = ReturnType<typeof useCrawlMetadat
 export type CrawlMetadataQueryResult = Apollo.QueryResult<
   CrawlMetadataQuery,
   CrawlMetadataQueryVariables
+>;
+
+export const EconomicDataDocument = gql`
+  query EconomicData($category: String!, $timeRange: DateRangeInput!) {
+    getEconomicData(category: $category, timeRange: $timeRange) {
+      timestamp
+      value
+      unit
+      sourceField
+      dataType
+      item {
+        slug
+        displayName
+        groupLabel
+      }
+    }
+  }
+`;
+
+export function useEconomicDataQuery(
+  baseOptions: Apollo.QueryHookOptions<EconomicDataQuery, EconomicDataQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<EconomicDataQuery, EconomicDataQueryVariables>(EconomicDataDocument, options);
+}
+
+export function useEconomicDataLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<EconomicDataQuery, EconomicDataQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<EconomicDataQuery, EconomicDataQueryVariables>(EconomicDataDocument, options);
+}
+export type EconomicDataQueryHookResult = ReturnType<typeof useEconomicDataQuery>;
+export type EconomicDataLazyQueryHookResult = ReturnType<typeof useEconomicDataLazyQuery>;
+export type EconomicDataQueryResult = Apollo.QueryResult<EconomicDataQuery, EconomicDataQueryVariables>;
+export const EconomicFetchConfigsDocument = gql`
+  query EconomicFetchConfigs {
+    economicDataFetchConfigs {
+      id
+      frequency
+      repeatCron
+      isEnabled
+      lastRunAt
+      lastStatus
+      lastError
+      item {
+        slug
+        displayName
+      }
+    }
+  }
+`;
+
+export function useEconomicFetchConfigsQuery(
+  baseOptions?: Apollo.QueryHookOptions<EconomicFetchConfigsQuery, EconomicFetchConfigsQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<EconomicFetchConfigsQuery, EconomicFetchConfigsQueryVariables>(
+    EconomicFetchConfigsDocument,
+    options
+  );
+}
+
+export function useEconomicFetchConfigsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<EconomicFetchConfigsQuery, EconomicFetchConfigsQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<EconomicFetchConfigsQuery, EconomicFetchConfigsQueryVariables>(
+    EconomicFetchConfigsDocument,
+    options
+  );
+}
+export type EconomicFetchConfigsQueryHookResult = ReturnType<typeof useEconomicFetchConfigsQuery>;
+export type EconomicFetchConfigsLazyQueryHookResult = ReturnType<typeof useEconomicFetchConfigsLazyQuery>;
+export type EconomicFetchConfigsQueryResult = Apollo.QueryResult<
+  EconomicFetchConfigsQuery,
+  EconomicFetchConfigsQueryVariables
+>;
+export const UpdateEconomicFetchConfigDocument = gql`
+  mutation UpdateEconomicFetchConfig(
+    $slug: String!
+    $frequency: EconomicDataFrequency
+    $repeatCron: String
+    $isEnabled: Boolean
+  ) {
+    updateEconomicDataFetchConfig(
+      slug: $slug
+      frequency: $frequency
+      repeatCron: $repeatCron
+      isEnabled: $isEnabled
+    ) {
+      id
+      frequency
+      repeatCron
+      isEnabled
+      lastRunAt
+      lastStatus
+      lastError
+      item {
+        slug
+        displayName
+      }
+    }
+  }
+`;
+export type UpdateEconomicFetchConfigMutationFn = Apollo.MutationFunction<
+  UpdateEconomicFetchConfigMutation,
+  UpdateEconomicFetchConfigMutationVariables
+>;
+
+export function useUpdateEconomicFetchConfigMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    UpdateEconomicFetchConfigMutation,
+    UpdateEconomicFetchConfigMutationVariables
+  >
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    UpdateEconomicFetchConfigMutation,
+    UpdateEconomicFetchConfigMutationVariables
+  >(UpdateEconomicFetchConfigDocument, options);
+}
+export type UpdateEconomicFetchConfigMutationHookResult = ReturnType<
+  typeof useUpdateEconomicFetchConfigMutation
+>;
+export type UpdateEconomicFetchConfigMutationResult = Apollo.MutationResult<UpdateEconomicFetchConfigMutation>;
+export type UpdateEconomicFetchConfigMutationOptions = Apollo.BaseMutationOptions<
+  UpdateEconomicFetchConfigMutation,
+  UpdateEconomicFetchConfigMutationVariables
+>;
+export const TriggerEconomicDataFetchDocument = gql`
+  mutation TriggerEconomicDataFetch($slugs: [String!]!) {
+    triggerDataFetch(input: { slugs: $slugs })
+  }
+`;
+export type TriggerEconomicDataFetchMutationFn = Apollo.MutationFunction<
+  TriggerEconomicDataFetchMutation,
+  TriggerEconomicDataFetchMutationVariables
+>;
+
+export function useTriggerEconomicDataFetchMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    TriggerEconomicDataFetchMutation,
+    TriggerEconomicDataFetchMutationVariables
+  >
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    TriggerEconomicDataFetchMutation,
+    TriggerEconomicDataFetchMutationVariables
+  >(TriggerEconomicDataFetchDocument, options);
+}
+export type TriggerEconomicDataFetchMutationHookResult = ReturnType<
+  typeof useTriggerEconomicDataFetchMutation
+>;
+export type TriggerEconomicDataFetchMutationResult = Apollo.MutationResult<TriggerEconomicDataFetchMutation>;
+export type TriggerEconomicDataFetchMutationOptions = Apollo.BaseMutationOptions<
+  TriggerEconomicDataFetchMutation,
+  TriggerEconomicDataFetchMutationVariables
 >;

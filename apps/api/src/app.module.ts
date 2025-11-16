@@ -13,6 +13,7 @@ import { QueueModule } from "./modules/queue/queue.module";
 import { CacheModule } from "./modules/cache/cache.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { CrawlModule } from "./modules/crawl/crawl.module";
+import { AkshareModule } from "./modules/akshare/akshare.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { ApiGraphqlModule } from "./graphql/graphql.module";
@@ -40,6 +41,7 @@ import { ApiGraphqlModule } from "./graphql/graphql.module";
     ItemsModule,
     DashboardModule,
     CrawlModule,
+    AkshareModule,
     ApiGraphqlModule,
     HealthModule
   ],

@@ -23,6 +23,9 @@ model Org {
   auditLogs   AuditLog[]
   items       ItemMeta[]
   crawlTasks  CrawlTask[]
+  newsSources NewsSource[]
+  pipelineJobs PipelineJob[]
+  articles    Article[]
 }
 
 model User {
@@ -299,4 +302,103 @@ model RefreshToken {
   userAgent   String?
 
   @@index([userId])
+}
+
+enum EconomicDataValueType {
+  price
+  index
+  percent
+  yield
+  fx
+  volume
+  quantity
+  spread
+}
+
+enum EconomicDataFrequency {
+  realtime
+  hourly
+  daily
+  weekly
+  monthly
+}
+
+enum EconomicDataRunStatus {
+  pending
+  running
+  success
+  failed
+}
+
+model EconomicCategory {
+  id          String                  @id @default(cuid())
+  key         String                  @unique
+  label       String
+  description String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  items       EconomicDataItemCategory[]
+}
+
+model EconomicDataItem {
+  id               String                     @id @default(cuid())
+  slug             String                     @unique
+  displayName      String
+  groupLabel       String?
+  description      String?
+  sourceFunction   String
+  sourceEndpoint   String
+  sourceDocUrl     String?
+  valueType        EconomicDataValueType      @default(price)
+  defaultUnit      String?
+  defaultFrequency EconomicDataFrequency      @default(daily)
+  responseAdapter  String?
+  isActive         Boolean                    @default(true)
+  metadata         Json?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  dataPoints       EconomicDataPoint[]
+  fetchConfig      EconomicDataFetchConfig?
+  categories       EconomicDataItemCategory[]
+}
+
+model EconomicDataItemCategory {
+  id          String               @id @default(cuid())
+  item        EconomicDataItem     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId      String
+  category    EconomicCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId  String
+  createdAt   DateTime             @default(now())
+
+  @@unique([itemId, categoryId])
+}
+
+model EconomicDataPoint {
+  id          String                @id @default(cuid())
+  item        EconomicDataItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId      String
+  recordedAt  DateTime
+  dataType    EconomicDataValueType
+  value       Decimal               @db.Decimal(38, 12)
+  unit        String?
+  sourceField String
+  sourceMeta  Json?
+  createdAt   DateTime              @default(now())
+
+  @@index([itemId, recordedAt])
+  @@unique([itemId, recordedAt, sourceField])
+}
+
+model EconomicDataFetchConfig {
+  id           String                @id @default(cuid())
+  item         EconomicDataItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId       String                @unique
+  frequency    EconomicDataFrequency
+  repeatCron   String?
+  isEnabled    Boolean               @default(true)
+  lastRunAt    DateTime?
+  lastStatus   EconomicDataRunStatus?
+  lastError    String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 }
