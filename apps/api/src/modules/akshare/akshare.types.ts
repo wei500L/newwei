@@ -14,12 +14,14 @@ export interface AkshareTimeseriesParserConfig {
   type: "timeseries";
   timestampField: string;
   timestampFormat?: string;
+  categoryField?: string;
   valueFields: AkshareDataFieldConfig[];
 }
 
 export interface AkshareLatestParserConfig {
   type: "latest";
   timestampField?: string;
+  categoryField?: string;
   valueFields: AkshareDataFieldConfig[];
 }
 
@@ -32,6 +34,7 @@ export interface AkshareYieldCurveParserConfig {
 export interface AkshareMacroParserConfig {
   type: "macro";
   periodField: string;
+  categoryField?: string;
   valueFields: AkshareDataFieldConfig[];
 }
 

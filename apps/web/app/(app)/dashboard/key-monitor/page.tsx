@@ -46,6 +46,20 @@ export default function KeyMonitorPage() {
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <EconomicChartCard
+            title="人民币中间价(主要货币)"
+            description="来自SAFE的人民币对主要货币中间价"
+            seriesMap={seriesMap}
+            series={[
+              { slug: "china_fx_mid_rates", label: "美元", field: "美元" },
+              { slug: "china_fx_mid_rates", label: "欧元", field: "欧元" },
+              { slug: "china_fx_mid_rates", label: "日元", field: "日元" }
+            ]}
+          />
+        </Col>
+      </Row>
+      <Row gutter={[16, 16]}>
+        <Col span={24}>
+          <EconomicChartCard
             title="人民币汇率"
             description="美元/人民币与欧元/人民币即期走势"
             seriesMap={seriesMap}

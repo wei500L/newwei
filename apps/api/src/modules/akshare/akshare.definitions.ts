@@ -1310,5 +1310,97 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
         { field: "比重", label: "收入占比", unit: "%", dataType: EconomicDataValueType.percent }
       ]
     }
+  },
+  {
+    id: "china-fx-mid-rates",
+    slug: "china_fx_mid_rates",
+    displayName: "人民币中间价(主要货币)",
+    categories: ["key-monitor", "economic-short"],
+    sourceFunction: "ak.currency_boc_safe",
+    endpoint: "/currency_boc_safe",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    valueType: EconomicDataValueType.fx,
+    defaultUnit: "CNY/100外币",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "macro",
+      periodField: "日期",
+      valueFields: [
+        { field: "美元", label: "美元", unit: "CNY/100外币", dataType: EconomicDataValueType.fx },
+        { field: "欧元", label: "欧元", unit: "CNY/100外币", dataType: EconomicDataValueType.fx },
+        { field: "英镑", label: "英镑", unit: "CNY/100外币", dataType: EconomicDataValueType.fx },
+        { field: "日元", label: "日元", unit: "CNY/100外币", dataType: EconomicDataValueType.fx },
+        { field: "港元", label: "港元", unit: "CNY/100外币", dataType: EconomicDataValueType.fx },
+        { field: "澳元", label: "澳元", unit: "CNY/100外币", dataType: EconomicDataValueType.fx },
+        { field: "加元", label: "加元", unit: "CNY/100外币", dataType: EconomicDataValueType.fx },
+        { field: "新加坡元", label: "新加坡元", unit: "CNY/100外币", dataType: EconomicDataValueType.fx },
+        { field: "瑞士法郎", label: "瑞士法郎", unit: "CNY/100外币", dataType: EconomicDataValueType.fx },
+        { field: "新西兰元", label: "新西兰元", unit: "CNY/100外币", dataType: EconomicDataValueType.fx }
+      ]
+    }
+  },
+  {
+    id: "rmb-fx-cswap-curve",
+    slug: "rmb_fx_cswap_curve",
+    displayName: "人民币外汇掉期C-Swap曲线",
+    categories: ["key-monitor", "economic-short"],
+    sourceFunction: "ak.fx_c_swap_cm",
+    endpoint: "/fx_c_swap_cm",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    valueType: EconomicDataValueType.fx,
+    defaultUnit: "Pips",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期时间",
+      categoryField: "期限品种",
+      valueFields: [
+        { field: "掉期点(Pips)", label: "掉期点(Pips)", unit: "Pips", dataType: EconomicDataValueType.fx },
+        { field: "全价汇率", label: "全价汇率", unit: "CNY", dataType: EconomicDataValueType.fx }
+      ]
+    }
+  },
+  {
+    id: "rmb-fx-spot-quotes",
+    slug: "rmb_fx_spot_quotes",
+    displayName: "人民币外汇即期报价",
+    categories: ["key-monitor", "economic-short"],
+    sourceFunction: "ak.fx_spot_quote",
+    endpoint: "/fx_spot_quote",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    valueType: EconomicDataValueType.fx,
+    defaultUnit: "",
+    defaultFrequency: REALTIME,
+    parser: {
+      type: "latest",
+      categoryField: "货币对",
+      valueFields: [
+        { field: "买报价", label: "买报价", unit: "", dataType: EconomicDataValueType.fx },
+        { field: "卖报价", label: "卖报价", unit: "", dataType: EconomicDataValueType.fx }
+      ]
+    }
+  },
+  {
+    id: "global-fx-pair-quotes",
+    slug: "global_fx_pair_quotes",
+    displayName: "外币对即期报价",
+    categories: ["economic-short"],
+    sourceFunction: "ak.fx_pair_quote",
+    endpoint: "/fx_pair_quote",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    valueType: EconomicDataValueType.fx,
+    defaultFrequency: REALTIME,
+    parser: {
+      type: "latest",
+      categoryField: "货币对",
+      valueFields: [
+        { field: "买报价", label: "买报价", unit: "", dataType: EconomicDataValueType.fx },
+        { field: "卖报价", label: "卖报价", unit: "", dataType: EconomicDataValueType.fx }
+      ]
+    }
   }
 ] satisfies AkshareDataItemDefinition[];
