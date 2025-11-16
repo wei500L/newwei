@@ -132,6 +132,48 @@ infra/
 - LiteLLM 调用走统一的 `LiteLlmService.acompletion`，包含 Redis RPM 限流、指数退避重试与模型级 fallback。模型输出由新版 `CleanedNewsSchema` 验证，字段涵盖标题、副标题、分类、主题、200~300 字摘要、要点、实体、噪声类型与质量分；同时以 [LiteLLM 成本追踪回调](https://docs.litellm.ai/docs/observability/custom_callback) 为参考记录 token 使用量、`costUsd` 与 `latencyMs`（相关缺陷修复见 [v1.74.0 release notes](https://docs.litellm.ai/release_notes/v1-74-0-stable)），方便后续预算/Guardrail。
 - Crawl4AI 结果默认缓存到 Redis（TTL 由 `NEWS_PIPELINE_CACHE_TTL_SECONDS` 控制），重复 URL 不会再次耗费 Token。若在 payload 中设置 `forceRefresh: true` 可强制重新抓取；LiteLLM 解析失败时队列会抛错并写入 `TaskLogModel`，方便追踪问题。
 
+### LiteLLM 部署指南
+
+News Pipeline 默认将 LiteLLM 代理暴露在 `http://localhost:4001`，因此只要按下列步骤部署即可被 `LiteLlmService` 热加载使用：
+
+1. **安装 LiteLLM Proxy**  
+   推荐使用独立虚拟环境或容器运行：
+
+   ```bash
+   python3 -m venv .venv-litellm
+   source .venv-litellm/bin/activate
+   pip install "litellm[proxy]"
+   ```
+
+   或者直接使用官方镜像：`docker run -p 4001:4000 ghcr.io/berriai/litellm:main`.
+
+2. **提供上游模型凭证**  
+   LiteLLM 会把兼容 OpenAI/Anthropic 等模型代理到统一接口，需在代理进程环境中注入真实凭证，例如：
+
+   ```bash
+   export OPENAI_API_KEY="sk-xxx"
+   export ANTHROPIC_API_KEY="xxx" # 可选
+   ```
+
+   如果需要自定义模型路由、RPM 限制或日志，可以创建 `litellm.config.yaml`（示例见官方文档），并使用 `litellm --config /path/to/litellm.config.yaml` 启动。
+
+3. **运行代理并监听 4001 端口**
+
+   ```bash
+   litellm --port 4001 --num_workers 4
+   ```
+
+   News Pipeline 会自动轮询 `config/news-pipeline.config.yaml` 中的 `litellm_config.api_url`/`fallback_models` 以及 `.env` 的 `LITELLM_*` 覆盖值，因此只要保证该端口可达即可。
+
+4. **校验 API 是否连通**
+   ```bash
+   curl http://localhost:4001/v1/models
+   curl http://localhost:4001/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
+   ```
+   返回 200 表示 LiteLLM 部署成功。此时执行 `pnpm dev` 或 `pnpm docker:up`，就能让 BullMQ 队列中的 `NewsPipelineService` 实际走 LiteLLM 代理完成清洗任务。
+
 ## TODO 与扩展点
 
 - [ ] 在简单的撤销机制之外，实现刷新令牌黑名单

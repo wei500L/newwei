@@ -1,7 +1,10 @@
 {
   "extends": "../../packages/config/tsconfig/nest.json",
   "compilerOptions": {
-    "baseUrl": "./",
+    "rootDir": ".",
+    "module": "Node16",
+    "moduleResolution": "node16",
+    "baseUrl": ".",
     "paths": {
       "@modular/utils": ["../../packages/utils/src"],
       "@modular/config": ["../../packages/config/src"],
