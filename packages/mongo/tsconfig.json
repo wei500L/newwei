@@ -1,7 +1,13 @@
 {
   "extends": "../config/tsconfig/library.json",
   "compilerOptions": {
-    "baseUrl": "./src"
+    "baseUrl": ".",
+    "ignoreDeprecations": "5.0",
+    "module": "Node16",
+    "moduleResolution": "node16",
+    "paths": {
+      "@modular/utils": ["../utils/src"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"]

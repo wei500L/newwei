@@ -6,7 +6,6 @@
     "experimentalDecorators": true,
     "allowJs": false,
     "outDir": "dist",
-    "rootDir": "src",
     "sourceMap": true,
     "declaration": true
   },
