@@ -2,13 +2,18 @@ import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 
 export const baseEnvSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  NODE_ENV: z
+    .enum(["development", "test", "production"])
+    .default("development"),
   MYSQL_HOST: z.string().min(1),
   MYSQL_PORT: z.coerce.number().int().positive(),
   MYSQL_USER: z.string().min(1),
   MYSQL_PASSWORD: z.string().min(1),
   MYSQL_DB: z.string().min(1),
-  MONGO_URI: z.string().url().or(z.string().regex(/^mongodb/)),
+  MONGO_URI: z
+    .string()
+    .url()
+    .or(z.string().regex(/^mongodb/)),
   REDIS_HOST: z.string().min(1),
   REDIS_PORT: z.coerce.number().int().positive(),
   JWT_SECRET: z.string().min(16),
@@ -20,7 +25,11 @@ export const baseEnvSchema = z.object({
   CRAWL4AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   CRAWL4AI_MAX_CONCURRENCY: z.coerce.number().int().positive().default(3),
   CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3),
-  CRAWL_MEDIA_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  CRAWL_MEDIA_FETCH_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15_000),
   CRAWL_MEDIA_MAX_BYTES: z.coerce.number().int().positive().default(2_097_152),
   CRAWL_MEDIA_MAX_PER_RESULT: z.coerce.number().int().positive().default(6),
   LITELLM_MODEL: z.string().min(1).default("openai/gpt-4o-mini"),
@@ -33,9 +42,19 @@ export const baseEnvSchema = z.object({
   LITELLM_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   LITELLM_FALLBACK_MODELS: z.string().optional(),
   LITELLM_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
-  NEWS_PIPELINE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(3_600),
-  NEWS_PIPELINE_MAX_INPUT_CHARS: z.coerce.number().int().positive().default(48_000),
-  NEWS_PIPELINE_CONFIG_PATH: z.string().default("config/news-pipeline.config.yaml")
+  NEWS_PIPELINE_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3_600),
+  NEWS_PIPELINE_MAX_INPUT_CHARS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(48_000),
+  NEWS_PIPELINE_CONFIG_PATH: z
+    .string()
+    .default("config/news-pipeline.config.yaml"),
 });
 
 export type BaseEnvSchema = typeof baseEnvSchema;
@@ -48,7 +67,7 @@ export interface LoadEnvOptions {
 
 export function loadAndValidateEnv<TSchema extends z.ZodTypeAny>(
   schema: TSchema,
-  options: LoadEnvOptions = {}
+  options: LoadEnvOptions = {},
 ): z.infer<TSchema> {
   if (options.dotenvPath) {
     loadDotenv({ path: options.dotenvPath });
@@ -59,7 +78,10 @@ export function loadAndValidateEnv<TSchema extends z.ZodTypeAny>(
   const parsed = schema.safeParse(process.env);
   if (!parsed.success) {
     // TODO(app): wire this into centralized structured logger once tracing pipeline is available.
-    console.error("Invalid environment variables", parsed.error.flatten().fieldErrors);
+    console.error(
+      "Invalid environment variables",
+      parsed.error.flatten().fieldErrors,
+    );
     throw new Error("Environment validation failed");
   }
 

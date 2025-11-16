@@ -5,13 +5,15 @@ import {
   LogoutOutlined,
   RadarChartOutlined,
   SettingOutlined,
-  TableOutlined
+  TableOutlined,
 } from "@ant-design/icons";
 import { Breadcrumb, Button, Layout, Menu, Space, Typography } from "antd";
 import { usePathname, useRouter } from "next/navigation";
-import { PropsWithChildren, useMemo } from "react";
-import { useSidebarStore } from "@/store/sidebar";
 import { signOut, useSession } from "next-auth/react";
+import type { PropsWithChildren } from "react";
+import { useMemo } from "react";
+
+import { useSidebarStore } from "@/store/sidebar";
 
 const { Header, Sider, Content } = Layout;
 
@@ -19,23 +21,23 @@ const navigationItems = [
   {
     key: "/dashboard",
     icon: <DashboardOutlined />,
-    label: "Dashboard"
+    label: "Dashboard",
   },
   {
     key: "/items",
     icon: <TableOutlined />,
-    label: "Items"
+    label: "Items",
   },
   {
     key: "/crawl",
     icon: <RadarChartOutlined />,
-    label: "Crawl Tasks"
+    label: "Crawl Tasks",
   },
   {
     key: "/settings",
     icon: <SettingOutlined />,
-    label: "Settings"
-  }
+    label: "Settings",
+  },
 ];
 
 export function ShellLayout({ children }: PropsWithChildren) {
@@ -55,12 +57,18 @@ export function ShellLayout({ children }: PropsWithChildren) {
     .filter(Boolean)
     .map((segment, index) => ({
       title: segment.charAt(0).toUpperCase() + segment.slice(1),
-      key: `${segment}-${index}`
+      key: `${segment}-${index}`,
     }));
 
   return (
     <Layout className="main-layout">
-      <Sider collapsible collapsed={collapsed} onCollapse={toggle} width={220} breakpoint="lg">
+      <Sider
+        collapsible
+        collapsed={collapsed}
+        onCollapse={toggle}
+        width={220}
+        breakpoint="lg"
+      >
         <div
           style={{
             height: 64,
@@ -70,7 +78,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
             padding: collapsed ? 0 : "0 16px",
             color: "#fff",
             fontWeight: 600,
-            fontSize: collapsed ? 18 : 20
+            fontSize: collapsed ? 18 : 20,
           }}
         >
           {collapsed ? "MM" : "Modular Monolith"}
@@ -91,7 +99,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.1)"
+            boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
           }}
         >
           <Breadcrumb items={breadcrumbs} />
