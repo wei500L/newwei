@@ -168,4 +168,16 @@ export class EnvService extends ConfigService<ApiEnv> {
         12,
     };
   }
+
+  get akshareConfig() {
+    return {
+      baseUrl:
+        this.get<string>("AKSHARE_HTTP_BASE_URL", { infer: true }) ??
+        "http://localhost:8081",
+      timeoutMs:
+        this.get<number>("AKSHARE_HTTP_TIMEOUT_MS", { infer: true }) ?? 20_000,
+      maxRetries:
+        this.get<number>("AKSHARE_HTTP_MAX_RETRIES", { infer: true }) ?? 3,
+    };
+  }
 }

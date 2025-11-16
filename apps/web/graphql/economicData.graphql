@@ -1,0 +1,49 @@
+query EconomicData($category: String!, $timeRange: DateRangeInput!) {
+  getEconomicData(category: $category, timeRange: $timeRange) {
+    timestamp
+    value
+    unit
+    sourceField
+    dataType
+    item {
+      slug
+      displayName
+    }
+  }
+}
+
+query EconomicFetchConfigs {
+  economicDataFetchConfigs {
+    id
+    frequency
+    repeatCron
+    isEnabled
+    lastRunAt
+    lastStatus
+    lastError
+    item {
+      slug
+      displayName
+    }
+  }
+}
+
+mutation UpdateEconomicFetchConfig($slug: String!, $frequency: EconomicDataFrequency, $repeatCron: String, $isEnabled: Boolean) {
+  updateEconomicDataFetchConfig(slug: $slug, frequency: $frequency, repeatCron: $repeatCron, isEnabled: $isEnabled) {
+    id
+    frequency
+    repeatCron
+    isEnabled
+    lastRunAt
+    lastStatus
+    lastError
+    item {
+      slug
+      displayName
+    }
+  }
+}
+
+mutation TriggerEconomicDataFetch($slugs: [String!]!) {
+  triggerDataFetch(input: { slugs: $slugs })
+}
