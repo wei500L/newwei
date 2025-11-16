@@ -29,6 +29,7 @@ pnpm dev
 ```
 
 访问地址：
+
 - 前端：http://localhost:3000/login
 - API 健康检查：http://localhost:4000/api/healthz
 - Swagger UI：http://localhost:4000/docs
@@ -49,16 +50,17 @@ pnpm docker:down
 
 ## 工作区脚本
 
-| 命令 | 说明 |
-| --- | --- |
-| `pnpm dev` | 以监听模式运行 `@modular/api` 和 `@modular/web` |
-| `pnpm build` | 对所有包执行 Turbo 构建 |
-| `pnpm lint` / `pnpm typecheck` / `pnpm test` | 汇总执行 lint、类型检查与测试 |
-| `pnpm db:migrate` | 通过 `packages/db` 执行 Prisma 迁移 |
-| `pnpm db:seed` | 灌入默认的组织、角色与管理员账号 |
-| `pnpm docker:*` | 包装 docker-compose 全生命周期（infra/scripts） |
+| 命令                                         | 说明                                            |
+| -------------------------------------------- | ----------------------------------------------- |
+| `pnpm dev`                                   | 以监听模式运行 `@modular/api` 和 `@modular/web` |
+| `pnpm build`                                 | 对所有包执行 Turbo 构建                         |
+| `pnpm lint` / `pnpm typecheck` / `pnpm test` | 汇总执行 lint、类型检查与测试                   |
+| `pnpm db:migrate`                            | 通过 `packages/db` 执行 Prisma 迁移             |
+| `pnpm db:seed`                               | 灌入默认的组织、角色与管理员账号                |
+| `pnpm docker:*`                              | 包装 docker-compose 全生命周期（infra/scripts） |
 
 关键包脚本：
+
 - `apps/api`：`dev`、`build`、`test`、`test:e2e`
 - `apps/web`：`dev`、`build`、`start`、`typecheck`
 - `infra/scripts`：`env:check`、`docker:up`、`docker:down`、`docker:logs`
@@ -90,26 +92,26 @@ infra/
   - `CRAWL_MEDIA_FETCH_TIMEOUT_MS` / `CRAWL_MEDIA_MAX_BYTES` / `CRAWL_MEDIA_MAX_PER_RESULT`：控制在 `storeMedia` 打开时后端下载新闻图片/视频的网络超时、单文件最大字节与每条结果最多缓存的媒体数量。
 - `pnpm db:migrate && pnpm db:seed` 会创建 `CrawlTask` / `CrawlResult` 表并灌入一个示例任务；Mongo 中新增 `CrawlResultContent` 模型用来存储 Markdown。
 - Docker Compose 中新增 `crawl4ai` 服务（基于 `ghcr.io/unclecode/crawl4ai:latest`），默认对 API 暴露 8080 端口并有健康检查；若需要本地调试可以通过 `http://localhost:8082` 命中。
-- 参考 crawl4ai 官方文档关于 *Full-Page Scanning*（见 `docs/md_v2/blog/releases/0.4.1.md`）的实现，我们在任务配置中加入 “Full-page scanning” 开关与滚动延迟，API 会在调用 `/crawl` 时自动下发 `scan_full_page` 与 `scroll_delay`，可用于处理瀑布流/无限滚动的新闻站点。
-- 参考 crawl4ai 官方 *Link & Media Extraction* 指南（`docs/md_v2/core/link-media.md`），当 `storeMedia` 打开时 API 会自动启用 `wait_for_images`、允许跨域图片并解析 `result.media`；后端会在 `CRAWL_MEDIA_*` 限制内抓取最多 6 个图片/视频并以内联 Base64 存进 `CrawlResultContent.mediaAssets`，前端详情页可直接预览或下载这些媒体。
-- 为了匹配 crawl4ai *Simple Crawling* 指南中的新闻监控实践（`docs/md_v2/core/simple-crawling.md`），API 默认会下发 `word_count_threshold=80`、`exclude_external_links=true`、`remove_overlay_elements=true` 与 `process_iframes=true`，同时开放 REST/GraphQL 字段让你细调 `wordCountThreshold`、`textMode`、`captureScreenshot`、`cssSelector` 与 `excludedTags`。多 URL 策略也能逐条重写这些参数，以便首页/文章页套用不同的噪声过滤策略。
-- 对应 crawl4ai *Virtual Scroll* 能力（`docs/md_v2/advanced/virtual-scroll.md`），任务与策略表单新增 `virtualScroll` 配置（容器选择器、滚动次数、滚动方式、滚动后的等待时间），API 会构造 `VirtualScrollConfig` 并将其附在 `CrawlerRunConfig.virtual_scroll_config`，用于抓取虚拟列表或无限下拉的新闻流。
-- 同样来自 crawl4ai `0.4.1` 版本的 *Dynamic Viewport Adjustment*（`docs/md_v2/blog/releases/0.4.1.md`），控制台与 GraphQL/REST DTO 新增 `adjustViewportToContent` 开关，API 会把该布尔值映射到 `CrawlerRunConfig.adjust_viewport_to_content`，确保对响应式/超长页面自动缩放视口并捕获完整内容；多 URL 策略也可单独覆盖该设置。
+- 参考 crawl4ai 官方文档关于 _Full-Page Scanning_（见 `docs/md_v2/blog/releases/0.4.1.md`）的实现，我们在任务配置中加入 “Full-page scanning” 开关与滚动延迟，API 会在调用 `/crawl` 时自动下发 `scan_full_page` 与 `scroll_delay`，可用于处理瀑布流/无限滚动的新闻站点。
+- 参考 crawl4ai 官方 _Link & Media Extraction_ 指南（`docs/md_v2/core/link-media.md`），当 `storeMedia` 打开时 API 会自动启用 `wait_for_images`、允许跨域图片并解析 `result.media`；后端会在 `CRAWL_MEDIA_*` 限制内抓取最多 6 个图片/视频并以内联 Base64 存进 `CrawlResultContent.mediaAssets`，前端详情页可直接预览或下载这些媒体。
+- 为了匹配 crawl4ai _Simple Crawling_ 指南中的新闻监控实践（`docs/md_v2/core/simple-crawling.md`），API 默认会下发 `word_count_threshold=80`、`exclude_external_links=true`、`remove_overlay_elements=true` 与 `process_iframes=true`，同时开放 REST/GraphQL 字段让你细调 `wordCountThreshold`、`textMode`、`captureScreenshot`、`cssSelector` 与 `excludedTags`。多 URL 策略也能逐条重写这些参数，以便首页/文章页套用不同的噪声过滤策略。
+- 对应 crawl4ai _Virtual Scroll_ 能力（`docs/md_v2/advanced/virtual-scroll.md`），任务与策略表单新增 `virtualScroll` 配置（容器选择器、滚动次数、滚动方式、滚动后的等待时间），API 会构造 `VirtualScrollConfig` 并将其附在 `CrawlerRunConfig.virtual_scroll_config`，用于抓取虚拟列表或无限下拉的新闻流。
+- 同样来自 crawl4ai `0.4.1` 版本的 _Dynamic Viewport Adjustment_（`docs/md_v2/blog/releases/0.4.1.md`），控制台与 GraphQL/REST DTO 新增 `adjustViewportToContent` 开关，API 会把该布尔值映射到 `CrawlerRunConfig.adjust_viewport_to_content`，确保对响应式/超长页面自动缩放视口并捕获完整内容；多 URL 策略也可单独覆盖该设置。
 - 如果目标站点启用了 Cloudflare/DataDome 等高强度检测，可勾选 “Undetected browser” 与 “Stealth mode”。这会将 crawl4ai `BrowserConfig` 的 `browser_type` 设为 `undetected` 并启用 `enable_stealth`（官方文档 `docs/md_v2/advanced/undetected-browser.md`），同时把 `magic/simulate_user/override_navigator` 等参数写入 `CrawlerRunConfig`，以更贴近真实用户（光标移动、Navigator 属性伪装等）避免被识别。
-- 参考 crawl4ai 官方 *Managed Browser: Use user-owned browsers with full control, avoiding bot detection*（`docs/md_v2/advanced/identity-based-crawling.md`），我们在 API/控制台新增 “Managed browser” 与 “User data directory” 配置，能够将 `BrowserConfig.use_managed_browser`/`user_data_dir` 传给 Crawl4AI，直接复用你本机登陆后的浏览器 profile（或 BrowserProfiler 导出的路径），让任务以真实身份与指纹执行、降低反爬风险。
-- 参考 crawl4ai 官方 *Full Browser Control: Modify headers, cookies, user agents, and more for tailored crawling setups*（`docs/md_v2/core/browser-crawler-config.md`、`docs/md_v2/assets/llm.txt/txt/config_objects.txt`），控制台新增 “Browser identity” 区块，可配置自定义 Header/Cookie、用户代理（静态或随机生成策略）以及 Locale/Timezone/Geolocation。API 会自动将这些参数映射到 `BrowserConfig` / `CrawlerRunConfig`，便于在需要特定指纹或持久身份的站点执行抓取。
-- 依据 crawl4ai v0.7.4 发布说明中的 *Enhanced Proxy Support*（`docs/blog/release-v0.7.4.md`），创建任务时可在前端表单或 GraphQL 输入中选择字符串代理（`http://user:pass@proxy:8080`、`socks5://...`）或字典代理（`server/username/password` 分离），API 会自动将其映射为 `BrowserConfig.proxy_config`，方便在不同供应商之间切换。
-- 参考 crawl4ai 官方 *Multi-URL Configuration* 文档（`docs/md_v2/advanced/multi-url-crawling.md` / `docs/blog/release-v0.7.3.md`），创建任务时可以在 “Multi-URL strategies” 中声明不同的 URL 列表或匹配模式（glob/regex 等）及其专属 `CrawlerRunConfig` 覆盖，例如为 PDF、API、博客页面配置不同的缓存策略、滚动和提取选项；API 会自动将这些规则映射为 `crawler_configurations` 发送到 Crawl4AI，并在同一批次内抓取多条 URL。
-- 参考 crawl4ai 官方 *Markdown Generation* 指南（`docs/md_v2/core/markdown-generation.md`）与 *Fit Markdown: Heuristic-based filtering to remove noise and irrelevant parts*（`docs/md_v2/core/fit-markdown.md`），创建任务时可配置 `DefaultMarkdownGenerator` 的 `content_source` 与 `options`（忽略链接、逃逸 HTML、Wrap 宽度等）以及 `PruningContentFilter` 的 `threshold/threshold_type/min_word_threshold`；API 会在 `CrawlerRunConfig` 中下发 `markdown_generator`，并在结果详情页展示原始 / 引用 / Fit Markdown，方便在不同渠道复用内容。
-- 参考 crawl4ai 官方 *Enhanced Table Extraction: Direct DataFrame conversion from web tables*（`docs/blog/release-v0.7.3.md`），API 新增 `table_score_threshold` 与 `table_extraction` 映射，控制台提供“Enhanced table extraction”表单用于设置 `DefaultTableExtraction` 的最小行列或切换到 LLM 策略；抓取结果会把 `result.tables` 中的 caption/source/metadata/rows 序列化为 DataFrame-ready JSON，GraphQL/详情页可直接预览并导出表格，便于后续在 Pandas/Viz 中复用。
-- 参考 crawl4ai 官方 *Clean Markdown: Generates clean, structured Markdown with accurate formatting* 实践（`docs/examples/quickstart.ipynb`、`docs/md_v2/core/content-selection.md`），控制台新增 “Clean Markdown” 配置面板，可传递 `css_selector/target_elements/excluded_tags/remove_overlay_elements/word_count_threshold` 到 Crawl4AI 以去除导航/页脚 & 弹层，仅保留满足字数阈值的正文；API 会把 `cleanMarkdown` 写进 `CrawlerRunConfig`，任务详情页还会突出显示 Clean (fit) Markdown 变体。
-- 参考 crawl4ai 官方 *Link Analysis: Extract and analyze all links for detailed data exploration*（`docs/md_v2/core/link-media.md`、`docs/blog/release-v0.7.0.md`），API 现在会根据任务中的 LinkPreviewConfig 为 Crawl4AI 注入 `link_preview_config` + `score_links`，抓取完成后将链接得分、分类统计写入 Mongo。控制台的创建侧栏提供 LinkPreviewConfig 的完整参数（include/exclude patterns、最大链接数、BM25 query、score threshold 等），任务详情页也会聚合展示顶级链接/待关注链接、桶计数和平均内在得分，辅助数据探索。
-- 参考 crawl4ai README 关于 *Memory Monitoring* 的 `MemoryMonitor` 实践，我们从 `/crawl` 响应中读取 `serverMemoryMb/peakMemoryMb/memoryEfficiency`，在后台日志与控制台详情页展示该指标，帮助排查 OOM 或批量任务的资源瓶颈。
+- 参考 crawl4ai 官方 _Managed Browser: Use user-owned browsers with full control, avoiding bot detection_（`docs/md_v2/advanced/identity-based-crawling.md`），我们在 API/控制台新增 “Managed browser” 与 “User data directory” 配置，能够将 `BrowserConfig.use_managed_browser`/`user_data_dir` 传给 Crawl4AI，直接复用你本机登陆后的浏览器 profile（或 BrowserProfiler 导出的路径），让任务以真实身份与指纹执行、降低反爬风险。
+- 参考 crawl4ai 官方 _Full Browser Control: Modify headers, cookies, user agents, and more for tailored crawling setups_（`docs/md_v2/core/browser-crawler-config.md`、`docs/md_v2/assets/llm.txt/txt/config_objects.txt`），控制台新增 “Browser identity” 区块，可配置自定义 Header/Cookie、用户代理（静态或随机生成策略）以及 Locale/Timezone/Geolocation。API 会自动将这些参数映射到 `BrowserConfig` / `CrawlerRunConfig`，便于在需要特定指纹或持久身份的站点执行抓取。
+- 依据 crawl4ai v0.7.4 发布说明中的 _Enhanced Proxy Support_（`docs/blog/release-v0.7.4.md`），创建任务时可在前端表单或 GraphQL 输入中选择字符串代理（`http://user:pass@proxy:8080`、`socks5://...`）或字典代理（`server/username/password` 分离），API 会自动将其映射为 `BrowserConfig.proxy_config`，方便在不同供应商之间切换。
+- 参考 crawl4ai 官方 _Multi-URL Configuration_ 文档（`docs/md_v2/advanced/multi-url-crawling.md` / `docs/blog/release-v0.7.3.md`），创建任务时可以在 “Multi-URL strategies” 中声明不同的 URL 列表或匹配模式（glob/regex 等）及其专属 `CrawlerRunConfig` 覆盖，例如为 PDF、API、博客页面配置不同的缓存策略、滚动和提取选项；API 会自动将这些规则映射为 `crawler_configurations` 发送到 Crawl4AI，并在同一批次内抓取多条 URL。
+- 参考 crawl4ai 官方 _Markdown Generation_ 指南（`docs/md_v2/core/markdown-generation.md`）与 _Fit Markdown: Heuristic-based filtering to remove noise and irrelevant parts_（`docs/md_v2/core/fit-markdown.md`），创建任务时可配置 `DefaultMarkdownGenerator` 的 `content_source` 与 `options`（忽略链接、逃逸 HTML、Wrap 宽度等）以及 `PruningContentFilter` 的 `threshold/threshold_type/min_word_threshold`；API 会在 `CrawlerRunConfig` 中下发 `markdown_generator`，并在结果详情页展示原始 / 引用 / Fit Markdown，方便在不同渠道复用内容。
+- 参考 crawl4ai 官方 _Enhanced Table Extraction: Direct DataFrame conversion from web tables_（`docs/blog/release-v0.7.3.md`），API 新增 `table_score_threshold` 与 `table_extraction` 映射，控制台提供“Enhanced table extraction”表单用于设置 `DefaultTableExtraction` 的最小行列或切换到 LLM 策略；抓取结果会把 `result.tables` 中的 caption/source/metadata/rows 序列化为 DataFrame-ready JSON，GraphQL/详情页可直接预览并导出表格，便于后续在 Pandas/Viz 中复用。
+- 参考 crawl4ai 官方 _Clean Markdown: Generates clean, structured Markdown with accurate formatting_ 实践（`docs/examples/quickstart.ipynb`、`docs/md_v2/core/content-selection.md`），控制台新增 “Clean Markdown” 配置面板，可传递 `css_selector/target_elements/excluded_tags/remove_overlay_elements/word_count_threshold` 到 Crawl4AI 以去除导航/页脚 & 弹层，仅保留满足字数阈值的正文；API 会把 `cleanMarkdown` 写进 `CrawlerRunConfig`，任务详情页还会突出显示 Clean (fit) Markdown 变体。
+- 参考 crawl4ai 官方 _Link Analysis: Extract and analyze all links for detailed data exploration_（`docs/md_v2/core/link-media.md`、`docs/blog/release-v0.7.0.md`），API 现在会根据任务中的 LinkPreviewConfig 为 Crawl4AI 注入 `link_preview_config` + `score_links`，抓取完成后将链接得分、分类统计写入 Mongo。控制台的创建侧栏提供 LinkPreviewConfig 的完整参数（include/exclude patterns、最大链接数、BM25 query、score threshold 等），任务详情页也会聚合展示顶级链接/待关注链接、桶计数和平均内在得分，辅助数据探索。
+- 参考 crawl4ai README 关于 _Memory Monitoring_ 的 `MemoryMonitor` 实践，我们从 `/crawl` 响应中读取 `serverMemoryMb/peakMemoryMb/memoryEfficiency`，在后台日志与控制台详情页展示该指标，帮助排查 OOM 或批量任务的资源瓶颈。
 - 参考 crawl4ai 官方 “Error Handling: Robust error management for seamless execution” 实践（`docs/md_v2/assets/llm.txt/txt/http_based_crawler_strategy.txt` 与 `docs/md_v2/assets/llm.txt/txt/multi_urls_crawling.txt`），API 现会解析 `success/status_code/error_message` 字段，将失败 URL 收集到队列日志，并标记 429/503/timeout 等可重试错误，方便在控制台快速排查与重试部分失败的抓取任务。
-- 参考 crawl4ai 官方 *Dynamic Crawling: Execute JS and wait for async or sync for dynamic content extraction* 指南（`docs/md_v2/advanced/session-management.md` 与 `docs/md_v2/assets/llm.txt/txt/config_objects.txt`），API 与控制台现支持为基础任务或 Multi-URL 策略注入 `js_code/js_only/wait_for/wait_for_timeout`。可在抓取前执行自定义 JavaScript（滚动、点击“加载更多”）并等待 CSS 选择器或 JS 条件达成后再返回 Markdown，解决瀑布流、懒加载页面内容缺失的问题。
-- 参考 crawl4ai 官方 *Session Management: Preserve browser states and reuse them for multi-step crawling*（`docs/md_v2/advanced/session-management.md`）以及 *Storage State tutorial*（`docs/examples/storage_state_tutorial.md`）的实践，任务表单新增 “Session management” 区块。可以在 API 请求中注入 `session_id`（复用同一 Playwright 浏览器标签）与 `storage_state`（粘贴 cookies/localStorage JSON 或服务器上的 state 文件路径），方便处理需要先登录/多步跳转的站点，并支持在任务详情页回显已保存的会话参数。
-- 参考 crawl4ai 官方 *Media Support: Extract images, audio, videos, and responsive image formats like srcset and picture*（`docs/md_v2/core/link-media.md`、`docs/md_v2/core/crawler-result.md`），API 现在可在任务创建时开启 “Store media assets” 选项来持久化 `result.media`，并在控制台结果详情中渲染图像/音视频缩略图、srcset 与 picture source 等响应式信息，辅助核对素材抓取质量。
-- 参考 crawl4ai 官方 *Metadata Extraction: Retrieve structured metadata from web pages* 能力（`docs/md_v2/core/url-seeding.md`、`docs/md_v2/assets/llm.txt/txt/url_seeder.txt`），新增 “Metadata extraction” 预览卡片。后端提供 `POST /api/crawl-tasks/metadata` 与 GraphQL `crawlMetadata` 查询，使用 sitemap seeding + `<head>` 解析提取 title/description/keywords/Open Graph/JSON-LD，并支持 query + score threshold 过滤。前端可在不排队 crawl 任务的前提下先评估站点的元数据质量，辅助调参。
+- 参考 crawl4ai 官方 _Dynamic Crawling: Execute JS and wait for async or sync for dynamic content extraction_ 指南（`docs/md_v2/advanced/session-management.md` 与 `docs/md_v2/assets/llm.txt/txt/config_objects.txt`），API 与控制台现支持为基础任务或 Multi-URL 策略注入 `js_code/js_only/wait_for/wait_for_timeout`。可在抓取前执行自定义 JavaScript（滚动、点击“加载更多”）并等待 CSS 选择器或 JS 条件达成后再返回 Markdown，解决瀑布流、懒加载页面内容缺失的问题。
+- 参考 crawl4ai 官方 _Session Management: Preserve browser states and reuse them for multi-step crawling_（`docs/md_v2/advanced/session-management.md`）以及 _Storage State tutorial_（`docs/examples/storage_state_tutorial.md`）的实践，任务表单新增 “Session management” 区块。可以在 API 请求中注入 `session_id`（复用同一 Playwright 浏览器标签）与 `storage_state`（粘贴 cookies/localStorage JSON 或服务器上的 state 文件路径），方便处理需要先登录/多步跳转的站点，并支持在任务详情页回显已保存的会话参数。
+- 参考 crawl4ai 官方 _Media Support: Extract images, audio, videos, and responsive image formats like srcset and picture_（`docs/md_v2/core/link-media.md`、`docs/md_v2/core/crawler-result.md`），API 现在可在任务创建时开启 “Store media assets” 选项来持久化 `result.media`，并在控制台结果详情中渲染图像/音视频缩略图、srcset 与 picture source 等响应式信息，辅助核对素材抓取质量。
+- 参考 crawl4ai 官方 _Metadata Extraction: Retrieve structured metadata from web pages_ 能力（`docs/md_v2/core/url-seeding.md`、`docs/md_v2/assets/llm.txt/txt/url_seeder.txt`），新增 “Metadata extraction” 预览卡片。后端提供 `POST /api/crawl-tasks/metadata` 与 GraphQL `crawlMetadata` 查询，使用 sitemap seeding + `<head>` 解析提取 title/description/keywords/Open Graph/JSON-LD，并支持 query + score threshold 过滤。前端可在不排队 crawl 任务的前提下先评估站点的元数据质量，辅助调参。
 
 ## 测试
 
@@ -126,8 +128,8 @@ infra/
 
 - BullMQ `itemPipeline` 队列现已对接 `NewsPipelineService`：任意 `items` API/GraphQL 创建的原始 payload 只要包含 `url`，就会依次完成 Crawl4AI 去重抓取、LiteLLM 清洗、Zod 校验与 `ProcessedItemModel` 存储。抓取/LLM/持久化三个阶段的日志会写入 `TaskLogModel`，可在仪表盘查看。
 - LiteLLM 与 Crawl4AI 的高级参数集中在 `config/news-pipeline.config.yaml`。文件按照 `litellm_config` 与 `crawl4ai_config` 分区，支持模型 fallback、RPM 限流、virtual scroll、cleanMarkdown CSS 选择器等，修改后会被 `NewsPipelineConfigService` 热加载。若需多环境覆盖，可通过 `NEWS_PIPELINE_CONFIG_PATH` 指向自定义文件。
-- 新增环境变量：`LITELLM_MODEL`、`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_TIMEOUT_MS`、`LITELLM_TEMPERATURE`、`LITELLM_TOP_P`、`LITELLM_MAX_OUTPUT_TOKENS`、`LITELLM_MAX_RETRIES`、`LITELLM_FALLBACK_MODELS`、`LITELLM_REQUESTS_PER_MINUTE`、`NEWS_PIPELINE_CACHE_TTL_SECONDS`、`NEWS_PIPELINE_MAX_INPUT_CHARS` 和 `NEWS_PIPELINE_CONFIG_PATH`。`pnpm --filter infra-scripts run env:check` 会同时校验。
-- LiteLLM 调用走统一的 `LiteLlmService.acompletion`，包含 Redis RPM 限流、指数退避重试与模型级 fallback。模型输出由 `CleanedNewsSchema` 验证，字段涵盖 `title/content/publish_time/source`、高亮摘要、关键词、段落结构以及 token 用量。`ProcessedItemModel` 还会记录 Crawl4AI runId、缓存命中与源域名，前端 `items` 详情页能够直接消费。
+- 新增环境变量：`LITELLM_MODEL`、`LITELLM_API_URL`、`LITELLM_API_KEY`、`LITELLM_TIMEOUT_MS`、`LITELLM_TEMPERATURE`、`LITELLM_TOP_P`、`LITELLM_MAX_TOKENS`、`LITELLM_RETRY_ATTEMPTS`、`LITELLM_FALLBACK_MODELS`、`LITELLM_REQUESTS_PER_MINUTE`、`NEWS_PIPELINE_CACHE_TTL_SECONDS`、`NEWS_PIPELINE_MAX_INPUT_CHARS`、`NEWS_PIPELINE_CONFIG_PATH`、`NEWS_CRAWL_QUEUE_CONCURRENCY`、`NEWS_PROCESS_QUEUE_CONCURRENCY`、`NEWS_CRAWL_QUEUE_RATE_LIMIT`、`NEWS_PROCESS_QUEUE_RATE_LIMIT`。`pnpm --filter infra-scripts run env:check` 会同时校验。
+- LiteLLM 调用走统一的 `LiteLlmService.acompletion`，包含 Redis RPM 限流、指数退避重试与模型级 fallback。模型输出由新版 `CleanedNewsSchema` 验证，字段涵盖标题、副标题、分类、主题、200~300 字摘要、要点、实体、噪声类型与质量分；同时以 [LiteLLM 成本追踪回调](https://docs.litellm.ai/docs/observability/custom_callback) 为参考记录 token 使用量、`costUsd` 与 `latencyMs`（相关缺陷修复见 [v1.74.0 release notes](https://docs.litellm.ai/release_notes/v1-74-0-stable)），方便后续预算/Guardrail。
 - Crawl4AI 结果默认缓存到 Redis（TTL 由 `NEWS_PIPELINE_CACHE_TTL_SECONDS` 控制），重复 URL 不会再次耗费 Token。若在 payload 中设置 `forceRefresh: true` 可强制重新抓取；LiteLLM 解析失败时队列会抛错并写入 `TaskLogModel`，方便追踪问题。
 
 ## TODO 与扩展点

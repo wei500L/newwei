@@ -1,8 +1,10 @@
+import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import axios, { AxiosError, AxiosInstance } from "axios";
 import { setTimeout as sleep } from "node:timers/promises";
-import { createLogger } from "@modular/utils";
+
 import { RateLimiterService } from "../cache/rate-limiter.service";
+
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
 
@@ -49,6 +51,9 @@ export interface LiteLlmCompletionResponse {
   created: number;
   choices: LiteLlmCompletionChoice[];
   usage?: LiteLlmCompletionResponseUsage;
+  response_cost?: number;
+  costUsd?: number;
+  latencyMs?: number;
 }
 
 @Injectable()
@@ -59,17 +64,23 @@ export class LiteLlmService {
 
   constructor(
     private readonly configService: NewsPipelineConfigService,
-    private readonly rateLimiter: RateLimiterService
+    private readonly rateLimiter: RateLimiterService,
   ) {
     this.currentBaseUrl = "";
     this.client = this.buildClient();
   }
 
-  async acompletion(params: LiteLlmCompletionParams): Promise<LiteLlmCompletionResponse> {
+  async acompletion(
+    params: LiteLlmCompletionParams,
+  ): Promise<LiteLlmCompletionResponse> {
     await this.enforceRateLimit();
     const cfg = this.configService.config.litellm;
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
-    const uniqueModels = Array.from(new Set(models.filter((model) => typeof model === "string" && model.length > 0)));
+    const uniqueModels = Array.from(
+      new Set(
+        models.filter((model) => typeof model === "string" && model.length > 0),
+      ),
+    );
     let lastError: unknown;
     for (const model of uniqueModels) {
       try {
@@ -79,16 +90,21 @@ export class LiteLlmService {
         this.logger.warn(
           {
             model,
-            message: error instanceof Error ? error.message : "unknown error"
+            message: error instanceof Error ? error.message : "unknown error",
           },
-          "LiteLLM completion failed; evaluating fallback"
+          "LiteLLM completion failed; evaluating fallback",
         );
       }
     }
-    throw lastError instanceof Error ? lastError : new Error("LiteLLM completion failed");
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("LiteLLM completion failed");
   }
 
-  private async executeWithRetry(model: string, params: LiteLlmCompletionParams) {
+  private async executeWithRetry(
+    model: string,
+    params: LiteLlmCompletionParams,
+  ) {
     const cfg = this.configService.config.litellm;
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
@@ -105,12 +121,35 @@ export class LiteLlmService {
           max_tokens: params.max_tokens ?? cfg.maxOutputTokens,
           response_format: params.response_format ?? undefined,
           stream: cfg.stream,
-          metadata: params.metadata
+          metadata: params.metadata,
         };
-        const response = await this.client.post<LiteLlmCompletionResponse>("/v1/chat/completions", payload, {
-          timeout: params.timeoutMs ?? cfg.timeoutMs
-        });
-        return response.data;
+        const start = Date.now();
+        const response = await this.client.post<LiteLlmCompletionResponse>(
+          "/v1/chat/completions",
+          payload,
+          {
+            timeout: params.timeoutMs ?? cfg.timeoutMs,
+          },
+        );
+        const latencyMs = Date.now() - start;
+        const headerCost = this.extractHeaderCost(
+          response.headers?.["x-litellm-cost"] ??
+            response.headers?.["litellm-cost"],
+        );
+        const payloadCost = this.extractHeaderCost(
+          (response.data as Record<string, unknown>).response_cost,
+        );
+        const usageCost = this.extractHeaderCost(
+          response.data.usage
+            ? (response.data.usage as Record<string, unknown>).response_cost
+            : undefined,
+        );
+        const costUsd = headerCost ?? payloadCost ?? usageCost;
+        return {
+          ...response.data,
+          costUsd: costUsd ?? undefined,
+          latencyMs,
+        } satisfies LiteLlmCompletionResponse;
       } catch (error) {
         lastError = error;
         attempt += 1;
@@ -122,7 +161,9 @@ export class LiteLlmService {
       }
     }
 
-    throw lastError instanceof Error ? lastError : new Error("LiteLLM completion exhausted retries");
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("LiteLLM completion exhausted retries");
   }
 
   private isRetryable(error: unknown) {
@@ -130,7 +171,9 @@ export class LiteLlmService {
       return false;
     }
     const status = error.response?.status;
-    return !status || [408, 409, 423, 425, 429, 500, 502, 503, 504].includes(status);
+    return (
+      !status || [408, 409, 423, 425, 429, 500, 502, 503, 504].includes(status)
+    );
   }
 
   private buildClient() {
@@ -141,8 +184,8 @@ export class LiteLlmService {
       timeout: cfg.timeoutMs,
       headers: {
         "Content-Type": "application/json",
-        ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {})
-      }
+        ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}),
+      },
     });
   }
 
@@ -152,7 +195,7 @@ export class LiteLlmService {
     const allowed = await this.rateLimiter.consume(
       limitKey,
       cfg.litellm.requestsPerMinute,
-      cfg.pipeline.rateLimitWindowSeconds
+      cfg.pipeline.rateLimitWindowSeconds,
     );
     if (!allowed) {
       throw new Error("LiteLLM request throttled by local rate limiter");
@@ -161,5 +204,16 @@ export class LiteLlmService {
     if (base !== this.currentBaseUrl) {
       this.client = this.buildClient();
     }
+  }
+
+  private extractHeaderCost(value: unknown) {
+    if (typeof value === "string") {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    return undefined;
   }
 }

@@ -163,6 +163,130 @@ enum CrawlTaskStatus {
   paused
 }
 
+model NewsSource {
+  id               String          @id @default(cuid())
+  org              Org             @relation(fields: [orgId], references: [id])
+  orgId            String
+  name             String
+  url              String
+  siteType         NewsSourceType  @default(general)
+  language         String?
+  frequencySeconds Int             @default(3600)
+  priority         Int             @default(0)
+  isActive         Boolean         @default(true)
+  config           Json?
+  lastRunAt        DateTime?
+  nextRunAt        DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  jobs     PipelineJob[]
+  articles Article[]
+
+  @@unique([orgId, url])
+}
+
+model PipelineJob {
+  id           String            @id @default(cuid())
+  org          Org               @relation(fields: [orgId], references: [id])
+  orgId        String
+  source       NewsSource?       @relation(fields: [sourceId], references: [id])
+  sourceId     String?
+  url          String
+  priority     Int               @default(0)
+  status       PipelineJobStatus @default(pending)
+  queueName    String            @default("crawl-queue")
+  scheduledFor DateTime?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  attempts     Int               @default(0)
+  error        String?
+  crawlRunId   String?
+  article      Article?          @relation(fields: [articleId], references: [id])
+  articleId    String?
+  metadata     Json?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([orgId, status])
+  @@index([queueName, status])
+  @@index([sourceId, createdAt])
+}
+
+model Article {
+  id          String        @id @default(cuid())
+  org         Org           @relation(fields: [orgId], references: [id])
+  orgId       String
+  source      NewsSource?   @relation(fields: [sourceId], references: [id])
+  sourceId    String?
+  url         String
+  sourceLabel String?
+  language    String?
+  titleGuess  String?
+  crawlAt     DateTime
+  contentHash String        @unique
+  markdownRef String?
+  version     Int           @default(1)
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  jobs      PipelineJob[]
+  processed ProcessedArticle?
+
+  @@unique([url, contentHash])
+  @@index([orgId, sourceId, crawlAt])
+}
+
+model ProcessedArticle {
+  id                 String   @id @default(cuid())
+  article            Article  @relation(fields: [articleId], references: [id])
+  articleId          String   @unique
+  title              String?
+  subtitle           String?
+  author             String?
+  source             String?
+  publishedAt        DateTime?
+  category           String?
+  topics             Json?
+  summary            String?
+  keyPoints          Json?
+  entities           Json?
+  cleanedMarkdownRef String?
+  removedNoiseTypes  Json?
+  qualityScore       Float?
+  llmModel           String?
+  llmPromptVersion   String?
+  language           String?
+  location           String?
+  promptTokens       Int?
+  completionTokens   Int?
+  totalTokens        Int?
+  costUsd            Float?
+  latencyMs          Int?
+  createdAt          DateTime @default(now())
+  processedAt        DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+enum NewsSourceType {
+  general
+  finance
+  technology
+  politics
+  regulatory
+  other
+}
+
+enum PipelineJobStatus {
+  pending
+  queued
+  running
+  completed
+  failed
+  delayed
+}
+
 model RefreshToken {
   id          String   @id @default(cuid())
   user        User     @relation(fields: [userId], references: [id])

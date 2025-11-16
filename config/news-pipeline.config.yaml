@@ -1,12 +1,12 @@
 litellm_config:
   model: openai/gpt-4o-mini
-  api_base: http://localhost:4001
+  api_url: http://localhost:4001
   api_key: ""
   timeout_ms: 60000
   temperature: 0.2
   top_p: 0.9
-  max_output_tokens: 1200
-  max_retries: 3
+  max_tokens: 1200
+  retry_attempts: 3
   fallback_models:
     - anthropic/claude-3-haiku
     - openai/gpt-4o-mini

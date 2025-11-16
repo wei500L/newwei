@@ -21,14 +21,19 @@ export interface JsonSchemaResponseFormat {
 @Injectable()
 export class NewsPromptBuilder {
   buildSystemPrompt(language?: string) {
-    const languageHint = language ? `Use ${language} for the final output.` : "";
+    const languageHint = language
+      ? `All free-text fields should use ${language}.`
+      : "";
     return [
-      "You are a news sanitation assistant embedded in an ingestion pipeline.",
-      "Return concise JSON that keeps the article body faithful to the source while removing navigation bars, ads, footers, reactions, comment counts, share prompts, newsletter embeds, or unrelated recommendations.",
-      "Normalize whitespace, keep paragraphs separated by double line breaks, and include bullet lists with '- ' prefixes.",
-      "Preserve the article ordering, figure captions, block quotes, and inline code snippets.",
-      "If the story lacks a clear body, return status='error' with an explanatory message instead of empty content.",
-      languageHint
+      "You are part of a news normalization pipeline that outputs structured JSON.",
+      "Strip navigation, footers, legal boilerplate, promos, and unrelated recommendations while keeping facts, quotes, figures, and emphasis.",
+      "Summaries must be 200-300 Chinese characters describing who/what/when/where/why.",
+      "Return 5-8 key_points as single-sentence bullets emphasizing chronology, numbers, and impact.",
+      "Entities must include type (person/org/location/product/index/policy/other) and confidence 0-1.",
+      "Set removed_noise_types to the categories you deleted (e.g., footer, nav, ads).",
+      "quality_score is a decimal 0-1 reflecting completeness, readability, and de-noising success.",
+      "Use null for fields you cannot infer, never omit required properties.",
+      languageHint,
     ]
       .filter(Boolean)
       .join(" ");
@@ -39,11 +44,15 @@ export class NewsPromptBuilder {
       `URL: ${input.url}`,
       `Cache hit: ${input.cacheHit ? "yes" : "no"}`,
       input.metadata ? `Metadata: ${JSON.stringify(input.metadata)}` : "",
-      input.keywords.length > 0 ? `Focus topics: ${input.keywords.join(", ")}` : "",
-      input.summaryHints.length > 0 ? `Summary hints: ${input.summaryHints.join("; ")}` : "",
+      input.keywords.length > 0
+        ? `Focus topics: ${input.keywords.join(", ")}`
+        : "",
+      input.summaryHints.length > 0
+        ? `Summary hints: ${input.summaryHints.join("; ")}`
+        : "",
       "",
       "Clean this markdown while keeping only the newsworthy sections:",
-      input.markdown
+      input.markdown,
     ];
     return pieces.filter(Boolean).join("\n");
   }
@@ -55,83 +64,87 @@ export class NewsPromptBuilder {
         name: "clean_news_payload",
         schema: {
           type: "object",
-          required: ["status", "title", "content", "source"],
+          required: [
+            "title",
+            "summary",
+            "key_points",
+            "cleaned_markdown",
+            "removed_noise_types",
+            "quality_score",
+          ],
           additionalProperties: false,
           properties: {
-            status: {
-              type: "string",
-              enum: ["ok", "error"],
-              description: "Mark error when the article body cannot be extracted."
-            },
             title: {
-              type: "string",
-              description: "Readable headline without site suffixes."
-            },
-            content: {
-              type: "string",
-              description: "Markdown body stripped of navigation, ads, paywall notices, share prompts, and comments."
-            },
-            publish_time: {
               type: ["string", "null"],
-              description: "ISO8601 timestamp if available."
-            },
-            publish_timezone: {
-              type: ["string", "null"]
+              description: "Readable headline without site suffixes.",
             },
             author: {
-              type: ["string", "null"]
+              type: ["string", "null"],
             },
             source: {
-              type: "object",
-              required: ["url"],
-              additionalProperties: false,
-              properties: {
-                url: { type: "string" },
-                name: { type: ["string", "null"] },
-                domain: { type: ["string", "null"] }
-              }
+              type: ["string", "null"],
+              description: "Publisher or channel name.",
             },
+            subtitle: { type: ["string", "null"] },
+            published_at: {
+              type: ["string", "null"],
+              description: "ISO8601 timestamp.",
+            },
+            language: { type: ["string", "null"] },
+            location: {
+              type: ["string", "null"],
+              description: "City/region if mentioned.",
+            },
+            category: { type: ["string", "null"] },
             summary: {
               type: ["string", "null"],
-              description: "3-4 sentence abstract of the article."
+              description:
+                "200-300 Chinese characters covering who/what/when/where/why.",
             },
-            highlights: {
+            key_points: {
+              type: "array",
+              minItems: 5,
+              maxItems: 8,
+              items: { type: "string" },
+              description: "Chronological bullet points with data/impact.",
+            },
+            topics: {
               type: "array",
               items: { type: "string" },
-              description: "Key bullet points, ordered by importance."
+              description: "Key tags / sectors.",
             },
-            keywords: {
-              type: "array",
-              items: { type: "string" },
-              description: "Important topical keywords."
-            },
-            sentiment: {
-              type: ["string", "null"],
-              description: "Optional tone classification such as neutral/positive/negative."
-            },
-            sections: {
+            entities: {
               type: "array",
               items: {
                 type: "object",
-                required: ["body"],
+                required: ["name", "type", "confidence"],
                 properties: {
-                  heading: { type: ["string", "null"] },
-                  body: { type: "string" }
-                }
-              }
+                  name: { type: "string" },
+                  type: { type: "string" },
+                  confidence: { type: "number", minimum: 0, maximum: 1 },
+                },
+              },
             },
-            metadata: {
-              type: "object",
-              description: "Optional structured hints such as tickers, geographies, languages.",
-              additionalProperties: true
+            cleaned_markdown: {
+              type: "string",
+              description: "Noise-free markdown body.",
             },
-            error: {
-              type: ["string", "null"],
-              description: "Populate when status=error."
-            }
-          }
-        }
-      }
+            removed_noise_types: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "List of noise categories removed (e.g., footer, nav, ads).",
+            },
+            quality_score: {
+              type: ["number", "null"],
+              minimum: 0,
+              maximum: 1,
+            },
+            llm_model: { type: ["string", "null"] },
+            llm_prompt_version: { type: ["string", "null"] },
+          },
+        },
+      },
     };
   }
 }

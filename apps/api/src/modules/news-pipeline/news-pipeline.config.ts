@@ -2,13 +2,18 @@ import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { existsSync, readFileSync, unwatchFile, watchFile } from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
-import { EnvService, LiteLlmEnvConfig, NewsPipelineEnvConfig } from "../config/config.service";
+
+import {
+  EnvService,
+  LiteLlmEnvConfig,
+  NewsPipelineEnvConfig,
+} from "../config/config.service";
 import {
   CrawlCleanMarkdownOptions,
   CrawlMarkdownOptions,
   CrawlTaskOptions,
   CrawlVirtualScrollConfig,
-  CrawlVirtualScrollMode
+  CrawlVirtualScrollMode,
 } from "../crawl/crawl.types";
 
 export interface LiteLlmConfig extends LiteLlmEnvConfig {
@@ -27,7 +32,8 @@ export interface Crawl4aiPipelineConfig {
   virtualScroll?: CrawlVirtualScrollConfig;
 }
 
-export interface PipelineRuntimeConfig extends Omit<NewsPipelineEnvConfig, "configPath"> {
+export interface PipelineRuntimeConfig
+  extends Omit<NewsPipelineEnvConfig, "configPath"> {
   summaryMaxTokens: number;
   rateLimitWindowSeconds: number;
   allowMediaEmbedding: boolean;
@@ -63,7 +69,10 @@ interface Crawl4aiFileConfig {
   markdown?: CrawlMarkdownOptions;
   clean_markdown?: CrawlCleanMarkdownOptions;
   crawler_defaults?: CrawlTaskOptions;
-  virtual_scroll?: CrawlVirtualScrollConfig & { enabled?: boolean; scroll_by?: CrawlVirtualScrollMode };
+  virtual_scroll?: CrawlVirtualScrollConfig & {
+    enabled?: boolean;
+    scroll_by?: CrawlVirtualScrollMode;
+  };
 }
 
 interface PipelineFileConfig {
@@ -95,9 +104,14 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
     this.watcherHandler = () => {
       try {
         this.currentConfig = this.loadFromDisk();
-        this.logger.log(`Reloaded news pipeline config from ${this.configPath}`);
+        this.logger.log(
+          `Reloaded news pipeline config from ${this.configPath}`,
+        );
       } catch (error) {
-        this.logger.error("Failed to reload news pipeline config", error as Error);
+        this.logger.error(
+          "Failed to reload news pipeline config",
+          error as Error,
+        );
       }
     };
     this.registerWatcherIfExists();
@@ -131,7 +145,9 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
 
   private registerWatcherIfExists() {
     if (!existsSync(this.configPath)) {
-      this.logger.warn(`News pipeline config file missing at ${this.configPath}; using defaults/ENV overrides.`);
+      this.logger.warn(
+        `News pipeline config file missing at ${this.configPath}; using defaults/ENV overrides.`,
+      );
       return;
     }
     watchFile(this.configPath, { interval: 5_000 }, this.watcherHandler);
@@ -145,7 +161,9 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
         const file = readFileSync(this.configPath, "utf8");
         rawConfig = (parse(file) as PipelineConfigFile) ?? {};
       } catch (error) {
-        this.logger.warn(`Failed parsing news pipeline config at ${this.configPath}: ${(error as Error).message}`);
+        this.logger.warn(
+          `Failed parsing news pipeline config at ${this.configPath}: ${(error as Error).message}`,
+        );
       }
     }
     return this.normalizeConfig(rawConfig);
@@ -155,7 +173,7 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
     return {
       litellm: this.normalizeLiteLlmConfig(raw.litellm_config),
       crawl4ai: this.normalizeCrawlConfig(raw.crawl4ai_config),
-      pipeline: this.normalizePipelineConfig(raw.pipeline)
+      pipeline: this.normalizePipelineConfig(raw.pipeline),
     };
   }
 
@@ -164,30 +182,44 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
     const fallbackModels =
       envConfig.fallbackModels.length > 0
         ? envConfig.fallbackModels
-        : raw?.fallback_models?.filter((entry) => typeof entry === "string" && entry.length > 0) ?? [];
+        : (raw?.fallback_models?.filter(
+            (entry) => typeof entry === "string" && entry.length > 0,
+          ) ?? []);
+    const apiBase = raw?.api_url ?? raw?.api_base ?? envConfig.apiBase;
+    const maxTokens = raw?.max_tokens ?? raw?.max_output_tokens;
+    const retryAttempts = raw?.retry_attempts ?? raw?.max_retries;
     return {
       model: raw?.model ?? envConfig.model,
-      apiBase: raw?.api_base ?? envConfig.apiBase,
+      apiBase,
       apiKey: envConfig.apiKey ?? raw?.api_key,
       timeoutMs: this.ensurePositive(raw?.timeout_ms, envConfig.timeoutMs),
       temperature: this.clamp(raw?.temperature ?? envConfig.temperature, 0, 2),
       topP: this.clamp(raw?.top_p ?? envConfig.topP, 0, 1),
-      maxOutputTokens: this.ensurePositive(raw?.max_output_tokens, envConfig.maxOutputTokens),
-      maxRetries: this.ensurePositiveInt(raw?.max_retries, envConfig.maxRetries),
+      maxOutputTokens: this.ensurePositive(
+        maxTokens,
+        envConfig.maxOutputTokens,
+      ),
+      maxRetries: this.ensurePositiveInt(retryAttempts, envConfig.maxRetries),
       fallbackModels,
-      requestsPerMinute: this.ensurePositiveInt(raw?.requests_per_minute, envConfig.requestsPerMinute),
+      requestsPerMinute: this.ensurePositiveInt(
+        raw?.requests_per_minute,
+        envConfig.requestsPerMinute,
+      ),
       stream: raw?.stream ?? false,
-      responseFormat: raw?.response_format ?? "json_schema"
+      responseFormat: raw?.response_format ?? "json_schema",
     };
   }
 
-  private normalizeCrawlConfig(raw?: Crawl4aiFileConfig): Crawl4aiPipelineConfig {
+  private normalizeCrawlConfig(
+    raw?: Crawl4aiFileConfig,
+  ): Crawl4aiPipelineConfig {
     const crawlEnv = this.env.crawl4aiConfig;
     const markdown = raw?.markdown;
     const cleanMarkdown = raw?.clean_markdown;
     const crawlerDefaults = {
       scanFullPage: raw?.crawler_defaults?.scanFullPage ?? true,
-      adjustViewportToContent: raw?.crawler_defaults?.adjustViewportToContent ?? true,
+      adjustViewportToContent:
+        raw?.crawler_defaults?.adjustViewportToContent ?? true,
       waitForImages: raw?.crawler_defaults?.waitForImages ?? true,
       excludeExternalLinks: raw?.crawler_defaults?.excludeExternalLinks ?? true,
       processIframes: raw?.crawler_defaults?.processIframes ?? true,
@@ -197,10 +229,12 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
       wordCountThreshold: raw?.crawler_defaults?.wordCountThreshold ?? 120,
       cleanMarkdown,
       markdownOptions: markdown,
-      virtualScroll: raw?.virtual_scroll?.enabled ? this.normalizeVirtualScroll(raw.virtual_scroll) : undefined,
+      virtualScroll: raw?.virtual_scroll?.enabled
+        ? this.normalizeVirtualScroll(raw.virtual_scroll)
+        : undefined,
       captureScreenshot: raw?.crawler_defaults?.captureScreenshot ?? false,
       simulateUser: raw?.crawler_defaults?.simulateUser ?? true,
-      overrideNavigator: raw?.crawler_defaults?.overrideNavigator ?? true
+      overrideNavigator: raw?.crawler_defaults?.overrideNavigator ?? true,
     } satisfies CrawlTaskOptions;
 
     return {
@@ -208,35 +242,58 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
         typeof raw?.user_agent === "string" && raw.user_agent.length > 5
           ? raw.user_agent
           : "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
-      maxConcurrent: this.ensurePositiveInt(raw?.max_concurrent, crawlEnv.maxConcurrency),
+      maxConcurrent: this.ensurePositiveInt(
+        raw?.max_concurrent,
+        crawlEnv.maxConcurrency,
+      ),
       timeoutMs: this.ensurePositive(raw?.timeout_ms, crawlEnv.timeoutMs),
-      keywordMatchThreshold: this.clamp(raw?.keyword_match_threshold ?? 0.55, 0, 1),
+      keywordMatchThreshold: this.clamp(
+        raw?.keyword_match_threshold ?? 0.55,
+        0,
+        1,
+      ),
       markdown,
       cleanMarkdown,
       crawlerDefaults,
-      virtualScroll: crawlerDefaults.virtualScroll
+      virtualScroll: crawlerDefaults.virtualScroll,
     };
   }
 
-  private normalizeVirtualScroll(config: CrawlVirtualScrollConfig & { scroll_by?: CrawlVirtualScrollMode }) {
+  private normalizeVirtualScroll(
+    config: CrawlVirtualScrollConfig & { scroll_by?: CrawlVirtualScrollMode },
+  ) {
     return {
       containerSelector: config.containerSelector ?? "body",
       scrollCount: this.ensurePositiveInt(config.scrollCount, 3),
-      scrollBy: config.scroll_by ?? config.scrollBy ?? ("viewport" as CrawlVirtualScrollMode),
-      waitAfterScrollMs: this.ensurePositive(config.waitAfterScrollMs, 600)
+      scrollBy:
+        config.scroll_by ??
+        config.scrollBy ??
+        ("viewport" as CrawlVirtualScrollMode),
+      waitAfterScrollMs: this.ensurePositive(config.waitAfterScrollMs, 600),
     };
   }
 
-  private normalizePipelineConfig(raw?: PipelineFileConfig): PipelineRuntimeConfig {
+  private normalizePipelineConfig(
+    raw?: PipelineFileConfig,
+  ): PipelineRuntimeConfig {
     const envConfig = this.env.newsPipelineEnv;
     return {
-      cacheTtlSeconds: this.ensurePositiveInt(raw?.cache_ttl_seconds, envConfig.cacheTtlSeconds),
-      maxInputChars: this.ensurePositiveInt(raw?.max_input_characters, envConfig.maxInputChars),
+      cacheTtlSeconds: this.ensurePositiveInt(
+        raw?.cache_ttl_seconds,
+        envConfig.cacheTtlSeconds,
+      ),
+      maxInputChars: this.ensurePositiveInt(
+        raw?.max_input_characters,
+        envConfig.maxInputChars,
+      ),
       summaryMaxTokens: this.ensurePositiveInt(raw?.summary_max_tokens, 256),
-      rateLimitWindowSeconds: this.ensurePositiveInt(raw?.rate_limit_window_seconds, 60),
+      rateLimitWindowSeconds: this.ensurePositiveInt(
+        raw?.rate_limit_window_seconds,
+        60,
+      ),
       allowMediaEmbedding: raw?.allow_media_embedding ?? true,
       detectLanguage: raw?.detect_language ?? true,
-      configPath: envConfig.configPath
+      configPath: envConfig.configPath,
     };
   }
 

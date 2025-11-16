@@ -16,7 +16,7 @@ describe("NewsPromptBuilder", () => {
       keywords: ["ai", "policy"],
       summaryHints: ["focus on regulation"],
       language: "en",
-      cacheHit: false
+      cacheHit: false,
     });
     expect(prompt).toContain("https://example.com/story");
     expect(prompt).toContain("focus on regulation");
@@ -29,7 +29,8 @@ describe("NewsPromptBuilder", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const schema = (format.json_schema.schema as any)?.properties;
     expect(schema.title).toBeDefined();
-    expect(schema.content).toBeDefined();
-    expect(schema.source).toBeDefined();
+    expect(schema.cleaned_markdown).toBeDefined();
+    expect(schema.key_points).toBeDefined();
+    expect(schema.removed_noise_types).toBeDefined();
   });
 });
