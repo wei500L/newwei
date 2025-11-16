@@ -1,12 +1,22 @@
-import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { Worker } from "bullmq";
-import { createLogger } from "@modular/utils";
 import { RawItemModel, TaskLogModel } from "@modular/mongo";
-import { EnvService } from "../config/config.service";
-import { ITEM_PIPELINE_QUEUE_NAME, PIPELINE_QUEUE } from "./queue.module";
+import { createLogger } from "@modular/utils";
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
+import { Worker } from "bullmq";
 import type { Queue } from "bullmq";
+
+import { EnvService } from "../config/config.service";
 import { NewsPipelineService } from "../news-pipeline/news-pipeline.service";
-import type { PipelineJobContext, RawPipelineItem } from "../news-pipeline/news-pipeline.types";
+import type {
+  PipelineJobContext,
+  RawPipelineItem,
+} from "../news-pipeline/news-pipeline.types";
+
+import { ITEM_PIPELINE_QUEUE_NAME, PIPELINE_QUEUE } from "./queue.module";
 
 const logger = createLogger({ name: "queue" });
 
@@ -17,7 +27,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(PIPELINE_QUEUE) private readonly queue: Queue,
     private readonly env: EnvService,
-    private readonly pipeline: NewsPipelineService
+    private readonly pipeline: NewsPipelineService,
   ) {}
 
   async onModuleInit() {
@@ -39,7 +49,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
             stage: "dedupe",
             status: "failed",
             message: "Raw item not found",
-            data: job.data
+            data: job.data,
           });
           throw new Error("Raw item not found");
         }
@@ -50,20 +60,20 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           stage: "dedupe",
           status: "completed",
           message: "Item deduplicated",
-          data: { itemMetaId }
+          data: { itemMetaId },
         });
 
         const pipelineJob: PipelineJobContext = {
           queue: ITEM_PIPELINE_QUEUE_NAME,
           jobId: job.id ? String(job.id) : "",
           itemMetaId,
-          rawItemId
+          rawItemId,
         };
         const rawPayload: RawPipelineItem = {
           id: rawItem._id.toString(),
           itemMetaId,
           payload: rawItem.payload,
-          source: rawItem.source ?? undefined
+          source: rawItem.source ?? undefined,
         };
 
         const processed = await this.pipeline.process(pipelineJob, rawPayload);
@@ -73,7 +83,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           jobId: job.id,
           stage: "complete",
           status: "completed",
-          data: { processedId: processed.id ?? rawItemId }
+          data: { processedId: processed.id ?? rawItemId },
         });
 
         return processed;
@@ -83,10 +93,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           host: config.connection.host,
           port: config.connection.port,
           username: config.connection.username,
-          db: config.connection.db
+          db: config.connection.db,
         },
-        concurrency: 3
-      }
+        concurrency: 3,
+      },
     );
 
     this.worker.on("failed", async (job, err) => {
@@ -98,8 +108,8 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           stage: "worker",
           status: "failed",
           error: {
-            message: err.message
-          }
+            message: err.message,
+          },
         });
       }
     });

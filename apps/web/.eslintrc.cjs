@@ -4,5 +4,16 @@ module.exports = {
   parserOptions: {
     project: [__dirname + "/tsconfig.json"],
     tsconfigRootDir: __dirname
+  },
+  settings: {
+    next: {
+      rootDir: [__dirname]
+    },
+    "import/resolver": {
+      typescript: {
+        project: [__dirname + "/tsconfig.json"],
+        alwaysTryTypes: true
+      }
+    }
   }
 };

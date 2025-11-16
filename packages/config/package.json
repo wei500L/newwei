@@ -11,14 +11,21 @@
     "src"
   ],
   "exports": {
-    "./eslint/*": "./eslint/*",
-    "./tsconfig/*": "./tsconfig/*",
+    "./eslint/*": "./eslint/*.js",
+    "./tsconfig/*": "./tsconfig/*.json",
     "./prettier": "./prettier.config.cjs",
     "./commitlint": "./commitlint.config.cjs",
     ".": {
       "import": "./dist/index.js",
       "require": "./dist/index.js"
     }
+  },
+  "dependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-import-resolver-typescript": "^3.0.0",
+    "eslint-plugin-import": "^2.30.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
