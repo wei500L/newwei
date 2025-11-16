@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+
 import { ApiEnv } from "./env.schema";
 
 export interface LiteLlmEnvConfig {
@@ -19,6 +20,10 @@ export interface NewsPipelineEnvConfig {
   cacheTtlSeconds: number;
   maxInputChars: number;
   configPath: string;
+  crawlQueueConcurrency: number;
+  processQueueConcurrency: number;
+  crawlQueueRateLimit: number;
+  processQueueRateLimit: number;
 }
 
 @Injectable()
@@ -33,7 +38,7 @@ export class EnvService extends ConfigService<ApiEnv> {
       port: this.get<number>("REDIS_PORT", { infer: true }),
       username: this.get<string | undefined>("REDIS_USERNAME", { infer: true }),
       password: undefined,
-      db: this.get<number>("REDIS_DB", { infer: true }) ?? 0
+      db: this.get<number>("REDIS_DB", { infer: true }) ?? 0,
     };
   }
 
@@ -42,32 +47,40 @@ export class EnvService extends ConfigService<ApiEnv> {
       secret: this.get<string>("JWT_SECRET", { infer: true }),
       issuer: this.get<string>("JWT_ISSUER", { infer: true }),
       audience: this.get<string>("JWT_AUDIENCE", { infer: true }),
-      accessExpiresIn: this.get<string>("JWT_ACCESS_EXPIRES_IN", { infer: true }),
-      refreshExpiresIn: this.get<string>("JWT_REFRESH_EXPIRES_IN", { infer: true })
+      accessExpiresIn: this.get<string>("JWT_ACCESS_EXPIRES_IN", {
+        infer: true,
+      }),
+      refreshExpiresIn: this.get<string>("JWT_REFRESH_EXPIRES_IN", {
+        infer: true,
+      }),
     };
   }
 
   get bullmqConfig() {
     return {
       namespace: this.get<string>("BULLMQ_NAMESPACE", { infer: true }),
-      connection: this.redisConfig
+      connection: this.redisConfig,
     };
   }
 
   get rateLimit() {
     return {
       login: this.get<number>("RATE_LIMIT_LOGIN", { infer: true }) ?? 5,
-      loginWindowSeconds: this.get<number>("RATE_LIMIT_LOGIN_WINDOW", { infer: true }) ?? 60
+      loginWindowSeconds:
+        this.get<number>("RATE_LIMIT_LOGIN_WINDOW", { infer: true }) ?? 60,
     };
   }
 
   get graphqlConfig() {
     return {
-      playground: this.get<boolean>("GRAPHQL_PLAYGROUND", { infer: true }) ?? false,
-      introspection: this.get<boolean>("GRAPHQL_INTROSPECTION", { infer: true }) ?? false,
+      playground:
+        this.get<boolean>("GRAPHQL_PLAYGROUND", { infer: true }) ?? false,
+      introspection:
+        this.get<boolean>("GRAPHQL_INTROSPECTION", { infer: true }) ?? false,
       depthLimit: this.get<number>("GRAPHQL_DEPTH_LIMIT", { infer: true }) ?? 8,
-      complexityLimit: this.get<number>("GRAPHQL_COMPLEXITY_LIMIT", { infer: true }) ?? 2000,
-      corsOrigin: this.get<string | undefined>("CORS_ORIGIN", { infer: true })
+      complexityLimit:
+        this.get<number>("GRAPHQL_COMPLEXITY_LIMIT", { infer: true }) ?? 2000,
+      corsOrigin: this.get<string | undefined>("CORS_ORIGIN", { infer: true }),
     };
   }
 
@@ -75,41 +88,84 @@ export class EnvService extends ConfigService<ApiEnv> {
     return {
       baseUrl: this.get<string>("CRAWL4AI_BASE_URL", { infer: true }),
       apiKey: this.get<string | undefined>("CRAWL4AI_API_KEY", { infer: true }),
-      timeoutMs: this.get<number>("CRAWL4AI_TIMEOUT_MS", { infer: true }) ?? 120_000,
-      maxConcurrency: this.get<number>("CRAWL4AI_MAX_CONCURRENCY", { infer: true }) ?? 3,
-      maxRetries: this.get<number>("CRAWL4AI_MAX_RETRIES", { infer: true }) ?? 3,
+      timeoutMs:
+        this.get<number>("CRAWL4AI_TIMEOUT_MS", { infer: true }) ?? 120_000,
+      maxConcurrency:
+        this.get<number>("CRAWL4AI_MAX_CONCURRENCY", { infer: true }) ?? 3,
+      maxRetries:
+        this.get<number>("CRAWL4AI_MAX_RETRIES", { infer: true }) ?? 3,
       media: {
-        fetchTimeoutMs: this.get<number>("CRAWL_MEDIA_FETCH_TIMEOUT_MS", { infer: true }) ?? 15_000,
-        maxBytes: this.get<number>("CRAWL_MEDIA_MAX_BYTES", { infer: true }) ?? 2_097_152,
-        maxPerResult: this.get<number>("CRAWL_MEDIA_MAX_PER_RESULT", { infer: true }) ?? 6
-      }
+        fetchTimeoutMs:
+          this.get<number>("CRAWL_MEDIA_FETCH_TIMEOUT_MS", { infer: true }) ??
+          15_000,
+        maxBytes:
+          this.get<number>("CRAWL_MEDIA_MAX_BYTES", { infer: true }) ??
+          2_097_152,
+        maxPerResult:
+          this.get<number>("CRAWL_MEDIA_MAX_PER_RESULT", { infer: true }) ?? 6,
+      },
     };
   }
 
   get liteLlmConfig(): LiteLlmEnvConfig {
-    const fallbackModels = (this.get<string>("LITELLM_FALLBACK_MODELS", { infer: true }) ?? "")
+    const fallbackModels = (
+      this.get<string>("LITELLM_FALLBACK_MODELS", { infer: true }) ?? ""
+    )
       .split(",")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
+    const apiBase =
+      this.get<string>("LITELLM_API_URL", { infer: true }) ??
+      this.get<string>("LITELLM_API_BASE", { infer: true }) ??
+      "http://localhost:4001";
+    const maxTokens =
+      this.get<number>("LITELLM_MAX_TOKENS", { infer: true }) ??
+      this.get<number>("LITELLM_MAX_OUTPUT_TOKENS", { infer: true }) ??
+      1_200;
+    const retryAttempts =
+      this.get<number>("LITELLM_RETRY_ATTEMPTS", { infer: true }) ??
+      this.get<number>("LITELLM_MAX_RETRIES", { infer: true }) ??
+      3;
     return {
-      model: this.get<string>("LITELLM_MODEL", { infer: true }) ?? "openai/gpt-4o-mini",
-      apiBase: this.get<string>("LITELLM_API_BASE", { infer: true }) ?? "http://localhost:4001",
+      model:
+        this.get<string>("LITELLM_MODEL", { infer: true }) ??
+        "openai/gpt-4o-mini",
+      apiBase,
       apiKey: this.get<string | undefined>("LITELLM_API_KEY", { infer: true }),
-      timeoutMs: this.get<number>("LITELLM_TIMEOUT_MS", { infer: true }) ?? 60_000,
-      temperature: this.get<number>("LITELLM_TEMPERATURE", { infer: true }) ?? 0.2,
+      timeoutMs:
+        this.get<number>("LITELLM_TIMEOUT_MS", { infer: true }) ?? 60_000,
+      temperature:
+        this.get<number>("LITELLM_TEMPERATURE", { infer: true }) ?? 0.2,
       topP: this.get<number>("LITELLM_TOP_P", { infer: true }) ?? 0.9,
-      maxOutputTokens: this.get<number>("LITELLM_MAX_OUTPUT_TOKENS", { infer: true }) ?? 1_200,
-      maxRetries: this.get<number>("LITELLM_MAX_RETRIES", { infer: true }) ?? 3,
+      maxOutputTokens: maxTokens,
+      maxRetries: retryAttempts,
       fallbackModels,
-      requestsPerMinute: this.get<number>("LITELLM_REQUESTS_PER_MINUTE", { infer: true }) ?? 60
+      requestsPerMinute:
+        this.get<number>("LITELLM_REQUESTS_PER_MINUTE", { infer: true }) ?? 60,
     };
   }
 
   get newsPipelineEnv(): NewsPipelineEnvConfig {
     return {
-      cacheTtlSeconds: this.get<number>("NEWS_PIPELINE_CACHE_TTL_SECONDS", { infer: true }) ?? 3_600,
-      maxInputChars: this.get<number>("NEWS_PIPELINE_MAX_INPUT_CHARS", { infer: true }) ?? 48_000,
-      configPath: this.get<string>("NEWS_PIPELINE_CONFIG_PATH", { infer: true }) ?? "config/news-pipeline.config.yaml"
+      cacheTtlSeconds:
+        this.get<number>("NEWS_PIPELINE_CACHE_TTL_SECONDS", { infer: true }) ??
+        3_600,
+      maxInputChars:
+        this.get<number>("NEWS_PIPELINE_MAX_INPUT_CHARS", { infer: true }) ??
+        48_000,
+      configPath:
+        this.get<string>("NEWS_PIPELINE_CONFIG_PATH", { infer: true }) ??
+        "config/news-pipeline.config.yaml",
+      crawlQueueConcurrency:
+        this.get<number>("NEWS_CRAWL_QUEUE_CONCURRENCY", { infer: true }) ?? 4,
+      processQueueConcurrency:
+        this.get<number>("NEWS_PROCESS_QUEUE_CONCURRENCY", { infer: true }) ??
+        8,
+      crawlQueueRateLimit:
+        this.get<number>("NEWS_CRAWL_QUEUE_RATE_LIMIT", { infer: true }) ?? 5,
+      processQueueRateLimit:
+        this.get<number>("NEWS_PROCESS_QUEUE_RATE_LIMIT", { infer: true }) ??
+        12,
     };
   }
 }

@@ -7,15 +7,24 @@ const ProcessedItemSchema = new Schema(
     status: {
       type: String,
       enum: ["pending", "processing", "completed", "failed"],
-      default: "pending"
+      default: "pending",
     },
     tags: { type: [String], default: [] },
     result: Schema.Types.Mixed,
-    error: Schema.Types.Mixed
+    error: Schema.Types.Mixed,
+    llm: {
+      model: { type: String },
+      promptVersion: { type: String },
+      promptTokens: { type: Number },
+      completionTokens: { type: Number },
+      totalTokens: { type: Number },
+      costUsd: { type: Number },
+      latencyMs: { type: Number },
+    },
   },
   {
-    timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" }
-  }
+    timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" },
+  },
 );
 
 export const ProcessedItemModel =
