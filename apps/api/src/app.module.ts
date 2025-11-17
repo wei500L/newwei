@@ -14,6 +14,7 @@ import { CacheModule } from "./modules/cache/cache.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { CrawlModule } from "./modules/crawl/crawl.module";
 import { AkshareModule } from "./modules/akshare/akshare.module";
+import { EmailModule } from "./modules/email/email.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { ApiGraphqlModule } from "./graphql/graphql.module";
@@ -39,6 +40,7 @@ import { ApiGraphqlModule } from "./graphql/graphql.module";
     AuthModule,
     RbacModule,
     ItemsModule,
+    EmailModule,
     DashboardModule,
     CrawlModule,
     AkshareModule,
