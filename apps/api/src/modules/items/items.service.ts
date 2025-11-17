@@ -53,7 +53,7 @@ export class ItemsService {
       return { itemMeta, rawItem };
     });
 
-    await this.queueService.enqueueItem(created.itemMeta.id, created.rawItem.id);
+    await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
 
     return {
       ...created.itemMeta,
@@ -163,7 +163,7 @@ export class ItemsService {
     });
 
     if (enqueueRef) {
-      await this.queueService.enqueueItem(existing.id, enqueueRef);
+      await this.queueService.enqueueItem(orgId, existing.id, enqueueRef);
     }
 
     return updated;

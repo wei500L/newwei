@@ -279,7 +279,7 @@ export class CrawlService {
     });
 
     const hydrated = await this.attachResultContent(results);
-    const memoryStats = await this.getLatestMemoryStats(id);
+    const memoryStats = await this.getLatestMemoryStats(orgId, id);
 
     return {
       task: {
@@ -363,6 +363,7 @@ export class CrawlService {
     await TaskLogModel.create({
       queue: CRAWL_QUEUE_NAME,
       jobId: taskId,
+      orgId,
       stage: "start",
       status: "processing",
       message: "crawl task started",
@@ -380,6 +381,7 @@ export class CrawlService {
         await TaskLogModel.create({
           queue: CRAWL_QUEUE_NAME,
           jobId: taskId,
+          orgId,
           stage: "crawler",
           status: "completed",
           message: "crawl4ai warnings",
@@ -392,6 +394,7 @@ export class CrawlService {
         await TaskLogModel.create({
           queue: CRAWL_QUEUE_NAME,
           jobId: taskId,
+          orgId,
           stage: "crawler",
           status: "completed",
           message: "crawl4ai partial failures",
@@ -434,6 +437,7 @@ export class CrawlService {
       await TaskLogModel.create({
         queue: CRAWL_QUEUE_NAME,
         jobId: taskId,
+        orgId,
         stage: "complete",
         status: "completed",
         data: summary
@@ -453,6 +457,7 @@ export class CrawlService {
       await TaskLogModel.create({
         queue: CRAWL_QUEUE_NAME,
         jobId: taskId,
+        orgId,
         stage: "error",
         status: "failed",
         error: {
@@ -1805,10 +1810,11 @@ export class CrawlService {
     });
   }
 
-  private async getLatestMemoryStats(taskId: string): Promise<CrawlMemoryStats | null> {
+  private async getLatestMemoryStats(orgId: string, taskId: string): Promise<CrawlMemoryStats | null> {
     const log = await TaskLogModel.findOne({
       queue: CRAWL_QUEUE_NAME,
       jobId: taskId,
+      orgId,
       stage: "complete"
     })
       .sort({ createdAt: -1 })

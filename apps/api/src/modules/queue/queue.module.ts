@@ -26,7 +26,10 @@ export const ITEM_PIPELINE_QUEUE_NAME = "itemPipeline";
             db: config.connection.db
           },
           defaultJobOptions: {
-            removeOnComplete: true,
+            removeOnComplete: {
+              age: 3600,
+              count: 1000
+            },
             removeOnFail: false,
             attempts: 5,
             backoff: {

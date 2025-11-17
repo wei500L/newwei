@@ -178,6 +178,8 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("AKSHARE_HTTP_TIMEOUT_MS", { infer: true }) ?? 20_000,
       maxRetries:
         this.get<number>("AKSHARE_HTTP_MAX_RETRIES", { infer: true }) ?? 3,
+      queueConcurrency:
+        this.get<number>("AKSHARE_QUEUE_CONCURRENCY", { infer: true }) ?? 2,
     };
   }
 }

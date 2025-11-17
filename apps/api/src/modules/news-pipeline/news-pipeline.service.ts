@@ -55,7 +55,7 @@ export class NewsPipelineService {
       forceRefresh: payload.forceRefresh,
     });
 
-    const article = await this.fetchArticle(payload);
+    const article = await this.fetchArticle(job, payload);
     await this.logStage(job, "crawl", "completed", {
       url: article.sourceUrl,
       fromCache: article.fromCache,
@@ -73,6 +73,7 @@ export class NewsPipelineService {
     const processed = await ProcessedItemModel.create({
       rawItemId: raw.id,
       itemMetaId: job.itemMetaId,
+      orgId: job.orgId,
       status: "completed",
       tags: this.buildTags(payload, cleaned),
       result: cleaned,
@@ -91,8 +92,8 @@ export class NewsPipelineService {
     };
   }
 
-  private async fetchArticle(payload: NormalizedNewsPayload) {
-    const cacheKey = this.cacheKey(payload.url);
+  private async fetchArticle(job: PipelineJobContext, payload: NormalizedNewsPayload) {
+    const cacheKey = this.cacheKey(job.orgId, payload.url);
     if (!payload.forceRefresh) {
       const cached = await this.cache.get<CrawlCacheEntry>(cacheKey);
       if (cached?.markdown) {
@@ -339,9 +340,9 @@ export class NewsPipelineService {
     };
   }
 
-  private cacheKey(url: string) {
+  private cacheKey(orgId: string, url: string) {
     const hash = createHash("sha256").update(url).digest("hex");
-    return `${this.crawlCachePrefix}${hash}`;
+    return `${this.crawlCachePrefix}${orgId}:${hash}`;
   }
 
   private async retry<T>(
@@ -378,6 +379,7 @@ export class NewsPipelineService {
     await TaskLogModel.create({
       queue: job.queue,
       jobId: job.jobId,
+      orgId: job.orgId,
       stage,
       status,
       data,

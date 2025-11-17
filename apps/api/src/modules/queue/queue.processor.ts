@@ -35,10 +35,12 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker(
       ITEM_PIPELINE_QUEUE_NAME,
       async (job) => {
-        const { rawItemId, itemMetaId } = job.data as {
+        const { rawItemId, itemMetaId, orgId: jobOrgId } = job.data as {
           rawItemId: string;
           itemMetaId: string;
+          orgId?: string;
         };
+        const orgId = jobOrgId ?? "unknown";
         logger.info({ jobId: job.id }, "Processing item pipeline job");
 
         const rawItem = await RawItemModel.findById(rawItemId);
@@ -46,6 +48,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           await TaskLogModel.create({
             queue: ITEM_PIPELINE_QUEUE_NAME,
             jobId: job.id,
+            orgId,
             stage: "dedupe",
             status: "failed",
             message: "Raw item not found",
@@ -57,6 +60,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         await TaskLogModel.create({
           queue: ITEM_PIPELINE_QUEUE_NAME,
           jobId: job.id,
+          orgId,
           stage: "dedupe",
           status: "completed",
           message: "Item deduplicated",
@@ -68,6 +72,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           jobId: job.id ? String(job.id) : "",
           itemMetaId,
           rawItemId,
+          orgId,
         };
         const rawPayload: RawPipelineItem = {
           id: rawItem._id.toString(),
@@ -81,6 +86,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         await TaskLogModel.create({
           queue: ITEM_PIPELINE_QUEUE_NAME,
           jobId: job.id,
+          orgId,
           stage: "complete",
           status: "completed",
           data: { processedId: processed.id ?? rawItemId },
@@ -102,9 +108,11 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker.on("failed", async (job, err) => {
       logger.error({ jobId: job?.id, err }, "Queue job failed");
       if (job) {
+        const jobOrgId = (job.data as { orgId?: string } | undefined)?.orgId ?? "unknown";
         await TaskLogModel.create({
           queue: ITEM_PIPELINE_QUEUE_NAME,
           jobId: job.id,
+          orgId: jobOrgId,
           stage: "worker",
           status: "failed",
           error: {

@@ -20,6 +20,7 @@ export class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
+    const config = this.env.akshareConfig;
     this.worker = new Worker<AkshareJobPayload>(
       AKSHARE_QUEUE_NAME,
       async (job) => {
@@ -28,7 +29,7 @@ export class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {
       },
       {
         connection: this.queue.opts.connection,
-        concurrency: this.env.akshareConfig.maxRetries
+        concurrency: config.queueConcurrency
       }
     );
 
