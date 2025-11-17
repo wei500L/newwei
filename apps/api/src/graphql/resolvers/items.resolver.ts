@@ -21,9 +21,8 @@ import { ItemMetaLoader } from "../loaders/item-meta.loader";
 import { RawItemLoader } from "../loaders/raw-item.loader";
 import { ProcessedItemLoader } from "../loaders/processed-item.loader";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { BadRequestException, UseInterceptors } from "@nestjs/common";
+import { BadRequestException } from "@nestjs/common";
 import { PageInfo } from "../models/page-info.model";
-import { DataloaderInterceptor } from "nestjs-dataloader";
 
 function encodeCursor(value: string) {
   return Buffer.from(value, "utf8").toString("base64");
@@ -35,7 +34,6 @@ function decodeCursor(cursor?: string | null) {
 
 @Resolver(() => ItemModel)
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
-@UseInterceptors(DataloaderInterceptor)
 export class ItemsResolver {
   constructor(private readonly itemsService: ItemsService, private readonly prisma: PrismaService) {}
 

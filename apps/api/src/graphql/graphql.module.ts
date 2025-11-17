@@ -15,7 +15,7 @@ import { DashboardModule } from "../modules/dashboard/dashboard.module";
 import { QueueModule } from "../modules/queue/queue.module";
 import { CacheModule } from "../modules/cache/cache.module";
 import { CrawlModule } from "../modules/crawl/crawl.module";
-import { DataloaderModule } from "nestjs-dataloader";
+import { DataloaderModule, DataloaderInterceptor } from "nestjs-dataloader";
 import { UsersResolver } from "./resolvers/user.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
@@ -30,7 +30,7 @@ import { ProcessedItemLoader } from "./loaders/processed-item.loader";
 import { QueueEventPublisher } from "./queue-event.publisher";
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
 import { GraphQLJSONScalar } from "./scalars/json.scalar";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { GqlAuthGuard } from "../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
 
@@ -128,6 +128,18 @@ const logger = createLogger({ name: "graphql" });
     QueueEventPublisher,
     GqlAuthGuard,
     GqlPermissionsGuard,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: DataloaderInterceptor
+    },
+    {
+      provide: APP_GUARD,
+      useClass: GqlAuthGuard
+    },
+    {
+      provide: APP_GUARD,
+      useClass: GqlPermissionsGuard
+    },
     {
       provide: APP_GUARD,
       useClass: GraphqlRateLimitGuard

@@ -5,6 +5,7 @@ import { LoginDto } from "./dto/login.dto";
 import { RefreshDto } from "./dto/refresh.dto";
 import { Public } from "../../common/decorators/public.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 import type { Request } from "express";
 import type { AuthenticatedUser } from "./auth.service";
 
@@ -29,12 +30,14 @@ export class AuthController {
   }
 
   @Post("logout")
+  @AllowAuthenticated()
   async logout(@CurrentUser() user: AuthenticatedUser, @Body("refreshToken") refreshToken?: string) {
     await this.authService.logout(user.id, refreshToken);
     return { ok: true };
   }
 
   @Get("me")
+  @AllowAuthenticated()
   async profile(@CurrentUser() user: AuthenticatedUser) {
     return user;
   }
