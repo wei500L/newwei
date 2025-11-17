@@ -1,19 +1,25 @@
 import { Field, InputType, Int } from "@nestjs/graphql";
 import { AlertChannelType, AlertOperator, AlertSeverity, AlertStatus } from "@prisma/client";
 import GraphQLJSON from "graphql-type-json";
+import { IsArray, IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength, Min } from "class-validator";
 
 @InputType()
 export class AlertChannelInput {
   @Field(() => AlertChannelType)
+  @IsEnum(AlertChannelType)
   type!: AlertChannelType;
 
   @Field()
+  @IsString()
+  @MaxLength(80)
   name!: string;
 
   @Field()
+  @IsString()
   target!: string;
 
   @Field(() => GraphQLJSON, { nullable: true })
+  @IsOptional()
   config?: Record<string, unknown>;
 }
 
@@ -23,44 +29,71 @@ export class UpsertAlertRuleInput {
   id?: string;
 
   @Field()
+  @IsString()
+  @MaxLength(120)
   name!: string;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
   description?: string;
 
   @Field(() => AlertSeverity, { nullable: true })
+  @IsOptional()
+  @IsEnum(AlertSeverity)
   severity?: AlertSeverity;
 
   @Field(() => AlertStatus, { nullable: true })
+  @IsOptional()
+  @IsEnum(AlertStatus)
   status?: AlertStatus;
 
   @Field()
+  @IsString()
   metricSlug!: string;
 
   @Field(() => AlertOperator)
+  @IsEnum(AlertOperator)
   operator!: AlertOperator;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsNumber()
   thresholdValue?: number;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsNumber()
   thresholdLower?: number;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsNumber()
   thresholdUpper?: number;
 
   @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsPositive()
   changeWindowMin?: number;
 
   @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsPositive()
   cooldownSeconds?: number;
 
   @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsPositive()
   checkIntervalSec?: number;
 
   @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   channelIds?: string[];
 
   @Field(() => GraphQLJSON, { nullable: true })
+  @IsOptional()
   metadata?: Record<string, unknown>;
 }

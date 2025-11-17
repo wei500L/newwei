@@ -23,6 +23,15 @@ query AlertRules {
   }
 }
 
+query AlertChannels {
+  alertChannels {
+    id
+    name
+    type
+    target
+  }
+}
+
 query AlertEvents($limit: Int) {
   alertEvents(limit: $limit) {
     id

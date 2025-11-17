@@ -14,6 +14,24 @@ export class AlertsResolver {
   constructor(private readonly alerts: AlertsService) {}
 
   @HasPermission("alerts.read")
+  @Query(() => [AlertChannelModel])
+  async alertChannels(@Context("req") req: any): Promise<AlertChannelModel[]> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    const channels = await this.alerts.listChannels(requester.orgId);
+    return channels.map((channel) => ({
+      id: channel.id,
+      name: channel.name,
+      type: channel.type,
+      target: channel.target,
+      createdAt: channel.createdAt,
+      updatedAt: channel.updatedAt
+    }));
+  }
+
+  @HasPermission("alerts.read")
   @Query(() => [AlertRuleModel])
   async alertRules(@Context("req") req: any): Promise<AlertRuleModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;

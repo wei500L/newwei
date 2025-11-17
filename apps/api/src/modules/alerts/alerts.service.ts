@@ -471,20 +471,18 @@ ${event.message ?? ""}`
       operator: rule.operator,
       message: event.message
     };
-    const maxRetries = this.env.alertingConfig.maxRetries;
-    let attempt = 0;
+    const delays = [60_000, 5 * 60_000, 15 * 60_000];
     let lastError: unknown;
-    while (attempt < maxRetries) {
+    for (let attempt = 0; attempt < delays.length; attempt++) {
       try {
         await firstValueFrom(this.http.post(target, payload, { timeout: this.env.alertingConfig.webhookTimeoutMs }));
         return;
       } catch (error) {
         lastError = error;
-        attempt += 1;
-        if (attempt >= maxRetries) {
+        if (attempt === delays.length - 1) {
           break;
         }
-        await this.delay(300 * attempt);
+        await this.delay(delays[attempt]);
       }
     }
     throw lastError ?? new Error("Webhook delivery failed");

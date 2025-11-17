@@ -1,12 +1,14 @@
 "use client";
 
-import { Card, Col, Empty, List, Row, Spin, Statistic, Typography, message } from "antd";
+import { Card, Col, Empty, List, Row, Spin, Statistic, Typography, message, Select, Space, Button } from "antd";
+import { useEffect, useState } from "react";
 import { useDashboardsQuery, useQueueStatsQuery, useUpsertDashboardMutation, useDeleteDashboardMutation } from "@/graphql/generated";
 import { QueueChart } from "./queue-chart";
 import { DashboardEditor } from "./dashboard-editor";
 import { AlertPanel } from "./alert-panel";
 import { AnalysisPanel } from "./analysis-panel";
 import { DrilldownChart } from "./drilldown-chart";
+import { AlertConfigForm } from "./alert-config-form";
 
 export function DashboardContent() {
   const { data, loading, error } = useQueueStatsQuery();
@@ -27,6 +29,15 @@ export function DashboardContent() {
   }
 
   const { counts, processedCount, itemCount, recentLogs } = data.queueStats;
+  const dashboards = dashboardsData?.dashboards ?? [];
+  const [activeId, setActiveId] = useState<string | undefined>(dashboards[0]?.id);
+  const activeDashboard = dashboards.find((d) => d.id === activeId) ?? dashboards[0];
+
+  useEffect(() => {
+    if (dashboards.length && !activeId) {
+      setActiveId(dashboards[0].id);
+    }
+  }, [dashboards, activeId]);
   const chartData: Record<string, number> = {
     waiting: counts.waiting,
     active: counts.active,
@@ -108,23 +119,47 @@ export function DashboardContent() {
       <Row style={{ marginTop: "2rem" }}>
         <Col span={24}>
           <Card title="Custom Dashboard Editor" className="content-card">
-            <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-              Drag and resize widgets, then persist layout through the dashboard GraphQL mutations. The layout will be stored in
-              Prisma-backed MySQL tables.
-            </Typography.Paragraph>
-            <DashboardEditor
-              dashboard={dashboardsData?.dashboards?.at(0)}
-              saving={savingDashboard}
-              onSave={async (input) => {
-                await saveDashboard({ variables: { input } });
-                await refetchDashboards();
-              }}
-              onDelete={dashboardsData?.dashboards?.at(0)?.id ? async (id: string) => {
-                await deleteDashboard({ variables: { id } });
-                await refetchDashboards();
-                message.success("Dashboard deleted");
-              } : undefined}
-            />
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Space align="center">
+                <Typography.Text type="secondary">
+                  Drag and resize widgets, then persist layout through the dashboard GraphQL mutations. Layouts are stored in MySQL.
+                </Typography.Text>
+                <Select
+                  placeholder="Select dashboard"
+                  style={{ minWidth: 220 }}
+                  value={activeDashboard?.id}
+                  onChange={(val) => setActiveId(val)}
+                  options={dashboards.map((d) => ({ label: d.name, value: d.id }))}
+                />
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setActiveId(undefined);
+                  }}
+                >
+                  New Dashboard
+                </Button>
+              </Space>
+              <DashboardEditor
+                dashboard={activeDashboard}
+                saving={savingDashboard}
+                onSave={async (input) => {
+                  await saveDashboard({ variables: { input } });
+                  await refetchDashboards();
+                  message.success("Dashboard saved");
+                }}
+                onDelete={
+                  activeDashboard?.id
+                    ? async (id: string) => {
+                        await deleteDashboard({ variables: { id } });
+                        await refetchDashboards();
+                        message.success("Dashboard deleted");
+                        setActiveId(undefined);
+                      }
+                    : undefined
+                }
+              />
+            </Space>
           </Card>
         </Col>
       </Row>
@@ -143,6 +178,13 @@ export function DashboardContent() {
       <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
         <Col xs={24} lg={24}>
           <DrilldownChart category="economic-short" title="Economic Drilldown (linked zoom + click to drill)" />
+        </Col>
+      </Row>
+      <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
+        <Col xs={24} lg={24}>
+          <Card title="Alert Configuration" className="content-card">
+            <AlertConfigForm />
+          </Card>
         </Col>
       </Row>
     </div>

@@ -7,6 +7,7 @@ export interface DashboardRangeState {
   start: Date;
   end: Date;
   setRange: (range: DashboardRangePreset) => void;
+  setRangeByDates: (start: Date, end: Date) => void;
   setCustomRange: (start: Date, end: Date) => void;
 }
 
@@ -52,6 +53,7 @@ export const useDashboardRangeStore = create<DashboardRangeState>((set) => ({
     }
     set({ range: preset, ...calculateRange(preset) });
   },
+  setRangeByDates: (start, end) => set({ range: "custom", start, end }),
   setCustomRange: (start, end) => {
     set({ range: "custom", start, end });
   }
