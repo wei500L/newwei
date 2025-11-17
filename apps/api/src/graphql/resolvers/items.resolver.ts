@@ -65,7 +65,7 @@ export class ItemsResolver {
 
     const items = await this.prisma.itemMeta.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy: { id: "desc" },
       take: take + 1,
       ...(cursorId
         ? {

@@ -32,6 +32,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const config = this.env.bullmqConfig;
+    const concurrency =
+      this.env.newsPipelineEnv.processQueueConcurrency > 0
+        ? this.env.newsPipelineEnv.processQueueConcurrency
+        : 3;
     this.worker = new Worker(
       ITEM_PIPELINE_QUEUE_NAME,
       async (job) => {
@@ -40,7 +44,11 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           itemMetaId: string;
           orgId?: string;
         };
-        const orgId = jobOrgId ?? "unknown";
+        if (!jobOrgId) {
+          logger.error({ jobId: job.id }, "Queue job missing orgId; failing job");
+          throw new Error("Queue job missing orgId");
+        }
+        const orgId = jobOrgId;
         logger.info({ jobId: job.id }, "Processing item pipeline job");
 
         const rawItem = await RawItemModel.findById(rawItemId);
@@ -101,7 +109,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           username: config.connection.username,
           db: config.connection.db,
         },
-        concurrency: 3,
+        concurrency,
       },
     );
 

@@ -104,13 +104,15 @@ model ItemMeta {
   id          String   @id @default(cuid())
   org         Org      @relation(fields: [orgId], references: [id])
   orgId       String
-  externalId  String   @unique
+  externalId  String
   name        String
   status      String   @default("draft")
   mongoRef    String   // references packages/mongo RawItem document id
   version     Int      @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@unique([orgId, externalId])
 }
 
 model CrawlTask {
