@@ -13,7 +13,7 @@ export function LiveAlertsToasts() {
       next: (payload) => {
         const evt = payload.data?.alertEvents;
         if (evt) {
-          message.warning(`[Alert] ${evt.severity} • ${evt.message ?? "Triggered"} • ${evt.triggeredAt}`);
+          message.warning(`[Alert] ${evt.severity} • ${evt.message ?? "Triggered"} • value=${evt.metricValue ?? "n/a"}`);
         }
       }
     });

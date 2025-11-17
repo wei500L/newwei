@@ -10,6 +10,7 @@ import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { Inject } from "@nestjs/common";
 import { ALERTS_PUBSUB } from "../../modules/alerts/alerts.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
+import { withFilter } from "graphql-subscriptions";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -193,10 +194,10 @@ export class AlertsResolver {
     resolve: (payload: any) => ({
       id: payload.event.id,
       triggeredAt: payload.event.triggeredAt,
-      metricValue: 0,
-      changePercent: null,
+      metricValue: payload.event.metricValue,
+      changePercent: payload.event.changePercent ?? null,
       severity: payload.event.severity,
-      status: "pending",
+      status: payload.event.status,
       message: payload.event.message ?? undefined,
       deliveries: []
     })
@@ -206,8 +207,9 @@ export class AlertsResolver {
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
-    return this.pubsub.asyncIterator("alertEvents", {
-      filter: (payload: any) => payload.orgId === requester.orgId
-    } as any);
+    return withFilter(
+      () => this.pubsub.asyncIterator("alertEvents"),
+      (payload: any) => payload.orgId === requester.orgId
+    )();
   }
 }

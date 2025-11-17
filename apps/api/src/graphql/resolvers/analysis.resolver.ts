@@ -10,6 +10,7 @@ import { AnomalyAnalysisInput, CorrelationAnalysisInput } from "../dto/analysis.
 import { Inject } from "@nestjs/common";
 import { ANALYSIS_PUBSUB } from "../../modules/analysis/analysis.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
+import { withFilter } from "graphql-subscriptions";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -103,8 +104,9 @@ export class AnalysisResolver {
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
-    return this.pubsub.asyncIterator("analysisEvents", {
-      filter: (payload: any) => payload.orgId === requester.orgId
-    } as any);
+    return withFilter(
+      () => this.pubsub.asyncIterator("analysisEvents"),
+      (payload: any) => payload.orgId === requester.orgId
+    )();
   }
 }
