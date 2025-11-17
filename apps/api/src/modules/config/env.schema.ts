@@ -67,6 +67,12 @@ export const apiEnvSchema = baseEnvSchema.extend({
   NEWS_PROCESS_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(8),
   NEWS_CRAWL_QUEUE_RATE_LIMIT: z.coerce.number().int().positive().default(5),
   NEWS_PROCESS_QUEUE_RATE_LIMIT: z.coerce.number().int().positive().default(12),
+  ALERT_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(4),
+  ALERT_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+  ALERT_MAX_RETRIES: z.coerce.number().int().positive().default(3),
+  ALERT_SCAN_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
+  ANALYSIS_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  ANALYSIS_MAX_RETRIES: z.coerce.number().int().positive().default(3),
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

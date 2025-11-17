@@ -1,13 +1,20 @@
 "use client";
 
-import { Card, Col, Empty, List, Row, Spin, Statistic, Typography } from "antd";
-import { useQueueStatsQuery } from "@/graphql/generated";
+import { Card, Col, Empty, List, Row, Spin, Statistic, Typography, message } from "antd";
+import { useDashboardsQuery, useQueueStatsQuery, useUpsertDashboardMutation, useDeleteDashboardMutation } from "@/graphql/generated";
 import { QueueChart } from "./queue-chart";
+import { DashboardEditor } from "./dashboard-editor";
+import { AlertPanel } from "./alert-panel";
+import { AnalysisPanel } from "./analysis-panel";
+import { DrilldownChart } from "./drilldown-chart";
 
 export function DashboardContent() {
   const { data, loading, error } = useQueueStatsQuery();
+  const { data: dashboardsData, loading: dashboardsLoading, refetch: refetchDashboards } = useDashboardsQuery();
+  const [saveDashboard, { loading: savingDashboard }] = useUpsertDashboardMutation();
+  const [deleteDashboard] = useDeleteDashboardMutation();
 
-  if (loading) {
+  if (loading || dashboardsLoading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
         <Spin size="large" />
@@ -96,6 +103,46 @@ export function DashboardContent() {
               integrated.
             </Typography.Paragraph>
           </Card>
+        </Col>
+      </Row>
+      <Row style={{ marginTop: "2rem" }}>
+        <Col span={24}>
+          <Card title="Custom Dashboard Editor" className="content-card">
+            <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+              Drag and resize widgets, then persist layout through the dashboard GraphQL mutations. The layout will be stored in
+              Prisma-backed MySQL tables.
+            </Typography.Paragraph>
+            <DashboardEditor
+              dashboard={dashboardsData?.dashboards?.at(0)}
+              saving={savingDashboard}
+              onSave={async (input) => {
+                await saveDashboard({ variables: { input } });
+                await refetchDashboards();
+              }}
+              onDelete={dashboardsData?.dashboards?.at(0)?.id ? async (id: string) => {
+                await deleteDashboard({ variables: { id } });
+                await refetchDashboards();
+                message.success("Dashboard deleted");
+              } : undefined}
+            />
+          </Card>
+        </Col>
+      </Row>
+      <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
+        <Col xs={24} lg={12}>
+          <Card title="Smart Alerts" className="content-card">
+            <AlertPanel />
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title="AI Analysis" className="content-card">
+            <AnalysisPanel />
+          </Card>
+        </Col>
+      </Row>
+      <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
+        <Col xs={24} lg={24}>
+          <DrilldownChart category="economic-short" title="Economic Drilldown (linked zoom + click to drill)" />
         </Col>
       </Row>
     </div>

@@ -1,7 +1,7 @@
 import { Args, Mutation, Query, Resolver, UseGuards } from "@nestjs/graphql";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { EconomicDataFetchConfigModel, EconomicDataPointModel } from "../models/economic-data.model";
+import { EconomicDataFetchConfigModel, EconomicDataPointModel, TimeGranularity } from "../models/economic-data.model";
 import { DateRangeInput, TriggerDataFetchInput } from "../dto/economic-data.input";
 import { AkshareService } from "../../modules/akshare/akshare.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
@@ -16,11 +16,12 @@ export class EconomicDataResolver {
   @Query(() => [EconomicDataPointModel])
   async getEconomicData(
     @Args("category") category: string,
-    @Args("timeRange") timeRange: DateRangeInput
+    @Args("timeRange") timeRange: DateRangeInput,
+    @Args("granularity", { type: () => TimeGranularity, nullable: true }) granularity?: TimeGranularity
   ): Promise<EconomicDataPointModel[]> {
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
-    const points = await this.akshareService.getDataByCategory(category, start, end);
+    const points = await this.akshareService.getDataByCategory(category, start, end, granularity);
     return points.map((point) => ({
       timestamp: point.recordedAt,
       value: Number(point.value),

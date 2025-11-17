@@ -1,0 +1,63 @@
+query AlertRules {
+  alertRules {
+    id
+    name
+    description
+    severity
+    status
+    metricSlug
+    operator
+    thresholdValue
+    thresholdLower
+    thresholdUpper
+    changeWindowMin
+    cooldownSeconds
+    checkIntervalSec
+    lastTriggeredAt
+    channels {
+      id
+      name
+      type
+      target
+    }
+  }
+}
+
+query AlertEvents($limit: Int) {
+  alertEvents(limit: $limit) {
+    id
+    triggeredAt
+    metricValue
+    changePercent
+    severity
+    status
+    message
+    deliveries {
+      id
+      status
+      channelType
+      sentAt
+      error
+    }
+  }
+}
+
+mutation UpsertAlertRule($input: UpsertAlertRuleInput!) {
+  upsertAlertRule(input: $input) {
+    id
+    name
+  }
+}
+
+mutation CreateAlertChannel($input: AlertChannelInput!) {
+  createAlertChannel(input: $input) {
+    id
+    name
+    type
+    target
+  }
+}
+
+mutation TriggerAlertRule($ruleId: String!) {
+  triggerAlertRule(ruleId: $ruleId)
+}

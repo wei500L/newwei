@@ -2,6 +2,7 @@ import { EconomicDataFrequency, EconomicDataValueType } from "@prisma/client";
 import { AkshareDataFieldConfig, AkshareDataItemDefinition } from "./akshare.types";
 
 const REALTIME: EconomicDataFrequency = "realtime";
+const HOURLY: EconomicDataFrequency = "hourly";
 const DAILY: EconomicDataFrequency = "daily";
 const MONTHLY: EconomicDataFrequency = "monthly";
 const WEEKLY: EconomicDataFrequency = "weekly";
@@ -1400,6 +1401,127 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
       valueFields: [
         { field: "买报价", label: "买报价", unit: "", dataType: EconomicDataValueType.fx },
         { field: "卖报价", label: "卖报价", unit: "", dataType: EconomicDataValueType.fx }
+      ]
+    }
+  },
+  {
+    id: "macro-fx-sentiment",
+    slug: "macro_fx_sentiment",
+    displayName: "外汇情绪指数",
+    categories: ["sentiment", "fx"],
+    sourceFunction: "ak.macro_fx_sentiment",
+    endpoint: "/macro_fx_sentiment",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "percent",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: [
+        { field: "AUDJPY", label: "AUD/JPY", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "AUDUSD", label: "AUD/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "EURAUD", label: "EUR/AUD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "EURJPY", label: "EUR/JPY", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "EURUSD", label: "EUR/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "GBPJPY", label: "GBP/JPY", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "GBPUSD", label: "GBP/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "NZDUSD", label: "NZD/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "USDCAD", label: "USD/CAD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "USDCHF", label: "USD/CHF", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "USDJPY", label: "USD/JPY", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "USDX", label: "USDX", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "XAUUSD", label: "XAU/USD", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    }
+  },
+  {
+    id: "usd-index-hist",
+    slug: "usd_index_history",
+    displayName: "美元指数历史行情",
+    categories: ["macro", "global-index"],
+    sourceFunction: "ak.index_global_hist_em",
+    endpoint: "/index_global_hist_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "美元指数" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "今开", label: "开盘", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最新价", label: "最新价", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最高", label: "高", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最低", label: "低", unit: "", dataType: EconomicDataValueType.index }
+      ]
+    }
+  },
+  {
+    id: "comex-gold-inventory",
+    slug: "comex_gold_inventory",
+    displayName: "COMEX黄金库存",
+    categories: ["commodity", "precious-metal"],
+    sourceFunction: "ak.futures_comex_inventory",
+    endpoint: "/futures_comex_inventory",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "黄金" },
+    valueType: EconomicDataValueType.quantity,
+    defaultUnit: "吨",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "COMEX黄金库存量-吨", label: "库存(吨)", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "COMEX黄金库存量-盎司", label: "库存(盎司)", unit: "盎司", dataType: EconomicDataValueType.quantity }
+      ]
+    }
+  },
+  {
+    id: "comex-silver-inventory",
+    slug: "comex_silver_inventory",
+    displayName: "COMEX白银库存",
+    categories: ["commodity", "precious-metal"],
+    sourceFunction: "ak.futures_comex_inventory",
+    endpoint: "/futures_comex_inventory",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "白银" },
+    valueType: EconomicDataValueType.quantity,
+    defaultUnit: "吨",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "COMEX白银库存量-吨", label: "库存(吨)", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "COMEX白银库存量-盎司", label: "库存(盎司)", unit: "盎司", dataType: EconomicDataValueType.quantity }
+      ]
+    }
+  },
+  {
+    id: "spot-silver-benchmark",
+    slug: "spot_silver_benchmark",
+    displayName: "上海银基准价",
+    categories: ["commodity", "precious-metal"],
+    sourceFunction: "ak.spot_silver_benchmark_sge",
+    endpoint: "/spot_silver_benchmark_sge",
+    docUrl: "https://akshare.akfamily.xyz/data/spot/spot.html",
+    method: "GET",
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "CNY/kg",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "交易时间",
+      valueFields: [
+        { field: "早盘价", label: "早盘价", unit: "CNY/kg", dataType: EconomicDataValueType.price },
+        { field: "晚盘价", label: "晚盘价", unit: "CNY/kg", dataType: EconomicDataValueType.price }
       ]
     }
   }

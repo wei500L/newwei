@@ -26,6 +26,9 @@ model Org {
   newsSources NewsSource[]
   pipelineJobs PipelineJob[]
   articles    Article[]
+  dashboards  Dashboard[]
+  alertRules  AlertRule[]
+  alertChannels AlertNotificationChannel[]
 }
 
 model User {
@@ -43,6 +46,9 @@ model User {
   auditLogs     AuditLog[]
   refreshTokens  RefreshToken[]
   crawlTasks     CrawlTask[] @relation("CrawlTaskCreatedBy")
+  dashboardsCreated Dashboard[] @relation("DashboardCreatedBy")
+  alertRulesCreated AlertRule[] @relation("AlertRuleCreatedBy")
+  alertChannelsCreated AlertNotificationChannel[] @relation("AlertChannelCreatedBy")
 }
 
 model Role {
@@ -274,6 +280,183 @@ model ProcessedArticle {
   updatedAt          DateTime @updatedAt
 }
 
+model Dashboard {
+  id          String            @id @default(cuid())
+  org         Org               @relation(fields: [orgId], references: [id])
+  orgId       String
+  name        String
+  slug        String
+  description String?
+  theme       String?
+  config      Json?
+  createdBy   User?             @relation("DashboardCreatedBy", fields: [createdById], references: [id])
+  createdById String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  widgets     DashboardWidget[]
+
+  @@unique([orgId, slug])
+}
+
+model DashboardWidget {
+  id           String               @id @default(cuid())
+  dashboard    Dashboard            @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  dashboardId  String
+  title        String?
+  type         DashboardWidgetType
+  dataSource   String
+  dataConfig   Json?
+  layoutX      Int
+  layoutY      Int
+  layoutW      Int
+  layoutH      Int
+  sortOrder    Int                  @default(0)
+  options      Json?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+}
+
+enum DashboardWidgetType {
+  line
+  bar
+  pie
+  scatter
+  kline
+  radar
+  table
+}
+
+model AlertNotificationChannel {
+  id          String               @id @default(cuid())
+  org         Org                  @relation(fields: [orgId], references: [id])
+  orgId       String
+  type        AlertChannelType
+  name        String
+  target      String
+  config      Json?
+  isActive    Boolean              @default(true)
+  createdBy   User?                @relation("AlertChannelCreatedBy", fields: [createdById], references: [id])
+  createdById String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  deliveries  AlertDelivery[]
+  ruleLinks   AlertRuleChannel[]
+}
+
+model AlertRule {
+  id               String           @id @default(cuid())
+  org              Org              @relation(fields: [orgId], references: [id])
+  orgId            String
+  name             String
+  description      String?
+  severity         AlertSeverity    @default(medium)
+  status           AlertStatus      @default(active)
+  dataItem         EconomicDataItem? @relation(fields: [dataItemId], references: [id])
+  dataItemId       String?
+  metricSlug       String
+  operator         AlertOperator
+  thresholdValue   Decimal?         @db.Decimal(38, 12)
+  thresholdLower   Decimal?         @db.Decimal(38, 12)
+  thresholdUpper   Decimal?         @db.Decimal(38, 12)
+  changeWindowMin  Int?             // rolling window in minutes
+  cooldownSeconds  Int              @default(3600)
+  checkIntervalSec Int              @default(300)
+  lastTriggeredAt  DateTime?
+  metadata         Json?
+  createdBy        User?            @relation("AlertRuleCreatedBy", fields: [createdById], references: [id])
+  createdById      String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  events           AlertEvent[]
+  channels         AlertRuleChannel[]
+}
+
+model AlertEvent {
+  id             String              @id @default(cuid())
+  rule           AlertRule           @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  ruleId         String
+  triggeredAt    DateTime
+  metricValue    Decimal             @db.Decimal(38, 12)
+  changePercent  Float?
+  severity       AlertSeverity
+  status         AlertEventStatus    @default(pending)
+  message        String?
+  context        Json?
+  createdAt      DateTime            @default(now())
+
+  deliveries     AlertDelivery[]
+}
+
+model AlertDelivery {
+  id             String                  @id @default(cuid())
+  event          AlertEvent              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId        String
+  channel        AlertNotificationChannel? @relation(fields: [channelId], references: [id])
+  channelId      String?
+  channelType    AlertChannelType
+  targetSnapshot Json?
+  status         AlertDeliveryStatus     @default(pending)
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime                @default(now())
+}
+
+model AlertRuleChannel {
+  id         String                   @id @default(cuid())
+  rule       AlertRule                @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  ruleId     String
+  channel    AlertNotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channelId  String
+  createdAt  DateTime                 @default(now())
+
+  @@unique([ruleId, channelId])
+}
+
+enum AlertChannelType {
+  email
+  webhook
+}
+
+enum AlertSeverity {
+  low
+  medium
+  high
+}
+
+enum AlertStatus {
+  draft
+  active
+  paused
+  archived
+}
+
+enum AlertOperator {
+  gt
+  gte
+  lt
+  lte
+  eq
+  outside_range
+  within_range
+  change_up_pct
+  change_down_pct
+}
+
+enum AlertEventStatus {
+  pending
+  delivered
+  failed
+}
+
+enum AlertDeliveryStatus {
+  pending
+  sent
+  failed
+}
+
 enum NewsSourceType {
   general
   finance
@@ -362,6 +545,7 @@ model EconomicDataItem {
   dataPoints       EconomicDataPoint[]
   fetchConfig      EconomicDataFetchConfig?
   categories       EconomicDataItemCategory[]
+  alertRules       AlertRule[]
 }
 
 model EconomicDataItemCategory {

@@ -8,6 +8,7 @@ import { DatabaseModule } from "../config/database.module";
 @Module({
   imports: [ItemsModule, QueueModule, DatabaseModule],
   controllers: [DashboardController],
-  providers: [DashboardService]
+  providers: [DashboardService],
+  exports: [DashboardService]
 })
 export class DashboardModule {}

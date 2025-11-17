@@ -464,7 +464,38 @@ export class AkshareService implements OnModuleInit {
     return null;
   }
 
-  async getDataByCategory(categoryKey: string, start: Date, end: Date) {
+  private bucketTimestamp(date: Date, granularity: string) {
+    const d = new Date(date);
+    switch (granularity) {
+      case "year":
+        d.setMonth(0, 1);
+        d.setHours(0, 0, 0, 0);
+        break;
+      case "quarter": {
+        const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
+        d.setMonth(quarterStartMonth, 1);
+        d.setHours(0, 0, 0, 0);
+        break;
+      }
+      case "month":
+        d.setDate(1);
+        d.setHours(0, 0, 0, 0);
+        break;
+      case "week": {
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        d.setDate(diff);
+        d.setHours(0, 0, 0, 0);
+        break;
+      }
+      case "day":
+      default:
+        d.setHours(0, 0, 0, 0);
+    }
+    return d.toISOString();
+  }
+
+  async getDataByCategory(categoryKey: string, start: Date, end: Date, granularity?: string) {
     const points = await this.prisma.economicDataPoint.findMany({
       where: {
         recordedAt: {
@@ -486,7 +517,32 @@ export class AkshareService implements OnModuleInit {
       },
       orderBy: { recordedAt: "asc" }
     });
-    return points;
+    if (!granularity) {
+      return points;
+    }
+    const bucketed = new Map<string, { timestamp: Date; valueSum: number; count: number; sample: typeof points[number] }>();
+    for (const point of points) {
+      const bucketKey = this.bucketTimestamp(point.recordedAt, granularity);
+      const existing = bucketed.get(bucketKey);
+      if (existing) {
+        existing.valueSum += Number(point.value);
+        existing.count += 1;
+      } else {
+        bucketed.set(bucketKey, {
+          timestamp: new Date(bucketKey),
+          valueSum: Number(point.value),
+          count: 1,
+          sample: point
+        });
+      }
+    }
+    return Array.from(bucketed.values())
+      .map((entry) => ({
+        ...entry.sample,
+        recordedAt: entry.timestamp,
+        value: new Prisma.Decimal(entry.valueSum / entry.count)
+      }))
+      .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
   }
 
   async listFetchConfigs() {

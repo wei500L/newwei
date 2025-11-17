@@ -1,0 +1,25 @@
+query AnalysisResults($limit: Int) {
+  analysisResults(limit: $limit) {
+    id
+    type
+    status
+    summary
+    createdAt
+  }
+}
+
+mutation RequestCorrelation($input: CorrelationAnalysisInput!) {
+  requestCorrelationAnalysis(input: $input) {
+    id
+    status
+    type
+  }
+}
+
+mutation RequestAnomaly($input: AnomalyAnalysisInput!) {
+  requestAnomalyExplanation(input: $input) {
+    id
+    status
+    type
+  }
+}
