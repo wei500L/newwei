@@ -27,7 +27,19 @@ export class QueueService {
   }
 
   async stats(orgId: string) {
-    const counts = await this.queue.getJobCounts("waiting", "active", "completed", "failed", "delayed");
+    const counts: Record<JobType, number> = {
+      waiting: 0,
+      active: 0,
+      completed: 0,
+      failed: 0,
+      delayed: 0
+    };
+    const statuses: JobType[] = ["waiting", "active", "completed", "failed", "delayed"];
+    for (const status of statuses) {
+      // Limit to recent jobs; queue defaults already prune completed items.
+      const jobs = await this.queue.getJobs([status], 0, 500, false);
+      counts[status] = jobs.filter((job) => job.data?.orgId === orgId).length;
+    }
     const logs = await TaskLogModel.find({ orgId, queue: ITEM_PIPELINE_QUEUE_NAME })
       .sort({ createdAt: -1 })
       .limit(10)

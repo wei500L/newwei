@@ -24,9 +24,6 @@ export class ItemMetaModel {
 
   @Field(() => GraphQLISODateTime)
   updatedAt!: Date;
-
-  @Field(() => GraphQLISODateTime)
-  updatedAt!: Date;
 }
 
 @ObjectType()
