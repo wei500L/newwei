@@ -1,6 +1,14 @@
 import { Field, Float, GraphQLISODateTime, ObjectType, registerEnumType } from "@nestjs/graphql";
 import { EconomicDataFrequency, EconomicDataRunStatus, EconomicDataValueType } from "@prisma/client";
 
+export enum TimeGranularity {
+  year = "year",
+  quarter = "quarter",
+  month = "month",
+  week = "week",
+  day = "day"
+}
+
 registerEnumType(EconomicDataFrequency, {
   name: "EconomicDataFrequency"
 });
@@ -12,6 +20,8 @@ registerEnumType(EconomicDataRunStatus, {
 registerEnumType(EconomicDataValueType, {
   name: "EconomicDataValueType"
 });
+
+registerEnumType(TimeGranularity, { name: "TimeGranularity" });
 
 @ObjectType()
 export class EconomicDataItemModel {

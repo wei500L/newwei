@@ -1,0 +1,35 @@
+query Dashboards {
+  dashboards {
+    id
+    name
+    slug
+    description
+    theme
+    config
+    widgets {
+      id
+      title
+      type
+      dataSource
+      dataConfig
+      layoutX
+      layoutY
+      layoutW
+      layoutH
+      sortOrder
+      options
+    }
+  }
+}
+
+mutation UpsertDashboard($input: UpsertDashboardInput!) {
+  upsertDashboard(input: $input) {
+    id
+    name
+    slug
+  }
+}
+
+mutation DeleteDashboard($id: String!) {
+  deleteDashboard(id: $id)
+}

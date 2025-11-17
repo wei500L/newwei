@@ -192,6 +192,27 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get alertingConfig() {
+    return {
+      queueConcurrency:
+        this.get<number>("ALERT_QUEUE_CONCURRENCY", { infer: true }) ?? 4,
+      webhookTimeoutMs:
+        this.get<number>("ALERT_WEBHOOK_TIMEOUT_MS", { infer: true }) ?? 5_000,
+      maxRetries: this.get<number>("ALERT_MAX_RETRIES", { infer: true }) ?? 3,
+      scanIntervalMs:
+        this.get<number>("ALERT_SCAN_INTERVAL_MS", { infer: true }) ?? 300_000,
+    };
+  }
+
+  get analysisConfig() {
+    return {
+      queueConcurrency:
+        this.get<number>("ANALYSIS_QUEUE_CONCURRENCY", { infer: true }) ?? 2,
+      maxRetries:
+        this.get<number>("ANALYSIS_MAX_RETRIES", { infer: true }) ?? 3,
+    };
+  }
+
   get smtpConfig(): SmtpConfig {
     const host = this.getOrThrow<string>("SMTP_HOST", { infer: true });
     const port = this.getOrThrow<number>("SMTP_PORT", { infer: true });

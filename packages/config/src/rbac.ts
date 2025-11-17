@@ -9,6 +9,12 @@ export const CORE_PERMISSIONS = [
   "permissions.write",
   "items.read",
   "items.write",
+  "dashboards.read",
+  "dashboards.write",
+  "alerts.read",
+  "alerts.manage",
+  "analysis.read",
+  "analysis.run",
   "queue.manage",
   "crawl.read",
   "crawl.write",
@@ -42,6 +48,12 @@ export const DEFAULT_ROLES: DefaultRoleDefinition[] = [
       "permissions.read",
       "items.read",
       "items.write",
+      "dashboards.read",
+      "dashboards.write",
+      "alerts.read",
+      "alerts.manage",
+      "analysis.read",
+      "analysis.run",
       "queue.manage",
       "crawl.read",
       "crawl.write",
@@ -52,7 +64,17 @@ export const DEFAULT_ROLES: DefaultRoleDefinition[] = [
   {
     name: "analyst",
     description: "Read-only access to organizational and item data",
-    permissions: ["org.read", "users.read", "roles.read", "items.read", "crawl.read", "economicdata.read"]
+    permissions: [
+      "org.read",
+      "users.read",
+      "roles.read",
+      "items.read",
+      "dashboards.read",
+      "alerts.read",
+      "analysis.read",
+      "crawl.read",
+      "economicdata.read"
+    ]
   }
 ];
 

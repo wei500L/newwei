@@ -1,0 +1,137 @@
+import { Field, GraphQLISODateTime, ObjectType, registerEnumType } from "@nestjs/graphql";
+import GraphQLJSON from "graphql-type-json";
+import {
+  AlertChannelType,
+  AlertDeliveryStatus,
+  AlertEventStatus,
+  AlertOperator,
+  AlertSeverity,
+  AlertStatus
+} from "@prisma/client";
+
+registerEnumType(AlertSeverity, { name: "AlertSeverity" });
+registerEnumType(AlertStatus, { name: "AlertStatus" });
+registerEnumType(AlertOperator, { name: "AlertOperator" });
+registerEnumType(AlertChannelType, { name: "AlertChannelType" });
+registerEnumType(AlertEventStatus, { name: "AlertEventStatus" });
+registerEnumType(AlertDeliveryStatus, { name: "AlertDeliveryStatus" });
+
+@ObjectType()
+export class AlertChannelModel {
+  @Field()
+  id!: string;
+
+  @Field()
+  name!: string;
+
+  @Field(() => AlertChannelType)
+  type!: AlertChannelType;
+
+  @Field()
+  target!: string;
+
+  @Field(() => GraphQLISODateTime)
+  createdAt!: Date;
+
+  @Field(() => GraphQLISODateTime)
+  updatedAt!: Date;
+}
+
+@ObjectType()
+export class AlertDeliveryModel {
+  @Field()
+  id!: string;
+
+  @Field(() => AlertDeliveryStatus)
+  status!: AlertDeliveryStatus;
+
+  @Field({ nullable: true })
+  error?: string;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  sentAt?: Date;
+
+  @Field(() => AlertChannelType)
+  channelType!: AlertChannelType;
+}
+
+@ObjectType()
+export class AlertEventModel {
+  @Field()
+  id!: string;
+
+  @Field(() => GraphQLISODateTime)
+  triggeredAt!: Date;
+
+  @Field()
+  metricValue!: number;
+
+  @Field({ nullable: true })
+  changePercent?: number | null;
+
+  @Field(() => AlertSeverity)
+  severity!: AlertSeverity;
+
+  @Field(() => AlertEventStatus)
+  status!: AlertEventStatus;
+
+  @Field({ nullable: true })
+  message?: string;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  context?: Record<string, unknown>;
+
+  @Field(() => [AlertDeliveryModel])
+  deliveries!: AlertDeliveryModel[];
+}
+
+@ObjectType()
+export class AlertRuleModel {
+  @Field()
+  id!: string;
+
+  @Field()
+  name!: string;
+
+  @Field({ nullable: true })
+  description?: string;
+
+  @Field(() => AlertSeverity)
+  severity!: AlertSeverity;
+
+  @Field(() => AlertStatus)
+  status!: AlertStatus;
+
+  @Field()
+  metricSlug!: string;
+
+  @Field(() => AlertOperator)
+  operator!: AlertOperator;
+
+  @Field({ nullable: true })
+  thresholdValue?: number | null;
+
+  @Field({ nullable: true })
+  thresholdLower?: number | null;
+
+  @Field({ nullable: true })
+  thresholdUpper?: number | null;
+
+  @Field({ nullable: true })
+  changeWindowMin?: number | null;
+
+  @Field()
+  cooldownSeconds!: number;
+
+  @Field()
+  checkIntervalSec!: number;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  lastTriggeredAt?: Date | null;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  metadata?: Record<string, unknown>;
+
+  @Field(() => [AlertChannelModel])
+  channels!: AlertChannelModel[];
+}

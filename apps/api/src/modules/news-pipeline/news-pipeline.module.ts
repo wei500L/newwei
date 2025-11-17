@@ -8,6 +8,6 @@ import { NewsPipelineService } from "./news-pipeline.service";
 @Module({
   imports: [CrawlModule],
   providers: [NewsPipelineConfigService, NewsPromptBuilder, LiteLlmService, NewsPipelineService],
-  exports: [NewsPipelineService, NewsPipelineConfigService]
+  exports: [NewsPipelineService, NewsPipelineConfigService, LiteLlmService]
 })
 export class NewsPipelineModule {}

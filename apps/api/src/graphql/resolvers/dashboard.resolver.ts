@@ -1,12 +1,13 @@
-import { Context, Query, Resolver, Subscription, UseGuards } from "@nestjs/graphql";
+import { Args, Context, Mutation, Query, Resolver, Subscription, UseGuards } from "@nestjs/graphql";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { DashboardService } from "../../modules/dashboard/dashboard.service";
-import { QueueStatsModel, QueueEventModel, QueueCountsModel } from "../models/dashboard.model";
+import { QueueStatsModel, QueueEventModel, QueueCountsModel, DashboardModel } from "../models/dashboard.model";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { QueueEventPublisher, QueueEventPayload } from "../queue-event.publisher";
 import { ForbiddenException } from "@nestjs/common";
+import { UpsertDashboardInput } from "../dto/dashboard.input";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -15,6 +16,90 @@ export class DashboardResolver {
     private readonly dashboardService: DashboardService,
     private readonly queueEvents: QueueEventPublisher
   ) {}
+
+  @HasPermission("dashboards.read")
+  @Query(() => [DashboardModel])
+  async dashboards(@Context("req") req: any): Promise<DashboardModel[]> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    const dashboards = await this.dashboardService.listDashboards(requester.orgId);
+    return dashboards.map((dashboard) => ({
+      id: dashboard.id,
+      name: dashboard.name,
+      slug: dashboard.slug,
+      description: dashboard.description ?? undefined,
+      theme: dashboard.theme ?? undefined,
+      config: dashboard.config as any,
+      createdAt: dashboard.createdAt,
+      updatedAt: dashboard.updatedAt,
+      widgets:
+        dashboard.widgets?.map((widget) => ({
+          id: widget.id,
+          title: widget.title ?? undefined,
+          type: widget.type,
+          dataSource: widget.dataSource,
+          dataConfig: widget.dataConfig as any,
+          layoutX: widget.layoutX,
+          layoutY: widget.layoutY,
+          layoutW: widget.layoutW,
+          layoutH: widget.layoutH,
+          sortOrder: widget.sortOrder,
+          options: widget.options as any
+        })) ?? []
+    }));
+  }
+
+  @HasPermission("dashboards.write")
+  @Mutation(() => DashboardModel)
+  async upsertDashboard(
+    @Context("req") req: any,
+    @Args("input") input: UpsertDashboardInput
+  ): Promise<DashboardModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    const dashboard = await this.dashboardService.upsertDashboard(requester.orgId, input, requester.id);
+    if (!dashboard) {
+      throw new ForbiddenException("Unable to persist dashboard");
+    }
+    return {
+      id: dashboard.id,
+      name: dashboard.name,
+      slug: dashboard.slug,
+      description: dashboard.description ?? undefined,
+      theme: dashboard.theme ?? undefined,
+      config: dashboard.config as any,
+      createdAt: dashboard.createdAt,
+      updatedAt: dashboard.updatedAt,
+      widgets:
+        dashboard.widgets?.map((widget) => ({
+          id: widget.id,
+          title: widget.title ?? undefined,
+          type: widget.type,
+          dataSource: widget.dataSource,
+          dataConfig: widget.dataConfig as any,
+          layoutX: widget.layoutX,
+          layoutY: widget.layoutY,
+          layoutW: widget.layoutW,
+          layoutH: widget.layoutH,
+          sortOrder: widget.sortOrder,
+          options: widget.options as any
+        })) ?? []
+    };
+  }
+
+  @HasPermission("dashboards.write")
+  @Mutation(() => Boolean)
+  async deleteDashboard(@Context("req") req: any, @Args("id") id: string): Promise<boolean> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    return this.dashboardService.deleteDashboard(requester.orgId, id);
+  }
 
   @HasPermission("queue.manage")
   @Query(() => QueueStatsModel)

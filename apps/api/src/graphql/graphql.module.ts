@@ -16,12 +16,16 @@ import { QueueModule } from "../modules/queue/queue.module";
 import { CacheModule } from "../modules/cache/cache.module";
 import { CrawlModule } from "../modules/crawl/crawl.module";
 import { DataloaderModule, DataloaderInterceptor } from "nestjs-dataloader";
+import { AlertsModule } from "../modules/alerts/alerts.module";
+import { AnalysisModule } from "../modules/analysis/analysis.module";
 import { UsersResolver } from "./resolvers/user.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
 import { DashboardResolver } from "./resolvers/dashboard.resolver";
 import { CrawlResolver } from "./resolvers/crawl.resolver";
 import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
+import { AlertsResolver } from "./resolvers/alerts.resolver";
+import { AnalysisResolver } from "./resolvers/analysis.resolver";
 import { UserLoader } from "./loaders/user.loader";
 import { RoleLoader } from "./loaders/role.loader";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
@@ -46,6 +50,8 @@ const logger = createLogger({ name: "graphql" });
     QueueModule,
     CacheModule,
     CrawlModule,
+    AlertsModule,
+    AnalysisModule,
     DataloaderModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       inject: [EnvService],
@@ -119,6 +125,8 @@ const logger = createLogger({ name: "graphql" });
     DashboardResolver,
     CrawlResolver,
     EconomicDataResolver,
+    AlertsResolver,
+    AnalysisResolver,
     GraphQLJSONScalar,
     UserLoader,
     RoleLoader,

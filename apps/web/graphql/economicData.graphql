@@ -1,5 +1,5 @@
-query EconomicData($category: String!, $timeRange: DateRangeInput!) {
-  getEconomicData(category: $category, timeRange: $timeRange) {
+query EconomicData($category: String!, $timeRange: DateRangeInput!, $granularity: TimeGranularity) {
+  getEconomicData(category: $category, timeRange: $timeRange, granularity: $granularity) {
     timestamp
     value
     unit
