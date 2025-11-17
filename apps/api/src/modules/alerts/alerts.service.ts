@@ -16,6 +16,8 @@ import { ALERTS_QUEUE } from "./alerts.constants";
 import { EnvService } from "../config/config.service";
 import { firstValueFrom } from "rxjs";
 import { createLogger } from "@modular/utils";
+import { ALERTS_PUBSUB, AlertEventPayload } from "./alerts.pubsub";
+import { PubSubEngine } from "graphql-subscriptions";
 
 export interface AlertChannelInput {
   id?: string;
@@ -64,7 +66,8 @@ export class AlertsService {
     email: EmailService,
     http: HttpService,
     private readonly env: EnvService,
-    @Inject(ALERTS_QUEUE) private readonly queue: Queue<AlertJobPayload>
+    @Inject(ALERTS_QUEUE) private readonly queue: Queue<AlertJobPayload>,
+    @Inject(ALERTS_PUBSUB) private readonly pubsub: PubSubEngine
   ) {
     this.prisma = prisma;
     this.email = email;
@@ -287,6 +290,16 @@ export class AlertsService {
     );
 
     await this.dispatchNotifications(event.id, rule, activeChannels);
+    await this.pubsub.publish("alertEvents", {
+      orgId: rule.orgId,
+      event: {
+        id: event.id,
+        ruleId: rule.id,
+        triggeredAt: event.triggeredAt.toISOString(),
+        message: triggered.message,
+        severity: rule.severity
+      }
+    } satisfies AlertEventPayload);
 
     return { event, deliveries };
   }

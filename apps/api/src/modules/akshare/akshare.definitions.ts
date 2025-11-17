@@ -1524,5 +1524,99 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
         { field: "晚盘价", label: "晚盘价", unit: "CNY/kg", dataType: EconomicDataValueType.price }
       ]
     }
+  },
+  {
+    id: "sp500-index",
+    slug: "sp500_index",
+    displayName: "标普500指数",
+    categories: ["global-index", "macro"],
+    sourceFunction: "ak.index_global_hist_em",
+    endpoint: "/index_global_hist_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "标普500" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "今开", label: "开盘", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最新价", label: "收盘", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最高", label: "高", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最低", label: "低", unit: "", dataType: EconomicDataValueType.index }
+      ]
+    }
+  },
+  {
+    id: "dowjones-index",
+    slug: "dowjones_index",
+    displayName: "道琼斯指数",
+    categories: ["global-index", "macro"],
+    sourceFunction: "ak.index_global_hist_em",
+    endpoint: "/index_global_hist_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "道琼斯" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "今开", label: "开盘", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最新价", label: "收盘", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最高", label: "高", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最低", label: "低", unit: "", dataType: EconomicDataValueType.index }
+      ]
+    }
+  },
+  {
+    id: "nasdaq-index",
+    slug: "nasdaq_index",
+    displayName: "纳斯达克指数",
+    categories: ["global-index", "macro"],
+    sourceFunction: "ak.index_global_hist_em",
+    endpoint: "/index_global_hist_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "纳斯达克指数" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "今开", label: "开盘", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最新价", label: "收盘", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最高", label: "高", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最低", label: "低", unit: "", dataType: EconomicDataValueType.index }
+      ]
+    }
+  },
+  {
+    id: "crypto-bitcoin-cme",
+    slug: "crypto_bitcoin_cme",
+    displayName: "CME比特币成交报告",
+    categories: ["crypto", "derivatives"],
+    sourceFunction: "ak.crypto_bitcoin_cme",
+    endpoint: "/crypto_bitcoin_cme",
+    docUrl: "https://akshare.akfamily.xyz/data/dc/dc.html",
+    method: "GET",
+    defaultParams: { date: `${CURRENT_YEAR}0101` },
+    valueType: EconomicDataValueType.volume,
+    defaultUnit: "contracts",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "成交量", label: "成交量", unit: "contracts", dataType: EconomicDataValueType.volume },
+        { field: "未平仓合约", label: "未平仓", unit: "contracts", dataType: EconomicDataValueType.volume }
+      ]
+    }
   }
 ] satisfies AkshareDataItemDefinition[];

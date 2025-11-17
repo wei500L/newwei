@@ -6,6 +6,8 @@ import { EnvService } from "../config/config.service";
 import { ANALYSIS_QUEUE } from "./analysis.constants";
 import { AnalysisJobPayload, AnomalyInput, CorrelationInput } from "./analysis.types";
 import { createLogger } from "@modular/utils";
+import { ANALYSIS_PUBSUB } from "./analysis.pubsub";
+import { PubSubEngine } from "graphql-subscriptions";
 
 const logger = createLogger({ name: "analysis-service" });
 
@@ -14,7 +16,8 @@ export class AnalysisService {
   constructor(
     private readonly llm: LiteLlmService,
     private readonly env: EnvService,
-    @Inject(ANALYSIS_QUEUE) private readonly queue: Queue<AnalysisJobPayload>
+    @Inject(ANALYSIS_QUEUE) private readonly queue: Queue<AnalysisJobPayload>,
+    @Inject(ANALYSIS_PUBSUB) private readonly pubsub: PubSubEngine
   ) {}
 
   async submitCorrelation(orgId: string, input: CorrelationInput, triggeredById?: string) {
@@ -74,11 +77,13 @@ export class AnalysisService {
       }
       record.status = "completed";
       await record.save();
+      await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, record.createdAt);
     } catch (error) {
       logger.error({ job, error }, "Analysis job failed");
       record.status = "failed";
       record.error = error instanceof Error ? error.message : String(error);
       await record.save();
+      await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, record.createdAt);
       throw error;
     }
   }
@@ -133,5 +138,18 @@ export class AnalysisService {
     });
     const content = completion.choices?.[0]?.message?.content ?? "";
     return { summary: content, raw: completion };
+  }
+
+  private async publish(orgId: string, id: string, type: string, status: string, summary?: string, createdAt?: Date) {
+    await this.pubsub.publish("analysisEvents", {
+      orgId,
+      result: {
+        id,
+        type,
+        status,
+        summary,
+        createdAt: (createdAt ?? new Date()).toISOString()
+      }
+    });
   }
 }

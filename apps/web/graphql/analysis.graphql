@@ -8,6 +8,16 @@ query AnalysisResults($limit: Int) {
   }
 }
 
+subscription AnalysisEvents {
+  analysisEvents {
+    id
+    type
+    status
+    summary
+    createdAt
+  }
+}
+
 mutation RequestCorrelation($input: CorrelationAnalysisInput!) {
   requestCorrelationAnalysis(input: $input) {
     id

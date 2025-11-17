@@ -210,6 +210,8 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("ANALYSIS_QUEUE_CONCURRENCY", { infer: true }) ?? 2,
       maxRetries:
         this.get<number>("ANALYSIS_MAX_RETRIES", { infer: true }) ?? 3,
+      autoTriggerEnabled:
+        this.get<boolean>("ANALYSIS_AUTOTRIGGER_ENABLED", { infer: true }) ?? false,
     };
   }
 

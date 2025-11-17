@@ -5,8 +5,12 @@ import dayjs from "dayjs";
 import {
   useAlertEventsQuery,
   useAlertRulesQuery,
-  useTriggerAlertRuleMutation
+  useTriggerAlertRuleMutation,
+  AlertEventsDocument,
+  AlertEventsSubscription
 } from "@/graphql/generated";
+import { useEffect } from "react";
+import { useApolloClient } from "@apollo/client";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -18,6 +22,16 @@ export function AlertPanel() {
   const { data: rulesData, refetch: refetchRules } = useAlertRulesQuery();
   const { data: eventsData, refetch: refetchEvents } = useAlertEventsQuery({ variables: { limit: 10 } });
   const [triggerRule, { loading }] = useTriggerAlertRuleMutation();
+  const client = useApolloClient();
+
+  useEffect(() => {
+    const sub = client.subscribe<AlertEventsSubscription>({ query: AlertEventsDocument }).subscribe({
+      next: () => {
+        void Promise.all([refetchRules(), refetchEvents()]);
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [client, refetchEvents, refetchRules]);
 
   const rules = rulesData?.alertRules ?? [];
   const events = eventsData?.alertEvents ?? [];

@@ -9,6 +9,7 @@ import { AlertPanel } from "./alert-panel";
 import { AnalysisPanel } from "./analysis-panel";
 import { DrilldownChart } from "./drilldown-chart";
 import { AlertConfigForm } from "./alert-config-form";
+import { LiveAlertsToasts } from "./live-alerts";
 
 export function DashboardContent() {
   const { data, loading, error } = useQueueStatsQuery();
@@ -63,6 +64,7 @@ export function DashboardContent() {
 
   return (
     <div>
+      <LiveAlertsToasts />
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} lg={8}>
           <Card className="content-card">
