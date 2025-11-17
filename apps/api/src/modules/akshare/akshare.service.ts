@@ -2,7 +2,7 @@ import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { lastValueFrom } from "rxjs";
-import { Queue } from "bullmq";
+import { Queue, type RepeatJob, type RepeatOptions } from "bullmq";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
 import { AkshareDataItemDefinition, AkshareJobPayload, AkshareParserConfig } from "./akshare.types";
 import { PrismaService } from "../config/prisma.service";
@@ -129,24 +129,44 @@ export class AkshareService implements OnModuleInit {
     const configs = await this.prisma.economicDataFetchConfig.findMany({
       include: { item: true }
     });
-    await this.queue.drain(true);
+    const existingJobs = await this.queue.getRepeatableJobs();
+    const configByJobName = new Map(
+      configs.map((config) => [this.buildJobName(config.itemId), config])
+    );
+    for (const job of existingJobs) {
+      const config = configByJobName.get(job.name ?? "");
+      if (!config || !config.isEnabled) {
+        await this.queue.removeRepeatableByKey(job.key);
+      }
+    }
+
+    const existingByName = new Map(existingJobs.map((job) => [job.name ?? "", job]));
     for (const config of configs) {
       if (!config.isEnabled) {
         continue;
       }
+      const jobName = this.buildJobName(config.itemId);
+      const repeat = this.buildRepeatOptions(config.frequency, config.repeatCron);
+      const existing = existingByName.get(jobName);
+      if (existing && this.repeatMatches(existing, repeat)) {
+        continue;
+      }
+      if (existing) {
+        await this.queue.removeRepeatableByKey(existing.key);
+      }
       await this.queue.add(
-        `fetch:${config.itemId}`,
+        jobName,
         { dataItemId: config.item.slug },
         {
           removeOnComplete: true,
           removeOnFail: false,
-          repeat: this.buildRepeatOptions(config.frequency, config.repeatCron)
+          repeat
         }
       );
     }
   }
 
-  private buildRepeatOptions(frequency: Prisma.EconomicDataFrequency, cron?: string) {
+  private buildRepeatOptions(frequency: Prisma.EconomicDataFrequency, cron?: string): RepeatOptions {
     if (cron) {
       return { pattern: cron };
     }
@@ -164,6 +184,20 @@ export class AkshareService implements OnModuleInit {
       default:
         return { every: 24 * 60 * 60 * 1000 };
     }
+  }
+
+  private buildJobName(itemId: string) {
+    return `fetch:${itemId}`;
+  }
+
+  private repeatMatches(job: RepeatJob, repeat: RepeatOptions) {
+    if (repeat.every) {
+      return job.every === repeat.every;
+    }
+    if (repeat.pattern) {
+      return job.pattern === repeat.pattern;
+    }
+    return false;
   }
 
   async triggerDataFetch(slugs: string[], triggeredById?: string) {
@@ -241,15 +275,37 @@ export class AkshareService implements OnModuleInit {
       : `${config.baseUrl.replace(/\/$/, "")}${definition.endpoint.startsWith("/") ? "" : "/"}${definition.endpoint}`;
     const method = definition.method ?? "GET";
     const params = definition.defaultParams ?? {};
-    const observable = this.http.request({
-      method,
-      url,
-      params: method === "GET" ? params : undefined,
-      data: method === "POST" ? params : undefined,
-      timeout: config.timeoutMs
-    });
-    const response = await lastValueFrom(observable);
-    return { definition, payload: response.data };
+    const request = async () => {
+      const observable = this.http.request({
+        method,
+        url,
+        params: method === "GET" ? params : undefined,
+        data: method === "POST" ? params : undefined,
+        timeout: config.timeoutMs
+      });
+      const response = await lastValueFrom(observable);
+      return response.data;
+    };
+
+    const payload = await this.retry(request, config.maxRetries);
+    return { definition, payload };
+  }
+
+  private async retry<T>(fn: () => Promise<T>, attempts: number) {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= Math.max(1, attempts); attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        if (attempt === attempts) {
+          break;
+        }
+        const delayMs = Math.min(2000 * attempt, 10_000);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+    throw lastError;
   }
 
   private parsePayload(parser: AkshareParserConfig, payload: any) {

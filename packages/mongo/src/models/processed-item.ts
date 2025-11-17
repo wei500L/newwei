@@ -4,6 +4,7 @@ const ProcessedItemSchema = new Schema(
   {
     rawItemId: { type: Schema.Types.ObjectId, ref: "RawItem", required: true },
     itemMetaId: { type: String, index: true, required: true },
+    orgId: { type: String, index: true, required: true },
     status: {
       type: String,
       enum: ["pending", "processing", "completed", "failed"],

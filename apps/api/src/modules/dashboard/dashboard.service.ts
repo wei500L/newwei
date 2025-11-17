@@ -18,8 +18,8 @@ export class DashboardService {
   async stats(orgId: string) {
     const [itemCount, processedCount, queueStats] = await Promise.all([
       this.prisma.itemMeta.count({ where: { orgId } }),
-      ProcessedItemModel.countDocuments({}),
-      this.queueService.stats()
+      ProcessedItemModel.countDocuments({ orgId }),
+      this.queueService.stats(orgId)
     ]);
 
     return {

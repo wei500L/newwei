@@ -12,6 +12,7 @@ export interface PipelineJobContext {
   jobId: string;
   itemMetaId: string;
   rawItemId: string;
+  orgId: string;
 }
 
 export interface NormalizedNewsPayload {

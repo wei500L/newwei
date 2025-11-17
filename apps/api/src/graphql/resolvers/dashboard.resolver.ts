@@ -58,7 +58,11 @@ export class DashboardResolver {
       timestamp: value.queueEvents.timestamp
     })
   })
-  queueEventsSubscription(): AsyncIterableIterator<{ queueEvents: QueueEventPayload }> {
-    return this.queueEvents.asyncIterator();
+  queueEventsSubscription(@Context("req") req: any): AsyncIterableIterator<{ queueEvents: QueueEventPayload }> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    return this.queueEvents.asyncIterator(requester.orgId);
   }
 }

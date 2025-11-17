@@ -45,6 +45,7 @@ export const baseEnvSchema = z.object({
   AKSHARE_HTTP_BASE_URL: z.string().url().default("http://localhost:8081"),
   AKSHARE_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
   AKSHARE_HTTP_MAX_RETRIES: z.coerce.number().int().positive().default(3),
+  AKSHARE_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
   NEWS_PIPELINE_CACHE_TTL_SECONDS: z.coerce
     .number()
     .int()

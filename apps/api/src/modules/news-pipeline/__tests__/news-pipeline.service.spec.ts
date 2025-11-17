@@ -131,7 +131,8 @@ describe("NewsPipelineService", () => {
     queue: "itemPipeline",
     jobId: "job-1",
     itemMetaId: "meta-1",
-    rawItemId: "raw-1"
+    rawItemId: "raw-1",
+    orgId: "org-1"
   };
 
   const raw: RawPipelineItem = {
