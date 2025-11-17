@@ -37,6 +37,19 @@ pnpm dev
 
 预置管理员账号：`admin@example.com` / `Change_me123!`
 
+### 邮件发送
+
+`.env` 与 `infra/docker/.env` 增加了 SMTP 配置，可用于 163 邮箱等服务：
+
+```bash
+SMTP_HOST=smtp.163.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=wei500l@163.com
+SMTP_PASS=your_smtp_app_password
+SMTP_FROM="Wei <wei500l@163.com>"
+```
+
 ### Docker Compose
 
 ```bash

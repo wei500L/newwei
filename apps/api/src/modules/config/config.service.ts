@@ -26,6 +26,15 @@ export interface NewsPipelineEnvConfig {
   processQueueRateLimit: number;
 }
 
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  from?: string;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -180,6 +189,23 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("AKSHARE_HTTP_MAX_RETRIES", { infer: true }) ?? 3,
       queueConcurrency:
         this.get<number>("AKSHARE_QUEUE_CONCURRENCY", { infer: true }) ?? 2,
+    };
+  }
+
+  get smtpConfig(): SmtpConfig {
+    const host = this.getOrThrow<string>("SMTP_HOST", { infer: true });
+    const port = this.getOrThrow<number>("SMTP_PORT", { infer: true });
+    const secure = this.get<boolean>("SMTP_SECURE", { infer: true }) ?? true;
+    const user = this.getOrThrow<string>("SMTP_USER", { infer: true });
+    const pass = this.getOrThrow<string>("SMTP_PASS", { infer: true });
+    const from = this.get<string | undefined>("SMTP_FROM", { infer: true });
+    return {
+      host,
+      port,
+      secure,
+      user,
+      pass,
+      from: from ?? user,
     };
   }
 }
