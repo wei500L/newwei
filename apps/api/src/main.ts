@@ -5,11 +5,11 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { json, urlencoded } from "express";
-import { ConfigService } from "@nestjs/config";
 import { WINSTON_MODULE_NEST_PROVIDER } from "nest-winston";
 import { AppModule } from "./app.module";
 import { createLogger } from "@modular/utils";
 import pkg from "../package.json" assert { type: "json" };
+import { EnvService } from "./modules/config/config.service";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -47,13 +47,15 @@ async function bootstrap() {
   app.use(cookieParser());
   app.use(json({ limit: "10mb" }));
   app.use(urlencoded({ extended: true }));
+  const env = app.get(EnvService);
+  const corsOrigin =
+    env.graphqlConfig.corsOrigin?.split(",").map((origin) => origin.trim()).filter(Boolean) ?? true;
   app.enableCors({
     credentials: true,
-    origin: true
+    origin: corsOrigin
   });
 
-  const config = app.get(ConfigService);
-  const port = config.get<number>("PORT", 4000);
+  const port = env.port;
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("Modular Monolith API")

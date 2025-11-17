@@ -50,6 +50,7 @@ export class AuthService {
       where: { email },
       include: {
         memberships: {
+          orderBy: { createdAt: "asc" },
           include: {
             org: true,
             role: {
@@ -216,6 +217,7 @@ export class AuthService {
 
     const memberships = await this.prisma.membership.findMany({
       where: { userId: user.id },
+      orderBy: { createdAt: "asc" },
       include: {
         role: {
           include: {

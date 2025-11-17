@@ -27,18 +27,7 @@ export class QueueService {
   }
 
   async stats(orgId: string) {
-    const statuses: JobType[] = ["waiting", "active", "completed", "failed", "delayed"];
-    const counts: Record<JobType, number> = {
-      waiting: 0,
-      active: 0,
-      completed: 0,
-      failed: 0,
-      delayed: 0
-    };
-    for (const status of statuses) {
-      const jobs = await this.queue.getJobs([status], 0, -1, false);
-      counts[status] = jobs.filter((job) => job.data?.orgId === orgId).length;
-    }
+    const counts = await this.queue.getJobCounts("waiting", "active", "completed", "failed", "delayed");
     const logs = await TaskLogModel.find({ orgId, queue: ITEM_PIPELINE_QUEUE_NAME })
       .sort({ createdAt: -1 })
       .limit(10)
