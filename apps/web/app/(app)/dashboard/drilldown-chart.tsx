@@ -13,7 +13,7 @@ const GRANS: TimeGranularity[] = [TimeGranularity.Year, TimeGranularity.Quarter,
 export function DrilldownChart({ category, title }: { category: string; title: string }) {
   const [level, setLevel] = useState<number>(2); // start at month
   const client = useApolloClient();
-  const { start, end } = useDashboardRangeStore();
+  const { start, end, setCustomRange } = useDashboardRangeStore();
 
   const { data, isLoading } = useQuery({
     queryKey: ["economicData", category, level, start.toISOString(), end.toISOString()],
@@ -32,8 +32,9 @@ export function DrilldownChart({ category, title }: { category: string; title: s
     staleTime: 60_000
   });
 
-  const breadcrumbs = GRANS.slice(0, level + 1).map((g) => ({
-    title: g
+  const breadcrumbs = GRANS.slice(0, level + 1).map((g, idx) => ({
+    title: g,
+    onClick: () => setLevel(idx)
   }));
 
   const option = useMemo(() => {
@@ -71,6 +72,20 @@ export function DrilldownChart({ category, title }: { category: string; title: s
             handler: (_params) => {
               if (level < GRANS.length - 1) {
                 setLevel((prev) => Math.min(GRANS.length - 1, prev + 1));
+              }
+            }
+          },
+          {
+            type: "dataZoom",
+            handler: (params) => {
+              const startVal = params.batch?.[0]?.startValue ?? params.batch?.[0]?.start ?? undefined;
+              const endVal = params.batch?.[0]?.endValue ?? params.batch?.[0]?.end ?? undefined;
+              if (startVal && endVal) {
+                const startDate = new Date(startVal);
+                const endDate = new Date(endVal);
+                if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+                  setCustomRange(startDate, endDate);
+                }
               }
             }
           }

@@ -34,7 +34,7 @@ export const useDashboardEditorStore = create<DashboardEditorState>((set, get) =
   widgets: [],
   theme: "light",
   name: "Analysis Dashboard",
-  slug: "analysis-dashboard",
+  slug: `analysis-${nanoid(6)}`,
   description: undefined,
   setMeta: (meta) =>
     set((state) => ({
@@ -80,7 +80,7 @@ export const useDashboardEditorStore = create<DashboardEditorState>((set, get) =
       widgets: [],
       theme: "light",
       name: "Analysis Dashboard",
-      slug: "analysis-dashboard",
+      slug: `analysis-${nanoid(6)}`,
       description: undefined
     })
 }));
