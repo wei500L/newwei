@@ -171,6 +171,17 @@ export class CrawlResolver {
     return this.toGraphTask(task);
   }
 
+  @HasPermission("crawl.write")
+  @Mutation(() => Boolean)
+  async deleteCrawlTask(@Context("req") req: any, @Args("id") id: string): Promise<boolean> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+    await this.crawlService.deleteTask(requester.orgId, requester.id, id);
+    return true;
+  }
+
   @HasPermission("crawl.read")
   @Query(() => [CrawlMetadataResultModel])
   async crawlMetadata(@Context("req") req: any, @Args("input") input: CrawlMetadataInput) {

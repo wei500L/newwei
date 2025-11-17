@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -38,6 +38,13 @@ export class CrawlController {
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateCrawlTaskDto) {
     return this.crawlService.createTask(user.orgId, user.id, body);
+  }
+
+  @Permissions("crawl.write")
+  @Delete(":id")
+  async remove(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    await this.crawlService.deleteTask(user.orgId, user.id, id);
+    return { ok: true };
   }
 
   @Permissions("crawl.write")

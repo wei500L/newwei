@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
 import type { CrawlResult, CrawlTask, CrawlTaskStatus, Prisma } from "@prisma/client";
-import { Queue } from "bullmq";
+import { Job, Queue } from "bullmq";
 import { createLogger } from "@modular/utils";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
@@ -218,6 +218,43 @@ export class CrawlService {
 
     await this.enqueueTask(created.id, orgId, userId);
     return this.toView(created);
+  }
+
+  async deleteTask(orgId: string, userId: string, taskId: string) {
+    const task = await this.prisma.crawlTask.findFirst({
+      where: { id: taskId, orgId },
+      include: { results: { select: { id: true } } }
+    });
+    if (!task) {
+      throw new NotFoundException("Crawl task not found");
+    }
+
+    await this.removeQueuedJobs(taskId);
+    const resultIds = task.results.map((result) => result.id);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.crawlResult.deleteMany({ where: { taskId } });
+      await tx.crawlTask.delete({ where: { id: taskId } });
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorId: userId,
+          resource: "crawlTask",
+          action: "delete",
+          metadata: {
+            taskId,
+            deletedResultCount: resultIds.length
+          }
+        }
+      });
+    });
+
+    await Promise.all([
+      CrawlResultContentModel.deleteMany({ taskId }).exec(),
+      TaskLogModel.deleteMany({ orgId, jobId: { $regex: `^${taskId}` } }).exec()
+    ]);
+
+    return { taskId, deletedResultCount: resultIds.length };
   }
 
   async listTasks(orgId: string, filters: ListCrawlTaskDto) {
@@ -2302,6 +2339,24 @@ export class CrawlService {
       }
     }
     return undefined;
+  }
+
+  private async removeQueuedJobs(taskId: string) {
+    const jobs = await this.crawlQueue.getJobs(
+      ["waiting", "delayed", "active", "failed"],
+      0,
+      200
+    );
+    const matching = jobs.filter((job) => job.data?.taskId === taskId);
+    await Promise.all(
+      matching.map(async (job: Job) => {
+        try {
+          await job.remove();
+        } catch (error) {
+          logger.warn({ taskId, jobId: job.id, err: error }, "Failed to remove queued crawl job");
+        }
+      })
+    );
   }
 
   private normalizeTablesFromResult(item: Crawl4aiArticle): CrawlResultTable[] | undefined {
