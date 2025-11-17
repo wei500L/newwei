@@ -70,3 +70,12 @@ mutation CreateAlertChannel($input: AlertChannelInput!) {
 mutation TriggerAlertRule($ruleId: String!) {
   triggerAlertRule(ruleId: $ruleId)
 }
+
+subscription AlertEvents {
+  alertEvents {
+    id
+    triggeredAt
+    severity
+    message
+  }
+}

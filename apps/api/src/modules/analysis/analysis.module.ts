@@ -5,6 +5,7 @@ import { AnalysisService } from "./analysis.service";
 import { AnalysisProcessor } from "./analysis.processor";
 import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_QUEUE_NAME } from "./analysis.constants";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
+import { ANALYSIS_PUBSUB, createAnalysisPubSub } from "./analysis.pubsub";
 
 @Module({
   imports: [NewsPipelineModule],
@@ -20,6 +21,10 @@ import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
       provide: ANALYSIS_QUEUE_EVENTS,
       inject: [EnvService],
       useFactory: (env: EnvService) => new QueueEvents(ANALYSIS_QUEUE_NAME, { connection: env.redisConfig })
+    },
+    {
+      provide: ANALYSIS_PUBSUB,
+      useFactory: () => createAnalysisPubSub()
     }
   ],
   exports: [AnalysisService]

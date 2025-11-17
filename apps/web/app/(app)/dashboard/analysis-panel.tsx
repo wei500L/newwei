@@ -5,13 +5,27 @@ import dayjs from "dayjs";
 import {
   useAnalysisResultsQuery,
   useRequestAnomalyMutation,
-  useRequestCorrelationMutation
+  useRequestCorrelationMutation,
+  AnalysisEventsDocument,
+  AnalysisEventsSubscription
 } from "@/graphql/generated";
+import { useEffect } from "react";
+import { useApolloClient } from "@apollo/client";
 
 export function AnalysisPanel() {
   const { data, refetch } = useAnalysisResultsQuery({ variables: { limit: 10 } });
   const [requestCorrelation, { loading: savingCorr }] = useRequestCorrelationMutation();
   const [requestAnomaly, { loading: savingAnomaly }] = useRequestAnomalyMutation();
+  const client = useApolloClient();
+
+  useEffect(() => {
+    const sub = client.subscribe<AnalysisEventsSubscription>({ query: AnalysisEventsDocument }).subscribe({
+      next: () => {
+        void refetch();
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [client, refetch]);
 
   const results = data?.analysisResults ?? [];
 

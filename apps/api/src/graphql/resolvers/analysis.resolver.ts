@@ -1,4 +1,4 @@
-import { Args, Context, Int, Mutation, Query, Resolver, UseGuards } from "@nestjs/graphql";
+import { Args, Context, Int, Mutation, Query, Resolver, Subscription, UseGuards } from "@nestjs/graphql";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
@@ -7,11 +7,17 @@ import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { AnalysisService } from "../../modules/analysis/analysis.service";
 import { AnalysisResultModel } from "../models/analysis.model";
 import { AnomalyAnalysisInput, CorrelationAnalysisInput } from "../dto/analysis.input";
+import { Inject } from "@nestjs/common";
+import { ANALYSIS_PUBSUB } from "../../modules/analysis/analysis.pubsub";
+import { PubSubEngine } from "graphql-subscriptions";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class AnalysisResolver {
-  constructor(private readonly analysisService: AnalysisService) {}
+  constructor(
+    private readonly analysisService: AnalysisService,
+    @Inject(ANALYSIS_PUBSUB) private readonly pubsub: PubSubEngine
+  ) {}
 
   @HasPermission("analysis.read")
   @Query(() => [AnalysisResultModel])
@@ -76,5 +82,29 @@ export class AnalysisResolver {
       summary: record.summary ?? undefined,
       input: record.input as any
     };
+  }
+
+  @HasPermission("analysis.read")
+  @Subscription(() => AnalysisResultModel, {
+    name: "analysisEvents",
+    resolve: (payload: any) => ({
+      id: payload.result.id,
+      type: payload.result.type,
+      status: payload.result.status,
+      summary: payload.result.summary ?? undefined,
+      createdAt: payload.result.createdAt,
+      input: null,
+      output: null,
+      error: undefined
+    })
+  })
+  analysisEventsSubscription(@Context("req") req: any) {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    return this.pubsub.asyncIterator("analysisEvents", {
+      filter: (payload: any) => payload.orgId === requester.orgId
+    } as any);
   }
 }

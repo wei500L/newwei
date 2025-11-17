@@ -1,4 +1,4 @@
-import { Args, Context, Int, Mutation, Query, Resolver, UseGuards } from "@nestjs/graphql";
+import { Args, Context, Int, Mutation, Query, Resolver, Subscription, UseGuards } from "@nestjs/graphql";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
@@ -7,11 +7,14 @@ import { AlertChannelModel, AlertEventModel, AlertRuleModel } from "../models/al
 import { AlertChannelInput, UpsertAlertRuleInput } from "../dto/alert.input";
 import { ForbiddenException } from "@nestjs/common";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { Inject } from "@nestjs/common";
+import { ALERTS_PUBSUB } from "../../modules/alerts/alerts.pubsub";
+import { PubSubEngine } from "graphql-subscriptions";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class AlertsResolver {
-  constructor(private readonly alerts: AlertsService) {}
+  constructor(private readonly alerts: AlertsService, @Inject(ALERTS_PUBSUB) private readonly pubsub: PubSubEngine) {}
 
   @HasPermission("alerts.read")
   @Query(() => [AlertChannelModel])
@@ -182,5 +185,29 @@ export class AlertsResolver {
   async triggerAlertRule(@Args("ruleId") ruleId: string): Promise<boolean> {
     await this.alerts.enqueueRuleCheck(ruleId);
     return true;
+  }
+
+  @HasPermission("alerts.read")
+  @Subscription(() => AlertEventModel, {
+    name: "alertEvents",
+    resolve: (payload: any) => ({
+      id: payload.event.id,
+      triggeredAt: payload.event.triggeredAt,
+      metricValue: 0,
+      changePercent: null,
+      severity: payload.event.severity,
+      status: "pending",
+      message: payload.event.message ?? undefined,
+      deliveries: []
+    })
+  })
+  alertEventsSubscription(@Context("req") req: any) {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    return this.pubsub.asyncIterator("alertEvents", {
+      filter: (payload: any) => payload.orgId === requester.orgId
+    } as any);
   }
 }

@@ -73,6 +73,7 @@ export const apiEnvSchema = baseEnvSchema.extend({
   ALERT_SCAN_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
   ANALYSIS_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
   ANALYSIS_MAX_RETRIES: z.coerce.number().int().positive().default(3),
+  ANALYSIS_AUTOTRIGGER_ENABLED: z.coerce.boolean().default(false),
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
