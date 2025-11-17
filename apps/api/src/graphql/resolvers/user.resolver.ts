@@ -6,6 +6,7 @@ import { PrismaService } from "../../modules/config/prisma.service";
 import { AuthService, AuthenticatedUser } from "../../modules/auth/auth.service";
 import { ForbiddenException } from "@nestjs/common";
 import { HasPermission } from "../decorators/has-permission.decorator";
+import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 
 function decodeCursor(cursor?: string | null) {
   return cursor ? Buffer.from(cursor, "base64").toString("utf8") : undefined;
@@ -17,6 +18,7 @@ export class UsersResolver {
   constructor(private readonly prisma: PrismaService, private readonly authService: AuthService) {}
 
   @Query(() => UserModel)
+  @AllowAuthenticated()
   async me(@Context("req") req: any): Promise<UserModel> {
     if (!req?.user) {
       throw new ForbiddenException("Unauthenticated");
