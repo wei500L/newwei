@@ -10,6 +10,9 @@ export type AlertEventPayload = {
     triggeredAt: string;
     message?: string;
     severity: string;
+    metricValue: number;
+    changePercent?: number | null;
+    status: string;
   };
 };
 

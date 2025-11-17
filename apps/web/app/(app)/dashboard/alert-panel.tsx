@@ -91,11 +91,11 @@ export function AlertPanel() {
               <List.Item.Meta
                 title={
                   <Space>
-                    <Badge status={event.status === "delivered" ? "success" : event.status === "pending" ? "processing" : "error"} />
-                    <Typography.Text>{dayjs(event.triggeredAt).format("YYYY-MM-DD HH:mm")}</Typography.Text>
-                    <Tag color={severityColor[event.severity] ?? "blue"}>{event.severity}</Tag>
-                  </Space>
-                }
+        <Badge status={event.status === "delivered" ? "success" : event.status === "pending" ? "processing" : "error"} />
+        <Typography.Text>{dayjs(event.triggeredAt).format("YYYY-MM-DD HH:mm")}</Typography.Text>
+        <Tag color={severityColor[event.severity] ?? "blue"}>{event.severity}</Tag>
+      </Space>
+    }
                 description={
                   <Space direction="vertical">
                     <Typography.Text type="secondary">

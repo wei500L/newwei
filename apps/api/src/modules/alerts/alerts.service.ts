@@ -297,7 +297,10 @@ export class AlertsService {
         ruleId: rule.id,
         triggeredAt: event.triggeredAt.toISOString(),
         message: triggered.message,
-        severity: rule.severity
+        severity: rule.severity,
+        metricValue: Number(event.metricValue),
+        changePercent: event.changePercent ?? null,
+        status: "pending"
       }
     } satisfies AlertEventPayload);
 
