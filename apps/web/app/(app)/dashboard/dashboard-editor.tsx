@@ -1,11 +1,12 @@
 "use client";
 
-import { Button, Card, Input, Space, Typography, message } from "antd";
+import { Button, Card, Input, Select, Space, Typography, message } from "antd";
 import dynamic from "next/dynamic";
-import { useEffect } from "react";
-import { DashboardWidgetState, DashboardWidgetType, useDashboardEditorStore } from "@/store/dashboard-editor";
+import { useEffect, useMemo } from "react";
+import { DashboardWidgetType, useDashboardEditorStore } from "@/store/dashboard-editor";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import type { DashboardsQuery, UpsertDashboardInput } from "@/graphql/generated";
+import { WidgetRenderer } from "./charts/widget-renderer";
 
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -27,6 +28,17 @@ const defaultWidgetSize: Record<DashboardWidgetType, { w: number; h: number }> =
   table: { w: 6, h: 8 }
 };
 
+const datasourceOptions = [
+  { label: "标普500", value: "economic:sp500_index" },
+  { label: "纳斯达克", value: "economic:nasdaq_index" },
+  { label: "道琼斯", value: "economic:dowjones_index" },
+  { label: "美元指数", value: "economic:usd_index_history" },
+  { label: "布伦特原油", value: "economic:brent_oil_price" },
+  { label: "CME Bitcoin", value: "economic:crypto_bitcoin_cme" },
+  { label: "Crypto Spot", value: "economic:crypto_js_spot" },
+  { label: "默认演示", value: "economic:economic-short" }
+];
+
 type DashboardRecord = DashboardsQuery["dashboards"][number] | undefined;
 
 interface DashboardEditorProps {
@@ -37,7 +49,7 @@ interface DashboardEditorProps {
 }
 
 export function DashboardEditor({ dashboard, saving, onSave, onDelete }: DashboardEditorProps) {
-  const { widgets, addWidget, updateLayout, removeWidget, name, slug, description, setMeta, reset, setWidgets } =
+  const { widgets, addWidget, updateLayout, removeWidget, name, slug, description, primaryColor, setMeta, reset, setWidgets } =
     useDashboardEditorStore();
 
   useEffect(() => {
@@ -46,6 +58,9 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
       return;
     }
     setMeta({ name: dashboard.name, slug: dashboard.slug, description: dashboard.description ?? undefined });
+    if (dashboard.config && (dashboard.config as any).primaryColor) {
+      setMeta({ primaryColor: (dashboard.config as any).primaryColor });
+    }
     setWidgets(
       dashboard.widgets.map((widget) => ({
         id: widget.id,
@@ -78,7 +93,7 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
     addWidget({
       type,
       title: `${type} widget`,
-      dataSource: "economic:demo",
+      dataSource: datasourceOptions[0].value,
       layout: { x: 0, y: Infinity, w: size.w, h: size.h },
       options: {},
       dataConfig: {}
@@ -108,6 +123,24 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
               placeholder="Description"
               onChange={(e) => setMeta({ description: e.target.value })}
             />
+            <Select
+              style={{ width: 120 }}
+              value={dashboard?.theme ?? "light"}
+              options={[
+                { label: "Light", value: "light" },
+                { label: "Dark", value: "dark" }
+              ]}
+              onChange={(theme) => setMeta({ theme })}
+            />
+            <Space align="center">
+              <Typography.Text type="secondary">Primary</Typography.Text>
+              <input
+                type="color"
+                value={primaryColor}
+                onChange={(e) => setMeta({ primaryColor: e.target.value })}
+                style={{ width: 48, height: 32, border: "none", background: "transparent", padding: 0 }}
+              />
+            </Space>
             <Space>
               <Button
                 type="primary"
@@ -118,8 +151,8 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
                     name,
                     slug,
                     description: description ?? undefined,
-                    theme: "light",
-                    config: {},
+                    theme: dashboard?.theme ?? "light",
+                    config: { primaryColor },
                     widgets: widgets.map((widget) => ({
                       id: widget.id.startsWith("temp-") ? undefined : widget.id,
                       title: widget.title,
@@ -171,29 +204,32 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
             <Card
               title={widget.title ?? widget.type}
               extra={
-                <Button danger size="small" onClick={() => removeWidget(widget.id)}>
-                  Remove
-                </Button>
+                <Space size="small">
+                  <Select
+                    size="small"
+                    style={{ width: 180 }}
+                    value={widget.dataSource}
+                    onChange={(val) => updateWidget(widget.id, { dataSource: val })}
+                    options={datasourceOptions}
+                  />
+                  <input
+                    type="color"
+                    value={(widget.options as any)?.color ?? primaryColor ?? "#1677ff"}
+                    onChange={(e) => updateWidget(widget.id, { options: { ...(widget.options ?? {}), color: e.target.value } })}
+                    style={{ width: 48, height: 32, border: "none", background: "transparent", padding: 0 }}
+                  />
+                  <Button danger size="small" onClick={() => removeWidget(widget.id)}>
+                    Remove
+                  </Button>
+                </Space>
               }
               style={{ height: "100%" }}
             >
-              <WidgetPreview widget={widget} />
+              <WidgetRenderer type={widget.type} title={widget.title} dataSource={widget.dataSource} color={widget.options?.color as string | undefined} />
             </Card>
           </div>
         ))}
       </ResponsiveGridLayout>
     </Space>
-  );
-}
-
-function WidgetPreview({ widget }: { widget: DashboardWidgetState }) {
-  return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
-      <Typography.Text type="secondary">Type: {widget.type}</Typography.Text>
-      <Typography.Text type="secondary">Data source: {widget.dataSource}</Typography.Text>
-      <Typography.Paragraph>
-        Drag to reposition and resize. Persist layout via the dashboard save mutation to sync with MySQL through GraphQL.
-      </Typography.Paragraph>
-    </div>
   );
 }

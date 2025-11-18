@@ -63,3 +63,24 @@ export function detectTrend(series: SeriesPoint[], days = 3, thresholdPct = 10):
   }
   return results;
 }
+
+export function detectVolumeSpike(
+  series: SeriesPoint[],
+  window = 20,
+  volumeToValueRatio = 3
+): AnomalyDetectionResult[] {
+  const results: AnomalyDetectionResult[] = [];
+  for (let i = window; i < series.length; i++) {
+    const windowSlice = series.slice(i - window, i);
+    const mean = windowSlice.reduce((a, b) => a + b.value, 0) / windowSlice.length;
+    const point = series[i];
+    if (mean > 0 && point.value >= mean * volumeToValueRatio) {
+      results.push({
+        point,
+        reason: `Volume ${point.value.toFixed(2)} >= ${volumeToValueRatio}x ${mean.toFixed(2)}`,
+        score: point.value / mean
+      });
+    }
+  }
+  return results;
+}

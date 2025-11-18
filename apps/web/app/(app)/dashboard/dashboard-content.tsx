@@ -10,12 +10,14 @@ import { AnalysisPanel } from "./analysis-panel";
 import { DrilldownChart } from "./drilldown-chart";
 import { AlertConfigForm } from "./alert-config-form";
 import { LiveAlertsToasts } from "./live-alerts";
+import { useDashboardRangeStore } from "@/store/time-range";
 
 export function DashboardContent() {
   const { data, loading, error } = useQueueStatsQuery();
   const { data: dashboardsData, loading: dashboardsLoading, refetch: refetchDashboards } = useDashboardsQuery();
   const [saveDashboard, { loading: savingDashboard }] = useUpsertDashboardMutation();
   const [deleteDashboard] = useDeleteDashboardMutation();
+  const { range, setRange } = useDashboardRangeStore();
 
   if (loading || dashboardsLoading) {
     return (
@@ -126,6 +128,18 @@ export function DashboardContent() {
                 <Typography.Text type="secondary">
                   Drag and resize widgets, then persist layout through the dashboard GraphQL mutations. Layouts are stored in MySQL.
                 </Typography.Text>
+                <Select
+                  size="small"
+                  value={range !== "custom" ? range : undefined}
+                  onChange={(val) => setRange(val as any)}
+                  options={[
+                    { label: "1M", value: "1M" },
+                    { label: "3M", value: "3M" },
+                    { label: "6M", value: "6M" },
+                    { label: "1Y", value: "1Y" }
+                  ]}
+                  style={{ width: 120 }}
+                />
                 <Select
                   placeholder="Select dashboard"
                   style={{ minWidth: 220 }}

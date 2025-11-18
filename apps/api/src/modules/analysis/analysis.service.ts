@@ -8,6 +8,7 @@ import { AnalysisJobPayload, AnomalyInput, CorrelationInput } from "./analysis.t
 import { createLogger } from "@modular/utils";
 import { ANALYSIS_PUBSUB } from "./analysis.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
+import { detectZScoreAnomalies, detectRollingSpike, detectTrend, detectVolumeSpike, SeriesPoint } from "./anomaly-detector";
 
 const logger = createLogger({ name: "analysis-service" });
 
@@ -138,6 +139,14 @@ export class AnalysisService {
     });
     const content = completion.choices?.[0]?.message?.content ?? "";
     return { summary: content, raw: completion };
+  }
+
+  evaluateSeriesForAnomalies(series: SeriesPoint[]) {
+    const z = detectZScoreAnomalies(series);
+    const spikes = detectRollingSpike(series);
+    const trends = detectTrend(series);
+    const volumes = detectVolumeSpike(series);
+    return [...z, ...spikes, ...trends, ...volumes];
   }
 
   private async publish(orgId: string, id: string, type: string, status: string, summary?: string, createdAt?: Date) {
