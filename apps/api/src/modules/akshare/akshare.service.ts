@@ -537,11 +537,14 @@ export class AkshareService implements OnModuleInit {
       }
     }
     return Array.from(bucketed.values())
-      .map((entry) => ({
-        ...entry.sample,
-        recordedAt: entry.timestamp,
-        value: new Prisma.Decimal(entry.valueSum / entry.count)
-      }))
+      .map((entry) => {
+        const aggregated = entry.sample;
+        return {
+          ...aggregated,
+          recordedAt: entry.timestamp,
+          value: new Prisma.Decimal(entry.valueSum / entry.count)
+        };
+      })
       .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
   }
 

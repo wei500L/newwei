@@ -95,6 +95,11 @@ export class AlertsService {
     });
   }
 
+  async listChannelMap(orgId: string) {
+    const channels = await this.listChannels(orgId);
+    return new Map(channels.map((c) => [c.id, c]));
+  }
+
   async listRules(orgId: string) {
     return this.prisma.alertRule.findMany({
       where: { orgId },
@@ -444,16 +449,30 @@ export class AlertsService {
 
   private async sendEmail(
     target: string,
-    event: { metricValue: Prisma.Decimal; triggeredAt: Date; ruleId: string; message?: string },
+    event: { metricValue: Prisma.Decimal; triggeredAt: Date; ruleId: string; message?: string; changePercent?: number | null },
     rule: { name: string; metricSlug: string; operator?: AlertOperator; thresholdValue?: Prisma.Decimal | null; thresholdLower?: Prisma.Decimal | null; thresholdUpper?: Prisma.Decimal | null }
   ) {
+    const threshold =
+      rule.thresholdValue !== null && rule.thresholdValue !== undefined
+        ? Number(rule.thresholdValue)
+        : rule.thresholdUpper !== null && rule.thresholdUpper !== undefined
+          ? Number(rule.thresholdUpper)
+          : rule.thresholdLower !== null && rule.thresholdLower !== undefined
+            ? Number(rule.thresholdLower)
+            : null;
+    const html = this.email.buildAlertTemplate({
+      ruleName: rule.name,
+      metric: rule.metricSlug,
+      value: Number(event.metricValue),
+      threshold,
+      triggeredAt: event.triggeredAt.toISOString(),
+      message: event.message,
+      changePercent: event.changePercent ?? null
+    });
     await this.email.send({
       to: target,
       subject: `[Alert] ${rule.name} triggered`,
-      text: `Rule ${rule.name} for ${rule.metricSlug} triggered at ${event.triggeredAt.toISOString()} with value ${event.metricValue.toString()}.
-Operator: ${rule.operator ?? "n/a"}
-Threshold: ${rule.thresholdValue ?? rule.thresholdLower ?? rule.thresholdUpper ?? "n/a"}
-${event.message ?? ""}`
+      html
     });
   }
 

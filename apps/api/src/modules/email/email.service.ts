@@ -46,4 +46,24 @@ export class EmailService {
   async verify() {
     return this.transporter.verify();
   }
+
+  buildAlertTemplate(params: {
+    ruleName: string;
+    metric: string;
+    value: number;
+    threshold?: number | null;
+    triggeredAt: string;
+    message?: string;
+    changePercent?: number | null;
+  }) {
+    const { ruleName, metric, value, threshold, triggeredAt, message, changePercent } = params;
+    return `
+      <h3>告警触发：${ruleName}</h3>
+      <p>指标：${metric}</p>
+      <p>当前值：${value}${changePercent !== undefined && changePercent !== null ? `（变化：${changePercent.toFixed(2)}%）` : ""}</p>
+      <p>阈值：${threshold ?? "未设置"}</p>
+      <p>时间：${triggeredAt}</p>
+      ${message ? `<p>详情：${message}</p>` : ""}
+    `;
+  }
 }

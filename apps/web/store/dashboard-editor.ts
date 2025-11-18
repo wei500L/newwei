@@ -20,7 +20,8 @@ export interface DashboardEditorState {
   name: string;
   slug: string;
   description?: string;
-  setMeta: (meta: { name?: string; slug?: string; description?: string }) => void;
+  primaryColor?: string;
+  setMeta: (meta: { name?: string; slug?: string; description?: string; theme?: "light" | "dark"; primaryColor?: string }) => void;
   setTheme: (theme: "light" | "dark") => void;
   setWidgets: (widgets: DashboardWidgetState[]) => void;
   addWidget: (widget: Omit<DashboardWidgetState, "id" | "sortOrder">) => void;
@@ -36,11 +37,14 @@ export const useDashboardEditorStore = create<DashboardEditorState>((set, get) =
   name: "Analysis Dashboard",
   slug: `analysis-${nanoid(6)}`,
   description: undefined,
+  primaryColor: "#1677ff",
   setMeta: (meta) =>
     set((state) => ({
       name: meta.name ?? state.name,
       slug: meta.slug ?? state.slug,
-      description: meta.description ?? state.description
+      description: meta.description ?? state.description,
+      theme: (meta.theme as "light" | "dark" | undefined) ?? state.theme,
+      primaryColor: meta.primaryColor ?? state.primaryColor
     })),
   setTheme: (theme) => set({ theme }),
   setWidgets: (widgets) => set({ widgets }),
@@ -81,6 +85,7 @@ export const useDashboardEditorStore = create<DashboardEditorState>((set, get) =
       theme: "light",
       name: "Analysis Dashboard",
       slug: `analysis-${nanoid(6)}`,
-      description: undefined
+      description: undefined,
+      primaryColor: "#1677ff"
     })
 }));

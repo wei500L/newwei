@@ -1618,5 +1618,68 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
         { field: "未平仓合约", label: "未平仓", unit: "contracts", dataType: EconomicDataValueType.volume }
       ]
     }
+  },
+  {
+    id: "crypto-js-spot",
+    slug: "crypto_js_spot",
+    displayName: "加密货币现货行情",
+    categories: ["crypto", "realtime"],
+    sourceFunction: "ak.crypto_js_spot",
+    endpoint: "/crypto_js_spot",
+    docUrl: "https://akshare.akfamily.xyz/data/dc/dc.html",
+    method: "GET",
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: REALTIME,
+    parser: {
+      type: "latest",
+      categoryField: "instrument",
+      valueFields: [
+        { field: "price", label: "最新价", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "vol24h", label: "24h成交量", unit: "USD", dataType: EconomicDataValueType.volume }
+      ]
+    }
+  },
+  {
+    id: "crypto-btc-kline-daily",
+    slug: "crypto_btc_kline_daily",
+    displayName: "比特币日线K",
+    categories: ["crypto", "timeseries"],
+    sourceFunction: "ak.crypto_hist",
+    endpoint: "/crypto_hist",
+    docUrl: "https://akshare.akfamily.xyz",
+    method: "GET",
+    defaultParams: { symbol: "BTC", period: "1day" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "timestamp",
+      valueFields: createEnglishOhlcFields("USD")
+    }
+  },
+  {
+    id: "brent-oil-price",
+    slug: "brent_oil_price",
+    displayName: "布伦特原油价格",
+    categories: ["energy", "commodity"],
+    sourceFunction: "ak.futures_uk_brent",
+    endpoint: "/futures_uk_brent",
+    docUrl: "https://akshare.akfamily.xyz",
+    method: "GET",
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: [
+        { field: "open", label: "开盘", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "high", label: "高", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "low", label: "低", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "close", label: "收盘", unit: "USD", dataType: EconomicDataValueType.price }
+      ]
+    }
   }
 ] satisfies AkshareDataItemDefinition[];
