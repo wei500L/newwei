@@ -49,8 +49,20 @@ interface DashboardEditorProps {
 }
 
 export function DashboardEditor({ dashboard, saving, onSave, onDelete }: DashboardEditorProps) {
-  const { widgets, addWidget, updateLayout, removeWidget, name, slug, description, primaryColor, setMeta, reset, setWidgets } =
-    useDashboardEditorStore();
+  const {
+    widgets,
+    addWidget,
+    updateWidget,
+    updateLayout,
+    removeWidget,
+    name,
+    slug,
+    description,
+    primaryColor,
+    setMeta,
+    reset,
+    setWidgets
+  } = useDashboardEditorStore();
 
   useEffect(() => {
     if (!dashboard) {
