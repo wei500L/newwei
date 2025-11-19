@@ -3,6 +3,7 @@ import Redis from "ioredis";
 import { EnvService } from "../config/config.service";
 import { CacheService } from "./cache.service";
 import { RateLimiterService } from "./rate-limiter.service";
+import { ActionRateLimitService } from "./action-rate-limit.service";
 
 export const REDIS_CLIENT = Symbol("REDIS_CLIENT");
 
@@ -23,8 +24,9 @@ export const REDIS_CLIENT = Symbol("REDIS_CLIENT");
       }
     },
     CacheService,
-    RateLimiterService
+    RateLimiterService,
+    ActionRateLimitService
   ],
-  exports: [CacheService, RateLimiterService, REDIS_CLIENT]
+  exports: [CacheService, RateLimiterService, ActionRateLimitService, REDIS_CLIENT]
 })
 export class CacheModule {}

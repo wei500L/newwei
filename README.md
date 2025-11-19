@@ -78,6 +78,13 @@ pnpm docker:down
 - `apps/web`：`dev`、`build`、`start`、`typecheck`
 - `infra/scripts`：`env:check`、`docker:up`、`docker:down`、`docker:logs`
 
+## 安全与限流
+
+- 登录接口默认启用 `RATE_LIMIT_LOGIN` / `RATE_LIMIT_LOGIN_WINDOW`，防止暴力破解。
+- `RATE_LIMIT_CRAWL_TASK_CREATE` / `RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW` 控制每位成员在窗口期内可新建的 Crawl 任务数（默认 10 次 / 5 分钟），避免批量滥用抓取和下游 LLM 资源。
+- `RATE_LIMIT_RBAC_WRITE` / `RATE_LIMIT_RBAC_WRITE_WINDOW` 针对角色创建与成员授权提供独立限流（默认 20 次 / 10 分钟），杜绝误操作或恶意批量改权限。
+- 将上述值调大或调小即可匹配不同组织规模；如需临时关闭限流，可在环境配置中设置足够大的数字。
+
 ## 代码结构
 
 ```
