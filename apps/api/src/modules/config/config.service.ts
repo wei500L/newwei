@@ -77,6 +77,18 @@ export class EnvService extends ConfigService<ApiEnv> {
       login: this.get<number>("RATE_LIMIT_LOGIN", { infer: true }) ?? 5,
       loginWindowSeconds:
         this.get<number>("RATE_LIMIT_LOGIN_WINDOW", { infer: true }) ?? 60,
+      crawlTaskCreate:
+        this.get<number>("RATE_LIMIT_CRAWL_TASK_CREATE", { infer: true }) ?? 10,
+      crawlTaskCreateWindowSeconds:
+        this.get<number>("RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW", {
+          infer: true,
+        }) ?? 300,
+      rbacWrite:
+        this.get<number>("RATE_LIMIT_RBAC_WRITE", { infer: true }) ?? 20,
+      rbacWriteWindowSeconds:
+        this.get<number>("RATE_LIMIT_RBAC_WRITE_WINDOW", {
+          infer: true,
+        }) ?? 600,
     };
   }
 

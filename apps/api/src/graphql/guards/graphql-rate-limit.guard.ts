@@ -1,7 +1,8 @@
-import { CanActivate, ExecutionContext, Injectable, TooManyRequestsException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { GqlExecutionContext } from "@nestjs/graphql";
 import { RateLimiterService } from "../../modules/cache/rate-limiter.service";
 import { EnvService } from "../../modules/config/config.service";
+import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 
 type GqlContextType = "graphql" | "http" | "rpc" | "ws";
 

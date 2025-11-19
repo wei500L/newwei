@@ -2,10 +2,14 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { AssignRoleDto } from "./dto/assign-role.dto";
+import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 
 @Injectable()
 export class RbacService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly actionRateLimit: ActionRateLimitService
+  ) {}
 
   async listPermissions() {
     return this.prisma.permission.findMany({
@@ -25,7 +29,8 @@ export class RbacService {
     });
   }
 
-  async createRole(orgId: string, dto: CreateRoleDto) {
+  async createRole(orgId: string, actorId: string, dto: CreateRoleDto) {
+    await this.actionRateLimit.enforceRbacWrite(orgId, actorId);
     return this.prisma.$transaction(async (tx) => {
       const permissions = await tx.permission.findMany({
         where: { name: { in: dto.permissions } }
@@ -58,7 +63,8 @@ export class RbacService {
     });
   }
 
-  async assignRole(orgId: string, dto: AssignRoleDto) {
+  async assignRole(orgId: string, actorId: string, dto: AssignRoleDto) {
+    await this.actionRateLimit.enforceRbacWrite(orgId, actorId);
     const membership = await this.prisma.membership.upsert({
       where: {
         userId_orgId: {
