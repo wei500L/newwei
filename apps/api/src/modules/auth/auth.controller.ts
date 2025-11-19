@@ -32,7 +32,12 @@ export class AuthController {
   @Post("logout")
   @AllowAuthenticated()
   async logout(@CurrentUser() user: AuthenticatedUser, @Body("refreshToken") refreshToken?: string) {
-    await this.authService.logout(user.id, refreshToken);
+    await this.authService.logout(
+      user.id,
+      refreshToken,
+      user.accessTokenId,
+      user.accessTokenExpiresAt
+    );
     return { ok: true };
   }
 
