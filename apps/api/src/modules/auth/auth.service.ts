@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  BadRequestException,
-  TooManyRequestsException
-} from "@nestjs/common";
+import { Injectable, UnauthorizedException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
 import bcrypt from "bcrypt";
@@ -12,6 +7,7 @@ import crypto from "node:crypto";
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import { CacheService } from "../cache/cache.service";
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
+import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 
 export interface JwtPayload {
   sub: string;

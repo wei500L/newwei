@@ -28,13 +28,13 @@ export class RbacController {
   @Permissions("roles.write")
   @Post("roles")
   async createRole(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateRoleDto) {
-    return this.rbacService.createRole(user.orgId, body);
+    return this.rbacService.createRole(user.orgId, user.id, body);
   }
 
   @Permissions("roles.write")
   @Post("assign")
   async assignRole(@CurrentUser() user: AuthenticatedUser, @Body() body: AssignRoleDto) {
-    return this.rbacService.assignRole(user.orgId, body);
+    return this.rbacService.assignRole(user.orgId, user.id, body);
   }
 
   @Permissions("users.read")

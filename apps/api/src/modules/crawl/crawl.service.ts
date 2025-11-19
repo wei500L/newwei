@@ -42,6 +42,7 @@ import { TaskLogModel, CrawlResultContentModel } from "@modular/mongo";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import type { MongoConnection } from "@modular/mongo";
 import { buildLinkAnalysis } from "./link-analysis";
+import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 
 const logger = createLogger({ name: "crawl-service" });
 
@@ -141,13 +142,16 @@ export class CrawlService {
     private readonly env: EnvService,
     @Inject(CRAWL_QUEUE) private readonly crawlQueue: Queue<CrawlJobData>,
     private readonly crawlClient: Crawl4aiClient,
-    @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection
+    @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection,
+    private readonly actionRateLimit: ActionRateLimitService
   ) {
     void this._mongo;
     this.mediaConfig = env.crawl4aiConfig.media;
   }
 
   async createTask(orgId: string, userId: string, dto: CreateCrawlTaskDto) {
+    await this.actionRateLimit.enforceCrawlTaskCreate(orgId, userId);
+
     const keywords = normalizeKeywords(dto.keywords);
     const timeRangeFrom = coerceDate(dto.timeRangeFrom);
     const timeRangeTo = coerceDate(dto.timeRangeTo);

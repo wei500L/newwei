@@ -12,6 +12,10 @@ export const apiEnvSchema = baseEnvSchema.extend({
   BULLMQ_NAMESPACE: z.string().default("modular"),
   RATE_LIMIT_LOGIN: z.coerce.number().int().positive().default(5),
   RATE_LIMIT_LOGIN_WINDOW: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_CRAWL_TASK_CREATE: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW: z.coerce.number().int().positive().default(300),
+  RATE_LIMIT_RBAC_WRITE: z.coerce.number().int().positive().default(20),
+  RATE_LIMIT_RBAC_WRITE_WINDOW: z.coerce.number().int().positive().default(600),
   GRAPHQL_PLAYGROUND: z.coerce
     .boolean()
     .default(process.env.NODE_ENV === "production" ? false : true),
