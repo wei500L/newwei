@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import { CacheService } from "../cache/cache.service";
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
+import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 
 export interface JwtPayload {
@@ -36,13 +37,14 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
     private readonly rateLimiter: RateLimiterService,
+    private readonly rateLimitConfig: RateLimitConfigService,
     private readonly cache: CacheService,
     private readonly accessTokenBlacklist: AccessTokenBlacklistService
   ) {}
 
   private async validateRateLimit(identifier: string) {
-    const { login, loginWindowSeconds } = this.env.rateLimit;
-    const allowed = await this.rateLimiter.consume(identifier, login, loginWindowSeconds);
+    const { limit, windowSeconds } = await this.rateLimitConfig.getBucketConfig("login");
+    const allowed = await this.rateLimiter.consume(identifier, limit, windowSeconds);
     if (!allowed) {
       throw new TooManyRequestsException("Too many login attempts. Please try again later.");
     }

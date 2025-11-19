@@ -1,6 +1,7 @@
 export const CORE_PERMISSIONS = [
   "org.read",
   "org.write",
+  "settings.manage",
   "users.read",
   "users.write",
   "roles.read",

@@ -26,6 +26,7 @@ import { CrawlResolver } from "./resolvers/crawl.resolver";
 import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
 import { AlertsResolver } from "./resolvers/alerts.resolver";
 import { AnalysisResolver } from "./resolvers/analysis.resolver";
+import { SettingsResolver } from "./resolvers/settings.resolver";
 import { UserLoader } from "./loaders/user.loader";
 import { RoleLoader } from "./loaders/role.loader";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
@@ -127,6 +128,7 @@ const logger = createLogger({ name: "graphql" });
     EconomicDataResolver,
     AlertsResolver,
     AnalysisResolver,
+    SettingsResolver,
     GraphQLJSONScalar,
     UserLoader,
     RoleLoader,

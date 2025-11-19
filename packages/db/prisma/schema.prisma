@@ -49,6 +49,7 @@ model User {
   dashboardsCreated Dashboard[] @relation("DashboardCreatedBy")
   alertRulesCreated AlertRule[] @relation("AlertRuleCreatedBy")
   alertChannelsCreated AlertNotificationChannel[] @relation("AlertChannelCreatedBy")
+  systemSettingsUpdated SystemSetting[] @relation("SystemSettingUpdatedBy")
 }
 
 model Role {
@@ -163,6 +164,16 @@ model CrawlResult {
 
   @@index([taskId, fetchedAt])
   @@unique([taskId, contentHash])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       Json
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  updatedBy   User?    @relation("SystemSettingUpdatedBy", fields: [updatedById], references: [id])
+  updatedById String?
 }
 
 enum CrawlTaskStatus {

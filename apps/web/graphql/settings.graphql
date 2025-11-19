@@ -1,0 +1,33 @@
+query RateLimitSettings {
+  rateLimitSettings {
+    login {
+      limit
+      windowSeconds
+    }
+    crawlCreate {
+      limit
+      windowSeconds
+    }
+    rbacWrite {
+      limit
+      windowSeconds
+    }
+  }
+}
+
+mutation UpdateRateLimitSettings($input: UpdateRateLimitSettingsInput!) {
+  updateRateLimitSettings(input: $input) {
+    login {
+      limit
+      windowSeconds
+    }
+    crawlCreate {
+      limit
+      windowSeconds
+    }
+    rbacWrite {
+      limit
+      windowSeconds
+    }
+  }
+}

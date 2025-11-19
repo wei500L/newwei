@@ -43,6 +43,10 @@ const rateLimiterMock = {
   consume: jest.fn().mockResolvedValue(true)
 } as any;
 
+const rateLimitConfigMock = {
+  getBucketConfig: jest.fn().mockResolvedValue({ limit: 5, windowSeconds: 60 })
+} as any;
+
 const cacheMock = {
   get: jest.fn(),
   set: jest.fn()
@@ -58,10 +62,15 @@ describe("AuthService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    rateLimiterMock.consume = jest.fn().mockResolvedValue(true);
+    rateLimitConfigMock.getBucketConfig = jest
+      .fn()
+      .mockResolvedValue({ limit: 5, windowSeconds: 60 });
     service = new AuthService(
       prismaMock,
       envMock,
       rateLimiterMock,
+      rateLimitConfigMock,
       cacheMock,
       accessTokenBlacklistMock
     );
@@ -108,6 +117,14 @@ describe("AuthService", () => {
     await expect(service.login("user@example.com", "pw", "127.0.0.1")).rejects.toThrow(
       TooManyRequestsException
     );
+  });
+
+  it("uses configured login rate limit values", async () => {
+    rateLimitConfigMock.getBucketConfig = jest
+      .fn()
+      .mockResolvedValue({ limit: 2, windowSeconds: 120 });
+    await (service as any).validateRateLimit("login:test");
+    expect(rateLimiterMock.consume).toHaveBeenCalledWith("login:test", 2, 120);
   });
 
   it("rejects missing membership", async () => {

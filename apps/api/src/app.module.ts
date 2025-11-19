@@ -20,6 +20,7 @@ import { AnalysisModule } from "./modules/analysis/analysis.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { ApiGraphqlModule } from "./graphql/graphql.module";
+import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { ApiGraphqlModule } from "./graphql/graphql.module";
     AkshareModule,
     AlertsModule,
     AnalysisModule,
+    SystemSettingsModule,
     ApiGraphqlModule,
     HealthModule
   ],

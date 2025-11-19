@@ -1,14 +1,17 @@
 import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { GqlExecutionContext } from "@nestjs/graphql";
 import { RateLimiterService } from "../../modules/cache/rate-limiter.service";
-import { EnvService } from "../../modules/config/config.service";
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
 
 type GqlContextType = "graphql" | "http" | "rpc" | "ws";
 
 @Injectable()
 export class GraphqlRateLimitGuard implements CanActivate {
-  constructor(private readonly rateLimiter: RateLimiterService, private readonly env: EnvService) {}
+  constructor(
+    private readonly rateLimiter: RateLimiterService,
+    private readonly rateLimitConfig: RateLimitConfigService
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const type = context.getType<GqlContextType>();
@@ -25,8 +28,9 @@ export class GraphqlRateLimitGuard implements CanActivate {
       request?.connection?.remoteAddress ||
       "anonymous";
 
-    const limit = Math.max((this.env.rateLimit.login ?? 5) * 12, 60);
-    const windowSeconds = this.env.rateLimit.loginWindowSeconds ?? 60;
+    const loginBucket = await this.rateLimitConfig.getBucketConfig("login");
+    const limit = Math.max(loginBucket.limit * 12, 60);
+    const windowSeconds = loginBucket.windowSeconds;
 
     const allowed = await this.rateLimiter.consume(`graphql:${ip}`, limit, windowSeconds);
     if (!allowed) {

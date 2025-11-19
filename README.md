@@ -83,7 +83,8 @@ pnpm docker:down
 - 登录接口默认启用 `RATE_LIMIT_LOGIN` / `RATE_LIMIT_LOGIN_WINDOW`，防止暴力破解。
 - `RATE_LIMIT_CRAWL_TASK_CREATE` / `RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW` 控制每位成员在窗口期内可新建的 Crawl 任务数（默认 10 次 / 5 分钟），避免批量滥用抓取和下游 LLM 资源。
 - `RATE_LIMIT_RBAC_WRITE` / `RATE_LIMIT_RBAC_WRITE_WINDOW` 针对角色创建与成员授权提供独立限流（默认 20 次 / 10 分钟），杜绝误操作或恶意批量改权限。
-- 将上述值调大或调小即可匹配不同组织规模；如需临时关闭限流，可在环境配置中设置足够大的数字。
+- 以上环境变量仅提供兜底默认值，推荐在管理后台 Settings → Rate Limits 面板中动态配置。保存后立即写入数据库，并实时影响登录、爬虫任务和 RBAC 写操作的限流窗口。
+- 如需临时关闭限流，可在 UI 中设置一个足够大的限额，或在环境配置中指定新的默认值。
 
 ## 代码结构
 

@@ -119,6 +119,17 @@ export type CrawlBrowserCookieInput = {
   path?: InputMaybe<string>;
 };
 
+export type RateLimitBucketInput = {
+  limit: number;
+  windowSeconds: number;
+};
+
+export type UpdateRateLimitSettingsInput = {
+  login: RateLimitBucketInput;
+  crawlCreate: RateLimitBucketInput;
+  rbacWrite: RateLimitBucketInput;
+};
+
 export type CrawlUserAgentGeneratorInput = {
   platform?: InputMaybe<string>;
   browser?: InputMaybe<string>;
@@ -446,6 +457,28 @@ export type RbacOverviewQuery = {
   }>;
 };
 
+export type RateLimitSettingsQueryVariables = Exact<{ [key: string]: never }>;
+
+export type RateLimitSettingsQuery = {
+  rateLimitSettings: {
+    login: { limit: number; windowSeconds: number };
+    crawlCreate: { limit: number; windowSeconds: number };
+    rbacWrite: { limit: number; windowSeconds: number };
+  };
+};
+
+export type UpdateRateLimitSettingsMutationVariables = Exact<{
+  input: UpdateRateLimitSettingsInput;
+}>;
+
+export type UpdateRateLimitSettingsMutation = {
+  updateRateLimitSettings: {
+    login: { limit: number; windowSeconds: number };
+    crawlCreate: { limit: number; windowSeconds: number };
+    rbacWrite: { limit: number; windowSeconds: number };
+  };
+};
+
 export type CrawlTasksQueryVariables = Exact<{
   first: number;
   after?: InputMaybe<string>;
@@ -669,6 +702,95 @@ export function useRbacOverviewLazyQuery(
 export type RbacOverviewQueryHookResult = ReturnType<typeof useRbacOverviewQuery>;
 export type RbacOverviewLazyQueryHookResult = ReturnType<typeof useRbacOverviewLazyQuery>;
 export type RbacOverviewQueryResult = Apollo.QueryResult<RbacOverviewQuery, RbacOverviewQueryVariables>;
+export const RateLimitSettingsDocument = gql`
+  query RateLimitSettings {
+    rateLimitSettings {
+      login {
+        limit
+        windowSeconds
+      }
+      crawlCreate {
+        limit
+        windowSeconds
+      }
+      rbacWrite {
+        limit
+        windowSeconds
+      }
+    }
+  }
+`;
+
+export function useRateLimitSettingsQuery(
+  baseOptions?: Apollo.QueryHookOptions<RateLimitSettingsQuery, RateLimitSettingsQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<RateLimitSettingsQuery, RateLimitSettingsQueryVariables>(
+    RateLimitSettingsDocument,
+    options
+  );
+}
+
+export function useRateLimitSettingsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<RateLimitSettingsQuery, RateLimitSettingsQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<RateLimitSettingsQuery, RateLimitSettingsQueryVariables>(
+    RateLimitSettingsDocument,
+    options
+  );
+}
+
+export type RateLimitSettingsQueryHookResult = ReturnType<typeof useRateLimitSettingsQuery>;
+export type RateLimitSettingsLazyQueryHookResult = ReturnType<typeof useRateLimitSettingsLazyQuery>;
+export type RateLimitSettingsQueryResult = Apollo.QueryResult<
+  RateLimitSettingsQuery,
+  RateLimitSettingsQueryVariables
+>;
+export const UpdateRateLimitSettingsDocument = gql`
+  mutation UpdateRateLimitSettings($input: UpdateRateLimitSettingsInput!) {
+    updateRateLimitSettings(input: $input) {
+      login {
+        limit
+        windowSeconds
+      }
+      crawlCreate {
+        limit
+        windowSeconds
+      }
+      rbacWrite {
+        limit
+        windowSeconds
+      }
+    }
+  }
+`;
+export type UpdateRateLimitSettingsMutationFn = Apollo.MutationFunction<
+  UpdateRateLimitSettingsMutation,
+  UpdateRateLimitSettingsMutationVariables
+>;
+
+export function useUpdateRateLimitSettingsMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    UpdateRateLimitSettingsMutation,
+    UpdateRateLimitSettingsMutationVariables
+  >
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    UpdateRateLimitSettingsMutation,
+    UpdateRateLimitSettingsMutationVariables
+  >(UpdateRateLimitSettingsDocument, options);
+}
+export type UpdateRateLimitSettingsMutationHookResult = ReturnType<
+  typeof useUpdateRateLimitSettingsMutation
+>;
+export type UpdateRateLimitSettingsMutationResult =
+  Apollo.MutationResult<UpdateRateLimitSettingsMutation>;
+export type UpdateRateLimitSettingsMutationOptions = Apollo.BaseMutationOptions<
+  UpdateRateLimitSettingsMutation,
+  UpdateRateLimitSettingsMutationVariables
+>;
 export const CrawlTasksDocument = gql`
   query CrawlTasks($first: Int!, $after: String, $search: String, $status: CrawlTaskStatus) {
     crawlTasks(first: $first, after: $after, search: $search, status: $status) {
