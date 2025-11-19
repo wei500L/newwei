@@ -47,12 +47,23 @@ const cacheMock = {
   set: jest.fn()
 } as any;
 
+const accessTokenBlacklistMock = {
+  add: jest.fn(),
+  has: jest.fn()
+} as any;
+
 describe("AuthService", () => {
   let service: AuthService;
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new AuthService(prismaMock, envMock, rateLimiterMock, cacheMock);
+    service = new AuthService(
+      prismaMock,
+      envMock,
+      rateLimiterMock,
+      cacheMock,
+      accessTokenBlacklistMock
+    );
   });
 
   it("parses timespans", () => {

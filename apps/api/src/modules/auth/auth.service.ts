@@ -11,11 +11,15 @@ import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import { CacheService } from "../cache/cache.service";
+import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 
-interface JwtPayload {
+export interface JwtPayload {
   sub: string;
   orgId: string;
   permissions: string[];
+  jti?: string;
+  exp?: number;
+  iat?: number;
 }
 
 export interface AuthenticatedUser {
@@ -26,6 +30,8 @@ export interface AuthenticatedUser {
   permissions: string[];
   firstName: string;
   lastName: string;
+  accessTokenId?: string;
+  accessTokenExpiresAt?: number;
 }
 
 @Injectable()
@@ -34,7 +40,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
     private readonly rateLimiter: RateLimiterService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly accessTokenBlacklist: AccessTokenBlacklistService
   ) {}
 
   private async validateRateLimit(identifier: string) {
@@ -107,7 +114,8 @@ export class AuthService {
     const token = jwt.sign(payload, jwtConfig.secret, {
       expiresIn: jwtConfig.accessExpiresIn,
       audience: jwtConfig.audience,
-      issuer: jwtConfig.issuer
+      issuer: jwtConfig.issuer,
+      jwtid: crypto.randomUUID()
     });
     const decoded = jwt.decode(token) as { exp?: number } | null;
     const expiresIn = decoded?.exp ? decoded.exp * 1000 : undefined;
@@ -268,7 +276,12 @@ export class AuthService {
     };
   }
 
-  async logout(userId: string, refreshToken?: string) {
+  async logout(
+    userId: string,
+    refreshToken?: string,
+    accessTokenId?: string,
+    accessTokenExpiresAt?: number
+  ) {
     if (refreshToken) {
       const [tokenId] = refreshToken.split(".");
       if (tokenId) {
@@ -283,6 +296,13 @@ export class AuthService {
       where: { userId },
       data: { revokedAt: new Date() }
     });
+
+    if (accessTokenId && accessTokenExpiresAt) {
+      const ttlSeconds = Math.ceil((accessTokenExpiresAt - Date.now()) / 1000);
+      if (ttlSeconds > 0) {
+        await this.accessTokenBlacklist.add(accessTokenId, ttlSeconds);
+      }
+    }
 
     const membership = await this.prisma.membership.findFirst({
       where: { userId }

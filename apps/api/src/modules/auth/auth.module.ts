@@ -6,11 +6,12 @@ import { CacheModule } from "../cache/cache.module";
 import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
 import { JwtStrategy } from "./strategies/jwt.strategy";
+import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 
 @Module({
   imports: [PassportModule.register({ defaultStrategy: "jwt" }), ConfigModule, DatabaseModule, CacheModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService]
+  providers: [AuthService, JwtStrategy, AccessTokenBlacklistService],
+  exports: [AuthService, AccessTokenBlacklistService]
 })
 export class AuthModule {}
