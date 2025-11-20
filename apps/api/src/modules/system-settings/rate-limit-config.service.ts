@@ -57,6 +57,7 @@ export class RateLimitConfigService {
   }
 
   async updateRateLimitSettings(
+    orgId: string,
     actorId: string,
     input: RateLimitSettingsInput
   ): Promise<RateLimitSettings> {
@@ -78,6 +79,15 @@ export class RateLimitConfigService {
         })
       )
     );
+    await this.prisma.auditLog.create({
+      data: {
+        orgId,
+        actorId,
+        resource: "system_settings",
+        action: "rate_limit_update",
+        metadata: normalized
+      }
+    });
     this.cache = normalized;
     this.cacheExpiresAt = Date.now() + this.cacheTtlMs;
     return normalized;

@@ -1,5 +1,5 @@
 import { Field, InputType, Int } from "@nestjs/graphql";
-import { Max, Min } from "class-validator";
+import { Max, MaxLength, Min } from "class-validator";
 
 @InputType()
 export class RateLimitBucketInput {
@@ -24,4 +24,19 @@ export class UpdateRateLimitSettingsInput {
 
   @Field(() => RateLimitBucketInput)
   rbacWrite!: RateLimitBucketInput;
+}
+
+@InputType()
+export class UpdateNewsPromptConfigInput {
+  @Field()
+  @MaxLength(120)
+  version!: string;
+
+  @Field()
+  @MaxLength(6000)
+  systemPromptTemplate!: string;
+
+  @Field()
+  @MaxLength(12000)
+  userPromptTemplate!: string;
 }

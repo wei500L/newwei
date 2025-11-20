@@ -24,6 +24,6 @@ export class RateLimitSettingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: UpdateRateLimitSettingsDto
   ) {
-    return this.rateLimitConfig.updateRateLimitSettings(user.id, body);
+    return this.rateLimitConfig.updateRateLimitSettings(user.orgId, user.id, body);
   }
 }

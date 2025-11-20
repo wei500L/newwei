@@ -130,6 +130,12 @@ export type UpdateRateLimitSettingsInput = {
   rbacWrite: RateLimitBucketInput;
 };
 
+export type UpdateNewsPromptConfigInput = {
+  version: string;
+  systemPromptTemplate: string;
+  userPromptTemplate: string;
+};
+
 export type CrawlUserAgentGeneratorInput = {
   platform?: InputMaybe<string>;
   browser?: InputMaybe<string>;
@@ -479,6 +485,28 @@ export type UpdateRateLimitSettingsMutation = {
   };
 };
 
+export type NewsPromptConfigQueryVariables = Exact<{ [key: string]: never }>;
+
+export type NewsPromptConfigQuery = {
+  newsPromptConfig: {
+    version: string;
+    systemPromptTemplate: string;
+    userPromptTemplate: string;
+  };
+};
+
+export type UpdateNewsPromptConfigMutationVariables = Exact<{
+  input: UpdateNewsPromptConfigInput;
+}>;
+
+export type UpdateNewsPromptConfigMutation = {
+  updateNewsPromptConfig: {
+    version: string;
+    systemPromptTemplate: string;
+    userPromptTemplate: string;
+  };
+};
+
 export type CrawlTasksQueryVariables = Exact<{
   first: number;
   after?: InputMaybe<string>;
@@ -790,6 +818,77 @@ export type UpdateRateLimitSettingsMutationResult =
 export type UpdateRateLimitSettingsMutationOptions = Apollo.BaseMutationOptions<
   UpdateRateLimitSettingsMutation,
   UpdateRateLimitSettingsMutationVariables
+>;
+export const NewsPromptConfigDocument = gql`
+  query NewsPromptConfig {
+    newsPromptConfig {
+      version
+      systemPromptTemplate
+      userPromptTemplate
+    }
+  }
+`;
+
+export function useNewsPromptConfigQuery(
+  baseOptions?: Apollo.QueryHookOptions<NewsPromptConfigQuery, NewsPromptConfigQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<NewsPromptConfigQuery, NewsPromptConfigQueryVariables>(
+    NewsPromptConfigDocument,
+    options
+  );
+}
+
+export function useNewsPromptConfigLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<NewsPromptConfigQuery, NewsPromptConfigQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<NewsPromptConfigQuery, NewsPromptConfigQueryVariables>(
+    NewsPromptConfigDocument,
+    options
+  );
+}
+
+export type NewsPromptConfigQueryHookResult = ReturnType<typeof useNewsPromptConfigQuery>;
+export type NewsPromptConfigLazyQueryHookResult = ReturnType<typeof useNewsPromptConfigLazyQuery>;
+export type NewsPromptConfigQueryResult = Apollo.QueryResult<
+  NewsPromptConfigQuery,
+  NewsPromptConfigQueryVariables
+>;
+export const UpdateNewsPromptConfigDocument = gql`
+  mutation UpdateNewsPromptConfig($input: UpdateNewsPromptConfigInput!) {
+    updateNewsPromptConfig(input: $input) {
+      version
+      systemPromptTemplate
+      userPromptTemplate
+    }
+  }
+`;
+export type UpdateNewsPromptConfigMutationFn = Apollo.MutationFunction<
+  UpdateNewsPromptConfigMutation,
+  UpdateNewsPromptConfigMutationVariables
+>;
+
+export function useUpdateNewsPromptConfigMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    UpdateNewsPromptConfigMutation,
+    UpdateNewsPromptConfigMutationVariables
+  >
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    UpdateNewsPromptConfigMutation,
+    UpdateNewsPromptConfigMutationVariables
+  >(UpdateNewsPromptConfigDocument, options);
+}
+export type UpdateNewsPromptConfigMutationHookResult = ReturnType<
+  typeof useUpdateNewsPromptConfigMutation
+>;
+export type UpdateNewsPromptConfigMutationResult =
+  Apollo.MutationResult<UpdateNewsPromptConfigMutation>;
+export type UpdateNewsPromptConfigMutationOptions = Apollo.BaseMutationOptions<
+  UpdateNewsPromptConfigMutation,
+  UpdateNewsPromptConfigMutationVariables
 >;
 export const CrawlTasksDocument = gql`
   query CrawlTasks($first: Int!, $after: String, $search: String, $status: CrawlTaskStatus) {

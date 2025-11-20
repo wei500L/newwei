@@ -22,8 +22,7 @@ import {
   RawPipelineItem,
 } from "./news-pipeline.types";
 import { NewsPromptBuilder } from "./news-prompt.builder";
-
-const PROMPT_VERSION = "news-clean-v2";
+import { NewsPromptConfigService } from "./news-prompt-config.service";
 
 interface LlmCallMetadata {
   model: string;
@@ -45,6 +44,7 @@ export class NewsPipelineService {
     private readonly liteLlm: LiteLlmService,
     private readonly configService: NewsPipelineConfigService,
     private readonly promptBuilder: NewsPromptBuilder,
+    private readonly promptConfig: NewsPromptConfigService,
     private readonly cache: CacheService,
   ) {}
 
@@ -225,15 +225,19 @@ export class NewsPipelineService {
   ): Promise<{ cleaned: CleanedNews; llm: LlmCallMetadata }> {
     const pipelineCfg = this.configService.config.pipeline;
     const truncated = article.markdown.slice(0, pipelineCfg.maxInputChars);
+    const promptConfig = await this.promptConfig.getConfig();
     const response = await this.liteLlm.acompletion({
       messages: [
         {
           role: "system",
-          content: this.promptBuilder.buildSystemPrompt(payload.language),
+          content: this.promptBuilder.buildSystemPrompt(
+            promptConfig,
+            payload.language,
+          ),
         },
         {
           role: "user",
-          content: this.promptBuilder.buildUserPrompt({
+          content: this.promptBuilder.buildUserPrompt(promptConfig, {
             url: article.sourceUrl,
             markdown: truncated,
             metadata: {
@@ -255,10 +259,14 @@ export class NewsPipelineService {
       },
     });
 
-    const cleaned = this.parseResponse(response);
+    const cleaned = this.withPromptMetadata(
+      this.parseResponse(response),
+      promptConfig.version,
+      response.model,
+    );
     const llm: LlmCallMetadata = {
       model: response.model,
-      promptVersion: PROMPT_VERSION,
+      promptVersion: promptConfig.version,
       promptTokens: response.usage?.prompt_tokens ?? null,
       completionTokens: response.usage?.completion_tokens ?? null,
       totalTokens: response.usage?.total_tokens ?? null,
@@ -283,6 +291,18 @@ export class NewsPipelineService {
       throw new Error("LiteLLM return was not valid JSON");
     }
     return CleanedNewsSchema.parse(parsed);
+  }
+
+  private withPromptMetadata(
+    cleaned: CleanedNews,
+    promptVersion: string,
+    model?: string | null,
+  ): CleanedNews {
+    return {
+      ...cleaned,
+      llm_model: cleaned.llm_model ?? model ?? null,
+      llm_prompt_version: cleaned.llm_prompt_version ?? promptVersion ?? null,
+    };
   }
 
   private buildTags(payload: NormalizedNewsPayload, cleaned: CleanedNews) {

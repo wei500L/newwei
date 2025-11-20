@@ -1,15 +1,16 @@
 import { NewsPromptBuilder } from "../news-prompt.builder";
+import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
 
 describe("NewsPromptBuilder", () => {
   const builder = new NewsPromptBuilder();
 
   it("includes language hints in the system prompt", () => {
-    const prompt = builder.buildSystemPrompt("zh-CN");
+    const prompt = builder.buildSystemPrompt(DEFAULT_NEWS_PROMPT_CONFIG, "zh-CN");
     expect(prompt).toContain("zh-CN");
   });
 
   it("builds user prompts with metadata and keywords", () => {
-    const prompt = builder.buildUserPrompt({
+    const prompt = builder.buildUserPrompt(DEFAULT_NEWS_PROMPT_CONFIG, {
       url: "https://example.com/story",
       markdown: "# Title\nBody",
       metadata: { title: "Title" },

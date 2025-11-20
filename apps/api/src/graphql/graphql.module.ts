@@ -18,6 +18,7 @@ import { CrawlModule } from "../modules/crawl/crawl.module";
 import { DataloaderModule, DataloaderInterceptor } from "nestjs-dataloader";
 import { AlertsModule } from "../modules/alerts/alerts.module";
 import { AnalysisModule } from "../modules/analysis/analysis.module";
+import { NewsPipelineModule } from "../modules/news-pipeline/news-pipeline.module";
 import { UsersResolver } from "./resolvers/user.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
@@ -53,6 +54,7 @@ const logger = createLogger({ name: "graphql" });
     CrawlModule,
     AlertsModule,
     AnalysisModule,
+    NewsPipelineModule,
     DataloaderModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       inject: [EnvService],

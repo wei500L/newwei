@@ -3,6 +3,7 @@ import { NewsPromptBuilder } from "../news-prompt.builder";
 import { NewsPipelineService } from "../news-pipeline.service";
 import type { PipelineJobContext, RawPipelineItem } from "../news-pipeline.types";
 import { NewsPipelineConfig } from "../news-pipeline.config";
+import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
 
 jest.mock("@modular/mongo", () => ({
   TaskLogModel: {
@@ -113,6 +114,10 @@ describe("NewsPipelineService", () => {
     set: jest.fn().mockResolvedValue(undefined)
   };
 
+  const promptConfigService = {
+    getConfig: jest.fn().mockResolvedValue(DEFAULT_NEWS_PROMPT_CONFIG)
+  };
+
   const configService = {
     get config() {
       return baseConfig;
@@ -124,6 +129,7 @@ describe("NewsPipelineService", () => {
     liteLlm as any,
     configService as any,
     promptBuilder,
+    promptConfigService as any,
     cache as any
   );
 
@@ -151,5 +157,6 @@ describe("NewsPipelineService", () => {
     expect(crawlClient.crawl).toHaveBeenCalledTimes(1);
     expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
     expect(cache.set).toHaveBeenCalledTimes(1);
+    expect(promptConfigService.getConfig).toHaveBeenCalledTimes(1);
   });
 });

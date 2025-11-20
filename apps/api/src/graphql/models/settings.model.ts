@@ -20,3 +20,15 @@ export class RateLimitSettingsModel {
   @Field(() => RateLimitBucketModel)
   rbacWrite!: RateLimitBucketModel;
 }
+
+@ObjectType()
+export class NewsPromptConfigModel {
+  @Field()
+  version!: string;
+
+  @Field()
+  systemPromptTemplate!: string;
+
+  @Field()
+  userPromptTemplate!: string;
+}

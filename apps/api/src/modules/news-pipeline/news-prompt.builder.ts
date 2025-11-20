@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { NewsPromptConfig } from "./news-prompt-config.service";
 
 export interface PromptInput {
   url: string;
@@ -20,41 +21,39 @@ export interface JsonSchemaResponseFormat {
 
 @Injectable()
 export class NewsPromptBuilder {
-  buildSystemPrompt(language?: string) {
+  buildSystemPrompt(config: NewsPromptConfig, language?: string) {
     const languageHint = language
       ? `All free-text fields should use ${language}.`
       : "";
-    return [
-      "You are part of a news normalization pipeline that outputs structured JSON.",
-      "Strip navigation, footers, legal boilerplate, promos, and unrelated recommendations while keeping facts, quotes, figures, and emphasis.",
-      "Summaries must be 200-300 Chinese characters describing who/what/when/where/why.",
-      "Return 5-8 key_points as single-sentence bullets emphasizing chronology, numbers, and impact.",
-      "Entities must include type (person/org/location/product/index/policy/other) and confidence 0-1.",
-      "Set removed_noise_types to the categories you deleted (e.g., footer, nav, ads).",
-      "quality_score is a decimal 0-1 reflecting completeness, readability, and de-noising success.",
-      "Use null for fields you cannot infer, never omit required properties.",
-      languageHint,
-    ]
-      .filter(Boolean)
-      .join(" ");
+    return this.renderTemplate(config.systemPromptTemplate, {
+      language_hint: languageHint,
+    });
   }
 
-  buildUserPrompt(input: PromptInput) {
-    const pieces: string[] = [
-      `URL: ${input.url}`,
-      `Cache hit: ${input.cacheHit ? "yes" : "no"}`,
-      input.metadata ? `Metadata: ${JSON.stringify(input.metadata)}` : "",
+  buildUserPrompt(config: NewsPromptConfig, input: PromptInput) {
+    const metadataSection =
+      input.metadata && Object.keys(input.metadata).length > 0
+        ? `Metadata: ${JSON.stringify(input.metadata)}`
+        : "";
+    const keywordsSection =
       input.keywords.length > 0
         ? `Focus topics: ${input.keywords.join(", ")}`
-        : "",
+        : "";
+    const summaryHintsSection =
       input.summaryHints.length > 0
         ? `Summary hints: ${input.summaryHints.join("; ")}`
-        : "",
-      "",
-      "Clean this markdown while keeping only the newsworthy sections:",
-      input.markdown,
-    ];
-    return pieces.filter(Boolean).join("\n");
+        : "";
+
+    const rendered = this.renderTemplate(config.userPromptTemplate, {
+      url: input.url,
+      cache_hit: input.cacheHit ? "yes" : "no",
+      metadata_section: metadataSection,
+      keywords_section: keywordsSection,
+      summary_hints_section: summaryHintsSection,
+      markdown: input.markdown,
+    });
+
+    return this.squashEmptyLines(rendered);
   }
 
   buildResponseFormat(): JsonSchemaResponseFormat {
@@ -146,5 +145,25 @@ export class NewsPromptBuilder {
         },
       },
     };
+  }
+
+  private renderTemplate(template: string, context: Record<string, string>) {
+    return Object.entries(context).reduce((acc, [key, value]) => {
+      const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi");
+      return acc.replace(pattern, value ?? "");
+    }, template);
+  }
+
+  private squashEmptyLines(input: string) {
+    return input
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter((line, idx, arr) => {
+        const currentEmpty = line.trim().length === 0;
+        const prevEmpty = idx > 0 && arr[idx - 1].trim().length === 0;
+        return !(currentEmpty && prevEmpty);
+      })
+      .join("\n")
+      .trim();
   }
 }

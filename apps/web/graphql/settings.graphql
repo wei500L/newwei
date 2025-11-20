@@ -31,3 +31,19 @@ mutation UpdateRateLimitSettings($input: UpdateRateLimitSettingsInput!) {
     }
   }
 }
+
+query NewsPromptConfig {
+  newsPromptConfig {
+    version
+    systemPromptTemplate
+    userPromptTemplate
+  }
+}
+
+mutation UpdateNewsPromptConfig($input: UpdateNewsPromptConfigInput!) {
+  updateNewsPromptConfig(input: $input) {
+    version
+    systemPromptTemplate
+    userPromptTemplate
+  }
+}

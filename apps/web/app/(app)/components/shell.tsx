@@ -17,35 +17,43 @@ import { useSidebarStore } from "@/store/sidebar";
 
 const { Header, Sider, Content } = Layout;
 
-const navigationItems = [
-  {
-    key: "/dashboard",
-    icon: <DashboardOutlined />,
-    label: "Dashboard",
-  },
-  {
-    key: "/items",
-    icon: <TableOutlined />,
-    label: "Items",
-  },
-  {
-    key: "/crawl",
-    icon: <RadarChartOutlined />,
-    label: "Crawl Tasks",
-  },
-  {
-    key: "/settings",
-    icon: <SettingOutlined />,
-    label: "Settings",
-  },
-];
-
 export function ShellLayout({ children }: PropsWithChildren) {
   const pathname = usePathname();
   const router = useRouter();
   const collapsed = useSidebarStore((state) => state.collapsed);
   const toggle = useSidebarStore((state) => state.toggle);
   const session = useSession();
+
+  const navigationItems = useMemo(() => {
+    const base = [
+      {
+        key: "/dashboard",
+        icon: <DashboardOutlined />,
+        label: "Dashboard",
+      },
+      {
+        key: "/items",
+        icon: <TableOutlined />,
+        label: "Items",
+      },
+      {
+        key: "/crawl",
+        icon: <RadarChartOutlined />,
+        label: "Crawl Tasks",
+      },
+    ];
+    const canManageSettings =
+      session.data?.permissions?.includes("settings.manage") ??
+      session.data?.user?.permissions?.includes("settings.manage");
+    if (canManageSettings) {
+      base.push({
+        key: "/settings",
+        icon: <SettingOutlined />,
+        label: "Admin Settings",
+      });
+    }
+    return base;
+  }, [session.data?.permissions, session.data?.user?.permissions]);
 
   const selectedKeys = useMemo(() => {
     const match = navigationItems.find((item) => pathname.startsWith(item.key));

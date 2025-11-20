@@ -5,6 +5,9 @@ const prismaMock = {
     findMany: jest.fn(),
     upsert: jest.fn()
   },
+  auditLog: {
+    create: jest.fn()
+  },
   $transaction: jest.fn()
 } as any;
 
@@ -26,6 +29,7 @@ describe("RateLimitConfigService", () => {
     jest.resetAllMocks();
     prismaMock.systemSetting.findMany = jest.fn().mockResolvedValue([]);
     prismaMock.systemSetting.upsert = jest.fn().mockResolvedValue(undefined);
+    prismaMock.auditLog.create = jest.fn().mockResolvedValue(undefined);
     prismaMock.$transaction = jest
       .fn()
       .mockImplementation(async (operations: Promise<any>[]) => Promise.all(operations));
@@ -52,13 +56,22 @@ describe("RateLimitConfigService", () => {
   });
 
   it("updates settings and refreshes cache", async () => {
-    await service.updateRateLimitSettings("admin-1", {
+    await service.updateRateLimitSettings("org-1", "admin-1", {
       login: { limit: 6, windowSeconds: 100 },
       crawlCreate: { limit: 4, windowSeconds: 500 },
       rbacWrite: { limit: 2, windowSeconds: 300 }
     });
     expect(prismaMock.$transaction).toHaveBeenCalled();
     expect(prismaMock.systemSetting.upsert).toHaveBeenCalledTimes(3);
+    expect(prismaMock.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          orgId: "org-1",
+          actorId: "admin-1",
+          action: "rate_limit_update"
+        })
+      })
+    );
     const refreshed = await service.getBucketConfig("rbacWrite");
     expect(refreshed).toEqual({ limit: 2, windowSeconds: 300 });
   });

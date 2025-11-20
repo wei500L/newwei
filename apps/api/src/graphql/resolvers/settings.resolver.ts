@@ -1,21 +1,32 @@
 import { Args, Context, Mutation, Query, Resolver, UseGuards } from "@nestjs/graphql";
 import { ForbiddenException } from "@nestjs/common";
-import { RateLimitSettingsModel } from "../models/settings.model";
+import { NewsPromptConfigModel, RateLimitSettingsModel } from "../models/settings.model";
 import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
-import { UpdateRateLimitSettingsInput } from "../dto/settings.input";
+import {
+  UpdateNewsPromptConfigInput,
+  UpdateRateLimitSettingsInput
+} from "../dto/settings.input";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt-config.service";
+import { PrismaService } from "../../modules/config/prisma.service";
 
-@Resolver(() => RateLimitSettingsModel)
+@Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class SettingsResolver {
-  constructor(private readonly rateLimitConfig: RateLimitConfigService) {}
+  constructor(
+    private readonly rateLimitConfig: RateLimitConfigService,
+    private readonly newsPromptConfig: NewsPromptConfigService,
+    private readonly prisma: PrismaService
+  ) {}
 
   @HasPermission("settings.manage")
   @Query(() => RateLimitSettingsModel)
-  async rateLimitSettings(): Promise<RateLimitSettingsModel> {
+  async rateLimitSettings(@Context("req") req: any): Promise<RateLimitSettingsModel> {
+    const user = req?.user as AuthenticatedUser | undefined;
+    await this.assertAdmin(user);
     return this.rateLimitConfig.getRateLimitSettings();
   }
 
@@ -26,9 +37,42 @@ export class SettingsResolver {
     @Args("input") input: UpdateRateLimitSettingsInput
   ): Promise<RateLimitSettingsModel> {
     const user = req?.user as AuthenticatedUser | undefined;
-    if (!user) {
+    await this.assertAdmin(user);
+    return this.rateLimitConfig.updateRateLimitSettings(user.orgId, user.id, input);
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => NewsPromptConfigModel)
+  async newsPromptConfig(@Context("req") req: any): Promise<NewsPromptConfigModel> {
+    const user = req?.user as AuthenticatedUser | undefined;
+    await this.assertAdmin(user);
+    return this.newsPromptConfig.getConfig();
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsPromptConfigModel)
+  async updateNewsPromptConfig(
+    @Context("req") req: any,
+    @Args("input") input: UpdateNewsPromptConfigInput
+  ): Promise<NewsPromptConfigModel> {
+    const user = req?.user as AuthenticatedUser | undefined;
+    await this.assertAdmin(user);
+    return this.newsPromptConfig.updateConfig(user.orgId, user.id, input);
+  }
+
+  private async assertAdmin(user?: AuthenticatedUser) {
+    if (!user || !Array.isArray(user.roleIds) || user.roleIds.length === 0) {
       throw new ForbiddenException("Unauthenticated");
     }
-    return this.rateLimitConfig.updateRateLimitSettings(user.id, input);
+    const adminRole = await this.prisma.role.findFirst({
+      where: {
+        id: { in: user.roleIds },
+        name: "admin"
+      },
+      select: { id: true }
+    });
+    if (!adminRole) {
+      throw new ForbiddenException("Admin access required");
+    }
   }
 }
