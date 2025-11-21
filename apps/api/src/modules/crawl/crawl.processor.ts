@@ -2,7 +2,7 @@ import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import { Queue, QueueEvents, Worker } from "bullmq";
 import { createLogger } from "@modular/utils";
 import { EnvService } from "../config/config.service";
-import { CrawlService } from "./crawl.service";
+import { CrawlExecutionService } from "./crawl-execution.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import type { CrawlJobData } from "./crawl.types";
 
@@ -14,7 +14,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly env: EnvService,
-    private readonly crawlService: CrawlService,
+    private readonly crawlExecutionService: CrawlExecutionService,
     @Inject(CRAWL_QUEUE) private readonly queue: Queue<CrawlJobData>,
     @Inject(CRAWL_QUEUE_EVENTS) private readonly events: QueueEvents
   ) {}
@@ -24,7 +24,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       CRAWL_QUEUE_NAME,
       async (job) => {
         logger.info({ jobId: job.id, taskId: job.data.taskId }, "Processing crawl job");
-        return this.crawlService.runTask(job.data.taskId, job.data.orgId, job.data.triggeredById);
+        return this.crawlExecutionService.runTask(job.data.taskId, job.data.orgId, job.data.triggeredById);
       },
       {
         connection: this.queue.opts.connection,

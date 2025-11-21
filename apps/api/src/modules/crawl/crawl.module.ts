@@ -3,12 +3,15 @@ import { HttpModule } from "@nestjs/axios";
 import { Queue, QueueEvents } from "bullmq";
 import { EnvService } from "../config/config.service";
 import { CrawlController } from "./crawl.controller";
-import { CrawlService } from "./crawl.service";
 import { CrawlMetadataService } from "./crawl-metadata.service";
 import { Crawl4aiClient } from "./crawl4ai.client";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { CrawlQueueProcessor } from "./crawl.processor";
 import type { CrawlJobData } from "./crawl.types";
+import { CrawlQueueService } from "./crawl-queue.service";
+import { CrawlExecutionService } from "./crawl-execution.service";
+import { CrawlTaskService } from "./crawl-task.service";
+import { CrawlResultService } from "./crawl-result.service";
 
 @Module({
   imports: [
@@ -30,7 +33,10 @@ import type { CrawlJobData } from "./crawl.types";
   ],
   controllers: [CrawlController],
   providers: [
-    CrawlService,
+    CrawlTaskService,
+    CrawlExecutionService,
+    CrawlQueueService,
+    CrawlResultService,
     CrawlMetadataService,
     Crawl4aiClient,
     CrawlQueueProcessor,
@@ -64,6 +70,6 @@ import type { CrawlJobData } from "./crawl.types";
       }
     }
   ],
-  exports: [CrawlService, CrawlMetadataService, Crawl4aiClient]
+  exports: [CrawlTaskService, CrawlExecutionService, CrawlResultService, CrawlMetadataService, Crawl4aiClient]
 })
 export class CrawlModule {}

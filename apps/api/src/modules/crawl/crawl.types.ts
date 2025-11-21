@@ -329,6 +329,47 @@ export interface CrawlMemoryStats {
   efficiencyPercent?: number;
 }
 
+export interface CrawlTaskResult {
+  id: string;
+  sourceUrl: string;
+  fetchedAt: Date;
+  markdown: string;
+  metadata?: Record<string, unknown> | null;
+  markdownWithCitations?: string | null;
+  referencesMarkdown?: string | null;
+  fitMarkdown?: string | null;
+  linkAnalysis?: CrawlLinkAnalysis | null;
+  media?: CrawlMediaCollection | null;
+  mediaAssets?: CrawlStoredMediaAsset[] | null;
+  tables?: CrawlResultTable[] | null;
+}
+
+export interface CrawlTaskView {
+  id: string;
+  targetUrl: string;
+  displayName?: string | null;
+  status: CrawlTaskStatus;
+  keywords: string[];
+  concurrency: number;
+  timeRangeFrom?: Date | null;
+  timeRangeTo?: Date | null;
+  lastRunAt?: Date | null;
+  lastSuccessAt?: Date | null;
+  lastResultAt?: Date | null;
+  lastCursor?: string | null;
+  lastError?: string | null;
+  runCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  resultCount: number;
+  config?: Record<string, unknown> | null;
+  results?: CrawlTaskResult[];
+  memoryStats?: CrawlMemoryStats | null;
+  lastServerMemoryMb?: number | null;
+  lastPeakMemoryMb?: number | null;
+  lastMemoryEfficiency?: number | null;
+}
+
 export type CrawlMetadataSource = "sitemap" | "urls";
 
 export interface CrawlMetadataExtractionInput {
@@ -365,3 +406,4 @@ export interface CrawlMetadataResult {
   relevanceScore?: number;
   error?: string;
 }
+import type { CrawlTaskStatus } from "@prisma/client";

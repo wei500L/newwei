@@ -28,17 +28,15 @@ import {
   CreateCrawlTaskInput,
   CrawlMetadataInput
 } from "../dto/crawl.input";
-import {
-  CrawlService,
-  CrawlTaskResult,
-  CrawlTaskView,
-  CrawlMemoryStats
-} from "../../modules/crawl/crawl.service";
+import { CrawlTaskService } from "../../modules/crawl/crawl-task.service";
 import { CrawlMetadataService } from "../../modules/crawl/crawl-metadata.service";
 import type {
   CrawlLinkAnalysis,
   CrawlLinkAnalysisLink,
-  CrawlMetadataResult
+  CrawlMetadataResult,
+  CrawlTaskResult,
+  CrawlTaskView,
+  CrawlMemoryStats
 } from "../../modules/crawl/crawl.types";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { PrismaService } from "../../modules/config/prisma.service";
@@ -56,7 +54,7 @@ function decodeCursor(cursor?: string | null) {
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class CrawlResolver {
   constructor(
-    private readonly crawlService: CrawlService,
+    private readonly crawlTaskService: CrawlTaskService,
     private readonly metadataService: CrawlMetadataService,
     private readonly prisma: PrismaService
   ) {}
@@ -102,7 +100,7 @@ export class CrawlResolver {
     const totalCount = await this.prisma.crawlTask.count({ where });
 
     const edges = nodes.map((task) => {
-      const view = this.crawlService.toView(task);
+      const view = this.crawlTaskService.toView(task);
       return {
         cursor: encodeCursor(task.id),
         node: this.toGraphTask(view)
@@ -127,7 +125,7 @@ export class CrawlResolver {
       throw new BadRequestException("Unauthenticated");
     }
 
-    const result = await this.crawlService.getTask(requester.orgId, args.id, {
+    const result = await this.crawlTaskService.getTask(requester.orgId, args.id, {
       resultLimit: args.resultLimit ?? undefined,
       resultSearch: args.resultSearch ?? undefined
     });
@@ -155,7 +153,7 @@ export class CrawlResolver {
       options: input.options ?? undefined
     };
 
-    const created = await this.crawlService.createTask(requester.orgId, requester.id, dto);
+    const created = await this.crawlTaskService.createTask(requester.orgId, requester.id, dto);
     return this.toGraphTask(created);
   }
 
@@ -167,7 +165,7 @@ export class CrawlResolver {
       throw new BadRequestException("Unauthenticated");
     }
 
-    const task = await this.crawlService.retryTask(requester.orgId, requester.id, id);
+    const task = await this.crawlTaskService.retryTask(requester.orgId, requester.id, id);
     return this.toGraphTask(task);
   }
 
@@ -178,7 +176,7 @@ export class CrawlResolver {
     if (!requester) {
       throw new BadRequestException("Unauthenticated");
     }
-    await this.crawlService.deleteTask(requester.orgId, requester.id, id);
+    await this.crawlTaskService.deleteTask(requester.orgId, requester.id, id);
     return true;
   }
 
