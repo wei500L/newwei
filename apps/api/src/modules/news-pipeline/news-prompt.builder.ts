@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
+import { zodToJsonSchema, type JsonSchema7Type } from "zod-to-json-schema";
 import { NewsPromptConfig } from "./news-prompt-config.service";
+import { CleanedNewsSchema } from "./news-pipeline.schema";
 
 export interface PromptInput {
   url: string;
@@ -15,9 +17,22 @@ export interface JsonSchemaResponseFormat {
   type: "json_schema";
   json_schema: {
     name: string;
-    schema: Record<string, unknown>;
+    schema: JsonSchema7Type;
   };
 }
+
+const CLEANED_NEWS_JSON_SCHEMA: JsonSchema7Type = zodToJsonSchema(
+  CleanedNewsSchema,
+  { $refStrategy: "none" },
+);
+
+const CLEANED_NEWS_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
+  type: "json_schema",
+  json_schema: {
+    name: "clean_news_payload",
+    schema: CLEANED_NEWS_JSON_SCHEMA,
+  },
+};
 
 @Injectable()
 export class NewsPromptBuilder {
@@ -57,94 +72,7 @@ export class NewsPromptBuilder {
   }
 
   buildResponseFormat(): JsonSchemaResponseFormat {
-    return {
-      type: "json_schema",
-      json_schema: {
-        name: "clean_news_payload",
-        schema: {
-          type: "object",
-          required: [
-            "title",
-            "summary",
-            "key_points",
-            "cleaned_markdown",
-            "removed_noise_types",
-            "quality_score",
-          ],
-          additionalProperties: false,
-          properties: {
-            title: {
-              type: ["string", "null"],
-              description: "Readable headline without site suffixes.",
-            },
-            author: {
-              type: ["string", "null"],
-            },
-            source: {
-              type: ["string", "null"],
-              description: "Publisher or channel name.",
-            },
-            subtitle: { type: ["string", "null"] },
-            published_at: {
-              type: ["string", "null"],
-              description: "ISO8601 timestamp.",
-            },
-            language: { type: ["string", "null"] },
-            location: {
-              type: ["string", "null"],
-              description: "City/region if mentioned.",
-            },
-            category: { type: ["string", "null"] },
-            summary: {
-              type: ["string", "null"],
-              description:
-                "200-300 Chinese characters covering who/what/when/where/why.",
-            },
-            key_points: {
-              type: "array",
-              minItems: 5,
-              maxItems: 8,
-              items: { type: "string" },
-              description: "Chronological bullet points with data/impact.",
-            },
-            topics: {
-              type: "array",
-              items: { type: "string" },
-              description: "Key tags / sectors.",
-            },
-            entities: {
-              type: "array",
-              items: {
-                type: "object",
-                required: ["name", "type", "confidence"],
-                properties: {
-                  name: { type: "string" },
-                  type: { type: "string" },
-                  confidence: { type: "number", minimum: 0, maximum: 1 },
-                },
-              },
-            },
-            cleaned_markdown: {
-              type: "string",
-              description: "Noise-free markdown body.",
-            },
-            removed_noise_types: {
-              type: "array",
-              items: { type: "string" },
-              description:
-                "List of noise categories removed (e.g., footer, nav, ads).",
-            },
-            quality_score: {
-              type: ["number", "null"],
-              minimum: 0,
-              maximum: 1,
-            },
-            llm_model: { type: ["string", "null"] },
-            llm_prompt_version: { type: ["string", "null"] },
-          },
-        },
-      },
-    };
+    return CLEANED_NEWS_RESPONSE_FORMAT;
   }
 
   private renderTemplate(template: string, context: Record<string, string>) {

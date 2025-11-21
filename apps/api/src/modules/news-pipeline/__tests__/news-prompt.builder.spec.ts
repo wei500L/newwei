@@ -1,5 +1,7 @@
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { NewsPromptBuilder } from "../news-prompt.builder";
 import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
+import { CleanedNewsSchema } from "../news-pipeline.schema";
 
 describe("NewsPromptBuilder", () => {
   const builder = new NewsPromptBuilder();
@@ -27,11 +29,9 @@ describe("NewsPromptBuilder", () => {
   it("returns a json schema response format with required fields", () => {
     const format = builder.buildResponseFormat();
     expect(format.type).toBe("json_schema");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const schema = (format.json_schema.schema as any)?.properties;
-    expect(schema.title).toBeDefined();
-    expect(schema.cleaned_markdown).toBeDefined();
-    expect(schema.key_points).toBeDefined();
-    expect(schema.removed_noise_types).toBeDefined();
+    expect(format.json_schema.name).toBe("clean_news_payload");
+    expect(format.json_schema.schema).toEqual(
+      zodToJsonSchema(CleanedNewsSchema, { $refStrategy: "none" }),
+    );
   });
 });
