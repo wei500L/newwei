@@ -19,6 +19,9 @@ import {
   CrawlUserAgentGeneratorConfig,
   CrawlGeolocationConfig,
   CrawlCleanMarkdownOptions,
+  CrawlMarkdownOptions,
+  CrawlMarkdownFilter,
+  CrawlMarkdownContentSource,
   CrawlMarkdownStrategy,
   CrawlTableExtractionStrategy,
   CrawlVirtualScrollConfig
