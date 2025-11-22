@@ -130,6 +130,10 @@ export type UpdateRateLimitSettingsInput = {
   rbacWrite: RateLimitBucketInput;
 };
 
+export type UpdateAuditLogRetentionInput = {
+  retentionDays: number;
+};
+
 export type UpdateNewsPromptConfigInput = {
   version: string;
   systemPromptTemplate: string;
@@ -485,6 +489,20 @@ export type UpdateRateLimitSettingsMutation = {
   };
 };
 
+export type AuditLogRetentionQueryVariables = Exact<{ [key: string]: never }>;
+
+export type AuditLogRetentionQuery = {
+  auditLogRetention: { retentionDays: number };
+};
+
+export type UpdateAuditLogRetentionMutationVariables = Exact<{
+  input: UpdateAuditLogRetentionInput;
+}>;
+
+export type UpdateAuditLogRetentionMutation = {
+  updateAuditLogRetention: { retentionDays: number };
+};
+
 export type NewsPromptConfigQueryVariables = Exact<{ [key: string]: never }>;
 
 export type NewsPromptConfigQuery = {
@@ -818,6 +836,74 @@ export type UpdateRateLimitSettingsMutationResult =
 export type UpdateRateLimitSettingsMutationOptions = Apollo.BaseMutationOptions<
   UpdateRateLimitSettingsMutation,
   UpdateRateLimitSettingsMutationVariables
+>;
+export const AuditLogRetentionDocument = gql`
+  query AuditLogRetention {
+    auditLogRetention {
+      retentionDays
+    }
+  }
+`;
+
+export function useAuditLogRetentionQuery(
+  baseOptions?: Apollo.QueryHookOptions<AuditLogRetentionQuery, AuditLogRetentionQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<AuditLogRetentionQuery, AuditLogRetentionQueryVariables>(
+    AuditLogRetentionDocument,
+    options
+  );
+}
+
+export function useAuditLogRetentionLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<AuditLogRetentionQuery, AuditLogRetentionQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<AuditLogRetentionQuery, AuditLogRetentionQueryVariables>(
+    AuditLogRetentionDocument,
+    options
+  );
+}
+export type AuditLogRetentionQueryHookResult = ReturnType<typeof useAuditLogRetentionQuery>;
+export type AuditLogRetentionLazyQueryHookResult = ReturnType<
+  typeof useAuditLogRetentionLazyQuery
+>;
+export type AuditLogRetentionQueryResult = Apollo.QueryResult<
+  AuditLogRetentionQuery,
+  AuditLogRetentionQueryVariables
+>;
+export const UpdateAuditLogRetentionDocument = gql`
+  mutation UpdateAuditLogRetention($input: UpdateAuditLogRetentionInput!) {
+    updateAuditLogRetention(input: $input) {
+      retentionDays
+    }
+  }
+`;
+export type UpdateAuditLogRetentionMutationFn = Apollo.MutationFunction<
+  UpdateAuditLogRetentionMutation,
+  UpdateAuditLogRetentionMutationVariables
+>;
+
+export function useUpdateAuditLogRetentionMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    UpdateAuditLogRetentionMutation,
+    UpdateAuditLogRetentionMutationVariables
+  >
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    UpdateAuditLogRetentionMutation,
+    UpdateAuditLogRetentionMutationVariables
+  >(UpdateAuditLogRetentionDocument, options);
+}
+export type UpdateAuditLogRetentionMutationHookResult = ReturnType<
+  typeof useUpdateAuditLogRetentionMutation
+>;
+export type UpdateAuditLogRetentionMutationResult =
+  Apollo.MutationResult<UpdateAuditLogRetentionMutation>;
+export type UpdateAuditLogRetentionMutationOptions = Apollo.BaseMutationOptions<
+  UpdateAuditLogRetentionMutation,
+  UpdateAuditLogRetentionMutationVariables
 >;
 export const NewsPromptConfigDocument = gql`
   query NewsPromptConfig {

@@ -22,6 +22,12 @@ export class RateLimitSettingsModel {
 }
 
 @ObjectType()
+export class AuditLogRetentionModel {
+  @Field(() => Int)
+  retentionDays!: number;
+}
+
+@ObjectType()
 export class NewsPromptConfigModel {
   @Field()
   version!: string;

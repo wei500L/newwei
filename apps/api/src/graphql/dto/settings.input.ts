@@ -27,6 +27,14 @@ export class UpdateRateLimitSettingsInput {
 }
 
 @InputType()
+export class UpdateAuditLogRetentionInput {
+  @Field(() => Int)
+  @Min(1)
+  @Max(3650)
+  retentionDays!: number;
+}
+
+@InputType()
 export class UpdateNewsPromptConfigInput {
   @Field()
   @MaxLength(120)

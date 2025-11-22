@@ -32,6 +32,18 @@ mutation UpdateRateLimitSettings($input: UpdateRateLimitSettingsInput!) {
   }
 }
 
+query AuditLogRetention {
+  auditLogRetention {
+    retentionDays
+  }
+}
+
+mutation UpdateAuditLogRetention($input: UpdateAuditLogRetentionInput!) {
+  updateAuditLogRetention(input: $input) {
+    retentionDays
+  }
+}
+
 query NewsPromptConfig {
   newsPromptConfig {
     version

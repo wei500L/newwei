@@ -16,13 +16,16 @@ import {
   Typography
 } from "antd";
 import {
+  useAuditLogRetentionQuery,
   useNewsPromptConfigQuery,
   useRateLimitSettingsQuery,
   useRbacOverviewQuery,
+  useUpdateAuditLogRetentionMutation,
   useUpdateNewsPromptConfigMutation,
   useUpdateRateLimitSettingsMutation
 } from "@/graphql/generated";
 import type {
+  UpdateAuditLogRetentionMutationVariables,
   UpdateNewsPromptConfigMutationVariables,
   UpdateRateLimitSettingsMutationVariables
 } from "@/graphql/generated";
@@ -176,6 +179,11 @@ export function SettingsContent() {
     children: <RateLimitSettingsPanel />
   });
   tabItems.push({
+    key: "auditLog",
+    label: "Audit Log",
+    children: <AuditLogRetentionPanel />
+  });
+  tabItems.push({
     key: "newsPrompts",
     label: "News Pipeline Prompts",
     children: <NewsPromptSettingsPanel />
@@ -250,6 +258,72 @@ function RateLimitSettingsPanel() {
           field="rbacWrite"
           description="Prevents rapid privilege escalations or accidental bulk changes."
         />
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={saving}>
+            Save Changes
+          </Button>
+        </Form.Item>
+      </Form>
+    </>
+  );
+}
+
+function AuditLogRetentionPanel() {
+  const [form] = Form.useForm<UpdateAuditLogRetentionMutationVariables["input"]>();
+  const { data, loading, refetch } = useAuditLogRetentionQuery();
+  const [updateRetention, { loading: saving }] = useUpdateAuditLogRetentionMutation();
+  const [messageApi, contextHolder] = message.useMessage();
+
+  useEffect(() => {
+    if (data?.auditLogRetention?.retentionDays) {
+      form.setFieldsValue({ retentionDays: data.auditLogRetention.retentionDays });
+    }
+  }, [data?.auditLogRetention?.retentionDays, form]);
+
+  const handleSubmit = async (values: UpdateAuditLogRetentionMutationVariables["input"]) => {
+    try {
+      await updateRetention({
+        variables: { input: values }
+      });
+      await refetch();
+      messageApi.success("Audit log retention updated");
+    } catch (error) {
+      console.error(error);
+      messageApi.error("Failed to update audit log retention");
+    }
+  };
+
+  if (loading && !data?.auditLogRetention) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+        <Spin />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {contextHolder}
+      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+        Control how long audit trail entries are retained before automatic cleanup. Use a shorter
+        window to reduce storage costs while keeping enough history for investigations.
+      </Typography.Paragraph>
+      <Form layout="vertical" form={form} onFinish={handleSubmit}>
+        <Card size="small" style={{ marginBottom: "1rem" }} title="Retention">
+          <Typography.Paragraph type="secondary">
+            Old records are purged nightly at 01:00. Minimum retention is 1 day.
+          </Typography.Paragraph>
+          <Form.Item
+            label="Retention days"
+            name="retentionDays"
+            rules={[
+              { required: true, message: "Please enter a retention window" },
+              { type: "number", min: 1, max: 3650, message: "Enter between 1 and 3650 days" }
+            ]}
+          >
+            <InputNumber min={1} max={3650} />
+          </Form.Item>
+        </Card>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
             Save Changes

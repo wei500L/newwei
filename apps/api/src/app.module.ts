@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { WinstonModule } from "nest-winston";
 import { utilities as nestWinstonModuleUtilities } from "nest-winston/dist/winston.utilities";
 import * as winston from "winston";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ConfigModule } from "./modules/config/config.module";
 import { HealthModule } from "./modules/health/health.module";
 import { DatabaseModule } from "./modules/config/database.module";
@@ -36,6 +37,7 @@ import { SystemSettingsModule } from "./modules/system-settings/system-settings.
         })
       ]
     }),
+    ScheduleModule.forRoot(),
     ConfigModule,
     DatabaseModule,
     CacheModule,

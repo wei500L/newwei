@@ -162,6 +162,7 @@ model CrawlResult {
   metadata    Json?
   createdAt   DateTime   @default(now())
 
+  @@index([sourceUrl])
   @@index([taskId, fetchedAt])
   @@unique([taskId, contentHash])
 }

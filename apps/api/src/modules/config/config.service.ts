@@ -92,6 +92,10 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get auditLogRetentionDays() {
+    return this.get<number>("AUDIT_LOG_RETENTION_DAYS", { infer: true }) ?? 90;
+  }
+
   get graphqlConfig() {
     return {
       playground:

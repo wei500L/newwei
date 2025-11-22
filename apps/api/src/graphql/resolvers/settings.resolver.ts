@@ -1,8 +1,13 @@
 import { Args, Context, Mutation, Query, Resolver, UseGuards } from "@nestjs/graphql";
 import { ForbiddenException } from "@nestjs/common";
-import { NewsPromptConfigModel, RateLimitSettingsModel } from "../models/settings.model";
+import {
+  AuditLogRetentionModel,
+  NewsPromptConfigModel,
+  RateLimitSettingsModel
+} from "../models/settings.model";
 import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
 import {
+  UpdateAuditLogRetentionInput,
   UpdateNewsPromptConfigInput,
   UpdateRateLimitSettingsInput
 } from "../dto/settings.input";
@@ -12,6 +17,7 @@ import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt-config.service";
 import { PrismaService } from "../../modules/config/prisma.service";
+import { AuditLogSettingsService } from "../../modules/system-settings/audit-log-settings.service";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -19,6 +25,7 @@ export class SettingsResolver {
   constructor(
     private readonly rateLimitConfig: RateLimitConfigService,
     private readonly newsPromptConfig: NewsPromptConfigService,
+    private readonly auditLogSettings: AuditLogSettingsService,
     private readonly prisma: PrismaService
   ) {}
 
@@ -39,6 +46,31 @@ export class SettingsResolver {
     const user = req?.user as AuthenticatedUser | undefined;
     await this.assertAdmin(user);
     return this.rateLimitConfig.updateRateLimitSettings(user.orgId, user.id, input);
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => AuditLogRetentionModel)
+  async auditLogRetention(@Context("req") req: any): Promise<AuditLogRetentionModel> {
+    const user = req?.user as AuthenticatedUser | undefined;
+    await this.assertAdmin(user);
+    return { retentionDays: await this.auditLogSettings.getRetentionDays() };
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => AuditLogRetentionModel)
+  async updateAuditLogRetention(
+    @Context("req") req: any,
+    @Args("input") input: UpdateAuditLogRetentionInput
+  ): Promise<AuditLogRetentionModel> {
+    const user = req?.user as AuthenticatedUser | undefined;
+    await this.assertAdmin(user);
+    return {
+      retentionDays: await this.auditLogSettings.updateRetentionDays(
+        user.orgId,
+        user.id,
+        input.retentionDays
+      )
+    };
   }
 
   @HasPermission("settings.manage")
