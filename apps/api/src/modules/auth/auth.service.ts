@@ -50,7 +50,21 @@ export class AuthService {
     }
   }
 
-  async validateUser(email: string, password: string): Promise<AuthenticatedUser> {
+  private pickMembership<T extends { orgId: string }>(memberships: T[], orgId?: string): T {
+    if (memberships.length === 0) {
+      throw new UnauthorizedException("User is not assigned to an organization");
+    }
+    if (!orgId) {
+      return memberships[0];
+    }
+    const membership = memberships.find((candidate) => candidate.orgId === orgId);
+    if (!membership) {
+      throw new UnauthorizedException("User is not assigned to the specified organization");
+    }
+    return membership;
+  }
+
+  async validateUser(email: string, password: string, orgId?: string): Promise<AuthenticatedUser> {
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: {
@@ -80,10 +94,7 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const primaryMembership = user.memberships[0];
-    if (!primaryMembership) {
-      throw new UnauthorizedException("User is not assigned to an organization");
-    }
+    const primaryMembership = this.pickMembership(user.memberships, orgId);
 
     const permissions = Array.from(
       new Set(
@@ -97,7 +108,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       orgId: primaryMembership.orgId,
-      roleIds: user.memberships.map((membership) => membership.roleId),
+      roleIds: [primaryMembership.roleId],
       permissions
     };
   }
@@ -140,7 +151,7 @@ export class AuthService {
     });
 
     return {
-      token: `${tokenId}.${secret}`,
+      token: user.orgId ? `${tokenId}.${user.orgId}.${secret}` : `${tokenId}.${secret}`,
       expiresAt
     };
   }
@@ -166,9 +177,15 @@ export class AuthService {
     }
   }
 
-  async login(email: string, password: string, ipAddress?: string, userAgent?: string) {
+  async login(
+    email: string,
+    password: string,
+    orgId?: string,
+    ipAddress?: string,
+    userAgent?: string
+  ) {
     await this.validateRateLimit(`login:${ipAddress ?? email}`);
-    const user = await this.validateUser(email, password);
+    const user = await this.validateUser(email, password, orgId);
 
     const { token: accessToken, expiresAt } = this.signAccessToken(user);
     const { token: refreshToken } = await this.signRefreshToken(user, ipAddress, userAgent);
@@ -197,8 +214,21 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string, ipAddress?: string, userAgent?: string) {
-    const [tokenId, secret] = refreshToken.split(".");
+  async refresh(
+    refreshToken: string,
+    orgId?: string,
+    ipAddress?: string,
+    userAgent?: string
+  ) {
+    const parts = refreshToken.split(".");
+    if (parts.length < 2 || parts.length > 3) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    const [tokenId, possibleOrgId, possibleSecret] = parts;
+    const secret = parts.length === 3 ? possibleSecret : possibleOrgId;
+    const tokenOrgId = parts.length === 3 ? possibleOrgId : undefined;
+
     if (!tokenId || !secret) {
       throw new UnauthorizedException("Invalid refresh token");
     }
@@ -235,10 +265,7 @@ export class AuthService {
       }
     });
 
-    const primaryMembership = memberships[0];
-    if (!primaryMembership) {
-      throw new UnauthorizedException("User is not assigned to an organization");
-    }
+    const primaryMembership = this.pickMembership(memberships, orgId ?? tokenOrgId);
 
     const permissions = Array.from(
       new Set(primaryMembership.role.permissions.map((p) => p.permission.name))
@@ -250,7 +277,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       orgId: primaryMembership.orgId,
-      roleIds: memberships.map((membership) => membership.roleId),
+      roleIds: [primaryMembership.roleId],
       permissions
     };
 
@@ -276,6 +303,7 @@ export class AuthService {
 
   async logout(
     userId: string,
+    orgId?: string,
     refreshToken?: string,
     accessTokenId?: string,
     accessTokenExpiresAt?: number
@@ -303,7 +331,7 @@ export class AuthService {
     }
 
     const membership = await this.prisma.membership.findFirst({
-      where: { userId }
+      where: { userId, ...(orgId ? { orgId } : {}) }
     });
 
     if (membership) {
@@ -318,15 +346,16 @@ export class AuthService {
     }
   }
 
-  async getUserProfile(userId: string) {
-    const cacheKey = `profile:${userId}`;
+  async getUserProfile(userId: string, orgId?: string) {
+    const cacheKey = `profile:${userId}:${orgId ?? "default"}`;
     const cached = await this.cache.get<AuthenticatedUser>(cacheKey);
     if (cached) {
       return cached;
     }
 
-    const membership = await this.prisma.membership.findFirst({
+    const memberships = await this.prisma.membership.findMany({
       where: { userId },
+      orderBy: { createdAt: "asc" },
       include: {
         role: {
           include: {
@@ -338,9 +367,7 @@ export class AuthService {
       }
     });
 
-    if (!membership) {
-      throw new UnauthorizedException("Membership not found");
-    }
+    const membership = this.pickMembership(memberships, orgId);
 
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const permissions = membership.role.permissions.map((perm) => perm.permission.name);

@@ -27,6 +27,7 @@ describe("UsersResolver", () => {
 
   it("maps me query to authenticated user", async () => {
     const result = await resolver.me({ user: sampleUser } as any);
+    expect(authService.getUserProfile).toHaveBeenCalledWith(sampleUser.id, sampleUser.orgId);
     expect(result).toMatchObject({ id: sampleUser.id, email: sampleUser.email, permissions: sampleUser.permissions });
   });
 });

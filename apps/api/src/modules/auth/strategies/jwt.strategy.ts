@@ -29,7 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
     }
 
-    const profile = await this.authService.getUserProfile(payload.sub);
+    const profile = await this.authService.getUserProfile(payload.sub, payload.orgId);
     return {
       ...profile,
       accessTokenId: payload.jti,

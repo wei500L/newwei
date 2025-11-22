@@ -20,10 +20,11 @@ export class UsersResolver {
   @Query(() => UserModel)
   @AllowAuthenticated()
   async me(@Context("req") req: any): Promise<UserModel> {
-    if (!req?.user) {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
-    const profile = await this.authService.getUserProfile((req.user as AuthenticatedUser).id);
+    const profile = await this.authService.getUserProfile(requester.id, requester.orgId);
     return this.toGraphQLUser(profile);
   }
 

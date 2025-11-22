@@ -18,7 +18,13 @@ export class AuthController {
   @Post("login")
   @HttpCode(200)
   async login(@Body() body: LoginDto, @Req() req: Request) {
-    const result = await this.authService.login(body.email, body.password, req.ip, req.get("user-agent") ?? undefined);
+    const result = await this.authService.login(
+      body.email,
+      body.password,
+      body.orgId,
+      req.ip,
+      req.get("user-agent") ?? undefined
+    );
     return result;
   }
 
@@ -26,7 +32,12 @@ export class AuthController {
   @Post("refresh")
   @HttpCode(200)
   async refresh(@Body() body: RefreshDto, @Req() req: Request) {
-    return this.authService.refresh(body.refreshToken, req.ip, req.get("user-agent") ?? undefined);
+    return this.authService.refresh(
+      body.refreshToken,
+      body.orgId,
+      req.ip,
+      req.get("user-agent") ?? undefined
+    );
   }
 
   @Post("logout")
@@ -34,6 +45,7 @@ export class AuthController {
   async logout(@CurrentUser() user: AuthenticatedUser, @Body("refreshToken") refreshToken?: string) {
     await this.authService.logout(
       user.id,
+      user.orgId,
       refreshToken,
       user.accessTokenId,
       user.accessTokenExpiresAt
