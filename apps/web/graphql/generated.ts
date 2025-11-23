@@ -187,6 +187,13 @@ export type UpdateRateLimitSettingsInput = {
   rbacWrite: RateLimitBucketInput;
 };
 
+export type UpdateCrawlClientSettingsInput = {
+  healthCheckTtlMs: number;
+  requestTimeoutMs: number;
+  maxRetries: number;
+  retryBackoffMs: number;
+};
+
 export type UpdateAuditLogRetentionInput = {
   retentionDays: number;
 };
@@ -605,6 +612,30 @@ export type UpdateNewsPromptConfigMutation = {
     version: string;
     systemPromptTemplate: string;
     userPromptTemplate: string;
+  };
+};
+
+export type CrawlClientSettingsQueryVariables = Exact<{ [key: string]: never }>;
+
+export type CrawlClientSettingsQuery = {
+  crawlClientSettings: {
+    healthCheckTtlMs: number;
+    requestTimeoutMs: number;
+    maxRetries: number;
+    retryBackoffMs: number;
+  };
+};
+
+export type UpdateCrawlClientSettingsMutationVariables = Exact<{
+  input: UpdateCrawlClientSettingsInput;
+}>;
+
+export type UpdateCrawlClientSettingsMutation = {
+  updateCrawlClientSettings: {
+    healthCheckTtlMs: number;
+    requestTimeoutMs: number;
+    maxRetries: number;
+    retryBackoffMs: number;
   };
 };
 
@@ -1058,6 +1089,83 @@ export type UpdateNewsPromptConfigMutationResult =
 export type UpdateNewsPromptConfigMutationOptions = Apollo.BaseMutationOptions<
   UpdateNewsPromptConfigMutation,
   UpdateNewsPromptConfigMutationVariables
+>;
+export const CrawlClientSettingsDocument = gql`
+  query CrawlClientSettings {
+    crawlClientSettings {
+      healthCheckTtlMs
+      requestTimeoutMs
+      maxRetries
+      retryBackoffMs
+    }
+  }
+`;
+
+export function useCrawlClientSettingsQuery(
+  baseOptions?: Apollo.QueryHookOptions<CrawlClientSettingsQuery, CrawlClientSettingsQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<CrawlClientSettingsQuery, CrawlClientSettingsQueryVariables>(
+    CrawlClientSettingsDocument,
+    options
+  );
+}
+
+export function useCrawlClientSettingsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    CrawlClientSettingsQuery,
+    CrawlClientSettingsQueryVariables
+  >
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<CrawlClientSettingsQuery, CrawlClientSettingsQueryVariables>(
+    CrawlClientSettingsDocument,
+    options
+  );
+}
+export type CrawlClientSettingsQueryHookResult = ReturnType<typeof useCrawlClientSettingsQuery>;
+export type CrawlClientSettingsLazyQueryHookResult = ReturnType<
+  typeof useCrawlClientSettingsLazyQuery
+>;
+export type CrawlClientSettingsQueryResult = Apollo.QueryResult<
+  CrawlClientSettingsQuery,
+  CrawlClientSettingsQueryVariables
+>;
+export const UpdateCrawlClientSettingsDocument = gql`
+  mutation UpdateCrawlClientSettings($input: UpdateCrawlClientSettingsInput!) {
+    updateCrawlClientSettings(input: $input) {
+      healthCheckTtlMs
+      requestTimeoutMs
+      maxRetries
+      retryBackoffMs
+    }
+  }
+`;
+export type UpdateCrawlClientSettingsMutationFn = Apollo.MutationFunction<
+  UpdateCrawlClientSettingsMutation,
+  UpdateCrawlClientSettingsMutationVariables
+>;
+
+export function useUpdateCrawlClientSettingsMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    UpdateCrawlClientSettingsMutation,
+    UpdateCrawlClientSettingsMutationVariables
+  >
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    UpdateCrawlClientSettingsMutation,
+    UpdateCrawlClientSettingsMutationVariables
+  >(UpdateCrawlClientSettingsDocument, options);
+}
+export type UpdateCrawlClientSettingsMutationHookResult = ReturnType<
+  typeof useUpdateCrawlClientSettingsMutation
+>;
+export type UpdateCrawlClientSettingsMutationResult =
+  Apollo.MutationResult<UpdateCrawlClientSettingsMutation>;
+export type UpdateCrawlClientSettingsMutationOptions = Apollo.BaseMutationOptions<
+  UpdateCrawlClientSettingsMutation,
+  UpdateCrawlClientSettingsMutationVariables
 >;
 export const CrawlTasksDocument = gql`
   query CrawlTasks($first: Int!, $after: String, $search: String, $status: CrawlTaskStatus) {

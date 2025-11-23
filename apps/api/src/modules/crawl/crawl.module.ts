@@ -6,6 +6,7 @@ import { CrawlController } from "./crawl.controller";
 import { CrawlMetadataService } from "./crawl-metadata.service";
 import { Crawl4aiClient } from "./crawl4ai.client";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
+import { CrawlSettingsService } from "./crawl-settings.service";
 import { CrawlQueueProcessor } from "./crawl.processor";
 import type { CrawlJobData } from "./crawl.types";
 import { CrawlQueueService } from "./crawl-queue.service";
@@ -33,6 +34,7 @@ import { CrawlResultService } from "./crawl-result.service";
   ],
   controllers: [CrawlController],
   providers: [
+    CrawlSettingsService,
     CrawlTaskService,
     CrawlExecutionService,
     CrawlQueueService,
@@ -53,7 +55,7 @@ import { CrawlResultService } from "./crawl-result.service";
             removeOnFail: false,
             backoff: {
               type: "exponential",
-              delay: 5_000
+              delay: env.crawl4aiConfig.retryBackoffMs
             }
           }
         });
@@ -70,6 +72,13 @@ import { CrawlResultService } from "./crawl-result.service";
       }
     }
   ],
-  exports: [CrawlTaskService, CrawlExecutionService, CrawlResultService, CrawlMetadataService, Crawl4aiClient]
+  exports: [
+    CrawlSettingsService,
+    CrawlTaskService,
+    CrawlExecutionService,
+    CrawlResultService,
+    CrawlMetadataService,
+    Crawl4aiClient
+  ]
 })
 export class CrawlModule {}

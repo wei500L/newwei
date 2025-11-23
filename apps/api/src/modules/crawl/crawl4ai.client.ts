@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import type { AxiosError } from "axios";
 import { lastValueFrom } from "rxjs";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
+import { CrawlSettingsService, type CrawlClientSettings } from "./crawl-settings.service";
 import type {
   CrawlTaskOptions,
   CrawlMultiUrlConfig,
@@ -89,19 +90,23 @@ interface Crawl4aiHttpPayload {
 @Injectable()
 export class Crawl4aiClient {
   private lastHealthCheck = 0;
-  private readonly healthCheckTtlMs = 60_000;
 
-  constructor(private readonly http: HttpService) {}
+  constructor(
+    private readonly http: HttpService,
+    private readonly crawlSettings: CrawlSettingsService
+  ) {}
 
   async crawl(request: Crawl4aiRequest): Promise<Crawl4aiResponse> {
-    await this.ensureHealthy();
+    const settings = await this.crawlSettings.getSettings();
+    await this.ensureHealthy(settings);
     const payload = this.toHttpPayload(request);
     try {
       const response = await lastValueFrom(
         this.http.post<Crawl4aiResponse>("/crawl", payload, {
           headers: {
             "content-type": "application/json"
-          }
+          },
+          timeout: settings.requestTimeoutMs
         })
       );
       return {
@@ -124,13 +129,17 @@ export class Crawl4aiClient {
     }
   }
 
-  private async ensureHealthy() {
+  private async ensureHealthy(settings: CrawlClientSettings) {
     const now = Date.now();
-    if (now - this.lastHealthCheck < this.healthCheckTtlMs) {
+    if (now - this.lastHealthCheck < settings.healthCheckTtlMs) {
       return;
     }
     try {
-      await lastValueFrom(this.http.get("/health"));
+      await lastValueFrom(
+        this.http.get("/health", {
+          timeout: settings.requestTimeoutMs
+        })
+      );
       this.lastHealthCheck = now;
     } catch (error) {
       throw new Crawl4aiRequestException("crawl4ai health check failed", undefined, error);

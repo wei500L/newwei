@@ -22,6 +22,21 @@ export class RateLimitSettingsModel {
 }
 
 @ObjectType()
+export class CrawlClientSettingsModel {
+  @Field(() => Int)
+  healthCheckTtlMs!: number;
+
+  @Field(() => Int)
+  requestTimeoutMs!: number;
+
+  @Field(() => Int)
+  maxRetries!: number;
+
+  @Field(() => Int)
+  retryBackoffMs!: number;
+}
+
+@ObjectType()
 export class AuditLogRetentionModel {
   @Field(() => Int)
   retentionDays!: number;

@@ -17,15 +17,18 @@ import {
 } from "antd";
 import {
   useAuditLogRetentionQuery,
+  useCrawlClientSettingsQuery,
   useNewsPromptConfigQuery,
   useRateLimitSettingsQuery,
   useRbacOverviewQuery,
   useUpdateAuditLogRetentionMutation,
+  useUpdateCrawlClientSettingsMutation,
   useUpdateNewsPromptConfigMutation,
   useUpdateRateLimitSettingsMutation
 } from "@/graphql/generated";
 import type {
   UpdateAuditLogRetentionMutationVariables,
+  UpdateCrawlClientSettingsMutationVariables,
   UpdateNewsPromptConfigMutationVariables,
   UpdateRateLimitSettingsMutationVariables
 } from "@/graphql/generated";
@@ -179,6 +182,11 @@ export function SettingsContent() {
     children: <RateLimitSettingsPanel />
   });
   tabItems.push({
+    key: "crawlClient",
+    label: "Crawl Client",
+    children: <CrawlClientSettingsPanel />
+  });
+  tabItems.push({
     key: "auditLog",
     label: "Audit Log",
     children: <AuditLogRetentionPanel />
@@ -261,6 +269,85 @@ function RateLimitSettingsPanel() {
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
             Save Changes
+          </Button>
+        </Form.Item>
+      </Form>
+    </>
+  );
+}
+
+function CrawlClientSettingsPanel() {
+  const [form] = Form.useForm<UpdateCrawlClientSettingsMutationVariables["input"]>();
+  const { data, loading, refetch } = useCrawlClientSettingsQuery();
+  const [updateSettings, { loading: saving }] = useUpdateCrawlClientSettingsMutation();
+  const [messageApi, contextHolder] = message.useMessage();
+
+  useEffect(() => {
+    if (data?.crawlClientSettings) {
+      form.setFieldsValue(data.crawlClientSettings);
+    }
+  }, [data?.crawlClientSettings, form]);
+
+  const handleSubmit = async (values: UpdateCrawlClientSettingsMutationVariables["input"]) => {
+    try {
+      await updateSettings({
+        variables: { input: values }
+      });
+      await refetch();
+      messageApi.success("Crawl client settings saved");
+    } catch (error) {
+      console.error(error);
+      messageApi.error("Failed to save crawl client settings");
+    }
+  };
+
+  if (loading && !data?.crawlClientSettings) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+        <Spin />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {contextHolder}
+      <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
+        Control crawl health check caching, HTTP timeout, and retry backoff without redeploying
+        workers.
+      </Typography.Paragraph>
+      <Form layout="vertical" form={form} onFinish={handleSubmit}>
+        <Form.Item
+          label="Health check TTL (ms)"
+          name="healthCheckTtlMs"
+          rules={[{ required: true, message: "Please set a health check TTL" }]}
+        >
+          <InputNumber min={5_000} max={900_000} step={1_000} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label="Request timeout (ms)"
+          name="requestTimeoutMs"
+          rules={[{ required: true, message: "Please set a request timeout" }]}
+        >
+          <InputNumber min={5_000} max={300_000} step={1_000} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label="Max attempts"
+          name="maxRetries"
+          rules={[{ required: true, message: "Please set the max attempts" }]}
+        >
+          <InputNumber min={1} max={10} step={1} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label="Retry backoff (ms)"
+          name="retryBackoffMs"
+          rules={[{ required: true, message: "Please set a retry backoff delay" }]}
+        >
+          <InputNumber min={500} max={600_000} step={500} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={saving}>
+            Save crawl settings
           </Button>
         </Form.Item>
       </Form>

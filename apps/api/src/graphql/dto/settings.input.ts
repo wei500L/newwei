@@ -27,6 +27,29 @@ export class UpdateRateLimitSettingsInput {
 }
 
 @InputType()
+export class UpdateCrawlClientSettingsInput {
+  @Field(() => Int)
+  @Min(5_000)
+  @Max(900_000)
+  healthCheckTtlMs!: number;
+
+  @Field(() => Int)
+  @Min(5_000)
+  @Max(300_000)
+  requestTimeoutMs!: number;
+
+  @Field(() => Int)
+  @Min(1)
+  @Max(10)
+  maxRetries!: number;
+
+  @Field(() => Int)
+  @Min(500)
+  @Max(600_000)
+  retryBackoffMs!: number;
+}
+
+@InputType()
 export class UpdateAuditLogRetentionInput {
   @Field(() => Int)
   @Min(1)

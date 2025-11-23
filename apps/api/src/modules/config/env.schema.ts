@@ -31,6 +31,8 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CRAWL4AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   CRAWL4AI_MAX_CONCURRENCY: z.coerce.number().int().positive().default(3),
   CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3),
+  CRAWL4AI_HEALTH_CHECK_TTL_MS: z.coerce.number().int().positive().default(60_000),
+  CRAWL4AI_RETRY_BACKOFF_MS: z.coerce.number().int().positive().default(5_000),
   CRAWL_MEDIA_FETCH_TIMEOUT_MS: z.coerce
     .number()
     .int()

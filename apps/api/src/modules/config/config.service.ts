@@ -119,6 +119,10 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("CRAWL4AI_MAX_CONCURRENCY", { infer: true }) ?? 3,
       maxRetries:
         this.get<number>("CRAWL4AI_MAX_RETRIES", { infer: true }) ?? 3,
+      healthCheckTtlMs:
+        this.get<number>("CRAWL4AI_HEALTH_CHECK_TTL_MS", { infer: true }) ?? 60_000,
+      retryBackoffMs:
+        this.get<number>("CRAWL4AI_RETRY_BACKOFF_MS", { infer: true }) ?? 5_000,
       media: {
         fetchTimeoutMs:
           this.get<number>("CRAWL_MEDIA_FETCH_TIMEOUT_MS", { infer: true }) ??

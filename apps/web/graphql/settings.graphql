@@ -59,3 +59,21 @@ mutation UpdateNewsPromptConfig($input: UpdateNewsPromptConfigInput!) {
     userPromptTemplate
   }
 }
+
+query CrawlClientSettings {
+  crawlClientSettings {
+    healthCheckTtlMs
+    requestTimeoutMs
+    maxRetries
+    retryBackoffMs
+  }
+}
+
+mutation UpdateCrawlClientSettings($input: UpdateCrawlClientSettingsInput!) {
+  updateCrawlClientSettings(input: $input) {
+    healthCheckTtlMs
+    requestTimeoutMs
+    maxRetries
+    retryBackoffMs
+  }
+}

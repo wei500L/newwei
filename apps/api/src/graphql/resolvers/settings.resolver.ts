@@ -2,12 +2,14 @@ import { Args, Context, Mutation, Query, Resolver, UseGuards } from "@nestjs/gra
 import { ForbiddenException } from "@nestjs/common";
 import {
   AuditLogRetentionModel,
+  CrawlClientSettingsModel,
   NewsPromptConfigModel,
   RateLimitSettingsModel
 } from "../models/settings.model";
 import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
 import {
   UpdateAuditLogRetentionInput,
+  UpdateCrawlClientSettingsInput,
   UpdateNewsPromptConfigInput,
   UpdateRateLimitSettingsInput
 } from "../dto/settings.input";
@@ -18,6 +20,7 @@ import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt-config.service";
 import { PrismaService } from "../../modules/config/prisma.service";
 import { AuditLogSettingsService } from "../../modules/system-settings/audit-log-settings.service";
+import { CrawlSettingsService } from "../../modules/crawl/crawl-settings.service";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -26,6 +29,7 @@ export class SettingsResolver {
     private readonly rateLimitConfig: RateLimitConfigService,
     private readonly newsPromptConfig: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
+    private readonly crawlSettings: CrawlSettingsService,
     private readonly prisma: PrismaService
   ) {}
 
@@ -46,6 +50,25 @@ export class SettingsResolver {
     const user = req?.user as AuthenticatedUser | undefined;
     await this.assertAdmin(user);
     return this.rateLimitConfig.updateRateLimitSettings(user.orgId, user.id, input);
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => CrawlClientSettingsModel)
+  async crawlClientSettings(@Context("req") req: any): Promise<CrawlClientSettingsModel> {
+    const user = req?.user as AuthenticatedUser | undefined;
+    await this.assertAdmin(user);
+    return this.crawlSettings.getSettings();
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => CrawlClientSettingsModel)
+  async updateCrawlClientSettings(
+    @Context("req") req: any,
+    @Args("input") input: UpdateCrawlClientSettingsInput
+  ): Promise<CrawlClientSettingsModel> {
+    const user = req?.user as AuthenticatedUser | undefined;
+    await this.assertAdmin(user);
+    return this.crawlSettings.updateSettings(user.orgId, user.id, input);
   }
 
   @HasPermission("settings.manage")
