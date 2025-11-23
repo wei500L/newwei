@@ -7,22 +7,51 @@ import {
   SettingOutlined,
   TableOutlined,
 } from "@ant-design/icons";
-import { Breadcrumb, Button, Layout, Menu, Space, Typography } from "antd";
+import { Breadcrumb, Dropdown, Layout, Menu, Space, Typography, message } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import type { PropsWithChildren } from "react";
-import { useMemo } from "react";
+import { useMemo, useState, useCallback } from "react";
 
 import { useSidebarStore } from "@/store/sidebar";
 
 const { Header, Sider, Content } = Layout;
 
 export function ShellLayout({ children }: PropsWithChildren) {
+  const [messageApi, contextHolder] = message.useMessage();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [loggingOutAll, setLoggingOutAll] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const collapsed = useSidebarStore((state) => state.collapsed);
   const toggle = useSidebarStore((state) => state.toggle);
   const session = useSession();
+
+  const handleLogout = useCallback(
+    async (logoutAll: boolean) => {
+      const setLoading = logoutAll ? setLoggingOutAll : setLoggingOut;
+      setLoading(true);
+      try {
+        const response = await fetch("/api/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ logoutAll })
+        });
+
+        if (!response.ok) {
+          throw new Error("Logout failed");
+        }
+
+        await signOut({ callbackUrl: "/login" });
+      } catch (error) {
+        console.error("Logout error", error);
+        messageApi.error("Failed to logout. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [messageApi]
+  );
 
   const navigationItems = useMemo(() => {
     const base = [
@@ -58,7 +87,9 @@ export function ShellLayout({ children }: PropsWithChildren) {
   const selectedKeys = useMemo(() => {
     const match = navigationItems.find((item) => pathname.startsWith(item.key));
     return match ? [match.key] : [];
-  }, [pathname]);
+  }, [pathname, navigationItems]);
+
+  const isLoggingOut = loggingOut || loggingOutAll;
 
   const breadcrumbs = pathname
     .split("/")
@@ -70,6 +101,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
 
   return (
     <Layout className="main-layout">
+      {contextHolder}
       <Sider
         collapsible
         collapsed={collapsed}
@@ -115,13 +147,30 @@ export function ShellLayout({ children }: PropsWithChildren) {
             <Typography.Text>
               {session.data?.user?.firstName} {session.data?.user?.lastName}
             </Typography.Text>
-            <Button
+            <Dropdown.Button
               type="text"
               icon={<LogoutOutlined />}
-              onClick={() => signOut({ callbackUrl: "/login" })}
+              loading={isLoggingOut}
+              onClick={() => handleLogout(false)}
+              menu={{
+                items: [
+                  {
+                    key: "logout",
+                    label: "Logout (this device)",
+                    onClick: () => handleLogout(false),
+                    disabled: isLoggingOut
+                  },
+                  {
+                    key: "logoutAll",
+                    label: "Logout all devices",
+                    onClick: () => handleLogout(true),
+                    disabled: isLoggingOut
+                  }
+                ]
+              }}
             >
               Logout
-            </Button>
+            </Dropdown.Button>
           </Space>
         </Header>
         <Content style={{ margin: "24px", display: "flex" }}>

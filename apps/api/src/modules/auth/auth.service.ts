@@ -306,22 +306,25 @@ export class AuthService {
     orgId?: string,
     refreshToken?: string,
     accessTokenId?: string,
-    accessTokenExpiresAt?: number
+    accessTokenExpiresAt?: number,
+    logoutAll?: boolean
   ) {
-    if (refreshToken) {
+    const now = new Date();
+
+    if (logoutAll) {
+      await this.prisma.refreshToken.updateMany({
+        where: { userId },
+        data: { revokedAt: now }
+      });
+    } else if (refreshToken) {
       const [tokenId] = refreshToken.split(".");
       if (tokenId) {
         await this.prisma.refreshToken.updateMany({
           where: { id: tokenId, userId },
-          data: { revokedAt: new Date() }
+          data: { revokedAt: now }
         });
       }
     }
-
-    await this.prisma.refreshToken.updateMany({
-      where: { userId },
-      data: { revokedAt: new Date() }
-    });
 
     if (accessTokenId && accessTokenExpiresAt) {
       const ttlSeconds = Math.ceil((accessTokenExpiresAt - Date.now()) / 1000);

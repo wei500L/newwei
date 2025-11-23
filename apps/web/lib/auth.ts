@@ -17,7 +17,7 @@ type BackendLoginResponse = {
   };
 };
 
-type TokenPayload = {
+export type TokenPayload = {
   accessToken: string;
   refreshToken: string;
   accessTokenExpires: number;

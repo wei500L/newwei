@@ -3,6 +3,7 @@ import { ApiTags } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshDto } from "./dto/refresh.dto";
+import { LogoutDto } from "./dto/logout.dto";
 import { Public } from "../../common/decorators/public.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
@@ -42,13 +43,14 @@ export class AuthController {
 
   @Post("logout")
   @AllowAuthenticated()
-  async logout(@CurrentUser() user: AuthenticatedUser, @Body("refreshToken") refreshToken?: string) {
+  async logout(@CurrentUser() user: AuthenticatedUser, @Body() body: LogoutDto) {
     await this.authService.logout(
       user.id,
       user.orgId,
-      refreshToken,
+      body?.refreshToken,
       user.accessTokenId,
-      user.accessTokenExpiresAt
+      user.accessTokenExpiresAt,
+      body?.logoutAll
     );
     return { ok: true };
   }
