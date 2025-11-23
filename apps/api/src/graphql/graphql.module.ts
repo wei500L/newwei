@@ -33,7 +33,6 @@ import { RoleLoader } from "./loaders/role.loader";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
 import { RawItemLoader } from "./loaders/raw-item.loader";
 import { ProcessedItemLoader } from "./loaders/processed-item.loader";
-import { QueueEventPublisher } from "./queue-event.publisher";
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
 import { GraphQLJSONScalar } from "./scalars/json.scalar";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
@@ -137,7 +136,6 @@ const logger = createLogger({ name: "graphql" });
     ItemMetaLoader,
     RawItemLoader,
     ProcessedItemLoader,
-    QueueEventPublisher,
     GqlAuthGuard,
     GqlPermissionsGuard,
     {

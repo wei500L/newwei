@@ -1,13 +1,14 @@
+import { ForbiddenException } from "@nestjs/common";
 import { Args, Context, Mutation, Query, Resolver, Subscription, UseGuards } from "@nestjs/graphql";
+
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { DashboardService } from "../../modules/dashboard/dashboard.service";
-import { QueueStatsModel, QueueEventModel, QueueCountsModel, DashboardModel } from "../models/dashboard.model";
-import { HasPermission } from "../decorators/has-permission.decorator";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
-import { QueueEventPublisher, QueueEventPayload } from "../queue-event.publisher";
-import { ForbiddenException } from "@nestjs/common";
+import { DashboardService } from "../../modules/dashboard/dashboard.service";
+import { QueueEventPublisher, QueueEventPayload } from "../../modules/queue/queue-event.publisher";
+import { HasPermission } from "../decorators/has-permission.decorator";
 import { UpsertDashboardInput } from "../dto/dashboard.input";
+import { QueueStatsModel, QueueEventModel, QueueCountsModel, DashboardModel } from "../models/dashboard.model";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)

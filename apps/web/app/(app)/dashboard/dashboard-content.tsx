@@ -1,23 +1,84 @@
 "use client";
 
-import { Card, Col, Empty, List, Row, Spin, Statistic, Typography, message, Select, Space, Button } from "antd";
-import { useEffect, useState } from "react";
-import { useDashboardsQuery, useQueueStatsQuery, useUpsertDashboardMutation, useDeleteDashboardMutation } from "@/graphql/generated";
-import { QueueChart } from "./queue-chart";
-import { DashboardEditor } from "./dashboard-editor";
+import { Button, Card, Col, Empty, List, Row, Select, Space, Spin, Statistic, Tag, Typography, message } from "antd";
+import { useEffect, useMemo, useState } from "react";
+
+import { useDashboardsQuery, useDeleteDashboardMutation, useQueueStatsQuery, useUpsertDashboardMutation } from "@/graphql/generated";
+import { useDashboardRangeStore, type DashboardRangePreset } from "@/store/time-range";
+
+import { AlertConfigForm } from "./alert-config-form";
 import { AlertPanel } from "./alert-panel";
 import { AnalysisPanel } from "./analysis-panel";
+import { DashboardEditor } from "./dashboard-editor";
 import { DrilldownChart } from "./drilldown-chart";
-import { AlertConfigForm } from "./alert-config-form";
 import { LiveAlertsToasts } from "./live-alerts";
-import { useDashboardRangeStore } from "@/store/time-range";
+import { QueueChart } from "./queue-chart";
+import { useQueueEvents } from "./use-queue-events";
+
+interface QueueLog {
+  event: string;
+  jobId: string;
+  data?: string | null;
+  timestamp: string;
+}
+
+const dedupeLogs = (logs: QueueLog[], limit = 15): QueueLog[] => {
+  const seen = new Set<string>();
+  const result: QueueLog[] = [];
+  for (const log of logs) {
+    const key = `${log.event}:${log.jobId}:${log.timestamp}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(log);
+    if (result.length >= limit) {
+      break;
+    }
+  }
+  return result;
+};
 
 export function DashboardContent() {
-  const { data, loading, error } = useQueueStatsQuery();
+  const { data, loading, error, refetch } = useQueueStatsQuery();
   const { data: dashboardsData, loading: dashboardsLoading, refetch: refetchDashboards } = useDashboardsQuery();
   const [saveDashboard, { loading: savingDashboard }] = useUpsertDashboardMutation();
   const [deleteDashboard] = useDeleteDashboardMutation();
   const { range, setRange } = useDashboardRangeStore();
+  const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
+  const [liveLogs, setLiveLogs] = useState<QueueLog[]>([]);
+  const [activeId, setActiveId] = useState<string | undefined>();
+
+  const dashboards = useMemo(() => dashboardsData?.dashboards ?? [], [dashboardsData]);
+
+  useEffect(() => {
+    if (dashboards.length && !activeId) {
+      setActiveId(dashboards[0].id);
+    }
+  }, [dashboards, activeId]);
+
+  useEffect(() => {
+    if (connectionError) {
+      message.error(`Queue live connection failed: ${connectionError}`);
+    }
+  }, [connectionError]);
+
+  useEffect(() => {
+    if (!lastEvent) return;
+    const serializedData = lastEvent.data ? JSON.stringify(lastEvent.data) : undefined;
+    setLiveLogs((prev) =>
+      dedupeLogs([
+        { event: lastEvent.event, jobId: lastEvent.jobId, data: serializedData, timestamp: lastEvent.timestamp },
+        ...prev
+      ])
+    );
+    void refetch();
+    if (lastEvent.event === "FAILED") {
+      message.error(`Queue job ${lastEvent.jobId} failed`);
+    } else if (lastEvent.event === "COMPLETED") {
+      message.success(`Queue job ${lastEvent.jobId} completed`);
+    } else if (lastEvent.event === "ACTIVE") {
+      message.info(`Queue job ${lastEvent.jobId} started`);
+    }
+  }, [lastEvent, refetch]);
 
   if (loading || dashboardsLoading) {
     return (
@@ -32,15 +93,9 @@ export function DashboardContent() {
   }
 
   const { counts, processedCount, itemCount, recentLogs } = data.queueStats;
-  const dashboards = dashboardsData?.dashboards ?? [];
-  const [activeId, setActiveId] = useState<string | undefined>(dashboards[0]?.id);
   const activeDashboard = dashboards.find((d) => d.id === activeId) ?? dashboards[0];
 
-  useEffect(() => {
-    if (dashboards.length && !activeId) {
-      setActiveId(dashboards[0].id);
-    }
-  }, [dashboards, activeId]);
+  const combinedLogs = dedupeLogs([...(liveLogs ?? []), ...(recentLogs ?? [])]);
   const chartData: Record<string, number> = {
     waiting: counts.waiting,
     active: counts.active,
@@ -49,12 +104,12 @@ export function DashboardContent() {
     delayed: counts.delayed
   };
 
-  const parsedLogs = recentLogs.map((log) => {
+  const parsedLogs = combinedLogs.map((log) => {
     let parsedPayload: Record<string, unknown> | undefined;
     if (log.data) {
       try {
         parsedPayload = JSON.parse(log.data);
-      } catch (err) {
+      } catch {
         parsedPayload = undefined;
       }
     }
@@ -79,7 +134,15 @@ export function DashboardContent() {
           </Card>
         </Col>
         <Col xs={24} md={24} lg={8}>
-          <Card className="content-card" title="Queue Snapshot">
+          <Card
+            className="content-card"
+            title={
+              <Space size="small" align="center">
+                <span>Queue Snapshot</span>
+                <Tag color={queueLive ? "green" : "default"}>{queueLive ? "Live" : "Offline"}</Tag>
+              </Space>
+            }
+          >
             <QueueChart data={chartData} />
           </Card>
         </Col>
@@ -126,12 +189,13 @@ export function DashboardContent() {
             <Space direction="vertical" style={{ width: "100%" }}>
               <Space align="center">
                 <Typography.Text type="secondary">
-                  Drag and resize widgets, then persist layout through the dashboard GraphQL mutations. Layouts are stored in MySQL.
+                  Drag and resize widgets, then persist layout through the dashboard GraphQL mutations. Layouts are stored in
+                  MySQL.
                 </Typography.Text>
                 <Select
                   size="small"
                   value={range !== "custom" ? range : undefined}
-                  onChange={(val) => setRange(val as any)}
+                  onChange={(val) => setRange(val as DashboardRangePreset)}
                   options={[
                     { label: "1M", value: "1M" },
                     { label: "3M", value: "3M" },

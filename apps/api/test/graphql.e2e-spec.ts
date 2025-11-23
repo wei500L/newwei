@@ -1,17 +1,20 @@
-import request from "supertest";
-import { Test } from "@nestjs/testing";
-import { INestApplication, UnauthorizedException } from "@nestjs/common";
+import type { INestApplication} from "@nestjs/common";
+import { UnauthorizedException } from "@nestjs/common";
 import { GqlExecutionContext } from "@nestjs/graphql";
+import { Test } from "@nestjs/testing";
+import request from "supertest";
+
 import { AppModule } from "../src/app.module";
-import { PrismaService } from "../src/modules/config/prisma.service";
-import { AuthService, AuthenticatedUser } from "../src/modules/auth/auth.service";
-import { RateLimiterService } from "../src/modules/cache/rate-limiter.service";
 import { GqlAuthGuard } from "../src/common/guards/gql-auth.guard";
 import { JwtAuthGuard } from "../src/common/guards/jwt-auth.guard";
 import { GraphqlRateLimitGuard } from "../src/graphql/guards/graphql-rate-limit.guard";
-import { ItemsService } from "../src/modules/items/items.service";
-import { QueueEventPublisher } from "../src/graphql/queue-event.publisher";
+import { AuthService } from "../src/modules/auth/auth.service";
+import type { AuthenticatedUser } from "../src/modules/auth/auth.service";
+import { RateLimiterService } from "../src/modules/cache/rate-limiter.service";
+import { PrismaService } from "../src/modules/config/prisma.service";
 import { DashboardService } from "../src/modules/dashboard/dashboard.service";
+import { ItemsService } from "../src/modules/items/items.service";
+import { QueueEventPublisher } from "../src/modules/queue/queue-event.publisher";
 import { RbacService } from "../src/modules/rbac/rbac.service";
 
 const sampleUser: AuthenticatedUser = {

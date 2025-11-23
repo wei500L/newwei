@@ -28,5 +28,6 @@ const graphqlUrl = `${apiRoot}/graphql`;
 export const env = {
   ...envValues,
   apiBaseUrl,
+  apiRoot,
   graphqlUrl
 };

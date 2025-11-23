@@ -1,17 +1,22 @@
 import { Module } from "@nestjs/common";
-import { Queue, QueueEvents, Worker } from "bullmq";
-import { EnvService } from "../config/config.service";
-import { QueueService } from "./queue.service";
-import { QueueProcessor } from "./queue.processor";
+import { Queue, QueueEvents } from "bullmq";
+
+import { AuthModule } from "../auth/auth.module";
 import { CacheModule } from "../cache/cache.module";
+import { EnvService } from "../config/config.service";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
+
+import { QueueEventPublisher } from "./queue-event.publisher";
+import { QueueGateway } from "./queue.gateway";
+import { QueueProcessor } from "./queue.processor";
+import { QueueService } from "./queue.service";
 
 export const PIPELINE_QUEUE = Symbol("PIPELINE_QUEUE");
 export const PIPELINE_QUEUE_EVENTS = Symbol("PIPELINE_QUEUE_EVENTS");
 export const ITEM_PIPELINE_QUEUE_NAME = "itemPipeline";
 
 @Module({
-  imports: [CacheModule, NewsPipelineModule],
+  imports: [CacheModule, NewsPipelineModule, AuthModule],
   providers: [
     {
       provide: PIPELINE_QUEUE,
@@ -56,8 +61,10 @@ export const ITEM_PIPELINE_QUEUE_NAME = "itemPipeline";
       }
     },
     QueueProcessor,
-    QueueService
+    QueueService,
+    QueueEventPublisher,
+    QueueGateway
   ],
-  exports: [QueueService, PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS]
+  exports: [QueueService, QueueEventPublisher, PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS]
 })
 export class QueueModule {}
