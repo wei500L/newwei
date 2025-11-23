@@ -21,6 +21,63 @@ export type EconomicDataValueType =
   | "quantity"
   | "spread";
 export type EconomicDataRunStatus = "pending" | "running" | "success" | "failed";
+export const AlertChannelType = {
+  Email: "email",
+  Webhook: "webhook"
+} as const;
+
+export type AlertChannelType = (typeof AlertChannelType)[keyof typeof AlertChannelType];
+export const AlertDeliveryStatus = {
+  Pending: "pending",
+  Sent: "sent",
+  Failed: "failed"
+} as const;
+
+export type AlertDeliveryStatus = (typeof AlertDeliveryStatus)[keyof typeof AlertDeliveryStatus];
+export const AlertEventStatus = {
+  Pending: "pending",
+  Delivered: "delivered",
+  Failed: "failed"
+} as const;
+
+export type AlertEventStatus = (typeof AlertEventStatus)[keyof typeof AlertEventStatus];
+export const AlertMetricProvider = {
+  EconomicData: "economic_data",
+  SystemEvent: "system_event",
+  PipelineJob: "pipeline_job",
+  CrawlTask: "crawl_task",
+  SystemMetric: "system_metric"
+} as const;
+
+export type AlertMetricProvider = (typeof AlertMetricProvider)[keyof typeof AlertMetricProvider];
+export const AlertOperator = {
+  Gt: "gt",
+  Gte: "gte",
+  Lt: "lt",
+  Lte: "lte",
+  Eq: "eq",
+  OutsideRange: "outside_range",
+  WithinRange: "within_range",
+  ChangeUpPct: "change_up_pct",
+  ChangeDownPct: "change_down_pct"
+} as const;
+
+export type AlertOperator = (typeof AlertOperator)[keyof typeof AlertOperator];
+export const AlertSeverity = {
+  Low: "low",
+  Medium: "medium",
+  High: "high"
+} as const;
+
+export type AlertSeverity = (typeof AlertSeverity)[keyof typeof AlertSeverity];
+export const AlertStatus = {
+  Draft: "draft",
+  Active: "active",
+  Paused: "paused",
+  Archived: "archived"
+} as const;
+
+export type AlertStatus = (typeof AlertStatus)[keyof typeof AlertStatus];
 
 export type CrawlTimeRangeInput = {
   from?: InputMaybe<string>;
@@ -138,6 +195,32 @@ export type UpdateNewsPromptConfigInput = {
   version: string;
   systemPromptTemplate: string;
   userPromptTemplate: string;
+};
+
+export type AlertChannelInput = {
+  type: AlertChannelType;
+  name: string;
+  target: string;
+  config?: InputMaybe<any>;
+};
+
+export type UpsertAlertRuleInput = {
+  id?: InputMaybe<string>;
+  name: string;
+  description?: InputMaybe<string>;
+  severity?: InputMaybe<AlertSeverity>;
+  status?: InputMaybe<AlertStatus>;
+  metricProvider?: InputMaybe<AlertMetricProvider>;
+  metricSlug: string;
+  operator: AlertOperator;
+  thresholdValue?: InputMaybe<number>;
+  thresholdLower?: InputMaybe<number>;
+  thresholdUpper?: InputMaybe<number>;
+  changeWindowMin?: InputMaybe<number>;
+  cooldownSeconds?: InputMaybe<number>;
+  checkIntervalSec?: InputMaybe<number>;
+  channelIds?: InputMaybe<Array<string>>;
+  metadata?: InputMaybe<any>;
 };
 
 export type CrawlUserAgentGeneratorInput = {
@@ -1390,3 +1473,310 @@ export type TriggerEconomicDataFetchMutationOptions = Apollo.BaseMutationOptions
   TriggerEconomicDataFetchMutation,
   TriggerEconomicDataFetchMutationVariables
 >;
+export type AlertRulesQueryVariables = Exact<{ [key: string]: never }>;
+
+export type AlertRulesQuery = {
+  alertRules: Array<{
+    __typename?: "AlertRuleModel";
+    id: string;
+    name: string;
+    description?: string | null;
+    severity: AlertSeverity;
+    status: AlertStatus;
+    metricProvider: AlertMetricProvider;
+    metricSlug: string;
+    operator: AlertOperator;
+    thresholdValue?: number | null;
+    thresholdLower?: number | null;
+    thresholdUpper?: number | null;
+    changeWindowMin?: number | null;
+    cooldownSeconds: number;
+    checkIntervalSec: number;
+    lastTriggeredAt?: any | null;
+    metadata?: any | null;
+    channels: Array<{
+      __typename?: "AlertChannelModel";
+      id: string;
+      name: string;
+      type: AlertChannelType;
+      target: string;
+    }>;
+  }>;
+};
+
+export type AlertChannelsQueryVariables = Exact<{ [key: string]: never }>;
+
+export type AlertChannelsQuery = {
+  alertChannels: Array<{
+    __typename?: "AlertChannelModel";
+    id: string;
+    name: string;
+    type: AlertChannelType;
+    target: string;
+  }>;
+};
+
+export type AlertEventsQueryVariables = Exact<{
+  limit?: InputMaybe<number>;
+}>;
+
+export type AlertEventsQuery = {
+  alertEvents: Array<{
+    __typename?: "AlertEventModel";
+    id: string;
+    triggeredAt: any;
+    metricValue: number;
+    changePercent?: number | null;
+    severity: AlertSeverity;
+    status: AlertEventStatus;
+    message?: string | null;
+    deliveries: Array<{
+      __typename?: "AlertDeliveryModel";
+      id: string;
+      status: AlertDeliveryStatus;
+      channelType: AlertChannelType;
+      sentAt?: any | null;
+      error?: string | null;
+    }>;
+  }>;
+};
+
+export type UpsertAlertRuleMutationVariables = Exact<{
+  input: UpsertAlertRuleInput;
+}>;
+
+export type UpsertAlertRuleMutation = { upsertAlertRule: { __typename?: "AlertRuleModel"; id: string; name: string } };
+
+export type CreateAlertChannelMutationVariables = Exact<{
+  input: AlertChannelInput;
+}>;
+
+export type CreateAlertChannelMutation = {
+  createAlertChannel: { __typename?: "AlertChannelModel"; id: string; name: string; type: AlertChannelType; target: string };
+};
+
+export type TriggerAlertRuleMutationVariables = Exact<{
+  ruleId: string;
+}>;
+
+export type TriggerAlertRuleMutation = { triggerAlertRule: boolean };
+
+export type AlertEventsStreamSubscriptionVariables = Exact<{ [key: string]: never }>;
+
+export type AlertEventsStreamSubscription = {
+  alertEvents: {
+    __typename?: "AlertEventModel";
+    id: string;
+    triggeredAt: any;
+    severity: AlertSeverity;
+    message?: string | null;
+    metricValue: number;
+  };
+};
+
+export const AlertRulesDocument = gql`
+  query AlertRules {
+    alertRules {
+      id
+      name
+      description
+      severity
+      status
+      metricProvider
+      metricSlug
+      operator
+      thresholdValue
+      thresholdLower
+      thresholdUpper
+      changeWindowMin
+      cooldownSeconds
+      checkIntervalSec
+      lastTriggeredAt
+      metadata
+      channels {
+        id
+        name
+        type
+        target
+      }
+    }
+  }
+`;
+
+export function useAlertRulesQuery(baseOptions?: Apollo.QueryHookOptions<AlertRulesQuery, AlertRulesQueryVariables>) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<AlertRulesQuery, AlertRulesQueryVariables>(AlertRulesDocument, options);
+}
+
+export function useAlertRulesLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<AlertRulesQuery, AlertRulesQueryVariables>) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<AlertRulesQuery, AlertRulesQueryVariables>(AlertRulesDocument, options);
+}
+export type AlertRulesQueryHookResult = ReturnType<typeof useAlertRulesQuery>;
+export type AlertRulesLazyQueryHookResult = ReturnType<typeof useAlertRulesLazyQuery>;
+export type AlertRulesQueryResult = Apollo.QueryResult<AlertRulesQuery, AlertRulesQueryVariables>;
+export const AlertChannelsDocument = gql`
+  query AlertChannels {
+    alertChannels {
+      id
+      name
+      type
+      target
+    }
+  }
+`;
+
+export function useAlertChannelsQuery(
+  baseOptions?: Apollo.QueryHookOptions<AlertChannelsQuery, AlertChannelsQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<AlertChannelsQuery, AlertChannelsQueryVariables>(AlertChannelsDocument, options);
+}
+
+export function useAlertChannelsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<AlertChannelsQuery, AlertChannelsQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<AlertChannelsQuery, AlertChannelsQueryVariables>(AlertChannelsDocument, options);
+}
+export type AlertChannelsQueryHookResult = ReturnType<typeof useAlertChannelsQuery>;
+export type AlertChannelsLazyQueryHookResult = ReturnType<typeof useAlertChannelsLazyQuery>;
+export type AlertChannelsQueryResult = Apollo.QueryResult<AlertChannelsQuery, AlertChannelsQueryVariables>;
+export const AlertEventsDocument = gql`
+  query AlertEvents($limit: Int) {
+    alertEvents(limit: $limit) {
+      id
+      triggeredAt
+      metricValue
+      changePercent
+      severity
+      status
+      message
+      deliveries {
+        id
+        status
+        channelType
+        sentAt
+        error
+      }
+    }
+  }
+`;
+
+export function useAlertEventsQuery(baseOptions?: Apollo.QueryHookOptions<AlertEventsQuery, AlertEventsQueryVariables>) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<AlertEventsQuery, AlertEventsQueryVariables>(AlertEventsDocument, options);
+}
+
+export function useAlertEventsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<AlertEventsQuery, AlertEventsQueryVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<AlertEventsQuery, AlertEventsQueryVariables>(AlertEventsDocument, options);
+}
+export type AlertEventsQueryHookResult = ReturnType<typeof useAlertEventsQuery>;
+export type AlertEventsLazyQueryHookResult = ReturnType<typeof useAlertEventsLazyQuery>;
+export type AlertEventsQueryResult = Apollo.QueryResult<AlertEventsQuery, AlertEventsQueryVariables>;
+export const UpsertAlertRuleDocument = gql`
+  mutation UpsertAlertRule($input: UpsertAlertRuleInput!) {
+    upsertAlertRule(input: $input) {
+      id
+      name
+    }
+  }
+`;
+export type UpsertAlertRuleMutationFn = Apollo.MutationFunction<
+  UpsertAlertRuleMutation,
+  UpsertAlertRuleMutationVariables
+>;
+
+export function useUpsertAlertRuleMutation(
+  baseOptions?: Apollo.MutationHookOptions<UpsertAlertRuleMutation, UpsertAlertRuleMutationVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<UpsertAlertRuleMutation, UpsertAlertRuleMutationVariables>(UpsertAlertRuleDocument, options);
+}
+export type UpsertAlertRuleMutationHookResult = ReturnType<typeof useUpsertAlertRuleMutation>;
+export type UpsertAlertRuleMutationResult = Apollo.MutationResult<UpsertAlertRuleMutation>;
+export type UpsertAlertRuleMutationOptions = Apollo.BaseMutationOptions<
+  UpsertAlertRuleMutation,
+  UpsertAlertRuleMutationVariables
+>;
+export const CreateAlertChannelDocument = gql`
+  mutation CreateAlertChannel($input: AlertChannelInput!) {
+    createAlertChannel(input: $input) {
+      id
+      name
+      type
+      target
+    }
+  }
+`;
+export type CreateAlertChannelMutationFn = Apollo.MutationFunction<
+  CreateAlertChannelMutation,
+  CreateAlertChannelMutationVariables
+>;
+
+export function useCreateAlertChannelMutation(
+  baseOptions?: Apollo.MutationHookOptions<CreateAlertChannelMutation, CreateAlertChannelMutationVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<CreateAlertChannelMutation, CreateAlertChannelMutationVariables>(
+    CreateAlertChannelDocument,
+    options
+  );
+}
+export type CreateAlertChannelMutationHookResult = ReturnType<typeof useCreateAlertChannelMutation>;
+export type CreateAlertChannelMutationResult = Apollo.MutationResult<CreateAlertChannelMutation>;
+export type CreateAlertChannelMutationOptions = Apollo.BaseMutationOptions<
+  CreateAlertChannelMutation,
+  CreateAlertChannelMutationVariables
+>;
+export const TriggerAlertRuleDocument = gql`
+  mutation TriggerAlertRule($ruleId: String!) {
+    triggerAlertRule(ruleId: $ruleId)
+  }
+`;
+export type TriggerAlertRuleMutationFn = Apollo.MutationFunction<
+  TriggerAlertRuleMutation,
+  TriggerAlertRuleMutationVariables
+>;
+
+export function useTriggerAlertRuleMutation(
+  baseOptions?: Apollo.MutationHookOptions<TriggerAlertRuleMutation, TriggerAlertRuleMutationVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<TriggerAlertRuleMutation, TriggerAlertRuleMutationVariables>(
+    TriggerAlertRuleDocument,
+    options
+  );
+}
+export type TriggerAlertRuleMutationHookResult = ReturnType<typeof useTriggerAlertRuleMutation>;
+export type TriggerAlertRuleMutationResult = Apollo.MutationResult<TriggerAlertRuleMutation>;
+export type TriggerAlertRuleMutationOptions = Apollo.BaseMutationOptions<
+  TriggerAlertRuleMutation,
+  TriggerAlertRuleMutationVariables
+>;
+export const AlertEventsStreamDocument = gql`
+  subscription AlertEventsStream {
+    alertEvents {
+      id
+      triggeredAt
+      severity
+      message
+      metricValue
+    }
+  }
+`;
+
+export function useAlertEventsStreamSubscription(
+  baseOptions?: Apollo.SubscriptionHookOptions<AlertEventsStreamSubscription, AlertEventsStreamSubscriptionVariables>
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useSubscription<AlertEventsStreamSubscription, AlertEventsStreamSubscriptionVariables>(
+    AlertEventsStreamDocument,
+    options
+  );
+}
+export type AlertEventsStreamSubscriptionHookResult = ReturnType<typeof useAlertEventsStreamSubscription>;
+export type AlertEventsStreamSubscriptionResult = Apollo.SubscriptionResult<AlertEventsStreamSubscription>;

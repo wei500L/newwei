@@ -6,8 +6,8 @@ import {
   useAlertEventsQuery,
   useAlertRulesQuery,
   useTriggerAlertRuleMutation,
-  AlertEventsDocument,
-  AlertEventsSubscription
+  AlertEventsStreamDocument,
+  AlertEventsStreamSubscription
 } from "@/graphql/generated";
 import { useEffect } from "react";
 import { useApolloClient } from "@apollo/client";
@@ -25,7 +25,7 @@ export function AlertPanel() {
   const client = useApolloClient();
 
   useEffect(() => {
-    const sub = client.subscribe<AlertEventsSubscription>({ query: AlertEventsDocument }).subscribe({
+    const sub = client.subscribe<AlertEventsStreamSubscription>({ query: AlertEventsStreamDocument }).subscribe({
       next: () => {
         void Promise.all([refetchRules(), refetchEvents()]);
       }
@@ -69,7 +69,7 @@ export function AlertPanel() {
                 description={
                   <Space direction="vertical" size={0}>
                     <Typography.Text type="secondary">
-                      Metric: {rule.metricSlug} • Cooldown: {rule.cooldownSeconds}s • Interval: {rule.checkIntervalSec}s
+                      Provider: {rule.metricProvider} • Metric: {rule.metricSlug} • Cooldown: {rule.cooldownSeconds}s • Interval: {rule.checkIntervalSec}s
                     </Typography.Text>
                     <Typography.Text type="secondary">
                       Channels: {rule.channels.map((c) => c.name).join(", ") || "n/a"}

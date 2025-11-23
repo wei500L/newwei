@@ -5,6 +5,7 @@ query AlertRules {
     description
     severity
     status
+    metricProvider
     metricSlug
     operator
     thresholdValue
@@ -14,6 +15,7 @@ query AlertRules {
     cooldownSeconds
     checkIntervalSec
     lastTriggeredAt
+    metadata
     channels {
       id
       name
@@ -71,11 +73,12 @@ mutation TriggerAlertRule($ruleId: String!) {
   triggerAlertRule(ruleId: $ruleId)
 }
 
-subscription AlertEvents {
+subscription AlertEventsStream {
   alertEvents {
     id
     triggeredAt
     severity
     message
+    metricValue
   }
 }

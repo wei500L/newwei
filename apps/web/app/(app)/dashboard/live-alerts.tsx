@@ -3,13 +3,13 @@
 import { useEffect } from "react";
 import { message } from "antd";
 import { useApolloClient } from "@apollo/client";
-import { AlertEventsDocument, AlertEventsSubscription } from "@/graphql/generated";
+import { AlertEventsStreamDocument, AlertEventsStreamSubscription } from "@/graphql/generated";
 
 export function LiveAlertsToasts() {
   const client = useApolloClient();
 
   useEffect(() => {
-    const sub = client.subscribe<AlertEventsSubscription>({ query: AlertEventsDocument }).subscribe({
+    const sub = client.subscribe<AlertEventsStreamSubscription>({ query: AlertEventsStreamDocument }).subscribe({
       next: (payload) => {
         const evt = payload.data?.alertEvents;
         if (evt) {

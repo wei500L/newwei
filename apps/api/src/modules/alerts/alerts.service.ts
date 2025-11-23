@@ -4,6 +4,7 @@ import {
   AlertChannelType,
   AlertDeliveryStatus,
   AlertEventStatus,
+  AlertMetricProvider,
   AlertOperator,
   AlertSeverity,
   AlertStatus,
@@ -12,12 +13,13 @@ import {
 import { Queue } from "bullmq";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
-import { ALERTS_QUEUE } from "./alerts.constants";
+import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
 import { EnvService } from "../config/config.service";
 import { firstValueFrom } from "rxjs";
 import { createLogger } from "@modular/utils";
 import { ALERTS_PUBSUB, AlertEventPayload } from "./alerts.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
+import { MetricProvider } from "./providers/metric-provider";
 
 export interface AlertChannelInput {
   id?: string;
@@ -34,6 +36,7 @@ export interface UpsertAlertRuleInput {
   description?: string;
   severity?: AlertSeverity;
   status?: AlertStatus;
+  metricProvider?: AlertMetricProvider;
   metricSlug: string;
   operator: AlertOperator;
   thresholdValue?: number;
@@ -60,6 +63,7 @@ export class AlertsService {
   private readonly prisma: PrismaService;
   private readonly email: EmailService;
   private readonly http: HttpService;
+  private readonly metricProviders: MetricProvider[];
 
   constructor(
     prisma: PrismaService,
@@ -67,11 +71,13 @@ export class AlertsService {
     http: HttpService,
     private readonly env: EnvService,
     @Inject(ALERTS_QUEUE) private readonly queue: Queue<AlertJobPayload>,
-    @Inject(ALERTS_PUBSUB) private readonly pubsub: PubSubEngine
+    @Inject(ALERTS_PUBSUB) private readonly pubsub: PubSubEngine,
+    @Inject(ALERT_METRIC_PROVIDERS) metricProviders: MetricProvider[]
   ) {
     this.prisma = prisma;
     this.email = email;
     this.http = http;
+    this.metricProviders = metricProviders;
   }
 
   async listChannels(orgId: string) {
@@ -121,15 +127,28 @@ export class AlertsService {
   }
 
   async upsertRule(orgId: string, input: UpsertAlertRuleInput, createdById?: string) {
-    const dataItem = await this.prisma.economicDataItem.findUnique({
-      where: { slug: input.metricSlug }
-    });
+    const existingRule = input.id ? await this.prisma.alertRule.findUnique({ where: { id: input.id } }) : null;
+    if (input.id && (!existingRule || existingRule.orgId !== orgId)) {
+      throw new Error("Alert rule not found for this org");
+    }
+
+    const metricProvider = input.metricProvider ?? existingRule?.metricProvider ?? AlertMetricProvider.economic_data;
+    if (!this.resolveMetricProvider({ metricProvider })) {
+      throw new Error(`No metric provider registered for type ${metricProvider}`);
+    }
+    const dataItem =
+      metricProvider === AlertMetricProvider.economic_data
+        ? await this.prisma.economicDataItem.findUnique({
+            where: { slug: input.metricSlug }
+          })
+        : null;
     const baseData: Prisma.AlertRuleUncheckedCreateInput = {
       orgId,
       name: input.name,
       description: input.description,
       severity: input.severity ?? AlertSeverity.medium,
       status: input.status ?? AlertStatus.active,
+      metricProvider,
       metricSlug: input.metricSlug,
       operator: input.operator,
       thresholdValue: input.thresholdValue !== undefined ? new Prisma.Decimal(input.thresholdValue) : null,
@@ -140,23 +159,20 @@ export class AlertsService {
       checkIntervalSec: input.checkIntervalSec ?? 300,
       metadata: input.metadata ?? {},
       createdById,
-      dataItemId: dataItem?.id ?? null
+      dataItemId: metricProvider === AlertMetricProvider.economic_data ? dataItem?.id ?? null : null
     };
 
     const rule = await this.prisma.$transaction(async (tx) => {
-      let currentRule;
-      if (input.id) {
-        const existing = await tx.alertRule.findUnique({ where: { id: input.id } });
-        if (!existing || existing.orgId !== orgId) {
-          throw new Error("Alert rule not found for this org");
-        }
+      let currentRule = existingRule;
+      if (currentRule) {
         currentRule = await tx.alertRule.update({
-          where: { id: input.id },
+          where: { id: currentRule.id },
           data: {
             name: baseData.name,
             description: baseData.description,
             severity: baseData.severity,
             status: baseData.status,
+            metricProvider: baseData.metricProvider,
             metricSlug: baseData.metricSlug,
             operator: baseData.operator,
             thresholdValue: baseData.thresholdValue,
@@ -249,7 +265,13 @@ export class AlertsService {
       }
     }
 
-    const { latest, previous, changePercent } = await this.fetchLatestValues(rule.metricSlug, rule.operator, rule.changeWindowMin);
+    const provider = this.resolveMetricProvider(rule);
+    if (!provider) {
+      logger.warn({ ruleId: rule.id, metricProvider: rule.metricProvider }, "Alert rule has no metric provider registered");
+      return null;
+    }
+
+    const { latest, previous, changePercent, context: providerContext } = await provider.fetch(rule);
     if (latest === null || latest === undefined) {
       return null;
     }
@@ -268,7 +290,7 @@ export class AlertsService {
         severity: rule.severity,
         status: AlertEventStatus.pending,
         message: triggered.message,
-        context: triggered.context ?? {}
+        context: { ...(providerContext ?? {}), ...(triggered.context ?? {}) }
       }
     });
 
@@ -312,27 +334,8 @@ export class AlertsService {
     return { event, deliveries };
   }
 
-  private async fetchLatestValues(metricSlug: string, operator: AlertOperator, changeWindowMin?: number) {
-    const take = operator === "change_up_pct" || operator === "change_down_pct" ? 2 : 1;
-    const where: Prisma.EconomicDataPointWhereInput = {
-      item: { slug: metricSlug }
-    };
-    if (changeWindowMin) {
-      const windowStart = new Date(Date.now() - changeWindowMin * 60 * 1000);
-      where.recordedAt = { gte: windowStart };
-    }
-    const points = await this.prisma.economicDataPoint.findMany({
-      where,
-      orderBy: { recordedAt: "desc" },
-      take
-    });
-    if (!points.length) {
-      return { latest: null, previous: null, changePercent: null };
-    }
-    const latest = Number(points[0].value);
-    const previous = points.length > 1 ? Number(points[1].value) : null;
-    const changePercent = previous ? ((latest - previous) / previous) * 100 : null;
-    return { latest, previous, changePercent };
+  private resolveMetricProvider(rule: { metricProvider: AlertMetricProvider }) {
+    return this.metricProviders.find((provider) => provider.supports(rule));
   }
 
   private shouldTrigger(

@@ -1,5 +1,5 @@
 import { Field, InputType, Int } from "@nestjs/graphql";
-import { AlertChannelType, AlertOperator, AlertSeverity, AlertStatus } from "@prisma/client";
+import { AlertChannelType, AlertMetricProvider, AlertOperator, AlertSeverity, AlertStatus } from "@prisma/client";
 import GraphQLJSON from "graphql-type-json";
 import { IsArray, IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength, Min } from "class-validator";
 
@@ -48,6 +48,11 @@ export class UpsertAlertRuleInput {
   @IsOptional()
   @IsEnum(AlertStatus)
   status?: AlertStatus;
+
+  @Field(() => AlertMetricProvider, { nullable: true })
+  @IsOptional()
+  @IsEnum(AlertMetricProvider)
+  metricProvider?: AlertMetricProvider;
 
   @Field()
   @IsString()

@@ -4,6 +4,7 @@ import {
   AlertChannelType,
   AlertDeliveryStatus,
   AlertEventStatus,
+  AlertMetricProvider,
   AlertOperator,
   AlertSeverity,
   AlertStatus
@@ -12,6 +13,7 @@ import {
 registerEnumType(AlertSeverity, { name: "AlertSeverity" });
 registerEnumType(AlertStatus, { name: "AlertStatus" });
 registerEnumType(AlertOperator, { name: "AlertOperator" });
+registerEnumType(AlertMetricProvider, { name: "AlertMetricProvider" });
 registerEnumType(AlertChannelType, { name: "AlertChannelType" });
 registerEnumType(AlertEventStatus, { name: "AlertEventStatus" });
 registerEnumType(AlertDeliveryStatus, { name: "AlertDeliveryStatus" });
@@ -101,6 +103,9 @@ export class AlertRuleModel {
 
   @Field(() => AlertStatus)
   status!: AlertStatus;
+
+  @Field(() => AlertMetricProvider)
+  metricProvider!: AlertMetricProvider;
 
   @Field()
   metricSlug!: string;

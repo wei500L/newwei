@@ -365,6 +365,7 @@ model AlertRule {
   description      String?
   severity         AlertSeverity    @default(medium)
   status           AlertStatus      @default(active)
+  metricProvider   AlertMetricProvider @default(economic_data)
   dataItem         EconomicDataItem? @relation(fields: [dataItemId], references: [id])
   dataItemId       String?
   metricSlug       String
@@ -443,6 +444,14 @@ enum AlertStatus {
   active
   paused
   archived
+}
+
+enum AlertMetricProvider {
+  economic_data
+  system_event
+  pipeline_job
+  crawl_task
+  system_metric
 }
 
 enum AlertOperator {
