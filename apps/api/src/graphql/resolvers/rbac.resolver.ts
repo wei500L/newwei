@@ -1,4 +1,4 @@
-import { Context, Query, ResolveField, Resolver, UseGuards, Parent } from "@nestjs/graphql";
+import { Args, Context, Query, ResolveField, Resolver, UseGuards, Parent } from "@nestjs/graphql";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { RbacService } from "../../modules/rbac/rbac.service";
@@ -18,16 +18,20 @@ export class RbacResolver {
 
   @HasPermission("roles.read")
   @Query(() => [RoleModel])
-  async roles(@Context("req") req: any): Promise<RoleModel[]> {
+  async roles(
+    @Context("req") req: any,
+    @Args("includeSystem", { type: () => Boolean, nullable: true }) includeSystem?: boolean
+  ): Promise<RoleModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
-    const data = await this.rbacService.listRoles(requester.orgId);
+    const data = await this.rbacService.listRoles(requester.orgId, { includeSystem });
     return data.map((role) => ({
       id: role.id,
       name: role.name,
       description: role.description ?? undefined,
+      isSystem: role.isSystem,
       permissions: role.permissions.map((permission) => ({
         id: permission.permission.id,
         name: permission.permission.name,
@@ -63,6 +67,7 @@ export class RbacResolver {
         id: membership.role.id,
         name: membership.role.name,
         description: membership.role.description ?? undefined,
+        isSystem: membership.role.isSystem,
         permissions: membership.role.permissions.map((permission) => ({
           id: permission.permission.id,
           name: permission.permission.name,

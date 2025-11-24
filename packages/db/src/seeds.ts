@@ -40,12 +40,14 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
         }
       },
       update: {
-        description: roleDef.description
+        description: roleDef.description,
+        isSystem: roleDef.isSystem ?? false
       },
       create: {
         name: roleDef.name,
         description: roleDef.description,
-        orgId: org.id
+        orgId: org.id,
+        isSystem: roleDef.isSystem ?? false
       }
     });
 

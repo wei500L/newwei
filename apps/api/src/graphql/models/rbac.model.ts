@@ -25,6 +25,9 @@ export class RoleModel {
   @Field({ nullable: true })
   description?: string | null;
 
+  @Field()
+  isSystem!: boolean;
+
   @HasPermission("roles.read")
   @Field(() => [PermissionModel])
   permissions!: PermissionModel[];

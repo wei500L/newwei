@@ -30,13 +30,15 @@ export interface DefaultRoleDefinition {
   name: string;
   description: string;
   permissions: CorePermission[];
+  isSystem?: boolean;
 }
 
 export const DEFAULT_ROLES: DefaultRoleDefinition[] = [
   {
     name: "admin",
     description: "Full access across the administrative surface",
-    permissions: [...CORE_PERMISSIONS]
+    permissions: [...CORE_PERMISSIONS],
+    isSystem: true
   },
   {
     name: "manager",
@@ -60,7 +62,8 @@ export const DEFAULT_ROLES: DefaultRoleDefinition[] = [
       "crawl.write",
       "economicdata.read",
       "akshare.fetch"
-    ]
+    ],
+    isSystem: true
   },
   {
     name: "analyst",
@@ -75,7 +78,8 @@ export const DEFAULT_ROLES: DefaultRoleDefinition[] = [
       "analysis.read",
       "crawl.read",
       "economicdata.read"
-    ]
+    ],
+    isSystem: true
   }
 ];
 

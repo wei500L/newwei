@@ -21,8 +21,9 @@ export class RbacController {
 
   @Permissions("roles.read")
   @Get("roles")
-  async roles(@CurrentUser() user: AuthenticatedUser) {
-    return this.rbacService.listRoles(user.orgId);
+  async roles(@CurrentUser() user: AuthenticatedUser, @Query("includeSystem") includeSystem?: string) {
+    const includeSystemFlag = includeSystem === undefined ? true : includeSystem === "true";
+    return this.rbacService.listRoles(user.orgId, { includeSystem: includeSystemFlag });
   }
 
   @Permissions("roles.write")

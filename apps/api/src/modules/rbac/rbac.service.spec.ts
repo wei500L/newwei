@@ -54,11 +54,12 @@ describe("RbacService", () => {
     prismaMock.permission.findMany = jest
       .fn()
       .mockResolvedValue([{ id: "perm-1", name: "items.read" }]);
-    prismaMock.role.create = jest.fn().mockResolvedValue({ id: "role-1" });
+    prismaMock.role.create = jest.fn().mockResolvedValue({ id: "role-1", isSystem: false });
     prismaMock.rolePermission.createMany = jest.fn();
     prismaMock.role.findUnique = jest.fn().mockResolvedValue({
       id: "role-1",
       name: "analyst",
+      isSystem: false,
       permissions: []
     });
 
@@ -70,6 +71,14 @@ describe("RbacService", () => {
 
     expect(result?.id).toBe("role-1");
     expect(prismaMock.rolePermission.createMany).toHaveBeenCalled();
+    expect(prismaMock.role.create).toHaveBeenCalledWith({
+      data: {
+        name: "analyst",
+        description: "",
+        orgId: "org-1",
+        isSystem: false
+      }
+    });
   });
 
   it("propagates RBAC rate limit violations", async () => {
@@ -91,5 +100,19 @@ describe("RbacService", () => {
     await service.assignRole("org-1", "admin-1", { userId: "user-2", roleId: "role-9" });
     expect(actionRateLimitMock.enforceRbacWrite).toHaveBeenCalledWith("org-1", "admin-1");
     expect(prismaMock.membership.upsert).toHaveBeenCalled();
+  });
+
+  it("filters system roles when includeSystem is false", async () => {
+    prismaMock.role.findMany = jest.fn().mockResolvedValue([]);
+    await service.listRoles("org-1", { includeSystem: false });
+    expect(prismaMock.role.findMany).toHaveBeenCalledWith({
+      where: { orgId: "org-1", isSystem: false },
+      include: {
+        permissions: {
+          include: { permission: true }
+        }
+      },
+      orderBy: { name: "asc" }
+    });
   });
 });

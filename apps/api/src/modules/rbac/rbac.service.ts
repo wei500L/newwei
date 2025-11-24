@@ -17,9 +17,13 @@ export class RbacService {
     });
   }
 
-  async listRoles(orgId: string) {
+  async listRoles(orgId: string, options?: { includeSystem?: boolean }) {
+    const includeSystem = options?.includeSystem ?? true;
     return this.prisma.role.findMany({
-      where: { orgId },
+      where: {
+        orgId,
+        ...(includeSystem ? {} : { isSystem: false })
+      },
       include: {
         permissions: {
           include: { permission: true }
@@ -43,7 +47,8 @@ export class RbacService {
         data: {
           name: dto.name,
           description: dto.description,
-          orgId
+          orgId,
+          isSystem: false
         }
       });
 
