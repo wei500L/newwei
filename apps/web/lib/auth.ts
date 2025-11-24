@@ -2,26 +2,37 @@ import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { env } from "./env";
 
-type BackendLoginResponse = {
+export type OrganizationOption = {
+  id: string;
+  name?: string;
+  slug?: string;
+};
+
+export type AuthenticatedUser = {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  orgId: string;
+  roleIds: string[];
+  permissions: string[];
+  organizations?: OrganizationOption[];
+};
+
+export type BackendLoginResponse = {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
-  user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    orgId: string;
-    roleIds: string[];
-    permissions: string[];
-  };
+  user: AuthenticatedUser;
+  organizations?: OrganizationOption[];
 };
 
 export type TokenPayload = {
   accessToken: string;
   refreshToken: string;
   accessTokenExpires: number;
-  user: BackendLoginResponse["user"];
+  user: AuthenticatedUser;
+  organizations?: OrganizationOption[];
   error?: string;
 };
 
@@ -32,7 +43,7 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ refreshToken: token.refreshToken })
+      body: JSON.stringify({ refreshToken: token.refreshToken, orgId: token.user.orgId })
     });
 
     if (!response.ok) {
@@ -45,7 +56,8 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
       accessToken: data.accessToken,
       refreshToken: data.refreshToken ?? token.refreshToken,
       accessTokenExpires: Date.now() + data.expiresIn * 1000,
-      user: data.user
+      user: data.user,
+      organizations: data.organizations ?? token.organizations ?? [{ id: data.user.orgId }]
     };
   } catch (error) {
     console.error("Refresh token error", error);
@@ -69,7 +81,8 @@ const config: NextAuthConfig = {
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
+        password: { label: "Password", type: "password" },
+        orgId: { label: "Organization", type: "text", required: false }
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -80,7 +93,8 @@ const config: NextAuthConfig = {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: credentials.email,
-            password: credentials.password
+            password: credentials.password,
+            orgId: credentials.orgId || undefined
           })
         });
 
@@ -89,17 +103,19 @@ const config: NextAuthConfig = {
         }
 
         const data = (await response.json()) as BackendLoginResponse;
+        const organizations = data.organizations ?? [{ id: data.user.orgId }];
         return {
           id: data.user.id,
           email: data.user.email,
           name: `${data.user.firstName} ${data.user.lastName}`,
-          ...data
+          ...data,
+          organizations
         };
       }
     })
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         const typedUser = user as unknown as BackendLoginResponse & {
           id: string;
@@ -110,11 +126,27 @@ const config: NextAuthConfig = {
           accessToken: typedUser.accessToken,
           refreshToken: typedUser.refreshToken,
           accessTokenExpires: Date.now() + typedUser.expiresIn * 1000,
-          user: typedUser.user
+          user: typedUser.user,
+          organizations: typedUser.organizations ?? [{ id: typedUser.user.orgId }]
         } satisfies TokenPayload;
       }
 
       const typedToken = token as unknown as TokenPayload;
+
+      if (trigger === "update" && session) {
+        const updatedSession = session as Partial<TokenPayload> & {
+          user?: TokenPayload["user"];
+        };
+        return {
+          ...typedToken,
+          accessToken: updatedSession.accessToken ?? typedToken.accessToken,
+          refreshToken: updatedSession.refreshToken ?? typedToken.refreshToken,
+          accessTokenExpires:
+            updatedSession.accessTokenExpires ?? typedToken.accessTokenExpires,
+          user: updatedSession.user ?? typedToken.user,
+          organizations: updatedSession.organizations ?? typedToken.organizations
+        } satisfies TokenPayload;
+      }
 
       if (Date.now() < typedToken.accessTokenExpires - 30_000) {
         return typedToken;
@@ -126,10 +158,15 @@ const config: NextAuthConfig = {
       const typedToken = token as unknown as TokenPayload;
       return {
         ...session,
-        user: typedToken.user,
+        user: {
+          ...typedToken.user,
+          organizations: typedToken.organizations
+        },
         accessToken: typedToken.accessToken,
+        accessTokenExpires: typedToken.accessTokenExpires,
         permissions: typedToken.user.permissions,
         orgId: typedToken.user.orgId,
+        organizations: typedToken.organizations ?? [{ id: typedToken.user.orgId }],
         error: typedToken.error
       };
     }

@@ -14,6 +14,7 @@ import type { PropsWithChildren } from "react";
 import { useMemo, useState, useCallback } from "react";
 
 import { useSidebarStore } from "@/store/sidebar";
+import { OrganizationSwitcher } from "./organization-switcher";
 
 const { Header, Sider, Content } = Layout;
 
@@ -144,6 +145,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
         >
           <Breadcrumb items={breadcrumbs} />
           <Space align="center" size="large">
+            <OrganizationSwitcher />
             <Typography.Text>
               {session.data?.user?.firstName} {session.data?.user?.lastName}
             </Typography.Text>

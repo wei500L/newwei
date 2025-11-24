@@ -12,12 +12,14 @@ const loginSchema = z.object({
   email: z.string({ required_error: "Email is required" }).email("Invalid email"),
   password: z
     .string({ required_error: "Password is required" })
-    .min(8, "Password must be at least 8 characters")
+    .min(8, "Password must be at least 8 characters"),
+  orgId: z.string().trim().optional().transform((value) => (value ? value : undefined))
 });
 
 interface LoginFormValues {
   email: string;
   password: string;
+  orgId?: string;
 }
 
 export default function LoginPage() {
@@ -42,12 +44,15 @@ export default function LoginPage() {
       return;
     }
 
+    const payload = parsed.data;
+
     try {
       setLoading(true);
       setError(null);
       const result = await signIn("credentials", {
-        email: values.email,
-        password: values.password,
+        email: payload.email,
+        password: payload.password,
+        orgId: payload.orgId,
         redirect: false
       });
 
@@ -82,6 +87,13 @@ export default function LoginPage() {
           rules={[{ required: true, message: "Please enter your password" }]}
         >
           <Input.Password placeholder="********" autoComplete="current-password" size="large" />
+        </Form.Item>
+        <Form.Item
+          label="Organization"
+          name="orgId"
+          tooltip="Optional. Leave blank to use your default organization"
+        >
+          <Input placeholder="org-123 or slug" autoComplete="organization" size="large" />
         </Form.Item>
         {error && (
           <Form.Item>
