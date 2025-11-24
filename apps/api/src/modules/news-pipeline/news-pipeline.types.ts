@@ -15,18 +15,6 @@ export interface PipelineJobContext {
   orgId: string;
 }
 
-export interface NormalizedNewsPayload {
-  url: string;
-  language?: string;
-  sourceName?: string | null;
-  keywords: string[];
-  tags: string[];
-  metadata: Record<string, unknown>;
-  crawlOptions?: Partial<CrawlTaskOptions>;
-  forceRefresh: boolean;
-  summaryHints: string[];
-}
-
 export interface CrawlCacheEntry {
   url: string;
   markdown: string;

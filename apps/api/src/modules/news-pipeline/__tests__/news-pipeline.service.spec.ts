@@ -4,6 +4,7 @@ import { NewsPipelineService } from "../news-pipeline.service";
 import type { PipelineJobContext, RawPipelineItem } from "../news-pipeline.types";
 import { NewsPipelineConfig } from "../news-pipeline.config";
 import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
+import { NormalizedNewsPayloadSchema } from "../news-pipeline.schema";
 
 jest.mock("@modular/mongo", () => ({
   TaskLogModel: {
@@ -90,18 +91,23 @@ describe("NewsPipelineService", () => {
           message: {
             role: "assistant",
             content: JSON.stringify({
-              status: "ok",
               title: "Clean Headline",
-              content: "Clean body",
-              publish_time: "2024-01-01T00:00:00Z",
-              source: {
-                url: "https://example.com/story",
-                name: "Example",
-                domain: "example.com"
-              },
-              highlights: ["Clean body"],
-              keywords: ["example"],
-              metadata: {}
+              subtitle: null,
+              author: null,
+              source: "Example",
+              published_at: "2024-01-01T00:00:00Z",
+              language: "en",
+              location: null,
+              category: null,
+              topics: ["news"],
+              summary: "Clean body",
+              key_points: ["Clean body"],
+              entities: [],
+              cleaned_markdown: "Clean body",
+              removed_noise_types: [],
+              quality_score: 0.9,
+              llm_model: "openai/gpt-4o-mini",
+              llm_prompt_version: "v1"
             })
           }
         }
@@ -158,5 +164,40 @@ describe("NewsPipelineService", () => {
     expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
     expect(cache.set).toHaveBeenCalledTimes(1);
     expect(promptConfigService.getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws when crawl returns no successful results", async () => {
+    crawlClient.crawl.mockResolvedValueOnce({
+      results: [
+        { url: "https://example.com", markdown: "", success: false }
+      ]
+    });
+
+    await expect(service.process(job, raw)).rejects.toThrow(
+      "crawl4ai returned no successful article"
+    );
+  });
+
+  it("normalizes payloads via schema parsing", () => {
+    const parsed = NormalizedNewsPayloadSchema.parse({
+      url: " https://example.com/news ",
+      language: " en ",
+      sourceName: "Example ",
+      keywords: [" ai ", " "],
+      tags: [" breaking "],
+      summaryHints: [" focus "],
+      metadata: { foo: "bar" },
+      forceRefresh: "",
+      crawlOptions: { userAgent: "UA" }
+    });
+
+    expect(parsed.url).toBe("https://example.com/news");
+    expect(parsed.language).toBe("en");
+    expect(parsed.sourceName).toBe("Example");
+    expect(parsed.keywords).toEqual(["ai"]);
+    expect(parsed.tags).toEqual(["breaking"]);
+    expect(parsed.summaryHints).toEqual(["focus"]);
+    expect(parsed.forceRefresh).toBe(false);
+    expect(parsed.crawlOptions).toEqual({ userAgent: "UA" });
   });
 });

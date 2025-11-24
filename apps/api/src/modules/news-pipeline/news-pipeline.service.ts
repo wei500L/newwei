@@ -14,10 +14,14 @@ import {
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
-import { CleanedNewsSchema, CleanedNews } from "./news-pipeline.schema";
+import {
+  CleanedNewsSchema,
+  CleanedNews,
+  NormalizedNewsPayload,
+  NormalizedNewsPayloadSchema,
+} from "./news-pipeline.schema";
 import {
   CrawlCacheEntry,
-  NormalizedNewsPayload,
   PipelineJobContext,
   RawPipelineItem,
 } from "./news-pipeline.types";
@@ -113,9 +117,6 @@ export class NewsPipelineService {
 
     const crawlResponse = await this.executeCrawl(payload);
     const article = this.pickSuccessfulArticle(crawlResponse);
-    if (!article) {
-      throw new Error("crawl4ai returned no successful article");
-    }
     const normalized = this.normalizeArticle(
       article,
       payload.url,
@@ -151,12 +152,13 @@ export class NewsPipelineService {
 
   private pickSuccessfulArticle(response: Crawl4aiResponse) {
     if (!response.results || response.results.length === 0) {
-      return null;
+      throw new Error("crawl4ai returned no results");
     }
-    return (
-      response.results.find((article) => article.success !== false) ??
-      response.results[0]
-    );
+    const article = response.results.find((result) => result.success !== false);
+    if (!article) {
+      throw new Error("crawl4ai returned no successful article");
+    }
+    return article;
   }
 
   private normalizeArticle(
@@ -316,48 +318,7 @@ export class NewsPipelineService {
   private normalizePayload(
     payload: Record<string, unknown>,
   ): NormalizedNewsPayload {
-    const url = typeof payload.url === "string" ? payload.url.trim() : "";
-    if (!url) {
-      throw new Error("raw payload must include url");
-    }
-    const keywords = Array.isArray(payload.keywords)
-      ? payload.keywords
-          .map((keyword) => (typeof keyword === "string" ? keyword.trim() : ""))
-          .filter(Boolean)
-      : [];
-    const tags = Array.isArray(payload.tags)
-      ? payload.tags
-          .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
-          .filter(Boolean)
-      : [];
-    const summaryHints = Array.isArray(payload.summaryHints)
-      ? payload.summaryHints
-          .map((hint) => (typeof hint === "string" ? hint.trim() : ""))
-          .filter(Boolean)
-      : [];
-    const crawlOptions =
-      typeof payload.crawlOptions === "object" && payload.crawlOptions
-        ? (payload.crawlOptions as Partial<
-            NormalizedNewsPayload["crawlOptions"]
-          >)
-        : undefined;
-
-    return {
-      url,
-      language:
-        typeof payload.language === "string" ? payload.language : undefined,
-      sourceName:
-        typeof payload.sourceName === "string" ? payload.sourceName : undefined,
-      keywords,
-      tags,
-      metadata:
-        typeof payload.metadata === "object" && payload.metadata
-          ? (payload.metadata as Record<string, unknown>)
-          : {},
-      crawlOptions,
-      forceRefresh: Boolean(payload.forceRefresh),
-      summaryHints,
-    };
+    return NormalizedNewsPayloadSchema.parse(payload);
   }
 
   private cacheKey(orgId: string, url: string) {
