@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
+import { CacheService } from "../cache/cache.service";
 
 export type RateLimitBucket = "login" | "crawlCreate" | "rbacWrite";
 
@@ -31,23 +32,23 @@ const MIN_LIMIT = 1;
 const MAX_LIMIT = 1_000;
 const MIN_WINDOW_SECONDS = 5;
 const MAX_WINDOW_SECONDS = 86_400;
+const RATE_LIMIT_CACHE_KEY = "rate_limit:settings";
 
 @Injectable()
 export class RateLimitConfigService {
-  private cache: RateLimitSettings | null = null;
-  private cacheExpiresAt = 0;
-  private readonly cacheTtlMs = 30_000;
-
-  constructor(private readonly prisma: PrismaService, private readonly env: EnvService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly env: EnvService,
+    private readonly cache: CacheService
+  ) {}
 
   async getRateLimitSettings(): Promise<RateLimitSettings> {
-    const now = Date.now();
-    if (this.cache && now < this.cacheExpiresAt) {
-      return this.cache;
+    const cached = await this.cache.get<RateLimitSettings>(RATE_LIMIT_CACHE_KEY);
+    if (cached) {
+      return this.normalizeSettings(cached);
     }
     const settings = await this.loadSettings();
-    this.cache = settings;
-    this.cacheExpiresAt = now + this.cacheTtlMs;
+    await this.cache.set(RATE_LIMIT_CACHE_KEY, settings);
     return settings;
   }
 
@@ -88,14 +89,12 @@ export class RateLimitConfigService {
         metadata: normalized
       }
     });
-    this.cache = normalized;
-    this.cacheExpiresAt = Date.now() + this.cacheTtlMs;
+    await this.cache.set(RATE_LIMIT_CACHE_KEY, normalized);
     return normalized;
   }
 
   async invalidateCache() {
-    this.cache = null;
-    this.cacheExpiresAt = 0;
+    await this.cache.del(RATE_LIMIT_CACHE_KEY);
   }
 
   private async loadSettings(): Promise<RateLimitSettings> {
