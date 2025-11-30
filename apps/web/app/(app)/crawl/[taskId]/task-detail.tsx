@@ -888,7 +888,17 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       .filter((entry): entry is string => Boolean(entry));
   }, [config]);
 
-  const multiConfigs = useMemo(() => {
+  type MultiUrlConfigView = {
+    name?: string;
+    matcher?: {
+      matchMode?: string;
+      patterns?: string[];
+    };
+    urls?: string[];
+    options?: Record<string, unknown>;
+  };
+
+  const multiConfigs: MultiUrlConfigView[] = useMemo(() => {
     if (!config || !Array.isArray((config as any).multiUrlConfigs)) {
       return [];
     }
@@ -1109,9 +1119,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           <List
             dataSource={multiConfigs}
             renderItem={(item, index) => {
-              const matcher = item?.matcher as { matchMode?: string; patterns?: string[] } | undefined;
-              const urls = Array.isArray(item?.urls) ? (item?.urls as string[]) : [];
-              const options = (item?.options ?? {}) as Record<string, unknown>;
+              const matcher = item?.matcher;
+              const urls = Array.isArray(item?.urls) ? item.urls : [];
+              const options = item?.options ?? {};
               return (
                 <List.Item key={item?.name ?? `strategy-${index}`}>
                   <Space direction="vertical" style={{ width: "100%" }}>
@@ -1200,7 +1210,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                         {link.text || link.href}
                       </Typography.Link>
                       <Typography.Text type="secondary">
-                        {(link.baseDomain ?? link.type ?? "link").toString()} • Score{" "}
+                        {(link.baseDomain ?? "link").toString()} • Score{" "}
                         {getLinkScore(link).toFixed(2)}
                       </Typography.Text>
                     </Space>
@@ -1221,7 +1231,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                         {link.text || link.href}
                       </Typography.Link>
                       <Typography.Text type="secondary">
-                        {(link.baseDomain ?? link.type ?? "link").toString()} • Intrinsic{" "}
+                        {(link.baseDomain ?? "link").toString()} • Intrinsic{" "}
                         {(link.intrinsicScore ?? 0).toFixed(2)}
                       </Typography.Text>
                     </Space>
