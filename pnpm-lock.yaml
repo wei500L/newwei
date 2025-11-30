@@ -146,6 +146,9 @@ importers:
       graphql-ws:
         specifier: ^5.14.2
         version: 5.16.2(graphql@16.12.0)
+      handlebars:
+        specifier: ^4.7.8
+        version: 4.7.8
       helmet:
         specifier: ^7.1.0
         version: 7.2.0

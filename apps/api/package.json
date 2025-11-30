@@ -46,6 +46,7 @@
     "graphql-tag": "^2.12.6",
     "graphql-type-json": "^0.3.2",
     "graphql-ws": "^5.14.2",
+    "handlebars": "^4.7.8",
     "helmet": "^7.1.0",
     "ioredis": "^5.4.1",
     "jsonwebtoken": "^9.0.2",

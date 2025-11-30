@@ -1,4 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+
 import { Injectable } from "@nestjs/common";
+import Handlebars, { TemplateDelegate } from "handlebars";
 import nodemailer, { Transporter } from "nodemailer";
 
 import { EnvService } from "../config/config.service";
@@ -11,9 +15,35 @@ export interface SendEmailOptions {
   from?: string;
 }
 
+interface AlertTemplateContext {
+  ruleName: string;
+  metric: string;
+  value: number;
+  thresholdLabel: string | number;
+  triggeredAt: string;
+  message?: string;
+  changePercentLabel?: string;
+}
+
+const ALERT_TEMPLATE_NAME = "alert.hbs";
+
+const ALERT_TEMPLATE_FALLBACK = `
+  <h3>告警触发：{{ruleName}}</h3>
+  <p>指标：{{metric}}</p>
+  <p>当前值：{{value}}{{#if changePercentLabel}}（变化：{{changePercentLabel}}%）{{/if}}</p>
+  <p>阈值：{{thresholdLabel}}</p>
+  <p>时间：{{triggeredAt}}</p>
+  {{#if message}}
+    <p>详情：{{message}}</p>
+  {{/if}}
+`;
+
 @Injectable()
 export class EmailService {
   private readonly transporter: Transporter;
+  private readonly templates: {
+    alert: TemplateDelegate<AlertTemplateContext>;
+  };
 
   constructor(private readonly env: EnvService) {
     const config = env.smtpConfig;
@@ -26,6 +56,10 @@ export class EmailService {
         pass: config.pass
       }
     });
+
+    this.templates = {
+      alert: this.compileTemplate<AlertTemplateContext>(ALERT_TEMPLATE_NAME, ALERT_TEMPLATE_FALLBACK)
+    };
   }
 
   async send(options: SendEmailOptions) {
@@ -57,13 +91,33 @@ export class EmailService {
     changePercent?: number | null;
   }) {
     const { ruleName, metric, value, threshold, triggeredAt, message, changePercent } = params;
-    return `
-      <h3>告警触发：${ruleName}</h3>
-      <p>指标：${metric}</p>
-      <p>当前值：${value}${changePercent !== undefined && changePercent !== null ? `（变化：${changePercent.toFixed(2)}%）` : ""}</p>
-      <p>阈值：${threshold ?? "未设置"}</p>
-      <p>时间：${triggeredAt}</p>
-      ${message ? `<p>详情：${message}</p>` : ""}
-    `;
+    const changePercentLabel =
+      changePercent !== undefined && changePercent !== null ? changePercent.toFixed(2) : undefined;
+
+    return this.templates.alert({
+      ruleName,
+      metric,
+      value,
+      thresholdLabel: threshold ?? "未设置",
+      triggeredAt,
+      message,
+      changePercentLabel
+    });
+  }
+
+  private compileTemplate<T>(templateFile: string, fallbackSource: string): TemplateDelegate<T> {
+    const templatePath = this.resolveTemplatePath(templateFile);
+    const templateSource = templatePath ? readFileSync(templatePath, "utf-8") : fallbackSource;
+    return Handlebars.compile<T>(templateSource);
+  }
+
+  private resolveTemplatePath(templateFile: string): string | null {
+    const candidates = [
+      path.join(__dirname, "templates", templateFile),
+      path.resolve(__dirname, "..", "..", "..", "src", "modules", "email", "templates", templateFile)
+    ];
+
+    const existingPath = candidates.find((candidate) => existsSync(candidate));
+    return existingPath ?? null;
   }
 }

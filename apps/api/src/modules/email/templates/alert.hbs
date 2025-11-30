@@ -1,0 +1,8 @@
+<h3>告警触发：{{ruleName}}</h3>
+<p>指标：{{metric}}</p>
+<p>当前值：{{value}}{{#if changePercentLabel}}（变化：{{changePercentLabel}}%）{{/if}}</p>
+<p>阈值：{{thresholdLabel}}</p>
+<p>时间：{{triggeredAt}}</p>
+{{#if message}}
+<p>详情：{{message}}</p>
+{{/if}}
