@@ -16,6 +16,7 @@
   "dependencies": {
     "@ant-design/icons": "^5.3.6",
     "@apollo/client": "^3.11.0",
+    "@modular/utils": "workspace:*",
     "@tanstack/react-query": "^5.51.0",
     "antd": "^5.19.0",
     "axios": "^1.6.8",

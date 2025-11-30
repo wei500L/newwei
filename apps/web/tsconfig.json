@@ -9,6 +9,9 @@
       "@/lib/*": [
         "./lib/*"
       ],
+      "@modular/utils": [
+        "../../packages/utils/src"
+      ],
       "@/store/*": [
         "./store/*"
       ],
