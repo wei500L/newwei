@@ -44,26 +44,46 @@ export interface EchartProps {
 
 export function DashboardChart({ option, height = 360, renderer = "canvas", group, onEvents }: EchartProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.EChartsType>();
 
   useEffect(() => {
     if (!ref.current) {
       return;
     }
     const chart = echarts.init(ref.current, undefined, { renderer });
+    chartRef.current = chart;
     if (group) {
       chart.group = group;
       echarts.connect(group);
     }
-    chart.setOption(option);
-    onEvents?.forEach((evt) => chart.on(evt.type, (params) => evt.handler(params, chart)));
     const handleResize = () => chart.resize();
     window.addEventListener("resize", handleResize);
     return () => {
       window.removeEventListener("resize", handleResize);
-      onEvents?.forEach((evt) => chart.off(evt.type));
       chart.dispose();
+      chartRef.current = undefined;
     };
-  }, [option, renderer, group, onEvents]);
+  }, [renderer, group]);
+
+  useEffect(() => {
+    if (!chartRef.current) {
+      return;
+    }
+    chartRef.current.setOption(option);
+  }, [option, renderer, group]);
+
+  useEffect(() => {
+    if (!chartRef.current || !onEvents?.length) {
+      return;
+    }
+    const chart = chartRef.current;
+    const handlers = onEvents.map((evt) => {
+      const wrapped = (params: unknown) => evt.handler(params, chart);
+      chart.on(evt.type, wrapped);
+      return { type: evt.type, wrapped };
+    });
+    return () => handlers.forEach(({ type, wrapped }) => chart.off(type, wrapped));
+  }, [onEvents, renderer, group]);
 
   return <div ref={ref} style={{ width: "100%", height }} />;
 }
