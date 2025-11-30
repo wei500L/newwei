@@ -22,7 +22,6 @@ import {
   useDeleteDashboardMutation,
   useQueueStatsQuery,
   useUpsertDashboardMutation,
-  type Dashboard,
 } from "@/graphql/generated";
 import {
   useDashboardRangeStore,
@@ -81,8 +80,8 @@ export function DashboardContent() {
   );
 
   useEffect(() => {
-    if (dashboards.length && !activeId) {
-      setActiveId(dashboards[0].id);
+    if (dashboards.length > 0 && !activeId) {
+      setActiveId(dashboards[0]?.id);
     }
   }, [dashboards, activeId]);
 
@@ -134,7 +133,7 @@ export function DashboardContent() {
 
   const { counts, processedCount, itemCount, recentLogs } = data.queueStats;
   const activeDashboard =
-    dashboards.find((d: Dashboard) => d.id === activeId) ?? dashboards[0];
+    dashboards.find((d) => d.id === activeId) ?? dashboards[0] ?? null;
 
   const combinedLogs = dedupeLogs([...(liveLogs ?? []), ...(recentLogs ?? [])]);
   const chartData: Record<string, number> = {
@@ -256,7 +255,7 @@ export function DashboardContent() {
                   style={{ minWidth: 220 }}
                   value={activeDashboard?.id}
                   onChange={(val) => setActiveId(val)}
-                  options={dashboards.map((d: Dashboard) => ({
+                  options={dashboards.map((d) => ({
                     label: d.name,
                     value: d.id,
                   }))}
@@ -271,7 +270,7 @@ export function DashboardContent() {
                 </Button>
               </Space>
               <DashboardEditor
-                dashboard={activeDashboard}
+                dashboard={activeDashboard ?? undefined}
                 saving={savingDashboard}
                 onSave={async (input) => {
                   await saveDashboard({ variables: { input } });

@@ -2,7 +2,7 @@
 
 import { DashboardChart } from "@/components/echart";
 import { gql, useQuery } from "@apollo/client";
-import { Skeleton, Typography } from "antd";
+import { Alert, Button, Skeleton, Typography } from "antd";
 import { useMemo } from "react";
 import { useDashboardRangeStore } from "@/store/time-range";
 import { TimeGranularity } from "@/graphql/generated";
@@ -69,7 +69,12 @@ export function WidgetRenderer({
 }: WidgetRenderProps) {
   const { start, end } = useDashboardRangeStore();
   const sourceInfo = parseDataSource(dataSource);
-  const { data: apiData, loading } = useQuery(ECONOMIC_WIDGET_QUERY, {
+  const {
+    data: apiData,
+    loading,
+    error,
+    refetch,
+  } = useQuery(ECONOMIC_WIDGET_QUERY, {
     skip: sourceInfo.kind !== "economic",
     variables:
       sourceInfo.kind !== "economic"
@@ -183,8 +188,28 @@ export function WidgetRenderer({
     );
   }
 
+  if (error) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="加载经济数据失败"
+        description={error.message}
+        action={
+          <Button size="small" onClick={() => refetch()}>
+            重试
+          </Button>
+        }
+      />
+    );
+  }
+
   if (loading) {
     return <Skeleton active paragraph={{ rows: 6 }} />;
+  }
+
+  if (!resolvedData || resolvedData.length === 0) {
+    return <Typography.Text type="secondary">暂无数据</Typography.Text>;
   }
 
   const theme = color

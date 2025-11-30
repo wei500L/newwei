@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -11,7 +11,7 @@ import {
 } from "../utils/series";
 
 export default function EconomicAlertPage() {
-  const { loading, error, seriesMap } = useEconomicData({
+  const { loading, error, seriesMap, refetch } = useEconomicData({
     category: "economic-alert",
     pollInterval: 60_000,
   });
@@ -215,14 +215,22 @@ export default function EconomicAlertPage() {
         <Typography.Title level={4}>经济预警</Typography.Title>
         <TimeRangeControls />
       </div>
-      {error && (
+      {error ? (
         <Alert
           type="error"
           message="经济数据加载失败"
           description={error.message}
           showIcon
+          action={
+            <Button size="small" onClick={() => refetch()}>
+              重试
+            </Button>
+          }
         />
-      )}
+      ) : null}
+      {!loading && seriesMap.size === 0 ? (
+        <Empty description="暂无宏观数据" />
+      ) : null}
       {alerts.length > 0 && (
         <Alert
           type="warning"

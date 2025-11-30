@@ -17,7 +17,7 @@ import {
   useRequestAnomalyMutation,
   useRequestCorrelationMutation,
   useAnalysisEventsSubscription,
-  type AnalysisResult,
+  type AnalysisResultsQuery,
 } from "@/graphql/generated";
 export function AnalysisPanel() {
   const { data, refetch } = useAnalysisResultsQuery({
@@ -58,7 +58,7 @@ export function AnalysisPanel() {
         />
       </Card>
       <Card title="Recent Analysis Results">
-        <List<AnalysisResult>
+        <List<AnalysisResultsQuery["analysisResults"][number]>
           dataSource={results}
           renderItem={(result) => (
             <List.Item>

@@ -4,13 +4,30 @@ import * as Apollo from "@apollo/client";
 
 export type Maybe<T> = T | null;
 export type InputMaybe<T> = Maybe<T>;
-export type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
-export type MakeOptional<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]?: Maybe<T[SubKey]> };
-export type MakeMaybe<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]: Maybe<T[SubKey]> };
+export type Exact<T extends { [key: string]: unknown }> = {
+  [K in keyof T]: T[K];
+};
+export type MakeOptional<T, K extends keyof T> = Omit<T, K> & {
+  [SubKey in K]?: Maybe<T[SubKey]>;
+};
+export type MakeMaybe<T, K extends keyof T> = Omit<T, K> & {
+  [SubKey in K]: Maybe<T[SubKey]>;
+};
 const defaultOptions = {} as const;
 
-export type CrawlTaskStatus = "pending" | "queued" | "running" | "completed" | "failed" | "paused";
-export type EconomicDataFrequency = "realtime" | "hourly" | "daily" | "weekly" | "monthly";
+export type CrawlTaskStatus =
+  | "pending"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "paused";
+export type EconomicDataFrequency =
+  | "realtime"
+  | "hourly"
+  | "daily"
+  | "weekly"
+  | "monthly";
 export type EconomicDataValueType =
   | "price"
   | "index"
@@ -20,36 +37,44 @@ export type EconomicDataValueType =
   | "volume"
   | "quantity"
   | "spread";
-export type EconomicDataRunStatus = "pending" | "running" | "success" | "failed";
+export type EconomicDataRunStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "failed";
 export const AlertChannelType = {
   Email: "email",
-  Webhook: "webhook"
+  Webhook: "webhook",
 } as const;
 
-export type AlertChannelType = (typeof AlertChannelType)[keyof typeof AlertChannelType];
+export type AlertChannelType =
+  (typeof AlertChannelType)[keyof typeof AlertChannelType];
 export const AlertDeliveryStatus = {
   Pending: "pending",
   Sent: "sent",
-  Failed: "failed"
+  Failed: "failed",
 } as const;
 
-export type AlertDeliveryStatus = (typeof AlertDeliveryStatus)[keyof typeof AlertDeliveryStatus];
+export type AlertDeliveryStatus =
+  (typeof AlertDeliveryStatus)[keyof typeof AlertDeliveryStatus];
 export const AlertEventStatus = {
   Pending: "pending",
   Delivered: "delivered",
-  Failed: "failed"
+  Failed: "failed",
 } as const;
 
-export type AlertEventStatus = (typeof AlertEventStatus)[keyof typeof AlertEventStatus];
+export type AlertEventStatus =
+  (typeof AlertEventStatus)[keyof typeof AlertEventStatus];
 export const AlertMetricProvider = {
   EconomicData: "economic_data",
   SystemEvent: "system_event",
   PipelineJob: "pipeline_job",
   CrawlTask: "crawl_task",
-  SystemMetric: "system_metric"
+  SystemMetric: "system_metric",
 } as const;
 
-export type AlertMetricProvider = (typeof AlertMetricProvider)[keyof typeof AlertMetricProvider];
+export type AlertMetricProvider =
+  (typeof AlertMetricProvider)[keyof typeof AlertMetricProvider];
 export const AlertOperator = {
   Gt: "gt",
   Gte: "gte",
@@ -59,14 +84,14 @@ export const AlertOperator = {
   OutsideRange: "outside_range",
   WithinRange: "within_range",
   ChangeUpPct: "change_up_pct",
-  ChangeDownPct: "change_down_pct"
+  ChangeDownPct: "change_down_pct",
 } as const;
 
 export type AlertOperator = (typeof AlertOperator)[keyof typeof AlertOperator];
 export const AlertSeverity = {
   Low: "low",
   Medium: "medium",
-  High: "high"
+  High: "high",
 } as const;
 
 export type AlertSeverity = (typeof AlertSeverity)[keyof typeof AlertSeverity];
@@ -74,10 +99,38 @@ export const AlertStatus = {
   Draft: "draft",
   Active: "active",
   Paused: "paused",
-  Archived: "archived"
+  Archived: "archived",
 } as const;
 
 export type AlertStatus = (typeof AlertStatus)[keyof typeof AlertStatus];
+
+export const AnalysisType = {
+  Correlation: "correlation",
+  Anomaly: "anomaly",
+} as const;
+
+export type AnalysisType = (typeof AnalysisType)[keyof typeof AnalysisType];
+
+export const AnalysisStatus = {
+  Pending: "pending",
+  Running: "running",
+  Completed: "completed",
+  Failed: "failed",
+} as const;
+
+export type AnalysisStatus =
+  (typeof AnalysisStatus)[keyof typeof AnalysisStatus];
+
+export const TimeGranularity = {
+  Year: "year",
+  Quarter: "quarter",
+  Month: "month",
+  Week: "week",
+  Day: "day",
+} as const;
+
+export type TimeGranularity =
+  (typeof TimeGranularity)[keyof typeof TimeGranularity];
 
 export type CrawlTimeRangeInput = {
   from?: InputMaybe<string>;
@@ -291,6 +344,48 @@ export type DateRangeInput = {
   end: any;
 };
 
+export type CorrelationAnalysisInput = {
+  indicatorName: string;
+  value: number;
+  changePercent: number;
+  startDate: string;
+  endDate: string;
+  newsSummaries: Array<string>;
+};
+
+export type AnomalyAnalysisInput = {
+  metric: string;
+  timestamp: string;
+  value: number;
+  deviationPercent: number;
+  newsList: Array<string>;
+  policyList: Array<string>;
+};
+
+export type DashboardWidgetInput = {
+  id?: InputMaybe<string>;
+  title?: InputMaybe<string>;
+  type: string;
+  dataSource: string;
+  dataConfig?: InputMaybe<any>;
+  layoutX: number;
+  layoutY: number;
+  layoutW: number;
+  layoutH: number;
+  sortOrder?: InputMaybe<number>;
+  options?: InputMaybe<any>;
+};
+
+export type UpsertDashboardInput = {
+  id?: InputMaybe<string>;
+  name: string;
+  slug: string;
+  description?: InputMaybe<string>;
+  theme?: InputMaybe<string>;
+  config?: InputMaybe<any>;
+  widgets: Array<DashboardWidgetInput>;
+};
+
 export type CrawlMetadataInput = {
   source?: InputMaybe<string>;
   domain?: InputMaybe<string>;
@@ -346,6 +441,7 @@ export type EconomicDataFetchConfigModel = {
 export type EconomicDataQueryVariables = Exact<{
   category: string;
   timeRange: DateRangeInput;
+  granularity?: InputMaybe<TimeGranularity>;
 }>;
 
 export type EconomicDataQuery = {
@@ -356,11 +452,18 @@ export type EconomicDataQuery = {
     unit?: string | null;
     sourceField?: string | null;
     dataType: EconomicDataValueType;
-    item: { __typename?: "EconomicDataItemModel"; slug: string; displayName: string; groupLabel?: string | null };
+    item: {
+      __typename?: "EconomicDataItemModel";
+      slug: string;
+      displayName: string;
+      groupLabel?: string | null;
+    };
   }>;
 };
 
-export type EconomicFetchConfigsQueryVariables = Exact<{ [key: string]: never }>;
+export type EconomicFetchConfigsQueryVariables = Exact<{
+  [key: string]: never;
+}>;
 
 export type EconomicFetchConfigsQuery = {
   economicDataFetchConfigs: Array<{
@@ -372,7 +475,11 @@ export type EconomicFetchConfigsQuery = {
     lastRunAt?: any | null;
     lastStatus?: EconomicDataRunStatus | null;
     lastError?: string | null;
-    item: { __typename?: "EconomicDataItemModel"; slug: string; displayName: string };
+    item: {
+      __typename?: "EconomicDataItemModel";
+      slug: string;
+      displayName: string;
+    };
   }>;
 };
 
@@ -393,7 +500,11 @@ export type UpdateEconomicFetchConfigMutation = {
     lastRunAt?: any | null;
     lastStatus?: EconomicDataRunStatus | null;
     lastError?: string | null;
-    item: { __typename?: "EconomicDataItemModel"; slug: string; displayName: string };
+    item: {
+      __typename?: "EconomicDataItemModel";
+      slug: string;
+      displayName: string;
+    };
   };
 };
 
@@ -426,7 +537,10 @@ export type ItemsQuery = {
   items: {
     totalCount: number;
     pageInfo: { hasNextPage: boolean; endCursor?: string | null };
-    edges: Array<{ cursor: string; node: { id: string; title: string; status: string; createdAt: any } }>;
+    edges: Array<{
+      cursor: string;
+      node: { id: string; title: string; status: string; createdAt: any };
+    }>;
   };
 };
 
@@ -436,8 +550,19 @@ export type QueueStatsQuery = {
   queueStats: {
     processedCount: number;
     itemCount: number;
-    counts: { waiting: number; active: number; completed: number; failed: number; delayed: number };
-    recentLogs: Array<{ event: string; jobId: string; data?: string | null; timestamp: string }>;
+    counts: {
+      waiting: number;
+      active: number;
+      completed: number;
+      failed: number;
+      delayed: number;
+    };
+    recentLogs: Array<{
+      event: string;
+      jobId: string;
+      data?: string | null;
+      timestamp: string;
+    }>;
   };
 };
 
@@ -454,12 +579,16 @@ export const MeDocument = gql`
   }
 `;
 
-export function useMeQuery(baseOptions?: Apollo.QueryHookOptions<MeQuery, MeQueryVariables>) {
+export function useMeQuery(
+  baseOptions?: Apollo.QueryHookOptions<MeQuery, MeQueryVariables>,
+) {
   const options = { ...defaultOptions, ...baseOptions };
   return Apollo.useQuery<MeQuery, MeQueryVariables>(MeDocument, options);
 }
 
-export function useMeLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<MeQuery, MeQueryVariables>) {
+export function useMeLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<MeQuery, MeQueryVariables>,
+) {
   const options = { ...defaultOptions, ...baseOptions };
   return Apollo.useLazyQuery<MeQuery, MeQueryVariables>(MeDocument, options);
 }
@@ -488,19 +617,32 @@ export const ItemsDocument = gql`
   }
 `;
 
-export function useItemsQuery(baseOptions: Apollo.QueryHookOptions<ItemsQuery, ItemsQueryVariables>) {
+export function useItemsQuery(
+  baseOptions: Apollo.QueryHookOptions<ItemsQuery, ItemsQueryVariables>,
+) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<ItemsQuery, ItemsQueryVariables>(ItemsDocument, options);
+  return Apollo.useQuery<ItemsQuery, ItemsQueryVariables>(
+    ItemsDocument,
+    options,
+  );
 }
 
-export function useItemsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<ItemsQuery, ItemsQueryVariables>) {
+export function useItemsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<ItemsQuery, ItemsQueryVariables>,
+) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<ItemsQuery, ItemsQueryVariables>(ItemsDocument, options);
+  return Apollo.useLazyQuery<ItemsQuery, ItemsQueryVariables>(
+    ItemsDocument,
+    options,
+  );
 }
 
 export type ItemsQueryHookResult = ReturnType<typeof useItemsQuery>;
 export type ItemsLazyQueryHookResult = ReturnType<typeof useItemsLazyQuery>;
-export type ItemsQueryResult = Apollo.QueryResult<ItemsQuery, ItemsQueryVariables>;
+export type ItemsQueryResult = Apollo.QueryResult<
+  ItemsQuery,
+  ItemsQueryVariables
+>;
 export const QueueStatsDocument = gql`
   query QueueStats {
     queueStats {
@@ -524,21 +666,410 @@ export const QueueStatsDocument = gql`
 `;
 
 export function useQueueStatsQuery(
-  baseOptions?: Apollo.QueryHookOptions<QueueStatsQuery, QueueStatsQueryVariables>
+  baseOptions?: Apollo.QueryHookOptions<
+    QueueStatsQuery,
+    QueueStatsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<QueueStatsQuery, QueueStatsQueryVariables>(QueueStatsDocument, options);
+  return Apollo.useQuery<QueueStatsQuery, QueueStatsQueryVariables>(
+    QueueStatsDocument,
+    options,
+  );
 }
 
 export function useQueueStatsLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<QueueStatsQuery, QueueStatsQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    QueueStatsQuery,
+    QueueStatsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<QueueStatsQuery, QueueStatsQueryVariables>(QueueStatsDocument, options);
+  return Apollo.useLazyQuery<QueueStatsQuery, QueueStatsQueryVariables>(
+    QueueStatsDocument,
+    options,
+  );
 }
 export type QueueStatsQueryHookResult = ReturnType<typeof useQueueStatsQuery>;
-export type QueueStatsLazyQueryHookResult = ReturnType<typeof useQueueStatsLazyQuery>;
-export type QueueStatsQueryResult = Apollo.QueryResult<QueueStatsQuery, QueueStatsQueryVariables>;
+export type QueueStatsLazyQueryHookResult = ReturnType<
+  typeof useQueueStatsLazyQuery
+>;
+export type QueueStatsQueryResult = Apollo.QueryResult<
+  QueueStatsQuery,
+  QueueStatsQueryVariables
+>;
+export type AnalysisResultsQueryVariables = Exact<{
+  limit?: InputMaybe<number>;
+}>;
+
+export type AnalysisResultsQuery = {
+  analysisResults: Array<{
+    __typename?: "AnalysisResultModel";
+    id: string;
+    type: AnalysisType;
+    status: AnalysisStatus;
+    summary?: string | null;
+    createdAt: any;
+  }>;
+};
+
+export type AnalysisEventsSubscriptionVariables = Exact<{
+  [key: string]: never;
+}>;
+
+export type AnalysisEventsSubscription = {
+  analysisEvents: {
+    __typename?: "AnalysisResultModel";
+    id: string;
+    type: AnalysisType;
+    status: AnalysisStatus;
+    summary?: string | null;
+    createdAt: any;
+  };
+};
+
+export type RequestCorrelationMutationVariables = Exact<{
+  input: CorrelationAnalysisInput;
+}>;
+
+export type RequestCorrelationMutation = {
+  requestCorrelationAnalysis: {
+    __typename?: "AnalysisResultModel";
+    id: string;
+    status: AnalysisStatus;
+    type: AnalysisType;
+  };
+};
+
+export type RequestAnomalyMutationVariables = Exact<{
+  input: AnomalyAnalysisInput;
+}>;
+
+export type RequestAnomalyMutation = {
+  requestAnomalyExplanation: {
+    __typename?: "AnalysisResultModel";
+    id: string;
+    status: AnalysisStatus;
+    type: AnalysisType;
+  };
+};
+
+export type DashboardsQueryVariables = Exact<{ [key: string]: never }>;
+
+export type DashboardsQuery = {
+  dashboards: Array<{
+    __typename?: "DashboardModel";
+    id: string;
+    name: string;
+    slug: string;
+    description?: string | null;
+    theme?: string | null;
+    config?: any | null;
+    widgets: Array<{
+      __typename?: "DashboardWidgetModel";
+      id: string;
+      title?: string | null;
+      type: string;
+      dataSource: string;
+      dataConfig?: any | null;
+      layoutX: number;
+      layoutY: number;
+      layoutW: number;
+      layoutH: number;
+      sortOrder?: number | null;
+      options?: any | null;
+    }>;
+  }>;
+};
+
+export type UpsertDashboardMutationVariables = Exact<{
+  input: UpsertDashboardInput;
+}>;
+
+export type UpsertDashboardMutation = {
+  upsertDashboard: {
+    __typename?: "DashboardModel";
+    id: string;
+    name: string;
+    slug: string;
+  };
+};
+
+export type DeleteDashboardMutationVariables = Exact<{
+  id: string;
+}>;
+
+export type DeleteDashboardMutation = { deleteDashboard: boolean };
+
+export const AnalysisResultsDocument = gql`
+  query AnalysisResults($limit: Int) {
+    analysisResults(limit: $limit) {
+      id
+      type
+      status
+      summary
+      createdAt
+    }
+  }
+`;
+
+export function useAnalysisResultsQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    AnalysisResultsQuery,
+    AnalysisResultsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<AnalysisResultsQuery, AnalysisResultsQueryVariables>(
+    AnalysisResultsDocument,
+    options,
+  );
+}
+export function useAnalysisResultsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    AnalysisResultsQuery,
+    AnalysisResultsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<
+    AnalysisResultsQuery,
+    AnalysisResultsQueryVariables
+  >(AnalysisResultsDocument, options);
+}
+export type AnalysisResultsQueryHookResult = ReturnType<
+  typeof useAnalysisResultsQuery
+>;
+export type AnalysisResultsLazyQueryHookResult = ReturnType<
+  typeof useAnalysisResultsLazyQuery
+>;
+export type AnalysisResultsQueryResult = Apollo.QueryResult<
+  AnalysisResultsQuery,
+  AnalysisResultsQueryVariables
+>;
+export const AnalysisEventsDocument = gql`
+  subscription AnalysisEvents {
+    analysisEvents {
+      id
+      type
+      status
+      summary
+      createdAt
+    }
+  }
+`;
+
+export function useAnalysisEventsSubscription(
+  baseOptions?: Apollo.SubscriptionHookOptions<
+    AnalysisEventsSubscription,
+    AnalysisEventsSubscriptionVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useSubscription<
+    AnalysisEventsSubscription,
+    AnalysisEventsSubscriptionVariables
+  >(AnalysisEventsDocument, options);
+}
+export type AnalysisEventsSubscriptionHookResult = ReturnType<
+  typeof useAnalysisEventsSubscription
+>;
+export type AnalysisEventsSubscriptionResult =
+  Apollo.SubscriptionResult<AnalysisEventsSubscription>;
+export const RequestCorrelationDocument = gql`
+  mutation RequestCorrelation($input: CorrelationAnalysisInput!) {
+    requestCorrelationAnalysis(input: $input) {
+      id
+      status
+      type
+    }
+  }
+`;
+export type RequestCorrelationMutationFn = Apollo.MutationFunction<
+  RequestCorrelationMutation,
+  RequestCorrelationMutationVariables
+>;
+
+export function useRequestCorrelationMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    RequestCorrelationMutation,
+    RequestCorrelationMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    RequestCorrelationMutation,
+    RequestCorrelationMutationVariables
+  >(RequestCorrelationDocument, options);
+}
+export type RequestCorrelationMutationHookResult = ReturnType<
+  typeof useRequestCorrelationMutation
+>;
+export type RequestCorrelationMutationResult =
+  Apollo.MutationResult<RequestCorrelationMutation>;
+export type RequestCorrelationMutationOptions = Apollo.BaseMutationOptions<
+  RequestCorrelationMutation,
+  RequestCorrelationMutationVariables
+>;
+export const RequestAnomalyDocument = gql`
+  mutation RequestAnomaly($input: AnomalyAnalysisInput!) {
+    requestAnomalyExplanation(input: $input) {
+      id
+      status
+      type
+    }
+  }
+`;
+export type RequestAnomalyMutationFn = Apollo.MutationFunction<
+  RequestAnomalyMutation,
+  RequestAnomalyMutationVariables
+>;
+
+export function useRequestAnomalyMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    RequestAnomalyMutation,
+    RequestAnomalyMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    RequestAnomalyMutation,
+    RequestAnomalyMutationVariables
+  >(RequestAnomalyDocument, options);
+}
+export type RequestAnomalyMutationHookResult = ReturnType<
+  typeof useRequestAnomalyMutation
+>;
+export type RequestAnomalyMutationResult =
+  Apollo.MutationResult<RequestAnomalyMutation>;
+export type RequestAnomalyMutationOptions = Apollo.BaseMutationOptions<
+  RequestAnomalyMutation,
+  RequestAnomalyMutationVariables
+>;
+export const DashboardsDocument = gql`
+  query Dashboards {
+    dashboards {
+      id
+      name
+      slug
+      description
+      theme
+      config
+      widgets {
+        id
+        title
+        type
+        dataSource
+        dataConfig
+        layoutX
+        layoutY
+        layoutW
+        layoutH
+        sortOrder
+        options
+      }
+    }
+  }
+`;
+
+export function useDashboardsQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    DashboardsQuery,
+    DashboardsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<DashboardsQuery, DashboardsQueryVariables>(
+    DashboardsDocument,
+    options,
+  );
+}
+export function useDashboardsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    DashboardsQuery,
+    DashboardsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<DashboardsQuery, DashboardsQueryVariables>(
+    DashboardsDocument,
+    options,
+  );
+}
+export type DashboardsQueryHookResult = ReturnType<typeof useDashboardsQuery>;
+export type DashboardsLazyQueryHookResult = ReturnType<
+  typeof useDashboardsLazyQuery
+>;
+export type DashboardsQueryResult = Apollo.QueryResult<
+  DashboardsQuery,
+  DashboardsQueryVariables
+>;
+export const UpsertDashboardDocument = gql`
+  mutation UpsertDashboard($input: UpsertDashboardInput!) {
+    upsertDashboard(input: $input) {
+      id
+      name
+      slug
+    }
+  }
+`;
+export type UpsertDashboardMutationFn = Apollo.MutationFunction<
+  UpsertDashboardMutation,
+  UpsertDashboardMutationVariables
+>;
+
+export function useUpsertDashboardMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    UpsertDashboardMutation,
+    UpsertDashboardMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    UpsertDashboardMutation,
+    UpsertDashboardMutationVariables
+  >(UpsertDashboardDocument, options);
+}
+export type UpsertDashboardMutationHookResult = ReturnType<
+  typeof useUpsertDashboardMutation
+>;
+export type UpsertDashboardMutationResult =
+  Apollo.MutationResult<UpsertDashboardMutation>;
+export type UpsertDashboardMutationOptions = Apollo.BaseMutationOptions<
+  UpsertDashboardMutation,
+  UpsertDashboardMutationVariables
+>;
+export const DeleteDashboardDocument = gql`
+  mutation DeleteDashboard($id: String!) {
+    deleteDashboard(id: $id)
+  }
+`;
+export type DeleteDashboardMutationFn = Apollo.MutationFunction<
+  DeleteDashboardMutation,
+  DeleteDashboardMutationVariables
+>;
+
+export function useDeleteDashboardMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    DeleteDashboardMutation,
+    DeleteDashboardMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    DeleteDashboardMutation,
+    DeleteDashboardMutationVariables
+  >(DeleteDashboardDocument, options);
+}
+export type DeleteDashboardMutationHookResult = ReturnType<
+  typeof useDeleteDashboardMutation
+>;
+export type DeleteDashboardMutationResult =
+  Apollo.MutationResult<DeleteDashboardMutation>;
+export type DeleteDashboardMutationOptions = Apollo.BaseMutationOptions<
+  DeleteDashboardMutation,
+  DeleteDashboardMutationVariables
+>;
 export type RbacOverviewQueryVariables = Exact<{ [key: string]: never }>;
 
 export type RbacOverviewQuery = {
@@ -546,7 +1077,11 @@ export type RbacOverviewQuery = {
     id: string;
     name: string;
     description?: string | null;
-    permissions: Array<{ id: string; name: string; description?: string | null }>;
+    permissions: Array<{
+      id: string;
+      name: string;
+      description?: string | null;
+    }>;
   }>;
   permissions: Array<{ id: string; name: string; description?: string | null }>;
   memberships: Array<{
@@ -846,22 +1381,41 @@ export const RbacOverviewDocument = gql`
 `;
 
 export function useRbacOverviewQuery(
-  baseOptions?: Apollo.QueryHookOptions<RbacOverviewQuery, RbacOverviewQueryVariables>
+  baseOptions?: Apollo.QueryHookOptions<
+    RbacOverviewQuery,
+    RbacOverviewQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<RbacOverviewQuery, RbacOverviewQueryVariables>(RbacOverviewDocument, options);
+  return Apollo.useQuery<RbacOverviewQuery, RbacOverviewQueryVariables>(
+    RbacOverviewDocument,
+    options,
+  );
 }
 
 export function useRbacOverviewLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<RbacOverviewQuery, RbacOverviewQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    RbacOverviewQuery,
+    RbacOverviewQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<RbacOverviewQuery, RbacOverviewQueryVariables>(RbacOverviewDocument, options);
+  return Apollo.useLazyQuery<RbacOverviewQuery, RbacOverviewQueryVariables>(
+    RbacOverviewDocument,
+    options,
+  );
 }
 
-export type RbacOverviewQueryHookResult = ReturnType<typeof useRbacOverviewQuery>;
-export type RbacOverviewLazyQueryHookResult = ReturnType<typeof useRbacOverviewLazyQuery>;
-export type RbacOverviewQueryResult = Apollo.QueryResult<RbacOverviewQuery, RbacOverviewQueryVariables>;
+export type RbacOverviewQueryHookResult = ReturnType<
+  typeof useRbacOverviewQuery
+>;
+export type RbacOverviewLazyQueryHookResult = ReturnType<
+  typeof useRbacOverviewLazyQuery
+>;
+export type RbacOverviewQueryResult = Apollo.QueryResult<
+  RbacOverviewQuery,
+  RbacOverviewQueryVariables
+>;
 export const RateLimitSettingsDocument = gql`
   query RateLimitSettings {
     rateLimitSettings {
@@ -882,27 +1436,37 @@ export const RateLimitSettingsDocument = gql`
 `;
 
 export function useRateLimitSettingsQuery(
-  baseOptions?: Apollo.QueryHookOptions<RateLimitSettingsQuery, RateLimitSettingsQueryVariables>
+  baseOptions?: Apollo.QueryHookOptions<
+    RateLimitSettingsQuery,
+    RateLimitSettingsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<RateLimitSettingsQuery, RateLimitSettingsQueryVariables>(
-    RateLimitSettingsDocument,
-    options
-  );
+  return Apollo.useQuery<
+    RateLimitSettingsQuery,
+    RateLimitSettingsQueryVariables
+  >(RateLimitSettingsDocument, options);
 }
 
 export function useRateLimitSettingsLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<RateLimitSettingsQuery, RateLimitSettingsQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    RateLimitSettingsQuery,
+    RateLimitSettingsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<RateLimitSettingsQuery, RateLimitSettingsQueryVariables>(
-    RateLimitSettingsDocument,
-    options
-  );
+  return Apollo.useLazyQuery<
+    RateLimitSettingsQuery,
+    RateLimitSettingsQueryVariables
+  >(RateLimitSettingsDocument, options);
 }
 
-export type RateLimitSettingsQueryHookResult = ReturnType<typeof useRateLimitSettingsQuery>;
-export type RateLimitSettingsLazyQueryHookResult = ReturnType<typeof useRateLimitSettingsLazyQuery>;
+export type RateLimitSettingsQueryHookResult = ReturnType<
+  typeof useRateLimitSettingsQuery
+>;
+export type RateLimitSettingsLazyQueryHookResult = ReturnType<
+  typeof useRateLimitSettingsLazyQuery
+>;
 export type RateLimitSettingsQueryResult = Apollo.QueryResult<
   RateLimitSettingsQuery,
   RateLimitSettingsQueryVariables
@@ -934,7 +1498,7 @@ export function useUpdateRateLimitSettingsMutation(
   baseOptions?: Apollo.MutationHookOptions<
     UpdateRateLimitSettingsMutation,
     UpdateRateLimitSettingsMutationVariables
-  >
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
   return Apollo.useMutation<
@@ -960,25 +1524,33 @@ export const AuditLogRetentionDocument = gql`
 `;
 
 export function useAuditLogRetentionQuery(
-  baseOptions?: Apollo.QueryHookOptions<AuditLogRetentionQuery, AuditLogRetentionQueryVariables>
+  baseOptions?: Apollo.QueryHookOptions<
+    AuditLogRetentionQuery,
+    AuditLogRetentionQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<AuditLogRetentionQuery, AuditLogRetentionQueryVariables>(
-    AuditLogRetentionDocument,
-    options
-  );
+  return Apollo.useQuery<
+    AuditLogRetentionQuery,
+    AuditLogRetentionQueryVariables
+  >(AuditLogRetentionDocument, options);
 }
 
 export function useAuditLogRetentionLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<AuditLogRetentionQuery, AuditLogRetentionQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    AuditLogRetentionQuery,
+    AuditLogRetentionQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<AuditLogRetentionQuery, AuditLogRetentionQueryVariables>(
-    AuditLogRetentionDocument,
-    options
-  );
+  return Apollo.useLazyQuery<
+    AuditLogRetentionQuery,
+    AuditLogRetentionQueryVariables
+  >(AuditLogRetentionDocument, options);
 }
-export type AuditLogRetentionQueryHookResult = ReturnType<typeof useAuditLogRetentionQuery>;
+export type AuditLogRetentionQueryHookResult = ReturnType<
+  typeof useAuditLogRetentionQuery
+>;
 export type AuditLogRetentionLazyQueryHookResult = ReturnType<
   typeof useAuditLogRetentionLazyQuery
 >;
@@ -1002,7 +1574,7 @@ export function useUpdateAuditLogRetentionMutation(
   baseOptions?: Apollo.MutationHookOptions<
     UpdateAuditLogRetentionMutation,
     UpdateAuditLogRetentionMutationVariables
-  >
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
   return Apollo.useMutation<
@@ -1030,27 +1602,37 @@ export const NewsPromptConfigDocument = gql`
 `;
 
 export function useNewsPromptConfigQuery(
-  baseOptions?: Apollo.QueryHookOptions<NewsPromptConfigQuery, NewsPromptConfigQueryVariables>
+  baseOptions?: Apollo.QueryHookOptions<
+    NewsPromptConfigQuery,
+    NewsPromptConfigQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
   return Apollo.useQuery<NewsPromptConfigQuery, NewsPromptConfigQueryVariables>(
     NewsPromptConfigDocument,
-    options
+    options,
   );
 }
 
 export function useNewsPromptConfigLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<NewsPromptConfigQuery, NewsPromptConfigQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    NewsPromptConfigQuery,
+    NewsPromptConfigQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<NewsPromptConfigQuery, NewsPromptConfigQueryVariables>(
-    NewsPromptConfigDocument,
-    options
-  );
+  return Apollo.useLazyQuery<
+    NewsPromptConfigQuery,
+    NewsPromptConfigQueryVariables
+  >(NewsPromptConfigDocument, options);
 }
 
-export type NewsPromptConfigQueryHookResult = ReturnType<typeof useNewsPromptConfigQuery>;
-export type NewsPromptConfigLazyQueryHookResult = ReturnType<typeof useNewsPromptConfigLazyQuery>;
+export type NewsPromptConfigQueryHookResult = ReturnType<
+  typeof useNewsPromptConfigQuery
+>;
+export type NewsPromptConfigLazyQueryHookResult = ReturnType<
+  typeof useNewsPromptConfigLazyQuery
+>;
 export type NewsPromptConfigQueryResult = Apollo.QueryResult<
   NewsPromptConfigQuery,
   NewsPromptConfigQueryVariables
@@ -1073,7 +1655,7 @@ export function useUpdateNewsPromptConfigMutation(
   baseOptions?: Apollo.MutationHookOptions<
     UpdateNewsPromptConfigMutation,
     UpdateNewsPromptConfigMutationVariables
-  >
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
   return Apollo.useMutation<
@@ -1102,28 +1684,33 @@ export const CrawlClientSettingsDocument = gql`
 `;
 
 export function useCrawlClientSettingsQuery(
-  baseOptions?: Apollo.QueryHookOptions<CrawlClientSettingsQuery, CrawlClientSettingsQueryVariables>
+  baseOptions?: Apollo.QueryHookOptions<
+    CrawlClientSettingsQuery,
+    CrawlClientSettingsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<CrawlClientSettingsQuery, CrawlClientSettingsQueryVariables>(
-    CrawlClientSettingsDocument,
-    options
-  );
+  return Apollo.useQuery<
+    CrawlClientSettingsQuery,
+    CrawlClientSettingsQueryVariables
+  >(CrawlClientSettingsDocument, options);
 }
 
 export function useCrawlClientSettingsLazyQuery(
   baseOptions?: Apollo.LazyQueryHookOptions<
     CrawlClientSettingsQuery,
     CrawlClientSettingsQueryVariables
-  >
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<CrawlClientSettingsQuery, CrawlClientSettingsQueryVariables>(
-    CrawlClientSettingsDocument,
-    options
-  );
+  return Apollo.useLazyQuery<
+    CrawlClientSettingsQuery,
+    CrawlClientSettingsQueryVariables
+  >(CrawlClientSettingsDocument, options);
 }
-export type CrawlClientSettingsQueryHookResult = ReturnType<typeof useCrawlClientSettingsQuery>;
+export type CrawlClientSettingsQueryHookResult = ReturnType<
+  typeof useCrawlClientSettingsQuery
+>;
 export type CrawlClientSettingsLazyQueryHookResult = ReturnType<
   typeof useCrawlClientSettingsLazyQuery
 >;
@@ -1150,7 +1737,7 @@ export function useUpdateCrawlClientSettingsMutation(
   baseOptions?: Apollo.MutationHookOptions<
     UpdateCrawlClientSettingsMutation,
     UpdateCrawlClientSettingsMutationVariables
-  >
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
   return Apollo.useMutation<
@@ -1163,12 +1750,18 @@ export type UpdateCrawlClientSettingsMutationHookResult = ReturnType<
 >;
 export type UpdateCrawlClientSettingsMutationResult =
   Apollo.MutationResult<UpdateCrawlClientSettingsMutation>;
-export type UpdateCrawlClientSettingsMutationOptions = Apollo.BaseMutationOptions<
-  UpdateCrawlClientSettingsMutation,
-  UpdateCrawlClientSettingsMutationVariables
->;
+export type UpdateCrawlClientSettingsMutationOptions =
+  Apollo.BaseMutationOptions<
+    UpdateCrawlClientSettingsMutation,
+    UpdateCrawlClientSettingsMutationVariables
+  >;
 export const CrawlTasksDocument = gql`
-  query CrawlTasks($first: Int!, $after: String, $search: String, $status: CrawlTaskStatus) {
+  query CrawlTasks(
+    $first: Int!
+    $after: String
+    $search: String
+    $status: CrawlTaskStatus
+  ) {
     crawlTasks(first: $first, after: $after, search: $search, status: $status) {
       totalCount
       pageInfo {
@@ -1198,21 +1791,38 @@ export const CrawlTasksDocument = gql`
 `;
 
 export function useCrawlTasksQuery(
-  baseOptions: Apollo.QueryHookOptions<CrawlTasksQuery, CrawlTasksQueryVariables>
+  baseOptions: Apollo.QueryHookOptions<
+    CrawlTasksQuery,
+    CrawlTasksQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<CrawlTasksQuery, CrawlTasksQueryVariables>(CrawlTasksDocument, options);
+  return Apollo.useQuery<CrawlTasksQuery, CrawlTasksQueryVariables>(
+    CrawlTasksDocument,
+    options,
+  );
 }
 
 export function useCrawlTasksLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<CrawlTasksQuery, CrawlTasksQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    CrawlTasksQuery,
+    CrawlTasksQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<CrawlTasksQuery, CrawlTasksQueryVariables>(CrawlTasksDocument, options);
+  return Apollo.useLazyQuery<CrawlTasksQuery, CrawlTasksQueryVariables>(
+    CrawlTasksDocument,
+    options,
+  );
 }
 export type CrawlTasksQueryHookResult = ReturnType<typeof useCrawlTasksQuery>;
-export type CrawlTasksLazyQueryHookResult = ReturnType<typeof useCrawlTasksLazyQuery>;
-export type CrawlTasksQueryResult = Apollo.QueryResult<CrawlTasksQuery, CrawlTasksQueryVariables>;
+export type CrawlTasksLazyQueryHookResult = ReturnType<
+  typeof useCrawlTasksLazyQuery
+>;
+export type CrawlTasksQueryResult = Apollo.QueryResult<
+  CrawlTasksQuery,
+  CrawlTasksQueryVariables
+>;
 export const CrawlTaskDocument = gql`
   query CrawlTask($id: ID!, $resultLimit: Int, $resultSearch: String) {
     crawlTask(id: $id, resultLimit: $resultLimit, resultSearch: $resultSearch) {
@@ -1294,21 +1904,35 @@ export const CrawlTaskDocument = gql`
 `;
 
 export function useCrawlTaskQuery(
-  baseOptions: Apollo.QueryHookOptions<CrawlTaskQuery, CrawlTaskQueryVariables>
+  baseOptions: Apollo.QueryHookOptions<CrawlTaskQuery, CrawlTaskQueryVariables>,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<CrawlTaskQuery, CrawlTaskQueryVariables>(CrawlTaskDocument, options);
+  return Apollo.useQuery<CrawlTaskQuery, CrawlTaskQueryVariables>(
+    CrawlTaskDocument,
+    options,
+  );
 }
 
 export function useCrawlTaskLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<CrawlTaskQuery, CrawlTaskQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    CrawlTaskQuery,
+    CrawlTaskQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<CrawlTaskQuery, CrawlTaskQueryVariables>(CrawlTaskDocument, options);
+  return Apollo.useLazyQuery<CrawlTaskQuery, CrawlTaskQueryVariables>(
+    CrawlTaskDocument,
+    options,
+  );
 }
 export type CrawlTaskQueryHookResult = ReturnType<typeof useCrawlTaskQuery>;
-export type CrawlTaskLazyQueryHookResult = ReturnType<typeof useCrawlTaskLazyQuery>;
-export type CrawlTaskQueryResult = Apollo.QueryResult<CrawlTaskQuery, CrawlTaskQueryVariables>;
+export type CrawlTaskLazyQueryHookResult = ReturnType<
+  typeof useCrawlTaskLazyQuery
+>;
+export type CrawlTaskQueryResult = Apollo.QueryResult<
+  CrawlTaskQuery,
+  CrawlTaskQueryVariables
+>;
 export const CreateCrawlTaskDocument = gql`
   mutation CreateCrawlTask($input: CreateCrawlTaskInput!) {
     createCrawlTask(input: $input) {
@@ -1332,16 +1956,22 @@ export type CreateCrawlTaskMutationFn = Apollo.MutationFunction<
 >;
 
 export function useCreateCrawlTaskMutation(
-  baseOptions?: Apollo.MutationHookOptions<CreateCrawlTaskMutation, CreateCrawlTaskMutationVariables>
+  baseOptions?: Apollo.MutationHookOptions<
+    CreateCrawlTaskMutation,
+    CreateCrawlTaskMutationVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useMutation<CreateCrawlTaskMutation, CreateCrawlTaskMutationVariables>(
-    CreateCrawlTaskDocument,
-    options
-  );
+  return Apollo.useMutation<
+    CreateCrawlTaskMutation,
+    CreateCrawlTaskMutationVariables
+  >(CreateCrawlTaskDocument, options);
 }
-export type CreateCrawlTaskMutationHookResult = ReturnType<typeof useCreateCrawlTaskMutation>;
-export type CreateCrawlTaskMutationResult = Apollo.MutationResult<CreateCrawlTaskMutation>;
+export type CreateCrawlTaskMutationHookResult = ReturnType<
+  typeof useCreateCrawlTaskMutation
+>;
+export type CreateCrawlTaskMutationResult =
+  Apollo.MutationResult<CreateCrawlTaskMutation>;
 export type CreateCrawlTaskMutationOptions = Apollo.BaseMutationOptions<
   CreateCrawlTaskMutation,
   CreateCrawlTaskMutationVariables
@@ -1363,16 +1993,22 @@ export type RetryCrawlTaskMutationFn = Apollo.MutationFunction<
 >;
 
 export function useRetryCrawlTaskMutation(
-  baseOptions?: Apollo.MutationHookOptions<RetryCrawlTaskMutation, RetryCrawlTaskMutationVariables>
+  baseOptions?: Apollo.MutationHookOptions<
+    RetryCrawlTaskMutation,
+    RetryCrawlTaskMutationVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useMutation<RetryCrawlTaskMutation, RetryCrawlTaskMutationVariables>(
-    RetryCrawlTaskDocument,
-    options
-  );
+  return Apollo.useMutation<
+    RetryCrawlTaskMutation,
+    RetryCrawlTaskMutationVariables
+  >(RetryCrawlTaskDocument, options);
 }
-export type RetryCrawlTaskMutationHookResult = ReturnType<typeof useRetryCrawlTaskMutation>;
-export type RetryCrawlTaskMutationResult = Apollo.MutationResult<RetryCrawlTaskMutation>;
+export type RetryCrawlTaskMutationHookResult = ReturnType<
+  typeof useRetryCrawlTaskMutation
+>;
+export type RetryCrawlTaskMutationResult =
+  Apollo.MutationResult<RetryCrawlTaskMutation>;
 export type RetryCrawlTaskMutationOptions = Apollo.BaseMutationOptions<
   RetryCrawlTaskMutation,
   RetryCrawlTaskMutationVariables
@@ -1404,28 +2040,52 @@ export const CrawlMetadataDocument = gql`
 `;
 
 export function useCrawlMetadataQuery(
-  baseOptions: Apollo.QueryHookOptions<CrawlMetadataQuery, CrawlMetadataQueryVariables>
+  baseOptions: Apollo.QueryHookOptions<
+    CrawlMetadataQuery,
+    CrawlMetadataQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<CrawlMetadataQuery, CrawlMetadataQueryVariables>(CrawlMetadataDocument, options);
+  return Apollo.useQuery<CrawlMetadataQuery, CrawlMetadataQueryVariables>(
+    CrawlMetadataDocument,
+    options,
+  );
 }
 
 export function useCrawlMetadataLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<CrawlMetadataQuery, CrawlMetadataQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    CrawlMetadataQuery,
+    CrawlMetadataQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<CrawlMetadataQuery, CrawlMetadataQueryVariables>(CrawlMetadataDocument, options);
+  return Apollo.useLazyQuery<CrawlMetadataQuery, CrawlMetadataQueryVariables>(
+    CrawlMetadataDocument,
+    options,
+  );
 }
-export type CrawlMetadataQueryHookResult = ReturnType<typeof useCrawlMetadataQuery>;
-export type CrawlMetadataLazyQueryHookResult = ReturnType<typeof useCrawlMetadataLazyQuery>;
+export type CrawlMetadataQueryHookResult = ReturnType<
+  typeof useCrawlMetadataQuery
+>;
+export type CrawlMetadataLazyQueryHookResult = ReturnType<
+  typeof useCrawlMetadataLazyQuery
+>;
 export type CrawlMetadataQueryResult = Apollo.QueryResult<
   CrawlMetadataQuery,
   CrawlMetadataQueryVariables
 >;
 
 export const EconomicDataDocument = gql`
-  query EconomicData($category: String!, $timeRange: DateRangeInput!) {
-    getEconomicData(category: $category, timeRange: $timeRange) {
+  query EconomicData(
+    $category: String!
+    $timeRange: DateRangeInput!
+    $granularity: TimeGranularity
+  ) {
+    getEconomicData(
+      category: $category
+      timeRange: $timeRange
+      granularity: $granularity
+    ) {
       timestamp
       value
       unit
@@ -1441,21 +2101,40 @@ export const EconomicDataDocument = gql`
 `;
 
 export function useEconomicDataQuery(
-  baseOptions: Apollo.QueryHookOptions<EconomicDataQuery, EconomicDataQueryVariables>
+  baseOptions: Apollo.QueryHookOptions<
+    EconomicDataQuery,
+    EconomicDataQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<EconomicDataQuery, EconomicDataQueryVariables>(EconomicDataDocument, options);
+  return Apollo.useQuery<EconomicDataQuery, EconomicDataQueryVariables>(
+    EconomicDataDocument,
+    options,
+  );
 }
 
 export function useEconomicDataLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<EconomicDataQuery, EconomicDataQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    EconomicDataQuery,
+    EconomicDataQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<EconomicDataQuery, EconomicDataQueryVariables>(EconomicDataDocument, options);
+  return Apollo.useLazyQuery<EconomicDataQuery, EconomicDataQueryVariables>(
+    EconomicDataDocument,
+    options,
+  );
 }
-export type EconomicDataQueryHookResult = ReturnType<typeof useEconomicDataQuery>;
-export type EconomicDataLazyQueryHookResult = ReturnType<typeof useEconomicDataLazyQuery>;
-export type EconomicDataQueryResult = Apollo.QueryResult<EconomicDataQuery, EconomicDataQueryVariables>;
+export type EconomicDataQueryHookResult = ReturnType<
+  typeof useEconomicDataQuery
+>;
+export type EconomicDataLazyQueryHookResult = ReturnType<
+  typeof useEconomicDataLazyQuery
+>;
+export type EconomicDataQueryResult = Apollo.QueryResult<
+  EconomicDataQuery,
+  EconomicDataQueryVariables
+>;
 export const EconomicFetchConfigsDocument = gql`
   query EconomicFetchConfigs {
     economicDataFetchConfigs {
@@ -1475,26 +2154,36 @@ export const EconomicFetchConfigsDocument = gql`
 `;
 
 export function useEconomicFetchConfigsQuery(
-  baseOptions?: Apollo.QueryHookOptions<EconomicFetchConfigsQuery, EconomicFetchConfigsQueryVariables>
+  baseOptions?: Apollo.QueryHookOptions<
+    EconomicFetchConfigsQuery,
+    EconomicFetchConfigsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<EconomicFetchConfigsQuery, EconomicFetchConfigsQueryVariables>(
-    EconomicFetchConfigsDocument,
-    options
-  );
+  return Apollo.useQuery<
+    EconomicFetchConfigsQuery,
+    EconomicFetchConfigsQueryVariables
+  >(EconomicFetchConfigsDocument, options);
 }
 
 export function useEconomicFetchConfigsLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<EconomicFetchConfigsQuery, EconomicFetchConfigsQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    EconomicFetchConfigsQuery,
+    EconomicFetchConfigsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<EconomicFetchConfigsQuery, EconomicFetchConfigsQueryVariables>(
-    EconomicFetchConfigsDocument,
-    options
-  );
+  return Apollo.useLazyQuery<
+    EconomicFetchConfigsQuery,
+    EconomicFetchConfigsQueryVariables
+  >(EconomicFetchConfigsDocument, options);
 }
-export type EconomicFetchConfigsQueryHookResult = ReturnType<typeof useEconomicFetchConfigsQuery>;
-export type EconomicFetchConfigsLazyQueryHookResult = ReturnType<typeof useEconomicFetchConfigsLazyQuery>;
+export type EconomicFetchConfigsQueryHookResult = ReturnType<
+  typeof useEconomicFetchConfigsQuery
+>;
+export type EconomicFetchConfigsLazyQueryHookResult = ReturnType<
+  typeof useEconomicFetchConfigsLazyQuery
+>;
 export type EconomicFetchConfigsQueryResult = Apollo.QueryResult<
   EconomicFetchConfigsQuery,
   EconomicFetchConfigsQueryVariables
@@ -1535,7 +2224,7 @@ export function useUpdateEconomicFetchConfigMutation(
   baseOptions?: Apollo.MutationHookOptions<
     UpdateEconomicFetchConfigMutation,
     UpdateEconomicFetchConfigMutationVariables
-  >
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
   return Apollo.useMutation<
@@ -1546,11 +2235,13 @@ export function useUpdateEconomicFetchConfigMutation(
 export type UpdateEconomicFetchConfigMutationHookResult = ReturnType<
   typeof useUpdateEconomicFetchConfigMutation
 >;
-export type UpdateEconomicFetchConfigMutationResult = Apollo.MutationResult<UpdateEconomicFetchConfigMutation>;
-export type UpdateEconomicFetchConfigMutationOptions = Apollo.BaseMutationOptions<
-  UpdateEconomicFetchConfigMutation,
-  UpdateEconomicFetchConfigMutationVariables
->;
+export type UpdateEconomicFetchConfigMutationResult =
+  Apollo.MutationResult<UpdateEconomicFetchConfigMutation>;
+export type UpdateEconomicFetchConfigMutationOptions =
+  Apollo.BaseMutationOptions<
+    UpdateEconomicFetchConfigMutation,
+    UpdateEconomicFetchConfigMutationVariables
+  >;
 export const TriggerEconomicDataFetchDocument = gql`
   mutation TriggerEconomicDataFetch($slugs: [String!]!) {
     triggerDataFetch(input: { slugs: $slugs })
@@ -1565,7 +2256,7 @@ export function useTriggerEconomicDataFetchMutation(
   baseOptions?: Apollo.MutationHookOptions<
     TriggerEconomicDataFetchMutation,
     TriggerEconomicDataFetchMutationVariables
-  >
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
   return Apollo.useMutation<
@@ -1576,11 +2267,13 @@ export function useTriggerEconomicDataFetchMutation(
 export type TriggerEconomicDataFetchMutationHookResult = ReturnType<
   typeof useTriggerEconomicDataFetchMutation
 >;
-export type TriggerEconomicDataFetchMutationResult = Apollo.MutationResult<TriggerEconomicDataFetchMutation>;
-export type TriggerEconomicDataFetchMutationOptions = Apollo.BaseMutationOptions<
-  TriggerEconomicDataFetchMutation,
-  TriggerEconomicDataFetchMutationVariables
->;
+export type TriggerEconomicDataFetchMutationResult =
+  Apollo.MutationResult<TriggerEconomicDataFetchMutation>;
+export type TriggerEconomicDataFetchMutationOptions =
+  Apollo.BaseMutationOptions<
+    TriggerEconomicDataFetchMutation,
+    TriggerEconomicDataFetchMutationVariables
+  >;
 export type AlertRulesQueryVariables = Exact<{ [key: string]: never }>;
 
 export type AlertRulesQuery = {
@@ -1653,14 +2346,22 @@ export type UpsertAlertRuleMutationVariables = Exact<{
   input: UpsertAlertRuleInput;
 }>;
 
-export type UpsertAlertRuleMutation = { upsertAlertRule: { __typename?: "AlertRuleModel"; id: string; name: string } };
+export type UpsertAlertRuleMutation = {
+  upsertAlertRule: { __typename?: "AlertRuleModel"; id: string; name: string };
+};
 
 export type CreateAlertChannelMutationVariables = Exact<{
   input: AlertChannelInput;
 }>;
 
 export type CreateAlertChannelMutation = {
-  createAlertChannel: { __typename?: "AlertChannelModel"; id: string; name: string; type: AlertChannelType; target: string };
+  createAlertChannel: {
+    __typename?: "AlertChannelModel";
+    id: string;
+    name: string;
+    type: AlertChannelType;
+    target: string;
+  };
 };
 
 export type TriggerAlertRuleMutationVariables = Exact<{
@@ -1669,7 +2370,9 @@ export type TriggerAlertRuleMutationVariables = Exact<{
 
 export type TriggerAlertRuleMutation = { triggerAlertRule: boolean };
 
-export type AlertEventsStreamSubscriptionVariables = Exact<{ [key: string]: never }>;
+export type AlertEventsStreamSubscriptionVariables = Exact<{
+  [key: string]: never;
+}>;
 
 export type AlertEventsStreamSubscription = {
   alertEvents: {
@@ -1711,18 +2414,39 @@ export const AlertRulesDocument = gql`
   }
 `;
 
-export function useAlertRulesQuery(baseOptions?: Apollo.QueryHookOptions<AlertRulesQuery, AlertRulesQueryVariables>) {
+export function useAlertRulesQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    AlertRulesQuery,
+    AlertRulesQueryVariables
+  >,
+) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<AlertRulesQuery, AlertRulesQueryVariables>(AlertRulesDocument, options);
+  return Apollo.useQuery<AlertRulesQuery, AlertRulesQueryVariables>(
+    AlertRulesDocument,
+    options,
+  );
 }
 
-export function useAlertRulesLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<AlertRulesQuery, AlertRulesQueryVariables>) {
+export function useAlertRulesLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    AlertRulesQuery,
+    AlertRulesQueryVariables
+  >,
+) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<AlertRulesQuery, AlertRulesQueryVariables>(AlertRulesDocument, options);
+  return Apollo.useLazyQuery<AlertRulesQuery, AlertRulesQueryVariables>(
+    AlertRulesDocument,
+    options,
+  );
 }
 export type AlertRulesQueryHookResult = ReturnType<typeof useAlertRulesQuery>;
-export type AlertRulesLazyQueryHookResult = ReturnType<typeof useAlertRulesLazyQuery>;
-export type AlertRulesQueryResult = Apollo.QueryResult<AlertRulesQuery, AlertRulesQueryVariables>;
+export type AlertRulesLazyQueryHookResult = ReturnType<
+  typeof useAlertRulesLazyQuery
+>;
+export type AlertRulesQueryResult = Apollo.QueryResult<
+  AlertRulesQuery,
+  AlertRulesQueryVariables
+>;
 export const AlertChannelsDocument = gql`
   query AlertChannels {
     alertChannels {
@@ -1735,21 +2459,40 @@ export const AlertChannelsDocument = gql`
 `;
 
 export function useAlertChannelsQuery(
-  baseOptions?: Apollo.QueryHookOptions<AlertChannelsQuery, AlertChannelsQueryVariables>
+  baseOptions?: Apollo.QueryHookOptions<
+    AlertChannelsQuery,
+    AlertChannelsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<AlertChannelsQuery, AlertChannelsQueryVariables>(AlertChannelsDocument, options);
+  return Apollo.useQuery<AlertChannelsQuery, AlertChannelsQueryVariables>(
+    AlertChannelsDocument,
+    options,
+  );
 }
 
 export function useAlertChannelsLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<AlertChannelsQuery, AlertChannelsQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    AlertChannelsQuery,
+    AlertChannelsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<AlertChannelsQuery, AlertChannelsQueryVariables>(AlertChannelsDocument, options);
+  return Apollo.useLazyQuery<AlertChannelsQuery, AlertChannelsQueryVariables>(
+    AlertChannelsDocument,
+    options,
+  );
 }
-export type AlertChannelsQueryHookResult = ReturnType<typeof useAlertChannelsQuery>;
-export type AlertChannelsLazyQueryHookResult = ReturnType<typeof useAlertChannelsLazyQuery>;
-export type AlertChannelsQueryResult = Apollo.QueryResult<AlertChannelsQuery, AlertChannelsQueryVariables>;
+export type AlertChannelsQueryHookResult = ReturnType<
+  typeof useAlertChannelsQuery
+>;
+export type AlertChannelsLazyQueryHookResult = ReturnType<
+  typeof useAlertChannelsLazyQuery
+>;
+export type AlertChannelsQueryResult = Apollo.QueryResult<
+  AlertChannelsQuery,
+  AlertChannelsQueryVariables
+>;
 export const AlertEventsDocument = gql`
   query AlertEvents($limit: Int) {
     alertEvents(limit: $limit) {
@@ -1771,20 +2514,39 @@ export const AlertEventsDocument = gql`
   }
 `;
 
-export function useAlertEventsQuery(baseOptions?: Apollo.QueryHookOptions<AlertEventsQuery, AlertEventsQueryVariables>) {
+export function useAlertEventsQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    AlertEventsQuery,
+    AlertEventsQueryVariables
+  >,
+) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useQuery<AlertEventsQuery, AlertEventsQueryVariables>(AlertEventsDocument, options);
+  return Apollo.useQuery<AlertEventsQuery, AlertEventsQueryVariables>(
+    AlertEventsDocument,
+    options,
+  );
 }
 
 export function useAlertEventsLazyQuery(
-  baseOptions?: Apollo.LazyQueryHookOptions<AlertEventsQuery, AlertEventsQueryVariables>
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    AlertEventsQuery,
+    AlertEventsQueryVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useLazyQuery<AlertEventsQuery, AlertEventsQueryVariables>(AlertEventsDocument, options);
+  return Apollo.useLazyQuery<AlertEventsQuery, AlertEventsQueryVariables>(
+    AlertEventsDocument,
+    options,
+  );
 }
 export type AlertEventsQueryHookResult = ReturnType<typeof useAlertEventsQuery>;
-export type AlertEventsLazyQueryHookResult = ReturnType<typeof useAlertEventsLazyQuery>;
-export type AlertEventsQueryResult = Apollo.QueryResult<AlertEventsQuery, AlertEventsQueryVariables>;
+export type AlertEventsLazyQueryHookResult = ReturnType<
+  typeof useAlertEventsLazyQuery
+>;
+export type AlertEventsQueryResult = Apollo.QueryResult<
+  AlertEventsQuery,
+  AlertEventsQueryVariables
+>;
 export const UpsertAlertRuleDocument = gql`
   mutation UpsertAlertRule($input: UpsertAlertRuleInput!) {
     upsertAlertRule(input: $input) {
@@ -1799,13 +2561,22 @@ export type UpsertAlertRuleMutationFn = Apollo.MutationFunction<
 >;
 
 export function useUpsertAlertRuleMutation(
-  baseOptions?: Apollo.MutationHookOptions<UpsertAlertRuleMutation, UpsertAlertRuleMutationVariables>
+  baseOptions?: Apollo.MutationHookOptions<
+    UpsertAlertRuleMutation,
+    UpsertAlertRuleMutationVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useMutation<UpsertAlertRuleMutation, UpsertAlertRuleMutationVariables>(UpsertAlertRuleDocument, options);
+  return Apollo.useMutation<
+    UpsertAlertRuleMutation,
+    UpsertAlertRuleMutationVariables
+  >(UpsertAlertRuleDocument, options);
 }
-export type UpsertAlertRuleMutationHookResult = ReturnType<typeof useUpsertAlertRuleMutation>;
-export type UpsertAlertRuleMutationResult = Apollo.MutationResult<UpsertAlertRuleMutation>;
+export type UpsertAlertRuleMutationHookResult = ReturnType<
+  typeof useUpsertAlertRuleMutation
+>;
+export type UpsertAlertRuleMutationResult =
+  Apollo.MutationResult<UpsertAlertRuleMutation>;
 export type UpsertAlertRuleMutationOptions = Apollo.BaseMutationOptions<
   UpsertAlertRuleMutation,
   UpsertAlertRuleMutationVariables
@@ -1826,16 +2597,22 @@ export type CreateAlertChannelMutationFn = Apollo.MutationFunction<
 >;
 
 export function useCreateAlertChannelMutation(
-  baseOptions?: Apollo.MutationHookOptions<CreateAlertChannelMutation, CreateAlertChannelMutationVariables>
+  baseOptions?: Apollo.MutationHookOptions<
+    CreateAlertChannelMutation,
+    CreateAlertChannelMutationVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useMutation<CreateAlertChannelMutation, CreateAlertChannelMutationVariables>(
-    CreateAlertChannelDocument,
-    options
-  );
+  return Apollo.useMutation<
+    CreateAlertChannelMutation,
+    CreateAlertChannelMutationVariables
+  >(CreateAlertChannelDocument, options);
 }
-export type CreateAlertChannelMutationHookResult = ReturnType<typeof useCreateAlertChannelMutation>;
-export type CreateAlertChannelMutationResult = Apollo.MutationResult<CreateAlertChannelMutation>;
+export type CreateAlertChannelMutationHookResult = ReturnType<
+  typeof useCreateAlertChannelMutation
+>;
+export type CreateAlertChannelMutationResult =
+  Apollo.MutationResult<CreateAlertChannelMutation>;
 export type CreateAlertChannelMutationOptions = Apollo.BaseMutationOptions<
   CreateAlertChannelMutation,
   CreateAlertChannelMutationVariables
@@ -1851,16 +2628,22 @@ export type TriggerAlertRuleMutationFn = Apollo.MutationFunction<
 >;
 
 export function useTriggerAlertRuleMutation(
-  baseOptions?: Apollo.MutationHookOptions<TriggerAlertRuleMutation, TriggerAlertRuleMutationVariables>
+  baseOptions?: Apollo.MutationHookOptions<
+    TriggerAlertRuleMutation,
+    TriggerAlertRuleMutationVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useMutation<TriggerAlertRuleMutation, TriggerAlertRuleMutationVariables>(
-    TriggerAlertRuleDocument,
-    options
-  );
+  return Apollo.useMutation<
+    TriggerAlertRuleMutation,
+    TriggerAlertRuleMutationVariables
+  >(TriggerAlertRuleDocument, options);
 }
-export type TriggerAlertRuleMutationHookResult = ReturnType<typeof useTriggerAlertRuleMutation>;
-export type TriggerAlertRuleMutationResult = Apollo.MutationResult<TriggerAlertRuleMutation>;
+export type TriggerAlertRuleMutationHookResult = ReturnType<
+  typeof useTriggerAlertRuleMutation
+>;
+export type TriggerAlertRuleMutationResult =
+  Apollo.MutationResult<TriggerAlertRuleMutation>;
 export type TriggerAlertRuleMutationOptions = Apollo.BaseMutationOptions<
   TriggerAlertRuleMutation,
   TriggerAlertRuleMutationVariables
@@ -1878,13 +2661,19 @@ export const AlertEventsStreamDocument = gql`
 `;
 
 export function useAlertEventsStreamSubscription(
-  baseOptions?: Apollo.SubscriptionHookOptions<AlertEventsStreamSubscription, AlertEventsStreamSubscriptionVariables>
+  baseOptions?: Apollo.SubscriptionHookOptions<
+    AlertEventsStreamSubscription,
+    AlertEventsStreamSubscriptionVariables
+  >,
 ) {
   const options = { ...defaultOptions, ...baseOptions };
-  return Apollo.useSubscription<AlertEventsStreamSubscription, AlertEventsStreamSubscriptionVariables>(
-    AlertEventsStreamDocument,
-    options
-  );
+  return Apollo.useSubscription<
+    AlertEventsStreamSubscription,
+    AlertEventsStreamSubscriptionVariables
+  >(AlertEventsStreamDocument, options);
 }
-export type AlertEventsStreamSubscriptionHookResult = ReturnType<typeof useAlertEventsStreamSubscription>;
-export type AlertEventsStreamSubscriptionResult = Apollo.SubscriptionResult<AlertEventsStreamSubscription>;
+export type AlertEventsStreamSubscriptionHookResult = ReturnType<
+  typeof useAlertEventsStreamSubscription
+>;
+export type AlertEventsStreamSubscriptionResult =
+  Apollo.SubscriptionResult<AlertEventsStreamSubscription>;

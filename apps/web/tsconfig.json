@@ -11,7 +11,7 @@
         "./lib/*"
       ],
       "@/graphql/generated": [
-        "./graphql/generated-with-stubs"
+        "./graphql/generated"
       ],
       "@modular/utils": [
         "../../packages/utils/src"

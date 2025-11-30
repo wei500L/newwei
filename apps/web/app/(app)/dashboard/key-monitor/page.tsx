@@ -1,13 +1,13 @@
 "use client";
 
-import { Col, Row, Spin, Typography } from "antd";
+import { Alert, Button, Col, Empty, Row, Spin, Typography } from "antd";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { EconomicChartCard } from "../components/economic-chart-card";
 import { CandlestickCard } from "../components/candlestick-card";
 
 export default function KeyMonitorPage() {
-  const { loading, seriesMap } = useEconomicData({
+  const { loading, seriesMap, error, refetch } = useEconomicData({
     category: "key-monitor",
     pollInterval: 30_000,
   });
@@ -21,6 +21,21 @@ export default function KeyMonitorPage() {
         <Typography.Title level={4}>重点监控</Typography.Title>
         <TimeRangeControls />
       </div>
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          message="加载重点监控数据失败"
+          action={
+            <Button size="small" onClick={() => refetch()}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
+      {!loading && seriesMap.size === 0 ? (
+        <Empty description="暂无监控数据" />
+      ) : null}
       {loading && <Spin />}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={8}>

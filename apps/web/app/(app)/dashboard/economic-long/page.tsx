@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -12,7 +12,7 @@ import {
 } from "../utils/series";
 
 export default function EconomicLongPage() {
-  const { loading, error, seriesMap } = useEconomicData({
+  const { loading, error, seriesMap, refetch } = useEconomicData({
     category: "economic-long",
     pollInterval: 300_000,
   });
@@ -73,10 +73,22 @@ export default function EconomicLongPage() {
         <Typography.Title level={4}>经济长期趋势</Typography.Title>
         <TimeRangeControls />
       </div>
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          message="获取经济长期数据失败"
+          action={
+            <Button size="small" onClick={() => refetch()}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
+      {!loading && seriesMap.size === 0 ? (
+        <Empty description="暂无数据" />
+      ) : null}
       {loading && <Spin />}
-      {error && (
-        <Typography.Text type="danger">{error.message}</Typography.Text>
-      )}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={8}>
           <Card title="近3年GDP年度对比" className="content-card">

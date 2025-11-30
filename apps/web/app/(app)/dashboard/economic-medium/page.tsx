@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -18,7 +18,7 @@ const metalSeries = [
 ];
 
 export default function EconomicMediumPage() {
-  const { loading, error, seriesMap } = useEconomicData({
+  const { loading, error, seriesMap, refetch } = useEconomicData({
     category: "economic-medium",
     pollInterval: 120_000,
   });
@@ -204,10 +204,22 @@ export default function EconomicMediumPage() {
         <Typography.Title level={4}>经济中期趋势</Typography.Title>
         <TimeRangeControls />
       </div>
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          message="获取经济中期数据失败"
+          action={
+            <Button size="small" onClick={() => refetch()}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
+      {!loading && seriesMap.size === 0 ? (
+        <Empty description="暂无数据" />
+      ) : null}
       {loading && <Spin />}
-      {error && (
-        <Typography.Text type="danger">{error.message}</Typography.Text>
-      )}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card title="近6个月GDP / M2增速" className="content-card">

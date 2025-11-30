@@ -1,6 +1,6 @@
 "use client";
 
-import { Breadcrumb, Card } from "antd";
+import { Alert, Breadcrumb, Button, Card } from "antd";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApolloClient } from "@apollo/client";
@@ -21,7 +21,7 @@ export function DrilldownChart({
   const client = useApolloClient();
   const { start, end, setCustomRange } = useDashboardRangeStore();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch, error } = useQuery({
     queryKey: [
       "economicData",
       category,
@@ -79,6 +79,28 @@ export function DrilldownChart({
       loading={isLoading}
       extra={<Breadcrumb items={breadcrumbs} />}
     >
+      {isError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="加载经济数据失败"
+          description={error instanceof Error ? error.message : undefined}
+          action={
+            <Button size="small" onClick={() => refetch()}>
+              重试
+            </Button>
+          }
+          style={{ marginBottom: 12 }}
+        />
+      ) : null}
+      {!isLoading && (!data || data.length === 0) ? (
+        <Alert
+          type="info"
+          message="暂无数据"
+          showIcon
+          style={{ marginBottom: 12 }}
+        />
+      ) : null}
       <DashboardChart
         group="linked-charts"
         option={option}

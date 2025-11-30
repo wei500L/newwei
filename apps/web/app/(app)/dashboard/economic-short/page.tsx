@@ -1,6 +1,16 @@
 "use client";
 
-import { Card, Col, Empty, Row, Spin, Tabs, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Empty,
+  Row,
+  Spin,
+  Tabs,
+  Typography,
+} from "antd";
 import { useState } from "react";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
@@ -31,7 +41,7 @@ const heatmapBuckets = [
 ];
 
 export default function EconomicShortPage() {
-  const { loading, seriesMap, error } = useEconomicData({
+  const { loading, seriesMap, error, refetch } = useEconomicData({
     category: "economic-short",
     pollInterval: 60_000,
   });
@@ -107,10 +117,23 @@ export default function EconomicShortPage() {
         <Typography.Title level={4}>经济短期趋势</Typography.Title>
         <TimeRangeControls />
       </div>
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          message="获取经济短期数据失败"
+          description={error.message}
+          action={
+            <Button size="small" onClick={() => refetch()}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
+      {!loading && seriesMap.size === 0 ? (
+        <Empty description="暂无短期数据" />
+      ) : null}
       {loading && <Spin />}
-      {error && (
-        <Typography.Text type="danger">{error.message}</Typography.Text>
-      )}
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <Card className="content-card" title="近1个月股指K线">
