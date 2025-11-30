@@ -18,24 +18,24 @@ export function QueueChart({ data }: QueueChartProps) {
     const chart = echarts.init(chartRef.current);
     const option = {
       tooltip: {
-        trigger: "axis"
+        trigger: "axis",
       },
       xAxis: {
         type: "category",
-        data: Object.keys(data)
+        data: Object.keys(data),
       },
       yAxis: {
-        type: "value"
+        type: "value",
       },
       series: [
         {
           data: Object.values(data),
           type: "bar",
           itemStyle: {
-            color: "#1677ff"
-          }
-        }
-      ]
+            color: "#1677ff",
+          },
+        },
+      ],
     };
 
     chart.setOption(option);

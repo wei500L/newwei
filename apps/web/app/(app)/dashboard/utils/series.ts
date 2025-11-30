@@ -1,6 +1,14 @@
-import type { EconomicSeriesField, EconomicSeriesGroup, EconomicSeriesMap } from "@/hooks/useEconomicData";
+import type {
+  EconomicSeriesField,
+  EconomicSeriesGroup,
+  EconomicSeriesMap,
+} from "@/hooks/useEconomicData";
 
-export function getSeriesField(seriesMap: EconomicSeriesMap, slug: string, field?: string) {
+export function getSeriesField(
+  seriesMap: EconomicSeriesMap,
+  slug: string,
+  field?: string,
+) {
   const group = seriesMap.get(slug);
   if (!group || group.fields.size === 0) {
     return undefined;
@@ -17,7 +25,7 @@ export function getSortedValues(series?: EconomicSeriesField) {
     return [];
   }
   return [...series.values].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
   );
 }
 
@@ -29,27 +37,44 @@ export function getLatestValue(series?: EconomicSeriesField) {
   return values[values.length - 1];
 }
 
-export function filterValuesByDays(series: EconomicSeriesField | undefined, days: number) {
+export function filterValuesByDays(
+  series: EconomicSeriesField | undefined,
+  days: number,
+) {
   const values = getSortedValues(series);
   if (values.length === 0) {
     return [];
   }
-  const cutoff = new Date(values[values.length - 1].timestamp);
+  const last = values[values.length - 1];
+  if (!last) {
+    return [];
+  }
+  const cutoff = new Date(last.timestamp);
   cutoff.setDate(cutoff.getDate() - days);
   return values.filter((entry) => new Date(entry.timestamp) >= cutoff);
 }
 
-export function calculatePercentChange(series: EconomicSeriesField | undefined, lookback: number) {
+export function calculatePercentChange(
+  series: EconomicSeriesField | undefined,
+  lookback: number,
+) {
   const values = getSortedValues(series);
   if (values.length < 2) {
     return null;
   }
   const latest = values[values.length - 1];
+  if (!latest) {
+    return null;
+  }
   const baseTime = new Date(latest.timestamp);
   baseTime.setDate(baseTime.getDate() - lookback);
   let base = values[0];
+  if (!base) {
+    return null;
+  }
   for (let i = values.length - 2; i >= 0; i -= 1) {
     const candidate = values[i];
+    if (!candidate) continue;
     if (new Date(candidate.timestamp) <= baseTime) {
       base = candidate;
       break;
@@ -64,7 +89,10 @@ export function calculatePercentChange(series: EconomicSeriesField | undefined, 
   return ((latest.value - base.value) / base.value) * 100;
 }
 
-export function computeMovingAverage(series: EconomicSeriesField | undefined, windowSize: number) {
+export function computeMovingAverage(
+  series: EconomicSeriesField | undefined,
+  windowSize: number,
+) {
   const values = getSortedValues(series);
   if (values.length === 0) {
     return [];
@@ -81,7 +109,7 @@ export function computeMovingAverage(series: EconomicSeriesField | undefined, wi
     if (window.length === windowSize) {
       result.push({
         timestamp: entry.timestamp,
-        value: windowSum / windowSize
+        value: windowSum / windowSize,
       });
     }
   }
@@ -103,7 +131,10 @@ export function getCandlestickSeries(group?: EconomicSeriesGroup) {
     string,
     { open?: number; close?: number; low?: number; high?: number }
   >();
-  const assign = (series: EconomicSeriesField, key: "open" | "close" | "low" | "high") => {
+  const assign = (
+    series: EconomicSeriesField,
+    key: "open" | "close" | "low" | "high",
+  ) => {
     for (const entry of series.values) {
       const bucket = buckets.get(entry.timestamp) ?? {};
       bucket[key] = entry.value;
@@ -116,18 +147,32 @@ export function getCandlestickSeries(group?: EconomicSeriesGroup) {
   assign(highSeries, "high");
 
   const sortedTimestamps = Array.from(buckets.keys()).sort(
-    (a, b) => new Date(a).getTime() - new Date(b).getTime()
+    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
   );
   return sortedTimestamps
     .map((timestamp) => {
       const bucket = buckets.get(timestamp);
-      if (!bucket || bucket.open === undefined || bucket.close === undefined || bucket.low === undefined || bucket.high === undefined) {
+      if (
+        !bucket ||
+        bucket.open === undefined ||
+        bucket.close === undefined ||
+        bucket.low === undefined ||
+        bucket.high === undefined
+      ) {
         return undefined;
       }
       return {
         timestamp,
-        values: [bucket.open, bucket.close, bucket.low, bucket.high] as [number, number, number, number]
+        values: [bucket.open, bucket.close, bucket.low, bucket.high] as [
+          number,
+          number,
+          number,
+          number,
+        ],
       };
     })
-    .filter(Boolean) as Array<{ timestamp: string; values: [number, number, number, number] }>;
+    .filter(Boolean) as Array<{
+    timestamp: string;
+    values: [number, number, number, number];
+  }>;
 }

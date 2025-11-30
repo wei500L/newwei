@@ -8,20 +8,33 @@ import {
   computeMovingAverage,
   filterValuesByDays,
   getSeriesField,
-  getSortedValues
+  getSortedValues,
 } from "../utils/series";
 
 const metalSeries = [
   { slug: "copper_futures_main", label: "沪铜" },
   { slug: "aluminum_futures_main", label: "沪铝" },
-  { slug: "rebar_futures_main", label: "螺纹钢" }
+  { slug: "rebar_futures_main", label: "螺纹钢" },
 ];
 
 export default function EconomicMediumPage() {
-  const { loading, error, seriesMap } = useEconomicData({ category: "economic-medium", pollInterval: 120_000 });
+  const { loading, error, seriesMap } = useEconomicData({
+    category: "economic-medium",
+    pollInterval: 120_000,
+  });
 
-  const gdpYoy = filterValuesByDays(getSeriesField(seriesMap, "china_gdp", "国内生产总值-同比增长"), 180);
-  const m2Yoy = filterValuesByDays(getSeriesField(seriesMap, "china_money_supply", "货币和准货币(M2)-同比增长"), 180);
+  const gdpYoy = filterValuesByDays(
+    getSeriesField(seriesMap, "china_gdp", "国内生产总值-同比增长"),
+    180,
+  );
+  const m2Yoy = filterValuesByDays(
+    getSeriesField(
+      seriesMap,
+      "china_money_supply",
+      "货币和准货币(M2)-同比增长",
+    ),
+    180,
+  );
 
   const dualAxisOption = {
     tooltip: { trigger: "axis" },
@@ -29,23 +42,23 @@ export default function EconomicMediumPage() {
     xAxis: { type: "time" },
     yAxis: [
       { type: "value", name: "GDP同比(%)" },
-      { type: "value", name: "M2同比(%)", alignTicks: true }
+      { type: "value", name: "M2同比(%)", alignTicks: true },
     ],
     series: [
       {
         name: "GDP同比",
         type: "line",
         smooth: true,
-        data: gdpYoy.map((entry) => [entry.timestamp, entry.value])
+        data: gdpYoy.map((entry) => [entry.timestamp, entry.value]),
       },
       {
         name: "M2同比",
         type: "line",
         smooth: true,
         yAxisIndex: 1,
-        data: m2Yoy.map((entry) => [entry.timestamp, entry.value])
-      }
-    ]
+        data: m2Yoy.map((entry) => [entry.timestamp, entry.value]),
+      },
+    ],
   };
 
   const maSeries = metalSeries.map((metal) => {
@@ -53,7 +66,7 @@ export default function EconomicMediumPage() {
     const averages = computeMovingAverage(source, 5);
     return {
       name: `${metal.label}MA`,
-      data: averages.map((entry) => [entry.timestamp, entry.value])
+      data: averages.map((entry) => [entry.timestamp, entry.value]),
     };
   });
 
@@ -66,67 +79,123 @@ export default function EconomicMediumPage() {
       type: "line",
       name: entry.name,
       smooth: true,
-      data: entry.data
-    }))
+      data: entry.data,
+    })),
   };
 
-  const pmiSeries = getSortedValues(getSeriesField(seriesMap, "china_pmi", "今值"));
+  const pmiSeries = getSortedValues(
+    getSeriesField(seriesMap, "china_pmi", "今值"),
+  );
   const pmiChanges = pmiSeries.slice(-8).map((entry, index, arr) => {
     if (index === 0) {
       return null;
     }
     const prev = arr[index - 1];
+    if (!prev) {
+      return null;
+    }
     return {
       timestamp: entry.timestamp,
-      diff: Number((entry.value - prev.value).toFixed(2))
+      diff: Number((entry.value - prev.value).toFixed(2)),
     };
   });
-  const filteredChanges = pmiChanges.filter(Boolean) as Array<{ timestamp: string; diff: number }>;
+  const filteredChanges = pmiChanges.filter(Boolean) as Array<{
+    timestamp: string;
+    diff: number;
+  }>;
   const formatLabel = (timestamp: string) => {
     const date = new Date(timestamp);
     return `${date.getFullYear()}-${date.getMonth() + 1}`;
   };
   const pmiOption = {
-    tooltip: { trigger: "axis", valueFormatter: (value: number) => `${value.toFixed(2)}` },
-    xAxis: { type: "category", data: filteredChanges.map((entry) => formatLabel(entry.timestamp)) },
+    tooltip: {
+      trigger: "axis",
+      valueFormatter: (value: number) => `${value.toFixed(2)}`,
+    },
+    xAxis: {
+      type: "category",
+      data: filteredChanges.map((entry) => formatLabel(entry.timestamp)),
+    },
     yAxis: { type: "value" },
     series: [
       {
         type: "bar",
         data: filteredChanges.map((entry) => entry.diff),
         itemStyle: {
-          color: (params: any) => ((params.value ?? 0) >= 0 ? "#389e0d" : "#cf1322")
-        }
-      }
-    ]
+          color: (params: any) =>
+            (params.value ?? 0) >= 0 ? "#389e0d" : "#cf1322",
+        },
+      },
+    ],
   };
 
-  const usGdpSeries = getSortedValues(getSeriesField(seriesMap, "us_gdp_monthly", "今值"));
-  const usCpiSeries = getSortedValues(getSeriesField(seriesMap, "us_cpi_monthly", "今值"));
-  const usPpiSeries = getSortedValues(getSeriesField(seriesMap, "us_ppi_monthly", "今值"));
+  const usGdpSeries = getSortedValues(
+    getSeriesField(seriesMap, "us_gdp_monthly", "今值"),
+  );
+  const usCpiSeries = getSortedValues(
+    getSeriesField(seriesMap, "us_cpi_monthly", "今值"),
+  );
+  const usPpiSeries = getSortedValues(
+    getSeriesField(seriesMap, "us_ppi_monthly", "今值"),
+  );
   const usGrowthOption = {
-    tooltip: { trigger: "axis", valueFormatter: (value: number) => `${value.toFixed(2)}%` },
+    tooltip: {
+      trigger: "axis",
+      valueFormatter: (value: number) => `${value.toFixed(2)}%`,
+    },
     legend: { data: ["GDP", "CPI", "PPI"] },
     xAxis: { type: "time" },
     yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
     series: [
-      { name: "GDP", type: "line", smooth: true, data: usGdpSeries.map((entry) => [entry.timestamp, entry.value]) },
-      { name: "CPI", type: "line", smooth: true, data: usCpiSeries.map((entry) => [entry.timestamp, entry.value]) },
-      { name: "PPI", type: "line", smooth: true, data: usPpiSeries.map((entry) => [entry.timestamp, entry.value]) }
-    ]
+      {
+        name: "GDP",
+        type: "line",
+        smooth: true,
+        data: usGdpSeries.map((entry) => [entry.timestamp, entry.value]),
+      },
+      {
+        name: "CPI",
+        type: "line",
+        smooth: true,
+        data: usCpiSeries.map((entry) => [entry.timestamp, entry.value]),
+      },
+      {
+        name: "PPI",
+        type: "line",
+        smooth: true,
+        data: usPpiSeries.map((entry) => [entry.timestamp, entry.value]),
+      },
+    ],
   };
 
-  const usManufacturingSeries = getSortedValues(getSeriesField(seriesMap, "us_manufacturing_pmi", "今值"));
-  const usServicesSeries = getSortedValues(getSeriesField(seriesMap, "us_services_pmi", "current_value"));
+  const usManufacturingSeries = getSortedValues(
+    getSeriesField(seriesMap, "us_manufacturing_pmi", "今值"),
+  );
+  const usServicesSeries = getSortedValues(
+    getSeriesField(seriesMap, "us_services_pmi", "current_value"),
+  );
   const usPmiOption = {
     tooltip: { trigger: "axis" },
     legend: { data: ["制造业PMI", "服务业PMI"] },
     xAxis: { type: "time" },
     yAxis: { type: "value", min: 40, max: 65 },
     series: [
-      { name: "制造业PMI", type: "line", smooth: true, data: usManufacturingSeries.map((entry) => [entry.timestamp, entry.value]) },
-      { name: "服务业PMI", type: "line", smooth: true, data: usServicesSeries.map((entry) => [entry.timestamp, entry.value]) }
-    ]
+      {
+        name: "制造业PMI",
+        type: "line",
+        smooth: true,
+        data: usManufacturingSeries.map((entry) => [
+          entry.timestamp,
+          entry.value,
+        ]),
+      },
+      {
+        name: "服务业PMI",
+        type: "line",
+        smooth: true,
+        data: usServicesSeries.map((entry) => [entry.timestamp, entry.value]),
+      },
+    ],
   };
 
   return (
@@ -136,7 +205,9 @@ export default function EconomicMediumPage() {
         <TimeRangeControls />
       </div>
       {loading && <Spin />}
-      {error && <Typography.Text type="danger">{error.message}</Typography.Text>}
+      {error && (
+        <Typography.Text type="danger">{error.message}</Typography.Text>
+      )}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card title="近6个月GDP / M2增速" className="content-card">

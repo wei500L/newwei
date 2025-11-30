@@ -4,13 +4,20 @@
     "baseUrl": ".",
     "paths": {
       "@/components/*": [
-        "./app/(app)/components/*"
+        "./app/(app)/components/*",
+        "./components/*"
       ],
       "@/lib/*": [
         "./lib/*"
       ],
+      "@/graphql/generated": [
+        "./graphql/generated-with-stubs"
+      ],
       "@modular/utils": [
         "../../packages/utils/src"
+      ],
+      "@/hooks/*": [
+        "./hooks/*"
       ],
       "@/store/*": [
         "./store/*"

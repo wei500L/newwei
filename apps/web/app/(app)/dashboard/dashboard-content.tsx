@@ -1,10 +1,33 @@
 "use client";
 
-import { Button, Card, Col, Empty, List, Row, Select, Space, Spin, Statistic, Tag, Typography, message } from "antd";
+import {
+  Button,
+  Card,
+  Col,
+  Empty,
+  List,
+  Row,
+  Select,
+  Space,
+  Spin,
+  Statistic,
+  Tag,
+  Typography,
+  message,
+} from "antd";
 import { useEffect, useMemo, useState } from "react";
 
-import { useDashboardsQuery, useDeleteDashboardMutation, useQueueStatsQuery, useUpsertDashboardMutation } from "@/graphql/generated";
-import { useDashboardRangeStore, type DashboardRangePreset } from "@/store/time-range";
+import {
+  useDashboardsQuery,
+  useDeleteDashboardMutation,
+  useQueueStatsQuery,
+  useUpsertDashboardMutation,
+  type Dashboard,
+} from "@/graphql/generated";
+import {
+  useDashboardRangeStore,
+  type DashboardRangePreset,
+} from "@/store/time-range";
 
 import { AlertConfigForm } from "./alert-config-form";
 import { AlertPanel } from "./alert-panel";
@@ -39,15 +62,23 @@ const dedupeLogs = (logs: QueueLog[], limit = 15): QueueLog[] => {
 
 export function DashboardContent() {
   const { data, loading, error, refetch } = useQueueStatsQuery();
-  const { data: dashboardsData, loading: dashboardsLoading, refetch: refetchDashboards } = useDashboardsQuery();
-  const [saveDashboard, { loading: savingDashboard }] = useUpsertDashboardMutation();
+  const {
+    data: dashboardsData,
+    loading: dashboardsLoading,
+    refetch: refetchDashboards,
+  } = useDashboardsQuery();
+  const [saveDashboard, { loading: savingDashboard }] =
+    useUpsertDashboardMutation();
   const [deleteDashboard] = useDeleteDashboardMutation();
   const { range, setRange } = useDashboardRangeStore();
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
   const [liveLogs, setLiveLogs] = useState<QueueLog[]>([]);
   const [activeId, setActiveId] = useState<string | undefined>();
 
-  const dashboards = useMemo(() => dashboardsData?.dashboards ?? [], [dashboardsData]);
+  const dashboards = useMemo(
+    () => dashboardsData?.dashboards ?? [],
+    [dashboardsData],
+  );
 
   useEffect(() => {
     if (dashboards.length && !activeId) {
@@ -63,12 +94,19 @@ export function DashboardContent() {
 
   useEffect(() => {
     if (!lastEvent) return;
-    const serializedData = lastEvent.data ? JSON.stringify(lastEvent.data) : undefined;
+    const serializedData = lastEvent.data
+      ? JSON.stringify(lastEvent.data)
+      : undefined;
     setLiveLogs((prev) =>
       dedupeLogs([
-        { event: lastEvent.event, jobId: lastEvent.jobId, data: serializedData, timestamp: lastEvent.timestamp },
-        ...prev
-      ])
+        {
+          event: lastEvent.event,
+          jobId: lastEvent.jobId,
+          data: serializedData,
+          timestamp: lastEvent.timestamp,
+        },
+        ...prev,
+      ]),
     );
     void refetch();
     if (lastEvent.event === "FAILED") {
@@ -82,7 +120,9 @@ export function DashboardContent() {
 
   if (loading || dashboardsLoading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+      >
         <Spin size="large" />
       </div>
     );
@@ -93,7 +133,8 @@ export function DashboardContent() {
   }
 
   const { counts, processedCount, itemCount, recentLogs } = data.queueStats;
-  const activeDashboard = dashboards.find((d) => d.id === activeId) ?? dashboards[0];
+  const activeDashboard =
+    dashboards.find((d: Dashboard) => d.id === activeId) ?? dashboards[0];
 
   const combinedLogs = dedupeLogs([...(liveLogs ?? []), ...(recentLogs ?? [])]);
   const chartData: Record<string, number> = {
@@ -101,7 +142,7 @@ export function DashboardContent() {
     active: counts.active,
     completed: counts.completed,
     failed: counts.failed,
-    delayed: counts.delayed
+    delayed: counts.delayed,
   };
 
   const parsedLogs = combinedLogs.map((log) => {
@@ -115,7 +156,7 @@ export function DashboardContent() {
     }
     return {
       ...log,
-      payload: parsedPayload
+      payload: parsedPayload,
     };
   });
 
@@ -139,7 +180,9 @@ export function DashboardContent() {
             title={
               <Space size="small" align="center">
                 <span>Queue Snapshot</span>
-                <Tag color={queueLive ? "green" : "default"}>{queueLive ? "Live" : "Offline"}</Tag>
+                <Tag color={queueLive ? "green" : "default"}>
+                  {queueLive ? "Live" : "Offline"}
+                </Tag>
               </Space>
             }
           >
@@ -160,25 +203,29 @@ export function DashboardContent() {
                     description={
                       <Typography.Text type="secondary">
                         {new Date(item.timestamp).toLocaleString()}
-                        {item.payload?.message ? ` — ${item.payload?.message}` : ""}
+                        {item.payload?.message
+                          ? ` — ${item.payload?.message}`
+                          : ""}
                       </Typography.Text>
                     }
                   />
                 </List.Item>
               )}
             />
-            {parsedLogs.length === 0 && <Empty description="No recent queue logs" />}
+            {parsedLogs.length === 0 && (
+              <Empty description="No recent queue logs" />
+            )}
           </Card>
         </Col>
         <Col xs={24} md={12}>
           <Card title="Next Actions" className="content-card">
             <Typography.Paragraph>
-              Queue jobs are processed through the dedupe → transform → tag → score pipeline. Monitor
-              the queue metrics to ensure SLAs are met.
+              Queue jobs are processed through the dedupe → transform → tag →
+              score pipeline. Monitor the queue metrics to ensure SLAs are met.
             </Typography.Paragraph>
             <Typography.Paragraph type="secondary">
-              TODO: surface anomaly detection and alert routing rules once observability stack is
-              integrated.
+              TODO: surface anomaly detection and alert routing rules once
+              observability stack is integrated.
             </Typography.Paragraph>
           </Card>
         </Col>
@@ -189,8 +236,8 @@ export function DashboardContent() {
             <Space direction="vertical" style={{ width: "100%" }}>
               <Space align="center">
                 <Typography.Text type="secondary">
-                  Drag and resize widgets, then persist layout through the dashboard GraphQL mutations. Layouts are stored in
-                  MySQL.
+                  Drag and resize widgets, then persist layout through the
+                  dashboard GraphQL mutations. Layouts are stored in MySQL.
                 </Typography.Text>
                 <Select
                   size="small"
@@ -200,7 +247,7 @@ export function DashboardContent() {
                     { label: "1M", value: "1M" },
                     { label: "3M", value: "3M" },
                     { label: "6M", value: "6M" },
-                    { label: "1Y", value: "1Y" }
+                    { label: "1Y", value: "1Y" },
                   ]}
                   style={{ width: 120 }}
                 />
@@ -209,7 +256,10 @@ export function DashboardContent() {
                   style={{ minWidth: 220 }}
                   value={activeDashboard?.id}
                   onChange={(val) => setActiveId(val)}
-                  options={dashboards.map((d) => ({ label: d.name, value: d.id }))}
+                  options={dashboards.map((d: Dashboard) => ({
+                    label: d.name,
+                    value: d.id,
+                  }))}
                 />
                 <Button
                   size="small"
@@ -257,7 +307,10 @@ export function DashboardContent() {
       </Row>
       <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
         <Col xs={24} lg={24}>
-          <DrilldownChart category="economic-short" title="Economic Drilldown (linked zoom + click to drill)" />
+          <DrilldownChart
+            category="economic-short"
+            title="Economic Drilldown (linked zoom + click to drill)"
+          />
         </Col>
       </Row>
       <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>

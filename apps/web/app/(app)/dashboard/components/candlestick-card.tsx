@@ -12,37 +12,38 @@ export interface CandlestickCardProps {
   height?: number;
 }
 
-export function CandlestickCard({ title, group, height = 320 }: CandlestickCardProps) {
+export function CandlestickCard({
+  title,
+  group,
+  height = 320,
+}: CandlestickCardProps) {
   const candlestick = getCandlestickSeries(group);
   const option: EChartsOption = {
     title: {
       text: title,
       left: "center",
-      textStyle: { fontSize: 14, fontWeight: 500 }
+      textStyle: { fontSize: 14, fontWeight: 500 },
     },
     tooltip: {
-      trigger: "axis"
+      trigger: "axis",
     },
     grid: { left: 40, right: 24, top: 50, bottom: 50 },
-    dataZoom: [
-      { type: "inside" },
-      { type: "slider" }
-    ],
+    dataZoom: [{ type: "inside" }, { type: "slider" }],
     xAxis: {
       type: "category",
       data: candlestick.map((entry) => entry.timestamp),
-      boundaryGap: true
+      boundaryGap: true,
     },
     yAxis: {
-      scale: true
+      scale: true,
     },
     series: [
       {
         name: title,
         type: "candlestick",
-        data: candlestick.map((entry) => entry.values)
-      }
-    ]
+        data: candlestick.map((entry) => entry.values),
+      },
+    ],
   };
 
   return (

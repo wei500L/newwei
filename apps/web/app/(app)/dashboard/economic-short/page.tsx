@@ -6,67 +6,86 @@ import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { CandlestickCard } from "../components/candlestick-card";
-import { calculatePercentChange, filterValuesByDays, getSeriesField } from "../utils/series";
+import {
+  calculatePercentChange,
+  filterValuesByDays,
+  getSeriesField,
+} from "../utils/series";
 
 const indexTabs = [
   { key: "shanghai_composite_index", label: "上证指数" },
   { key: "csi300_index", label: "沪深300" },
   { key: "sz_component_index", label: "深证成指" },
-  { key: "csi1000_index", label: "中证1000" }
+  { key: "csi1000_index", label: "中证1000" },
 ];
 
 const fxPairs = [
   { slug: "usd_cny_spot", label: "USD/CNY" },
-  { slug: "eur_cny_spot", label: "EUR/CNY" }
+  { slug: "eur_cny_spot", label: "EUR/CNY" },
 ];
 
 const heatmapBuckets = [
   { label: "1日", period: 1 },
   { label: "3日", period: 3 },
-  { label: "7日", period: 7 }
+  { label: "7日", period: 7 },
 ];
 
 export default function EconomicShortPage() {
-  const { loading, seriesMap, error } = useEconomicData({ category: "economic-short", pollInterval: 60_000 });
-  const [activeIndex, setActiveIndex] = useState(indexTabs[0].key);
+  const { loading, seriesMap, error } = useEconomicData({
+    category: "economic-short",
+    pollInterval: 60_000,
+  });
+  const [activeIndex, setActiveIndex] = useState(indexTabs[0]?.key ?? "growth");
 
   const heatmapData = fxPairs.flatMap((pair, xIndex) =>
     heatmapBuckets.map((bucket, yIndex) => {
       const series = getSeriesField(seriesMap, pair.slug, "最新价");
       const change = calculatePercentChange(series, bucket.period) ?? 0;
       return [xIndex, yIndex, Number(change.toFixed(3))];
-    })
+    }),
   );
 
   const heatmapOption = {
     tooltip: {
       position: "top",
-      formatter: ({ value }: any) => `${heatmapBuckets[value[1]].label} ${fxPairs[value[0]].label}：${value[2]}%`
+      formatter: ({ value }: any) => {
+        const bucket = heatmapBuckets[value[1]];
+        const pair = fxPairs[value[0]];
+        if (!bucket || !pair) return "";
+        return `${bucket.label} ${pair.label}：${value[2]}%`;
+      },
     },
     xAxis: {
       type: "category",
-      data: fxPairs.map((pair) => pair.label)
+      data: fxPairs.map((pair) => pair.label),
     },
     yAxis: {
       type: "category",
-      data: heatmapBuckets.map((bucket) => bucket.label)
+      data: heatmapBuckets.map((bucket) => bucket.label),
     },
     visualMap: {
       min: -2,
       max: 2,
       orient: "horizontal",
-      left: "center"
+      left: "center",
     },
     series: [
       {
         type: "heatmap",
         data: heatmapData,
-        label: { show: true, formatter: ({ value }: any) => `${value[2]}%` }
-      }
-    ]
+        label: {
+          show: true,
+          formatter: ({ value }: any) => `${value?.[2] ?? 0}%`,
+        },
+      },
+    ],
   };
 
-  const btcSeries = getSeriesField(seriesMap, "bitcoin_spot_price", "latest_price");
+  const btcSeries = getSeriesField(
+    seriesMap,
+    "bitcoin_spot_price",
+    "latest_price",
+  );
   const btcValues = filterValuesByDays(btcSeries, 3);
   const cryptoOption = {
     tooltip: { trigger: "axis" },
@@ -77,9 +96,9 @@ export default function EconomicShortPage() {
         type: "line",
         name: "BTC",
         smooth: true,
-        data: btcValues.map((entry) => [entry.timestamp, entry.value])
-      }
-    ]
+        data: btcValues.map((entry) => [entry.timestamp, entry.value]),
+      },
+    ],
   };
 
   return (
@@ -89,7 +108,9 @@ export default function EconomicShortPage() {
         <TimeRangeControls />
       </div>
       {loading && <Spin />}
-      {error && <Typography.Text type="danger">{error.message}</Typography.Text>}
+      {error && (
+        <Typography.Text type="danger">{error.message}</Typography.Text>
+      )}
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <Card className="content-card" title="近1个月股指K线">
@@ -99,7 +120,12 @@ export default function EconomicShortPage() {
               items={indexTabs.map((tab) => ({
                 key: tab.key,
                 label: tab.label,
-                children: <CandlestickCard title={tab.label} group={seriesMap.get(tab.key)} />
+                children: (
+                  <CandlestickCard
+                    title={tab.label}
+                    group={seriesMap.get(tab.key)}
+                  />
+                ),
               }))}
             />
           </Card>

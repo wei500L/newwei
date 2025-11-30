@@ -35,7 +35,7 @@ echarts.use([
 ]);
 
 export interface EchartProps {
-  option: echarts.EChartsOption;
+  option: echarts.EChartsCoreOption;
   height?: number | string;
   renderer?: "canvas" | "svg";
   group?: string;

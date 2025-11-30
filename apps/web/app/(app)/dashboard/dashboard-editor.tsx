@@ -3,30 +3,40 @@
 import { Button, Card, Input, Select, Space, Typography, message } from "antd";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo } from "react";
-import { DashboardWidgetType, useDashboardEditorStore } from "@/store/dashboard-editor";
+import {
+  DashboardWidgetType,
+  useDashboardEditorStore,
+} from "@/store/dashboard-editor";
 import { TimeRangeControls } from "@/components/time-range-controls";
-import type { DashboardsQuery, UpsertDashboardInput } from "@/graphql/generated";
+import type {
+  DashboardsQuery,
+  UpsertDashboardInput,
+} from "@/graphql/generated";
 import { WidgetRenderer } from "./charts/widget-renderer";
 
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
 const ResponsiveGridLayout = dynamic(
-  () => import("react-grid-layout").then((mod) => mod.WidthProvider(mod.Responsive)),
+  () =>
+    import("react-grid-layout").then((mod) =>
+      mod.WidthProvider(mod.Responsive),
+    ),
   {
-    ssr: false
-  }
+    ssr: false,
+  },
 );
 
-const defaultWidgetSize: Record<DashboardWidgetType, { w: number; h: number }> = {
-  line: { w: 4, h: 6 },
-  bar: { w: 4, h: 6 },
-  pie: { w: 3, h: 5 },
-  scatter: { w: 4, h: 6 },
-  kline: { w: 5, h: 7 },
-  radar: { w: 4, h: 6 },
-  table: { w: 6, h: 8 }
-};
+const defaultWidgetSize: Record<DashboardWidgetType, { w: number; h: number }> =
+  {
+    line: { w: 4, h: 6 },
+    bar: { w: 4, h: 6 },
+    pie: { w: 3, h: 5 },
+    scatter: { w: 4, h: 6 },
+    kline: { w: 5, h: 7 },
+    radar: { w: 4, h: 6 },
+    table: { w: 6, h: 8 },
+  };
 
 const datasourceOptions = [
   { label: "标普500", value: "economic:sp500_index" },
@@ -36,7 +46,7 @@ const datasourceOptions = [
   { label: "布伦特原油", value: "economic:brent_oil_price" },
   { label: "CME Bitcoin", value: "economic:crypto_bitcoin_cme" },
   { label: "Crypto Spot", value: "economic:crypto_js_spot" },
-  { label: "默认演示", value: "economic:economic-short" }
+  { label: "默认演示", value: "economic:economic-short" },
 ];
 
 type DashboardRecord = DashboardsQuery["dashboards"][number] | undefined;
@@ -48,7 +58,12 @@ interface DashboardEditorProps {
   onDelete?: (id: string) => Promise<void>;
 }
 
-export function DashboardEditor({ dashboard, saving, onSave, onDelete }: DashboardEditorProps) {
+export function DashboardEditor({
+  dashboard,
+  saving,
+  onSave,
+  onDelete,
+}: DashboardEditorProps) {
   const {
     widgets,
     addWidget,
@@ -61,7 +76,7 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
     primaryColor,
     setMeta,
     reset,
-    setWidgets
+    setWidgets,
   } = useDashboardEditorStore();
 
   useEffect(() => {
@@ -69,21 +84,30 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
       reset();
       return;
     }
-    setMeta({ name: dashboard.name, slug: dashboard.slug, description: dashboard.description ?? undefined });
+    setMeta({
+      name: dashboard.name,
+      slug: dashboard.slug,
+      description: dashboard.description ?? undefined,
+    });
     if (dashboard.config && (dashboard.config as any).primaryColor) {
       setMeta({ primaryColor: (dashboard.config as any).primaryColor });
     }
     setWidgets(
-      dashboard.widgets.map((widget) => ({
-        id: widget.id,
+      dashboard.widgets.map((widget, idx) => ({
+        id: widget.id ?? `temp-${idx}`,
         title: widget.title ?? undefined,
         type: widget.type as DashboardWidgetType,
         dataSource: widget.dataSource,
         dataConfig: widget.dataConfig ?? undefined,
-        layout: { x: widget.layoutX, y: widget.layoutY, w: widget.layoutW, h: widget.layoutH },
+        layout: {
+          x: widget.layoutX,
+          y: widget.layoutY,
+          w: widget.layoutW,
+          h: widget.layoutH,
+        },
         sortOrder: widget.sortOrder ?? 0,
-        options: widget.options ?? undefined
-      }))
+        options: widget.options ?? undefined,
+      })),
     );
   }, [dashboard, reset, setMeta, setWidgets]);
 
@@ -94,21 +118,25 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
         x: widget.layout.x,
         y: widget.layout.y,
         w: widget.layout.w,
-        h: widget.layout.h
-      }))
+        h: widget.layout.h,
+      })),
     }),
-    [widgets]
+    [widgets],
   );
 
   const handleAddWidget = (type: DashboardWidgetType) => {
+    if (!datasourceOptions.length) {
+      return;
+    }
     const size = defaultWidgetSize[type];
+    const defaultDataSource = datasourceOptions[0]?.value ?? "economic:default";
     addWidget({
       type,
       title: `${type} widget`,
-      dataSource: datasourceOptions[0].value,
+      dataSource: defaultDataSource,
       layout: { x: 0, y: Infinity, w: size.w, h: size.h },
       options: {},
-      dataConfig: {}
+      dataConfig: {},
     });
   };
 
@@ -137,10 +165,12 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
             />
             <Select
               style={{ width: 120 }}
-              value={dashboard?.theme ?? "light"}
+              value={
+                (dashboard?.theme as "light" | "dark" | undefined) ?? "light"
+              }
               options={[
                 { label: "Light", value: "light" },
-                { label: "Dark", value: "dark" }
+                { label: "Dark", value: "dark" },
               ]}
               onChange={(theme) => setMeta({ theme })}
             />
@@ -150,7 +180,13 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
                 type="color"
                 value={primaryColor}
                 onChange={(e) => setMeta({ primaryColor: e.target.value })}
-                style={{ width: 48, height: 32, border: "none", background: "transparent", padding: 0 }}
+                style={{
+                  width: 48,
+                  height: 32,
+                  border: "none",
+                  background: "transparent",
+                  padding: 0,
+                }}
               />
             </Space>
             <Space>
@@ -176,8 +212,8 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
                       layoutW: widget.layout.w,
                       layoutH: widget.layout.h,
                       sortOrder: widget.sortOrder,
-                      options: widget.options ?? {}
-                    }))
+                      options: widget.options ?? {},
+                    })),
                   };
                   await onSave(payload);
                   message.success("Dashboard saved");
@@ -212,7 +248,15 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
         onLayoutChange={(layout) => updateLayout(layout as any)}
       >
         {widgets.map((widget) => (
-          <div key={widget.id} data-grid={{ x: widget.layout.x, y: widget.layout.y, w: widget.layout.w, h: widget.layout.h }}>
+          <div
+            key={widget.id}
+            data-grid={{
+              x: widget.layout.x,
+              y: widget.layout.y,
+              w: widget.layout.w,
+              h: widget.layout.h,
+            }}
+          >
             <Card
               title={widget.title ?? widget.type}
               extra={
@@ -221,23 +265,51 @@ export function DashboardEditor({ dashboard, saving, onSave, onDelete }: Dashboa
                     size="small"
                     style={{ width: 180 }}
                     value={widget.dataSource}
-                    onChange={(val) => updateWidget(widget.id, { dataSource: val })}
+                    onChange={(val) =>
+                      updateWidget(widget.id, { dataSource: val })
+                    }
                     options={datasourceOptions}
                   />
                   <input
                     type="color"
-                    value={(widget.options as any)?.color ?? primaryColor ?? "#1677ff"}
-                    onChange={(e) => updateWidget(widget.id, { options: { ...(widget.options ?? {}), color: e.target.value } })}
-                    style={{ width: 48, height: 32, border: "none", background: "transparent", padding: 0 }}
+                    value={
+                      (widget.options as any)?.color ??
+                      primaryColor ??
+                      "#1677ff"
+                    }
+                    onChange={(e) =>
+                      updateWidget(widget.id, {
+                        options: {
+                          ...(widget.options ?? {}),
+                          color: e.target.value,
+                        },
+                      })
+                    }
+                    style={{
+                      width: 48,
+                      height: 32,
+                      border: "none",
+                      background: "transparent",
+                      padding: 0,
+                    }}
                   />
-                  <Button danger size="small" onClick={() => removeWidget(widget.id)}>
+                  <Button
+                    danger
+                    size="small"
+                    onClick={() => removeWidget(widget.id)}
+                  >
                     Remove
                   </Button>
                 </Space>
               }
               style={{ height: "100%" }}
             >
-              <WidgetRenderer type={widget.type} title={widget.title} dataSource={widget.dataSource} color={widget.options?.color as string | undefined} />
+              <WidgetRenderer
+                type={widget.type}
+                title={widget.title}
+                dataSource={widget.dataSource}
+                color={widget.options?.color as string | undefined}
+              />
             </Card>
           </div>
         ))}

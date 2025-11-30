@@ -1,6 +1,16 @@
 "use client";
 
-import { Alert, Badge, Card, Col, Empty, List, Row, Spin, Typography } from "antd";
+import {
+  Alert,
+  Badge,
+  Card,
+  Col,
+  Empty,
+  List,
+  Row,
+  Spin,
+  Typography,
+} from "antd";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -12,17 +22,20 @@ const metalConfigs = [
   { slug: "rebar_futures_main", label: "螺纹钢" },
   { slug: "aluminum_futures_main", label: "铝" },
   { slug: "platinum_spot_sge", label: "铂金" },
-  { slug: "palladium_spot_sge", label: "钯金" }
+  { slug: "palladium_spot_sge", label: "钯金" },
 ];
 
 const agConfigs = [
   { slug: "wheat_futures_main", label: "小麦" },
   { slug: "corn_futures_main", label: "玉米" },
-  { slug: "soybean_futures_main", label: "大豆" }
+  { slug: "soybean_futures_main", label: "大豆" },
 ];
 
 export default function MilitaryAlertPage() {
-  const { loading, error, seriesMap } = useEconomicData({ category: "military-alert", pollInterval: 60_000 });
+  const { loading, error, seriesMap } = useEconomicData({
+    category: "military-alert",
+    pollInterval: 60_000,
+  });
 
   const radarIndicators: { name: string; max: number }[] = [];
   const radarValues: number[] = [];
@@ -31,14 +44,16 @@ export default function MilitaryAlertPage() {
     const dailyChange = calculatePercentChange(latestSeries, 1) ?? 0;
     const swing3d = calculatePercentChange(latestSeries, 3) ?? 0;
     const sameDirection =
-      Math.sign(dailyChange) !== 0 && Math.sign(dailyChange) === Math.sign(swing3d) && Math.abs(swing3d) >= 10;
+      Math.sign(dailyChange) !== 0 &&
+      Math.sign(dailyChange) === Math.sign(swing3d) &&
+      Math.abs(swing3d) >= 10;
     radarIndicators.push({ name: config.label, max: 12 });
     radarValues.push(Math.min(Math.abs(dailyChange), 12));
     return {
       title: config.label,
       dailyChange,
       swing3d,
-      sameDirection
+      sameDirection,
     };
   });
 
@@ -46,7 +61,7 @@ export default function MilitaryAlertPage() {
     tooltip: { trigger: "item" },
     radar: {
       indicator: radarIndicators,
-      radius: "65%"
+      radius: "65%",
     },
     series: [
       {
@@ -55,11 +70,11 @@ export default function MilitaryAlertPage() {
         data: [
           {
             value: radarValues,
-            name: "单日波动(%)"
-          }
-        ]
-      }
-    ]
+            name: "单日波动(%)",
+          },
+        ],
+      },
+    ],
   };
 
   const agBarData = agConfigs.map((config) => {
@@ -69,7 +84,10 @@ export default function MilitaryAlertPage() {
   });
 
   const agOption = {
-    tooltip: { trigger: "axis", valueFormatter: (value: number) => `${value.toFixed(2)}%` },
+    tooltip: {
+      trigger: "axis",
+      valueFormatter: (value: number) => `${value.toFixed(2)}%`,
+    },
     xAxis: { type: "category", data: agBarData.map((item) => item.name) },
     yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
     series: [
@@ -77,10 +95,11 @@ export default function MilitaryAlertPage() {
         type: "bar",
         data: agBarData.map((item) => item.change),
         itemStyle: {
-          color: (params: any) => ((params.value ?? 0) > 5 ? "#cf1322" : "#0958d9")
-        }
-      }
-    ]
+          color: (params: any) =>
+            (params.value ?? 0) > 5 ? "#cf1322" : "#0958d9",
+        },
+      },
+    ],
   };
 
   return (
@@ -89,7 +108,14 @@ export default function MilitaryAlertPage() {
         <Typography.Title level={4}>军事预警看板</Typography.Title>
         <TimeRangeControls />
       </div>
-      {error && <Alert type="error" showIcon message="军事数据加载失败" description={error.message} />}
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          message="军事数据加载失败"
+          description={error.message}
+        />
+      )}
       {loading && <Spin />}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
@@ -108,13 +134,32 @@ export default function MilitaryAlertPage() {
                     title={
                       <span>
                         {item.title}
-                        {Math.abs(item.dailyChange) >= 5 && <Badge color="red" text="单日>5%" style={{ marginLeft: 8 }} />}
-                        {item.sameDirection && <Badge color="orange" text="3日同向>10%" style={{ marginLeft: 8 }} />}
+                        {Math.abs(item.dailyChange) >= 5 && (
+                          <Badge
+                            color="red"
+                            text="单日>5%"
+                            style={{ marginLeft: 8 }}
+                          />
+                        )}
+                        {item.sameDirection && (
+                          <Badge
+                            color="orange"
+                            text="3日同向>10%"
+                            style={{ marginLeft: 8 }}
+                          />
+                        )}
                       </span>
                     }
                     description={
-                      <Typography.Text type={Math.abs(item.dailyChange) >= 5 ? "danger" : "secondary"}>
-                        日变动 {item.dailyChange.toFixed(2)}% • 三日累积 {item.swing3d.toFixed(2)}%
+                      <Typography.Text
+                        type={
+                          Math.abs(item.dailyChange) >= 5
+                            ? "danger"
+                            : "secondary"
+                        }
+                      >
+                        日变动 {item.dailyChange.toFixed(2)}% • 三日累积{" "}
+                        {item.swing3d.toFixed(2)}%
                       </Typography.Text>
                     }
                   />
@@ -140,8 +185,18 @@ export default function MilitaryAlertPage() {
             description="原油与天然气主力合约近走势"
             seriesMap={seriesMap}
             series={[
-              { slug: "crude_oil_futures_main", label: "原油", field: "收盘价", type: "area" },
-              { slug: "natural_gas_futures_main", label: "天然气", field: "收盘价", type: "area" }
+              {
+                slug: "crude_oil_futures_main",
+                label: "原油",
+                field: "收盘价",
+                type: "area",
+              },
+              {
+                slug: "natural_gas_futures_main",
+                label: "天然气",
+                field: "收盘价",
+                type: "area",
+              },
             ]}
           />
         </Col>

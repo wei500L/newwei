@@ -33,7 +33,7 @@ export function TimeRangeControls() {
     <Space direction="horizontal" size="middle" style={{ width: "100%", justifyContent: "space-between" }}>
       <Segmented
         options={presets}
-        value={range !== "custom" ? range : null}
+        value={range !== "custom" ? range : undefined}
         onChange={handlePresetChange}
         size="middle"
       />

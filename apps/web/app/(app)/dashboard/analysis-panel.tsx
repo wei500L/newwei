@@ -1,31 +1,37 @@
 "use client";
 
-import { Button, Card, Form, Input, InputNumber, List, Space, Typography, message } from "antd";
+import {
+  Button,
+  Card,
+  Form,
+  Input,
+  InputNumber,
+  List,
+  Space,
+  Typography,
+  message,
+} from "antd";
 import dayjs from "dayjs";
 import {
   useAnalysisResultsQuery,
   useRequestAnomalyMutation,
   useRequestCorrelationMutation,
-  AnalysisEventsDocument,
-  AnalysisEventsSubscription
+  useAnalysisEventsSubscription,
+  type AnalysisResult,
 } from "@/graphql/generated";
-import { useEffect } from "react";
-import { useApolloClient } from "@apollo/client";
-
 export function AnalysisPanel() {
-  const { data, refetch } = useAnalysisResultsQuery({ variables: { limit: 10 } });
-  const [requestCorrelation, { loading: savingCorr }] = useRequestCorrelationMutation();
-  const [requestAnomaly, { loading: savingAnomaly }] = useRequestAnomalyMutation();
-  const client = useApolloClient();
-
-  useEffect(() => {
-    const sub = client.subscribe<AnalysisEventsSubscription>({ query: AnalysisEventsDocument }).subscribe({
-      next: () => {
-        void refetch();
-      }
-    });
-    return () => sub.unsubscribe();
-  }, [client, refetch]);
+  const { data, refetch } = useAnalysisResultsQuery({
+    variables: { limit: 10 },
+  });
+  const [requestCorrelation, { loading: savingCorr }] =
+    useRequestCorrelationMutation();
+  const [requestAnomaly, { loading: savingAnomaly }] =
+    useRequestAnomalyMutation();
+  useAnalysisEventsSubscription({
+    onData: () => {
+      void refetch();
+    },
+  });
 
   const results = data?.analysisResults ?? [];
 
@@ -52,7 +58,7 @@ export function AnalysisPanel() {
         />
       </Card>
       <Card title="Recent Analysis Results">
-        <List
+        <List<AnalysisResult>
           dataSource={results}
           renderItem={(result) => (
             <List.Item>
@@ -63,10 +69,16 @@ export function AnalysisPanel() {
                     <Typography.Text type="secondary">
                       {dayjs(result.createdAt).format("YYYY-MM-DD HH:mm")}
                     </Typography.Text>
-                    <Typography.Text type="secondary">{result.status}</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {result.status}
+                    </Typography.Text>
                   </Space>
                 }
-                description={<Typography.Paragraph ellipsis={{ rows: 3 }}>{result.summary ?? "Pending"}</Typography.Paragraph>}
+                description={
+                  <Typography.Paragraph ellipsis={{ rows: 3 }}>
+                    {result.summary ?? "Pending"}
+                  </Typography.Paragraph>
+                }
               />
             </List.Item>
           )}
@@ -76,13 +88,26 @@ export function AnalysisPanel() {
   );
 }
 
-function CorrelationForm({ onSubmit, loading }: { onSubmit: (values: any) => Promise<void>; loading?: boolean }) {
+function CorrelationForm({
+  onSubmit,
+  loading,
+}: {
+  onSubmit: (values: any) => Promise<void>;
+  loading?: boolean;
+}) {
   const [form] = Form.useForm();
   return (
     <Form
       layout="inline"
       form={form}
-      initialValues={{ indicatorName: "CPI", changePercent: 0, value: 0, startDate: dayjs().subtract(30, "day").format("YYYY-MM-DD"), endDate: dayjs().format("YYYY-MM-DD"), newsSummaries: [] }}
+      initialValues={{
+        indicatorName: "CPI",
+        changePercent: 0,
+        value: 0,
+        startDate: dayjs().subtract(30, "day").format("YYYY-MM-DD"),
+        endDate: dayjs().format("YYYY-MM-DD"),
+        newsSummaries: [],
+      }}
       onFinish={onSubmit}
     >
       <Form.Item name="indicatorName" rules={[{ required: true }]}>
@@ -101,7 +126,18 @@ function CorrelationForm({ onSubmit, loading }: { onSubmit: (values: any) => Pro
         <Input placeholder="End date" />
       </Form.Item>
       <Form.Item name="newsSummaries">
-        <Input placeholder="News summaries (comma separated)" onChange={(e) => form.setFieldValue("newsSummaries", e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))} />
+        <Input
+          placeholder="News summaries (comma separated)"
+          onChange={(e) =>
+            form.setFieldValue(
+              "newsSummaries",
+              e.target.value
+                .split(",")
+                .map((s: string) => s.trim())
+                .filter(Boolean),
+            )
+          }
+        />
       </Form.Item>
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={loading}>
@@ -112,7 +148,13 @@ function CorrelationForm({ onSubmit, loading }: { onSubmit: (values: any) => Pro
   );
 }
 
-function AnomalyForm({ onSubmit, loading }: { onSubmit: (values: any) => Promise<void>; loading?: boolean }) {
+function AnomalyForm({
+  onSubmit,
+  loading,
+}: {
+  onSubmit: (values: any) => Promise<void>;
+  loading?: boolean;
+}) {
   const [form] = Form.useForm();
   return (
     <Form
@@ -124,7 +166,7 @@ function AnomalyForm({ onSubmit, loading }: { onSubmit: (values: any) => Promise
         value: 0,
         deviationPercent: 0,
         newsList: [],
-        policyList: []
+        policyList: [],
       }}
       onFinish={onSubmit}
     >
@@ -141,10 +183,32 @@ function AnomalyForm({ onSubmit, loading }: { onSubmit: (values: any) => Promise
         <InputNumber placeholder="Deviation %" />
       </Form.Item>
       <Form.Item name="newsList">
-        <Input placeholder="News list comma separated" onChange={(e) => form.setFieldValue("newsList", e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))} />
+        <Input
+          placeholder="News list comma separated"
+          onChange={(e) =>
+            form.setFieldValue(
+              "newsList",
+              e.target.value
+                .split(",")
+                .map((s: string) => s.trim())
+                .filter(Boolean),
+            )
+          }
+        />
       </Form.Item>
       <Form.Item name="policyList">
-        <Input placeholder="Policy list comma separated" onChange={(e) => form.setFieldValue("policyList", e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))} />
+        <Input
+          placeholder="Policy list comma separated"
+          onChange={(e) =>
+            form.setFieldValue(
+              "policyList",
+              e.target.value
+                .split(",")
+                .map((s: string) => s.trim())
+                .filter(Boolean),
+            )
+          }
+        />
       </Form.Item>
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={loading}>

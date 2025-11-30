@@ -8,35 +8,72 @@ import {
   useAlertChannelsQuery,
   useAlertRulesQuery,
   useCreateAlertChannelMutation,
-  useUpsertAlertRuleMutation
+  useUpsertAlertRuleMutation,
 } from "@/graphql/generated";
-import { Button, Divider, Form, Input, InputNumber, Select, Space, Typography, message } from "antd";
+import {
+  Button,
+  Divider,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Space,
+  Typography,
+  message,
+} from "antd";
 import { useMemo } from "react";
 
-const operatorOptions = Object.values(AlertOperator).map((op) => ({ label: op, value: op }));
-const severityOptions = Object.values(AlertSeverity).map((s) => ({ label: s, value: s }));
-const statusOptions = Object.values(AlertStatus).map((s) => ({ label: s, value: s }));
-const metricProviderOptions = Object.values(AlertMetricProvider).map((provider) => ({ label: provider, value: provider }));
-const pipelineStatusOptions = ["pending", "queued", "running", "completed", "failed", "delayed"].map((status) => ({
-  label: status,
-  value: status
+const operatorOptions = Object.values(AlertOperator).map((op) => ({
+  label: op,
+  value: op,
 }));
-const crawlStatusOptions = ["pending", "queued", "running", "completed", "failed", "paused"].map((status) => ({
+const severityOptions = Object.values(AlertSeverity).map((s) => ({
+  label: s,
+  value: s,
+}));
+const statusOptions = Object.values(AlertStatus).map((s) => ({
+  label: s,
+  value: s,
+}));
+const metricProviderOptions = Object.values(AlertMetricProvider).map(
+  (provider) => ({ label: provider, value: provider }),
+);
+const pipelineStatusOptions = [
+  "pending",
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "delayed",
+].map((status) => ({
   label: status,
-  value: status
+  value: status,
+}));
+const crawlStatusOptions = [
+  "pending",
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "paused",
+].map((status) => ({
+  label: status,
+  value: status,
 }));
 const systemMetricSlugs = [
   "system.memory.usage_pct",
   "system.load.1m",
   "system.uptime.seconds",
-  "custom.manual"
+  "custom.manual",
 ].map((slug) => ({ label: slug, value: slug }));
 
 export function AlertConfigForm() {
   const { data, refetch } = useAlertRulesQuery();
-  const { data: channelsData, refetch: refetchChannels } = useAlertChannelsQuery();
+  const { data: channelsData, refetch: refetchChannels } =
+    useAlertChannelsQuery();
   const [upsertRule, { loading: savingRule }] = useUpsertAlertRuleMutation();
-  const [createChannel, { loading: creatingChannel }] = useCreateAlertChannelMutation();
+  const [createChannel, { loading: creatingChannel }] =
+    useCreateAlertChannelMutation();
 
   const existingRule = useMemo(() => data?.alertRules?.[0], [data]);
   const [form] = Form.useForm();
@@ -52,14 +89,17 @@ export function AlertConfigForm() {
           initialValues={{
             id: existingRule?.id,
             name: existingRule?.name ?? "Price spike",
-            metricProvider: existingRule?.metricProvider ?? AlertMetricProvider.EconomicData,
+            metricProvider:
+              existingRule?.metricProvider ?? AlertMetricProvider.EconomicData,
             metricSlug:
               existingRule?.metricSlug ??
               (existingRule?.metricProvider === AlertMetricProvider.SystemMetric
                 ? "system.memory.usage_pct"
-                : existingRule?.metricProvider === AlertMetricProvider.PipelineJob
+                : existingRule?.metricProvider ===
+                    AlertMetricProvider.PipelineJob
                   ? "pipeline_job"
-                  : existingRule?.metricProvider === AlertMetricProvider.CrawlTask
+                  : existingRule?.metricProvider ===
+                      AlertMetricProvider.CrawlTask
                     ? "crawl_task"
                     : "usd_index_history"),
             pipelineStatuses: existingRule?.metadata?.statuses ?? ["failed"],
@@ -76,57 +116,67 @@ export function AlertConfigForm() {
             status: existingRule?.status ?? AlertStatus.Active,
             cooldownSeconds: existingRule?.cooldownSeconds ?? 3600,
             checkIntervalSec: existingRule?.checkIntervalSec ?? 300,
-            channelIds: existingRule?.channels?.map((c) => c.id) ?? []
+            channelIds: existingRule?.channels?.map((c) => c.id) ?? [],
           }}
           onFinish={async (values) => {
-            if (values.metricProvider === AlertMetricProvider.PipelineJob && (!values.pipelineStatuses || !values.pipelineStatuses.length)) {
+            if (
+              values.metricProvider === AlertMetricProvider.PipelineJob &&
+              (!values.pipelineStatuses || !values.pipelineStatuses.length)
+            ) {
               message.error("Select at least one pipeline job status");
               return;
             }
-            if (values.metricProvider === AlertMetricProvider.CrawlTask && (!values.crawlStatuses || !values.crawlStatuses.length)) {
+            if (
+              values.metricProvider === AlertMetricProvider.CrawlTask &&
+              (!values.crawlStatuses || !values.crawlStatuses.length)
+            ) {
               message.error("Select at least one crawl task status");
               return;
             }
-            if (values.metricProvider === AlertMetricProvider.SystemMetric && !values.metricSlug) {
+            if (
+              values.metricProvider === AlertMetricProvider.SystemMetric &&
+              !values.metricSlug
+            ) {
               message.error("Choose a system metric slug");
               return;
             }
             await upsertRule({
               variables: {
                 input: {
-                    id: values.id ?? undefined,
-                    name: values.name,
-                    metricProvider: values.metricProvider,
-                    metricSlug: values.metricSlug,
-                    operator: values.operator,
-                    thresholdValue: values.thresholdValue ?? undefined,
-                    thresholdLower: values.thresholdLower ?? undefined,
-                    thresholdUpper: values.thresholdUpper ?? undefined,
-                    severity: values.severity,
-                    status: values.status,
-                    cooldownSeconds: values.cooldownSeconds,
-                    checkIntervalSec: values.checkIntervalSec,
-                    metadata:
-                      values.metricProvider === AlertMetricProvider.PipelineJob
+                  id: values.id ?? undefined,
+                  name: values.name,
+                  metricProvider: values.metricProvider,
+                  metricSlug: values.metricSlug,
+                  operator: values.operator,
+                  thresholdValue: values.thresholdValue ?? undefined,
+                  thresholdLower: values.thresholdLower ?? undefined,
+                  thresholdUpper: values.thresholdUpper ?? undefined,
+                  severity: values.severity,
+                  status: values.status,
+                  cooldownSeconds: values.cooldownSeconds,
+                  checkIntervalSec: values.checkIntervalSec,
+                  metadata:
+                    values.metricProvider === AlertMetricProvider.PipelineJob
+                      ? {
+                          statuses: values.pipelineStatuses,
+                          queueName: values.pipelineQueueName,
+                          sourceId: values.pipelineSourceId,
+                        }
+                      : values.metricProvider === AlertMetricProvider.CrawlTask
                         ? {
-                            statuses: values.pipelineStatuses,
-                            queueName: values.pipelineQueueName,
-                            sourceId: values.pipelineSourceId
+                            statuses: values.crawlStatuses,
+                            createdById: values.crawlCreatedById,
                           }
-                        : values.metricProvider === AlertMetricProvider.CrawlTask
+                        : values.metricProvider ===
+                            AlertMetricProvider.SystemMetric
                           ? {
-                              statuses: values.crawlStatuses,
-                              createdById: values.crawlCreatedById
+                              currentValue: values.systemCurrentValue,
                             }
-                          : values.metricProvider === AlertMetricProvider.SystemMetric
-                            ? {
-                                currentValue: values.systemCurrentValue
-                              }
-                            : undefined,
-                    channelIds: values.channelIds
-                  }
-                }
-              });
+                          : undefined,
+                  channelIds: values.channelIds,
+                },
+              },
+            });
             await Promise.all([refetch(), refetchChannels()]);
             message.success("Alert rule saved");
           }}
@@ -137,18 +187,33 @@ export function AlertConfigForm() {
           <Form.Item label="Name" name="name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item label="Metric provider" name="metricProvider" rules={[{ required: true }]}>
+          <Form.Item
+            label="Metric provider"
+            name="metricProvider"
+            rules={[{ required: true }]}
+          >
             <Select
               options={metricProviderOptions}
               onChange={(provider) => {
                 if (provider === AlertMetricProvider.EconomicData) {
                   form.setFieldsValue({ metricSlug: "usd_index_history" });
                 } else if (provider === AlertMetricProvider.PipelineJob) {
-                  form.setFieldsValue({ metricSlug: "pipeline_job", pipelineStatuses: ["failed"], pipelineQueueName: null });
+                  form.setFieldsValue({
+                    metricSlug: "pipeline_job",
+                    pipelineStatuses: ["failed"],
+                    pipelineQueueName: null,
+                  });
                 } else if (provider === AlertMetricProvider.CrawlTask) {
-                  form.setFieldsValue({ metricSlug: "crawl_task", crawlStatuses: ["failed"], crawlCreatedById: null });
+                  form.setFieldsValue({
+                    metricSlug: "crawl_task",
+                    crawlStatuses: ["failed"],
+                    crawlCreatedById: null,
+                  });
                 } else if (provider === AlertMetricProvider.SystemMetric) {
-                  form.setFieldsValue({ metricSlug: "system.memory.usage_pct", systemCurrentValue: undefined });
+                  form.setFieldsValue({
+                    metricSlug: "system.memory.usage_pct",
+                    systemCurrentValue: undefined,
+                  });
                 }
               }}
             />
@@ -161,7 +226,12 @@ export function AlertConfigForm() {
           >
             <Input placeholder="e.g. usd_index_history or system.memory.usage_pct" />
           </Form.Item>
-          <Form.Item noStyle shouldUpdate={(prev, next) => prev.metricProvider !== next.metricProvider}>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, next) =>
+              prev.metricProvider !== next.metricProvider
+            }
+          >
             {({ getFieldValue }) => {
               const provider = getFieldValue("metricProvider");
               if (provider === AlertMetricProvider.PipelineJob) {
@@ -169,7 +239,11 @@ export function AlertConfigForm() {
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>Pipeline filters</Typography.Text>
                     <Form.Item label="Statuses" name="pipelineStatuses">
-                      <Select mode="multiple" options={pipelineStatusOptions} placeholder="defaults to failed" />
+                      <Select
+                        mode="multiple"
+                        options={pipelineStatusOptions}
+                        placeholder="defaults to failed"
+                      />
                     </Form.Item>
                     <Form.Item label="Queue name" name="pipelineQueueName">
                       <Input placeholder="optional queueName filter" />
@@ -185,9 +259,16 @@ export function AlertConfigForm() {
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>Crawl task filters</Typography.Text>
                     <Form.Item label="Statuses" name="crawlStatuses">
-                      <Select mode="multiple" options={crawlStatusOptions} placeholder="defaults to failed" />
+                      <Select
+                        mode="multiple"
+                        options={crawlStatusOptions}
+                        placeholder="defaults to failed"
+                      />
                     </Form.Item>
-                    <Form.Item label="Created by user ID" name="crawlCreatedById">
+                    <Form.Item
+                      label="Created by user ID"
+                      name="crawlCreatedById"
+                    >
                       <Input placeholder="optional createdById filter" />
                     </Form.Item>
                   </Space>
@@ -196,7 +277,9 @@ export function AlertConfigForm() {
               if (provider === AlertMetricProvider.SystemMetric) {
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
-                    <Typography.Text strong>System metric options</Typography.Text>
+                    <Typography.Text strong>
+                      System metric options
+                    </Typography.Text>
                     <Form.Item label="Preset metric">
                       <Select
                         options={systemMetricSlugs}
@@ -212,7 +295,10 @@ export function AlertConfigForm() {
                       name="systemCurrentValue"
                       tooltip="Optional: provide a value directly instead of using the measured system metric"
                     >
-                      <InputNumber style={{ width: "100%" }} placeholder="overrides measured value" />
+                      <InputNumber
+                        style={{ width: "100%" }}
+                        placeholder="overrides measured value"
+                      />
                     </Form.Item>
                   </Space>
                 );
@@ -220,7 +306,11 @@ export function AlertConfigForm() {
               return null;
             }}
           </Form.Item>
-          <Form.Item label="Operator" name="operator" rules={[{ required: true }]}>
+          <Form.Item
+            label="Operator"
+            name="operator"
+            rules={[{ required: true }]}
+          >
             <Select options={operatorOptions} />
           </Form.Item>
           <Form.Item label="Threshold value" name="thresholdValue">
@@ -235,18 +325,34 @@ export function AlertConfigForm() {
             </Form.Item>
           </Space>
           <Space>
-            <Form.Item label="Severity" name="severity" rules={[{ required: true }]}>
+            <Form.Item
+              label="Severity"
+              name="severity"
+              rules={[{ required: true }]}
+            >
               <Select options={severityOptions} style={{ width: 160 }} />
             </Form.Item>
-            <Form.Item label="Status" name="status" rules={[{ required: true }]}>
+            <Form.Item
+              label="Status"
+              name="status"
+              rules={[{ required: true }]}
+            >
               <Select options={statusOptions} style={{ width: 160 }} />
             </Form.Item>
           </Space>
           <Space>
-            <Form.Item label="Cooldown (seconds)" name="cooldownSeconds" rules={[{ required: true }]}>
+            <Form.Item
+              label="Cooldown (seconds)"
+              name="cooldownSeconds"
+              rules={[{ required: true }]}
+            >
               <InputNumber />
             </Form.Item>
-            <Form.Item label="Check interval (seconds)" name="checkIntervalSec" rules={[{ required: true }]}>
+            <Form.Item
+              label="Check interval (seconds)"
+              name="checkIntervalSec"
+              rules={[{ required: true }]}
+            >
               <InputNumber />
             </Form.Item>
           </Space>
@@ -254,7 +360,12 @@ export function AlertConfigForm() {
             <Select
               mode="multiple"
               placeholder="Select notification channels"
-              options={channelsData?.alertChannels?.map((c) => ({ label: c.name, value: c.id })) ?? []}
+              options={
+                channelsData?.alertChannels?.map((c) => ({
+                  label: c.name,
+                  value: c.id,
+                })) ?? []
+              }
             />
           </Form.Item>
           <Form.Item>
@@ -266,13 +377,23 @@ export function AlertConfigForm() {
       </div>
       <Divider />
       <div>
-        <Typography.Title level={5}>Create Notification Channel</Typography.Title>
+        <Typography.Title level={5}>
+          Create Notification Channel
+        </Typography.Title>
         <Form
           form={channelForm}
           layout="inline"
           initialValues={{ type: "webhook" }}
           onFinish={async (values) => {
-            await createChannel({ variables: { input: { type: values.type, name: values.name, target: values.target } } });
+            await createChannel({
+              variables: {
+                input: {
+                  type: values.type,
+                  name: values.name,
+                  target: values.target,
+                },
+              },
+            });
             await Promise.all([refetch(), refetchChannels()]);
             message.success("Channel created");
             channelForm.resetFields();
@@ -286,7 +407,7 @@ export function AlertConfigForm() {
               style={{ width: 120 }}
               options={[
                 { label: "Webhook", value: "webhook" },
-                { label: "Email", value: "email" }
+                { label: "Email", value: "email" },
               ]}
             />
           </Form.Item>

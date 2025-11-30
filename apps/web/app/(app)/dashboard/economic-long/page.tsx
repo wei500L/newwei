@@ -5,12 +5,23 @@ import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { EconomicSeriesGroup } from "@/hooks/useEconomicData";
-import { filterValuesByDays, getSeriesField, getSortedValues } from "../utils/series";
+import {
+  filterValuesByDays,
+  getSeriesField,
+  getSortedValues,
+} from "../utils/series";
 
 export default function EconomicLongPage() {
-  const { loading, error, seriesMap } = useEconomicData({ category: "economic-long", pollInterval: 300_000 });
+  const { loading, error, seriesMap } = useEconomicData({
+    category: "economic-long",
+    pollInterval: 300_000,
+  });
 
-  const gdpSeries = getSeriesField(seriesMap, "china_gdp", "国内生产总值-绝对值");
+  const gdpSeries = getSeriesField(
+    seriesMap,
+    "china_gdp",
+    "国内生产总值-绝对值",
+  );
   const gdpByYear = new Map<number, number>();
   for (const point of getSortedValues(gdpSeries)) {
     const year = new Date(point.timestamp).getFullYear();
@@ -21,20 +32,28 @@ export default function EconomicLongPage() {
     .slice(-3);
   const gdpOption = {
     tooltip: { trigger: "axis" },
-    xAxis: { type: "category", data: gdpBarData.map((entry) => entry[0].toString()) },
+    xAxis: {
+      type: "category",
+      data: gdpBarData.map((entry) => entry[0].toString()),
+    },
     yAxis: { type: "value" },
     series: [
       {
         type: "bar",
         data: gdpBarData.map((entry) => Number(entry[1].toFixed(0))),
-        itemStyle: { color: "#0958d9" }
-      }
-    ]
+        itemStyle: { color: "#0958d9" },
+      },
+    ],
   };
 
-  const yieldTimelineOption = buildYieldTimeline(seriesMap.get("us_treasury_yield_curve"));
+  const yieldTimelineOption = buildYieldTimeline(
+    seriesMap.get("us_treasury_yield_curve"),
+  );
 
-  const reserveSeries = filterValuesByDays(getSeriesField(seriesMap, "china_fx_gold", "国家外汇储备-数值"), 730);
+  const reserveSeries = filterValuesByDays(
+    getSeriesField(seriesMap, "china_fx_gold", "国家外汇储备-数值"),
+    730,
+  );
   const reserveOption = {
     tooltip: { trigger: "axis" },
     xAxis: { type: "time" },
@@ -43,9 +62,9 @@ export default function EconomicLongPage() {
       {
         type: "line",
         areaStyle: {},
-        data: reserveSeries.map((entry) => [entry.timestamp, entry.value])
-      }
-    ]
+        data: reserveSeries.map((entry) => [entry.timestamp, entry.value]),
+      },
+    ],
   };
 
   return (
@@ -55,7 +74,9 @@ export default function EconomicLongPage() {
         <TimeRangeControls />
       </div>
       {loading && <Spin />}
-      {error && <Typography.Text type="danger">{error.message}</Typography.Text>}
+      {error && (
+        <Typography.Text type="danger">{error.message}</Typography.Text>
+      )}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={8}>
           <Card title="近3年GDP年度对比" className="content-card">
@@ -69,7 +90,10 @@ export default function EconomicLongPage() {
         <Col xs={24} lg={16}>
           <Card title="近5年国债收益率曲线演化" className="content-card">
             {yieldTimelineOption ? (
-              <DashboardChart option={yieldTimelineOption} height={320} />
+              <DashboardChart
+                option={yieldTimelineOption as any}
+                height={320}
+              />
             ) : (
               <Empty description="暂无收益率曲线数据" />
             )}
@@ -99,7 +123,7 @@ function buildYieldTimeline(group?: EconomicSeriesGroup) {
     { field: "美国国债收益率2年", label: "2Y" },
     { field: "美国国债收益率5年", label: "5Y" },
     { field: "美国国债收益率10年", label: "10Y" },
-    { field: "美国国债收益率30年", label: "30Y" }
+    { field: "美国国债收益率30年", label: "30Y" },
   ];
   const buckets = new Map<
     string,
@@ -119,7 +143,9 @@ function buildYieldTimeline(group?: EconomicSeriesGroup) {
     }
   }
   const yearSnapshots = new Map<number, string>();
-  const sortedDates = Array.from(buckets.keys()).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  const sortedDates = Array.from(buckets.keys()).sort(
+    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
+  );
   for (const date of sortedDates) {
     const year = new Date(date).getFullYear();
     yearSnapshots.set(year, date);
@@ -131,7 +157,9 @@ function buildYieldTimeline(group?: EconomicSeriesGroup) {
   if (selectedDates.length === 0) {
     return null;
   }
-  const timelineLabels = selectedDates.map((date) => new Date(date).getFullYear().toString());
+  const timelineLabels = selectedDates.map((date) =>
+    new Date(date).getFullYear().toString(),
+  );
   const options = selectedDates.map((date, index) => {
     const values = buckets.get(date);
     return {
@@ -141,9 +169,9 @@ function buildYieldTimeline(group?: EconomicSeriesGroup) {
           type: "line",
           data: fieldMap.map((field) => values?.[field.label] ?? 0),
           name: "收益率(%)",
-          areaStyle: { opacity: 0.15 }
-        }
-      ]
+          areaStyle: { opacity: 0.15 },
+        },
+      ],
     };
   });
   return {
@@ -152,18 +180,18 @@ function buildYieldTimeline(group?: EconomicSeriesGroup) {
         axisType: "category",
         autoPlay: true,
         playInterval: 2500,
-        data: timelineLabels
+        data: timelineLabels,
       },
       xAxis: {
         type: "category",
-        data: fieldMap.map((field) => field.label)
+        data: fieldMap.map((field) => field.label),
       },
       yAxis: {
         type: "value",
-        axisLabel: { formatter: "{value}%" }
+        axisLabel: { formatter: "{value}%" },
       },
-      series: [{ type: "line" }]
+      series: [{ type: "line" }],
     },
-    options
+    options,
   };
 }

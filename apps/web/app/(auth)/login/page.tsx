@@ -9,11 +9,17 @@ import { z } from "zod";
 const { Title, Text } = Typography;
 
 const loginSchema = z.object({
-  email: z.string({ required_error: "Email is required" }).email("Invalid email"),
+  email: z
+    .string({ required_error: "Email is required" })
+    .email("Invalid email"),
   password: z
     .string({ required_error: "Password is required" })
     .min(8, "Password must be at least 8 characters"),
-  orgId: z.string().trim().optional().transform((value) => (value ? value : undefined))
+  orgId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => (value ? value : undefined)),
 });
 
 interface LoginFormValues {
@@ -36,9 +42,9 @@ export default function LoginPage() {
       Object.entries(fieldErrors).forEach(([name, messages]) => {
         form.setFields([
           {
-            name,
-            errors: messages
-          }
+            name: name as any,
+            errors: messages,
+          },
         ]);
       });
       return;
@@ -53,7 +59,7 @@ export default function LoginPage() {
         email: payload.email,
         password: payload.password,
         orgId: payload.orgId,
-        redirect: false
+        redirect: false,
       });
 
       if (result?.error) {
@@ -77,23 +83,44 @@ export default function LoginPage() {
         Welcome Back
       </Title>
       <Text type="secondary">Sign in to access the operator console.</Text>
-      <Form form={form} layout="vertical" style={{ marginTop: "1.5rem" }} onFinish={onFinish}>
-        <Form.Item label="Email" name="email" rules={[{ required: true, message: "Please enter your email" }]}>
-          <Input placeholder="admin@example.com" autoComplete="email" size="large" />
+      <Form
+        form={form}
+        layout="vertical"
+        style={{ marginTop: "1.5rem" }}
+        onFinish={onFinish}
+      >
+        <Form.Item
+          label="Email"
+          name="email"
+          rules={[{ required: true, message: "Please enter your email" }]}
+        >
+          <Input
+            placeholder="admin@example.com"
+            autoComplete="email"
+            size="large"
+          />
         </Form.Item>
         <Form.Item
           label="Password"
           name="password"
           rules={[{ required: true, message: "Please enter your password" }]}
         >
-          <Input.Password placeholder="********" autoComplete="current-password" size="large" />
+          <Input.Password
+            placeholder="********"
+            autoComplete="current-password"
+            size="large"
+          />
         </Form.Item>
         <Form.Item
           label="Organization"
           name="orgId"
           tooltip="Optional. Leave blank to use your default organization"
         >
-          <Input placeholder="org-123 or slug" autoComplete="organization" size="large" />
+          <Input
+            placeholder="org-123 or slug"
+            autoComplete="organization"
+            size="large"
+          />
         </Form.Item>
         {error && (
           <Form.Item>
@@ -101,7 +128,13 @@ export default function LoginPage() {
           </Form.Item>
         )}
         <Form.Item>
-          <Button type="primary" htmlType="submit" size="large" block loading={loading}>
+          <Button
+            type="primary"
+            htmlType="submit"
+            size="large"
+            block
+            loading={loading}
+          >
             Sign In
           </Button>
         </Form.Item>

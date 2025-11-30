@@ -19,12 +19,21 @@ export interface EconomicChartCardProps {
   series: SeriesConfig[];
 }
 
-export function EconomicChartCard({ title, description, seriesMap, series }: EconomicChartCardProps) {
+export function EconomicChartCard({
+  title,
+  description,
+  seriesMap,
+  series,
+}: EconomicChartCardProps) {
   const option = buildOption(seriesMap, series, title);
 
   return (
     <Card title={title} className="content-card" style={{ marginBottom: 16 }}>
-      {description && <Typography.Paragraph type="secondary">{description}</Typography.Paragraph>}
+      {description && (
+        <Typography.Paragraph type="secondary">
+          {description}
+        </Typography.Paragraph>
+      )}
       {option.series && (option.series as any[]).length > 0 ? (
         <DashboardChart option={option} height={360} />
       ) : (
@@ -37,7 +46,7 @@ export function EconomicChartCard({ title, description, seriesMap, series }: Eco
 function buildOption(
   seriesMap: EconomicSeriesMap,
   configs: SeriesConfig[],
-  title: string
+  title: string,
 ): EChartsOption {
   const dataset = configs
     .map((config) => {
@@ -57,8 +66,8 @@ function buildOption(
         showSymbol: false,
         areaStyle: config.type === "area" ? {} : undefined,
         data: fieldSeries.values
-          .map((point) => [point.timestamp, point.value])
-          .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+          .map<[string, number]>((point) => [point.timestamp, point.value])
+          .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime()),
       };
     })
     .filter(Boolean) as SeriesOption[];
@@ -67,38 +76,38 @@ function buildOption(
     title: {
       text: title,
       left: "center",
-      textStyle: { fontSize: 14, fontWeight: 400 }
+      textStyle: { fontSize: 14, fontWeight: 400 },
     },
     tooltip: {
-      trigger: "axis"
+      trigger: "axis",
     },
     legend: {
       top: 24,
-      data: dataset.map((d) => d.name as string)
+      data: dataset.map((d) => d.name as string),
     },
     grid: {
       left: "3%",
       right: "3%",
       bottom: 60,
       top: 60,
-      containLabel: true
+      containLabel: true,
     },
     xAxis: {
       type: "time",
-      boundaryGap: false
+      boundaryGap: ["0%", "0%"],
     },
     yAxis: {
       type: "value",
-      scale: true
+      scale: true,
     },
     dataZoom: [
       {
-        type: "inside"
+        type: "inside",
       },
       {
-        type: "slider"
-      }
+        type: "slider",
+      },
     ],
-    series: dataset
+    series: dataset,
   };
 }

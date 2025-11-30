@@ -11,23 +11,28 @@ const dashboardRoutes = [
   { key: "/dashboard/economic-short", label: "经济短期" },
   { key: "/dashboard/economic-medium", label: "经济中期" },
   { key: "/dashboard/economic-long", label: "经济长期" },
-  { key: "/dashboard/livelihood-prices", label: "民生物价" }
+  { key: "/dashboard/livelihood-prices", label: "民生物价" },
 ];
 
 export function DashboardNav() {
   const pathname = usePathname();
   const router = useRouter();
+  if (dashboardRoutes.length === 0) {
+    return null;
+  }
   const activeItem =
-    dashboardRoutes.find((route) => pathname === route.key || pathname.startsWith(`${route.key}/`)) ??
-    dashboardRoutes[0];
+    dashboardRoutes.find(
+      (route) => pathname === route.key || pathname.startsWith(`${route.key}/`),
+    ) ?? dashboardRoutes[0];
+  const activeKey = activeItem?.key ?? dashboardRoutes[0]!.key;
 
   return (
     <Tabs
-      activeKey={activeItem.key}
+      activeKey={activeKey}
       onChange={(key) => router.push(key)}
       items={dashboardRoutes.map((route) => ({
         key: route.key,
-        label: route.label
+        label: route.label,
       }))}
     />
   );
