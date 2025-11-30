@@ -4,7 +4,7 @@ import { QueueService } from "../queue/queue.service";
 import { ProcessedItemModel } from "@modular/mongo";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import type { MongoConnection } from "@modular/mongo";
-import { DashboardWidgetType } from "@prisma/client";
+import { DashboardWidgetType, Prisma } from "@prisma/client";
 
 @Injectable()
 export class DashboardService {
@@ -55,8 +55,13 @@ export class DashboardService {
   ) {
     const dashboard = await this.prisma.$transaction(async (tx) => {
       let current;
+      let existingWidgets: { id: string }[] = [];
+
       if (input.id) {
-        const existing = await tx.dashboard.findUnique({ where: { id: input.id } });
+        const existing = await tx.dashboard.findUnique({
+          where: { id: input.id },
+          include: { widgets: true }
+        });
         if (!existing || existing.orgId !== orgId) {
           throw new Error("Dashboard not found");
         }
@@ -71,7 +76,7 @@ export class DashboardService {
             createdById
           }
         });
-        await tx.dashboardWidget.deleteMany({ where: { dashboardId: current.id } });
+        existingWidgets = existing.widgets;
       } else {
         current = await tx.dashboard.create({
           data: {
@@ -87,22 +92,69 @@ export class DashboardService {
       }
 
       const widgets = input.widgets ?? [];
-      if (widgets.length) {
-        await tx.dashboardWidget.createMany({
-          data: widgets.map((widget, index) => ({
-            dashboardId: current.id,
-            title: widget.title,
-            type: widget.type,
-            dataSource: widget.dataSource,
-            dataConfig: widget.dataConfig ?? {},
-            layoutX: widget.layoutX,
-            layoutY: widget.layoutY,
-            layoutW: widget.layoutW,
-            layoutH: widget.layoutH,
-            sortOrder: widget.sortOrder ?? index,
-            options: widget.options ?? {}
-          }))
+      const widgetsToCreate: Prisma.DashboardWidgetCreateManyInput[] = [];
+      const widgetUpdatePromises: Promise<unknown>[] = [];
+      const existingWidgetIds = new Set(existingWidgets.map((widget) => widget.id));
+      const incomingWidgetIds = new Set<string>();
+
+      widgets.forEach((widget, index) => {
+        const sortOrder = widget.sortOrder ?? index;
+        if (widget.id) {
+          if (!existingWidgetIds.has(widget.id)) {
+            throw new Error("Widget not found on dashboard");
+          }
+          incomingWidgetIds.add(widget.id);
+          widgetUpdatePromises.push(
+            tx.dashboardWidget.update({
+              where: { id: widget.id },
+              data: {
+                title: widget.title,
+                type: widget.type,
+                dataSource: widget.dataSource,
+                dataConfig: widget.dataConfig ?? {},
+                layoutX: widget.layoutX,
+                layoutY: widget.layoutY,
+                layoutW: widget.layoutW,
+                layoutH: widget.layoutH,
+                sortOrder,
+                options: widget.options ?? {}
+              }
+            })
+          );
+          return;
+        }
+
+        widgetsToCreate.push({
+          dashboardId: current.id,
+          title: widget.title,
+          type: widget.type,
+          dataSource: widget.dataSource,
+          dataConfig: widget.dataConfig ?? {},
+          layoutX: widget.layoutX,
+          layoutY: widget.layoutY,
+          layoutW: widget.layoutW,
+          layoutH: widget.layoutH,
+          sortOrder,
+          options: widget.options ?? {}
         });
+      });
+
+      const widgetsToDelete = existingWidgets
+        .filter((existingWidget) => !incomingWidgetIds.has(existingWidget.id))
+        .map((widget) => widget.id);
+
+      if (widgetsToDelete.length) {
+        await tx.dashboardWidget.deleteMany({
+          where: { id: { in: widgetsToDelete }, dashboardId: current.id }
+        });
+      }
+
+      if (widgetUpdatePromises.length) {
+        await Promise.all(widgetUpdatePromises);
+      }
+
+      if (widgetsToCreate.length) {
+        await tx.dashboardWidget.createMany({ data: widgetsToCreate });
       }
 
       return current;
