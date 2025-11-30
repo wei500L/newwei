@@ -27,17 +27,6 @@ interface AlertTemplateContext {
 
 const ALERT_TEMPLATE_NAME = "alert.hbs";
 
-const ALERT_TEMPLATE_FALLBACK = `
-  <h3>告警触发：{{ruleName}}</h3>
-  <p>指标：{{metric}}</p>
-  <p>当前值：{{value}}{{#if changePercentLabel}}（变化：{{changePercentLabel}}%）{{/if}}</p>
-  <p>阈值：{{thresholdLabel}}</p>
-  <p>时间：{{triggeredAt}}</p>
-  {{#if message}}
-    <p>详情：{{message}}</p>
-  {{/if}}
-`;
-
 @Injectable()
 export class EmailService {
   private readonly transporter: Transporter;
@@ -58,7 +47,7 @@ export class EmailService {
     });
 
     this.templates = {
-      alert: this.compileTemplate<AlertTemplateContext>(ALERT_TEMPLATE_NAME, ALERT_TEMPLATE_FALLBACK)
+      alert: this.compileTemplate<AlertTemplateContext>(ALERT_TEMPLATE_NAME)
     };
   }
 
@@ -105,16 +94,25 @@ export class EmailService {
     });
   }
 
-  private compileTemplate<T>(templateFile: string, fallbackSource: string): TemplateDelegate<T> {
+  private compileTemplate<T>(templateFile: string): TemplateDelegate<T> {
     const templatePath = this.resolveTemplatePath(templateFile);
-    const templateSource = templatePath ? readFileSync(templatePath, "utf-8") : fallbackSource;
+    if (!templatePath) {
+      throw new Error(`Email template not found: ${templateFile}`);
+    }
+
+    const templateSource = readFileSync(templatePath, "utf-8");
     return Handlebars.compile<T>(templateSource);
   }
 
   private resolveTemplatePath(templateFile: string): string | null {
+    const isBuiltArtifact = __dirname.includes(`${path.sep}dist${path.sep}`);
+    const packageRoot = isBuiltArtifact
+      ? path.resolve(__dirname, "..", "..", "..", "..")
+      : path.resolve(__dirname, "..", "..", "..");
     const candidates = [
       path.join(__dirname, "templates", templateFile),
-      path.resolve(__dirname, "..", "..", "..", "src", "modules", "email", "templates", templateFile)
+      path.join(packageRoot, "dist", "src", "modules", "email", "templates", templateFile),
+      path.join(packageRoot, "src", "modules", "email", "templates", templateFile)
     ];
 
     const existingPath = candidates.find((candidate) => existsSync(candidate));

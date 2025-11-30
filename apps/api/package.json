@@ -6,12 +6,13 @@
   "types": "dist/main.d.ts",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx watch src/main.ts",
-    "build": "rimraf dist && tsc -p tsconfig.build.json",
+    "build": "rimraf dist && tsc -p tsconfig.build.json && pnpm run copy:email-templates",
     "start": "node dist/main.js",
     "lint": "eslint src test --ext .ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "jest",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "copy:email-templates": "node ./scripts/copy-email-templates.js"
   },
   "dependencies": {
     "@apollo/server": "^4.11.1",
