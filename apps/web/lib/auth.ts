@@ -63,6 +63,9 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
     console.error("Refresh token error", error);
     return {
       ...token,
+      accessToken: "",
+      refreshToken: "",
+      accessTokenExpires: 0,
       error: "RefreshAccessTokenError"
     };
   }
@@ -156,6 +159,9 @@ const config: NextAuthConfig = {
     },
     async session({ session, token }) {
       const typedToken = token as unknown as TokenPayload;
+      if (typedToken.error === "RefreshAccessTokenError") {
+        return null;
+      }
       return {
         ...session,
         user: {
