@@ -1,6 +1,8 @@
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 
+import { createLogger } from "./logger";
+
 export const baseEnvSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -79,6 +81,8 @@ export function loadAndValidateEnv<TSchema extends z.ZodTypeAny>(
   schema: TSchema,
   options: LoadEnvOptions = {},
 ): z.infer<TSchema> {
+  const logger = createLogger({ name: "env" });
+
   if (options.dotenvPath) {
     loadDotenv({ path: options.dotenvPath });
   } else {
@@ -87,10 +91,12 @@ export function loadAndValidateEnv<TSchema extends z.ZodTypeAny>(
 
   const parsed = schema.safeParse(process.env);
   if (!parsed.success) {
-    // TODO(app): wire this into centralized structured logger once tracing pipeline is available.
-    console.error(
+    logger.error(
+      {
+        errors: parsed.error.flatten().fieldErrors,
+        dotenvPath: options.dotenvPath,
+      },
       "Invalid environment variables",
-      parsed.error.flatten().fieldErrors,
     );
     throw new Error("Environment validation failed");
   }

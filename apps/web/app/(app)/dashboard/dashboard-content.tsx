@@ -18,6 +18,11 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  AlertSeverity,
+  AlertStatus,
+  AnalysisType,
+  useAlertRulesQuery,
+  useAnalysisResultsQuery,
   useDashboardsQuery,
   useDeleteDashboardMutation,
   useQueueStatsQuery,
@@ -43,6 +48,12 @@ interface QueueLog {
   data?: string | null;
   timestamp: string;
 }
+
+const severityColor: Record<AlertSeverity, string> = {
+  [AlertSeverity.Low]: "green",
+  [AlertSeverity.Medium]: "orange",
+  [AlertSeverity.High]: "red",
+};
 
 const dedupeLogs = (logs: QueueLog[], limit = 15): QueueLog[] => {
   const seen = new Set<string>();
@@ -70,6 +81,15 @@ export function DashboardContent() {
     useUpsertDashboardMutation();
   const [deleteDashboard] = useDeleteDashboardMutation();
   const { range, setRange } = useDashboardRangeStore();
+  const { data: alertRulesData, loading: alertRulesLoading } =
+    useAlertRulesQuery({
+      fetchPolicy: "cache-first",
+    });
+  const { data: analysisData, loading: analysisLoading } =
+    useAnalysisResultsQuery({
+      variables: { limit: 5 },
+      fetchPolicy: "cache-first",
+    });
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
   const [liveLogs, setLiveLogs] = useState<QueueLog[]>([]);
   const [activeId, setActiveId] = useState<string | undefined>();
@@ -77,6 +97,20 @@ export function DashboardContent() {
   const dashboards = useMemo(
     () => dashboardsData?.dashboards ?? [],
     [dashboardsData],
+  );
+  const activeAlertRules = useMemo(
+    () =>
+      (alertRulesData?.alertRules ?? []).filter(
+        (rule) => rule.status === AlertStatus.Active,
+      ),
+    [alertRulesData],
+  );
+  const recentAnomalies = useMemo(
+    () =>
+      (analysisData?.analysisResults ?? [])
+        .filter((result) => result.type === AnalysisType.Anomaly)
+        .slice(0, 3),
+    [analysisData],
   );
 
   useEffect(() => {
@@ -222,10 +256,71 @@ export function DashboardContent() {
               Queue jobs are processed through the dedupe → transform → tag →
               score pipeline. Monitor the queue metrics to ensure SLAs are met.
             </Typography.Paragraph>
-            <Typography.Paragraph type="secondary">
-              TODO: surface anomaly detection and alert routing rules once
-              observability stack is integrated.
-            </Typography.Paragraph>
+            <Row gutter={[12, 12]}>
+              <Col xs={24} md={12}>
+                <Typography.Text strong>
+                  Latest anomaly signals
+                </Typography.Text>
+                <List
+                  size="small"
+                  loading={analysisLoading}
+                  dataSource={recentAnomalies}
+                  locale={{ emptyText: "No anomalies detected" }}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        title={
+                          <Space>
+                            <Tag>{item.status}</Tag>
+                            <Typography.Text>
+                              {new Date(item.createdAt).toLocaleString()}
+                            </Typography.Text>
+                          </Space>
+                        }
+                        description={
+                          <Typography.Text type="secondary">
+                            {item.summary ?? "Pending analysis summary"}
+                          </Typography.Text>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              </Col>
+              <Col xs={24} md={12}>
+                <Typography.Text strong>Alert routing</Typography.Text>
+                <List
+                  size="small"
+                  loading={alertRulesLoading}
+                  dataSource={activeAlertRules.slice(0, 3)}
+                  locale={{ emptyText: "No active alert rules" }}
+                  renderItem={(rule) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        title={
+                          <Space>
+                            <Typography.Text strong>
+                              {rule.name}
+                            </Typography.Text>
+                            <Tag color={severityColor[rule.severity]}>
+                              {rule.severity}
+                            </Tag>
+                            <Tag>{rule.metricProvider}</Tag>
+                          </Space>
+                        }
+                        description={
+                          <Typography.Text type="secondary">
+                            Metric: {rule.metricSlug} • Channels:{" "}
+                            {rule.channels.map((c) => c.name).join(", ") ||
+                              "none configured"}
+                          </Typography.Text>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              </Col>
+            </Row>
           </Card>
         </Col>
       </Row>

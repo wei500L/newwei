@@ -1,5 +1,5 @@
 // Prisma schema for primary MySQL storage
-// TODO(db): consider sharding strategies once multi-tenant scale is required.
+// Sharding strategy: orgId acts as the shard key. Multi-tenant tables are indexed on orgId to keep routing/hash-based partitioning cheap.
 generator client {
   provider = "prisma-client-js"
 }
@@ -106,6 +106,8 @@ model AuditLog {
   metadata   Json?
   ipAddress  String?
   createdAt  DateTime @default(now())
+
+  @@index([orgId, createdAt])
 }
 
 model ItemMeta {
@@ -150,6 +152,8 @@ model CrawlTask {
   updatedAt      DateTime         @updatedAt
 
   results        CrawlResult[]
+
+  @@index([orgId, status, updatedAt])
 }
 
 model CrawlResult {
@@ -356,6 +360,8 @@ model AlertNotificationChannel {
 
   deliveries  AlertDelivery[]
   ruleLinks   AlertRuleChannel[]
+
+  @@index([orgId, type])
 }
 
 model AlertRule {
@@ -386,6 +392,8 @@ model AlertRule {
 
   events           AlertEvent[]
   channels         AlertRuleChannel[]
+
+  @@index([orgId, status, severity])
 }
 
 model AlertEvent {
