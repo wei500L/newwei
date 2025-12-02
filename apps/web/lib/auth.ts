@@ -1,6 +1,8 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { env } from "./env";
+import { logServerError } from "./server-logger";
+import { createTraceHeaders } from "./trace";
 
 export type OrganizationOption = {
   id: string;
@@ -37,17 +39,20 @@ export type TokenPayload = {
 };
 
 async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
+  let traceId: string | undefined;
   try {
     const response = await fetch(`${env.apiBaseUrl}/auth/refresh`, {
       method: "POST",
-      headers: {
+      headers: createTraceHeaders({
         "Content-Type": "application/json"
-      },
+      }),
       body: JSON.stringify({ refreshToken: token.refreshToken, orgId: token.user.orgId })
     });
+    traceId = response.headers.get("x-trace-id") ?? undefined;
 
     if (!response.ok) {
-      throw new Error("Failed to refresh token");
+      const errorText = await response.text().catch(() => "Failed to refresh token");
+      throw new Error(errorText || "Failed to refresh token");
     }
 
     const data = (await response.json()) as BackendLoginResponse;
@@ -60,7 +65,10 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
       organizations: data.organizations ?? token.organizations ?? [{ id: data.user.orgId }]
     };
   } catch (error) {
-    console.error("Refresh token error", error);
+    logServerError("Refresh token error", error, {
+      traceId,
+      meta: { userId: token.user.id }
+    });
     return {
       ...token,
       accessToken: "",

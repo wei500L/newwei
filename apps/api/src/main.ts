@@ -33,7 +33,11 @@ async function bootstrap() {
   app.use((req, res, next) => {
     const started = Date.now();
     res.on("finish", () => {
+      const traceId =
+        (res.getHeader("x-trace-id") as string | undefined) ||
+        (req as { traceId?: string }).traceId;
       httpLogger.info({
+        traceId,
         method: req.method,
         url: req.originalUrl,
         statusCode: res.statusCode,

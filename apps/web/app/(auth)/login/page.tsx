@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { z } from "zod";
+import { captureClientError } from "@/lib/client-telemetry";
 
 const { Title, Text } = Typography;
 
@@ -70,7 +71,7 @@ export default function LoginPage() {
       const redirectTo = searchParams.get("callbackUrl") ?? "/dashboard";
       router.push(redirectTo);
     } catch (err) {
-      console.error(err);
+      captureClientError("Login failed", err);
       setError("Unexpected error. Please try again later.");
     } finally {
       setLoading(false);

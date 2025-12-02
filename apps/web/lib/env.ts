@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logServerError } from "./server-logger";
 
 const schema = z.object({
   NEXTAUTH_URL: z.string().url(),
@@ -13,7 +14,9 @@ const parsed = schema.safeParse({
 });
 
 if (!parsed.success) {
-  console.error(parsed.error.flatten().fieldErrors);
+  logServerError("Invalid web environment configuration", parsed.error, {
+    meta: parsed.error.flatten().fieldErrors
+  });
   throw new Error("Invalid web environment configuration");
 }
 

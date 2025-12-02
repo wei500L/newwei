@@ -1,4 +1,7 @@
-export const formatDateTime = (date: Date | string | number, locale: string = "en-US") => {
+export const formatDateTime = (
+  date: Date | string | number,
+  locale: Intl.LocalesArgument = "en-US"
+) => {
   const value = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
   return new Intl.DateTimeFormat(locale, {
     year: "numeric",

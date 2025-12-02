@@ -15,6 +15,8 @@ import { useMemo, useState, useCallback } from "react";
 
 import { useSidebarStore } from "@/store/sidebar";
 import { OrganizationSwitcher } from "./organization-switcher";
+import { captureClientError } from "@/lib/client-telemetry";
+import { createTraceHeaders } from "@/lib/trace";
 
 const { Header, Sider, Content } = Layout;
 
@@ -35,7 +37,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
       try {
         const response = await fetch("/api/logout", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: createTraceHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ logoutAll })
         });
 
@@ -45,7 +47,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
 
         await signOut({ callbackUrl: "/login" });
       } catch (error) {
-        console.error("Logout error", error);
+        captureClientError("Logout error", error);
         messageApi.error("Failed to logout. Please try again.");
       } finally {
         setLoading(false);

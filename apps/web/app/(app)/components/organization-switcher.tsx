@@ -6,6 +6,8 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { BackendLoginResponse, OrganizationOption } from "@/lib/auth";
+import { captureClientError } from "@/lib/client-telemetry";
+import { createTraceHeaders } from "@/lib/trace";
 
 export function OrganizationSwitcher() {
   const { data: session, status, update } = useSession();
@@ -41,9 +43,9 @@ export function OrganizationSwitcher() {
     try {
       const response = await fetch("/api/organizations/switch", {
         method: "POST",
-        headers: {
+        headers: createTraceHeaders({
           "Content-Type": "application/json"
-        },
+        }),
         body: JSON.stringify({ orgId })
       });
 
@@ -67,7 +69,7 @@ export function OrganizationSwitcher() {
       });
       messageApi.success(`Switched to ${data.user.orgId}`);
     } catch (err) {
-      console.error("Organization switch failed", err);
+      captureClientError("Organization switch failed", err);
       setError("Unexpected error while switching organization");
       messageApi.error("Unexpected error while switching organization");
     } finally {

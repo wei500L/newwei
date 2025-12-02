@@ -34,6 +34,7 @@ import type {
 } from "@/graphql/generated";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo } from "react";
+import { captureClientError } from "@/lib/client-telemetry";
 
 function estimateTokens(text: string) {
   if (!text) {
@@ -230,7 +231,7 @@ function RateLimitSettingsPanel() {
       await refetch();
       messageApi.success("Rate limit settings saved");
     } catch (error) {
-      console.error(error);
+      captureClientError("Failed to save rate limits", error);
       messageApi.error("Failed to save rate limits");
     }
   };
@@ -296,7 +297,7 @@ function CrawlClientSettingsPanel() {
       await refetch();
       messageApi.success("Crawl client settings saved");
     } catch (error) {
-      console.error(error);
+      captureClientError("Failed to save crawl client settings", error);
       messageApi.error("Failed to save crawl client settings");
     }
   };
@@ -375,7 +376,7 @@ function AuditLogRetentionPanel() {
       await refetch();
       messageApi.success("Audit log retention updated");
     } catch (error) {
-      console.error(error);
+      captureClientError("Failed to update audit log retention", error);
       messageApi.error("Failed to update audit log retention");
     }
   };
@@ -448,7 +449,7 @@ function NewsPromptSettingsPanel() {
       await refetch();
       messageApi.success("Prompt configuration saved");
     } catch (error) {
-      console.error(error);
+      captureClientError("Failed to save prompt configuration", error);
       messageApi.error("Failed to save prompt configuration");
     }
   };

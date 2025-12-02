@@ -1,0 +1,160 @@
+import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus
+} from "@nestjs/common";
+import { GqlArgumentsHost } from "@nestjs/graphql";
+import type { Request, Response } from "express";
+import { GraphQLError } from "graphql";
+
+interface NormalizedHttpResponse {
+  statusCode: number;
+  message: string;
+  error?: unknown;
+}
+
+@Catch()
+export class GlobalExceptionFilter implements ExceptionFilter {
+  private readonly logger = createLogger({ name: "exceptions" });
+
+  catch(exception: unknown, host: ArgumentsHost) {
+    const traceId = getCurrentTraceId() ?? ensureTraceId();
+
+    if (host.getType() === "http") {
+      this.handleHttpException(exception, host, traceId);
+      return;
+    }
+
+    if (host.getType<GqlArgumentsHost>() === "graphql") {
+      return this.handleGraphqlException(exception, host, traceId);
+    }
+
+    this.logger.error({ traceId, err: exception }, "Unhandled exception");
+    throw exception;
+  }
+
+  private handleHttpException(
+    exception: unknown,
+    host: ArgumentsHost,
+    traceId?: string,
+  ) {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
+
+    const httpStatus = this.resolveStatus(exception);
+    const normalized = this.normalizeResponse(exception, httpStatus);
+
+    response?.setHeader("x-trace-id", traceId ?? "");
+    this.logger.error(
+      {
+        traceId,
+        err: exception,
+        statusCode: httpStatus,
+        path: request?.url,
+        method: request?.method,
+        error: normalized.error,
+      },
+      "Request failed",
+    );
+
+    response?.status(httpStatus).json({
+      ...normalized,
+      traceId,
+      path: request?.url,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  private handleGraphqlException(
+    exception: unknown,
+    host: ArgumentsHost,
+    traceId?: string,
+  ) {
+    const gqlHost = GqlArgumentsHost.create(host);
+    const ctx = gqlHost.getContext<{ req?: Request; res?: Response }>();
+    const info = gqlHost.getInfo();
+
+    const statusCode = this.resolveStatus(exception);
+    const normalized = this.normalizeResponse(exception, statusCode);
+
+    ctx?.res?.setHeader("x-trace-id", traceId ?? "");
+    this.logger.error(
+      {
+        traceId,
+        err: exception,
+        statusCode,
+        operation: info?.fieldName ?? info?.path?.key,
+        operationName: ctx?.req?.body?.operationName,
+      },
+      "GraphQL request failed",
+    );
+
+    return new GraphQLError(normalized.message, {
+      extensions: {
+        code: this.resolveGraphqlCode(statusCode),
+        http: { status: statusCode },
+        traceId,
+      },
+    });
+  }
+
+  private resolveStatus(exception: unknown): number {
+    if (exception instanceof HttpException) {
+      return exception.getStatus();
+    }
+    return HttpStatus.INTERNAL_SERVER_ERROR;
+  }
+
+  private normalizeResponse(
+    exception: unknown,
+    statusCode: number,
+  ): NormalizedHttpResponse {
+    if (exception instanceof HttpException) {
+      const response = exception.getResponse();
+      const message =
+        typeof response === "string"
+          ? response
+          : this.getMessageFromResponse(response) ?? exception.message;
+
+      return {
+        statusCode,
+        message,
+        error: typeof response === "object" ? response : undefined,
+      };
+    }
+
+    return {
+      statusCode,
+      message: "Internal server error",
+    };
+  }
+
+  private resolveGraphqlCode(statusCode: number): string {
+    const statusName = HttpStatus[statusCode];
+    if (typeof statusName === "string") {
+      return statusName;
+    }
+    return "INTERNAL_SERVER_ERROR";
+  }
+
+  private getMessageFromResponse(response: unknown): string | undefined {
+    if (typeof response !== "object" || response === null) {
+      return undefined;
+    }
+
+    const maybeMessage = (response as { message?: unknown }).message;
+    if (typeof maybeMessage === "string") {
+      return maybeMessage;
+    }
+
+    if (Array.isArray(maybeMessage)) {
+      return maybeMessage.filter((value) => typeof value === "string").join("; ");
+    }
+
+    return undefined;
+  }
+}

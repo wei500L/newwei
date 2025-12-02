@@ -1,5 +1,7 @@
 import pino from "pino";
 
+import { getCurrentTraceId } from "./tracing";
+
 export interface CreateLoggerOptions {
   name?: string;
   level?: pino.LevelWithSilent;
@@ -15,6 +17,10 @@ export const createLogger = ({
     name,
     enabled,
     level: level ?? (process.env.NODE_ENV === "production" ? "info" : "debug"),
+    mixin: () => {
+      const traceId = getCurrentTraceId();
+      return traceId ? { traceId } : {};
+    },
     transport:
       process.env.NODE_ENV !== "production"
         ? {

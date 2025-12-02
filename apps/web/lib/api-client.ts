@@ -1,5 +1,6 @@
 import axios from "axios";
 import { env } from "./env";
+import { createTraceHeaders } from "./trace";
 
 export interface ApiClientOptions {
   accessToken?: string;
@@ -24,6 +25,14 @@ export const createApiClient = (options: ApiClientOptions = {}) => {
       return Promise.reject(error);
     }
   );
+
+  instance.interceptors.request.use((config) => {
+    config.headers = {
+      ...config.headers,
+      ...createTraceHeaders(config.headers)
+    };
+    return config;
+  });
 
   return instance;
 };

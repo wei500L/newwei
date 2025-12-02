@@ -1,26 +1,29 @@
-import { Module } from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
+import { Module, type MiddlewareConsumer, type NestModule } from "@nestjs/common";
+import { APP_FILTER, APP_GUARD } from "@nestjs/core";
+import { ScheduleModule } from "@nestjs/schedule";
 import { WinstonModule } from "nest-winston";
 import { utilities as nestWinstonModuleUtilities } from "nest-winston/dist/winston.utilities";
 import * as winston from "winston";
-import { ScheduleModule } from "@nestjs/schedule";
-import { ConfigModule } from "./modules/config/config.module";
-import { HealthModule } from "./modules/health/health.module";
-import { DatabaseModule } from "./modules/config/database.module";
-import { AuthModule } from "./modules/auth/auth.module";
-import { RbacModule } from "./modules/rbac/rbac.module";
-import { ItemsModule } from "./modules/items/items.module";
-import { QueueModule } from "./modules/queue/queue.module";
-import { CacheModule } from "./modules/cache/cache.module";
-import { DashboardModule } from "./modules/dashboard/dashboard.module";
-import { CrawlModule } from "./modules/crawl/crawl.module";
-import { AkshareModule } from "./modules/akshare/akshare.module";
-import { EmailModule } from "./modules/email/email.module";
-import { AlertsModule } from "./modules/alerts/alerts.module";
-import { AnalysisModule } from "./modules/analysis/analysis.module";
+
+import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
+import { TraceIdMiddleware } from "./common/middleware/trace-id.middleware";
 import { ApiGraphqlModule } from "./graphql/graphql.module";
+import { AkshareModule } from "./modules/akshare/akshare.module";
+import { AlertsModule } from "./modules/alerts/alerts.module";
+import { AnalysisModule } from "./modules/analysis/analysis.module";
+import { AuthModule } from "./modules/auth/auth.module";
+import { CacheModule } from "./modules/cache/cache.module";
+import { ConfigModule } from "./modules/config/config.module";
+import { DatabaseModule } from "./modules/config/database.module";
+import { CrawlModule } from "./modules/crawl/crawl.module";
+import { DashboardModule } from "./modules/dashboard/dashboard.module";
+import { EmailModule } from "./modules/email/email.module";
+import { HealthModule } from "./modules/health/health.module";
+import { ItemsModule } from "./modules/items/items.module";
+import { QueueModule } from "./modules/queue/queue.module";
+import { RbacModule } from "./modules/rbac/rbac.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
 
 @Module({
@@ -63,7 +66,15 @@ import { SystemSettingsModule } from "./modules/system-settings/system-settings.
     {
       provide: APP_GUARD,
       useClass: PermissionsGuard
+    },
+    {
+      provide: APP_FILTER,
+      useClass: GlobalExceptionFilter
     }
   ]
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(TraceIdMiddleware).forRoutes("*");
+  }
+}
