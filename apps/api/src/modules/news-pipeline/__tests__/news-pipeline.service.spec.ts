@@ -1,4 +1,6 @@
-import { TaskLogModel } from "@modular/mongo";
+import { createHash } from "crypto";
+
+import { TaskLogModel, ProcessedItemModel } from "@modular/mongo";
 import type { Crawl4aiResponse } from "../../crawl/crawl4ai.client";
 import { NewsPromptBuilder } from "../news-prompt.builder";
 import { NewsPipelineService } from "../news-pipeline.service";
@@ -15,6 +17,9 @@ jest.mock("@modular/mongo", () => ({
     create: jest.fn().mockResolvedValue({
       _id: { toString: () => "processed-id" },
       toJSON: () => ({ id: "processed-id" })
+    }),
+    findById: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null)
     })
   }
 }));
@@ -131,13 +136,24 @@ describe("NewsPipelineService", () => {
     }
   };
 
+  const prisma = {
+    processedArticle: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockResolvedValue(null)
+    },
+    article: {
+      upsert: jest.fn().mockResolvedValue({ id: "article-1" })
+    }
+  };
+
   const service = new NewsPipelineService(
     crawlClient as any,
     liteLlm as any,
     configService as any,
     promptBuilder,
     promptConfigService as any,
-    cache as any
+    cache as any,
+    prisma as any
   );
 
   const job: PipelineJobContext = {
@@ -160,6 +176,12 @@ describe("NewsPipelineService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (prisma.processedArticle.findFirst as jest.Mock).mockResolvedValue(null);
+    (prisma.article.upsert as jest.Mock).mockResolvedValue({ id: "article-1" });
+    (prisma.processedArticle.upsert as jest.Mock).mockResolvedValue(null);
+    (ProcessedItemModel.findById as jest.Mock).mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null)
+    });
   });
 
   it("processes a raw item by crawling and cleaning content", async () => {
@@ -169,6 +191,90 @@ describe("NewsPipelineService", () => {
     expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
     expect(cache.set).toHaveBeenCalledTimes(1);
     expect(promptConfigService.getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses existing processed article when content hash matches", async () => {
+    const contentHash = createHash("sha256")
+      .update("# Headline\nBody paragraph")
+      .digest("hex");
+    const processedArticle = {
+      id: "processed-article-1",
+      articleId: "article-1",
+      article: {
+        id: "article-1",
+        orgId: "org-1",
+        sourceId: null,
+        url: "https://example.com/story?ref=news",
+        sourceLabel: "Example",
+        language: "en",
+        titleGuess: null,
+        crawlAt: new Date("2024-01-01T00:00:00Z"),
+        contentHash,
+        markdownRef: null,
+        version: 1,
+        metadata: {},
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+        updatedAt: new Date("2024-01-01T00:00:00Z")
+      },
+      title: "Existing title",
+      subtitle: null,
+      author: "Reporter",
+      source: "Example",
+      publishedAt: new Date("2024-01-01T00:00:00Z"),
+      category: null,
+      topics: ["news"],
+      summary: "Existing summary",
+      keyPoints: ["Existing summary"],
+      entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+      cleanedMarkdownRef: "processed-id",
+      removedNoiseTypes: [],
+      qualityScore: 0.9,
+      llmModel: "openai/gpt-4o-mini",
+      llmPromptVersion: "v1",
+      language: "en",
+      location: "US",
+      promptTokens: 10,
+      completionTokens: 5,
+      totalTokens: 15,
+      costUsd: 0.01,
+      latencyMs: 80,
+      createdAt: new Date("2024-01-01T00:00:00Z"),
+      processedAt: new Date("2024-01-01T00:00:00Z"),
+      updatedAt: new Date("2024-01-01T00:00:00Z")
+    };
+    (prisma.processedArticle.findFirst as jest.Mock).mockResolvedValueOnce(
+      processedArticle
+    );
+    (ProcessedItemModel.findById as jest.Mock).mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValue({
+        result: {
+          title: "Existing title",
+          subtitle: null,
+          author: "Reporter",
+          source: "Example",
+          published_at: "2024-01-01T00:00:00Z",
+          language: "en",
+          location: "US",
+          category: null,
+          topics: ["news"],
+          summary: "Existing summary",
+          key_points: ["Existing summary"],
+          entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+          cleaned_markdown: "Clean body from cache",
+          removed_noise_types: [],
+          quality_score: 0.9,
+          llm_model: "openai/gpt-4o-mini",
+          llm_prompt_version: "v1"
+        }
+      })
+    });
+
+    await service.process(job, raw);
+
+    expect(liteLlm.acompletion).not.toHaveBeenCalled();
+    expect(prisma.article.upsert).not.toHaveBeenCalled();
+    expect(prisma.processedArticle.upsert).not.toHaveBeenCalled();
+    expect(ProcessedItemModel.create).toHaveBeenCalledTimes(1);
   });
 
   it("throws when crawl returns no successful results", async () => {

@@ -1,10 +1,12 @@
 import { TaskLogModel, ProcessedItemModel } from "@modular/mongo";
+import type { Article, ProcessedArticle } from "@prisma/client";
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { CacheService } from "../cache/cache.service";
+import { PrismaService } from "../config/prisma.service";
 import {
   Crawl4aiClient,
   Crawl4aiArticle,
@@ -29,8 +31,8 @@ import { NewsPromptBuilder } from "./news-prompt.builder";
 import { NewsPromptConfigService } from "./news-prompt-config.service";
 
 interface LlmCallMetadata {
-  model: string;
-  promptVersion: string;
+  model: string | null;
+  promptVersion: string | null;
   promptTokens: number | null;
   completionTokens: number | null;
   totalTokens: number | null;
@@ -50,6 +52,7 @@ export class NewsPipelineService {
     private readonly promptBuilder: NewsPromptBuilder,
     private readonly promptConfig: NewsPromptConfigService,
     private readonly cache: CacheService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async process(job: PipelineJobContext, raw: RawPipelineItem) {
@@ -91,7 +94,7 @@ export class NewsPipelineService {
       },
     );
 
-    const { cleaned, llm } = await this.runStage(
+    const { cleaned, llm, contentHash, processedArticleId } = await this.runStage(
       job,
       "llm",
       async () => this.cleanArticle(payload, article, job),
@@ -116,8 +119,8 @@ export class NewsPipelineService {
     const processed = await this.runStage(
       job,
       "persist",
-      async () =>
-        ProcessedItemModel.create({
+      async () => {
+        const created = await ProcessedItemModel.create({
           rawItemId: raw.id,
           itemMetaId: job.itemMetaId,
           orgId: job.orgId,
@@ -126,7 +129,21 @@ export class NewsPipelineService {
           result: cleaned,
           llm,
           error: undefined,
-        }),
+        });
+
+        await this.persistProcessedArticle({
+          orgId: job.orgId,
+          payload,
+          article,
+          cleaned,
+          llm,
+          contentHash,
+          processedItemId: created._id.toString(),
+          processedArticleId,
+        });
+
+        return created;
+      },
       {
         onProcessingData: () => ({
           rawItemId: raw.id,
@@ -154,15 +171,21 @@ export class NewsPipelineService {
     if (!payload.forceRefresh) {
       const cached = await this.cache.get<CrawlCacheEntry>(cacheKey);
       if (cached?.markdown) {
+        const cachedWithHash = {
+          ...cached,
+          contentHash:
+            cached.contentHash ?? this.hashContent(cached.markdown),
+        };
         return {
           sourceUrl: payload.url,
-          markdown: cached.markdown,
-          markdownWithCitations: cached.markdownWithCitations,
-          referencesMarkdown: cached.referencesMarkdown,
-          metadata: cached.metadata ?? {},
-          publishedAt: cached.publishedAt ?? null,
-          runId: cached.runId ?? null,
-          fetchedAt: cached.fetchedAt ?? null,
+          markdown: cachedWithHash.markdown,
+          markdownWithCitations: cachedWithHash.markdownWithCitations,
+          referencesMarkdown: cachedWithHash.referencesMarkdown,
+          metadata: cachedWithHash.metadata ?? {},
+          publishedAt: cachedWithHash.publishedAt ?? null,
+          runId: cachedWithHash.runId ?? null,
+          fetchedAt: cachedWithHash.fetchedAt ?? null,
+          contentHash: cachedWithHash.contentHash,
           fromCache: true,
         };
       }
@@ -223,6 +246,7 @@ export class NewsPipelineService {
     if (!markdown) {
       throw new Error("Crawl result missing markdown");
     }
+    const contentHash = this.hashContent(markdown);
     const markdownRecord = this.asMarkdownRecord(article.markdown);
     return {
       sourceUrl: article.url ?? url,
@@ -237,6 +261,7 @@ export class NewsPipelineService {
       publishedAt: article.publishedAt ?? null,
       runId: article.success === false ? null : (runId ?? null),
       fetchedAt: new Date().toISOString(),
+      contentHash,
     };
   }
 
@@ -277,7 +302,26 @@ export class NewsPipelineService {
     payload: NormalizedNewsPayload,
     article: ReturnType<typeof this.normalizeArticle> & { fromCache: boolean },
     job: PipelineJobContext,
-  ): Promise<{ cleaned: CleanedNews; llm: LlmCallMetadata }> {
+  ): Promise<{
+    cleaned: CleanedNews;
+    llm: LlmCallMetadata;
+    contentHash: string;
+    processedArticleId?: string | null;
+  }> {
+    const contentHash = article.contentHash ?? this.hashContent(article.markdown);
+    const existing = await this.findProcessedArticle(contentHash);
+    if (existing) {
+      const cleanedFromExisting = await this.resolveCleanedNews(existing);
+      if (cleanedFromExisting) {
+        return {
+          cleaned: cleanedFromExisting,
+          llm: this.buildLlmMetadataFromProcessed(existing),
+          contentHash,
+          processedArticleId: existing.id,
+        };
+      }
+    }
+
     const pipelineCfg = this.configService.config.pipeline;
     const truncated = article.markdown.slice(0, pipelineCfg.maxInputChars);
     const promptConfig = await this.promptConfig.getConfig();
@@ -328,7 +372,113 @@ export class NewsPipelineService {
       costUsd: response.costUsd ?? null,
       latencyMs: response.latencyMs ?? null,
     };
-    return { cleaned, llm };
+    return { cleaned, llm, contentHash };
+  }
+
+  private async findProcessedArticle(contentHash: string) {
+    return this.prisma.processedArticle.findFirst({
+      where: { article: { contentHash } },
+      include: { article: true },
+    });
+  }
+
+  private async resolveCleanedNews(
+    processed: ProcessedArticle & { article: Article },
+  ): Promise<CleanedNews | null> {
+    const cleanedFromRef = await this.loadCleanedNewsFromRef(
+      processed.cleanedMarkdownRef,
+    );
+    if (cleanedFromRef) {
+      return this.withPromptMetadata(
+        cleanedFromRef,
+        processed.llmPromptVersion ?? null,
+        processed.llmModel ?? null,
+      );
+    }
+
+    try {
+      return this.mapProcessedArticleToCleanedNews(processed);
+    } catch (error) {
+      this.logger.warn(
+        { error, processedArticleId: processed.id },
+        "Failed to map processed article to cleaned news",
+      );
+      return null;
+    }
+  }
+
+  private async loadCleanedNewsFromRef(ref?: string | null) {
+    if (!ref) {
+      return null;
+    }
+    try {
+      const query = ProcessedItemModel.findById(ref);
+      if (!query) {
+        return null;
+      }
+      const doc =
+        query && typeof (query as { lean?: () => unknown }).lean === "function"
+          ? await (query as { lean: () => unknown }).lean()
+          : await query;
+      const result = (doc as { result?: unknown } | null | undefined)?.result;
+      if (!result) {
+        return null;
+      }
+      return CleanedNewsSchema.parse(result);
+    } catch (error) {
+      this.logger.warn({ error, ref }, "Failed to load cleaned news by ref");
+      return null;
+    }
+  }
+
+  private mapProcessedArticleToCleanedNews(
+    processed: ProcessedArticle & { article: Article },
+  ): CleanedNews {
+    const topics = this.toStringArray(processed.topics);
+    const keyPoints = this.toStringArray(processed.keyPoints);
+    const removedNoiseTypes = this.toStringArray(processed.removedNoiseTypes);
+    const entities = this.normalizeEntities(processed.entities);
+    const cleanedMarkdown =
+      (processed.cleanedMarkdownRef && processed.cleanedMarkdownRef.length > 0
+        ? processed.cleanedMarkdownRef
+        : null) ??
+      processed.summary ??
+      processed.article.url ??
+      processed.article.contentHash;
+
+    return CleanedNewsSchema.parse({
+      title: processed.title ?? null,
+      subtitle: processed.subtitle ?? null,
+      author: processed.author ?? null,
+      source: processed.source ?? processed.article.sourceLabel ?? null,
+      published_at: processed.publishedAt
+        ? processed.publishedAt.toISOString()
+        : null,
+      language: processed.language ?? processed.article.language ?? null,
+      location: processed.location ?? null,
+      category: processed.category ?? null,
+      topics,
+      summary: processed.summary ?? null,
+      key_points: keyPoints,
+      entities,
+      cleaned_markdown: cleanedMarkdown,
+      removed_noise_types: removedNoiseTypes,
+      quality_score: processed.qualityScore ?? null,
+      llm_model: processed.llmModel ?? null,
+      llm_prompt_version: processed.llmPromptVersion ?? null,
+    });
+  }
+
+  private buildLlmMetadataFromProcessed(processed: ProcessedArticle): LlmCallMetadata {
+    return {
+      model: processed.llmModel ?? null,
+      promptVersion: processed.llmPromptVersion ?? null,
+      promptTokens: processed.promptTokens ?? null,
+      completionTokens: processed.completionTokens ?? null,
+      totalTokens: processed.totalTokens ?? null,
+      costUsd: processed.costUsd ?? null,
+      latencyMs: processed.latencyMs ?? null,
+    };
   }
 
   private parseResponse(
@@ -350,7 +500,7 @@ export class NewsPipelineService {
 
   private withPromptMetadata(
     cleaned: CleanedNews,
-    promptVersion: string,
+    promptVersion: string | null,
     model?: string | null,
   ): CleanedNews {
     return {
@@ -358,6 +508,118 @@ export class NewsPipelineService {
       llm_model: cleaned.llm_model ?? model ?? null,
       llm_prompt_version: cleaned.llm_prompt_version ?? promptVersion ?? null,
     };
+  }
+
+  private async persistProcessedArticle(options: {
+    orgId: string;
+    payload: NormalizedNewsPayload;
+    article: ReturnType<typeof this.normalizeArticle>;
+    cleaned: CleanedNews;
+    llm: LlmCallMetadata;
+    contentHash: string;
+    processedItemId: string;
+    processedArticleId?: string | null;
+  }) {
+    if (options.processedArticleId) {
+      return;
+    }
+
+    try {
+      const crawlAt =
+        this.parseDate(options.article.publishedAt) ??
+        this.parseDate(options.article.fetchedAt) ??
+        new Date();
+
+      const articleRecord = await this.prisma.article.upsert({
+        where: { contentHash: options.contentHash },
+        update: {
+          url: options.article.sourceUrl,
+          sourceLabel: options.payload.sourceName ?? null,
+          language: options.cleaned.language ?? options.payload.language ?? null,
+          titleGuess: options.cleaned.title ?? undefined,
+          metadata: options.article.metadata ?? {},
+          crawlAt,
+        },
+        create: {
+          orgId: options.orgId,
+          url: options.article.sourceUrl,
+          sourceLabel: options.payload.sourceName ?? null,
+          language: options.cleaned.language ?? options.payload.language ?? null,
+          titleGuess: options.cleaned.title ?? undefined,
+          crawlAt,
+          contentHash: options.contentHash,
+          metadata: options.article.metadata ?? {},
+        },
+      });
+
+      await this.prisma.processedArticle.upsert({
+        where: { articleId: articleRecord.id },
+        update: {
+          title: options.cleaned.title ?? null,
+          subtitle: options.cleaned.subtitle ?? null,
+          author: options.cleaned.author ?? null,
+          source: options.cleaned.source ?? options.payload.sourceName ?? null,
+          publishedAt:
+            this.parseDate(options.cleaned.published_at) ??
+            this.parseDate(options.article.publishedAt),
+          category: options.cleaned.category ?? null,
+          topics: options.cleaned.topics ?? [],
+          summary: options.cleaned.summary ?? null,
+          keyPoints: options.cleaned.key_points ?? [],
+          entities: options.cleaned.entities ?? [],
+          cleanedMarkdownRef: options.processedItemId,
+          removedNoiseTypes: options.cleaned.removed_noise_types ?? [],
+          qualityScore: options.cleaned.quality_score ?? null,
+          llmModel: options.llm.model ?? options.cleaned.llm_model ?? null,
+          llmPromptVersion:
+            options.cleaned.llm_prompt_version ??
+            options.llm.promptVersion ??
+            null,
+          language: options.cleaned.language ?? options.payload.language ?? null,
+          location: options.cleaned.location ?? null,
+          promptTokens: options.llm.promptTokens ?? null,
+          completionTokens: options.llm.completionTokens ?? null,
+          totalTokens: options.llm.totalTokens ?? null,
+          costUsd: options.llm.costUsd ?? null,
+          latencyMs: options.llm.latencyMs ?? null,
+        },
+        create: {
+          articleId: articleRecord.id,
+          title: options.cleaned.title ?? null,
+          subtitle: options.cleaned.subtitle ?? null,
+          author: options.cleaned.author ?? null,
+          source: options.cleaned.source ?? options.payload.sourceName ?? null,
+          publishedAt:
+            this.parseDate(options.cleaned.published_at) ??
+            this.parseDate(options.article.publishedAt),
+          category: options.cleaned.category ?? null,
+          topics: options.cleaned.topics ?? [],
+          summary: options.cleaned.summary ?? null,
+          keyPoints: options.cleaned.key_points ?? [],
+          entities: options.cleaned.entities ?? [],
+          cleanedMarkdownRef: options.processedItemId,
+          removedNoiseTypes: options.cleaned.removed_noise_types ?? [],
+          qualityScore: options.cleaned.quality_score ?? null,
+          llmModel: options.llm.model ?? options.cleaned.llm_model ?? null,
+          llmPromptVersion:
+            options.cleaned.llm_prompt_version ??
+            options.llm.promptVersion ??
+            null,
+          language: options.cleaned.language ?? options.payload.language ?? null,
+          location: options.cleaned.location ?? null,
+          promptTokens: options.llm.promptTokens ?? null,
+          completionTokens: options.llm.completionTokens ?? null,
+          totalTokens: options.llm.totalTokens ?? null,
+          costUsd: options.llm.costUsd ?? null,
+          latencyMs: options.llm.latencyMs ?? null,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        { error, contentHash: options.contentHash },
+        "Failed to persist processed article",
+      );
+    }
   }
 
   private buildTags(payload: NormalizedNewsPayload, cleaned: CleanedNews) {
@@ -374,9 +636,67 @@ export class NewsPipelineService {
     return NormalizedNewsPayloadSchema.parse(payload);
   }
 
+  private parseDate(value?: string | Date | null) {
+    if (!value) {
+      return null;
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  private toStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry.trim();
+        }
+        if (typeof entry === "number") {
+          return entry.toString();
+        }
+        return null;
+      })
+      .filter((entry): entry is string => Boolean(entry && entry.trim()))
+      .map((entry) => entry.trim());
+  }
+
+  private normalizeEntities(value: unknown): CleanedNews["entities"] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return null;
+        }
+        const { name, type, confidence } = entry as {
+          name?: unknown;
+          type?: unknown;
+          confidence?: unknown;
+        };
+        if (typeof name !== "string" || typeof type !== "string") {
+          return null;
+        }
+        const numericConfidence =
+          typeof confidence === "number" && Number.isFinite(confidence)
+            ? Math.min(1, Math.max(0, confidence))
+            : 0;
+        return { name, type, confidence: numericConfidence };
+      })
+      .filter(
+        (entity): entity is CleanedNews["entities"][number] => Boolean(entity),
+      );
+  }
+
   private cacheKey(orgId: string, url: string) {
-    const hash = createHash("sha256").update(url).digest("hex");
+    const hash = this.hashContent(url);
     return `${this.crawlCachePrefix}${orgId}:${hash}`;
+  }
+
+  private hashContent(content: string) {
+    return createHash("sha256").update(content).digest("hex");
   }
 
   private async retry<T>(

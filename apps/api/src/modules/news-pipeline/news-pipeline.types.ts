@@ -25,4 +25,5 @@ export interface CrawlCacheEntry {
   runId?: string | null;
   fetchedAt?: string | null;
   linkAnalysis?: Record<string, unknown>;
+  contentHash?: string;
 }
