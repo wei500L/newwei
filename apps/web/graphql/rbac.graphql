@@ -3,6 +3,7 @@ query RbacOverview {
     id
     name
     description
+    isSystem
     permissions {
       id
       name
@@ -20,12 +21,45 @@ query RbacOverview {
     role {
       id
       name
+      isSystem
     }
     user {
       id
       email
       firstName
       lastName
+    }
+  }
+}
+
+mutation AssignRole($input: AssignRoleInput!) {
+  assignRole(input: $input) {
+    id
+    orgId
+    role {
+      id
+      name
+      isSystem
+    }
+    user {
+      id
+      email
+      firstName
+      lastName
+    }
+  }
+}
+
+mutation UpdateRole($input: UpdateRoleInput!) {
+  updateRole(input: $input) {
+    id
+    name
+    description
+    isSystem
+    permissions {
+      id
+      name
+      description
     }
   }
 }

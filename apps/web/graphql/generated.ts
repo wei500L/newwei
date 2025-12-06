@@ -257,6 +257,17 @@ export type UpdateNewsPromptConfigInput = {
   userPromptTemplate: string;
 };
 
+export type AssignRoleInput = {
+  userId: string;
+  roleId: string;
+};
+
+export type UpdateRoleInput = {
+  id: string;
+  description?: InputMaybe<string>;
+  permissions: Array<string>;
+};
+
 export type AlertChannelInput = {
   type: AlertChannelType;
   name: string;
@@ -1077,6 +1088,7 @@ export type RbacOverviewQuery = {
     id: string;
     name: string;
     description?: string | null;
+    isSystem: boolean;
     permissions: Array<{
       id: string;
       name: string;
@@ -1087,9 +1099,36 @@ export type RbacOverviewQuery = {
   memberships: Array<{
     id: string;
     orgId: string;
-    role: { id: string; name: string };
+    role: { id: string; name: string; isSystem: boolean };
     user: { id: string; email: string; firstName: string; lastName: string };
   }>;
+};
+
+export type AssignRoleMutationVariables = Exact<{
+  input: AssignRoleInput;
+}>;
+
+export type AssignRoleMutation = {
+  assignRole: {
+    id: string;
+    orgId: string;
+    role: { id: string; name: string; isSystem: boolean };
+    user: { id: string; email: string; firstName: string; lastName: string };
+  };
+};
+
+export type UpdateRoleMutationVariables = Exact<{
+  input: UpdateRoleInput;
+}>;
+
+export type UpdateRoleMutation = {
+  updateRole: {
+    id: string;
+    name: string;
+    description?: string | null;
+    isSystem: boolean;
+    permissions: Array<{ id: string; name: string; description?: string | null }>;
+  };
 };
 
 export type RateLimitSettingsQueryVariables = Exact<{ [key: string]: never }>;
@@ -1352,6 +1391,7 @@ export const RbacOverviewDocument = gql`
       id
       name
       description
+      isSystem
       permissions {
         id
         name
@@ -1369,6 +1409,7 @@ export const RbacOverviewDocument = gql`
       role {
         id
         name
+        isSystem
       }
       user {
         id
@@ -1415,6 +1456,92 @@ export type RbacOverviewLazyQueryHookResult = ReturnType<
 export type RbacOverviewQueryResult = Apollo.QueryResult<
   RbacOverviewQuery,
   RbacOverviewQueryVariables
+>;
+export const AssignRoleDocument = gql`
+  mutation AssignRole($input: AssignRoleInput!) {
+    assignRole(input: $input) {
+      id
+      orgId
+      role {
+        id
+        name
+        isSystem
+      }
+      user {
+        id
+        email
+        firstName
+        lastName
+      }
+    }
+  }
+`;
+export type AssignRoleMutationFn = Apollo.MutationFunction<
+  AssignRoleMutation,
+  AssignRoleMutationVariables
+>;
+
+export function useAssignRoleMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    AssignRoleMutation,
+    AssignRoleMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    AssignRoleMutation,
+    AssignRoleMutationVariables
+  >(AssignRoleDocument, options);
+}
+export type AssignRoleMutationHookResult = ReturnType<
+  typeof useAssignRoleMutation
+>;
+export type AssignRoleMutationResult =
+  Apollo.MutationResult<AssignRoleMutation>;
+export type AssignRoleMutationOptions = Apollo.BaseMutationOptions<
+  AssignRoleMutation,
+  AssignRoleMutationVariables
+>;
+export const UpdateRoleDocument = gql`
+  mutation UpdateRole($input: UpdateRoleInput!) {
+    updateRole(input: $input) {
+      id
+      name
+      description
+      isSystem
+      permissions {
+        id
+        name
+        description
+      }
+    }
+  }
+`;
+export type UpdateRoleMutationFn = Apollo.MutationFunction<
+  UpdateRoleMutation,
+  UpdateRoleMutationVariables
+>;
+
+export function useUpdateRoleMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    UpdateRoleMutation,
+    UpdateRoleMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<UpdateRoleMutation, UpdateRoleMutationVariables>(
+    UpdateRoleDocument,
+    options,
+  );
+}
+export type UpdateRoleMutationHookResult = ReturnType<
+  typeof useUpdateRoleMutation
+>;
+export type UpdateRoleMutationResult =
+  Apollo.MutationResult<UpdateRoleMutation>;
+export type UpdateRoleMutationOptions = Apollo.BaseMutationOptions<
+  UpdateRoleMutation,
+  UpdateRoleMutationVariables
 >;
 export const RateLimitSettingsDocument = gql`
   query RateLimitSettings {

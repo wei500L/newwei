@@ -1,4 +1,13 @@
-import { Args, Context, Query, ResolveField, Resolver, UseGuards, Parent } from "@nestjs/graphql";
+import {
+  Args,
+  Context,
+  Mutation,
+  Query,
+  ResolveField,
+  Resolver,
+  UseGuards,
+  Parent
+} from "@nestjs/graphql";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { RbacService } from "../../modules/rbac/rbac.service";
@@ -10,6 +19,7 @@ import { UserLoader } from "../loaders/user.loader";
 import { UserModel } from "../models/user.model";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { ForbiddenException } from "@nestjs/common";
+import { AssignRoleInput, UpdateRoleInput } from "../dto/rbac.input";
 
 @Resolver(() => MembershipModel)
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -27,17 +37,7 @@ export class RbacResolver {
       throw new ForbiddenException("Unauthenticated");
     }
     const data = await this.rbacService.listRoles(requester.orgId, { includeSystem });
-    return data.map((role) => ({
-      id: role.id,
-      name: role.name,
-      description: role.description ?? undefined,
-      isSystem: role.isSystem,
-      permissions: role.permissions.map((permission) => ({
-        id: permission.permission.id,
-        name: permission.permission.name,
-        description: permission.permission.description ?? undefined
-      }))
-    }));
+    return data.map((role) => this.mapRole(role));
   }
 
   @HasPermission("permissions.read")
@@ -59,31 +59,35 @@ export class RbacResolver {
       throw new ForbiddenException("Unauthenticated");
     }
     const memberships = await this.rbacService.listMembers(requester.orgId);
-    return memberships.map((membership) => ({
-      id: membership.id,
-      orgId: membership.orgId,
-      userId: membership.userId,
-      role: {
-        id: membership.role.id,
-        name: membership.role.name,
-        description: membership.role.description ?? undefined,
-        isSystem: membership.role.isSystem,
-        permissions: membership.role.permissions.map((permission) => ({
-          id: permission.permission.id,
-          name: permission.permission.name,
-          description: permission.permission.description ?? undefined
-        }))
-      },
-      user: {
-        id: membership.user.id,
-        email: membership.user.email,
-        firstName: membership.user.firstName,
-        lastName: membership.user.lastName,
-        orgId: membership.orgId,
-        roleIds: [membership.roleId],
-        permissions: membership.role.permissions.map((permission) => permission.permission.name)
-      }
-    }));
+    return memberships.map((membership) => this.mapMembership(membership));
+  }
+
+  @HasPermission("roles.write")
+  @Mutation(() => MembershipModel)
+  async assignRole(
+    @Context("req") req: any,
+    @Args("input") input: AssignRoleInput
+  ): Promise<MembershipModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    const membership = await this.rbacService.assignRole(requester.orgId, requester.id, input);
+    return this.mapMembership(membership);
+  }
+
+  @HasPermission("roles.write")
+  @Mutation(() => RoleModel)
+  async updateRole(
+    @Context("req") req: any,
+    @Args("input") input: UpdateRoleInput
+  ): Promise<RoleModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    const role = await this.rbacService.updateRole(requester.orgId, requester.id, input);
+    return this.mapRole(role);
   }
 
   @ResolveField(() => UserModel)
@@ -106,6 +110,40 @@ export class RbacResolver {
       orgId: membership.orgId,
       roleIds: [],
       permissions: []
+    };
+  }
+
+  private mapRole(role: any): RoleModel {
+    return {
+      id: role.id,
+      name: role.name,
+      description: role.description ?? undefined,
+      isSystem: role.isSystem,
+      permissions: role.permissions.map((permission: any) => ({
+        id: permission.permission.id,
+        name: permission.permission.name,
+        description: permission.permission.description ?? undefined
+      }))
+    };
+  }
+
+  private mapMembership(membership: any): MembershipModel {
+    return {
+      id: membership.id,
+      orgId: membership.orgId,
+      userId: membership.userId,
+      role: this.mapRole(membership.role),
+      user: {
+        id: membership.user.id,
+        email: membership.user.email,
+        firstName: membership.user.firstName,
+        lastName: membership.user.lastName,
+        orgId: membership.orgId,
+        roleIds: [membership.roleId],
+        permissions: membership.role.permissions.map(
+          (permission: any) => permission.permission.name
+        )
+      }
     };
   }
 }

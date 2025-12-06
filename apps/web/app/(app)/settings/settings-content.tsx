@@ -7,6 +7,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Select,
   Alert,
   List,
   message,
@@ -24,16 +25,21 @@ import {
   useUpdateAuditLogRetentionMutation,
   useUpdateCrawlClientSettingsMutation,
   useUpdateNewsPromptConfigMutation,
-  useUpdateRateLimitSettingsMutation
+  useUpdateRateLimitSettingsMutation,
+  useAssignRoleMutation,
+  useUpdateRoleMutation
 } from "@/graphql/generated";
 import type {
   UpdateAuditLogRetentionMutationVariables,
   UpdateCrawlClientSettingsMutationVariables,
   UpdateNewsPromptConfigMutationVariables,
-  UpdateRateLimitSettingsMutationVariables
+  UpdateRateLimitSettingsMutationVariables,
+  AssignRoleMutationVariables,
+  UpdateRoleMutationVariables,
+  RbacOverviewQuery
 } from "@/graphql/generated";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { captureClientError } from "@/lib/client-telemetry";
 
 function estimateTokens(text: string) {
@@ -47,12 +53,31 @@ function estimateTokens(text: string) {
   return words.reduce((acc, word) => acc + Math.max(1, Math.ceil(word.length / 4)), 0);
 }
 
+type RoleListItem = RbacOverviewQuery["roles"][number];
+type PermissionListItem = RbacOverviewQuery["permissions"][number];
+type MembershipListItem = RbacOverviewQuery["memberships"][number];
+type RoleFormValues = Omit<UpdateRoleMutationVariables["input"], "id">;
+
+function haveSameMembers(a: string[], b: string[]) {
+  if (a.length !== b.length) {
+    return false;
+  }
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((value, index) => value === sortedB[index]);
+}
+
 export function SettingsContent() {
   const { data: session, status } = useSession();
+  const [messageApi, messageContext] = message.useMessage();
   const canViewSettings = session?.permissions?.includes("settings.manage") ?? false;
-  const { data, loading } = useRbacOverviewQuery({
+  const { data, loading, refetch } = useRbacOverviewQuery({
     skip: !canViewSettings
   });
+  const [assignRoleMutation, { loading: assigningRole }] = useAssignRoleMutation();
+  const [updateRoleMutation, { loading: updatingRole }] = useUpdateRoleMutation();
+  const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
+  const [savingMembershipId, setSavingMembershipId] = useState<string | null>(null);
 
   if (status === "loading" || (loading && canViewSettings)) {
     return (
@@ -94,6 +119,52 @@ export function SettingsContent() {
     [adminRoleIds, canViewSettings, session?.user?.roleIds]
   );
 
+  const handleRoleSave = async (roleId: string, values: RoleFormValues) => {
+    setSavingRoleId(roleId);
+    try {
+      await updateRoleMutation({
+        variables: {
+          input: {
+            id: roleId,
+            description: values.description,
+            permissions: values.permissions
+          }
+        }
+      });
+      await refetch();
+      messageApi.success("Role updated");
+    } catch (error) {
+      captureClientError("Failed to update role", error);
+      messageApi.error("Failed to update role");
+    } finally {
+      setSavingRoleId(null);
+    }
+  };
+
+  const handleMembershipSave = async (
+    membership: MembershipListItem,
+    roleId: AssignRoleMutationVariables["input"]["roleId"]
+  ) => {
+    setSavingMembershipId(membership.id);
+    try {
+      await assignRoleMutation({
+        variables: {
+          input: {
+            userId: membership.user.id,
+            roleId
+          }
+        }
+      });
+      await refetch();
+      messageApi.success("Member role updated");
+    } catch (error) {
+      captureClientError("Failed to update member role", error);
+      messageApi.error("Failed to update member role");
+    } finally {
+      setSavingMembershipId(null);
+    }
+  };
+
   if (!isAdmin) {
     return (
       <Card className="content-card" title="Organization Settings">
@@ -111,27 +182,12 @@ export function SettingsContent() {
       key: "roles",
       label: "Roles",
       children: roles.length > 0 ? (
-        <List
-          dataSource={roles}
-          renderItem={(role) => (
-            <List.Item>
-              <List.Item.Meta
-                title={role.name}
-                description={
-                  <div>
-                    <Typography.Paragraph type="secondary">
-                      {role.description || "No description provided."}
-                    </Typography.Paragraph>
-                    <div>
-                      {role.permissions.map((permission) => (
-                        <Tag key={permission.id}>{permission.name}</Tag>
-                      ))}
-                    </div>
-                  </div>
-                }
-              />
-            </List.Item>
-          )}
+        <RolesPanel
+          roles={roles}
+          permissions={permissions}
+          onSave={handleRoleSave}
+          savingRoleId={savingRoleId}
+          updating={updatingRole}
         />
       ) : (
         <Empty description="No roles configured yet" />
@@ -160,16 +216,12 @@ export function SettingsContent() {
       key: "members",
       label: "Members",
       children: memberships.length > 0 ? (
-        <List
-          dataSource={memberships}
-          renderItem={(member) => (
-            <List.Item>
-              <List.Item.Meta
-                title={`${member.user.firstName} ${member.user.lastName}`}
-                description={`${member.user.email} • ${member.role.name}`}
-              />
-            </List.Item>
-          )}
+        <MembersPanel
+          memberships={memberships}
+          roles={roles}
+          onSave={handleMembershipSave}
+          savingMembershipId={savingMembershipId}
+          assigning={assigningRole}
         />
       ) : (
         <Empty description="No members assigned" />
@@ -200,12 +252,252 @@ export function SettingsContent() {
 
   return (
     <Card className="content-card" title="Organization Settings">
+      {messageContext}
       <Tabs defaultActiveKey="roles" items={tabItems} />
       <Typography.Paragraph type="secondary" style={{ marginTop: "1.5rem" }}>
-        TODO: add inline editing for role assignments and permission bundles. Hook into audit trail to
-        visualize configuration drift over time.
+        Make changes directly from this page. RBAC updates are saved instantly and enforced across the
+        platform.
       </Typography.Paragraph>
     </Card>
+  );
+}
+
+function RolesPanel({
+  roles,
+  permissions,
+  onSave,
+  savingRoleId,
+  updating
+}: {
+  roles: RoleListItem[];
+  permissions: PermissionListItem[];
+  onSave: (roleId: string, values: RoleFormValues) => Promise<void>;
+  savingRoleId: string | null;
+  updating: boolean;
+}) {
+  const sortedPermissions = useMemo(
+    () => [...permissions].sort((a, b) => a.name.localeCompare(b.name)),
+    [permissions]
+  );
+
+  return (
+    <List
+      dataSource={roles}
+      renderItem={(role) => (
+        <List.Item key={role.id}>
+          <RoleInlineEditor
+            role={role}
+            permissions={sortedPermissions}
+            onSave={onSave}
+            saving={savingRoleId === role.id}
+            updating={updating}
+          />
+        </List.Item>
+      )}
+    />
+  );
+}
+
+function RoleInlineEditor({
+  role,
+  permissions,
+  onSave,
+  saving,
+  updating
+}: {
+  role: RoleListItem;
+  permissions: PermissionListItem[];
+  onSave: (roleId: string, values: RoleFormValues) => Promise<void>;
+  saving: boolean;
+  updating: boolean;
+}) {
+  const [form] = Form.useForm<RoleFormValues>();
+  const initialValues = useMemo(
+    () => ({
+      description: role.description ?? "",
+      permissions: role.permissions.map((permission) => permission.name)
+    }),
+    [role.description, role.permissions]
+  );
+
+  useEffect(() => {
+    form.setFieldsValue(initialValues);
+  }, [form, initialValues]);
+
+  const currentPermissions =
+    Form.useWatch("permissions", form) ?? initialValues.permissions;
+  const currentDescription =
+    Form.useWatch("description", form) ?? initialValues.description ?? "";
+  const isLocked = role.isSystem;
+  const isBusy = isLocked || updating || saving;
+  const hasChanges =
+    !isLocked &&
+    (currentDescription !== (role.description ?? "") ||
+      !haveSameMembers(currentPermissions, initialValues.permissions));
+
+  const handleReset = () => form.setFieldsValue(initialValues);
+
+  return (
+    <Form
+      form={form}
+      layout="vertical"
+      initialValues={initialValues}
+      onFinish={(values) => onSave(role.id, values)}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          marginBottom: "0.25rem"
+        }}
+      >
+        <Typography.Title level={5} style={{ margin: 0 }}>
+          {role.name}
+        </Typography.Title>
+        {role.isSystem ? <Tag color="gold">System</Tag> : null}
+      </div>
+      <Form.Item label="Description" name="description">
+        <Input.TextArea
+          rows={2}
+          maxLength={240}
+          disabled={isBusy}
+          placeholder="Add a short summary for this role"
+        />
+      </Form.Item>
+      <Form.Item
+        label="Permissions"
+        name="permissions"
+        rules={[{ required: true, message: "Select at least one permission" }]}
+      >
+        <Select
+          mode="multiple"
+          placeholder="Select permissions"
+          optionFilterProp="label"
+          options={permissions.map((permission) => ({
+            label: `${permission.name}${
+              permission.description ? ` — ${permission.description}` : ""
+            }`,
+            value: permission.name
+          }))}
+          disabled={isBusy}
+        />
+      </Form.Item>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+        <Button onClick={handleReset} disabled={!hasChanges || isBusy}>
+          Reset
+        </Button>
+        <Button
+          type="primary"
+          htmlType="submit"
+          loading={saving}
+          disabled={!hasChanges || isBusy}
+        >
+          Save changes
+        </Button>
+      </div>
+    </Form>
+  );
+}
+
+function MembersPanel({
+  memberships,
+  roles,
+  onSave,
+  savingMembershipId,
+  assigning
+}: {
+  memberships: MembershipListItem[];
+  roles: RoleListItem[];
+  onSave: (membership: MembershipListItem, roleId: string) => Promise<void>;
+  savingMembershipId: string | null;
+  assigning: boolean;
+}) {
+  return (
+    <List
+      dataSource={memberships}
+      renderItem={(membership) => (
+        <List.Item key={membership.id}>
+          <MemberInlineEditor
+            membership={membership}
+            roles={roles}
+            onSave={onSave}
+            saving={savingMembershipId === membership.id}
+            assigning={assigning}
+          />
+        </List.Item>
+      )}
+    />
+  );
+}
+
+function MemberInlineEditor({
+  membership,
+  roles,
+  onSave,
+  saving,
+  assigning
+}: {
+  membership: MembershipListItem;
+  roles: RoleListItem[];
+  onSave: (membership: MembershipListItem, roleId: string) => Promise<void>;
+  saving: boolean;
+  assigning: boolean;
+}) {
+  const [selectedRoleId, setSelectedRoleId] = useState<string>(membership.role.id);
+  const roleOptions = useMemo(
+    () =>
+      roles.map((role) => ({
+        value: role.id,
+        label: role.name,
+        isSystem: role.isSystem,
+        description: role.description
+      })),
+    [roles]
+  );
+
+  useEffect(() => {
+    setSelectedRoleId(membership.role.id);
+  }, [membership.role.id]);
+
+  const selectedRole = roleOptions.find((role) => role.value === selectedRoleId);
+  const noRolesAvailable = roles.length === 0;
+  const hasChanges = !noRolesAvailable && selectedRoleId !== membership.role.id;
+  const isBusy = saving || assigning || noRolesAvailable;
+
+  return (
+    <>
+      <List.Item.Meta
+        title={`${membership.user.firstName} ${membership.user.lastName}`}
+        description={`${membership.user.email} • ${membership.role.name}`}
+      />
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
+        <Typography.Text type="secondary">Role assignment</Typography.Text>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <Select
+            value={selectedRoleId}
+            onChange={setSelectedRoleId}
+            style={{ minWidth: "220px" }}
+            options={roleOptions.map((option) => ({
+              label: option.label,
+              value: option.value,
+              title: option.description ?? undefined
+            }))}
+            optionFilterProp="label"
+            disabled={isBusy}
+          />
+          {selectedRole?.isSystem ? <Tag color="gold">System</Tag> : null}
+          <Button
+            type="primary"
+            onClick={() => onSave(membership, selectedRoleId)}
+            disabled={!hasChanges || isBusy}
+            loading={saving}
+          >
+            Update
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }
 

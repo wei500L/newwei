@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { RbacService } from "./rbac.service";
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 
@@ -9,10 +9,13 @@ const prismaMock = {
   role: {
     findMany: jest.fn(),
     create: jest.fn(),
-    findUnique: jest.fn()
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn()
   },
   rolePermission: {
-    createMany: jest.fn()
+    createMany: jest.fn(),
+    deleteMany: jest.fn()
   },
   membership: {
     upsert: jest.fn(),
@@ -100,6 +103,50 @@ describe("RbacService", () => {
     await service.assignRole("org-1", "admin-1", { userId: "user-2", roleId: "role-9" });
     expect(actionRateLimitMock.enforceRbacWrite).toHaveBeenCalledWith("org-1", "admin-1");
     expect(prismaMock.membership.upsert).toHaveBeenCalled();
+  });
+
+  it("updates role permissions and description", async () => {
+    prismaMock.role.findFirst = jest.fn().mockResolvedValue({
+      id: "role-1",
+      name: "ops",
+      isSystem: false
+    });
+    prismaMock.permission.findMany = jest
+      .fn()
+      .mockResolvedValue([{ id: "perm-1", name: "items.write", description: "" }]);
+    prismaMock.rolePermission.deleteMany = jest.fn();
+    prismaMock.rolePermission.createMany = jest.fn();
+    prismaMock.role.update = jest.fn().mockResolvedValue({
+      id: "role-1",
+      name: "ops",
+      description: "manages items",
+      isSystem: false,
+      permissions: [{ permission: { id: "perm-1", name: "items.write", description: "" } }]
+    });
+
+    const result = await service.updateRole("org-1", "admin-1", {
+      id: "role-1",
+      description: "manages items",
+      permissions: ["items.write"]
+    });
+
+    expect(actionRateLimitMock.enforceRbacWrite).toHaveBeenCalledWith("org-1", "admin-1");
+    expect(prismaMock.rolePermission.deleteMany).toHaveBeenCalledWith({ where: { roleId: "role-1" } });
+    expect(prismaMock.rolePermission.createMany).toHaveBeenCalled();
+    expect(prismaMock.role.update).toHaveBeenCalled();
+    expect(result?.permissions).toHaveLength(1);
+  });
+
+  it("rejects updates to system roles", async () => {
+    prismaMock.role.findFirst = jest.fn().mockResolvedValue({
+      id: "role-1",
+      name: "admin",
+      isSystem: true
+    });
+
+    await expect(
+      service.updateRole("org-1", "admin-1", { id: "role-1", description: "locked", permissions: ["items.read"] })
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it("filters system roles when includeSystem is false", async () => {

@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { AssignRoleDto } from "./dto/assign-role.dto";
 import { ActionRateLimitService } from "../cache/action-rate-limit.service";
+import { UpdateRoleDto } from "./dto/update-role.dto";
 
 @Injectable()
 export class RbacService {
@@ -87,7 +88,13 @@ export class RbacService {
       },
       include: {
         user: true,
-        role: true
+        role: {
+          include: {
+            permissions: {
+              include: { permission: true }
+            }
+          }
+        }
       }
     });
     return membership;
@@ -98,8 +105,59 @@ export class RbacService {
       where: { orgId },
       include: {
         user: true,
-        role: true
+        role: {
+          include: {
+            permissions: {
+              include: { permission: true }
+            }
+          }
+        }
       }
+    });
+  }
+
+  async updateRole(orgId: string, actorId: string, dto: UpdateRoleDto) {
+    await this.actionRateLimit.enforceRbacWrite(orgId, actorId);
+    const existingRole = await this.prisma.role.findFirst({
+      where: {
+        id: dto.id,
+        orgId
+      }
+    });
+    if (!existingRole) {
+      throw new NotFoundException("Role not found");
+    }
+    if (existingRole.isSystem) {
+      throw new ForbiddenException("System roles cannot be edited");
+    }
+
+    const permissions = await this.prisma.permission.findMany({
+      where: { name: { in: dto.permissions } }
+    });
+    if (permissions.length !== dto.permissions.length) {
+      throw new NotFoundException("One or more permissions not found");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.rolePermission.deleteMany({ where: { roleId: existingRole.id } });
+      if (permissions.length > 0) {
+        await tx.rolePermission.createMany({
+          data: permissions.map((permission) => ({
+            roleId: existingRole.id,
+            permissionId: permission.id
+          }))
+        });
+      }
+
+      return tx.role.update({
+        where: { id: existingRole.id },
+        data: {
+          description: dto.description ?? null
+        },
+        include: {
+          permissions: { include: { permission: true } }
+        }
+      });
     });
   }
 
