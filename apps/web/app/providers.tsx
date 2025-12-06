@@ -4,6 +4,7 @@ import { ApolloProvider } from "@apollo/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App as AntApp, ConfigProvider, theme } from "antd";
 import { PropsWithChildren, useState } from "react";
+import { UnauthorizedRedirect } from "./unauthorized-redirect";
 import { getApolloClient } from "@/lib/apollo-client";
 
 export function AppProviders({ children }: PropsWithChildren) {
@@ -30,7 +31,10 @@ export function AppProviders({ children }: PropsWithChildren) {
     >
       <AntApp>
         <ApolloProvider client={apolloClient}>
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+          <QueryClientProvider client={queryClient}>
+            <UnauthorizedRedirect />
+            {children}
+          </QueryClientProvider>
         </ApolloProvider>
       </AntApp>
     </ConfigProvider>
