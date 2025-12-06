@@ -62,6 +62,31 @@ export interface AkshareDataItemDefinition {
   tags?: string[];
 }
 
+export interface AkshareDataItemMetadata {
+  method?: AkshareRequestMethod;
+  defaultParams?: Record<string, string | number> | null;
+  parser?: AkshareParserConfig;
+  tags?: string[];
+}
+
+export interface AkshareDataItemConfig {
+  itemId: string;
+  slug: string;
+  displayName: string;
+  description?: string | null;
+  categories: string[];
+  sourceFunction: string;
+  endpoint: string;
+  docUrl?: string | null;
+  method: AkshareRequestMethod;
+  defaultParams?: Record<string, string | number> | null;
+  valueType: EconomicDataValueType;
+  defaultUnit?: string | null;
+  defaultFrequency: EconomicDataFrequency;
+  parser: AkshareParserConfig;
+  tags?: string[];
+}
+
 export interface AkshareJobPayload {
   dataItemId: string;
   triggeredById?: string;

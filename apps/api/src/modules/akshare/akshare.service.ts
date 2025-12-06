@@ -4,14 +4,20 @@ import { EconomicDataRunStatus, Prisma } from "@prisma/client";
 import { lastValueFrom } from "rxjs";
 import { Queue, type RepeatJob, type RepeatOptions } from "bullmq";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
-import { AkshareDataItemDefinition, AkshareJobPayload, AkshareParserConfig } from "./akshare.types";
+import {
+  AkshareDataItemConfig,
+  AkshareDataItemDefinition,
+  AkshareDataItemMetadata,
+  AkshareJobPayload,
+  AkshareParserConfig
+} from "./akshare.types";
 import { PrismaService } from "../config/prisma.service";
 import { AKSHARE_QUEUE } from "./akshare.constants";
 import { AkshareResponseModel } from "@modular/mongo";
 import { EnvService } from "../config/config.service";
 
 interface FetchResult {
-  definition: AkshareDataItemDefinition;
+  definition: AkshareDataItemConfig;
   payload: unknown;
 }
 
@@ -33,6 +39,100 @@ export class AkshareService implements OnModuleInit {
 
   get definitions() {
     return AKSHARE_DATA_DEFINITIONS;
+  }
+
+  private buildSeedMetadata(definition: AkshareDataItemDefinition): AkshareDataItemMetadata {
+    return {
+      method: definition.method ?? "GET",
+      defaultParams: definition.defaultParams ?? null,
+      parser: definition.parser,
+      tags: definition.tags ?? []
+    };
+  }
+
+  private parseMetadata(metadata: Prisma.JsonValue | null): AkshareDataItemMetadata {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return {};
+    }
+    const parsed = metadata as Record<string, any>;
+    const method = parsed.method === "POST" ? "POST" : parsed.method === "GET" ? "GET" : undefined;
+    const defaultParams =
+      parsed.defaultParams && typeof parsed.defaultParams === "object" && !Array.isArray(parsed.defaultParams)
+        ? (parsed.defaultParams as Record<string, string | number>)
+        : parsed.defaultParams === null
+          ? null
+          : undefined;
+    const parser = parsed.parser as AkshareParserConfig | undefined;
+    const tags = Array.isArray(parsed.tags) ? parsed.tags.map((tag) => String(tag)) : undefined;
+
+    return {
+      method,
+      defaultParams,
+      parser,
+      tags
+    };
+  }
+
+  private mergeMetadata(existing: AkshareDataItemMetadata, seed: AkshareDataItemMetadata): AkshareDataItemMetadata {
+    return {
+      method: existing.method ?? seed.method ?? "GET",
+      defaultParams:
+        existing.defaultParams === null
+          ? null
+          : existing.defaultParams ?? (seed.defaultParams === null ? null : seed.defaultParams),
+      parser: existing.parser ?? seed.parser,
+      tags: existing.tags ?? seed.tags
+    };
+  }
+
+  private normalizeMetadata(metadata: AkshareDataItemMetadata) {
+    return {
+      method: metadata.method ?? "GET",
+      defaultParams: metadata.defaultParams ?? null,
+      parser: metadata.parser ?? null,
+      tags: metadata.tags ?? []
+    };
+  }
+
+  private metadataEquals(a: AkshareDataItemMetadata, b: AkshareDataItemMetadata) {
+    return JSON.stringify(this.normalizeMetadata(a)) === JSON.stringify(this.normalizeMetadata(b));
+  }
+
+  private async loadDefinitionFromDatabase(slug: string): Promise<AkshareDataItemConfig> {
+    const item = await this.prisma.economicDataItem.findUnique({
+      where: { slug },
+      include: {
+        categories: {
+          include: { category: true }
+        }
+      }
+    });
+    if (!item) {
+      throw new InternalServerErrorException(`Data item ${slug} not found`);
+    }
+
+    const metadata = this.parseMetadata(item.metadata);
+    if (!metadata.parser) {
+      throw new InternalServerErrorException(`Akshare parser not configured for ${slug}`);
+    }
+
+    return {
+      itemId: item.id,
+      slug: item.slug,
+      displayName: item.displayName,
+      description: item.description,
+      categories: item.categories.map((entry) => entry.category.key),
+      sourceFunction: item.sourceFunction,
+      endpoint: item.sourceEndpoint,
+      docUrl: item.sourceDocUrl,
+      method: metadata.method ?? "GET",
+      defaultParams: metadata.defaultParams ?? null,
+      valueType: item.valueType,
+      defaultUnit: item.defaultUnit,
+      defaultFrequency: item.defaultFrequency,
+      parser: metadata.parser,
+      tags: metadata.tags ?? []
+    };
   }
 
   async ensureCatalog() {
@@ -62,66 +162,99 @@ export class AkshareService implements OnModuleInit {
     }
 
     for (const definition of this.definitions) {
-      const item = await this.prisma.economicDataItem.upsert({
+      const seedMetadata = this.buildSeedMetadata(definition);
+      const existingItem = await this.prisma.economicDataItem.findUnique({
         where: { slug: definition.slug },
-        update: {
-          displayName: definition.displayName,
-          groupLabel: definition.categories[0],
-          description: definition.description,
-          sourceFunction: definition.sourceFunction,
-          sourceEndpoint: definition.endpoint,
-          sourceDocUrl: definition.docUrl,
-          valueType: definition.valueType,
-          defaultUnit: definition.defaultUnit,
-          defaultFrequency: definition.defaultFrequency,
-          metadata: {
-            method: definition.method ?? "GET",
-            defaultParams: definition.defaultParams ?? null
-          }
-        },
-        create: {
-          slug: definition.slug,
-          displayName: definition.displayName,
-          groupLabel: definition.categories[0],
-          description: definition.description,
-          sourceFunction: definition.sourceFunction,
-          sourceEndpoint: definition.endpoint,
-          sourceDocUrl: definition.docUrl,
-          valueType: definition.valueType,
-          defaultUnit: definition.defaultUnit,
-          defaultFrequency: definition.defaultFrequency,
-          metadata: {
-            method: definition.method ?? "GET",
-            defaultParams: definition.defaultParams ?? null
-          }
+        include: {
+          categories: {
+            include: { category: true }
+          },
+          fetchConfig: true
         }
       });
 
-      await this.prisma.economicDataItemCategory.deleteMany({ where: { itemId: item.id } });
-      for (const categoryKey of definition.categories) {
-        const category = existingCategoryMap.get(categoryKey);
-        if (!category) {
-          this.logger.warn(`Missing category ${categoryKey} for ${definition.slug}`);
-          continue;
-        }
-        await this.prisma.economicDataItemCategory.create({
-          data: {
-            itemId: item.id,
-            categoryId: category.id
+      const categories = definition.categories
+        .map((categoryKey) => {
+          const category = existingCategoryMap.get(categoryKey);
+          if (!category) {
+            this.logger.warn(`Missing category ${categoryKey} for ${definition.slug}`);
+            return null;
           }
+          return category;
+        })
+        .filter((category): category is NonNullable<typeof category> => Boolean(category));
+
+      if (!existingItem) {
+        await this.prisma.economicDataItem.create({
+          data: {
+            slug: definition.slug,
+            displayName: definition.displayName,
+            groupLabel: definition.categories[0],
+            description: definition.description,
+            sourceFunction: definition.sourceFunction,
+            sourceEndpoint: definition.endpoint,
+            sourceDocUrl: definition.docUrl,
+            valueType: definition.valueType,
+            defaultUnit: definition.defaultUnit,
+            defaultFrequency: definition.defaultFrequency,
+            metadata: this.normalizeMetadata(seedMetadata),
+            categories: {
+              create: categories.map((category) => ({
+                category: { connect: { id: category.id } }
+              }))
+            },
+            fetchConfig: {
+              create: {
+                frequency: definition.defaultFrequency,
+                repeatCron: null,
+                isEnabled: true
+              }
+            }
+          }
+        });
+        continue;
+      }
+
+      const existingMetadata = this.parseMetadata(existingItem.metadata);
+      const mergedMetadata = this.mergeMetadata(existingMetadata, seedMetadata);
+
+      const updates: Prisma.EconomicDataItemUpdateInput = {};
+      if (!existingItem.groupLabel && definition.categories[0]) {
+        updates.groupLabel = definition.categories[0];
+      }
+      if (!this.metadataEquals(existingMetadata, mergedMetadata)) {
+        updates.metadata = this.normalizeMetadata(mergedMetadata);
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await this.prisma.economicDataItem.update({
+          where: { id: existingItem.id },
+          data: updates
         });
       }
 
-      await this.prisma.economicDataFetchConfig.upsert({
-        where: { itemId: item.id },
-        update: {},
-        create: {
-          itemId: item.id,
-          frequency: definition.defaultFrequency,
-          repeatCron: null,
-          isEnabled: true
+      const existingCategoryKeys = new Set(existingItem.categories.map((entry) => entry.category.key));
+      for (const category of categories) {
+        if (!existingCategoryKeys.has(category.key)) {
+          await this.prisma.economicDataItemCategory.create({
+            data: {
+              itemId: existingItem.id,
+              categoryId: category.id
+            }
+          });
         }
-      });
+      }
+
+      if (!existingItem.fetchConfig) {
+        await this.prisma.economicDataFetchConfig.create({
+          data: {
+            itemId: existingItem.id,
+            frequency: existingItem.defaultFrequency ?? definition.defaultFrequency,
+            repeatCron: null,
+            isEnabled: true
+          }
+        });
+      }
     }
   }
 
@@ -210,10 +343,8 @@ export class AkshareService implements OnModuleInit {
   async fetchAndPersist(slug: string, triggeredById?: string) {
     let itemId: string | undefined;
     try {
-      const definition = this.definitions.find((entry) => entry.slug === slug);
-      if (!definition) {
-        throw new InternalServerErrorException(`Unknown Akshare definition: ${slug}`);
-      }
+      const definition = await this.loadDefinitionFromDatabase(slug);
+      itemId = definition.itemId;
       const response = await this.executeRequest(definition);
       await AkshareResponseModel.create({
         dataItemId: definition.slug,
@@ -225,17 +356,11 @@ export class AkshareService implements OnModuleInit {
       });
 
       const parsedPoints = this.parsePayload(definition.parser, response.payload);
-      const dbItem = await this.prisma.economicDataItem.findUnique({ where: { slug: definition.slug } });
-      if (!dbItem) {
-        throw new InternalServerErrorException(`Missing catalog entry for ${definition.slug}`);
-      }
-      itemId = dbItem.id;
-
       for (const point of parsedPoints) {
         await this.prisma.economicDataPoint.upsert({
           where: {
             itemId_recordedAt_sourceField: {
-              itemId: dbItem.id,
+              itemId: definition.itemId,
               recordedAt: point.recordedAt,
               sourceField: point.sourceField
             }
@@ -246,7 +371,7 @@ export class AkshareService implements OnModuleInit {
             dataType: point.dataType
           },
           create: {
-            itemId: dbItem.id,
+            itemId: definition.itemId,
             recordedAt: point.recordedAt,
             dataType: point.dataType,
             value: new Prisma.Decimal(point.value),
@@ -257,7 +382,7 @@ export class AkshareService implements OnModuleInit {
         });
       }
 
-      await this.updateFetchStatusByItemId(dbItem.id, EconomicDataRunStatus.success);
+      await this.updateFetchStatusByItemId(definition.itemId, EconomicDataRunStatus.success);
 
       this.logger.log(`Stored ${parsedPoints.length} points for ${definition.slug}`);
       return parsedPoints.length;
@@ -278,7 +403,7 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private async executeRequest(definition: AkshareDataItemDefinition): Promise<FetchResult> {
+  private async executeRequest(definition: AkshareDataItemConfig): Promise<FetchResult> {
     const config = this.env.akshareConfig;
     const url = definition.endpoint.startsWith("http")
       ? definition.endpoint
