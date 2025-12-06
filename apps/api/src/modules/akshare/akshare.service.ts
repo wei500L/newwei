@@ -3,6 +3,7 @@ import { Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit 
 import { EconomicDataRunStatus, Prisma } from "@prisma/client";
 import { lastValueFrom } from "rxjs";
 import { Queue, type RepeatJob, type RepeatOptions } from "bullmq";
+import type Redis from "ioredis";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
 import {
   AkshareDataItemConfig,
@@ -15,6 +16,7 @@ import { PrismaService } from "../config/prisma.service";
 import { AKSHARE_QUEUE } from "./akshare.constants";
 import { AkshareResponseModel } from "@modular/mongo";
 import { EnvService } from "../config/config.service";
+import { REDIS_CLIENT } from "../cache/cache.module";
 
 interface FetchResult {
   definition: AkshareDataItemConfig;
@@ -29,7 +31,8 @@ export class AkshareService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly http: HttpService,
     private readonly env: EnvService,
-    @Inject(AKSHARE_QUEUE) private readonly queue: Queue<AkshareJobPayload>
+    @Inject(AKSHARE_QUEUE) private readonly queue: Queue<AkshareJobPayload>,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis
   ) {}
 
   async onModuleInit() {
@@ -259,6 +262,45 @@ export class AkshareService implements OnModuleInit {
   }
 
   async ensureRepeatableJobs() {
+    const lockKey = "akshare:repeatable-jobs:lock";
+    const lockTtlMs = 60_000;
+    const lockId = `${process.pid}:${Date.now()}`;
+    const retryDelayMs = 250;
+    const maxWaitMs = 5_000;
+
+    let acquired = false;
+    const start = Date.now();
+    while (!acquired) {
+      const lock = await this.redis.set(lockKey, lockId, "PX", lockTtlMs, "NX");
+      if (lock) {
+        acquired = true;
+        break;
+      }
+      if (Date.now() - start >= maxWaitMs) {
+        this.logger.log("Skipping ensureRepeatableJobs: lock already held by another instance");
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+
+    try {
+      await this.syncRepeatableJobs();
+    } finally {
+      const releaseScript = `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          return redis.call("del", KEYS[1])
+        end
+        return 0
+      `;
+      try {
+        await this.redis.eval(releaseScript, 1, lockKey, lockId);
+      } catch (error) {
+        this.logger.warn({ error }, "Failed to release Akshare repeatable jobs lock");
+      }
+    }
+  }
+
+  private async syncRepeatableJobs() {
     const configs = await this.prisma.economicDataFetchConfig.findMany({
       include: { item: true }
     });
