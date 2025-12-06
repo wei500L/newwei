@@ -53,41 +53,94 @@ export class NewsPipelineService {
   ) {}
 
   async process(job: PipelineJobContext, raw: RawPipelineItem) {
-    const payload = this.normalizePayload(raw.payload);
-    await this.logStage(job, "normalize", "completed", {
-      url: payload.url,
-      forceRefresh: payload.forceRefresh,
-    });
+    const payload = await this.runStage(
+      job,
+      "normalize",
+      async () => this.normalizePayload(raw.payload),
+      {
+        onProcessingData: () => ({
+          rawItemId: raw.id,
+        }),
+        onSuccessData: (normalized) => ({
+          url: normalized.url,
+          forceRefresh: normalized.forceRefresh,
+        }),
+        onErrorData: () => ({
+          rawItemId: raw.id,
+        }),
+      },
+    );
 
-    const article = await this.fetchArticle(job, payload);
-    await this.logStage(job, "crawl", "completed", {
-      url: article.sourceUrl,
-      fromCache: article.fromCache,
-      runId: article.runId,
-    });
+    const article = await this.runStage(
+      job,
+      "crawl",
+      async () => this.fetchArticle(job, payload),
+      {
+        onProcessingData: () => ({
+          url: payload.url,
+          forceRefresh: payload.forceRefresh,
+        }),
+        onSuccessData: (fetched) => ({
+          url: fetched.sourceUrl,
+          fromCache: fetched.fromCache,
+          runId: fetched.runId,
+        }),
+        onErrorData: () => ({
+          url: payload.url,
+        }),
+      },
+    );
 
-    const { cleaned, llm } = await this.cleanArticle(payload, article, job);
-    await this.logStage(job, "llm", "completed", {
-      model: llm.model,
-      totalTokens: llm.totalTokens,
-      costUsd: llm.costUsd,
-      latencyMs: llm.latencyMs,
-    });
+    const { cleaned, llm } = await this.runStage(
+      job,
+      "llm",
+      async () => this.cleanArticle(payload, article, job),
+      {
+        onProcessingData: () => ({
+          url: payload.url,
+          runId: article.runId,
+        }),
+        onSuccessData: ({ llm }) => ({
+          model: llm.model,
+          totalTokens: llm.totalTokens,
+          costUsd: llm.costUsd,
+          latencyMs: llm.latencyMs,
+        }),
+        onErrorData: () => ({
+          url: payload.url,
+          runId: article.runId,
+        }),
+      },
+    );
 
-    const processed = await ProcessedItemModel.create({
-      rawItemId: raw.id,
-      itemMetaId: job.itemMetaId,
-      orgId: job.orgId,
-      status: "completed",
-      tags: this.buildTags(payload, cleaned),
-      result: cleaned,
-      llm,
-      error: undefined,
-    });
-
-    await this.logStage(job, "persist", "completed", {
-      processedId: processed._id.toString(),
-    });
+    const processed = await this.runStage(
+      job,
+      "persist",
+      async () =>
+        ProcessedItemModel.create({
+          rawItemId: raw.id,
+          itemMetaId: job.itemMetaId,
+          orgId: job.orgId,
+          status: "completed",
+          tags: this.buildTags(payload, cleaned),
+          result: cleaned,
+          llm,
+          error: undefined,
+        }),
+      {
+        onProcessingData: () => ({
+          rawItemId: raw.id,
+          itemMetaId: job.itemMetaId,
+        }),
+        onSuccessData: (result) => ({
+          processedId: result._id.toString(),
+        }),
+        onErrorData: () => ({
+          rawItemId: raw.id,
+          itemMetaId: job.itemMetaId,
+        }),
+      },
+    );
 
     const document = processed.toJSON() as { id?: string };
     return {
@@ -350,6 +403,42 @@ export class NewsPipelineService {
       : new Error("operation failed");
   }
 
+  private async runStage<T>(
+    job: PipelineJobContext,
+    stage: string,
+    action: () => Promise<T>,
+    options?: {
+      onProcessingData?: () => Record<string, unknown>;
+      onSuccessData?: (result: T) => Record<string, unknown>;
+      onErrorData?: () => Record<string, unknown>;
+    },
+  ): Promise<T> {
+    await this.logStage(
+      job,
+      stage,
+      "processing",
+      options?.onProcessingData ? options.onProcessingData() : undefined,
+    );
+    try {
+      const result = await action();
+      if (options?.onSuccessData) {
+        await this.logStage(job, stage, "completed", options.onSuccessData(result));
+      } else {
+        await this.logStage(job, stage, "completed");
+      }
+      return result;
+    } catch (error) {
+      await this.logStage(
+        job,
+        stage,
+        "failed",
+        options?.onErrorData ? options.onErrorData() : undefined,
+        error,
+      );
+      throw error;
+    }
+  }
+
   private async logStage(
     job: PipelineJobContext,
     stage: string,
@@ -357,18 +446,29 @@ export class NewsPipelineService {
     data?: Record<string, unknown>,
     error?: unknown,
   ) {
-    await TaskLogModel.create({
-      queue: job.queue,
-      jobId: job.jobId,
-      orgId: job.orgId,
-      stage,
-      status,
-      data,
-      error: error
-        ? {
-            message: error instanceof Error ? error.message : String(error),
-          }
-        : undefined,
-    });
+    const errorDetails = error
+      ? {
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : undefined,
+          stack: error instanceof Error ? error.stack : undefined,
+        }
+      : undefined;
+
+    try {
+      await TaskLogModel.create({
+        queue: job.queue,
+        jobId: job.jobId,
+        orgId: job.orgId,
+        stage,
+        status,
+        data,
+        error: errorDetails,
+      });
+    } catch (logError) {
+      this.logger.warn(
+        { logError, stage, status, jobId: job.jobId, orgId: job.orgId },
+        "Failed to persist task log",
+      );
+    }
   }
 }

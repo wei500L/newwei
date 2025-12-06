@@ -33,8 +33,17 @@ export class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {
       }
     );
 
-    this.worker.on("failed", (job, error) => {
-      logger.error({ jobId: job?.id, slug: job?.data?.dataItemId, error }, "Akshare worker failed");
+    this.worker.on("failed", async (job, error) => {
+      const slug = job?.data?.dataItemId;
+      logger.error({ jobId: job?.id, slug, error }, "Akshare worker failed");
+      if (!slug) {
+        return;
+      }
+      try {
+        await this.akshareService.recordFetchFailure(slug, error);
+      } catch (persistError) {
+        logger.error({ jobId: job?.id, slug, error: persistError }, "Failed to persist Akshare failure status");
+      }
     });
 
     this.events.on("failed", (event) => {

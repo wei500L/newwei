@@ -1,6 +1,6 @@
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { EconomicDataRunStatus, Prisma } from "@prisma/client";
 import { lastValueFrom } from "rxjs";
 import { Queue, type RepeatJob, type RepeatOptions } from "bullmq";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
@@ -208,64 +208,74 @@ export class AkshareService implements OnModuleInit {
   }
 
   async fetchAndPersist(slug: string, triggeredById?: string) {
-    const definition = this.definitions.find((entry) => entry.slug === slug);
-    if (!definition) {
-      throw new InternalServerErrorException(`Unknown Akshare definition: ${slug}`);
-    }
-    const response = await this.executeRequest(definition);
-    await AkshareResponseModel.create({
-      dataItemId: definition.slug,
-      endpoint: definition.endpoint,
-      method: definition.method ?? "GET",
-      requestParams: definition.defaultParams ?? {},
-      payload: response.payload,
-      fetchedAt: new Date()
-    });
+    let itemId: string | undefined;
+    try {
+      const definition = this.definitions.find((entry) => entry.slug === slug);
+      if (!definition) {
+        throw new InternalServerErrorException(`Unknown Akshare definition: ${slug}`);
+      }
+      const response = await this.executeRequest(definition);
+      await AkshareResponseModel.create({
+        dataItemId: definition.slug,
+        endpoint: definition.endpoint,
+        method: definition.method ?? "GET",
+        requestParams: definition.defaultParams ?? {},
+        payload: response.payload,
+        fetchedAt: new Date()
+      });
 
-    const parsedPoints = this.parsePayload(definition.parser, response.payload);
-    const dbItem = await this.prisma.economicDataItem.findUnique({ where: { slug: definition.slug } });
-    if (!dbItem) {
-      throw new InternalServerErrorException(`Missing catalog entry for ${definition.slug}`);
-    }
+      const parsedPoints = this.parsePayload(definition.parser, response.payload);
+      const dbItem = await this.prisma.economicDataItem.findUnique({ where: { slug: definition.slug } });
+      if (!dbItem) {
+        throw new InternalServerErrorException(`Missing catalog entry for ${definition.slug}`);
+      }
+      itemId = dbItem.id;
 
-    for (const point of parsedPoints) {
-      await this.prisma.economicDataPoint.upsert({
-        where: {
-          itemId_recordedAt_sourceField: {
+      for (const point of parsedPoints) {
+        await this.prisma.economicDataPoint.upsert({
+          where: {
+            itemId_recordedAt_sourceField: {
+              itemId: dbItem.id,
+              recordedAt: point.recordedAt,
+              sourceField: point.sourceField
+            }
+          },
+          update: {
+            value: new Prisma.Decimal(point.value),
+            unit: point.unit,
+            dataType: point.dataType
+          },
+          create: {
             itemId: dbItem.id,
             recordedAt: point.recordedAt,
-            sourceField: point.sourceField
+            dataType: point.dataType,
+            value: new Prisma.Decimal(point.value),
+            unit: point.unit,
+            sourceField: point.sourceField,
+            sourceMeta: point.meta ?? null
           }
-        },
-        update: {
-          value: new Prisma.Decimal(point.value),
-          unit: point.unit,
-          dataType: point.dataType
-        },
-        create: {
-          itemId: dbItem.id,
-          recordedAt: point.recordedAt,
-          dataType: point.dataType,
-          value: new Prisma.Decimal(point.value),
-          unit: point.unit,
-          sourceField: point.sourceField,
-          sourceMeta: point.meta ?? null
-        }
-      });
-    }
-
-    await this.prisma.economicDataFetchConfig.update({
-      where: { itemId: dbItem.id },
-      data: {
-        lastRunAt: new Date(),
-        lastStatus: "success",
-        lastError: null,
-        updatedAt: new Date()
+        });
       }
-    });
 
-    this.logger.log(`Stored ${parsedPoints.length} points for ${definition.slug}`);
-    return parsedPoints.length;
+      await this.updateFetchStatusByItemId(dbItem.id, EconomicDataRunStatus.success);
+
+      this.logger.log(`Stored ${parsedPoints.length} points for ${definition.slug}`);
+      return parsedPoints.length;
+    } catch (error) {
+      try {
+        if (itemId) {
+          await this.updateFetchStatusByItemId(itemId, EconomicDataRunStatus.failed, error);
+        } else {
+          await this.recordFetchFailure(slug, error);
+        }
+      } catch (persistError) {
+        this.logger.error(
+          { slug, error: persistError },
+          "Failed to record Akshare fetch failure status"
+        );
+      }
+      throw error;
+    }
   }
 
   private async executeRequest(definition: AkshareDataItemDefinition): Promise<FetchResult> {
@@ -579,5 +589,47 @@ export class AkshareService implements OnModuleInit {
     });
     await this.ensureRepeatableJobs();
     return updated;
+  }
+
+  private formatError(error: unknown) {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (typeof error === "string") {
+      return error;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+
+  private async updateFetchStatusByItemId(itemId: string, status: EconomicDataRunStatus, error?: unknown) {
+    await this.prisma.economicDataFetchConfig.update({
+      where: { itemId },
+      data: {
+        lastRunAt: new Date(),
+        lastStatus: status,
+        lastError: error ? this.formatError(error) : null,
+        updatedAt: new Date()
+      }
+    });
+  }
+
+  async recordFetchFailure(slug: string, error: unknown) {
+    try {
+      const item = await this.prisma.economicDataItem.findUnique({ where: { slug } });
+      if (!item) {
+        this.logger.error(`Failed to update fetch status for ${slug}: item not found`);
+        return;
+      }
+      await this.updateFetchStatusByItemId(item.id, EconomicDataRunStatus.failed, error);
+    } catch (updateError) {
+      this.logger.error(
+        { slug, error: updateError },
+        "Failed to persist Akshare fetch failure status"
+      );
+    }
   }
 }

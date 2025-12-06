@@ -1,3 +1,4 @@
+import { TaskLogModel } from "@modular/mongo";
 import type { Crawl4aiResponse } from "../../crawl/crawl4ai.client";
 import { NewsPromptBuilder } from "../news-prompt.builder";
 import { NewsPipelineService } from "../news-pipeline.service";
@@ -157,6 +158,10 @@ describe("NewsPipelineService", () => {
     }
   };
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("processes a raw item by crawling and cleaning content", async () => {
     await service.process(job, raw);
 
@@ -199,5 +204,33 @@ describe("NewsPipelineService", () => {
     expect(parsed.summaryHints).toEqual(["focus"]);
     expect(parsed.forceRefresh).toBe(false);
     expect(parsed.crawlOptions).toEqual({ userAgent: "UA" });
+  });
+
+  it("logs failed stage when LLM cleaning fails", async () => {
+    const error = new Error("LLM unavailable");
+    liteLlm.acompletion.mockRejectedValueOnce(error);
+
+    await expect(service.process(job, raw)).rejects.toThrow("LLM unavailable");
+
+    const llmProcessingCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+      ([entry]) => entry.stage === "llm" && entry.status === "processing"
+    );
+
+    expect(llmProcessingCall?.[0]).toMatchObject({
+      stage: "llm",
+      status: "processing",
+      data: { url: "https://example.com/story", runId: null }
+    });
+
+    const llmFailureCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+      ([entry]) => entry.stage === "llm" && entry.status === "failed"
+    );
+
+    expect(llmFailureCall?.[0]).toMatchObject({
+      stage: "llm",
+      status: "failed",
+      data: { url: "https://example.com/story", runId: null },
+      error: { message: "LLM unavailable" }
+    });
   });
 });
