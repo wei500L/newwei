@@ -159,6 +159,10 @@ const config: NextAuthConfig = {
         } satisfies TokenPayload;
       }
 
+      if (typedToken.error === "RefreshAccessTokenError") {
+        return typedToken;
+      }
+
       if (Date.now() < typedToken.accessTokenExpires - 30_000) {
         return typedToken;
       }
@@ -167,9 +171,6 @@ const config: NextAuthConfig = {
     },
     async session({ session, token }) {
       const typedToken = token as unknown as TokenPayload;
-      if (typedToken.error === "RefreshAccessTokenError") {
-        return null;
-      }
       return {
         ...session,
         user: {

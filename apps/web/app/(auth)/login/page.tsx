@@ -35,6 +35,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const sessionExpired = searchParams.get("sessionExpired") === "1";
 
   const onFinish = async (values: LoginFormValues) => {
     const parsed = loginSchema.safeParse(values);
@@ -90,6 +91,11 @@ export default function LoginPage() {
         style={{ marginTop: "1.5rem" }}
         onFinish={onFinish}
       >
+        {sessionExpired && (
+          <Form.Item>
+            <Alert type="warning" message="Session expired. Please sign in again." showIcon />
+          </Form.Item>
+        )}
         <Form.Item
           label="Email"
           name="email"
