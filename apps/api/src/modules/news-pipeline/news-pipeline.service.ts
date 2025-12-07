@@ -699,6 +699,17 @@ export class NewsPipelineService {
     return createHash("sha256").update(content).digest("hex");
   }
 
+  private computeBackoffDelay(
+    baseDelayMs: number,
+    attempt: number,
+    maxAttempts: number,
+  ) {
+    const exponentialDelay =
+      baseDelayMs * 2 ** Math.max(Math.min(attempt, maxAttempts) - 1, 0);
+    const jitterFactor = 0.5 + Math.random(); // add jitter to avoid synchronized retries
+    return Math.round(exponentialDelay * jitterFactor);
+  }
+
   private async retry<T>(
     fn: () => Promise<T>,
     attempts: number,
@@ -715,7 +726,8 @@ export class NewsPipelineService {
         if (tries >= attempts) {
           throw error;
         }
-        await sleep(delayMs * tries);
+        const backoffDelay = this.computeBackoffDelay(delayMs, tries, attempts);
+        await sleep(backoffDelay);
       }
     }
     throw lastError instanceof Error
