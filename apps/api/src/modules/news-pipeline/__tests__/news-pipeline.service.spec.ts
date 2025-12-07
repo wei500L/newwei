@@ -442,4 +442,109 @@ describe("NewsPipelineService", () => {
       error: { message: "LLM unavailable" }
     });
   });
+
+  it("marks invalid outbox payloads as failed without writing Mongo", async () => {
+    const updateSpy = mongoOutbox.update as jest.Mock;
+    mongoOutbox.findMany.mockResolvedValueOnce([
+      {
+        id: "outbox-invalid",
+        payload: {},
+        status: "pending",
+        attempts: 2,
+        availableAt: new Date(),
+        lockedAt: null
+      }
+    ]);
+
+    await service.retryPendingOutbox();
+
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "outbox-invalid" },
+        data: expect.objectContaining({
+          status: "failed",
+          attempts: 3,
+          lockedAt: null,
+          availableAt: expect.any(Date)
+        })
+      })
+    );
+    expect(ProcessedItemModel.create).not.toHaveBeenCalled();
+  });
+
+  it("replays stale locked outbox entry to Mongo and deletes it", async () => {
+    const staleLockedAt = new Date(Date.now() - 10 * 60 * 1000);
+    const validPayload = {
+      type: "processed_item",
+      document: {
+        _id: "64b5f0c4f6e4b0495c3f4a10",
+        rawItemId,
+        itemMetaId: "meta-1",
+        orgId: "org-1",
+        status: "completed",
+        tags: ["breaking"],
+        result: {
+          title: "Existing title",
+          subtitle: null,
+          author: "Reporter",
+          source: "Example",
+          published_at: "2024-01-01T00:00:00Z",
+          language: "en",
+          location: "US",
+          category: null,
+          topics: ["news"],
+          summary: "Existing summary",
+          key_points: ["Existing summary"],
+          entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+          cleaned_markdown: "Clean body from cache",
+          removed_noise_types: [],
+          quality_score: 0.9,
+          llm_model: "openai/gpt-4o-mini",
+          llm_prompt_version: "v1"
+        },
+        llm: {
+          model: "openai/gpt-4o-mini",
+          promptVersion: "v1",
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+          costUsd: 0.01,
+          latencyMs: 80
+        },
+        error: undefined
+      }
+    };
+
+    mongoOutbox.findMany.mockResolvedValueOnce([
+      {
+        id: "outbox-stale",
+        payload: validPayload,
+        status: "processing",
+        attempts: 1,
+        availableAt: new Date(),
+        lockedAt: staleLockedAt
+      }
+    ]);
+    mongoOutbox.updateMany.mockResolvedValueOnce({ count: 1 });
+    mongoOutbox.findUnique.mockResolvedValueOnce({
+      id: "outbox-stale",
+      attempts: 1
+    });
+    const createSpy = ProcessedItemModel.create as jest.Mock;
+    createSpy.mockResolvedValueOnce({
+      _id: { toString: () => validPayload.document._id },
+      toJSON: () => ({ id: validPayload.document._id })
+    });
+
+    await service.retryPendingOutbox();
+
+    expect(mongoOutbox.delete).toHaveBeenCalledWith({ where: { id: "outbox-stale" } });
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: expect.anything(),
+        rawItemId: expect.anything(),
+        result: validPayload.document.result
+      })
+    );
+  });
 });
