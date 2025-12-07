@@ -6,6 +6,7 @@ import { AuditLogSettingsService } from "../system-settings/audit-log-settings.s
 @Injectable()
 export class AuditLogRetentionService {
   private readonly logger = new Logger(AuditLogRetentionService.name);
+  private static readonly DELETE_BATCH_SIZE = 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -28,14 +29,36 @@ export class AuditLogRetentionService {
   async purgeExpiredAuditLogs(now: Date = new Date()) {
     const retentionDays = Math.max(1, await this.auditLogSettings.getRetentionDays());
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
-    const result = await this.prisma.auditLog.deleteMany({
-      where: { createdAt: { lt: cutoff } }
-    });
+    const batchSize = AuditLogRetentionService.DELETE_BATCH_SIZE;
+    let totalDeleted = 0;
 
-    if (result.count > 0) {
-      this.logger.log(`Deleted ${result.count} audit log(s) older than ${retentionDays} days`);
+    while (true) {
+      const expiredIds = await this.prisma.auditLog.findMany({
+        where: { createdAt: { lt: cutoff } },
+        select: { id: true },
+        orderBy: { id: "asc" },
+        take: batchSize
+      });
+
+      if (expiredIds.length === 0) {
+        break;
+      }
+
+      const { count } = await this.prisma.auditLog.deleteMany({
+        where: { id: { in: expiredIds.map(({ id }) => id) } }
+      });
+
+      totalDeleted += count;
+
+      if (expiredIds.length < batchSize) {
+        break;
+      }
     }
 
-    return result.count;
+    if (totalDeleted > 0) {
+      this.logger.log(`Deleted ${totalDeleted} audit log(s) older than ${retentionDays} days`);
+    }
+
+    return totalDeleted;
   }
 }
