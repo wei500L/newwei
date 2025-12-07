@@ -55,7 +55,10 @@ const severityColor: Record<AlertSeverity, string> = {
   [AlertSeverity.High]: "red",
 };
 
-const dedupeLogs = (logs: QueueLog[], limit = 15): QueueLog[] => {
+const LIVE_LOGS_LIMIT = 50;
+const DISPLAY_LOG_LIMIT = 15;
+
+const dedupeLogs = (logs: QueueLog[], limit: number): QueueLog[] => {
   const seen = new Set<string>();
   const result: QueueLog[] = [];
   for (const log of logs) {
@@ -131,15 +134,18 @@ export function DashboardContent() {
       ? JSON.stringify(lastEvent.data)
       : undefined;
     setLiveLogs((prev) =>
-      dedupeLogs([
-        {
-          event: lastEvent.event,
-          jobId: lastEvent.jobId,
-          data: serializedData,
-          timestamp: lastEvent.timestamp,
-        },
-        ...prev,
-      ]),
+      dedupeLogs(
+        [
+          {
+            event: lastEvent.event,
+            jobId: lastEvent.jobId,
+            data: serializedData,
+            timestamp: lastEvent.timestamp,
+          },
+          ...prev,
+        ],
+        LIVE_LOGS_LIMIT,
+      ),
     );
     void refetch();
     if (lastEvent.event === "FAILED") {
@@ -169,7 +175,14 @@ export function DashboardContent() {
   const activeDashboard =
     dashboards.find((d) => d.id === activeId) ?? dashboards[0] ?? null;
 
-  const combinedLogs = dedupeLogs([...(liveLogs ?? []), ...(recentLogs ?? [])]);
+  const combinedLogs = useMemo(
+    () =>
+      dedupeLogs(
+        [...(liveLogs ?? []), ...(recentLogs ?? [])],
+        DISPLAY_LOG_LIMIT,
+      ),
+    [liveLogs, recentLogs],
+  );
   const chartData: Record<string, number> = {
     waiting: counts.waiting,
     active: counts.active,
@@ -178,20 +191,24 @@ export function DashboardContent() {
     delayed: counts.delayed,
   };
 
-  const parsedLogs = combinedLogs.map((log) => {
-    let parsedPayload: Record<string, unknown> | undefined;
-    if (log.data) {
-      try {
-        parsedPayload = JSON.parse(log.data);
-      } catch {
-        parsedPayload = undefined;
-      }
-    }
-    return {
-      ...log,
-      payload: parsedPayload,
-    };
-  });
+  const parsedLogs = useMemo(
+    () =>
+      combinedLogs.map((log) => {
+        let parsedPayload: Record<string, unknown> | undefined;
+        if (log.data) {
+          try {
+            parsedPayload = JSON.parse(log.data);
+          } catch {
+            parsedPayload = undefined;
+          }
+        }
+        return {
+          ...log,
+          payload: parsedPayload,
+        };
+      }),
+    [combinedLogs],
+  );
 
   return (
     <div>
