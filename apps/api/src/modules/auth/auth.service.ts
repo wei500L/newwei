@@ -177,6 +177,22 @@ export class AuthService {
     }
   }
 
+  // Refresh tokens follow tokenId[.orgId].secret so we can unambiguously recover each segment.
+  private parseRefreshToken(refreshToken: string) {
+    const tokenPattern =
+      /^(?<tokenId>[A-Za-z0-9_-]+)(?:\.(?<orgId>[A-Za-z0-9_-]+))?\.(?<secret>[A-Fa-f0-9]{32,128})$/;
+    const match = tokenPattern.exec(refreshToken);
+    if (!match?.groups?.tokenId || !match.groups.secret) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    return {
+      tokenId: match.groups.tokenId,
+      orgId: match.groups.orgId,
+      secret: match.groups.secret
+    };
+  }
+
   async login(
     email: string,
     password: string,
@@ -220,18 +236,7 @@ export class AuthService {
     ipAddress?: string,
     userAgent?: string
   ) {
-    const parts = refreshToken.split(".");
-    if (parts.length < 2 || parts.length > 3) {
-      throw new UnauthorizedException("Invalid refresh token");
-    }
-
-    const [tokenId, possibleOrgId, possibleSecret] = parts;
-    const secret = parts.length === 3 ? possibleSecret : possibleOrgId;
-    const tokenOrgId = parts.length === 3 ? possibleOrgId : undefined;
-
-    if (!tokenId || !secret) {
-      throw new UnauthorizedException("Invalid refresh token");
-    }
+    const { tokenId, orgId: tokenOrgId, secret } = this.parseRefreshToken(refreshToken);
 
     const record = await this.prisma.refreshToken.findUnique({
       where: { id: tokenId }

@@ -173,7 +173,7 @@ describe("AuthService", () => {
   });
 
   it("defaults refresh to the org encoded in the token when none is provided", async () => {
-    const secret = "refresh-secret";
+    const secret = "a".repeat(64);
     prismaMock.refreshToken.findUnique = jest.fn().mockResolvedValue({
       id: "token-1",
       userId: "user-1",
@@ -210,7 +210,7 @@ describe("AuthService", () => {
   });
 
   it("allows switching organizations on refresh when requested", async () => {
-    const secret = "refresh-secret";
+    const secret = "a".repeat(64);
     prismaMock.refreshToken.findUnique = jest.fn().mockResolvedValue({
       id: "token-1",
       userId: "user-1",
@@ -244,6 +244,13 @@ describe("AuthService", () => {
     const result = await service.refresh(`token-1.org-1.${secret}`, "org-2");
     expect(result.user.orgId).toBe("org-2");
     expect(result.user.permissions).toContain("items.write");
+  });
+
+  it("rejects refresh tokens that do not match the expected structure", async () => {
+    await expect(service.refresh("token-without-secret")).rejects.toThrow(
+      UnauthorizedException
+    );
+    await expect(service.refresh("token.org.too.short")).rejects.toThrow(UnauthorizedException);
   });
 
   it("rejects missing membership", async () => {
