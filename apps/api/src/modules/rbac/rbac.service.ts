@@ -71,6 +71,16 @@ export class RbacService {
 
   async assignRole(orgId: string, actorId: string, dto: AssignRoleDto) {
     await this.actionRateLimit.enforceRbacWrite(orgId, actorId);
+    const role = await this.prisma.role.findFirst({
+      where: {
+        id: dto.roleId,
+        orgId
+      }
+    });
+    if (!role) {
+      throw new NotFoundException("Role not found");
+    }
+
     const membership = await this.prisma.membership.upsert({
       where: {
         userId_orgId: {

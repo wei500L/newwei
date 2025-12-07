@@ -63,6 +63,7 @@ model Role {
   permissions RolePermission[]
   memberships Membership[]
 
+  @@unique([id, orgId])
   @@unique([orgId, name])
 }
 
@@ -89,10 +90,11 @@ model Membership {
   userId    String
   org       Org    @relation(fields: [orgId], references: [id])
   orgId     String
-  role      Role   @relation(fields: [roleId], references: [id])
+  role      Role   @relation(fields: [roleId, orgId], references: [id, orgId])
   roleId    String
   createdAt DateTime @default(now())
 
+  @@index([roleId, orgId])
   @@unique([userId, orgId])
 }
 

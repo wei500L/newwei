@@ -42,6 +42,12 @@ describe("RbacService", () => {
         })
       );
     actionRateLimitMock.enforceRbacWrite = jest.fn().mockResolvedValue(true);
+    prismaMock.role.findFirst = jest.fn().mockResolvedValue({
+      id: "role-9",
+      name: "admin",
+      orgId: "org-1",
+      isSystem: false
+    });
     service = new RbacService(prismaMock, actionRateLimitMock);
   });
 
@@ -102,7 +108,19 @@ describe("RbacService", () => {
     prismaMock.membership.upsert = jest.fn().mockResolvedValue({ id: "membership-1" });
     await service.assignRole("org-1", "admin-1", { userId: "user-2", roleId: "role-9" });
     expect(actionRateLimitMock.enforceRbacWrite).toHaveBeenCalledWith("org-1", "admin-1");
+    expect(prismaMock.role.findFirst).toHaveBeenCalledWith({
+      where: { id: "role-9", orgId: "org-1" }
+    });
     expect(prismaMock.membership.upsert).toHaveBeenCalled();
+  });
+
+  it("rejects assigning roles outside the organization", async () => {
+    prismaMock.role.findFirst = jest.fn().mockResolvedValue(null);
+
+    await expect(
+      service.assignRole("org-1", "admin-1", { userId: "user-2", roleId: "foreign-role" })
+    ).rejects.toThrow(NotFoundException);
+    expect(prismaMock.membership.upsert).not.toHaveBeenCalled();
   });
 
   it("updates role permissions and description", async () => {
