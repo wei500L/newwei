@@ -19,12 +19,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+import { Crawl4aiClient } from "../crawl/crawl4ai.client";
 import {
-  Crawl4aiClient,
-  Crawl4aiArticle,
-  Crawl4aiResponse,
-  Crawl4aiMarkdownResult,
-} from "../crawl/crawl4ai.client";
+  Crawl4aiResponseSchema,
+  ParsedCrawl4aiArticle,
+  ParsedCrawl4aiResponse,
+} from "./news-pipeline.crawl.schema";
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
@@ -257,7 +257,7 @@ export class NewsPipelineService {
     }
 
     const crawlResponse = await this.executeCrawl(payload);
-    const article = this.pickSuccessfulArticle(crawlResponse);
+    const article = this.pickSuccessfulArticle(crawlResponse.results);
     const normalized = this.normalizeArticle(
       article,
       payload.url,
@@ -274,7 +274,7 @@ export class NewsPipelineService {
     };
   }
 
-  private async executeCrawl(payload: NormalizedNewsPayload) {
+  private async executeCrawl(payload: NormalizedNewsPayload): Promise<ParsedCrawl4aiResponse> {
     const cfg = this.configService.config.crawl4ai;
     const options = {
       ...cfg.crawlerDefaults,
@@ -288,14 +288,16 @@ export class NewsPipelineService {
       url: payload.url,
       options,
     };
-    return this.retry(async () => this.crawlClient.crawl(request), 3, 2_000);
+    const response = await this.retry(
+      async () => this.crawlClient.crawl(request),
+      3,
+      2_000,
+    );
+    return Crawl4aiResponseSchema.parse(response);
   }
 
-  private pickSuccessfulArticle(response: Crawl4aiResponse) {
-    if (!response.results || response.results.length === 0) {
-      throw new Error("crawl4ai returned no results");
-    }
-    const article = response.results.find((result) => result.success !== false);
+  private pickSuccessfulArticle(results: ParsedCrawl4aiArticle[]) {
+    const article = results.find((result) => result.success !== false);
     if (!article) {
       throw new Error("crawl4ai returned no successful article");
     }
@@ -303,7 +305,7 @@ export class NewsPipelineService {
   }
 
   private normalizeArticle(
-    article: Crawl4aiArticle,
+    article: ParsedCrawl4aiArticle,
     url: string,
     runId?: string | null,
   ) {
@@ -312,7 +314,8 @@ export class NewsPipelineService {
       throw new Error("Crawl result missing markdown");
     }
     const contentHash = this.hashContent(markdown);
-    const markdownRecord = this.asMarkdownRecord(article.markdown);
+    const markdownRecord =
+      typeof article.markdown === "string" || !article.markdown ? null : article.markdown;
     return {
       sourceUrl: article.url ?? url,
       markdown,
@@ -330,33 +333,22 @@ export class NewsPipelineService {
     };
   }
 
-  private asMarkdownRecord(
-    markdown: Crawl4aiArticle["markdown"],
-  ): Crawl4aiMarkdownResult | null {
-    if (markdown && typeof markdown === "object") {
-      return markdown as Crawl4aiMarkdownResult;
-    }
-    return null;
-  }
-
-  private extractMarkdown(article: Crawl4aiArticle) {
+  private extractMarkdown(article: ParsedCrawl4aiArticle) {
     if (!article) {
       return "";
     }
     if (typeof article.markdown === "string") {
       return article.markdown;
     }
-    if (article.markdown && typeof article.markdown === "object") {
-      const record = article.markdown as Record<string, unknown>;
+    if (article.markdown) {
+      const record = article.markdown;
       return (
-        (typeof record.fit_markdown === "string"
-          ? record.fit_markdown
-          : undefined) ??
-        (typeof record.raw_markdown === "string"
-          ? record.raw_markdown
-          : undefined) ??
-        (typeof record.markdown === "string" ? record.markdown : undefined) ??
-        (typeof record.text === "string" ? record.text : undefined) ??
+        record.fit_markdown ??
+        record.fitMarkdown ??
+        record.raw_markdown ??
+        record.rawMarkdown ??
+        record.markdown ??
+        record.text ??
         ""
       );
     }
