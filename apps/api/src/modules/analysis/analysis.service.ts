@@ -115,7 +115,22 @@ export class AnalysisService {
   }
 
   private async runAnomaly(input: AnomalyInput) {
-    const systemPrompt = "角色：金融数据异常分析专家。请解释异常的可能原因并结合新闻与政策。";
+    const statisticalFindings = this.evaluateSeriesForAnomalies(input.series ?? []);
+    const statsSummary = statisticalFindings.length
+      ? statisticalFindings
+          .map((finding, idx) => {
+            const timestamp =
+              finding.point.timestamp instanceof Date
+                ? finding.point.timestamp.toISOString()
+                : finding.point.timestamp;
+            return `${idx + 1}. ${finding.reason} | 值 ${finding.point.value} @ ${timestamp} (score ${finding.score.toFixed(
+              2
+            )})`;
+          })
+          .join("\n")
+      : "未检测到显著的统计异常";
+    const systemPrompt =
+      "角色：金融数据异常分析专家。优先参考统计检测结果，再结合新闻与政策解释异常的可能原因，并输出可执行洞察。";
     const news = input.newsList?.length ? input.newsList.map((n, idx) => `${idx + 1}. ${n}`).join("\n") : "无相关新闻";
     const policies = input.policyList?.length ? input.policyList.map((p, idx) => `${idx + 1}. ${p}`).join("\n") : "无相关政策";
     const userPrompt = [
@@ -125,6 +140,8 @@ export class AnalysisService {
       `异常值：${input.value}（偏离均值 ${input.deviationPercent}%）`,
       `同期新闻：${news}`,
       `相关政策：${policies}`,
+      "统计检测结果：",
+      statsSummary,
       "",
       "输出要求：",
       "1. 异常原因分析（3-5条，按可能性排序）",
@@ -138,7 +155,8 @@ export class AnalysisService {
       ]
     });
     const content = completion.choices?.[0]?.message?.content ?? "";
-    return { summary: content, raw: completion };
+    const summary = statisticalFindings.length ? `统计检测：\n${statsSummary}\n\n${content}` : content;
+    return { summary, raw: completion, statisticalFindings };
   }
 
   evaluateSeriesForAnomalies(series: SeriesPoint[]) {

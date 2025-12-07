@@ -364,6 +364,11 @@ export type CorrelationAnalysisInput = {
   newsSummaries: Array<string>;
 };
 
+export type SeriesPointInput = {
+  timestamp: string;
+  value: number;
+};
+
 export type AnomalyAnalysisInput = {
   metric: string;
   timestamp: string;
@@ -371,6 +376,7 @@ export type AnomalyAnalysisInput = {
   deviationPercent: number;
   newsList: Array<string>;
   policyList: Array<string>;
+  series?: InputMaybe<Array<SeriesPointInput>>;
 };
 
 export type DashboardWidgetInput = {

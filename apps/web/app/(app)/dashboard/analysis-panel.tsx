@@ -156,6 +156,36 @@ function AnomalyForm({
   loading?: boolean;
 }) {
   const [form] = Form.useForm();
+  const parseSeriesJson = (raw?: string) => {
+    if (!raw || !raw.trim()) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        message.error("Series must be a JSON array");
+        return null;
+      }
+      const normalized = parsed
+        .map((item) => {
+          if (!item) return null;
+          const timestamp = (item as any).timestamp ?? (item as any).time ?? (item as any).date;
+          const value = Number((item as any).value);
+          if (!timestamp || Number.isNaN(value)) return null;
+          return { timestamp: String(timestamp), value };
+        })
+        .filter(
+          (point): point is { timestamp: string; value: number } =>
+            !!point,
+        );
+      if (!normalized.length) {
+        message.warning("No valid series points parsed");
+      }
+      return normalized;
+    } catch (error) {
+      message.error("Series JSON is invalid");
+      return null;
+    }
+  };
+
   return (
     <Form
       layout="inline"
@@ -167,8 +197,22 @@ function AnomalyForm({
         deviationPercent: 0,
         newsList: [],
         policyList: [],
+        seriesJson: "",
       }}
-      onFinish={onSubmit}
+      onFinish={async (values) => {
+        const series = parseSeriesJson(values.seriesJson);
+        if (series === null) return;
+        const payload = {
+          metric: values.metric,
+          timestamp: values.timestamp,
+          value: values.value,
+          deviationPercent: values.deviationPercent,
+          newsList: values.newsList ?? [],
+          policyList: values.policyList ?? [],
+          series: series.length ? series : undefined,
+        };
+        await onSubmit(payload);
+      }}
     >
       <Form.Item name="metric" rules={[{ required: true }]}>
         <Input placeholder="Metric" />
@@ -208,6 +252,12 @@ function AnomalyForm({
                 .filter(Boolean),
             )
           }
+        />
+      </Form.Item>
+      <Form.Item name="seriesJson">
+        <Input.TextArea
+          placeholder='Series JSON e.g. [{"timestamp":"2024-06-01","value":123}]'
+          autoSize={{ minRows: 2, maxRows: 4 }}
         />
       </Form.Item>
       <Form.Item>

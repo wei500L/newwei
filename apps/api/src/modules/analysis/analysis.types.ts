@@ -1,3 +1,5 @@
+import { SeriesPoint } from "./anomaly-detector";
+
 export type AnalysisJobPayload =
   | { type: "correlation"; analysisId: string }
   | { type: "anomaly"; analysisId: string };
@@ -18,4 +20,5 @@ export interface AnomalyInput {
   deviationPercent: number;
   newsList: string[];
   policyList: string[];
+  series?: SeriesPoint[];
 }

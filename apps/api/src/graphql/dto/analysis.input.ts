@@ -23,6 +23,15 @@ export class CorrelationAnalysisInput {
 }
 
 @InputType()
+export class SeriesPointInput {
+  @Field()
+  timestamp!: string;
+
+  @Field(() => Float)
+  value!: number;
+}
+
+@InputType()
 export class AnomalyAnalysisInput {
   @Field()
   metric!: string;
@@ -41,6 +50,9 @@ export class AnomalyAnalysisInput {
 
   @Field(() => [String])
   policyList!: string[];
+
+  @Field(() => [SeriesPointInput], { nullable: true })
+  series?: SeriesPointInput[];
 }
 
 @InputType()
