@@ -1,7 +1,19 @@
-import { TaskLogModel, ProcessedItemModel } from "@modular/mongo";
-import type { Article, ProcessedArticle } from "@prisma/client";
+import {
+  ProcessedItemModel,
+  TaskLogModel,
+  type ProcessedItemDocument,
+} from "@modular/mongo";
+import {
+  MongoOutboxStatus,
+  MongoOutboxType,
+  type Article,
+  type Prisma,
+  type ProcessedArticle,
+} from "@prisma/client";
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
+import { Types } from "mongoose";
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -40,10 +52,37 @@ interface LlmCallMetadata {
   latencyMs: number | null;
 }
 
+type ProcessedItemOutboxPayload = {
+  type: MongoOutboxType.processed_item;
+  document: {
+    _id: string;
+    rawItemId: string;
+    itemMetaId: string;
+    orgId: string;
+    status: "completed";
+    tags: string[];
+    result: CleanedNews;
+    llm: LlmCallMetadata;
+    error?: unknown;
+  };
+};
+
+type PersistedProcessedItem =
+  | ProcessedItemDocument
+  | { _id: string; toJSON: () => { id: string } };
+
+type PersistResult = {
+  processedItem: PersistedProcessedItem;
+  outboxId: string;
+};
+
 @Injectable()
 export class NewsPipelineService {
   private readonly logger = createLogger({ name: "news-pipeline" });
   private readonly crawlCachePrefix = "news:crawl:";
+  private readonly outboxRetryBaseDelayMs = 30_000;
+  private readonly outboxStaleLockMs = 5 * 60_000;
+  private readonly outboxBatchSize = 10;
 
   constructor(
     private readonly crawlClient: Crawl4aiClient,
@@ -116,41 +155,28 @@ export class NewsPipelineService {
       },
     );
 
-    const processed = await this.runStage(
+    const persistResult = await this.runStage(
       job,
       "persist",
-      async () => {
-        const created = await ProcessedItemModel.create({
-          rawItemId: raw.id,
-          itemMetaId: job.itemMetaId,
-          orgId: job.orgId,
-          status: "completed",
-          tags: this.buildTags(payload, cleaned),
-          result: cleaned,
-          llm,
-          error: undefined,
-        });
-
-        await this.persistProcessedArticle({
-          orgId: job.orgId,
+      async () =>
+        this.persistProcessedResult({
+          job,
+          raw,
           payload,
           article,
           cleaned,
           llm,
           contentHash,
-          processedItemId: created._id.toString(),
           processedArticleId,
-        });
-
-        return created;
-      },
+        }),
       {
         onProcessingData: () => ({
           rawItemId: raw.id,
           itemMetaId: job.itemMetaId,
         }),
         onSuccessData: (result) => ({
-          processedId: result._id.toString(),
+          processedId: result.processedItem._id.toString(),
+          outboxId: result.outboxId,
         }),
         onErrorData: () => ({
           rawItemId: raw.id,
@@ -159,11 +185,50 @@ export class NewsPipelineService {
       },
     );
 
-    const document = processed.toJSON() as { id?: string };
+    const document = persistResult.processedItem.toJSON() as { id?: string };
     return {
       ...document,
-      id: document.id ?? processed._id.toString(),
+      id: document.id ?? persistResult.processedItem._id.toString(),
     };
+  }
+
+  private async persistProcessedResult(options: {
+    job: PipelineJobContext;
+    raw: RawPipelineItem;
+    payload: NormalizedNewsPayload;
+    article: ReturnType<typeof this.normalizeArticle> & { fromCache: boolean };
+    cleaned: CleanedNews;
+    llm: LlmCallMetadata;
+    contentHash: string;
+    processedArticleId?: string | null;
+  }): Promise<PersistResult> {
+    const processedItemId = new Types.ObjectId().toHexString();
+    const outboxPayload = this.buildProcessedItemOutboxPayload({
+      processedItemId,
+      raw: options.raw,
+      orgId: options.job.orgId,
+      payload: options.payload,
+      cleaned: options.cleaned,
+      llm: options.llm,
+    });
+
+    const outboxEntry = await this.createOutboxEntry({
+      orgId: options.job.orgId,
+      payload: outboxPayload,
+      processedItemId,
+      contentHash: options.contentHash,
+      article: options.article,
+      cleaned: options.cleaned,
+      llm: options.llm,
+      processedArticleId: options.processedArticleId,
+      normalizedPayload: options.payload,
+    });
+
+    const processedItem =
+      (await this.deliverOutboxPayload(outboxEntry.id, outboxPayload)) ??
+      this.buildPendingProcessedItem(processedItemId);
+
+    return { processedItem, outboxId: outboxEntry.id };
   }
 
   private async fetchArticle(job: PipelineJobContext, payload: NormalizedNewsPayload) {
@@ -510,27 +575,69 @@ export class NewsPipelineService {
     };
   }
 
-  private async persistProcessedArticle(options: {
+  private async createOutboxEntry(options: {
     orgId: string;
-    payload: NormalizedNewsPayload;
+    payload: ProcessedItemOutboxPayload;
+    processedItemId: string;
+    contentHash: string;
     article: ReturnType<typeof this.normalizeArticle>;
     cleaned: CleanedNews;
     llm: LlmCallMetadata;
-    contentHash: string;
-    processedItemId: string;
     processedArticleId?: string | null;
+    normalizedPayload: NormalizedNewsPayload;
   }) {
-    if (options.processedArticleId) {
-      return;
-    }
+    try {
+      return await this.prisma.runInTransaction(async (tx) => {
+        if (!options.processedArticleId) {
+          await this.upsertArticleAndProcessed(tx, {
+            orgId: options.orgId,
+            contentHash: options.contentHash,
+            article: options.article,
+            cleaned: options.cleaned,
+            llm: options.llm,
+            processedItemId: options.processedItemId,
+            payload: options.normalizedPayload,
+          });
+        }
 
+        return tx.mongoOutbox.create({
+          data: {
+            orgId: options.orgId,
+            type: MongoOutboxType.processed_item,
+            payload: options.payload,
+            status: MongoOutboxStatus.pending,
+            availableAt: new Date(),
+          },
+        });
+      });
+    } catch (error) {
+      this.logger.error(
+        { error, orgId: options.orgId },
+        "Failed to persist MySQL transaction with outbox entry",
+      );
+      throw error;
+    }
+  }
+
+  private async upsertArticleAndProcessed(
+    tx: Prisma.TransactionClient,
+    options: {
+      orgId: string;
+      contentHash: string;
+      article: ReturnType<typeof this.normalizeArticle>;
+      cleaned: CleanedNews;
+      llm: LlmCallMetadata;
+      processedItemId: string;
+      payload: NormalizedNewsPayload;
+    },
+  ) {
     try {
       const crawlAt =
         this.parseDate(options.article.publishedAt) ??
         this.parseDate(options.article.fetchedAt) ??
         new Date();
 
-      const articleRecord = await this.prisma.article.upsert({
+      const articleRecord = await tx.article.upsert({
         where: { contentHash: options.contentHash },
         update: {
           url: options.article.sourceUrl,
@@ -552,7 +659,7 @@ export class NewsPipelineService {
         },
       });
 
-      await this.prisma.processedArticle.upsert({
+      await tx.processedArticle.upsert({
         where: { articleId: articleRecord.id },
         update: {
           title: options.cleaned.title ?? null,
@@ -618,6 +725,264 @@ export class NewsPipelineService {
       this.logger.warn(
         { error, contentHash: options.contentHash },
         "Failed to persist processed article",
+      );
+      throw error;
+    }
+  }
+
+  private buildProcessedItemOutboxPayload(options: {
+    processedItemId: string;
+    raw: RawPipelineItem;
+    orgId: string;
+    payload: NormalizedNewsPayload;
+    cleaned: CleanedNews;
+    llm: LlmCallMetadata;
+  }): ProcessedItemOutboxPayload {
+    return {
+      type: MongoOutboxType.processed_item,
+      document: {
+        _id: options.processedItemId,
+        rawItemId: options.raw.id,
+        itemMetaId: options.raw.itemMetaId,
+        orgId: options.orgId,
+        status: "completed",
+        tags: this.buildTags(options.payload, options.cleaned),
+        result: options.cleaned,
+        llm: options.llm,
+        error: undefined,
+      },
+    };
+  }
+
+  private buildPendingProcessedItem(processedItemId: string): PersistedProcessedItem {
+    return {
+      _id: processedItemId,
+      toJSON: () => ({ id: processedItemId }),
+    };
+  }
+
+  private async deliverOutboxPayload(
+    outboxId: string,
+    payload: ProcessedItemOutboxPayload,
+  ): Promise<ProcessedItemDocument | null> {
+    const claimed = await this.claimOutboxEntry(outboxId);
+    if (!claimed) {
+      return null;
+    }
+
+    try {
+      const created = await this.writeProcessedItemFromPayload(payload.document);
+      await this.prisma.mongoOutbox.delete({ where: { id: outboxId } });
+      return created;
+    } catch (error) {
+      const attempts = claimed?.attempts ?? 1;
+      this.logger.warn(
+        { error, outboxId, processedItemId: payload.document._id },
+        "Mongo outbox delivery failed",
+      );
+      await this.markOutboxFailure(outboxId, attempts, error);
+      return null;
+    }
+  }
+
+  private async claimOutboxEntry(outboxId: string) {
+    const now = new Date();
+    const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
+    return this.prisma.runInTransaction(async (tx) => {
+      const updated = await tx.mongoOutbox.updateMany({
+        where: {
+          id: outboxId,
+          OR: [
+            { status: MongoOutboxStatus.pending, availableAt: { lte: now } },
+            { status: MongoOutboxStatus.failed, availableAt: { lte: now } },
+            { status: MongoOutboxStatus.processing, lockedAt: { lt: staleLockCutoff } },
+          ],
+        },
+        data: {
+          status: MongoOutboxStatus.processing,
+          lockedAt: now,
+          attempts: { increment: 1 },
+          lastError: null,
+        },
+      });
+
+      if (updated.count === 0) {
+        return null;
+      }
+
+      return tx.mongoOutbox.findUnique({ where: { id: outboxId } });
+    });
+  }
+
+  private async markOutboxFailure(outboxId: string, attempts: number, error: unknown) {
+    const nextDelay = this.computeBackoffDelay(this.outboxRetryBaseDelayMs, attempts, 5);
+    const availableAt = new Date(Date.now() + nextDelay);
+    const message = error instanceof Error ? error.message : String(error);
+
+    try {
+      await this.prisma.mongoOutbox.update({
+        where: { id: outboxId },
+        data: {
+          status: MongoOutboxStatus.failed,
+          lastError: message,
+          availableAt,
+          lockedAt: null,
+          attempts: Math.max(attempts, 1),
+        },
+      });
+    } catch (updateError) {
+      this.logger.warn(
+        { error: updateError, outboxId, message },
+        "Failed to update Mongo outbox status after delivery error",
+      );
+    }
+  }
+
+  private async writeProcessedItemFromPayload(
+    document: ProcessedItemOutboxPayload["document"],
+  ): Promise<ProcessedItemDocument> {
+    try {
+      return await ProcessedItemModel.create({
+        ...document,
+        _id: new Types.ObjectId(document._id),
+        rawItemId: new Types.ObjectId(document.rawItemId),
+      });
+    } catch (error) {
+      if (this.isDuplicateKeyError(error)) {
+        const existing = await ProcessedItemModel.findById(document._id);
+        if (existing) {
+          return existing as ProcessedItemDocument;
+        }
+      }
+      throw error;
+    }
+  }
+
+  private parseOutboxPayload(
+    payload: Prisma.JsonValue | null,
+  ): ProcessedItemOutboxPayload | null {
+    if (!payload || typeof payload !== "object") {
+      return null;
+    }
+
+    const raw = payload as Record<string, unknown>;
+    if (raw.type !== MongoOutboxType.processed_item) {
+      return null;
+    }
+
+    const document = raw.document as Record<string, unknown> | undefined;
+    if (!document) {
+      return null;
+    }
+
+    const cleaned = this.normalizeCleanedNews(document.result);
+    const llm = this.normalizeLlmMetadata(document.llm);
+
+    if (
+      typeof document._id !== "string" ||
+      typeof document.rawItemId !== "string" ||
+      typeof document.itemMetaId !== "string" ||
+      typeof document.orgId !== "string" ||
+      document.status !== "completed" ||
+      !cleaned ||
+      !llm
+    ) {
+      return null;
+    }
+
+    const tags = Array.isArray(document.tags)
+      ? document.tags.filter((tag) => typeof tag === "string")
+      : [];
+
+    return {
+      type: MongoOutboxType.processed_item,
+      document: {
+        _id: document._id,
+        rawItemId: document.rawItemId,
+        itemMetaId: document.itemMetaId,
+        orgId: document.orgId,
+        status: "completed",
+        tags,
+        result: cleaned,
+        llm,
+        error: undefined,
+      },
+    };
+  }
+
+  private normalizeLlmMetadata(value: unknown): LlmCallMetadata | null {
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const raw = value as Record<string, unknown>;
+    return {
+      model: typeof raw.model === "string" ? raw.model : null,
+      promptVersion:
+        typeof raw.promptVersion === "string" ? raw.promptVersion : null,
+      promptTokens:
+        typeof raw.promptTokens === "number" && Number.isFinite(raw.promptTokens)
+          ? raw.promptTokens
+          : null,
+      completionTokens:
+        typeof raw.completionTokens === "number" &&
+        Number.isFinite(raw.completionTokens)
+          ? raw.completionTokens
+          : null,
+      totalTokens:
+        typeof raw.totalTokens === "number" && Number.isFinite(raw.totalTokens)
+          ? raw.totalTokens
+          : null,
+      costUsd:
+        typeof raw.costUsd === "number" && Number.isFinite(raw.costUsd)
+          ? raw.costUsd
+          : null,
+      latencyMs:
+        typeof raw.latencyMs === "number" && Number.isFinite(raw.latencyMs)
+          ? raw.latencyMs
+          : null,
+    };
+  }
+
+  private normalizeCleanedNews(value: unknown): CleanedNews | null {
+    const parsed = CleanedNewsSchema.safeParse(value);
+    return parsed.success ? parsed.data : null;
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async retryPendingOutbox() {
+    const now = new Date();
+    const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
+    try {
+      const entries = await this.prisma.mongoOutbox.findMany({
+        where: {
+          OR: [
+            { status: MongoOutboxStatus.pending, availableAt: { lte: now } },
+            { status: MongoOutboxStatus.failed, availableAt: { lte: now } },
+            { status: MongoOutboxStatus.processing, lockedAt: { lt: staleLockCutoff } },
+          ],
+        },
+        orderBy: { createdAt: "asc" },
+        take: this.outboxBatchSize,
+      });
+
+      for (const entry of entries) {
+        const payload = this.parseOutboxPayload(entry.payload);
+        if (!payload) {
+          await this.markOutboxFailure(
+            entry.id,
+            (entry.attempts ?? 0) + 1,
+            new Error("Invalid outbox payload"),
+          );
+          continue;
+        }
+
+        await this.deliverOutboxPayload(entry.id, payload);
+      }
+    } catch (error) {
+      this.logger.warn(
+        { error },
+        "Failed to process Mongo outbox batch",
       );
     }
   }
@@ -697,6 +1062,15 @@ export class NewsPipelineService {
 
   private hashContent(content: string) {
     return createHash("sha256").update(content).digest("hex");
+  }
+
+  private isDuplicateKeyError(error: unknown) {
+    return Boolean(
+      error &&
+        typeof error === "object" &&
+        "code" in error &&
+        (error as { code?: number }).code === 11000,
+    );
   }
 
   private computeBackoffDelay(

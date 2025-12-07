@@ -136,15 +136,34 @@ describe("NewsPipelineService", () => {
     }
   };
 
-  const prisma = {
+  const mongoOutbox = {
+    create: jest.fn(),
+    updateMany: jest.fn(),
+    findUnique: jest.fn(),
+    delete: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn()
+  };
+
+  const prisma: any = {
     processedArticle: {
       findFirst: jest.fn().mockResolvedValue(null),
       upsert: jest.fn().mockResolvedValue(null)
     },
     article: {
       upsert: jest.fn().mockResolvedValue({ id: "article-1" })
-    }
+    },
+    mongoOutbox,
+    runInTransaction: jest.fn()
   };
+
+  prisma.runInTransaction.mockImplementation(async (cb: any) =>
+    cb({
+      article: prisma.article,
+      processedArticle: prisma.processedArticle,
+      mongoOutbox
+    })
+  );
 
   const service = new NewsPipelineService(
     crawlClient as any,
@@ -156,16 +175,18 @@ describe("NewsPipelineService", () => {
     prisma as any
   );
 
+  const rawItemId = "507f1f77bcf86cd799439011";
+
   const job: PipelineJobContext = {
     queue: "itemPipeline",
     jobId: "job-1",
     itemMetaId: "meta-1",
-    rawItemId: "raw-1",
+    rawItemId,
     orgId: "org-1"
   };
 
   const raw: RawPipelineItem = {
-    id: "raw-1",
+    id: rawItemId,
     itemMetaId: "meta-1",
     payload: {
       url: "https://example.com/story",
@@ -179,6 +200,19 @@ describe("NewsPipelineService", () => {
     (prisma.processedArticle.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.article.upsert as jest.Mock).mockResolvedValue({ id: "article-1" });
     (prisma.processedArticle.upsert as jest.Mock).mockResolvedValue(null);
+    prisma.runInTransaction.mockImplementation(async (cb: any) =>
+      cb({
+        article: prisma.article,
+        processedArticle: prisma.processedArticle,
+        mongoOutbox
+      })
+    );
+    mongoOutbox.create.mockResolvedValue({ id: "outbox-1", attempts: 0 });
+    mongoOutbox.updateMany.mockResolvedValue({ count: 1 });
+    mongoOutbox.findUnique.mockResolvedValue({ id: "outbox-1", attempts: 1 });
+    mongoOutbox.delete.mockResolvedValue(undefined);
+    mongoOutbox.findMany.mockResolvedValue([]);
+    mongoOutbox.update.mockResolvedValue(undefined);
     (ProcessedItemModel.findById as jest.Mock).mockReturnValue({
       lean: jest.fn().mockResolvedValue(null)
     });
@@ -191,6 +225,9 @@ describe("NewsPipelineService", () => {
     expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
     expect(cache.set).toHaveBeenCalledTimes(1);
     expect(promptConfigService.getConfig).toHaveBeenCalledTimes(1);
+    expect(prisma.mongoOutbox.create).toHaveBeenCalledTimes(1);
+    expect(prisma.mongoOutbox.delete).toHaveBeenCalledTimes(1);
+    expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
   });
 
   it("reuses existing processed article when content hash matches", async () => {
@@ -275,6 +312,9 @@ describe("NewsPipelineService", () => {
     expect(prisma.article.upsert).not.toHaveBeenCalled();
     expect(prisma.processedArticle.upsert).not.toHaveBeenCalled();
     expect(ProcessedItemModel.create).toHaveBeenCalledTimes(1);
+    expect(prisma.mongoOutbox.create).toHaveBeenCalledTimes(1);
+    expect(prisma.mongoOutbox.delete).toHaveBeenCalledTimes(1);
+    expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
   });
 
   it("fails fast when existing processed article cannot be mapped", async () => {

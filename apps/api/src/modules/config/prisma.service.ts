@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { EnvService } from "./config.service";
 
 @Injectable()
@@ -29,5 +29,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async onModuleDestroy() {
     await this.$disconnect();
+  }
+
+  async runInTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {
+    return this.$transaction(fn, { timeout: 15000 });
   }
 }
