@@ -30,11 +30,21 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (job.name.startsWith("evaluate-rule") && job.data.type === "evaluate" && job.data.ruleId) {
           await this.alertsService.evaluateRule(job.data.ruleId);
+          return;
+        }
+        if (job.name.startsWith("deliver-notification") && job.data.type === "deliver" && job.data.deliveryId) {
+          await this.alertsService.handleDeliveryJob(job);
+          return;
         }
       },
       {
         connection: this.queue.opts.connection,
-        concurrency: this.env.alertingConfig.queueConcurrency
+        concurrency: this.env.alertingConfig.queueConcurrency,
+        settings: {
+          backoffStrategies: {
+            alertNotifications: (attemptsMade) => this.alertsService.getNotificationBackoffDelay(attemptsMade)
+          }
+        }
       }
     );
 

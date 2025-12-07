@@ -10,7 +10,7 @@ import {
   AlertStatus,
   Prisma
 } from "@prisma/client";
-import { Queue } from "bullmq";
+import { Job, Queue } from "bullmq";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
 import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
@@ -54,9 +54,14 @@ export type AlertJobPayload =
   | {
       type: "evaluate";
       ruleId: string;
+    }
+  | {
+      type: "deliver";
+      deliveryId: string;
     };
 
 const logger = createLogger({ name: "alerts" });
+const NOTIFICATION_BACKOFF_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000];
 
 @Injectable()
 export class AlertsService {
@@ -316,7 +321,7 @@ export class AlertsService {
       )
     );
 
-    await this.dispatchNotifications(event.id, rule, activeChannels);
+    await this.enqueueNotificationJobs(event.id, deliveries);
     await this.pubsub.publish("alertEvents", {
       orgId: rule.orgId,
       event: {
@@ -400,59 +405,112 @@ export class AlertsService {
     }
   }
 
-  private async dispatchNotifications(
-    eventId: string,
-    rule: {
-      name: string;
-      metricSlug: string;
-      severity: AlertSeverity;
-      operator?: AlertOperator;
-      thresholdValue?: Prisma.Decimal | null;
-      thresholdLower?: Prisma.Decimal | null;
-      thresholdUpper?: Prisma.Decimal | null;
-    },
-    channels: { id: string; type: AlertChannelType; target: string; name: string }[]
-  ) {
-    const event = await this.prisma.alertEvent.findUnique({
-      where: { id: eventId },
-      include: { rule: true, deliveries: true }
-    });
-    if (!event) {
+  private async enqueueNotificationJobs(eventId: string, deliveries: { id: string }[]) {
+    if (deliveries.length === 0) {
+      await this.prisma.alertEvent.update({
+        where: { id: eventId },
+        data: { status: AlertEventStatus.delivered }
+      });
       return;
     }
-    for (const delivery of event.deliveries) {
-      const channel = channels.find((c) => c.id === delivery.channelId);
-      if (!channel) {
-        continue;
-      }
-      try {
-        if (channel.type === "email") {
-          await this.sendEmail(channel.target, event, rule);
-        } else if (channel.type === "webhook") {
-          await this.sendWebhook(channel.target, event, rule);
-        }
-        await this.prisma.alertDelivery.update({
-          where: { id: delivery.id },
-          data: { status: AlertDeliveryStatus.sent, sentAt: new Date() }
-        });
-      } catch (error) {
-        const message = (error as Error)?.message ?? "unknown error";
-        logger.error({ delivery: delivery.id, channel: channel.name, error }, "Alert delivery failed");
-        await this.prisma.alertDelivery.update({
-          where: { id: delivery.id },
-          data: { status: AlertDeliveryStatus.failed, error: message }
-        });
-      }
+    const attempts = NOTIFICATION_BACKOFF_DELAYS_MS.length + 1;
+    await Promise.all(
+      deliveries.map((delivery) =>
+        this.queue.add(
+          this.buildDeliveryJobName(delivery.id),
+          { type: "deliver", deliveryId: delivery.id },
+          {
+            jobId: `deliver:${delivery.id}`,
+            attempts,
+            backoff: { type: "alertNotifications" },
+            removeOnComplete: true,
+            removeOnFail: false
+          }
+        )
+      )
+    );
+  }
+
+  async handleDeliveryJob(job: Job<AlertJobPayload>) {
+    if (job.data.type !== "deliver" || !job.data.deliveryId) {
+      return;
     }
+    const delivery = await this.prisma.alertDelivery.findUnique({
+      where: { id: job.data.deliveryId },
+      include: { event: { include: { rule: true } } }
+    });
+    if (!delivery || !delivery.event || !delivery.event.rule) {
+      return;
+    }
+    const channel = delivery.targetSnapshot as { type?: AlertChannelType; target?: string; name?: string } | null;
+    if (!channel?.type || !channel?.target) {
+      await this.prisma.alertDelivery.update({
+        where: { id: delivery.id },
+        data: { status: AlertDeliveryStatus.failed, error: "Invalid channel snapshot" }
+      });
+      await this.updateEventStatus(delivery.eventId);
+      return;
+    }
+    if (delivery.status !== AlertDeliveryStatus.pending) {
+      await this.updateEventStatus(delivery.eventId);
+      return;
+    }
+    try {
+      if (channel.type === "email") {
+        await this.sendEmail(channel.target, delivery.event, delivery.event.rule);
+      } else if (channel.type === "webhook") {
+        await this.sendWebhook(channel.target, delivery.event, delivery.event.rule);
+      } else {
+        throw new Error(`Unsupported channel type ${channel.type}`);
+      }
+      await this.prisma.alertDelivery.update({
+        where: { id: delivery.id },
+        data: { status: AlertDeliveryStatus.sent, sentAt: new Date() }
+      });
+    } catch (error) {
+      const message = (error as Error)?.message ?? "unknown error";
+      const isLastAttempt = job.attemptsMade >= (job.opts.attempts ?? 1);
+      await this.prisma.alertDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: isLastAttempt ? AlertDeliveryStatus.failed : AlertDeliveryStatus.pending,
+          error: message
+        }
+      });
+      logger.error(
+        { delivery: delivery.id, channel: channel.name ?? channel.target, attempt: job.attemptsMade, error },
+        "Alert delivery attempt failed"
+      );
+      throw error;
+    } finally {
+      await this.updateEventStatus(delivery.eventId);
+    }
+  }
+
+  getNotificationBackoffDelay(attemptsMade: number) {
+    const index = Math.min(Math.max(attemptsMade - 1, 0), NOTIFICATION_BACKOFF_DELAYS_MS.length - 1);
+    return NOTIFICATION_BACKOFF_DELAYS_MS[index];
+  }
+
+  private async updateEventStatus(eventId: string) {
+    const deliveries = await this.prisma.alertDelivery.findMany({ where: { eventId } });
+    if (!deliveries.length) {
+      return;
+    }
+    const hasPending = deliveries.some((delivery) => delivery.status === AlertDeliveryStatus.pending);
+    if (hasPending) {
+      return;
+    }
+    const anySent = deliveries.some((delivery) => delivery.status === AlertDeliveryStatus.sent);
     await this.prisma.alertEvent.update({
       where: { id: eventId },
-      data: { status: AlertEventStatus.delivered }
+      data: { status: anySent ? AlertEventStatus.delivered : AlertEventStatus.failed }
     });
   }
 
   private async sendEmail(
     target: string,
-    event: { metricValue: Prisma.Decimal; triggeredAt: Date; ruleId: string; message?: string; changePercent?: number | null },
+    event: { metricValue: Prisma.Decimal; triggeredAt: Date; ruleId: string; message?: string | null; changePercent?: number | null },
     rule: { name: string; metricSlug: string; operator?: AlertOperator; thresholdValue?: Prisma.Decimal | null; thresholdLower?: Prisma.Decimal | null; thresholdUpper?: Prisma.Decimal | null }
   ) {
     const threshold =
@@ -481,7 +539,7 @@ export class AlertsService {
 
   private async sendWebhook(
     target: string,
-    event: { id: string; triggeredAt: Date; metricValue: Prisma.Decimal; severity: AlertSeverity; ruleId: string; message?: string },
+    event: { id: string; triggeredAt: Date; metricValue: Prisma.Decimal; severity: AlertSeverity; ruleId: string; message?: string | null },
     rule: {
       name: string;
       metricSlug: string;
@@ -509,21 +567,7 @@ export class AlertsService {
       operator: rule.operator,
       message: event.message
     };
-    const delays = [60_000, 5 * 60_000, 15 * 60_000];
-    let lastError: unknown;
-    for (let attempt = 0; attempt < delays.length; attempt++) {
-      try {
-        await firstValueFrom(this.http.post(target, payload, { timeout: this.env.alertingConfig.webhookTimeoutMs }));
-        return;
-      } catch (error) {
-        lastError = error;
-        if (attempt === delays.length - 1) {
-          break;
-        }
-        await this.delay(delays[attempt]);
-      }
-    }
-    throw lastError ?? new Error("Webhook delivery failed");
+    await firstValueFrom(this.http.post(target, payload, { timeout: this.env.alertingConfig.webhookTimeoutMs }));
   }
 
   async scheduleScanJob() {
@@ -560,6 +604,10 @@ export class AlertsService {
     return `evaluate-rule:${ruleId}`;
   }
 
+  private buildDeliveryJobName(deliveryId: string) {
+    return `deliver-notification:${deliveryId}`;
+  }
+
   private async removeJob(ruleId: string, includeRepeats = true) {
     if (includeRepeats) {
       const repeatables = await this.queue.getRepeatableJobs();
@@ -570,9 +618,5 @@ export class AlertsService {
       }
     }
     await this.queue.removeJobs([`evaluate:${ruleId}`, this.buildRuleJobName(ruleId)]);
-  }
-
-  private delay(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
