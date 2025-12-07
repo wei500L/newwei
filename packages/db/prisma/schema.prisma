@@ -158,7 +158,7 @@ model CrawlTask {
 
 model CrawlResult {
   id          String     @id @default(cuid())
-  task        CrawlTask  @relation(fields: [taskId], references: [id])
+  task        CrawlTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
   taskId      String
   sourceUrl   String
   fetchedAt   DateTime
