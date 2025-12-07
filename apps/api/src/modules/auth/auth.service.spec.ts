@@ -57,6 +57,15 @@ const accessTokenBlacklistMock = {
   has: jest.fn()
 } as any;
 
+const authCacheSettingsMock = {
+  getSettings: jest.fn().mockResolvedValue({
+    profileTtlSeconds: 600,
+    lockTtlMs: 5_000,
+    maxWaitMs: 5_000,
+    retryDelayMs: 50
+  })
+} as any;
+
 describe("AuthService", () => {
   let service: AuthService;
 
@@ -66,13 +75,20 @@ describe("AuthService", () => {
     rateLimitConfigMock.getBucketConfig = jest
       .fn()
       .mockResolvedValue({ limit: 5, windowSeconds: 60 });
+    authCacheSettingsMock.getSettings = jest.fn().mockResolvedValue({
+      profileTtlSeconds: 600,
+      lockTtlMs: 5_000,
+      maxWaitMs: 5_000,
+      retryDelayMs: 50
+    });
     service = new AuthService(
       prismaMock,
       envMock,
       rateLimiterMock,
       rateLimitConfigMock,
       cacheMock,
-      accessTokenBlacklistMock
+      accessTokenBlacklistMock,
+      authCacheSettingsMock
     );
   });
 

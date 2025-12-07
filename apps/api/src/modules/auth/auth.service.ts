@@ -9,6 +9,7 @@ import { CacheService } from "../cache/cache.service";
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+import { AuthCacheSettingsService } from "./auth-cache-settings.service";
 
 export interface JwtPayload {
   sub: string;
@@ -39,7 +40,8 @@ export class AuthService {
     private readonly rateLimiter: RateLimiterService,
     private readonly rateLimitConfig: RateLimitConfigService,
     private readonly cache: CacheService,
-    private readonly accessTokenBlacklist: AccessTokenBlacklistService
+    private readonly accessTokenBlacklist: AccessTokenBlacklistService,
+    private readonly authCacheSettings: AuthCacheSettingsService
   ) {}
 
   private async validateRateLimit(identifier: string) {
@@ -356,40 +358,44 @@ export class AuthService {
 
   async getUserProfile(userId: string, orgId?: string) {
     const cacheKey = `profile:${userId}:${orgId ?? "default"}`;
-    const cached = await this.cache.get<AuthenticatedUser>(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    const memberships = await this.prisma.membership.findMany({
-      where: { userId },
-      orderBy: { createdAt: "asc" },
-      include: {
-        role: {
+    const settings = await this.authCacheSettings.getSettings();
+    return this.cache.wrap(
+      cacheKey,
+      settings.profileTtlSeconds,
+      async () => {
+        const memberships = await this.prisma.membership.findMany({
+          where: { userId },
+          orderBy: { createdAt: "asc" },
           include: {
-            permissions: {
-              include: { permission: true }
+            role: {
+            include: {
+              permissions: {
+                include: { permission: true }
+              }
             }
           }
         }
+      });
+
+      const membership = this.pickMembership(memberships, orgId);
+
+      const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      const permissions = membership.role.permissions.map((perm) => perm.permission.name);
+      return {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        orgId: membership.orgId,
+        roleIds: [membership.roleId],
+        permissions
+      };
+      },
+      {
+        lockTtlMs: settings.lockTtlMs,
+        retryDelayMs: settings.retryDelayMs,
+        maxWaitMs: settings.maxWaitMs
       }
-    });
-
-    const membership = this.pickMembership(memberships, orgId);
-
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    const permissions = membership.role.permissions.map((perm) => perm.permission.name);
-    const profile: AuthenticatedUser = {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      orgId: membership.orgId,
-      roleIds: [membership.roleId],
-      permissions
-    };
-
-    await this.cache.set(cacheKey, profile, 60);
-    return profile;
+    );
   }
 }

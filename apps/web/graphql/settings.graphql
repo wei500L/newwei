@@ -32,6 +32,24 @@ mutation UpdateRateLimitSettings($input: UpdateRateLimitSettingsInput!) {
   }
 }
 
+query AuthCacheSettings {
+  authCacheSettings {
+    profileTtlSeconds
+    lockTtlMs
+    maxWaitMs
+    retryDelayMs
+  }
+}
+
+mutation UpdateAuthCacheSettings($input: UpdateAuthCacheSettingsInput!) {
+  updateAuthCacheSettings(input: $input) {
+    profileTtlSeconds
+    lockTtlMs
+    maxWaitMs
+    retryDelayMs
+  }
+}
+
 query AuditLogRetention {
   auditLogRetention {
     retentionDays

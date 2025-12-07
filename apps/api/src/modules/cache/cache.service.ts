@@ -1,4 +1,5 @@
 import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import type Redis from "ioredis";
 import { REDIS_CLIENT } from "./cache.module";
 
@@ -34,5 +35,82 @@ export class CacheService implements OnModuleDestroy {
       await this.redis.expire(key, ttlSeconds);
     }
     return value;
+  }
+
+  async wrap<T>(
+    key: string,
+    ttlSeconds: number,
+    loader: () => Promise<T>,
+    options?: { lockTtlMs?: number; retryDelayMs?: number; maxWaitMs?: number }
+  ): Promise<T> {
+    const cached = await this.get<T>(key);
+    if (cached) {
+      return cached;
+    }
+
+    const lockKey = this.lockKey(key);
+    const lockTtlMs = options?.lockTtlMs ?? 5000;
+    const retryDelayMs = options?.retryDelayMs ?? 50;
+    const maxWaitMs = options?.maxWaitMs ?? lockTtlMs;
+
+    let lockToken = await this.acquireLock(lockKey, lockTtlMs);
+    if (!lockToken) {
+      const start = Date.now();
+      while (Date.now() - start < maxWaitMs) {
+        await this.delay(retryDelayMs);
+        const retryCached = await this.get<T>(key);
+        if (retryCached) {
+          return retryCached;
+        }
+
+        lockToken = await this.acquireLock(lockKey, lockTtlMs);
+        if (lockToken) {
+          break;
+        }
+      }
+    }
+
+    if (lockToken) {
+      try {
+        const value = await loader();
+        await this.set(key, value, ttlSeconds);
+        return value;
+      } finally {
+        await this.releaseLock(lockKey, lockToken);
+      }
+    }
+
+    const finalCached = await this.get<T>(key);
+    if (finalCached) {
+      return finalCached;
+    }
+
+    const value = await loader();
+    await this.set(key, value, ttlSeconds);
+    return value;
+  }
+
+  private lockKey(key: string) {
+    return `lock:${key}`;
+  }
+
+  private async acquireLock(key: string, ttlMs: number) {
+    const token = randomUUID();
+    const result = await this.redis.set(key, token, "PX", ttlMs, "NX");
+    return result === "OK" ? token : null;
+  }
+
+  private async releaseLock(key: string, token: string) {
+    const releaseScript = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      end
+      return 0
+    `;
+    await this.redis.eval(releaseScript, 1, key, token);
+  }
+
+  private delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

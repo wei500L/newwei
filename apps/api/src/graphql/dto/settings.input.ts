@@ -27,6 +27,29 @@ export class UpdateRateLimitSettingsInput {
 }
 
 @InputType()
+export class UpdateAuthCacheSettingsInput {
+  @Field(() => Int)
+  @Min(60)
+  @Max(86_400)
+  profileTtlSeconds!: number;
+
+  @Field(() => Int)
+  @Min(100)
+  @Max(60_000)
+  lockTtlMs!: number;
+
+  @Field(() => Int)
+  @Min(50)
+  @Max(120_000)
+  maxWaitMs!: number;
+
+  @Field(() => Int)
+  @Min(10)
+  @Max(1_000)
+  retryDelayMs!: number;
+}
+
+@InputType()
 export class UpdateCrawlClientSettingsInput {
   @Field(() => Int)
   @Min(5_000)

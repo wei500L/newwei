@@ -4,12 +4,14 @@ import {
   AuditLogRetentionModel,
   CrawlClientSettingsModel,
   NewsPromptConfigModel,
+  AuthCacheSettingsModel,
   RateLimitSettingsModel
 } from "../models/settings.model";
 import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
 import {
   UpdateAuditLogRetentionInput,
   UpdateCrawlClientSettingsInput,
+  UpdateAuthCacheSettingsInput,
   UpdateNewsPromptConfigInput,
   UpdateRateLimitSettingsInput
 } from "../dto/settings.input";
@@ -21,6 +23,7 @@ import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt
 import { PrismaService } from "../../modules/config/prisma.service";
 import { AuditLogSettingsService } from "../../modules/system-settings/audit-log-settings.service";
 import { CrawlSettingsService } from "../../modules/crawl/crawl-settings.service";
+import { AuthCacheSettingsService } from "../../modules/auth/auth-cache-settings.service";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -30,6 +33,7 @@ export class SettingsResolver {
     private readonly newsPromptConfig: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
     private readonly crawlSettings: CrawlSettingsService,
+    private readonly authCacheSettings: AuthCacheSettingsService,
     private readonly prisma: PrismaService
   ) {}
 
@@ -50,6 +54,25 @@ export class SettingsResolver {
     const user = req?.user as AuthenticatedUser | undefined;
     await this.assertAdmin(user);
     return this.rateLimitConfig.updateRateLimitSettings(user.orgId, user.id, input);
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => AuthCacheSettingsModel)
+  async authCacheSettings(@Context("req") req: any): Promise<AuthCacheSettingsModel> {
+    const user = req?.user as AuthenticatedUser | undefined;
+    await this.assertAdmin(user);
+    return this.authCacheSettings.getSettings();
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => AuthCacheSettingsModel)
+  async updateAuthCacheSettings(
+    @Context("req") req: any,
+    @Args("input") input: UpdateAuthCacheSettingsInput
+  ): Promise<AuthCacheSettingsModel> {
+    const user = req?.user as AuthenticatedUser | undefined;
+    await this.assertAdmin(user);
+    return this.authCacheSettings.updateSettings(user.orgId, user.id, input);
   }
 
   @HasPermission("settings.manage")

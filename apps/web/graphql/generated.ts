@@ -240,6 +240,13 @@ export type UpdateRateLimitSettingsInput = {
   rbacWrite: RateLimitBucketInput;
 };
 
+export type UpdateAuthCacheSettingsInput = {
+  profileTtlSeconds: number;
+  lockTtlMs: number;
+  maxWaitMs: number;
+  retryDelayMs: number;
+};
+
 export type UpdateCrawlClientSettingsInput = {
   healthCheckTtlMs: number;
   requestTimeoutMs: number;
@@ -1159,6 +1166,30 @@ export type UpdateRateLimitSettingsMutation = {
   };
 };
 
+export type AuthCacheSettingsQueryVariables = Exact<{ [key: string]: never }>;
+
+export type AuthCacheSettingsQuery = {
+  authCacheSettings: {
+    profileTtlSeconds: number;
+    lockTtlMs: number;
+    maxWaitMs: number;
+    retryDelayMs: number;
+  };
+};
+
+export type UpdateAuthCacheSettingsMutationVariables = Exact<{
+  input: UpdateAuthCacheSettingsInput;
+}>;
+
+export type UpdateAuthCacheSettingsMutation = {
+  updateAuthCacheSettings: {
+    profileTtlSeconds: number;
+    lockTtlMs: number;
+    maxWaitMs: number;
+    retryDelayMs: number;
+  };
+};
+
 export type AuditLogRetentionQueryVariables = Exact<{ [key: string]: never }>;
 
 export type AuditLogRetentionQuery = {
@@ -1647,6 +1678,88 @@ export type UpdateRateLimitSettingsMutationResult =
 export type UpdateRateLimitSettingsMutationOptions = Apollo.BaseMutationOptions<
   UpdateRateLimitSettingsMutation,
   UpdateRateLimitSettingsMutationVariables
+>;
+export const AuthCacheSettingsDocument = gql`
+  query AuthCacheSettings {
+    authCacheSettings {
+      profileTtlSeconds
+      lockTtlMs
+      maxWaitMs
+      retryDelayMs
+    }
+  }
+`;
+
+export function useAuthCacheSettingsQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    AuthCacheSettingsQuery,
+    AuthCacheSettingsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<
+    AuthCacheSettingsQuery,
+    AuthCacheSettingsQueryVariables
+  >(AuthCacheSettingsDocument, options);
+}
+
+export function useAuthCacheSettingsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    AuthCacheSettingsQuery,
+    AuthCacheSettingsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<
+    AuthCacheSettingsQuery,
+    AuthCacheSettingsQueryVariables
+  >(AuthCacheSettingsDocument, options);
+}
+export type AuthCacheSettingsQueryHookResult = ReturnType<
+  typeof useAuthCacheSettingsQuery
+>;
+export type AuthCacheSettingsLazyQueryHookResult = ReturnType<
+  typeof useAuthCacheSettingsLazyQuery
+>;
+export type AuthCacheSettingsQueryResult = Apollo.QueryResult<
+  AuthCacheSettingsQuery,
+  AuthCacheSettingsQueryVariables
+>;
+export const UpdateAuthCacheSettingsDocument = gql`
+  mutation UpdateAuthCacheSettings($input: UpdateAuthCacheSettingsInput!) {
+    updateAuthCacheSettings(input: $input) {
+      profileTtlSeconds
+      lockTtlMs
+      maxWaitMs
+      retryDelayMs
+    }
+  }
+`;
+export type UpdateAuthCacheSettingsMutationFn = Apollo.MutationFunction<
+  UpdateAuthCacheSettingsMutation,
+  UpdateAuthCacheSettingsMutationVariables
+>;
+
+export function useUpdateAuthCacheSettingsMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    UpdateAuthCacheSettingsMutation,
+    UpdateAuthCacheSettingsMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    UpdateAuthCacheSettingsMutation,
+    UpdateAuthCacheSettingsMutationVariables
+  >(UpdateAuthCacheSettingsDocument, options);
+}
+export type UpdateAuthCacheSettingsMutationHookResult = ReturnType<
+  typeof useUpdateAuthCacheSettingsMutation
+>;
+export type UpdateAuthCacheSettingsMutationResult =
+  Apollo.MutationResult<UpdateAuthCacheSettingsMutation>;
+export type UpdateAuthCacheSettingsMutationOptions = Apollo.BaseMutationOptions<
+  UpdateAuthCacheSettingsMutation,
+  UpdateAuthCacheSettingsMutationVariables
 >;
 export const AuditLogRetentionDocument = gql`
   query AuditLogRetention {

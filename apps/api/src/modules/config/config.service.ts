@@ -92,6 +92,22 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get authProfileCacheTtlSeconds() {
+    return this.get<number>("AUTH_PROFILE_CACHE_TTL_SECONDS", { infer: true }) ?? 600;
+  }
+
+  get authProfileCacheLockTtlMs() {
+    return this.get<number>("AUTH_PROFILE_CACHE_LOCK_TTL_MS", { infer: true }) ?? 5_000;
+  }
+
+  get authProfileCacheMaxWaitMs() {
+    return this.get<number>("AUTH_PROFILE_CACHE_MAX_WAIT_MS", { infer: true }) ?? 5_000;
+  }
+
+  get authProfileCacheRetryDelayMs() {
+    return this.get<number>("AUTH_PROFILE_CACHE_RETRY_DELAY_MS", { infer: true }) ?? 50;
+  }
+
   get auditLogRetentionDays() {
     return this.get<number>("AUDIT_LOG_RETENTION_DAYS", { infer: true }) ?? 90;
   }

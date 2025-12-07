@@ -22,6 +22,21 @@ export class RateLimitSettingsModel {
 }
 
 @ObjectType()
+export class AuthCacheSettingsModel {
+  @Field(() => Int)
+  profileTtlSeconds!: number;
+
+  @Field(() => Int)
+  lockTtlMs!: number;
+
+  @Field(() => Int)
+  maxWaitMs!: number;
+
+  @Field(() => Int)
+  retryDelayMs!: number;
+}
+
+@ObjectType()
 export class CrawlClientSettingsModel {
   @Field(() => Int)
   healthCheckTtlMs!: number;

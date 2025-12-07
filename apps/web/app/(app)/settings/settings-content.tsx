@@ -18,11 +18,13 @@ import {
 } from "antd";
 import {
   useAuditLogRetentionQuery,
+  useAuthCacheSettingsQuery,
   useCrawlClientSettingsQuery,
   useNewsPromptConfigQuery,
   useRateLimitSettingsQuery,
   useRbacOverviewQuery,
   useUpdateAuditLogRetentionMutation,
+  useUpdateAuthCacheSettingsMutation,
   useUpdateCrawlClientSettingsMutation,
   useUpdateNewsPromptConfigMutation,
   useUpdateRateLimitSettingsMutation,
@@ -31,6 +33,7 @@ import {
 } from "@/graphql/generated";
 import type {
   UpdateAuditLogRetentionMutationVariables,
+  UpdateAuthCacheSettingsMutationVariables,
   UpdateCrawlClientSettingsMutationVariables,
   UpdateNewsPromptConfigMutationVariables,
   UpdateRateLimitSettingsMutationVariables,
@@ -229,6 +232,11 @@ export function SettingsContent() {
     }
   ];
 
+  tabItems.push({
+    key: "authCache",
+    label: "Auth Cache",
+    children: <AuthCacheSettingsPanel />
+  });
   tabItems.push({
     key: "rateLimits",
     label: "Rate Limits",
@@ -496,6 +504,145 @@ function MemberInlineEditor({
             Update
           </Button>
         </div>
+      </div>
+    </>
+  );
+}
+
+function AuthCacheSettingsPanel() {
+  const [form] = Form.useForm<UpdateAuthCacheSettingsMutationVariables["input"]>();
+  const { data, loading, refetch } = useAuthCacheSettingsQuery();
+  const [updateSettings, { loading: saving }] = useUpdateAuthCacheSettingsMutation();
+  const [messageApi, contextHolder] = message.useMessage();
+
+  const profileTtlSeconds =
+    Form.useWatch("profileTtlSeconds", form) ??
+    data?.authCacheSettings?.profileTtlSeconds ??
+    0;
+  const lockTtlMs =
+    Form.useWatch("lockTtlMs", form) ?? data?.authCacheSettings?.lockTtlMs ?? 0;
+  const maxWaitMs =
+    Form.useWatch("maxWaitMs", form) ?? data?.authCacheSettings?.maxWaitMs ?? 0;
+  const retryDelayMs =
+    Form.useWatch("retryDelayMs", form) ?? data?.authCacheSettings?.retryDelayMs ?? 0;
+
+  useEffect(() => {
+    if (data?.authCacheSettings) {
+      form.setFieldsValue(data.authCacheSettings);
+    }
+  }, [data?.authCacheSettings, form]);
+
+  const handleSubmit = async (values: UpdateAuthCacheSettingsMutationVariables["input"]) => {
+    try {
+      await updateSettings({
+        variables: { input: values }
+      });
+      await refetch();
+      messageApi.success("Auth cache settings saved");
+    } catch (error) {
+      captureClientError("Failed to save auth cache settings", error);
+      messageApi.error("Failed to save auth cache settings");
+    }
+  };
+
+  if (loading && !data?.authCacheSettings) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+        <Spin />
+      </div>
+    );
+  }
+
+  const ttlMinutes = Math.max(1, Math.round(profileTtlSeconds / 60));
+  const lockSeconds = Math.max(1, Math.round(lockTtlMs / 1000));
+  const maxWaitSeconds = Math.max(1, Math.round(maxWaitMs / 1000));
+
+  return (
+    <>
+      {contextHolder}
+      <div className="settings-entrance">
+        <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+          Tune profile cache TTL and stampede protection without redeploys. Longer TTLs lower DB
+          pressure; locks keep a single request responsible for rebuilding the cache.
+        </Typography.Paragraph>
+
+        <div className="cache-summary">
+          <Card size="small" className="cache-pill">
+            <Typography.Text strong>Profile TTL</Typography.Text>
+            <Typography.Title level={3} style={{ margin: "0.25rem 0" }}>
+              {ttlMinutes} min
+            </Typography.Title>
+            <Typography.Text type="secondary">{profileTtlSeconds} seconds</Typography.Text>
+          </Card>
+          <Card size="small" className="cache-pill" style={{ background: "linear-gradient(135deg, #ecfeff, #e0f2fe)" }}>
+            <Typography.Text strong>Lock window</Typography.Text>
+            <Typography.Title level={4} style={{ margin: "0.25rem 0" }}>
+              {lockSeconds}s lock / {maxWaitSeconds}s wait
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              Retry delay {retryDelayMs}ms to smooth bursts
+            </Typography.Text>
+          </Card>
+        </div>
+
+        <Card className="cache-card">
+          <Form layout="vertical" form={form} onFinish={handleSubmit}>
+            <Form.Item
+              label="Profile cache TTL (seconds)"
+              name="profileTtlSeconds"
+              rules={[
+                { required: true, message: "Please set a cache TTL" },
+                { type: "number", min: 60, max: 86_400 }
+              ]}
+              extra="Aim for 5–10 minutes in production; shorten temporarily when debugging profile changes."
+            >
+              <InputNumber min={60} max={86_400} step={30} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label="Lock TTL (ms)"
+              name="lockTtlMs"
+              rules={[
+                { required: true, message: "Please set a lock TTL" },
+                { type: "number", min: 100, max: 60_000 }
+              ]}
+              extra="How long a worker holds the rebuild lock. Keep this just above the 99th percentile profile query time."
+            >
+              <InputNumber min={100} max={60_000} step={50} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label="Max wait for lock (ms)"
+              name="maxWaitMs"
+              rules={[
+                { required: true, message: "Please set a max wait" },
+                { type: "number", min: 50, max: 120_000 }
+              ]}
+              extra="How long other callers wait before giving up and rebuilding themselves."
+            >
+              <InputNumber min={50} max={120_000} step={50} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label="Retry delay between lock attempts (ms)"
+              name="retryDelayMs"
+              rules={[
+                { required: true, message: "Please set a retry delay" },
+                { type: "number", min: 10, max: 1_000 }
+              ]}
+              extra="Short delays reduce lock churn at peak load."
+            >
+              <InputNumber min={10} max={1_000} step={10} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <Button type="primary" htmlType="submit" loading={saving}>
+                  Save auth cache settings
+                </Button>
+                <Typography.Text type="secondary">
+                  Saves apply instantly; caches will refresh on the next miss.
+                </Typography.Text>
+              </div>
+            </Form.Item>
+          </Form>
+        </Card>
       </div>
     </>
   );
