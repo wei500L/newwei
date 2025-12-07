@@ -92,6 +92,12 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get rateLimitSettingsCacheTtlSeconds() {
+    return (
+      this.get<number>("RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS", { infer: true }) ?? 60
+    );
+  }
+
   get authProfileCacheTtlSeconds() {
     return this.get<number>("AUTH_PROFILE_CACHE_TTL_SECONDS", { infer: true }) ?? 600;
   }

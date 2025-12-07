@@ -16,6 +16,7 @@ export const apiEnvSchema = baseEnvSchema.extend({
   RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW: z.coerce.number().int().positive().default(300),
   RATE_LIMIT_RBAC_WRITE: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_RBAC_WRITE_WINDOW: z.coerce.number().int().positive().default(600),
+  RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
   AUTH_PROFILE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
   AUTH_PROFILE_CACHE_LOCK_TTL_MS: z.coerce.number().int().positive().default(5_000),
   AUTH_PROFILE_CACHE_MAX_WAIT_MS: z.coerce.number().int().positive().default(5_000),

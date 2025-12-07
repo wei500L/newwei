@@ -19,7 +19,8 @@ const envMock = {
     crawlTaskCreateWindowSeconds: 300,
     rbacWrite: 4,
     rbacWriteWindowSeconds: 600
-  }
+  },
+  rateLimitSettingsCacheTtlSeconds: 60
 } as any;
 
 describe("RateLimitConfigService", () => {
@@ -68,7 +69,11 @@ describe("RateLimitConfigService", () => {
     expect(settings.login).toEqual({ limit: 8, windowSeconds: 90 });
     expect(settings.crawlCreate).toEqual({ limit: 2, windowSeconds: 600 });
     expect(settings.rbacWrite).toEqual({ limit: 3, windowSeconds: 420 });
-    expect(cacheMock.set).toHaveBeenCalledWith(expect.any(String), settings);
+    expect(cacheMock.set).toHaveBeenCalledWith(
+      expect.any(String),
+      settings,
+      envMock.rateLimitSettingsCacheTtlSeconds
+    );
   });
 
   it("returns cached settings without hitting the database", async () => {
@@ -104,7 +109,8 @@ describe("RateLimitConfigService", () => {
       expect.any(String),
       expect.objectContaining({
         login: { limit: 6, windowSeconds: 100 }
-      })
+      }),
+      envMock.rateLimitSettingsCacheTtlSeconds
     );
     const refreshed = await service.getBucketConfig("rbacWrite");
     expect(refreshed).toEqual({ limit: 2, windowSeconds: 300 });

@@ -36,11 +36,15 @@ const RATE_LIMIT_CACHE_KEY = "rate_limit:settings";
 
 @Injectable()
 export class RateLimitConfigService {
+  private readonly cacheTtlSeconds: number;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
     private readonly cache: CacheService
-  ) {}
+  ) {
+    this.cacheTtlSeconds = this.env.rateLimitSettingsCacheTtlSeconds;
+  }
 
   async getRateLimitSettings(): Promise<RateLimitSettings> {
     const cached = await this.cache.get<RateLimitSettings>(RATE_LIMIT_CACHE_KEY);
@@ -48,7 +52,7 @@ export class RateLimitConfigService {
       return this.normalizeSettings(cached);
     }
     const settings = await this.loadSettings();
-    await this.cache.set(RATE_LIMIT_CACHE_KEY, settings);
+    await this.cache.set(RATE_LIMIT_CACHE_KEY, settings, this.cacheTtlSeconds);
     return settings;
   }
 
@@ -89,7 +93,7 @@ export class RateLimitConfigService {
         metadata: normalized
       }
     });
-    await this.cache.set(RATE_LIMIT_CACHE_KEY, normalized);
+    await this.cache.set(RATE_LIMIT_CACHE_KEY, normalized, this.cacheTtlSeconds);
     return normalized;
   }
 
