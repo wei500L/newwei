@@ -399,11 +399,11 @@ export class NewsPipelineService {
     try {
       return this.mapProcessedArticleToCleanedNews(processed);
     } catch (error) {
-      this.logger.warn(
+      this.logger.error(
         { error, processedArticleId: processed.id },
         "Failed to map processed article to cleaned news",
       );
-      return null;
+      throw error;
     }
   }
 

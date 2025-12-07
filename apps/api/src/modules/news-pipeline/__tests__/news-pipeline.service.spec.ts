@@ -277,6 +277,69 @@ describe("NewsPipelineService", () => {
     expect(ProcessedItemModel.create).toHaveBeenCalledTimes(1);
   });
 
+  it("fails fast when existing processed article cannot be mapped", async () => {
+    const contentHash = createHash("sha256")
+      .update("# Headline\nBody paragraph")
+      .digest("hex");
+    (prisma.processedArticle.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: "processed-article-2",
+      articleId: "article-1",
+      article: {
+        id: "article-1",
+        orgId: "org-1",
+        sourceId: null,
+        url: "https://example.com/story?ref=news",
+        sourceLabel: "Example",
+        language: "en",
+        titleGuess: null,
+        crawlAt: new Date("2024-01-01T00:00:00Z"),
+        contentHash,
+        markdownRef: null,
+        version: 1,
+        metadata: {},
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+        updatedAt: new Date("2024-01-01T00:00:00Z")
+      },
+      title: "Existing title",
+      subtitle: null,
+      author: "Reporter",
+      source: "Example",
+      publishedAt: new Date("2024-01-01T00:00:00Z"),
+      category: null,
+      topics: ["news"],
+      summary: "Existing summary",
+      keyPoints: ["Existing summary"],
+      entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+      cleanedMarkdownRef: null,
+      removedNoiseTypes: [],
+      qualityScore: 2, // invalid to trigger mapping failure
+      llmModel: "openai/gpt-4o-mini",
+      llmPromptVersion: "v1",
+      language: "en",
+      location: "US",
+      promptTokens: 10,
+      completionTokens: 5,
+      totalTokens: 15,
+      costUsd: 0.01,
+      latencyMs: 80,
+      createdAt: new Date("2024-01-01T00:00:00Z"),
+      processedAt: new Date("2024-01-01T00:00:00Z"),
+      updatedAt: new Date("2024-01-01T00:00:00Z")
+    });
+
+    await expect(service.process(job, raw)).rejects.toThrow();
+    expect(liteLlm.acompletion).not.toHaveBeenCalled();
+
+    const failureCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+      ([entry]) => entry.stage === "llm" && entry.status === "failed"
+    );
+    expect(failureCall?.[0]).toMatchObject({
+      stage: "llm",
+      status: "failed",
+      data: { url: "https://example.com/story", runId: null }
+    });
+  });
+
   it("throws when crawl returns no successful results", async () => {
     crawlClient.crawl.mockResolvedValueOnce({
       results: [
