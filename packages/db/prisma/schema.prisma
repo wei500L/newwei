@@ -126,6 +126,8 @@ model ItemMeta {
   updatedAt   DateTime @updatedAt
 
   @@unique([orgId, externalId])
+  @@index([orgId, name])
+  @@fulltext([name, externalId])
 }
 
 model CrawlTask {

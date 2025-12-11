@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../config/prisma.service";
 import { QueueService } from "../queue/queue.service";
 import { CreateItemDto } from "./dto/create-item.dto";
@@ -8,6 +9,24 @@ import type { MongoConnection } from "@modular/mongo";
 import { UpdateItemDto } from "./dto/update-item.dto";
 
 const MAX_CURSOR_PAGE_SIZE = 50;
+const FULLTEXT_MIN_TOKEN_LENGTH = 3;
+
+type SearchStrategy =
+  | { type: "none" }
+  | { type: "fulltext"; query: string }
+  | { type: "prefix"; term: string };
+
+type ItemMetaRow = {
+  id: string;
+  orgId: string;
+  externalId: string;
+  name: string;
+  status: string;
+  mongoRef: string;
+  version: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 @Injectable()
 export class ItemsService {
@@ -64,12 +83,28 @@ export class ItemsService {
   }
 
   async list(orgId: string, page = 1, pageSize = 10, search?: string) {
-    const where = this.buildListWhere(orgId, search);
+    const take = Math.max(pageSize, 1);
+    const skip = (page - 1) * take;
+    const strategy = this.resolveSearchStrategy(search);
+
+    if (strategy.type === "fulltext") {
+      const { items, total } = await this.listWithFullText(orgId, strategy.query, skip, take);
+      return {
+        items,
+        total,
+        page,
+        pageSize: take
+      };
+    }
+
+    const where =
+      strategy.type === "prefix" ? this.buildPrefixWhere(orgId, strategy.term) : { orgId };
+
     const [items, total] = await Promise.all([
       this.prisma.itemMeta.findMany({
         where,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        skip,
+        take,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }]
       }),
       this.prisma.itemMeta.count({ where })
@@ -79,13 +114,21 @@ export class ItemsService {
       items,
       total,
       page,
-      pageSize
+      pageSize: take
     };
   }
 
   async listWithCursor(orgId: string, first = 10, cursorId?: string, search?: string) {
-    const where = this.buildListWhere(orgId, search);
     const take = Math.min(Math.max(first, 1), MAX_CURSOR_PAGE_SIZE);
+
+    const strategy = this.resolveSearchStrategy(search);
+
+    if (strategy.type === "fulltext") {
+      return this.listWithCursorFullText(orgId, take, cursorId, strategy.query);
+    }
+
+    const where =
+      strategy.type === "prefix" ? this.buildPrefixWhere(orgId, strategy.term) : { orgId };
 
     const items = await this.prisma.itemMeta.findMany({
       where,
@@ -187,17 +230,109 @@ export class ItemsService {
     return updated;
   }
 
-  private buildListWhere(orgId: string, search?: string) {
+  private resolveSearchStrategy(search?: string): SearchStrategy {
+    const normalized = search?.trim();
+    if (!normalized) {
+      return { type: "none" };
+    }
+
+    const fullTextQuery = this.buildFullTextQuery(normalized);
+    if (fullTextQuery) {
+      return { type: "fulltext", query: fullTextQuery };
+    }
+
+    return { type: "prefix", term: normalized };
+  }
+
+  private buildFullTextQuery(search: string): string | null {
+    const tokens = search
+      .split(/\s+/)
+      .map((token) => token.replace(/[+-><()~"*@]+/g, ""))
+      .filter((token) => token.length >= FULLTEXT_MIN_TOKEN_LENGTH);
+
+    if (tokens.length === 0) {
+      return null;
+    }
+
+    return tokens.map((token) => `${token}*`).join(" ");
+  }
+
+  private buildPrefixWhere(orgId: string, term: string) {
     return {
       orgId,
-      ...(search
-        ? {
-            OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { externalId: { contains: search, mode: "insensitive" } }
-            ]
-          }
-        : {})
+      OR: [
+        { name: { startsWith: term } },
+        { externalId: { startsWith: term } }
+      ]
+    };
+  }
+
+  private async listWithFullText(orgId: string, query: string, skip: number, take: number) {
+    const items = await this.prisma.$queryRaw<ItemMetaRow[]>`
+      SELECT \`id\`, \`orgId\`, \`externalId\`, \`name\`, \`status\`, \`mongoRef\`, \`version\`, \`createdAt\`, \`updatedAt\`
+      FROM \`ItemMeta\`
+      WHERE \`orgId\` = ${orgId}
+        AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
+      ORDER BY \`createdAt\` DESC, \`id\` DESC
+      LIMIT ${take} OFFSET ${skip}
+    `;
+
+    const totalResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) AS count
+      FROM \`ItemMeta\`
+      WHERE \`orgId\` = ${orgId}
+        AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
+    `;
+
+    const total = Number(totalResult[0]?.count ?? 0);
+
+    return { items, total };
+  }
+
+  private async listWithCursorFullText(
+    orgId: string,
+    take: number,
+    cursorId: string | undefined,
+    query: string
+  ) {
+    const cursor = cursorId
+      ? await this.prisma.itemMeta.findFirst({
+          where: { id: cursorId, orgId },
+          select: { id: true, createdAt: true }
+        })
+      : null;
+
+    if (cursorId && !cursor) {
+      throw new NotFoundException("Cursor not found");
+    }
+
+    const cursorClause = cursor
+      ? Prisma.sql`AND (\`createdAt\` < ${cursor.createdAt} OR (\`createdAt\` = ${cursor.createdAt} AND \`id\` < ${cursor.id}))`
+      : Prisma.sql``;
+
+    const items = await this.prisma.$queryRaw<ItemMetaRow[]>`
+      SELECT \`id\`, \`orgId\`, \`externalId\`, \`name\`, \`status\`, \`mongoRef\`, \`version\`, \`createdAt\`, \`updatedAt\`
+      FROM \`ItemMeta\`
+      WHERE \`orgId\` = ${orgId}
+        AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
+        ${cursorClause}
+      ORDER BY \`createdAt\` DESC, \`id\` DESC
+      LIMIT ${take + 1}
+    `;
+
+    const totalCountResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) AS count
+      FROM \`ItemMeta\`
+      WHERE \`orgId\` = ${orgId}
+        AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
+    `;
+
+    const totalCount = Number(totalCountResult[0]?.count ?? 0);
+
+    return {
+      items: items.slice(0, take),
+      hasNextPage: items.length > take,
+      totalCount
     };
   }
 }
