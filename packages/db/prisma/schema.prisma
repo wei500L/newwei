@@ -1,7 +1,8 @@
 // Prisma schema for primary MySQL storage
 // Sharding strategy: orgId acts as the shard key. Multi-tenant tables are indexed on orgId to keep routing/hash-based partitioning cheap.
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextIndex"]
 }
 
 datasource db {
@@ -30,6 +31,7 @@ model Org {
   alertRules  AlertRule[]
   alertChannels AlertNotificationChannel[]
   mongoOutbox MongoOutbox[]
+  notifications Notification[]
 }
 
 model User {
@@ -51,6 +53,7 @@ model User {
   alertRulesCreated AlertRule[] @relation("AlertRuleCreatedBy")
   alertChannelsCreated AlertNotificationChannel[] @relation("AlertChannelCreatedBy")
   systemSettingsUpdated SystemSetting[] @relation("SystemSettingUpdatedBy")
+  notifications Notification[]
 }
 
 model Role {
@@ -357,6 +360,25 @@ model DashboardWidget {
   updatedAt    DateTime             @updatedAt
 }
 
+model Notification {
+  id        String            @id @default(cuid())
+  org       Org               @relation(fields: [orgId], references: [id])
+  orgId     String
+  user      User?             @relation(fields: [userId], references: [id])
+  userId    String?
+  type      NotificationType
+  title     String
+  body      String?
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([orgId, createdAt])
+  @@index([userId, createdAt])
+  @@index([orgId, userId, readAt])
+}
+
 enum DashboardWidgetType {
   line
   bar
@@ -365,6 +387,16 @@ enum DashboardWidgetType {
   kline
   radar
   table
+}
+
+enum NotificationType {
+  crawl_completed
+  crawl_failed
+  analysis_completed
+  analysis_failed
+  org_invite
+  alert_triggered
+  system
 }
 
 model AlertNotificationChannel {

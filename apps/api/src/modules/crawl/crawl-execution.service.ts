@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { CrawlTask, Prisma } from "@prisma/client";
+import { NotificationType } from "@prisma/client";
 import { createLogger } from "@modular/utils";
 import { TaskLogModel } from "@modular/mongo";
 import { PrismaService } from "../config/prisma.service";
@@ -29,6 +30,7 @@ import {
 import { Crawl4aiClient, Crawl4aiArticle, Crawl4aiRequest, Crawl4aiResponse } from "./crawl4ai.client";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { CrawlResultService } from "./crawl-result.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 const logger = createLogger({ name: "crawl-execution-service" });
 
@@ -39,7 +41,8 @@ export class CrawlExecutionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crawlClient: Crawl4aiClient,
-    private readonly resultService: CrawlResultService
+    private readonly resultService: CrawlResultService,
+    private readonly notifications: NotificationsService
   ) {}
 
   async runTask(taskId: string, orgId: string, triggeredById?: string): Promise<CrawlExecutionSummary> {
@@ -143,6 +146,10 @@ export class CrawlExecutionService {
         data: summary
       });
 
+      if (triggeredById) {
+        await this.safeNotifyCrawl(task, summary, triggeredById, "completed");
+      }
+
       return summary;
     } catch (error) {
       const message =
@@ -164,7 +171,52 @@ export class CrawlExecutionService {
           message
         }
       });
+
+      if (triggeredById) {
+        await this.safeNotifyCrawl(
+          task,
+          { inserted: 0, skipped: 0 },
+          triggeredById,
+          "failed",
+          message
+        );
+      }
       throw error;
+    }
+  }
+
+  private async safeNotifyCrawl(
+    task: CrawlTask,
+    summary: CrawlExecutionSummary,
+    triggeredById: string,
+    status: "completed" | "failed",
+    errorMessage?: string
+  ) {
+    try {
+      const lastResultAt = summary.lastFetchedAt
+        ? summary.lastFetchedAt.toISOString()
+        : null;
+      await this.notifications.notify({
+        orgId: task.orgId,
+        userId: triggeredById,
+        type: status === "completed" ? NotificationType.crawl_completed : NotificationType.crawl_failed,
+        title: `${status === "completed" ? "Crawl completed" : "Crawl failed"}: ${
+          task.displayName ?? task.targetUrl
+        }`,
+        body:
+          status === "completed"
+            ? `Inserted ${summary.inserted}, skipped ${summary.skipped}${
+                summary.retryableFailures ? `, retryable ${summary.retryableFailures}` : ""
+              }`
+            : errorMessage ?? "Crawl task failed",
+        data: {
+          taskId: task.id,
+          status,
+          lastResultAt
+        }
+      });
+    } catch (err) {
+      logger.warn({ taskId: task.id, err }, "Failed to send crawl notification");
     }
   }
 

@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { getQueueToken } from "@nestjs/bull-shared";
 import { Queue, QueueEvents } from "bullmq";
 
 import { AuthModule } from "../auth/auth.module";
@@ -60,11 +61,21 @@ export const ITEM_PIPELINE_QUEUE_NAME = "itemPipeline";
         });
       }
     },
+    {
+      provide: getQueueToken(ITEM_PIPELINE_QUEUE_NAME),
+      useExisting: PIPELINE_QUEUE
+    },
     QueueProcessor,
     QueueService,
     QueueEventPublisher,
     QueueGateway
   ],
-  exports: [QueueService, QueueEventPublisher, PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS]
+  exports: [
+    QueueService,
+    QueueEventPublisher,
+    PIPELINE_QUEUE,
+    PIPELINE_QUEUE_EVENTS,
+    getQueueToken(ITEM_PIPELINE_QUEUE_NAME)
+  ]
 })
 export class QueueModule {}

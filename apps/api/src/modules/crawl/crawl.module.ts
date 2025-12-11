@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { getQueueToken } from "@nestjs/bull-shared";
 import { HttpModule } from "@nestjs/axios";
 import { Queue, QueueEvents } from "bullmq";
 import { EnvService } from "../config/config.service";
@@ -13,9 +14,11 @@ import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlTaskService } from "./crawl-task.service";
 import { CrawlResultService } from "./crawl-result.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
   imports: [
+    NotificationsModule,
     HttpModule.registerAsync({
       inject: [EnvService],
       useFactory: (env: EnvService) => {
@@ -70,6 +73,10 @@ import { CrawlResultService } from "./crawl-result.service";
           connection: redis
         });
       }
+    },
+    {
+      provide: getQueueToken(CRAWL_QUEUE_NAME),
+      useExisting: CRAWL_QUEUE
     }
   ],
   exports: [
@@ -78,7 +85,10 @@ import { CrawlResultService } from "./crawl-result.service";
     CrawlExecutionService,
     CrawlResultService,
     CrawlMetadataService,
-    Crawl4aiClient
+    Crawl4aiClient,
+    CRAWL_QUEUE,
+    CRAWL_QUEUE_EVENTS,
+    getQueueToken(CRAWL_QUEUE_NAME)
   ]
 })
 export class CrawlModule {}

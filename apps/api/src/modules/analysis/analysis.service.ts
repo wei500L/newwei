@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { Queue } from "bullmq";
-import { AnalysisResultModel } from "@modular/mongo";
+import { AnalysisResultModel, type AnalysisResultDocument } from "@modular/mongo";
 import { LiteLlmService } from "../news-pipeline/litellm.service";
 import { EnvService } from "../config/config.service";
 import { ANALYSIS_QUEUE } from "./analysis.constants";
@@ -9,6 +9,8 @@ import { createLogger } from "@modular/utils";
 import { ANALYSIS_PUBSUB } from "./analysis.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
 import { detectZScoreAnomalies, detectRollingSpike, detectTrend, detectVolumeSpike, SeriesPoint } from "./anomaly-detector";
+import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationType } from "@prisma/client";
 
 const logger = createLogger({ name: "analysis-service" });
 
@@ -18,7 +20,8 @@ export class AnalysisService {
     private readonly llm: LiteLlmService,
     private readonly env: EnvService,
     @Inject(ANALYSIS_QUEUE) private readonly queue: Queue<AnalysisJobPayload>,
-    @Inject(ANALYSIS_PUBSUB) private readonly pubsub: PubSubEngine
+    @Inject(ANALYSIS_PUBSUB) private readonly pubsub: PubSubEngine,
+    private readonly notifications: NotificationsService
   ) {}
 
   async submitCorrelation(orgId: string, input: CorrelationInput, triggeredById?: string) {
@@ -79,13 +82,44 @@ export class AnalysisService {
       record.status = "completed";
       await record.save();
       await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, record.createdAt);
+      await this.notifyResult(record);
     } catch (error) {
       logger.error({ job, error }, "Analysis job failed");
       record.status = "failed";
       record.error = error instanceof Error ? error.message : String(error);
       await record.save();
       await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, record.createdAt);
+      await this.notifyResult(record);
       throw error;
+    }
+  }
+
+  private async notifyResult(record: AnalysisResultDocument) {
+    if (!record.triggeredById) {
+      return;
+    }
+    const analysisId = (record.id as string | undefined) ?? record._id?.toString?.() ?? "";
+    try {
+      await this.notifications.notify({
+        orgId: record.orgId,
+        userId: record.triggeredById,
+        type:
+          record.status === "completed"
+            ? NotificationType.analysis_completed
+            : NotificationType.analysis_failed,
+        title: `${record.type} analysis ${record.status}`,
+        body:
+          record.status === "completed"
+            ? record.summary ?? undefined
+            : record.error ?? "Analysis job failed",
+        data: {
+          analysisId,
+          status: record.status,
+          type: record.type
+        }
+      });
+    } catch (error) {
+      logger.warn({ analysisId, error }, "Failed to send analysis notification");
     }
   }
 

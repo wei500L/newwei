@@ -120,6 +120,18 @@ export const AnalysisStatus = {
 
 export type AnalysisStatus =
   (typeof AnalysisStatus)[keyof typeof AnalysisStatus];
+export const NotificationType = {
+  CrawlCompleted: "crawl_completed",
+  CrawlFailed: "crawl_failed",
+  AnalysisCompleted: "analysis_completed",
+  AnalysisFailed: "analysis_failed",
+  OrgInvite: "org_invite",
+  AlertTriggered: "alert_triggered",
+  System: "system",
+} as const;
+
+export type NotificationType =
+  (typeof NotificationType)[keyof typeof NotificationType];
 
 export const TimeGranularity = {
   Year: "year",
@@ -2631,6 +2643,51 @@ export type AlertEventsStreamSubscription = {
   };
 };
 
+export type NotificationsQueryVariables = Exact<{
+  limit?: InputMaybe<number>;
+}>;
+
+export type NotificationsQuery = {
+  notifications: Array<{
+    __typename?: "NotificationModel";
+    id: string;
+    type: NotificationType;
+    title: string;
+    body?: string | null;
+    data?: any | null;
+    createdAt: any;
+    readAt?: any | null;
+  }>;
+};
+
+export type UnreadNotificationCountQueryVariables = Exact<{
+  [key: string]: never;
+}>;
+
+export type UnreadNotificationCountQuery = {
+  unreadNotificationCount: number;
+};
+
+export type MarkNotificationReadMutationVariables = Exact<{
+  id: string;
+}>;
+
+export type MarkNotificationReadMutation = {
+  markNotificationRead?: {
+    __typename?: "NotificationModel";
+    id: string;
+    readAt?: any | null;
+  } | null;
+};
+
+export type MarkAllNotificationsReadMutationVariables = Exact<{
+  [key: string]: never;
+}>;
+
+export type MarkAllNotificationsReadMutation = {
+  markAllNotificationsRead: boolean;
+};
+
 export const AlertRulesDocument = gql`
   query AlertRules {
     alertRules {
@@ -2923,3 +2980,159 @@ export type AlertEventsStreamSubscriptionHookResult = ReturnType<
 >;
 export type AlertEventsStreamSubscriptionResult =
   Apollo.SubscriptionResult<AlertEventsStreamSubscription>;
+export const NotificationsDocument = gql`
+  query Notifications($limit: Int) {
+    notifications(limit: $limit) {
+      id
+      type
+      title
+      body
+      data
+      createdAt
+      readAt
+    }
+  }
+`;
+
+export function useNotificationsQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    NotificationsQuery,
+    NotificationsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<NotificationsQuery, NotificationsQueryVariables>(
+    NotificationsDocument,
+    options,
+  );
+}
+
+export function useNotificationsLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    NotificationsQuery,
+    NotificationsQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<NotificationsQuery, NotificationsQueryVariables>(
+    NotificationsDocument,
+    options,
+  );
+}
+export type NotificationsQueryHookResult = ReturnType<
+  typeof useNotificationsQuery
+>;
+export type NotificationsLazyQueryHookResult = ReturnType<
+  typeof useNotificationsLazyQuery
+>;
+export type NotificationsQueryResult = Apollo.QueryResult<
+  NotificationsQuery,
+  NotificationsQueryVariables
+>;
+export const UnreadNotificationCountDocument = gql`
+  query UnreadNotificationCount {
+    unreadNotificationCount
+  }
+`;
+
+export function useUnreadNotificationCountQuery(
+  baseOptions?: Apollo.QueryHookOptions<
+    UnreadNotificationCountQuery,
+    UnreadNotificationCountQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useQuery<
+    UnreadNotificationCountQuery,
+    UnreadNotificationCountQueryVariables
+  >(UnreadNotificationCountDocument, options);
+}
+
+export function useUnreadNotificationCountLazyQuery(
+  baseOptions?: Apollo.LazyQueryHookOptions<
+    UnreadNotificationCountQuery,
+    UnreadNotificationCountQueryVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useLazyQuery<
+    UnreadNotificationCountQuery,
+    UnreadNotificationCountQueryVariables
+  >(UnreadNotificationCountDocument, options);
+}
+export type UnreadNotificationCountQueryHookResult = ReturnType<
+  typeof useUnreadNotificationCountQuery
+>;
+export type UnreadNotificationCountLazyQueryHookResult = ReturnType<
+  typeof useUnreadNotificationCountLazyQuery
+>;
+export type UnreadNotificationCountQueryResult = Apollo.QueryResult<
+  UnreadNotificationCountQuery,
+  UnreadNotificationCountQueryVariables
+>;
+export const MarkNotificationReadDocument = gql`
+  mutation MarkNotificationRead($id: String!) {
+    markNotificationRead(id: $id) {
+      id
+      readAt
+    }
+  }
+`;
+export type MarkNotificationReadMutationFn = Apollo.MutationFunction<
+  MarkNotificationReadMutation,
+  MarkNotificationReadMutationVariables
+>;
+
+export function useMarkNotificationReadMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    MarkNotificationReadMutation,
+    MarkNotificationReadMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    MarkNotificationReadMutation,
+    MarkNotificationReadMutationVariables
+  >(MarkNotificationReadDocument, options);
+}
+export type MarkNotificationReadMutationHookResult = ReturnType<
+  typeof useMarkNotificationReadMutation
+>;
+export type MarkNotificationReadMutationResult =
+  Apollo.MutationResult<MarkNotificationReadMutation>;
+export type MarkNotificationReadMutationOptions = Apollo.BaseMutationOptions<
+  MarkNotificationReadMutation,
+  MarkNotificationReadMutationVariables
+>;
+export const MarkAllNotificationsReadDocument = gql`
+  mutation MarkAllNotificationsRead {
+    markAllNotificationsRead
+  }
+`;
+export type MarkAllNotificationsReadMutationFn = Apollo.MutationFunction<
+  MarkAllNotificationsReadMutation,
+  MarkAllNotificationsReadMutationVariables
+>;
+
+export function useMarkAllNotificationsReadMutation(
+  baseOptions?: Apollo.MutationHookOptions<
+    MarkAllNotificationsReadMutation,
+    MarkAllNotificationsReadMutationVariables
+  >,
+) {
+  const options = { ...defaultOptions, ...baseOptions };
+  return Apollo.useMutation<
+    MarkAllNotificationsReadMutation,
+    MarkAllNotificationsReadMutationVariables
+  >(MarkAllNotificationsReadDocument, options);
+}
+export type MarkAllNotificationsReadMutationHookResult = ReturnType<
+  typeof useMarkAllNotificationsReadMutation
+>;
+export type MarkAllNotificationsReadMutationResult =
+  Apollo.MutationResult<MarkAllNotificationsReadMutation>;
+export type MarkAllNotificationsReadMutationOptions =
+  Apollo.BaseMutationOptions<
+    MarkAllNotificationsReadMutation,
+    MarkAllNotificationsReadMutationVariables
+  >;

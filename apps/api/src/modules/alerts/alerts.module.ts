@@ -1,5 +1,6 @@
 import { HttpModule } from "@nestjs/axios";
 import { Module } from "@nestjs/common";
+import { getQueueToken } from "@nestjs/bull-shared";
 import { Queue, QueueEvents } from "bullmq";
 import { DatabaseModule } from "../config/database.module";
 import { EnvService } from "../config/config.service";
@@ -71,8 +72,12 @@ import { SystemEventMetricProvider } from "./providers/system-event-metric.provi
     {
       provide: ALERTS_PUBSUB,
       useFactory: () => createAlertsPubSub()
+    },
+    {
+      provide: getQueueToken(ALERTS_QUEUE_NAME),
+      useExisting: ALERTS_QUEUE
     }
   ],
-  exports: [AlertsService]
+  exports: [AlertsService, ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, getQueueToken(ALERTS_QUEUE_NAME)]
 })
 export class AlertsModule {}

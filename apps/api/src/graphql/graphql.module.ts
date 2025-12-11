@@ -19,6 +19,7 @@ import { DataloaderModule, DataloaderInterceptor } from "nestjs-dataloader";
 import { AlertsModule } from "../modules/alerts/alerts.module";
 import { AnalysisModule } from "../modules/analysis/analysis.module";
 import { NewsPipelineModule } from "../modules/news-pipeline/news-pipeline.module";
+import { NotificationsModule } from "../modules/notifications/notifications.module";
 import { UsersResolver } from "./resolvers/user.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
@@ -28,6 +29,7 @@ import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
 import { AlertsResolver } from "./resolvers/alerts.resolver";
 import { AnalysisResolver } from "./resolvers/analysis.resolver";
 import { SettingsResolver } from "./resolvers/settings.resolver";
+import { NotificationResolver } from "./resolvers/notification.resolver";
 import { UserLoader } from "./loaders/user.loader";
 import { RoleLoader } from "./loaders/role.loader";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
@@ -53,6 +55,7 @@ const logger = createLogger({ name: "graphql" });
     CrawlModule,
     AlertsModule,
     AnalysisModule,
+    NotificationsModule,
     NewsPipelineModule,
     DataloaderModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
@@ -129,6 +132,7 @@ const logger = createLogger({ name: "graphql" });
     EconomicDataResolver,
     AlertsResolver,
     AnalysisResolver,
+    NotificationResolver,
     SettingsResolver,
     GraphQLJSONScalar,
     UserLoader,

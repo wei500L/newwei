@@ -1,0 +1,26 @@
+query Notifications($limit: Int) {
+  notifications(limit: $limit) {
+    id
+    type
+    title
+    body
+    data
+    createdAt
+    readAt
+  }
+}
+
+query UnreadNotificationCount {
+  unreadNotificationCount
+}
+
+mutation MarkNotificationRead($id: String!) {
+  markNotificationRead(id: $id) {
+    id
+    readAt
+  }
+}
+
+mutation MarkAllNotificationsRead {
+  markAllNotificationsRead
+}

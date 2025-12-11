@@ -17,6 +17,7 @@ import { useSidebarStore } from "@/store/sidebar";
 import { OrganizationSwitcher } from "./organization-switcher";
 import { captureClientError } from "@/lib/client-telemetry";
 import { createTraceHeaders } from "@/lib/trace";
+import { NotificationCenter } from "./notification-center";
 
 const { Header, Sider, Content } = Layout;
 
@@ -147,6 +148,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
         >
           <Breadcrumb items={breadcrumbs} />
           <Space align="center" size="large">
+            <NotificationCenter />
             <OrganizationSwitcher />
             <Typography.Text>
               {session.data?.user?.firstName} {session.data?.user?.lastName}

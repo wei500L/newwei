@@ -22,9 +22,11 @@ import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { EmailModule } from "./modules/email/email.module";
 import { HealthModule } from "./modules/health/health.module";
 import { ItemsModule } from "./modules/items/items.module";
+import { QueueAdminModule } from "./modules/queue/queue-admin.module";
 import { QueueModule } from "./modules/queue/queue.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 
 @Module({
   imports: [
@@ -45,6 +47,7 @@ import { SystemSettingsModule } from "./modules/system-settings/system-settings.
     DatabaseModule,
     CacheModule,
     QueueModule,
+    QueueAdminModule,
     AuthModule,
     RbacModule,
     ItemsModule,
@@ -55,6 +58,7 @@ import { SystemSettingsModule } from "./modules/system-settings/system-settings.
     AlertsModule,
     AnalysisModule,
     SystemSettingsModule,
+    NotificationsModule,
     ApiGraphqlModule,
     HealthModule
   ],
