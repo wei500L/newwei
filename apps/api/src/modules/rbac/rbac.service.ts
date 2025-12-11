@@ -12,6 +12,34 @@ export class RbacService {
     private readonly actionRateLimit: ActionRateLimitService
   ) {}
 
+  private async getActorPermissionSet(orgId: string, actorId: string) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { orgId, userId: actorId },
+      include: {
+        role: {
+          include: {
+            permissions: {
+              include: { permission: true }
+            }
+          }
+        }
+      }
+    });
+    if (!membership) {
+      throw new ForbiddenException("Actor is not a member of the organization");
+    }
+    return new Set(
+      membership.role.permissions.map((rolePermission) => rolePermission.permission.name)
+    );
+  }
+
+  private assertActorCanManagePermissions(actorPermissions: Set<string>, requested: string[]) {
+    const missing = requested.find((permission) => !actorPermissions.has(permission));
+    if (missing) {
+      throw new ForbiddenException("Insufficient permission scope for RBAC change");
+    }
+  }
+
   async listPermissions() {
     return this.prisma.permission.findMany({
       orderBy: { name: "asc" }
@@ -36,6 +64,7 @@ export class RbacService {
 
   async createRole(orgId: string, actorId: string, dto: CreateRoleDto) {
     await this.actionRateLimit.enforceRbacWrite(orgId, actorId);
+    const actorPermissions = await this.getActorPermissionSet(orgId, actorId);
     return this.prisma.$transaction(async (tx) => {
       const permissions = await tx.permission.findMany({
         where: { name: { in: dto.permissions } }
@@ -43,6 +72,10 @@ export class RbacService {
       if (permissions.length !== dto.permissions.length) {
         throw new NotFoundException("One or more permissions not found");
       }
+      this.assertActorCanManagePermissions(
+        actorPermissions,
+        permissions.map((permission) => permission.name)
+      );
 
       const role = await tx.role.create({
         data: {
@@ -71,15 +104,25 @@ export class RbacService {
 
   async assignRole(orgId: string, actorId: string, dto: AssignRoleDto) {
     await this.actionRateLimit.enforceRbacWrite(orgId, actorId);
+    const actorPermissions = await this.getActorPermissionSet(orgId, actorId);
     const role = await this.prisma.role.findFirst({
       where: {
         id: dto.roleId,
         orgId
+      },
+      include: {
+        permissions: {
+          include: { permission: true }
+        }
       }
     });
     if (!role) {
       throw new NotFoundException("Role not found");
     }
+    this.assertActorCanManagePermissions(
+      actorPermissions,
+      role.permissions.map((permission) => permission.permission.name)
+    );
 
     const membership = await this.prisma.membership.upsert({
       where: {
@@ -128,10 +171,16 @@ export class RbacService {
 
   async updateRole(orgId: string, actorId: string, dto: UpdateRoleDto) {
     await this.actionRateLimit.enforceRbacWrite(orgId, actorId);
+    const actorPermissions = await this.getActorPermissionSet(orgId, actorId);
     const existingRole = await this.prisma.role.findFirst({
       where: {
         id: dto.id,
         orgId
+      },
+      include: {
+        permissions: {
+          include: { permission: true }
+        }
       }
     });
     if (!existingRole) {
@@ -140,6 +189,10 @@ export class RbacService {
     if (existingRole.isSystem) {
       throw new ForbiddenException("System roles cannot be edited");
     }
+    this.assertActorCanManagePermissions(
+      actorPermissions,
+      existingRole.permissions.map((permission) => permission.permission.name)
+    );
 
     const permissions = await this.prisma.permission.findMany({
       where: { name: { in: dto.permissions } }
@@ -147,6 +200,10 @@ export class RbacService {
     if (permissions.length !== dto.permissions.length) {
       throw new NotFoundException("One or more permissions not found");
     }
+    this.assertActorCanManagePermissions(
+      actorPermissions,
+      permissions.map((permission) => permission.name)
+    );
 
     return this.prisma.$transaction(async (tx) => {
       await tx.rolePermission.deleteMany({ where: { roleId: existingRole.id } });

@@ -18,6 +18,7 @@ const prismaMock = {
     deleteMany: jest.fn()
   },
   membership: {
+    findFirst: jest.fn(),
     upsert: jest.fn(),
     findMany: jest.fn()
   }
@@ -42,11 +43,26 @@ describe("RbacService", () => {
         })
       );
     actionRateLimitMock.enforceRbacWrite = jest.fn().mockResolvedValue(true);
+    prismaMock.membership.findFirst = jest.fn().mockResolvedValue({
+      id: "membership-actor",
+      orgId: "org-1",
+      userId: "admin-1",
+      roleId: "role-actor",
+      role: {
+        permissions: [
+          { permission: { id: "perm-roles-write", name: "roles.write" } },
+          { permission: { id: "perm-items-read", name: "items.read" } },
+          { permission: { id: "perm-items-write", name: "items.write" } },
+          { permission: { id: "perm-permissions-read", name: "permissions.read" } }
+        ]
+      }
+    });
     prismaMock.role.findFirst = jest.fn().mockResolvedValue({
       id: "role-9",
       name: "admin",
       orgId: "org-1",
-      isSystem: false
+      isSystem: false,
+      permissions: [{ permission: { id: "perm-items-read", name: "items.read" } }]
     });
     service = new RbacService(prismaMock, actionRateLimitMock);
   });
@@ -109,7 +125,12 @@ describe("RbacService", () => {
     await service.assignRole("org-1", "admin-1", { userId: "user-2", roleId: "role-9" });
     expect(actionRateLimitMock.enforceRbacWrite).toHaveBeenCalledWith("org-1", "admin-1");
     expect(prismaMock.role.findFirst).toHaveBeenCalledWith({
-      where: { id: "role-9", orgId: "org-1" }
+      where: { id: "role-9", orgId: "org-1" },
+      include: {
+        permissions: {
+          include: { permission: true }
+        }
+      }
     });
     expect(prismaMock.membership.upsert).toHaveBeenCalled();
   });
@@ -123,11 +144,59 @@ describe("RbacService", () => {
     expect(prismaMock.membership.upsert).not.toHaveBeenCalled();
   });
 
+  it("rejects assigning roles that exceed actor permissions", async () => {
+    prismaMock.membership.findFirst = jest.fn().mockResolvedValue({
+      id: "membership-actor",
+      orgId: "org-1",
+      userId: "admin-1",
+      roleId: "role-actor",
+      role: {
+        permissions: [{ permission: { id: "perm-roles-write", name: "roles.write" } }]
+      }
+    });
+    prismaMock.role.findFirst = jest.fn().mockResolvedValue({
+      id: "role-1",
+      name: "admin",
+      orgId: "org-1",
+      isSystem: false,
+      permissions: [{ permission: { id: "perm-items-write", name: "items.write" } }]
+    });
+
+    await expect(
+      service.assignRole("org-1", "admin-1", { userId: "user-2", roleId: "role-1" })
+    ).rejects.toThrow(ForbiddenException);
+    expect(prismaMock.membership.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects creating roles with permissions outside actor scope", async () => {
+    prismaMock.membership.findFirst = jest.fn().mockResolvedValue({
+      id: "membership-actor",
+      orgId: "org-1",
+      userId: "admin-1",
+      roleId: "role-actor",
+      role: {
+        permissions: [{ permission: { id: "perm-roles-write", name: "roles.write" } }]
+      }
+    });
+    prismaMock.permission.findMany = jest
+      .fn()
+      .mockResolvedValue([{ id: "perm-1", name: "items.write", description: "" }]);
+
+    await expect(
+      service.createRole("org-1", "admin-1", {
+        name: "ops",
+        description: "ops role",
+        permissions: ["items.write"]
+      })
+    ).rejects.toThrow(ForbiddenException);
+  });
+
   it("updates role permissions and description", async () => {
     prismaMock.role.findFirst = jest.fn().mockResolvedValue({
       id: "role-1",
       name: "ops",
-      isSystem: false
+      isSystem: false,
+      permissions: [{ permission: { id: "perm-items-write", name: "items.write" } }]
     });
     prismaMock.permission.findMany = jest
       .fn()
@@ -153,6 +222,36 @@ describe("RbacService", () => {
     expect(prismaMock.rolePermission.createMany).toHaveBeenCalled();
     expect(prismaMock.role.update).toHaveBeenCalled();
     expect(result?.permissions).toHaveLength(1);
+  });
+
+  it("rejects updating roles that carry permissions the actor lacks", async () => {
+    prismaMock.membership.findFirst = jest.fn().mockResolvedValue({
+      id: "membership-actor",
+      orgId: "org-1",
+      userId: "admin-1",
+      roleId: "role-actor",
+      role: {
+        permissions: [{ permission: { id: "perm-roles-write", name: "roles.write" } }]
+      }
+    });
+    prismaMock.role.findFirst = jest.fn().mockResolvedValue({
+      id: "role-1",
+      name: "ops",
+      isSystem: false,
+      permissions: [{ permission: { id: "perm-items-write", name: "items.write" } }]
+    });
+    prismaMock.permission.findMany = jest
+      .fn()
+      .mockResolvedValue([{ id: "perm-1", name: "items.write", description: "" }]);
+
+    await expect(
+      service.updateRole("org-1", "admin-1", {
+        id: "role-1",
+        description: "manages items",
+        permissions: ["items.write"]
+      })
+    ).rejects.toThrow(ForbiddenException);
+    expect(prismaMock.rolePermission.deleteMany).not.toHaveBeenCalled();
   });
 
   it("rejects updates to system roles", async () => {

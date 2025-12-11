@@ -30,12 +30,14 @@ const ALERT_TEMPLATE_NAME = "alert.hbs";
 @Injectable()
 export class EmailService {
   private readonly transporter: Transporter;
+  private readonly packageRoot: string | null;
   private readonly templates: {
     alert: TemplateDelegate<AlertTemplateContext>;
   };
 
   constructor(private readonly env: EnvService) {
     const config = env.smtpConfig;
+    this.packageRoot = this.findPackageRoot();
     this.transporter = nodemailer.createTransport({
       host: config.host,
       port: config.port,
@@ -105,17 +107,72 @@ export class EmailService {
   }
 
   private resolveTemplatePath(templateFile: string): string | null {
-    const isBuiltArtifact = __dirname.includes(`${path.sep}dist${path.sep}`);
-    const packageRoot = isBuiltArtifact
-      ? path.resolve(__dirname, "..", "..", "..", "..")
-      : path.resolve(__dirname, "..", "..", "..");
-    const candidates = [
-      path.join(__dirname, "templates", templateFile),
-      path.join(packageRoot, "dist", "src", "modules", "email", "templates", templateFile),
-      path.join(packageRoot, "src", "modules", "email", "templates", templateFile)
-    ];
+    const candidateDirectories = new Set<string>([
+      path.join(__dirname, "templates")
+    ]);
 
-    const existingPath = candidates.find((candidate) => existsSync(candidate));
-    return existingPath ?? null;
+    if (this.packageRoot) {
+      candidateDirectories.add(
+        path.join(this.packageRoot, "src", "modules", "email", "templates")
+      );
+      candidateDirectories.add(
+        path.join(this.packageRoot, "dist", "src", "modules", "email", "templates")
+      );
+    }
+
+    const cwd = process.cwd();
+    candidateDirectories.add(path.join(cwd, "src", "modules", "email", "templates"));
+    candidateDirectories.add(path.join(cwd, "dist", "src", "modules", "email", "templates"));
+    candidateDirectories.add(
+      path.join(cwd, "apps", "api", "src", "modules", "email", "templates")
+    );
+    candidateDirectories.add(
+      path.join(cwd, "apps", "api", "dist", "src", "modules", "email", "templates")
+    );
+
+    for (const directory of candidateDirectories) {
+      const candidate = path.join(directory, templateFile);
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private findPackageRoot(): string | null {
+    const searchStarts = [__dirname, process.cwd()];
+
+    for (const start of searchStarts) {
+      const packageRoot = this.walkUpForPackage(start);
+      if (packageRoot) {
+        return packageRoot;
+      }
+    }
+
+    return null;
+  }
+
+  private walkUpForPackage(startFrom: string): string | null {
+    let current = path.resolve(startFrom);
+    const { root } = path.parse(current);
+
+    while (current && current !== root) {
+      const packageJsonPath = path.join(current, "package.json");
+      if (existsSync(packageJsonPath)) {
+        try {
+          const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+          if (packageJson?.name === "@modular/api") {
+            return current;
+          }
+        } catch {
+          // ignore malformed package.json files and keep searching upward
+        }
+      }
+
+      current = path.dirname(current);
+    }
+
+    return null;
   }
 }

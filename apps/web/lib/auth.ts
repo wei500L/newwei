@@ -126,6 +126,10 @@ const config: NextAuthConfig = {
     })
   ],
   callbacks: {
+    authorized({ auth }) {
+      const session = auth as { error?: TokenPayload["error"] } | null;
+      return !!session && session.error !== "RefreshAccessTokenError";
+    },
     async jwt({ token, user, trigger, session }) {
       if (user) {
         const typedUser = user as unknown as BackendLoginResponse & {
@@ -160,7 +164,12 @@ const config: NextAuthConfig = {
       }
 
       if (typedToken.error === "RefreshAccessTokenError") {
-        return typedToken;
+        return {
+          ...typedToken,
+          accessToken: "",
+          refreshToken: "",
+          accessTokenExpires: 0
+        };
       }
 
       if (Date.now() < typedToken.accessTokenExpires - 30_000) {

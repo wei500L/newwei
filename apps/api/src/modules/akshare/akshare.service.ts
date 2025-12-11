@@ -23,9 +23,19 @@ interface FetchResult {
   payload: unknown;
 }
 
+interface ParsedDataPoint {
+  recordedAt: Date;
+  value: number | null;
+  unit?: string;
+  dataType: string;
+  sourceField: string;
+  meta?: unknown;
+}
+
 @Injectable()
 export class AkshareService implements OnModuleInit {
   private readonly logger = new Logger(AkshareService.name);
+  private readonly dataPointBatchSize = 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -398,36 +408,12 @@ export class AkshareService implements OnModuleInit {
       });
 
       const parsedPoints = this.parsePayload(definition.parser, response.payload);
-      for (const point of parsedPoints) {
-        await this.prisma.economicDataPoint.upsert({
-          where: {
-            itemId_recordedAt_sourceField: {
-              itemId: definition.itemId,
-              recordedAt: point.recordedAt,
-              sourceField: point.sourceField
-            }
-          },
-          update: {
-            value: new Prisma.Decimal(point.value),
-            unit: point.unit,
-            dataType: point.dataType
-          },
-          create: {
-            itemId: definition.itemId,
-            recordedAt: point.recordedAt,
-            dataType: point.dataType,
-            value: new Prisma.Decimal(point.value),
-            unit: point.unit,
-            sourceField: point.sourceField,
-            sourceMeta: point.meta ?? null
-          }
-        });
-      }
+      const storedCount = await this.bulkUpsertDataPoints(definition.itemId, parsedPoints);
 
       await this.updateFetchStatusByItemId(definition.itemId, EconomicDataRunStatus.success);
 
-      this.logger.log(`Stored ${parsedPoints.length} points for ${definition.slug}`);
-      return parsedPoints.length;
+      this.logger.log(`Stored ${storedCount} points for ${definition.slug}`);
+      return storedCount;
     } catch (error) {
       try {
         if (itemId) {
@@ -443,6 +429,61 @@ export class AkshareService implements OnModuleInit {
       }
       throw error;
     }
+  }
+
+  private async bulkUpsertDataPoints(itemId: string, points: ParsedDataPoint[]) {
+    const deduped = new Map<string, ParsedDataPoint>();
+    for (const point of points) {
+      if (point.value === null || point.value === undefined) {
+        continue;
+      }
+      const recordedAt = point.recordedAt instanceof Date ? point.recordedAt : new Date(point.recordedAt);
+      const key = `${recordedAt.getTime()}|${point.sourceField}`;
+      deduped.set(key, {
+        ...point,
+        recordedAt
+      });
+    }
+
+    if (deduped.size === 0) {
+      return 0;
+    }
+
+    const sortedPoints = Array.from(deduped.values()).sort((a, b) => {
+      const diff = a.recordedAt.getTime() - b.recordedAt.getTime();
+      if (diff !== 0) {
+        return diff;
+      }
+      return a.sourceField.localeCompare(b.sourceField);
+    });
+
+    const batchSize = Math.min(this.dataPointBatchSize, sortedPoints.length);
+    for (let i = 0; i < sortedPoints.length; i += batchSize) {
+      const chunk = sortedPoints.slice(i, i + batchSize);
+      await this.prisma.$executeRaw(this.buildUpsertDataPointsQuery(itemId, chunk));
+    }
+
+    return deduped.size;
+  }
+
+  private buildUpsertDataPointsQuery(itemId: string, points: ParsedDataPoint[]) {
+    const values = points.map((point) => {
+      const metaJson = point.meta ? JSON.stringify(point.meta) : null;
+      const value = point.value === null ? null : new Prisma.Decimal(point.value);
+      return Prisma.sql`(${itemId}, ${point.recordedAt}, ${point.dataType}, ${value}, ${
+        point.unit ?? null
+      }, ${point.sourceField}, ${metaJson})`;
+    });
+
+    return Prisma.sql`
+      INSERT INTO \`EconomicDataPoint\` (\`itemId\`, \`recordedAt\`, \`dataType\`, \`value\`, \`unit\`, \`sourceField\`, \`sourceMeta\`)
+      VALUES ${Prisma.join(values)}
+      ON DUPLICATE KEY UPDATE
+        \`value\` = VALUES(\`value\`),
+        \`unit\` = VALUES(\`unit\`),
+        \`dataType\` = VALUES(\`dataType\`),
+        \`sourceMeta\` = VALUES(\`sourceMeta\`)
+    `;
   }
 
   private async executeRequest(definition: AkshareDataItemConfig): Promise<FetchResult> {
@@ -485,7 +526,7 @@ export class AkshareService implements OnModuleInit {
     throw lastError;
   }
 
-  private parsePayload(parser: AkshareParserConfig, payload: any) {
+  private parsePayload(parser: AkshareParserConfig, payload: any): ParsedDataPoint[] {
     switch (parser.type) {
       case "latest":
         return this.parseLatestPayload(parser, payload);
