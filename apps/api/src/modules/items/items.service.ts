@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../config/prisma.service";
 import { QueueService } from "../queue/queue.service";
@@ -7,6 +7,10 @@ import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import type { MongoConnection } from "@modular/mongo";
 import { UpdateItemDto } from "./dto/update-item.dto";
+import {
+  NormalizedNewsPayload,
+  NormalizedNewsPayloadSchema
+} from "../news-pipeline/news-pipeline.schema";
 
 const MAX_CURSOR_PAGE_SIZE = 50;
 const FULLTEXT_MIN_TOKEN_LENGTH = 3;
@@ -39,6 +43,8 @@ export class ItemsService {
   }
 
   async create(orgId: string, userId: string, dto: CreateItemDto) {
+    const payload = this.parsePayload(dto.payload);
+
     const created = await this.prisma.$transaction(async (tx) => {
       const itemMeta = await tx.itemMeta.create({
         data: {
@@ -52,7 +58,7 @@ export class ItemsService {
 
       const rawItem = await RawItemModel.create({
         itemMetaId: itemMeta.id,
-        payload: dto.payload,
+        payload,
         source: "api"
       });
 
@@ -67,7 +73,7 @@ export class ItemsService {
           actorId: userId,
           resource: "item",
           action: "create",
-          metadata: dto
+          metadata: { ...dto, payload }
         }
       });
 
@@ -181,6 +187,7 @@ export class ItemsService {
       throw new NotFoundException("Item not found");
     }
 
+    const normalizedPayload = dto.payload ? this.parsePayload(dto.payload) : undefined;
     let enqueueRef: string | null = null;
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -193,10 +200,10 @@ export class ItemsService {
       });
 
       let newRawRef = existing.mongoRef;
-      if (dto.payload) {
+      if (normalizedPayload) {
         const raw = await RawItemModel.create({
           itemMetaId: existing.id,
-          payload: dto.payload,
+          payload: normalizedPayload,
           source: "graphql"
         });
         newRawRef = raw.id;
@@ -213,7 +220,7 @@ export class ItemsService {
           actorId: userId,
           resource: "item",
           action: "update",
-          metadata: dto
+          metadata: normalizedPayload ? { ...dto, payload: normalizedPayload } : dto
         }
       });
 
@@ -334,5 +341,15 @@ export class ItemsService {
       hasNextPage: items.length > take,
       totalCount
     };
+  }
+
+  private parsePayload(payload: Record<string, unknown>): NormalizedNewsPayload {
+    const parsed = NormalizedNewsPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      const [firstError] = parsed.error.errors;
+      const message = firstError?.message ?? "payload is invalid";
+      throw new BadRequestException(`Invalid payload: ${message}`);
+    }
+    return parsed.data;
   }
 }
