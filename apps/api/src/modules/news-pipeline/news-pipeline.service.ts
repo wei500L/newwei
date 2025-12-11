@@ -233,13 +233,14 @@ export class NewsPipelineService {
 
   private async fetchArticle(job: PipelineJobContext, payload: NormalizedNewsPayload) {
     const cacheKey = this.cacheKey(job.orgId, payload.url);
-    if (!payload.forceRefresh) {
+    if (payload.forceRefresh) {
+      await this.cache.del(cacheKey);
+    } else {
       const cached = await this.cache.get<CrawlCacheEntry>(cacheKey);
       if (cached?.markdown) {
         const cachedWithHash = {
           ...cached,
-          contentHash:
-            cached.contentHash ?? this.hashContent(cached.markdown),
+          contentHash: cached.contentHash ?? this.hashContent(cached.markdown),
         };
         return {
           sourceUrl: payload.url,
@@ -256,21 +257,33 @@ export class NewsPipelineService {
       }
     }
 
-    const crawlResponse = await this.executeCrawl(payload);
-    const article = this.pickSuccessfulArticle(crawlResponse.results);
-    const normalized = this.normalizeArticle(
-      article,
-      payload.url,
-      crawlResponse.runId ?? null,
-    );
-    await this.cache.set(
+    let executedCrawl = false;
+    const normalized = await this.cache.wrap(
       cacheKey,
-      normalized,
       this.configService.config.pipeline.cacheTtlSeconds,
+      async () => {
+        executedCrawl = true;
+        const crawlResponse = await this.executeCrawl(payload);
+        const article = this.pickSuccessfulArticle(crawlResponse.results);
+        return this.normalizeArticle(
+          article,
+          payload.url,
+          crawlResponse.runId ?? null,
+        );
+      },
+      {
+        lockTtlMs: this.getCrawlLockTtlMs(),
+        retryDelayMs: 100,
+        maxWaitMs: this.getCrawlLockTtlMs(),
+      },
     );
-    return {
+    const normalizedWithHash = {
       ...normalized,
-      fromCache: false,
+      contentHash: normalized.contentHash ?? this.hashContent(normalized.markdown),
+    };
+    return {
+      ...normalizedWithHash,
+      fromCache: !executedCrawl,
     };
   }
 
@@ -1054,6 +1067,11 @@ export class NewsPipelineService {
 
   private hashContent(content: string) {
     return createHash("sha256").update(content).digest("hex");
+  }
+
+  private getCrawlLockTtlMs() {
+    const timeoutMs = this.configService.config.crawl4ai.timeoutMs;
+    return Math.max(timeoutMs + 5_000, 10_000);
   }
 
   private isDuplicateKeyError(error: unknown) {
