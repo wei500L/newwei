@@ -16,7 +16,6 @@ import { ItemsService } from "../../modules/items/items.service";
 import { ItemModel, ItemConnection, ItemEdge, ItemMetaModel, RawItemModelGraph, ProcessedItemModelGraph } from "../models/item.model";
 import { ItemsQueryArgs, CreateItemInput, UpdateItemInput } from "../dto/item.input";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
-import { PrismaService } from "../../modules/config/prisma.service";
 import { ItemMetaLoader } from "../loaders/item-meta.loader";
 import { RawItemLoader } from "../loaders/raw-item.loader";
 import { ProcessedItemLoader } from "../loaders/processed-item.loader";
@@ -35,7 +34,7 @@ function decodeCursor(cursor?: string | null) {
 @Resolver(() => ItemModel)
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class ItemsResolver {
-  constructor(private readonly itemsService: ItemsService, private readonly prisma: PrismaService) {}
+  constructor(private readonly itemsService: ItemsService) {}
 
   @HasPermission("items.read")
   @Query(() => ItemConnection)
@@ -49,37 +48,14 @@ export class ItemsResolver {
     }
 
     const cursorId = decodeCursor(args.after);
-    const take = Math.min(args.first, 50);
+    const { items, hasNextPage, totalCount } = await this.itemsService.listWithCursor(
+      requester.orgId,
+      args.first,
+      cursorId,
+      args.search
+    );
 
-    const where = {
-      orgId: requester.orgId,
-      ...(args.search
-        ? {
-            OR: [
-              { name: { contains: args.search, mode: "insensitive" } },
-              { externalId: { contains: args.search, mode: "insensitive" } }
-            ]
-          }
-        : {})
-    };
-
-    const items = await this.prisma.itemMeta.findMany({
-      where,
-      orderBy: { id: "desc" },
-      take: take + 1,
-      ...(cursorId
-        ? {
-            skip: 1,
-            cursor: { id: cursorId }
-          }
-        : {})
-    });
-
-    const hasNextPage = items.length > take;
-    const nodes = items.slice(0, take);
-    const totalCount = await this.prisma.itemMeta.count({ where });
-
-    const edges: ItemEdge[] = nodes.map((item) => ({
+    const edges: ItemEdge[] = items.map((item) => ({
       cursor: encodeCursor(item.id),
       node: this.toItemModel(item)
     }));

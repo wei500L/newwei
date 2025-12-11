@@ -7,6 +7,8 @@ import { MONGO_CONNECTION } from "../config/mongo.provider";
 import type { MongoConnection } from "@modular/mongo";
 import { UpdateItemDto } from "./dto/update-item.dto";
 
+const MAX_CURSOR_PAGE_SIZE = 50;
+
 @Injectable()
 export class ItemsService {
   constructor(
@@ -62,23 +64,13 @@ export class ItemsService {
   }
 
   async list(orgId: string, page = 1, pageSize = 10, search?: string) {
-    const where = {
-      orgId,
-      ...(search
-        ? {
-            OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { externalId: { contains: search, mode: "insensitive" } }
-            ]
-          }
-        : {})
-    };
+    const where = this.buildListWhere(orgId, search);
     const [items, total] = await Promise.all([
       this.prisma.itemMeta.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { createdAt: "desc" }
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }]
       }),
       this.prisma.itemMeta.count({ where })
     ]);
@@ -88,6 +80,32 @@ export class ItemsService {
       total,
       page,
       pageSize
+    };
+  }
+
+  async listWithCursor(orgId: string, first = 10, cursorId?: string, search?: string) {
+    const where = this.buildListWhere(orgId, search);
+    const take = Math.min(Math.max(first, 1), MAX_CURSOR_PAGE_SIZE);
+
+    const items = await this.prisma.itemMeta.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: take + 1,
+      ...(cursorId
+        ? {
+            skip: 1,
+            cursor: { id: cursorId }
+          }
+        : {})
+    });
+
+    const hasNextPage = items.length > take;
+    const totalCount = await this.prisma.itemMeta.count({ where });
+
+    return {
+      items: items.slice(0, take),
+      hasNextPage,
+      totalCount
     };
   }
 
@@ -167,5 +185,19 @@ export class ItemsService {
     }
 
     return updated;
+  }
+
+  private buildListWhere(orgId: string, search?: string) {
+    return {
+      orgId,
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { externalId: { contains: search, mode: "insensitive" } }
+            ]
+          }
+        : {})
+    };
   }
 }
