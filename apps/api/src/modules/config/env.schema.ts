@@ -3,6 +3,8 @@ import { z } from "zod";
 
 export const apiEnvSchema = baseEnvSchema.extend({
   PORT: z.coerce.number().int().positive().default(4000),
+  BULL_BOARD_USERNAME: z.string().min(1).optional(),
+  BULL_BOARD_PASSWORD: z.string().min(1).optional(),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
   JWT_ISSUER: z.string().default("modular-monolith"),

@@ -90,4 +90,5 @@ export interface AkshareDataItemConfig {
 export interface AkshareJobPayload {
   dataItemId: string;
   triggeredById?: string;
+  traceId?: string;
 }

@@ -1,5 +1,5 @@
 import { RawItemModel, TaskLogModel } from "@modular/mongo";
-import { createLogger } from "@modular/utils";
+import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 import {
   Inject,
   Injectable,
@@ -39,10 +39,13 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker(
       ITEM_PIPELINE_QUEUE_NAME,
       async (job) => {
-        const { rawItemId, itemMetaId, orgId: jobOrgId } = job.data as {
+        const traceId = ensureTraceId((job.data as { traceId?: string } | undefined)?.traceId);
+        return runWithTraceId(traceId, async () => {
+          const { rawItemId, itemMetaId, orgId: jobOrgId } = job.data as {
           rawItemId: string;
           itemMetaId: string;
           orgId?: string;
+          traceId?: string;
         };
         if (!jobOrgId) {
           logger.error({ jobId: job.id }, "Queue job missing orgId; failing job");
@@ -101,6 +104,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         });
 
         return processed;
+        });
       },
       {
         connection: {
@@ -114,7 +118,12 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     );
 
     this.worker.on("failed", async (job, err) => {
-      logger.error({ jobId: job?.id, err }, "Queue job failed");
+      const traceId = (job?.data as { traceId?: string } | undefined)?.traceId;
+      if (traceId) {
+        runWithTraceId(traceId, () => logger.error({ jobId: job?.id, err }, "Queue job failed"));
+      } else {
+        logger.error({ jobId: job?.id, err }, "Queue job failed");
+      }
       if (job) {
         const jobOrgId = (job.data as { orgId?: string } | undefined)?.orgId ?? "unknown";
         await TaskLogModel.create({

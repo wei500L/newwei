@@ -5,7 +5,7 @@ import { LiteLlmService } from "../news-pipeline/litellm.service";
 import { EnvService } from "../config/config.service";
 import { ANALYSIS_QUEUE } from "./analysis.constants";
 import { AnalysisJobPayload, AnomalyInput, CorrelationInput } from "./analysis.types";
-import { createLogger } from "@modular/utils";
+import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { ANALYSIS_PUBSUB } from "./analysis.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
 import { detectZScoreAnomalies, detectRollingSpike, detectTrend, detectVolumeSpike, SeriesPoint } from "./anomaly-detector";
@@ -32,9 +32,10 @@ export class AnalysisService {
       input,
       triggeredById
     });
+    const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       "correlation",
-      { type: "correlation", analysisId: record.id },
+      { type: "correlation", analysisId: record.id, traceId },
       { jobId: `corr:${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
     );
     return record;
@@ -48,9 +49,10 @@ export class AnalysisService {
       input,
       triggeredById
     });
+    const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       "anomaly",
-      { type: "anomaly", analysisId: record.id },
+      { type: "anomaly", analysisId: record.id, traceId },
       { jobId: `anomaly:${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
     );
     return record;

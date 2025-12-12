@@ -35,10 +35,22 @@ export interface SmtpConfig {
   from?: string;
 }
 
+export interface BullBoardConfig {
+  username?: string;
+  password?: string;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
     return this.get<number>("PORT", { infer: true }) ?? 4000;
+  }
+
+  get bullBoardConfig(): BullBoardConfig {
+    return {
+      username: this.get<string | undefined>("BULL_BOARD_USERNAME", { infer: true }),
+      password: this.get<string | undefined>("BULL_BOARD_PASSWORD", { infer: true })
+    };
   }
 
   get redisConfig() {

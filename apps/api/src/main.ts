@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
+import { RequestMethod } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
@@ -19,7 +20,12 @@ async function bootstrap() {
   const winstonLogger = app.get(WINSTON_MODULE_NEST_PROVIDER);
   app.useLogger(winstonLogger);
 
-  app.setGlobalPrefix("api");
+  app.setGlobalPrefix("api", {
+    exclude: [
+      { path: "admin/queues", method: RequestMethod.ALL },
+      { path: "admin/queues/(.*)", method: RequestMethod.ALL }
+    ]
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -4,7 +4,7 @@ import { EnvService } from "../config/config.service";
 import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_QUEUE_NAME } from "./analysis.constants";
 import { AnalysisJobPayload } from "./analysis.types";
 import { AnalysisService } from "./analysis.service";
-import { createLogger } from "@modular/utils";
+import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 
 const logger = createLogger({ name: "analysis-worker" });
 
@@ -23,7 +23,10 @@ export class AnalysisProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<AnalysisJobPayload>(
       ANALYSIS_QUEUE_NAME,
       async (job) => {
-        await this.analysisService.process(job.data);
+        const traceId = ensureTraceId(job.data.traceId);
+        return runWithTraceId(traceId, async () => {
+          await this.analysisService.process(job.data);
+        });
       },
       {
         connection: this.queue.opts.connection,
@@ -32,7 +35,12 @@ export class AnalysisProcessor implements OnModuleInit, OnModuleDestroy {
     );
 
     this.worker.on("failed", (job, error) => {
-      logger.error({ jobId: job?.id, error }, "Analysis worker failed");
+      const traceId = job?.data?.traceId;
+      if (traceId) {
+        runWithTraceId(traceId, () => logger.error({ jobId: job?.id, error }, "Analysis worker failed"));
+      } else {
+        logger.error({ jobId: job?.id, error }, "Analysis worker failed");
+      }
     });
 
     this.events.on("failed", (event) => {

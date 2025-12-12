@@ -2,6 +2,7 @@ export interface CrawlJobData {
   taskId: string;
   orgId: string;
   triggeredById?: string;
+  traceId?: string;
 }
 
 export interface CrawlExecutionSummary {

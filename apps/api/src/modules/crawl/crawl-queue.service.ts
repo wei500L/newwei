@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { Job, Queue } from "bullmq";
-import { createLogger } from "@modular/utils";
+import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { CRAWL_QUEUE, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import type { CrawlJobData } from "./crawl.types";
 import { CrawlSettingsService } from "./crawl-settings.service";
@@ -17,9 +17,10 @@ export class CrawlQueueService {
   async enqueueTask(taskId: string, orgId: string, triggeredById?: string) {
     const settings = await this.crawlSettings.getSettings();
     const attempts = Math.max(1, settings.maxRetries);
+    const traceId = ensureTraceId(getCurrentTraceId());
     await this.crawlQueue.add(
       "crawl-task",
-      { taskId, orgId, triggeredById },
+      { taskId, orgId, triggeredById, traceId },
       {
         jobId: `${taskId}:${Date.now()}`,
         removeOnComplete: true,

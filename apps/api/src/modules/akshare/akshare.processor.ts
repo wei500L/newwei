@@ -4,7 +4,7 @@ import { EnvService } from "../config/config.service";
 import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./akshare.constants";
 import { AkshareJobPayload } from "./akshare.types";
 import { AkshareService } from "./akshare.service";
-import { createLogger } from "@modular/utils";
+import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 
 const logger = createLogger({ name: "akshare-queue" });
 
@@ -24,8 +24,11 @@ export class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<AkshareJobPayload>(
       AKSHARE_QUEUE_NAME,
       async (job) => {
-        logger.info({ jobId: job.id, slug: job.data.dataItemId }, "Processing Akshare job");
-        await this.akshareService.fetchAndPersist(job.data.dataItemId, job.data.triggeredById);
+        const traceId = ensureTraceId(job.data.traceId);
+        return runWithTraceId(traceId, async () => {
+          logger.info({ jobId: job.id, slug: job.data.dataItemId }, "Processing Akshare job");
+          await this.akshareService.fetchAndPersist(job.data.dataItemId, job.data.triggeredById);
+        });
       },
       {
         connection: this.queue.opts.connection,
@@ -35,7 +38,12 @@ export class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {
 
     this.worker.on("failed", async (job, error) => {
       const slug = job?.data?.dataItemId;
-      logger.error({ jobId: job?.id, slug, error }, "Akshare worker failed");
+      const traceId = job?.data?.traceId;
+      if (traceId) {
+        runWithTraceId(traceId, () => logger.error({ jobId: job?.id, slug, error }, "Akshare worker failed"));
+      } else {
+        logger.error({ jobId: job?.id, slug, error }, "Akshare worker failed");
+      }
       if (!slug) {
         return;
       }

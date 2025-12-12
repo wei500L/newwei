@@ -3,7 +3,7 @@ import { Queue, QueueEvents, Worker } from "bullmq";
 import { ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, ALERTS_QUEUE_NAME } from "./alerts.constants";
 import { AlertsService, AlertJobPayload } from "./alerts.service";
 import { EnvService } from "../config/config.service";
-import { createLogger } from "@modular/utils";
+import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 
 const logger = createLogger({ name: "alerts-worker" });
 
@@ -24,18 +24,21 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<AlertJobPayload>(
       ALERTS_QUEUE_NAME,
       async (job) => {
-        if (job.name === "scan-active-rules") {
-          await this.alertsService.enqueueActiveRuleChecks();
-          return;
-        }
-        if (job.name.startsWith("evaluate-rule") && job.data.type === "evaluate" && job.data.ruleId) {
-          await this.alertsService.evaluateRule(job.data.ruleId);
-          return;
-        }
-        if (job.name.startsWith("deliver-notification") && job.data.type === "deliver" && job.data.deliveryId) {
-          await this.alertsService.handleDeliveryJob(job);
-          return;
-        }
+        const traceId = ensureTraceId(job.data.traceId);
+        return runWithTraceId(traceId, async () => {
+          if (job.name === "scan-active-rules") {
+            await this.alertsService.enqueueActiveRuleChecks();
+            return;
+          }
+          if (job.name.startsWith("evaluate-rule") && job.data.type === "evaluate" && job.data.ruleId) {
+            await this.alertsService.evaluateRule(job.data.ruleId);
+            return;
+          }
+          if (job.name.startsWith("deliver-notification") && job.data.type === "deliver" && job.data.deliveryId) {
+            await this.alertsService.handleDeliveryJob(job);
+            return;
+          }
+        });
       },
       {
         connection: this.queue.opts.connection,
@@ -49,7 +52,12 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
     );
 
     this.worker.on("failed", (job, error) => {
-      logger.error({ jobId: job?.id, error }, "Alerts worker failed");
+      const traceId = job?.data?.traceId;
+      if (traceId) {
+        runWithTraceId(traceId, () => logger.error({ jobId: job?.id, error }, "Alerts worker failed"));
+      } else {
+        logger.error({ jobId: job?.id, error }, "Alerts worker failed");
+      }
     });
 
     this.events.on("failed", (event) => {

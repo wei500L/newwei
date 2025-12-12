@@ -4,6 +4,7 @@ import { EconomicDataRunStatus, Prisma } from "@prisma/client";
 import { lastValueFrom } from "rxjs";
 import { Queue, type RepeatJob, type RepeatOptions } from "bullmq";
 import type Redis from "ioredis";
+import { ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
 import {
   AkshareDataItemConfig,
@@ -386,8 +387,13 @@ export class AkshareService implements OnModuleInit {
   }
 
   async triggerDataFetch(slugs: string[], triggeredById?: string) {
+    const traceId = ensureTraceId(getCurrentTraceId());
     for (const slug of slugs) {
-      await this.queue.add("manual-fetch", { dataItemId: slug, triggeredById }, { removeOnComplete: true });
+      await this.queue.add(
+        "manual-fetch",
+        { dataItemId: slug, triggeredById, traceId },
+        { removeOnComplete: true }
+      );
     }
     return true;
   }

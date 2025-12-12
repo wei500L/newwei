@@ -16,7 +16,7 @@ import { EmailService } from "../email/email.service";
 import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
 import { EnvService } from "../config/config.service";
 import { firstValueFrom } from "rxjs";
-import { createLogger } from "@modular/utils";
+import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { ALERTS_PUBSUB, AlertEventPayload } from "./alerts.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
 import { MetricProvider } from "./providers/metric-provider";
@@ -50,14 +50,16 @@ export interface UpsertAlertRuleInput {
 }
 
 export type AlertJobPayload =
-  | { type: "scan" }
+  | { type: "scan"; traceId?: string }
   | {
       type: "evaluate";
       ruleId: string;
+      traceId?: string;
     }
   | {
       type: "deliver";
       deliveryId: string;
+      traceId?: string;
     };
 
 const logger = createLogger({ name: "alerts" });
@@ -225,9 +227,10 @@ export class AlertsService {
   }
 
   async enqueueRuleCheck(ruleId: string) {
+    const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       this.buildRuleJobName(ruleId),
-      { type: "evaluate", ruleId },
+      { type: "evaluate", ruleId, traceId },
       {
         jobId: `evaluate:${ruleId}:${Date.now()}`,
         removeOnComplete: true,
@@ -414,11 +417,12 @@ export class AlertsService {
       return;
     }
     const attempts = NOTIFICATION_BACKOFF_DELAYS_MS.length + 1;
+    const traceId = ensureTraceId(getCurrentTraceId());
     await Promise.all(
       deliveries.map((delivery) =>
         this.queue.add(
           this.buildDeliveryJobName(delivery.id),
-          { type: "deliver", deliveryId: delivery.id },
+          { type: "deliver", deliveryId: delivery.id, traceId },
           {
             jobId: `deliver:${delivery.id}`,
             attempts,

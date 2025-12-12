@@ -1,6 +1,6 @@
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Queue, QueueEvents, Worker } from "bullmq";
-import { createLogger } from "@modular/utils";
+import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 import { EnvService } from "../config/config.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
@@ -23,8 +23,11 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<CrawlJobData>(
       CRAWL_QUEUE_NAME,
       async (job) => {
-        logger.info({ jobId: job.id, taskId: job.data.taskId }, "Processing crawl job");
-        return this.crawlExecutionService.runTask(job.data.taskId, job.data.orgId, job.data.triggeredById);
+        const traceId = ensureTraceId(job.data.traceId);
+        return runWithTraceId(traceId, async () => {
+          logger.info({ jobId: job.id, taskId: job.data.taskId }, "Processing crawl job");
+          return this.crawlExecutionService.runTask(job.data.taskId, job.data.orgId, job.data.triggeredById);
+        });
       },
       {
         connection: this.queue.opts.connection,
@@ -33,7 +36,12 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     );
 
     this.worker.on("failed", (job, error) => {
-      logger.error({ jobId: job?.id, error }, "Crawl queue worker error");
+      const traceId = job?.data?.traceId;
+      if (traceId) {
+        runWithTraceId(traceId, () => logger.error({ jobId: job?.id, error }, "Crawl queue worker error"));
+      } else {
+        logger.error({ jobId: job?.id, error }, "Crawl queue worker error");
+      }
     });
 
     this.events.on("failed", ({ jobId, failedReason }) => {

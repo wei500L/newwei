@@ -1,6 +1,7 @@
 import { TaskLogModel } from "@modular/mongo";
 import { Inject, Injectable } from "@nestjs/common";
 import { Queue, JobsOptions, JobType } from "bullmq";
+import { ensureTraceId, getCurrentTraceId } from "@modular/utils";
 
 import { PIPELINE_QUEUE, ITEM_PIPELINE_QUEUE_NAME } from "./queue.module";
 
@@ -32,9 +33,10 @@ export class QueueService {
 
   async enqueueItem(orgId: string, itemMetaId: string, rawItemId: string, opts: JobsOptions = {}) {
     const jobId = `${itemMetaId}:${rawItemId}`;
+    const traceId = ensureTraceId(getCurrentTraceId());
     return this.queue.add(
       "process-item",
-      { itemMetaId, rawItemId, orgId },
+      { itemMetaId, rawItemId, orgId, traceId },
       {
         jobId,
         removeOnComplete: true,

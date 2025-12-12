@@ -32,10 +32,13 @@ pnpm dev
 
 - 前端：http://localhost:3000/login
 - API 健康检查：http://localhost:4000/api/healthz
+- Bull Board 队列仪表盘：http://localhost:4000/admin/queues
 - Swagger UI：http://localhost:4000/docs
 - GraphQL Playground（开发环境）：http://localhost:4000/graphql
 
 预置管理员账号：`admin@example.com` / `Change_me123!`
+
+如需保护 Bull Board，可在 `.env` 配置 `BULL_BOARD_USERNAME` / `BULL_BOARD_PASSWORD` 启用 Basic Auth。
 
 ### 邮件发送
 
