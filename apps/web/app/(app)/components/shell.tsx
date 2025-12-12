@@ -7,6 +7,8 @@ import {
   SettingOutlined,
   TableOutlined,
   ApartmentOutlined,
+  BugOutlined,
+  ControlOutlined,
 } from "@ant-design/icons";
 import { Breadcrumb, Dropdown, Layout, Menu, Space, Typography, message } from "antd";
 import { usePathname, useRouter } from "next/navigation";
@@ -90,6 +92,16 @@ export function ShellLayout({ children }: PropsWithChildren) {
       });
     }
     if (canManageSettings) {
+      base.push({
+        key: "/admin/errors",
+        icon: <BugOutlined />,
+        label: "Errors",
+      });
+      base.push({
+        key: "/settings/system",
+        icon: <ControlOutlined />,
+        label: "System Settings",
+      });
       base.push({
         key: "/settings",
         icon: <SettingOutlined />,

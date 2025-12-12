@@ -54,4 +54,29 @@ export class CrawlQueueService {
       })
     );
   }
+
+  async getPendingJobCount(): Promise<number> {
+    const counts = await this.crawlQueue.getJobCounts("waiting", "delayed", "active");
+    return (counts.waiting ?? 0) + (counts.delayed ?? 0) + (counts.active ?? 0);
+  }
+
+  async listPendingTaskIds(scanLimit = 5_000): Promise<Set<string>> {
+    const states = ["waiting", "delayed", "active"] as const;
+    const pageSize = 500;
+    const taskIds = new Set<string>();
+    for (let start = 0; start < scanLimit; start += pageSize) {
+      const end = Math.min(scanLimit - 1, start + pageSize - 1);
+      const jobs = await this.crawlQueue.getJobs([...states], start, end);
+      for (const job of jobs) {
+        const taskId = job.data?.taskId;
+        if (typeof taskId === "string" && taskId.length > 0) {
+          taskIds.add(taskId);
+        }
+      }
+      if (jobs.length < pageSize) {
+        break;
+      }
+    }
+    return taskIds;
+  }
 }

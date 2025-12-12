@@ -27,6 +27,7 @@ import { QueueModule } from "./modules/queue/queue.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { ObservabilityModule } from "./modules/observability/observability.module";
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
     AnalysisModule,
     SystemSettingsModule,
     NotificationsModule,
+    ObservabilityModule,
     ApiGraphqlModule,
     HealthModule
   ],

@@ -2,6 +2,7 @@ import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import { Queue, QueueEvents, Worker } from "bullmq";
 import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import type { CrawlJobData } from "./crawl.types";
@@ -15,6 +16,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly env: EnvService,
     private readonly crawlExecutionService: CrawlExecutionService,
+    private readonly prisma: PrismaService,
     @Inject(CRAWL_QUEUE) private readonly queue: Queue<CrawlJobData>,
     @Inject(CRAWL_QUEUE_EVENTS) private readonly events: QueueEvents
   ) {}
@@ -44,8 +46,50 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    this.events.on("failed", ({ jobId, failedReason }) => {
-      logger.warn({ jobId, failedReason }, "Crawl queue event failed");
+    this.events.on("stalled", async ({ jobId }) => {
+      try {
+        const job = await this.queue.getJob(jobId);
+        if (!job?.data?.taskId || !job.data.orgId) {
+          logger.warn({ jobId }, "Crawl stalled event missing job data");
+          return;
+        }
+        await this.prisma.crawlTask.updateMany({
+          where: {
+            id: job.data.taskId,
+            orgId: job.data.orgId,
+            status: "running"
+          },
+          data: {
+            status: "queued",
+            lastError: "crawl job stalled; re-queued by bullmq"
+          }
+        });
+      } catch (error) {
+        logger.error({ jobId, err: error }, "Failed to handle crawl stalled event");
+      }
+    });
+
+    this.events.on("failed", async ({ jobId, failedReason }) => {
+      try {
+        const job = await this.queue.getJob(jobId);
+        if (!job?.data?.taskId || !job.data.orgId) {
+          logger.warn({ jobId, failedReason }, "Crawl failed event missing job data");
+          return;
+        }
+        await this.prisma.crawlTask.updateMany({
+          where: {
+            id: job.data.taskId,
+            orgId: job.data.orgId,
+            status: { in: ["queued", "running"] }
+          },
+          data: {
+            status: "failed",
+            lastError: failedReason || "crawl job failed"
+          }
+        });
+      } catch (error) {
+        logger.error({ jobId, err: error }, "Failed to handle crawl failed event");
+      }
     });
   }
 

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
+import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
@@ -124,6 +125,19 @@ export class CrawlTaskService {
     await this.prisma.$transaction(async (tx) => {
       await tx.crawlResult.deleteMany({ where: { taskId } });
       await tx.crawlTask.delete({ where: { id: taskId } });
+      await tx.mongoOutbox.create({
+        data: {
+          orgId,
+          type: MongoOutboxType.cleanup_crawl_results,
+          status: MongoOutboxStatus.pending,
+          availableAt: new Date(),
+          payload: {
+            type: MongoOutboxType.cleanup_crawl_results,
+            taskId,
+            orgId
+          }
+        }
+      });
       await tx.auditLog.create({
         data: {
           orgId,
@@ -137,8 +151,6 @@ export class CrawlTaskService {
         }
       });
     });
-
-    await this.resultService.deleteTaskResults(taskId, orgId);
 
     return { taskId, deletedResultCount: resultIds.length };
   }

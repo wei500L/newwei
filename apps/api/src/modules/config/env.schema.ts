@@ -23,6 +23,7 @@ export const apiEnvSchema = baseEnvSchema.extend({
   AUTH_PROFILE_CACHE_LOCK_TTL_MS: z.coerce.number().int().positive().default(5_000),
   AUTH_PROFILE_CACHE_MAX_WAIT_MS: z.coerce.number().int().positive().default(5_000),
   AUTH_PROFILE_CACHE_RETRY_DELAY_MS: z.coerce.number().int().positive().default(50),
+  AUTH_REFRESH_GRACE_SECONDS: z.coerce.number().int().positive().default(10),
   AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
   GRAPHQL_PLAYGROUND: z.coerce
     .boolean()
@@ -40,6 +41,12 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   CRAWL4AI_HEALTH_CHECK_TTL_MS: z.coerce.number().int().positive().default(60_000),
   CRAWL4AI_RETRY_BACKOFF_MS: z.coerce.number().int().positive().default(5_000),
+  CRAWL_TASK_JANITOR_ENABLED: z.coerce.boolean().default(true),
+  CRAWL_TASK_RUNNING_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
+  CRAWL_TASK_QUEUED_TIMEOUT_MS: z.coerce.number().int().positive().default(43_200_000),
+  CRAWL_TASK_JANITOR_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+  CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT: z.coerce.number().int().positive().default(5_000),
+  CRAWL_TASK_JANITOR_LOCK_TTL_MS: z.coerce.number().int().positive().default(120_000),
   CRAWL_MEDIA_FETCH_TIMEOUT_MS: z.coerce
     .number()
     .int()

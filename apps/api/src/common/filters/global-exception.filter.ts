@@ -9,6 +9,7 @@ import {
 import { GqlArgumentsHost } from "@nestjs/graphql";
 import type { Request, Response } from "express";
 import { GraphQLError } from "graphql";
+import { ExceptionEventsService } from "../../modules/observability/exception-events.service";
 
 interface NormalizedHttpResponse {
   statusCode: number;
@@ -16,9 +17,13 @@ interface NormalizedHttpResponse {
   error?: unknown;
 }
 
+type HostContextType = "http" | "graphql" | "rpc" | "ws";
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = createLogger({ name: "exceptions" });
+
+  constructor(private readonly exceptionEvents: ExceptionEventsService) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const traceId = getCurrentTraceId() ?? ensureTraceId();
@@ -28,11 +33,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    if (host.getType<GqlArgumentsHost>() === "graphql") {
+    if (host.getType<HostContextType>() === "graphql") {
       return this.handleGraphqlException(exception, host, traceId);
     }
 
     this.logger.error({ traceId, err: exception }, "Unhandled exception");
+    try {
+      this.exceptionEvents.record({
+        kind: "unknown",
+        traceId,
+        message: exception instanceof Error ? exception.message : "Unhandled exception",
+        errorName: exception instanceof Error ? exception.name : undefined,
+        stack: exception instanceof Error ? exception.stack : undefined
+      });
+    } catch {
+      // ignore failures in error side-channel
+    }
     throw exception;
   }
 
@@ -60,6 +76,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       },
       "Request failed",
     );
+
+    try {
+      this.exceptionEvents.record({
+        kind: "http",
+        traceId: traceId ?? "",
+        statusCode: httpStatus,
+        message: normalized.message,
+        path: request?.url,
+        method: request?.method,
+        errorName: exception instanceof Error ? exception.name : undefined,
+        stack: exception instanceof Error ? exception.stack : undefined
+      });
+    } catch {
+      // ignore failures in error side-channel
+    }
 
     response?.status(httpStatus).json({
       ...normalized,
@@ -92,6 +123,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       },
       "GraphQL request failed",
     );
+
+    try {
+      this.exceptionEvents.record({
+        kind: "graphql",
+        traceId: traceId ?? "",
+        statusCode,
+        message: normalized.message,
+        operation: info?.fieldName ?? String(info?.path?.key ?? ""),
+        operationName: ctx?.req?.body?.operationName,
+        errorName: exception instanceof Error ? exception.name : undefined,
+        stack: exception instanceof Error ? exception.stack : undefined
+      });
+    } catch {
+      // ignore failures in error side-channel
+    }
 
     return new GraphQLError(normalized.message, {
       extensions: {

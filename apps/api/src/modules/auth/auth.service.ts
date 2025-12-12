@@ -247,78 +247,104 @@ export class AuthService {
   ) {
     const { tokenId, orgId: tokenOrgId, secret } = this.parseRefreshToken(refreshToken);
 
-    const record = await this.prisma.refreshToken.findUnique({
-      where: { id: tokenId }
-    });
+    const effectiveOrgId = orgId ?? tokenOrgId ?? "default";
+    const secretHash = crypto.createHash("sha256").update(secret).digest("hex");
+    const cacheKey = `auth:refresh:${tokenId}:${effectiveOrgId}:${secretHash}`;
+    const graceSeconds = this.env.authRefreshGraceSeconds;
+    const lockTtlMs = Math.max(graceSeconds * 1000, 10_000);
 
-    if (!record || record.revokedAt || record.expiresAt < new Date()) {
-      throw new UnauthorizedException("Refresh token expired");
-    }
+    return this.cache.wrap(
+      cacheKey,
+      graceSeconds,
+      async () => {
+        const now = new Date();
+        const graceMs = graceSeconds * 1000;
+        const record = await this.prisma.refreshToken.findUnique({
+          where: { id: tokenId }
+        });
 
-    const matches = await bcrypt.compare(secret, record.tokenHash);
-    if (!matches) {
-      throw new UnauthorizedException("Invalid refresh token");
-    }
+        if (!record || record.expiresAt < now) {
+          throw new UnauthorizedException("Refresh token expired");
+        }
 
-    const user = await this.prisma.user.findUnique({ where: { id: record.userId } });
-    if (!user || !user.isActive) {
-      throw new UnauthorizedException("User not found");
-    }
-
-    const memberships = await this.prisma.membership.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: "asc" },
-      include: {
-        org: true,
-        role: {
-          include: {
-            permissions: {
-              include: { permission: true }
-            }
+        if (record.revokedAt) {
+          const revokedAgeMs = now.getTime() - record.revokedAt.getTime();
+          if (revokedAgeMs > graceMs) {
+            throw new UnauthorizedException("Refresh token expired");
           }
         }
+
+        const matches = await bcrypt.compare(secret, record.tokenHash);
+        if (!matches) {
+          throw new UnauthorizedException("Invalid refresh token");
+        }
+
+        const user = await this.prisma.user.findUnique({ where: { id: record.userId } });
+        if (!user || !user.isActive) {
+          throw new UnauthorizedException("User not found");
+        }
+
+        const memberships = await this.prisma.membership.findMany({
+          where: { userId: user.id },
+          orderBy: { createdAt: "asc" },
+          include: {
+            org: true,
+            role: {
+              include: {
+                permissions: {
+                  include: { permission: true }
+                }
+              }
+            }
+          }
+        });
+
+        const primaryMembership = this.pickMembership(memberships, orgId ?? tokenOrgId);
+        if (!primaryMembership.org?.isActive) {
+          throw new UnauthorizedException("Organization disabled");
+        }
+
+        const permissions = Array.from(
+          new Set(primaryMembership.role.permissions.map((p) => p.permission.name))
+        );
+
+        const authUser: AuthenticatedUser = {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          orgId: primaryMembership.orgId,
+          roleIds: [primaryMembership.roleId],
+          permissions
+        };
+
+        const { token: accessToken, expiresAt } = this.signAccessToken(authUser);
+        const newRefreshToken = await this.signRefreshToken(authUser, ipAddress, userAgent);
+
+        await this.prisma.refreshToken.updateMany({
+          where: { id: tokenId, revokedAt: null },
+          data: {
+            revokedAt: now,
+            ipAddress,
+            userAgent
+          }
+        });
+
+        const organizations = await this.orgService.listOrganizationOptionsForUser(user.id);
+        return {
+          user: authUser,
+          accessToken,
+          refreshToken: newRefreshToken.token,
+          organizations,
+          expiresIn: expiresAt ? Math.floor((expiresAt - Date.now()) / 1000) : 900
+        };
+      },
+      {
+        lockTtlMs,
+        maxWaitMs: lockTtlMs,
+        retryDelayMs: 50
       }
-    });
-
-    const primaryMembership = this.pickMembership(memberships, orgId ?? tokenOrgId);
-    if (!primaryMembership.org?.isActive) {
-      throw new UnauthorizedException("Organization disabled");
-    }
-
-    const permissions = Array.from(
-      new Set(primaryMembership.role.permissions.map((p) => p.permission.name))
     );
-
-    const authUser: AuthenticatedUser = {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      orgId: primaryMembership.orgId,
-      roleIds: [primaryMembership.roleId],
-      permissions
-    };
-
-    const { token: accessToken, expiresAt } = this.signAccessToken(authUser);
-    const newRefreshToken = await this.signRefreshToken(authUser, ipAddress, userAgent);
-
-    await this.prisma.refreshToken.update({
-      where: { id: tokenId },
-      data: {
-        revokedAt: new Date(),
-        ipAddress,
-        userAgent
-      }
-    });
-
-    const organizations = await this.orgService.listOrganizationOptionsForUser(user.id);
-    return {
-      user: authUser,
-      accessToken,
-      refreshToken: newRefreshToken.token,
-      organizations,
-      expiresIn: expiresAt ? Math.floor((expiresAt - Date.now()) / 1000) : 900
-    };
   }
 
   async logout(

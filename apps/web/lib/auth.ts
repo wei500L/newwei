@@ -38,15 +38,21 @@ export type TokenPayload = {
   error?: string;
 };
 
+const REFRESH_TOKEN_TIMEOUT_MS = 5_000;
+
 async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
   let traceId: string | undefined;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REFRESH_TOKEN_TIMEOUT_MS);
+
   try {
     const response = await fetch(`${env.apiBaseUrl}/auth/refresh`, {
       method: "POST",
       headers: createTraceHeaders({
         "Content-Type": "application/json"
       }),
-      body: JSON.stringify({ refreshToken: token.refreshToken, orgId: token.user.orgId })
+      body: JSON.stringify({ refreshToken: token.refreshToken, orgId: token.user.orgId }),
+      signal: controller.signal
     });
     traceId = response.headers.get("x-trace-id") ?? undefined;
 
@@ -65,9 +71,17 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
       organizations: data.organizations ?? token.organizations ?? [{ id: data.user.orgId }]
     };
   } catch (error) {
+    const isAbortError = error instanceof Error && error.name === "AbortError";
+    const meta: Record<string, unknown> = { userId: token.user.id };
+
+    if (isAbortError) {
+      meta.reason = "refresh_token_timeout";
+      meta.timeoutMs = REFRESH_TOKEN_TIMEOUT_MS;
+    }
+
     logServerError("Refresh token error", error, {
       traceId,
-      meta: { userId: token.user.id }
+      meta
     });
     return {
       ...token,
@@ -76,6 +90,8 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
       accessTokenExpires: 0,
       error: "RefreshAccessTokenError"
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

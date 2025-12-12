@@ -6,7 +6,6 @@ import { Alert, Button, Skeleton, Typography } from "antd";
 import { useMemo } from "react";
 import { useDashboardRangeStore } from "@/store/time-range";
 import { TimeGranularity } from "@/graphql/generated";
-import * as echarts from "echarts/core";
 
 const ECONOMIC_WIDGET_QUERY = gql`
   query EconomicWidgetData(
@@ -212,25 +211,24 @@ export function WidgetRenderer({
     return <Typography.Text type="secondary">暂无数据</Typography.Text>;
   }
 
-  const theme = color
-    ? {
-        color: [color],
-        textStyle: { color: "#333" },
-        title: { textStyle: { color } },
-      }
-    : undefined;
-  if (theme) {
-    const themeName = `custom-${color}`;
-    echarts.registerTheme(themeName, theme);
-    return (
-      <DashboardChart
-        option={option}
-        height={300}
-        group="linked-charts"
-        renderer="canvas"
-      />
-    );
-  }
+  const theme = useMemo(
+    () =>
+      color
+        ? {
+            color: [color],
+            textStyle: { color: "#333" },
+            title: { textStyle: { color } },
+          }
+        : undefined,
+    [color],
+  );
 
-  return <DashboardChart option={option} height={300} group="linked-charts" />;
+  return (
+    <DashboardChart
+      option={option}
+      height={300}
+      group="linked-charts"
+      theme={theme}
+    />
+  );
 }

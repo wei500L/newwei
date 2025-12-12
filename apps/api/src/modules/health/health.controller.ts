@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { Public } from "../../common/decorators/public.decorator";
 import { PrismaService } from "../config/prisma.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
+import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
 import { RedisHealthIndicator } from "./redis.health";
 
 const nodeRequire = createRequire(__filename);
@@ -19,6 +20,7 @@ export class HealthController {
     private readonly mongoIndicator: MongooseHealthIndicator,
     private readonly diskIndicator: DiskHealthIndicator,
     private readonly redisIndicator: RedisHealthIndicator,
+    private readonly crawl4aiIndicator: Crawl4aiHealthIndicator,
     private readonly prisma: PrismaService,
     @Inject(MONGO_CONNECTION) private readonly mongo: MongoConnection
   ) {}
@@ -31,6 +33,7 @@ export class HealthController {
       () => this.prismaIndicator.pingCheck("mysql", this.prisma, { timeout: 1500 }),
       () => this.redisIndicator.isHealthy("redis"),
       () => this.mongoIndicator.pingCheck("mongo", { connection: this.mongo, timeout: 1500 }),
+      () => this.crawl4aiIndicator.isHealthy("crawl4ai"),
       () =>
         this.diskIndicator.checkStorage("disk", {
           path: process.cwd(),

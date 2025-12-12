@@ -14,6 +14,8 @@ import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlTaskService } from "./crawl-task.service";
 import { CrawlResultService } from "./crawl-result.service";
+import { CrawlTaskJanitorService } from "./crawl-task-janitor.service";
+import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
 import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
@@ -39,9 +41,11 @@ import { NotificationsModule } from "../notifications/notifications.module";
   providers: [
     CrawlSettingsService,
     CrawlTaskService,
+    CrawlTaskJanitorService,
     CrawlExecutionService,
     CrawlQueueService,
     CrawlResultService,
+    CrawlCleanupOutboxService,
     CrawlMetadataService,
     Crawl4aiClient,
     CrawlQueueProcessor,

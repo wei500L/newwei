@@ -33,6 +33,7 @@ const envMock = {
     accessExpiresIn: "15m",
     refreshExpiresIn: "7d"
   },
+  authRefreshGraceSeconds: 10,
   rateLimit: {
     login: 5,
     loginWindowSeconds: 60
@@ -49,7 +50,10 @@ const rateLimitConfigMock = {
 
 const cacheMock = {
   get: jest.fn(),
-  set: jest.fn()
+  set: jest.fn(),
+  del: jest.fn(),
+  incr: jest.fn(),
+  wrap: jest.fn()
 } as any;
 
 const accessTokenBlacklistMock = {
@@ -75,6 +79,15 @@ describe("AuthService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    const wrapStore = new Map<string, unknown>();
+    cacheMock.wrap = jest.fn(async (_key: string, _ttlSeconds: number, loader: () => Promise<unknown>) => {
+      if (wrapStore.has(_key)) {
+        return wrapStore.get(_key);
+      }
+      const value = await loader();
+      wrapStore.set(_key, value);
+      return value;
+    });
     rateLimiterMock.consume = jest.fn().mockResolvedValue(true);
     rateLimitConfigMock.getBucketConfig = jest
       .fn()
@@ -281,6 +294,52 @@ describe("AuthService", () => {
       UnauthorizedException
     );
     await expect(service.refresh("token.org.too.short")).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("returns the cached refresh result during the grace window to avoid concurrent 401s", async () => {
+    const secret = "a".repeat(64);
+    const tokenHash = await bcrypt.hash(secret, 10);
+    prismaMock.refreshToken.findUnique = jest.fn().mockResolvedValue({
+      id: "token-1",
+      userId: "user-1",
+      tokenHash,
+      expiresAt: new Date(Date.now() + 10000),
+      revokedAt: null
+    });
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+      isActive: true
+    });
+    prismaMock.membership.findMany = jest.fn().mockResolvedValue([
+      {
+        orgId: "org-1",
+        org: { isActive: true },
+        roleId: "role-1",
+        role: {
+          permissions: [{ permission: { name: "items.read" } }]
+        }
+      }
+    ]);
+
+    const token = `token-1.org-1.${secret}`;
+    const first = await service.refresh(token);
+
+    prismaMock.refreshToken.findUnique = jest.fn().mockResolvedValue({
+      id: "token-1",
+      userId: "user-1",
+      tokenHash,
+      expiresAt: new Date(Date.now() + 10000),
+      revokedAt: new Date()
+    });
+
+    const second = await service.refresh(token);
+    expect(second.refreshToken).toBe(first.refreshToken);
+    expect(second.accessToken).toBe(first.accessToken);
+    expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
+    expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it("rejects missing membership", async () => {

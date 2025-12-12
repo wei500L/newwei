@@ -4,7 +4,7 @@ import { EconomicDataRunStatus, Prisma } from "@prisma/client";
 import { lastValueFrom } from "rxjs";
 import { Queue, type RepeatJob, type RepeatOptions } from "bullmq";
 import type Redis from "ioredis";
-import { ensureTraceId, getCurrentTraceId } from "@modular/utils";
+import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime } from "@modular/utils";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
 import {
   AkshareDataItemConfig,
@@ -646,24 +646,8 @@ export class AkshareService implements OnModuleInit {
   }
 
   private parseDate(value: unknown) {
-    if (value instanceof Date) {
-      return value;
-    }
-    if (typeof value === "number") {
-      return new Date(value);
-    }
-    if (typeof value === "string") {
-      const normalized = value
-        .replace(/年/g, "-")
-        .replace(/月/g, "-")
-        .replace(/日/g, "")
-        .replace(/--/g, "-");
-      const parsed = new Date(normalized);
-      if (!Number.isNaN(parsed.getTime())) {
-        return parsed;
-      }
-    }
-    return new Date();
+    const parsed = parseDateTime(value, { timeZone: CommonTimeZone.UTC });
+    return parsed ?? new Date();
   }
 
   private normalizeNumber(value: unknown): number | null {
@@ -692,29 +676,29 @@ export class AkshareService implements OnModuleInit {
     const d = new Date(date);
     switch (granularity) {
       case "year":
-        d.setMonth(0, 1);
-        d.setHours(0, 0, 0, 0);
+        d.setUTCMonth(0, 1);
+        d.setUTCHours(0, 0, 0, 0);
         break;
       case "quarter": {
-        const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
-        d.setMonth(quarterStartMonth, 1);
-        d.setHours(0, 0, 0, 0);
+        const quarterStartMonth = Math.floor(d.getUTCMonth() / 3) * 3;
+        d.setUTCMonth(quarterStartMonth, 1);
+        d.setUTCHours(0, 0, 0, 0);
         break;
       }
       case "month":
-        d.setDate(1);
-        d.setHours(0, 0, 0, 0);
+        d.setUTCDate(1);
+        d.setUTCHours(0, 0, 0, 0);
         break;
       case "week": {
-        const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        d.setDate(diff);
-        d.setHours(0, 0, 0, 0);
+        const day = d.getUTCDay();
+        const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+        d.setUTCDate(diff);
+        d.setUTCHours(0, 0, 0, 0);
         break;
       }
       case "day":
       default:
-        d.setHours(0, 0, 0, 0);
+        d.setUTCHours(0, 0, 0, 0);
     }
     return d.toISOString();
   }

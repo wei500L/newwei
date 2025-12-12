@@ -90,6 +90,28 @@ export class CacheService implements OnModuleDestroy {
     return value;
   }
 
+  async withLock<T>(
+    key: string,
+    ttlMs: number,
+    runner: () => Promise<T>
+  ): Promise<T | null> {
+    const lockKey = this.lockKey(key);
+    const lockToken = await this.acquireLock(lockKey, ttlMs);
+    if (!lockToken) {
+      return null;
+    }
+
+    try {
+      return await runner();
+    } finally {
+      try {
+        await this.releaseLock(lockKey, lockToken);
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
   private lockKey(key: string) {
     return `lock:${key}`;
   }

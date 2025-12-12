@@ -10,12 +10,14 @@ import {
   type Prisma,
   type ProcessedArticle,
 } from "@prisma/client";
-import { createLogger } from "@modular/utils";
+import { createLogger, parseDateTime } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { Types } from "mongoose";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { setTimeout as sleep } from "node:timers/promises";
+import { z } from "zod";
 
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
@@ -67,6 +69,43 @@ type ProcessedItemOutboxPayload = {
   };
 };
 
+const NullableStringSchema = z.preprocess(
+  (value) => (typeof value === "string" ? value : null),
+  z.string().nullable(),
+);
+
+const NullableFiniteNumberSchema = z.preprocess(
+  (value) =>
+    typeof value === "number" && Number.isFinite(value) ? value : null,
+  z.number().finite().nullable(),
+);
+
+const LlmCallMetadataSchema: z.ZodType<LlmCallMetadata> = z.object({
+  model: NullableStringSchema,
+  promptVersion: NullableStringSchema,
+  promptTokens: NullableFiniteNumberSchema,
+  completionTokens: NullableFiniteNumberSchema,
+  totalTokens: NullableFiniteNumberSchema,
+  costUsd: NullableFiniteNumberSchema,
+  latencyMs: NullableFiniteNumberSchema,
+});
+
+const ProcessedItemOutboxPayloadSchema: z.ZodType<ProcessedItemOutboxPayload> =
+  z.object({
+    type: z.literal(MongoOutboxType.processed_item),
+    document: z.object({
+      _id: z.string(),
+      rawItemId: z.string(),
+      itemMetaId: z.string(),
+      orgId: z.string(),
+      status: z.literal("completed"),
+      tags: z.array(z.string()).default([]),
+      result: CleanedNewsSchema,
+      llm: LlmCallMetadataSchema,
+      error: z.unknown().optional(),
+    }),
+  });
+
 type PersistedProcessedItem =
   | ProcessedItemDocument
   | { _id: string; toJSON: () => { id: string } };
@@ -76,6 +115,14 @@ type PersistResult = {
   outboxId: string;
 };
 
+type OutboxDeliveryRequestedEvent = {
+  outboxId: string;
+  payload?: ProcessedItemOutboxPayload;
+};
+
+const OUTBOX_DELIVERY_REQUESTED_EVENT = "newsPipeline.outbox.deliveryRequested";
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 @Injectable()
 export class NewsPipelineService {
   private readonly logger = createLogger({ name: "news-pipeline" });
@@ -83,6 +130,11 @@ export class NewsPipelineService {
   private readonly outboxRetryBaseDelayMs = 30_000;
   private readonly outboxStaleLockMs = 5 * 60_000;
   private readonly outboxBatchSize = 10;
+  private readonly outboxEventEmitter = new EventEmitter();
+  private readonly outboxDeliveryQueue = new Map<string, ProcessedItemOutboxPayload | null>();
+  private outboxDeliveryScheduled = false;
+  private outboxDeliveryInFlight = false;
+  private readonly outboxRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     private readonly crawlClient: Crawl4aiClient,
@@ -92,7 +144,14 @@ export class NewsPipelineService {
     private readonly promptConfig: NewsPromptConfigService,
     private readonly cache: CacheService,
     private readonly prisma: PrismaService,
-  ) {}
+  ) {
+    this.outboxEventEmitter.on(
+      OUTBOX_DELIVERY_REQUESTED_EVENT,
+      (event: OutboxDeliveryRequestedEvent) => {
+        this.enqueueOutboxDelivery(event);
+      },
+    );
+  }
 
   async process(job: PipelineJobContext, raw: RawPipelineItem) {
     const payload = await this.runStage(
@@ -224,11 +283,10 @@ export class NewsPipelineService {
       normalizedPayload: options.payload,
     });
 
-    const processedItem =
-      (await this.deliverOutboxPayload(outboxEntry.id, outboxPayload)) ??
-      this.buildPendingProcessedItem(processedItemId);
-
-    return { processedItem, outboxId: outboxEntry.id };
+    return {
+      processedItem: this.buildPendingProcessedItem(processedItemId),
+      outboxId: outboxEntry.id,
+    };
   }
 
   private async fetchArticle(job: PipelineJobContext, payload: NormalizedNewsPayload) {
@@ -592,7 +650,7 @@ export class NewsPipelineService {
     normalizedPayload: NormalizedNewsPayload;
   }) {
     try {
-      return await this.prisma.runInTransaction(async (tx) => {
+      const outboxEntry = await this.prisma.runInTransaction(async (tx) => {
         if (!options.processedArticleId) {
           await this.upsertArticleAndProcessed(tx, {
             orgId: options.orgId,
@@ -615,6 +673,13 @@ export class NewsPipelineService {
           },
         });
       });
+
+      this.outboxEventEmitter.emit(OUTBOX_DELIVERY_REQUESTED_EVENT, {
+        outboxId: outboxEntry.id,
+        payload: options.payload,
+      } satisfies OutboxDeliveryRequestedEvent);
+
+      return outboxEntry;
     } catch (error) {
       this.logger.error(
         { error, orgId: options.orgId },
@@ -622,6 +687,74 @@ export class NewsPipelineService {
       );
       throw error;
     }
+  }
+
+  private enqueueOutboxDelivery(event: OutboxDeliveryRequestedEvent) {
+    const existingPayload = this.outboxDeliveryQueue.get(event.outboxId);
+    if (!existingPayload && event.payload) {
+      this.outboxDeliveryQueue.set(event.outboxId, event.payload);
+    } else if (!this.outboxDeliveryQueue.has(event.outboxId)) {
+      this.outboxDeliveryQueue.set(event.outboxId, event.payload ?? null);
+    }
+
+    if (this.outboxDeliveryInFlight || this.outboxDeliveryScheduled) {
+      return;
+    }
+
+    this.outboxDeliveryScheduled = true;
+    setImmediate(() => {
+      this.outboxDeliveryScheduled = false;
+      void this.flushOutboxDeliveryQueue();
+    });
+  }
+
+  private async flushOutboxDeliveryQueue() {
+    if (this.outboxDeliveryInFlight) {
+      return;
+    }
+
+    this.outboxDeliveryInFlight = true;
+    try {
+      while (this.outboxDeliveryQueue.size > 0) {
+        const batch = Array.from(this.outboxDeliveryQueue.entries());
+        this.outboxDeliveryQueue.clear();
+
+        for (const [outboxId, payload] of batch) {
+          await this.deliverOutboxFromQueue(outboxId, payload);
+        }
+      }
+    } catch (error) {
+      this.logger.warn({ error }, "Failed to flush outbox delivery queue");
+    } finally {
+      this.outboxDeliveryInFlight = false;
+    }
+  }
+
+  private async deliverOutboxFromQueue(
+    outboxId: string,
+    payload: ProcessedItemOutboxPayload | null,
+  ) {
+    if (payload) {
+      await this.deliverOutboxPayload(outboxId, payload);
+      return;
+    }
+
+    const entry = await this.prisma.mongoOutbox.findUnique({ where: { id: outboxId } });
+    if (!entry) {
+      return;
+    }
+
+    const parsed = this.parseOutboxPayload(entry.payload);
+    if (!parsed) {
+      await this.markOutboxFailure(
+        outboxId,
+        (entry.attempts ?? 0) + 1,
+        new Error("Invalid outbox payload"),
+      );
+      return;
+    }
+
+    await this.deliverOutboxPayload(outboxId, parsed);
   }
 
   private async upsertArticleAndProcessed(
@@ -778,6 +911,7 @@ export class NewsPipelineService {
     try {
       const created = await this.writeProcessedItemFromPayload(payload.document);
       await this.prisma.mongoOutbox.delete({ where: { id: outboxId } });
+      this.clearOutboxRetry(outboxId);
       return created;
     } catch (error) {
       const attempts = claimed?.attempts ?? 1;
@@ -797,6 +931,7 @@ export class NewsPipelineService {
       const updated = await tx.mongoOutbox.updateMany({
         where: {
           id: outboxId,
+          type: MongoOutboxType.processed_item,
           OR: [
             { status: MongoOutboxStatus.pending, availableAt: { lte: now } },
             { status: MongoOutboxStatus.failed, availableAt: { lte: now } },
@@ -835,12 +970,45 @@ export class NewsPipelineService {
           attempts: Math.max(attempts, 1),
         },
       });
+      this.scheduleOutboxRetry(outboxId, availableAt);
     } catch (updateError) {
       this.logger.warn(
         { error: updateError, outboxId, message },
         "Failed to update Mongo outbox status after delivery error",
       );
     }
+  }
+
+  private scheduleOutboxRetry(outboxId: string, availableAt: Date) {
+    const delayMs = availableAt.getTime() - Date.now();
+    if (delayMs <= 0) {
+      this.outboxEventEmitter.emit(OUTBOX_DELIVERY_REQUESTED_EVENT, { outboxId });
+      return;
+    }
+
+    const cappedDelayMs = Math.min(delayMs, MAX_TIMEOUT_MS);
+    const existing = this.outboxRetryTimers.get(outboxId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    const timer = setTimeout(() => {
+      this.outboxRetryTimers.delete(outboxId);
+      this.outboxEventEmitter.emit(OUTBOX_DELIVERY_REQUESTED_EVENT, { outboxId });
+    }, cappedDelayMs);
+    if (typeof (timer as { unref?: () => void }).unref === "function") {
+      (timer as { unref: () => void }).unref();
+    }
+    this.outboxRetryTimers.set(outboxId, timer);
+  }
+
+  private clearOutboxRetry(outboxId: string) {
+    const existing = this.outboxRetryTimers.get(outboxId);
+    if (!existing) {
+      return;
+    }
+    clearTimeout(existing);
+    this.outboxRetryTimers.delete(outboxId);
   }
 
   private async writeProcessedItemFromPayload(
@@ -866,101 +1034,18 @@ export class NewsPipelineService {
   private parseOutboxPayload(
     payload: Prisma.JsonValue | null,
   ): ProcessedItemOutboxPayload | null {
-    if (!payload || typeof payload !== "object") {
-      return null;
-    }
-
-    const raw = payload as Record<string, unknown>;
-    if (raw.type !== MongoOutboxType.processed_item) {
-      return null;
-    }
-
-    const document = raw.document as Record<string, unknown> | undefined;
-    if (!document) {
-      return null;
-    }
-
-    const cleaned = this.normalizeCleanedNews(document.result);
-    const llm = this.normalizeLlmMetadata(document.llm);
-
-    if (
-      typeof document._id !== "string" ||
-      typeof document.rawItemId !== "string" ||
-      typeof document.itemMetaId !== "string" ||
-      typeof document.orgId !== "string" ||
-      document.status !== "completed" ||
-      !cleaned ||
-      !llm
-    ) {
-      return null;
-    }
-
-    const tags = Array.isArray(document.tags)
-      ? document.tags.filter((tag) => typeof tag === "string")
-      : [];
-
-    return {
-      type: MongoOutboxType.processed_item,
-      document: {
-        _id: document._id,
-        rawItemId: document.rawItemId,
-        itemMetaId: document.itemMetaId,
-        orgId: document.orgId,
-        status: "completed",
-        tags,
-        result: cleaned,
-        llm,
-        error: undefined,
-      },
-    };
-  }
-
-  private normalizeLlmMetadata(value: unknown): LlmCallMetadata | null {
-    if (!value || typeof value !== "object") {
-      return null;
-    }
-
-    const raw = value as Record<string, unknown>;
-    return {
-      model: typeof raw.model === "string" ? raw.model : null,
-      promptVersion:
-        typeof raw.promptVersion === "string" ? raw.promptVersion : null,
-      promptTokens:
-        typeof raw.promptTokens === "number" && Number.isFinite(raw.promptTokens)
-          ? raw.promptTokens
-          : null,
-      completionTokens:
-        typeof raw.completionTokens === "number" &&
-        Number.isFinite(raw.completionTokens)
-          ? raw.completionTokens
-          : null,
-      totalTokens:
-        typeof raw.totalTokens === "number" && Number.isFinite(raw.totalTokens)
-          ? raw.totalTokens
-          : null,
-      costUsd:
-        typeof raw.costUsd === "number" && Number.isFinite(raw.costUsd)
-          ? raw.costUsd
-          : null,
-      latencyMs:
-        typeof raw.latencyMs === "number" && Number.isFinite(raw.latencyMs)
-          ? raw.latencyMs
-          : null,
-    };
-  }
-
-  private normalizeCleanedNews(value: unknown): CleanedNews | null {
-    const parsed = CleanedNewsSchema.safeParse(value);
+    const parsed = ProcessedItemOutboxPayloadSchema.safeParse(payload);
     return parsed.success ? parsed.data : null;
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_5_MINUTES)
   async retryPendingOutbox() {
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
     try {
       const entries = await this.prisma.mongoOutbox.findMany({
         where: {
+          type: MongoOutboxType.processed_item,
           OR: [
             { status: MongoOutboxStatus.pending, availableAt: { lte: now } },
             { status: MongoOutboxStatus.failed, availableAt: { lte: now } },
@@ -1007,11 +1092,7 @@ export class NewsPipelineService {
   }
 
   private parseDate(value?: string | Date | null) {
-    if (!value) {
-      return null;
-    }
-    const date = value instanceof Date ? value : new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
+    return parseDateTime(value);
   }
 
   private toStringArray(value: unknown): string[] {

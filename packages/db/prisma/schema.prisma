@@ -550,6 +550,7 @@ enum MongoOutboxStatus {
 
 enum MongoOutboxType {
   processed_item
+  cleanup_crawl_results
 }
 
 enum NewsSourceType {

@@ -24,6 +24,19 @@ jest.mock("@modular/mongo", () => ({
   }
 }));
 
+jest.mock("@modular/utils", () => {
+  const actual = jest.requireActual("@modular/utils");
+  return {
+    ...actual,
+    createLogger: () => ({
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn()
+    })
+  };
+});
+
 const baseConfig: NewsPipelineConfig = {
   litellm: {
     model: "openai/gpt-4o-mini",
@@ -62,6 +75,11 @@ const baseConfig: NewsPipelineConfig = {
 
 describe("NewsPipelineService", () => {
   const promptBuilder = new NewsPromptBuilder();
+
+  const flushOutbox = async () => {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  };
 
   const crawlClient = {
     crawl: jest.fn(async () => {
@@ -121,10 +139,15 @@ describe("NewsPipelineService", () => {
     }))
   };
 
-  const cache = {
-    get: jest.fn().mockResolvedValue(null),
-    set: jest.fn().mockResolvedValue(undefined)
-  };
+  const cache: any = {};
+  cache.get = jest.fn().mockResolvedValue(null);
+  cache.set = jest.fn().mockResolvedValue(undefined);
+  cache.del = jest.fn().mockResolvedValue(undefined);
+  cache.wrap = jest.fn(async (key: string, ttlSeconds: number, fn: () => Promise<any>) => {
+    const value = await fn();
+    await cache.set(key, value, ttlSeconds);
+    return value;
+  });
 
   const promptConfigService = {
     getConfig: jest.fn().mockResolvedValue(DEFAULT_NEWS_PROMPT_CONFIG)
@@ -218,8 +241,26 @@ describe("NewsPipelineService", () => {
     });
   });
 
+  afterEach(async () => {
+    const retryTimers = (service as any).outboxRetryTimers as Map<
+      string,
+      ReturnType<typeof setTimeout>
+    >;
+    if (!retryTimers) {
+      return;
+    }
+    for (const timer of retryTimers.values()) {
+      clearTimeout(timer);
+    }
+    retryTimers.clear();
+
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+  });
+
   it("processes a raw item by crawling and cleaning content", async () => {
     await service.process(job, raw);
+    await flushOutbox();
 
     expect(crawlClient.crawl).toHaveBeenCalledTimes(1);
     expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
@@ -307,6 +348,7 @@ describe("NewsPipelineService", () => {
     });
 
     await service.process(job, raw);
+    await flushOutbox();
 
     expect(liteLlm.acompletion).not.toHaveBeenCalled();
     expect(prisma.article.upsert).not.toHaveBeenCalled();
@@ -546,5 +588,70 @@ describe("NewsPipelineService", () => {
         result: validPayload.document.result
       })
     );
+  });
+
+  it("sanitizes dirty outbox payload fields via schema parsing", async () => {
+    const staleLockedAt = new Date(Date.now() - 10 * 60 * 1000);
+    const dirtyPayload = {
+      type: "processed_item",
+      document: {
+        _id: "64b5f0c4f6e4b0495c3f4a10",
+        rawItemId,
+        itemMetaId: "meta-1",
+        orgId: "org-1",
+        status: "completed",
+        result: {
+          title: "Existing title",
+          subtitle: null,
+          author: "Reporter",
+          source: "Example",
+          published_at: "2024-01-01T00:00:00Z",
+          language: "en",
+          location: "US",
+          category: null,
+          topics: ["news"],
+          summary: "Existing summary",
+          key_points: ["Existing summary"],
+          entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+          cleaned_markdown: "Clean body from cache",
+          removed_noise_types: [],
+          quality_score: 0.9,
+          llm_model: "openai/gpt-4o-mini",
+          llm_prompt_version: "v1"
+        },
+        llm: {
+          model: "openai/gpt-4o-mini",
+          promptVersion: "v1",
+          promptTokens: "10",
+          completionTokens: 5,
+          totalTokens: 15,
+          costUsd: 0.01,
+          latencyMs: 80
+        }
+      }
+    };
+
+    mongoOutbox.findMany.mockResolvedValueOnce([
+      {
+        id: "outbox-dirty",
+        payload: dirtyPayload,
+        status: "processing",
+        attempts: 1,
+        availableAt: new Date(),
+        lockedAt: staleLockedAt
+      }
+    ]);
+    mongoOutbox.updateMany.mockResolvedValueOnce({ count: 1 });
+    mongoOutbox.findUnique.mockResolvedValueOnce({
+      id: "outbox-dirty",
+      attempts: 1
+    });
+
+    await service.retryPendingOutbox();
+
+    expect(mongoOutbox.delete).toHaveBeenCalledWith({ where: { id: "outbox-dirty" } });
+    const createArgs = (ProcessedItemModel.create as jest.Mock).mock.calls[0]?.[0];
+    expect(createArgs.tags).toEqual([]);
+    expect(createArgs.llm.promptTokens).toBeNull();
   });
 });

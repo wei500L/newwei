@@ -40,6 +40,15 @@ export interface BullBoardConfig {
   password?: string;
 }
 
+export interface CrawlTaskJanitorConfig {
+  enabled: boolean;
+  runningTimeoutMs: number;
+  queuedTimeoutMs: number;
+  batchSize: number;
+  queueScanLimit: number;
+  lockTtlMs: number;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -126,6 +135,10 @@ export class EnvService extends ConfigService<ApiEnv> {
     return this.get<number>("AUTH_PROFILE_CACHE_RETRY_DELAY_MS", { infer: true }) ?? 50;
   }
 
+  get authRefreshGraceSeconds() {
+    return this.get<number>("AUTH_REFRESH_GRACE_SECONDS", { infer: true }) ?? 10;
+  }
+
   get auditLogRetentionDays() {
     return this.get<number>("AUDIT_LOG_RETENTION_DAYS", { infer: true }) ?? 90;
   }
@@ -167,6 +180,22 @@ export class EnvService extends ConfigService<ApiEnv> {
         maxPerResult:
           this.get<number>("CRAWL_MEDIA_MAX_PER_RESULT", { infer: true }) ?? 6,
       },
+    };
+  }
+
+  get crawlTaskJanitorConfig(): CrawlTaskJanitorConfig {
+    return {
+      enabled: this.get<boolean>("CRAWL_TASK_JANITOR_ENABLED", { infer: true }) ?? true,
+      runningTimeoutMs:
+        this.get<number>("CRAWL_TASK_RUNNING_TIMEOUT_MS", { infer: true }) ?? 1_800_000,
+      queuedTimeoutMs:
+        this.get<number>("CRAWL_TASK_QUEUED_TIMEOUT_MS", { infer: true }) ?? 43_200_000,
+      batchSize:
+        this.get<number>("CRAWL_TASK_JANITOR_BATCH_SIZE", { infer: true }) ?? 50,
+      queueScanLimit:
+        this.get<number>("CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT", { infer: true }) ?? 5_000,
+      lockTtlMs:
+        this.get<number>("CRAWL_TASK_JANITOR_LOCK_TTL_MS", { infer: true }) ?? 120_000
     };
   }
 
