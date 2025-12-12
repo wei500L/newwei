@@ -1,5 +1,5 @@
-import { Args, Context, Mutation, Query, Resolver, UseGuards } from "@nestjs/graphql";
-import { ForbiddenException } from "@nestjs/common";
+import { Args, Context, Mutation, Query, Resolver } from "@nestjs/graphql";
+import { ForbiddenException, UseGuards } from "@nestjs/common";
 import {
   AuditLogRetentionModel,
   CrawlClientSettingsModel,

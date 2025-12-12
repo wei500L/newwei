@@ -1,12 +1,15 @@
 import { Controller, Get, Inject } from "@nestjs/common";
 import { DiskHealthIndicator, HealthCheck, HealthCheckService, MongooseHealthIndicator, PrismaHealthIndicator } from "@nestjs/terminus";
 import type { MongoConnection } from "@modular/mongo";
+import { createRequire } from "node:module";
 
 import { Public } from "../../common/decorators/public.decorator";
-import pkg from "../../package.json" assert { type: "json" };
 import { PrismaService } from "../config/prisma.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { RedisHealthIndicator } from "./redis.health";
+
+const nodeRequire = createRequire(__filename);
+const pkg = nodeRequire("../../../package.json") as { version?: string };
 
 @Controller("healthz")
 export class HealthController {

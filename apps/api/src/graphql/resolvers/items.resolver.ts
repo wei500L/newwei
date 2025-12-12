@@ -6,7 +6,6 @@ import {
   Query,
   ResolveField,
   Resolver,
-  UseGuards
 } from "@nestjs/graphql";
 import type DataLoader from "dataloader";
 import { Loader } from "nestjs-dataloader";
@@ -20,7 +19,7 @@ import { ItemMetaLoader } from "../loaders/item-meta.loader";
 import { RawItemLoader } from "../loaders/raw-item.loader";
 import { ProcessedItemLoader } from "../loaders/processed-item.loader";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, UseGuards } from "@nestjs/common";
 import { PageInfo } from "../models/page-info.model";
 
 function encodeCursor(value: string) {

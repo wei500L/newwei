@@ -66,6 +66,10 @@ const authCacheSettingsMock = {
   })
 } as any;
 
+const orgServiceMock = {
+  listOrganizationOptionsForUser: jest.fn().mockResolvedValue([{ id: "org-1" }])
+} as any;
+
 describe("AuthService", () => {
   let service: AuthService;
 
@@ -88,7 +92,8 @@ describe("AuthService", () => {
       rateLimitConfigMock,
       cacheMock,
       accessTokenBlacklistMock,
-      authCacheSettingsMock
+      authCacheSettingsMock,
+      orgServiceMock
     );
   });
 
@@ -112,6 +117,7 @@ describe("AuthService", () => {
       memberships: [
         {
           orgId: "org-1",
+          org: { isActive: true },
           roleId: "role-1",
           role: {
             permissions: [
@@ -142,6 +148,7 @@ describe("AuthService", () => {
       memberships: [
         {
           orgId: "org-1",
+          org: { isActive: true },
           roleId: "role-1",
           role: {
             permissions: [
@@ -153,6 +160,7 @@ describe("AuthService", () => {
         },
         {
           orgId: "org-2",
+          org: { isActive: true },
           roleId: "role-2",
           role: {
             permissions: [
@@ -201,11 +209,13 @@ describe("AuthService", () => {
       id: "user-1",
       email: "test@example.com",
       firstName: "Test",
-      lastName: "User"
+      lastName: "User",
+      isActive: true
     });
     prismaMock.membership.findMany = jest.fn().mockResolvedValue([
       {
         orgId: "org-1",
+        org: { isActive: true },
         roleId: "role-1",
         role: {
           permissions: [{ permission: { name: "items.read" } }]
@@ -213,6 +223,7 @@ describe("AuthService", () => {
       },
       {
         orgId: "org-2",
+        org: { isActive: true },
         roleId: "role-2",
         role: {
           permissions: [{ permission: { name: "items.write" } }]
@@ -238,11 +249,13 @@ describe("AuthService", () => {
       id: "user-1",
       email: "test@example.com",
       firstName: "Test",
-      lastName: "User"
+      lastName: "User",
+      isActive: true
     });
     prismaMock.membership.findMany = jest.fn().mockResolvedValue([
       {
         orgId: "org-1",
+        org: { isActive: true },
         roleId: "role-1",
         role: {
           permissions: [{ permission: { name: "items.read" } }]
@@ -250,6 +263,7 @@ describe("AuthService", () => {
       },
       {
         orgId: "org-2",
+        org: { isActive: true },
         roleId: "role-2",
         role: {
           permissions: [{ permission: { name: "items.write" } }]

@@ -1,11 +1,11 @@
-import { Args, Context, Int, Mutation, Query, Resolver, UseGuards } from "@nestjs/graphql";
+import { Args, Context, Int, Mutation, Query, Resolver } from "@nestjs/graphql";
 import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { NotificationsService } from "../../modules/notifications/notifications.service";
 import { NotificationModel } from "../models/notification.model";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { NotificationEvent } from "../../modules/notifications/notification.dispatcher";
 
 @Resolver()

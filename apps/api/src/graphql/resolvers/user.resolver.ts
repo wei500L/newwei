@@ -1,10 +1,10 @@
-import { Args, Context, Int, Query, Resolver, UseGuards } from "@nestjs/graphql";
+import { Args, Context, Int, Query, Resolver } from "@nestjs/graphql";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { UserModel } from "../models/user.model";
 import { PrismaService } from "../../modules/config/prisma.service";
 import { AuthService, AuthenticatedUser } from "../../modules/auth/auth.service";
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 

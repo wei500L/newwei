@@ -4,9 +4,8 @@ import {
   Mutation,
   Query,
   Resolver,
-  UseGuards
 } from "@nestjs/graphql";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, UseGuards } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";

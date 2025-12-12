@@ -1,5 +1,5 @@
-import { ForbiddenException } from "@nestjs/common";
-import { Args, Context, Mutation, Query, Resolver, Subscription, UseGuards } from "@nestjs/graphql";
+import { ForbiddenException, UseGuards } from "@nestjs/common";
+import { Args, Context, Mutation, Query, Resolver, Subscription } from "@nestjs/graphql";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";

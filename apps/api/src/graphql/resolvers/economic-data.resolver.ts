@@ -1,4 +1,5 @@
-import { Args, Mutation, Query, Resolver, UseGuards } from "@nestjs/graphql";
+import { Args, Mutation, Query, Resolver } from "@nestjs/graphql";
+import { UseGuards } from "@nestjs/common";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { EconomicDataFetchConfigModel, EconomicDataPointModel, TimeGranularity } from "../models/economic-data.model";

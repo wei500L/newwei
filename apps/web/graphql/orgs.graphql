@@ -1,0 +1,48 @@
+query MyOrganizations {
+  myOrganizations {
+    id
+    name
+    slug
+    description
+    isActive
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CreateOrg($input: CreateOrgInput!) {
+  createOrg(input: $input) {
+    id
+    name
+    slug
+    description
+    isActive
+    createdAt
+    updatedAt
+  }
+}
+
+mutation UpdateOrg($input: UpdateOrgInput!) {
+  updateOrg(input: $input) {
+    id
+    name
+    slug
+    description
+    isActive
+    createdAt
+    updatedAt
+  }
+}
+
+mutation SetOrgActive($input: SetOrgActiveInput!) {
+  setOrgActive(input: $input) {
+    id
+    name
+    slug
+    description
+    isActive
+    createdAt
+    updatedAt
+  }
+}
+

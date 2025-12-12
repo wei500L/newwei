@@ -5,7 +5,6 @@ import {
   Query,
   ResolveField,
   Resolver,
-  UseGuards,
   Parent
 } from "@nestjs/graphql";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
@@ -18,7 +17,7 @@ import { Loader } from "nestjs-dataloader";
 import { UserLoader } from "../loaders/user.loader";
 import { UserModel } from "../models/user.model";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { AssignRoleInput, UpdateRoleInput } from "../dto/rbac.input";
 
 @Resolver(() => MembershipModel)

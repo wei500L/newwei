@@ -10,6 +10,7 @@ import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 import { AuthCacheSettingsService } from "./auth-cache-settings.service";
+import { OrgService } from "../org/org.service";
 
 export interface JwtPayload {
   sub: string;
@@ -41,7 +42,8 @@ export class AuthService {
     private readonly rateLimitConfig: RateLimitConfigService,
     private readonly cache: CacheService,
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
-    private readonly authCacheSettings: AuthCacheSettingsService
+    private readonly authCacheSettings: AuthCacheSettingsService,
+    private readonly orgService: OrgService
   ) {}
 
   private async validateRateLimit(identifier: string) {
@@ -97,6 +99,9 @@ export class AuthService {
     }
 
     const primaryMembership = this.pickMembership(user.memberships, orgId);
+    if (!primaryMembership.org?.isActive) {
+      throw new UnauthorizedException("Organization disabled");
+    }
 
     const permissions = Array.from(
       new Set(
@@ -224,10 +229,12 @@ export class AuthService {
       }
     });
 
+    const organizations = await this.orgService.listOrganizationOptionsForUser(user.id);
     return {
       user,
       accessToken,
       refreshToken,
+      organizations,
       expiresIn: expiresAt ? Math.floor((expiresAt - Date.now()) / 1000) : 900
     };
   }
@@ -254,7 +261,7 @@ export class AuthService {
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: record.userId } });
-    if (!user) {
+    if (!user || !user.isActive) {
       throw new UnauthorizedException("User not found");
     }
 
@@ -262,6 +269,7 @@ export class AuthService {
       where: { userId: user.id },
       orderBy: { createdAt: "asc" },
       include: {
+        org: true,
         role: {
           include: {
             permissions: {
@@ -273,6 +281,9 @@ export class AuthService {
     });
 
     const primaryMembership = this.pickMembership(memberships, orgId ?? tokenOrgId);
+    if (!primaryMembership.org?.isActive) {
+      throw new UnauthorizedException("Organization disabled");
+    }
 
     const permissions = Array.from(
       new Set(primaryMembership.role.permissions.map((p) => p.permission.name))
@@ -300,10 +311,12 @@ export class AuthService {
       }
     });
 
+    const organizations = await this.orgService.listOrganizationOptionsForUser(user.id);
     return {
       user: authUser,
       accessToken,
       refreshToken: newRefreshToken.token,
+      organizations,
       expiresIn: expiresAt ? Math.floor((expiresAt - Date.now()) / 1000) : 900
     };
   }
@@ -367,29 +380,40 @@ export class AuthService {
           where: { userId },
           orderBy: { createdAt: "asc" },
           include: {
+            org: true,
             role: {
-            include: {
-              permissions: {
-                include: { permission: true }
+              include: {
+                permissions: {
+                  include: { permission: true }
+                }
               }
             }
           }
+        });
+
+        const membership = this.pickMembership(memberships, orgId);
+        if (!membership.org?.isActive) {
+          throw new UnauthorizedException("Organization disabled");
         }
-      });
 
-      const membership = this.pickMembership(memberships, orgId);
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+        if (!user.isActive) {
+          throw new UnauthorizedException("User disabled");
+        }
 
-      const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-      const permissions = membership.role.permissions.map((perm) => perm.permission.name);
-      return {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        orgId: membership.orgId,
-        roleIds: [membership.roleId],
-        permissions
-      };
+        const permissions = Array.from(
+          new Set(membership.role.permissions.map((perm) => perm.permission.name))
+        );
+
+        return {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          orgId: membership.orgId,
+          roleIds: [membership.roleId],
+          permissions
+        };
       },
       {
         lockTtlMs: settings.lockTtlMs,

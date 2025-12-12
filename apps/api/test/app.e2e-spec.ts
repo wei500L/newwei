@@ -39,14 +39,17 @@ describe("App E2E", () => {
       .overrideProvider(PIPELINE_QUEUE_EVENTS)
       .useValue({})
       .overrideProvider(QueueProcessor)
-      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() });
+      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() })
+      .compile();
 
-    app = await moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication();
     await app.init();
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   it("returns health", async () => {

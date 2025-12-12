@@ -6,6 +6,7 @@ import {
   RadarChartOutlined,
   SettingOutlined,
   TableOutlined,
+  ApartmentOutlined,
 } from "@ant-design/icons";
 import { Breadcrumb, Dropdown, Layout, Menu, Space, Typography, message } from "antd";
 import { usePathname, useRouter } from "next/navigation";
@@ -78,6 +79,16 @@ export function ShellLayout({ children }: PropsWithChildren) {
     const canManageSettings =
       session.data?.permissions?.includes("settings.manage") ??
       session.data?.user?.permissions?.includes("settings.manage");
+    const canManageOrganizations =
+      session.data?.permissions?.includes("org.write") ??
+      session.data?.user?.permissions?.includes("org.write");
+    if (canManageOrganizations) {
+      base.push({
+        key: "/admin/orgs",
+        icon: <ApartmentOutlined />,
+        label: "Organizations",
+      });
+    }
     if (canManageSettings) {
       base.push({
         key: "/settings",

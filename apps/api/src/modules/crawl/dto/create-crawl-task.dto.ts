@@ -216,17 +216,17 @@ export class CrawlOptionsDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlMarkdownOptionsDto)
-  markdownOptions?: CrawlMarkdownOptionsDto;
+  markdownOptions?: any;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlMarkdownFilterDto)
-  markdownFilter?: CrawlMarkdownFilterDto;
+  markdownFilter?: any;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlMarkdownStrategyDto)
-  markdownStrategy?: CrawlMarkdownStrategyDto;
+  markdownStrategy?: any;
 
   @IsOptional()
   @Type(() => Number)
@@ -238,17 +238,17 @@ export class CrawlOptionsDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlTableExtractionStrategyDto)
-  tableExtraction?: CrawlTableExtractionStrategyDto;
+  tableExtraction?: any;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlCleanMarkdownOptionsDto)
-  cleanMarkdown?: CrawlCleanMarkdownOptionsDto;
+  cleanMarkdown?: any;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlVirtualScrollConfigDto)
-  virtualScroll?: CrawlVirtualScrollConfigDto;
+  virtualScroll?: any;
 
   @IsOptional()
   @IsBoolean()
@@ -257,7 +257,7 @@ export class CrawlOptionsDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlLinkPreviewOptionsDto)
-  linkPreview?: CrawlLinkPreviewOptionsDto;
+  linkPreview?: any;
 
   @IsOptional()
   @IsArray()
@@ -481,7 +481,7 @@ export class CrawlStrategyOverridesDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlVirtualScrollConfigDto)
-  virtualScroll?: CrawlVirtualScrollConfigDto;
+  virtualScroll?: any;
 
   @IsOptional()
   @IsBoolean()

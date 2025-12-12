@@ -15,11 +15,12 @@ import { DashboardModule } from "../modules/dashboard/dashboard.module";
 import { QueueModule } from "../modules/queue/queue.module";
 import { CacheModule } from "../modules/cache/cache.module";
 import { CrawlModule } from "../modules/crawl/crawl.module";
-import { DataloaderModule, DataloaderInterceptor } from "nestjs-dataloader";
+import { DataLoaderInterceptor } from "nestjs-dataloader";
 import { AlertsModule } from "../modules/alerts/alerts.module";
 import { AnalysisModule } from "../modules/analysis/analysis.module";
 import { NewsPipelineModule } from "../modules/news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../modules/notifications/notifications.module";
+import { OrgModule } from "../modules/org/org.module";
 import { UsersResolver } from "./resolvers/user.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
@@ -30,6 +31,7 @@ import { AlertsResolver } from "./resolvers/alerts.resolver";
 import { AnalysisResolver } from "./resolvers/analysis.resolver";
 import { SettingsResolver } from "./resolvers/settings.resolver";
 import { NotificationResolver } from "./resolvers/notification.resolver";
+import { OrgResolver } from "./resolvers/org.resolver";
 import { UserLoader } from "./loaders/user.loader";
 import { RoleLoader } from "./loaders/role.loader";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
@@ -57,8 +59,9 @@ const logger = createLogger({ name: "graphql" });
     AnalysisModule,
     NotificationsModule,
     NewsPipelineModule,
-    DataloaderModule,
+    OrgModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
+      driver: ApolloDriver,
       inject: [EnvService],
       useFactory: async (env: EnvService) => {
         const cfg = env.graphqlConfig;
@@ -73,8 +76,7 @@ const logger = createLogger({ name: "graphql" });
         const corsOrigin = cfg.corsOrigin ? cfg.corsOrigin.split(",") : true;
 
         return {
-          driver: ApolloDriver,
-          autoSchemaFile: join(process.cwd(), "apps/api/schema.gql"),
+          autoSchemaFile: join(__dirname, "..", "..", "schema.gql"),
           sortSchema: true,
           csrfPrevention: true,
           playground: cfg.playground,
@@ -134,6 +136,7 @@ const logger = createLogger({ name: "graphql" });
     AnalysisResolver,
     NotificationResolver,
     SettingsResolver,
+    OrgResolver,
     GraphQLJSONScalar,
     UserLoader,
     RoleLoader,
@@ -144,7 +147,7 @@ const logger = createLogger({ name: "graphql" });
     GqlPermissionsGuard,
     {
       provide: APP_INTERCEPTOR,
-      useClass: DataloaderInterceptor
+      useClass: DataLoaderInterceptor
     },
     {
       provide: APP_GUARD,

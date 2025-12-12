@@ -16,6 +16,7 @@ import { DashboardService } from "../src/modules/dashboard/dashboard.service";
 import { ItemsService } from "../src/modules/items/items.service";
 import { QueueEventPublisher } from "../src/modules/queue/queue-event.publisher";
 import { RbacService } from "../src/modules/rbac/rbac.service";
+import { OrgService } from "../src/modules/org/org.service";
 
 const sampleUser: AuthenticatedUser = {
   id: "user-1",
@@ -155,6 +156,47 @@ describe("GraphQL API", () => {
         listPermissions: jest.fn().mockResolvedValue([]),
         listMembers: jest.fn().mockResolvedValue([])
       })
+      .overrideProvider(OrgService)
+      .useValue({
+        listOrganizationsForUser: jest.fn().mockResolvedValue([
+          {
+            id: "org-1",
+            name: "Acme Corp",
+            slug: "acme",
+            description: "Seed org",
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+        ]),
+        createOrg: jest.fn().mockResolvedValue({
+          id: "org-2",
+          name: "Beta Org",
+          slug: "beta",
+          description: null,
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }),
+        updateOrg: jest.fn().mockResolvedValue({
+          id: "org-1",
+          name: "Acme Corp Updated",
+          slug: "acme",
+          description: null,
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }),
+        setOrgActive: jest.fn().mockResolvedValue({
+          id: "org-1",
+          name: "Acme Corp",
+          slug: "acme",
+          description: null,
+          isActive: false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      })
       .overrideProvider(GraphqlRateLimitGuard)
       .useValue({
         canActivate: () => true
@@ -230,5 +272,32 @@ describe("GraphQL API", () => {
     const error = response.body.errors?.[0];
     expect(error).toBeDefined();
     expect(error.extensions?.code ?? error.extensions?.response?.statusCode).toBe("FORBIDDEN");
+  });
+
+  it("returns organizations for authenticated user", async () => {
+    const response = await request(app.getHttpServer())
+      .post("/graphql")
+      .set("authorization", "Bearer test")
+      .send({ query: "query { myOrganizations { id name slug isActive } }" })
+      .expect(200);
+
+    expect(response.body.errors).toBeUndefined();
+    expect(response.body.data.myOrganizations).toHaveLength(1);
+    expect(response.body.data.myOrganizations[0].id).toBe("org-1");
+  });
+
+  it("creates orgs when org.write is present", async () => {
+    const response = await request(app.getHttpServer())
+      .post("/graphql")
+      .set("authorization", "Bearer test")
+      .set("x-test-permissions", "org.write")
+      .send({
+        query:
+          "mutation { createOrg(input: { name: \"Beta\", slug: \"beta\" }) { id name slug isActive } }"
+      })
+      .expect(200);
+
+    expect(response.body.errors).toBeUndefined();
+    expect(response.body.data.createOrg.id).toBe("org-2");
   });
 });

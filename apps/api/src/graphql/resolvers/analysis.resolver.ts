@@ -1,13 +1,12 @@
-import { Args, Context, Int, Mutation, Query, Resolver, Subscription, UseGuards } from "@nestjs/graphql";
+import { Args, Context, Int, Mutation, Query, Resolver, Subscription } from "@nestjs/graphql";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, Inject, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { AnalysisService } from "../../modules/analysis/analysis.service";
 import { AnalysisResultModel } from "../models/analysis.model";
 import { AnomalyAnalysisInput, CorrelationAnalysisInput } from "../dto/analysis.input";
-import { Inject } from "@nestjs/common";
 import { ANALYSIS_PUBSUB } from "../../modules/analysis/analysis.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
 import { withFilter } from "graphql-subscriptions";
