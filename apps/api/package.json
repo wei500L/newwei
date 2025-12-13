@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "copy:email-templates": "node ./scripts/copy-email-templates.js"
+    "copy:email-templates": "node ./scripts/copy-email-templates.js",
+    "crawl:encrypt-configs": "tsx ./scripts/encrypt-crawl-task-configs.ts"
   },
   "dependencies": {
     "@apollo/server": "^4.11.1",

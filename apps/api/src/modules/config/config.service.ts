@@ -214,6 +214,14 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get crawlTaskConfigEncryptionKey(): string | undefined {
+    const raw = this.get<string | undefined>("CRAWL_TASK_CONFIG_ENCRYPTION_KEY", { infer: true });
+    if (!raw) {
+      return undefined;
+    }
+    return raw;
+  }
+
   get crawlTaskJanitorConfig(): CrawlTaskJanitorConfig {
     return {
       enabled: this.get<boolean>("CRAWL_TASK_JANITOR_ENABLED", { infer: true }) ?? true,

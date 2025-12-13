@@ -112,6 +112,11 @@ describe("GraphQL API", () => {
       })
       .overrideProvider(ItemsService)
       .useValue({
+        listWithCursor: jest.fn().mockResolvedValue({
+          items: sampleItems,
+          hasNextPage: false,
+          totalCount: sampleItems.length
+        }),
         create: jest.fn().mockResolvedValue({
           ...sampleItems[0],
           status: "active"
@@ -284,6 +289,22 @@ describe("GraphQL API", () => {
     expect(response.body.errors).toBeUndefined();
     expect(response.body.data.myOrganizations).toHaveLength(1);
     expect(response.body.data.myOrganizations[0].id).toBe("org-1");
+  });
+
+  it("rejects overly complex items query", async () => {
+    const response = await request(app.getHttpServer())
+      .post("/graphql")
+      .set("authorization", "Bearer test")
+      .set("x-test-permissions", sampleUser.permissions.join(","))
+      .send({
+        query:
+          "query { items(first: 500) { edges { cursor node { id title status meta { id name status } raw { id payload } processed { id result } } } pageInfo { hasNextPage endCursor } totalCount } }"
+      })
+      .expect(200);
+
+    const error = response.body.errors?.[0];
+    expect(error).toBeDefined();
+    expect(error.extensions?.code).toBe("QUERY_TOO_COMPLEX");
   });
 
   it("creates orgs when org.write is present", async () => {

@@ -11,6 +11,12 @@ import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
 import type { CrawlTaskView } from "./crawl.types";
+import {
+  CrawlTaskConfigEncryptionRequiredError,
+  decodeCrawlTaskConfigKey,
+  protectCrawlTaskConfigForStorage,
+  redactCrawlTaskConfigForView
+} from "./crawl-config-secrets";
 
 type CrawlTaskRecord = Prisma.CrawlTaskGetPayload<{
   include: {
@@ -73,6 +79,21 @@ export class CrawlTaskService {
 
     const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
     const concurrency = Math.min(dto.concurrency ?? defaultConcurrency, defaultConcurrency);
+    const encryptionKeyRaw = this.env.crawlTaskConfigEncryptionKey;
+    const encryptionKey = encryptionKeyRaw ? decodeCrawlTaskConfigKey(encryptionKeyRaw) : undefined;
+    let protectedConfig: Record<string, unknown> | null = normalizedOptions as Record<string, unknown>;
+    try {
+      protectedConfig = protectCrawlTaskConfigForStorage(
+        normalizedOptions as Record<string, unknown>,
+        encryptionKey
+      ).config;
+    } catch (error) {
+      if (error instanceof CrawlTaskConfigEncryptionRequiredError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
+
     const created = await this.prisma.crawlTask.create({
       data: {
         orgId,
@@ -84,7 +105,7 @@ export class CrawlTaskService {
         keywords,
         timeRangeFrom,
         timeRangeTo,
-        config: normalizedOptions,
+        config: protectedConfig,
         runCount: 0
       },
       include: { _count: { select: { results: true } } }
@@ -280,7 +301,7 @@ export class CrawlTaskService {
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       resultCount: task._count.results,
-      config: (task.config as Record<string, unknown> | null) ?? null,
+      config: redactCrawlTaskConfigForView((task.config as Record<string, unknown> | null) ?? null),
       memoryStats: undefined,
       lastServerMemoryMb: task.lastServerMemoryMb ?? null,
       lastPeakMemoryMb: task.lastPeakMemoryMb ?? null,

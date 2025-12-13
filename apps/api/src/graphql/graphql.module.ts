@@ -3,8 +3,25 @@ import { GraphQLModule } from "@nestjs/graphql";
 import { ApolloDriver, ApolloDriverConfig } from "@nestjs/apollo";
 import { join } from "node:path";
 import depthLimit from "graphql-depth-limit";
-import { createComplexityLimitRule } from "graphql-query-complexity";
-import { GraphQLDirective, DirectiveLocation, GraphQLNonNull, GraphQLString } from "graphql";
+import {
+  type ComplexityEstimator,
+  createComplexityDirective,
+  directiveEstimator,
+  fieldExtensionsEstimator,
+  getComplexity,
+  simpleEstimator,
+} from "graphql-query-complexity";
+import {
+  DirectiveLocation,
+  GraphQLError,
+  GraphQLDirective,
+  GraphQLNonNull,
+  GraphQLString,
+  getNamedType,
+  isCompositeType,
+  isEnumType,
+  isScalarType,
+} from "graphql";
 import { EnvService } from "../modules/config/config.service";
 import { ConfigModule } from "../modules/config/config.module";
 import { createLogger } from "@modular/utils";
@@ -45,6 +62,43 @@ import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
 
 const logger = createLogger({ name: "graphql" });
 
+const BASE_FIELD_COMPLEXITY = 1;
+const COMPOSITE_FIELD_COMPLEXITY = 2;
+
+const paginationComplexityEstimator: ComplexityEstimator = ({ args, childComplexity }) => {
+  const pageSize =
+    typeof args.first === "number"
+      ? args.first
+      : typeof args.last === "number"
+        ? args.last
+        : typeof args.take === "number"
+          ? args.take
+          : typeof args.limit === "number"
+            ? args.limit
+            : typeof args.pageSize === "number"
+              ? args.pageSize
+              : typeof args.perPage === "number"
+                ? args.perPage
+                : undefined;
+
+  if (typeof pageSize !== "number" || childComplexity <= 0) {
+    return;
+  }
+
+  return BASE_FIELD_COMPLEXITY + childComplexity * Math.max(0, pageSize);
+};
+
+const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childComplexity }) => {
+  const namedType = getNamedType(field.type);
+  if (isScalarType(namedType) || isEnumType(namedType)) {
+    return;
+  }
+  if (!isCompositeType(namedType)) {
+    return;
+  }
+  return COMPOSITE_FIELD_COMPLEXITY + childComplexity;
+};
+
 @Module({
   imports: [
     ConfigModule,
@@ -72,8 +126,17 @@ const logger = createLogger({ name: "graphql" });
             name: { type: new GraphQLNonNull(GraphQLString) }
           }
         });
+        const complexityDirective = createComplexityDirective();
 
         const corsOrigin = cfg.corsOrigin ? cfg.corsOrigin.split(",") : true;
+
+        const estimators: ComplexityEstimator[] = [
+          fieldExtensionsEstimator(),
+          directiveEstimator(),
+          paginationComplexityEstimator,
+          compositeFieldComplexityEstimator,
+          simpleEstimator({ defaultComplexity: BASE_FIELD_COMPLEXITY })
+        ];
 
         return {
           autoSchemaFile: join(__dirname, "..", "..", "schema.gql"),
@@ -111,15 +174,36 @@ const logger = createLogger({ name: "graphql" });
             }
           },
           buildSchemaOptions: {
-            directives: [hasPermissionDirective]
+            directives: [hasPermissionDirective, complexityDirective]
           },
           validationRules: [
-            depthLimit(cfg.depthLimit),
-            createComplexityLimitRule(cfg.complexityLimit, {
-              onComplete: (complexity: number) => {
-                logger.debug({ complexity }, "GraphQL query complexity evaluated");
+            depthLimit(cfg.depthLimit)
+          ],
+          plugins: [
+            {
+              async requestDidStart() {
+                return {
+                  didResolveOperation(requestContext) {
+                    const complexity = getComplexity({
+                      schema: requestContext.schema,
+                      query: requestContext.document,
+                      variables: requestContext.request.variables,
+                      operationName: requestContext.request.operationName,
+                      estimators
+                    });
+
+                    logger.debug({ complexity }, "GraphQL query complexity evaluated");
+
+                    if (complexity > cfg.complexityLimit) {
+                      throw new GraphQLError(
+                        `Query is too complex: ${complexity}. Maximum allowed complexity: ${cfg.complexityLimit}`,
+                        { extensions: { code: "QUERY_TOO_COMPLEX", complexity } }
+                      );
+                    }
+                  }
+                };
               }
-            })
+            }
           ]
         };
       }

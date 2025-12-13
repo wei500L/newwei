@@ -8,6 +8,7 @@ import { RateLimiterService } from "../cache/rate-limiter.service";
 
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
+import { iterateSseDataFromReadable } from "./sse";
 
 export type LiteLlmMessage =
   | {
@@ -251,37 +252,7 @@ export class LiteLlmService {
   }
 
   private async *iterateSseData(stream: Readable): AsyncGenerator<string> {
-    let buffer = "";
-    for await (const chunk of stream) {
-      buffer += chunk.toString("utf8").replace(/\r\n/g, "\n");
-      while (true) {
-        const idx = buffer.indexOf("\n\n");
-        if (idx === -1) {
-          break;
-        }
-        const rawEvent = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const lines = rawEvent.split(/\r?\n/);
-        const dataLines = lines
-          .map((line) => line.trimEnd())
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice("data:".length).trimStart());
-        if (!dataLines.length) {
-          continue;
-        }
-        yield dataLines.join("\n");
-      }
-    }
-    if (buffer.trim().length > 0) {
-      const lines = buffer.split(/\r?\n/);
-      const dataLines = lines
-        .map((line) => line.trimEnd())
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice("data:".length).trimStart());
-      if (dataLines.length) {
-        yield dataLines.join("\n");
-      }
-    }
+    yield* iterateSseDataFromReadable(stream);
   }
 
   private isRetryable(error: unknown) {

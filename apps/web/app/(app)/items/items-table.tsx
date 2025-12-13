@@ -2,29 +2,84 @@
 
 import { Button, Input, Space, Table, Tag } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useItemsQuery } from "@/graphql/generated";
 
-export function ItemsTable() {
-  const [search, setSearch] = useState("");
-  const [pagination, setPagination] = useState<TablePaginationConfig>({
-    current: 1,
-    pageSize: 10
-  });
+function parsePositiveInt(value: string | null, fallback: number) {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+  return parsed;
+}
 
-  const pageSize = pagination.pageSize ?? 10;
+export function ItemsTable() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const urlSearch = (searchParams.get("q") ?? "").trim();
+  const current = parsePositiveInt(searchParams.get("page"), 1);
+  const pageSize = parsePositiveInt(searchParams.get("pageSize"), 10);
+
+  const [searchInput, setSearchInput] = useState(urlSearch);
+  useEffect(() => {
+    setSearchInput(urlSearch);
+  }, [urlSearch]);
+
+  const setQueryParams = useCallback(
+    (updates: { q?: string | null; page?: number | null; pageSize?: number | null }) => {
+      const currentQuery = searchParams.toString();
+      const next = new URLSearchParams(searchParams.toString());
+      if (updates.q !== undefined) {
+        const value = updates.q?.trim() ?? "";
+        if (value) {
+          next.set("q", value);
+        } else {
+          next.delete("q");
+        }
+      }
+      if (updates.page !== undefined) {
+        const value = updates.page ?? 1;
+        if (value > 1) {
+          next.set("page", String(value));
+        } else {
+          next.delete("page");
+        }
+      }
+      if (updates.pageSize !== undefined) {
+        const value = updates.pageSize ?? 10;
+        if (value !== 10) {
+          next.set("pageSize", String(value));
+        } else {
+          next.delete("pageSize");
+        }
+      }
+      const nextQuery = next.toString();
+      if (nextQuery === currentQuery) {
+        return;
+      }
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    },
+    [pathname, router, searchParams]
+  );
 
   const { data, loading, refetch, fetchMore } = useItemsQuery({
     variables: {
       first: pageSize,
       after: null,
-      search: search || null
+      search: urlSearch || null
     },
     notifyOnNetworkStatusChange: true
   });
 
   const edges = data?.items.edges ?? [];
   const totalCount = data?.items.totalCount ?? 0;
+  const needsMoreForPage = Boolean(data?.items.pageInfo.hasNextPage) && edges.length < current * pageSize;
 
   const ensurePageData = useCallback(
     async (targetPage: number, size: number) => {
@@ -41,7 +96,7 @@ export function ItemsTable() {
           variables: {
             first: size,
             after: current.pageInfo.endCursor,
-            search: search || null
+            search: urlSearch || null
           },
           updateQuery: (prev, { fetchMoreResult }) => {
             if (!fetchMoreResult) {
@@ -61,50 +116,44 @@ export function ItemsTable() {
         current = result.data.items;
       }
     },
-    [data?.items, fetchMore, search]
+    [data?.items, fetchMore, urlSearch]
   );
 
+  useEffect(() => {
+    if (!data?.items) {
+      return;
+    }
+    if (needsMoreForPage) {
+      void ensurePageData(current, pageSize);
+    }
+  }, [current, data?.items, ensurePageData, needsMoreForPage, pageSize]);
+
   const pageData = useMemo(() => {
-    const startIndex = ((pagination.current ?? 1) - 1) * (pagination.pageSize ?? 10);
-    const endIndex = startIndex + (pagination.pageSize ?? 10);
+    const startIndex = (current - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
     return edges.slice(startIndex, endIndex).map((edge) => ({
       ...edge.node,
       name: edge.node.title,
       createdAt: new Date(edge.node.createdAt).toISOString()
     }));
-  }, [edges, pagination.current, pagination.pageSize]);
+  }, [current, edges, pageSize]);
 
   const handleTableChange = (pager: TablePaginationConfig) => {
-    void (async () => {
-      const nextPage = pager.current ?? 1;
-      const nextPageSize = pager.pageSize ?? pageSize;
-      const pageSizeChanged = nextPageSize !== pageSize;
-      setPagination({
-        current: nextPage,
-        pageSize: nextPageSize
-      });
-      if (pageSizeChanged) {
-        await refetch({
-          first: nextPageSize,
-          after: null,
-          search: search || null
-        });
-        return;
-      }
-      if (edges.length < nextPage * nextPageSize && data?.items?.pageInfo?.hasNextPage) {
-        await ensurePageData(nextPage, nextPageSize);
-      }
-    })();
+    const nextPageSize = pager.pageSize ?? pageSize;
+    const pageSizeChanged = nextPageSize !== pageSize;
+    const nextPage = pageSizeChanged ? 1 : (pager.current ?? 1);
+
+    setQueryParams({
+      page: nextPage,
+      pageSize: nextPageSize
+    });
   };
 
   const handleSearch = (value: string) => {
     const nextValue = value.trim();
-    setPagination((prev) => ({ ...prev, current: 1 }));
-    setSearch(nextValue);
-    void refetch({
-      first: pageSize,
-      after: null,
-      search: nextValue || null
+    setQueryParams({
+      q: nextValue || null,
+      page: 1
     });
   };
 
@@ -134,7 +183,15 @@ export function ItemsTable() {
         <Input.Search
           placeholder="Search items"
           allowClear
+          value={searchInput}
           onSearch={handleSearch}
+          onChange={(event) => {
+            const value = event.target.value;
+            setSearchInput(value);
+            if (!value) {
+              setQueryParams({ q: null, page: 1 });
+            }
+          }}
           enterButton
         />
         <Button type="primary" onClick={() => refetch()} loading={loading}>
@@ -145,10 +202,10 @@ export function ItemsTable() {
         rowKey="id"
         columns={columns}
         dataSource={pageData}
-        loading={loading}
+        loading={loading || needsMoreForPage}
         pagination={{
-          current: pagination.current,
-          pageSize: pagination.pageSize,
+          current,
+          pageSize,
           total: totalCount,
           showSizeChanger: true
         }}

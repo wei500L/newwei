@@ -1,9 +1,17 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { HttpException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { EnvService } from "../../config/config.service";
 import { AuthService, JwtPayload } from "../auth.service";
 import { AccessTokenBlacklistService } from "../access-token-blacklist.service";
+
+function isPrismaNotFoundError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const maybeCode = (error as { code?: unknown }).code;
+  return maybeCode === "P2025";
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -29,7 +37,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
     }
 
-    const profile = await this.authService.getUserProfile(payload.sub, payload.orgId);
+    let profile: Awaited<ReturnType<AuthService["getUserProfile"]>>;
+    try {
+      profile = await this.authService.getUserProfile(payload.sub, payload.orgId);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      if (isPrismaNotFoundError(error)) {
+        throw new UnauthorizedException("Invalid access token");
+      }
+      throw error;
+    }
     return {
       ...profile,
       accessTokenId: payload.jti,

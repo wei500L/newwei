@@ -4,7 +4,14 @@ import { NotificationType } from "@prisma/client";
 import { createLogger } from "@modular/utils";
 import { TaskLogModel } from "@modular/mongo";
 import { PrismaService } from "../config/prisma.service";
+import { EnvService } from "../config/config.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
+import {
+  CrawlTaskConfigEncryptionRequiredError,
+  decodeCrawlTaskConfigKey,
+  protectCrawlTaskConfigForStorage,
+  revealCrawlTaskConfigForExecution
+} from "./crawl-config-secrets";
 import {
   CrawlExecutionSummary,
   CrawlTaskOptions,
@@ -40,6 +47,7 @@ export class CrawlExecutionService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly env: EnvService,
     private readonly crawlClient: Crawl4aiClient,
     private readonly resultService: CrawlResultService,
     private readonly notifications: NotificationsService
@@ -74,7 +82,27 @@ export class CrawlExecutionService {
     });
 
     try {
-      const options = this.extractOptions(task.config);
+      const encryptionKeyRaw = this.env.crawlTaskConfigEncryptionKey;
+      const encryptionKey = encryptionKeyRaw ? decodeCrawlTaskConfigKey(encryptionKeyRaw) : undefined;
+      const configRecord =
+        task.config && typeof task.config === "object" && !Array.isArray(task.config)
+          ? (task.config as Record<string, unknown>)
+          : null;
+
+      if (configRecord) {
+        const protectedResult = protectCrawlTaskConfigForStorage(configRecord, encryptionKey);
+        if (protectedResult.didEncrypt) {
+          await this.prisma.crawlTask.update({
+            where: { id: task.id },
+            data: { config: protectedResult.config }
+          });
+        }
+      }
+
+      const decryptedConfig = configRecord
+        ? revealCrawlTaskConfigForExecution(configRecord, encryptionKey)
+        : null;
+      const options = this.extractOptions(decryptedConfig as Prisma.JsonValue | null);
       const payload = this.buildRequestPayload(task, options);
       const response = await this.crawlClient.crawl(payload);
       const { successes, failures } = this.partitionCrawlerResults(response.results);
@@ -153,7 +181,11 @@ export class CrawlExecutionService {
       return summary;
     } catch (error) {
       const message =
-        error instanceof Crawl4aiRequestException ? error.message : "crawl job failed";
+        error instanceof CrawlTaskConfigEncryptionRequiredError
+          ? error.message
+          : error instanceof Crawl4aiRequestException
+            ? error.message
+            : "crawl job failed";
       await this.prisma.crawlTask.update({
         where: { id: task.id },
         data: {
@@ -242,7 +274,7 @@ export class CrawlExecutionService {
   }
 
   private extractOptions(config: Prisma.JsonValue | null): CrawlTaskOptions {
-    if (!config || typeof config !== "object") {
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
       return this.normalizeOptions();
     }
     const value = config as Record<string, unknown>;

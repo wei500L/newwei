@@ -48,6 +48,7 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   CRAWL4AI_HEALTH_CHECK_TTL_MS: z.coerce.number().int().positive().default(60_000),
   CRAWL4AI_RETRY_BACKOFF_MS: z.coerce.number().int().positive().default(5_000),
+  CRAWL_TASK_CONFIG_ENCRYPTION_KEY: z.string().optional(),
   CRAWL_TASK_JANITOR_ENABLED: z.coerce.boolean().default(true),
   CRAWL_TASK_RUNNING_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
   CRAWL_TASK_QUEUED_TIMEOUT_MS: z.coerce.number().int().positive().default(43_200_000),
