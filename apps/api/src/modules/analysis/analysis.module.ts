@@ -8,11 +8,13 @@ import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_QUEUE_NAME } from "./an
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { ANALYSIS_PUBSUB, createAnalysisPubSub } from "./analysis.pubsub";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { AnalysisPromptService } from "./analysis-prompt.service";
 
 @Module({
   imports: [NewsPipelineModule, NotificationsModule],
   providers: [
     AnalysisService,
+    AnalysisPromptService,
     AnalysisProcessor,
     {
       provide: ANALYSIS_QUEUE,

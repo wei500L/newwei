@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   Button,
   Card,
@@ -18,22 +19,66 @@ import {
   useRequestCorrelationMutation,
   useAnalysisEventsSubscription,
   type AnalysisResultsQuery,
+  type AnalysisEventsSubscription,
 } from "@/graphql/generated";
 export function AnalysisPanel() {
   const { data, refetch } = useAnalysisResultsQuery({
     variables: { limit: 10 },
   });
+  const [liveUpdates, setLiveUpdates] = useState<
+    Record<string, AnalysisEventsSubscription["analysisEvents"] & { summaryText: string }>
+  >({});
   const [requestCorrelation, { loading: savingCorr }] =
     useRequestCorrelationMutation();
   const [requestAnomaly, { loading: savingAnomaly }] =
     useRequestAnomalyMutation();
   useAnalysisEventsSubscription({
-    onData: () => {
-      void refetch();
+    onData: ({ data }) => {
+      const event = data.data?.analysisEvents;
+      if (!event) return;
+      setLiveUpdates((prev) => {
+        const existing = prev[event.id];
+        const previousText = existing?.summaryText ?? "";
+        const delta = typeof event.summary === "string" ? event.summary : "";
+        const summaryText =
+          event.status === "running" ? previousText + delta : delta || previousText;
+        return {
+          ...prev,
+          [event.id]: {
+            ...event,
+            summaryText,
+          },
+        };
+      });
     },
   });
 
-  const results = data?.analysisResults ?? [];
+  const results = useMemo(() => {
+    const base = data?.analysisResults ?? [];
+    const merged = base.map((result) => {
+      const live = liveUpdates[result.id];
+      if (!live) return result;
+      return {
+        ...result,
+        status: live.status,
+        type: live.type,
+        createdAt: live.createdAt,
+        summary: live.summaryText,
+      };
+    });
+    const missing = Object.values(liveUpdates)
+      .filter((live) => !base.some((result) => result.id === live.id))
+      .map((live) => ({
+        id: live.id,
+        type: live.type,
+        status: live.status,
+        createdAt: live.createdAt,
+        summary: live.summaryText,
+      }));
+    return [...missing, ...merged].sort(
+      (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+    );
+  }, [data?.analysisResults, liveUpdates]);
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -76,7 +121,8 @@ export function AnalysisPanel() {
                 }
                 description={
                   <Typography.Paragraph ellipsis={{ rows: 3 }}>
-                    {result.summary ?? "Pending"}
+                    {result.summary ??
+                      (result.status === "running" ? "Generating..." : "Pending")}
                   </Typography.Paragraph>
                 }
               />

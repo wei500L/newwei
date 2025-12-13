@@ -23,7 +23,7 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
     await this.alertsService.ensureAllSchedules();
     this.worker = new Worker<AlertJobPayload>(
       ALERTS_QUEUE_NAME,
-      async (job) => {
+      async (job, token) => {
         const traceId = ensureTraceId(job.data.traceId);
         return runWithTraceId(traceId, async () => {
           if (job.name === "scan-active-rules") {
@@ -35,7 +35,7 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
             return;
           }
           if (job.name.startsWith("deliver-notification") && job.data.type === "deliver" && job.data.deliveryId) {
-            await this.alertsService.handleDeliveryJob(job);
+            await this.alertsService.handleDeliveryJob(job, token);
             return;
           }
         });

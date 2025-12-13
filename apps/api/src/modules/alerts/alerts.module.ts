@@ -14,6 +14,7 @@ import { PipelineMetricProvider } from "./providers/pipeline-metric.provider";
 import { CrawlMetricProvider } from "./providers/crawl-metric.provider";
 import { SystemMetricProvider } from "./providers/system-metric.provider";
 import { SystemEventMetricProvider } from "./providers/system-event-metric.provider";
+import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SystemEventMetricProvider } from "./providers/system-event-metric.provi
   ],
   providers: [
     AlertsService,
+    AlertsNotificationThrottleService,
     AlertsProcessor,
     EconomicDataMetricProvider,
     PipelineMetricProvider,

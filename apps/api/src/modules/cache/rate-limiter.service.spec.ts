@@ -12,6 +12,7 @@ class FakeRedis {
     now: number,
     windowMs: number,
     limit: number
+    // extra args: ttlSeconds, cleanupLimit, cleanupThreshold
   ): Promise<[number, number]> {
     const windowStart = now - windowMs;
     const entries = this.buckets.get(bucketKey) ?? [];
@@ -68,5 +69,58 @@ describe("RateLimiterService (sliding window)", () => {
   it("treats disabled buckets as allowed", async () => {
     expect(await service.consume("skip", 0, 60)).toBe(true);
     expect(await service.consume("skip", 5, 0)).toBe(true);
+  });
+
+  it("fails open when redis eval times out (circuit protection)", async () => {
+    const originalTimeout = process.env.RATE_LIMIT_REDIS_EVAL_TIMEOUT_MS;
+    const originalThreshold = process.env.RATE_LIMIT_REDIS_CIRCUIT_FAILURE_THRESHOLD;
+    const originalOpenMs = process.env.RATE_LIMIT_REDIS_CIRCUIT_OPEN_MS;
+    const originalFailOpen = process.env.RATE_LIMIT_REDIS_FAIL_OPEN;
+
+    process.env.RATE_LIMIT_REDIS_EVAL_TIMEOUT_MS = "50";
+    process.env.RATE_LIMIT_REDIS_CIRCUIT_FAILURE_THRESHOLD = "1";
+    process.env.RATE_LIMIT_REDIS_CIRCUIT_OPEN_MS = "5000";
+    process.env.RATE_LIMIT_REDIS_FAIL_OPEN = "true";
+
+    try {
+      const slowRedis = {
+        evalCalls: 0,
+        eval: async () => {
+          slowRedis.evalCalls += 1;
+          return await new Promise<[number, number]>(() => undefined);
+        }
+      };
+      const slowService = new RateLimiterService(slowRedis as any);
+
+      const started = process.hrtime.bigint();
+      await expect(slowService.consume("user", 1, 60)).resolves.toBe(true);
+      const durationMs = Number(process.hrtime.bigint() - started) / 1e6;
+      expect(durationMs).toBeLessThan(500);
+      expect(slowRedis.evalCalls).toBe(1);
+
+      await expect(slowService.consume("user", 1, 60)).resolves.toBe(true);
+      expect(slowRedis.evalCalls).toBe(1);
+    } finally {
+      if (originalTimeout === undefined) {
+        delete process.env.RATE_LIMIT_REDIS_EVAL_TIMEOUT_MS;
+      } else {
+        process.env.RATE_LIMIT_REDIS_EVAL_TIMEOUT_MS = originalTimeout;
+      }
+      if (originalThreshold === undefined) {
+        delete process.env.RATE_LIMIT_REDIS_CIRCUIT_FAILURE_THRESHOLD;
+      } else {
+        process.env.RATE_LIMIT_REDIS_CIRCUIT_FAILURE_THRESHOLD = originalThreshold;
+      }
+      if (originalOpenMs === undefined) {
+        delete process.env.RATE_LIMIT_REDIS_CIRCUIT_OPEN_MS;
+      } else {
+        process.env.RATE_LIMIT_REDIS_CIRCUIT_OPEN_MS = originalOpenMs;
+      }
+      if (originalFailOpen === undefined) {
+        delete process.env.RATE_LIMIT_REDIS_FAIL_OPEN;
+      } else {
+        process.env.RATE_LIMIT_REDIS_FAIL_OPEN = originalFailOpen;
+      }
+    }
   });
 });

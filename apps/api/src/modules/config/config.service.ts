@@ -49,6 +49,14 @@ export interface CrawlTaskJanitorConfig {
   lockTtlMs: number;
 }
 
+export interface WebSocketSecurityConfig {
+  maxConnectionsPerUser: number;
+  maxConnectionsPerIp: number;
+  connectRateLimitPerIp: number;
+  connectRateLimitPerUser: number;
+  connectRateLimitWindowSeconds: number;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -153,6 +161,17 @@ export class EnvService extends ConfigService<ApiEnv> {
       complexityLimit:
         this.get<number>("GRAPHQL_COMPLEXITY_LIMIT", { infer: true }) ?? 2000,
       corsOrigin: this.get<string | undefined>("CORS_ORIGIN", { infer: true }),
+    };
+  }
+
+  get webSocketSecurity(): WebSocketSecurityConfig {
+    return {
+      maxConnectionsPerUser: this.get<number>("WS_MAX_CONNECTIONS_PER_USER", { infer: true }) ?? 5,
+      maxConnectionsPerIp: this.get<number>("WS_MAX_CONNECTIONS_PER_IP", { infer: true }) ?? 50,
+      connectRateLimitPerIp: this.get<number>("WS_CONNECT_RATE_LIMIT_PER_IP", { infer: true }) ?? 60,
+      connectRateLimitPerUser: this.get<number>("WS_CONNECT_RATE_LIMIT_PER_USER", { infer: true }) ?? 30,
+      connectRateLimitWindowSeconds:
+        this.get<number>("WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS", { infer: true }) ?? 60
     };
   }
 
@@ -284,6 +303,16 @@ export class EnvService extends ConfigService<ApiEnv> {
       maxRetries: this.get<number>("ALERT_MAX_RETRIES", { infer: true }) ?? 3,
       scanIntervalMs:
         this.get<number>("ALERT_SCAN_INTERVAL_MS", { infer: true }) ?? 300_000,
+      notifyGlobalPerSecond:
+        this.get<number>("ALERT_NOTIFY_GLOBAL_PER_SECOND", { infer: true }) ?? 10,
+      notifyEmailPerSecond:
+        this.get<number>("ALERT_NOTIFY_EMAIL_PER_SECOND", { infer: true }) ?? 2,
+      notifyWebhookPerSecond:
+        this.get<number>("ALERT_NOTIFY_WEBHOOK_PER_SECOND", { infer: true }) ?? 10,
+      notifyPerChannelPerSecond:
+        this.get<number>("ALERT_NOTIFY_PER_CHANNEL_PER_SECOND", { infer: true }) ?? 2,
+      notifyLimiterTtlMs:
+        this.get<number>("ALERT_NOTIFY_LIMITER_TTL_MS", { infer: true }) ?? 60_000,
     };
   }
 
@@ -295,6 +324,21 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("ANALYSIS_MAX_RETRIES", { infer: true }) ?? 3,
       autoTriggerEnabled:
         this.get<boolean>("ANALYSIS_AUTOTRIGGER_ENABLED", { infer: true }) ?? false,
+      promptCorrelationSystem: this.get<string | undefined>("ANALYSIS_PROMPT_CORRELATION_SYSTEM", {
+        infer: true
+      }),
+      promptCorrelationUser: this.get<string | undefined>("ANALYSIS_PROMPT_CORRELATION_USER", {
+        infer: true
+      }),
+      promptAnomalySystem: this.get<string | undefined>("ANALYSIS_PROMPT_ANOMALY_SYSTEM", {
+        infer: true
+      }),
+      promptAnomalyUser: this.get<string | undefined>("ANALYSIS_PROMPT_ANOMALY_USER", {
+        infer: true
+      }),
+      llmTimeoutMs: this.get<number>("ANALYSIS_LLM_TIMEOUT_MS", { infer: true }) ?? 300_000,
+      streamFlushChars: this.get<number>("ANALYSIS_STREAM_FLUSH_CHARS", { infer: true }) ?? 80,
+      streamFlushMs: this.get<number>("ANALYSIS_STREAM_FLUSH_MS", { infer: true }) ?? 250
     };
   }
 

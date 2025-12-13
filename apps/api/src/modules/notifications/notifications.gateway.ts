@@ -8,6 +8,11 @@ import { NotificationDispatcher, NotificationEvent } from "./notification.dispat
 import { verify } from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
 
+interface RateLimitState {
+  windowStartMs: number;
+  count: number;
+}
+
 @WebSocketGateway({
   namespace: "notifications",
   cors: {
@@ -23,6 +28,10 @@ export class NotificationsGateway
 
   private readonly logger = createLogger({ name: "notifications-gateway" });
   private unsubscribe?: () => void;
+  private readonly connectionsByUserId = new Map<string, Set<string>>();
+  private readonly connectionsByIp = new Map<string, Set<string>>();
+  private readonly connectAttemptsByIp = new Map<string, RateLimitState>();
+  private readonly connectAttemptsByUserId = new Map<string, RateLimitState>();
 
   constructor(
     private readonly env: EnvService,
@@ -40,39 +49,98 @@ export class NotificationsGateway
       this.unsubscribe();
       this.unsubscribe = undefined;
     }
+
+    const sockets = this.getConnectedSockets();
+    if (sockets.length > 0) {
+      this.logger.info({ sockets: sockets.length }, "Disconnecting notification sockets on shutdown");
+      for (const socket of sockets) {
+        try {
+          socket.disconnect(true);
+        } catch (error) {
+          this.logger.warn(
+            { socketId: socket.id, error: error instanceof Error ? error.message : String(error) },
+            "Failed to disconnect notification socket on shutdown"
+          );
+        }
+      }
+    }
+
+    this.connectionsByUserId.clear();
+    this.connectionsByIp.clear();
+    this.connectAttemptsByIp.clear();
+    this.connectAttemptsByUserId.clear();
   }
 
   async handleConnection(client: Socket) {
+    const ip = this.extractClientIp(client);
     try {
       if (!this.isOriginAllowed(this.extractOrigin(client))) {
         throw new Error("Origin not allowed");
       }
 
+      this.enforceConnectRateLimit(
+        this.connectAttemptsByIp,
+        ip ? `ip:${ip}` : "ip:unknown",
+        this.env.webSocketSecurity.connectRateLimitPerIp
+      );
+
       const token = this.extractToken(client);
       const payload = this.verifyToken(token);
+      this.enforceConnectRateLimit(
+        this.connectAttemptsByUserId,
+        `user:${payload.sub}`,
+        this.env.webSocketSecurity.connectRateLimitPerUser
+      );
       await this.ensureNotRevoked(payload);
       const profile = await this.authService.getUserProfile(payload.sub, payload.orgId);
+
       client.data.user = profile;
+      client.data.clientIp = ip;
+
+      this.registerConnection(profile.id, client.id);
+      if (ip) {
+        this.registerIpConnection(ip, client.id);
+      }
+
+      const { maxConnectionsPerUser, maxConnectionsPerIp } = this.env.webSocketSecurity;
+      const userConnections = this.connectionsByUserId.get(profile.id)?.size ?? 0;
+      if (userConnections > maxConnectionsPerUser) {
+        throw new Error("Too many connections");
+      }
+      if (ip) {
+        const ipConnections = this.connectionsByIp.get(ip)?.size ?? 0;
+        if (ipConnections > maxConnectionsPerIp) {
+          throw new Error("Too many connections");
+        }
+      }
+
       await client.join([this.orgRoom(profile.orgId), this.userRoom(profile.id)]);
       client.emit("notification:connected", { orgId: profile.orgId, userId: profile.id });
       this.logger.info(
-        { socketId: client.id, orgId: profile.orgId, userId: profile.id },
+        { socketId: client.id, orgId: profile.orgId, userId: profile.id, ip, userConnections },
         "Notification socket connected"
       );
     } catch (error) {
+      this.unregisterClient(client);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const responseMessage =
+        errorMessage === "Too many connections" || errorMessage === "Too many connection attempts"
+          ? errorMessage
+          : "Unauthorized";
       this.logger.warn(
-        { socketId: client.id, error: error instanceof Error ? error.message : String(error) },
+        { socketId: client.id, ip, error: errorMessage },
         "Notification socket authentication failed"
       );
-      client.emit("notification:error", { message: "Unauthorized" });
+      client.emit("notification:error", { message: responseMessage });
       client.disconnect(true);
     }
   }
 
   handleDisconnect(client: Socket) {
     const profile = client.data?.user as AuthenticatedUser | undefined;
+    this.unregisterClient(client);
     this.logger.info(
-      { socketId: client.id, userId: profile?.id, orgId: profile?.orgId },
+      { socketId: client.id, userId: profile?.id, orgId: profile?.orgId, ip: client.data?.clientIp },
       "Notification socket disconnected"
     );
   }
@@ -126,6 +194,66 @@ export class NotificationsGateway
     }
 
     throw new Error("Missing auth token");
+  }
+
+  private enforceConnectRateLimit(map: Map<string, RateLimitState>, key: string, limit: number) {
+    const windowMs = this.env.webSocketSecurity.connectRateLimitWindowSeconds * 1000;
+    const now = Date.now();
+    const current = map.get(key);
+    if (!current || now - current.windowStartMs >= windowMs) {
+      map.set(key, { windowStartMs: now, count: 1 });
+      return;
+    }
+    current.count += 1;
+    if (current.count > limit) {
+      throw new Error("Too many connection attempts");
+    }
+  }
+
+  private registerConnection(userId: string, socketId: string) {
+    const sockets = this.connectionsByUserId.get(userId) ?? new Set<string>();
+    sockets.add(socketId);
+    this.connectionsByUserId.set(userId, sockets);
+  }
+
+  private registerIpConnection(ip: string, socketId: string) {
+    const sockets = this.connectionsByIp.get(ip) ?? new Set<string>();
+    sockets.add(socketId);
+    this.connectionsByIp.set(ip, sockets);
+  }
+
+  private unregisterClient(client: Socket) {
+    const socketId = client.id;
+    const profile = client.data?.user as AuthenticatedUser | undefined;
+    if (profile?.id) {
+      const sockets = this.connectionsByUserId.get(profile.id);
+      if (sockets) {
+        sockets.delete(socketId);
+        if (sockets.size === 0) {
+          this.connectionsByUserId.delete(profile.id);
+        }
+      }
+    }
+
+    const ip = client.data?.clientIp as string | undefined;
+    if (ip) {
+      const sockets = this.connectionsByIp.get(ip);
+      if (sockets) {
+        sockets.delete(socketId);
+        if (sockets.size === 0) {
+          this.connectionsByIp.delete(ip);
+        }
+      }
+    }
+  }
+
+  private extractClientIp(client: Socket) {
+    const forwardedHeader = client.handshake.headers["x-forwarded-for"];
+    const forwarded = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
+    const ipFromForwarded = forwarded?.split(",")[0]?.trim();
+    const address = typeof client.handshake.address === "string" ? client.handshake.address : undefined;
+    const ip = ipFromForwarded || address;
+    return ip ? ip.replace(/^::ffff:/, "") : undefined;
   }
 
   private parseAuthorizationHeader(authHeader: string | string[] | undefined) {
@@ -182,5 +310,14 @@ export class NotificationsGateway
 
   private userRoom(userId: string) {
     return `user:${userId}`;
+  }
+
+  private getConnectedSockets(): Socket[] {
+    const serverAny = this.server as any;
+    const sockets = serverAny?.sockets?.sockets ?? serverAny?.sockets;
+    if (!sockets || typeof sockets.values !== "function") {
+      return [];
+    }
+    return Array.from((sockets as Map<string, Socket>).values());
   }
 }

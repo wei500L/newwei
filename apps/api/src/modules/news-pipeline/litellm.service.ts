@@ -1,6 +1,7 @@
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import axios, { AxiosError, AxiosInstance } from "axios";
+import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { RateLimiterService } from "../cache/rate-limiter.service";
@@ -56,6 +57,13 @@ export interface LiteLlmCompletionResponse {
   latencyMs?: number;
 }
 
+export interface LiteLlmStreamChunk {
+  model: string;
+  raw: unknown;
+  delta?: string;
+  finishReason?: string;
+}
+
 @Injectable()
 export class LiteLlmService {
   private client: AxiosInstance;
@@ -99,6 +107,41 @@ export class LiteLlmService {
     throw lastError instanceof Error
       ? lastError
       : new Error("LiteLLM completion failed");
+  }
+
+  async *stream(params: LiteLlmCompletionParams): AsyncGenerator<LiteLlmStreamChunk> {
+    await this.enforceRateLimit();
+    const cfg = this.configService.config.litellm;
+    const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
+    const uniqueModels = Array.from(
+      new Set(models.filter((model) => typeof model === "string" && model.length > 0)),
+    );
+
+    let lastError: unknown;
+    for (const model of uniqueModels) {
+      let started = false;
+      try {
+        for await (const chunk of this.executeStream(model, params)) {
+          started = true;
+          yield chunk;
+        }
+        return;
+      } catch (error) {
+        if (started) {
+          throw error;
+        }
+        lastError = error;
+        this.logger.warn(
+          {
+            model,
+            message: error instanceof Error ? error.message : "unknown error",
+          },
+          "LiteLLM stream failed; evaluating fallback",
+        );
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("LiteLLM stream failed");
   }
 
   private async executeWithRetry(
@@ -164,6 +207,81 @@ export class LiteLlmService {
     throw lastError instanceof Error
       ? lastError
       : new Error("LiteLLM completion exhausted retries");
+  }
+
+  private async *executeStream(model: string, params: LiteLlmCompletionParams): AsyncGenerator<LiteLlmStreamChunk> {
+    const cfg = this.configService.config.litellm;
+    const payload = {
+      model,
+      messages: params.messages,
+      temperature: params.temperature ?? cfg.temperature,
+      top_p: params.top_p ?? cfg.topP,
+      max_tokens: params.max_tokens ?? cfg.maxOutputTokens,
+      response_format: params.response_format ?? undefined,
+      stream: true,
+      metadata: params.metadata,
+    };
+
+    const response = await this.client.post("/v1/chat/completions", payload, {
+      responseType: "stream",
+      timeout: params.timeoutMs ?? cfg.timeoutMs,
+    });
+    const stream = response.data as Readable;
+
+    for await (const data of this.iterateSseData(stream)) {
+      if (data === "[DONE]") {
+        return;
+      }
+      let parsed: any;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        continue;
+      }
+
+      const choice = parsed?.choices?.[0];
+      const delta = choice?.delta?.content;
+      const finishReason = choice?.finish_reason;
+      if (typeof delta === "string" && delta.length > 0) {
+        yield { model, raw: parsed, delta, finishReason };
+      } else if (typeof finishReason === "string" && finishReason.length > 0) {
+        yield { model, raw: parsed, finishReason };
+      }
+    }
+  }
+
+  private async *iterateSseData(stream: Readable): AsyncGenerator<string> {
+    let buffer = "";
+    for await (const chunk of stream) {
+      buffer += chunk.toString("utf8").replace(/\r\n/g, "\n");
+      while (true) {
+        const idx = buffer.indexOf("\n\n");
+        if (idx === -1) {
+          break;
+        }
+        const rawEvent = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const lines = rawEvent.split(/\r?\n/);
+        const dataLines = lines
+          .map((line) => line.trimEnd())
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice("data:".length).trimStart());
+        if (!dataLines.length) {
+          continue;
+        }
+        yield dataLines.join("\n");
+      }
+    }
+    if (buffer.trim().length > 0) {
+      const lines = buffer.split(/\r?\n/);
+      const dataLines = lines
+        .map((line) => line.trimEnd())
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice("data:".length).trimStart());
+      if (dataLines.length) {
+        yield dataLines.join("\n");
+      }
+    }
   }
 
   private isRetryable(error: unknown) {

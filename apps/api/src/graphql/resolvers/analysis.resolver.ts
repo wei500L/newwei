@@ -95,7 +95,7 @@ export class AnalysisResolver {
       createdAt: payload.result.createdAt,
       input: null,
       output: null,
-      error: undefined
+      error: payload.result.error ?? undefined
     })
   })
   analysisEventsSubscription(@Context("req") req: any) {

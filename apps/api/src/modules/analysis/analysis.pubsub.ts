@@ -9,6 +9,7 @@ export type AnalysisEventPayload = {
     type: string;
     status: string;
     summary?: string;
+    error?: string;
     createdAt: string;
   };
 };

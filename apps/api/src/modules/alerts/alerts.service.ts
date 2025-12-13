@@ -10,7 +10,7 @@ import {
   AlertStatus,
   Prisma
 } from "@prisma/client";
-import { Job, Queue } from "bullmq";
+import { DelayedError, Job, Queue } from "bullmq";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
 import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
@@ -20,6 +20,7 @@ import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { ALERTS_PUBSUB, AlertEventPayload } from "./alerts.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
 import { MetricProvider } from "./providers/metric-provider";
+import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
 
 export interface AlertChannelInput {
   id?: string;
@@ -60,6 +61,7 @@ export type AlertJobPayload =
       type: "deliver";
       deliveryId: string;
       traceId?: string;
+      scheduledAtMs?: number;
     };
 
 const logger = createLogger({ name: "alerts" });
@@ -71,11 +73,13 @@ export class AlertsService {
   private readonly email: EmailService;
   private readonly http: HttpService;
   private readonly metricProviders: MetricProvider[];
+  private readonly notificationThrottle: AlertsNotificationThrottleService;
 
   constructor(
     prisma: PrismaService,
     email: EmailService,
     http: HttpService,
+    notificationThrottle: AlertsNotificationThrottleService,
     private readonly env: EnvService,
     @Inject(ALERTS_QUEUE) private readonly queue: Queue<AlertJobPayload>,
     @Inject(ALERTS_PUBSUB) private readonly pubsub: PubSubEngine,
@@ -85,6 +89,7 @@ export class AlertsService {
     this.email = email;
     this.http = http;
     this.metricProviders = metricProviders;
+    this.notificationThrottle = notificationThrottle;
   }
 
   async listChannels(orgId: string) {
@@ -435,7 +440,7 @@ export class AlertsService {
     );
   }
 
-  async handleDeliveryJob(job: Job<AlertJobPayload>) {
+  async handleDeliveryJob(job: Job<AlertJobPayload>, token?: string) {
     if (job.data.type !== "deliver" || !job.data.deliveryId) {
       return;
     }
@@ -446,7 +451,9 @@ export class AlertsService {
     if (!delivery || !delivery.event || !delivery.event.rule) {
       return;
     }
-    const channel = delivery.targetSnapshot as { type?: AlertChannelType; target?: string; name?: string } | null;
+    const channel = delivery.targetSnapshot as
+      | { id?: string; type?: AlertChannelType; target?: string; name?: string; config?: unknown }
+      | null;
     if (!channel?.type || !channel?.target) {
       await this.prisma.alertDelivery.update({
         where: { id: delivery.id },
@@ -459,7 +466,48 @@ export class AlertsService {
       await this.updateEventStatus(delivery.eventId);
       return;
     }
+
+    const ruleMuteUntilMs = this.extractMuteUntilMs(delivery.event.rule.metadata);
+    const channelMuteUntilMs = this.extractMuteUntilMs(channel.config);
+    const muteUntilMs = Math.max(ruleMuteUntilMs ?? 0, channelMuteUntilMs ?? 0) || null;
+    if (this.notificationThrottle.isMutedNow(muteUntilMs)) {
+      await this.prisma.alertDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: AlertDeliveryStatus.sent,
+          sentAt: new Date(),
+          error: `suppressed: muted until ${new Date(muteUntilMs!).toISOString()}`
+        }
+      });
+      await this.updateEventStatus(delivery.eventId);
+      return;
+    }
+
     try {
+      const hadScheduledAtMs = !!job.data.scheduledAtMs;
+      if (job.data.scheduledAtMs && Date.now() < job.data.scheduledAtMs) {
+        await job.moveToDelayed(job.data.scheduledAtMs, token);
+        throw new DelayedError();
+      }
+
+      if (!job.data.scheduledAtMs) {
+        const scheduledAtMs = await this.notificationThrottle.reserveNotificationScheduleMs({
+          channelType: channel.type,
+          channelId: delivery.channelId ?? channel.id ?? null
+        });
+        if (scheduledAtMs > Date.now()) {
+          await job.updateData({ ...job.data, scheduledAtMs });
+          await job.moveToDelayed(scheduledAtMs, token);
+          throw new DelayedError();
+        }
+      }
+
+      if (hadScheduledAtMs) {
+        const updated = { ...(job.data as any) };
+        delete updated.scheduledAtMs;
+        await job.updateData(updated);
+      }
+
       if (channel.type === "email") {
         await this.sendEmail(channel.target, delivery.event, delivery.event.rule);
       } else if (channel.type === "webhook") {
@@ -472,6 +520,9 @@ export class AlertsService {
         data: { status: AlertDeliveryStatus.sent, sentAt: new Date() }
       });
     } catch (error) {
+      if (error instanceof DelayedError) {
+        throw error;
+      }
       const message = (error as Error)?.message ?? "unknown error";
       const isLastAttempt = job.attemptsMade >= (job.opts.attempts ?? 1);
       await this.prisma.alertDelivery.update({
@@ -489,6 +540,21 @@ export class AlertsService {
     } finally {
       await this.updateEventStatus(delivery.eventId);
     }
+  }
+
+  private extractMuteUntilMs(input: unknown): number | null {
+    if (!input || typeof input !== "object") {
+      return null;
+    }
+    const config = input as Record<string, unknown>;
+    const value =
+      config["muteUntil"] ??
+      config["mutedUntil"] ??
+      config["silenceUntil"] ??
+      config["silencedUntil"] ??
+      config["mute_until"] ??
+      config["muted_until"];
+    return this.notificationThrottle.parseMuteUntilMs(value as any);
   }
 
   getNotificationBackoffDelay(attemptsMade: number) {

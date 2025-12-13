@@ -1,16 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { Queue } from "bullmq";
 import { AnalysisResultModel, type AnalysisResultDocument } from "@modular/mongo";
-import { LiteLlmService } from "../news-pipeline/litellm.service";
+import { LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
 import { EnvService } from "../config/config.service";
 import { ANALYSIS_QUEUE } from "./analysis.constants";
 import { AnalysisJobPayload, AnomalyInput, CorrelationInput } from "./analysis.types";
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { ANALYSIS_PUBSUB } from "./analysis.pubsub";
 import { PubSubEngine } from "graphql-subscriptions";
-import { detectZScoreAnomalies, detectRollingSpike, detectTrend, detectVolumeSpike, SeriesPoint } from "./anomaly-detector";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationType } from "@prisma/client";
+import { AnalysisPromptService } from "./analysis-prompt.service";
 
 const logger = createLogger({ name: "analysis-service" });
 
@@ -19,6 +19,7 @@ export class AnalysisService {
   constructor(
     private readonly llm: LiteLlmService,
     private readonly env: EnvService,
+    private readonly prompts: AnalysisPromptService,
     @Inject(ANALYSIS_QUEUE) private readonly queue: Queue<AnalysisJobPayload>,
     @Inject(ANALYSIS_PUBSUB) private readonly pubsub: PubSubEngine,
     private readonly notifications: NotificationsService
@@ -70,14 +71,15 @@ export class AnalysisService {
     }
     record.status = "running";
     await record.save();
+    await this.publish(record.orgId, record.id, record.type, record.status, undefined, record.createdAt);
 
     try {
       if (job.type === "correlation") {
-        const output = await this.runCorrelation(record.input as CorrelationInput);
+        const output = await this.runCorrelation(record.orgId, record.id, record.createdAt, record.input as CorrelationInput);
         record.output = output;
         record.summary = output.summary;
       } else {
-        const output = await this.runAnomaly(record.input as AnomalyInput);
+        const output = await this.runAnomaly(record.orgId, record.id, record.createdAt, record.input as AnomalyInput);
         record.output = output;
         record.summary = output.summary;
       }
@@ -89,8 +91,20 @@ export class AnalysisService {
       logger.error({ job, error }, "Analysis job failed");
       record.status = "failed";
       record.error = error instanceof Error ? error.message : String(error);
+      const partialSummary = (error as any)?.partialSummary;
+      if (typeof partialSummary === "string" && partialSummary.length > 0) {
+        record.summary = partialSummary;
+      }
       await record.save();
-      await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, record.createdAt);
+      await this.publish(
+        record.orgId,
+        record.id,
+        record.type,
+        record.status,
+        record.summary ?? undefined,
+        record.createdAt,
+        record.error ?? undefined
+      );
       await this.notifyResult(record);
       throw error;
     }
@@ -125,85 +139,83 @@ export class AnalysisService {
     }
   }
 
-  private async runCorrelation(input: CorrelationInput) {
-    const systemPrompt = "你是一位专业的金融数据分析师。请围绕数据关联与情绪总结，提供简洁可执行的输出。";
-    const news = input.newsSummaries?.length ? input.newsSummaries.map((n, idx) => `${idx + 1}. ${n}`).join("\n") : "无相关新闻";
-    const userPrompt = [
-      "任务：分析以下数据之间的关联性",
-      `经济指标：${input.indicatorName}，当前值 ${input.value}，环比变化 ${input.changePercent}%`,
-      `相关新闻：${news}`,
-      `时间范围：${input.startDate} 至 ${input.endDate}`,
-      "",
-      "输出要求：",
-      "1. 数据关联性分析（200字以内）",
-      "2. 关键驱动因素（3-5条）",
-      "3. 情绪判断：积极/中性/消极",
-      "4. 潜在影响预测（100字以内）"
-    ].join("\n");
-    const completion = await this.llm.acompletion({
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
-    });
-    const content = completion.choices?.[0]?.message?.content ?? "";
-    return { summary: content, raw: completion };
+  private async runCorrelation(orgId: string, analysisId: string, createdAt: Date, input: CorrelationInput) {
+    const messages = this.prompts.buildCorrelationMessages(input);
+    const { summary, raw } = await this.streamMessages(orgId, analysisId, "correlation", createdAt, messages);
+    return { summary, raw };
   }
 
-  private async runAnomaly(input: AnomalyInput) {
-    const statisticalFindings = this.evaluateSeriesForAnomalies(input.series ?? []);
-    const statsSummary = statisticalFindings.length
-      ? statisticalFindings
-          .map((finding, idx) => {
-            const timestamp =
-              finding.point.timestamp instanceof Date
-                ? finding.point.timestamp.toISOString()
-                : finding.point.timestamp;
-            return `${idx + 1}. ${finding.reason} | 值 ${finding.point.value} @ ${timestamp} (score ${finding.score.toFixed(
-              2
-            )})`;
-          })
-          .join("\n")
-      : "未检测到显著的统计异常";
-    const systemPrompt =
-      "角色：金融数据异常分析专家。优先参考统计检测结果，再结合新闻与政策解释异常的可能原因，并输出可执行洞察。";
-    const news = input.newsList?.length ? input.newsList.map((n, idx) => `${idx + 1}. ${n}`).join("\n") : "无相关新闻";
-    const policies = input.policyList?.length ? input.policyList.map((p, idx) => `${idx + 1}. ${p}`).join("\n") : "无相关政策";
-    const userPrompt = [
-      "任务：解释以下数据异常的可能原因",
-      `指标：${input.metric}`,
-      `异常时间：${input.timestamp}`,
-      `异常值：${input.value}（偏离均值 ${input.deviationPercent}%）`,
-      `同期新闻：${news}`,
-      `相关政策：${policies}`,
-      "统计检测结果：",
-      statsSummary,
-      "",
-      "输出要求：",
-      "1. 异常原因分析（3-5条，按可能性排序）",
-      "2. 每条原因需引用具体新闻或政策依据",
-      "3. 总结（50字以内）"
-    ].join("\n");
-    const completion = await this.llm.acompletion({
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
-    });
-    const content = completion.choices?.[0]?.message?.content ?? "";
-    const summary = statisticalFindings.length ? `统计检测：\n${statsSummary}\n\n${content}` : content;
-    return { summary, raw: completion, statisticalFindings };
+  private async runAnomaly(orgId: string, analysisId: string, createdAt: Date, input: AnomalyInput) {
+    const { messages, statisticalFindings, statsSummary } = this.prompts.buildAnomalyMessages(input);
+    const prefix = statisticalFindings.length ? `统计检测：\n${statsSummary}\n\n` : "";
+    const { summary: content, raw } = await this.streamMessages(orgId, analysisId, "anomaly", createdAt, messages, prefix);
+    return { summary: content, raw, statisticalFindings };
   }
 
-  evaluateSeriesForAnomalies(series: SeriesPoint[]) {
-    const z = detectZScoreAnomalies(series);
-    const spikes = detectRollingSpike(series);
-    const trends = detectTrend(series);
-    const volumes = detectVolumeSpike(series);
-    return [...z, ...spikes, ...trends, ...volumes];
+  private async streamMessages(
+    orgId: string,
+    analysisId: string,
+    type: string,
+    createdAt: Date,
+    messages: LiteLlmMessage[],
+    initialChunk?: string
+  ): Promise<{ summary: string; raw: Record<string, unknown> }> {
+    const flushChars = Math.max(1, Number(this.env.analysisConfig.streamFlushChars ?? 80));
+    const flushMs = Math.max(0, Number(this.env.analysisConfig.streamFlushMs ?? 250));
+
+    let buffer = "";
+    let summary = "";
+    let lastModel: string | undefined;
+    let lastFlushAt = Date.now();
+
+    const flush = async () => {
+      if (!buffer) {
+        return;
+      }
+      const chunk = buffer;
+      buffer = "";
+      summary += chunk;
+      lastFlushAt = Date.now();
+      await this.publish(orgId, analysisId, type, "running", chunk, createdAt);
+    };
+
+    try {
+      if (initialChunk) {
+        buffer += initialChunk;
+        await flush();
+      }
+      for await (const chunk of this.llm.stream({ messages, timeoutMs: this.env.analysisConfig.llmTimeoutMs })) {
+        if (typeof chunk.model === "string") {
+          lastModel = chunk.model;
+        }
+        if (typeof chunk.delta !== "string" || chunk.delta.length === 0) {
+          continue;
+        }
+        buffer += chunk.delta;
+        const now = Date.now();
+        if (buffer.length >= flushChars || now - lastFlushAt >= flushMs) {
+          await flush();
+        }
+      }
+      await flush();
+      return { summary, raw: { stream: true, model: lastModel } };
+    } catch (error) {
+      await flush();
+      const normalized = error instanceof Error ? error : new Error(String(error));
+      (normalized as any).partialSummary = summary;
+      throw normalized;
+    }
   }
 
-  private async publish(orgId: string, id: string, type: string, status: string, summary?: string, createdAt?: Date) {
+  private async publish(
+    orgId: string,
+    id: string,
+    type: string,
+    status: string,
+    summary?: string,
+    createdAt?: Date,
+    error?: string
+  ) {
     await this.pubsub.publish("analysisEvents", {
       orgId,
       result: {
@@ -211,6 +223,7 @@ export class AnalysisService {
         type,
         status,
         summary,
+        error,
         createdAt: (createdAt ?? new Date()).toISOString()
       }
     });
