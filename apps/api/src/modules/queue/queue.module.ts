@@ -9,14 +9,18 @@ import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
 import { QueueEventPublisher } from "./queue-event.publisher";
 import { QueueGateway } from "./queue.gateway";
+import { QueueOrgStatsService } from "./queue-org-stats.service";
+import { QueueOrgStatsTracker } from "./queue-org-stats.tracker";
 import { QueueProcessor } from "./queue.processor";
 import { QueueService } from "./queue.service";
 
-export const PIPELINE_QUEUE = Symbol("PIPELINE_QUEUE");
-export const PIPELINE_DLQ_QUEUE = Symbol("PIPELINE_DLQ_QUEUE");
-export const PIPELINE_QUEUE_EVENTS = Symbol("PIPELINE_QUEUE_EVENTS");
-export const ITEM_PIPELINE_QUEUE_NAME = "itemPipeline";
-export const ITEM_PIPELINE_DLQ_QUEUE_NAME = "itemPipelineDlq";
+import {
+  ITEM_PIPELINE_DLQ_QUEUE_NAME,
+  ITEM_PIPELINE_QUEUE_NAME,
+  PIPELINE_DLQ_QUEUE,
+  PIPELINE_QUEUE,
+  PIPELINE_QUEUE_EVENTS,
+} from "./queue.constants";
 
 @Module({
   imports: [CacheModule, NewsPipelineModule, AuthModule],
@@ -97,6 +101,8 @@ export const ITEM_PIPELINE_DLQ_QUEUE_NAME = "itemPipelineDlq";
     QueueProcessor,
     QueueService,
     QueueEventPublisher,
+    QueueOrgStatsService,
+    QueueOrgStatsTracker,
     QueueGateway
   ],
   exports: [

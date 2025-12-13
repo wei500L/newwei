@@ -127,21 +127,37 @@ export class RbacResolver {
   }
 
   private mapMembership(membership: any): MembershipModel {
+    const roleLinks = Array.isArray(membership?.roles) ? membership.roles : [];
+    const roles = roleLinks.map((link: any) => link.role).filter(Boolean);
+    if (roles.length === 0 && membership?.role) {
+      roles.push(membership.role);
+    }
+
+    const roleIds = (
+      roleLinks.length > 0 ? roleLinks.map((link: any) => link.roleId) : [membership.roleId]
+    ).filter((id: any): id is string => typeof id === "string");
+    const permissions = Array.from(
+      new Set(
+        roles.flatMap((role: any) =>
+          (role.permissions ?? []).map((permission: any) => permission.permission.name)
+        )
+      )
+    );
+
     return {
       id: membership.id,
       orgId: membership.orgId,
       userId: membership.userId,
       role: this.mapRole(membership.role),
+      roles: roles.map((role: any) => this.mapRole(role)),
       user: {
         id: membership.user.id,
         email: membership.user.email,
         firstName: membership.user.firstName,
         lastName: membership.user.lastName,
         orgId: membership.orgId,
-        roleIds: [membership.roleId],
-        permissions: membership.role.permissions.map(
-          (permission: any) => permission.permission.name
-        )
+        roleIds,
+        permissions
       }
     };
   }

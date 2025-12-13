@@ -96,6 +96,9 @@ export class DashboardModel {
   @Field()
   id!: string;
 
+  @Field(() => GraphQLInt)
+  version!: number;
+
   @Field()
   name!: string;
 

@@ -87,6 +87,45 @@ export class AuthService {
     return membership;
   }
 
+  private buildMembershipClaims(membership: any): Pick<AuthenticatedUser, "roleIds" | "permissions"> {
+    const roleIds = new Set<string>();
+    const permissions = new Set<string>();
+
+    const roleLinks = Array.isArray(membership?.roles) ? membership.roles : [];
+    if (roleLinks.length > 0) {
+      for (const link of roleLinks) {
+        if (typeof link?.roleId === "string") {
+          roleIds.add(link.roleId);
+        }
+        const rolePermissions = Array.isArray(link?.role?.permissions) ? link.role.permissions : [];
+        for (const rolePermission of rolePermissions) {
+          const name = rolePermission?.permission?.name;
+          if (typeof name === "string") {
+            permissions.add(name);
+          }
+        }
+      }
+    } else {
+      if (typeof membership?.roleId === "string") {
+        roleIds.add(membership.roleId);
+      }
+      const rolePermissions = Array.isArray(membership?.role?.permissions)
+        ? membership.role.permissions
+        : [];
+      for (const rolePermission of rolePermissions) {
+        const name = rolePermission?.permission?.name;
+        if (typeof name === "string") {
+          permissions.add(name);
+        }
+      }
+    }
+
+    return {
+      roleIds: Array.from(roleIds),
+      permissions: Array.from(permissions)
+    };
+  }
+
   async validateUser(email: string, password: string, orgId?: string): Promise<AuthenticatedUser> {
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -95,6 +134,19 @@ export class AuthService {
           orderBy: { createdAt: "asc" },
           include: {
             org: true,
+            roles: {
+              include: {
+                role: {
+                  include: {
+                    permissions: {
+                      include: {
+                        permission: true
+                      }
+                    }
+                  }
+                }
+              }
+            },
             role: {
               include: {
                 permissions: {
@@ -122,11 +174,7 @@ export class AuthService {
       throw new UnauthorizedException("Organization disabled");
     }
 
-    const permissions = Array.from(
-      new Set(
-        primaryMembership.role.permissions.map((rp) => rp.permission.name)
-      )
-    );
+    const { roleIds, permissions } = this.buildMembershipClaims(primaryMembership);
 
     return {
       id: user.id,
@@ -134,7 +182,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       orgId: primaryMembership.orgId,
-      roleIds: [primaryMembership.roleId],
+      roleIds,
       permissions
     };
   }
@@ -310,6 +358,17 @@ export class AuthService {
           orderBy: { createdAt: "asc" },
           include: {
             org: true,
+            roles: {
+              include: {
+                role: {
+                  include: {
+                    permissions: {
+                      include: { permission: true }
+                    }
+                  }
+                }
+              }
+            },
             role: {
               include: {
                 permissions: {
@@ -325,9 +384,7 @@ export class AuthService {
           throw new UnauthorizedException("Organization disabled");
         }
 
-        const permissions = Array.from(
-          new Set(primaryMembership.role.permissions.map((p) => p.permission.name))
-        );
+        const { roleIds, permissions } = this.buildMembershipClaims(primaryMembership);
 
         const authUser: AuthenticatedUser = {
           id: user.id,
@@ -335,7 +392,7 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           orgId: primaryMembership.orgId,
-          roleIds: [primaryMembership.roleId],
+          roleIds,
           permissions
         };
 
@@ -428,6 +485,17 @@ export class AuthService {
           orderBy: { createdAt: "asc" },
           include: {
             org: true,
+            roles: {
+              include: {
+                role: {
+                  include: {
+                    permissions: {
+                      include: { permission: true }
+                    }
+                  }
+                }
+              }
+            },
             role: {
               include: {
                 permissions: {
@@ -448,9 +516,7 @@ export class AuthService {
           throw new UnauthorizedException("User disabled");
         }
 
-        const permissions = Array.from(
-          new Set(membership.role.permissions.map((perm) => perm.permission.name))
-        );
+        const { roleIds, permissions } = this.buildMembershipClaims(membership);
 
         return {
           id: user.id,
@@ -458,7 +524,7 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           orgId: membership.orgId,
-          roleIds: [membership.roleId],
+          roleIds,
           permissions
         };
       },

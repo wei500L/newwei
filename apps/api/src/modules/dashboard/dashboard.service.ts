@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
 import { QueueService } from "../queue/queue.service";
 import { ProcessedItemModel } from "@modular/mongo";
@@ -32,6 +32,7 @@ export class DashboardService {
     orgId: string,
     input: {
       id?: string;
+      version?: number;
       name: string;
       slug: string;
       description?: string;
@@ -63,19 +64,30 @@ export class DashboardService {
           include: { widgets: true }
         });
         if (!existing || existing.orgId !== orgId) {
-          throw new Error("Dashboard not found");
+          throw new NotFoundException("Dashboard not found");
         }
-        current = await tx.dashboard.update({
-          where: { id: input.id },
+        if (input.version === undefined) {
+          throw new BadRequestException("Dashboard version is required for update");
+        }
+        const updateResult = await tx.dashboard.updateMany({
+          where: { id: input.id, orgId, version: input.version },
           data: {
             name: input.name,
             slug: input.slug,
             description: input.description,
             theme: input.theme,
             config: input.config ?? {},
-            createdById
+            createdById,
+            version: { increment: 1 }
           }
         });
+        if (updateResult.count !== 1) {
+          throw new ConflictException("Dashboard has been updated by another user. Please refresh and retry.");
+        }
+        current = await tx.dashboard.findUnique({ where: { id: input.id } });
+        if (!current) {
+          throw new NotFoundException("Dashboard not found");
+        }
         existingWidgets = existing.widgets;
       } else {
         current = await tx.dashboard.create({
@@ -101,7 +113,7 @@ export class DashboardService {
         const sortOrder = widget.sortOrder ?? index;
         if (widget.id) {
           if (!existingWidgetIds.has(widget.id)) {
-            throw new Error("Widget not found on dashboard");
+            throw new BadRequestException("Widget not found on dashboard");
           }
           incomingWidgetIds.add(widget.id);
           widgetUpdatePromises.push(

@@ -138,7 +138,8 @@ describe("AuthService", () => {
                 permission: { name: "items.read" }
               }
             ]
-          }
+          },
+          roles: []
         }
       ]
     });
@@ -147,6 +148,44 @@ describe("AuthService", () => {
     expect(user.permissions).toContain("items.read");
     expect(user.orgId).toBe("org-1");
     expect(user.roleIds).toEqual(["role-1"]);
+  });
+
+  it("unions permissions across multiple roles in the same org", async () => {
+    const password = await bcrypt.hash("password", 10);
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      passwordHash: password,
+      firstName: "Test",
+      lastName: "User",
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          org: { isActive: true },
+          roleId: "role-primary",
+          role: { permissions: [] },
+          roles: [
+            {
+              roleId: "role-editor",
+              role: {
+                permissions: [{ permission: { name: "items.read" } }]
+              }
+            },
+            {
+              roleId: "role-billing",
+              role: {
+                permissions: [{ permission: { name: "billing.manage" } }]
+              }
+            }
+          ]
+        }
+      ]
+    });
+
+    const user = await service.validateUser("test@example.com", "password", "org-1");
+    expect(user.roleIds).toEqual(["role-editor", "role-billing"]);
+    expect(user.permissions).toEqual(expect.arrayContaining(["items.read", "billing.manage"]));
   });
 
   it("selects the requested organization when validating credentials", async () => {

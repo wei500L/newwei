@@ -14,11 +14,8 @@ import { AlertsModule } from "../alerts/alerts.module";
 import { ALERTS_QUEUE_NAME } from "../alerts/alerts.constants";
 import { EnvService } from "../config/config.service";
 
-import {
-  ITEM_PIPELINE_DLQ_QUEUE_NAME,
-  ITEM_PIPELINE_QUEUE_NAME,
-  QueueModule,
-} from "./queue.module";
+import { ITEM_PIPELINE_DLQ_QUEUE_NAME, ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
+import { QueueModule } from "./queue.module";
 
 const createBullBoardBasicAuthMiddleware = (
   username: string,

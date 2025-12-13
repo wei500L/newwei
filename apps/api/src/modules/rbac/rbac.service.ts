@@ -16,6 +16,17 @@ export class RbacService {
     const membership = await this.prisma.membership.findFirst({
       where: { orgId, userId: actorId },
       include: {
+        roles: {
+          include: {
+            role: {
+              include: {
+                permissions: {
+                  include: { permission: true }
+                }
+              }
+            }
+          }
+        },
         role: {
           include: {
             permissions: {
@@ -28,8 +39,12 @@ export class RbacService {
     if (!membership) {
       throw new ForbiddenException("Actor is not a member of the organization");
     }
+    const roles = membership.roles?.map((link) => link.role).filter(Boolean) ?? [];
+    if (roles.length === 0 && membership.role) {
+      roles.push(membership.role);
+    }
     return new Set(
-      membership.role.permissions.map((rolePermission) => rolePermission.permission.name)
+      roles.flatMap((role) => role.permissions.map((rp) => rp.permission.name))
     );
   }
 
@@ -124,33 +139,66 @@ export class RbacService {
       role.permissions.map((permission) => permission.permission.name)
     );
 
-    const membership = await this.prisma.membership.upsert({
-      where: {
-        userId_orgId: {
+    return this.prisma.$transaction(async (tx) => {
+      const existingMembership = await tx.membership.findUnique({
+        where: {
+          userId_orgId: {
+            userId: dto.userId,
+            orgId
+          }
+        },
+        select: { id: true, roleId: true }
+      });
+
+      const membership = await tx.membership.upsert({
+        where: {
+          userId_orgId: {
+            userId: dto.userId,
+            orgId
+          }
+        },
+        update: {
+          roleId: dto.roleId
+        },
+        create: {
           userId: dto.userId,
+          roleId: dto.roleId,
           orgId
         }
-      },
-      update: {
-        roleId: dto.roleId
-      },
-      create: {
-        userId: dto.userId,
-        roleId: dto.roleId,
-        orgId
-      },
-      include: {
-        user: true,
-        role: {
-          include: {
-            permissions: {
-              include: { permission: true }
+      });
+
+      await tx.membershipRole.createMany({
+        data: Array.from(new Set([existingMembership?.roleId, dto.roleId]))
+          .filter((roleId): roleId is string => typeof roleId === "string")
+          .map((roleId) => ({ membershipId: membership.id, roleId, orgId })),
+        skipDuplicates: true
+      });
+
+      return tx.membership.findUniqueOrThrow({
+        where: { id: membership.id },
+        include: {
+          user: true,
+          role: {
+            include: {
+              permissions: {
+                include: { permission: true }
+              }
+            }
+          },
+          roles: {
+            include: {
+              role: {
+                include: {
+                  permissions: {
+                    include: { permission: true }
+                  }
+                }
+              }
             }
           }
         }
-      }
+      });
     });
-    return membership;
   }
 
   async listMembers(orgId: string) {
@@ -162,6 +210,17 @@ export class RbacService {
           include: {
             permissions: {
               include: { permission: true }
+            }
+          }
+        },
+        roles: {
+          include: {
+            role: {
+              include: {
+                permissions: {
+                  include: { permission: true }
+                }
+              }
             }
           }
         }

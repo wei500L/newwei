@@ -414,6 +414,7 @@ export type DashboardWidgetInput = {
 
 export type UpsertDashboardInput = {
   id?: InputMaybe<string>;
+  version?: InputMaybe<number>;
   name: string;
   slug: string;
   description?: InputMaybe<string>;
@@ -796,6 +797,7 @@ export type DashboardsQuery = {
   dashboards: Array<{
     __typename?: "DashboardModel";
     id: string;
+    version: number;
     name: string;
     slug: string;
     description?: string | null;
@@ -986,6 +988,7 @@ export const DashboardsDocument = gql`
   query Dashboards {
     dashboards {
       id
+      version
       name
       slug
       description

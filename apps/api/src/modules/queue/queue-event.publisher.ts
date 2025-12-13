@@ -3,7 +3,7 @@ import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 import { PubSub } from "graphql-subscriptions";
 
-import { PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS } from "./queue.module";
+import { PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS } from "./queue.constants";
 
 export interface QueueEventPayload {
   event: string;

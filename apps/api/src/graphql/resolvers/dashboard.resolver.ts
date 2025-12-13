@@ -28,6 +28,7 @@ export class DashboardResolver {
     const dashboards = await this.dashboardService.listDashboards(requester.orgId);
     return dashboards.map((dashboard) => ({
       id: dashboard.id,
+      version: dashboard.version,
       name: dashboard.name,
       slug: dashboard.slug,
       description: dashboard.description ?? undefined,
@@ -68,6 +69,7 @@ export class DashboardResolver {
     }
     return {
       id: dashboard.id,
+      version: dashboard.version,
       name: dashboard.name,
       slug: dashboard.slug,
       description: dashboard.description ?? undefined,

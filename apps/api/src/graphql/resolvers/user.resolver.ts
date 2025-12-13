@@ -72,6 +72,17 @@ export class UsersResolver {
         memberships: {
           where: { orgId: requester.orgId },
           include: {
+            roles: {
+              include: {
+                role: {
+                  include: {
+                    permissions: {
+                      include: { permission: true }
+                    }
+                  }
+                }
+              }
+            },
             role: {
               include: {
                 permissions: {
@@ -85,22 +96,51 @@ export class UsersResolver {
     });
 
     return users.map((user) =>
-      this.toGraphQLUser({
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        orgId: user.memberships[0]?.orgId ?? requester.orgId,
-        roleIds: user.memberships.map((membership) => membership.roleId),
-        permissions: Array.from(
-          new Set(
-            user.memberships.flatMap((membership) =>
-              membership.role.permissions.map((permission) => permission.permission.name)
-            )
-          )
-        )
-      })
+      this.toGraphQLUser(this.mapUserMembership(user, requester.orgId))
     );
+  }
+
+  private mapUserMembership(user: any, orgId: string): AuthenticatedUser {
+    const membership = Array.isArray(user.memberships) ? user.memberships[0] : undefined;
+    const roleIds = new Set<string>();
+    const permissions = new Set<string>();
+
+    const roleLinks = Array.isArray(membership?.roles) ? membership.roles : [];
+    if (roleLinks.length > 0) {
+      for (const link of roleLinks) {
+        if (typeof link?.roleId === "string") {
+          roleIds.add(link.roleId);
+        }
+        const rolePermissions = Array.isArray(link?.role?.permissions) ? link.role.permissions : [];
+        for (const rolePermission of rolePermissions) {
+          const name = rolePermission?.permission?.name;
+          if (typeof name === "string") {
+            permissions.add(name);
+          }
+        }
+      }
+    } else if (membership?.role) {
+      if (typeof membership.roleId === "string") {
+        roleIds.add(membership.roleId);
+      }
+      const rolePermissions = Array.isArray(membership.role.permissions) ? membership.role.permissions : [];
+      for (const rolePermission of rolePermissions) {
+        const name = rolePermission?.permission?.name;
+        if (typeof name === "string") {
+          permissions.add(name);
+        }
+      }
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      orgId: membership?.orgId ?? orgId,
+      roleIds: Array.from(roleIds),
+      permissions: Array.from(permissions)
+    };
   }
 
   private toGraphQLUser(user: AuthenticatedUser): UserModel {

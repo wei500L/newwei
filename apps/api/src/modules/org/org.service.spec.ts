@@ -8,12 +8,14 @@ const prismaMock = {
     findUnique: jest.fn(),
     create: jest.fn()
   },
+  membershipRole: {
+    create: jest.fn()
+  },
   org: {
     create: jest.fn(),
     update: jest.fn()
   },
   permission: {
-    upsert: jest.fn(),
     findMany: jest.fn()
   },
   role: {
@@ -82,9 +84,10 @@ describe("OrgService", () => {
       updatedAt: new Date()
     });
 
-    prismaMock.permission.findMany = jest.fn().mockResolvedValue(
-      CORE_PERMISSIONS.map((name) => ({ id: `perm-${name}`, name }))
-    );
+    prismaMock.permission.findMany = jest.fn().mockResolvedValue([
+      ...CORE_PERMISSIONS.map((name) => ({ id: `perm-${name}`, name })),
+      { id: "perm-custom.manage", name: "custom.manage" }
+    ]);
 
     prismaMock.role.create = jest.fn().mockImplementation(async ({ data }: any) => ({
       id: `role-${data.name}`,
@@ -94,6 +97,7 @@ describe("OrgService", () => {
     prismaMock.rolePermission.createMany = jest.fn().mockResolvedValue({ count: 1 });
     prismaMock.role.findFirstOrThrow = jest.fn().mockResolvedValue({ id: "role-admin" });
     prismaMock.membership.create = jest.fn().mockResolvedValue({ id: "membership-1" });
+    prismaMock.membershipRole.create = jest.fn().mockResolvedValue({ membershipId: "membership-1" });
 
     const created = await service.createOrg("user-1", {
       name: "New Org",
@@ -103,6 +107,10 @@ describe("OrgService", () => {
 
     expect(created.id).toBe("org-new");
     expect(prismaMock.role.create).toHaveBeenCalledTimes(DEFAULT_ROLES.length);
+    const adminRolePermissionBatch = prismaMock.rolePermission.createMany.mock.calls[0]?.[0]?.data;
+    expect(adminRolePermissionBatch).toEqual(
+      expect.arrayContaining([{ roleId: "role-admin", permissionId: "perm-custom.manage" }])
+    );
     expect(prismaMock.membership.create).toHaveBeenCalledWith({
       data: {
         userId: "user-1",
@@ -110,7 +118,58 @@ describe("OrgService", () => {
         roleId: "role-admin"
       }
     });
+    expect(prismaMock.membershipRole.create).toHaveBeenCalledWith({
+      data: {
+        membershipId: "membership-1",
+        orgId: "org-new",
+        roleId: "role-admin"
+      }
+    });
     expect(prismaMock.auditLog.create).toHaveBeenCalled();
+  });
+
+  it("creates an organization even when some configured permissions are missing", async () => {
+    prismaMock.org.create = jest.fn().mockResolvedValue({
+      id: "org-new",
+      name: "New Org",
+      slug: "new-org",
+      description: null,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    prismaMock.permission.findMany = jest.fn().mockResolvedValue([
+      { id: "perm-org.read", name: "org.read" }
+    ]);
+
+    prismaMock.role.create = jest.fn().mockImplementation(async ({ data }: any) => ({
+      id: `role-${data.name}`,
+      ...data
+    }));
+
+    prismaMock.rolePermission.createMany = jest.fn().mockResolvedValue({ count: 1 });
+    prismaMock.role.findFirstOrThrow = jest.fn().mockResolvedValue({ id: "role-admin" });
+    prismaMock.membership.create = jest.fn().mockResolvedValue({ id: "membership-1" });
+    prismaMock.membershipRole.create = jest.fn().mockResolvedValue({ membershipId: "membership-1" });
+
+    await expect(
+      service.createOrg("user-1", {
+        name: "New Org",
+        slug: "new-org",
+        description: "hello"
+      })
+    ).resolves.toBeTruthy();
+
+    expect(prismaMock.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({
+            bootstrapWarnings: expect.any(Array)
+          })
+        })
+      })
+    );
   });
 
   it("rejects updates when actor is not a member", async () => {
@@ -120,4 +179,3 @@ describe("OrgService", () => {
     );
   });
 });
-

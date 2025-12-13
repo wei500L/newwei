@@ -1,40 +1,36 @@
 import { TaskLogModel } from "@modular/mongo";
 import { Inject, Injectable } from "@nestjs/common";
-import { Queue, JobsOptions, JobType } from "bullmq";
-import { ensureTraceId, getCurrentTraceId } from "@modular/utils";
+import { Queue, JobsOptions } from "bullmq";
+import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 
-import { PIPELINE_QUEUE, ITEM_PIPELINE_QUEUE_NAME } from "./queue.module";
-
-type TrackedJobStatus = Extract<JobType, "waiting" | "active" | "completed" | "failed" | "delayed">;
+import { ITEM_PIPELINE_QUEUE_NAME, PIPELINE_QUEUE } from "./queue.constants";
+import { QueueOrgStatsService, type TrackedJobStatus } from "./queue-org-stats.service";
 
 @Injectable()
 export class QueueService {
-  constructor(@Inject(PIPELINE_QUEUE) private readonly queue: Queue) {}
+  private readonly logger = createLogger({ name: "queue-service" });
+
+  constructor(
+    @Inject(PIPELINE_QUEUE) private readonly queue: Queue,
+    private readonly orgStats: QueueOrgStatsService,
+  ) {}
 
   /**
-   * BullMQ counters are global; we need to filter by orgId manually.
+   * BullMQ counters are global; we keep org-scoped counters in Redis via QueueEvents.
    */
   private async getOrgJobCounts(orgId: string): Promise<Record<TrackedJobStatus, number>> {
-    const trackedStatuses: TrackedJobStatus[] = ["waiting", "active", "completed", "failed", "delayed"];
-    const jobsByStatus = await Promise.all(
-      trackedStatuses.map((status) => this.queue.getJobs(status, 0, -1, true))
-    );
-
-    return trackedStatuses.reduce<Record<TrackedJobStatus, number>>(
-      (counts, status, index) => {
-        counts[status] = jobsByStatus[index].filter(
-          (job) => (job.data as { orgId?: string }).orgId === orgId
-        ).length;
-        return counts;
-      },
-      { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 }
-    );
+    try {
+      return await this.orgStats.getCounts(orgId);
+    } catch (error) {
+      this.logger.error({ orgId, error }, "Failed to load org queue counters");
+      return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
+    }
   }
 
   async enqueueItem(orgId: string, itemMetaId: string, rawItemId: string, opts: JobsOptions = {}) {
     const jobId = `${itemMetaId}:${rawItemId}`;
     const traceId = ensureTraceId(getCurrentTraceId());
-    return this.queue.add(
+    const job = await this.queue.add(
       "process-item",
       { itemMetaId, rawItemId, orgId, traceId },
       {
@@ -46,6 +42,20 @@ export class QueueService {
         ...opts
       }
     );
+
+    const delay = typeof opts.delay === "number" ? opts.delay : 0;
+    const status: TrackedJobStatus = delay > 0 ? "delayed" : "waiting";
+    const removeOnComplete = (opts.removeOnComplete ?? true) as unknown;
+    const removeOnFail = (opts.removeOnFail ?? false) as unknown;
+    const keepCompleted = removeOnComplete !== true;
+    const keepFailed = removeOnFail !== true;
+    try {
+      await this.orgStats.upsertJobMetaAndCount({ jobId, orgId, status, keepCompleted, keepFailed });
+    } catch (error) {
+      this.logger.warn({ jobId, orgId, error }, "Failed to record initial org queue counters");
+    }
+
+    return job;
   }
 
   async stats(orgId: string) {

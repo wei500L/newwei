@@ -196,6 +196,7 @@ export function DashboardEditor({
                 onClick={async () => {
                   const payload: UpsertDashboardInput = {
                     id: dashboard?.id,
+                    version: dashboard?.version ?? undefined,
                     name,
                     slug,
                     description: description ?? undefined,
@@ -215,8 +216,14 @@ export function DashboardEditor({
                       options: widget.options ?? {},
                     })),
                   };
-                  await onSave(payload);
-                  message.success("Dashboard saved");
+                  try {
+                    await onSave(payload);
+                    message.success("Dashboard saved");
+                  } catch (error: unknown) {
+                    const errorMessage =
+                      error instanceof Error ? error.message : "Unable to persist dashboard";
+                    message.error(errorMessage);
+                  }
                 }}
               >
                 Save

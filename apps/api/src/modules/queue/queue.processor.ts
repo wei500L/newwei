@@ -21,7 +21,7 @@ import {
   ITEM_PIPELINE_QUEUE_NAME,
   PIPELINE_DLQ_QUEUE,
   PIPELINE_QUEUE,
-} from "./queue.module";
+} from "./queue.constants";
 import {
   classifyQueueError,
   QueueErrorKind,

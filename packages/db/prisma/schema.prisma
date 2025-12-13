@@ -20,6 +20,7 @@ model Org {
   updatedAt   DateTime     @updatedAt
 
   memberships Membership[]
+  membershipRoles MembershipRole[]
   roles       Role[]
   auditLogs   AuditLog[]
   items       ItemMeta[]
@@ -65,6 +66,7 @@ model Role {
   orgId       String
   permissions RolePermission[]
   memberships Membership[]
+  membershipRoles MembershipRole[]
 
   @@unique([id, orgId])
   @@unique([orgId, name])
@@ -95,10 +97,26 @@ model Membership {
   orgId     String
   role      Role   @relation(fields: [roleId, orgId], references: [id, orgId])
   roleId    String
+  roles     MembershipRole[]
   createdAt DateTime @default(now())
 
   @@index([roleId, orgId])
+  @@unique([id, orgId])
   @@unique([userId, orgId])
+}
+
+model MembershipRole {
+  membership   Membership @relation(fields: [membershipId, orgId], references: [id, orgId], onDelete: Cascade)
+  membershipId String
+  org          Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId        String
+  role         Role       @relation(fields: [roleId, orgId], references: [id, orgId], onDelete: Cascade)
+  roleId       String
+  createdAt    DateTime   @default(now())
+
+  @@id([membershipId, roleId])
+  @@index([orgId, membershipId])
+  @@index([orgId, roleId])
 }
 
 model AuditLog {
@@ -334,6 +352,7 @@ model Dashboard {
   config      Json?
   createdBy   User?             @relation("DashboardCreatedBy", fields: [createdById], references: [id])
   createdById String?
+  version     Int               @default(1)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 

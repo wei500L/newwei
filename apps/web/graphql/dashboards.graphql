@@ -1,6 +1,7 @@
 query Dashboards {
   dashboards {
     id
+    version
     name
     slug
     description

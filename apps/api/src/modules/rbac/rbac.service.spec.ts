@@ -19,8 +19,13 @@ const prismaMock = {
   },
   membership: {
     findFirst: jest.fn(),
+    findUnique: jest.fn(),
     upsert: jest.fn(),
-    findMany: jest.fn()
+    findMany: jest.fn(),
+    findUniqueOrThrow: jest.fn()
+  },
+  membershipRole: {
+    createMany: jest.fn()
   }
 } as unknown as any;
 
@@ -35,13 +40,7 @@ describe("RbacService", () => {
     jest.resetAllMocks();
     prismaMock.$transaction = jest
       .fn()
-      .mockImplementation(async (handler: any) =>
-        handler({
-          permission: prismaMock.permission,
-          role: prismaMock.role,
-          rolePermission: prismaMock.rolePermission
-        })
-      );
+      .mockImplementation(async (handler: any) => handler(prismaMock));
     actionRateLimitMock.enforceRbacWrite = jest.fn().mockResolvedValue(true);
     prismaMock.membership.findFirst = jest.fn().mockResolvedValue({
       id: "membership-actor",
@@ -121,7 +120,34 @@ describe("RbacService", () => {
   });
 
   it("enforces rate limit on role assignments", async () => {
+    prismaMock.membership.findUnique = jest.fn().mockResolvedValue(null);
     prismaMock.membership.upsert = jest.fn().mockResolvedValue({ id: "membership-1" });
+    prismaMock.membershipRole.createMany = jest.fn().mockResolvedValue({ count: 1 });
+    prismaMock.membership.findUniqueOrThrow = jest.fn().mockResolvedValue({
+      id: "membership-1",
+      orgId: "org-1",
+      userId: "user-2",
+      roleId: "role-9",
+      user: { id: "user-2", email: "user@example.com", firstName: "User", lastName: "Two" },
+      role: {
+        id: "role-9",
+        name: "admin",
+        isSystem: false,
+        permissions: [{ permission: { id: "perm-items-read", name: "items.read" } }]
+      },
+      roles: [
+        {
+          orgId: "org-1",
+          roleId: "role-9",
+          role: {
+            id: "role-9",
+            name: "admin",
+            isSystem: false,
+            permissions: [{ permission: { id: "perm-items-read", name: "items.read" } }]
+          }
+        }
+      ]
+    });
     await service.assignRole("org-1", "admin-1", { userId: "user-2", roleId: "role-9" });
     expect(actionRateLimitMock.enforceRbacWrite).toHaveBeenCalledWith("org-1", "admin-1");
     expect(prismaMock.role.findFirst).toHaveBeenCalledWith({
@@ -133,6 +159,10 @@ describe("RbacService", () => {
       }
     });
     expect(prismaMock.membership.upsert).toHaveBeenCalled();
+    expect(prismaMock.membershipRole.createMany).toHaveBeenCalledWith({
+      data: [{ membershipId: "membership-1", roleId: "role-9", orgId: "org-1" }],
+      skipDuplicates: true
+    });
   });
 
   it("rejects assigning roles outside the organization", async () => {

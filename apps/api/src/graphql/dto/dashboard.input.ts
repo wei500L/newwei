@@ -43,6 +43,9 @@ export class UpsertDashboardInput {
   @Field({ nullable: true })
   id?: string;
 
+  @Field(() => Int, { nullable: true })
+  version?: number;
+
   @Field()
   name!: string;
 

@@ -49,6 +49,10 @@ export class MembershipModel {
   role!: RoleModel;
 
   @HasPermission("users.read")
+  @Field(() => [RoleModel])
+  roles!: RoleModel[];
+
+  @HasPermission("users.read")
   @Field(() => UserModel)
   user!: UserModel;
 }

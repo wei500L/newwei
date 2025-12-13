@@ -387,7 +387,6 @@ export function DashboardContent() {
                 onSave={async (input) => {
                   await saveDashboard({ variables: { input } });
                   await refetchDashboards();
-                  message.success("Dashboard saved");
                 }}
                 onDelete={
                   activeDashboard?.id
