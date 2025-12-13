@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
 import { QueueService } from "../queue/queue.service";
 import { CreateItemDto } from "./dto/create-item.dto";
@@ -67,7 +68,12 @@ export class ItemsService {
         data: { mongoRef: rawItem.id }
       });
 
-      await tx.auditLog.create({
+      return { itemMeta, rawItem };
+    });
+
+    void writeAuditLogBestEffort(
+      this.prisma,
+      {
         data: {
           orgId,
           actorId: userId,
@@ -75,10 +81,9 @@ export class ItemsService {
           action: "create",
           metadata: { ...dto, payload }
         }
-      });
-
-      return { itemMeta, rawItem };
-    });
+      },
+      { orgId, actorId: userId, resource: "item", action: "create" }
+    ).catch(() => undefined);
 
     await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
 
@@ -214,16 +219,6 @@ export class ItemsService {
         enqueueRef = raw.id;
       }
 
-      await tx.auditLog.create({
-        data: {
-          orgId,
-          actorId: userId,
-          resource: "item",
-          action: "update",
-          metadata: normalizedPayload ? { ...dto, payload: normalizedPayload } : dto
-        }
-      });
-
       return {
         ...updatedMeta,
         mongoRef: newRawRef
@@ -233,6 +228,20 @@ export class ItemsService {
     if (enqueueRef) {
       await this.queueService.enqueueItem(orgId, existing.id, enqueueRef);
     }
+
+    void writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId: userId,
+          resource: "item",
+          action: "update",
+          metadata: normalizedPayload ? { ...dto, payload: normalizedPayload } : dto
+        }
+      },
+      { orgId, actorId: userId, resource: "item", action: "update" }
+    ).catch(() => undefined);
 
     return updated;
   }

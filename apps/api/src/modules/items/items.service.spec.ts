@@ -52,6 +52,9 @@ describe("ItemsService", () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
       auditLog: {
         create: jest.fn().mockRejectedValue(new Error("audit down"))
+      },
+      auditLogOutbox: {
+        create: jest.fn().mockResolvedValue({ id: "outbox-1" })
       }
     } as any;
 

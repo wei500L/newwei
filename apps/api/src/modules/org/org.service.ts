@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { DEFAULT_ROLES } from "@modular/config";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
 
 export type OrgListItem = {
@@ -155,15 +156,19 @@ export class OrgService {
         metadata.bootstrapWarnings = bootstrapWarnings;
       }
 
-      await tx.auditLog.create({
-        data: {
-          orgId: createdOrg.id,
-          actorId,
-          resource: "org",
-          action: "create",
-          metadata
-        }
-      });
+      await writeAuditLogBestEffort(
+        tx,
+        {
+          data: {
+            orgId: createdOrg.id,
+            actorId,
+            resource: "org",
+            action: "create",
+            metadata
+          }
+        },
+        { orgId: createdOrg.id, actorId, resource: "org", action: "create" }
+      );
 
       return createdOrg;
     });
@@ -215,20 +220,24 @@ export class OrgService {
       data
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        orgId,
-        actorId,
-        resource: "org",
-        action: "update",
-        metadata: {
-          name: typeof input.name === "string" ? input.name.trim() : undefined,
-          slug: typeof input.slug === "string" ? input.slug.trim().toLowerCase() : undefined,
-          description:
-            typeof input.description !== "undefined" ? input.description ?? null : undefined
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId,
+          resource: "org",
+          action: "update",
+          metadata: {
+            name: typeof input.name === "string" ? input.name.trim() : undefined,
+            slug: typeof input.slug === "string" ? input.slug.trim().toLowerCase() : undefined,
+            description:
+              typeof input.description !== "undefined" ? input.description ?? null : undefined
+          }
         }
-      }
-    });
+      },
+      { orgId, actorId, resource: "org", action: "update" }
+    );
 
     return {
       id: updated.id,
@@ -250,15 +259,20 @@ export class OrgService {
       data: { isActive }
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        orgId: normalizedOrgId,
-        actorId,
-        resource: "org",
-        action: isActive ? "enable" : "disable",
-        metadata: { isActive }
-      }
-    });
+    const auditAction = isActive ? "enable" : "disable";
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId: normalizedOrgId,
+          actorId,
+          resource: "org",
+          action: auditAction,
+          metadata: { isActive }
+        }
+      },
+      { orgId: normalizedOrgId, actorId, resource: "org", action: auditAction }
+    );
 
     return {
       id: updated.id,

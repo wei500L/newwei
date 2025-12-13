@@ -11,6 +11,7 @@ import { RateLimitConfigService } from "../system-settings/rate-limit-config.ser
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 import { AuthCacheSettingsService } from "./auth-cache-settings.service";
 import { OrgService } from "../org/org.service";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 
 export interface JwtPayload {
   sub: string;
@@ -285,16 +286,20 @@ export class AuthService {
       data: { lastLoginAt: new Date() }
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        orgId: user.orgId,
-        actorId: user.id,
-        resource: "auth",
-        action: "login",
-        metadata: { email },
-        ipAddress
-      }
-    });
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId: user.orgId,
+          actorId: user.id,
+          resource: "auth",
+          action: "login",
+          metadata: { email },
+          ipAddress
+        }
+      },
+      { orgId: user.orgId, actorId: user.id, resource: "auth", action: "login" }
+    );
 
     const organizations = await this.orgService.listOrganizationOptionsForUser(user.id);
     return {
@@ -462,14 +467,18 @@ export class AuthService {
     });
 
     if (membership) {
-      await this.prisma.auditLog.create({
-        data: {
-          orgId: membership.orgId,
-          actorId: userId,
-          resource: "auth",
-          action: "logout"
-        }
-      });
+      await writeAuditLogBestEffort(
+        this.prisma,
+        {
+          data: {
+            orgId: membership.orgId,
+            actorId: userId,
+            resource: "auth",
+            action: "logout"
+          }
+        },
+        { orgId: membership.orgId, actorId: userId, resource: "auth", action: "logout" }
+      );
     }
   }
 

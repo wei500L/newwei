@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from "@nestjs/comm
 import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../config/prisma.service";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { EnvService } from "../config/config.service";
 import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 import { clampResultLimit, coerceDate, normalizeKeywords } from "./crawl.utils";
@@ -111,19 +112,23 @@ export class CrawlTaskService {
       include: { _count: { select: { results: true } } }
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        orgId,
-        actorId: userId,
-        resource: "crawlTask",
-        action: "create",
-        metadata: {
-          targetUrl: dto.url,
-          keywords,
-          concurrency
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId: userId,
+          resource: "crawlTask",
+          action: "create",
+          metadata: {
+            targetUrl: dto.url,
+            keywords,
+            concurrency
+          }
         }
-      }
-    });
+      },
+      { orgId, actorId: userId, resource: "crawlTask", action: "create" }
+    );
 
     await this.queueService.enqueueTask(created.id, orgId, userId);
     await this.prisma.crawlTask.update({ where: { id: created.id }, data: { status: "queued" } });
@@ -159,18 +164,22 @@ export class CrawlTaskService {
           }
         }
       });
-      await tx.auditLog.create({
-        data: {
-          orgId,
-          actorId: userId,
-          resource: "crawlTask",
-          action: "delete",
-          metadata: {
-            taskId,
-            deletedResultCount: resultIds.length
+      await writeAuditLogBestEffort(
+        tx,
+        {
+          data: {
+            orgId,
+            actorId: userId,
+            resource: "crawlTask",
+            action: "delete",
+            metadata: {
+              taskId,
+              deletedResultCount: resultIds.length
+            }
           }
-        }
-      });
+        },
+        { orgId, actorId: userId, resource: "crawlTask", action: "delete" }
+      );
     });
 
     return { taskId, deletedResultCount: resultIds.length };
@@ -264,15 +273,19 @@ export class CrawlTaskService {
     });
     await this.queueService.enqueueTask(id, orgId, userId);
 
-    await this.prisma.auditLog.create({
-      data: {
-        orgId,
-        actorId: userId,
-        resource: "crawlTask",
-        action: "retry",
-        metadata: { id }
-      }
-    });
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId: userId,
+          resource: "crawlTask",
+          action: "retry",
+          metadata: { id }
+        }
+      },
+      { orgId, actorId: userId, resource: "crawlTask", action: "retry" }
+    );
 
     const refreshed = await this.prisma.crawlTask.findFirst({
       where: { id, orgId },

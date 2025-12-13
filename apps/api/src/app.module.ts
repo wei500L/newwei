@@ -14,6 +14,7 @@ import { AkshareModule } from "./modules/akshare/akshare.module";
 import { AlertsModule } from "./modules/alerts/alerts.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { AuditModule } from "./modules/audit/audit.module";
 import { CacheModule } from "./modules/cache/cache.module";
 import { ConfigModule } from "./modules/config/config.module";
 import { DatabaseModule } from "./modules/config/database.module";
@@ -51,6 +52,7 @@ import { WebSocketModule } from "./modules/websocket/websocket.module";
     QueueModule,
     QueueAdminModule,
     AuthModule,
+    AuditModule,
     RbacModule,
     ItemsModule,
     EmailModule,

@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 
 export interface NewsPromptConfig {
   version: string;
@@ -72,17 +73,21 @@ export class NewsPromptConfigService {
         description: PROMPT_CONFIG_DESCRIPTION
       }
     });
-    await this.prisma.auditLog.create({
-      data: {
-        orgId,
-        actorId,
-        resource: "news_pipeline_prompt",
-        action: "update",
-        metadata: {
-          version: normalized.version
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId,
+          resource: "news_pipeline_prompt",
+          action: "update",
+          metadata: {
+            version: normalized.version
+          }
         }
-      }
-    });
+      },
+      { orgId, actorId, resource: "news_pipeline_prompt", action: "update" }
+    );
     return normalized;
   }
 

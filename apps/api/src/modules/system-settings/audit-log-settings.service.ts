@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 
 const AUDIT_LOG_RETENTION_KEY = "audit_log_retention_days";
 const MIN_RETENTION_DAYS = 1;
@@ -27,21 +28,23 @@ export class AuditLogSettingsService {
 
   async updateRetentionDays(orgId: string, actorId: string, days: number): Promise<number> {
     const normalized = this.normalize(days);
-    await this.prisma.$transaction([
-      this.prisma.systemSetting.upsert({
-        where: { key: AUDIT_LOG_RETENTION_KEY },
-        update: {
-          value: normalized,
-          updatedById: actorId
-        },
-        create: {
-          key: AUDIT_LOG_RETENTION_KEY,
-          value: normalized,
-          updatedById: actorId,
-          description: "Audit log retention in days"
-        }
-      }),
-      this.prisma.auditLog.create({
+    await this.prisma.systemSetting.upsert({
+      where: { key: AUDIT_LOG_RETENTION_KEY },
+      update: {
+        value: normalized,
+        updatedById: actorId
+      },
+      create: {
+        key: AUDIT_LOG_RETENTION_KEY,
+        value: normalized,
+        updatedById: actorId,
+        description: "Audit log retention in days"
+      }
+    });
+
+    void writeAuditLogBestEffort(
+      this.prisma,
+      {
         data: {
           orgId,
           actorId,
@@ -49,8 +52,10 @@ export class AuditLogSettingsService {
           action: "audit_log_retention_update",
           metadata: { retentionDays: normalized }
         }
-      })
-    ]);
+      },
+      { orgId, actorId, resource: "system_settings", action: "audit_log_retention_update" }
+    ).catch(() => undefined);
+
     this.cache = normalized;
     this.cacheExpiresAt = Date.now() + this.cacheTtlMs;
     return normalized;

@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
 import { CacheService } from "../cache/cache.service";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 
 export interface AuthCacheSettings {
   profileTtlSeconds: number;
@@ -43,21 +44,23 @@ export class AuthCacheSettingsService {
 
   async updateSettings(orgId: string, actorId: string, input: AuthCacheSettings) {
     const normalized = this.normalize(input);
-    await this.prisma.$transaction([
-      this.prisma.systemSetting.upsert({
-        where: { key: AUTH_CACHE_SETTINGS_KEY },
-        update: {
-          value: normalized,
-          updatedById: actorId
-        },
-        create: {
-          key: AUTH_CACHE_SETTINGS_KEY,
-          value: normalized,
-          updatedById: actorId,
-          description: "Auth profile cache settings"
-        }
-      }),
-      this.prisma.auditLog.create({
+    await this.prisma.systemSetting.upsert({
+      where: { key: AUTH_CACHE_SETTINGS_KEY },
+      update: {
+        value: normalized,
+        updatedById: actorId
+      },
+      create: {
+        key: AUTH_CACHE_SETTINGS_KEY,
+        value: normalized,
+        updatedById: actorId,
+        description: "Auth profile cache settings"
+      }
+    });
+
+    void writeAuditLogBestEffort(
+      this.prisma,
+      {
         data: {
           orgId,
           actorId,
@@ -65,8 +68,10 @@ export class AuthCacheSettingsService {
           action: "auth_cache_settings_update",
           metadata: normalized
         }
-      })
-    ]);
+      },
+      { orgId, actorId, resource: "system_settings", action: "auth_cache_settings_update" }
+    ).catch(() => undefined);
+
     await this.cache.set(AUTH_CACHE_SETTINGS_CACHE_KEY, normalized, 60);
     return normalized;
   }

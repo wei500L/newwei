@@ -5,6 +5,7 @@ import { TaskLogModel } from "@modular/mongo";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
 import { CacheService } from "../cache/cache.service";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { CrawlQueueService } from "./crawl-queue.service";
 
@@ -180,19 +181,23 @@ export class CrawlTaskJanitorService {
     await Promise.all(
       Object.entries(byOrg).map(async ([orgId, ids]) => {
         try {
-          await this.prisma.auditLog.create({
-            data: {
-              orgId,
-              actorId: null,
-              resource: "crawlTask",
-              action: "auto_fail_stale",
-              metadata: {
-                kind,
-                message,
-                taskIds: ids
+          await writeAuditLogBestEffort(
+            this.prisma,
+            {
+              data: {
+                orgId,
+                actorId: null,
+                resource: "crawlTask",
+                action: "auto_fail_stale",
+                metadata: {
+                  kind,
+                  message,
+                  taskIds: ids
+                }
               }
-            }
-          });
+            },
+            { orgId, resource: "crawlTask", action: "auto_fail_stale" }
+          );
         } catch (error) {
           logger.warn({ orgId, err: error }, "Failed to write crawl stale-task audit log");
         }

@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 
 export interface CrawlClientSettings {
   healthCheckTtlMs: number;
@@ -54,8 +55,12 @@ export class CrawlSettingsService {
           updatedById: actorId,
           description: "Crawl client runtime settings"
         }
-      }),
-      this.prisma.auditLog.create({
+      })
+    ]);
+
+    void writeAuditLogBestEffort(
+      this.prisma,
+      {
         data: {
           orgId,
           actorId,
@@ -63,8 +68,10 @@ export class CrawlSettingsService {
           action: "crawl_client_settings_update",
           metadata: normalized
         }
-      })
-    ]);
+      },
+      { orgId, actorId, resource: "system_settings", action: "crawl_client_settings_update" }
+    ).catch(() => undefined);
+
     return normalized;
   }
 

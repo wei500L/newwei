@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
 import { CacheService } from "../cache/cache.service";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 
 export type RateLimitBucket = "login" | "crawlCreate" | "rbacWrite";
 
@@ -84,15 +85,19 @@ export class RateLimitConfigService {
         })
       )
     );
-    await this.prisma.auditLog.create({
-      data: {
-        orgId,
-        actorId,
-        resource: "system_settings",
-        action: "rate_limit_update",
-        metadata: normalized
-      }
-    });
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId,
+          resource: "system_settings",
+          action: "rate_limit_update",
+          metadata: normalized
+        }
+      },
+      { orgId, actorId, resource: "system_settings", action: "rate_limit_update" }
+    );
     await this.cache.set(RATE_LIMIT_CACHE_KEY, normalized, this.cacheTtlSeconds);
     return normalized;
   }
