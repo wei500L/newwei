@@ -160,8 +160,7 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
         },
         lastServerMemoryMb: 420.5,
         lastPeakMemoryMb: 950.2,
-        lastMemoryEfficiency: 78.4
-        },
+        lastMemoryEfficiency: 78.4,
         timeRangeFrom: new Date(Date.now() - 1000 * 60 * 60 * 24),
         timeRangeTo: new Date(),
         runCount: 0
