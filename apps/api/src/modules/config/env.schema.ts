@@ -39,6 +39,8 @@ export const apiEnvSchema = baseEnvSchema.extend({
   WS_CONNECT_RATE_LIMIT_PER_IP: z.coerce.number().int().positive().default(60),
   WS_CONNECT_RATE_LIMIT_PER_USER: z.coerce.number().int().positive().default(30),
   WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+  WS_REDIS_ADAPTER_ENABLED: z.coerce.boolean().default(true),
+  WS_REDIS_ADAPTER_KEY: z.string().min(1).default("socket.io"),
   CRAWL4AI_BASE_URL: z.string().url(),
   CRAWL4AI_API_KEY: z.string().optional(),
   CRAWL4AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),

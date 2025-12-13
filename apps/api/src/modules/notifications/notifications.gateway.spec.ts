@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 
 import type { AuthenticatedUser } from "../auth/auth.service";
 import { NotificationsGateway } from "./notifications.gateway";
+import { UserSessionManager } from "../websocket/user-session-manager.service";
 
 jest.mock("@modular/utils", () => {
   const actual = jest.requireActual("@modular/utils");
@@ -30,7 +31,35 @@ function createToken(userId: string, orgId: string) {
   );
 }
 
-function createClient(params: { id: string; token: string; ip?: string }) {
+function createFakeServer() {
+  const rooms = new Map<string, Set<string>>();
+  const emit = jest.fn();
+
+  return {
+    addToRooms(socketId: string, roomList: string[]) {
+      for (const room of roomList) {
+        const set = rooms.get(room) ?? new Set<string>();
+        set.add(socketId);
+        rooms.set(room, set);
+      }
+    },
+    removeSocket(socketId: string) {
+      for (const set of rooms.values()) {
+        set.delete(socketId);
+      }
+    },
+    in(room: string) {
+      return {
+        allSockets: async () => new Set(rooms.get(room) ?? [])
+      };
+    },
+    to() {
+      return { emit };
+    }
+  } as any;
+}
+
+function createClient(server: ReturnType<typeof createFakeServer>, params: { id: string; token: string; ip?: string }) {
   const ip = params.ip ?? "127.0.0.1";
   return {
     id: params.id,
@@ -44,9 +73,13 @@ function createClient(params: { id: string; token: string; ip?: string }) {
       query: {},
       address: ip
     },
-    join: jest.fn().mockResolvedValue(undefined),
+    join: jest.fn(async (rooms: string[]) => {
+      server.addToRooms(params.id, rooms);
+    }),
     emit: jest.fn(),
-    disconnect: jest.fn()
+    disconnect: jest.fn(() => {
+      server.removeSocket(params.id);
+    })
   } as any;
 }
 
@@ -77,23 +110,23 @@ describe("NotificationsGateway", () => {
     const authService = { getUserProfile: jest.fn().mockResolvedValue(profile) } as any;
     const accessTokenBlacklist = { has: jest.fn().mockResolvedValue(false) } as any;
     const dispatcher = { registerListener: jest.fn() } as any;
+    const sessions = new UserSessionManager(env as any);
 
-    const gateway = new NotificationsGateway(env, authService, accessTokenBlacklist, dispatcher);
+    const gateway = new NotificationsGateway(env, authService, accessTokenBlacklist, dispatcher, sessions);
+    const server = createFakeServer();
+    (gateway as any).server = server;
     const token = createToken(profile.id, profile.orgId);
 
-    const client1 = createClient({ id: "s1", token });
+    const client1 = createClient(server, { id: "s1", token });
     await gateway.handleConnection(client1);
     expect(client1.join).toHaveBeenCalledTimes(1);
     expect(client1.disconnect).not.toHaveBeenCalled();
 
-    const client2 = createClient({ id: "s2", token });
+    const client2 = createClient(server, { id: "s2", token });
     await gateway.handleConnection(client2);
     expect(client2.join).not.toHaveBeenCalled();
     expect(client2.emit).toHaveBeenCalledWith("notification:error", { message: "Too many connections" });
     expect(client2.disconnect).toHaveBeenCalledWith(true);
-
-    const connectionsByUserId = (gateway as any).connectionsByUserId as Map<string, Set<string>>;
-    expect(connectionsByUserId.get(profile.id)?.size).toBe(1);
   });
 
   it("rate limits connection attempts per IP", async () => {
@@ -122,15 +155,18 @@ describe("NotificationsGateway", () => {
     const authService = { getUserProfile: jest.fn().mockResolvedValue(profile) } as any;
     const accessTokenBlacklist = { has: jest.fn().mockResolvedValue(false) } as any;
     const dispatcher = { registerListener: jest.fn() } as any;
+    const sessions = new UserSessionManager(env as any);
 
-    const gateway = new NotificationsGateway(env, authService, accessTokenBlacklist, dispatcher);
+    const gateway = new NotificationsGateway(env, authService, accessTokenBlacklist, dispatcher, sessions);
+    const server = createFakeServer();
+    (gateway as any).server = server;
     const token = createToken(profile.id, profile.orgId);
 
-    const client1 = createClient({ id: "s1", token, ip: "10.0.0.1" });
+    const client1 = createClient(server, { id: "s1", token, ip: "10.0.0.1" });
     await gateway.handleConnection(client1);
     expect(client1.disconnect).not.toHaveBeenCalled();
 
-    const client2 = createClient({ id: "s2", token, ip: "10.0.0.1" });
+    const client2 = createClient(server, { id: "s2", token, ip: "10.0.0.1" });
     await gateway.handleConnection(client2);
     expect(client2.emit).toHaveBeenCalledWith("notification:error", { message: "Too many connection attempts" });
     expect(client2.disconnect).toHaveBeenCalledWith(true);
@@ -152,20 +188,19 @@ describe("NotificationsGateway", () => {
     const authService = { getUserProfile: jest.fn() } as any;
     const accessTokenBlacklist = { has: jest.fn() } as any;
     const dispatcher = { registerListener: jest.fn() } as any;
+    const sessions = new UserSessionManager(env as any);
 
-    const gateway = new NotificationsGateway(env, authService, accessTokenBlacklist, dispatcher);
+    const gateway = new NotificationsGateway(env, authService, accessTokenBlacklist, dispatcher, sessions);
 
     const socket1 = { id: "s1", disconnect: jest.fn() };
     const socket2 = { id: "s2", disconnect: jest.fn() };
     (gateway as any).server = { sockets: new Map([["s1", socket1], ["s2", socket2]]) };
     const unsubscribe = jest.fn();
     (gateway as any).unsubscribe = unsubscribe;
-    (gateway as any).connectionsByUserId.set("user-1", new Set(["s1"]));
 
     await gateway.onModuleDestroy();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
     expect(socket1.disconnect).toHaveBeenCalledWith(true);
     expect(socket2.disconnect).toHaveBeenCalledWith(true);
-    expect(((gateway as any).connectionsByUserId as Map<string, Set<string>>).size).toBe(0);
   });
 });

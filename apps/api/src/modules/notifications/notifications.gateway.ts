@@ -4,6 +4,7 @@ import { WebSocketGateway, WebSocketServer, OnGatewayConnection, OnGatewayDiscon
 import { AccessTokenBlacklistService } from "../auth/access-token-blacklist.service";
 import { AuthService, AuthenticatedUser, JwtPayload } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
+import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { NotificationDispatcher, NotificationEvent } from "./notification.dispatcher";
 import { verify } from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
@@ -28,8 +29,6 @@ export class NotificationsGateway
 
   private readonly logger = createLogger({ name: "notifications-gateway" });
   private unsubscribe?: () => void;
-  private readonly connectionsByUserId = new Map<string, Set<string>>();
-  private readonly connectionsByIp = new Map<string, Set<string>>();
   private readonly connectAttemptsByIp = new Map<string, RateLimitState>();
   private readonly connectAttemptsByUserId = new Map<string, RateLimitState>();
 
@@ -37,7 +36,8 @@ export class NotificationsGateway
     private readonly env: EnvService,
     private readonly authService: AuthService,
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
-    private readonly dispatcher: NotificationDispatcher
+    private readonly dispatcher: NotificationDispatcher,
+    private readonly sessions: UserSessionManager
   ) {}
 
   onModuleInit() {
@@ -65,8 +65,6 @@ export class NotificationsGateway
       }
     }
 
-    this.connectionsByUserId.clear();
-    this.connectionsByIp.clear();
     this.connectAttemptsByIp.clear();
     this.connectAttemptsByUserId.clear();
   }
@@ -97,24 +95,11 @@ export class NotificationsGateway
       client.data.user = profile;
       client.data.clientIp = ip;
 
-      this.registerConnection(profile.id, client.id);
-      if (ip) {
-        this.registerIpConnection(ip, client.id);
-      }
-
-      const { maxConnectionsPerUser, maxConnectionsPerIp } = this.env.webSocketSecurity;
-      const userConnections = this.connectionsByUserId.get(profile.id)?.size ?? 0;
-      if (userConnections > maxConnectionsPerUser) {
-        throw new Error("Too many connections");
-      }
-      if (ip) {
-        const ipConnections = this.connectionsByIp.get(ip)?.size ?? 0;
-        if (ipConnections > maxConnectionsPerIp) {
-          throw new Error("Too many connections");
-        }
-      }
-
-      await client.join([this.orgRoom(profile.orgId), this.userRoom(profile.id)]);
+      const { userConnections } = await this.sessions.register(this.server, client, {
+        userId: profile.id,
+        orgId: profile.orgId,
+        ip
+      });
       client.emit("notification:connected", { orgId: profile.orgId, userId: profile.id });
       this.logger.info(
         { socketId: client.id, orgId: profile.orgId, userId: profile.id, ip, userConnections },
@@ -149,11 +134,11 @@ export class NotificationsGateway
     if (!this.server) {
       return;
     }
-    const rooms = [this.orgRoom(event.orgId)];
     if (event.userId) {
-      rooms.push(this.userRoom(event.userId));
+      this.sessions.emitToUser(this.server, event.userId, "notification", event);
+      return;
     }
-    this.server.to(rooms).emit("notification", event);
+    this.sessions.emitToOrg(this.server, event.orgId, "notification", event);
   }
 
   private verifyToken(token: string): JwtPayload {
@@ -210,41 +195,8 @@ export class NotificationsGateway
     }
   }
 
-  private registerConnection(userId: string, socketId: string) {
-    const sockets = this.connectionsByUserId.get(userId) ?? new Set<string>();
-    sockets.add(socketId);
-    this.connectionsByUserId.set(userId, sockets);
-  }
-
-  private registerIpConnection(ip: string, socketId: string) {
-    const sockets = this.connectionsByIp.get(ip) ?? new Set<string>();
-    sockets.add(socketId);
-    this.connectionsByIp.set(ip, sockets);
-  }
-
   private unregisterClient(client: Socket) {
-    const socketId = client.id;
-    const profile = client.data?.user as AuthenticatedUser | undefined;
-    if (profile?.id) {
-      const sockets = this.connectionsByUserId.get(profile.id);
-      if (sockets) {
-        sockets.delete(socketId);
-        if (sockets.size === 0) {
-          this.connectionsByUserId.delete(profile.id);
-        }
-      }
-    }
-
-    const ip = client.data?.clientIp as string | undefined;
-    if (ip) {
-      const sockets = this.connectionsByIp.get(ip);
-      if (sockets) {
-        sockets.delete(socketId);
-        if (sockets.size === 0) {
-          this.connectionsByIp.delete(ip);
-        }
-      }
-    }
+    this.sessions.unregister(client);
   }
 
   private extractClientIp(client: Socket) {
@@ -302,14 +254,6 @@ export class NotificationsGateway
         }
       });
     return allowed.length === 0 || allowed.includes(origin);
-  }
-
-  private orgRoom(orgId: string) {
-    return `org:${orgId}`;
-  }
-
-  private userRoom(userId: string) {
-    return `user:${userId}`;
   }
 
   private getConnectedSockets(): Socket[] {

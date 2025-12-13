@@ -11,6 +11,7 @@ import { AppModule } from "./app.module";
 import { createLogger } from "@modular/utils";
 import pkg from "../package.json" assert { type: "json" };
 import { EnvService } from "./modules/config/config.service";
+import { RedisIoAdapter } from "./common/websocket/redis-io.adapter";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -58,6 +59,13 @@ async function bootstrap() {
   app.use(json({ limit: "10mb" }));
   app.use(urlencoded({ extended: true }));
   const env = app.get(EnvService);
+
+  if (env.webSocketRedisAdapter.enabled) {
+    const redisIoAdapter = new RedisIoAdapter(app, env);
+    await redisIoAdapter.connectToRedis();
+    app.useWebSocketAdapter(redisIoAdapter);
+  }
+
   const corsOrigin =
     env.graphqlConfig.corsOrigin?.split(",").map((origin) => origin.trim()).filter(Boolean) ?? true;
   app.enableCors({

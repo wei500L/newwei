@@ -7,6 +7,7 @@ import { Server, Socket } from "socket.io";
 import { AccessTokenBlacklistService } from "../auth/access-token-blacklist.service";
 import { AuthService, AuthenticatedUser, JwtPayload } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
+import { UserSessionManager } from "../websocket/user-session-manager.service";
 
 import { QueueEventPayload, QueueEventPublisher } from "./queue-event.publisher";
 
@@ -29,6 +30,7 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     private readonly authService: AuthService,
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
     private readonly queueEvents: QueueEventPublisher,
+    private readonly sessions: UserSessionManager,
   ) {}
 
   onModuleInit() {
@@ -45,6 +47,7 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   }
 
   async handleConnection(client: Socket) {
+    const ip = this.extractClientIp(client);
     try {
       if (!this.isOriginAllowed(this.extractOrigin(client))) {
         throw new Error("Origin not allowed");
@@ -59,22 +62,38 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       }
 
       client.data.user = profile;
-      await client.join([this.orgRoom(profile.orgId), this.userRoom(profile.id)]);
+      client.data.clientIp = ip;
+
+      const { userConnections } = await this.sessions.register(this.server, client, {
+        userId: profile.id,
+        orgId: profile.orgId,
+        ip
+      });
       client.emit("queue:connected", { orgId: profile.orgId, userId: profile.id });
-      this.logger.info({ socketId: client.id, orgId: profile.orgId, userId: profile.id }, "Queue socket connected");
+      this.logger.info(
+        { socketId: client.id, orgId: profile.orgId, userId: profile.id, ip, userConnections },
+        "Queue socket connected"
+      );
     } catch (error) {
+      this.sessions.unregister(client);
       this.logger.warn(
-        { socketId: client.id, error: error instanceof Error ? error.message : String(error) },
+        { socketId: client.id, ip, error: error instanceof Error ? error.message : String(error) },
         "Queue socket authentication failed",
       );
-      client.emit("queue:error", { message: "Unauthorized" });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const responseMessage = errorMessage === "Too many connections" ? "Too many connections" : "Unauthorized";
+      client.emit("queue:error", { message: responseMessage });
       client.disconnect(true);
     }
   }
 
   handleDisconnect(client: Socket) {
     const profile = client.data?.user as AuthenticatedUser | undefined;
-    this.logger.info({ socketId: client.id, userId: profile?.id, orgId: profile?.orgId }, "Queue socket disconnected");
+    this.sessions.unregister(client);
+    this.logger.info(
+      { socketId: client.id, userId: profile?.id, orgId: profile?.orgId, ip: client.data?.clientIp },
+      "Queue socket disconnected",
+    );
   }
 
   private verifyToken(token: string): JwtPayload {
@@ -176,7 +195,12 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     return `org:${orgId}`;
   }
 
-  private userRoom(userId: string) {
-    return `user:${userId}`;
+  private extractClientIp(client: Socket) {
+    const forwardedHeader = client.handshake.headers["x-forwarded-for"];
+    const forwarded = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
+    const ipFromForwarded = forwarded?.split(",")[0]?.trim();
+    const address = typeof client.handshake.address === "string" ? client.handshake.address : undefined;
+    const detectedIp = ipFromForwarded || address;
+    return detectedIp ? detectedIp.replace(/^::ffff:/, "") : undefined;
   }
 }

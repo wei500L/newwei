@@ -57,6 +57,11 @@ export interface WebSocketSecurityConfig {
   connectRateLimitWindowSeconds: number;
 }
 
+export interface WebSocketRedisAdapterConfig {
+  enabled: boolean;
+  key: string;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -172,6 +177,13 @@ export class EnvService extends ConfigService<ApiEnv> {
       connectRateLimitPerUser: this.get<number>("WS_CONNECT_RATE_LIMIT_PER_USER", { infer: true }) ?? 30,
       connectRateLimitWindowSeconds:
         this.get<number>("WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS", { infer: true }) ?? 60
+    };
+  }
+
+  get webSocketRedisAdapter(): WebSocketRedisAdapterConfig {
+    return {
+      enabled: this.get<boolean>("WS_REDIS_ADAPTER_ENABLED", { infer: true }) ?? true,
+      key: this.get<string>("WS_REDIS_ADAPTER_KEY", { infer: true }) ?? "socket.io"
     };
   }
 

@@ -28,6 +28,7 @@ import { RbacModule } from "./modules/rbac/rbac.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { ObservabilityModule } from "./modules/observability/observability.module";
+import { WebSocketModule } from "./modules/websocket/websocket.module";
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { ObservabilityModule } from "./modules/observability/observability.modul
     SystemSettingsModule,
     NotificationsModule,
     ObservabilityModule,
+    WebSocketModule,
     ApiGraphqlModule,
     HealthModule
   ],
