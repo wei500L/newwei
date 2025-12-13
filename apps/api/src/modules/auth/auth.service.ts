@@ -520,7 +520,10 @@ export class AuthService {
           throw new UnauthorizedException("Organization disabled");
         }
 
-        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user) {
+          throw new UnauthorizedException("Invalid access token");
+        }
         if (!user.isActive) {
           throw new UnauthorizedException("User disabled");
         }

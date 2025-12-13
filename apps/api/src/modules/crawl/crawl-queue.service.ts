@@ -1,11 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { Job, Queue } from "bullmq";
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
-import { CRAWL_QUEUE, CRAWL_QUEUE_NAME } from "./crawl.constants";
+import { CRAWL_QUEUE } from "./crawl.constants";
 import type { CrawlJobData } from "./crawl.types";
 import { CrawlSettingsService } from "./crawl-settings.service";
 
 const logger = createLogger({ name: "crawl-queue-service" });
+
+function isJobLockedRemovalError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("locked by another worker");
+}
 
 @Injectable()
 export class CrawlQueueService {
@@ -37,22 +41,42 @@ export class CrawlQueueService {
   }
 
   async removeQueuedJobs(taskId: string) {
-    const jobs = await this.crawlQueue.getJobs([
-      "waiting",
-      "delayed",
-      "active",
-      "failed"
-    ], 0, 200);
-    const matching = jobs.filter((job) => job.data?.taskId === taskId);
-    await Promise.all(
-      matching.map(async (job: Job) => {
-        try {
-          await job.remove();
-        } catch (error) {
-          logger.warn({ taskId, jobId: job.id, err: error }, "Failed to remove queued crawl job");
-        }
-      })
-    );
+    const states = ["waiting", "delayed", "failed", "paused"] as const;
+    const scanLimit = 5_000;
+    const pageSize = 200;
+
+    for (let start = 0; start < scanLimit; start += pageSize) {
+      const end = Math.min(scanLimit - 1, start + pageSize - 1);
+      const jobs = await this.crawlQueue.getJobs([...states], start, end);
+      const matching = jobs.filter((job) => job.data?.taskId === taskId);
+      await Promise.all(
+        matching.map(async (job: Job) => {
+          try {
+            await job.remove();
+          } catch (error) {
+            if (isJobLockedRemovalError(error)) {
+              return;
+            }
+
+            let state: string | undefined;
+            try {
+              state = await job.getState();
+            } catch {
+              state = undefined;
+            }
+
+            logger.warn(
+              { taskId, jobId: job.id, state, err: error },
+              "Failed to remove queued crawl job"
+            );
+          }
+        })
+      );
+
+      if (jobs.length < pageSize) {
+        break;
+      }
+    }
   }
 
   async getPendingJobCount(): Promise<number> {

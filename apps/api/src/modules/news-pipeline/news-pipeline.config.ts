@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
-import { existsSync, readFileSync, unwatchFile, watchFile } from "node:fs";
+import { existsSync, readFileSync, watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
 
@@ -94,34 +94,23 @@ interface PipelineConfigFile {
 export class NewsPipelineConfigService implements OnModuleDestroy {
   private readonly logger = new Logger(NewsPipelineConfigService.name);
   private readonly configPath: string;
-  private watcherAttached = false;
-  private readonly watcherHandler: () => void;
+  private configWatcher?: FSWatcher;
+  private reloadTimer?: ReturnType<typeof setTimeout>;
   private currentConfig: NewsPipelineConfig;
 
   constructor(private readonly env: EnvService) {
     this.configPath = this.resolveConfigPath(env.newsPipelineEnv.configPath);
     this.currentConfig = this.loadFromDisk();
-    this.watcherHandler = () => {
-      try {
-        this.currentConfig = this.loadFromDisk();
-        this.logger.log(
-          `Reloaded news pipeline config from ${this.configPath}`,
-        );
-      } catch (error) {
-        this.logger.error(
-          "Failed to reload news pipeline config",
-          error as Error,
-        );
-      }
-    };
     this.registerWatcherIfExists();
   }
 
   onModuleDestroy() {
-    if (this.watcherAttached) {
-      unwatchFile(this.configPath, this.watcherHandler);
-      this.watcherAttached = false;
+    if (this.reloadTimer) {
+      clearTimeout(this.reloadTimer);
+      this.reloadTimer = undefined;
     }
+    this.configWatcher?.close();
+    this.configWatcher = undefined;
   }
 
   get config(): NewsPipelineConfig {
@@ -144,14 +133,58 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
   }
 
   private registerWatcherIfExists() {
+    const configDir = path.dirname(this.configPath);
+    if (!existsSync(configDir)) {
+      this.logger.warn(
+        `News pipeline config directory missing at ${configDir}; skipping config watch.`,
+      );
+      return;
+    }
+
     if (!existsSync(this.configPath)) {
       this.logger.warn(
         `News pipeline config file missing at ${this.configPath}; using defaults/ENV overrides.`,
       );
+    }
+
+    const targetFile = path.basename(this.configPath);
+    this.configWatcher = watch(
+      configDir,
+      { persistent: false },
+      (eventType, filename) => {
+        const observed = filename?.toString();
+        if (observed) {
+          if (observed !== targetFile) {
+            return;
+          }
+        } else if (!existsSync(this.configPath)) {
+          return;
+        }
+        this.scheduleReload(eventType);
+      },
+    );
+    this.configWatcher.on("error", (error) => {
+      this.logger.error("News pipeline config watcher error", error as Error);
+    });
+  }
+
+  private scheduleReload(eventType: string) {
+    if (eventType !== "change" && eventType !== "rename") {
       return;
     }
-    watchFile(this.configPath, { interval: 5_000 }, this.watcherHandler);
-    this.watcherAttached = true;
+    if (this.reloadTimer) {
+      clearTimeout(this.reloadTimer);
+    }
+    this.reloadTimer = setTimeout(() => this.reloadFromDisk(), 200);
+  }
+
+  private reloadFromDisk() {
+    try {
+      this.currentConfig = this.loadFromDisk();
+      this.logger.log(`Reloaded news pipeline config from ${this.configPath}`);
+    } catch (error) {
+      this.logger.error("Failed to reload news pipeline config", error as Error);
+    }
   }
 
   private loadFromDisk(): NewsPipelineConfig {

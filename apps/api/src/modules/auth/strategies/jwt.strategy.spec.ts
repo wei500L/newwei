@@ -82,8 +82,9 @@ describe("JwtStrategy", () => {
     ).rejects.toThrow("User disabled");
   });
 
-  it("maps Prisma not-found errors to UnauthorizedException", async () => {
-    authServiceMock.getUserProfile = jest.fn().mockRejectedValue({ code: "P2025" });
+  it("does not special-case Prisma error codes", async () => {
+    const prismaError = { code: "P2025" };
+    authServiceMock.getUserProfile = jest.fn().mockRejectedValue(prismaError);
     const strategy = new JwtStrategy(envMock, authServiceMock, accessTokenBlacklistMock);
 
     await expect(
@@ -92,7 +93,7 @@ describe("JwtStrategy", () => {
         orgId: "org-1",
         permissions: []
       })
-    ).rejects.toThrow("Invalid access token");
+    ).rejects.toBe(prismaError);
   });
 
   it("does not swallow unexpected errors", async () => {
@@ -109,4 +110,3 @@ describe("JwtStrategy", () => {
     ).rejects.toBe(error);
   });
 });
-

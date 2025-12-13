@@ -15,7 +15,7 @@ interface NormalizedMetadataConfig {
   source: CrawlMetadataSource;
   domain?: string;
   urls?: string[];
-  pattern?: RegExp;
+  patternMatcher?: (url: string) => boolean;
   maxUrls: number;
   includeJsonLd: boolean;
   includeOpenGraph: boolean;
@@ -33,6 +33,8 @@ interface FetchResponse {
 
 @Injectable()
 export class CrawlMetadataService {
+  private static readonly MAX_PATTERN_LENGTH = 512;
+  private static readonly MAX_WILDCARDS = 32;
   private readonly parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "",
@@ -62,7 +64,7 @@ export class CrawlMetadataService {
     const source: CrawlMetadataSource = input.source === "urls" ? "urls" : "sitemap";
     const domain = this.normalizeDomain(input.domain);
     const urls = this.normalizeUrlList(input.urls);
-    const pattern = this.normalizePattern(input.pattern);
+    const patternMatcher = this.normalizePattern(input.pattern);
     const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
     const includeJsonLd = input.extractJsonLd ?? true;
     const includeOpenGraph = input.extractOpenGraph ?? true;
@@ -85,7 +87,7 @@ export class CrawlMetadataService {
       source,
       domain,
       urls,
-      pattern,
+      patternMatcher,
       maxUrls,
       includeJsonLd,
       includeOpenGraph,
@@ -145,14 +147,65 @@ export class CrawlMetadataService {
     if (!trimmed) {
       return undefined;
     }
-    const escaped = trimmed.replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&");
-    const regexSource = `^${escaped.replace(/\*/g, ".*").replace(/\?/g, ".")}$`;
-    try {
-      return new RegExp(regexSource, "i");
-    } catch (error) {
-      logger.warn({ pattern, error }, "Invalid metadata pattern");
+
+    if (trimmed.length > CrawlMetadataService.MAX_PATTERN_LENGTH) {
+      logger.warn(
+        { patternLength: trimmed.length },
+        "Rejected metadata pattern: exceeds max length"
+      );
       return undefined;
     }
+
+    const wildcardCount = (trimmed.match(/[\*\?]/g) ?? []).length;
+    if (wildcardCount > CrawlMetadataService.MAX_WILDCARDS) {
+      logger.warn(
+        { wildcardCount },
+        "Rejected metadata pattern: exceeds max wildcard count"
+      );
+      return undefined;
+    }
+
+    const normalizedPattern = trimmed.toLowerCase();
+    return (url: string) => this.wildcardMatch(normalizedPattern, url.toLowerCase());
+  }
+
+  private wildcardMatch(pattern: string, input: string) {
+    let patternIndex = 0;
+    let inputIndex = 0;
+    let starIndex = -1;
+    let matchIndex = 0;
+
+    while (inputIndex < input.length) {
+      const patternChar = patternIndex < pattern.length ? pattern[patternIndex] : undefined;
+
+      if (patternChar === "?" || patternChar === input[inputIndex]) {
+        patternIndex += 1;
+        inputIndex += 1;
+        continue;
+      }
+
+      if (patternChar === "*") {
+        starIndex = patternIndex;
+        matchIndex = inputIndex;
+        patternIndex += 1;
+        continue;
+      }
+
+      if (starIndex !== -1) {
+        patternIndex = starIndex + 1;
+        matchIndex += 1;
+        inputIndex = matchIndex;
+        continue;
+      }
+
+      return false;
+    }
+
+    while (patternIndex < pattern.length && pattern[patternIndex] === "*") {
+      patternIndex += 1;
+    }
+
+    return patternIndex === pattern.length;
   }
 
   private clampNumber(value: number | undefined, min: number, max: number, fallback: number) {
@@ -228,7 +281,7 @@ export class CrawlMetadataService {
         if (!loc) {
           continue;
         }
-        if (this.shouldIncludeUrl(loc, config.pattern) && collected.size < config.maxUrls) {
+        if (this.shouldIncludeUrl(loc, config.patternMatcher) && collected.size < config.maxUrls) {
           collected.add(loc);
         }
       }
@@ -253,11 +306,11 @@ export class CrawlMetadataService {
     }
   }
 
-  private shouldIncludeUrl(url: string, pattern?: RegExp) {
-    if (!pattern) {
+  private shouldIncludeUrl(url: string, patternMatcher?: (url: string) => boolean) {
+    if (!patternMatcher) {
       return true;
     }
-    return pattern.test(url);
+    return patternMatcher(url);
   }
 
   private joinUrl(origin: string, path: string) {

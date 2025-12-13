@@ -1,4 +1,45 @@
-import { Schema, model, models } from "mongoose";
+import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
+
+const ProcessedItemErrorSchema = new Schema(
+  {
+    message: { type: String, required: true },
+    name: { type: String },
+    stack: { type: String }
+  },
+  { _id: false }
+);
+
+const ProcessedItemEntitySchema = new Schema(
+  {
+    name: { type: String, required: true },
+    type: { type: String, required: true },
+    confidence: { type: Number, required: true, min: 0, max: 1 }
+  },
+  { _id: false }
+);
+
+const ProcessedItemResultSchema = new Schema(
+  {
+    title: { type: String, default: null },
+    subtitle: { type: String, default: null },
+    author: { type: String, default: null },
+    source: { type: String, default: null },
+    published_at: { type: String, default: null },
+    language: { type: String, default: null },
+    location: { type: String, default: null },
+    category: { type: String, default: null },
+    topics: { type: [String], default: [] },
+    summary: { type: String, default: null },
+    key_points: { type: [String], default: [] },
+    entities: { type: [ProcessedItemEntitySchema], default: [] },
+    cleaned_markdown: { type: String, required: true },
+    removed_noise_types: { type: [String], default: [] },
+    quality_score: { type: Number, min: 0, max: 1, default: null },
+    llm_model: { type: String, default: null },
+    llm_prompt_version: { type: String, default: null }
+  },
+  { _id: false }
+);
 
 const ProcessedItemSchema = new Schema(
   {
@@ -11,8 +52,8 @@ const ProcessedItemSchema = new Schema(
       default: "pending",
     },
     tags: { type: [String], default: [] },
-    result: Schema.Types.Mixed,
-    error: Schema.Types.Mixed,
+    result: { type: ProcessedItemResultSchema, default: undefined },
+    error: { type: ProcessedItemErrorSchema, default: undefined },
     llm: {
       model: { type: String },
       promptVersion: { type: String },
@@ -28,11 +69,23 @@ const ProcessedItemSchema = new Schema(
   },
 );
 
-export const ProcessedItemModel =
-  models.ProcessedItem || model("ProcessedItem", ProcessedItemSchema);
+ProcessedItemSchema.pre("validate", function (next) {
+  const doc = this as unknown as { status?: string; result?: unknown; error?: unknown };
+  if (doc.status === "completed" && !doc.result) {
+    next(new Error("ProcessedItem.result is required when status is completed"));
+    return;
+  }
+  if (doc.status === "failed" && !doc.error) {
+    next(new Error("ProcessedItem.error is required when status is failed"));
+    return;
+  }
+  next();
+});
 
-export type ProcessedItemDocument = typeof ProcessedItemModel extends infer T
-  ? T extends { prototype: infer P }
-    ? P
-    : never
-  : never;
+export const ProcessedItemModel =
+  (models.ProcessedItem as Model<ProcessedItem> | undefined) ||
+  model<ProcessedItem>("ProcessedItem", ProcessedItemSchema);
+
+export type ProcessedItem = InferSchemaType<typeof ProcessedItemSchema>;
+
+export type ProcessedItemDocument = HydratedDocument<ProcessedItem>;

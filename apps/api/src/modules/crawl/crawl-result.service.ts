@@ -506,13 +506,55 @@ export class CrawlResultService {
     kind: string,
     item: CrawlMediaItem
   ): CrawlStoredMediaAsset | undefined {
-    const match = dataUri.match(/^data:(.*?);base64,(.+)$/);
-    if (!match) {
+    const maxBytes = this.mediaConfig.maxBytes;
+    if (maxBytes <= 0) {
       return undefined;
     }
-    const [, mime, payload] = match;
+
+    const maxDataUriChars = 1024 + this.maxBase64PayloadLength(maxBytes);
+    if (dataUri.length > maxDataUriChars) {
+      logger.debug(
+        { kind, length: dataUri.length, max: maxDataUriChars },
+        "Skipped inline media asset exceeding max length"
+      );
+      return undefined;
+    }
+
+    const commaIndex = dataUri.indexOf(",");
+    if (commaIndex < 0) {
+      return undefined;
+    }
+
+    const meta = dataUri.slice("data:".length, commaIndex);
+    const payload = dataUri.slice(commaIndex + 1);
+    const metaParts = meta.split(";");
+    const isBase64 = metaParts.some((part) => part.trim().toLowerCase() === "base64");
+    if (!isBase64) {
+      return undefined;
+    }
+    const mime = metaParts[0]?.trim() ?? "";
+
+    const estimatedBytes = this.estimateBase64DecodedBytes(payload);
+    if (!estimatedBytes) {
+      return undefined;
+    }
+    if (estimatedBytes > maxBytes) {
+      logger.debug(
+        { kind, estimatedBytes, maxBytes },
+        "Skipped inline media asset exceeding max bytes"
+      );
+      return undefined;
+    }
+
     try {
       const buffer = Buffer.from(payload, "base64");
+      if (buffer.length > maxBytes) {
+        logger.debug(
+          { kind, size: buffer.length, maxBytes },
+          "Skipped inline media asset exceeding max bytes"
+        );
+        return undefined;
+      }
       return {
         id: hashMarkdown(`${dataUri.slice(0, 64)}:${buffer.length}`),
         kind,
@@ -533,6 +575,59 @@ export class CrawlResultService {
       logger.warn({ error }, "Failed to parse inline media asset");
       return undefined;
     }
+  }
+
+  private maxBase64PayloadLength(maxBytes: number): number {
+    return Math.ceil(maxBytes / 3) * 4;
+  }
+
+  private estimateBase64DecodedBytes(payload: string): number | undefined {
+    let effectiveLength = 0;
+    let sawValidChar = false;
+
+    for (let idx = 0; idx < payload.length; idx += 1) {
+      const code = payload.charCodeAt(idx);
+      if (this.isWhitespaceCharCode(code)) {
+        continue;
+      }
+      sawValidChar = true;
+      if (
+        (code >= 65 && code <= 90) || // A-Z
+        (code >= 97 && code <= 122) || // a-z
+        (code >= 48 && code <= 57) || // 0-9
+        code === 43 || // +
+        code === 47 || // /
+        code === 61 // =
+      ) {
+        effectiveLength += 1;
+        continue;
+      }
+      return undefined;
+    }
+
+    if (!sawValidChar || effectiveLength === 0) {
+      return undefined;
+    }
+
+    let padding = 0;
+    for (let idx = payload.length - 1; idx >= 0; idx -= 1) {
+      const code = payload.charCodeAt(idx);
+      if (this.isWhitespaceCharCode(code)) {
+        continue;
+      }
+      if (code === 61 && padding < 2) {
+        padding += 1;
+        continue;
+      }
+      break;
+    }
+
+    const decoded = Math.floor((effectiveLength * 3) / 4) - padding;
+    return decoded > 0 ? decoded : undefined;
+  }
+
+  private isWhitespaceCharCode(code: number): boolean {
+    return code === 9 || code === 10 || code === 13 || code === 32;
   }
 
   private async fetchMediaAsset(
@@ -823,4 +918,3 @@ export class CrawlResultService {
     return String(value);
   }
 }
-

@@ -500,4 +500,19 @@ describe("AuthService", () => {
       UnauthorizedException
     );
   });
+
+  it("treats missing users as unauthorized when loading profiles", async () => {
+    prismaMock.membership.findMany = jest.fn().mockResolvedValue([
+      {
+        orgId: "org-1",
+        org: { isActive: true },
+        roleId: "role-1",
+        role: { permissions: [] },
+        roles: []
+      }
+    ]);
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue(null);
+
+    await expect(service.getUserProfile("user-1", "org-1")).rejects.toThrow("Invalid access token");
+  });
 });

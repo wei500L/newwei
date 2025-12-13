@@ -29,6 +29,8 @@ type CrawlTaskRecord = Prisma.CrawlTaskGetPayload<{
   };
 }>;
 
+type CrawlTaskOptionsInput = NonNullable<CreateCrawlTaskDto["options"]>;
+
 @Injectable()
 export class CrawlTaskService {
   constructor(
@@ -43,6 +45,9 @@ export class CrawlTaskService {
   async createTask(orgId: string, userId: string, dto: CreateCrawlTaskDto) {
     await this.actionRateLimit.enforceCrawlTaskCreate(orgId, userId);
 
+    const rawOptions = dto.options ?? undefined;
+    const normalizedRawOptions = await this.normalizeActorOptions(orgId, userId, rawOptions);
+
     const keywords = normalizeKeywords(dto.keywords);
     const timeRangeFrom = coerceDate(dto.timeRangeFrom);
     const timeRangeTo = coerceDate(dto.timeRangeTo);
@@ -51,31 +56,33 @@ export class CrawlTaskService {
     }
 
     const normalizedOptions = this.executionService.normalizeOptions({
-      includeImages: dto.options?.includeImages,
-      storeMedia: dto.options?.storeMedia,
-      onlyMainContent: dto.options?.onlyMainContent,
-      extractLinks: dto.options?.extractLinks,
-      scanFullPage: dto.options?.scanFullPage,
-      adjustViewportToContent: dto.options?.adjustViewportToContent,
-      scrollDelayMs: dto.options?.scrollDelayMs,
-      enableUndetectedBrowser: dto.options?.enableUndetectedBrowser,
-      enableStealthMode: dto.options?.enableStealthMode,
-      useManagedBrowser: dto.options?.useManagedBrowser,
-      userDataDir: dto.options?.userDataDir,
-      simulateUser: dto.options?.simulateUser,
-      overrideNavigator: dto.options?.overrideNavigator,
-      sessionId: dto.options?.sessionId,
-      storageState: dto.options?.storageState,
-      proxyUrl: dto.options?.proxyUrl,
-      proxyConfig: dto.options?.proxyConfig,
-      additionalUrls: dto.options?.additionalUrls,
-      multiUrlConfigs: dto.options?.multiUrlConfigs,
-      markdownOptions: dto.options?.markdownOptions,
-      markdownFilter: dto.options?.markdownFilter,
-      markdownStrategy: dto.options?.markdownStrategy,
-      cleanMarkdown: dto.options?.cleanMarkdown,
-      scoreLinks: dto.options?.scoreLinks,
-      linkPreview: dto.options?.linkPreview
+      includeImages: normalizedRawOptions?.includeImages,
+      storeMedia: normalizedRawOptions?.storeMedia,
+      onlyMainContent: normalizedRawOptions?.onlyMainContent,
+      extractLinks: normalizedRawOptions?.extractLinks,
+      scanFullPage: normalizedRawOptions?.scanFullPage,
+      adjustViewportToContent: normalizedRawOptions?.adjustViewportToContent,
+      scrollDelayMs: normalizedRawOptions?.scrollDelayMs,
+      enableUndetectedBrowser: normalizedRawOptions?.enableUndetectedBrowser,
+      enableStealthMode: normalizedRawOptions?.enableStealthMode,
+      useManagedBrowser: normalizedRawOptions?.useManagedBrowser,
+      userDataDir: normalizedRawOptions?.userDataDir,
+      simulateUser: normalizedRawOptions?.simulateUser,
+      overrideNavigator: normalizedRawOptions?.overrideNavigator,
+      jsCode: normalizedRawOptions?.jsCode,
+      jsOnly: normalizedRawOptions?.jsOnly,
+      sessionId: normalizedRawOptions?.sessionId,
+      storageState: normalizedRawOptions?.storageState,
+      proxyUrl: normalizedRawOptions?.proxyUrl,
+      proxyConfig: normalizedRawOptions?.proxyConfig,
+      additionalUrls: normalizedRawOptions?.additionalUrls,
+      multiUrlConfigs: normalizedRawOptions?.multiUrlConfigs,
+      markdownOptions: normalizedRawOptions?.markdownOptions,
+      markdownFilter: normalizedRawOptions?.markdownFilter,
+      markdownStrategy: normalizedRawOptions?.markdownStrategy,
+      cleanMarkdown: normalizedRawOptions?.cleanMarkdown,
+      scoreLinks: normalizedRawOptions?.scoreLinks,
+      linkPreview: normalizedRawOptions?.linkPreview
     });
 
     const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
@@ -329,5 +336,96 @@ export class CrawlTaskService {
     return value
       .map((entry) => (typeof entry === "string" ? entry : null))
       .filter((entry): entry is string => Boolean(entry));
+  }
+
+  private shouldRestrictJsExecution(options?: CrawlTaskOptionsInput | null): boolean {
+    if (!options) {
+      return false;
+    }
+    if (Array.isArray(options.jsCode) && options.jsCode.length > 0) {
+      return true;
+    }
+    if (options.jsOnly) {
+      return true;
+    }
+    const multiUrlConfigs = Array.isArray(options.multiUrlConfigs) ? options.multiUrlConfigs : [];
+    for (const config of multiUrlConfigs) {
+      const overrides = config?.options;
+      if (!overrides) {
+        continue;
+      }
+      if (Array.isArray(overrides.jsCode) && overrides.jsCode.length > 0) {
+        return true;
+      }
+      if (overrides.jsOnly) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private stripJsExecutionOptions(options: CrawlTaskOptionsInput): CrawlTaskOptionsInput {
+    const sanitized: CrawlTaskOptionsInput = {
+      ...options,
+      jsCode: undefined,
+      jsOnly: undefined
+    };
+    if (!Array.isArray(options.multiUrlConfigs) || options.multiUrlConfigs.length === 0) {
+      return sanitized;
+    }
+    sanitized.multiUrlConfigs = options.multiUrlConfigs.map((config) => {
+      if (!config?.options) {
+        return config;
+      }
+      return {
+        ...config,
+        options: {
+          ...config.options,
+          jsCode: undefined,
+          jsOnly: undefined
+        }
+      };
+    });
+    return sanitized;
+  }
+
+  private async isActorAdmin(orgId: string, userId: string): Promise<boolean> {
+    const membership = await this.prisma.membership.findUnique({
+      where: {
+        userId_orgId: {
+          orgId,
+          userId
+        }
+      },
+      select: {
+        role: { select: { name: true } },
+        roles: { select: { role: { select: { name: true } } } }
+      }
+    });
+    if (!membership) {
+      return false;
+    }
+    if (membership.role.name === "admin") {
+      return true;
+    }
+    return membership.roles.some((link) => link.role.name === "admin");
+  }
+
+  private async normalizeActorOptions(
+    orgId: string,
+    userId: string,
+    options?: CrawlTaskOptionsInput | null
+  ): Promise<CrawlTaskOptionsInput | undefined> {
+    if (!options) {
+      return undefined;
+    }
+    if (!this.shouldRestrictJsExecution(options)) {
+      return options;
+    }
+    const isAdmin = await this.isActorAdmin(orgId, userId);
+    if (isAdmin) {
+      return options;
+    }
+    return this.stripJsExecutionOptions(options);
   }
 }
