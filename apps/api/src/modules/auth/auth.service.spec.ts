@@ -192,6 +192,75 @@ describe("AuthService", () => {
     expect(user.roleIds).toEqual(["role-2"]);
   });
 
+  it("requires an organization when validating credentials for multi-org users", async () => {
+    const password = await bcrypt.hash("password", 10);
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      passwordHash: password,
+      firstName: "Test",
+      lastName: "User",
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          org: { isActive: true },
+          roleId: "role-1",
+          role: {
+            permissions: [{ permission: { name: "items.read" } }]
+          }
+        },
+        {
+          orgId: "org-2",
+          org: { isActive: true },
+          roleId: "role-2",
+          role: {
+            permissions: [{ permission: { name: "items.write" } }]
+          }
+        }
+      ]
+    });
+
+    await expect(service.validateUser("test@example.com", "password")).rejects.toThrow(
+      BadRequestException
+    );
+  });
+
+  it("defaults to the only active organization when others are disabled", async () => {
+    const password = await bcrypt.hash("password", 10);
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      passwordHash: password,
+      firstName: "Test",
+      lastName: "User",
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          org: { isActive: false },
+          roleId: "role-1",
+          role: {
+            permissions: [{ permission: { name: "items.read" } }]
+          }
+        },
+        {
+          orgId: "org-2",
+          org: { isActive: true },
+          roleId: "role-2",
+          role: {
+            permissions: [{ permission: { name: "items.write" } }]
+          }
+        }
+      ]
+    });
+
+    const user = await service.validateUser("test@example.com", "password");
+    expect(user.orgId).toBe("org-2");
+    expect(user.permissions).toContain("items.write");
+    expect(user.roleIds).toEqual(["role-2"]);
+  });
+
   it("throws on excessive login attempts", async () => {
     rateLimiterMock.consume = jest.fn().mockResolvedValue(false);
     await expect(
@@ -247,6 +316,41 @@ describe("AuthService", () => {
     const result = await service.refresh(`token-1.org-2.${secret}`);
     expect(result.user.orgId).toBe("org-2");
     expect(result.user.roleIds).toEqual(["role-2"]);
+  });
+
+  it("does not use a hardcoded orgId fallback in refresh cache keys", async () => {
+    const secret = "a".repeat(64);
+    prismaMock.refreshToken.findUnique = jest.fn().mockResolvedValue({
+      id: "token-1",
+      userId: "user-1",
+      tokenHash: await bcrypt.hash(secret, 10),
+      expiresAt: new Date(Date.now() + 10000),
+      revokedAt: null
+    });
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+      isActive: true
+    });
+    prismaMock.membership.findMany = jest.fn().mockResolvedValue([
+      {
+        orgId: "org-1",
+        org: { isActive: true },
+        roleId: "role-1",
+        role: {
+          permissions: [{ permission: { name: "items.read" } }]
+        }
+      }
+    ]);
+
+    const result = await service.refresh(`token-1.${secret}`);
+    expect(result.user.orgId).toBe("org-1");
+
+    const firstCacheKey = cacheMock.wrap.mock.calls[0]?.[0] as string | undefined;
+    expect(firstCacheKey).toBeDefined();
+    expect(firstCacheKey).not.toContain(":default:");
   });
 
   it("allows switching organizations on refresh when requested", async () => {

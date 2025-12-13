@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { GqlExecutionContext } from "@nestjs/graphql";
-import { PERMISSIONS_KEY } from "../decorators/permissions.decorator";
+import { PERMISSIONS_KEY, PermissionsMode, normalizePermissionsRequirement } from "../decorators/permissions.decorator";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import { ALLOW_AUTHENTICATED_KEY } from "../decorators/allow-authenticated.decorator";
 
@@ -30,12 +30,13 @@ export class GqlPermissionsGuard implements CanActivate {
       context.getClass()
     ]);
 
-    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
+    const requiredPermissionsMetadata = this.reflector.getAllAndOverride<unknown>(PERMISSIONS_KEY, [
       context.getHandler(),
       context.getClass()
     ]);
+    const requirement = normalizePermissionsRequirement(requiredPermissionsMetadata);
 
-    if (!requiredPermissions || requiredPermissions.length === 0) {
+    if (!requirement || requirement.permissions.length === 0) {
       if (allowAuthenticated) {
         return true;
       }
@@ -49,9 +50,11 @@ export class GqlPermissionsGuard implements CanActivate {
       throw new ForbiddenException("Missing user context");
     }
 
-    const hasPermission = requiredPermissions.every((permission) =>
-      user.permissions?.includes(permission)
-    );
+    const userPermissions = new Set(user.permissions ?? []);
+    const hasPermission =
+      requirement.mode === PermissionsMode.All
+        ? requirement.permissions.every((permission) => userPermissions.has(permission))
+        : requirement.permissions.some((permission) => userPermissions.has(permission));
 
     if (!hasPermission) {
       throw new ForbiddenException("Insufficient permissions");

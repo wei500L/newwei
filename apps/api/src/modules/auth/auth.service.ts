@@ -54,12 +54,31 @@ export class AuthService {
     }
   }
 
-  private pickMembership<T extends { orgId: string }>(memberships: T[], orgId?: string): T {
+  private pickMembership<T extends { orgId: string; org?: { isActive: boolean } | null }>(
+    memberships: T[],
+    orgId?: string
+  ): T {
     if (memberships.length === 0) {
       throw new UnauthorizedException("User is not assigned to an organization");
     }
     if (!orgId) {
-      return memberships[0];
+      if (memberships.length === 1) {
+        return memberships[0];
+      }
+
+      const activeMemberships = memberships.filter((membership) => membership.org?.isActive ?? true);
+
+      if (activeMemberships.length === 1) {
+        return activeMemberships[0];
+      }
+
+      if (activeMemberships.length === 0) {
+        throw new UnauthorizedException("Organization disabled");
+      }
+
+      throw new BadRequestException(
+        "Organization is required when a user belongs to multiple organizations"
+      );
     }
     const membership = memberships.find((candidate) => candidate.orgId === orgId);
     if (!membership) {
@@ -247,9 +266,11 @@ export class AuthService {
   ) {
     const { tokenId, orgId: tokenOrgId, secret } = this.parseRefreshToken(refreshToken);
 
-    const effectiveOrgId = orgId ?? tokenOrgId ?? "default";
+    const effectiveOrgId = orgId ?? tokenOrgId;
     const secretHash = crypto.createHash("sha256").update(secret).digest("hex");
-    const cacheKey = `auth:refresh:${tokenId}:${effectiveOrgId}:${secretHash}`;
+    const cacheKey = effectiveOrgId
+      ? `auth:refresh:${tokenId}:${effectiveOrgId}:${secretHash}`
+      : `auth:refresh:${tokenId}:${secretHash}`;
     const graceSeconds = this.env.authRefreshGraceSeconds;
     const lockTtlMs = Math.max(graceSeconds * 1000, 10_000);
 
@@ -299,7 +320,7 @@ export class AuthService {
           }
         });
 
-        const primaryMembership = this.pickMembership(memberships, orgId ?? tokenOrgId);
+        const primaryMembership = this.pickMembership(memberships, effectiveOrgId);
         if (!primaryMembership.org?.isActive) {
           throw new UnauthorizedException("Organization disabled");
         }

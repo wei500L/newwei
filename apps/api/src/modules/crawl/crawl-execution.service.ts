@@ -224,31 +224,70 @@ export class CrawlExecutionService {
     status: "completed" | "failed",
     errorMessage?: string
   ) {
+    const lastResultAt = summary.lastFetchedAt ? summary.lastFetchedAt.toISOString() : null;
+    const payload = {
+      orgId: task.orgId,
+      userId: triggeredById,
+      type: status === "completed" ? NotificationType.crawl_completed : NotificationType.crawl_failed,
+      title: `${status === "completed" ? "Crawl completed" : "Crawl failed"}: ${task.displayName ?? task.targetUrl}`,
+      body:
+        status === "completed"
+          ? `Inserted ${summary.inserted}, skipped ${summary.skipped}${
+              summary.retryableFailures ? `, retryable ${summary.retryableFailures}` : ""
+            }`
+          : errorMessage ?? "Crawl task failed",
+      data: {
+        taskId: task.id,
+        status,
+        lastResultAt
+      }
+    };
+
+    const maxAttempts = 3;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.notifications.notify(payload);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt === maxAttempts) {
+          break;
+        }
+        const delayMs = Math.min(250 * 2 ** (attempt - 1), 2_000);
+        logger.warn(
+          { taskId: task.id, attempt, maxAttempts, delayMs, error },
+          "Failed to send crawl notification, retrying"
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    logger.error(
+      { taskId: task.id, attempts: maxAttempts, error: lastError },
+      "Failed to send crawl notification after retries"
+    );
+
     try {
-      const lastResultAt = summary.lastFetchedAt
-        ? summary.lastFetchedAt.toISOString()
-        : null;
-      await this.notifications.notify({
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: task.id,
         orgId: task.orgId,
-        userId: triggeredById,
-        type: status === "completed" ? NotificationType.crawl_completed : NotificationType.crawl_failed,
-        title: `${status === "completed" ? "Crawl completed" : "Crawl failed"}: ${
-          task.displayName ?? task.targetUrl
-        }`,
-        body:
-          status === "completed"
-            ? `Inserted ${summary.inserted}, skipped ${summary.skipped}${
-                summary.retryableFailures ? `, retryable ${summary.retryableFailures}` : ""
-              }`
-            : errorMessage ?? "Crawl task failed",
+        stage: "notify",
+        status: "failed",
+        message: "crawl notification delivery failed",
         data: {
           taskId: task.id,
           status,
-          lastResultAt
+          notificationType: payload.type
+        },
+        error: {
+          message: lastError instanceof Error ? lastError.message : String(lastError)
         }
       });
-    } catch (err) {
-      logger.warn({ taskId: task.id, err }, "Failed to send crawl notification");
+    } catch (error) {
+      logger.error({ taskId: task.id, error }, "Failed to persist crawl notification failure log");
     }
   }
 

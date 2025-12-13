@@ -33,10 +33,21 @@ interface ParsedDataPoint {
   meta?: unknown;
 }
 
+interface UpsertDataPointRow {
+  recordedAt: Date;
+  value: Prisma.Decimal;
+  unit: string | null;
+  dataType: string;
+  sourceField: string;
+  metaJson: string | null;
+  estimatedBytes: number;
+}
+
 @Injectable()
 export class AkshareService implements OnModuleInit {
   private readonly logger = new Logger(AkshareService.name);
   private readonly dataPointBatchSize = 1000;
+  private readonly dataPointBatchMaxBytes = 2_000_000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -413,7 +424,7 @@ export class AkshareService implements OnModuleInit {
         fetchedAt: new Date()
       });
 
-      const parsedPoints = this.parsePayload(definition.parser, response.payload);
+      const parsedPoints = this.parsePayload(definition.parser, response.payload, { slug: definition.slug });
       const storedCount = await this.bulkUpsertDataPoints(definition.itemId, parsedPoints);
 
       await this.updateFetchStatusByItemId(definition.itemId, EconomicDataRunStatus.success);
@@ -443,6 +454,9 @@ export class AkshareService implements OnModuleInit {
       if (point.value === null || point.value === undefined) {
         continue;
       }
+      if (typeof point.value === "number" && !Number.isFinite(point.value)) {
+        continue;
+      }
       const recordedAt = point.recordedAt instanceof Date ? point.recordedAt : new Date(point.recordedAt);
       const key = `${recordedAt.getTime()}|${point.sourceField}`;
       deduped.set(key, {
@@ -463,22 +477,138 @@ export class AkshareService implements OnModuleInit {
       return a.sourceField.localeCompare(b.sourceField);
     });
 
-    const batchSize = Math.min(this.dataPointBatchSize, sortedPoints.length);
-    for (let i = 0; i < sortedPoints.length; i += batchSize) {
-      const chunk = sortedPoints.slice(i, i + batchSize);
-      await this.prisma.$executeRaw(this.buildUpsertDataPointsQuery(itemId, chunk));
+    const rows = sortedPoints
+      .map((point) => this.toUpsertDataPointRow(itemId, point))
+      .filter((row): row is UpsertDataPointRow => Boolean(row));
+
+    let chunk: UpsertDataPointRow[] = [];
+    let chunkBytes = 0;
+    for (const row of rows) {
+      const wouldExceedRows = chunk.length >= this.dataPointBatchSize;
+      const wouldExceedBytes = chunk.length > 0 && chunkBytes + row.estimatedBytes > this.dataPointBatchMaxBytes;
+      if (wouldExceedRows || wouldExceedBytes) {
+        await this.executeUpsertDataPointChunk(itemId, chunk);
+        chunk = [];
+        chunkBytes = 0;
+      }
+      chunk.push(row);
+      chunkBytes += row.estimatedBytes;
+    }
+    if (chunk.length > 0) {
+      await this.executeUpsertDataPointChunk(itemId, chunk);
     }
 
     return deduped.size;
   }
 
-  private buildUpsertDataPointsQuery(itemId: string, points: ParsedDataPoint[]) {
-    const values = points.map((point) => {
-      const metaJson = point.meta ? JSON.stringify(point.meta) : null;
-      const value = point.value === null ? null : new Prisma.Decimal(point.value);
-      return Prisma.sql`(${itemId}, ${point.recordedAt}, ${point.dataType}, ${value}, ${
-        point.unit ?? null
-      }, ${point.sourceField}, ${metaJson})`;
+  private toUpsertDataPointRow(itemId: string, point: ParsedDataPoint): UpsertDataPointRow | null {
+    if (point.value === null || point.value === undefined) {
+      return null;
+    }
+    if (typeof point.value === "number" && !Number.isFinite(point.value)) {
+      return null;
+    }
+
+    let metaJson: string | null = null;
+    if (point.meta !== undefined) {
+      try {
+        metaJson = JSON.stringify(point.meta);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to serialize Akshare data point metadata (itemId=${itemId}, sourceField=${point.sourceField}): ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        metaJson = null;
+      }
+    }
+
+    const unit = point.unit ?? null;
+    const value = new Prisma.Decimal(point.value);
+    const estimatedBytes = this.estimateUpsertDataPointRowBytes({
+      itemId,
+      recordedAt: point.recordedAt,
+      dataType: point.dataType,
+      value,
+      unit,
+      sourceField: point.sourceField,
+      metaJson
+    });
+
+    return {
+      recordedAt: point.recordedAt,
+      dataType: point.dataType,
+      value,
+      unit,
+      sourceField: point.sourceField,
+      metaJson,
+      estimatedBytes
+    };
+  }
+
+  private estimateUpsertDataPointRowBytes(input: {
+    itemId: string;
+    recordedAt: Date;
+    dataType: string;
+    value: Prisma.Decimal;
+    unit: string | null;
+    sourceField: string;
+    metaJson: string | null;
+  }) {
+    const recordedAt = input.recordedAt instanceof Date ? input.recordedAt.toISOString() : String(input.recordedAt);
+    const value = input.value.toString();
+    const fixedOverhead = 96;
+    return (
+      fixedOverhead +
+      Buffer.byteLength(input.itemId, "utf8") +
+      Buffer.byteLength(recordedAt, "utf8") +
+      Buffer.byteLength(input.dataType, "utf8") +
+      Buffer.byteLength(value, "utf8") +
+      Buffer.byteLength(input.sourceField, "utf8") +
+      (input.unit ? Buffer.byteLength(input.unit, "utf8") : 0) +
+      (input.metaJson ? Buffer.byteLength(input.metaJson, "utf8") : 0)
+    );
+  }
+
+  private isPacketTooLargeError(error: unknown) {
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+
+    const anyError = error as any;
+    const topMessage = typeof anyError.message === "string" ? anyError.message : "";
+    const metaMessage = typeof anyError.meta?.message === "string" ? anyError.meta.message : "";
+    const message = `${topMessage} ${metaMessage}`.toLowerCase();
+    if (message.includes("max_allowed_packet") || message.includes("packet") && message.includes("too")) {
+      return true;
+    }
+
+    const metaCode = anyError.meta?.code;
+    const errno = anyError.errno ?? anyError.code;
+    return String(metaCode) === "1153" || String(errno) === "1153";
+  }
+
+  private async executeUpsertDataPointChunk(itemId: string, rows: UpsertDataPointRow[]): Promise<void> {
+    if (rows.length === 0) {
+      return;
+    }
+
+    try {
+      await this.prisma.$executeRaw(this.buildUpsertDataPointsQuery(itemId, rows));
+    } catch (error) {
+      if (this.isPacketTooLargeError(error) && rows.length > 1) {
+        const mid = Math.ceil(rows.length / 2);
+        await this.executeUpsertDataPointChunk(itemId, rows.slice(0, mid));
+        await this.executeUpsertDataPointChunk(itemId, rows.slice(mid));
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private buildUpsertDataPointsQuery(itemId: string, rows: UpsertDataPointRow[]) {
+    const values = rows.map((row) => {
+      return Prisma.sql`(${itemId}, ${row.recordedAt}, ${row.dataType}, ${row.value}, ${row.unit}, ${row.sourceField}, ${row.metaJson})`;
     });
 
     return Prisma.sql`
@@ -532,18 +662,29 @@ export class AkshareService implements OnModuleInit {
     throw lastError;
   }
 
-  private parsePayload(parser: AkshareParserConfig, payload: any): ParsedDataPoint[] {
-    switch (parser.type) {
+  private parsePayload(parser: AkshareParserConfig, payload: any, context?: { slug?: string }): ParsedDataPoint[] {
+    const parserType = (parser as { type?: unknown } | null | undefined)?.type;
+    switch (parserType) {
       case "latest":
-        return this.parseLatestPayload(parser, payload);
+        return this.parseLatestPayload(parser as Extract<AkshareParserConfig, { type: "latest" }>, payload);
       case "timeseries":
-        return this.parseTimeseriesPayload(parser, payload);
+        return this.parseTimeseriesPayload(parser as Extract<AkshareParserConfig, { type: "timeseries" }>, payload);
       case "macro":
-        return this.parseMacroPayload(parser, payload);
+        return this.parseMacroPayload(parser as Extract<AkshareParserConfig, { type: "macro" }>, payload);
       case "yieldCurve":
-        return this.parseYieldCurvePayload(parser, payload);
-      default:
-        return [];
+        return this.parseYieldCurvePayload(parser as Extract<AkshareParserConfig, { type: "yieldCurve" }>, payload);
+      default: {
+        this.logger.error(
+          {
+            slug: context?.slug,
+            parserType,
+            parser
+          },
+          "Unsupported Akshare parser type"
+        );
+        const suffix = context?.slug ? ` for ${context.slug}` : "";
+        throw new InternalServerErrorException(`Unsupported Akshare parser type: ${String(parserType)}${suffix}`);
+      }
     }
   }
 

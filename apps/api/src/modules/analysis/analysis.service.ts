@@ -1,16 +1,20 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { Queue } from "bullmq";
 import { AnalysisResultModel, type AnalysisResultDocument } from "@modular/mongo";
-import { LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
-import { EnvService } from "../config/config.service";
-import { ANALYSIS_QUEUE } from "./analysis.constants";
-import { AnalysisJobPayload, AnomalyInput, CorrelationInput } from "./analysis.types";
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
-import { ANALYSIS_PUBSUB } from "./analysis.pubsub";
-import { PubSubEngine } from "graphql-subscriptions";
-import { NotificationsService } from "../notifications/notifications.service";
+import { Inject, Injectable } from "@nestjs/common";
+// eslint-disable-next-line import/no-unresolved
 import { NotificationType } from "@prisma/client";
+import type { Queue } from "bullmq";
+import type { PubSubEngine } from "graphql-subscriptions";
+
+import { EnvService } from "../config/config.service";
+import { LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
+import { NotificationsService } from "../notifications/notifications.service";
+
 import { AnalysisPromptService } from "./analysis-prompt.service";
+import { ANALYSIS_QUEUE } from "./analysis.constants";
+import { getPartialSummaryFromError, AnalysisStreamError } from "./analysis.errors";
+import { ANALYSIS_PUBSUB } from "./analysis.pubsub";
+import type { AnalysisJobPayload, AnomalyInput, CorrelationInput } from "./analysis.types";
 
 const logger = createLogger({ name: "analysis-service" });
 
@@ -87,14 +91,12 @@ export class AnalysisService {
       await record.save();
       await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, record.createdAt);
       await this.notifyResult(record);
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error({ job, error }, "Analysis job failed");
       record.status = "failed";
       record.error = error instanceof Error ? error.message : String(error);
-      const partialSummary = (error as any)?.partialSummary;
-      if (typeof partialSummary === "string" && partialSummary.length > 0) {
-        record.summary = partialSummary;
-      }
+      const partialSummary = getPartialSummaryFromError(error);
+      if (partialSummary) record.summary = partialSummary;
       await record.save();
       await this.publish(
         record.orgId,
@@ -199,11 +201,16 @@ export class AnalysisService {
       }
       await flush();
       return { summary, raw: { stream: true, model: lastModel } };
-    } catch (error) {
-      await flush();
+    } catch (error: unknown) {
+      try {
+        await flush();
+      } catch (flushError) {
+        logger.warn({ flushError }, "Failed to flush partial summary after stream error");
+      }
       const normalized = error instanceof Error ? error : new Error(String(error));
-      (normalized as any).partialSummary = summary;
-      throw normalized;
+      const streamError = new AnalysisStreamError(normalized.message, summary, { cause: normalized });
+      streamError.stack = normalized.stack;
+      throw streamError;
     }
   }
 
