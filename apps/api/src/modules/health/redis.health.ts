@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { HealthCheckError, HealthIndicator, type HealthIndicatorResult } from "@nestjs/terminus";
 import type Redis from "ioredis";
 
-import { REDIS_CLIENT } from "../cache/cache.module";
+import { REDIS_CLIENT } from "../cache/cache.tokens";
 
 enum RedisHealthMode {
   Standalone = "standalone",

@@ -1,7 +1,7 @@
-import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
-import type Redis from "ioredis";
-import { REDIS_CLIENT } from "./cache.module";
+import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from './cache.tokens';
 
 @Injectable()
 export class CacheService implements OnModuleDestroy {
@@ -118,8 +118,8 @@ export class CacheService implements OnModuleDestroy {
 
   private async acquireLock(key: string, ttlMs: number) {
     const token = randomUUID();
-    const result = await this.redis.set(key, token, "PX", ttlMs, "NX");
-    return result === "OK" ? token : null;
+    const result = await this.redis.set(key, token, 'PX', ttlMs, 'NX');
+    return result === 'OK' ? token : null;
   }
 
   private async releaseLock(key: string, token: string) {

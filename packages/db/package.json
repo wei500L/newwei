@@ -11,7 +11,7 @@
     "seed": "tsx src/scripts/seed.ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "lint": "eslint src --ext .ts",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "tsx src/scripts/generate.ts"
   },
   "dependencies": {
     "@modular/utils": "workspace:*",
@@ -25,6 +25,7 @@
     "prisma": "^5.16.0",
     "tslib": "^2.6.2",
     "tsx": "^4.7.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "zod": "^3.23.8"
   }
 }

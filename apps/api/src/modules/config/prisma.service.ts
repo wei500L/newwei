@@ -1,10 +1,10 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { EnvService } from "./config.service";
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  constructor(private readonly env: EnvService) {
+  constructor(@Inject(EnvService) private readonly env: EnvService) {
     const connectionString =
       process.env.DATABASE_URL ??
       `mysql://${env.get<string>("MYSQL_USER", { infer: true })}:${encodeURIComponent(

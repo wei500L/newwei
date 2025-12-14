@@ -3,17 +3,19 @@ services:
     image: mysql:8.4
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DB}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_HOST: "%"
     ports:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,7 +31,11 @@ services:
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet -u $$MONGO_INITDB_ROOT_USERNAME -p $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep 1"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -51,12 +57,10 @@ services:
   crawl4ai:
     image: ${CRAWL4AI_IMAGE:-ghcr.io/unclecode/crawl4ai:latest}
     restart: unless-stopped
-    environment:
-      PORT: 8080
     ports:
-      - "8082:8080"
+      - "8082:11235"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2).read()\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:11235/health', timeout=2).read()\""]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -66,8 +70,10 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:20}
     working_dir: /workspace
-    command: sh -c "pnpm install && pnpm --filter @modular/api run dev"
+    command: sh -c "pnpm install --unsafe-perm && pnpm rebuild bcrypt --unsafe-perm && pnpm --filter db run prisma:generate && pnpm --filter @modular/api run dev"
     env_file:
       - ./.env
     environment:
@@ -77,6 +83,13 @@ services:
     volumes:
       - ../..:/workspace
       - api-node-modules:/workspace/node_modules
+      - api-app-api-node-modules:/workspace/apps/api/node_modules
+      - api-app-web-node-modules:/workspace/apps/web/node_modules
+      - api-package-config-node-modules:/workspace/packages/config/node_modules
+      - api-package-db-node-modules:/workspace/packages/db/node_modules
+      - api-package-mongo-node-modules:/workspace/packages/mongo/node_modules
+      - api-package-utils-node-modules:/workspace/packages/utils/node_modules
+      - api-infra-scripts-node-modules:/workspace/infra/scripts/node_modules
       - api-pnpm-store:/root/.local/share/pnpm/store
     depends_on:
       mysql:
@@ -88,17 +101,20 @@ services:
       crawl4ai:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/api/healthz"]
-      interval: 30s
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/api/healthz/live"]
+      interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 20
+      start_period: 300s
 
   web:
     build:
       context: ../..
       dockerfile: infra/docker/web.Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:20}
     working_dir: /workspace
-    command: sh -c "pnpm install && pnpm --filter @modular/web run dev -- --hostname 0.0.0.0"
+    command: sh -c "pnpm install --unsafe-perm && pnpm --filter @modular/web run dev -- --hostname 0.0.0.0"
     env_file:
       - ./.env
     environment:
@@ -108,15 +124,23 @@ services:
     volumes:
       - ../..:/workspace
       - web-node-modules:/workspace/node_modules
+      - web-app-api-node-modules:/workspace/apps/api/node_modules
+      - web-app-web-node-modules:/workspace/apps/web/node_modules
+      - web-package-config-node-modules:/workspace/packages/config/node_modules
+      - web-package-db-node-modules:/workspace/packages/db/node_modules
+      - web-package-mongo-node-modules:/workspace/packages/mongo/node_modules
+      - web-package-utils-node-modules:/workspace/packages/utils/node_modules
+      - web-infra-scripts-node-modules:/workspace/infra/scripts/node_modules
       - web-pnpm-store:/root/.local/share/pnpm/store
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
-      interval: 30s
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000"]
+      interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 20
+      start_period: 300s
 
 volumes:
   mysql-data:
@@ -124,5 +148,19 @@ volumes:
   redis-data:
   api-node-modules:
   api-pnpm-store:
+  api-app-api-node-modules:
+  api-app-web-node-modules:
+  api-package-config-node-modules:
+  api-package-db-node-modules:
+  api-package-mongo-node-modules:
+  api-package-utils-node-modules:
+  api-infra-scripts-node-modules:
   web-node-modules:
   web-pnpm-store:
+  web-app-api-node-modules:
+  web-app-web-node-modules:
+  web-package-config-node-modules:
+  web-package-db-node-modules:
+  web-package-mongo-node-modules:
+  web-package-utils-node-modules:
+  web-infra-scripts-node-modules:

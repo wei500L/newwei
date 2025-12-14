@@ -17,7 +17,7 @@ import { PrismaService } from "../config/prisma.service";
 import { AKSHARE_QUEUE } from "./akshare.constants";
 import { AkshareResponseModel } from "@modular/mongo";
 import { EnvService } from "../config/config.service";
-import { REDIS_CLIENT } from "../cache/cache.module";
+import { REDIS_CLIENT } from "../cache/cache.tokens";
 
 interface FetchResult {
   definition: AkshareDataItemConfig;

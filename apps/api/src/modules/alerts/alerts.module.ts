@@ -80,6 +80,6 @@ import { AlertsNotificationThrottleService } from "./alerts-notification-throttl
       useExisting: ALERTS_QUEUE
     }
   ],
-  exports: [AlertsService, ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, getQueueToken(ALERTS_QUEUE_NAME)]
+  exports: [AlertsService, ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, ALERTS_PUBSUB, getQueueToken(ALERTS_QUEUE_NAME)]
 })
 export class AlertsModule {}

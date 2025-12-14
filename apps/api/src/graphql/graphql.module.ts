@@ -35,6 +35,7 @@ import { CrawlModule } from "../modules/crawl/crawl.module";
 import { DataLoaderInterceptor } from "nestjs-dataloader";
 import { AlertsModule } from "../modules/alerts/alerts.module";
 import { AnalysisModule } from "../modules/analysis/analysis.module";
+import { AkshareModule } from "../modules/akshare/akshare.module";
 import { NewsPipelineModule } from "../modules/news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../modules/notifications/notifications.module";
 import { OrgModule } from "../modules/org/org.module";
@@ -111,6 +112,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     CrawlModule,
     AlertsModule,
     AnalysisModule,
+    AkshareModule,
     NotificationsModule,
     NewsPipelineModule,
     OrgModule,

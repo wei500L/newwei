@@ -7,6 +7,7 @@ import { DatabaseModule } from "../config/database.module";
 import { EnvService } from "../config/config.service";
 import { HealthController } from "./health.controller";
 import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
+import { MongoHealthIndicator } from "./mongo.health";
 import { RedisHealthIndicator } from "./redis.health";
 
 @Module({
@@ -31,6 +32,6 @@ import { RedisHealthIndicator } from "./redis.health";
     })
   ],
   controllers: [HealthController],
-  providers: [RedisHealthIndicator, Crawl4aiHealthIndicator]
+  providers: [RedisHealthIndicator, Crawl4aiHealthIndicator, MongoHealthIndicator]
 })
 export class HealthModule {}

@@ -1,11 +1,10 @@
-import { Global, Module } from "@nestjs/common";
-import Redis from "ioredis";
-import { EnvService } from "../config/config.service";
-import { CacheService } from "./cache.service";
-import { RateLimiterService } from "./rate-limiter.service";
-import { ActionRateLimitService } from "./action-rate-limit.service";
-
-export const REDIS_CLIENT = Symbol("REDIS_CLIENT");
+import { Global, Module } from '@nestjs/common';
+import Redis from 'ioredis';
+import { EnvService } from '../config/config.service';
+import { CacheService } from './cache.service';
+import { REDIS_CLIENT } from './cache.tokens';
+import { RateLimiterService } from './rate-limiter.service';
+import { ActionRateLimitService } from './action-rate-limit.service';
 
 @Global()
 @Module({

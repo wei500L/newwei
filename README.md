@@ -64,10 +64,18 @@ pnpm docker:down
 
 服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。`crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它。
 
+注意：`JWT_SECRET` / `NEXTAUTH_SECRET` 需要至少 16 位（见 `packages/utils/src/env.ts` 的校验），否则 `api` 容器会启动失败并被判定为 unhealthy。
+
 如果启动时 `crawl4ai` 拉取出现 `error from registry: denied`（例如无法访问 GHCR），可以二选一：
 
 - 本地镜像重新打 tag：`docker tag unclecode/crawl4ai:latest ghcr.io/unclecode/crawl4ai:latest`
 - 或在 `infra/docker/.env` 设置：`CRAWL4AI_IMAGE=unclecode/crawl4ai:latest`
+
+如果启动时构建 `api/web` 失败并提示无法从 Docker Hub 获取 `node:20`（例如 `failed to fetch anonymous token` / 网络被重置），可以在 `infra/docker/.env` 里改用镜像源（示例之一）：
+
+- `NODE_IMAGE=dockerproxy.com/library/node:20`
+
+如果构建时出现 `invalid file request .../node_modules/...`，通常是 Docker Desktop 在发送构建上下文时无法处理 Windows 上的 `node_modules` 链接；确保仓库根目录的 `.dockerignore` 生效（会排除 `**/node_modules`）后重新构建即可。
 
 ## 工作区脚本
 

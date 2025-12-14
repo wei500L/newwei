@@ -121,15 +121,17 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
     if (path.isAbsolute(rawValue)) {
       return rawValue;
     }
-    const cwdCandidate = path.resolve(process.cwd(), rawValue);
-    if (existsSync(cwdCandidate)) {
-      return cwdCandidate;
+    const candidates = [
+      path.resolve(process.cwd(), rawValue),
+      path.resolve(process.cwd(), "..", rawValue),
+      path.resolve(process.cwd(), "..", "..", rawValue),
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
     }
-    const parentCandidate = path.resolve(process.cwd(), "..", rawValue);
-    if (existsSync(parentCandidate)) {
-      return parentCandidate;
-    }
-    return cwdCandidate;
+    return candidates[0];
   }
 
   private registerWatcherIfExists() {

@@ -9,9 +9,12 @@ import { json, urlencoded } from "express";
 import { WINSTON_MODULE_NEST_PROVIDER } from "nest-winston";
 import { AppModule } from "./app.module";
 import { createLogger } from "@modular/utils";
-import pkg from "../package.json" assert { type: "json" };
+import { createRequire } from "node:module";
 import { EnvService } from "./modules/config/config.service";
 import { RedisIoAdapter } from "./common/websocket/redis-io.adapter";
+
+const nodeRequire = createRequire(__filename);
+const pkg = nodeRequire("../package.json") as { version?: string };
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {

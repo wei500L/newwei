@@ -35,6 +35,6 @@ import { AnalysisPromptService } from "./analysis-prompt.service";
       useExisting: ANALYSIS_QUEUE
     }
   ],
-  exports: [AnalysisService, ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, getQueueToken(ANALYSIS_QUEUE_NAME)]
+  exports: [AnalysisService, ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_PUBSUB, getQueueToken(ANALYSIS_QUEUE_NAME)]
 })
 export class AnalysisModule {}
