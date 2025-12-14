@@ -1,7 +1,11 @@
 {
   "extends": "../config/tsconfig/library.json",
   "compilerOptions": {
-    "baseUrl": "./src"
+    "baseUrl": "./src",
+    "paths": {
+      "@modular/config": ["../../config/src/index.ts"],
+      "@modular/config/*": ["../../config/src/*"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules", "src/**/*.spec.ts"]

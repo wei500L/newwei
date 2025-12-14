@@ -64,6 +64,11 @@ pnpm docker:down
 
 服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。`crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它。
 
+如果启动时 `crawl4ai` 拉取出现 `error from registry: denied`（例如无法访问 GHCR），可以二选一：
+
+- 本地镜像重新打 tag：`docker tag unclecode/crawl4ai:latest ghcr.io/unclecode/crawl4ai:latest`
+- 或在 `infra/docker/.env` 设置：`CRAWL4AI_IMAGE=unclecode/crawl4ai:latest`
+
 ## 工作区脚本
 
 | 命令                                         | 说明                                            |
