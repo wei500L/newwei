@@ -73,7 +73,7 @@ services:
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
     working_dir: /workspace
-    command: sh -c "pnpm install --unsafe-perm && pnpm rebuild bcrypt --unsafe-perm && pnpm --filter db run prisma:generate && pnpm --filter @modular/api run dev"
+    command: sh -c "pnpm install --unsafe-perm && pnpm rebuild bcrypt --unsafe-perm && pnpm --filter db run migrate && pnpm --filter @modular/api run dev"
     env_file:
       - ./.env
     environment:

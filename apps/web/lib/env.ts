@@ -4,13 +4,15 @@ import { logServerError } from "./server-logger";
 const schema = z.object({
   NEXTAUTH_URL: z.string().url(),
   NEXTAUTH_SECRET: z.string().min(16),
-  NEXT_PUBLIC_API_BASE_URL: z.string().url()
+  NEXT_PUBLIC_API_BASE_URL: z.string().url(),
+  API_BASE_URL: z.string().url().optional()
 });
 
 const parsed = schema.safeParse({
   NEXTAUTH_URL: process.env.NEXTAUTH_URL,
   NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-  NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL
+  NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
+  API_BASE_URL: process.env.API_BASE_URL
 });
 
 if (!parsed.success) {
@@ -22,10 +24,19 @@ if (!parsed.success) {
 
 const envValues = parsed.data;
 
-const apiBaseUrl = envValues.NEXT_PUBLIC_API_BASE_URL.endsWith("/api")
+const publicApiBaseUrl = envValues.NEXT_PUBLIC_API_BASE_URL.endsWith("/api")
   ? envValues.NEXT_PUBLIC_API_BASE_URL
   : `${envValues.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, "")}/api`;
-const apiRoot = apiBaseUrl.endsWith("/api") ? apiBaseUrl.slice(0, -4) : apiBaseUrl;
+const publicApiRoot = publicApiBaseUrl.endsWith("/api") ? publicApiBaseUrl.slice(0, -4) : publicApiBaseUrl;
+
+const internalApiRootRaw = envValues.API_BASE_URL ?? publicApiRoot;
+const internalApiBaseUrl = internalApiRootRaw.endsWith("/api")
+  ? internalApiRootRaw
+  : `${internalApiRootRaw.replace(/\/$/, "")}/api`;
+const internalApiRoot = internalApiBaseUrl.endsWith("/api") ? internalApiBaseUrl.slice(0, -4) : internalApiBaseUrl;
+
+const apiBaseUrl = typeof window === "undefined" ? internalApiBaseUrl : publicApiBaseUrl;
+const apiRoot = typeof window === "undefined" ? internalApiRoot : publicApiRoot;
 const graphqlUrl = `${apiRoot}/graphql`;
 
 export const env = {
