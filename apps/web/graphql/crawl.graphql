@@ -120,7 +120,7 @@ mutation CreateCrawlTask($input: CreateCrawlTaskInput!) {
   }
 }
 
-mutation RetryCrawlTask($id: ID!) {
+mutation RetryCrawlTask($id: String!) {
   retryCrawlTask(id: $id) {
     id
     status

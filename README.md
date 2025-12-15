@@ -69,14 +69,19 @@ pnpm docker:down
 如果你调用某个 Akshare HTTP 端点出现 `400 ... got an unexpected keyword argument ...`，通常表示你传的 query 参数不符合当前安装的 Akshare 版本函数签名。建议先在 akshare 容器里确认签名：
 
 ```bash
-docker exec -it docker-akshare-1 python -c "import inspect, akshare as ak; print(inspect.signature(ak.futures_zh_spot))"
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml exec akshare \
+  python -c "import inspect, akshare as ak; print(inspect.signature(ak.futures_zh_spot))"
 ```
 
 注意：`JWT_SECRET` / `NEXTAUTH_SECRET` 需要至少 16 位（见 `packages/utils/src/env.ts` 的校验），否则 `api` 容器会启动失败并被判定为 unhealthy。
 
-如果你访问 Docker Hub 不稳定，导致 `akshare` 网关构建时拉取 `python:3.11-slim` 失败，可以在 `infra/docker/.env` 里指定 Python 基础镜像（示例为 Akshare 官方镜像仓库）：
+如果你访问 Docker Hub 不稳定，导致 `akshare` 网关构建时拉取 `python:3.11-slim` 失败，可以在 `infra/docker/.env` 里指定一个 **Python 3.11+** 的基础镜像（`akshare>=1.16.72` 依赖 `aiohttp>=3.11.13`，因此 **Python 3.8/3.7 的镜像会构建失败**）。建议先验证镜像内 Python 版本：
 
-- `AKSHARE_PYTHON_IMAGE=registry.cn-shanghai.aliyuncs.com/akfamily/aktools:jupyter`
+- `docker run --rm <IMAGE> python -V`
+
+然后把 `infra/docker/.env` 里的 `AKSHARE_PYTHON_IMAGE` 改成你可用的镜像（示例之一）：
+
+- `AKSHARE_PYTHON_IMAGE=python:3.11-slim`
 
 如果你本机已经有一个可用的 Python 镜像但只有 image id（没有 tag），先打一个本地 tag 再引用更稳：
 

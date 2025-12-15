@@ -7,6 +7,7 @@ exports.createLogger = void 0;
 const pino_1 = __importDefault(require("pino"));
 const tracing_1 = require("./tracing");
 const createLogger = ({ name = "app", level = process.env.LOG_LEVEL, enabled = true } = {}) => {
+    const usePrettyTransport = process.env.NODE_ENV !== "production" && Boolean(process.stdout.isTTY);
     return (0, pino_1.default)({
         name,
         enabled,
@@ -15,7 +16,7 @@ const createLogger = ({ name = "app", level = process.env.LOG_LEVEL, enabled = t
             const traceId = (0, tracing_1.getCurrentTraceId)();
             return traceId ? { traceId } : {};
         },
-        transport: process.env.NODE_ENV !== "production"
+        transport: usePrettyTransport
             ? {
                 target: "pino-pretty",
                 options: {

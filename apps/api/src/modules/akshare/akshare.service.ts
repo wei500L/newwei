@@ -788,8 +788,40 @@ export class AkshareService implements OnModuleInit {
   }
 
   private parseDate(value: unknown) {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      const hhmmssMatch = trimmed.match(/^(\d{2})(\d{2})(\d{2})$/);
+      const hhmmMatch = trimmed.match(/^(\d{2})(\d{2})$/);
+      const match = hhmmssMatch ?? hhmmMatch;
+      if (match) {
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        const seconds = match.length > 3 ? Number(match[3]) : 0;
+        if (
+          Number.isInteger(hours) &&
+          Number.isInteger(minutes) &&
+          Number.isInteger(seconds) &&
+          hours >= 0 &&
+          hours <= 23 &&
+          minutes >= 0 &&
+          minutes <= 59 &&
+          seconds >= 0 &&
+          seconds <= 59
+        ) {
+          const now = new Date();
+          return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, seconds, 0));
+        }
+      }
+    }
+
     const parsed = parseDateTime(value, { timeZone: CommonTimeZone.UTC });
-    return parsed ?? new Date();
+    if (parsed) {
+      const year = parsed.getUTCFullYear();
+      if (year >= 1000 && year <= 9999) {
+        return parsed;
+      }
+    }
+    return new Date();
   }
 
   private normalizeNumber(value: unknown): number | null {
@@ -932,16 +964,24 @@ export class AkshareService implements OnModuleInit {
   }
 
   private formatError(error: unknown) {
+    const maxLength = 191;
+    const truncate = (message: string) => {
+      if (message.length <= maxLength) {
+        return message;
+      }
+      return `${message.slice(0, Math.max(0, maxLength - 3))}...`;
+    };
+
     if (error instanceof Error) {
-      return error.message;
+      return truncate(error.message);
     }
     if (typeof error === "string") {
-      return error;
+      return truncate(error);
     }
     try {
-      return JSON.stringify(error);
+      return truncate(JSON.stringify(error));
     } catch {
-      return String(error);
+      return truncate(String(error));
     }
   }
 

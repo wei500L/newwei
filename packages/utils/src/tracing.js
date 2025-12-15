@@ -12,9 +12,16 @@ const randomHex = (bytes) => {
         .padStart(2, "0")).join("");
 };
 const createAsyncLocalStorage = () => {
+    if (typeof window !== "undefined") {
+        return undefined;
+    }
+    if (typeof process === "undefined" || !(process.versions?.node)) {
+        return undefined;
+    }
     try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires,@typescript-eslint/no-require-imports,@typescript-eslint/consistent-type-imports
-        const { AsyncLocalStorage } = require("node:async_hooks");
+        // eslint-disable-next-line no-eval
+        const dynamicRequire = eval("require");
+        const { AsyncLocalStorage } = dynamicRequire("node:async_hooks");
         return new AsyncLocalStorage();
     }
     catch {

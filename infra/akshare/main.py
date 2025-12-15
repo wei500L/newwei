@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 import math
 from typing import Any
 
@@ -114,6 +115,41 @@ def _get_callable(name: str):
     return fn
 
 
+def _split_params_by_signature(fn: Any, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        signature = inspect.signature(fn)
+    except Exception:
+        return params, {}
+
+    parameters = signature.parameters.values()
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters):
+        return params, {}
+
+    allowed_kw = {
+        param.name
+        for param in parameters
+        if param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    }
+    kept = {k: v for k, v in params.items() if k in allowed_kw}
+    extra = {k: v for k, v in params.items() if k not in allowed_kw}
+    return kept, extra
+
+
+def _filter_frame_by_first_matching_column(
+    frame: pd.DataFrame, symbol: str, columns: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    normalized = str(symbol).strip()
+    if not normalized:
+        return _sanitize_for_json(frame)
+
+    for column in columns:
+        if column in frame.columns:
+            filtered = frame[frame[column].astype(str) == normalized]
+            if not filtered.empty:
+                return _sanitize_for_json(filtered)
+    return []
+
+
 def _apply_compat_params(function_name: str, params: dict[str, Any]) -> dict[str, Any]:
     if function_name == "futures_zh_spot":
         if "subscribe_list" in params and "symbol" not in params:
@@ -165,7 +201,23 @@ async def call_function(function_name: str, request: Request):
         params = _apply_compat_params(function_name, params)
         filter_symbol = params.pop("__filter_symbol", None)
 
-        result = fn(**params)
+        call_params, extra_params = _split_params_by_signature(fn, params)
+        result = fn(**call_params)
+
+        if isinstance(result, pd.DataFrame):
+            filter_value = extra_params.get("symbol") or extra_params.get("pair")
+            if filter_value:
+                if function_name in ("fx_spot_quote", "fx_pair_quote"):
+                    filtered = _filter_frame_by_first_matching_column(result, str(filter_value), ("货币对", "pair", "symbol"))
+                    if filtered:
+                        return filtered
+                    raise HTTPException(status_code=404, detail=f"symbol not found: {filter_value}")
+                if function_name == "crypto_js_spot":
+                    filtered = _filter_frame_by_first_matching_column(result, str(filter_value), ("交易品种", "symbol"))
+                    if filtered:
+                        return filtered
+                    raise HTTPException(status_code=404, detail=f"symbol not found: {filter_value}")
+
         if function_name == "stock_zh_a_spot_em" and filter_symbol:
             if not isinstance(result, pd.DataFrame):
                 raise HTTPException(status_code=500, detail="stock_zh_a_spot_em returned non-DataFrame")

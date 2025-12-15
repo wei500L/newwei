@@ -60,6 +60,7 @@ services:
       dockerfile: infra/akshare/Dockerfile
       args:
         PYTHON_IMAGE: ${AKSHARE_PYTHON_IMAGE:-python:3.11-slim}
+        AKSHARE_VERSION: ${AKSHARE_VERSION:-1.17.94}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     restart: unless-stopped
@@ -161,13 +162,14 @@ services:
       echo '[web] pnpm install...';
       pnpm install --unsafe-perm;
       echo '[web] starting dev server...';
-      pnpm --filter @modular/web run dev -- --hostname 0.0.0.0
+      pnpm --filter @modular/web run dev
       "
     env_file:
       - ./.env
     environment:
       PORT: 3000
       CI: "true"
+      GRAPHQL_SCHEMA_URL: ${GRAPHQL_SCHEMA_URL:-http://api:4000/graphql}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}

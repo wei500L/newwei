@@ -13,6 +13,7 @@ export const createLogger = ({
   level = process.env.LOG_LEVEL as pino.LevelWithSilent | undefined,
   enabled = true
 }: CreateLoggerOptions = {}) => {
+  const usePrettyTransport = process.env.NODE_ENV !== "production" && Boolean(process.stdout.isTTY);
   return pino({
     name,
     enabled,
@@ -21,16 +22,15 @@ export const createLogger = ({
       const traceId = getCurrentTraceId();
       return traceId ? { traceId } : {};
     },
-    transport:
-      process.env.NODE_ENV !== "production"
-        ? {
-            target: "pino-pretty",
-            options: {
-              colorize: true,
-              translateTime: "SYS:standard"
-            }
+    transport: usePrettyTransport
+      ? {
+          target: "pino-pretty",
+          options: {
+            colorize: true,
+            translateTime: "SYS:standard"
           }
-        : undefined
+        }
+      : undefined
   });
 };
 

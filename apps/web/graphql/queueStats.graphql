@@ -1,1 +1,19 @@
-query QueueStats {\n  queueStats {\n    counts {\n      waiting\n      active\n      completed\n      failed\n      delayed\n    }\n    processedCount\n    itemCount\n    recentLogs {\n      event\n      jobId\n      data\n      timestamp\n    }\n  }\n}
+query QueueStats {
+  queueStats {
+    counts {
+      waiting
+      active
+      completed
+      failed
+      delayed
+    }
+    processedCount
+    itemCount
+    recentLogs {
+      event
+      jobId
+      data
+      timestamp
+    }
+  }
+}

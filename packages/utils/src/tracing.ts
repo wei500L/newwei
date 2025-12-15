@@ -17,9 +17,19 @@ const randomHex = (bytes: number): string => {
 };
 
 const createAsyncLocalStorage = () => {
+  if (typeof window !== "undefined") {
+    return undefined;
+  }
+  if (typeof process === "undefined" || !process.versions?.node) {
+    return undefined;
+  }
+
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires,@typescript-eslint/no-require-imports,@typescript-eslint/consistent-type-imports
-    const { AsyncLocalStorage } = require("node:async_hooks") as typeof import("node:async_hooks");
+    // Avoid bundlers (e.g. Next/Webpack) trying to resolve node builtins for client bundles.
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const dynamicRequire = eval("require") as NodeRequire;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+    const { AsyncLocalStorage } = dynamicRequire("node:async_hooks") as typeof import("node:async_hooks");
     return new AsyncLocalStorage<TraceContext>();
   } catch {
     return undefined;
