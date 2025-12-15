@@ -38,13 +38,13 @@ export class CrawlResultModel {
   @Field({ nullable: true })
   mediaAssets?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   markdownWithCitations?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   referencesMarkdown?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   fitMarkdown?: string | null;
 
   @Field(() => CrawlLinkAnalysisModel, { nullable: true })
@@ -59,19 +59,19 @@ export class CrawlLinkModel {
   @Field()
   href!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   text?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   title?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   baseDomain?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   rel?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   type?: string | null;
 
   @Field(() => Number, { nullable: true })
@@ -152,16 +152,16 @@ export class CrawlMetadataResultModel {
   @Field(() => GraphQLISODateTime, { nullable: true })
   fetchedAt?: Date | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   title?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   description?: string | null;
 
   @Field(() => [String], { nullable: true })
   keywords?: string[] | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   author?: string | null;
 
   @Field(() => [CrawlMetadataTagModel])
@@ -176,7 +176,7 @@ export class CrawlMetadataResultModel {
   @Field(() => Number, { nullable: true })
   relevanceScore?: number | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   error?: string | null;
 }
 
@@ -188,7 +188,7 @@ export class CrawlTaskModel {
   @Field()
   targetUrl!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   displayName?: string | null;
 
   @Field(() => CrawlTaskStatus)
@@ -212,10 +212,10 @@ export class CrawlTaskModel {
   @Field(() => GraphQLISODateTime, { nullable: true })
   lastResultAt?: Date | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   lastCursor?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   lastError?: string | null;
 
   @Field(() => GraphQLISODateTime)
@@ -233,7 +233,7 @@ export class CrawlTaskModel {
   @Field(() => Number)
   resultCount!: number;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   config?: string | null;
 
   @Field(() => [CrawlResultModel], { nullable: true })

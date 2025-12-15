@@ -5,6 +5,6 @@ export class PageInfo {
   @Field()
   hasNextPage!: boolean;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   endCursor?: string | null;
 }

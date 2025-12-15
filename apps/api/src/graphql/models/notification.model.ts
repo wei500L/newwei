@@ -15,7 +15,7 @@ export class NotificationModel {
   @Field()
   title!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   body?: string | null;
 
   @Field(() => GraphQLJSON, { nullable: true })

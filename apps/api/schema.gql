@@ -1,0 +1,955 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+"""Define a relation between the field and other nodes"""
+directive @complexity(
+  multipliers: [String!]
+
+  """The complexity value for the field"""
+  value: Int!
+) on FIELD_DEFINITION
+
+directive @hasPermission(name: String!) on FIELD_DEFINITION | OBJECT
+
+input AlertChannelInput {
+  config: JSON
+  name: String!
+  target: String!
+  type: AlertChannelType!
+}
+
+type AlertChannelModel {
+  createdAt: DateTime!
+  id: String!
+  name: String!
+  target: String!
+  type: AlertChannelType!
+  updatedAt: DateTime!
+}
+
+enum AlertChannelType {
+  email
+  webhook
+}
+
+type AlertDeliveryModel {
+  channelType: AlertChannelType!
+  error: String
+  id: String!
+  sentAt: DateTime
+  status: AlertDeliveryStatus!
+}
+
+enum AlertDeliveryStatus {
+  failed
+  pending
+  sent
+}
+
+type AlertEventModel {
+  changePercent: Float
+  context: JSON
+  deliveries: [AlertDeliveryModel!]!
+  id: String!
+  message: String
+  metricValue: Float!
+  severity: AlertSeverity!
+  status: AlertEventStatus!
+  triggeredAt: DateTime!
+}
+
+enum AlertEventStatus {
+  delivered
+  failed
+  pending
+}
+
+enum AlertMetricProvider {
+  crawl_task
+  economic_data
+  pipeline_job
+  system_event
+  system_metric
+}
+
+enum AlertOperator {
+  change_down_pct
+  change_up_pct
+  eq
+  gt
+  gte
+  lt
+  lte
+  outside_range
+  within_range
+}
+
+type AlertRuleModel {
+  changeWindowMin: Float
+  channels: [AlertChannelModel!]!
+  checkIntervalSec: Float!
+  cooldownSeconds: Float!
+  description: String
+  id: String!
+  lastTriggeredAt: DateTime
+  metadata: JSON
+  metricProvider: AlertMetricProvider!
+  metricSlug: String!
+  name: String!
+  operator: AlertOperator!
+  severity: AlertSeverity!
+  status: AlertStatus!
+  thresholdLower: Float
+  thresholdUpper: Float
+  thresholdValue: Float
+}
+
+enum AlertSeverity {
+  high
+  low
+  medium
+}
+
+enum AlertStatus {
+  active
+  archived
+  draft
+  paused
+}
+
+type AnalysisResultModel {
+  createdAt: DateTime!
+  error: String
+  id: String!
+  input: JSON
+  output: JSON
+  status: AnalysisStatus!
+  summary: String
+  type: AnalysisType!
+}
+
+enum AnalysisStatus {
+  completed
+  failed
+  pending
+  running
+}
+
+enum AnalysisType {
+  anomaly
+  correlation
+}
+
+input AnomalyAnalysisInput {
+  deviationPercent: Float!
+  metric: String!
+  newsList: [String!]!
+  policyList: [String!]!
+  series: [SeriesPointInput!]
+  timestamp: String!
+  value: Float!
+}
+
+input AssignRoleInput {
+  roleId: String!
+  userId: String!
+}
+
+type AuditLogRetentionModel {
+  retentionDays: Int!
+}
+
+type AuthCacheSettingsModel {
+  lockTtlMs: Int!
+  maxWaitMs: Int!
+  profileTtlSeconds: Int!
+  retryDelayMs: Int!
+}
+
+input CorrelationAnalysisInput {
+  changePercent: Float!
+  endDate: String!
+  indicatorName: String!
+  newsSummaries: [String!]!
+  startDate: String!
+  value: Float!
+}
+
+input CrawlBrowserCookieInput {
+  domain: String!
+  name: String!
+  path: String
+  value: String!
+}
+
+input CrawlBrowserHeaderInput {
+  name: String!
+  value: String!
+}
+
+input CrawlCleanMarkdownInput {
+  cssSelector: String
+  excludedTags: [String!]
+  removeOverlayElements: Boolean
+  targetElements: [String!]
+  wordCountThreshold: Int
+}
+
+type CrawlClientSettingsModel {
+  healthCheckTtlMs: Int!
+  maxRetries: Int!
+  requestTimeoutMs: Int!
+  retryBackoffMs: Int!
+}
+
+input CrawlGeolocationInput {
+  accuracy: Float
+  latitude: Float!
+  longitude: Float!
+}
+
+type CrawlLinkAnalysisModel {
+  buckets: [CrawlLinkBucketModel!]!
+  lowQualityLinks: [CrawlLinkModel!]!
+  stats: CrawlLinkStatsModel!
+  topLinks: [CrawlLinkModel!]!
+}
+
+type CrawlLinkBucketModel {
+  kind: String!
+  links: [CrawlLinkModel!]!
+}
+
+type CrawlLinkModel {
+  baseDomain: String
+  contextualScore: Float
+  href: String!
+  intrinsicScore: Float
+  rel: String
+  text: String
+  title: String
+  totalScore: Float
+  type: String
+}
+
+input CrawlLinkPreviewInput {
+  concurrency: Int
+  excludePatterns: [String!]
+  includeExternal: Boolean
+  includeInternal: Boolean
+  includePatterns: [String!]
+  includeSocial: Boolean
+  maxLinks: Int
+  query: String
+  scoreThreshold: Float
+  timeoutSeconds: Int
+  verbose: Boolean
+}
+
+type CrawlLinkStatsModel {
+  averageIntrinsicScore: Float
+  externalLinks: Float!
+  highQualityLinks: Float
+  internalLinks: Float!
+  lowQualityLinks: Float
+  totalLinks: Float!
+}
+
+input CrawlMarkdownFilterInput {
+  minWordThreshold: Int
+  threshold: Float
+  thresholdType: String
+  type: String
+}
+
+input CrawlMarkdownOptionsInput {
+  bodyWidth: Int
+  contentSource: String
+  escapeHtml: Boolean
+  ignoreLinks: Boolean
+}
+
+input CrawlMarkdownStrategyInput {
+  params: JSON
+  type: String!
+}
+
+type CrawlMemoryStatsModel {
+  efficiencyPercent: Float
+  peakMemoryMb: Float
+  serverMemoryMb: Float
+}
+
+input CrawlMetadataInput {
+  concurrency: Int
+  domain: String
+  extractJsonLd: Boolean
+  extractOpenGraph: Boolean
+  extractStandardMeta: Boolean
+  maxUrls: Int
+  pattern: String
+  query: String
+  scoreThreshold: Float
+  source: String
+  urls: [String!]
+}
+
+type CrawlMetadataResultModel {
+  author: String
+  description: String
+  error: String
+  fetchedAt: DateTime
+  httpStatus: Float
+  jsonLd: [String!]!
+  keywords: [String!]
+  metaTags: [CrawlMetadataTagModel!]!
+  openGraph: [CrawlMetadataTagModel!]!
+  relevanceScore: Float
+  status: String!
+  title: String
+  url: String!
+}
+
+type CrawlMetadataTagModel {
+  name: String!
+  value: String!
+}
+
+input CrawlMultiUrlStrategyInput {
+  matcher: CrawlUrlMatcherInput
+  name: String
+  options: CrawlStrategyOverridesInput
+  urls: [String!]
+}
+
+input CrawlOptionsInput {
+  additionalUrls: [String!]
+  adjustViewportToContent: Boolean
+  browserCookies: [CrawlBrowserCookieInput!]
+  browserHeaders: [CrawlBrowserHeaderInput!]
+  cleanMarkdown: CrawlCleanMarkdownInput
+  enableStealthMode: Boolean
+  enableUndetectedBrowser: Boolean
+  excludeExternalImages: Boolean
+  extractLinks: Boolean
+  geolocation: CrawlGeolocationInput
+  includeImages: Boolean
+  jsCode: [String!]
+  jsOnly: Boolean
+  linkPreview: CrawlLinkPreviewInput
+  locale: String
+  markdownFilter: CrawlMarkdownFilterInput
+  markdownOptions: CrawlMarkdownOptionsInput
+  markdownStrategy: CrawlMarkdownStrategyInput
+  multiUrlConfigs: [CrawlMultiUrlStrategyInput!]
+  onlyMainContent: Boolean
+  overrideNavigator: Boolean
+  proxyConfig: CrawlProxyConfigInput
+  proxyUrl: String
+  scanFullPage: Boolean
+  scoreLinks: Boolean
+  scrollDelayMs: Int
+  sessionId: String
+  simulateUser: Boolean
+  storageState: String
+  storeMedia: Boolean
+  tableExtraction: CrawlTableExtractionInput
+  tableScoreThreshold: Float
+  timezoneId: String
+  useManagedBrowser: Boolean
+  userAgent: String
+  userAgentGenerator: CrawlUserAgentGeneratorInput
+  userAgentMode: String
+  userDataDir: String
+  waitForImages: Boolean
+  waitForScript: String
+  waitForSelector: String
+  waitForTimeoutMs: Int
+}
+
+input CrawlProxyConfigInput {
+  password: String
+  server: String!
+  username: String
+}
+
+type CrawlResultModel {
+  fetchedAt: DateTime!
+  fitMarkdown: String
+  id: ID!
+  linkAnalysis: CrawlLinkAnalysisModel
+  markdown: String!
+  markdownWithCitations: String
+  media: String
+  mediaAssets: String
+  metadata: String
+  referencesMarkdown: String
+  sourceUrl: String!
+  tables: JSON
+}
+
+input CrawlStrategyOverridesInput {
+  adjustViewportToContent: Boolean
+  cacheMode: String
+  captureScreenshot: Boolean
+  cssSelector: String
+  excludeExternalImages: Boolean
+  excludeExternalLinks: Boolean
+  excludedTags: [String!]
+  extractLinks: Boolean
+  jsCode: [String!]
+  jsOnly: Boolean
+  onlyMainContent: Boolean
+  overrideNavigator: Boolean
+  processIframes: Boolean
+  removeOverlayElements: Boolean
+  scanFullPage: Boolean
+  scrollDelayMs: Int
+  simulateUser: Boolean
+  textMode: Boolean
+  waitForImages: Boolean
+  waitForScript: String
+  waitForSelector: String
+  waitForTimeoutMs: Int
+  wordCountThreshold: Int
+}
+
+input CrawlTableExtractionInput {
+  params: JSON
+  type: String!
+}
+
+type CrawlTaskConnection {
+  edges: [CrawlTaskEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Float!
+}
+
+type CrawlTaskEdge {
+  cursor: String!
+  node: CrawlTaskModel!
+}
+
+type CrawlTaskModel {
+  concurrency: Float!
+  config: String
+  createdAt: DateTime!
+  displayName: String
+  id: ID!
+  keywords: [String!]!
+  lastCursor: String
+  lastError: String
+  lastMemoryEfficiency: Float
+  lastPeakMemoryMb: Float
+  lastResultAt: DateTime
+  lastRunAt: DateTime
+  lastServerMemoryMb: Float
+  lastSuccessAt: DateTime
+  memoryStats: CrawlMemoryStatsModel
+  resultCount: Float!
+  results: [CrawlResultModel!]
+  runCount: Float!
+  status: CrawlTaskStatus!
+  targetUrl: String!
+  timeRangeFrom: DateTime
+  timeRangeTo: DateTime
+  updatedAt: DateTime!
+}
+
+enum CrawlTaskStatus {
+  completed
+  failed
+  paused
+  pending
+  queued
+  running
+}
+
+input CrawlTimeRangeInput {
+  from: String
+  to: String
+}
+
+input CrawlUrlMatcherInput {
+  matchMode: String
+  patterns: [String!]
+}
+
+input CrawlUserAgentGeneratorInput {
+  browser: String
+  deviceType: String
+  locale: String
+  platform: String
+}
+
+input CreateCrawlTaskInput {
+  concurrency: Int
+  displayName: String
+  keywords: [String!]
+  options: CrawlOptionsInput
+  timeRange: CrawlTimeRangeInput
+  url: String!
+}
+
+input CreateItemInput {
+  externalId: String!
+  payload: String!
+  status: String
+  title: String!
+}
+
+input CreateOrgInput {
+  description: String
+  name: String!
+  slug: String!
+}
+
+type DashboardModel {
+  config: JSON
+  createdAt: DateTime!
+  description: String
+  id: String!
+  name: String!
+  slug: String!
+  theme: String
+  updatedAt: DateTime!
+  version: Int!
+  widgets: [DashboardWidgetModel!]!
+}
+
+input DashboardWidgetInput {
+  dataConfig: JSON
+  dataSource: String!
+  id: String
+  layoutH: Int!
+  layoutW: Int!
+  layoutX: Int!
+  layoutY: Int!
+  options: JSON
+  sortOrder: Int
+  title: String
+  type: DashboardWidgetType!
+}
+
+type DashboardWidgetModel {
+  dataConfig: JSON
+  dataSource: String!
+  id: String!
+  layoutH: Float!
+  layoutW: Float!
+  layoutX: Float!
+  layoutY: Float!
+  options: JSON
+  sortOrder: Float!
+  title: String
+  type: DashboardWidgetType!
+}
+
+enum DashboardWidgetType {
+  bar
+  kline
+  line
+  pie
+  radar
+  scatter
+  table
+}
+
+input DateRangeInput {
+  end: DateTime!
+  start: DateTime!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type EconomicDataFetchConfigModel {
+  frequency: EconomicDataFrequency!
+  id: String!
+  isEnabled: Boolean!
+  item: EconomicDataItemModel!
+  lastError: String
+  lastRunAt: DateTime
+  lastStatus: EconomicDataRunStatus
+  repeatCron: String
+}
+
+enum EconomicDataFrequency {
+  daily
+  hourly
+  monthly
+  realtime
+  weekly
+}
+
+type EconomicDataItemModel {
+  displayName: String!
+  groupLabel: String
+  slug: String!
+}
+
+type EconomicDataPointModel {
+  dataType: EconomicDataValueType!
+  item: EconomicDataItemModel!
+  sourceField: String
+  timestamp: DateTime!
+  unit: String
+  value: Float!
+}
+
+enum EconomicDataRunStatus {
+  failed
+  pending
+  running
+  success
+}
+
+enum EconomicDataValueType {
+  fx
+  index
+  percent
+  price
+  quantity
+  spread
+  volume
+  yield
+}
+
+type ItemConnection {
+  edges: [ItemEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ItemEdge {
+  cursor: String!
+  node: ItemModel!
+}
+
+type ItemMetaModel {
+  createdAt: DateTime!
+  externalId: String!
+  id: ID!
+  mongoRef: String!
+  name: String!
+  status: String!
+  updatedAt: DateTime!
+}
+
+type ItemModel {
+  createdAt: DateTime!
+  id: ID!
+  meta: ItemMetaModel!
+  orgId: String!
+  processed: ProcessedItemModelGraph
+  raw: RawItemModelGraph
+  status: String!
+  title: String!
+  updatedAt: DateTime!
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
+"""
+scalar JSON
+
+type MembershipModel {
+  id: String!
+  orgId: String!
+  role: RoleModel!
+  roles: [RoleModel!]!
+  user: UserModel!
+}
+
+type Mutation {
+  assignRole(input: AssignRoleInput!): MembershipModel!
+  createAlertChannel(input: AlertChannelInput!): AlertChannelModel!
+  createCrawlTask(input: CreateCrawlTaskInput!): CrawlTaskModel!
+  createItem(input: CreateItemInput!): ItemModel!
+  createOrg(input: CreateOrgInput!): OrgModel!
+  deleteAlertRule(ruleId: String!): Boolean!
+  deleteCrawlTask(id: String!): Boolean!
+  deleteDashboard(id: String!): Boolean!
+  markAllNotificationsRead: Boolean!
+  markNotificationRead(id: String!): NotificationModel
+  requestAnomalyExplanation(input: AnomalyAnalysisInput!): AnalysisResultModel!
+  requestCorrelationAnalysis(input: CorrelationAnalysisInput!): AnalysisResultModel!
+  retryCrawlTask(id: String!): CrawlTaskModel!
+  setOrgActive(input: SetOrgActiveInput!): OrgModel!
+  triggerAlertRule(ruleId: String!): Boolean!
+  triggerDataFetch(input: TriggerDataFetchInput!): Boolean!
+  updateAuditLogRetention(input: UpdateAuditLogRetentionInput!): AuditLogRetentionModel!
+  updateAuthCacheSettings(input: UpdateAuthCacheSettingsInput!): AuthCacheSettingsModel!
+  updateCrawlClientSettings(input: UpdateCrawlClientSettingsInput!): CrawlClientSettingsModel!
+  updateEconomicDataFetchConfig(frequency: EconomicDataFrequency, isEnabled: Boolean, repeatCron: String, slug: String!): EconomicDataFetchConfigModel!
+  updateItem(input: UpdateItemInput!): ItemModel!
+  updateNewsPromptConfig(input: UpdateNewsPromptConfigInput!): NewsPromptConfigModel!
+  updateOrg(input: UpdateOrgInput!): OrgModel!
+  updateRateLimitSettings(input: UpdateRateLimitSettingsInput!): RateLimitSettingsModel!
+  updateRole(input: UpdateRoleInput!): RoleModel!
+  upsertAlertRule(input: UpsertAlertRuleInput!): AlertRuleModel!
+  upsertDashboard(input: UpsertDashboardInput!): DashboardModel!
+}
+
+type NewsPromptConfigModel {
+  systemPromptTemplate: String!
+  userPromptTemplate: String!
+  version: String!
+}
+
+type NotificationModel {
+  body: String
+  createdAt: DateTime!
+  data: JSON
+  id: String!
+  readAt: DateTime
+  title: String!
+  type: NotificationType!
+}
+
+enum NotificationType {
+  alert_triggered
+  analysis_completed
+  analysis_failed
+  crawl_completed
+  crawl_failed
+  org_invite
+  system
+}
+
+type OrgModel {
+  createdAt: DateTime!
+  description: String
+  id: String!
+  isActive: Boolean!
+  name: String!
+  slug: String!
+  updatedAt: DateTime!
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+}
+
+type PermissionModel {
+  description: String
+  id: String!
+  name: String!
+}
+
+type ProcessedItemModelGraph {
+  createdAt: DateTime!
+  id: ID!
+  itemMetaId: String!
+  result: String
+  status: String!
+  tags: [String!]!
+}
+
+type Query {
+  alertChannels: [AlertChannelModel!]!
+  alertEvents(limit: Int): [AlertEventModel!]!
+  alertRules: [AlertRuleModel!]!
+  analysisResults(limit: Int): [AnalysisResultModel!]!
+  auditLogRetention: AuditLogRetentionModel!
+  authCacheSettings: AuthCacheSettingsModel!
+  crawlClientSettings: CrawlClientSettingsModel!
+  crawlMetadata(input: CrawlMetadataInput!): [CrawlMetadataResultModel!]!
+  crawlTask(id: ID!, resultLimit: Int = 20, resultSearch: String): CrawlTaskModel
+  crawlTasks(after: String, first: Int! = 20, search: String, status: CrawlTaskStatus): CrawlTaskConnection!
+  dashboards: [DashboardModel!]!
+  economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
+  getEconomicData(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicDataPointModel!]!
+  item(id: String!): ItemModel
+  items(after: String, first: Int! = 10, search: String): ItemConnection!
+  me: UserModel!
+  memberships: [MembershipModel!]!
+  myOrganizations: [OrgModel!]!
+  newsPromptConfig: NewsPromptConfigModel!
+  notifications(limit: Int): [NotificationModel!]!
+  permissions: [PermissionModel!]!
+  queueStats: QueueStatsModel!
+  rateLimitSettings: RateLimitSettingsModel!
+  roles(includeSystem: Boolean): [RoleModel!]!
+  unreadNotificationCount: Int!
+  users(after: String, first: Int, search: String): [UserModel!]!
+}
+
+type QueueCountsModel {
+  active: Int!
+  completed: Int!
+  delayed: Int!
+  failed: Int!
+  waiting: Int!
+}
+
+type QueueEventModel {
+  data: String
+  event: String!
+  jobId: String!
+  timestamp: String!
+}
+
+type QueueStatsModel {
+  counts: QueueCountsModel!
+  itemCount: Int!
+  processedCount: Int!
+  recentLogs: [QueueEventModel!]!
+}
+
+input RateLimitBucketInput {
+  limit: Int!
+  windowSeconds: Int!
+}
+
+type RateLimitBucketModel {
+  limit: Int!
+  windowSeconds: Int!
+}
+
+type RateLimitSettingsModel {
+  crawlCreate: RateLimitBucketModel!
+  login: RateLimitBucketModel!
+  rbacWrite: RateLimitBucketModel!
+}
+
+type RawItemModelGraph {
+  createdAt: DateTime!
+  id: ID!
+  itemMetaId: String!
+
+  """Raw payload JSON string"""
+  payload: String!
+  source: String
+  updatedAt: DateTime!
+}
+
+type RoleModel {
+  description: String
+  id: String!
+  isSystem: Boolean!
+  name: String!
+  permissions: [PermissionModel!]!
+}
+
+input SeriesPointInput {
+  timestamp: String!
+  value: Float!
+}
+
+input SetOrgActiveInput {
+  id: String!
+  isActive: Boolean!
+}
+
+type Subscription {
+  alertEvents: AlertEventModel!
+  analysisEvents: AnalysisResultModel!
+  queueEvents: QueueEventModel!
+}
+
+enum TimeGranularity {
+  day
+  month
+  quarter
+  week
+  year
+}
+
+input TriggerDataFetchInput {
+  slugs: [String!]!
+}
+
+input UpdateAuditLogRetentionInput {
+  retentionDays: Int!
+}
+
+input UpdateAuthCacheSettingsInput {
+  lockTtlMs: Int!
+  maxWaitMs: Int!
+  profileTtlSeconds: Int!
+  retryDelayMs: Int!
+}
+
+input UpdateCrawlClientSettingsInput {
+  healthCheckTtlMs: Int!
+  maxRetries: Int!
+  requestTimeoutMs: Int!
+  retryBackoffMs: Int!
+}
+
+input UpdateItemInput {
+  id: String!
+  payload: String
+  status: String
+  title: String
+}
+
+input UpdateNewsPromptConfigInput {
+  systemPromptTemplate: String!
+  userPromptTemplate: String!
+  version: String!
+}
+
+input UpdateOrgInput {
+  description: String
+  id: String!
+  name: String
+  slug: String
+}
+
+input UpdateRateLimitSettingsInput {
+  crawlCreate: RateLimitBucketInput!
+  login: RateLimitBucketInput!
+  rbacWrite: RateLimitBucketInput!
+}
+
+input UpdateRoleInput {
+  description: String
+  id: String!
+  permissions: [String!]!
+}
+
+input UpsertAlertRuleInput {
+  changeWindowMin: Int
+  channelIds: [String!]
+  checkIntervalSec: Int
+  cooldownSeconds: Int
+  description: String
+  id: String
+  metadata: JSON
+  metricProvider: AlertMetricProvider
+  metricSlug: String!
+  name: String!
+  operator: AlertOperator!
+  severity: AlertSeverity
+  status: AlertStatus
+  thresholdLower: Float
+  thresholdUpper: Float
+  thresholdValue: Float
+}
+
+input UpsertDashboardInput {
+  config: JSON
+  description: String
+  id: String
+  name: String!
+  slug: String!
+  theme: String
+  version: Int
+  widgets: [DashboardWidgetInput!]!
+}
+
+type UserModel {
+  email: String!
+  firstName: String!
+  id: String!
+  lastName: String!
+  orgId: String!
+  permissions: [String!]!
+  roleIds: [String!]!
+}

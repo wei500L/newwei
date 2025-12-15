@@ -73,11 +73,28 @@ services:
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
     working_dir: /workspace
-    command: sh -c "pnpm install --unsafe-perm && pnpm rebuild bcrypt --unsafe-perm && pnpm --filter db run migrate && pnpm --filter @modular/api run dev"
+    command: >
+      sh -ec "
+      echo '[api] pnpm install...';
+      pnpm install --unsafe-perm;
+      echo '[api] pnpm rebuild bcrypt...';
+      pnpm rebuild bcrypt --unsafe-perm;
+      echo '[api] prisma migrate (deploy) + generate...';
+      pnpm --filter db run migrate;
+      echo '[api] starting dev server...';
+      pnpm --filter @modular/api run dev
+      "
     env_file:
       - ./.env
     environment:
       PORT: 4000
+      CI: "true"
+      COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+      npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+      pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    dns:
+      - ${DOCKER_DNS_1:-223.5.5.5}
+      - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
       - "4000:4000"
     volumes:
@@ -114,11 +131,24 @@ services:
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
     working_dir: /workspace
-    command: sh -c "pnpm install --unsafe-perm && pnpm --filter @modular/web run dev -- --hostname 0.0.0.0"
+    command: >
+      sh -ec "
+      echo '[web] pnpm install...';
+      pnpm install --unsafe-perm;
+      echo '[web] starting dev server...';
+      pnpm --filter @modular/web run dev -- --hostname 0.0.0.0
+      "
     env_file:
       - ./.env
     environment:
       PORT: 3000
+      CI: "true"
+      COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+      npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+      pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    dns:
+      - ${DOCKER_DNS_1:-223.5.5.5}
+      - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
       - "3000:3000"
     volumes:

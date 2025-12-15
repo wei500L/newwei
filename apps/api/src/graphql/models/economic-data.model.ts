@@ -43,10 +43,10 @@ export class EconomicDataPointModel {
   @Field(() => Float)
   value!: number;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   unit?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   sourceField?: string | null;
 
   @Field(() => EconomicDataValueType)
@@ -64,7 +64,7 @@ export class EconomicDataFetchConfigModel {
   @Field(() => EconomicDataFrequency)
   frequency!: EconomicDataFrequency;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   repeatCron?: string | null;
 
   @Field()
@@ -76,7 +76,7 @@ export class EconomicDataFetchConfigModel {
   @Field(() => EconomicDataRunStatus, { nullable: true })
   lastStatus?: EconomicDataRunStatus | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   lastError?: string | null;
 
   @Field(() => EconomicDataItemModel)

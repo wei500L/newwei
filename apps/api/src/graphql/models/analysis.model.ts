@@ -27,10 +27,10 @@ export class AnalysisResultModel {
   @Field(() => AnalysisStatus)
   status!: AnalysisStatus;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   summary?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   error?: string | null;
 
   @Field(() => GraphQLJSON, { nullable: true })

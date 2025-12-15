@@ -44,7 +44,7 @@ export class UpdateOrgInput {
   })
   slug?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -61,4 +61,3 @@ export class SetOrgActiveInput {
   @IsBoolean()
   isActive!: boolean;
 }
-

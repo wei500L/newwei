@@ -68,7 +68,7 @@ export class AlertEventModel {
   @Field()
   metricValue!: number;
 
-  @Field({ nullable: true })
+  @Field(() => Number, { nullable: true })
   changePercent?: number | null;
 
   @Field(() => AlertSeverity)
@@ -113,16 +113,16 @@ export class AlertRuleModel {
   @Field(() => AlertOperator)
   operator!: AlertOperator;
 
-  @Field({ nullable: true })
+  @Field(() => Number, { nullable: true })
   thresholdValue?: number | null;
 
-  @Field({ nullable: true })
+  @Field(() => Number, { nullable: true })
   thresholdLower?: number | null;
 
-  @Field({ nullable: true })
+  @Field(() => Number, { nullable: true })
   thresholdUpper?: number | null;
 
-  @Field({ nullable: true })
+  @Field(() => Number, { nullable: true })
   changeWindowMin?: number | null;
 
   @Field()

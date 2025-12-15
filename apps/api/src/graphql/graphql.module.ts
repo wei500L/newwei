@@ -56,7 +56,6 @@ import { ItemMetaLoader } from "./loaders/item-meta.loader";
 import { RawItemLoader } from "./loaders/raw-item.loader";
 import { ProcessedItemLoader } from "./loaders/processed-item.loader";
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
-import { GraphQLJSONScalar } from "./scalars/json.scalar";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { GqlAuthGuard } from "../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
@@ -223,7 +222,6 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     NotificationResolver,
     SettingsResolver,
     OrgResolver,
-    GraphQLJSONScalar,
     UserLoader,
     RoleLoader,
     ItemMetaLoader,

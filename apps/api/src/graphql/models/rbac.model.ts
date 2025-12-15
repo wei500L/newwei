@@ -10,7 +10,7 @@ export class PermissionModel {
   @Field()
   name!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   description?: string | null;
 }
 
@@ -22,7 +22,7 @@ export class RoleModel {
   @Field()
   name!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   description?: string | null;
 
   @Field()

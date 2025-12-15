@@ -1,4 +1,4 @@
-import { Field, GraphQLInt, GraphQLISODateTime, ObjectType, registerEnumType } from "@nestjs/graphql";
+import { Field, GraphQLISODateTime, Int, ObjectType, registerEnumType } from "@nestjs/graphql";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { DashboardWidgetType } from "@prisma/client";
 import GraphQLJSON from "graphql-type-json";
@@ -7,19 +7,19 @@ registerEnumType(DashboardWidgetType, { name: "DashboardWidgetType" });
 
 @ObjectType()
 export class QueueCountsModel {
-  @Field(() => GraphQLInt)
+  @Field(() => Int)
   waiting!: number;
 
-  @Field(() => GraphQLInt)
+  @Field(() => Int)
   active!: number;
 
-  @Field(() => GraphQLInt)
+  @Field(() => Int)
   completed!: number;
 
-  @Field(() => GraphQLInt)
+  @Field(() => Int)
   failed!: number;
 
-  @Field(() => GraphQLInt)
+  @Field(() => Int)
   delayed!: number;
 }
 
@@ -29,10 +29,10 @@ export class QueueStatsModel {
   @Field(() => QueueCountsModel)
   counts!: QueueCountsModel;
 
-  @Field(() => GraphQLInt)
+  @Field(() => Int)
   processedCount!: number;
 
-  @Field(() => GraphQLInt)
+  @Field(() => Int)
   itemCount!: number;
 
   @HasPermission("queue.manage")
@@ -96,7 +96,7 @@ export class DashboardModel {
   @Field()
   id!: string;
 
-  @Field(() => GraphQLInt)
+  @Field(() => Int)
   version!: number;
 
   @Field()
