@@ -4,6 +4,7 @@ import { EconomicDataRunStatus, Prisma } from "@prisma/client";
 import { lastValueFrom } from "rxjs";
 import { Queue, type RepeatJob, type RepeatOptions } from "bullmq";
 import type Redis from "ioredis";
+import { randomUUID } from "node:crypto";
 import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime } from "@modular/utils";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
 import {
@@ -608,11 +609,11 @@ export class AkshareService implements OnModuleInit {
 
   private buildUpsertDataPointsQuery(itemId: string, rows: UpsertDataPointRow[]) {
     const values = rows.map((row) => {
-      return Prisma.sql`(${itemId}, ${row.recordedAt}, ${row.dataType}, ${row.value}, ${row.unit}, ${row.sourceField}, ${row.metaJson})`;
+      return Prisma.sql`(${randomUUID()}, ${itemId}, ${row.recordedAt}, ${row.dataType}, ${row.value}, ${row.unit}, ${row.sourceField}, ${row.metaJson})`;
     });
 
     return Prisma.sql`
-      INSERT INTO \`EconomicDataPoint\` (\`itemId\`, \`recordedAt\`, \`dataType\`, \`value\`, \`unit\`, \`sourceField\`, \`sourceMeta\`)
+      INSERT INTO \`EconomicDataPoint\` (\`id\`, \`itemId\`, \`recordedAt\`, \`dataType\`, \`value\`, \`unit\`, \`sourceField\`, \`sourceMeta\`)
       VALUES ${Prisma.join(values)}
       ON DUPLICATE KEY UPDATE
         \`value\` = VALUES(\`value\`),

@@ -54,6 +54,28 @@ services:
       timeout: 5s
       retries: 5
 
+  akshare:
+    build:
+      context: ../..
+      dockerfile: infra/akshare/Dockerfile
+      args:
+        PYTHON_IMAGE: ${AKSHARE_PYTHON_IMAGE:-python:3.11-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+    restart: unless-stopped
+    ports:
+      - "${AKSHARE_PORT:-8081}:8081"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz', timeout=2).read()\""
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   crawl4ai:
     image: ${CRAWL4AI_IMAGE:-ghcr.io/unclecode/crawl4ai:latest}
     restart: unless-stopped
@@ -89,6 +111,7 @@ services:
     environment:
       PORT: 4000
       CI: "true"
+      AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -114,6 +137,8 @@ services:
       mongo:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      akshare:
         condition: service_healthy
       crawl4ai:
         condition: service_healthy

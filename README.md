@@ -64,7 +64,24 @@ pnpm docker:down
 
 服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。`crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它。
 
+同样地，经济数据抓取模块使用 `AKSHARE_HTTP_BASE_URL` 指向一个 Python 网关（默认暴露在 `8081` 端口，底层通过 `pip install akshare` 调用 Akshare 并以 HTTP 提供数据）。Docker Compose 会自动启动该网关服务，API 容器内默认使用 `AKSHARE_HTTP_BASE_URL=http://akshare:8081`。
+
+如果你调用某个 Akshare HTTP 端点出现 `400 ... got an unexpected keyword argument ...`，通常表示你传的 query 参数不符合当前安装的 Akshare 版本函数签名。建议先在 akshare 容器里确认签名：
+
+```bash
+docker exec -it docker-akshare-1 python -c "import inspect, akshare as ak; print(inspect.signature(ak.futures_zh_spot))"
+```
+
 注意：`JWT_SECRET` / `NEXTAUTH_SECRET` 需要至少 16 位（见 `packages/utils/src/env.ts` 的校验），否则 `api` 容器会启动失败并被判定为 unhealthy。
+
+如果你访问 Docker Hub 不稳定，导致 `akshare` 网关构建时拉取 `python:3.11-slim` 失败，可以在 `infra/docker/.env` 里指定 Python 基础镜像（示例为 Akshare 官方镜像仓库）：
+
+- `AKSHARE_PYTHON_IMAGE=registry.cn-shanghai.aliyuncs.com/akfamily/aktools:jupyter`
+
+如果你本机已经有一个可用的 Python 镜像但只有 image id（没有 tag），先打一个本地 tag 再引用更稳：
+
+- `docker tag <IMAGE_ID> akshare-python-base:local`
+- `AKSHARE_PYTHON_IMAGE=akshare-python-base:local`
 
 如果启动时 `crawl4ai` 拉取出现 `error from registry: denied`（例如无法访问 GHCR），可以二选一：
 

@@ -74,7 +74,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
     method: "GET",
     defaultParams: {
-      subscribe_list: "AU0",
+      symbol: "AU0",
       market: "CF",
       adjust: "0"
     },
@@ -126,7 +126,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
     method: "GET",
     defaultParams: {
-      subscribe_list: "AG0",
+      symbol: "AG0",
       market: "CF",
       adjust: "0"
     },

@@ -16,3 +16,5 @@ logs
 .DS_Store
 .idea
 .husky/_
+__pycache__/
+*.pyc

@@ -12,6 +12,7 @@ const logger = createLogger({ name: "api-config" });
     NestConfigModule.forRoot({
       isGlobal: true,
       cache: true,
+      ignoreEnvFile: process.env.CI === "true",
       validate: (config) => {
         const result = apiEnvSchema.safeParse(config);
         if (!result.success) {
