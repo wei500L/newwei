@@ -2,20 +2,191 @@ from __future__ import annotations
 
 import datetime as dt
 import inspect
+import logging
 import math
+import os
+import subprocess
+import sys
+import threading
+import time
+import uuid
 from typing import Any
 
 import akshare as ak
 import pandas as pd
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 
 app = FastAPI(title="Akshare Gateway", version="0.1.0")
+logger = logging.getLogger("akshare-gateway")
 
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _get_akshare_version() -> str:
+    version = getattr(ak, "__version__", None)
+    if isinstance(version, str) and version.strip():
+        return version.strip()
+    return "unknown"
+
+
+@app.get("/version")
+def version() -> dict[str, str]:
+    return {"akshareVersion": _get_akshare_version(), "pythonVersion": sys.version.split()[0]}
+
+_state_lock = threading.Lock()
+_upgrade_state: dict[str, Any] = {
+    "inProgress": False,
+    "stage": "idle",
+    "requestId": None,
+    "requestedAt": None,
+    "startedAt": None,
+    "finishedAt": None,
+    "restartScheduledAt": None,
+    "beforeVersion": None,
+    "afterVersion": None,
+    "error": None,
+    "pipStdout": None,
+    "pipStderr": None,
+}
+
+
+def _now_iso() -> str:
+    return dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc).isoformat()
+
+
+def _get_upgrade_state() -> dict[str, Any]:
+    with _state_lock:
+        return dict(_upgrade_state)
+
+
+def _set_upgrade_state(**updates: Any) -> None:
+    with _state_lock:
+        _upgrade_state.update(updates)
+
+
+def _require_admin(token: str | None) -> None:
+    expected = os.getenv("AKSHARE_ADMIN_TOKEN", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Akshare admin endpoint disabled (AKSHARE_ADMIN_TOKEN is empty)")
+    if token != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+def _restart_process_after(delay_seconds: int) -> None:
+    time.sleep(max(0, int(delay_seconds)))
+    os._exit(0)
+
+
+def _perform_upgrade(request_id: str) -> None:
+    try:
+        _set_upgrade_state(stage="running", startedAt=_now_iso(), error=None)
+        before = _get_upgrade_state().get("beforeVersion") or _get_akshare_version()
+
+        cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", "--upgrade", "akshare"]
+        logger.info("Starting akshare upgrade requestId=%s", request_id)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15 * 60)
+        pip_stdout = (proc.stdout or "")[-20_000:]
+        pip_stderr = (proc.stderr or "")[-20_000:]
+
+        if proc.returncode != 0:
+            logger.error("Akshare upgrade failed requestId=%s exitCode=%s", request_id, proc.returncode)
+            _set_upgrade_state(
+                inProgress=False,
+                stage="failed",
+                finishedAt=_now_iso(),
+                beforeVersion=before,
+                afterVersion=None,
+                error=f"pip upgrade failed (exit code {proc.returncode})",
+                pipStdout=pip_stdout,
+                pipStderr=pip_stderr,
+            )
+            return
+
+        after_proc = subprocess.run(
+            [sys.executable, "-c", "import akshare as ak; print(getattr(ak, '__version__', 'unknown'))"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        after = (after_proc.stdout or "").strip() or "unknown"
+
+        restart_delay_seconds = 5
+        restart_at = (
+            dt.datetime.utcnow()
+            .replace(tzinfo=dt.timezone.utc)
+            .replace(microsecond=0)
+            + dt.timedelta(seconds=restart_delay_seconds)
+        ).isoformat()
+        _set_upgrade_state(
+            stage="restarting",
+            finishedAt=_now_iso(),
+            restartScheduledAt=restart_at,
+            beforeVersion=before,
+            afterVersion=after,
+            error=None,
+            pipStdout=pip_stdout,
+            pipStderr=pip_stderr,
+        )
+        logger.info("Akshare upgraded requestId=%s before=%s after=%s; restarting gateway", request_id, before, after)
+        _restart_process_after(restart_delay_seconds)
+    except subprocess.TimeoutExpired as exc:
+        _set_upgrade_state(
+            inProgress=False,
+            stage="failed",
+            finishedAt=_now_iso(),
+            error="pip upgrade timed out",
+            pipStdout=(exc.stdout or "")[-20_000:],
+            pipStderr=(exc.stderr or "")[-20_000:],
+        )
+        logger.error("Akshare upgrade timed out requestId=%s", request_id)
+    except Exception as exc:
+        _set_upgrade_state(inProgress=False, stage="failed", finishedAt=_now_iso(), error=str(exc))
+        logger.exception("Akshare upgrade crashed requestId=%s", request_id)
+
+
+@app.get("/admin/status")
+def admin_status(x_akshare_admin_token: str | None = Header(default=None)) -> dict[str, Any]:
+    _require_admin(x_akshare_admin_token)
+    state = _get_upgrade_state()
+    return {**state, "pid": os.getpid()}
+
+
+@app.post("/admin/upgrade")
+def upgrade(x_akshare_admin_token: str | None = Header(default=None)) -> dict[str, Any]:
+    _require_admin(x_akshare_admin_token)
+
+    request_id = str(uuid.uuid4())
+    before = _get_akshare_version()
+    with _state_lock:
+        if _upgrade_state.get("inProgress"):
+            raise HTTPException(
+                status_code=409,
+                detail={"message": "Upgrade already in progress", "state": dict(_upgrade_state)}
+            )
+        _upgrade_state.update(
+            {
+                "inProgress": True,
+                "stage": "queued",
+                "requestId": request_id,
+                "requestedAt": _now_iso(),
+                "startedAt": None,
+                "finishedAt": None,
+                "restartScheduledAt": None,
+                "beforeVersion": before,
+                "afterVersion": None,
+                "error": None,
+                "pipStdout": None,
+                "pipStderr": None,
+            }
+        )
+
+    thread = threading.Thread(target=_perform_upgrade, args=(request_id,), daemon=True)
+    thread.start()
+
+    return {"status": "accepted", "requestId": request_id, "beforeVersion": before}
 
 
 def _coerce_value(value: Any) -> Any:

@@ -314,6 +314,10 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get akshareAdminToken() {
+    return this.get<string | undefined>("AKSHARE_ADMIN_TOKEN", { infer: true });
+  }
+
   get alertingConfig() {
     return {
       queueConcurrency:

@@ -7,6 +7,7 @@ import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./aksha
 import { AkshareService } from "./akshare.service";
 import { AkshareQueueProcessor } from "./akshare.processor";
 import { DatabaseModule } from "../config/database.module";
+import { AdminAkshareController } from "./admin-akshare.controller";
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { DatabaseModule } from "../config/database.module";
       }
     })
   ],
+  controllers: [AdminAkshareController],
   providers: [
     AkshareService,
     AkshareQueueProcessor,

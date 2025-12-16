@@ -1,7 +1,7 @@
 "use client";
 
-import { Alert, Button, Card, Form, Input, InputNumber, Spin, Tabs, Tag, Typography, message } from "antd";
-import { useEffect, useMemo } from "react";
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Spin, Tabs, Tag, Typography, message } from "antd";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import {
   useAuditLogRetentionQuery,
@@ -22,6 +22,7 @@ import type {
   UpdateNewsPromptConfigMutationVariables,
   UpdateRateLimitSettingsMutationVariables
 } from "@/graphql/generated";
+import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 
 function estimateTokens(text: string) {
@@ -449,6 +450,214 @@ function NewsPromptSettingsPanel() {
   );
 }
 
+interface AkshareGatewayVersionResponse {
+  akshareVersion: string;
+  pythonVersion: string;
+}
+
+interface AkshareGatewayUpgradeAcceptedResponse {
+  status: "accepted";
+  requestId: string;
+  beforeVersion: string;
+}
+
+interface AkshareGatewayUpgradeStatusResponse {
+  inProgress: boolean;
+  stage: "idle" | "queued" | "running" | "restarting" | "failed";
+  requestId: string | null;
+  requestedAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  restartScheduledAt: string | null;
+  beforeVersion: string | null;
+  afterVersion: string | null;
+  error: string | null;
+  pipStdout: string | null;
+  pipStderr: string | null;
+  pid?: number;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function AkshareGatewaySettingsPanel() {
+  const { data: session } = useSession();
+  const [messageApi, contextHolder] = message.useMessage();
+  const [loading, setLoading] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
+  const [version, setVersion] = useState<AkshareGatewayVersionResponse | null>(null);
+  const [status, setStatus] = useState<AkshareGatewayUpgradeStatusResponse | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken: session?.accessToken }),
+    [session?.accessToken]
+  );
+
+  const fetchVersion = useCallback(async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await apiClient.get<AkshareGatewayVersionResponse>("admin/akshare/version", {
+        timeout: 10_000
+      });
+      setVersion(response.data);
+    } catch (error) {
+      captureClientError("Failed to load akshare gateway version", error);
+      setErrorMessage("Failed to load akshare gateway version");
+    } finally {
+      setLoading(false);
+    }
+  }, [apiClient]);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const response = await apiClient.get<AkshareGatewayUpgradeStatusResponse>("admin/akshare/status", {
+        timeout: 10_000
+      });
+      setStatus(response.data);
+      return response.data;
+    } catch (error) {
+      captureClientError("Failed to load akshare gateway status", error);
+      setStatus(null);
+      return null;
+    }
+  }, [apiClient]);
+
+  useEffect(() => {
+    void fetchVersion();
+    void fetchStatus();
+  }, [fetchStatus, fetchVersion]);
+
+  const handleUpgrade = useCallback(() => {
+    Modal.confirm({
+      title: "Upgrade Akshare to latest",
+      content:
+        "This will run `pip install -U akshare` inside the akshare gateway container and restart the gateway process. Requests may fail briefly during the restart.",
+      okText: "Upgrade now",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setUpgrading(true);
+        setErrorMessage(null);
+        try {
+          const response = await apiClient.post<AkshareGatewayUpgradeAcceptedResponse>(
+            "admin/akshare/upgrade",
+            {},
+            { timeout: 30_000 }
+          );
+          messageApi.success(`Akshare upgrade started (current: ${response.data.beforeVersion})`);
+
+          const requestId = response.data.requestId;
+          for (let attempt = 0; attempt < 120; attempt += 1) {
+            const currentStatus = await fetchStatus();
+            if (currentStatus?.requestId === requestId) {
+              if (currentStatus.stage === "failed") {
+                const detail = currentStatus.error ? `: ${currentStatus.error}` : "";
+                throw new Error(`Akshare upgrade failed${detail}`);
+              }
+              if (currentStatus.stage === "restarting") {
+                break;
+              }
+            }
+            await sleep(2000);
+          }
+
+          await sleep(2000);
+          for (let attempt = 0; attempt < 30; attempt += 1) {
+            try {
+              await fetchVersion();
+              break;
+            } catch {
+              // gateway may be restarting
+            }
+            await sleep(2000);
+          }
+        } catch (error) {
+          const statusCode = (error as any)?.response?.status as number | undefined;
+          if (statusCode === 409) {
+            messageApi.info("Akshare upgrade is already in progress");
+            void fetchStatus();
+            return;
+          }
+          if (statusCode === 503) {
+            messageApi.error("Akshare upgrade is disabled (missing AKSHARE_ADMIN_TOKEN)");
+            setErrorMessage("Akshare upgrade is disabled (missing AKSHARE_ADMIN_TOKEN)");
+            return;
+          }
+
+          captureClientError("Failed to upgrade akshare gateway", error);
+          messageApi.error("Failed to upgrade akshare");
+          setErrorMessage("Failed to upgrade akshare");
+          throw error;
+        } finally {
+          setUpgrading(false);
+        }
+      }
+    });
+  }, [apiClient, fetchStatus, fetchVersion, messageApi]);
+
+  const currentVersion = version?.akshareVersion ?? "-";
+  const pythonVersion = version?.pythonVersion ?? "-";
+  const stage = status?.stage ?? "unknown";
+  const stageColor =
+    stage === "failed"
+      ? "red"
+      : stage === "restarting" || stage === "running" || stage === "queued"
+        ? "orange"
+        : stage === "idle"
+          ? "green"
+          : "default";
+
+  return (
+    <>
+      {contextHolder}
+      <Typography.Paragraph type="secondary">
+        Shows the Akshare version running inside the akshare gateway container. You can upgrade it to the latest version
+        without rebuilding the image.
+      </Typography.Paragraph>
+
+      {errorMessage ? (
+        <Alert style={{ marginBottom: "1rem" }} type="error" message={errorMessage} showIcon />
+      ) : null}
+
+      <Card size="small" title="Akshare Gateway" style={{ marginBottom: "1rem" }}>
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+          <Typography.Text>Akshare</Typography.Text>
+          <Tag color="blue">{currentVersion}</Tag>
+          <Typography.Text type="secondary">Python {pythonVersion}</Typography.Text>
+          <Tag color={stageColor}>{stage}</Tag>
+          <Button onClick={() => void fetchVersion()} loading={loading}>
+            Refresh
+          </Button>
+          <Button onClick={() => void fetchStatus()} disabled={loading}>
+            Refresh status
+          </Button>
+          <Button
+            type="primary"
+            danger
+            onClick={handleUpgrade}
+            loading={upgrading}
+            disabled={loading || upgrading || Boolean(status?.inProgress)}
+          >
+            Upgrade to latest
+          </Button>
+        </div>
+        {status?.requestId ? (
+          <Typography.Paragraph type="secondary" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+            Request: {status.requestId}
+            {status.beforeVersion ? ` · before: ${status.beforeVersion}` : ""}
+            {status.afterVersion ? ` · after: ${status.afterVersion}` : ""}
+          </Typography.Paragraph>
+        ) : null}
+        {status?.error ? (
+          <Typography.Paragraph type="danger" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+            {status.error}
+          </Typography.Paragraph>
+        ) : null}
+      </Card>
+    </>
+  );
+}
+
 export function SystemSettingsContent() {
   const { data: session, status } = useSession();
   const canManageSettings = session?.permissions?.includes("settings.manage") ?? false;
@@ -478,7 +687,8 @@ export function SystemSettingsContent() {
     { key: "auditLog", label: "Audit Log", children: <AuditLogRetentionPanel /> },
     { key: "authCache", label: "Auth Cache", children: <AuthCacheSettingsPanel /> },
     { key: "crawlClient", label: "Crawl Client", children: <CrawlClientSettingsPanel /> },
-    { key: "newsPrompts", label: "News Pipeline Prompts", children: <NewsPromptSettingsPanel /> }
+    { key: "newsPrompts", label: "News Pipeline Prompts", children: <NewsPromptSettingsPanel /> },
+    { key: "akshare", label: "Akshare", children: <AkshareGatewaySettingsPanel /> }
   ];
 
   return (
@@ -490,4 +700,3 @@ export function SystemSettingsContent() {
     </Card>
   );
 }
-

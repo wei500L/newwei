@@ -73,6 +73,39 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml e
   python -c "import inspect, akshare as ak; print(inspect.signature(ak.futures_zh_spot))"
 ```
 
+#### Akshare 网关与版本更新
+
+本项目通过一个 Python 网关容器对外提供 Akshare 数据（默认 `http://akshare:8081`），而不是直接在 Node/Nest 里安装 Akshare。Akshare 更新频繁时，推荐用“管理后台一键升级”保持最新版本。
+
+##### 管理后台一键升级（始终最新）
+
+- 入口：Web → `System Settings` → `Akshare` → `Upgrade to latest`
+- 前提：在 `infra/docker/.env` 配置 `AKSHARE_ADMIN_TOKEN`（示例见 `infra/docker/.env.sample`）
+- 行为：会在网关容器内执行 `pip install -U akshare`，并自动重启网关进程一次；页面展示升级状态/失败信息与“真实运行版本”（来自网关 `/version`），同时写入审计日志（`akshare_gateway.*`）
+
+##### 构建时版本（可选）
+
+你也可以在构建镜像时指定 Akshare 版本（影响“首次 build/重建容器”的版本基线）：
+
+- 固定版本：`AKSHARE_VERSION=1.17.94`
+- 总是最新：`AKSHARE_VERSION=latest`（建议配合 `docker compose build --no-cache akshare` 避免缓存）
+
+##### 仅重建/重启 akshare 服务
+
+```bash
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml build akshare
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up -d akshare
+```
+
+##### 可选：官方 aktools 镜像做交互验证
+
+Akshare 官方提供 `aktools:jupyter` 镜像，适合本地临时进入 Python 环境验证数据源与函数行为（不替代本项目的网关服务协议）：
+
+```bash
+docker pull registry.cn-shanghai.aliyuncs.com/akfamily/aktools:jupyter
+docker run -it --rm registry.cn-shanghai.aliyuncs.com/akfamily/aktools:jupyter python
+```
+
 注意：`JWT_SECRET` / `NEXTAUTH_SECRET` 需要至少 16 位（见 `packages/utils/src/env.ts` 的校验），否则 `api` 容器会启动失败并被判定为 unhealthy。
 
 如果你访问 Docker Hub 不稳定，导致 `akshare` 网关构建时拉取 `python:3.11-slim` 失败，可以在 `infra/docker/.env` 里指定一个 **Python 3.11+** 的基础镜像（`akshare>=1.16.72` 依赖 `aiohttp>=3.11.13`，因此 **Python 3.8/3.7 的镜像会构建失败**）。建议先验证镜像内 Python 版本：

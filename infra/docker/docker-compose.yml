@@ -64,6 +64,8 @@ services:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     restart: unless-stopped
+    environment:
+      AKSHARE_ADMIN_TOKEN: ${AKSHARE_ADMIN_TOKEN:-}
     ports:
       - "${AKSHARE_PORT:-8081}:8081"
     healthcheck:
