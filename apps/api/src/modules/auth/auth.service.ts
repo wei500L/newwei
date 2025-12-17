@@ -55,14 +55,13 @@ export class AuthService {
     }
   }
 
-  private pickMembership<T extends { orgId: string; org?: { isActive: boolean } | null }>(
-    memberships: T[],
-    orgId?: string
-  ): T {
+  private pickMembership<
+    T extends { orgId: string; org?: { isActive: boolean; slug?: string } | null }
+  >(memberships: T[], orgIdOrSlug?: string): T {
     if (memberships.length === 0) {
       throw new UnauthorizedException("User is not assigned to an organization");
     }
-    if (!orgId) {
+    if (!orgIdOrSlug) {
       if (memberships.length === 1) {
         return memberships[0];
       }
@@ -81,7 +80,9 @@ export class AuthService {
         "Organization is required when a user belongs to multiple organizations"
       );
     }
-    const membership = memberships.find((candidate) => candidate.orgId === orgId);
+    const membership = memberships.find(
+      (candidate) => candidate.orgId === orgIdOrSlug || candidate.org?.slug === orgIdOrSlug
+    );
     if (!membership) {
       throw new UnauthorizedException("User is not assigned to the specified organization");
     }

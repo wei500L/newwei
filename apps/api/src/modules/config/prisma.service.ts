@@ -1,9 +1,12 @@
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { EnvService } from "./config.service";
+import { createLogger } from "@modular/utils";
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = createLogger({ name: "prisma" });
+
   constructor(@Inject(EnvService) private readonly env: EnvService) {
     const connectionString =
       process.env.DATABASE_URL ??
@@ -25,6 +28,26 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async onModuleInit() {
     await this.$connect();
+
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        await this.$queryRawUnsafe("SELECT 1 FROM `_prisma_migrations` LIMIT 1");
+      } catch (error) {
+        this.logger.error(
+          { err: error },
+          "Database schema not initialized; run `pnpm db:migrate` (and `pnpm db:seed`) before starting the API"
+        );
+        const migrationError = new Error(
+          "Database schema not initialized; run `pnpm db:migrate` (and `pnpm db:seed`) before starting the API"
+        );
+        try {
+          (migrationError as unknown as { cause?: unknown }).cause = error;
+        } catch {
+          // ignore
+        }
+        throw migrationError;
+      }
+    }
   }
 
   async onModuleDestroy() {

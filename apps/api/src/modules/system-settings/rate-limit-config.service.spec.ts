@@ -88,6 +88,31 @@ describe("RateLimitConfigService", () => {
     expect(cacheMock.set).not.toHaveBeenCalled();
   });
 
+  it("falls back to database when cache read fails", async () => {
+    cacheMock.get = jest.fn(async () => {
+      throw new Error("redis unavailable");
+    });
+    prismaMock.systemSetting.findMany = jest.fn().mockResolvedValue([
+      { key: "rate_limit_login", value: { limit: 8, windowSeconds: 90 } },
+      { key: "rate_limit_crawl_create", value: { limit: 2, windowSeconds: 600 } },
+      { key: "rate_limit_rbac_write", value: { limit: 3, windowSeconds: 420 } }
+    ]);
+
+    const settings = await service.getRateLimitSettings();
+    expect(settings.login).toEqual({ limit: 8, windowSeconds: 90 });
+    expect(prismaMock.systemSetting.findMany).toHaveBeenCalled();
+  });
+
+  it("falls back to environment defaults when database lookup fails", async () => {
+    prismaMock.systemSetting.findMany = jest.fn(async () => {
+      throw new Error("db unavailable");
+    });
+
+    const settings = await service.getRateLimitSettings();
+    expect(settings.login.limit).toBe(envMock.rateLimit.login);
+    expect(settings.crawlCreate.windowSeconds).toBe(envMock.rateLimit.crawlTaskCreateWindowSeconds);
+  });
+
   it("updates settings and refreshes cache", async () => {
     await service.updateRateLimitSettings("org-1", "admin-1", {
       login: { limit: 6, windowSeconds: 100 },

@@ -3,6 +3,7 @@ import { PrismaService } from "../config/prisma.service";
 import { EnvService } from "../config/config.service";
 import { CacheService } from "../cache/cache.service";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { createLogger } from "@modular/utils";
 
 export type RateLimitBucket = "login" | "crawlCreate" | "rbacWrite";
 
@@ -38,6 +39,7 @@ const RATE_LIMIT_CACHE_KEY = "rate_limit:settings";
 @Injectable()
 export class RateLimitConfigService {
   private readonly cacheTtlSeconds: number;
+  private readonly logger = createLogger({ name: "rate-limit-config" });
 
   constructor(
     private readonly prisma: PrismaService,
@@ -48,12 +50,37 @@ export class RateLimitConfigService {
   }
 
   async getRateLimitSettings(): Promise<RateLimitSettings> {
-    const cached = await this.cache.get<RateLimitSettings>(RATE_LIMIT_CACHE_KEY);
+    let cached: RateLimitSettings | null = null;
+    try {
+      cached = await this.cache.get<RateLimitSettings>(RATE_LIMIT_CACHE_KEY);
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        "Failed to read rate limit settings from cache; falling back to database"
+      );
+    }
+
     if (cached) {
       return this.normalizeSettings(cached);
     }
-    const settings = await this.loadSettings();
-    await this.cache.set(RATE_LIMIT_CACHE_KEY, settings, this.cacheTtlSeconds);
+
+    let settings: RateLimitSettings;
+    try {
+      settings = await this.loadSettings();
+    } catch (error) {
+      settings = this.getFallbackSettings();
+      this.logger.warn(
+        { err: error },
+        "Failed to load rate limit settings from database; using environment defaults"
+      );
+    }
+
+    try {
+      await this.cache.set(RATE_LIMIT_CACHE_KEY, settings, this.cacheTtlSeconds);
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to write rate limit settings to cache");
+    }
+
     return settings;
   }
 

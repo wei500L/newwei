@@ -119,7 +119,12 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
 
   // Seed a demo item metadata row
   await prisma.itemMeta.upsert({
-    where: { externalId: "item-001" },
+    where: {
+      orgId_externalId: {
+        orgId: org.id,
+        externalId: "item-001"
+      }
+    },
     update: {
       name: "Sample Item",
       status: "active"

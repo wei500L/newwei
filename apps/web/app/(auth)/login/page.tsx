@@ -60,12 +60,16 @@ export default function LoginPage() {
       const result = await signIn("credentials", {
         email: payload.email,
         password: payload.password,
-        orgId: payload.orgId,
+        ...(payload.orgId ? { orgId: payload.orgId } : {}),
         redirect: false,
       });
 
       if (result?.error) {
-        setError("Unable to sign in with provided credentials");
+        setError(
+          process.env.NODE_ENV === "production"
+            ? "Unable to sign in with provided credentials"
+            : `Unable to sign in (${result.error})`
+        );
         return;
       }
 
@@ -124,7 +128,7 @@ export default function LoginPage() {
           tooltip="Optional. Leave blank to use your default organization"
         >
           <Input
-            placeholder="org-123 or slug"
+            placeholder="Org ID or slug (e.g. cmja... or acme)"
             autoComplete="organization"
             size="large"
           />

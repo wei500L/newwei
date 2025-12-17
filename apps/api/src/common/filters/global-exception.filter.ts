@@ -9,6 +9,7 @@ import {
 import { GqlArgumentsHost } from "@nestjs/graphql";
 import type { Request, Response } from "express";
 import { GraphQLError } from "graphql";
+import { Prisma } from "@prisma/client";
 import { ExceptionEventsService } from "../../modules/observability/exception-events.service";
 
 interface NormalizedHttpResponse {
@@ -22,6 +23,7 @@ type HostContextType = "http" | "graphql" | "rpc" | "ws";
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = createLogger({ name: "exceptions" });
+  private readonly exposeErrorDetails = process.env.NODE_ENV !== "production";
 
   constructor(private readonly exceptionEvents: ExceptionEventsService) {}
 
@@ -144,6 +146,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         code: this.resolveGraphqlCode(statusCode),
         http: { status: statusCode },
         traceId,
+        ...(this.exposeErrorDetails &&
+        exception instanceof Error &&
+        !(exception instanceof HttpException)
+          ? {
+              originalError: {
+                name: exception.name,
+                message: exception.message,
+                stack: exception.stack
+              }
+            }
+          : {})
       },
     });
   }
@@ -151,6 +164,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   private resolveStatus(exception: unknown): number {
     if (exception instanceof HttpException) {
       return exception.getStatus();
+    }
+
+    if (
+      exception instanceof Prisma.PrismaClientInitializationError ||
+      exception instanceof Prisma.PrismaClientRustPanicError
+    ) {
+      return HttpStatus.SERVICE_UNAVAILABLE;
     }
     return HttpStatus.INTERNAL_SERVER_ERROR;
   }
@@ -170,6 +190,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         statusCode,
         message,
         error: typeof response === "object" ? response : undefined,
+      };
+    }
+
+    if (this.exposeErrorDetails && exception instanceof Error) {
+      return {
+        statusCode,
+        message: exception.message || "Internal server error",
+        error: {
+          name: exception.name,
+          message: exception.message,
+          stack: exception.stack
+        }
       };
     }
 

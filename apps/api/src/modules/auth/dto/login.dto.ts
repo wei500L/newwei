@@ -11,7 +11,7 @@ export class LoginDto {
   @MinLength(8)
   password!: string;
 
-  @ApiPropertyOptional({ description: "Organization to log into" })
+  @ApiPropertyOptional({ description: "Organization id or slug to log into" })
   @IsOptional()
   @IsString()
   orgId?: string;

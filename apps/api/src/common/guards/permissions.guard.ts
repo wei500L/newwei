@@ -1,6 +1,5 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { GqlExecutionContext } from "@nestjs/graphql";
 import { PERMISSIONS_KEY, PermissionsMode, normalizePermissionsRequirement } from "../decorators/permissions.decorator";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import { ALLOW_AUTHENTICATED_KEY } from "../decorators/allow-authenticated.decorator";
@@ -12,6 +11,10 @@ export class PermissionsGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext) {
+    if (context.getType<GqlContextType>() === "graphql") {
+      return true;
+    }
+
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass()
@@ -38,11 +41,7 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException("Permission metadata missing");
     }
 
-    const type = context.getType<GqlContextType>();
-    const request =
-      type === "graphql"
-        ? GqlExecutionContext.create(context).getContext().req
-        : context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest();
     const user = request.user as { permissions?: string[] } | undefined;
     if (!user) {
       throw new ForbiddenException("Missing user context");

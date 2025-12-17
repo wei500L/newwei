@@ -1,6 +1,6 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { env } from "./env";
+import { serverEnv } from "./env.server";
 import { logServerError } from "./server-logger";
 import { createTraceHeaders } from "./trace";
 
@@ -39,6 +39,15 @@ export type TokenPayload = {
 };
 
 const REFRESH_TOKEN_TIMEOUT_MS = 5_000;
+const LOGIN_TIMEOUT_MS = 8_000;
+
+function normalizeOptionalId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed === "undefined" || trimmed === "null") return undefined;
+  return trimmed;
+}
 
 async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
   let traceId: string | undefined;
@@ -46,7 +55,7 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
   const timeoutId = setTimeout(() => controller.abort(), REFRESH_TOKEN_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${env.apiBaseUrl}/auth/refresh`, {
+    const response = await fetch(`${serverEnv.apiBaseUrl}/auth/refresh`, {
       method: "POST",
       headers: createTraceHeaders({
         "Content-Type": "application/json"
@@ -96,7 +105,9 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
 }
 
 const config: NextAuthConfig = {
-  secret: env.NEXTAUTH_SECRET,
+  trustHost: true,
+  debug: process.env.NODE_ENV !== "production",
+  secret: serverEnv.NEXTAUTH_SECRET,
   session: {
     strategy: "jwt"
   },
@@ -115,29 +126,63 @@ const config: NextAuthConfig = {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
-        const response = await fetch(`${env.apiBaseUrl}/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: credentials.email,
-            password: credentials.password,
-            orgId: credentials.orgId || undefined
-          })
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+        const orgId = normalizeOptionalId(credentials.orgId);
+        const loginUrl = `${serverEnv.apiBaseUrl}/auth/login`;
 
-        if (!response.ok) {
+        try {
+          const response = await fetch(loginUrl, {
+            method: "POST",
+            headers: createTraceHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({
+              email: credentials.email,
+              password: credentials.password,
+              orgId
+            }),
+            signal: controller.signal
+          });
+
+          const traceId = response.headers.get("x-trace-id") ?? undefined;
+
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "Backend login failed");
+            logServerError("Credentials sign-in rejected by backend", new Error(errorText), {
+              traceId,
+              meta: {
+                status: response.status,
+                url: loginUrl,
+                email: credentials.email,
+                orgId: orgId ?? null
+              }
+            });
+            return null;
+          }
+
+          const data = (await response.json()) as BackendLoginResponse;
+          const organizations = data.organizations ?? [{ id: data.user.orgId }];
+          return {
+            id: data.user.id,
+            email: data.user.email,
+            name: `${data.user.firstName} ${data.user.lastName}`,
+            ...data,
+            organizations
+          };
+        } catch (error) {
+          const isAbortError = error instanceof Error && error.name === "AbortError";
+          logServerError("Credentials sign-in request failed", error, {
+            meta: {
+              reason: isAbortError ? "timeout" : "fetch_error",
+              timeoutMs: LOGIN_TIMEOUT_MS,
+              url: loginUrl,
+              email: credentials.email,
+              orgId: orgId ?? null
+            }
+          });
           return null;
+        } finally {
+          clearTimeout(timeoutId);
         }
-
-        const data = (await response.json()) as BackendLoginResponse;
-        const organizations = data.organizations ?? [{ id: data.user.orgId }];
-        return {
-          id: data.user.id,
-          email: data.user.email,
-          name: `${data.user.firstName} ${data.user.lastName}`,
-          ...data,
-          organizations
-        };
       }
     })
   ],

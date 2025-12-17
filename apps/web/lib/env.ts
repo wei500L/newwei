@@ -1,35 +1,56 @@
 import { z } from "zod";
 import { logServerError } from "./server-logger";
 
-const schema = z.object({
-  NEXTAUTH_URL: z.string().url(),
-  NEXTAUTH_SECRET: z.string().min(16),
-  NEXT_PUBLIC_API_BASE_URL: z.string().url(),
+const publicSchema = z.object({
+  NEXT_PUBLIC_API_BASE_URL: z.string().url()
+});
+
+const serverSchema = z.object({
   API_BASE_URL: z.string().url().optional()
 });
 
-const parsed = schema.safeParse({
-  NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-  NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
-  API_BASE_URL: process.env.API_BASE_URL
+const isServer = typeof window === "undefined";
+
+const publicParsed = publicSchema.safeParse({
+  NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL
 });
 
-if (!parsed.success) {
-  logServerError("Invalid web environment configuration", parsed.error, {
-    meta: parsed.error.flatten().fieldErrors
+if (!publicParsed.success) {
+  const fieldErrors = publicParsed.error.flatten().fieldErrors;
+  if (isServer) {
+    logServerError("Invalid web environment configuration", publicParsed.error, {
+      meta: fieldErrors
+    });
+  } else {
+    // eslint-disable-next-line no-console
+    console.error("Invalid web environment configuration", fieldErrors);
+  }
+  throw new Error("Invalid web environment configuration");
+}
+
+const publicEnvValues = publicParsed.data;
+
+const serverParsed = isServer
+  ? serverSchema.safeParse({
+      API_BASE_URL: process.env.API_BASE_URL
+    })
+  : null;
+
+if (isServer && serverParsed && !serverParsed.success) {
+  const fieldErrors = serverParsed.error.flatten().fieldErrors;
+  logServerError("Invalid web environment configuration", serverParsed.error, {
+    meta: fieldErrors
   });
   throw new Error("Invalid web environment configuration");
 }
 
-const envValues = parsed.data;
-
-const publicApiBaseUrl = envValues.NEXT_PUBLIC_API_BASE_URL.endsWith("/api")
-  ? envValues.NEXT_PUBLIC_API_BASE_URL
-  : `${envValues.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, "")}/api`;
+const publicApiBaseUrl = publicEnvValues.NEXT_PUBLIC_API_BASE_URL.endsWith("/api")
+  ? publicEnvValues.NEXT_PUBLIC_API_BASE_URL
+  : `${publicEnvValues.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, "")}/api`;
 const publicApiRoot = publicApiBaseUrl.endsWith("/api") ? publicApiBaseUrl.slice(0, -4) : publicApiBaseUrl;
 
-const internalApiRootRaw = envValues.API_BASE_URL ?? publicApiRoot;
+const internalApiRootRaw =
+  isServer && serverParsed && serverParsed.success ? serverParsed.data.API_BASE_URL ?? publicApiRoot : publicApiRoot;
 const internalApiBaseUrl = internalApiRootRaw.endsWith("/api")
   ? internalApiRootRaw
   : `${internalApiRootRaw.replace(/\/$/, "")}/api`;
@@ -40,7 +61,7 @@ const apiRoot = typeof window === "undefined" ? internalApiRoot : publicApiRoot;
 const graphqlUrl = `${apiRoot}/graphql`;
 
 export const env = {
-  ...envValues,
+  ...publicEnvValues,
   apiBaseUrl,
   apiRoot,
   graphqlUrl
