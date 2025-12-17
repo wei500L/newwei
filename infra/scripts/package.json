@@ -4,9 +4,10 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "docker:up": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml up --build",
-    "docker:down": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml down",
-    "docker:logs": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml logs -f",
+    "docker:up": "node src/docker-up.js",
+    "docker:up:build": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml up --build",
+    "docker:down": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml --profile extras down",
+    "docker:logs": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml --profile extras logs -f",
     "env:check": "tsx src/check-env.ts"
   },
   "dependencies": {

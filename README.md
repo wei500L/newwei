@@ -57,19 +57,23 @@ SMTP_FROM="Wei <wei500l@163.com>"
 
 ```bash
 cp infra/docker/.env.sample infra/docker/.env
-pnpm docker:up   # 启动 MySQL、Mongo、Redis、API、Web
+pnpm docker:up   # 启动 MySQL、Mongo、Redis、API、Web（会先检查镜像，缺失才拉取/构建）
+pnpm docker:up:extras # 额外启动 akshare/crawl4ai 等可选服务
+pnpm docker:up:build  # 需要重建镜像时使用（会触发拉取基础镜像）
 pnpm docker:logs # 追踪整个栈的日志
 pnpm docker:down
 ```
 
-服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。`crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它。
+服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。`akshare` 与 `crawl4ai` 这类外部依赖（需要额外拉取镜像）被放进了 `extras` profile：当你网络环境无法稳定访问 Docker Hub/GHCR 时，仍可先启动 API/Web 做本地开发；需要相关能力时再启用 `pnpm docker:up:extras`。
 
-同样地，经济数据抓取模块使用 `AKSHARE_HTTP_BASE_URL` 指向一个 Python 网关（默认暴露在 `8081` 端口，底层通过 `pip install akshare` 调用 Akshare 并以 HTTP 提供数据）。Docker Compose 会自动启动该网关服务，API 容器内默认使用 `AKSHARE_HTTP_BASE_URL=http://akshare:8081`。
+其中：
+- `crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它（建议随 `extras` 一起启动）。
+- 经济数据抓取模块使用 `AKSHARE_HTTP_BASE_URL` 指向一个 Python 网关（默认暴露在 `8081` 端口，底层通过 `pip install akshare` 调用 Akshare 并以 HTTP 提供数据）。启用 `extras` 后，API 容器内默认使用 `AKSHARE_HTTP_BASE_URL=http://akshare:8081`。
 
 如果你调用某个 Akshare HTTP 端点出现 `400 ... got an unexpected keyword argument ...`，通常表示你传的 query 参数不符合当前安装的 Akshare 版本函数签名。建议先在 akshare 容器里确认签名：
 
 ```bash
-docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml exec akshare \
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras exec akshare \
   python -c "import inspect, akshare as ak; print(inspect.signature(ak.futures_zh_spot))"
 ```
 
@@ -81,7 +85,9 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml e
 
 - 入口：Web → `System Settings` → `Akshare` → `Upgrade to latest`
 - 前提：在 `infra/docker/.env` 配置 `AKSHARE_ADMIN_TOKEN`（示例见 `infra/docker/.env.sample`）
-- 行为：会在网关容器内执行 `pip install -U akshare`，并自动重启网关进程一次；页面展示升级状态/失败信息与“真实运行版本”（来自网关 `/version`），同时写入审计日志（`akshare_gateway.*`）
+- 行为：会在网关容器内执行 `pip install -U akshare`，并自动重启网关进程一次；页面展示升级状态/失败信息、“真实运行版本”（来自网关 `/version`）以及升级历史（来自审计日志 `akshare_gateway.*`）
+
+`AKSHARE_ADMIN_TOKEN` 等同于一个“远程执行 pip 升级”的管理口令，请使用足够随机的值并避免泄露/提交到仓库。
 
 ##### 构建时版本（可选）
 
@@ -94,7 +100,7 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml e
 
 ```bash
 docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml build akshare
-docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up -d akshare
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras up -d akshare
 ```
 
 ##### 可选：官方 aktools 镜像做交互验证
@@ -108,7 +114,9 @@ docker run -it --rm registry.cn-shanghai.aliyuncs.com/akfamily/aktools:jupyter p
 
 注意：`JWT_SECRET` / `NEXTAUTH_SECRET` 需要至少 16 位（见 `packages/utils/src/env.ts` 的校验），否则 `api` 容器会启动失败并被判定为 unhealthy。
 
-如果你访问 Docker Hub 不稳定，导致 `akshare` 网关构建时拉取 `python:3.11-slim` 失败，可以在 `infra/docker/.env` 里指定一个 **Python 3.11+** 的基础镜像（`akshare>=1.16.72` 依赖 `aiohttp>=3.11.13`，因此 **Python 3.8/3.7 的镜像会构建失败**）。建议先验证镜像内 Python 版本：
+如果你暂时不需要经济数据/新闻抓取能力，可先只跑核心栈：`pnpm docker:up`（不启用 `extras`），避免因为拉取 Python/GHCR 镜像失败而卡住开发环境。
+
+如果你访问 Docker Hub 不稳定，导致 `akshare` 网关构建时拉取 `python:3.11-slim` 失败（通常出现在 `pnpm docker:up:extras`），可以在 `infra/docker/.env` 里指定一个 **Python 3.11+** 的基础镜像（`akshare>=1.16.72` 依赖 `aiohttp>=3.11.13`，因此 **Python 3.8/3.7 的镜像会构建失败**）。建议先验证镜像内 Python 版本：
 
 - `docker run --rm <IMAGE> python -V`
 

@@ -55,6 +55,7 @@ services:
       retries: 5
 
   akshare:
+    profiles: ["extras"]
     build:
       context: ../..
       dockerfile: infra/akshare/Dockerfile
@@ -80,6 +81,7 @@ services:
       start_period: 20s
 
   crawl4ai:
+    profiles: ["extras"]
     image: ${CRAWL4AI_IMAGE:-ghcr.io/unclecode/crawl4ai:latest}
     restart: unless-stopped
     ports:
@@ -140,10 +142,6 @@ services:
       mongo:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      akshare:
-        condition: service_healthy
-      crawl4ai:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:4000/api/healthz/live"]

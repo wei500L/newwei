@@ -16,9 +16,12 @@
     "codegen": "graphql-codegen --config apps/web/codegen.yml",
     "db:migrate": "pnpm --filter db run migrate",
     "db:seed": "pnpm --filter db run seed",
-    "docker:up": "pnpm --filter infra-scripts run docker:up",
-    "docker:down": "pnpm --filter infra-scripts run docker:down",
-    "docker:logs": "pnpm --filter infra-scripts run docker:logs"
+    "docker:up": "node infra/scripts/src/docker-up.js",
+    "docker:up:extras": "node infra/scripts/src/docker-up.js --profile extras",
+    "docker:up:build": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up --build",
+    "docker:up:extras:build": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras up --build",
+    "docker:down": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras down",
+    "docker:logs": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras logs -f"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.3.0",
