@@ -3,13 +3,14 @@
 import { App } from "antd";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
+
 import { onUnauthorized } from "@/lib/auth-events";
 
 export function UnauthorizedRedirect() {
   const { message } = App.useApp();
   const router = useRouter();
   const redirectingRef = useRef(false);
-  const timeoutRef = useRef<number>();
+  const timeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const unsubscribe = onUnauthorized(() => {
@@ -32,9 +33,10 @@ export function UnauthorizedRedirect() {
 
     return () => {
       unsubscribe();
-      if (timeoutRef.current) {
+      if (timeoutRef.current !== null) {
         window.clearTimeout(timeoutRef.current);
       }
+      timeoutRef.current = null;
       redirectingRef.current = false;
     };
   }, [message, router]);

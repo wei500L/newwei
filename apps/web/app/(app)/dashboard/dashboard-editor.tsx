@@ -2,26 +2,46 @@
 
 import { Button, Card, Input, Select, Space, Typography, message } from "antd";
 import dynamic from "next/dynamic";
+import type { ComponentType } from "react";
 import { useEffect, useMemo } from "react";
-import {
-  DashboardWidgetType,
-  useDashboardEditorStore,
-} from "@/store/dashboard-editor";
-import { TimeRangeControls } from "@/components/time-range-controls";
-import type {
-  DashboardsQuery,
-  UpsertDashboardInput,
-} from "@/graphql/generated";
-import { WidgetRenderer } from "./charts/widget-renderer";
+import type { Layout } from "react-grid-layout";
 
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
+import { TimeRangeControls } from "@/components/time-range-controls";
+import type {
+  DashboardsQuery,
+  DashboardWidgetType as GraphqlDashboardWidgetType,
+  UpsertDashboardInput,
+} from "@/graphql/generated";
+import { useDashboardEditorStore, type DashboardWidgetType } from "@/store/dashboard-editor";
+
+import { WidgetRenderer } from "./charts/widget-renderer";
+
+type GridLayoutComponent = ComponentType<Record<string, unknown>>;
+
 const ResponsiveGridLayout = dynamic(
   () =>
-    import("react-grid-layout").then((mod) =>
-      mod.WidthProvider(mod.Responsive),
-    ),
+    import("react-grid-layout").then((mod) => {
+      const responsive =
+        mod.Responsive ??
+        (typeof mod.default === "function" || typeof mod.default === "object"
+          ? (mod.default as { Responsive?: unknown }).Responsive
+          : undefined);
+
+      const widthProvider =
+        mod.WidthProvider ??
+        (typeof mod.default === "function" || typeof mod.default === "object"
+          ? (mod.default as { WidthProvider?: unknown }).WidthProvider
+          : undefined);
+
+      if (typeof responsive !== "function" || typeof widthProvider !== "function") {
+        throw new Error("react-grid-layout exports are not available");
+      }
+
+      return (widthProvider as (component: GridLayoutComponent) => GridLayoutComponent)(responsive as GridLayoutComponent);
+    }),
   {
     ssr: false,
   },
@@ -89,8 +109,17 @@ export function DashboardEditor({
       slug: dashboard.slug,
       description: dashboard.description ?? undefined,
     });
-    if (dashboard.config && (dashboard.config as any).primaryColor) {
-      setMeta({ primaryColor: (dashboard.config as any).primaryColor });
+    const configPrimaryColor = (() => {
+      const config = dashboard.config;
+      if (!config || typeof config !== "object") {
+        return undefined;
+      }
+      const raw = (config as Record<string, unknown>).primaryColor;
+      return typeof raw === "string" ? raw : undefined;
+    })();
+
+    if (configPrimaryColor) {
+      setMeta({ primaryColor: configPrimaryColor });
     }
     setWidgets(
       dashboard.widgets.map((widget, idx) => ({
@@ -205,7 +234,7 @@ export function DashboardEditor({
                     widgets: widgets.map((widget) => ({
                       id: widget.id.startsWith("temp-") ? undefined : widget.id,
                       title: widget.title,
-                      type: widget.type as any,
+                      type: widget.type as unknown as GraphqlDashboardWidgetType,
                       dataSource: widget.dataSource,
                       dataConfig: widget.dataConfig ?? {},
                       layoutX: widget.layout.x,
@@ -252,7 +281,7 @@ export function DashboardEditor({
         isResizable
         isDraggable
         margin={[16, 16]}
-        onLayoutChange={(layout) => updateLayout(layout as any)}
+        onLayoutChange={(layout: Layout[]) => updateLayout(layout)}
       >
         {widgets.map((widget) => (
           <div
@@ -279,11 +308,7 @@ export function DashboardEditor({
                   />
                   <input
                     type="color"
-                    value={
-                      (widget.options as any)?.color ??
-                      primaryColor ??
-                      "#1677ff"
-                    }
+                    value={(typeof widget.options?.color === "string" ? widget.options.color : undefined) ?? primaryColor ?? "#1677ff"}
                     onChange={(e) =>
                       updateWidget(widget.id, {
                         options: {

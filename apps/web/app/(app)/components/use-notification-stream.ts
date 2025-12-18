@@ -3,12 +3,13 @@
 import { useSession } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
-import { env } from "@/lib/env";
+
 import type { NotificationType } from "@/graphql/generated";
+import { env } from "@/lib/env";
 
 export interface NotificationMessage {
   id: string;
-  orgId: string;
+  orgId?: string;
   userId?: string | null;
   type: NotificationType;
   title: string;
@@ -42,9 +43,14 @@ export function useNotificationStream(onNotification?: (notification: Notificati
     const socket = io(`${env.apiRoot}/notifications`, {
       transports: ["websocket"],
       auth: { token },
-      withCredentials: true
+      withCredentials: true,
+      autoConnect: false
     });
     socketRef.current = socket;
+
+    const connectTimer = setTimeout(() => {
+      socket.connect();
+    }, 0);
 
     const handleNotification = (payload: NotificationMessage) => {
       onNotification?.(payload);
@@ -71,6 +77,7 @@ export function useNotificationStream(onNotification?: (notification: Notificati
     socket.on("disconnect", handleDisconnect);
 
     return () => {
+      clearTimeout(connectTimer);
       socket.off("connect", handleConnect);
       socket.off("notification", handleNotification);
       socket.off("notification:error");

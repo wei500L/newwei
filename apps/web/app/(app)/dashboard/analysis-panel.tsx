@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import {
   Button,
   Card,
@@ -13,7 +12,12 @@ import {
   message,
 } from "antd";
 import dayjs from "dayjs";
+import { useMemo, useState } from "react";
+
 import {
+  type AnomalyAnalysisInput,
+  type CorrelationAnalysisInput,
+  type SeriesPointInput,
   useAnalysisResultsQuery,
   useRequestAnomalyMutation,
   useRequestCorrelationMutation,
@@ -21,6 +25,7 @@ import {
   type AnalysisResultsQuery,
   type AnalysisEventsSubscription,
 } from "@/graphql/generated";
+
 export function AnalysisPanel() {
   const { data, refetch } = useAnalysisResultsQuery({
     variables: { limit: 10 },
@@ -50,6 +55,10 @@ export function AnalysisPanel() {
           },
         };
       });
+    },
+    onError: (error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      message.error(`Analysis stream error: ${errorMessage}`);
     },
   });
 
@@ -134,16 +143,15 @@ export function AnalysisPanel() {
   );
 }
 
-function CorrelationForm({
-  onSubmit,
-  loading,
-}: {
-  onSubmit: (values: any) => Promise<void>;
+interface CorrelationFormProps {
+  onSubmit: (values: CorrelationAnalysisInput) => Promise<void>;
   loading?: boolean;
-}) {
-  const [form] = Form.useForm();
+}
+
+function CorrelationForm({ onSubmit, loading }: CorrelationFormProps) {
+  const [form] = Form.useForm<CorrelationAnalysisInput>();
   return (
-    <Form
+    <Form<CorrelationAnalysisInput>
       layout="inline"
       form={form}
       initialValues={{
@@ -194,14 +202,17 @@ function CorrelationForm({
   );
 }
 
-function AnomalyForm({
-  onSubmit,
-  loading,
-}: {
-  onSubmit: (values: any) => Promise<void>;
+interface AnomalyFormValues extends AnomalyAnalysisInput {
+  seriesJson: string;
+}
+
+interface AnomalyFormProps {
+  onSubmit: (values: AnomalyAnalysisInput) => Promise<void>;
   loading?: boolean;
-}) {
-  const [form] = Form.useForm();
+}
+
+function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
+  const [form] = Form.useForm<AnomalyFormValues>();
   const parseSeriesJson = (raw?: string) => {
     if (!raw || !raw.trim()) return [];
     try {
@@ -213,27 +224,34 @@ function AnomalyForm({
       const normalized = parsed
         .map((item) => {
           if (!item) return null;
-          const timestamp = (item as any).timestamp ?? (item as any).time ?? (item as any).date;
-          const value = Number((item as any).value);
+          if (typeof item !== "object") {
+            return null;
+          }
+          const record = item as Record<string, unknown>;
+          const timestamp = record.timestamp ?? record.time ?? record.date;
+          if (timestamp === undefined || timestamp === null) {
+            return null;
+          }
+          const value = typeof record.value === "number" ? record.value : Number(record.value);
           if (!timestamp || Number.isNaN(value)) return null;
-          return { timestamp: String(timestamp), value };
+          return { timestamp: String(timestamp), value } satisfies SeriesPointInput;
         })
         .filter(
-          (point): point is { timestamp: string; value: number } =>
+          (point): point is SeriesPointInput =>
             !!point,
         );
       if (!normalized.length) {
         message.warning("No valid series points parsed");
       }
       return normalized;
-    } catch (error) {
+    } catch {
       message.error("Series JSON is invalid");
       return null;
     }
   };
 
   return (
-    <Form
+    <Form<AnomalyFormValues>
       layout="inline"
       form={form}
       initialValues={{
@@ -248,7 +266,7 @@ function AnomalyForm({
       onFinish={async (values) => {
         const series = parseSeriesJson(values.seriesJson);
         if (series === null) return;
-        const payload = {
+        const payload: AnomalyAnalysisInput = {
           metric: values.metric,
           timestamp: values.timestamp,
           value: values.value,

@@ -157,24 +157,7 @@ export function DashboardContent() {
     }
   }, [lastEvent, refetch]);
 
-  if (loading || dashboardsLoading) {
-    return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
-        <Spin size="large" />
-      </div>
-    );
-  }
-
-  if (error || !data?.queueStats) {
-    return <Empty description="Unable to load dashboard metrics" />;
-  }
-
-  const { counts, processedCount, itemCount, recentLogs } = data.queueStats;
-  const activeDashboard =
-    dashboards.find((d) => d.id === activeId) ?? dashboards[0] ?? null;
-
+  const recentLogs = data?.queueStats?.recentLogs;
   const combinedLogs = useMemo(
     () =>
       dedupeLogs(
@@ -183,14 +166,6 @@ export function DashboardContent() {
       ),
     [liveLogs, recentLogs],
   );
-  const chartData: Record<string, number> = {
-    waiting: counts.waiting,
-    active: counts.active,
-    completed: counts.completed,
-    failed: counts.failed,
-    delayed: counts.delayed,
-  };
-
   const parsedLogs = useMemo(
     () =>
       combinedLogs.map((log) => {
@@ -209,6 +184,32 @@ export function DashboardContent() {
       }),
     [combinedLogs],
   );
+
+  if (loading || dashboardsLoading) {
+    return (
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+      >
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  if (error || !data?.queueStats) {
+    return <Empty description="Unable to load dashboard metrics" />;
+  }
+
+  const { counts, processedCount, itemCount } = data.queueStats;
+  const activeDashboard =
+    dashboards.find((d) => d.id === activeId) ?? dashboards[0] ?? null;
+
+  const chartData: Record<string, number> = {
+    waiting: counts.waiting,
+    active: counts.active,
+    completed: counts.completed,
+    failed: counts.failed,
+    delayed: counts.delayed,
+  };
 
   return (
     <div>

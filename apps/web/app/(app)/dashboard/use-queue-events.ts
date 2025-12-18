@@ -39,9 +39,14 @@ export function useQueueEvents(): QueueEventState {
     const socket = io(`${env.apiRoot}/queue`, {
       transports: ["websocket"],
       auth: { token },
-      withCredentials: true
+      withCredentials: true,
+      autoConnect: false
     });
     socketRef.current = socket;
+
+    const connectTimer = setTimeout(() => {
+      socket.connect();
+    }, 0);
 
     const handleQueueEvent = (payload: QueueEventMessage) => {
       setState((prev) => ({ ...prev, lastEvent: payload }));
@@ -68,6 +73,7 @@ export function useQueueEvents(): QueueEventState {
     socket.on("disconnect", handleDisconnect);
 
     return () => {
+      clearTimeout(connectTimer);
       socket.off("connect", handleConnect);
       socket.off("queue:event", handleQueueEvent);
       socket.off("queue:error");

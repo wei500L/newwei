@@ -1,7 +1,8 @@
-import axios, { type AxiosError, type AxiosRequestConfig } from "axios";
+import axios, { AxiosHeaders, type AxiosError, type AxiosRequestConfig } from "axios";
+
+import { emitUnauthorized } from "./auth-events";
 import { env } from "./env";
 import { createTraceHeaders } from "./trace";
-import { emitUnauthorized } from "./auth-events";
 
 export interface ApiClientOptions {
   accessToken?: string;
@@ -66,10 +67,25 @@ export const createApiClient = (options: ApiClientOptions = {}) => {
   });
 
   instance.interceptors.request.use((config) => {
-    config.headers = {
-      ...config.headers,
-      ...createTraceHeaders(config.headers)
-    };
+    const existingHeaders =
+      config.headers instanceof AxiosHeaders ? config.headers.toJSON() : (config.headers ?? {});
+
+    const normalizedForTrace = Object.fromEntries(
+      Object.entries(existingHeaders).flatMap(([key, value]) => {
+        if (value === undefined || value === null) {
+          return [];
+        }
+        if (Array.isArray(value)) {
+          return [[key, value.map(String).join(",")]];
+        }
+        return [[key, String(value)]];
+      })
+    );
+
+    config.headers = AxiosHeaders.from({
+      ...existingHeaders,
+      ...createTraceHeaders(normalizedForTrace)
+    });
     return config;
   });
 

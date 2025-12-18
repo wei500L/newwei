@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
-import { message } from "antd";
 import { useApolloClient } from "@apollo/client";
-import {
-  AlertEventsStreamDocument,
-  AlertEventsStreamSubscription,
-} from "@/graphql/generated";
+import { message } from "antd";
+import { useEffect, useRef } from "react";
+
+import { AlertEventsStreamDocument, type AlertEventsStreamSubscription } from "@/graphql/generated";
 
 export function LiveAlertsToasts() {
   const client = useApolloClient();
+  const notifiedRef = useRef(false);
 
   useEffect(() => {
     const sub = client
@@ -25,8 +24,19 @@ export function LiveAlertsToasts() {
             );
           }
         },
+        error: (error) => {
+          if (notifiedRef.current) {
+            return;
+          }
+          notifiedRef.current = true;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          message.error(`Alert stream error: ${errorMessage}`);
+        },
       });
-    return () => sub.unsubscribe();
+    return () => {
+      sub.unsubscribe();
+      notifiedRef.current = false;
+    };
   }, [client]);
 
   return null;

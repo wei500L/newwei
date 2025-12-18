@@ -10,10 +10,11 @@ const normalizeHeaders = (headers?: HeadersInit): HeadersRecord => {
   }
 
   if (headers instanceof Headers) {
-    return Array.from(headers.entries()).reduce<HeadersRecord>((acc, [key, value]) => {
-      acc[key.toLowerCase()] = value;
-      return acc;
-    }, {});
+    const normalized: HeadersRecord = {};
+    headers.forEach((value, key) => {
+      normalized[key.toLowerCase()] = value;
+    });
+    return normalized;
   }
 
   if (Array.isArray(headers)) {
