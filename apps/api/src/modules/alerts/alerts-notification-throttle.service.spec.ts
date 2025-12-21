@@ -4,6 +4,7 @@ class FakeRedis {
   private values = new Map<string, number>();
 
   async eval(_script: string, _keys: number, key: string, now: number, intervalMs: number, _ttlMs: number): Promise<number> {
+    void _ttlMs;
     const next = this.values.get(key) ?? now;
     const scheduled = Math.max(now, next);
     const newNext = scheduled + intervalMs;

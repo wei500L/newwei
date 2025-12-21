@@ -1,6 +1,6 @@
 import { ArgsType, Field, ID, InputType, Int, Float, registerEnumType } from "@nestjs/graphql";
-import GraphQLJSON from "graphql-type-json";
 import { CrawlTaskStatus } from "@prisma/client";
+import GraphQLJSONScalar from "graphql-type-json";
 
 @InputType()
 export class CrawlTimeRangeInput {
@@ -205,7 +205,7 @@ export class CrawlMarkdownStrategyInput {
   @Field()
   type!: string;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   params?: Record<string, unknown>;
 }
 
@@ -214,7 +214,7 @@ export class CrawlTableExtractionInput {
   @Field()
   type!: string;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   params?: Record<string, unknown>;
 }
 

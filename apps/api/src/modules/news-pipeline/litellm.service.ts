@@ -233,9 +233,13 @@ export class LiteLlmService {
       if (data === "[DONE]") {
         return;
       }
-      let parsed: any;
+      let parsed:
+        | { choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[] }
+        | null = null;
       try {
-        parsed = JSON.parse(data);
+        parsed = JSON.parse(data) as {
+          choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[];
+        };
       } catch {
         continue;
       }

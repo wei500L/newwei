@@ -1,8 +1,10 @@
 import { Controller, Get } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Permissions } from "../../common/decorators/permissions.decorator";
+
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
+
 import { DashboardService } from "./dashboard.service";
 
 @ApiTags("dashboard")

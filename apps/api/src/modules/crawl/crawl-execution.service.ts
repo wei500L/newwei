@@ -1,17 +1,21 @@
+import { TaskLogModel } from "@modular/mongo";
+import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import type { CrawlTask, Prisma } from "@prisma/client";
 import { NotificationType } from "@prisma/client";
-import { createLogger } from "@modular/utils";
-import { TaskLogModel } from "@modular/mongo";
-import { PrismaService } from "../config/prisma.service";
+
 import { EnvService } from "../config/config.service";
-import { CRAWL_QUEUE_NAME } from "./crawl.constants";
+import { PrismaService } from "../config/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
+
 import {
   CrawlTaskConfigEncryptionRequiredError,
   decodeCrawlTaskConfigKey,
   protectCrawlTaskConfigForStorage,
   revealCrawlTaskConfigForExecution
 } from "./crawl-config-secrets";
+import { CrawlResultService } from "./crawl-result.service";
+import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import {
   CrawlExecutionSummary,
   CrawlTaskOptions,
@@ -36,8 +40,7 @@ import {
 } from "./crawl.types";
 import { Crawl4aiClient, Crawl4aiArticle, Crawl4aiRequest, Crawl4aiResponse } from "./crawl4ai.client";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
-import { CrawlResultService } from "./crawl-result.service";
-import { NotificationsService } from "../notifications/notifications.service";
+
 
 const logger = createLogger({ name: "crawl-execution-service" });
 

@@ -1,5 +1,7 @@
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+
+import { auth } from "@/lib/auth";
+
 import { CrawlTasksView } from "./crawl-tasks";
 
 export default async function CrawlTasksPage() {

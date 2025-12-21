@@ -1,5 +1,4 @@
 import { Field, GraphQLISODateTime, ObjectType, registerEnumType } from "@nestjs/graphql";
-import GraphQLJSON from "graphql-type-json";
 import {
   AlertChannelType,
   AlertDeliveryStatus,
@@ -9,6 +8,7 @@ import {
   AlertSeverity,
   AlertStatus
 } from "@prisma/client";
+import GraphQLJSONScalar from "graphql-type-json";
 
 registerEnumType(AlertSeverity, { name: "AlertSeverity" });
 registerEnumType(AlertStatus, { name: "AlertStatus" });
@@ -80,7 +80,7 @@ export class AlertEventModel {
   @Field({ nullable: true })
   message?: string;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   context?: Record<string, unknown>;
 
   @Field(() => [AlertDeliveryModel])
@@ -134,7 +134,7 @@ export class AlertRuleModel {
   @Field(() => GraphQLISODateTime, { nullable: true })
   lastTriggeredAt?: Date | null;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   metadata?: Record<string, unknown>;
 
   @Field(() => [AlertChannelModel])

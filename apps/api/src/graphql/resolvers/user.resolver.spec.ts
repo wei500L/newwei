@@ -1,6 +1,7 @@
+import type { AuthService, AuthenticatedUser } from "../../modules/auth/auth.service";
+import type { PrismaService } from "../../modules/config/prisma.service";
+
 import { UsersResolver } from "./user.resolver";
-import { PrismaService } from "../../modules/config/prisma.service";
-import { AuthService, AuthenticatedUser } from "../../modules/auth/auth.service";
 
 const sampleUser: AuthenticatedUser = {
   id: "user-1",

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
+
 import { REDIS_CLIENT } from './cache.tokens';
 
 const SLIDING_WINDOW_LUA_SCRIPT = `

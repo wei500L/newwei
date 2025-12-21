@@ -97,7 +97,7 @@ export function computeMovingAverage(
   if (values.length === 0) {
     return [];
   }
-  const result: Array<{ timestamp: string; value: number }> = [];
+  const result: { timestamp: string; value: number }[] = [];
   let windowSum = 0;
   const window: number[] = [];
   for (const entry of values) {
@@ -171,8 +171,8 @@ export function getCandlestickSeries(group?: EconomicSeriesGroup) {
         ],
       };
     })
-    .filter(Boolean) as Array<{
+    .filter(Boolean) as {
     timestamp: string;
     values: [number, number, number, number];
-  }>;
+  }[];
 }

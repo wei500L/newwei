@@ -1,9 +1,10 @@
-import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../config/prisma.service";
-import { EnvService } from "../config/config.service";
-import { CacheService } from "../cache/cache.service";
-import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { createLogger } from "@modular/utils";
+import { Injectable } from "@nestjs/common";
+
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
 
 export type RateLimitBucket = "login" | "crawlCreate" | "rbacWrite";
 
@@ -140,7 +141,7 @@ export class RateLimitConfigService {
         key: { in: Object.values(RATE_LIMIT_SETTING_KEYS) }
       }
     });
-    const recordMap = new Map(records.map((record) => [record.key, record.value as any]));
+    const recordMap = new Map(records.map((record) => [record.key, record.value as unknown]));
     return {
       login: this.normalizeBucket(recordMap.get(RATE_LIMIT_SETTING_KEYS.login), fallback.login),
       crawlCreate: this.normalizeBucket(

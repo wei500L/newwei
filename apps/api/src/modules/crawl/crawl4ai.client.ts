@@ -2,7 +2,7 @@ import { HttpService } from "@nestjs/axios";
 import { Injectable } from "@nestjs/common";
 import type { AxiosError } from "axios";
 import { lastValueFrom } from "rxjs";
-import { Crawl4aiRequestException } from "./crawl4ai.exception";
+
 import { CrawlSettingsService, type CrawlClientSettings } from "./crawl-settings.service";
 import type {
   CrawlTaskOptions,
@@ -11,7 +11,6 @@ import type {
   CrawlStrategyOverrides,
   CrawlMarkdownOptions,
   CrawlMarkdownFilter,
-  CrawlLinkPreviewOptions,
   Crawl4aiMedia,
   CrawlBrowserHeader,
   CrawlBrowserCookie,
@@ -22,6 +21,7 @@ import type {
   Crawl4aiTablePayload,
   CrawlVirtualScrollConfig
 } from "./crawl.types";
+import { Crawl4aiRequestException } from "./crawl4ai.exception";
 
 export interface Crawl4aiRequest {
   url: string;

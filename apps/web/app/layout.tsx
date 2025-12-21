@@ -1,8 +1,10 @@
 import "./globals.css";
 import type { ReactNode } from "react";
+
+import { auth } from "@/lib/auth";
+
 import { AppProviders } from "./providers";
 import { SessionProviders } from "./session-provider";
-import { auth } from "@/lib/auth";
 
 export const metadata = {
   title: "Modular Admin",

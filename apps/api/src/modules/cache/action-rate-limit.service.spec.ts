@@ -1,5 +1,6 @@
-import { ActionRateLimitService } from "./action-rate-limit.service";
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+
+import { ActionRateLimitService } from "./action-rate-limit.service";
 
 const rateLimiterMock = {
   consume: jest.fn()

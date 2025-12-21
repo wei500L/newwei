@@ -1,16 +1,18 @@
 "use client";
 
+import { useApolloClient } from "@apollo/client";
 import { Badge, Button, Divider, List, Space, Tag, Typography } from "antd";
+import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
+
+import type {
+  AlertEventsStreamSubscription} from "@/graphql/generated";
 import {
   useAlertEventsQuery,
   useAlertRulesQuery,
   useTriggerAlertRuleMutation,
-  AlertEventsStreamDocument,
-  AlertEventsStreamSubscription,
+  AlertEventsStreamDocument
 } from "@/graphql/generated";
-import { useEffect } from "react";
-import { useApolloClient } from "@apollo/client";
-import { useTranslation } from "react-i18next";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const severityColor: Record<string, string> = {

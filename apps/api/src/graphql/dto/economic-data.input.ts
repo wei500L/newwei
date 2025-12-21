@@ -1,5 +1,5 @@
 import { Field, GraphQLISODateTime, InputType } from "@nestjs/graphql";
-import { IsArray, IsDate, IsOptional, IsString, MinLength } from "class-validator";
+import { IsArray, IsDate, IsString, MinLength } from "class-validator";
 
 @InputType()
 export class DateRangeInput {

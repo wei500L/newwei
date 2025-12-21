@@ -1,11 +1,13 @@
 "use client";
 
 import { Alert, Button, Col, Empty, Row, Spin, Typography } from "antd";
+import { useTranslation } from "react-i18next";
+
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
-import { EconomicChartCard } from "../components/economic-chart-card";
+
 import { CandlestickCard } from "../components/candlestick-card";
-import { useTranslation } from "react-i18next";
+import { EconomicChartCard } from "../components/economic-chart-card";
 
 export default function KeyMonitorPage() {
   const { t } = useTranslation();

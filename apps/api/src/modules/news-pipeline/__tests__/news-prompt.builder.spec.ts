@@ -1,7 +1,8 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { NewsPromptBuilder } from "../news-prompt.builder";
-import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
+
 import { CleanedNewsSchema } from "../news-pipeline.schema";
+import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
+import { NewsPromptBuilder } from "../news-prompt.builder";
 
 describe("NewsPromptBuilder", () => {
   const builder = new NewsPromptBuilder();

@@ -1,5 +1,6 @@
-import { EmailService } from "./email.service";
 import type { EnvService } from "../config/config.service";
+
+import { EmailService } from "./email.service";
 
 describe("EmailService templates", () => {
   const envStub = {

@@ -1,13 +1,14 @@
-import { Inject, Injectable } from "@nestjs/common";
-import type { CrawlResult, CrawlTask } from "@prisma/client";
-import { createLogger } from "@modular/utils";
 import { CrawlResultContentModel, TaskLogModel } from "@modular/mongo";
 import type { MongoConnection } from "@modular/mongo";
-import { PrismaService } from "../config/prisma.service";
+import { createLogger } from "@modular/utils";
+import { Inject, Injectable } from "@nestjs/common";
+import type { CrawlResult, CrawlTask } from "@prisma/client";
+
 import { EnvService } from "../config/config.service";
+import { MONGO_CONNECTION } from "../config/mongo.provider";
+import { PrismaService } from "../config/prisma.service";
+
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
-import { hashMarkdown, coerceDate } from "./crawl.utils";
-import { buildLinkAnalysis } from "./link-analysis";
 import type {
   CrawlExecutionSummary,
   CrawlLinkAnalysis,
@@ -21,16 +22,18 @@ import type {
   CrawlTaskOptions,
   CrawlTaskResult
 } from "./crawl.types";
+import { hashMarkdown, coerceDate } from "./crawl.utils";
 import type { Crawl4aiArticle, Crawl4aiTablePayload } from "./crawl4ai.client";
-import { MONGO_CONNECTION } from "../config/mongo.provider";
+import { buildLinkAnalysis } from "./link-analysis";
+
 
 const logger = createLogger({ name: "crawl-result-service" });
 
-type CrawlMediaConfig = {
+interface CrawlMediaConfig {
   fetchTimeoutMs: number;
   maxBytes: number;
   maxPerResult: number;
-};
+}
 
 @Injectable()
 export class CrawlResultService {
@@ -743,12 +746,15 @@ export class CrawlResultService {
         ...item.tables.filter((entry): entry is Crawl4aiTablePayload => Boolean(entry && typeof entry === "object"))
       );
     }
-    if (item.media && typeof item.media === "object" && Array.isArray((item.media as any).tables)) {
-      payloads.push(
-        ...(item.media as any).tables.filter((entry: unknown): entry is Crawl4aiTablePayload =>
-          Boolean(entry && typeof entry === "object")
-        )
-      );
+    if (item.media && typeof item.media === "object") {
+      const tables = (item.media as { tables?: unknown }).tables;
+      if (Array.isArray(tables)) {
+        payloads.push(
+          ...tables.filter((entry: unknown): entry is Crawl4aiTablePayload =>
+            Boolean(entry && typeof entry === "object")
+          )
+        );
+      }
     }
     return payloads;
   }

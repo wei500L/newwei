@@ -1,5 +1,7 @@
 import { Field, HideField, ObjectType } from "@nestjs/graphql";
+
 import { HasPermission } from "../decorators/has-permission.decorator";
+
 import { UserModel } from "./user.model";
 
 @ObjectType()

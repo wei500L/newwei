@@ -1,15 +1,17 @@
+import { ForbiddenException, Inject, UseGuards } from "@nestjs/common";
 import { Args, Context, Int, Mutation, Query, Resolver, Subscription } from "@nestjs/graphql";
-import { HasPermission } from "../decorators/has-permission.decorator";
+import { PubSubEngine , withFilter } from "graphql-subscriptions";
+
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { AlertsService } from "../../modules/alerts/alerts.service";
-import { AlertChannelModel, AlertEventModel, AlertRuleModel } from "../models/alert.model";
-import { AlertChannelInput, UpsertAlertRuleInput } from "../dto/alert.input";
-import { ForbiddenException, Inject, UseGuards } from "@nestjs/common";
-import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { ALERTS_PUBSUB } from "../../modules/alerts/alerts.pubsub";
-import { PubSubEngine } from "graphql-subscriptions";
-import { withFilter } from "graphql-subscriptions";
+import { AlertsService } from "../../modules/alerts/alerts.service";
+import { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { HasPermission } from "../decorators/has-permission.decorator";
+import { AlertChannelInput, UpsertAlertRuleInput } from "../dto/alert.input";
+import type { GqlRequest } from "../graphql.types";
+import { AlertChannelModel, AlertEventModel, AlertRuleModel } from "../models/alert.model";
+
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -18,7 +20,7 @@ export class AlertsResolver {
 
   @HasPermission("alerts.read")
   @Query(() => [AlertChannelModel])
-  async alertChannels(@Context("req") req: any): Promise<AlertChannelModel[]> {
+  async alertChannels(@Context("req") req: GqlRequest): Promise<AlertChannelModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
@@ -36,7 +38,7 @@ export class AlertsResolver {
 
   @HasPermission("alerts.read")
   @Query(() => [AlertRuleModel])
-  async alertRules(@Context("req") req: any): Promise<AlertRuleModel[]> {
+  async alertRules(@Context("req") req: GqlRequest): Promise<AlertRuleModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
@@ -58,7 +60,7 @@ export class AlertsResolver {
       cooldownSeconds: rule.cooldownSeconds,
       checkIntervalSec: rule.checkIntervalSec,
       lastTriggeredAt: rule.lastTriggeredAt ?? undefined,
-      metadata: rule.metadata as any,
+      metadata: rule.metadata as Record<string, unknown> | null,
       channels: rule.channels
         .map((link) => link.channel)
         .filter((channel): channel is NonNullable<typeof channel> => !!channel)
@@ -76,7 +78,7 @@ export class AlertsResolver {
   @HasPermission("alerts.read")
   @Query(() => [AlertEventModel])
   async alertEvents(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("limit", { type: () => Int, nullable: true }) limit?: number
   ): Promise<AlertEventModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -92,7 +94,7 @@ export class AlertsResolver {
       severity: event.severity,
       status: event.status,
       message: event.message ?? undefined,
-      context: event.context as any,
+      context: event.context as Record<string, unknown> | null,
       deliveries:
         event.deliveries?.map((delivery) => ({
           id: delivery.id,
@@ -107,7 +109,7 @@ export class AlertsResolver {
   @HasPermission("alerts.manage")
   @Mutation(() => AlertRuleModel)
   async upsertAlertRule(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("input") input: UpsertAlertRuleInput
   ): Promise<AlertRuleModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -136,7 +138,7 @@ export class AlertsResolver {
       cooldownSeconds: updated.cooldownSeconds,
       checkIntervalSec: updated.checkIntervalSec,
       lastTriggeredAt: updated.lastTriggeredAt ?? undefined,
-      metadata: updated.metadata as any,
+      metadata: updated.metadata as Record<string, unknown> | null,
       channels: updated.channels
         .map((link) => link.channel)
         .filter((channel): channel is NonNullable<typeof channel> => !!channel)
@@ -153,7 +155,7 @@ export class AlertsResolver {
 
   @HasPermission("alerts.manage")
   @Mutation(() => Boolean)
-  async deleteAlertRule(@Context("req") req: any, @Args("ruleId") ruleId: string): Promise<boolean> {
+  async deleteAlertRule(@Context("req") req: GqlRequest, @Args("ruleId") ruleId: string): Promise<boolean> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
@@ -164,7 +166,7 @@ export class AlertsResolver {
   @HasPermission("alerts.manage")
   @Mutation(() => AlertChannelModel)
   async createAlertChannel(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("input") input: AlertChannelInput
   ): Promise<AlertChannelModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -192,7 +194,7 @@ export class AlertsResolver {
   @HasPermission("alerts.read")
   @Subscription(() => AlertEventModel, {
     name: "alertEvents",
-    resolve: (payload: any) => ({
+    resolve: (payload: { event: AlertEventModel }) => ({
       id: payload.event.id,
       triggeredAt: payload.event.triggeredAt,
       metricValue: payload.event.metricValue,
@@ -203,14 +205,14 @@ export class AlertsResolver {
       deliveries: []
     })
   })
-  alertEventsSubscription(@Context("req") req: any) {
+  alertEventsSubscription(@Context("req") req: GqlRequest) {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
     return withFilter(
       () => this.pubsub.asyncIterator("alertEvents"),
-      (payload: any) => payload.orgId === requester.orgId
+      (payload: { orgId: string }) => payload.orgId === requester.orgId
     )();
   }
 }

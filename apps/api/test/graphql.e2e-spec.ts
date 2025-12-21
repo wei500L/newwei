@@ -14,9 +14,9 @@ import { RateLimiterService } from "../src/modules/cache/rate-limiter.service";
 import { PrismaService } from "../src/modules/config/prisma.service";
 import { DashboardService } from "../src/modules/dashboard/dashboard.service";
 import { ItemsService } from "../src/modules/items/items.service";
+import { OrgService } from "../src/modules/org/org.service";
 import { QueueEventPublisher } from "../src/modules/queue/queue-event.publisher";
 import { RbacService } from "../src/modules/rbac/rbac.service";
-import { OrgService } from "../src/modules/org/org.service";
 
 const sampleUser: AuthenticatedUser = {
   id: "user-1",

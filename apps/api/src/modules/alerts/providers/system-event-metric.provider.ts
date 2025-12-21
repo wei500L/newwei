@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { AlertMetricProvider, AlertRule, Prisma } from "@prisma/client";
+
 import { PrismaService } from "../../config/prisma.service";
+
 import { MetricEvaluation, MetricProvider } from "./metric-provider";
 
 @Injectable()

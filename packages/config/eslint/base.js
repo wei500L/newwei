@@ -1,5 +1,6 @@
 module.exports = {
   root: false,
+  ignorePatterns: ["**/*.d.ts"],
   env: {
     es2022: true,
     node: true
@@ -17,6 +18,14 @@ module.exports = {
     "plugin:import/typescript",
     "prettier"
   ],
+  settings: {
+    "import/resolver": {
+      typescript: {
+        project: ["./tsconfig.json"],
+        alwaysTryTypes: true
+      }
+    }
+  },
   rules: {
     "@typescript-eslint/explicit-module-boundary-types": "off",
     "@typescript-eslint/no-explicit-any": "warn",

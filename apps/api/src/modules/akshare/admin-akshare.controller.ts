@@ -1,14 +1,15 @@
-import { Controller, Get, HttpException, Logger, Post, ServiceUnavailableException } from "@nestjs/common";
 import { HttpService } from "@nestjs/axios";
+import { Controller, Get, HttpException, Logger, Post, ServiceUnavailableException } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { AxiosError } from "axios";
 import { lastValueFrom } from "rxjs";
-import { Permissions } from "../../common/decorators/permissions.decorator";
+
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Permissions } from "../../common/decorators/permissions.decorator";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import type { AuthenticatedUser } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
-import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 
 interface AkshareGatewayVersionResponse {
   akshareVersion: string;

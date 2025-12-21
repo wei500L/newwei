@@ -1,11 +1,11 @@
 import { createLogger } from "@modular/utils";
-import { createAdapter } from "@socket.io/redis-adapter";
-import { IoAdapter } from "@nestjs/platform-socket.io";
 import type { INestApplicationContext } from "@nestjs/common";
+import { IoAdapter } from "@nestjs/platform-socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
 import { createClient, type RedisClientType } from "redis";
 import type { ServerOptions } from "socket.io";
 
-import { EnvService } from "../../modules/config/config.service";
+import type { EnvService } from "../../modules/config/config.service";
 
 export class RedisIoAdapter extends IoAdapter {
   private pubClient?: RedisClientType;

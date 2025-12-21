@@ -1,9 +1,10 @@
+import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 import { Job, Queue } from "bullmq";
-import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
+
+import { CrawlSettingsService } from "./crawl-settings.service";
 import { CRAWL_QUEUE } from "./crawl.constants";
 import type { CrawlJobData } from "./crawl.types";
-import { CrawlSettingsService } from "./crawl-settings.service";
 
 const logger = createLogger({ name: "crawl-queue-service" });
 

@@ -1,10 +1,11 @@
-import request from "supertest";
+import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import request from "supertest";
+
 import { AppModule } from "../src/app.module";
-import { PrismaService } from "../src/modules/config/prisma.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { MONGO_CONNECTION } from "../src/modules/config/mongo.provider";
+import { PrismaService } from "../src/modules/config/prisma.service";
 import { PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS } from "../src/modules/queue/queue.module";
 import { QueueProcessor } from "../src/modules/queue/queue.processor";
 

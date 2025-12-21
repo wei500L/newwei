@@ -1,16 +1,17 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+
 import { serverEnv } from "./env.server";
 import { logServerError } from "./server-logger";
 import { createTraceHeaders } from "./trace";
 
-export type OrganizationOption = {
+export interface OrganizationOption {
   id: string;
   name?: string;
   slug?: string;
-};
+}
 
-export type AuthenticatedUser = {
+export interface AuthenticatedUser {
   id: string;
   email: string;
   firstName: string;
@@ -19,24 +20,24 @@ export type AuthenticatedUser = {
   roleIds: string[];
   permissions: string[];
   organizations?: OrganizationOption[];
-};
+}
 
-export type BackendLoginResponse = {
+export interface BackendLoginResponse {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
   user: AuthenticatedUser;
   organizations?: OrganizationOption[];
-};
+}
 
-export type TokenPayload = {
+export interface TokenPayload {
   accessToken: string;
   refreshToken: string;
   accessTokenExpires: number;
   user: AuthenticatedUser;
   organizations?: OrganizationOption[];
   error?: string;
-};
+}
 
 const REFRESH_TOKEN_TIMEOUT_MS = 5_000;
 const LOGIN_TIMEOUT_MS = 8_000;

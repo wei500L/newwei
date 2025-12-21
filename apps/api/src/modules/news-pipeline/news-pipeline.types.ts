@@ -1,5 +1,3 @@
-import type { CrawlTaskOptions } from "../crawl/crawl.types";
-
 export interface RawPipelineItem {
   id: string;
   itemMetaId: string;

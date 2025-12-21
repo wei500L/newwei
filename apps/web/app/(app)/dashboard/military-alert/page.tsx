@@ -11,10 +11,13 @@ import {
   Spin,
   Typography,
 } from "antd";
+import type { CallbackDataParams } from "echarts";
 import { useTranslation } from "react-i18next";
-import { TimeRangeControls } from "@/components/time-range-controls";
+
 import { DashboardChart } from "@/components/echart";
+import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+
 import { EconomicChartCard } from "../components/economic-chart-card";
 import { calculatePercentChange, getSeriesField } from "../utils/series";
 
@@ -99,8 +102,10 @@ export default function MilitaryAlertPage() {
         type: "bar",
         data: agBarData.map((item) => item.change),
         itemStyle: {
-          color: (params: any) =>
-            (params.value ?? 0) > 5 ? "#cf1322" : "#0958d9",
+          color: (params: CallbackDataParams) => {
+            const value = typeof params.value === "number" ? params.value : 0;
+            return value > 5 ? "#cf1322" : "#0958d9";
+          },
         },
       },
     ],

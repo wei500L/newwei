@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Permissions } from "../../common/decorators/permissions.decorator";
+
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import type { AuthenticatedUser } from "../auth/auth.service";
+import { Permissions } from "../../common/decorators/permissions.decorator";
 import { AuthCacheSettingsService } from "../auth/auth-cache-settings.service";
+import type { AuthenticatedUser } from "../auth/auth.service";
+
 import { UpdateAuthCacheSettingsDto } from "./dto/auth-cache-settings.dto";
 
 @ApiTags("system-settings")

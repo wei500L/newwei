@@ -1,4 +1,5 @@
 import { Field, Float, InputType, Int } from "@nestjs/graphql";
+
 import { AnalysisType } from "../models/analysis.model";
 
 @InputType()

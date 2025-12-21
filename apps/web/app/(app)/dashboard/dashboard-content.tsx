@@ -29,6 +29,7 @@ import {
   useQueueStatsQuery,
   useUpsertDashboardMutation,
 } from "@/graphql/generated";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
   useDashboardRangeStore,
   type DashboardRangePreset,
@@ -42,7 +43,6 @@ import { DrilldownChart } from "./drilldown-chart";
 import { LiveAlertsToasts } from "./live-alerts";
 import { QueueChart } from "./queue-chart";
 import { useQueueEvents } from "./use-queue-events";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 interface QueueLog {
   event: string;

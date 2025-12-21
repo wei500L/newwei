@@ -8,6 +8,7 @@ import { DashboardService } from "../../modules/dashboard/dashboard.service";
 import { QueueEventPublisher, QueueEventPayload } from "../../modules/queue/queue-event.publisher";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { UpsertDashboardInput } from "../dto/dashboard.input";
+import type { GqlRequest } from "../graphql.types";
 import { QueueStatsModel, QueueEventModel, QueueCountsModel, DashboardModel } from "../models/dashboard.model";
 
 @Resolver()
@@ -20,7 +21,7 @@ export class DashboardResolver {
 
   @HasPermission("dashboards.read")
   @Query(() => [DashboardModel])
-  async dashboards(@Context("req") req: any): Promise<DashboardModel[]> {
+  async dashboards(@Context("req") req: GqlRequest): Promise<DashboardModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
@@ -33,7 +34,7 @@ export class DashboardResolver {
       slug: dashboard.slug,
       description: dashboard.description ?? undefined,
       theme: dashboard.theme ?? undefined,
-      config: dashboard.config as any,
+      config: dashboard.config as Record<string, unknown> | null,
       createdAt: dashboard.createdAt,
       updatedAt: dashboard.updatedAt,
       widgets:
@@ -42,13 +43,13 @@ export class DashboardResolver {
           title: widget.title ?? undefined,
           type: widget.type,
           dataSource: widget.dataSource,
-          dataConfig: widget.dataConfig as any,
+          dataConfig: widget.dataConfig as Record<string, unknown> | null,
           layoutX: widget.layoutX,
           layoutY: widget.layoutY,
           layoutW: widget.layoutW,
           layoutH: widget.layoutH,
           sortOrder: widget.sortOrder,
-          options: widget.options as any
+          options: widget.options as Record<string, unknown> | null
         })) ?? []
     }));
   }
@@ -56,7 +57,7 @@ export class DashboardResolver {
   @HasPermission("dashboards.write")
   @Mutation(() => DashboardModel)
   async upsertDashboard(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("input") input: UpsertDashboardInput
   ): Promise<DashboardModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -74,7 +75,7 @@ export class DashboardResolver {
       slug: dashboard.slug,
       description: dashboard.description ?? undefined,
       theme: dashboard.theme ?? undefined,
-      config: dashboard.config as any,
+      config: dashboard.config as Record<string, unknown> | null,
       createdAt: dashboard.createdAt,
       updatedAt: dashboard.updatedAt,
       widgets:
@@ -83,20 +84,20 @@ export class DashboardResolver {
           title: widget.title ?? undefined,
           type: widget.type,
           dataSource: widget.dataSource,
-          dataConfig: widget.dataConfig as any,
+          dataConfig: widget.dataConfig as Record<string, unknown> | null,
           layoutX: widget.layoutX,
           layoutY: widget.layoutY,
           layoutW: widget.layoutW,
           layoutH: widget.layoutH,
           sortOrder: widget.sortOrder,
-          options: widget.options as any
+          options: widget.options as Record<string, unknown> | null
         })) ?? []
     };
   }
 
   @HasPermission("dashboards.write")
   @Mutation(() => Boolean)
-  async deleteDashboard(@Context("req") req: any, @Args("id") id: string): Promise<boolean> {
+  async deleteDashboard(@Context("req") req: GqlRequest, @Args("id") id: string): Promise<boolean> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
@@ -106,7 +107,7 @@ export class DashboardResolver {
 
   @HasPermission("queue.manage")
   @Query(() => QueueStatsModel)
-  async queueStats(@Context("req") req: any): Promise<QueueStatsModel> {
+  async queueStats(@Context("req") req: GqlRequest): Promise<QueueStatsModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
@@ -146,7 +147,7 @@ export class DashboardResolver {
       timestamp: value.queueEvents.timestamp
     })
   })
-  queueEventsSubscription(@Context("req") req: any): AsyncIterableIterator<{ queueEvents: QueueEventPayload }> {
+  queueEventsSubscription(@Context("req") req: GqlRequest): AsyncIterableIterator<{ queueEvents: QueueEventPayload }> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+
 import { AkshareService } from "./akshare.service";
 
 describe("AkshareService bulk upsert", () => {

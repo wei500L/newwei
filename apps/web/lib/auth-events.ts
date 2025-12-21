@@ -1,9 +1,9 @@
 const UNAUTHORIZED_EVENT = "app:unauthorized";
 
-export type UnauthorizedEventDetail = {
+export interface UnauthorizedEventDetail {
   status?: number;
   reason?: string;
-};
+}
 
 export const emitUnauthorized = (detail: UnauthorizedEventDetail = {}) => {
   if (typeof window === "undefined") {

@@ -1,10 +1,11 @@
-import { AuditLogOutboxStatus, type Prisma } from "@prisma/client";
 import { createLogger } from "@modular/utils";
+import { AuditLogOutboxStatus, type Prisma } from "@prisma/client";
+
 import type { PrismaService } from "../config/prisma.service";
 
 const logger = createLogger({ name: "audit-log" });
 
-type AuditLogOutboxPayload = {
+interface AuditLogOutboxPayload {
   orgId: string;
   actorId: string | null;
   resource: string;
@@ -12,7 +13,7 @@ type AuditLogOutboxPayload = {
   metadata?: Prisma.InputJsonValue;
   ipAddress: string | null;
   createdAt: string;
-};
+}
 
 function createOutboxPayload(
   args: Prisma.AuditLogCreateArgs,

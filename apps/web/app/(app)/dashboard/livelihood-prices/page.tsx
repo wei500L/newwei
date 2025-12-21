@@ -1,10 +1,13 @@
 "use client";
 
 import { Card, Col, Empty, Row, Spin, Typography } from "antd";
+import type { CallbackDataParams } from "echarts";
 import { useTranslation } from "react-i18next";
-import { TimeRangeControls } from "@/components/time-range-controls";
+
 import { DashboardChart } from "@/components/echart";
+import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+
 import {
   getLatestValue,
   getSeriesField,
@@ -48,7 +51,7 @@ export default function LivelihoodPricesPage() {
 
   const treeOption = {
     tooltip: {
-      formatter: ({ name, value }: any) =>
+      formatter: ({ name, value }: CallbackDataParams) =>
         t("dashboard.livelihood.cpi.tooltip", { name, value }),
     },
     series: [

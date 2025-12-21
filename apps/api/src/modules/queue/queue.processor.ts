@@ -6,9 +6,8 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import { Worker } from "bullmq";
 import type { Queue } from "bullmq";
-import { UnrecoverableError } from "bullmq";
+import { Worker , UnrecoverableError } from "bullmq";
 
 import { EnvService } from "../config/config.service";
 import { NewsPipelineService } from "../news-pipeline/news-pipeline.service";
@@ -30,14 +29,14 @@ import {
 
 const logger = createLogger({ name: "queue" });
 
-type PipelineQueueJobData = {
+interface PipelineQueueJobData {
   rawItemId: string;
   itemMetaId: string;
   orgId?: string;
   traceId?: string;
-};
+}
 
-type PipelineQueueDlqData = {
+interface PipelineQueueDlqData {
   rawItemId?: string;
   itemMetaId?: string;
   orgId?: string;
@@ -49,7 +48,7 @@ type PipelineQueueDlqData = {
   attempts: number;
   errorKind: QueueErrorKind;
   error: unknown;
-};
+}
 
 @Injectable()
 export class QueueProcessor implements OnModuleInit, OnModuleDestroy {

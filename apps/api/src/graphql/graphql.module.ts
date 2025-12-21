@@ -1,16 +1,8 @@
-import { Module } from "@nestjs/common";
-import { GraphQLModule } from "@nestjs/graphql";
+import { createLogger } from "@modular/utils";
 import { ApolloDriver, ApolloDriverConfig } from "@nestjs/apollo";
-import { join } from "node:path";
-import depthLimit from "graphql-depth-limit";
-import {
-  type ComplexityEstimator,
-  createComplexityDirective,
-  directiveEstimator,
-  fieldExtensionsEstimator,
-  getComplexity,
-  simpleEstimator,
-} from "graphql-query-complexity";
+import { Module } from "@nestjs/common";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { GraphQLModule } from "@nestjs/graphql";
 import {
   DirectiveLocation,
   GraphQLError,
@@ -22,43 +14,53 @@ import {
   isEnumType,
   isScalarType,
 } from "graphql";
-import { EnvService } from "../modules/config/config.service";
-import { ConfigModule } from "../modules/config/config.module";
-import { createLogger } from "@modular/utils";
-import { ItemsModule } from "../modules/items/items.module";
-import { AuthModule } from "../modules/auth/auth.module";
-import { RbacModule } from "../modules/rbac/rbac.module";
-import { DashboardModule } from "../modules/dashboard/dashboard.module";
-import { QueueModule } from "../modules/queue/queue.module";
-import { CacheModule } from "../modules/cache/cache.module";
-import { CrawlModule } from "../modules/crawl/crawl.module";
+import depthLimit from "graphql-depth-limit";
+import {
+  type ComplexityEstimator,
+  createComplexityDirective,
+  directiveEstimator,
+  fieldExtensionsEstimator,
+  getComplexity,
+  simpleEstimator,
+} from "graphql-query-complexity";
 import { DataLoaderInterceptor } from "nestjs-dataloader";
+import { join } from "node:path";
+
+import { GqlAuthGuard } from "../common/guards/gql-auth.guard";
+import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
+import { AkshareModule } from "../modules/akshare/akshare.module";
 import { AlertsModule } from "../modules/alerts/alerts.module";
 import { AnalysisModule } from "../modules/analysis/analysis.module";
-import { AkshareModule } from "../modules/akshare/akshare.module";
+import { AuthModule } from "../modules/auth/auth.module";
+import { CacheModule } from "../modules/cache/cache.module";
+import { ConfigModule } from "../modules/config/config.module";
+import { EnvService } from "../modules/config/config.service";
+import { CrawlModule } from "../modules/crawl/crawl.module";
+import { DashboardModule } from "../modules/dashboard/dashboard.module";
+import { ItemsModule } from "../modules/items/items.module";
 import { NewsPipelineModule } from "../modules/news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../modules/notifications/notifications.module";
 import { OrgModule } from "../modules/org/org.module";
-import { UsersResolver } from "./resolvers/user.resolver";
-import { ItemsResolver } from "./resolvers/items.resolver";
-import { RbacResolver } from "./resolvers/rbac.resolver";
-import { DashboardResolver } from "./resolvers/dashboard.resolver";
-import { CrawlResolver } from "./resolvers/crawl.resolver";
-import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
+import { QueueModule } from "../modules/queue/queue.module";
+import { RbacModule } from "../modules/rbac/rbac.module";
+
+import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
+import { ItemMetaLoader } from "./loaders/item-meta.loader";
+import { ProcessedItemLoader } from "./loaders/processed-item.loader";
+import { RawItemLoader } from "./loaders/raw-item.loader";
+import { RoleLoader } from "./loaders/role.loader";
+import { UserLoader } from "./loaders/user.loader";
 import { AlertsResolver } from "./resolvers/alerts.resolver";
 import { AnalysisResolver } from "./resolvers/analysis.resolver";
-import { SettingsResolver } from "./resolvers/settings.resolver";
+import { CrawlResolver } from "./resolvers/crawl.resolver";
+import { DashboardResolver } from "./resolvers/dashboard.resolver";
+import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
+import { ItemsResolver } from "./resolvers/items.resolver";
 import { NotificationResolver } from "./resolvers/notification.resolver";
 import { OrgResolver } from "./resolvers/org.resolver";
-import { UserLoader } from "./loaders/user.loader";
-import { RoleLoader } from "./loaders/role.loader";
-import { ItemMetaLoader } from "./loaders/item-meta.loader";
-import { RawItemLoader } from "./loaders/raw-item.loader";
-import { ProcessedItemLoader } from "./loaders/processed-item.loader";
-import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
-import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
-import { GqlAuthGuard } from "../common/guards/gql-auth.guard";
-import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
+import { RbacResolver } from "./resolvers/rbac.resolver";
+import { SettingsResolver } from "./resolvers/settings.resolver";
+import { UsersResolver } from "./resolvers/user.resolver";
 
 const logger = createLogger({ name: "graphql" });
 
@@ -170,7 +172,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
                 extra.request = {
                   headers: connectionParams ?? {},
                   ip: extra?.socket?.remoteAddress
-                } as any;
+                } as { headers: Record<string, unknown>; ip?: string };
               }
             }
           },

@@ -1,11 +1,13 @@
 import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Permissions } from "../../common/decorators/permissions.decorator";
+
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
-import { ItemsService } from "./items.service";
+
 import { CreateItemDto } from "./dto/create-item.dto";
 import { ListItemsDto } from "./dto/list-items.dto";
+import { ItemsService } from "./items.service";
 
 @ApiTags("items")
 @ApiBearerAuth()

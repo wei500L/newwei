@@ -1,17 +1,19 @@
 import { Injectable, UnauthorizedException, BadRequestException } from "@nestjs/common";
-import { PrismaService } from "../config/prisma.service";
-import { EnvService } from "../config/config.service";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+import { decode, sign } from "jsonwebtoken";
 import crypto from "node:crypto";
-import { RateLimiterService } from "../cache/rate-limiter.service";
-import { CacheService } from "../cache/cache.service";
-import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
-import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
+
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
-import { AuthCacheSettingsService } from "./auth-cache-settings.service";
-import { OrgService } from "../org/org.service";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { CacheService } from "../cache/cache.service";
+import { RateLimiterService } from "../cache/rate-limiter.service";
+import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
+import { OrgService } from "../org/org.service";
+import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
+
+import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
+import { AuthCacheSettingsService } from "./auth-cache-settings.service";
 
 export interface JwtPayload {
   sub: string;
@@ -32,6 +34,25 @@ export interface AuthenticatedUser {
   lastName: string;
   accessTokenId?: string;
   accessTokenExpiresAt?: number;
+}
+
+interface MembershipRolePermission {
+  permission?: { name?: string | null };
+}
+
+interface MembershipRole {
+  permissions?: MembershipRolePermission[];
+}
+
+interface MembershipRoleLink {
+  roleId?: string | null;
+  role?: MembershipRole | null;
+}
+
+interface MembershipRecord {
+  roleId?: string | null;
+  roles?: MembershipRoleLink[] | null;
+  role?: MembershipRole | null;
 }
 
 @Injectable()
@@ -89,7 +110,7 @@ export class AuthService {
     return membership;
   }
 
-  private buildMembershipClaims(membership: any): Pick<AuthenticatedUser, "roleIds" | "permissions"> {
+  private buildMembershipClaims(membership: MembershipRecord): Pick<AuthenticatedUser, "roleIds" | "permissions"> {
     const roleIds = new Set<string>();
     const permissions = new Set<string>();
 
@@ -196,13 +217,13 @@ export class AuthService {
       orgId: user.orgId,
       permissions: user.permissions
     };
-    const token = jwt.sign(payload, jwtConfig.secret, {
+    const token = sign(payload, jwtConfig.secret, {
       expiresIn: jwtConfig.accessExpiresIn,
       audience: jwtConfig.audience,
       issuer: jwtConfig.issuer,
       jwtid: crypto.randomUUID()
     });
-    const decoded = jwt.decode(token) as { exp?: number } | null;
+    const decoded = decode(token) as { exp?: number } | null;
     const expiresIn = decoded?.exp ? decoded.exp * 1000 : undefined;
     return { token, expiresAt: expiresIn };
   }

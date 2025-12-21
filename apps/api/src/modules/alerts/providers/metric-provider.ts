@@ -1,4 +1,4 @@
-import { AlertMetricProvider, AlertRule } from "@prisma/client";
+import type { AlertMetricProvider, AlertRule } from "@prisma/client";
 
 export interface MetricEvaluation {
   latest: number | null;

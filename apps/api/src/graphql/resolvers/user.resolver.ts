@@ -1,12 +1,41 @@
+import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { Args, Context, Int, Query, Resolver } from "@nestjs/graphql";
+
+import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { UserModel } from "../models/user.model";
-import { PrismaService } from "../../modules/config/prisma.service";
 import { AuthService, AuthenticatedUser } from "../../modules/auth/auth.service";
-import { ForbiddenException, UseGuards } from "@nestjs/common";
+import { PrismaService } from "../../modules/config/prisma.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
+import type { GqlRequest } from "../graphql.types";
+import { UserModel } from "../models/user.model";
+
+interface UserMembershipRolePermission {
+  permission?: { name?: string | null };
+}
+
+interface UserMembershipRole {
+  permissions?: UserMembershipRolePermission[];
+}
+
+interface UserMembershipLink {
+  roleId?: string | null;
+  role?: UserMembershipRole | null;
+}
+
+interface UserMembershipRecord {
+  roleId?: string | null;
+  role?: UserMembershipRole | null;
+  roles?: UserMembershipLink[] | null;
+}
+
+interface UserRecord {
+  id: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  memberships?: UserMembershipRecord[] | null;
+}
 
 function decodeCursor(cursor?: string | null) {
   return cursor ? Buffer.from(cursor, "base64").toString("utf8") : undefined;
@@ -19,7 +48,7 @@ export class UsersResolver {
 
   @Query(() => UserModel)
   @AllowAuthenticated()
-  async me(@Context("req") req: any): Promise<UserModel> {
+  async me(@Context("req") req: GqlRequest): Promise<UserModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
@@ -31,7 +60,7 @@ export class UsersResolver {
   @HasPermission("users.read")
   @Query(() => [UserModel])
   async users(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("first", { type: () => Int, nullable: true }) first = 20,
     @Args("after", { nullable: true }) after?: string,
     @Args("search", { nullable: true }) search?: string
@@ -100,7 +129,7 @@ export class UsersResolver {
     );
   }
 
-  private mapUserMembership(user: any, orgId: string): AuthenticatedUser {
+  private mapUserMembership(user: UserRecord, orgId: string): AuthenticatedUser {
     const membership = Array.isArray(user.memberships) ? user.memberships[0] : undefined;
     const roleIds = new Set<string>();
     const permissions = new Set<string>();

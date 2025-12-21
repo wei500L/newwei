@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
+
 import { PrismaService } from "../config/prisma.service";
 import { AuditLogSettingsService } from "../system-settings/audit-log-settings.service";
 
@@ -32,7 +33,8 @@ export class AuditLogRetentionService {
     const batchSize = AuditLogRetentionService.DELETE_BATCH_SIZE;
     let totalDeleted = 0;
 
-    while (true) {
+    let hasMore = true;
+    while (hasMore) {
       const expiredIds = await this.prisma.auditLog.findMany({
         where: { createdAt: { lt: cutoff } },
         select: { id: true },
@@ -49,10 +51,7 @@ export class AuditLogRetentionService {
       });
 
       totalDeleted += count;
-
-      if (expiredIds.length < batchSize) {
-        break;
-      }
+      hasMore = expiredIds.length >= batchSize;
     }
 
     if (totalDeleted > 0) {

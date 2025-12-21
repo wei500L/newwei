@@ -1,10 +1,12 @@
 import { Body, Controller, Get, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { RateLimitConfigService } from "./rate-limit-config.service";
-import { Permissions } from "../../common/decorators/permissions.decorator";
+
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
+
 import { UpdateRateLimitSettingsDto } from "./dto/rate-limit-settings.dto";
+import { RateLimitConfigService } from "./rate-limit-config.service";
 
 @ApiTags("system-settings")
 @ApiBearerAuth()

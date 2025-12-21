@@ -1,5 +1,6 @@
+import type { PrismaService } from "../../modules/config/prisma.service";
+
 import { ItemMetaLoader } from "./item-meta.loader";
-import { PrismaService } from "../../modules/config/prisma.service";
 
 const prisma = {
   itemMeta: {

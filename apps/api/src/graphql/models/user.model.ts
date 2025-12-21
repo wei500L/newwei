@@ -1,4 +1,5 @@
 import { Field, ObjectType } from "@nestjs/graphql";
+
 import { HasPermission } from "../decorators/has-permission.decorator";
 
 @ObjectType()

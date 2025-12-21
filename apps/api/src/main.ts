@@ -1,17 +1,17 @@
 import "reflect-metadata";
+import { createLogger } from "@modular/utils";
+import { ValidationPipe , RequestMethod } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
-import { RequestMethod } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
-import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { json, urlencoded } from "express";
+import helmet from "helmet";
 import { WINSTON_MODULE_NEST_PROVIDER } from "nest-winston";
-import { AppModule } from "./app.module";
-import { createLogger } from "@modular/utils";
 import { createRequire } from "node:module";
-import { EnvService } from "./modules/config/config.service";
+
+import { AppModule } from "./app.module";
 import { RedisIoAdapter } from "./common/websocket/redis-io.adapter";
+import { EnvService } from "./modules/config/config.service";
 
 const nodeRequire = createRequire(__filename);
 const pkg = nodeRequire("../package.json") as { version?: string };

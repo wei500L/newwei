@@ -1,6 +1,6 @@
 import { Field, InputType, Int } from "@nestjs/graphql";
 import { DashboardWidgetType } from "@prisma/client";
-import GraphQLJSON from "graphql-type-json";
+import GraphQLJSONScalar from "graphql-type-json";
 
 @InputType()
 export class DashboardWidgetInput {
@@ -16,7 +16,7 @@ export class DashboardWidgetInput {
   @Field()
   dataSource!: string;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   dataConfig?: Record<string, unknown>;
 
   @Field(() => Int)

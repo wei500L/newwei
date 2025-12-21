@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Permissions } from "../../common/decorators/permissions.decorator";
+
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
+
 import { AuditLogSettingsService } from "./audit-log-settings.service";
 import { UpdateAuditLogRetentionDto } from "./dto/audit-log-settings.dto";
 

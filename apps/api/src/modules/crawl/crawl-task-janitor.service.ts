@@ -1,22 +1,24 @@
+import { TaskLogModel } from "@modular/mongo";
+import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { createLogger } from "@modular/utils";
-import { TaskLogModel } from "@modular/mongo";
-import { PrismaService } from "../config/prisma.service";
-import { EnvService } from "../config/config.service";
-import { CacheService } from "../cache/cache.service";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
-import { CRAWL_QUEUE_NAME } from "./crawl.constants";
+import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
+
 import { CrawlQueueService } from "./crawl-queue.service";
+import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 
 const logger = createLogger({ name: "crawl-task-janitor" });
 
-type StaleTaskRow = {
+interface StaleTaskRow {
   id: string;
   orgId: string;
   lastRunAt: Date | null;
   updatedAt: Date;
-};
+}
 
 @Injectable()
 export class CrawlTaskJanitorService {

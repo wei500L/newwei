@@ -12,15 +12,14 @@ import {
   Tag,
   Typography,
 } from "antd";
-import type { ColumnsType } from "antd/es/table";
 import type { FormInstance } from "antd/es/form";
+import type { ColumnsType } from "antd/es/table";
 import { useTranslation } from "react-i18next";
-import type {
-  CrawlMetadataInput,
-  CrawlMetadataQuery,
-} from "@/graphql/generated";
-import type { MetadataFormValues } from "../types";
+
+import type { CrawlMetadataQuery } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+
+import type { MetadataFormValues } from "../types";
 
 type MetadataResultRow = CrawlMetadataQuery["crawlMetadata"][number];
 

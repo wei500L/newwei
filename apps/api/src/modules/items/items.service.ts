@@ -1,17 +1,20 @@
+import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
+import type { MongoConnection } from "@modular/mongo";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
-import { PrismaService } from "../config/prisma.service";
-import { QueueService } from "../queue/queue.service";
-import { CreateItemDto } from "./dto/create-item.dto";
-import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
-import type { MongoConnection } from "@modular/mongo";
-import { UpdateItemDto } from "./dto/update-item.dto";
+import { PrismaService } from "../config/prisma.service";
 import {
   NormalizedNewsPayload,
   NormalizedNewsPayloadSchema
 } from "../news-pipeline/news-pipeline.schema";
+import { QueueService } from "../queue/queue.service";
+
+import { CreateItemDto } from "./dto/create-item.dto";
+import { UpdateItemDto } from "./dto/update-item.dto";
+
 
 const MAX_CURSOR_PAGE_SIZE = 50;
 const FULLTEXT_MIN_TOKEN_LENGTH = 3;
@@ -21,7 +24,7 @@ type SearchStrategy =
   | { type: "fulltext"; query: string }
   | { type: "prefix"; term: string };
 
-type ItemMetaRow = {
+interface ItemMetaRow {
   id: string;
   orgId: string;
   externalId: string;
@@ -31,7 +34,7 @@ type ItemMetaRow = {
   version: number;
   createdAt: Date;
   updatedAt: Date;
-};
+}
 
 @Injectable()
 export class ItemsService {
@@ -293,7 +296,7 @@ export class ItemsService {
       LIMIT ${take} OFFSET ${skip}
     `;
 
-    const totalResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+    const totalResult = await this.prisma.$queryRaw<{ count: bigint }[]>`
       SELECT COUNT(*) AS count
       FROM \`ItemMeta\`
       WHERE \`orgId\` = ${orgId}
@@ -336,7 +339,7 @@ export class ItemsService {
       LIMIT ${take + 1}
     `;
 
-    const totalCountResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+    const totalCountResult = await this.prisma.$queryRaw<{ count: bigint }[]>`
       SELECT COUNT(*) AS count
       FROM \`ItemMeta\`
       WHERE \`orgId\` = ${orgId}

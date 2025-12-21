@@ -1,8 +1,8 @@
 "use client";
 
-import { SessionProvider } from "next-auth/react";
 import type { Session } from "next-auth";
-import { PropsWithChildren } from "react";
+import { SessionProvider } from "next-auth/react";
+import type { PropsWithChildren } from "react";
 
 interface SessionProvidersProps extends PropsWithChildren {
   session: Session | null;

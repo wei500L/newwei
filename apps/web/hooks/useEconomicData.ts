@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+
 import { useEconomicDataQuery } from "@/graphql/generated";
 import { useDashboardRangeStore } from "@/store/time-range";
 
@@ -10,7 +11,7 @@ export interface EconomicSeriesOptions {
 export interface EconomicSeriesField {
   key: string;
   label: string;
-  values: Array<{ timestamp: string; value: number }>;
+  values: { timestamp: string; value: number }[];
 }
 
 export interface EconomicSeriesGroup {

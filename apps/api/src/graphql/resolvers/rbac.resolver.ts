@@ -1,3 +1,4 @@
+import { ForbiddenException, UseGuards } from "@nestjs/common";
 import {
   Args,
   Context,
@@ -7,18 +8,57 @@ import {
   Resolver,
   Parent
 } from "@nestjs/graphql";
-import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
-import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { RbacService } from "../../modules/rbac/rbac.service";
-import { PermissionModel, RoleModel, MembershipModel } from "../models/rbac.model";
-import { HasPermission } from "../decorators/has-permission.decorator";
 import type DataLoader from "dataloader";
 import { Loader } from "nestjs-dataloader";
-import { UserLoader } from "../loaders/user.loader";
-import { UserModel } from "../models/user.model";
+
+import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
+import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
-import { ForbiddenException, UseGuards } from "@nestjs/common";
+import { RbacService } from "../../modules/rbac/rbac.service";
+import { HasPermission } from "../decorators/has-permission.decorator";
 import { AssignRoleInput, UpdateRoleInput } from "../dto/rbac.input";
+import type { GqlRequest } from "../graphql.types";
+import { UserLoader } from "../loaders/user.loader";
+import { PermissionModel, RoleModel, MembershipModel } from "../models/rbac.model";
+import { UserModel } from "../models/user.model";
+
+interface RolePermissionRecord {
+  permission: {
+    id: string;
+    name: string;
+    description?: string | null;
+  };
+}
+
+interface RoleRecord {
+  id: string;
+  name: string;
+  description?: string | null;
+  isSystem: boolean;
+  permissions: RolePermissionRecord[];
+}
+
+interface RoleLinkRecord {
+  roleId?: string | null;
+  role?: RoleRecord | null;
+}
+
+interface UserRecord {
+  id: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+}
+
+interface MembershipRecord {
+  id: string;
+  orgId: string;
+  userId: string;
+  roleId?: string | null;
+  role: RoleRecord;
+  roles?: RoleLinkRecord[] | null;
+  user: UserRecord;
+}
 
 @Resolver(() => MembershipModel)
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -28,7 +68,7 @@ export class RbacResolver {
   @HasPermission("roles.read")
   @Query(() => [RoleModel])
   async roles(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("includeSystem", { type: () => Boolean, nullable: true }) includeSystem?: boolean
   ): Promise<RoleModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -52,7 +92,7 @@ export class RbacResolver {
 
   @HasPermission("users.read")
   @Query(() => [MembershipModel])
-  async memberships(@Context("req") req: any): Promise<MembershipModel[]> {
+  async memberships(@Context("req") req: GqlRequest): Promise<MembershipModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
@@ -64,7 +104,7 @@ export class RbacResolver {
   @HasPermission("roles.write")
   @Mutation(() => MembershipModel)
   async assignRole(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("input") input: AssignRoleInput
   ): Promise<MembershipModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -78,7 +118,7 @@ export class RbacResolver {
   @HasPermission("roles.write")
   @Mutation(() => RoleModel)
   async updateRole(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("input") input: UpdateRoleInput
   ): Promise<RoleModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -92,7 +132,7 @@ export class RbacResolver {
   @ResolveField(() => UserModel)
   async user(
     @Parent() membership: MembershipModel,
-    @Loader(UserLoader) userLoader: DataLoader<string, any>
+    @Loader(UserLoader) userLoader: DataLoader<string, UserRecord | null>
   ): Promise<UserModel> {
     if (membership.user) {
       return membership.user;
@@ -112,13 +152,13 @@ export class RbacResolver {
     };
   }
 
-  private mapRole(role: any): RoleModel {
+  private mapRole(role: RoleRecord): RoleModel {
     return {
       id: role.id,
       name: role.name,
       description: role.description ?? undefined,
       isSystem: role.isSystem,
-      permissions: role.permissions.map((permission: any) => ({
+      permissions: role.permissions.map((permission) => ({
         id: permission.permission.id,
         name: permission.permission.name,
         description: permission.permission.description ?? undefined
@@ -126,20 +166,22 @@ export class RbacResolver {
     };
   }
 
-  private mapMembership(membership: any): MembershipModel {
+  private mapMembership(membership: MembershipRecord): MembershipModel {
     const roleLinks = Array.isArray(membership?.roles) ? membership.roles : [];
-    const roles = roleLinks.map((link: any) => link.role).filter(Boolean);
+    const roles = roleLinks
+      .map((link) => link.role)
+      .filter((role): role is RoleRecord => Boolean(role));
     if (roles.length === 0 && membership?.role) {
       roles.push(membership.role);
     }
 
     const roleIds = (
-      roleLinks.length > 0 ? roleLinks.map((link: any) => link.roleId) : [membership.roleId]
-    ).filter((id: any): id is string => typeof id === "string");
+      roleLinks.length > 0 ? roleLinks.map((link) => link.roleId) : [membership.roleId]
+    ).filter((id): id is string => typeof id === "string");
     const permissions = Array.from(
       new Set(
-        roles.flatMap((role: any) =>
-          (role.permissions ?? []).map((permission: any) => permission.permission.name)
+        roles.flatMap((role) =>
+          (role.permissions ?? []).map((permission) => permission.permission.name)
         )
       )
     );
@@ -149,7 +191,7 @@ export class RbacResolver {
       orgId: membership.orgId,
       userId: membership.userId,
       role: this.mapRole(membership.role),
-      roles: roles.map((role: any) => this.mapRole(role)),
+      roles: roles.map((role) => this.mapRole(role)),
       user: {
         id: membership.user.id,
         email: membership.user.email,

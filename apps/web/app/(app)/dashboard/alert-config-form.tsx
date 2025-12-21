@@ -1,16 +1,6 @@
 "use client";
 
 import {
-  AlertMetricProvider,
-  AlertOperator,
-  AlertSeverity,
-  AlertStatus,
-  useAlertChannelsQuery,
-  useAlertRulesQuery,
-  useCreateAlertChannelMutation,
-  useUpsertAlertRuleMutation,
-} from "@/graphql/generated";
-import {
   Button,
   Divider,
   Form,
@@ -23,6 +13,17 @@ import {
 } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+
+import {
+  AlertMetricProvider,
+  AlertOperator,
+  AlertSeverity,
+  AlertStatus,
+  useAlertChannelsQuery,
+  useAlertRulesQuery,
+  useCreateAlertChannelMutation,
+  useUpsertAlertRuleMutation,
+} from "@/graphql/generated";
 
 const operatorOptions = Object.values(AlertOperator).map((op) => ({
   labelKey: `alerts.operators.${op}`,

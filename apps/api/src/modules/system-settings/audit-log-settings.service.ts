@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../config/prisma.service";
-import { EnvService } from "../config/config.service";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
 
 const AUDIT_LOG_RETENTION_KEY = "audit_log_retention_days";
 const MIN_RETENTION_DAYS = 1;
@@ -74,7 +75,7 @@ export class AuditLogSettingsService {
     if (!record) {
       return fallback;
     }
-    const value = record.value as any;
+    const value = record.value as unknown;
     if (typeof value === "number") {
       return this.normalize(value);
     }

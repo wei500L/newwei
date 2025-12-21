@@ -11,11 +11,14 @@ import {
   Tabs,
   Typography,
 } from "antd";
+import type { CallbackDataParams } from "echarts";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { TimeRangeControls } from "@/components/time-range-controls";
+
 import { DashboardChart } from "@/components/echart";
+import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+
 import { CandlestickCard } from "../components/candlestick-card";
 import {
   calculatePercentChange,
@@ -69,14 +72,18 @@ export default function EconomicShortPage() {
   const heatmapOption = {
     tooltip: {
       position: "top",
-      formatter: ({ value }: any) => {
-        const bucket = localizedBuckets[value[1]];
-        const pair = localizedPairs[value[0]];
+      formatter: (params: CallbackDataParams) => {
+        const values = Array.isArray(params.value) ? params.value : [];
+        const pairIndex = typeof values[0] === "number" ? values[0] : -1;
+        const bucketIndex = typeof values[1] === "number" ? values[1] : -1;
+        const score = values[2];
+        const bucket = localizedBuckets[bucketIndex];
+        const pair = localizedPairs[pairIndex];
         if (!bucket || !pair) return "";
         return t("dashboard.economicShort.heatmap.tooltip", {
           period: bucket.label,
           pair: pair.label,
-          value: value[2],
+          value: score,
         });
       },
     },
@@ -100,7 +107,12 @@ export default function EconomicShortPage() {
         data: heatmapData,
         label: {
           show: true,
-          formatter: ({ value }: any) => `${value?.[2] ?? 0}%`,
+          formatter: (params: CallbackDataParams) => {
+            const values = Array.isArray(params.value) ? params.value : [];
+            const score = values[2];
+            const numericScore = typeof score === "number" ? score : 0;
+            return `${numericScore}%`;
+          },
         },
       },
     ],

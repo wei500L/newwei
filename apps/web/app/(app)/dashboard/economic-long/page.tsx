@@ -1,11 +1,14 @@
 "use client";
 
 import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
+import type { EChartsOption } from "echarts";
 import { useTranslation } from "react-i18next";
-import { TimeRangeControls } from "@/components/time-range-controls";
+
 import { DashboardChart } from "@/components/echart";
-import { useEconomicData } from "@/hooks/useEconomicData";
-import { EconomicSeriesGroup } from "@/hooks/useEconomicData";
+import { TimeRangeControls } from "@/components/time-range-controls";
+import type { EconomicSeriesGroup } from "@/hooks/useEconomicData";
+import { useEconomicData  } from "@/hooks/useEconomicData";
+
 import {
   filterValuesByDays,
   getSeriesField,
@@ -105,10 +108,7 @@ export default function EconomicLongPage() {
         <Col xs={24} lg={16}>
           <Card title={t("dashboard.economicLong.cards.yieldCurve")} className="content-card">
             {yieldTimelineOption ? (
-              <DashboardChart
-                option={yieldTimelineOption as any}
-                height={320}
-              />
+              <DashboardChart option={yieldTimelineOption} height={320} />
             ) : (
               <Empty description={t("dashboard.economicLong.empty.yieldCurve")} />
             )}
@@ -133,7 +133,7 @@ export default function EconomicLongPage() {
 function buildYieldTimeline(
   group: EconomicSeriesGroup | undefined,
   t: (key: string, options?: Record<string, unknown>) => string
-) {
+): EChartsOption | null {
   if (!group) {
     return null;
   }
@@ -145,9 +145,7 @@ function buildYieldTimeline(
   ];
   const buckets = new Map<
     string,
-    {
-      [label: string]: number;
-    }
+    Record<string, number>
   >();
   for (const { field, label } of fieldMap) {
     const series = group.fields.get(field);

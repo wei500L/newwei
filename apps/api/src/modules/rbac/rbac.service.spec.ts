@@ -1,6 +1,8 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { RbacService } from "./rbac.service";
+
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+
+import { RbacService } from "./rbac.service";
 
 const prismaMock = {
   permission: {

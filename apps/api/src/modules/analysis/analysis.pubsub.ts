@@ -2,7 +2,7 @@ import { PubSub } from "graphql-subscriptions";
 
 export const ANALYSIS_PUBSUB = Symbol("ANALYSIS_PUBSUB");
 
-export type AnalysisEventPayload = {
+export interface AnalysisEventPayload {
   orgId: string;
   result: {
     id: string;
@@ -12,6 +12,6 @@ export type AnalysisEventPayload = {
     error?: string;
     createdAt: string;
   };
-};
+}
 
 export const createAnalysisPubSub = () => new PubSub<AnalysisEventPayload>();

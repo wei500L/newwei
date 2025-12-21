@@ -1,6 +1,8 @@
 import { Field, GraphQLISODateTime, HideField, ID, Int, ObjectType } from "@nestjs/graphql";
-import { PageInfo } from "./page-info.model";
+
 import { HasPermission } from "../decorators/has-permission.decorator";
+
+import { PageInfo } from "./page-info.model";
 
 @ObjectType()
 export class ItemMetaModel {

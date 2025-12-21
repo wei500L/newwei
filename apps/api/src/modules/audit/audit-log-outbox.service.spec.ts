@@ -7,6 +7,7 @@ jest.mock("@modular/utils", () => {
 });
 
 import { AuditLogOutboxStatus } from "@prisma/client";
+
 import { AuditLogOutboxService } from "./audit-log-outbox.service";
 
 describe("AuditLogOutboxService", () => {

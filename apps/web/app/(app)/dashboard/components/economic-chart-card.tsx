@@ -3,6 +3,7 @@
 import { Card, Empty, Typography } from "antd";
 import type { EChartsOption, SeriesOption } from "echarts";
 import { useTranslation } from "react-i18next";
+
 import { DashboardChart } from "@/components/echart";
 import type { EconomicSeriesMap } from "@/hooks/useEconomicData";
 
@@ -28,6 +29,11 @@ export function EconomicChartCard({
 }: EconomicChartCardProps) {
   const { t } = useTranslation();
   const option = buildOption(seriesMap, series, title);
+  const seriesList = Array.isArray(option.series)
+    ? option.series
+    : option.series
+      ? [option.series]
+      : [];
 
   return (
     <Card title={title} className="content-card" style={{ marginBottom: 16 }}>
@@ -36,7 +42,7 @@ export function EconomicChartCard({
           {description}
         </Typography.Paragraph>
       )}
-      {option.series && (option.series as any[]).length > 0 ? (
+      {seriesList.length > 0 ? (
         <DashboardChart option={option} height={360} />
       ) : (
         <Empty description={t("common.empty")} />

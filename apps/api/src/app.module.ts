@@ -13,8 +13,8 @@ import { ApiGraphqlModule } from "./graphql/graphql.module";
 import { AkshareModule } from "./modules/akshare/akshare.module";
 import { AlertsModule } from "./modules/alerts/alerts.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
-import { AuthModule } from "./modules/auth/auth.module";
 import { AuditModule } from "./modules/audit/audit.module";
+import { AuthModule } from "./modules/auth/auth.module";
 import { CacheModule } from "./modules/cache/cache.module";
 import { ConfigModule } from "./modules/config/config.module";
 import { DatabaseModule } from "./modules/config/database.module";
@@ -23,12 +23,12 @@ import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { EmailModule } from "./modules/email/email.module";
 import { HealthModule } from "./modules/health/health.module";
 import { ItemsModule } from "./modules/items/items.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { ObservabilityModule } from "./modules/observability/observability.module";
 import { QueueAdminModule } from "./modules/queue/queue-admin.module";
 import { QueueModule } from "./modules/queue/queue.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
-import { NotificationsModule } from "./modules/notifications/notifications.module";
-import { ObservabilityModule } from "./modules/observability/observability.module";
 import { WebSocketModule } from "./modules/websocket/websocket.module";
 
 @Module({

@@ -1,6 +1,6 @@
 import { Field, GraphQLISODateTime, Int, ObjectType, registerEnumType } from "@nestjs/graphql";
-import GraphQLJSON from "graphql-type-json";
 import { NotificationType } from "@prisma/client";
+import GraphQLJSONScalar from "graphql-type-json";
 
 registerEnumType(NotificationType, { name: "NotificationType" });
 
@@ -18,7 +18,7 @@ export class NotificationModel {
   @Field(() => String, { nullable: true })
   body?: string | null;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   data?: Record<string, unknown> | null;
 
   @Field(() => GraphQLISODateTime)

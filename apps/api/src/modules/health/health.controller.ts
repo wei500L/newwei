@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 
 import { Public } from "../../common/decorators/public.decorator";
 import { PrismaService } from "../config/prisma.service";
+
 import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
 import { MongoHealthIndicator } from "./mongo.health";
 import { RedisHealthIndicator } from "./redis.health";

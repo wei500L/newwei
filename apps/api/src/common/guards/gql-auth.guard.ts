@@ -31,7 +31,7 @@ export class GqlAuthGuard extends AuthGuard("jwt") {
     };
   }
 
-  handleRequest(err: unknown, user: unknown, info: unknown, _context?: unknown, _status?: unknown) {
+  handleRequest(err: unknown, user: unknown, info: unknown) {
     if (err) {
       if (err instanceof HttpException) {
         throw err;

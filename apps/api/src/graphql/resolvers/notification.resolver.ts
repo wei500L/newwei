@@ -1,12 +1,14 @@
+import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { Args, Context, Int, Mutation, Query, Resolver } from "@nestjs/graphql";
+
 import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { NotificationsService } from "../../modules/notifications/notifications.service";
-import { NotificationModel } from "../models/notification.model";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
-import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { NotificationEvent } from "../../modules/notifications/notification.dispatcher";
+import { NotificationsService } from "../../modules/notifications/notifications.service";
+import type { GqlRequest } from "../graphql.types";
+import { NotificationModel } from "../models/notification.model";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -16,7 +18,7 @@ export class NotificationResolver {
   @AllowAuthenticated()
   @Query(() => [NotificationModel])
   async notifications(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("limit", { type: () => Int, nullable: true }) limit?: number
   ): Promise<NotificationModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -30,7 +32,7 @@ export class NotificationResolver {
 
   @AllowAuthenticated()
   @Query(() => Int)
-  async unreadNotificationCount(@Context("req") req: any): Promise<number> {
+  async unreadNotificationCount(@Context("req") req: GqlRequest): Promise<number> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
@@ -41,7 +43,7 @@ export class NotificationResolver {
   @AllowAuthenticated()
   @Mutation(() => NotificationModel, { nullable: true })
   async markNotificationRead(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("id") id: string
   ): Promise<NotificationModel | null> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -54,7 +56,7 @@ export class NotificationResolver {
 
   @AllowAuthenticated()
   @Mutation(() => Boolean)
-  async markAllNotificationsRead(@Context("req") req: any): Promise<boolean> {
+  async markAllNotificationsRead(@Context("req") req: GqlRequest): Promise<boolean> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");

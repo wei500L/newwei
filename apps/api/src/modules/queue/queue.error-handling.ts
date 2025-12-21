@@ -3,20 +3,20 @@ export enum QueueErrorKind {
   Permanent = "permanent",
 }
 
-export type SerializedQueueError = {
+export interface SerializedQueueError {
   name: string;
   message: string;
   stack?: string;
   code?: string;
   status?: number;
   cause?: SerializedQueueError;
-};
+}
 
-export type ClassifiedQueueError = {
+export interface ClassifiedQueueError {
   kind: QueueErrorKind;
   reason: string;
   error: SerializedQueueError;
-};
+}
 
 export class QueuePermanentError extends Error {
   override name = "QueuePermanentError";

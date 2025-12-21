@@ -1,10 +1,10 @@
 "use client";
 
-type ClientTelemetryContext = {
+interface ClientTelemetryContext {
   traceId?: string;
   tags?: Record<string, string>;
   extras?: Record<string, unknown>;
-};
+}
 
 function normalizeError(message: string, error?: unknown): Error {
   if (error instanceof Error) {
@@ -34,8 +34,16 @@ export const captureClientError = (
   error?: unknown,
   context: ClientTelemetryContext = {},
 ) => {
+  interface SentryClient {
+    captureException?: (
+      error: Error,
+      context?: { tags?: Record<string, string>; extra?: Record<string, unknown> },
+    ) => void;
+  }
   const sentry =
-    typeof window !== "undefined" ? (window as { Sentry?: any }).Sentry : undefined;
+    typeof window !== "undefined"
+      ? (window as { Sentry?: SentryClient }).Sentry
+      : undefined;
   const normalizedError = normalizeError(message, error);
 
   if (sentry?.captureException) {

@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-
 import { Injectable } from "@nestjs/common";
 import Handlebars, { TemplateDelegate } from "handlebars";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import nodemailer, { Transporter } from "nodemailer";
 
 import { EnvService } from "../config/config.service";

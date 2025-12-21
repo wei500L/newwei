@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../config/prisma.service";
-import { EnvService } from "../config/config.service";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
 
 export interface CrawlClientSettings {
   healthCheckTtlMs: number;

@@ -1,10 +1,10 @@
 import { TaskLogModel } from "@modular/mongo";
+import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 import { Queue, JobsOptions } from "bullmq";
-import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 
-import { ITEM_PIPELINE_QUEUE_NAME, PIPELINE_QUEUE } from "./queue.constants";
 import { QueueOrgStatsService, type TrackedJobStatus } from "./queue-org-stats.service";
+import { ITEM_PIPELINE_QUEUE_NAME, PIPELINE_QUEUE } from "./queue.constants";
 
 @Injectable()
 export class QueueService {

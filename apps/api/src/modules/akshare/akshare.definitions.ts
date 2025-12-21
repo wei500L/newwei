@@ -1,5 +1,7 @@
-import { EconomicDataFrequency, EconomicDataValueType } from "@prisma/client";
-import { AkshareDataFieldConfig, AkshareDataItemDefinition } from "./akshare.types";
+import type { EconomicDataFrequency} from "@prisma/client";
+import { EconomicDataValueType } from "@prisma/client";
+
+import type { AkshareDataFieldConfig, AkshareDataItemDefinition } from "./akshare.types";
 
 const REALTIME: EconomicDataFrequency = "realtime";
 const HOURLY: EconomicDataFrequency = "hourly";

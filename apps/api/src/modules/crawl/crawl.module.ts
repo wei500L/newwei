@@ -1,22 +1,25 @@
-import { Module } from "@nestjs/common";
-import { getQueueToken } from "@nestjs/bull-shared";
 import { HttpModule } from "@nestjs/axios";
+import { getQueueToken } from "@nestjs/bull-shared";
+import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
+
 import { EnvService } from "../config/config.service";
-import { CrawlController } from "./crawl.controller";
+import { NotificationsModule } from "../notifications/notifications.module";
+
+import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
+import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlMetadataService } from "./crawl-metadata.service";
-import { Crawl4aiClient } from "./crawl4ai.client";
-import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
+import { CrawlQueueService } from "./crawl-queue.service";
+import { CrawlResultService } from "./crawl-result.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
+import { CrawlTaskJanitorService } from "./crawl-task-janitor.service";
+import { CrawlTaskService } from "./crawl-task.service";
+import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
+import { CrawlController } from "./crawl.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
 import type { CrawlJobData } from "./crawl.types";
-import { CrawlQueueService } from "./crawl-queue.service";
-import { CrawlExecutionService } from "./crawl-execution.service";
-import { CrawlTaskService } from "./crawl-task.service";
-import { CrawlResultService } from "./crawl-result.service";
-import { CrawlTaskJanitorService } from "./crawl-task-janitor.service";
-import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
-import { NotificationsModule } from "../notifications/notifications.module";
+import { Crawl4aiClient } from "./crawl4ai.client";
+
 
 @Module({
   imports: [

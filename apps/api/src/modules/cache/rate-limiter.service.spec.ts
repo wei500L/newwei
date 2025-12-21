@@ -1,7 +1,7 @@
 import { RateLimiterService } from "./rate-limiter.service";
 
 class FakeRedis {
-  private buckets = new Map<string, Array<{ score: number; member: string }>>();
+  private buckets = new Map<string, { score: number; member: string }[]>();
   private counters = new Map<string, number>();
 
   async eval(

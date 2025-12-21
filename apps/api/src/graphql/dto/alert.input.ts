@@ -1,7 +1,7 @@
 import { Field, InputType, Int } from "@nestjs/graphql";
 import { AlertChannelType, AlertMetricProvider, AlertOperator, AlertSeverity, AlertStatus } from "@prisma/client";
-import GraphQLJSON from "graphql-type-json";
-import { IsArray, IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength, Min } from "class-validator";
+import { IsArray, IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from "class-validator";
+import GraphQLJSONScalar from "graphql-type-json";
 
 @InputType()
 export class AlertChannelInput {
@@ -18,7 +18,7 @@ export class AlertChannelInput {
   @IsString()
   target!: string;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   @IsOptional()
   config?: Record<string, unknown>;
 }
@@ -98,7 +98,7 @@ export class UpsertAlertRuleInput {
   @IsString({ each: true })
   channelIds?: string[];
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   @IsOptional()
   metadata?: Record<string, unknown>;
 }

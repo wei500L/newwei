@@ -1,11 +1,18 @@
+import { AkshareResponseModel } from "@modular/mongo";
+import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
 import { EconomicDataRunStatus, Prisma } from "@prisma/client";
-import { lastValueFrom } from "rxjs";
 import { Queue, type RepeatJob, type RepeatOptions } from "bullmq";
 import type Redis from "ioredis";
 import { randomUUID } from "node:crypto";
-import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime } from "@modular/utils";
+import { lastValueFrom } from "rxjs";
+
+import { REDIS_CLIENT } from "../cache/cache.tokens";
+import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
+
+import { AKSHARE_QUEUE } from "./akshare.constants";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
 import {
   AkshareDataItemConfig,
@@ -14,11 +21,6 @@ import {
   AkshareJobPayload,
   AkshareParserConfig
 } from "./akshare.types";
-import { PrismaService } from "../config/prisma.service";
-import { AKSHARE_QUEUE } from "./akshare.constants";
-import { AkshareResponseModel } from "@modular/mongo";
-import { EnvService } from "../config/config.service";
-import { REDIS_CLIENT } from "../cache/cache.tokens";
 
 interface FetchResult {
   definition: AkshareDataItemConfig;
@@ -80,7 +82,7 @@ export class AkshareService implements OnModuleInit {
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
       return {};
     }
-    const parsed = metadata as Record<string, any>;
+    const parsed = metadata as Record<string, unknown>;
     const method = parsed.method === "POST" ? "POST" : parsed.method === "GET" ? "GET" : undefined;
     const defaultParams =
       parsed.defaultParams && typeof parsed.defaultParams === "object" && !Array.isArray(parsed.defaultParams)
@@ -410,7 +412,7 @@ export class AkshareService implements OnModuleInit {
     return true;
   }
 
-  async fetchAndPersist(slug: string, triggeredById?: string) {
+  async fetchAndPersist(slug: string) {
     let itemId: string | undefined;
     try {
       const definition = await this.loadDefinitionFromDatabase(slug);
@@ -576,7 +578,12 @@ export class AkshareService implements OnModuleInit {
       return false;
     }
 
-    const anyError = error as any;
+    const anyError = error as {
+      message?: unknown;
+      meta?: { message?: unknown; code?: unknown };
+      errno?: unknown;
+      code?: unknown;
+    };
     const topMessage = typeof anyError.message === "string" ? anyError.message : "";
     const metaMessage = typeof anyError.meta?.message === "string" ? anyError.meta.message : "";
     const message = `${topMessage} ${metaMessage}`.toLowerCase();
@@ -663,7 +670,7 @@ export class AkshareService implements OnModuleInit {
     throw lastError;
   }
 
-  private parsePayload(parser: AkshareParserConfig, payload: any, context?: { slug?: string }): ParsedDataPoint[] {
+  private parsePayload(parser: AkshareParserConfig, payload: unknown, context?: { slug?: string }): ParsedDataPoint[] {
     const parserType = (parser as { type?: unknown } | null | undefined)?.type;
     switch (parserType) {
       case "latest":
@@ -689,13 +696,16 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private parseLatestPayload(parser: Extract<AkshareParserConfig, { type: "latest" }>, payload: any) {
+  private parseLatestPayload(parser: Extract<AkshareParserConfig, { type: "latest" }>, payload: unknown) {
     const records = Array.isArray(payload) ? payload : [payload];
     const now = new Date();
     const dedupe = new Set<string>();
-    return records.flatMap((record: Record<string, any>) =>
-      parser.valueFields.flatMap((field) => {
-        const timestamp = parser.timestampField && record[parser.timestampField] ? this.parseDate(record[parser.timestampField]) : now;
+    return records.flatMap((rawRecord) => {
+      const record = rawRecord as Record<string, unknown>;
+      return parser.valueFields.flatMap((field) => {
+        const timestamp = parser.timestampField && record[parser.timestampField]
+          ? this.parseDate(record[parser.timestampField])
+          : now;
         const category = parser.categoryField ? record[parser.categoryField] : undefined;
         const sourceField = category ? `${category}:${field.field}` : field.field;
         const key = `${timestamp.getTime()}|${sourceField}`;
@@ -711,14 +721,15 @@ export class AkshareService implements OnModuleInit {
           sourceField,
           meta: record
         };
-      })
-    );
+      });
+    });
   }
 
-  private parseTimeseriesPayload(parser: Extract<AkshareParserConfig, { type: "timeseries" }>, payload: any[]) {
+  private parseTimeseriesPayload(parser: Extract<AkshareParserConfig, { type: "timeseries" }>, payload: unknown) {
     const records = Array.isArray(payload) ? payload : [];
     const seen = new Set<string>();
-    return records.flatMap((record) => {
+    return records.flatMap((rawRecord) => {
+      const record = rawRecord as Record<string, unknown>;
       const timestampValue = record[parser.timestampField];
       const recordedAt = this.parseDate(timestampValue);
       return parser.valueFields
@@ -743,10 +754,11 @@ export class AkshareService implements OnModuleInit {
     });
   }
 
-  private parseMacroPayload(parser: Extract<AkshareParserConfig, { type: "macro" }>, payload: any[]) {
+  private parseMacroPayload(parser: Extract<AkshareParserConfig, { type: "macro" }>, payload: unknown) {
     const records = Array.isArray(payload) ? payload : [];
     const seen = new Set<string>();
-    return records.flatMap((record) => {
+    return records.flatMap((rawRecord) => {
+      const record = rawRecord as Record<string, unknown>;
       const recordedAt = this.parseDate(record[parser.periodField]);
       return parser.valueFields
         .map((field) => {
@@ -770,9 +782,10 @@ export class AkshareService implements OnModuleInit {
     });
   }
 
-  private parseYieldCurvePayload(parser: Extract<AkshareParserConfig, { type: "yieldCurve" }>, payload: any[]) {
+  private parseYieldCurvePayload(parser: Extract<AkshareParserConfig, { type: "yieldCurve" }>, payload: unknown) {
     const records = Array.isArray(payload) ? payload : [];
-    return records.flatMap((record) => {
+    return records.flatMap((rawRecord) => {
+      const record = rawRecord as Record<string, unknown>;
       const recordedAt = this.parseDate(record[parser.dateField]);
       return parser.seriesFields
         .map((field) => ({

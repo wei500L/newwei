@@ -2,7 +2,7 @@ import { PubSub } from "graphql-subscriptions";
 
 export const ALERTS_PUBSUB = Symbol("ALERTS_PUBSUB");
 
-export type AlertEventPayload = {
+export interface AlertEventPayload {
   orgId: string;
   event: {
     id: string;
@@ -14,6 +14,6 @@ export type AlertEventPayload = {
     changePercent?: number | null;
     status: string;
   };
-};
+}
 
 export const createAlertsPubSub = () => new PubSub<AlertEventPayload>();

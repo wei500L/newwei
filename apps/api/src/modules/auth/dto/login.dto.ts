@@ -25,7 +25,7 @@ export class LoginResponseDto {
   refreshToken!: string;
 
   @ApiProperty({ example: "bearer" })
-  tokenType: string = "bearer";
+  tokenType = "bearer";
 
   @ApiProperty()
   expiresIn!: number;

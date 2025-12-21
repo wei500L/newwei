@@ -13,8 +13,9 @@ jest.mock("@modular/mongo", () => ({
   }
 }));
 
-import { NotificationType } from "@prisma/client";
 import { TaskLogModel } from "@modular/mongo";
+import { NotificationType } from "@prisma/client";
+
 import { CrawlExecutionService } from "../crawl-execution.service";
 
 describe("CrawlExecutionService", () => {

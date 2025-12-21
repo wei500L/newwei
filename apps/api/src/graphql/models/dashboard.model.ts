@@ -1,7 +1,8 @@
 import { Field, GraphQLISODateTime, Int, ObjectType, registerEnumType } from "@nestjs/graphql";
-import { HasPermission } from "../decorators/has-permission.decorator";
 import { DashboardWidgetType } from "@prisma/client";
-import GraphQLJSON from "graphql-type-json";
+import GraphQLJSONScalar from "graphql-type-json";
+
+import { HasPermission } from "../decorators/has-permission.decorator";
 
 registerEnumType(DashboardWidgetType, { name: "DashboardWidgetType" });
 
@@ -69,7 +70,7 @@ export class DashboardWidgetModel {
   @Field()
   dataSource!: string;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   dataConfig?: Record<string, unknown>;
 
   @Field()
@@ -87,7 +88,7 @@ export class DashboardWidgetModel {
   @Field()
   sortOrder!: number;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   options?: Record<string, unknown>;
 }
 
@@ -111,7 +112,7 @@ export class DashboardModel {
   @Field({ nullable: true })
   theme?: string;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   config?: Record<string, unknown>;
 
   @Field(() => GraphQLISODateTime)

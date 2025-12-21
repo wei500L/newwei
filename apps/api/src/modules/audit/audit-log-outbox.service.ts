@@ -1,12 +1,13 @@
+import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { AuditLogOutboxStatus, Prisma } from "@prisma/client";
-import { createLogger } from "@modular/utils";
+
 import { PrismaService } from "../config/prisma.service";
 
 const logger = createLogger({ name: "audit-log-outbox" });
 
-type AuditLogOutboxPayload = {
+interface AuditLogOutboxPayload {
   orgId: string;
   actorId?: string | null;
   resource: string;
@@ -14,9 +15,9 @@ type AuditLogOutboxPayload = {
   metadata?: Prisma.InputJsonValue;
   ipAddress?: string | null;
   createdAt: string;
-};
+}
 
-type NormalizedAuditLogOutboxPayload = {
+interface NormalizedAuditLogOutboxPayload {
   orgId: string;
   actorId: string | null;
   resource: string;
@@ -24,7 +25,7 @@ type NormalizedAuditLogOutboxPayload = {
   metadata: Prisma.InputJsonValue | undefined;
   ipAddress: string | null;
   createdAt: Date;
-};
+}
 
 @Injectable()
 export class AuditLogOutboxService {

@@ -1,10 +1,12 @@
 import { Global, Module } from "@nestjs/common";
+
 import { AuthModule } from "../auth/auth.module";
+
+import { AuditLogSettingsController } from "./audit-log-settings.controller";
+import { AuditLogSettingsService } from "./audit-log-settings.service";
+import { AuthCacheSettingsController } from "./auth-cache-settings.controller";
 import { RateLimitConfigService } from "./rate-limit-config.service";
 import { RateLimitSettingsController } from "./rate-limit-settings.controller";
-import { AuditLogSettingsService } from "./audit-log-settings.service";
-import { AuditLogSettingsController } from "./audit-log-settings.controller";
-import { AuthCacheSettingsController } from "./auth-cache-settings.controller";
 
 @Global()
 @Module({

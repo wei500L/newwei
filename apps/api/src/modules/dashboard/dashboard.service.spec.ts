@@ -11,6 +11,7 @@ jest.mock("../queue/queue.service", () => ({
 }));
 
 import { BadRequestException, ConflictException } from "@nestjs/common";
+
 import { DashboardService } from "./dashboard.service";
 
 const prismaMock = {

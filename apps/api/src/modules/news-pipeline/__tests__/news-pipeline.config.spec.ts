@@ -77,7 +77,6 @@ describe('NewsPipelineConfigService config watcher', () => {
 
   it('watches config directory via fs.watch and reloads on changes', () => {
     let service: any;
-    let watchCallback: any;
 
     jest.isolateModules(() => {
       const mod = require('../news-pipeline.config') as typeof import('../news-pipeline.config');
@@ -90,7 +89,7 @@ describe('NewsPipelineConfigService config watcher', () => {
       expect.any(Function),
     );
 
-    watchCallback = (fsMock.watch.mock.calls[0] as any[])[2];
+    const watchCallback = (fsMock.watch.mock.calls[0] as any[])[2];
 
     expect(fsMock.readFileSync).toHaveBeenCalledTimes(1);
     watchCallback('change', targetFile);

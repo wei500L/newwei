@@ -1,5 +1,5 @@
-import { create } from "zustand";
 import { nanoid } from "nanoid";
+import { create } from "zustand";
 
 export type DashboardWidgetType = "line" | "bar" | "pie" | "scatter" | "kline" | "radar" | "table";
 
@@ -31,7 +31,7 @@ export interface DashboardEditorState {
   reset: () => void;
 }
 
-export const useDashboardEditorStore = create<DashboardEditorState>((set, get) => ({
+export const useDashboardEditorStore = create<DashboardEditorState>((set) => ({
   widgets: [],
   theme: "light",
   name: "Analysis Dashboard",

@@ -1,5 +1,5 @@
-import mongoose from "mongoose";
 import { baseEnvSchema, loadAndValidateEnv } from "@modular/utils";
+import mongoose from "mongoose";
 
 let connectionPromise: Promise<typeof mongoose> | null = null;
 

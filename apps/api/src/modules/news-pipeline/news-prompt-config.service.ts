@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../config/prisma.service";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { PrismaService } from "../config/prisma.service";
 
 export interface NewsPromptConfig {
   version: string;

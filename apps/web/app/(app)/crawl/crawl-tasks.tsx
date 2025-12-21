@@ -1,5 +1,6 @@
 "use client";
 
+import { sanitizeCrawlOptions } from "@modular/utils";
 import {
   Button,
   Form,
@@ -15,19 +16,19 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { sanitizeCrawlOptions } from "@modular/utils";
+
+import type { CrawlMetadataInput, CrawlTaskStatus } from "@/graphql/generated";
 import {
-  CrawlMetadataInput,
-  CrawlTaskStatus,
   useCreateCrawlTaskMutation,
   useCrawlMetadataLazyQuery,
   useCrawlTasksQuery,
   useRetryCrawlTaskMutation,
 } from "@/graphql/generated";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
+
 import { CreateCrawlTaskDrawer } from "./components/CreateCrawlTaskDrawer";
 import { MetadataExtractionCard } from "./components/MetadataExtractionCard";
 import type { CreateCrawlTaskFormValues, MetadataFormValues } from "./types";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const statusColors: Record<CrawlTaskStatus, string> = {
   pending: "gold",
@@ -73,11 +74,11 @@ export function CrawlTasksView() {
   const metadataResults = metadataData?.crawlMetadata ?? [];
 
   const totalCount = data?.crawlTasks.totalCount ?? 0;
-  const allNodes = data?.crawlTasks.edges.map((edge) => edge.node) ?? [];
   const tableData = useMemo(() => {
+    const allNodes = data?.crawlTasks.edges.map((edge) => edge.node) ?? [];
     const start = (current - 1) * pageSize;
     return allNodes.slice(start, start + pageSize);
-  }, [allNodes, current, pageSize]);
+  }, [data?.crawlTasks.edges, current, pageSize]);
 
   const columns: ColumnsType<(typeof tableData)[number]> = [
     {
@@ -194,8 +195,8 @@ export function CrawlTasksView() {
         },
       });
       message.success(t("crawl.metadata.completed"));
-    } catch (error: any) {
-      if (error?.errorFields) {
+    } catch (error: unknown) {
+      if (typeof error === "object" && error && "errorFields" in error) {
         return;
       }
       message.error(t("crawl.metadata.failed"));

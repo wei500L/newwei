@@ -1,6 +1,8 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+
 import { Permissions } from "../../common/decorators/permissions.decorator";
+
 import { ExceptionEventsService } from "./exception-events.service";
 
 @ApiTags("observability")

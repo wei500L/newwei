@@ -1,9 +1,9 @@
 "use client";
 
 import { App } from "antd";
+import { signOut, useSession } from "next-auth/react";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { signOut, useSession } from "next-auth/react";
 
 export function SessionErrorListener() {
   const { message } = App.useApp();

@@ -1,17 +1,19 @@
+import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { MongoOutboxStatus, MongoOutboxType, Prisma } from "@prisma/client";
-import { createLogger } from "@modular/utils";
+
 import { PrismaService } from "../config/prisma.service";
+
 import { CrawlResultService } from "./crawl-result.service";
 
 const logger = createLogger({ name: "crawl-cleanup-outbox" });
 
-type CleanupCrawlResultsOutboxPayload = {
+interface CleanupCrawlResultsOutboxPayload {
   type: MongoOutboxType.cleanup_crawl_results;
   taskId: string;
   orgId?: string;
-};
+}
 
 @Injectable()
 export class CrawlCleanupOutboxService {

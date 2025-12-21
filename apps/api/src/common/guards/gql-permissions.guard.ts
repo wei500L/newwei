@@ -1,9 +1,10 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { GqlExecutionContext } from "@nestjs/graphql";
+
+import { ALLOW_AUTHENTICATED_KEY } from "../decorators/allow-authenticated.decorator";
 import { PERMISSIONS_KEY, PermissionsMode, normalizePermissionsRequirement } from "../decorators/permissions.decorator";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
-import { ALLOW_AUTHENTICATED_KEY } from "../decorators/allow-authenticated.decorator";
 
 type GqlContextType = "graphql" | "http" | "rpc" | "ws";
 

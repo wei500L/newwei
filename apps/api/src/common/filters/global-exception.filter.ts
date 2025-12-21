@@ -7,9 +7,10 @@ import {
   HttpStatus
 } from "@nestjs/common";
 import { GqlArgumentsHost } from "@nestjs/graphql";
+import { Prisma } from "@prisma/client";
 import type { Request, Response } from "express";
 import { GraphQLError } from "graphql";
-import { Prisma } from "@prisma/client";
+
 import { ExceptionEventsService } from "../../modules/observability/exception-events.service";
 
 interface NormalizedHttpResponse {

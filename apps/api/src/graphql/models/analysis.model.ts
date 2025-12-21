@@ -1,5 +1,5 @@
 import { Field, GraphQLISODateTime, ObjectType, registerEnumType } from "@nestjs/graphql";
-import GraphQLJSON from "graphql-type-json";
+import GraphQLJSONScalar from "graphql-type-json";
 
 export enum AnalysisType {
   correlation = "correlation",
@@ -33,10 +33,10 @@ export class AnalysisResultModel {
   @Field(() => String, { nullable: true })
   error?: string | null;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   input?: Record<string, unknown>;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   output?: Record<string, unknown>;
 
   @Field(() => GraphQLISODateTime)

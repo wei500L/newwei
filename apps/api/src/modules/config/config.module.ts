@@ -1,8 +1,9 @@
+import { createLogger } from "@modular/utils";
 import { Global, Module } from "@nestjs/common";
 import { ConfigModule as NestConfigModule } from "@nestjs/config";
-import { apiEnvSchema } from "./env.schema";
+
 import { EnvService } from "./config.service";
-import { createLogger } from "@modular/utils";
+import { apiEnvSchema } from "./env.schema";
 
 const logger = createLogger({ name: "api-config" });
 

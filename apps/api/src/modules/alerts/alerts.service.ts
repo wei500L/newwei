@@ -1,3 +1,4 @@
+import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable } from "@nestjs/common";
 import {
@@ -11,16 +12,17 @@ import {
   Prisma
 } from "@prisma/client";
 import { DelayedError, Job, Queue } from "bullmq";
+import { PubSubEngine } from "graphql-subscriptions";
+import { firstValueFrom } from "rxjs";
+
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
-import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
-import { EnvService } from "../config/config.service";
-import { firstValueFrom } from "rxjs";
-import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
-import { ALERTS_PUBSUB, AlertEventPayload } from "./alerts.pubsub";
-import { PubSubEngine } from "graphql-subscriptions";
-import { MetricProvider } from "./providers/metric-provider";
+
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
+import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
+import { ALERTS_PUBSUB, AlertEventPayload } from "./alerts.pubsub";
+import { MetricProvider } from "./providers/metric-provider";
 
 export interface AlertChannelInput {
   id?: string;
@@ -503,8 +505,10 @@ export class AlertsService {
       }
 
       if (hadScheduledAtMs) {
-        const updated = { ...(job.data as any) };
-        delete updated.scheduledAtMs;
+        const updated = { ...job.data };
+        if ("scheduledAtMs" in updated) {
+          delete updated.scheduledAtMs;
+        }
         await job.updateData(updated);
       }
 
@@ -554,7 +558,11 @@ export class AlertsService {
       config["silencedUntil"] ??
       config["mute_until"] ??
       config["muted_until"];
-    return this.notificationThrottle.parseMuteUntilMs(value as any);
+    const parsed =
+      typeof value === "string" || typeof value === "number" || value == null
+        ? value
+        : null;
+    return this.notificationThrottle.parseMuteUntilMs(parsed);
   }
 
   getNotificationBackoffDelay(attemptsMade: number) {

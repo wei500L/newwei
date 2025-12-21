@@ -125,6 +125,9 @@ importers:
       '@socket.io/redis-adapter':
         specifier: ^8.3.0
         version: 8.3.0(socket.io-adapter@2.5.5)
+      axios:
+        specifier: ^1.6.8
+        version: 1.13.2
       bcrypt:
         specifier: ^5.1.1
         version: 5.1.1

@@ -1,11 +1,13 @@
 import { Body, Controller, Get, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Permissions } from "../../common/decorators/permissions.decorator";
+
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
-import { RbacService } from "./rbac.service";
-import { CreateRoleDto } from "./dto/create-role.dto";
+
 import { AssignRoleDto } from "./dto/assign-role.dto";
+import { CreateRoleDto } from "./dto/create-role.dto";
+import { RbacService } from "./rbac.service";
 
 @ApiTags("rbac")
 @ApiBearerAuth()

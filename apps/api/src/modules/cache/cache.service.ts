@@ -1,6 +1,7 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import type Redis from 'ioredis';
+import { randomUUID } from 'node:crypto';
+
 import { REDIS_CLIENT } from './cache.tokens';
 
 @Injectable()

@@ -1,10 +1,12 @@
+import { ProcessedItemModel } from "@modular/mongo";
+import type { MongoConnection } from "@modular/mongo";
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { DashboardWidgetType, Prisma } from "@prisma/client";
+
+import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
 import { QueueService } from "../queue/queue.service";
-import { ProcessedItemModel } from "@modular/mongo";
-import { MONGO_CONNECTION } from "../config/mongo.provider";
-import type { MongoConnection } from "@modular/mongo";
-import { DashboardWidgetType, Prisma } from "@prisma/client";
+
 
 @Injectable()
 export class DashboardService {

@@ -7,12 +7,12 @@ import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
 
 export type TrackedJobStatus = "waiting" | "active" | "completed" | "failed" | "delayed";
 
-type JobMeta = {
+interface JobMeta {
   orgId: string;
   status: TrackedJobStatus;
   keepCompleted: "0" | "1";
   keepFailed: "0" | "1";
-};
+}
 
 const TRACKED_STATUSES: readonly TrackedJobStatus[] = [
   "waiting",

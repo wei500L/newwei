@@ -1,4 +1,3 @@
-import type { Dayjs } from "dayjs";
 import type {
   BrowserCookieFormValue,
   BrowserHeaderFormValue,
@@ -13,6 +12,7 @@ import type {
   TableExtractionFormValue,
   UserAgentGeneratorFormValue,
 } from "@modular/utils";
+import type { Dayjs } from "dayjs";
 
 export interface CreateCrawlTaskFormValues extends CrawlOptionsFormValues {
   url: string;

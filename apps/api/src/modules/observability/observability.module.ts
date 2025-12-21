@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
-import { ExceptionEventsService } from "./exception-events.service";
+
 import { AdminErrorsController } from "./admin-errors.controller";
+import { ExceptionEventsService } from "./exception-events.service";
 
 @Module({
   controllers: [AdminErrorsController],

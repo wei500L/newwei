@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App as AntApp, ConfigProvider, theme, unstableSetRender } from "antd";
 import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
-import dayjs from "dayjs";
+import { locale as setDayjsLocale } from "dayjs";
 import "dayjs/locale/en";
 import "dayjs/locale/zh-cn";
 import type { PropsWithChildren } from "react";
@@ -63,7 +63,7 @@ export function AppProviders({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    dayjs.locale(locale === "zh-CN" ? "zh-cn" : "en");
+    setDayjsLocale(locale === "zh-CN" ? "zh-cn" : "en");
     if (typeof document !== "undefined") {
       document.documentElement.lang = locale;
       document.title = i18nInstance.t("metadata.title");

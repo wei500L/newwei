@@ -1,12 +1,13 @@
 "use client";
 
-import { DashboardChart } from "@/components/echart";
 import { gql, useQuery } from "@apollo/client";
 import { Alert, Button, Skeleton, Typography } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+
+import { DashboardChart } from "@/components/echart";
+import type { TimeGranularity } from "@/graphql/generated";
 import { useDashboardRangeStore } from "@/store/time-range";
-import { TimeGranularity } from "@/graphql/generated";
 
 const ECONOMIC_WIDGET_QUERY = gql`
   query EconomicWidgetData(
@@ -179,7 +180,19 @@ export function WidgetRenderer({
           ],
         };
     }
-  }, [resolvedData, dataSource, title, type]);
+  }, [color, resolvedData, dataSource, title, type]);
+
+  const theme = useMemo(
+    () =>
+      color
+        ? {
+            color: [color],
+            textStyle: { color: "#333" },
+            title: { textStyle: { color } },
+          }
+        : undefined,
+    [color],
+  );
 
   if (sourceInfo.kind === "unknown") {
     return (
@@ -212,18 +225,6 @@ export function WidgetRenderer({
   if (!resolvedData || resolvedData.length === 0) {
     return <Typography.Text type="secondary">{t("common.empty")}</Typography.Text>;
   }
-
-  const theme = useMemo(
-    () =>
-      color
-        ? {
-            color: [color],
-            textStyle: { color: "#333" },
-            title: { textStyle: { color } },
-          }
-        : undefined,
-    [color],
-  );
 
   return (
     <DashboardChart

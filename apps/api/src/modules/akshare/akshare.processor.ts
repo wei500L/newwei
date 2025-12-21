@@ -1,10 +1,12 @@
+import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Queue, QueueEvents, Worker } from "bullmq";
+
 import { EnvService } from "../config/config.service";
+
 import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./akshare.constants";
-import { AkshareJobPayload } from "./akshare.types";
 import { AkshareService } from "./akshare.service";
-import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
+import { AkshareJobPayload } from "./akshare.types";
 
 const logger = createLogger({ name: "akshare-queue" });
 
@@ -27,7 +29,7 @@ export class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {
         const traceId = ensureTraceId(job.data.traceId);
         return runWithTraceId(traceId, async () => {
           logger.info({ jobId: job.id, slug: job.data.dataItemId }, "Processing Akshare job");
-          await this.akshareService.fetchAndPersist(job.data.dataItemId, job.data.triggeredById);
+          await this.akshareService.fetchAndPersist(job.data.dataItemId);
         });
       },
       {

@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
 import type { ArgumentsHost } from "@nestjs/common";
+
 import { GlobalExceptionFilter } from "./global-exception.filter";
 
 jest.mock("@modular/utils", () => ({

@@ -1,5 +1,6 @@
+import { CORE_PERMISSIONS, DEFAULT_ROLES, DEFAULT_USERS } from "@modular/config";
 import bcrypt from "bcrypt";
-import { DEFAULT_ROLES, DEFAULT_USERS, CORE_PERMISSIONS } from "@modular/config";
+
 import { prisma } from "./client";
 
 export interface SeedOptions {

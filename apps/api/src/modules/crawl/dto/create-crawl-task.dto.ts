@@ -17,6 +17,7 @@ import {
   IsNumber,
   IsObject
 } from "class-validator";
+
 import { CrawlUrlMatchMode } from "../crawl.types";
 
 export class CrawlProxyConfigDto {
@@ -216,17 +217,17 @@ export class CrawlOptionsDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlMarkdownOptionsDto)
-  markdownOptions?: any;
+  markdownOptions?: CrawlMarkdownOptionsDto;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlMarkdownFilterDto)
-  markdownFilter?: any;
+  markdownFilter?: CrawlMarkdownFilterDto;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlMarkdownStrategyDto)
-  markdownStrategy?: any;
+  markdownStrategy?: CrawlMarkdownStrategyDto;
 
   @IsOptional()
   @Type(() => Number)
@@ -238,17 +239,17 @@ export class CrawlOptionsDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlTableExtractionStrategyDto)
-  tableExtraction?: any;
+  tableExtraction?: CrawlTableExtractionStrategyDto;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlCleanMarkdownOptionsDto)
-  cleanMarkdown?: any;
+  cleanMarkdown?: CrawlCleanMarkdownOptionsDto;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlVirtualScrollConfigDto)
-  virtualScroll?: any;
+  virtualScroll?: CrawlVirtualScrollConfigDto;
 
   @IsOptional()
   @IsBoolean()
@@ -257,7 +258,7 @@ export class CrawlOptionsDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlLinkPreviewOptionsDto)
-  linkPreview?: any;
+  linkPreview?: CrawlLinkPreviewOptionsDto;
 
   @IsOptional()
   @IsArray()
@@ -481,7 +482,7 @@ export class CrawlStrategyOverridesDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => CrawlVirtualScrollConfigDto)
-  virtualScroll?: any;
+  virtualScroll?: CrawlVirtualScrollConfigDto;
 
   @IsOptional()
   @IsBoolean()

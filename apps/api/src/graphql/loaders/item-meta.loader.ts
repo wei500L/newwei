@@ -1,8 +1,10 @@
-import DataLoader from "dataloader";
 import { Injectable, Scope } from "@nestjs/common";
-import { NestDataLoader } from "nestjs-dataloader";
-import { PrismaService } from "../../modules/config/prisma.service";
 import type { ItemMeta } from "@prisma/client";
+import DataLoader from "dataloader";
+import { NestDataLoader } from "nestjs-dataloader";
+
+import { PrismaService } from "../../modules/config/prisma.service";
+
 
 @Injectable({ scope: Scope.REQUEST })
 export class ItemMetaLoader implements NestDataLoader<string, ItemMeta | null> {

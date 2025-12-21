@@ -1,8 +1,9 @@
 import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../config/prisma.service";
-import { EnvService } from "../config/config.service";
-import { CacheService } from "../cache/cache.service";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
 
 export interface AuthCacheSettings {
   profileTtlSeconds: number;

@@ -2,11 +2,12 @@
 
 import { Alert, Button, Form, Input, Typography } from "antd";
 import type { TFunction } from "i18next";
-import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+
 import { captureClientError } from "@/lib/client-telemetry";
 
 const { Title, Text } = Typography;
@@ -48,8 +49,8 @@ export default function LoginPage() {
       Object.entries(fieldErrors).forEach(([name, messages]) => {
         form.setFields([
           {
-            name: name as any,
-            errors: messages,
+            name,
+            errors: messages ?? [],
           },
         ]);
       });

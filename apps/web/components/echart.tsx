@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+
 import type { EchartProps } from "./echart.client";
 
 export const DashboardChart = dynamic<EchartProps>(

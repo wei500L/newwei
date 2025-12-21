@@ -1,12 +1,13 @@
-import { Module } from "@nestjs/common";
 import { HttpModule } from "@nestjs/axios";
+import { Module } from "@nestjs/common";
 import { TerminusModule } from "@nestjs/terminus";
 
 import { CacheModule } from "../cache/cache.module";
-import { DatabaseModule } from "../config/database.module";
 import { EnvService } from "../config/config.service";
-import { HealthController } from "./health.controller";
+import { DatabaseModule } from "../config/database.module";
+
 import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
+import { HealthController } from "./health.controller";
 import { MongoHealthIndicator } from "./mongo.health";
 import { RedisHealthIndicator } from "./redis.health";
 

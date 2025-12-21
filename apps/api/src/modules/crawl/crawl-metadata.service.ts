@@ -1,7 +1,8 @@
+import { createLogger } from "@modular/utils";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { load } from "cheerio";
 import { XMLParser } from "fast-xml-parser";
-import { createLogger } from "@modular/utils";
+
 import type {
   CrawlMetadataExtractionInput,
   CrawlMetadataResult,
@@ -156,7 +157,7 @@ export class CrawlMetadataService {
       return undefined;
     }
 
-    const wildcardCount = (trimmed.match(/[\*\?]/g) ?? []).length;
+    const wildcardCount = (trimmed.match(/[*?]/g) ?? []).length;
     if (wildcardCount > CrawlMetadataService.MAX_WILDCARDS) {
       logger.warn(
         { wildcardCount },
@@ -264,9 +265,9 @@ export class CrawlMetadataService {
     config: NormalizedMetadataConfig,
     collected: Set<string>
   ) {
-    let parsed: any;
+    let parsed: Record<string, unknown> | null = null;
     try {
-      parsed = this.parser.parse(xml);
+      parsed = this.parser.parse(xml) as Record<string, unknown>;
     } catch (error) {
       logger.warn({ error }, "Failed to parse sitemap xml");
       return;
@@ -480,11 +481,8 @@ export class CrawlMetadataService {
     const limit = Math.max(1, Math.min(concurrency, items.length));
 
     const runner = async (): Promise<void> => {
-      while (true) {
+      while (cursor < items.length) {
         const index = cursor++;
-        if (index >= items.length) {
-          return;
-        }
         results[index] = await worker(items[index], index);
       }
     };

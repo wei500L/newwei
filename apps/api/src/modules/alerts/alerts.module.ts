@@ -1,20 +1,22 @@
 import { HttpModule } from "@nestjs/axios";
-import { Module } from "@nestjs/common";
 import { getQueueToken } from "@nestjs/bull-shared";
+import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
-import { DatabaseModule } from "../config/database.module";
+
 import { EnvService } from "../config/config.service";
+import { DatabaseModule } from "../config/database.module";
 import { EmailModule } from "../email/email.module";
+
+import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
 import { ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, ALERTS_QUEUE_NAME, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
-import { AlertsService } from "./alerts.service";
 import { AlertsProcessor } from "./alerts.processor";
 import { ALERTS_PUBSUB, createAlertsPubSub } from "./alerts.pubsub";
+import { AlertsService } from "./alerts.service";
+import { CrawlMetricProvider } from "./providers/crawl-metric.provider";
 import { EconomicDataMetricProvider } from "./providers/economic-data-metric.provider";
 import { PipelineMetricProvider } from "./providers/pipeline-metric.provider";
-import { CrawlMetricProvider } from "./providers/crawl-metric.provider";
-import { SystemMetricProvider } from "./providers/system-metric.provider";
 import { SystemEventMetricProvider } from "./providers/system-event-metric.provider";
-import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
+import { SystemMetricProvider } from "./providers/system-metric.provider";
 
 @Module({
   imports: [

@@ -1,6 +1,8 @@
 import { BadRequestException, UnauthorizedException } from "@nestjs/common";
-import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 import bcrypt from "bcrypt";
+
+import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+
 import { AuthService } from "./auth.service";
 
 const prismaMock = {

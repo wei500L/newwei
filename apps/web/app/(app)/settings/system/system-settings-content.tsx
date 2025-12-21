@@ -1,9 +1,10 @@
 "use client";
 
 import { Alert, Button, Card, Form, Input, InputNumber, Modal, Spin, Tabs, Tag, Typography, message } from "antd";
-import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+
 import {
   useAuditLogRetentionQuery,
   useAuthCacheSettingsQuery,
@@ -589,7 +590,10 @@ function AkshareGatewaySettingsPanel() {
             await sleep(2000);
           }
         } catch (error) {
-          const statusCode = (error as any)?.response?.status as number | undefined;
+          const statusCode =
+            typeof error === "object" && error && "response" in error
+              ? (error as { response?: { status?: number } }).response?.status
+              : undefined;
           if (statusCode === 409) {
             messageApi.info(t("systemSettings.akshare.errors.inProgress"));
             void fetchStatus();

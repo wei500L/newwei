@@ -1,4 +1,5 @@
 import { TaskLogModel } from "@modular/mongo";
+
 import { CrawlTaskJanitorService } from "../crawl-task-janitor.service";
 
 jest.mock("@modular/mongo", () => ({

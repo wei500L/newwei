@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { zodToJsonSchema, type JsonSchema7Type } from "zod-to-json-schema";
-import { NewsPromptConfig } from "./news-prompt-config.service";
+
 import { CleanedNewsSchema } from "./news-pipeline.schema";
+import { NewsPromptConfig } from "./news-prompt-config.service";
 
 export interface PromptInput {
   url: string;

@@ -1,3 +1,4 @@
+import { BadRequestException, UseGuards } from "@nestjs/common";
 import {
   Args,
   Context,
@@ -9,17 +10,18 @@ import {
 } from "@nestjs/graphql";
 import type DataLoader from "dataloader";
 import { Loader } from "nestjs-dataloader";
+
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { ItemsService } from "../../modules/items/items.service";
-import { ItemModel, ItemConnection, ItemEdge, ItemMetaModel, RawItemModelGraph, ProcessedItemModelGraph } from "../models/item.model";
-import { ItemsQueryArgs, CreateItemInput, UpdateItemInput } from "../dto/item.input";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
-import { ItemMetaLoader } from "../loaders/item-meta.loader";
-import { RawItemLoader } from "../loaders/raw-item.loader";
-import { ProcessedItemLoader } from "../loaders/processed-item.loader";
+import { ItemsService } from "../../modules/items/items.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { BadRequestException, UseGuards } from "@nestjs/common";
+import { ItemsQueryArgs, CreateItemInput, UpdateItemInput } from "../dto/item.input";
+import type { GqlRequest } from "../graphql.types";
+import { ItemMetaLoader } from "../loaders/item-meta.loader";
+import { ProcessedItemLoader } from "../loaders/processed-item.loader";
+import { RawItemLoader } from "../loaders/raw-item.loader";
+import { ItemModel, ItemConnection, ItemEdge, ItemMetaModel, RawItemModelGraph, ProcessedItemModelGraph } from "../models/item.model";
 import { PageInfo } from "../models/page-info.model";
 
 function encodeCursor(value: string) {
@@ -38,7 +40,7 @@ export class ItemsResolver {
   @HasPermission("items.read")
   @Query(() => ItemConnection)
   async items(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args() args: ItemsQueryArgs
   ): Promise<ItemConnection> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -73,7 +75,7 @@ export class ItemsResolver {
 
   @HasPermission("items.read")
   @Query(() => ItemModel, { nullable: true })
-  async item(@Context("req") req: any, @Args("id") id: string): Promise<ItemModel | null> {
+  async item(@Context("req") req: GqlRequest, @Args("id") id: string): Promise<ItemModel | null> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new BadRequestException("Unauthenticated");
@@ -90,7 +92,7 @@ export class ItemsResolver {
   @HasPermission("items.write")
   @Mutation(() => ItemModel)
   async createItem(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("input") input: CreateItemInput
   ): Promise<ItemModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -101,7 +103,7 @@ export class ItemsResolver {
     let parsedPayload: Record<string, unknown>;
     try {
       parsedPayload = JSON.parse(input.payload);
-    } catch (error) {
+    } catch {
       throw new BadRequestException("payload must be valid JSON");
     }
 
@@ -118,7 +120,7 @@ export class ItemsResolver {
   @HasPermission("items.write")
   @Mutation(() => ItemModel)
   async updateItem(
-    @Context("req") req: any,
+    @Context("req") req: GqlRequest,
     @Args("input") input: UpdateItemInput
   ): Promise<ItemModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -130,7 +132,7 @@ export class ItemsResolver {
       ? (() => {
           try {
             return JSON.parse(input.payload!);
-          } catch (error) {
+          } catch {
             throw new BadRequestException("payload must be valid JSON");
           }
         })()

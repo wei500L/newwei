@@ -1,4 +1,5 @@
 import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
+
 import { CrawlTaskService } from "../crawl-task.service";
 
 describe("CrawlTaskService", () => {

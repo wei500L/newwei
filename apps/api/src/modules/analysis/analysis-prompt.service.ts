@@ -1,9 +1,11 @@
 import { analysisPromptTemplates, renderPromptTemplate } from "@modular/config";
 import { Injectable } from "@nestjs/common";
+
+import { EnvService } from "../config/config.service";
 import type { LiteLlmMessage } from "../news-pipeline/litellm.service";
+
 import type { AnomalyInput, CorrelationInput } from "./analysis.types";
 import type { AnomalyDetectionResult, SeriesPoint } from "./anomaly-detector";
-import { EnvService } from "../config/config.service";
 import {
   detectRollingSpike,
   detectTrend,

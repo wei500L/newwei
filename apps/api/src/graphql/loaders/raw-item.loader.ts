@@ -1,7 +1,7 @@
-import DataLoader from "dataloader";
-import { Injectable, Scope } from "@nestjs/common";
-import { NestDataLoader } from "nestjs-dataloader";
 import { RawItemModel } from "@modular/mongo";
+import { Injectable, Scope } from "@nestjs/common";
+import DataLoader from "dataloader";
+import { NestDataLoader } from "nestjs-dataloader";
 
 export interface RawItemDoc {
   id: string;
@@ -12,15 +12,17 @@ export interface RawItemDoc {
   updatedAt: Date;
 }
 
+type RawItemRecord = RawItemDoc & { _id: { toString(): string } };
+
 @Injectable({ scope: Scope.REQUEST })
 export class RawItemLoader implements NestDataLoader<string, RawItemDoc | null> {
   generateDataLoader(): DataLoader<string, RawItemDoc | null> {
     return new DataLoader(async (keys) => {
-      const docs = await RawItemModel.find({ itemMetaId: { $in: keys as string[] } })
+      const docs = (await RawItemModel.find({ itemMetaId: { $in: keys as string[] } })
         .sort({ createdAt: -1 })
-        .lean();
+        .lean()) as RawItemRecord[];
       const map = new Map<string, RawItemDoc>();
-      docs.forEach((doc: any) => {
+      docs.forEach((doc) => {
         if (!map.has(doc.itemMetaId)) {
           map.set(doc.itemMetaId, {
             id: doc._id.toString(),

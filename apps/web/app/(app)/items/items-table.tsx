@@ -2,9 +2,11 @@
 
 import { Button, Input, Space, Table, Tag } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import type { ItemsQuery } from "@/graphql/generated";
 import { useItemsQuery } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
@@ -18,6 +20,10 @@ function parsePositiveInt(value: string | null, fallback: number) {
   }
   return parsed;
 }
+
+type ItemEdge = ItemsQuery["items"]["edges"][number];
+
+const EMPTY_EDGES: ItemEdge[] = [];
 
 export function ItemsTable() {
   const { t, i18n } = useTranslation();
@@ -81,7 +87,7 @@ export function ItemsTable() {
     notifyOnNetworkStatusChange: true
   });
 
-  const edges = data?.items.edges ?? [];
+  const edges = data?.items.edges ?? EMPTY_EDGES;
   const totalCount = data?.items.totalCount ?? 0;
   const needsMoreForPage = Boolean(data?.items.pageInfo.hasNextPage) && edges.length < current * pageSize;
 

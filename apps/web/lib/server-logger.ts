@@ -1,9 +1,9 @@
 import { createLogger } from "@modular/utils";
 
-export type ServerLogContext = {
+export interface ServerLogContext {
   traceId?: string;
   meta?: Record<string, unknown>;
-};
+}
 
 const logger = createLogger({ name: "web" });
 

@@ -239,9 +239,7 @@ export interface CrawlStoredMediaAsset {
 
 export type CrawlTableCell = string | number | boolean | null;
 
-export interface CrawlResultTableRecord {
-  [key: string]: CrawlTableCell;
-}
+export type CrawlResultTableRecord = Record<string, CrawlTableCell>;
 
 export interface CrawlResultTable {
   id: string;

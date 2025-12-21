@@ -2,9 +2,11 @@
 
 import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
 import { useTranslation } from "react-i18next";
-import { TimeRangeControls } from "@/components/time-range-controls";
+
 import { DashboardChart } from "@/components/echart";
+import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+
 import {
   getLatestValue,
   getSeriesField,
@@ -63,7 +65,7 @@ export default function EconomicAlertPage() {
         value: Number((point.value - short).toFixed(3)),
       };
     })
-    .filter(Boolean) as Array<{ timestamp: string; value: number }>;
+    .filter(Boolean) as { timestamp: string; value: number }[];
 
   const latestSpread = spreadSeries.at(-1)?.value ?? null;
   const alerts: string[] = [];

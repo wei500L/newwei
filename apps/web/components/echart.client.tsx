@@ -280,7 +280,7 @@ export function DashboardChart({
       await ensureRenderer(renderer);
       if (cancelled) return;
 
-      const chart = echarts.init(dom, theme as any, { renderer });
+      const chart = echarts.init(dom, theme, { renderer });
       if (group) {
         chart.group = group;
         echarts.connect(group);

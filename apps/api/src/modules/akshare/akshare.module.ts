@@ -1,13 +1,15 @@
 import { HttpModule } from "@nestjs/axios";
-import { Module } from "@nestjs/common";
 import { getQueueToken } from "@nestjs/bull-shared";
+import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
+
 import { EnvService } from "../config/config.service";
-import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./akshare.constants";
-import { AkshareService } from "./akshare.service";
-import { AkshareQueueProcessor } from "./akshare.processor";
 import { DatabaseModule } from "../config/database.module";
+
 import { AdminAkshareController } from "./admin-akshare.controller";
+import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./akshare.constants";
+import { AkshareQueueProcessor } from "./akshare.processor";
+import { AkshareService } from "./akshare.service";
 
 @Module({
   imports: [

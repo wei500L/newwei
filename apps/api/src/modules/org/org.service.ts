@@ -1,10 +1,11 @@
+import { DEFAULT_ROLES } from "@modular/config";
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { DEFAULT_ROLES } from "@modular/config";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
 
-export type OrgListItem = {
+export interface OrgListItem {
   id: string;
   name: string;
   slug: string;
@@ -12,26 +13,26 @@ export type OrgListItem = {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-};
+}
 
-export type OrganizationOption = {
+export interface OrganizationOption {
   id: string;
   name?: string;
   slug?: string;
-};
+}
 
-export type CreateOrgInput = {
+export interface CreateOrgInput {
   name: string;
   slug: string;
   description?: string;
-};
+}
 
-export type UpdateOrgInput = {
+export interface UpdateOrgInput {
   id: string;
   name?: string;
   slug?: string;
   description?: string | null;
-};
+}
 
 @Injectable()
 export class OrgService {

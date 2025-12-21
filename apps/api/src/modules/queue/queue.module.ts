@@ -1,5 +1,5 @@
-import { Module } from "@nestjs/common";
 import { getQueueToken } from "@nestjs/bull-shared";
+import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { AuthModule } from "../auth/auth.module";
@@ -8,12 +8,8 @@ import { EnvService } from "../config/config.service";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
 import { QueueEventPublisher } from "./queue-event.publisher";
-import { QueueGateway } from "./queue.gateway";
 import { QueueOrgStatsService } from "./queue-org-stats.service";
 import { QueueOrgStatsTracker } from "./queue-org-stats.tracker";
-import { QueueProcessor } from "./queue.processor";
-import { QueueService } from "./queue.service";
-
 import {
   ITEM_PIPELINE_DLQ_QUEUE_NAME,
   ITEM_PIPELINE_QUEUE_NAME,
@@ -21,6 +17,9 @@ import {
   PIPELINE_QUEUE,
   PIPELINE_QUEUE_EVENTS,
 } from "./queue.constants";
+import { QueueGateway } from "./queue.gateway";
+import { QueueProcessor } from "./queue.processor";
+import { QueueService } from "./queue.service";
 
 @Module({
   imports: [CacheModule, NewsPipelineModule, AuthModule],

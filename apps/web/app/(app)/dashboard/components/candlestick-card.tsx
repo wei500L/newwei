@@ -3,8 +3,10 @@
 import { Card, Empty } from "antd";
 import type { EChartsOption } from "echarts";
 import { useTranslation } from "react-i18next";
+
 import { DashboardChart } from "@/components/echart";
 import type { EconomicSeriesGroup } from "@/hooks/useEconomicData";
+
 import { getCandlestickSeries } from "../utils/series";
 
 export interface CandlestickCardProps {

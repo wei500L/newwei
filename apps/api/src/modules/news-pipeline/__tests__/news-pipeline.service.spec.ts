@@ -1,13 +1,14 @@
-import { createHash } from "crypto";
 
 import { TaskLogModel, ProcessedItemModel } from "@modular/mongo";
+import { createHash } from "crypto";
+
 import type { Crawl4aiResponse } from "../../crawl/crawl4ai.client";
-import { NewsPromptBuilder } from "../news-prompt.builder";
+import type { NewsPipelineConfig } from "../news-pipeline.config";
+import { NormalizedNewsPayloadSchema } from "../news-pipeline.schema";
 import { NewsPipelineService } from "../news-pipeline.service";
 import type { PipelineJobContext, RawPipelineItem } from "../news-pipeline.types";
-import { NewsPipelineConfig } from "../news-pipeline.config";
 import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
-import { NormalizedNewsPayloadSchema } from "../news-pipeline.schema";
+import { NewsPromptBuilder } from "../news-prompt.builder";
 
 jest.mock("@modular/mongo", () => ({
   TaskLogModel: {

@@ -1,4 +1,4 @@
-import { SeriesPoint } from "./anomaly-detector";
+import type { SeriesPoint } from "./anomaly-detector";
 
 export type AnalysisJobPayload =
   | { type: "correlation"; analysisId: string; traceId?: string }

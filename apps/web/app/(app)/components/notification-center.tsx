@@ -182,7 +182,7 @@ export function NotificationCenter() {
         )}
       </div>
     );
-  }, [items, loading, markAllAsRead, markOneAsRead, refetch]);
+  }, [items, loading, locale, markAllAsRead, markOneAsRead, refetch, t, unread]);
 
   return (
     <Popover

@@ -1,15 +1,25 @@
 "use client";
 
+import { useApolloClient } from "@apollo/client";
+import { useQuery } from "@tanstack/react-query";
 import { Alert, Breadcrumb, Button, Card } from "antd";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useApolloClient } from "@apollo/client";
 import { useTranslation } from "react-i18next";
+
 import { DashboardChart } from "@/components/echart";
-import { useDashboardRangeStore } from "@/store/time-range";
 import { EconomicDataDocument } from "@/graphql/generated";
+import { useDashboardRangeStore } from "@/store/time-range";
 
 const GRANS = ["year", "quarter", "month", "week", "day"] as const;
+
+interface DataZoomEvent {
+  batch?: {
+    startValue?: string | number;
+    endValue?: string | number;
+    start?: string | number;
+    end?: string | number;
+  }[];
+}
 
 export function DrilldownChart({
   category,
@@ -117,7 +127,7 @@ export function DrilldownChart({
           },
           {
             type: "dataZoom",
-            handler: (params: any) => {
+            handler: (params: DataZoomEvent) => {
               const startVal =
                 params.batch?.[0]?.startValue ??
                 params.batch?.[0]?.start ??

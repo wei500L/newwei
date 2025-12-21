@@ -1,8 +1,9 @@
-import jwt from "jsonwebtoken";
+import { sign } from "jsonwebtoken";
 
 import type { AuthenticatedUser } from "../auth/auth.service";
-import { NotificationsGateway } from "./notifications.gateway";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
+
+import { NotificationsGateway } from "./notifications.gateway";
 
 jest.mock("@modular/utils", () => {
   const actual = jest.requireActual("@modular/utils");
@@ -24,7 +25,7 @@ const jwtConfig = {
 };
 
 function createToken(userId: string, orgId: string) {
-  return jwt.sign(
+  return sign(
     { sub: userId, orgId, permissions: [] },
     jwtConfig.secret,
     { issuer: jwtConfig.issuer, audience: jwtConfig.audience, jwtid: "jti-1" }

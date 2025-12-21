@@ -1,5 +1,6 @@
-import { Provider } from "@nestjs/common";
-import { connectMongo, disconnectMongo, MongoConnection } from "@modular/mongo";
+import type { MongoConnection } from "@modular/mongo";
+import { connectMongo, disconnectMongo } from "@modular/mongo";
+import type { Provider } from "@nestjs/common";
 
 export const MONGO_CONNECTION = Symbol("MONGO_CONNECTION");
 

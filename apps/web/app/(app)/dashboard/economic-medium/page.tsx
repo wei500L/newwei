@@ -1,17 +1,20 @@
 "use client";
 
 import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
+import type { CallbackDataParams } from "echarts";
 import { useTranslation } from "react-i18next";
-import { TimeRangeControls } from "@/components/time-range-controls";
+
 import { DashboardChart } from "@/components/echart";
+import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
+
 import {
   computeMovingAverage,
   filterValuesByDays,
   getSeriesField,
   getSortedValues,
 } from "../utils/series";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const metalSeries = [
   { slug: "copper_futures_main", labelKey: "dashboard.economicMedium.metals.copper" },
@@ -108,10 +111,10 @@ export default function EconomicMediumPage() {
       diff: Number((entry.value - prev.value).toFixed(2)),
     };
   });
-  const filteredChanges = pmiChanges.filter(Boolean) as Array<{
+  const filteredChanges = pmiChanges.filter(Boolean) as {
     timestamp: string;
     diff: number;
-  }>;
+  }[];
   const formatLabel = (timestamp: string) => {
     return formatDateTime(timestamp, locale, {
       year: "numeric",
@@ -133,8 +136,10 @@ export default function EconomicMediumPage() {
         type: "bar",
         data: filteredChanges.map((entry) => entry.diff),
         itemStyle: {
-          color: (params: any) =>
-            (params.value ?? 0) >= 0 ? "#389e0d" : "#cf1322",
+          color: (params: CallbackDataParams) => {
+            const value = typeof params.value === "number" ? params.value : 0;
+            return value >= 0 ? "#389e0d" : "#cf1322";
+          },
         },
       },
     ],

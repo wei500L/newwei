@@ -1,6 +1,6 @@
 "use client";
 
-import * as echarts from "echarts";
+import { init } from "echarts";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -19,7 +19,7 @@ export function QueueChart({ data }: QueueChartProps) {
 
     const keys = Object.keys(data);
     const labels = keys.map((key) => t(`dashboard.queue.states.${key}`, { defaultValue: key }));
-    const chart = echarts.init(chartRef.current);
+    const chart = init(chartRef.current);
     const option = {
       tooltip: {
         trigger: "axis",

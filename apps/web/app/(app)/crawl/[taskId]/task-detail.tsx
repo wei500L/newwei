@@ -18,8 +18,10 @@ import {
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import type {
+  CrawlTaskStatus} from "@/graphql/generated";
 import {
-  CrawlTaskStatus,
   useCrawlTaskQuery,
   useRetryCrawlTaskMutation
 } from "@/graphql/generated";
@@ -40,15 +42,15 @@ const limitOptions = [
   { value: 50, labelKey: "crawl.detail.results.latest50" }
 ];
 
-type CrawlMediaSource = {
+interface CrawlMediaSource {
   src?: string;
   srcset?: string;
   type?: string;
   media?: string;
   sizes?: string;
-};
+}
 
-type CrawlMediaItem = {
+interface CrawlMediaItem {
   src?: string;
   alt?: string;
   title?: string;
@@ -63,11 +65,11 @@ type CrawlMediaItem = {
   srcset?: string[];
   pictureSources?: CrawlMediaSource[];
   responsiveSources?: CrawlMediaSource[];
-};
+}
 
 type CrawlMediaCollection = Record<string, CrawlMediaItem[]>;
 
-type CrawlStoredMediaAsset = {
+interface CrawlStoredMediaAsset {
   id: string;
   kind: string;
   sourceUrl: string;
@@ -81,11 +83,11 @@ type CrawlStoredMediaAsset = {
   desc?: string;
   poster?: string;
   format?: string;
-};
+}
 
 type CrawlResultTableRecord = Record<string, string | number | boolean | null>;
 
-type CrawlResultTable = {
+interface CrawlResultTable {
   id: string;
   caption?: string;
   headers: string[];
@@ -98,7 +100,7 @@ type CrawlResultTable = {
     columns: string[];
     rows: CrawlResultTableRecord[];
   };
-};
+}
 
 const mediaDocsUrl =
   "https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/link-media.md";
@@ -118,8 +120,7 @@ function safeParseJson<T>(input?: string | null): T | null {
 }
 
 function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
-  const { t, i18n } = useTranslation();
-  const locale = resolveLocale(i18n.language);
+  const { t } = useTranslation();
   if (!media) {
     return null;
   }
@@ -351,6 +352,7 @@ function renderMediaPreview(
   const normalized = kind.toLowerCase();
   if (normalized.includes("image")) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={item.src}
         alt={item.alt || item.title || t("crawl.detail.media.thumbnailAlt")}
@@ -384,6 +386,7 @@ function renderMediaPreview(
 function renderStoredMediaPreview(asset: CrawlStoredMediaAsset) {
   if (asset.dataUri && asset.contentType?.startsWith("image/")) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={asset.dataUri}
         alt={asset.alt ?? asset.title ?? asset.kind}
@@ -689,7 +692,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!Array.isArray(config?.browserHeaders)) {
       return [] as string[];
     }
-    return (config?.browserHeaders as Array<{ name?: string; value?: string }>)
+    return (config?.browserHeaders as { name?: string; value?: string }[])
       .map((header) => {
         const name = typeof header?.name === "string" ? header.name : "";
         const value = typeof header?.value === "string" ? header.value : "";
@@ -705,7 +708,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!Array.isArray(config?.browserCookies)) {
       return [] as string[];
     }
-    return (config?.browserCookies as Array<{ name?: string; value?: string; domain?: string; path?: string }>)
+    return (config?.browserCookies as { name?: string; value?: string; domain?: string; path?: string }[])
       .map((cookie) => {
         const name = typeof cookie?.name === "string" ? cookie.name : "";
         const value = typeof cookie?.value === "string" ? cookie.value : "";
@@ -829,17 +832,14 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!config) {
       return null;
     }
-    const raw = typeof (config as any).sessionId === "string" ? ((config as any).sessionId as string).trim() : "";
+    const raw = typeof config.sessionId === "string" ? config.sessionId.trim() : "";
     return raw.length ? raw : null;
   }, [config]);
   const storageStatePreview = useMemo(() => {
     if (!config) {
       return null;
     }
-    const raw =
-      typeof (config as any).storageState === "string"
-        ? ((config as any).storageState as string).trim()
-        : "";
+    const raw = typeof config.storageState === "string" ? config.storageState.trim() : "";
     return raw.length ? shortenScript(raw) : null;
   }, [config]);
   const jsOnlyMode = Boolean(config?.jsOnly);
@@ -943,15 +943,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   }) => link.totalScore ?? link.contextualScore ?? link.intrinsicScore ?? 0;
 
   const additionalUrls = useMemo(() => {
-    if (!config || !Array.isArray((config as any).additionalUrls)) {
+    if (!config || !Array.isArray(config.additionalUrls)) {
       return [];
     }
-    return ((config as any).additionalUrls as unknown[])
+    return config.additionalUrls
       .map((entry) => (typeof entry === "string" ? entry : null))
       .filter((entry): entry is string => Boolean(entry));
   }, [config]);
 
-  type MultiUrlConfigView = {
+  interface MultiUrlConfigView {
     name?: string;
     matcher?: {
       matchMode?: string;
@@ -959,13 +959,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     };
     urls?: string[];
     options?: Record<string, unknown>;
-  };
+  }
 
   const multiConfigs: MultiUrlConfigView[] = useMemo(() => {
-    if (!config || !Array.isArray((config as any).multiUrlConfigs)) {
+    if (!config || !Array.isArray(config.multiUrlConfigs)) {
       return [];
     }
-    return ((config as any).multiUrlConfigs as Record<string, unknown>[]) ?? [];
+    return config.multiUrlConfigs.filter(
+      (entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null
+    );
   }, [config]);
 
   const handleRetry = async () => {

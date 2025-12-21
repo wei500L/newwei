@@ -1,10 +1,12 @@
+import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Queue, QueueEvents, Worker } from "bullmq";
+
 import { EnvService } from "../config/config.service";
+
 import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_QUEUE_NAME } from "./analysis.constants";
-import { AnalysisJobPayload } from "./analysis.types";
 import { AnalysisService } from "./analysis.service";
-import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
+import { AnalysisJobPayload } from "./analysis.types";
 
 const logger = createLogger({ name: "analysis-worker" });
 

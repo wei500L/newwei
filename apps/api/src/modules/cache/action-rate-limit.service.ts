@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
-import { RateLimiterService } from "./rate-limiter.service";
+
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
+
+import { RateLimiterService } from "./rate-limiter.service";
 
 @Injectable()
 export class ActionRateLimitService {

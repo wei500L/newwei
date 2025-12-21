@@ -3,6 +3,9 @@ import {
   TaskLogModel,
   type ProcessedItemDocument,
 } from "@modular/mongo";
+import { createLogger, parseDateTime } from "@modular/utils";
+import { Injectable } from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
 import {
   MongoOutboxStatus,
   MongoOutboxType,
@@ -10,9 +13,6 @@ import {
   type Prisma,
   type ProcessedArticle,
 } from "@prisma/client";
-import { createLogger, parseDateTime } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
-import { Cron, CronExpression } from "@nestjs/schedule";
 import { Types } from "mongoose";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
@@ -22,14 +22,15 @@ import { z } from "zod";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { Crawl4aiClient } from "../crawl/crawl4ai.client";
+
+
+import { LiteLlmService } from "./litellm.service";
+import { NewsPipelineConfigService } from "./news-pipeline.config";
 import {
   Crawl4aiResponseSchema,
   ParsedCrawl4aiArticle,
   ParsedCrawl4aiResponse,
 } from "./news-pipeline.crawl.schema";
-
-import { LiteLlmService } from "./litellm.service";
-import { NewsPipelineConfigService } from "./news-pipeline.config";
 import {
   CleanedNewsSchema,
   CleanedNews,
@@ -41,8 +42,8 @@ import {
   PipelineJobContext,
   RawPipelineItem,
 } from "./news-pipeline.types";
-import { NewsPromptBuilder } from "./news-prompt.builder";
 import { NewsPromptConfigService } from "./news-prompt-config.service";
+import { NewsPromptBuilder } from "./news-prompt.builder";
 
 interface LlmCallMetadata {
   model: string | null;
@@ -54,7 +55,7 @@ interface LlmCallMetadata {
   latencyMs: number | null;
 }
 
-type ProcessedItemOutboxPayload = {
+interface ProcessedItemOutboxPayload {
   type: MongoOutboxType.processed_item;
   document: {
     _id: string;
@@ -67,7 +68,7 @@ type ProcessedItemOutboxPayload = {
     llm: LlmCallMetadata;
     error?: unknown;
   };
-};
+}
 
 const NullableStringSchema = z.preprocess(
   (value) => (typeof value === "string" ? value : null),
@@ -110,15 +111,15 @@ type PersistedProcessedItem =
   | ProcessedItemDocument
   | { _id: string; toJSON: () => { id: string } };
 
-type PersistResult = {
+interface PersistResult {
   processedItem: PersistedProcessedItem;
   outboxId: string;
-};
+}
 
-type OutboxDeliveryRequestedEvent = {
+interface OutboxDeliveryRequestedEvent {
   outboxId: string;
   payload?: ProcessedItemOutboxPayload;
-};
+}
 
 const OUTBOX_DELIVERY_REQUESTED_EVENT = "newsPipeline.outbox.deliveryRequested";
 const MAX_TIMEOUT_MS = 2_147_483_647;

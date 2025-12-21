@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { AlertMetricProvider, AlertRule } from "@prisma/client";
 import os from "node:os";
+
 import { MetricEvaluation, MetricProvider } from "./metric-provider";
 
 type MetricFetcher = () => MetricEvaluation;

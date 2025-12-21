@@ -1,9 +1,11 @@
+import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Queue, QueueEvents, Worker } from "bullmq";
+
+import { EnvService } from "../config/config.service";
+
 import { ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, ALERTS_QUEUE_NAME } from "./alerts.constants";
 import { AlertsService, AlertJobPayload } from "./alerts.service";
-import { EnvService } from "../config/config.service";
-import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 
 const logger = createLogger({ name: "alerts-worker" });
 

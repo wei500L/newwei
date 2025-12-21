@@ -1,6 +1,6 @@
+import { CrawlTaskStatus } from "@prisma/client";
 import { Type } from "class-transformer";
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
-import { CrawlTaskStatus } from "@prisma/client";
 
 export class ListCrawlTaskDto {
   @IsOptional()

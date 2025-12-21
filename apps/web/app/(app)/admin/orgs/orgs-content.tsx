@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
-type OrgRow = {
+interface OrgRow {
   id: string;
   name: string;
   slug: string;
@@ -17,19 +17,21 @@ type OrgRow = {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-};
+}
 
-type CreateOrgInput = {
+interface CreateOrgInput {
   name: string;
   slug: string;
   description?: string;
-};
+}
 
-type UpdateOrgInput = {
+interface UpdateOrgInput {
   name: string;
   slug: string;
   description?: string;
-};
+}
+
+const EMPTY_ROWS: OrgRow[] = [];
 
 const MY_ORGANIZATIONS_QUERY = gql`
   query MyOrganizations {
@@ -87,7 +89,7 @@ const SET_ORG_ACTIVE_MUTATION = gql`
   }
 `;
 
-function mergeOrganizations(existing: Array<{ id: string; name?: string; slug?: string }>, next: OrgRow[]) {
+function mergeOrganizations(existing: { id: string; name?: string; slug?: string }[], next: OrgRow[]) {
   const map = new Map<string, { id: string; name?: string; slug?: string }>();
   existing.forEach((org) => map.set(org.id, org));
   next.forEach((org) => map.set(org.id, { id: org.id, name: org.name, slug: org.slug }));
@@ -122,7 +124,7 @@ export function OrgAdminContent() {
     { input: { id: string; isActive: boolean } }
   >(SET_ORG_ACTIVE_MUTATION);
 
-  const rows = data?.myOrganizations ?? [];
+  const rows = data?.myOrganizations ?? EMPTY_ROWS;
   const tableData = useMemo(() => rows.map((row) => ({ key: row.id, ...row })), [rows]);
 
   if (status === "loading" || loading) {

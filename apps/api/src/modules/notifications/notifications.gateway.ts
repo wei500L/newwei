@@ -1,13 +1,15 @@
 import { createLogger } from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { WebSocketGateway, WebSocketServer, OnGatewayConnection, OnGatewayDisconnect } from "@nestjs/websockets";
+import { verify } from "jsonwebtoken";
+import { Server, Socket } from "socket.io";
+
 import { AccessTokenBlacklistService } from "../auth/access-token-blacklist.service";
 import { AuthService, AuthenticatedUser, JwtPayload } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
+
 import { NotificationDispatcher, NotificationEvent } from "./notification.dispatcher";
-import { verify } from "jsonwebtoken";
-import { Server, Socket } from "socket.io";
 
 interface RateLimitState {
   windowStartMs: number;
@@ -257,11 +259,10 @@ export class NotificationsGateway
   }
 
   private getConnectedSockets(): Socket[] {
-    const serverAny = this.server as any;
-    const sockets = serverAny?.sockets?.sockets ?? serverAny?.sockets;
-    if (!sockets || typeof sockets.values !== "function") {
+    const sockets = this.server?.sockets?.sockets;
+    if (!sockets) {
       return [];
     }
-    return Array.from((sockets as Map<string, Socket>).values());
+    return Array.from(sockets.values());
   }
 }

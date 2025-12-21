@@ -1,12 +1,14 @@
-import { Args, Mutation, Query, Resolver } from "@nestjs/graphql";
 import { UseGuards } from "@nestjs/common";
+import { Args, Mutation, Query, Resolver } from "@nestjs/graphql";
+import { EconomicDataFrequency } from "@prisma/client";
+
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { EconomicDataFetchConfigModel, EconomicDataPointModel, TimeGranularity } from "../models/economic-data.model";
-import { DateRangeInput, TriggerDataFetchInput } from "../dto/economic-data.input";
 import { AkshareService } from "../../modules/akshare/akshare.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { EconomicDataFrequency } from "@prisma/client";
+import { DateRangeInput, TriggerDataFetchInput } from "../dto/economic-data.input";
+import { EconomicDataFetchConfigModel, EconomicDataPointModel, TimeGranularity } from "../models/economic-data.model";
+
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -66,7 +68,7 @@ export class EconomicDataResolver {
     @Args("isEnabled", { nullable: true }) isEnabled?: boolean
   ): Promise<EconomicDataFetchConfigModel> {
     const updated = await this.akshareService.updateFetchConfig(slug, {
-      frequency: frequency as any,
+      frequency,
       repeatCron: repeatCron ?? null,
       isEnabled
     });

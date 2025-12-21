@@ -1,14 +1,16 @@
-import { Module } from "@nestjs/common";
 import { getQueueToken } from "@nestjs/bull-shared";
+import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
+
 import { EnvService } from "../config/config.service";
-import { AnalysisService } from "./analysis.service";
-import { AnalysisProcessor } from "./analysis.processor";
-import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_QUEUE_NAME } from "./analysis.constants";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
-import { ANALYSIS_PUBSUB, createAnalysisPubSub } from "./analysis.pubsub";
 import { NotificationsModule } from "../notifications/notifications.module";
+
 import { AnalysisPromptService } from "./analysis-prompt.service";
+import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_QUEUE_NAME } from "./analysis.constants";
+import { AnalysisProcessor } from "./analysis.processor";
+import { ANALYSIS_PUBSUB, createAnalysisPubSub } from "./analysis.pubsub";
+import { AnalysisService } from "./analysis.service";
 
 @Module({
   imports: [NewsPipelineModule, NotificationsModule],

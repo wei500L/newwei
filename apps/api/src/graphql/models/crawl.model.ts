@@ -1,6 +1,7 @@
 import { Field, GraphQLISODateTime, ID, ObjectType } from "@nestjs/graphql";
-import GraphQLJSON from "graphql-type-json";
 import { CrawlTaskStatus } from "@prisma/client";
+import GraphQLJSONScalar from "graphql-type-json";
+
 import { PageInfo } from "./page-info.model";
 
 @ObjectType()
@@ -50,7 +51,7 @@ export class CrawlResultModel {
   @Field(() => CrawlLinkAnalysisModel, { nullable: true })
   linkAnalysis?: CrawlLinkAnalysisModel | null;
 
-  @Field(() => GraphQLJSON, { nullable: true })
+  @Field(() => GraphQLJSONScalar, { nullable: true })
   tables?: unknown;
 }
 

@@ -1,6 +1,6 @@
+import type { MongoConnection } from "@modular/mongo";
 import { Inject, Injectable } from "@nestjs/common";
 import { HealthCheckError, HealthIndicator, type HealthIndicatorResult } from "@nestjs/terminus";
-import type { MongoConnection } from "@modular/mongo";
 
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 
@@ -20,8 +20,12 @@ export class MongoHealthIndicator extends HealthIndicator {
         throw new HealthCheckError("MongoDB connection is not ready", result);
       }
 
-      const reply = await withTimeout(db.admin().command({ ping: 1 }), timeoutMs, "MongoDB ping timeout");
-      const ok = typeof (reply as any)?.ok === "number" ? (reply as any).ok === 1 : true;
+      const reply = (await withTimeout(
+        db.admin().command({ ping: 1 }),
+        timeoutMs,
+        "MongoDB ping timeout"
+      )) as { ok?: number };
+      const ok = typeof reply.ok === "number" ? reply.ok === 1 : true;
       if (!ok) {
         const result = this.getStatus(key, false, { message: "MongoDB ping returned non-ok response" });
         throw new HealthCheckError("MongoDB ping failed", result);
@@ -61,4 +65,3 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
     }
   });
 }
-

@@ -1,8 +1,10 @@
+import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Queue, QueueEvents, Worker } from "bullmq";
-import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
+
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import type { CrawlJobData } from "./crawl.types";

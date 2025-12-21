@@ -1,5 +1,7 @@
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+
+import { auth } from "@/lib/auth";
+
 import { OrgAdminContent } from "./orgs-content";
 
 export default async function OrgsAdminPage() {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { env } from "@/lib/env";
+
 import type { TokenPayload } from "@/lib/auth";
+import { env } from "@/lib/env";
 
 export async function POST(request: Request) {
   const token = (await getToken({ req: request })) as TokenPayload | null;

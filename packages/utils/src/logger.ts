@@ -1,10 +1,10 @@
-import pino from "pino";
+import createPino, { type LevelWithSilent, type Logger as PinoLogger } from "pino";
 
 import { getCurrentTraceId } from "./tracing";
 
 export interface CreateLoggerOptions {
   name?: string;
-  level?: pino.LevelWithSilent;
+  level?: LevelWithSilent;
   enabled?: boolean;
 }
 
@@ -35,20 +35,21 @@ export const createLogger = ({
       debug: log("debug"),
       trace: log("debug"),
       child: () => consoleLogger
-    } as unknown as pino.Logger;
+    } as unknown as PinoLogger;
 
     return consoleLogger;
   }
 
   const nodeEnv = typeof process !== "undefined" ? process.env?.NODE_ENV : undefined;
-  const envLogLevel = typeof process !== "undefined" ? (process.env?.LOG_LEVEL as pino.LevelWithSilent | undefined) : undefined;
+  const envLogLevel =
+    typeof process !== "undefined" ? (process.env?.LOG_LEVEL as LevelWithSilent | undefined) : undefined;
   const resolvedLevel = level ?? envLogLevel ?? (nodeEnv === "production" ? "info" : "debug");
   const stdoutIsTTY =
     typeof process !== "undefined" && typeof process.stdout !== "undefined" && typeof process.stdout.isTTY !== "undefined"
       ? Boolean(process.stdout.isTTY)
       : false;
   const usePrettyTransport = nodeEnv !== "production" && stdoutIsTTY;
-  return pino({
+  return createPino({
     name,
     enabled,
     level: resolvedLevel,

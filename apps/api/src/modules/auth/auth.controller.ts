@@ -1,14 +1,18 @@
 import { Body, Controller, Get, HttpCode, Post, Req } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
-import { AuthService } from "./auth.service";
-import { LoginDto } from "./dto/login.dto";
-import { RefreshDto } from "./dto/refresh.dto";
-import { LogoutDto } from "./dto/logout.dto";
-import { Public } from "../../common/decorators/public.decorator";
-import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 import type { Request } from "express";
+
+import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Public } from "../../common/decorators/public.decorator";
+
+import { AuthService } from "./auth.service";
 import type { AuthenticatedUser } from "./auth.service";
+import { LoginDto } from "./dto/login.dto";
+import { LogoutDto } from "./dto/logout.dto";
+import { RefreshDto } from "./dto/refresh.dto";
+
+
 
 @ApiTags("auth")
 @Controller("auth")

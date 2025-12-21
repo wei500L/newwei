@@ -1,10 +1,13 @@
 "use client";
 
 import { DatePicker, Segmented, Space } from "antd";
-import dayjs from "dayjs";
-import { DashboardRangePreset, useDashboardRangeStore } from "@/store/time-range";
 import type { SegmentedValue } from "antd/es/segmented";
+import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
+
+import type { DashboardRangePreset } from "@/store/time-range";
+import { useDashboardRangeStore } from "@/store/time-range";
+
 
 const presets: { label: string; value: DashboardRangePreset }[] = [
   { label: "1D", value: "1D" },
@@ -23,9 +26,13 @@ export function TimeRangeControls() {
     setRange(value as DashboardRangePreset);
   };
 
-  const handleCustomChange = (values: null | [Dayjs, Dayjs]) => {
-    if (values) {
-      setCustomRange(values[0].toDate(), values[1].toDate());
+  const handleCustomChange = (values: [Dayjs | null, Dayjs | null] | null) => {
+    if (!values) {
+      return;
+    }
+    const [startValue, endValue] = values;
+    if (startValue && endValue) {
+      setCustomRange(startValue.toDate(), endValue.toDate());
     }
   };
 
@@ -40,7 +47,7 @@ export function TimeRangeControls() {
       <DatePicker.RangePicker
         value={[dayjs(start), dayjs(end)]}
         allowEmpty={[false, false]}
-        onChange={(values) => handleCustomChange(values as any)}
+        onChange={handleCustomChange}
       />
     </Space>
   );

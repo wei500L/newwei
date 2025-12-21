@@ -1,18 +1,18 @@
-import { Module } from "@nestjs/common";
-import { BullBoardModule } from "@bull-board/nestjs";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
+import { BullBoardModule } from "@bull-board/nestjs";
+import { Module } from "@nestjs/common";
 import type { RequestHandler } from "express";
 
-import { CrawlModule } from "../crawl/crawl.module";
-import { CRAWL_QUEUE_NAME } from "../crawl/crawl.constants";
-import { AkshareModule } from "../akshare/akshare.module";
 import { AKSHARE_QUEUE_NAME } from "../akshare/akshare.constants";
-import { AnalysisModule } from "../analysis/analysis.module";
-import { ANALYSIS_QUEUE_NAME } from "../analysis/analysis.constants";
-import { AlertsModule } from "../alerts/alerts.module";
+import { AkshareModule } from "../akshare/akshare.module";
 import { ALERTS_QUEUE_NAME } from "../alerts/alerts.constants";
+import { AlertsModule } from "../alerts/alerts.module";
+import { ANALYSIS_QUEUE_NAME } from "../analysis/analysis.constants";
+import { AnalysisModule } from "../analysis/analysis.module";
 import { EnvService } from "../config/config.service";
+import { CRAWL_QUEUE_NAME } from "../crawl/crawl.constants";
+import { CrawlModule } from "../crawl/crawl.module";
 
 import { ITEM_PIPELINE_DLQ_QUEUE_NAME, ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
 import { QueueModule } from "./queue.module";

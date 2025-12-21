@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { Notification, NotificationType } from "@prisma/client";
+
 import { PrismaService } from "../config/prisma.service";
+
 import { NotificationDispatcher, NotificationEvent } from "./notification.dispatcher";
 
 export interface CreateNotificationInput {

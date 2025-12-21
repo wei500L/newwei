@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 import { logServerError } from "./server-logger";
 
 const publicSchema = z.object({

@@ -7,7 +7,7 @@ import { HttpException, HttpStatus, type HttpExceptionOptions } from "@nestjs/co
  */
 export class TooManyRequestsException extends HttpException {
   constructor(
-    objectOrError?: string | Record<string, any>,
+    objectOrError?: string | Record<string, unknown>,
     descriptionOrOptions: string | HttpExceptionOptions = "Too Many Requests"
   ) {
     const { description, httpExceptionOptions } = HttpException.extractDescriptionAndOptionsFrom(
