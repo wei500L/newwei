@@ -1,5 +1,5 @@
 ARG NODE_IMAGE=node:20
-FROM ${NODE_IMAGE}
+FROdocker部分修复M ${NODE_IMAGE}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

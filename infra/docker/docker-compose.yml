@@ -55,7 +55,6 @@ services:
       retries: 5
 
   akshare:
-    profiles: ["extras"]
     build:
       context: ../..
       dockerfile: infra/akshare/Dockerfile
@@ -81,7 +80,6 @@ services:
       start_period: 20s
 
   crawl4ai:
-    profiles: ["extras"]
     image: ${CRAWL4AI_IMAGE:-ghcr.io/unclecode/crawl4ai:latest}
     restart: unless-stopped
     ports:
@@ -162,13 +160,17 @@ services:
       echo '[web] pnpm install...';
       pnpm install --unsafe-perm;
       echo '[web] starting dev server...';
-      pnpm --filter @modular/web run dev
+      pnpm --filter @modular/web run dev:turbo
       "
     env_file:
       - ./.env
     environment:
       PORT: 3000
-      CI: "true"
+      CI: "false"
+      WATCHPACK_POLLING: "true"
+      WATCHPACK_POLLING_INTERVAL: "1000"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "1000"
       GRAPHQL_SCHEMA_URL: ${GRAPHQL_SCHEMA_URL:-http://api:4000/graphql}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}

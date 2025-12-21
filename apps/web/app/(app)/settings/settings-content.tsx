@@ -81,6 +81,16 @@ export function SettingsContent() {
   const [updateRoleMutation, { loading: updatingRole }] = useUpdateRoleMutation();
   const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   const [savingMembershipId, setSavingMembershipId] = useState<string | null>(null);
+  const roles = data?.roles ?? [];
+  const permissions = data?.permissions ?? [];
+  const memberships = data?.memberships ?? [];
+  const adminRoleIds = roles
+    .filter((role) => role.name.toLowerCase() === "admin")
+    .map((role) => role.id);
+  const isAdmin =
+    canViewSettings &&
+    (adminRoleIds.length === 0 ||
+      Boolean(session?.user?.roleIds?.some((roleId) => adminRoleIds.includes(roleId))));
 
   if (status === "loading" || (loading && canViewSettings)) {
     return (
@@ -101,26 +111,6 @@ export function SettingsContent() {
       </Card>
     );
   }
-
-  const roles = data?.roles ?? [];
-  const permissions = data?.permissions ?? [];
-  const memberships = data?.memberships ?? [];
-  const adminRoleIds = useMemo(
-    () => roles.filter((role) => role.name.toLowerCase() === "admin").map((role) => role.id),
-    [roles]
-  );
-  const isAdmin = useMemo(
-    () => {
-      if (!canViewSettings) {
-        return false;
-      }
-      if (adminRoleIds.length === 0) {
-        return true;
-      }
-      return Boolean(session?.user?.roleIds?.some((roleId) => adminRoleIds.includes(roleId)));
-    },
-    [adminRoleIds, canViewSettings, session?.user?.roleIds]
-  );
 
   const handleRoleSave = async (roleId: string, values: RoleFormValues) => {
     setSavingRoleId(roleId);
