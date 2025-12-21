@@ -2,10 +2,12 @@
 
 import { App } from "antd";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { signOut, useSession } from "next-auth/react";
 
 export function SessionErrorListener() {
   const { message } = App.useApp();
+  const { t } = useTranslation();
   const { data: session, status } = useSession();
   const handledRef = useRef(false);
 
@@ -17,10 +19,10 @@ export function SessionErrorListener() {
 
     if (session?.error === "RefreshAccessTokenError" && !handledRef.current) {
       handledRef.current = true;
-      message.error("Session expired. Please sign in again.");
+      message.error(t("auth.sessionExpired"));
       void signOut({ callbackUrl: "/login?sessionExpired=1" });
     }
-  }, [message, session?.error, status]);
+  }, [message, session?.error, status, t]);
 
   return null;
 }

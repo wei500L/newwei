@@ -2,6 +2,7 @@
 
 import { Card, Empty } from "antd";
 import type { EChartsOption } from "echarts";
+import { useTranslation } from "react-i18next";
 import { DashboardChart } from "@/components/echart";
 import type { EconomicSeriesGroup } from "@/hooks/useEconomicData";
 import { getCandlestickSeries } from "../utils/series";
@@ -17,6 +18,7 @@ export function CandlestickCard({
   group,
   height = 320,
 }: CandlestickCardProps) {
+  const { t } = useTranslation();
   const candlestick = getCandlestickSeries(group);
   const option: EChartsOption = {
     title: {
@@ -51,7 +53,7 @@ export function CandlestickCard({
       {candlestick.length > 0 ? (
         <DashboardChart option={option} height={height} />
       ) : (
-        <Empty description="暂无K线数据" />
+        <Empty description={t("dashboard.charts.noCandlestick")} />
       )}
     </Card>
   );

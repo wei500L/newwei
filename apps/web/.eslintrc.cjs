@@ -9,6 +9,7 @@ module.exports = {
     next: {
       rootDir: [__dirname]
     },
+    "import/core-modules": ["i18next", "react-i18next"],
     "import/resolver": {
       typescript: {
         project: [__dirname + "/tsconfig.json"],

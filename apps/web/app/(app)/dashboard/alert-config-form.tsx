@@ -22,21 +22,22 @@ import {
   message,
 } from "antd";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 const operatorOptions = Object.values(AlertOperator).map((op) => ({
-  label: op,
+  labelKey: `alerts.operators.${op}`,
   value: op,
 }));
 const severityOptions = Object.values(AlertSeverity).map((s) => ({
-  label: s,
+  labelKey: `alerts.severity.${s}`,
   value: s,
 }));
 const statusOptions = Object.values(AlertStatus).map((s) => ({
-  label: s,
+  labelKey: `alerts.status.${s}`,
   value: s,
 }));
 const metricProviderOptions = Object.values(AlertMetricProvider).map(
-  (provider) => ({ label: provider, value: provider }),
+  (provider) => ({ labelKey: `alerts.metricProviders.${provider}`, value: provider }),
 );
 const pipelineStatusOptions = [
   "pending",
@@ -68,6 +69,7 @@ const systemMetricSlugs = [
 ].map((slug) => ({ label: slug, value: slug }));
 
 export function AlertConfigForm() {
+  const { t } = useTranslation();
   const { data, refetch } = useAlertRulesQuery();
   const { data: channelsData, refetch: refetchChannels } =
     useAlertChannelsQuery();
@@ -82,13 +84,13 @@ export function AlertConfigForm() {
   return (
     <Space direction="vertical" style={{ width: "100%" }} size="large">
       <div>
-        <Typography.Title level={5}>Alert Rule Configuration</Typography.Title>
+        <Typography.Title level={5}>{t("alerts.config.title")}</Typography.Title>
         <Form
           form={form}
           layout="vertical"
           initialValues={{
             id: existingRule?.id,
-            name: existingRule?.name ?? "Price spike",
+            name: existingRule?.name ?? t("alerts.config.defaults.name"),
             metricProvider:
               existingRule?.metricProvider ?? AlertMetricProvider.EconomicData,
             metricSlug:
@@ -123,21 +125,21 @@ export function AlertConfigForm() {
               values.metricProvider === AlertMetricProvider.PipelineJob &&
               (!values.pipelineStatuses || !values.pipelineStatuses.length)
             ) {
-              message.error("Select at least one pipeline job status");
+              message.error(t("alerts.config.errors.pipelineStatus"));
               return;
             }
             if (
               values.metricProvider === AlertMetricProvider.CrawlTask &&
               (!values.crawlStatuses || !values.crawlStatuses.length)
             ) {
-              message.error("Select at least one crawl task status");
+              message.error(t("alerts.config.errors.crawlStatus"));
               return;
             }
             if (
               values.metricProvider === AlertMetricProvider.SystemMetric &&
               !values.metricSlug
             ) {
-              message.error("Choose a system metric slug");
+              message.error(t("alerts.config.errors.systemMetricSlug"));
               return;
             }
             await upsertRule({
@@ -178,22 +180,25 @@ export function AlertConfigForm() {
               },
             });
             await Promise.all([refetch(), refetchChannels()]);
-            message.success("Alert rule saved");
+            message.success(t("alerts.config.saved"));
           }}
         >
           <Form.Item name="id" hidden>
             <Input />
           </Form.Item>
-          <Form.Item label="Name" name="name" rules={[{ required: true }]}>
+          <Form.Item label={t("alerts.config.fields.name")} name="name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           <Form.Item
-            label="Metric provider"
+            label={t("alerts.config.fields.metricProvider")}
             name="metricProvider"
             rules={[{ required: true }]}
           >
             <Select
-              options={metricProviderOptions}
+              options={metricProviderOptions.map((option) => ({
+                value: option.value,
+                label: t(option.labelKey, { defaultValue: option.value })
+              }))}
               onChange={(provider) => {
                 if (provider === AlertMetricProvider.EconomicData) {
                   form.setFieldsValue({ metricSlug: "usd_index_history" });
@@ -219,12 +224,12 @@ export function AlertConfigForm() {
             />
           </Form.Item>
           <Form.Item
-            label="Metric slug"
+            label={t("alerts.config.fields.metricSlug")}
             name="metricSlug"
             rules={[{ required: true }]}
-            tooltip="Slug meaning depends on provider (e.g. economic data slug, system metric slug, or free-form filter key)."
+            tooltip={t("alerts.config.fields.metricSlugHint")}
           >
-            <Input placeholder="e.g. usd_index_history or system.memory.usage_pct" />
+            <Input placeholder={t("alerts.config.fields.metricSlugPlaceholder")} />
           </Form.Item>
           <Form.Item
             noStyle
@@ -237,19 +242,19 @@ export function AlertConfigForm() {
               if (provider === AlertMetricProvider.PipelineJob) {
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
-                    <Typography.Text strong>Pipeline filters</Typography.Text>
-                    <Form.Item label="Statuses" name="pipelineStatuses">
+                    <Typography.Text strong>{t("alerts.config.pipeline.title")}</Typography.Text>
+                    <Form.Item label={t("alerts.config.pipeline.statuses")} name="pipelineStatuses">
                       <Select
                         mode="multiple"
                         options={pipelineStatusOptions}
-                        placeholder="defaults to failed"
+                        placeholder={t("alerts.config.pipeline.defaultsToFailed")}
                       />
                     </Form.Item>
-                    <Form.Item label="Queue name" name="pipelineQueueName">
-                      <Input placeholder="optional queueName filter" />
+                    <Form.Item label={t("alerts.config.pipeline.queueName")} name="pipelineQueueName">
+                      <Input placeholder={t("alerts.config.pipeline.queueNamePlaceholder")} />
                     </Form.Item>
-                    <Form.Item label="Source ID" name="pipelineSourceId">
-                      <Input placeholder="optional sourceId filter" />
+                    <Form.Item label={t("alerts.config.pipeline.sourceId")} name="pipelineSourceId">
+                      <Input placeholder={t("alerts.config.pipeline.sourceIdPlaceholder")} />
                     </Form.Item>
                   </Space>
                 );
@@ -257,19 +262,19 @@ export function AlertConfigForm() {
               if (provider === AlertMetricProvider.CrawlTask) {
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
-                    <Typography.Text strong>Crawl task filters</Typography.Text>
-                    <Form.Item label="Statuses" name="crawlStatuses">
+                    <Typography.Text strong>{t("alerts.config.crawl.title")}</Typography.Text>
+                    <Form.Item label={t("alerts.config.crawl.statuses")} name="crawlStatuses">
                       <Select
                         mode="multiple"
                         options={crawlStatusOptions}
-                        placeholder="defaults to failed"
+                        placeholder={t("alerts.config.crawl.defaultsToFailed")}
                       />
                     </Form.Item>
                     <Form.Item
-                      label="Created by user ID"
+                      label={t("alerts.config.crawl.createdBy")}
                       name="crawlCreatedById"
                     >
-                      <Input placeholder="optional createdById filter" />
+                      <Input placeholder={t("alerts.config.crawl.createdByPlaceholder")} />
                     </Form.Item>
                   </Space>
                 );
@@ -278,12 +283,12 @@ export function AlertConfigForm() {
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>
-                      System metric options
+                      {t("alerts.config.system.title")}
                     </Typography.Text>
-                    <Form.Item label="Preset metric">
+                    <Form.Item label={t("alerts.config.system.presetMetric")}>
                       <Select
                         options={systemMetricSlugs}
-                        placeholder="system metric slug"
+                        placeholder={t("alerts.config.system.presetPlaceholder")}
                         value={getFieldValue("metricSlug")}
                         onChange={(value) => {
                           form.setFieldsValue({ metricSlug: value });
@@ -291,13 +296,13 @@ export function AlertConfigForm() {
                       />
                     </Form.Item>
                     <Form.Item
-                      label="Manual override value"
+                      label={t("alerts.config.system.override")}
                       name="systemCurrentValue"
-                      tooltip="Optional: provide a value directly instead of using the measured system metric"
+                      tooltip={t("alerts.config.system.overrideHint")}
                     >
                       <InputNumber
                         style={{ width: "100%" }}
-                        placeholder="overrides measured value"
+                        placeholder={t("alerts.config.system.overridePlaceholder")}
                       />
                     </Form.Item>
                   </Space>
@@ -307,59 +312,76 @@ export function AlertConfigForm() {
             }}
           </Form.Item>
           <Form.Item
-            label="Operator"
+            label={t("alerts.config.fields.operator")}
             name="operator"
             rules={[{ required: true }]}
           >
-            <Select options={operatorOptions} />
+            <Select
+              options={operatorOptions.map((option) => ({
+                value: option.value,
+                label: t(option.labelKey, { defaultValue: option.value })
+              }))}
+            />
           </Form.Item>
-          <Form.Item label="Threshold value" name="thresholdValue">
+          <Form.Item label={t("alerts.config.fields.thresholdValue")} name="thresholdValue">
             <InputNumber style={{ width: "100%" }} />
           </Form.Item>
           <Space>
-            <Form.Item label="Lower bound" name="thresholdLower">
+            <Form.Item label={t("alerts.config.fields.thresholdLower")} name="thresholdLower">
               <InputNumber />
             </Form.Item>
-            <Form.Item label="Upper bound" name="thresholdUpper">
+            <Form.Item label={t("alerts.config.fields.thresholdUpper")} name="thresholdUpper">
               <InputNumber />
             </Form.Item>
           </Space>
           <Space>
             <Form.Item
-              label="Severity"
+              label={t("alerts.config.fields.severity")}
               name="severity"
               rules={[{ required: true }]}
             >
-              <Select options={severityOptions} style={{ width: 160 }} />
+              <Select
+                options={severityOptions.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey, { defaultValue: option.value })
+                }))}
+                style={{ width: 160 }}
+              />
             </Form.Item>
             <Form.Item
-              label="Status"
+              label={t("alerts.config.fields.status")}
               name="status"
               rules={[{ required: true }]}
             >
-              <Select options={statusOptions} style={{ width: 160 }} />
+              <Select
+                options={statusOptions.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey, { defaultValue: option.value })
+                }))}
+                style={{ width: 160 }}
+              />
             </Form.Item>
           </Space>
           <Space>
             <Form.Item
-              label="Cooldown (seconds)"
+              label={t("alerts.config.fields.cooldown")}
               name="cooldownSeconds"
               rules={[{ required: true }]}
             >
               <InputNumber />
             </Form.Item>
             <Form.Item
-              label="Check interval (seconds)"
+              label={t("alerts.config.fields.checkInterval")}
               name="checkIntervalSec"
               rules={[{ required: true }]}
             >
               <InputNumber />
             </Form.Item>
           </Space>
-          <Form.Item label="Channels" name="channelIds">
+          <Form.Item label={t("alerts.config.fields.channels")} name="channelIds">
             <Select
               mode="multiple"
-              placeholder="Select notification channels"
+              placeholder={t("alerts.config.fields.channelsPlaceholder")}
               options={
                 channelsData?.alertChannels?.map((c) => ({
                   label: c.name,
@@ -370,7 +392,7 @@ export function AlertConfigForm() {
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" loading={savingRule}>
-              Save rule
+              {t("common.save")}
             </Button>
           </Form.Item>
         </Form>
@@ -378,7 +400,7 @@ export function AlertConfigForm() {
       <Divider />
       <div>
         <Typography.Title level={5}>
-          Create Notification Channel
+          {t("alerts.channels.title")}
         </Typography.Title>
         <Form
           form={channelForm}
@@ -395,28 +417,28 @@ export function AlertConfigForm() {
               },
             });
             await Promise.all([refetch(), refetchChannels()]);
-            message.success("Channel created");
+            message.success(t("alerts.channels.created"));
             channelForm.resetFields();
           }}
         >
-          <Form.Item name="name" rules={[{ required: true }]} label="Name">
-            <Input placeholder="Ops webhook" />
+          <Form.Item name="name" rules={[{ required: true }]} label={t("alerts.channels.fields.name")}>
+            <Input placeholder={t("alerts.channels.fields.namePlaceholder")} />
           </Form.Item>
-          <Form.Item name="type" rules={[{ required: true }]} label="Type">
+          <Form.Item name="type" rules={[{ required: true }]} label={t("alerts.channels.fields.type")}>
             <Select
               style={{ width: 120 }}
               options={[
-                { label: "Webhook", value: "webhook" },
-                { label: "Email", value: "email" },
+                { label: t("alerts.channels.types.webhook"), value: "webhook" },
+                { label: t("alerts.channels.types.email"), value: "email" },
               ]}
             />
           </Form.Item>
-          <Form.Item name="target" rules={[{ required: true }]} label="Target">
-            <Input placeholder="https://..." />
+          <Form.Item name="target" rules={[{ required: true }]} label={t("alerts.channels.fields.target")}>
+            <Input placeholder={t("alerts.channels.fields.targetPlaceholder")} />
           </Form.Item>
           <Form.Item>
             <Button type="dashed" htmlType="submit" loading={creatingChannel}>
-              Add channel
+              {t("alerts.channels.add")}
             </Button>
           </Form.Item>
         </Form>

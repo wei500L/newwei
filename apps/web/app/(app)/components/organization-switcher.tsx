@@ -4,12 +4,14 @@ import { SwapOutlined } from "@ant-design/icons";
 import { AutoComplete, Button, Space, Tooltip, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { BackendLoginResponse, OrganizationOption } from "@/lib/auth";
 import { captureClientError } from "@/lib/client-telemetry";
 import { createTraceHeaders } from "@/lib/trace";
 
 export function OrganizationSwitcher() {
+  const { t } = useTranslation();
   const { data: session, status, update } = useSession();
   const [orgId, setOrgId] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -33,7 +35,7 @@ export function OrganizationSwitcher() {
 
   const handleSwitch = async () => {
     if (!orgId) {
-      setError("Select an organization to switch into");
+      setError(t("orgSwitcher.error.selectOrganization"));
       return;
     }
 
@@ -51,7 +53,7 @@ export function OrganizationSwitcher() {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string; details?: string };
-        const errorMessage = payload.error ?? "Failed to switch organization";
+        const errorMessage = payload.error ?? t("orgSwitcher.error.switchFailed");
         setError(errorMessage);
         messageApi.error(payload.details ?? errorMessage);
         return;
@@ -67,11 +69,11 @@ export function OrganizationSwitcher() {
         permissions: data.user.permissions,
         organizations: data.organizations ?? availableOrganizations
       });
-      messageApi.success(`Switched to ${data.user.orgId}`);
+      messageApi.success(t("orgSwitcher.success", { orgId: data.user.orgId }));
     } catch (err) {
       captureClientError("Organization switch failed", err);
-      setError("Unexpected error while switching organization");
-      messageApi.error("Unexpected error while switching organization");
+      setError(t("orgSwitcher.error.unexpected"));
+      messageApi.error(t("orgSwitcher.error.unexpected"));
     } finally {
       setLoading(false);
     }
@@ -90,10 +92,10 @@ export function OrganizationSwitcher() {
     <>
       {contextHolder}
       <Space.Compact>
-        <Tooltip title="Switch the active organization for this session">
+        <Tooltip title={t("orgSwitcher.tooltip")}>
           <AutoComplete
             allowClear
-            placeholder="Organization"
+            placeholder={t("orgSwitcher.placeholder")}
             style={{ minWidth: 220 }}
             value={orgId}
             onChange={(value) => setOrgId(value ?? "")}
@@ -101,7 +103,7 @@ export function OrganizationSwitcher() {
             filterOption={(inputValue, option) =>
               (option?.label as string)?.toLowerCase().includes(inputValue.toLowerCase()) ?? false
             }
-            notFoundContent={<Typography.Text type="secondary">Type an organization id</Typography.Text>}
+            notFoundContent={<Typography.Text type="secondary">{t("orgSwitcher.notFound")}</Typography.Text>}
           />
         </Tooltip>
         <Button
@@ -111,7 +113,7 @@ export function OrganizationSwitcher() {
           disabled={!orgId}
           onClick={handleSwitch}
         >
-          Switch
+          {t("orgSwitcher.switch")}
         </Button>
       </Space.Compact>
       {error ? (

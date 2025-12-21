@@ -15,16 +15,20 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import type { PropsWithChildren } from "react";
 import { useMemo, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 
-import { useSidebarStore } from "@/store/sidebar";
-import { OrganizationSwitcher } from "./organization-switcher";
 import { captureClientError } from "@/lib/client-telemetry";
 import { createTraceHeaders } from "@/lib/trace";
+import { useSidebarStore } from "@/store/sidebar";
+
+import { LanguageSwitcher } from "./language-switcher";
 import { NotificationCenter } from "./notification-center";
+import { OrganizationSwitcher } from "./organization-switcher";
 
 const { Header, Sider, Content } = Layout;
 
 export function ShellLayout({ children }: PropsWithChildren) {
+  const { t } = useTranslation();
   const [messageApi, contextHolder] = message.useMessage();
   const [loggingOut, setLoggingOut] = useState(false);
   const [loggingOutAll, setLoggingOutAll] = useState(false);
@@ -52,12 +56,12 @@ export function ShellLayout({ children }: PropsWithChildren) {
         await signOut({ callbackUrl: "/login" });
       } catch (error) {
         captureClientError("Logout error", error);
-        messageApi.error("Failed to logout. Please try again.");
+        messageApi.error(t("auth.logoutFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [messageApi]
+    [messageApi, t]
   );
 
   const navigationItems = useMemo(() => {
@@ -65,17 +69,17 @@ export function ShellLayout({ children }: PropsWithChildren) {
       {
         key: "/dashboard",
         icon: <DashboardOutlined />,
-        label: "Dashboard",
+        label: t("nav.dashboard"),
       },
       {
         key: "/items",
         icon: <TableOutlined />,
-        label: "Items",
+        label: t("nav.items"),
       },
       {
         key: "/crawl",
         icon: <RadarChartOutlined />,
-        label: "Crawl Tasks",
+        label: t("nav.crawlTasks"),
       },
     ];
     const canManageSettings =
@@ -88,28 +92,28 @@ export function ShellLayout({ children }: PropsWithChildren) {
       base.push({
         key: "/admin/orgs",
         icon: <ApartmentOutlined />,
-        label: "Organizations",
+        label: t("nav.organizations"),
       });
     }
     if (canManageSettings) {
       base.push({
         key: "/admin/errors",
         icon: <BugOutlined />,
-        label: "Errors",
+        label: t("nav.errors"),
       });
       base.push({
         key: "/settings/system",
         icon: <ControlOutlined />,
-        label: "System Settings",
+        label: t("nav.systemSettings"),
       });
       base.push({
         key: "/settings",
         icon: <SettingOutlined />,
-        label: "Admin Settings",
+        label: t("nav.adminSettings"),
       });
     }
     return base;
-  }, [session.data?.permissions, session.data?.user?.permissions]);
+  }, [session.data?.permissions, session.data?.user?.permissions, t]);
 
   const selectedKeys = useMemo(() => {
     const match = navigationItems.find((item) => pathname.startsWith(item.key));
@@ -118,11 +122,28 @@ export function ShellLayout({ children }: PropsWithChildren) {
 
   const isLoggingOut = loggingOut || loggingOutAll;
 
+  const breadcrumbLabels: Record<string, string> = {
+    dashboard: t("nav.dashboard"),
+    "key-monitor": t("dashboard.tabs.keyMonitor"),
+    "military-alert": t("dashboard.tabs.militaryAlert"),
+    "economic-alert": t("dashboard.tabs.economicAlert"),
+    "economic-short": t("dashboard.tabs.economicShort"),
+    "economic-medium": t("dashboard.tabs.economicMedium"),
+    "economic-long": t("dashboard.tabs.economicLong"),
+    "livelihood-prices": t("dashboard.tabs.livelihoodPrices"),
+    items: t("nav.items"),
+    crawl: t("nav.crawlTasks"),
+    admin: t("nav.admin"),
+    orgs: t("nav.organizations"),
+    errors: t("nav.errors"),
+    settings: t("nav.settings"),
+    system: t("nav.systemSettings")
+  };
   const breadcrumbs = pathname
     .split("/")
     .filter(Boolean)
     .map((segment, index) => ({
-      title: segment.charAt(0).toUpperCase() + segment.slice(1),
+      title: breadcrumbLabels[segment] ?? segment,
       key: `${segment}-${index}`,
     }));
 
@@ -148,7 +169,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
             fontSize: collapsed ? 18 : 20,
           }}
         >
-          {collapsed ? "MM" : "Modular Monolith"}
+          {collapsed ? t("brand.short") : t("brand.full")}
         </div>
         <Menu
           theme="dark"
@@ -172,6 +193,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
           <Breadcrumb items={breadcrumbs} />
           <Space align="center" size="large">
             <NotificationCenter />
+            <LanguageSwitcher />
             <OrganizationSwitcher />
             <Typography.Text>
               {session.data?.user?.firstName} {session.data?.user?.lastName}
@@ -185,20 +207,20 @@ export function ShellLayout({ children }: PropsWithChildren) {
                 items: [
                   {
                     key: "logout",
-                    label: "Logout (this device)",
+                    label: t("auth.logoutThisDevice"),
                     onClick: () => handleLogout(false),
                     disabled: isLoggingOut
                   },
                   {
                     key: "logoutAll",
-                    label: "Logout all devices",
+                    label: t("auth.logoutAllDevices"),
                     onClick: () => handleLogout(true),
                     disabled: isLoggingOut
                   }
                 ]
               }}
             >
-              Logout
+              {t("auth.logout")}
             </Dropdown.Button>
           </Space>
         </Header>

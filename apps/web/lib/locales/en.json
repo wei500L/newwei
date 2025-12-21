@@ -1,0 +1,1360 @@
+{
+  "auth": {
+    "sessionExpiredRedirect": "Session expired. Redirecting to sign-in…",
+    "sessionExpired": "Session expired",
+    "login": {
+      "validation": {
+        "emailRequired": "Email is required",
+        "emailInvalid": "Enter a valid email address",
+        "passwordRequired": "Password is required",
+        "passwordMin": "Password must be at least {{count}} characters"
+      },
+      "error": {
+        "invalidCredentials": "Invalid email or password",
+        "invalidCredentialsWithReason": "Sign-in failed: {{reason}}"
+      },
+      "title": "Welcome back",
+      "subtitle": "Sign in to continue",
+      "sessionExpired": "Your session has expired. Please sign in again.",
+      "fields": {
+        "email": {
+          "label": "Email",
+          "required": "Email is required",
+          "placeholder": "Enter your email"
+        },
+        "password": {
+          "label": "Password",
+          "required": "Password is required",
+          "placeholder": "Enter your password"
+        },
+        "organization": {
+          "label": "Organization",
+          "tooltip": "Use the organization slug provided by your admin",
+          "placeholder": "Enter organization slug"
+        }
+      },
+      "submit": "Sign in"
+    },
+    "logoutFailed": "Sign out failed",
+    "logoutThisDevice": "Sign out this device",
+    "logoutAllDevices": "Sign out all devices",
+    "logout": "Sign out"
+  },
+  "metadata": {
+    "title": "Modular Admin",
+    "description": "Operator dashboard"
+  },
+  "alerts": {
+    "live": {
+      "message": "[{{severity}}] {{message}} ({{value}})"
+    },
+    "events": {
+      "triggered": "Alert triggered",
+      "title": "Alert events",
+      "metrics": "Value {{value}} · Change {{change}}%"
+    },
+    "streamError": "Alert stream error: {{error}}",
+    "config": {
+      "title": "Config",
+      "defaults": {
+        "name": "Name"
+      },
+      "errors": {
+        "pipelineStatus": "Pipeline status",
+        "crawlStatus": "Crawl status",
+        "systemMetricSlug": "System metric slug"
+      },
+      "saved": "Saved",
+      "fields": {
+        "name": "Name",
+        "metricProvider": "Metric provider",
+        "metricSlug": "Metric slug",
+        "metricSlugHint": "Metric slug hint",
+        "metricSlugPlaceholder": "Enter Metric slug",
+        "operator": "Operator",
+        "thresholdValue": "Threshold value",
+        "thresholdLower": "Threshold lower",
+        "thresholdUpper": "Threshold upper",
+        "severity": "Severity",
+        "status": "Status",
+        "cooldown": "Cooldown",
+        "checkInterval": "Check interval",
+        "channels": "Channels",
+        "channelsPlaceholder": "Enter Channels"
+      },
+      "pipeline": {
+        "title": "Pipeline",
+        "statuses": "Statuses",
+        "defaultsToFailed": "Failed to defaults",
+        "queueName": "Queue name",
+        "queueNamePlaceholder": "Enter Queue name",
+        "sourceId": "Source ID",
+        "sourceIdPlaceholder": "Enter Source ID"
+      },
+      "crawl": {
+        "title": "Crawl",
+        "statuses": "Statuses",
+        "defaultsToFailed": "Failed to defaults",
+        "createdBy": "Created",
+        "createdByPlaceholder": "Enter Created by"
+      },
+      "system": {
+        "title": "System",
+        "presetMetric": "Preset metric",
+        "presetPlaceholder": "Enter Preset",
+        "override": "Override",
+        "overrideHint": "Override hint",
+        "overridePlaceholder": "Enter Override"
+      }
+    },
+    "channels": {
+      "title": "Channels",
+      "created": "Created",
+      "fields": {
+        "name": "Name",
+        "namePlaceholder": "Enter Name",
+        "type": "Type",
+        "target": "Target",
+        "targetPlaceholder": "Enter Target"
+      },
+      "types": {
+        "webhook": "Webhook",
+        "email": "Email"
+      },
+      "add": "Add"
+    },
+    "rules": {
+      "title": "Alert rules",
+      "triggerNow": "Trigger now",
+      "summary": "Provider {{provider}} / metric {{metric}} · check every {{interval}}s · cooldown {{cooldown}}s",
+      "channels": "Channels: {{channels}}"
+    }
+  },
+  "common": {
+    "notAvailable": "Not available",
+    "error": {
+      "unexpected": "Unexpected error"
+    },
+    "retry": "Retry",
+    "empty": "No data",
+    "refresh": "Refresh",
+    "saveChanges": "Save changes",
+    "save": "Save",
+    "submit": "Submit",
+    "actions": "Actions",
+    "edit": "Edit",
+    "delete": "Delete",
+    "reset": "Reset",
+    "remove": "Remove",
+    "emptyValue": "—",
+    "view": "View",
+    "update": "Update",
+    "docs": "Docs",
+    "source": "Source",
+    "download": "Download",
+    "disabled": "Disabled",
+    "enabled": "Enabled",
+    "never": "Never",
+    "punctuation": {
+      "period": "."
+    },
+    "cancel": "Cancel"
+  },
+  "orgSwitcher": {
+    "error": {
+      "selectOrganization": "Please select an organization",
+      "switchFailed": "Switch failed",
+      "unexpected": "Unexpected error while switching"
+    },
+    "success": "Switched to organization {{orgId}}",
+    "tooltip": "Switch your active organization",
+    "placeholder": "Select an organization",
+    "notFound": "No organizations available",
+    "switch": "Switch organization"
+  },
+  "dashboard": {
+    "economicLong": {
+      "title": "Economic long",
+      "loadFailed": "Failed to load",
+      "cards": {
+        "gdp3y": "GDP (3Y)",
+        "yieldCurve": "Yield curve",
+        "reserves": "Reserves"
+      },
+      "empty": {
+        "gdp": "GDP",
+        "yieldCurve": "Yield curve",
+        "reserves": "Reserves"
+      },
+      "yieldCurve": {
+        "yearLabel": "Year {{year}}",
+        "yieldLabel": "Yield label"
+      }
+    },
+    "tabs": {
+      "keyMonitor": "Key monitor",
+      "militaryAlert": "Military alert",
+      "economicAlert": "Economic alert",
+      "economicShort": "Economic short",
+      "economicMedium": "Economic medium",
+      "economicLong": "Economic long",
+      "livelihoodPrices": "Livelihood prices"
+    },
+    "widgets": {
+      "unsupportedSource": "Unsupported data source: {{source}}",
+      "loadFailed": "Failed to load"
+    },
+    "queue": {
+      "connectionFailed": "Queue connection failed: {{error}}",
+      "jobFailed": "Job {{jobId}} failed",
+      "jobCompleted": "Job {{jobId}} completed",
+      "jobStarted": "Job {{jobId}} started",
+      "snapshot": "Snapshot",
+      "live": "Live",
+      "offline": "Offline",
+      "recentActivity": "Recent activity",
+      "payloadMessage": "Payload: {{message}}",
+      "noRecentLogs": "No recent logs",
+      "states": {
+        "waiting": "Waiting",
+        "active": "Active",
+        "completed": "Completed",
+        "failed": "Failed",
+        "delayed": "Delayed",
+        "paused": "Paused",
+        "stalled": "Stalled"
+      }
+    },
+    "errors": {
+      "metricsUnavailable": "Metrics unavailable"
+    },
+    "stats": {
+      "totalItems": "Total items",
+      "processedItems": "Processed items"
+    },
+    "nextActions": {
+      "title": "Next actions",
+      "description": "Next actions description",
+      "anomalies": "Anomalies",
+      "noAnomalies": "No anomalies",
+      "pendingSummary": "Pending summary",
+      "alertRouting": "Alert routing",
+      "noAlertRules": "No alert rules",
+      "alertRoutingSummary": "Alert routing summary",
+      "noneConfigured": "None configured"
+    },
+    "editor": {
+      "title": "Editor",
+      "description": "Editor description",
+      "selectDashboard": "Select dashboard",
+      "newDashboard": "New dashboard",
+      "deleted": "Deleted",
+      "widgetTitle": "Widget title",
+      "layoutTitle": "Layout title",
+      "fields": {
+        "name": "Name",
+        "slug": "Slug",
+        "description": "Editor description",
+        "primary": "Primary"
+      },
+      "theme": {
+        "light": "Light",
+        "dark": "Dark"
+      },
+      "saved": "Saved",
+      "saveFailed": "Failed to save",
+      "add": {
+        "line": "Line",
+        "bar": "Bar",
+        "pie": "Pie",
+        "kline": "Kline"
+      }
+    },
+    "panels": {
+      "smartAlerts": "Smart alerts",
+      "aiAnalysis": "AI analysis"
+    },
+    "drilldown": {
+      "title": "Drilldown",
+      "loadFailed": "Failed to load"
+    },
+    "alertConfig": {
+      "title": "Alert config"
+    },
+    "keyMonitor": {
+      "title": "Key monitor",
+      "loadFailed": "Failed to load",
+      "empty": "No Key monitor",
+      "cards": {
+        "gold": "Gold",
+        "oil": "Oil",
+        "copper": "Copper",
+        "shanghaiVsSp500": {
+          "title": "Shanghai vs S&P 500",
+          "description": "Shanghai vs S&P 500 description"
+        },
+        "fxMid": {
+          "title": "FX mid",
+          "description": "FX mid description"
+        },
+        "cnyFx": {
+          "title": "CNY FX",
+          "description": "CNY FX description"
+        }
+      },
+      "series": {
+        "shanghaiComposite": "Shanghai composite",
+        "sp500": "S&P 500",
+        "usd": "USD",
+        "eur": "EUR",
+        "jpy": "JPY",
+        "usdCny": "USD CNY",
+        "eurCny": "EUR CNY"
+      }
+    },
+    "economicAlert": {
+      "alerts": {
+        "cpiHigh": "CPI high",
+        "chinaPmiLow": "China PMI low",
+        "usYieldInversion": "Us yield inversion"
+      },
+      "gauges": {
+        "cpi": "CPI",
+        "ppi": "PPI"
+      },
+      "pmi": {
+        "china": "China",
+        "us": "Us",
+        "threshold": "Threshold"
+      },
+      "yield": {
+        "spread": "Spread"
+      },
+      "us": {
+        "cpi": "CPI",
+        "ppi": "PPI",
+        "manufacturingPmi": "Manufacturing PMI",
+        "servicesPmi": "Services PMI"
+      },
+      "title": "Economic alert",
+      "loadFailed": "Failed to load",
+      "empty": "No Economic alert",
+      "triggered": "Triggered",
+      "cards": {
+        "cpiPpiGauge": "CPI PPI gauge",
+        "pmiCompare": "PMI compare",
+        "yieldInversion": "Yield inversion",
+        "usInflation": "Us inflation",
+        "usPmiCompare": "Us PMI compare"
+      },
+      "emptyCpiPpi": "Empty CPI PPI",
+      "emptyPmi": "Empty PMI",
+      "emptyYield": "Empty yield",
+      "emptyUsInflation": "Empty us inflation",
+      "emptyUsPmi": "Empty us PMI"
+    },
+    "economicShort": {
+      "heatmap": {
+        "tooltip": "Tooltip",
+        "empty": "No Heatmap"
+      },
+      "crypto": {
+        "btc": "BTC",
+        "empty": "No Crypto"
+      },
+      "title": "Economic short",
+      "loadFailed": "Failed to load",
+      "empty": "No Economic short",
+      "cards": {
+        "indexCandlestick": "Index candlestick",
+        "fxHeatmap": "FX heatmap",
+        "cryptoPrices": "Crypto prices"
+      }
+    },
+    "economicMedium": {
+      "gdpYoy": "GDP yoy",
+      "m2Yoy": "M2 yoy",
+      "gdpYoyAxis": "GDP yoy axis",
+      "m2YoyAxis": "M2 yoy axis",
+      "metalMa": "Metal ma",
+      "us": {
+        "gdp": "GDP",
+        "cpi": "CPI",
+        "ppi": "PPI",
+        "manufacturingPmi": "Manufacturing PMI",
+        "servicesPmi": "Services PMI"
+      },
+      "title": "Economic medium",
+      "loadFailed": "Failed to load",
+      "cards": {
+        "gdpM2": "GDP M2",
+        "metalMa": "Metal ma",
+        "pmiChanges": "PMI changes",
+        "usGrowth": "Us growth",
+        "usPmi": "Us PMI"
+      },
+      "empty": {
+        "gdpM2": "GDP M2",
+        "metals": "Metals",
+        "pmi": "PMI",
+        "usEconomy": "Us economy",
+        "usPmi": "Us PMI"
+      }
+    },
+    "militaryAlert": {
+      "radar": {
+        "dailySwing": "Daily swing"
+      },
+      "title": "Military alert",
+      "loadFailed": "Failed to load",
+      "cards": {
+        "metalRadar": "Metal radar",
+        "agriAlert": "Agri alert",
+        "energy": {
+          "title": "Energy",
+          "description": "Energy description",
+          "oil": "Oil",
+          "gas": "Gas"
+        }
+      },
+      "empty": {
+        "metalRadar": "Metal radar",
+        "agri": "Agri"
+      },
+      "badges": {
+        "daily": "Daily",
+        "threeDay": "Three day"
+      },
+      "alertItemDescription": "Alert item description"
+    },
+    "charts": {
+      "noCandlestick": "No candlestick"
+    },
+    "livelihood": {
+      "cpi": {
+        "food": "Food",
+        "housing": "Housing",
+        "transport": "Transport",
+        "tooltip": "Tooltip"
+      },
+      "agri": {
+        "radarName": "Radar name"
+      },
+      "tourism": {
+        "fxIncome": "FX income",
+        "incomeShare": "Income share",
+        "axisIncome": "Axis income"
+      },
+      "title": "Livelihood",
+      "cards": {
+        "cpiTree": "CPI tree",
+        "agriRadar": "Agri radar",
+        "tourism": "Tourism"
+      },
+      "empty": {
+        "cpi": "CPI",
+        "agri": "Agri",
+        "tourism": "Tourism"
+      }
+    }
+  },
+  "language": {
+    "chinese": "Simplified Chinese",
+    "english": "English",
+    "label": "Language"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "items": "Items",
+    "crawlTasks": "Crawl Tasks",
+    "organizations": "Organizations",
+    "errors": "Errors",
+    "systemSettings": "System Settings",
+    "adminSettings": "Admin Settings",
+    "admin": "Admin",
+    "settings": "Settings"
+  },
+  "brand": {
+    "short": "M",
+    "full": "Modular"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "unreadCount_one": "{{count}} unread notification",
+    "unreadCount_other": "{{count}} unread notifications",
+    "markAllRead": "Mark all as read",
+    "empty": "No notifications yet"
+  },
+  "settings": {
+    "rateLimits": {
+      "fields": {
+        "maxAttempts": "Max attempts",
+        "windowSeconds": "Window seconds"
+      },
+      "validation": {
+        "maxAttempts": "Max attempts is required",
+        "windowSeconds": "Window seconds is required"
+      },
+      "saved": "Saved",
+      "saveFailed": "Failed to save",
+      "description": "Rate limits description",
+      "login": {
+        "title": "Login",
+        "description": "Login description"
+      },
+      "crawlCreate": {
+        "title": "Crawl create",
+        "description": "Crawl create description"
+      },
+      "rbacWrite": {
+        "title": "RBAC write",
+        "description": "RBAC write description"
+      }
+    },
+    "auditLog": {
+      "saved": "Saved",
+      "saveFailed": "Failed to save",
+      "descriptionSystem": "Description system",
+      "fields": {
+        "retentionDays": "Retention days"
+      },
+      "validation": {
+        "retentionRequired": "Retention days is required",
+        "retentionRange": "Retention must be between 1 and 3650 days"
+      },
+      "description": "Audit log description",
+      "retentionTitle": "Retention title",
+      "retentionHint": "Retention hint"
+    },
+    "authCache": {
+      "saved": "Saved",
+      "saveFailed": "Failed to save",
+      "description": "Auth cache description",
+      "fields": {
+        "profileTtl": "Profile TTL",
+        "lockTtl": "Lock TTL",
+        "maxWait": "Max wait",
+        "retryDelay": "Retry delay",
+        "profileTtlHint": "Profile TTL hint",
+        "lockTtlHint": "Lock TTL hint",
+        "maxWaitHint": "Max wait hint",
+        "retryDelayHint": "Retry delay hint"
+      },
+      "validation": {
+        "profileTtlRequired": "Profile TTL is required",
+        "lockTtlRequired": "Lock TTL is required",
+        "maxWaitRequired": "Max wait time is required",
+        "retryDelayRequired": "Retry delay is required"
+      },
+      "summary": {
+        "profileTtl": "Profile TTL",
+        "profileTtlValue": "Profile cache TTL: {{value}} minutes",
+        "profileTtlSeconds": "Profile cache TTL: {{value}} seconds",
+        "lockWindow": "Lock window",
+        "lockWindowValue": "Lock window: {{lock}}s, max wait {{wait}}s",
+        "retryDelay": "Retry delay: {{value}} ms"
+      },
+      "save": "Save",
+      "saveHint": "Save hint"
+    },
+    "crawlClient": {
+      "saved": "Saved",
+      "saveFailed": "Failed to save",
+      "description": "Crawl client description",
+      "fields": {
+        "healthCheckTtl": "Health check TTL",
+        "requestTimeout": "Request timeout",
+        "maxAttempts": "Max attempts",
+        "retryBackoff": "Retry backoff"
+      },
+      "validation": {
+        "healthCheckTtl": "Health check TTL is required",
+        "requestTimeout": "Request timeout is required",
+        "maxAttempts": "Max attempts is required",
+        "retryBackoff": "Retry backoff is required"
+      },
+      "save": "Save"
+    },
+    "newsPrompts": {
+      "saved": "Saved",
+      "saveFailed": "Failed to save",
+      "description": "News prompts description",
+      "fields": {
+        "version": "Version",
+        "systemTemplate": "System template",
+        "userTemplate": "User template"
+      },
+      "validation": {
+        "version": "Version is required",
+        "systemTemplate": "System prompt is required",
+        "userTemplate": "User prompt is required"
+      },
+      "placeholders": {
+        "version": "Enter Version",
+        "systemTemplate": "Enter System template",
+        "userTemplate": "Enter User template"
+      },
+      "estimatedTokens": "Estimated tokens: {{count}}",
+      "estimatedTotalTokens": "Estimated total tokens: {{count}}",
+      "placeholdersTitle": "Placeholders title"
+    },
+    "adminOnly": {
+      "title": "Admin only",
+      "description": "Admin only description"
+    },
+    "tabs": {
+      "rateLimits": "Rate limits",
+      "auditLog": "Audit log",
+      "authCache": "Auth cache",
+      "crawlClient": "Crawl client",
+      "newsPrompts": "News prompts",
+      "roles": "Roles",
+      "permissions": "Permissions",
+      "members": "Members"
+    },
+    "title": "Settings",
+    "roles": {
+      "updated": "Updated",
+      "updateFailed": "Failed to update",
+      "empty": "No Roles",
+      "system": "System",
+      "description": "Roles description",
+      "descriptionPlaceholder": "Enter Description",
+      "permissions": "Permissions",
+      "permissionsRequired": "Permissions required",
+      "permissionsPlaceholder": "Enter Permissions",
+      "saveChanges": "Save changes"
+    },
+    "members": {
+      "updated": "Updated",
+      "updateFailed": "Failed to update",
+      "empty": "No Members",
+      "roleAssignment": "Role assignment"
+    },
+    "permissions": {
+      "pending": "Pending",
+      "empty": "No Permissions"
+    },
+    "footerNote": "Footer note"
+  },
+  "systemSettings": {
+    "akshare": {
+      "errors": {
+        "loadVersion": "Load version",
+        "loadStatus": "Load status",
+        "upgradeDisabled": "Upgrade disabled",
+        "upgradeFailed": "Failed to upgrade",
+        "inProgress": "In progress",
+        "missingToken": "Missing token",
+        "noAdmin": "No admin"
+      },
+      "modal": {
+        "title": "Modal",
+        "content": "Content",
+        "confirm": "Confirm"
+      },
+      "upgradeStarted": "Upgrade started from {{version}}",
+      "description": "AKShare description",
+      "title": "AKShare",
+      "label": "Label",
+      "python": "Python version {{version}}",
+      "refreshStatus": "Refresh status",
+      "upgrade": "Upgrade",
+      "request": "Request {{requestId}} · from {{before}} to {{after}}"
+    },
+    "title": "System settings",
+    "adminOnly": "Admin only",
+    "tabs": {
+      "akshare": "AKShare"
+    },
+    "description": "System settings description"
+  },
+  "analysis": {
+    "streamError": "Analysis stream error: {{error}}",
+    "correlation": {
+      "title": "Correlation analysis",
+      "submitted": "Correlation analysis submitted",
+      "defaults": {
+        "indicator": "Indicator"
+      },
+      "fields": {
+        "indicator": "Indicator",
+        "value": "Value",
+        "changePercent": "Change percent",
+        "startDate": "Start date",
+        "endDate": "End date",
+        "newsSummaries": "News summaries"
+      }
+    },
+    "anomaly": {
+      "title": "Anomaly analysis",
+      "submitted": "Anomaly analysis submitted",
+      "errors": {
+        "seriesArray": "Series must be an array",
+        "seriesEmpty": "Series is empty",
+        "seriesInvalid": "Series format is invalid"
+      },
+      "defaults": {
+        "metric": "Metric"
+      },
+      "fields": {
+        "metric": "Metric",
+        "timestamp": "Timestamp",
+        "value": "Value",
+        "deviationPercent": "Deviation percent",
+        "newsList": "News list",
+        "policyList": "Policy list",
+        "seriesJson": "Series JSON"
+      }
+    },
+    "results": {
+      "title": "Analysis results",
+      "generating": "Generating",
+      "pending": "Pending"
+    }
+  },
+  "orgAdmin": {
+    "loading": "Loading",
+    "title": "Org admin",
+    "adminOnly": "Admin only",
+    "created": "Created",
+    "errors": {
+      "createFailed": "Failed to create",
+      "updateFailed": "Failed to update",
+      "toggleFailed": "Failed to toggle"
+    },
+    "updated": "Updated",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "new": "New",
+    "columns": {
+      "name": "Name",
+      "slug": "Slug",
+      "status": "Status",
+      "updated": "Updated"
+    },
+    "active": "Active",
+    "inactive": "Inactive",
+    "createTitle": "Create title",
+    "fields": {
+      "name": "Name",
+      "slug": "Slug",
+      "description": "Org admin description"
+    },
+    "validation": {
+      "nameRequired": "Name is required",
+      "slugRequired": "Slug is required",
+      "slugPattern": "Slug can only include lowercase letters, numbers, and hyphens"
+    },
+    "placeholders": {
+      "name": "Enter Name",
+      "slug": "Enter Slug",
+      "description": "Enter Description"
+    },
+    "editTitle": "Edit title"
+  },
+  "crawl": {
+    "columns": {
+      "task": "Task",
+      "status": "Status",
+      "runs": "Runs",
+      "peakMemory": "Peak memory",
+      "lastActivity": "Last activity"
+    },
+    "runsSummary": "Runs summary",
+    "metadata": {
+      "errors": {
+        "atLeastOneUrl": "At least one URL",
+        "sourceRequired": "Source is required",
+        "domainRequired": "Domain is required",
+        "urlsRequired": "Urls required"
+      },
+      "completed": "Completed",
+      "failed": "Failed to operation",
+      "columns": {
+        "url": "URL",
+        "status": "Status",
+        "http": "HTTP",
+        "score": "Score",
+        "summary": "Summary",
+        "keywords": "Keywords",
+        "metadata": "Metadata",
+        "error": "Error"
+      },
+      "untitled": "Untitled",
+      "noDescription": "No description",
+      "noMetaTags": "No meta tags",
+      "noOpenGraph": "No Open Graph tags",
+      "jsonLdCount_one": "{{count}} JSON-LD entry",
+      "jsonLdCount_other": "{{count}} JSON-LD entries",
+      "noJsonLd": "No JSON-LD",
+      "title": "Metadata",
+      "description": "Metadata description",
+      "linkText": "Link text",
+      "fields": {
+        "source": "Source",
+        "domain": "Domain",
+        "pattern": "Pattern",
+        "maxUrls": "Max urls",
+        "urls": "Urls",
+        "query": "Query",
+        "scoreThreshold": "Score threshold"
+      },
+      "source": {
+        "sitemap": "Sitemap",
+        "urls": "Urls"
+      },
+      "placeholders": {
+        "domain": "Enter Domain",
+        "pattern": "Enter Pattern",
+        "urls": "Enter Urls",
+        "query": "Enter query",
+        "scoreThreshold": "Enter Score threshold"
+      },
+      "submit": "Submit",
+      "empty": "No Metadata"
+    },
+    "task": {
+      "requeued": "Requeued",
+      "retryFailed": "Failed to retry",
+      "queued": "Queued",
+      "createFailed": "Failed to create"
+    },
+    "search": {
+      "placeholder": "Enter "
+    },
+    "filters": {
+      "status": "Status"
+    },
+    "status": {
+      "pending": "Pending",
+      "queued": "Queued",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "paused": "Paused",
+      "processing": "Processing"
+    },
+    "createTask": "Create task",
+    "detail": {
+      "media": {
+        "title": "Media",
+        "viewAsset": "View asset",
+        "sourceTypes": {
+          "picture": "Picture",
+          "responsive": "Responsive"
+        },
+        "more": "More",
+        "storedTitle": "Stored media",
+        "unknownMime": "Unknown MIME type",
+        "thumbnailAlt": "Thumbnail alt",
+        "score": "Score",
+        "srcsetVariants": "Srcset variants",
+        "sources": "Sources"
+      },
+      "tables": {
+        "title": "Tables",
+        "releaseNotes": "Release notes",
+        "defaultTitle": "Default title",
+        "source": "Source",
+        "remaining": "Remaining"
+      },
+      "proxy": {
+        "direct": "Direct",
+        "dict": "Proxy {{server}} / user {{user}}"
+      },
+      "markdown": {
+        "default": "Default",
+        "source": "Source",
+        "ignoreLinks": "Ignore links",
+        "keepLinks": "Keep links",
+        "escapeHtml": "Escape html",
+        "renderHtml": "Render html",
+        "wrap": "Wrap"
+      },
+      "markdownFilter": {
+        "threshold": "Threshold",
+        "mode": "Mode",
+        "minWords": "Min words"
+      },
+      "markdownStrategy": {
+        "default": "Default",
+        "withParams": "With params"
+      },
+      "cleanMarkdown": {
+        "scope": "Scope",
+        "targets": "Targets",
+        "excluded": "Excluded",
+        "minWords": "Min words",
+        "removeOverlays": "Remove overlays",
+        "keepOverlays": "Keep overlays"
+      },
+      "userAgent": {
+        "random": "Random",
+        "default": "Default",
+        "notConfigured": "Not configured"
+      },
+      "userAgentGenerator": {
+        "platform": "Platform",
+        "browser": "Browser",
+        "device": "Device",
+        "locale": "Locale"
+      },
+      "retryQueued": "Retry queued",
+      "retryFailed": "Failed to retry",
+      "notFound": "Task not found",
+      "backToTasks": "Back to tasks",
+      "retry": "Retry",
+      "openSource": "Open source",
+      "fields": {
+        "displayName": "Display name",
+        "keywords": "Keywords",
+        "concurrency": "Concurrency",
+        "includeImages": "Include images",
+        "storeMedia": "Store media",
+        "runCount": "Run count",
+        "scanFullPage": "Scan full page",
+        "adjustViewport": "Adjust viewport",
+        "undetectedBrowser": "Undetected browser",
+        "stealthMode": "Stealth mode",
+        "managedBrowser": "Managed browser",
+        "userDataDir": "User data dir",
+        "simulateUser": "Simulate user",
+        "overrideNavigator": "Override navigator",
+        "userAgent": "User agent",
+        "userAgentMode": "User agent mode",
+        "uaGenerator": "Ua generator",
+        "browserLocale": "Browser locale",
+        "timezone": "Timezone",
+        "geolocation": "Geolocation",
+        "customHeaders": "Custom headers",
+        "cookies": "Cookies",
+        "sessionId": "Session ID",
+        "storageState": "Storage state",
+        "jsOnly": "JS only",
+        "jsSteps": "JS steps",
+        "waitCondition": "Wait condition",
+        "waitTimeout": "Wait timeout",
+        "proxyRoute": "Proxy route",
+        "additionalUrls": "Additional urls",
+        "markdownGenerator": "Markdown generator",
+        "markdownStrategy": "Markdown strategy",
+        "markdownFilter": "Markdown filter",
+        "cleanMarkdown": "Clean markdown",
+        "lastServerMemory": "Last server memory",
+        "lastPeakMemory": "Last peak memory",
+        "lastMemoryEfficiency": "Last memory efficiency",
+        "serverMemory": "Server memory",
+        "peakMemory": "Peak memory",
+        "efficiency": "Efficiency",
+        "lastSuccess": "Success",
+        "lastError": "Last error",
+        "configuration": "Configuration"
+      },
+      "scanFullPageEnabled": "Scan full page enabled",
+      "serverDefault": "Server default",
+      "waitTimeoutValue": "Wait timeout value",
+      "default": "Default",
+      "memoryValue": "Memory value",
+      "percentValue": "Percent value",
+      "multiUrl": {
+        "patterns": "Patterns",
+        "overrides": "Overrides"
+      },
+      "results": {
+        "title": "Results",
+        "searchPlaceholder": "Enter Search",
+        "empty": "No results",
+        "variants": {
+          "raw": "Raw",
+          "citations": "Citations",
+          "references": "References",
+          "cleanFit": "Cleaned"
+        }
+      }
+    },
+    "multiUrl": {
+      "title": "Multi URL",
+      "strategyTitle": "Strategy title",
+      "add": "Add",
+      "empty": "No Multi URL",
+      "fields": {
+        "label": "Label",
+        "matchMode": "Match mode",
+        "patterns": "Patterns",
+        "urls": "Urls",
+        "cacheMode": "Cache mode"
+      },
+      "placeholders": {
+        "label": "Enter Label",
+        "matchMode": "Enter Match mode",
+        "patterns": "Enter Patterns",
+        "urls": "Enter Urls",
+        "cacheMode": "Enter Cache mode"
+      },
+      "matchModeHint": "Match mode hint",
+      "matchModeOptions": {
+        "glob": "Glob",
+        "regex": "Regex",
+        "substring": "Substring",
+        "prefix": "Prefix"
+      },
+      "urlsHint": "Urls hint",
+      "cacheModes": {
+        "bypass": "Bypass cache",
+        "prefer": "Prefer cache",
+        "force": "Force cache"
+      },
+      "dynamicOverrides": "Dynamic overrides"
+    },
+    "links": {
+      "title": "Links",
+      "stats": {
+        "total": "Total",
+        "internal": "Internal",
+        "external": "External",
+        "highQuality": "High quality",
+        "needsReview": "Needs review",
+        "avgIntrinsic": "Avg intrinsic"
+      },
+      "buckets": "Buckets",
+      "bucketItem": "Bucket item",
+      "topLinks": "Top links",
+      "emptyScored": "Empty scored",
+      "linkScore": "Link score",
+      "lowQuality": "Low quality",
+      "emptyLowQuality": "Empty low quality",
+      "intrinsicScore": "Intrinsic score",
+      "description": "Links description",
+      "scoreLinks": "Score links",
+      "scoreLinksHint": "Score links hint",
+      "includeInternal": "Include internal",
+      "includeExternal": "Include external",
+      "includeSocial": "Include social",
+      "maxLinks": "Max links",
+      "placeholders": {
+        "maxLinks": "Enter Max links",
+        "concurrency": "Enter Concurrency",
+        "timeout": "Enter Timeout",
+        "contextQuery": "Enter Context query",
+        "scoreThreshold": "Enter Score threshold",
+        "includePatterns": "Enter Include patterns",
+        "excludePatterns": "Enter Exclude patterns"
+      },
+      "concurrency": "Concurrency",
+      "timeout": "Timeout",
+      "contextQuery": "Context query",
+      "scoreThreshold": "Score threshold",
+      "verbose": "Verbose",
+      "includePatterns": "Include patterns",
+      "excludePatterns": "Exclude patterns"
+    },
+    "createDrawer": {
+      "title": "Create drawer",
+      "submit": "Submit"
+    },
+    "settings": {
+      "displayName": "Display name",
+      "validation": {
+        "displayNameMax": "Display name must be at most {{count}} characters",
+        "urlRequired": "URL is required"
+      },
+      "placeholders": {
+        "displayName": "Enter Display name",
+        "url": "Enter URL",
+        "keywords": "Enter Keywords",
+        "concurrency": "Enter Concurrency",
+        "scrollDelay": "Enter Scroll delay"
+      },
+      "targetUrl": "Target URL",
+      "keywords": "Keywords",
+      "timeRange": "Time range",
+      "concurrency": "Concurrency",
+      "includeImages": "Include images",
+      "storeMedia": "Store media",
+      "storeMediaHint": "Store media hint",
+      "onlyMainContent": "Only main content",
+      "extractLinks": "Extract links",
+      "excludeExternalImages": "Exclude external images",
+      "excludeExternalImagesHint": "Exclude external images hint",
+      "waitForImages": "Wait for images",
+      "waitForImagesHint": "Wait for images hint",
+      "scanFullPage": "Scan full page",
+      "scrollDelay": "Scroll delay",
+      "adjustViewport": "Adjust viewport",
+      "adjustViewportHint": "Adjust viewport hint",
+      "adjustViewportLink": "Adjust viewport link",
+      "simulateUser": "Simulate user",
+      "simulateUserHint": "Simulate user hint",
+      "overrideNavigator": "Override navigator",
+      "overrideNavigatorHint": "Override navigator hint"
+    },
+    "dynamic": {
+      "title": "Dynamic",
+      "description": "Dynamic description",
+      "jsStep": "JS step",
+      "jsRequired": "JS required",
+      "placeholders": {
+        "jsSnippet": "Enter JS snippet",
+        "selector": "Enter Selector",
+        "script": "Enter Script",
+        "waitTimeout": "Enter Wait timeout",
+        "selectorAlt": "Enter Selector alt",
+        "scriptAlt": "Enter Script alt"
+      },
+      "addJsStep": "Add JS step",
+      "jsOnly": "JS only",
+      "jsOnlyHint": "JS only hint",
+      "waitForSelector": "Wait for selector",
+      "waitForSelectorHint": "Wait for selector hint",
+      "waitForScript": "Wait for script",
+      "waitForScriptHint": "Wait for script hint",
+      "waitTimeout": "Wait timeout",
+      "waitTimeoutHint": "Wait timeout hint"
+    },
+    "markdown": {
+      "additionalUrls": "Additional urls",
+      "additionalUrlsHint": "Additional urls hint",
+      "placeholders": {
+        "additionalUrls": "Enter Additional urls",
+        "source": "Enter Source",
+        "bodyWidth": "Enter Body width",
+        "filter": "Enter Filter",
+        "pruningThreshold": "Enter Pruning threshold",
+        "thresholdMode": "Enter Threshold mode",
+        "minWords": "Enter Min words"
+      },
+      "source": "Source",
+      "sourceHint": "Source hint",
+      "sourceOptions": {
+        "cleaned": "Cleaned",
+        "raw": "Raw",
+        "fit": "Fit"
+      },
+      "ignoreLinks": "Ignore links",
+      "ignoreLinksHint": "Ignore links hint",
+      "escapeHtml": "Escape html",
+      "escapeHtmlHint": "Escape html hint",
+      "bodyWidth": "Body width",
+      "bodyWidthHint": "Body width hint",
+      "filter": "Filter",
+      "filterHint": "Filter hint",
+      "filterOptions": {
+        "pruning": "Pruning"
+      },
+      "pruningThreshold": "Pruning threshold",
+      "pruningThresholdHint": "Pruning threshold hint",
+      "thresholdMode": "Threshold mode",
+      "thresholdModeHint": "Threshold mode hint",
+      "thresholdModeOptions": {
+        "dynamic": "Dynamic",
+        "fixed": "Fixed"
+      },
+      "minWords": "Min words",
+      "minWordsHint": "Min words hint",
+      "customStrategy": {
+        "title": "Custom strategy",
+        "description": "Custom strategy description",
+        "linkText": "Link text",
+        "trailing": "Trailing",
+        "type": "Type",
+        "typeHint": "Type hint",
+        "placeholders": {
+          "type": "Enter Type",
+          "params": "Enter Params"
+        },
+        "params": "Params",
+        "paramsHint": "Params hint"
+      },
+      "clean": {
+        "title": "Clean",
+        "description": "Clean description",
+        "linkText": "Link text",
+        "trailing": "Trailing",
+        "cssSelector": "Css selector",
+        "cssSelectorHint": "Css selector hint",
+        "placeholders": {
+          "cssSelector": "Enter Css selector",
+          "targetElements": "Enter Target elements",
+          "excludedTags": "Enter Excluded tags",
+          "wordCount": "Enter Word count"
+        },
+        "targetElements": "Target elements",
+        "targetElementsHint": "Target elements hint",
+        "excludedTags": "Excluded tags",
+        "excludedTagsHint": "Excluded tags hint",
+        "removeOverlay": "Remove overlay",
+        "wordCount": "Word count",
+        "wordCountHint": "Word count hint"
+      }
+    },
+    "tables": {
+      "title": "Tables",
+      "description": "Tables description",
+      "scoreThreshold": "Score threshold",
+      "scoreThresholdHint": "Score threshold hint",
+      "placeholders": {
+        "scoreThreshold": "Enter Score threshold",
+        "strategyType": "Enter Strategy type",
+        "minRows": "Enter Min rows",
+        "minCols": "Enter Min cols",
+        "extraParams": "Enter Extra params"
+      },
+      "strategyType": "Strategy type",
+      "strategyTypeHint": "Strategy type hint",
+      "minRows": "Min rows",
+      "minRowsHint": "Min rows hint",
+      "minCols": "Min cols",
+      "minColsHint": "Min cols hint",
+      "extraParams": "Extra params",
+      "extraParamsHint": "Extra params hint"
+    },
+    "browser": {
+      "undetected": "Undetected",
+      "undetectedHint": "Undetected hint",
+      "stealth": "Stealth",
+      "stealthHint": "Stealth hint",
+      "managed": "Managed",
+      "managedHint": "Managed hint",
+      "managedLink": "Managed link",
+      "userDataDir": "User data dir",
+      "userDataDirHint": "User data dir hint",
+      "placeholders": {
+        "userDataDir": "Enter User data dir"
+      },
+      "identity": {
+        "title": "Identity",
+        "description": "Identity description",
+        "customUserAgent": "Custom user agent",
+        "customUserAgentHint": "Custom user agent hint",
+        "placeholders": {
+          "userAgent": "Enter User agent",
+          "userAgentMode": "Enter User agent mode",
+          "platform": "Enter Platform",
+          "browser": "Enter Browser",
+          "device": "Enter Device",
+          "locale": "Enter Locale",
+          "timezone": "Enter Timezone",
+          "latitude": "Enter Latitude",
+          "longitude": "Enter Longitude",
+          "accuracy": "Enter Accuracy"
+        },
+        "userAgentMode": "User agent mode",
+        "userAgentModeHint": "User agent mode hint",
+        "userAgentModeRandom": "User agent mode random",
+        "generatorPlatform": "Generator platform",
+        "platforms": {
+          "windows": "Windows",
+          "macos": "Macos",
+          "linux": "Linux",
+          "android": "Android",
+          "ios": "Ios"
+        },
+        "generatorBrowser": "Generator browser",
+        "browsers": {
+          "chrome": "Chrome",
+          "firefox": "Firefox",
+          "safari": "Safari",
+          "edge": "Edge"
+        },
+        "generatorDevice": "Generator device",
+        "devices": {
+          "desktop": "Desktop",
+          "mobile": "Mobile",
+          "tablet": "Tablet"
+        },
+        "generatorLocale": "Generator locale",
+        "generatorLocaleHint": "Generator locale hint",
+        "browserLocale": "Browser locale",
+        "browserLocaleHint": "Browser locale hint",
+        "timezoneId": "Timezone ID",
+        "timezoneHint": "Timezone hint",
+        "geolocation": "Geolocation",
+        "geolocationHint": "Geolocation hint"
+      },
+      "headers": {
+        "title": "Headers",
+        "placeholders": {
+          "name": "Enter Name",
+          "value": "Enter Value"
+        },
+        "add": "Add"
+      },
+      "cookies": {
+        "title": "Cookies",
+        "placeholders": {
+          "name": "Enter Name",
+          "value": "Enter Value",
+          "domain": "Enter Domain",
+          "path": "Enter Path"
+        },
+        "add": "Add"
+      }
+    },
+    "session": {
+      "title": "Session",
+      "description": "Session description",
+      "sessionId": "Session ID",
+      "sessionIdHint": "Session ID hint",
+      "placeholders": {
+        "sessionId": "Enter Session ID",
+        "storageState": "Enter Storage state"
+      },
+      "storageState": "Storage state",
+      "storageStateHint": "Storage state hint"
+    },
+    "proxy": {
+      "title": "Proxy",
+      "url": "URL",
+      "urlHint": "URL hint",
+      "placeholders": {
+        "url": "Enter URL",
+        "server": "Enter Server",
+        "username": "Enter Username",
+        "password": "Enter Password"
+      },
+      "server": "Server",
+      "serverHint": "Server hint",
+      "username": "Username",
+      "password": "Password"
+    }
+  },
+  "errors": {
+    "kinds": {
+      "http": "HTTP",
+      "graphql": "Graphql",
+      "unknown": "Unknown"
+    },
+    "loadFailed": "Failed to load",
+    "title": "Errors",
+    "adminOnly": "Admin only",
+    "columns": {
+      "time": "Time",
+      "kind": "Kind",
+      "status": "Status",
+      "traceId": "Trace ID",
+      "location": "Location",
+      "message": "Message"
+    },
+    "description": "Errors description",
+    "noStack": "No stack"
+  },
+  "items": {
+    "columns": {
+      "name": "Name",
+      "status": "Status",
+      "created": "Created"
+    },
+    "search": {
+      "placeholder": "Enter "
+    },
+    "status": {
+      "active": "Active",
+      "pending": "Pending",
+      "processing": "Processing",
+      "completed": "Completed",
+      "failed": "Failed",
+      "inactive": "Inactive"
+    }
+  }
+}

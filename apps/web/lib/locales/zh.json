@@ -1,0 +1,1358 @@
+{
+  "auth": {
+    "sessionExpiredRedirect": "会话已过期，正在跳转登录…",
+    "sessionExpired": "会话已过期",
+    "login": {
+      "validation": {
+        "emailRequired": "请输入邮箱",
+        "emailInvalid": "请输入有效的邮箱地址",
+        "passwordRequired": "请输入密码",
+        "passwordMin": "密码至少 {{count}} 位"
+      },
+      "error": {
+        "invalidCredentials": "邮箱或密码错误",
+        "invalidCredentialsWithReason": "登录失败：{{reason}}"
+      },
+      "title": "欢迎回来",
+      "subtitle": "登录后继续",
+      "sessionExpired": "登录已过期，请重新登录。",
+      "fields": {
+        "email": {
+          "label": "邮箱",
+          "required": "请输入邮箱",
+          "placeholder": "请输入邮箱"
+        },
+        "password": {
+          "label": "密码",
+          "required": "请输入密码",
+          "placeholder": "请输入密码"
+        },
+        "organization": {
+          "label": "组织",
+          "tooltip": "使用管理员提供的组织标识",
+          "placeholder": "请输入组织标识"
+        }
+      },
+      "submit": "登录"
+    },
+    "logoutFailed": "退出失败",
+    "logoutThisDevice": "退出当前设备",
+    "logoutAllDevices": "退出所有设备",
+    "logout": "退出登录"
+  },
+  "metadata": {
+    "title": "Modular 管理台",
+    "description": "运维控制台"
+  },
+  "alerts": {
+    "live": {
+      "message": "[{{severity}}] {{message}}（{{value}}）"
+    },
+    "events": {
+      "triggered": "告警已触发",
+      "title": "告警事件",
+      "metrics": "值 {{value}} · 变化 {{change}}%"
+    },
+    "streamError": "告警流错误：{{error}}",
+    "config": {
+      "title": "配置",
+      "defaults": {
+        "name": "名称"
+      },
+      "errors": {
+        "pipelineStatus": "流水线状态",
+        "crawlStatus": "抓取状态",
+        "systemMetricSlug": "系统指标标识"
+      },
+      "saved": "已保存",
+      "fields": {
+        "name": "名称",
+        "metricProvider": "指标提供方",
+        "metricSlug": "指标标识",
+        "metricSlugHint": "指标标识提示",
+        "metricSlugPlaceholder": "请输入指标标识",
+        "operator": "运算符",
+        "thresholdValue": "阈值值",
+        "thresholdLower": "阈值下限",
+        "thresholdUpper": "阈值上限",
+        "severity": "严重程度",
+        "status": "状态",
+        "cooldown": "冷却",
+        "checkInterval": "检查间隔",
+        "channels": "渠道",
+        "channelsPlaceholder": "请输入渠道"
+      },
+      "pipeline": {
+        "title": "流水线",
+        "statuses": "状态",
+        "defaultsToFailed": "默认失败",
+        "queueName": "队列名称",
+        "queueNamePlaceholder": "请输入队列名称",
+        "sourceId": "来源 ID",
+        "sourceIdPlaceholder": "请输入来源 ID"
+      },
+      "crawl": {
+        "title": "抓取",
+        "statuses": "状态",
+        "defaultsToFailed": "默认失败",
+        "createdBy": "已创建",
+        "createdByPlaceholder": "请输入创建"
+      },
+      "system": {
+        "title": "系统",
+        "presetMetric": "预设指标",
+        "presetPlaceholder": "请输入预设项",
+        "override": "覆盖",
+        "overrideHint": "覆盖提示",
+        "overridePlaceholder": "请输入覆盖"
+      }
+    },
+    "channels": {
+      "title": "渠道",
+      "created": "已创建",
+      "fields": {
+        "name": "名称",
+        "namePlaceholder": "请输入名称",
+        "type": "类型",
+        "target": "目标",
+        "targetPlaceholder": "请输入目标"
+      },
+      "types": {
+        "webhook": "Webhook",
+        "email": "邮箱"
+      },
+      "add": "添加"
+    },
+    "rules": {
+      "title": "告警规则",
+      "triggerNow": "立即触发",
+      "summary": "提供方 {{provider}} / 指标 {{metric}} · 每 {{interval}} 秒检查 · 冷却 {{cooldown}} 秒",
+      "channels": "通知渠道：{{channels}}"
+    }
+  },
+  "common": {
+    "notAvailable": "不可用",
+    "error": {
+      "unexpected": "发生未知错误"
+    },
+    "retry": "重试",
+    "empty": "暂无数据",
+    "refresh": "刷新",
+    "saveChanges": "保存更改",
+    "save": "保存",
+    "submit": "提交",
+    "actions": "操作",
+    "edit": "编辑",
+    "delete": "删除",
+    "reset": "重置",
+    "remove": "移除",
+    "emptyValue": "—",
+    "view": "查看",
+    "update": "更新",
+    "docs": "文档",
+    "source": "来源",
+    "download": "下载",
+    "disabled": "已禁用",
+    "enabled": "已启用",
+    "never": "从不",
+    "punctuation": {
+      "period": "。"
+    },
+    "cancel": "取消"
+  },
+  "orgSwitcher": {
+    "error": {
+      "selectOrganization": "请选择组织",
+      "switchFailed": "切换失败",
+      "unexpected": "切换时发生未知错误"
+    },
+    "success": "已切换至组织 {{orgId}}",
+    "tooltip": "切换当前使用的组织",
+    "placeholder": "选择组织",
+    "notFound": "没有可用组织",
+    "switch": "切换组织"
+  },
+  "dashboard": {
+    "economicLong": {
+      "title": "长期经济",
+      "loadFailed": "加载失败",
+      "cards": {
+        "gdp3y": "GDP 三年趋势",
+        "yieldCurve": "收益率曲线",
+        "reserves": "储备"
+      },
+      "empty": {
+        "gdp": "GDP",
+        "yieldCurve": "收益率曲线",
+        "reserves": "储备"
+      },
+      "yieldCurve": {
+        "yearLabel": "年份 {{year}}",
+        "yieldLabel": "收益率标签"
+      }
+    },
+    "tabs": {
+      "keyMonitor": "关键监控",
+      "militaryAlert": "军事告警",
+      "economicAlert": "经济告警",
+      "economicShort": "经济短期",
+      "economicMedium": "中期经济",
+      "economicLong": "长期经济",
+      "livelihoodPrices": "民生价格"
+    },
+    "widgets": {
+      "unsupportedSource": "不支持的数据源：{{source}}",
+      "loadFailed": "加载失败"
+    },
+    "queue": {
+      "connectionFailed": "队列连接失败：{{error}}",
+      "jobFailed": "任务 {{jobId}} 失败",
+      "jobCompleted": "任务 {{jobId}} 已完成",
+      "jobStarted": "任务 {{jobId}} 已开始",
+      "snapshot": "快照",
+      "live": "实时",
+      "offline": "离线",
+      "recentActivity": "近期活动",
+      "payloadMessage": "任务载荷：{{message}}",
+      "noRecentLogs": "无近期日志",
+      "states": {
+        "waiting": "等待中",
+        "active": "处理中",
+        "completed": "已完成",
+        "failed": "失败",
+        "delayed": "已延迟",
+        "paused": "已暂停",
+        "stalled": "已停滞"
+      }
+    },
+    "errors": {
+      "metricsUnavailable": "指标不可用"
+    },
+    "stats": {
+      "totalItems": "总计条目",
+      "processedItems": "已处理条目"
+    },
+    "nextActions": {
+      "title": "下一步操作",
+      "description": "下一步操作说明",
+      "anomalies": "异常",
+      "noAnomalies": "无异常",
+      "pendingSummary": "待处理摘要",
+      "alertRouting": "告警路由",
+      "noAlertRules": "无告警规则",
+      "alertRoutingSummary": "告警路由摘要",
+      "noneConfigured": "未配置"
+    },
+    "editor": {
+      "title": "编辑器",
+      "description": "编辑器说明",
+      "selectDashboard": "选择仪表板",
+      "newDashboard": "新建仪表板",
+      "deleted": "已删除",
+      "widgetTitle": "组件标题",
+      "layoutTitle": "布局标题",
+      "fields": {
+        "name": "名称",
+        "slug": "标识",
+        "description": "编辑器说明",
+        "primary": "主色"
+      },
+      "theme": {
+        "light": "浅色",
+        "dark": "深色"
+      },
+      "saved": "已保存",
+      "saveFailed": "保存失败",
+      "add": {
+        "line": "折线图",
+        "bar": "柱状图",
+        "pie": "饼图",
+        "kline": "K线图"
+      }
+    },
+    "panels": {
+      "smartAlerts": "智能告警",
+      "aiAnalysis": "AI分析"
+    },
+    "drilldown": {
+      "title": "下钻",
+      "loadFailed": "加载失败"
+    },
+    "alertConfig": {
+      "title": "告警配置"
+    },
+    "keyMonitor": {
+      "title": "关键监控",
+      "loadFailed": "加载失败",
+      "empty": "暂无关键监控",
+      "cards": {
+        "gold": "黄金",
+        "oil": "原油",
+        "copper": "铜",
+        "shanghaiVsSp500": {
+          "title": "上海 vs S&P 500",
+          "description": "上海 vs S&P 500 说明"
+        },
+        "fxMid": {
+          "title": "外汇中间价",
+          "description": "外汇中间价说明"
+        },
+        "cnyFx": {
+          "title": "人民币汇率",
+          "description": "人民币汇率说明"
+        }
+      },
+      "series": {
+        "shanghaiComposite": "上海综合",
+        "sp500": "S&P 500",
+        "usd": "USD",
+        "eur": "EUR",
+        "jpy": "JPY",
+        "usdCny": "USD/CNY",
+        "eurCny": "EUR/CNY"
+      }
+    },
+    "economicAlert": {
+      "alerts": {
+        "cpiHigh": "CPI 偏高",
+        "chinaPmiLow": "中国 PMI 偏低",
+        "usYieldInversion": "美国收益率倒挂"
+      },
+      "gauges": {
+        "cpi": "CPI",
+        "ppi": "PPI"
+      },
+      "pmi": {
+        "china": "中国",
+        "us": "美国",
+        "threshold": "阈值"
+      },
+      "yield": {
+        "spread": "利差"
+      },
+      "us": {
+        "cpi": "CPI",
+        "ppi": "PPI",
+        "manufacturingPmi": "制造业 PMI",
+        "servicesPmi": "服务业 PMI"
+      },
+      "title": "经济告警",
+      "loadFailed": "加载失败",
+      "empty": "暂无经济告警",
+      "triggered": "已触发",
+      "cards": {
+        "cpiPpiGauge": "CPI/PPI 仪表",
+        "pmiCompare": "PMI 对比",
+        "yieldInversion": "收益率倒挂",
+        "usInflation": "美国通胀",
+        "usPmiCompare": "美国 PMI 对比"
+      },
+      "emptyCpiPpi": "暂无 CPI/PPI",
+      "emptyPmi": "暂无 PMI",
+      "emptyYield": "暂无收益率",
+      "emptyUsInflation": "暂无美国通胀",
+      "emptyUsPmi": "暂无美国 PMI"
+    },
+    "economicShort": {
+      "heatmap": {
+        "tooltip": "提示",
+        "empty": "暂无热力图"
+      },
+      "crypto": {
+        "btc": "BTC",
+        "empty": "暂无加密"
+      },
+      "title": "经济短期",
+      "loadFailed": "加载失败",
+      "empty": "暂无经济短期",
+      "cards": {
+        "indexCandlestick": "指数K线图",
+        "fxHeatmap": "FX热力图",
+        "cryptoPrices": "加密价格"
+      }
+    },
+    "economicMedium": {
+      "gdpYoy": "GDP同比",
+      "m2Yoy": "M2同比",
+      "gdpYoyAxis": "GDP同比轴",
+      "m2YoyAxis": "M2同比轴",
+      "metalMa": "金属均线",
+      "us": {
+        "gdp": "GDP",
+        "cpi": "CPI",
+        "ppi": "PPI",
+        "manufacturingPmi": "制造业 PMI",
+        "servicesPmi": "服务业 PMI"
+      },
+      "title": "中期经济",
+      "loadFailed": "加载失败",
+      "cards": {
+        "gdpM2": "GDP/M2",
+        "metalMa": "金属均线",
+        "pmiChanges": "PMI 变化",
+        "usGrowth": "美国增长",
+        "usPmi": "美国 PMI"
+      },
+      "empty": {
+        "gdpM2": "GDP/M2",
+        "metals": "金属",
+        "pmi": "PMI",
+        "usEconomy": "美国经济",
+        "usPmi": "美国 PMI"
+      }
+    },
+    "militaryAlert": {
+      "radar": {
+        "dailySwing": "每日波动"
+      },
+      "title": "军事告警",
+      "loadFailed": "加载失败",
+      "cards": {
+        "metalRadar": "金属雷达",
+        "agriAlert": "农业告警",
+        "energy": {
+          "title": "能源",
+          "description": "能源说明",
+          "oil": "原油",
+          "gas": "天然气"
+        }
+      },
+      "empty": {
+        "metalRadar": "金属雷达",
+        "agri": "农业"
+      },
+      "badges": {
+        "daily": "每日",
+        "threeDay": "三日"
+      },
+      "alertItemDescription": "告警条目说明"
+    },
+    "charts": {
+      "noCandlestick": "无K线图"
+    },
+    "livelihood": {
+      "cpi": {
+        "food": "食品",
+        "housing": "住房",
+        "transport": "交通",
+        "tooltip": "提示"
+      },
+      "agri": {
+        "radarName": "雷达名称"
+      },
+      "tourism": {
+        "fxIncome": "外汇收入",
+        "incomeShare": "收入占比",
+        "axisIncome": "轴收入"
+      },
+      "title": "民生",
+      "cards": {
+        "cpiTree": "CPI 树状图",
+        "agriRadar": "农业雷达",
+        "tourism": "旅游"
+      },
+      "empty": {
+        "cpi": "CPI",
+        "agri": "农业",
+        "tourism": "旅游"
+      }
+    }
+  },
+  "language": {
+    "chinese": "简体中文",
+    "english": "英文",
+    "label": "语言"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "items": "条目",
+    "crawlTasks": "抓取任务",
+    "organizations": "组织",
+    "errors": "错误",
+    "systemSettings": "系统设置",
+    "adminSettings": "管理员设置",
+    "admin": "管理",
+    "settings": "设置"
+  },
+  "brand": {
+    "short": "M",
+    "full": "Modular"
+  },
+  "notifications": {
+    "title": "通知",
+    "unreadCount_other": "{{count}} 条未读通知",
+    "markAllRead": "全部标为已读",
+    "empty": "暂无通知"
+  },
+  "settings": {
+    "rateLimits": {
+      "fields": {
+        "maxAttempts": "最大尝试次数",
+        "windowSeconds": "窗口秒"
+      },
+      "validation": {
+        "maxAttempts": "请填写最大尝试次数",
+        "windowSeconds": "请填写时间窗口"
+      },
+      "saved": "已保存",
+      "saveFailed": "保存失败",
+      "description": "速率限制说明",
+      "login": {
+        "title": "登录",
+        "description": "登录说明"
+      },
+      "crawlCreate": {
+        "title": "抓取创建",
+        "description": "抓取创建说明"
+      },
+      "rbacWrite": {
+        "title": "RBAC 写入",
+        "description": "RBAC 写入说明"
+      }
+    },
+    "auditLog": {
+      "saved": "已保存",
+      "saveFailed": "保存失败",
+      "descriptionSystem": "说明系统",
+      "fields": {
+        "retentionDays": "保留天数"
+      },
+      "validation": {
+        "retentionRequired": "请填写保留天数",
+        "retentionRange": "保留天数应在 1 到 3650 之间"
+      },
+      "description": "审计日志说明",
+      "retentionTitle": "保留期标题",
+      "retentionHint": "保留期提示"
+    },
+    "authCache": {
+      "saved": "已保存",
+      "saveFailed": "保存失败",
+      "description": "认证缓存说明",
+      "fields": {
+        "profileTtl": "资料缓存 TTL",
+        "lockTtl": "锁定 TTL",
+        "maxWait": "最大等待",
+        "retryDelay": "重试延迟",
+        "profileTtlHint": "资料缓存 TTL 提示",
+        "lockTtlHint": "锁定 TTL 提示",
+        "maxWaitHint": "最大等待提示",
+        "retryDelayHint": "重试延迟提示"
+      },
+      "validation": {
+        "profileTtlRequired": "请填写资料缓存 TTL",
+        "lockTtlRequired": "请填写锁定 TTL",
+        "maxWaitRequired": "请填写最大等待时间",
+        "retryDelayRequired": "请填写重试延迟"
+      },
+      "summary": {
+        "profileTtl": "资料缓存 TTL",
+        "profileTtlValue": "资料缓存 TTL：{{value}} 分钟",
+        "profileTtlSeconds": "资料缓存 TTL：{{value}} 秒",
+        "lockWindow": "锁定窗口",
+        "lockWindowValue": "锁定窗口：{{lock}} 秒，最大等待 {{wait}} 秒",
+        "retryDelay": "重试延迟：{{value}} 毫秒"
+      },
+      "save": "保存",
+      "saveHint": "保存提示"
+    },
+    "crawlClient": {
+      "saved": "已保存",
+      "saveFailed": "保存失败",
+      "description": "抓取客户端说明",
+      "fields": {
+        "healthCheckTtl": "健康检查 TTL",
+        "requestTimeout": "请求超时",
+        "maxAttempts": "最大尝试次数",
+        "retryBackoff": "重试退避"
+      },
+      "validation": {
+        "healthCheckTtl": "请填写健康检查 TTL",
+        "requestTimeout": "请填写请求超时",
+        "maxAttempts": "请填写最大尝试次数",
+        "retryBackoff": "请填写重试退避"
+      },
+      "save": "保存"
+    },
+    "newsPrompts": {
+      "saved": "已保存",
+      "saveFailed": "保存失败",
+      "description": "新闻提示词说明",
+      "fields": {
+        "version": "版本",
+        "systemTemplate": "系统模板",
+        "userTemplate": "用户模板"
+      },
+      "validation": {
+        "version": "请填写版本号",
+        "systemTemplate": "请填写系统提示词",
+        "userTemplate": "请填写用户提示词"
+      },
+      "placeholders": {
+        "version": "请输入版本",
+        "systemTemplate": "请输入系统模板",
+        "userTemplate": "请输入用户模板"
+      },
+      "estimatedTokens": "预计 Token：{{count}}",
+      "estimatedTotalTokens": "预计总 Token：{{count}}",
+      "placeholdersTitle": "占位符标题"
+    },
+    "adminOnly": {
+      "title": "管理员仅",
+      "description": "管理员仅说明"
+    },
+    "tabs": {
+      "rateLimits": "速率限制",
+      "auditLog": "审计日志",
+      "authCache": "认证缓存",
+      "crawlClient": "抓取客户端",
+      "newsPrompts": "新闻提示词",
+      "roles": "角色",
+      "permissions": "权限",
+      "members": "成员"
+    },
+    "title": "设置",
+    "roles": {
+      "updated": "已更新",
+      "updateFailed": "更新失败",
+      "empty": "暂无角色",
+      "system": "系统",
+      "description": "角色说明",
+      "descriptionPlaceholder": "请输入说明",
+      "permissions": "权限",
+      "permissionsRequired": "需要权限",
+      "permissionsPlaceholder": "请输入权限",
+      "saveChanges": "保存更改"
+    },
+    "members": {
+      "updated": "已更新",
+      "updateFailed": "更新失败",
+      "empty": "暂无成员",
+      "roleAssignment": "角色分配"
+    },
+    "permissions": {
+      "pending": "待处理",
+      "empty": "暂无权限"
+    },
+    "footerNote": "页脚说明"
+  },
+  "systemSettings": {
+    "akshare": {
+      "errors": {
+        "loadVersion": "加载版本",
+        "loadStatus": "加载状态",
+        "upgradeDisabled": "升级已禁用",
+        "upgradeFailed": "升级失败",
+        "inProgress": "进行中",
+        "missingToken": "缺少令牌",
+        "noAdmin": "无管理员"
+      },
+      "modal": {
+        "title": "弹窗",
+        "content": "内容",
+        "confirm": "确认"
+      },
+      "upgradeStarted": "升级已开始，当前版本 {{version}}",
+      "description": "AKShare说明",
+      "title": "AKShare",
+      "label": "标签",
+      "python": "Python 版本 {{version}}",
+      "refreshStatus": "刷新状态",
+      "upgrade": "升级",
+      "request": "请求 {{requestId}} · 从 {{before}} 到 {{after}}"
+    },
+    "title": "系统设置",
+    "adminOnly": "管理员仅",
+    "tabs": {
+      "akshare": "AKShare"
+    },
+    "description": "系统设置说明"
+  },
+  "analysis": {
+    "streamError": "分析流错误：{{error}}",
+    "correlation": {
+      "title": "相关性分析",
+      "submitted": "相关性分析已提交",
+      "defaults": {
+        "indicator": "指标"
+      },
+      "fields": {
+        "indicator": "指标",
+        "value": "值",
+        "changePercent": "变化百分比",
+        "startDate": "开始日期",
+        "endDate": "结束日期",
+        "newsSummaries": "新闻摘要"
+      }
+    },
+    "anomaly": {
+      "title": "异常分析",
+      "submitted": "异常分析已提交",
+      "errors": {
+        "seriesArray": "序列必须为数组",
+        "seriesEmpty": "序列为空",
+        "seriesInvalid": "序列格式无效"
+      },
+      "defaults": {
+        "metric": "指标"
+      },
+      "fields": {
+        "metric": "指标",
+        "timestamp": "时间戳",
+        "value": "值",
+        "deviationPercent": "偏差百分比",
+        "newsList": "新闻列表",
+        "policyList": "政策列表",
+        "seriesJson": "序列 JSON"
+      }
+    },
+    "results": {
+      "title": "分析结果",
+      "generating": "生成中",
+      "pending": "待处理"
+    }
+  },
+  "orgAdmin": {
+    "loading": "加载中",
+    "title": "组织管理员",
+    "adminOnly": "管理员仅",
+    "created": "已创建",
+    "errors": {
+      "createFailed": "创建失败",
+      "updateFailed": "更新失败",
+      "toggleFailed": "切换失败"
+    },
+    "updated": "已更新",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "new": "新建",
+    "columns": {
+      "name": "名称",
+      "slug": "标识",
+      "status": "状态",
+      "updated": "已更新"
+    },
+    "active": "激活",
+    "inactive": "已停用",
+    "createTitle": "创建标题",
+    "fields": {
+      "name": "名称",
+      "slug": "标识",
+      "description": "组织管理员说明"
+    },
+    "validation": {
+      "nameRequired": "请填写名称",
+      "slugRequired": "请填写标识",
+      "slugPattern": "标识只能包含小写字母、数字和连字符"
+    },
+    "placeholders": {
+      "name": "请输入名称",
+      "slug": "请输入标识",
+      "description": "请输入说明"
+    },
+    "editTitle": "编辑标题"
+  },
+  "crawl": {
+    "columns": {
+      "task": "任务",
+      "status": "状态",
+      "runs": "运行次数",
+      "peakMemory": "峰值内存",
+      "lastActivity": "上次活动"
+    },
+    "runsSummary": "运行次数摘要",
+    "metadata": {
+      "errors": {
+        "atLeastOneUrl": "至少一个 URL",
+        "sourceRequired": "请选择来源",
+        "domainRequired": "请填写域名",
+        "urlsRequired": "需要 URL"
+      },
+      "completed": "已完成",
+      "failed": "操作失败",
+      "columns": {
+        "url": "URL",
+        "status": "状态",
+        "http": "HTTP",
+        "score": "评分",
+        "summary": "摘要",
+        "keywords": "关键词",
+        "metadata": "元数据",
+        "error": "错误"
+      },
+      "untitled": "未命名",
+      "noDescription": "无说明",
+      "noMetaTags": "无元标签",
+      "noOpenGraph": "无 Open Graph 标签",
+      "jsonLdCount_other": "{{count}} 条 JSON-LD",
+      "noJsonLd": "无 JSON-LD",
+      "title": "元数据",
+      "description": "元数据说明",
+      "linkText": "链接文本",
+      "fields": {
+        "source": "来源",
+        "domain": "域名",
+        "pattern": "模式",
+        "maxUrls": "最大 URL",
+        "urls": "URL",
+        "query": "查询",
+        "scoreThreshold": "评分阈值"
+      },
+      "source": {
+        "sitemap": "站点地图",
+        "urls": "URL"
+      },
+      "placeholders": {
+        "domain": "请输入域名",
+        "pattern": "请输入模式",
+        "urls": "请输入 URL",
+        "query": "请输入查询",
+        "scoreThreshold": "请输入评分阈值"
+      },
+      "submit": "提交",
+      "empty": "暂无元数据"
+    },
+    "task": {
+      "requeued": "已重新入队",
+      "retryFailed": "重试失败",
+      "queued": "已排队",
+      "createFailed": "创建失败"
+    },
+    "search": {
+      "placeholder": "请输入"
+    },
+    "filters": {
+      "status": "状态"
+    },
+    "status": {
+      "pending": "待处理",
+      "queued": "排队中",
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "paused": "已暂停",
+      "processing": "处理中"
+    },
+    "createTask": "创建任务",
+    "detail": {
+      "media": {
+        "title": "媒体",
+        "viewAsset": "查看资源",
+        "sourceTypes": {
+          "picture": "图片",
+          "responsive": "自适应"
+        },
+        "more": "更多",
+        "storedTitle": "已存储媒体",
+        "unknownMime": "未知 MIME 类型",
+        "thumbnailAlt": "缩略图替代文本",
+        "score": "评分",
+        "srcsetVariants": "srcset 变体",
+        "sources": "来源"
+      },
+      "tables": {
+        "title": "表格",
+        "releaseNotes": "发布说明",
+        "defaultTitle": "默认标题",
+        "source": "来源",
+        "remaining": "剩余"
+      },
+      "proxy": {
+        "direct": "直连",
+        "dict": "代理 {{server}} / 用户 {{user}}"
+      },
+      "markdown": {
+        "default": "默认",
+        "source": "来源",
+        "ignoreLinks": "忽略链接",
+        "keepLinks": "保留链接",
+        "escapeHtml": "转义 HTML",
+        "renderHtml": "渲染 HTML",
+        "wrap": "自动换行"
+      },
+      "markdownFilter": {
+        "threshold": "阈值",
+        "mode": "模式",
+        "minWords": "最小字数"
+      },
+      "markdownStrategy": {
+        "default": "默认",
+        "withParams": "参数"
+      },
+      "cleanMarkdown": {
+        "scope": "范围",
+        "targets": "目标",
+        "excluded": "排除",
+        "minWords": "最小字数",
+        "removeOverlays": "移除覆盖层",
+        "keepOverlays": "保留覆盖层"
+      },
+      "userAgent": {
+        "random": "随机",
+        "default": "默认",
+        "notConfigured": "未配置"
+      },
+      "userAgentGenerator": {
+        "platform": "平台",
+        "browser": "浏览器",
+        "device": "设备",
+        "locale": "区域"
+      },
+      "retryQueued": "已加入重试队列",
+      "retryFailed": "重试失败",
+      "notFound": "未找到任务",
+      "backToTasks": "返回任务列表",
+      "retry": "重试",
+      "openSource": "打开来源",
+      "fields": {
+        "displayName": "展示名称",
+        "keywords": "关键词",
+        "concurrency": "并发",
+        "includeImages": "包含图片",
+        "storeMedia": "存储媒体",
+        "runCount": "运行数量",
+        "scanFullPage": "扫描完整页面",
+        "adjustViewport": "调整视口",
+        "undetectedBrowser": "反检测浏览器",
+        "stealthMode": "隐身模式",
+        "managedBrowser": "托管浏览器",
+        "userDataDir": "用户数据目录",
+        "simulateUser": "模拟用户",
+        "overrideNavigator": "覆盖 Navigator",
+        "userAgent": "用户代理",
+        "userAgentMode": "用户代理模式",
+        "uaGenerator": "UA 生成器",
+        "browserLocale": "浏览器区域",
+        "timezone": "时区",
+        "geolocation": "地理位置",
+        "customHeaders": "自定义请求头",
+        "cookies": "Cookie",
+        "sessionId": "会话 ID",
+        "storageState": "存储状态",
+        "jsOnly": "仅 JS",
+        "jsSteps": "JS 步骤",
+        "waitCondition": "等待条件",
+        "waitTimeout": "等待超时",
+        "proxyRoute": "代理路由",
+        "additionalUrls": "额外 URL",
+        "markdownGenerator": "Markdown 生成器",
+        "markdownStrategy": "Markdown 策略",
+        "markdownFilter": "Markdown 过滤",
+        "cleanMarkdown": "清理 Markdown",
+        "lastServerMemory": "上次服务器内存",
+        "lastPeakMemory": "上次峰值内存",
+        "lastMemoryEfficiency": "上次内存利用率",
+        "serverMemory": "服务器内存",
+        "peakMemory": "峰值内存",
+        "efficiency": "效率",
+        "lastSuccess": "成功",
+        "lastError": "上次错误",
+        "configuration": "配置"
+      },
+      "scanFullPageEnabled": "扫描完整页面已启用",
+      "serverDefault": "服务器默认",
+      "waitTimeoutValue": "等待超时值",
+      "default": "默认",
+      "memoryValue": "内存值",
+      "percentValue": "百分比值",
+      "multiUrl": {
+        "patterns": "模式",
+        "overrides": "覆盖项"
+      },
+      "results": {
+        "title": "结果",
+        "searchPlaceholder": "请输入搜索",
+        "empty": "暂无结果",
+        "variants": {
+          "raw": "原始",
+          "citations": "引用",
+          "references": "参考",
+          "cleanFit": "清理后"
+        }
+      }
+    },
+    "multiUrl": {
+      "title": "多 URL",
+      "strategyTitle": "策略标题",
+      "add": "添加",
+      "empty": "暂无多 URL",
+      "fields": {
+        "label": "标签",
+        "matchMode": "匹配模式",
+        "patterns": "模式",
+        "urls": "URL",
+        "cacheMode": "缓存模式"
+      },
+      "placeholders": {
+        "label": "请输入标签",
+        "matchMode": "请输入匹配模式",
+        "patterns": "请输入模式",
+        "urls": "请输入 URL",
+        "cacheMode": "请输入缓存模式"
+      },
+      "matchModeHint": "匹配模式提示",
+      "matchModeOptions": {
+        "glob": "通配符",
+        "regex": "正则",
+        "substring": "子串",
+        "prefix": "前缀"
+      },
+      "urlsHint": "URL 提示",
+      "cacheModes": {
+        "bypass": "绕过缓存",
+        "prefer": "优先缓存",
+        "force": "强制缓存"
+      },
+      "dynamicOverrides": "动态覆盖项"
+    },
+    "links": {
+      "title": "链接",
+      "stats": {
+        "total": "总计",
+        "internal": "内部",
+        "external": "外部",
+        "highQuality": "高质量",
+        "needsReview": "需审查",
+        "avgIntrinsic": "平均内在"
+      },
+      "buckets": "分桶",
+      "bucketItem": "分桶条目",
+      "topLinks": "热门链接",
+      "emptyScored": "暂无评分",
+      "linkScore": "链接评分",
+      "lowQuality": "低质量",
+      "emptyLowQuality": "暂无低质量",
+      "intrinsicScore": "内在评分",
+      "description": "链接说明",
+      "scoreLinks": "评分链接",
+      "scoreLinksHint": "评分链接提示",
+      "includeInternal": "包含内部",
+      "includeExternal": "包含外部",
+      "includeSocial": "包含社交",
+      "maxLinks": "最大链接",
+      "placeholders": {
+        "maxLinks": "请输入最大链接",
+        "concurrency": "请输入并发",
+        "timeout": "请输入超时",
+        "contextQuery": "请输入上下文查询",
+        "scoreThreshold": "请输入评分阈值",
+        "includePatterns": "请输入包含模式",
+        "excludePatterns": "请输入排除模式"
+      },
+      "concurrency": "并发",
+      "timeout": "超时",
+      "contextQuery": "上下文查询",
+      "scoreThreshold": "评分阈值",
+      "verbose": "详细",
+      "includePatterns": "包含模式",
+      "excludePatterns": "排除模式"
+    },
+    "createDrawer": {
+      "title": "创建抽屉",
+      "submit": "提交"
+    },
+    "settings": {
+      "displayName": "展示名称",
+      "validation": {
+        "displayNameMax": "展示名称最多 {{count}} 个字符",
+        "urlRequired": "请填写 URL"
+      },
+      "placeholders": {
+        "displayName": "请输入展示名称",
+        "url": "请输入 URL",
+        "keywords": "请输入关键词",
+        "concurrency": "请输入并发",
+        "scrollDelay": "请输入滚动延迟"
+      },
+      "targetUrl": "目标 URL",
+      "keywords": "关键词",
+      "timeRange": "时间范围",
+      "concurrency": "并发",
+      "includeImages": "包含图片",
+      "storeMedia": "存储媒体",
+      "storeMediaHint": "存储媒体提示",
+      "onlyMainContent": "仅主要内容",
+      "extractLinks": "提取链接",
+      "excludeExternalImages": "排除外部图片",
+      "excludeExternalImagesHint": "排除外部图片提示",
+      "waitForImages": "等待图片",
+      "waitForImagesHint": "等待图片提示",
+      "scanFullPage": "扫描完整页面",
+      "scrollDelay": "滚动延迟",
+      "adjustViewport": "调整视口",
+      "adjustViewportHint": "调整视口提示",
+      "adjustViewportLink": "调整视口链接",
+      "simulateUser": "模拟用户",
+      "simulateUserHint": "模拟用户提示",
+      "overrideNavigator": "覆盖 Navigator",
+      "overrideNavigatorHint": "覆盖 Navigator 提示"
+    },
+    "dynamic": {
+      "title": "动态",
+      "description": "动态说明",
+      "jsStep": "JS 步骤",
+      "jsRequired": "需要 JS",
+      "placeholders": {
+        "jsSnippet": "请输入 JS 片段",
+        "selector": "请输入选择器",
+        "script": "请输入脚本",
+        "waitTimeout": "请输入等待超时",
+        "selectorAlt": "请输入选择器替代文本",
+        "scriptAlt": "请输入脚本替代文本"
+      },
+      "addJsStep": "添加 JS 步骤",
+      "jsOnly": "仅 JS",
+      "jsOnlyHint": "仅 JS 提示",
+      "waitForSelector": "等待选择器",
+      "waitForSelectorHint": "等待选择器提示",
+      "waitForScript": "等待脚本",
+      "waitForScriptHint": "等待脚本提示",
+      "waitTimeout": "等待超时",
+      "waitTimeoutHint": "等待超时提示"
+    },
+    "markdown": {
+      "additionalUrls": "额外 URL",
+      "additionalUrlsHint": "额外 URL 提示",
+      "placeholders": {
+        "additionalUrls": "请输入额外 URL",
+        "source": "请输入来源",
+        "bodyWidth": "请输入正文宽度",
+        "filter": "请输入过滤",
+        "pruningThreshold": "请输入剪枝阈值",
+        "thresholdMode": "请输入阈值模式",
+        "minWords": "请输入最小字数"
+      },
+      "source": "来源",
+      "sourceHint": "来源提示",
+      "sourceOptions": {
+        "cleaned": "清理后",
+        "raw": "原始",
+        "fit": "精简"
+      },
+      "ignoreLinks": "忽略链接",
+      "ignoreLinksHint": "忽略链接提示",
+      "escapeHtml": "转义 HTML",
+      "escapeHtmlHint": "转义 HTML 提示",
+      "bodyWidth": "正文宽度",
+      "bodyWidthHint": "正文宽度提示",
+      "filter": "过滤",
+      "filterHint": "过滤提示",
+      "filterOptions": {
+        "pruning": "剪枝"
+      },
+      "pruningThreshold": "剪枝阈值",
+      "pruningThresholdHint": "剪枝阈值提示",
+      "thresholdMode": "阈值模式",
+      "thresholdModeHint": "阈值模式提示",
+      "thresholdModeOptions": {
+        "dynamic": "动态",
+        "fixed": "固定"
+      },
+      "minWords": "最小字数",
+      "minWordsHint": "最小字数提示",
+      "customStrategy": {
+        "title": "自定义策略",
+        "description": "自定义策略说明",
+        "linkText": "链接文本",
+        "trailing": "尾部",
+        "type": "类型",
+        "typeHint": "类型提示",
+        "placeholders": {
+          "type": "请输入类型",
+          "params": "请输入参数"
+        },
+        "params": "参数",
+        "paramsHint": "参数提示"
+      },
+      "clean": {
+        "title": "清理",
+        "description": "清理说明",
+        "linkText": "链接文本",
+        "trailing": "尾部",
+        "cssSelector": "CSS 选择器",
+        "cssSelectorHint": "CSS 选择器提示",
+        "placeholders": {
+          "cssSelector": "请输入 CSS 选择器",
+          "targetElements": "请输入目标元素",
+          "excludedTags": "请输入排除标签",
+          "wordCount": "请输入字数量"
+        },
+        "targetElements": "目标元素",
+        "targetElementsHint": "目标元素提示",
+        "excludedTags": "排除标签",
+        "excludedTagsHint": "排除标签提示",
+        "removeOverlay": "移除覆盖层",
+        "wordCount": "字数量",
+        "wordCountHint": "字数量提示"
+      }
+    },
+    "tables": {
+      "title": "表格",
+      "description": "表格说明",
+      "scoreThreshold": "评分阈值",
+      "scoreThresholdHint": "评分阈值提示",
+      "placeholders": {
+        "scoreThreshold": "请输入评分阈值",
+        "strategyType": "请输入策略类型",
+        "minRows": "请输入最小行数",
+        "minCols": "请输入最小列",
+        "extraParams": "请输入额外参数"
+      },
+      "strategyType": "策略类型",
+      "strategyTypeHint": "策略类型提示",
+      "minRows": "最小行数",
+      "minRowsHint": "最小行数提示",
+      "minCols": "最小列",
+      "minColsHint": "最小列提示",
+      "extraParams": "额外参数",
+      "extraParamsHint": "额外参数提示"
+    },
+    "browser": {
+      "undetected": "反检测",
+      "undetectedHint": "反检测提示",
+      "stealth": "隐身",
+      "stealthHint": "隐身提示",
+      "managed": "托管",
+      "managedHint": "托管提示",
+      "managedLink": "托管链接",
+      "userDataDir": "用户数据目录",
+      "userDataDirHint": "用户数据目录提示",
+      "placeholders": {
+        "userDataDir": "请输入用户数据目录"
+      },
+      "identity": {
+        "title": "身份",
+        "description": "身份说明",
+        "customUserAgent": "自定义用户代理",
+        "customUserAgentHint": "自定义用户代理提示",
+        "placeholders": {
+          "userAgent": "请输入用户代理",
+          "userAgentMode": "请输入用户代理模式",
+          "platform": "请输入平台",
+          "browser": "请输入浏览器",
+          "device": "请输入设备",
+          "locale": "请输入区域",
+          "timezone": "请输入时区",
+          "latitude": "请输入纬度",
+          "longitude": "请输入经度",
+          "accuracy": "请输入精度"
+        },
+        "userAgentMode": "用户代理模式",
+        "userAgentModeHint": "用户代理模式提示",
+        "userAgentModeRandom": "用户代理模式随机",
+        "generatorPlatform": "生成器平台",
+        "platforms": {
+          "windows": "Windows",
+          "macos": "macOS",
+          "linux": "Linux",
+          "android": "Android",
+          "ios": "iOS"
+        },
+        "generatorBrowser": "生成器浏览器",
+        "browsers": {
+          "chrome": "Chrome",
+          "firefox": "Firefox",
+          "safari": "Safari",
+          "edge": "Edge"
+        },
+        "generatorDevice": "生成器设备",
+        "devices": {
+          "desktop": "桌面端",
+          "mobile": "移动端",
+          "tablet": "平板"
+        },
+        "generatorLocale": "生成器区域",
+        "generatorLocaleHint": "生成器区域提示",
+        "browserLocale": "浏览器区域",
+        "browserLocaleHint": "浏览器区域提示",
+        "timezoneId": "时区 ID",
+        "timezoneHint": "时区提示",
+        "geolocation": "地理位置",
+        "geolocationHint": "地理位置提示"
+      },
+      "headers": {
+        "title": "请求头",
+        "placeholders": {
+          "name": "请输入名称",
+          "value": "请输入值"
+        },
+        "add": "添加"
+      },
+      "cookies": {
+        "title": "Cookie",
+        "placeholders": {
+          "name": "请输入名称",
+          "value": "请输入值",
+          "domain": "请输入域名",
+          "path": "请输入路径"
+        },
+        "add": "添加"
+      }
+    },
+    "session": {
+      "title": "会话",
+      "description": "会话说明",
+      "sessionId": "会话 ID",
+      "sessionIdHint": "会话 ID 提示",
+      "placeholders": {
+        "sessionId": "请输入会话 ID",
+        "storageState": "请输入存储状态"
+      },
+      "storageState": "存储状态",
+      "storageStateHint": "存储状态提示"
+    },
+    "proxy": {
+      "title": "代理",
+      "url": "URL",
+      "urlHint": "URL 提示",
+      "placeholders": {
+        "url": "请输入 URL",
+        "server": "请输入服务器",
+        "username": "请输入用户名",
+        "password": "请输入密码"
+      },
+      "server": "服务器",
+      "serverHint": "服务器提示",
+      "username": "用户名",
+      "password": "密码"
+    }
+  },
+  "errors": {
+    "kinds": {
+      "http": "HTTP",
+      "graphql": "GraphQL",
+      "unknown": "未知"
+    },
+    "loadFailed": "加载失败",
+    "title": "错误",
+    "adminOnly": "管理员仅",
+    "columns": {
+      "time": "时间",
+      "kind": "类型",
+      "status": "状态",
+      "traceId": "追踪 ID",
+      "location": "位置",
+      "message": "消息"
+    },
+    "description": "错误说明",
+    "noStack": "无堆栈"
+  },
+  "items": {
+    "columns": {
+      "name": "名称",
+      "status": "状态",
+      "created": "已创建"
+    },
+    "search": {
+      "placeholder": "请输入"
+    },
+    "status": {
+      "active": "启用",
+      "pending": "待处理",
+      "processing": "处理中",
+      "completed": "已完成",
+      "failed": "失败",
+      "inactive": "已停用"
+    }
+  }
+}

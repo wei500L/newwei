@@ -2,8 +2,9 @@
 
 import { BellOutlined } from "@ant-design/icons";
 import { Badge, Button, List, Popover, Space, Spin, Tag, Typography, message } from "antd";
-import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+
 import {
   NotificationType,
   useMarkAllNotificationsReadMutation,
@@ -11,6 +12,8 @@ import {
   useNotificationsQuery,
   useUnreadNotificationCountQuery
 } from "@/graphql/generated";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
+
 import { useNotificationStream, type NotificationMessage } from "./use-notification-stream";
 
 type NotificationItem = NotificationMessage;
@@ -25,19 +28,11 @@ const typeColor: Record<NotificationType, string> = {
   [NotificationType.System]: "geekblue"
 };
 
-const typeLabel: Record<NotificationType, string> = {
-  [NotificationType.CrawlCompleted]: "Crawl 完成",
-  [NotificationType.CrawlFailed]: "Crawl 失败",
-  [NotificationType.AnalysisCompleted]: "分析完成",
-  [NotificationType.AnalysisFailed]: "分析失败",
-  [NotificationType.OrgInvite]: "邀请",
-  [NotificationType.AlertTriggered]: "告警",
-  [NotificationType.System]: "系统"
-};
-
 const MAX_ITEMS = 30;
 
 export function NotificationCenter() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data, loading, refetch } = useNotificationsQuery({
     variables: { limit: MAX_ITEMS }
   });
@@ -109,13 +104,18 @@ export function NotificationCenter() {
           align="center"
           style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }}
         >
-          <Typography.Text strong>通知</Typography.Text>
+          <Space size="small" align="center">
+            <Typography.Text strong>{t("notifications.title")}</Typography.Text>
+            <Typography.Text type="secondary">
+              {t("notifications.unreadCount", { count: unread })}
+            </Typography.Text>
+          </Space>
           <Space size="small">
             <Button size="small" type="text" onClick={() => void refetch()}>
-              刷新
+              {t("common.refresh")}
             </Button>
             <Button size="small" type="text" onClick={() => void markAllAsRead()}>
-              全部已读
+              {t("notifications.markAllRead")}
             </Button>
           </Space>
         </Space>
@@ -126,7 +126,7 @@ export function NotificationCenter() {
         ) : (
           <List
             dataSource={items}
-            locale={{ emptyText: "暂无通知" }}
+            locale={{ emptyText: t("notifications.empty") }}
             renderItem={(item) => {
               const isUnread = !item.readAt;
               return (
@@ -144,7 +144,9 @@ export function NotificationCenter() {
                   <List.Item.Meta
                     title={
                       <Space size="small" align="center">
-                        <Tag color={typeColor[item.type] ?? "default"}>{typeLabel[item.type]}</Tag>
+                        <Tag color={typeColor[item.type] ?? "default"}>
+                          {t(`notifications.type.${item.type}`)}
+                        </Tag>
                         <Typography.Text strong>{item.title}</Typography.Text>
                       </Space>
                     }
@@ -159,7 +161,15 @@ export function NotificationCenter() {
                           </Typography.Paragraph>
                         ) : null}
                         <Typography.Text type="secondary">
-                          {dayjs(item.createdAt).format("YYYY-MM-DD HH:mm:ss")}
+                          {formatDateTime(item.createdAt, locale, {
+                            year: "numeric",
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                            hour12: false
+                          })}
                         </Typography.Text>
                       </div>
                     }

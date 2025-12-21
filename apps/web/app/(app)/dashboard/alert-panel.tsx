@@ -1,7 +1,6 @@
 "use client";
 
 import { Badge, Button, Divider, List, Space, Tag, Typography } from "antd";
-import dayjs from "dayjs";
 import {
   useAlertEventsQuery,
   useAlertRulesQuery,
@@ -11,6 +10,8 @@ import {
 } from "@/graphql/generated";
 import { useEffect } from "react";
 import { useApolloClient } from "@apollo/client";
+import { useTranslation } from "react-i18next";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -19,6 +20,8 @@ const severityColor: Record<string, string> = {
 };
 
 export function AlertPanel() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: rulesData, refetch: refetchRules } = useAlertRulesQuery();
   const { data: eventsData, refetch: refetchEvents } = useAlertEventsQuery({
     variables: { limit: 10 },
@@ -45,7 +48,7 @@ export function AlertPanel() {
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <div>
-        <Typography.Title level={5}>Alert Rules</Typography.Title>
+        <Typography.Title level={5}>{t("alerts.rules.title")}</Typography.Title>
         <List
           dataSource={rules}
           renderItem={(rule) => (
@@ -60,7 +63,7 @@ export function AlertPanel() {
                     await Promise.all([refetchRules(), refetchEvents()]);
                   }}
                 >
-                  Trigger now
+                  {t("alerts.rules.triggerNow")}
                 </Button>,
               ]}
             >
@@ -77,13 +80,19 @@ export function AlertPanel() {
                 description={
                   <Space direction="vertical" size={0}>
                     <Typography.Text type="secondary">
-                      Provider: {rule.metricProvider} • Metric:{" "}
-                      {rule.metricSlug} • Cooldown: {rule.cooldownSeconds}s •
-                      Interval: {rule.checkIntervalSec}s
+                      {t("alerts.rules.summary", {
+                        provider: rule.metricProvider,
+                        metric: rule.metricSlug,
+                        cooldown: rule.cooldownSeconds,
+                        interval: rule.checkIntervalSec
+                      })}
                     </Typography.Text>
                     <Typography.Text type="secondary">
-                      Channels:{" "}
-                      {rule.channels.map((c) => c.name).join(", ") || "n/a"}
+                      {t("alerts.rules.channels", {
+                        channels:
+                          rule.channels.map((c) => c.name).join(", ") ||
+                          t("common.notAvailable")
+                      })}
                     </Typography.Text>
                   </Space>
                 }
@@ -94,7 +103,7 @@ export function AlertPanel() {
       </div>
       <Divider />
       <div>
-        <Typography.Title level={5}>Recent Alert Events</Typography.Title>
+        <Typography.Title level={5}>{t("alerts.events.title")}</Typography.Title>
         <List
           dataSource={events}
           renderItem={(event) => (
@@ -112,7 +121,13 @@ export function AlertPanel() {
                       }
                     />
                     <Typography.Text>
-                      {dayjs(event.triggeredAt).format("YYYY-MM-DD HH:mm")}
+                      {formatDateTime(event.triggeredAt, locale, {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
                     </Typography.Text>
                     <Tag color={severityColor[event.severity] ?? "blue"}>
                       {event.severity}
@@ -122,11 +137,13 @@ export function AlertPanel() {
                 description={
                   <Space direction="vertical">
                     <Typography.Text type="secondary">
-                      Value: {event.metricValue} • Change:{" "}
-                      {event.changePercent ?? "n/a"}%
+                      {t("alerts.events.metrics", {
+                        value: event.metricValue,
+                        change: event.changePercent ?? t("common.notAvailable")
+                      })}
                     </Typography.Text>
                     <Typography.Text type="secondary">
-                      {event.message ?? "Triggered"}
+                      {event.message ?? t("alerts.events.triggered")}
                     </Typography.Text>
                   </Space>
                 }

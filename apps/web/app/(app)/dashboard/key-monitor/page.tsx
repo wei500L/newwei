@@ -5,8 +5,10 @@ import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { EconomicChartCard } from "../components/economic-chart-card";
 import { CandlestickCard } from "../components/candlestick-card";
+import { useTranslation } from "react-i18next";
 
 export default function KeyMonitorPage() {
+  const { t } = useTranslation();
   const { loading, seriesMap, error, refetch } = useEconomicData({
     category: "key-monitor",
     pollInterval: 30_000,
@@ -18,49 +20,49 @@ export default function KeyMonitorPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ marginBottom: 16 }}>
-        <Typography.Title level={4}>重点监控</Typography.Title>
+        <Typography.Title level={4}>{t("dashboard.keyMonitor.title")}</Typography.Title>
         <TimeRangeControls />
       </div>
       {error ? (
         <Alert
           type="error"
           showIcon
-          message="加载重点监控数据失败"
+          message={t("dashboard.keyMonitor.loadFailed")}
           action={
             <Button size="small" onClick={() => refetch()}>
-              重试
+              {t("common.retry")}
             </Button>
           }
         />
       ) : null}
       {!loading && seriesMap.size === 0 ? (
-        <Empty description="暂无监控数据" />
+        <Empty description={t("dashboard.keyMonitor.empty")} />
       ) : null}
       {loading && <Spin />}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={8}>
-          <CandlestickCard title="黄金主力K线" group={goldSeries} />
+          <CandlestickCard title={t("dashboard.keyMonitor.cards.gold")} group={goldSeries} />
         </Col>
         <Col xs={24} lg={8}>
-          <CandlestickCard title="原油主力K线" group={oilSeries} />
+          <CandlestickCard title={t("dashboard.keyMonitor.cards.oil")} group={oilSeries} />
         </Col>
         <Col xs={24} lg={8}>
-          <CandlestickCard title="沪铜主力K线" group={copperSeries} />
+          <CandlestickCard title={t("dashboard.keyMonitor.cards.copper")} group={copperSeries} />
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <EconomicChartCard
-            title="上证指数 vs 标普500"
-            description="中美核心指数对比"
+            title={t("dashboard.keyMonitor.cards.shanghaiVsSp500.title")}
+            description={t("dashboard.keyMonitor.cards.shanghaiVsSp500.description")}
             seriesMap={seriesMap}
             series={[
               {
                 slug: "shanghai_composite_index",
-                label: "上证指数",
+                label: t("dashboard.keyMonitor.series.shanghaiComposite"),
                 field: "close",
               },
-              { slug: "sp500_index", label: "标普500", field: "close" },
+              { slug: "sp500_index", label: t("dashboard.keyMonitor.series.sp500"), field: "close" },
             ]}
           />
         </Col>
@@ -68,13 +70,13 @@ export default function KeyMonitorPage() {
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <EconomicChartCard
-            title="人民币中间价(主要货币)"
-            description="来自SAFE的人民币对主要货币中间价"
+            title={t("dashboard.keyMonitor.cards.fxMid.title")}
+            description={t("dashboard.keyMonitor.cards.fxMid.description")}
             seriesMap={seriesMap}
             series={[
-              { slug: "china_fx_mid_rates", label: "美元", field: "美元" },
-              { slug: "china_fx_mid_rates", label: "欧元", field: "欧元" },
-              { slug: "china_fx_mid_rates", label: "日元", field: "日元" },
+              { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.usd"), field: "美元" },
+              { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.eur"), field: "欧元" },
+              { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.jpy"), field: "日元" },
             ]}
           />
         </Col>
@@ -82,12 +84,12 @@ export default function KeyMonitorPage() {
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <EconomicChartCard
-            title="人民币汇率"
-            description="美元/人民币与欧元/人民币即期走势"
+            title={t("dashboard.keyMonitor.cards.cnyFx.title")}
+            description={t("dashboard.keyMonitor.cards.cnyFx.description")}
             seriesMap={seriesMap}
             series={[
-              { slug: "usd_cny_spot", label: "美元/人民币" },
-              { slug: "eur_cny_spot", label: "欧元/人民币" },
+              { slug: "usd_cny_spot", label: t("dashboard.keyMonitor.series.usdCny") },
+              { slug: "eur_cny_spot", label: t("dashboard.keyMonitor.series.eurCny") },
             ]}
           />
         </Col>

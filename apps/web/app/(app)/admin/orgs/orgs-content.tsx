@@ -2,11 +2,12 @@
 
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Form, Input, Modal, Space, Switch, Table, Tag, Typography, message } from "antd";
-import dayjs from "dayjs";
 import { useSession } from "next-auth/react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 type OrgRow = {
   id: string;
@@ -94,6 +95,8 @@ function mergeOrganizations(existing: Array<{ id: string; name?: string; slug?: 
 }
 
 export function OrgAdminContent() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session, status, update } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const canManageOrganizations = session?.permissions?.includes("org.write") ?? false;
@@ -125,18 +128,18 @@ export function OrgAdminContent() {
   if (status === "loading" || loading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
-        <Typography.Text type="secondary">Loading organizations…</Typography.Text>
+        <Typography.Text type="secondary">{t("orgAdmin.loading")}</Typography.Text>
       </div>
     );
   }
 
   if (!canManageOrganizations) {
     return (
-      <Card className="content-card" title="Organizations">
+      <Card className="content-card" title={t("orgAdmin.title")}>
         <Alert
           type="warning"
-          message="Admins only"
-          description="Only administrators can create, update, or disable organizations."
+          message={t("settings.adminOnly.title")}
+          description={t("orgAdmin.adminOnly")}
         />
       </Card>
     );
@@ -157,10 +160,10 @@ export function OrgAdminContent() {
         });
       }
 
-      messageApi.success("Organization created");
+      messageApi.success(t("orgAdmin.created"));
     } catch (error) {
       captureClientError("Create org failed", error);
-      messageApi.error("Failed to create organization");
+      messageApi.error(t("orgAdmin.errors.createFailed"));
     }
   };
 
@@ -182,10 +185,10 @@ export function OrgAdminContent() {
         });
       }
 
-      messageApi.success("Organization updated");
+      messageApi.success(t("orgAdmin.updated"));
     } catch (error) {
       captureClientError("Update org failed", error);
-      messageApi.error("Failed to update organization");
+      messageApi.error(t("orgAdmin.errors.updateFailed"));
     }
   };
 
@@ -193,10 +196,12 @@ export function OrgAdminContent() {
     try {
       await setOrgActive({ variables: { input: { id: org.id, isActive: nextActive } } });
       await refetch();
-      messageApi.success(nextActive ? "Organization enabled" : "Organization disabled");
+      messageApi.success(
+        nextActive ? t("orgAdmin.enabled") : t("orgAdmin.disabled")
+      );
     } catch (error) {
       captureClientError("Toggle org active failed", error);
-      messageApi.error("Failed to update organization status");
+      messageApi.error(t("orgAdmin.errors.toggleFailed"));
     }
   };
 
@@ -205,10 +210,10 @@ export function OrgAdminContent() {
       {contextHolder}
       <Card
         className="content-card"
-        title="Organizations"
+        title={t("orgAdmin.title")}
         extra={
           <Button type="primary" onClick={() => setCreateOpen(true)}>
-            New organization
+            {t("orgAdmin.new")}
           </Button>
         }
       >
@@ -217,33 +222,42 @@ export function OrgAdminContent() {
           pagination={{ pageSize: 10 }}
           columns={[
             {
-              title: "Name",
+              title: t("orgAdmin.columns.name"),
               dataIndex: "name",
               key: "name",
               render: (value: string) => <Typography.Text strong>{value}</Typography.Text>
             },
             {
-              title: "Slug",
+              title: t("orgAdmin.columns.slug"),
               dataIndex: "slug",
               key: "slug",
               render: (value: string) => <Typography.Text code>{value}</Typography.Text>
             },
             {
-              title: "Status",
+              title: t("orgAdmin.columns.status"),
               dataIndex: "isActive",
               key: "isActive",
               render: (value: boolean) => (
-                <Tag color={value ? "green" : "red"}>{value ? "Active" : "Disabled"}</Tag>
+                <Tag color={value ? "green" : "red"}>
+                  {value ? t("orgAdmin.active") : t("orgAdmin.inactive")}
+                </Tag>
               )
             },
             {
-              title: "Updated",
+              title: t("orgAdmin.columns.updated"),
               dataIndex: "updatedAt",
               key: "updatedAt",
-              render: (value: string) => dayjs(value).format("YYYY-MM-DD HH:mm")
+              render: (value: string) =>
+                formatDateTime(value, locale, {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit"
+                })
             },
             {
-              title: "Actions",
+              title: t("common.actions"),
               key: "actions",
               render: (_: unknown, org: OrgRow) => (
                 <Space>
@@ -258,7 +272,7 @@ export function OrgAdminContent() {
                       });
                     }}
                   >
-                    Edit
+                    {t("common.edit")}
                   </Button>
                   <Switch
                     size="small"
@@ -274,7 +288,7 @@ export function OrgAdminContent() {
       </Card>
 
       <Modal
-        title="Create organization"
+        title={t("orgAdmin.createTitle")}
         open={createOpen}
         onCancel={() => {
           setCreateOpen(false);
@@ -285,30 +299,34 @@ export function OrgAdminContent() {
         destroyOnHidden
       >
         <Form<CreateOrgInput> form={createForm} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>
-            <Input placeholder="Acme Corp" />
+          <Form.Item
+            name="name"
+            label={t("orgAdmin.fields.name")}
+            rules={[{ required: true, message: t("orgAdmin.validation.nameRequired") }]}
+          >
+            <Input placeholder={t("orgAdmin.placeholders.name")} />
           </Form.Item>
           <Form.Item
             name="slug"
-            label="Slug"
+            label={t("orgAdmin.fields.slug")}
             rules={[
-              { required: true, message: "Slug is required" },
+              { required: true, message: t("orgAdmin.validation.slugRequired") },
               {
                 pattern: /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/,
-                message: "Use lowercase letters, numbers, and hyphens"
+                message: t("orgAdmin.validation.slugPattern")
               }
             ]}
           >
-            <Input placeholder="acme" />
+            <Input placeholder={t("orgAdmin.placeholders.slug")} />
           </Form.Item>
-          <Form.Item name="description" label="Description" rules={[{ max: 500 }]}>
-            <Input.TextArea rows={3} placeholder="Optional" />
+          <Form.Item name="description" label={t("orgAdmin.fields.description")} rules={[{ max: 500 }]}>
+            <Input.TextArea rows={3} placeholder={t("orgAdmin.placeholders.description")} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="Edit organization"
+        title={t("orgAdmin.editTitle")}
         open={Boolean(editingOrg)}
         onCancel={() => {
           setEditingOrg(null);
@@ -319,23 +337,27 @@ export function OrgAdminContent() {
         destroyOnHidden
       >
         <Form<UpdateOrgInput> form={editForm} layout="vertical" onFinish={handleEdit}>
-          <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>
+          <Form.Item
+            name="name"
+            label={t("orgAdmin.fields.name")}
+            rules={[{ required: true, message: t("orgAdmin.validation.nameRequired") }]}
+          >
             <Input />
           </Form.Item>
           <Form.Item
             name="slug"
-            label="Slug"
+            label={t("orgAdmin.fields.slug")}
             rules={[
-              { required: true, message: "Slug is required" },
+              { required: true, message: t("orgAdmin.validation.slugRequired") },
               {
                 pattern: /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/,
-                message: "Use lowercase letters, numbers, and hyphens"
+                message: t("orgAdmin.validation.slugPattern")
               }
             ]}
           >
             <Input />
           </Form.Item>
-          <Form.Item name="description" label="Description" rules={[{ max: 500 }]}>
+          <Form.Item name="description" label={t("orgAdmin.fields.description")} rules={[{ max: 500 }]}>
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>

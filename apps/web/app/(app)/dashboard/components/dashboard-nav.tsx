@@ -2,19 +2,21 @@
 
 import { Tabs } from "antd";
 import { usePathname, useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 
 const dashboardRoutes = [
-  { key: "/dashboard", label: "总览" },
-  { key: "/dashboard/key-monitor", label: "重点监控" },
-  { key: "/dashboard/military-alert", label: "军事预警" },
-  { key: "/dashboard/economic-alert", label: "经济预警" },
-  { key: "/dashboard/economic-short", label: "经济短期" },
-  { key: "/dashboard/economic-medium", label: "经济中期" },
-  { key: "/dashboard/economic-long", label: "经济长期" },
-  { key: "/dashboard/livelihood-prices", label: "民生物价" },
+  { key: "/dashboard", labelKey: "dashboard.tabs.overview" },
+  { key: "/dashboard/key-monitor", labelKey: "dashboard.tabs.keyMonitor" },
+  { key: "/dashboard/military-alert", labelKey: "dashboard.tabs.militaryAlert" },
+  { key: "/dashboard/economic-alert", labelKey: "dashboard.tabs.economicAlert" },
+  { key: "/dashboard/economic-short", labelKey: "dashboard.tabs.economicShort" },
+  { key: "/dashboard/economic-medium", labelKey: "dashboard.tabs.economicMedium" },
+  { key: "/dashboard/economic-long", labelKey: "dashboard.tabs.economicLong" },
+  { key: "/dashboard/livelihood-prices", labelKey: "dashboard.tabs.livelihoodPrices" },
 ];
 
 export function DashboardNav() {
+  const { t } = useTranslation();
   const pathname = usePathname();
   const router = useRouter();
   if (dashboardRoutes.length === 0) {
@@ -32,7 +34,7 @@ export function DashboardNav() {
       onChange={(key) => router.push(key)}
       items={dashboardRoutes.map((route) => ({
         key: route.key,
-        label: route.label,
+        label: t(route.labelKey),
       }))}
     />
   );

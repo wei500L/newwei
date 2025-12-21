@@ -4,7 +4,9 @@ import { Button, Input, Space, Table, Tag } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import { useItemsQuery } from "@/graphql/generated";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 function parsePositiveInt(value: string | null, fallback: number) {
   if (!value) {
@@ -18,6 +20,8 @@ function parsePositiveInt(value: string | null, fallback: number) {
 }
 
 export function ItemsTable() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -159,21 +163,33 @@ export function ItemsTable() {
 
   const columns: ColumnsType<{ id: string; title: string; status: string; createdAt: string; name: string }> = [
     {
-      title: "Name",
+      title: t("items.columns.name"),
       dataIndex: "name",
       key: "name"
     },
     {
-      title: "Status",
+      title: t("items.columns.status"),
       dataIndex: "status",
       key: "status",
-      render: (status: string) => <Tag color={status === "active" ? "green" : "blue"}>{status}</Tag>
+      render: (status: string) => (
+        <Tag color={status === "active" ? "green" : "blue"}>
+          {t(`items.status.${status}`, { defaultValue: status })}
+        </Tag>
+      )
     },
     {
-      title: "Created",
+      title: t("items.columns.created"),
       dataIndex: "createdAt",
       key: "createdAt",
-      render: (value: string) => new Date(value).toLocaleString()
+      render: (value: string) =>
+        formatDateTime(value, locale, {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        })
     }
   ];
 
@@ -181,7 +197,7 @@ export function ItemsTable() {
     <div className="content-card">
       <Space style={{ marginBottom: "1rem" }}>
         <Input.Search
-          placeholder="Search items"
+          placeholder={t("items.search.placeholder")}
           allowClear
           value={searchInput}
           onSearch={handleSearch}
@@ -195,7 +211,7 @@ export function ItemsTable() {
           enterButton
         />
         <Button type="primary" onClick={() => refetch()} loading={loading}>
-          Refresh
+          {t("common.refresh")}
         </Button>
       </Space>
       <Table

@@ -3,6 +3,7 @@
 import { Alert, Button, Card, Form, Input, InputNumber, Modal, Spin, Tabs, Tag, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useTranslation } from "react-i18next";
 import {
   useAuditLogRetentionQuery,
   useAuthCacheSettingsQuery,
@@ -43,21 +44,22 @@ interface RateLimitFieldGroupProps {
 }
 
 function RateLimitFieldGroup({ title, description, field }: RateLimitFieldGroupProps) {
+  const { t } = useTranslation();
   return (
     <Card size="small" style={{ marginBottom: "1rem" }} title={title}>
       <Typography.Paragraph type="secondary">{description}</Typography.Paragraph>
       <div style={{ display: "flex", gap: "1rem" }}>
         <Form.Item
-          label="Max attempts"
+          label={t("settings.rateLimits.fields.maxAttempts")}
           name={[field, "limit"]}
-          rules={[{ required: true, message: "Please enter a limit" }]}
+          rules={[{ required: true, message: t("settings.rateLimits.validation.maxAttempts") }]}
         >
           <InputNumber min={1} max={1000} />
         </Form.Item>
         <Form.Item
-          label="Window (seconds)"
+          label={t("settings.rateLimits.fields.windowSeconds")}
           name={[field, "windowSeconds"]}
-          rules={[{ required: true, message: "Please enter a window size" }]}
+          rules={[{ required: true, message: t("settings.rateLimits.validation.windowSeconds") }]}
         >
           <InputNumber min={5} max={86_400} />
         </Form.Item>
@@ -67,6 +69,7 @@ function RateLimitFieldGroup({ title, description, field }: RateLimitFieldGroupP
 }
 
 function RateLimitSettingsPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateRateLimitSettingsMutationVariables["input"]>();
   const { data, loading, refetch } = useRateLimitSettingsQuery();
   const [updateRateLimitSettings, { loading: saving }] = useUpdateRateLimitSettingsMutation();
@@ -82,10 +85,10 @@ function RateLimitSettingsPanel() {
     try {
       await updateRateLimitSettings({ variables: { input: values } });
       await refetch();
-      messageApi.success("Rate limit settings saved");
+      messageApi.success(t("settings.rateLimits.saved"));
     } catch (error) {
       captureClientError("Failed to save rate limits", error);
-      messageApi.error("Failed to save rate limits");
+      messageApi.error(t("settings.rateLimits.saveFailed"));
     }
   };
 
@@ -101,28 +104,27 @@ function RateLimitSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
-        Configure how many requests are allowed per time window for the most sensitive operations.
-        Changes take effect immediately across the platform.
+        {t("settings.rateLimits.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <RateLimitFieldGroup
-          title="Login attempts"
+          title={t("settings.rateLimits.login.title")}
           field="login"
-          description="Limits brute-force attacks by capping failed logins per IP/email."
+          description={t("settings.rateLimits.login.description")}
         />
         <RateLimitFieldGroup
-          title="Crawl task creation"
+          title={t("settings.rateLimits.crawlCreate.title")}
           field="crawlCreate"
-          description="Protects crawl workers and downstream LLM workloads from abuse."
+          description={t("settings.rateLimits.crawlCreate.description")}
         />
         <RateLimitFieldGroup
-          title="RBAC writes"
+          title={t("settings.rateLimits.rbacWrite.title")}
           field="rbacWrite"
-          description="Prevents rapid privilege escalations or accidental bulk changes."
+          description={t("settings.rateLimits.rbacWrite.description")}
         />
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
-            Save Changes
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
@@ -131,6 +133,7 @@ function RateLimitSettingsPanel() {
 }
 
 function AuditLogRetentionPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateAuditLogRetentionMutationVariables["input"]>();
   const { data, loading, refetch } = useAuditLogRetentionQuery();
   const [updateRetention, { loading: saving }] = useUpdateAuditLogRetentionMutation();
@@ -146,10 +149,10 @@ function AuditLogRetentionPanel() {
     try {
       await updateRetention({ variables: { input: values } });
       await refetch();
-      messageApi.success("Audit log retention updated");
+      messageApi.success(t("settings.auditLog.saved"));
     } catch (error) {
       captureClientError("Failed to update audit log retention", error);
-      messageApi.error("Failed to update audit log retention");
+      messageApi.error(t("settings.auditLog.saveFailed"));
     }
   };
 
@@ -165,23 +168,22 @@ function AuditLogRetentionPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        Control how long audit trail entries are retained before automatic cleanup. Old records are
-        purged nightly at 01:00.
+        {t("settings.auditLog.descriptionSystem")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label="Retention days"
+          label={t("settings.auditLog.fields.retentionDays")}
           name="retentionDays"
           rules={[
-            { required: true, message: "Please enter a retention window" },
-            { type: "number", min: 1, max: 3650, message: "Enter between 1 and 3650 days" }
+            { required: true, message: t("settings.auditLog.validation.retentionRequired") },
+            { type: "number", min: 1, max: 3650, message: t("settings.auditLog.validation.retentionRange") }
           ]}
         >
           <InputNumber min={1} max={3650} />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
-            Save Changes
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
@@ -190,6 +192,7 @@ function AuditLogRetentionPanel() {
 }
 
 function AuthCacheSettingsPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateAuthCacheSettingsMutationVariables["input"]>();
   const { data, loading, refetch } = useAuthCacheSettingsQuery();
   const [updateSettings, { loading: saving }] = useUpdateAuthCacheSettingsMutation();
@@ -205,10 +208,10 @@ function AuthCacheSettingsPanel() {
     try {
       await updateSettings({ variables: { input: values } });
       await refetch();
-      messageApi.success("Auth cache settings saved");
+      messageApi.success(t("settings.authCache.saved"));
     } catch (error) {
       captureClientError("Failed to save auth cache settings", error);
-      messageApi.error("Failed to save auth cache settings");
+      messageApi.error(t("settings.authCache.saveFailed"));
     }
   };
 
@@ -224,44 +227,44 @@ function AuthCacheSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
-        Tune profile cache TTL and stampede protection without redeploys.
+        {t("settings.authCache.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label="Profile cache TTL (seconds)"
+          label={t("settings.authCache.fields.profileTtl")}
           name="profileTtlSeconds"
           rules={[
-            { required: true, message: "Please set a cache TTL" },
+            { required: true, message: t("settings.authCache.validation.profileTtlRequired") },
             { type: "number", min: 60, max: 86_400 }
           ]}
         >
           <InputNumber min={60} max={86_400} step={30} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label="Lock TTL (ms)"
+          label={t("settings.authCache.fields.lockTtl")}
           name="lockTtlMs"
           rules={[
-            { required: true, message: "Please set a lock TTL" },
+            { required: true, message: t("settings.authCache.validation.lockTtlRequired") },
             { type: "number", min: 1_000, max: 120_000 }
           ]}
         >
           <InputNumber min={1_000} max={120_000} step={500} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label="Max wait time for lock (ms)"
+          label={t("settings.authCache.fields.maxWait")}
           name="maxWaitMs"
           rules={[
-            { required: true, message: "Please set a max wait time" },
+            { required: true, message: t("settings.authCache.validation.maxWaitRequired") },
             { type: "number", min: 50, max: 120_000 }
           ]}
         >
           <InputNumber min={50} max={120_000} step={50} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label="Retry delay between lock attempts (ms)"
+          label={t("settings.authCache.fields.retryDelay")}
           name="retryDelayMs"
           rules={[
-            { required: true, message: "Please set a retry delay" },
+            { required: true, message: t("settings.authCache.validation.retryDelayRequired") },
             { type: "number", min: 10, max: 1_000 }
           ]}
         >
@@ -269,7 +272,7 @@ function AuthCacheSettingsPanel() {
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
-            Save Changes
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
@@ -278,6 +281,7 @@ function AuthCacheSettingsPanel() {
 }
 
 function CrawlClientSettingsPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateCrawlClientSettingsMutationVariables["input"]>();
   const { data, loading, refetch } = useCrawlClientSettingsQuery();
   const [updateSettings, { loading: saving }] = useUpdateCrawlClientSettingsMutation();
@@ -293,10 +297,10 @@ function CrawlClientSettingsPanel() {
     try {
       await updateSettings({ variables: { input: values } });
       await refetch();
-      messageApi.success("Crawl client settings saved");
+      messageApi.success(t("settings.crawlClient.saved"));
     } catch (error) {
       captureClientError("Failed to save crawl client settings", error);
-      messageApi.error("Failed to save crawl client settings");
+      messageApi.error(t("settings.crawlClient.saveFailed"));
     }
   };
 
@@ -312,41 +316,40 @@ function CrawlClientSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
-        Control crawl health check caching, HTTP timeout, and retry backoff without redeploying
-        workers.
+        {t("settings.crawlClient.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label="Health check TTL (ms)"
+          label={t("settings.crawlClient.fields.healthCheckTtl")}
           name="healthCheckTtlMs"
-          rules={[{ required: true, message: "Please set a health check TTL" }]}
+          rules={[{ required: true, message: t("settings.crawlClient.validation.healthCheckTtl") }]}
         >
           <InputNumber min={5_000} max={900_000} step={1_000} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label="Request timeout (ms)"
+          label={t("settings.crawlClient.fields.requestTimeout")}
           name="requestTimeoutMs"
-          rules={[{ required: true, message: "Please set a request timeout" }]}
+          rules={[{ required: true, message: t("settings.crawlClient.validation.requestTimeout") }]}
         >
           <InputNumber min={5_000} max={300_000} step={1_000} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label="Max attempts"
+          label={t("settings.crawlClient.fields.maxAttempts")}
           name="maxRetries"
-          rules={[{ required: true, message: "Please set the max attempts" }]}
+          rules={[{ required: true, message: t("settings.crawlClient.validation.maxAttempts") }]}
         >
           <InputNumber min={1} max={10} step={1} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label="Retry backoff (ms)"
+          label={t("settings.crawlClient.fields.retryBackoff")}
           name="retryBackoffMs"
-          rules={[{ required: true, message: "Please set a retry backoff delay" }]}
+          rules={[{ required: true, message: t("settings.crawlClient.validation.retryBackoff") }]}
         >
           <InputNumber min={500} max={600_000} step={500} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
-            Save Changes
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
@@ -355,6 +358,7 @@ function CrawlClientSettingsPanel() {
 }
 
 function NewsPromptSettingsPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateNewsPromptConfigMutationVariables["input"]>();
   const { data, loading, refetch } = useNewsPromptConfigQuery();
   const [updateConfig, { loading: saving }] = useUpdateNewsPromptConfigMutation();
@@ -376,10 +380,10 @@ function NewsPromptSettingsPanel() {
     try {
       await updateConfig({ variables: { input: values } });
       await refetch();
-      messageApi.success("Prompt configuration saved");
+      messageApi.success(t("settings.newsPrompts.saved"));
     } catch (error) {
       captureClientError("Failed to save prompt configuration", error);
-      messageApi.error("Failed to save prompt configuration");
+      messageApi.error(t("settings.newsPrompts.saveFailed"));
     }
   };
 
@@ -405,8 +409,7 @@ function NewsPromptSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "0.5rem" }}>
-        Update prompt version and templates without restarting services. Changes apply immediately
-        to new pipeline runs.
+        {t("settings.newsPrompts.description")}
       </Typography.Paragraph>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
         {placeholderTokens.map((token) => (
@@ -415,34 +418,34 @@ function NewsPromptSettingsPanel() {
       </div>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label="Prompt version"
+          label={t("settings.newsPrompts.fields.version")}
           name="version"
-          rules={[{ required: true, message: "Please enter a prompt version" }]}
+          rules={[{ required: true, message: t("settings.newsPrompts.validation.version") }]}
         >
-          <Input placeholder="news-clean-v2" />
+          <Input placeholder={t("settings.newsPrompts.placeholders.version")} />
         </Form.Item>
         <Form.Item
-          label="System prompt template"
+          label={t("settings.newsPrompts.fields.systemTemplate")}
           name="systemPromptTemplate"
-          rules={[{ required: true, message: "Please provide a system prompt template" }]}
-          extra={`Estimated tokens: ${systemTokens}`}
+          rules={[{ required: true, message: t("settings.newsPrompts.validation.systemTemplate") }]}
+          extra={t("settings.newsPrompts.estimatedTokens", { count: systemTokens })}
         >
-          <Input.TextArea rows={5} />
+          <Input.TextArea rows={5} placeholder={t("settings.newsPrompts.placeholders.systemTemplate")} />
         </Form.Item>
         <Form.Item
-          label="User prompt template"
+          label={t("settings.newsPrompts.fields.userTemplate")}
           name="userPromptTemplate"
-          rules={[{ required: true, message: "Please provide a user prompt template" }]}
-          extra={`Estimated tokens: ${userTokens}`}
+          rules={[{ required: true, message: t("settings.newsPrompts.validation.userTemplate") }]}
+          extra={t("settings.newsPrompts.estimatedTokens", { count: userTokens })}
         >
-          <Input.TextArea rows={10} />
+          <Input.TextArea rows={10} placeholder={t("settings.newsPrompts.placeholders.userTemplate")} />
         </Form.Item>
         <Typography.Text type="secondary" style={{ display: "block", marginBottom: "0.75rem" }}>
-          Estimated total tokens: {totalTokens}
+          {t("settings.newsPrompts.estimatedTotalTokens", { count: totalTokens })}
         </Typography.Text>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
-            Save Changes
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
@@ -482,6 +485,7 @@ interface AkshareGatewayUpgradeStatusResponse {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function AkshareGatewaySettingsPanel() {
+  const { t } = useTranslation();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(false);
@@ -505,11 +509,11 @@ function AkshareGatewaySettingsPanel() {
       setVersion(response.data);
     } catch (error) {
       captureClientError("Failed to load akshare gateway version", error);
-      setErrorMessage("Failed to load akshare gateway version");
+      setErrorMessage(t("systemSettings.akshare.errors.loadVersion"));
     } finally {
       setLoading(false);
     }
-  }, [apiClient]);
+  }, [apiClient, t]);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -521,9 +525,10 @@ function AkshareGatewaySettingsPanel() {
     } catch (error) {
       captureClientError("Failed to load akshare gateway status", error);
       setStatus(null);
+      setErrorMessage(t("systemSettings.akshare.errors.loadStatus"));
       return null;
     }
-  }, [apiClient]);
+  }, [apiClient, t]);
 
   useEffect(() => {
     void fetchVersion();
@@ -532,16 +537,16 @@ function AkshareGatewaySettingsPanel() {
 
   const handleUpgrade = useCallback(() => {
     if (status?.upgradeEnabled === false) {
-      const reason = status.disabledReason ?? "Akshare upgrade is disabled.";
+      const reason = status.disabledReason ?? t("systemSettings.akshare.errors.upgradeDisabled");
       messageApi.warning(reason);
       return;
     }
 
     Modal.confirm({
-      title: "Upgrade Akshare to latest",
+      title: t("systemSettings.akshare.modal.title"),
       content:
-        "This will run `pip install -U akshare` inside the akshare gateway container and restart the gateway process. Requests may fail briefly during the restart.",
-      okText: "Upgrade now",
+        t("systemSettings.akshare.modal.content"),
+      okText: t("systemSettings.akshare.modal.confirm"),
       okButtonProps: { danger: true },
       onOk: async () => {
         setUpgrading(true);
@@ -552,7 +557,11 @@ function AkshareGatewaySettingsPanel() {
             {},
             { timeout: 30_000 }
           );
-          messageApi.success(`Akshare upgrade started (current: ${response.data.beforeVersion})`);
+          messageApi.success(
+            t("systemSettings.akshare.upgradeStarted", {
+              version: response.data.beforeVersion
+            })
+          );
 
           const requestId = response.data.requestId;
           for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -560,7 +569,7 @@ function AkshareGatewaySettingsPanel() {
             if (currentStatus?.requestId === requestId) {
               if (currentStatus.stage === "failed") {
                 const detail = currentStatus.error ? `: ${currentStatus.error}` : "";
-                throw new Error(`Akshare upgrade failed${detail}`);
+                throw new Error(t("systemSettings.akshare.errors.upgradeFailed") + detail);
               }
               if (currentStatus.stage === "restarting") {
                 break;
@@ -582,37 +591,39 @@ function AkshareGatewaySettingsPanel() {
         } catch (error) {
           const statusCode = (error as any)?.response?.status as number | undefined;
           if (statusCode === 409) {
-            messageApi.info("Akshare upgrade is already in progress");
+            messageApi.info(t("systemSettings.akshare.errors.inProgress"));
             void fetchStatus();
             return;
           }
           if (statusCode === 503) {
-            messageApi.error("Akshare upgrade is disabled (missing AKSHARE_ADMIN_TOKEN)");
-            setErrorMessage("Akshare upgrade is disabled (missing AKSHARE_ADMIN_TOKEN)");
+            messageApi.error(t("systemSettings.akshare.errors.missingToken"));
+            setErrorMessage(t("systemSettings.akshare.errors.missingToken"));
             return;
           }
           if (statusCode === 404) {
-            messageApi.error("Akshare gateway does not expose admin endpoints");
-            setErrorMessage("Akshare gateway does not expose admin endpoints");
+            messageApi.error(t("systemSettings.akshare.errors.noAdmin"));
+            setErrorMessage(t("systemSettings.akshare.errors.noAdmin"));
             return;
           }
 
           captureClientError("Failed to upgrade akshare gateway", error);
-          messageApi.error("Failed to upgrade akshare");
-          setErrorMessage("Failed to upgrade akshare");
+          messageApi.error(t("systemSettings.akshare.errors.upgradeFailed"));
+          setErrorMessage(t("systemSettings.akshare.errors.upgradeFailed"));
           throw error;
         } finally {
           setUpgrading(false);
         }
       }
     });
-  }, [apiClient, fetchStatus, fetchVersion, messageApi, status]);
+  }, [apiClient, fetchStatus, fetchVersion, messageApi, status, t]);
 
   const currentVersion = version?.akshareVersion ?? "-";
   const pythonVersion = version?.pythonVersion ?? "-";
   const stage = status?.stage ?? "unknown";
   const upgradeDisabledReason =
-    status?.upgradeEnabled === false ? status.disabledReason ?? "Akshare upgrade is disabled." : null;
+    status?.upgradeEnabled === false
+      ? status.disabledReason ?? t("systemSettings.akshare.errors.upgradeDisabled")
+      : null;
   const stageColor =
     stage === "failed"
       ? "red"
@@ -626,8 +637,7 @@ function AkshareGatewaySettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary">
-        Shows the Akshare version running inside the akshare gateway container. You can upgrade it to the latest version
-        without rebuilding the image.
+        {t("systemSettings.akshare.description")}
       </Typography.Paragraph>
 
       {errorMessage ? (
@@ -638,17 +648,19 @@ function AkshareGatewaySettingsPanel() {
         <Alert style={{ marginBottom: "1rem" }} type="warning" message={upgradeDisabledReason} showIcon />
       ) : null}
 
-      <Card size="small" title="Akshare Gateway" style={{ marginBottom: "1rem" }}>
+      <Card size="small" title={t("systemSettings.akshare.title")} style={{ marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-          <Typography.Text>Akshare</Typography.Text>
+          <Typography.Text>{t("systemSettings.akshare.label")}</Typography.Text>
           <Tag color="blue">{currentVersion}</Tag>
-          <Typography.Text type="secondary">Python {pythonVersion}</Typography.Text>
-          <Tag color={stageColor}>{stage}</Tag>
+          <Typography.Text type="secondary">
+            {t("systemSettings.akshare.python", { version: pythonVersion })}
+          </Typography.Text>
+          <Tag color={stageColor}>{t(`systemSettings.akshare.stage.${stage}`, { defaultValue: stage })}</Tag>
           <Button onClick={() => void fetchVersion()} loading={loading}>
-            Refresh
+            {t("common.refresh")}
           </Button>
           <Button onClick={() => void fetchStatus()} disabled={loading}>
-            Refresh status
+            {t("systemSettings.akshare.refreshStatus")}
           </Button>
           <Button
             type="primary"
@@ -657,14 +669,16 @@ function AkshareGatewaySettingsPanel() {
             loading={upgrading}
             disabled={loading || upgrading || Boolean(status?.inProgress) || status?.upgradeEnabled === false}
           >
-            Upgrade to latest
+            {t("systemSettings.akshare.upgrade")}
           </Button>
         </div>
         {status?.requestId ? (
           <Typography.Paragraph type="secondary" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-            Request: {status.requestId}
-            {status.beforeVersion ? ` · before: ${status.beforeVersion}` : ""}
-            {status.afterVersion ? ` · after: ${status.afterVersion}` : ""}
+            {t("systemSettings.akshare.request", {
+              requestId: status.requestId,
+              before: status.beforeVersion ?? null,
+              after: status.afterVersion ?? null
+            })}
           </Typography.Paragraph>
         ) : null}
         {status?.error ? (
@@ -678,6 +692,7 @@ function AkshareGatewaySettingsPanel() {
 }
 
 export function SystemSettingsContent() {
+  const { t } = useTranslation();
   const { data: session, status } = useSession();
   const canManageSettings = session?.permissions?.includes("settings.manage") ?? false;
 
@@ -691,29 +706,29 @@ export function SystemSettingsContent() {
 
   if (!canManageSettings) {
     return (
-      <Card className="content-card" title="System Settings">
+      <Card className="content-card" title={t("systemSettings.title")}>
         <Alert
           type="warning"
-          message="Admins only"
-          description="Only administrators can view and change system settings."
+          message={t("settings.adminOnly.title")}
+          description={t("systemSettings.adminOnly")}
         />
       </Card>
     );
   }
 
   const items = [
-    { key: "rateLimits", label: "Rate Limits", children: <RateLimitSettingsPanel /> },
-    { key: "auditLog", label: "Audit Log", children: <AuditLogRetentionPanel /> },
-    { key: "authCache", label: "Auth Cache", children: <AuthCacheSettingsPanel /> },
-    { key: "crawlClient", label: "Crawl Client", children: <CrawlClientSettingsPanel /> },
-    { key: "newsPrompts", label: "News Pipeline Prompts", children: <NewsPromptSettingsPanel /> },
-    { key: "akshare", label: "Akshare", children: <AkshareGatewaySettingsPanel /> }
+    { key: "rateLimits", label: t("settings.tabs.rateLimits"), children: <RateLimitSettingsPanel /> },
+    { key: "auditLog", label: t("settings.tabs.auditLog"), children: <AuditLogRetentionPanel /> },
+    { key: "authCache", label: t("settings.tabs.authCache"), children: <AuthCacheSettingsPanel /> },
+    { key: "crawlClient", label: t("settings.tabs.crawlClient"), children: <CrawlClientSettingsPanel /> },
+    { key: "newsPrompts", label: t("settings.tabs.newsPrompts"), children: <NewsPromptSettingsPanel /> },
+    { key: "akshare", label: t("systemSettings.tabs.akshare"), children: <AkshareGatewaySettingsPanel /> }
   ];
 
   return (
-    <Card className="content-card" title="System Settings">
+    <Card className="content-card" title={t("systemSettings.title")}>
       <Typography.Paragraph type="secondary">
-        View and update system-wide settings without redeploys.
+        {t("systemSettings.description")}
       </Typography.Paragraph>
       <Tabs defaultActiveKey="rateLimits" items={items} />
     </Card>

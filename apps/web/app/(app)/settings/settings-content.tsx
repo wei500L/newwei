@@ -43,6 +43,7 @@ import type {
 } from "@/graphql/generated";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { captureClientError } from "@/lib/client-telemetry";
 
 function estimateTokens(text: string) {
@@ -71,6 +72,7 @@ function haveSameMembers(a: string[], b: string[]) {
 }
 
 export function SettingsContent() {
+  const { t } = useTranslation();
   const { data: session, status } = useSession();
   const [messageApi, messageContext] = message.useMessage();
   const canViewSettings = session?.permissions?.includes("settings.manage") ?? false;
@@ -102,11 +104,11 @@ export function SettingsContent() {
 
   if (!canViewSettings) {
     return (
-      <Card className="content-card" title="Organization Settings">
+      <Card className="content-card" title={t("settings.title")}>
         <Alert
           type="warning"
-          message="Admins only"
-          description="Only administrators can view and change organization settings."
+          message={t("settings.adminOnly.title")}
+          description={t("settings.adminOnly.description")}
         />
       </Card>
     );
@@ -125,10 +127,10 @@ export function SettingsContent() {
         }
       });
       await refetch();
-      messageApi.success("Role updated");
+      messageApi.success(t("settings.roles.updated"));
     } catch (error) {
       captureClientError("Failed to update role", error);
-      messageApi.error("Failed to update role");
+      messageApi.error(t("settings.roles.updateFailed"));
     } finally {
       setSavingRoleId(null);
     }
@@ -149,10 +151,10 @@ export function SettingsContent() {
         }
       });
       await refetch();
-      messageApi.success("Member role updated");
+      messageApi.success(t("settings.members.updated"));
     } catch (error) {
       captureClientError("Failed to update member role", error);
-      messageApi.error("Failed to update member role");
+      messageApi.error(t("settings.members.updateFailed"));
     } finally {
       setSavingMembershipId(null);
     }
@@ -160,11 +162,11 @@ export function SettingsContent() {
 
   if (!isAdmin) {
     return (
-      <Card className="content-card" title="Organization Settings">
+      <Card className="content-card" title={t("settings.title")}>
         <Alert
           type="warning"
-          message="Admins only"
-          description="Only administrators can view and change organization settings."
+          message={t("settings.adminOnly.title")}
+          description={t("settings.adminOnly.description")}
         />
       </Card>
     );
@@ -173,7 +175,7 @@ export function SettingsContent() {
   const tabItems = [
     {
       key: "roles",
-      label: "Roles",
+      label: t("settings.tabs.roles"),
       children: roles.length > 0 ? (
         <RolesPanel
           roles={roles}
@@ -183,12 +185,12 @@ export function SettingsContent() {
           updating={updatingRole}
         />
       ) : (
-        <Empty description="No roles configured yet" />
+        <Empty description={t("settings.roles.empty")} />
       )
     },
     {
       key: "permissions",
-      label: "Permissions",
+      label: t("settings.tabs.permissions"),
       children: permissions.length > 0 ? (
         <List
           dataSource={permissions}
@@ -196,18 +198,18 @@ export function SettingsContent() {
             <List.Item>
               <List.Item.Meta
                 title={permission.name}
-                description={permission.description || "Pending documentation."}
+                description={permission.description || t("settings.permissions.pending")}
               />
             </List.Item>
           )}
         />
       ) : (
-        <Empty description="No permissions found" />
+        <Empty description={t("settings.permissions.empty")} />
       )
     },
     {
       key: "members",
-      label: "Members",
+      label: t("settings.tabs.members"),
       children: memberships.length > 0 ? (
         <MembersPanel
           memberships={memberships}
@@ -217,44 +219,43 @@ export function SettingsContent() {
           assigning={assigningRole}
         />
       ) : (
-        <Empty description="No members assigned" />
+        <Empty description={t("settings.members.empty")} />
       )
     }
   ];
 
   tabItems.push({
     key: "authCache",
-    label: "Auth Cache",
+    label: t("settings.tabs.authCache"),
     children: <AuthCacheSettingsPanel />
   });
   tabItems.push({
     key: "rateLimits",
-    label: "Rate Limits",
+    label: t("settings.tabs.rateLimits"),
     children: <RateLimitSettingsPanel />
   });
   tabItems.push({
     key: "crawlClient",
-    label: "Crawl Client",
+    label: t("settings.tabs.crawlClient"),
     children: <CrawlClientSettingsPanel />
   });
   tabItems.push({
     key: "auditLog",
-    label: "Audit Log",
+    label: t("settings.tabs.auditLog"),
     children: <AuditLogRetentionPanel />
   });
   tabItems.push({
     key: "newsPrompts",
-    label: "News Pipeline Prompts",
+    label: t("settings.tabs.newsPrompts"),
     children: <NewsPromptSettingsPanel />
   });
 
   return (
-    <Card className="content-card" title="Organization Settings">
+    <Card className="content-card" title={t("settings.title")}>
       {messageContext}
       <Tabs defaultActiveKey="roles" items={tabItems} />
       <Typography.Paragraph type="secondary" style={{ marginTop: "1.5rem" }}>
-        Make changes directly from this page. RBAC updates are saved instantly and enforced across the
-        platform.
+        {t("settings.footerNote")}
       </Typography.Paragraph>
     </Card>
   );
@@ -309,6 +310,7 @@ function RoleInlineEditor({
   saving: boolean;
   updating: boolean;
 }) {
+  const { t } = useTranslation();
   const [form] = Form.useForm<RoleFormValues>();
   const initialValues = useMemo(
     () => ({
@@ -353,24 +355,24 @@ function RoleInlineEditor({
         <Typography.Title level={5} style={{ margin: 0 }}>
           {role.name}
         </Typography.Title>
-        {role.isSystem ? <Tag color="gold">System</Tag> : null}
+        {role.isSystem ? <Tag color="gold">{t("settings.roles.system")}</Tag> : null}
       </div>
-      <Form.Item label="Description" name="description">
+      <Form.Item label={t("settings.roles.description")} name="description">
         <Input.TextArea
           rows={2}
           maxLength={240}
           disabled={isBusy}
-          placeholder="Add a short summary for this role"
+          placeholder={t("settings.roles.descriptionPlaceholder")}
         />
       </Form.Item>
       <Form.Item
-        label="Permissions"
+        label={t("settings.roles.permissions")}
         name="permissions"
-        rules={[{ required: true, message: "Select at least one permission" }]}
+        rules={[{ required: true, message: t("settings.roles.permissionsRequired") }]}
       >
         <Select
           mode="multiple"
-          placeholder="Select permissions"
+          placeholder={t("settings.roles.permissionsPlaceholder")}
           optionFilterProp="label"
           options={permissions.map((permission) => ({
             label: `${permission.name}${
@@ -383,7 +385,7 @@ function RoleInlineEditor({
       </Form.Item>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
         <Button onClick={handleReset} disabled={!hasChanges || isBusy}>
-          Reset
+          {t("common.reset")}
         </Button>
         <Button
           type="primary"
@@ -391,7 +393,7 @@ function RoleInlineEditor({
           loading={saving}
           disabled={!hasChanges || isBusy}
         >
-          Save changes
+          {t("settings.roles.saveChanges")}
         </Button>
       </div>
     </Form>
@@ -442,6 +444,7 @@ function MemberInlineEditor({
   saving: boolean;
   assigning: boolean;
 }) {
+  const { t } = useTranslation();
   const [selectedRoleId, setSelectedRoleId] = useState<string>(membership.role.id);
   const roleOptions = useMemo(
     () =>
@@ -470,7 +473,7 @@ function MemberInlineEditor({
         description={`${membership.user.email} • ${membership.role.name}`}
       />
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
-        <Typography.Text type="secondary">Role assignment</Typography.Text>
+        <Typography.Text type="secondary">{t("settings.members.roleAssignment")}</Typography.Text>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <Select
             value={selectedRoleId}
@@ -484,14 +487,14 @@ function MemberInlineEditor({
             optionFilterProp="label"
             disabled={isBusy}
           />
-          {selectedRole?.isSystem ? <Tag color="gold">System</Tag> : null}
+          {selectedRole?.isSystem ? <Tag color="gold">{t("settings.roles.system")}</Tag> : null}
           <Button
             type="primary"
             onClick={() => onSave(membership, selectedRoleId)}
             disabled={!hasChanges || isBusy}
             loading={saving}
           >
-            Update
+            {t("common.update")}
           </Button>
         </div>
       </div>
@@ -500,6 +503,7 @@ function MemberInlineEditor({
 }
 
 function AuthCacheSettingsPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateAuthCacheSettingsMutationVariables["input"]>();
   const { data, loading, refetch } = useAuthCacheSettingsQuery();
   const [updateSettings, { loading: saving }] = useUpdateAuthCacheSettingsMutation();
@@ -528,10 +532,10 @@ function AuthCacheSettingsPanel() {
         variables: { input: values }
       });
       await refetch();
-      messageApi.success("Auth cache settings saved");
+      messageApi.success(t("settings.authCache.saved"));
     } catch (error) {
       captureClientError("Failed to save auth cache settings", error);
-      messageApi.error("Failed to save auth cache settings");
+      messageApi.error(t("settings.authCache.saveFailed"));
     }
   };
 
@@ -552,25 +556,29 @@ function AuthCacheSettingsPanel() {
       {contextHolder}
       <div className="settings-entrance">
         <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-          Tune profile cache TTL and stampede protection without redeploys. Longer TTLs lower DB
-          pressure; locks keep a single request responsible for rebuilding the cache.
+          {t("settings.authCache.description")}
         </Typography.Paragraph>
 
         <div className="cache-summary">
           <Card size="small" className="cache-pill">
-            <Typography.Text strong>Profile TTL</Typography.Text>
+            <Typography.Text strong>{t("settings.authCache.summary.profileTtl")}</Typography.Text>
             <Typography.Title level={3} style={{ margin: "0.25rem 0" }}>
-              {ttlMinutes} min
-            </Typography.Title>
-            <Typography.Text type="secondary">{profileTtlSeconds} seconds</Typography.Text>
-          </Card>
-          <Card size="small" className="cache-pill" style={{ background: "linear-gradient(135deg, #ecfeff, #e0f2fe)" }}>
-            <Typography.Text strong>Lock window</Typography.Text>
-            <Typography.Title level={4} style={{ margin: "0.25rem 0" }}>
-              {lockSeconds}s lock / {maxWaitSeconds}s wait
+              {t("settings.authCache.summary.profileTtlValue", { value: ttlMinutes })}
             </Typography.Title>
             <Typography.Text type="secondary">
-              Retry delay {retryDelayMs}ms to smooth bursts
+              {t("settings.authCache.summary.profileTtlSeconds", { value: profileTtlSeconds })}
+            </Typography.Text>
+          </Card>
+          <Card size="small" className="cache-pill" style={{ background: "linear-gradient(135deg, #ecfeff, #e0f2fe)" }}>
+            <Typography.Text strong>{t("settings.authCache.summary.lockWindow")}</Typography.Text>
+            <Typography.Title level={4} style={{ margin: "0.25rem 0" }}>
+              {t("settings.authCache.summary.lockWindowValue", {
+                lock: lockSeconds,
+                wait: maxWaitSeconds
+              })}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              {t("settings.authCache.summary.retryDelay", { value: retryDelayMs })}
             </Typography.Text>
           </Card>
         </div>
@@ -578,56 +586,56 @@ function AuthCacheSettingsPanel() {
         <Card className="cache-card">
           <Form layout="vertical" form={form} onFinish={handleSubmit}>
             <Form.Item
-              label="Profile cache TTL (seconds)"
+              label={t("settings.authCache.fields.profileTtl")}
               name="profileTtlSeconds"
               rules={[
-                { required: true, message: "Please set a cache TTL" },
+                { required: true, message: t("settings.authCache.validation.profileTtlRequired") },
                 { type: "number", min: 60, max: 86_400 }
               ]}
-              extra="Aim for 5–10 minutes in production; shorten temporarily when debugging profile changes."
+              extra={t("settings.authCache.fields.profileTtlHint")}
             >
               <InputNumber min={60} max={86_400} step={30} style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item
-              label="Lock TTL (ms)"
+              label={t("settings.authCache.fields.lockTtl")}
               name="lockTtlMs"
               rules={[
-                { required: true, message: "Please set a lock TTL" },
+                { required: true, message: t("settings.authCache.validation.lockTtlRequired") },
                 { type: "number", min: 100, max: 60_000 }
               ]}
-              extra="How long a worker holds the rebuild lock. Keep this just above the 99th percentile profile query time."
+              extra={t("settings.authCache.fields.lockTtlHint")}
             >
               <InputNumber min={100} max={60_000} step={50} style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item
-              label="Max wait for lock (ms)"
+              label={t("settings.authCache.fields.maxWait")}
               name="maxWaitMs"
               rules={[
-                { required: true, message: "Please set a max wait" },
+                { required: true, message: t("settings.authCache.validation.maxWaitRequired") },
                 { type: "number", min: 50, max: 120_000 }
               ]}
-              extra="How long other callers wait before giving up and rebuilding themselves."
+              extra={t("settings.authCache.fields.maxWaitHint")}
             >
               <InputNumber min={50} max={120_000} step={50} style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item
-              label="Retry delay between lock attempts (ms)"
+              label={t("settings.authCache.fields.retryDelay")}
               name="retryDelayMs"
               rules={[
-                { required: true, message: "Please set a retry delay" },
+                { required: true, message: t("settings.authCache.validation.retryDelayRequired") },
                 { type: "number", min: 10, max: 1_000 }
               ]}
-              extra="Short delays reduce lock churn at peak load."
+              extra={t("settings.authCache.fields.retryDelayHint")}
             >
               <InputNumber min={10} max={1_000} step={10} style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item>
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                 <Button type="primary" htmlType="submit" loading={saving}>
-                  Save auth cache settings
+                  {t("settings.authCache.save")}
                 </Button>
                 <Typography.Text type="secondary">
-                  Saves apply instantly; caches will refresh on the next miss.
+                  {t("settings.authCache.saveHint")}
                 </Typography.Text>
               </div>
             </Form.Item>
@@ -639,6 +647,7 @@ function AuthCacheSettingsPanel() {
 }
 
 function RateLimitSettingsPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateRateLimitSettingsMutationVariables["input"]>();
   const { data, loading, refetch } = useRateLimitSettingsQuery();
   const [updateRateLimitSettings, { loading: saving }] = useUpdateRateLimitSettingsMutation();
@@ -658,10 +667,10 @@ function RateLimitSettingsPanel() {
         }
       });
       await refetch();
-      messageApi.success("Rate limit settings saved");
+      messageApi.success(t("settings.rateLimits.saved"));
     } catch (error) {
       captureClientError("Failed to save rate limits", error);
-      messageApi.error("Failed to save rate limits");
+      messageApi.error(t("settings.rateLimits.saveFailed"));
     }
   };
 
@@ -677,28 +686,27 @@ function RateLimitSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
-        Configure how many requests are allowed per time window for the most sensitive operations.
-        Changes take effect immediately across the platform.
+        {t("settings.rateLimits.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <RateLimitFieldGroup
-          title="Login attempts"
+          title={t("settings.rateLimits.login.title")}
           field="login"
-          description="Limits brute-force attacks by capping failed logins per IP/email."
+          description={t("settings.rateLimits.login.description")}
         />
         <RateLimitFieldGroup
-          title="Crawl task creation"
+          title={t("settings.rateLimits.crawlCreate.title")}
           field="crawlCreate"
-          description="Protects crawl workers and downstream LLM workloads from abuse."
+          description={t("settings.rateLimits.crawlCreate.description")}
         />
         <RateLimitFieldGroup
-          title="RBAC writes"
+          title={t("settings.rateLimits.rbacWrite.title")}
           field="rbacWrite"
-          description="Prevents rapid privilege escalations or accidental bulk changes."
+          description={t("settings.rateLimits.rbacWrite.description")}
         />
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
-            Save Changes
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
@@ -707,6 +715,7 @@ function RateLimitSettingsPanel() {
 }
 
 function CrawlClientSettingsPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateCrawlClientSettingsMutationVariables["input"]>();
   const { data, loading, refetch } = useCrawlClientSettingsQuery();
   const [updateSettings, { loading: saving }] = useUpdateCrawlClientSettingsMutation();
@@ -724,10 +733,10 @@ function CrawlClientSettingsPanel() {
         variables: { input: values }
       });
       await refetch();
-      messageApi.success("Crawl client settings saved");
+      messageApi.success(t("settings.crawlClient.saved"));
     } catch (error) {
       captureClientError("Failed to save crawl client settings", error);
-      messageApi.error("Failed to save crawl client settings");
+      messageApi.error(t("settings.crawlClient.saveFailed"));
     }
   };
 
@@ -743,41 +752,40 @@ function CrawlClientSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
-        Control crawl health check caching, HTTP timeout, and retry backoff without redeploying
-        workers.
+        {t("settings.crawlClient.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label="Health check TTL (ms)"
+          label={t("settings.crawlClient.fields.healthCheckTtl")}
           name="healthCheckTtlMs"
-          rules={[{ required: true, message: "Please set a health check TTL" }]}
+          rules={[{ required: true, message: t("settings.crawlClient.validation.healthCheckTtl") }]}
         >
           <InputNumber min={5_000} max={900_000} step={1_000} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label="Request timeout (ms)"
+          label={t("settings.crawlClient.fields.requestTimeout")}
           name="requestTimeoutMs"
-          rules={[{ required: true, message: "Please set a request timeout" }]}
+          rules={[{ required: true, message: t("settings.crawlClient.validation.requestTimeout") }]}
         >
           <InputNumber min={5_000} max={300_000} step={1_000} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label="Max attempts"
+          label={t("settings.crawlClient.fields.maxAttempts")}
           name="maxRetries"
-          rules={[{ required: true, message: "Please set the max attempts" }]}
+          rules={[{ required: true, message: t("settings.crawlClient.validation.maxAttempts") }]}
         >
           <InputNumber min={1} max={10} step={1} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label="Retry backoff (ms)"
+          label={t("settings.crawlClient.fields.retryBackoff")}
           name="retryBackoffMs"
-          rules={[{ required: true, message: "Please set a retry backoff delay" }]}
+          rules={[{ required: true, message: t("settings.crawlClient.validation.retryBackoff") }]}
         >
           <InputNumber min={500} max={600_000} step={500} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
-            Save crawl settings
+            {t("settings.crawlClient.save")}
           </Button>
         </Form.Item>
       </Form>
@@ -786,6 +794,7 @@ function CrawlClientSettingsPanel() {
 }
 
 function AuditLogRetentionPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateAuditLogRetentionMutationVariables["input"]>();
   const { data, loading, refetch } = useAuditLogRetentionQuery();
   const [updateRetention, { loading: saving }] = useUpdateAuditLogRetentionMutation();
@@ -803,10 +812,10 @@ function AuditLogRetentionPanel() {
         variables: { input: values }
       });
       await refetch();
-      messageApi.success("Audit log retention updated");
+      messageApi.success(t("settings.auditLog.saved"));
     } catch (error) {
       captureClientError("Failed to update audit log retention", error);
-      messageApi.error("Failed to update audit log retention");
+      messageApi.error(t("settings.auditLog.saveFailed"));
     }
   };
 
@@ -822,20 +831,19 @@ function AuditLogRetentionPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        Control how long audit trail entries are retained before automatic cleanup. Use a shorter
-        window to reduce storage costs while keeping enough history for investigations.
+        {t("settings.auditLog.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
-        <Card size="small" style={{ marginBottom: "1rem" }} title="Retention">
+        <Card size="small" style={{ marginBottom: "1rem" }} title={t("settings.auditLog.retentionTitle")}>
           <Typography.Paragraph type="secondary">
-            Old records are purged nightly at 01:00. Minimum retention is 1 day.
+            {t("settings.auditLog.retentionHint")}
           </Typography.Paragraph>
           <Form.Item
-            label="Retention days"
+            label={t("settings.auditLog.fields.retentionDays")}
             name="retentionDays"
             rules={[
-              { required: true, message: "Please enter a retention window" },
-              { type: "number", min: 1, max: 3650, message: "Enter between 1 and 3650 days" }
+              { required: true, message: t("settings.auditLog.validation.retentionRequired") },
+              { type: "number", min: 1, max: 3650, message: t("settings.auditLog.validation.retentionRange") }
             ]}
           >
             <InputNumber min={1} max={3650} />
@@ -843,7 +851,7 @@ function AuditLogRetentionPanel() {
         </Card>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
-            Save Changes
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
@@ -852,6 +860,7 @@ function AuditLogRetentionPanel() {
 }
 
 function NewsPromptSettingsPanel() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<UpdateNewsPromptConfigMutationVariables["input"]>();
   const { data, loading, refetch } = useNewsPromptConfigQuery();
   const [updateConfig, { loading: saving }] = useUpdateNewsPromptConfigMutation();
@@ -876,10 +885,10 @@ function NewsPromptSettingsPanel() {
         variables: { input: values }
       });
       await refetch();
-      messageApi.success("Prompt configuration saved");
+      messageApi.success(t("settings.newsPrompts.saved"));
     } catch (error) {
       captureClientError("Failed to save prompt configuration", error);
-      messageApi.error("Failed to save prompt configuration");
+      messageApi.error(t("settings.newsPrompts.saveFailed"));
     }
   };
 
@@ -905,11 +914,10 @@ function NewsPromptSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "0.5rem" }}>
-        Update the prompt version and templates without restarting services. Changes apply to new
-        pipeline runs immediately.
+        {t("settings.newsPrompts.description")}
       </Typography.Paragraph>
       <Typography.Paragraph type="secondary" style={{ marginBottom: "0.5rem" }}>
-        Supported placeholders for templates:
+        {t("settings.newsPrompts.placeholdersTitle")}
       </Typography.Paragraph>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
         {placeholderTokens.map((token) => (
@@ -918,40 +926,40 @@ function NewsPromptSettingsPanel() {
       </div>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label="Prompt version"
+          label={t("settings.newsPrompts.fields.version")}
           name="version"
-          rules={[{ required: true, message: "Please enter a prompt version" }]}
+          rules={[{ required: true, message: t("settings.newsPrompts.validation.version") }]}
         >
-          <Input placeholder="news-clean-v2" />
+          <Input placeholder={t("settings.newsPrompts.placeholders.version")} />
         </Form.Item>
         <Form.Item
-          label="System prompt template"
+          label={t("settings.newsPrompts.fields.systemTemplate")}
           name="systemPromptTemplate"
-          rules={[{ required: true, message: "Please provide a system prompt template" }]}
-          extra={`Estimated tokens: ${systemTokens}`}
+          rules={[{ required: true, message: t("settings.newsPrompts.validation.systemTemplate") }]}
+          extra={t("settings.newsPrompts.estimatedTokens", { count: systemTokens })}
         >
           <Input.TextArea
             rows={5}
-            placeholder="You are part of a news normalization pipeline that outputs structured JSON..."
+            placeholder={t("settings.newsPrompts.placeholders.systemTemplate")}
           />
         </Form.Item>
         <Form.Item
-          label="User prompt template"
+          label={t("settings.newsPrompts.fields.userTemplate")}
           name="userPromptTemplate"
-          rules={[{ required: true, message: "Please provide a user prompt template" }]}
-          extra={`Estimated tokens: ${userTokens}`}
+          rules={[{ required: true, message: t("settings.newsPrompts.validation.userTemplate") }]}
+          extra={t("settings.newsPrompts.estimatedTokens", { count: userTokens })}
         >
           <Input.TextArea
             rows={10}
-            placeholder={`URL: {{url}}\nCache hit: {{cache_hit}}\nMetadata: {...}\nClean this markdown while keeping only the newsworthy sections:\n{{markdown}}`}
+            placeholder={t("settings.newsPrompts.placeholders.userTemplate")}
           />
         </Form.Item>
         <Typography.Text type="secondary" style={{ display: "block", marginBottom: "0.75rem" }}>
-          Estimated total tokens: {totalTokens}
+          {t("settings.newsPrompts.estimatedTotalTokens", { count: totalTokens })}
         </Typography.Text>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
-            Save Changes
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
@@ -966,21 +974,22 @@ interface RateLimitFieldGroupProps {
 }
 
 function RateLimitFieldGroup({ title, description, field }: RateLimitFieldGroupProps) {
+  const { t } = useTranslation();
   return (
     <Card size="small" style={{ marginBottom: "1rem" }} title={title}>
       <Typography.Paragraph type="secondary">{description}</Typography.Paragraph>
       <div style={{ display: "flex", gap: "1rem" }}>
         <Form.Item
-          label="Max attempts"
+          label={t("settings.rateLimits.fields.maxAttempts")}
           name={[field, "limit"]}
-          rules={[{ required: true, message: "Please enter a limit" }]}
+          rules={[{ required: true, message: t("settings.rateLimits.validation.maxAttempts") }]}
         >
           <InputNumber min={1} max={1000} />
         </Form.Item>
         <Form.Item
-          label="Window (seconds)"
+          label={t("settings.rateLimits.fields.windowSeconds")}
           name={[field, "windowSeconds"]}
-          rules={[{ required: true, message: "Please enter a window size" }]}
+          rules={[{ required: true, message: t("settings.rateLimits.validation.windowSeconds") }]}
         >
           <InputNumber min={5} max={86_400} />
         </Form.Item>

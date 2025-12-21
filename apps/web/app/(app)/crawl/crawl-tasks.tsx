@@ -14,6 +14,7 @@ import {
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { sanitizeCrawlOptions } from "@modular/utils";
 import {
   CrawlMetadataInput,
@@ -26,6 +27,7 @@ import {
 import { CreateCrawlTaskDrawer } from "./components/CreateCrawlTaskDrawer";
 import { MetadataExtractionCard } from "./components/MetadataExtractionCard";
 import type { CreateCrawlTaskFormValues, MetadataFormValues } from "./types";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const statusColors: Record<CrawlTaskStatus, string> = {
   pending: "gold",
@@ -37,6 +39,8 @@ const statusColors: Record<CrawlTaskStatus, string> = {
 };
 
 export function CrawlTasksView() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<CrawlTaskStatus | null>(
     null,
@@ -77,7 +81,7 @@ export function CrawlTasksView() {
 
   const columns: ColumnsType<(typeof tableData)[number]> = [
     {
-      title: "Task",
+      title: t("crawl.columns.task"),
       dataIndex: "displayName",
       key: "displayName",
       render: (_: unknown, record) => (
@@ -96,52 +100,64 @@ export function CrawlTasksView() {
       ),
     },
     {
-      title: "Status",
+      title: t("crawl.columns.status"),
       dataIndex: "status",
       key: "status",
       render: (value: CrawlTaskStatus) => (
-        <Tag color={statusColors[value]}>{value}</Tag>
+        <Tag color={statusColors[value]}>
+          {t(`crawl.status.${value}`, { defaultValue: value })}
+        </Tag>
       ),
     },
     {
-      title: "Runs",
+      title: t("crawl.columns.runs"),
       dataIndex: "runCount",
       key: "runCount",
       render: (_, record) =>
-        `${record.runCount} • results: ${record.resultCount}`,
+        t("crawl.runsSummary", {
+          runs: record.runCount,
+          results: record.resultCount,
+        }),
     },
     {
-      title: "Peak Mem (MB)",
+      title: t("crawl.columns.peakMemory"),
       dataIndex: "lastPeakMemoryMb",
       key: "lastPeakMemoryMb",
       render: (value?: number | null) =>
-        value != null ? value.toFixed(0) : "—",
+        value != null ? value.toFixed(0) : t("common.emptyValue"),
     },
     {
-      title: "Last Activity",
+      title: t("crawl.columns.lastActivity"),
       dataIndex: "lastRunAt",
       key: "lastRunAt",
       render: (_, record) => {
         if (!record.lastRunAt && !record.createdAt) {
-          return "—";
+          return t("common.emptyValue");
         }
         const timestamp = record.lastRunAt ?? record.createdAt;
-        return new Date(timestamp).toLocaleString();
+        return formatDateTime(timestamp, locale, {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
       },
     },
     {
-      title: "Actions",
+      title: t("common.actions"),
       key: "actions",
       render: (_, record) => (
         <Space>
-          <Link href={`/crawl/${record.id}`}>View</Link>
+          <Link href={`/crawl/${record.id}`}>{t("common.view")}</Link>
           <Button
             size="small"
             type="link"
             onClick={() => handleRetry(record.id)}
             loading={retrying}
           >
-            Retry
+            {t("common.retry")}
           </Button>
         </Space>
       ),
@@ -167,7 +183,7 @@ export function CrawlTasksView() {
             .map((entry) => entry.trim())
             .filter((entry) => entry.length > 0) ?? [];
         if (urls.length === 0) {
-          message.error("请输入至少一个 URL");
+          message.error(t("crawl.metadata.errors.atLeastOneUrl"));
           return;
         }
         input.urls = urls;
@@ -177,22 +193,22 @@ export function CrawlTasksView() {
           input,
         },
       });
-      message.success("Metadata extraction completed");
+      message.success(t("crawl.metadata.completed"));
     } catch (error: any) {
       if (error?.errorFields) {
         return;
       }
-      message.error("无法提取 metadata，请稍后重试");
+      message.error(t("crawl.metadata.failed"));
     }
   };
 
   const handleRetry = async (id: string) => {
     try {
       await retryTask({ variables: { id } });
-      message.success("Task re-queued");
+      message.success(t("crawl.task.requeued"));
       await refetch();
     } catch (error: unknown) {
-      message.error((error as Error).message ?? "Failed to retry task");
+      message.error((error as Error).message ?? t("crawl.task.retryFailed"));
     }
   };
   const handleCreate = async (values: CreateCrawlTaskFormValues) => {
@@ -223,12 +239,12 @@ export function CrawlTasksView() {
           },
         },
       });
-      message.success("Crawl task queued");
+      message.success(t("crawl.task.queued"));
       form.resetFields();
       setDrawerOpen(false);
       await refetch();
     } catch (error: unknown) {
-      message.error((error as Error).message ?? "Failed to create crawl task");
+      message.error((error as Error).message ?? t("crawl.task.createFailed"));
     }
   };
 
@@ -236,7 +252,7 @@ export function CrawlTasksView() {
     <div className="content-card">
       <Space style={{ marginBottom: 16 }} wrap>
         <Input.Search
-          placeholder="Search by name or URL"
+          placeholder={t("crawl.search.placeholder")}
           allowClear
           onSearch={(value) => {
             setPagination((prev) => ({ ...prev, current: 1 }));
@@ -251,17 +267,17 @@ export function CrawlTasksView() {
           style={{ width: 260 }}
         />
         <Select<CrawlTaskStatus | null>
-          placeholder="Status"
+          placeholder={t("crawl.filters.status")}
           allowClear
           style={{ width: 160 }}
           value={statusFilter}
           options={[
-            { value: "pending", label: "Pending" },
-            { value: "queued", label: "Queued" },
-            { value: "running", label: "Running" },
-            { value: "completed", label: "Completed" },
-            { value: "failed", label: "Failed" },
-            { value: "paused", label: "Paused" },
+            { value: "pending", label: t("crawl.status.pending") },
+            { value: "queued", label: t("crawl.status.queued") },
+            { value: "running", label: t("crawl.status.running") },
+            { value: "completed", label: t("crawl.status.completed") },
+            { value: "failed", label: t("crawl.status.failed") },
+            { value: "paused", label: t("crawl.status.paused") },
           ]}
           onChange={(value) => {
             setStatusFilter(value ?? null);
@@ -269,7 +285,7 @@ export function CrawlTasksView() {
           }}
         />
         <Button type="primary" onClick={() => setDrawerOpen(true)}>
-          Create Task
+          {t("crawl.createTask")}
         </Button>
       </Space>
       <Table

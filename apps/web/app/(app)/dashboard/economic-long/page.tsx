@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -12,6 +13,7 @@ import {
 } from "../utils/series";
 
 export default function EconomicLongPage() {
+  const { t } = useTranslation();
   const { loading, error, seriesMap, refetch } = useEconomicData({
     category: "economic-long",
     pollInterval: 300_000,
@@ -48,6 +50,7 @@ export default function EconomicLongPage() {
 
   const yieldTimelineOption = buildYieldTimeline(
     seriesMap.get("us_treasury_yield_curve"),
+    t,
   );
 
   const reserveSeries = filterValuesByDays(
@@ -70,55 +73,55 @@ export default function EconomicLongPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ marginBottom: 16 }}>
-        <Typography.Title level={4}>经济长期趋势</Typography.Title>
+        <Typography.Title level={4}>{t("dashboard.economicLong.title")}</Typography.Title>
         <TimeRangeControls />
       </div>
       {error ? (
         <Alert
           type="error"
           showIcon
-          message="获取经济长期数据失败"
+          message={t("dashboard.economicLong.loadFailed")}
           action={
             <Button size="small" onClick={() => refetch()}>
-              重试
+              {t("common.retry")}
             </Button>
           }
         />
       ) : null}
       {!loading && seriesMap.size === 0 ? (
-        <Empty description="暂无数据" />
+        <Empty description={t("common.empty")} />
       ) : null}
       {loading && <Spin />}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={8}>
-          <Card title="近3年GDP年度对比" className="content-card">
+          <Card title={t("dashboard.economicLong.cards.gdp3y")} className="content-card">
             {gdpBarData.length > 0 ? (
               <DashboardChart option={gdpOption} height={320} />
             ) : (
-              <Empty description="暂无GDP数据" />
+              <Empty description={t("dashboard.economicLong.empty.gdp")} />
             )}
           </Card>
         </Col>
         <Col xs={24} lg={16}>
-          <Card title="近5年国债收益率曲线演化" className="content-card">
+          <Card title={t("dashboard.economicLong.cards.yieldCurve")} className="content-card">
             {yieldTimelineOption ? (
               <DashboardChart
                 option={yieldTimelineOption as any}
                 height={320}
               />
             ) : (
-              <Empty description="暂无收益率曲线数据" />
+              <Empty description={t("dashboard.economicLong.empty.yieldCurve")} />
             )}
           </Card>
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col span={24}>
-          <Card title="外汇储备趋势（近2年）" className="content-card">
+          <Card title={t("dashboard.economicLong.cards.reserves")} className="content-card">
             {reserveSeries.length > 0 ? (
               <DashboardChart option={reserveOption} height={320} />
             ) : (
-              <Empty description="暂无储备数据" />
+              <Empty description={t("dashboard.economicLong.empty.reserves")} />
             )}
           </Card>
         </Col>
@@ -127,7 +130,10 @@ export default function EconomicLongPage() {
   );
 }
 
-function buildYieldTimeline(group?: EconomicSeriesGroup) {
+function buildYieldTimeline(
+  group: EconomicSeriesGroup | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   if (!group) {
     return null;
   }
@@ -175,12 +181,12 @@ function buildYieldTimeline(group?: EconomicSeriesGroup) {
   const options = selectedDates.map((date, index) => {
     const values = buckets.get(date);
     return {
-      title: { text: `${timelineLabels[index]}年` },
+      title: { text: t("dashboard.economicLong.yieldCurve.yearLabel", { year: timelineLabels[index] }) },
       series: [
         {
           type: "line",
           data: fieldMap.map((field) => values?.[field.label] ?? 0),
-          name: "收益率(%)",
+          name: t("dashboard.economicLong.yieldCurve.yieldLabel"),
           areaStyle: { opacity: 0.15 },
         },
       ],

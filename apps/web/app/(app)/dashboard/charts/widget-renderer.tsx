@@ -4,6 +4,7 @@ import { DashboardChart } from "@/components/echart";
 import { gql, useQuery } from "@apollo/client";
 import { Alert, Button, Skeleton, Typography } from "antd";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useDashboardRangeStore } from "@/store/time-range";
 import { TimeGranularity } from "@/graphql/generated";
 
@@ -66,6 +67,7 @@ export function WidgetRenderer({
   dataSource,
   color,
 }: WidgetRenderProps) {
+  const { t } = useTranslation();
   const { start, end } = useDashboardRangeStore();
   const sourceInfo = parseDataSource(dataSource);
   const {
@@ -182,7 +184,7 @@ export function WidgetRenderer({
   if (sourceInfo.kind === "unknown") {
     return (
       <Typography.Text type="secondary">
-        Unsupported data source: {dataSource}
+        {t("dashboard.widgets.unsupportedSource", { source: dataSource })}
       </Typography.Text>
     );
   }
@@ -192,11 +194,11 @@ export function WidgetRenderer({
       <Alert
         type="error"
         showIcon
-        message="加载经济数据失败"
+        message={t("dashboard.widgets.loadFailed")}
         description={error.message}
         action={
           <Button size="small" onClick={() => refetch()}>
-            重试
+            {t("common.retry")}
           </Button>
         }
       />
@@ -208,7 +210,7 @@ export function WidgetRenderer({
   }
 
   if (!resolvedData || resolvedData.length === 0) {
-    return <Typography.Text type="secondary">暂无数据</Typography.Text>;
+    return <Typography.Text type="secondary">{t("common.empty")}</Typography.Text>;
   }
 
   const theme = useMemo(

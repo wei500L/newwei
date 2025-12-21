@@ -2,6 +2,7 @@
 
 import * as echarts from "echarts";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 interface QueueChartProps {
   data: Record<string, number>;
@@ -9,12 +10,15 @@ interface QueueChartProps {
 
 export function QueueChart({ data }: QueueChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!chartRef.current) {
       return;
     }
 
+    const keys = Object.keys(data);
+    const labels = keys.map((key) => t(`dashboard.queue.states.${key}`, { defaultValue: key }));
     const chart = echarts.init(chartRef.current);
     const option = {
       tooltip: {
@@ -22,14 +26,14 @@ export function QueueChart({ data }: QueueChartProps) {
       },
       xAxis: {
         type: "category",
-        data: Object.keys(data),
+        data: labels,
       },
       yAxis: {
         type: "value",
       },
       series: [
         {
-          data: Object.values(data),
+          data: keys.map((key) => data[key] ?? 0),
           type: "bar",
           itemStyle: {
             color: "#1677ff",
@@ -46,7 +50,7 @@ export function QueueChart({ data }: QueueChartProps) {
       window.removeEventListener("resize", onResize);
       chart.dispose();
     };
-  }, [data]);
+  }, [data, t]);
 
   return <div ref={chartRef} style={{ width: "100%", height: 260 }} />;
 }

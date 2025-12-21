@@ -16,6 +16,7 @@ import {
 } from "antd";
 import type { FormInstance } from "antd/es/form";
 import dayjs from "dayjs";
+import { useTranslation } from "react-i18next";
 import type { CreateCrawlTaskFormValues } from "../types";
 
 interface CreateCrawlTaskDrawerProps {
@@ -33,6 +34,7 @@ export function CreateCrawlTaskDrawer({
   onClose,
   onSubmit,
 }: CreateCrawlTaskDrawerProps) {
+  const { t } = useTranslation();
   const scanFullPage = Form.useWatch("scanFullPage", form);
   const proxyUrlValue = Form.useWatch("proxyUrl", form);
   const proxyConfigValue = Form.useWatch("proxyConfig", form);
@@ -47,7 +49,7 @@ export function CreateCrawlTaskDrawer({
 
   return (
     <Drawer
-      title="New Crawl Task"
+      title={t("crawl.createDrawer.title")}
       placement="right"
       width={420}
       open={open}
@@ -67,9 +69,9 @@ export function CreateCrawlTaskDrawer({
           proxyObjectActive={proxyObjectActive}
         />
         <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
           <Button type="primary" htmlType="submit" loading={loading}>
-            Queue Task
+            {t("crawl.createDrawer.submit")}
           </Button>
         </Space>
       </Form>
@@ -88,26 +90,27 @@ function CrawlSettingsForm({
   markdownFilterType,
   linkPreviewDisabled,
 }: CrawlSettingsFormProps) {
+  const { t } = useTranslation();
   return (
     <>
       <Form.Item
-        label="Display name"
+        label={t("crawl.settings.displayName")}
         name="displayName"
-        rules={[{ max: 80, message: "Keep name under 80 characters" }]}
+        rules={[{ max: 80, message: t("crawl.settings.validation.displayNameMax", { count: 80 }) }]}
       >
-        <Input placeholder="e.g. HN Headlines" />
+        <Input placeholder={t("crawl.settings.placeholders.displayName")} />
       </Form.Item>
       <Form.Item
-        label="Target URL"
+        label={t("crawl.settings.targetUrl")}
         name="url"
-        rules={[{ required: true, message: "Please provide a URL" }]}
+        rules={[{ required: true, message: t("crawl.settings.validation.urlRequired") }]}
       >
-        <Input placeholder="https://news.example.com" />
+        <Input placeholder={t("crawl.settings.placeholders.url")} />
       </Form.Item>
-      <Form.Item label="Keywords" name="keywords">
-        <Select mode="tags" placeholder="Add keywords" />
+      <Form.Item label={t("crawl.settings.keywords")} name="keywords">
+        <Select mode="tags" placeholder={t("crawl.settings.placeholders.keywords")} />
       </Form.Item>
-      <Form.Item label="Time range" name="timeRange">
+      <Form.Item label={t("crawl.settings.timeRange")} name="timeRange">
         <DatePicker.RangePicker
           allowClear
           showTime
@@ -115,113 +118,113 @@ function CrawlSettingsForm({
           disabledDate={(date) => date && date > dayjs()}
         />
       </Form.Item>
-      <Form.Item label="Concurrency" name="concurrency">
+      <Form.Item label={t("crawl.settings.concurrency")} name="concurrency">
         <InputNumber
           min={1}
           max={10}
           style={{ width: "100%" }}
-          placeholder="Default: 3"
+          placeholder={t("crawl.settings.placeholders.concurrency")}
         />
       </Form.Item>
       <Form.Item
-        label="Include images"
+        label={t("crawl.settings.includeImages")}
         name="includeImages"
         valuePropName="checked"
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Store media assets"
+        label={t("crawl.settings.storeMedia")}
         name="storeMedia"
         valuePropName="checked"
-        extra="Persist Crawl4AI's result.media payload and download up to 6 inline assets (tunable via CRAWL_MEDIA_* envs)."
+        extra={t("crawl.settings.storeMediaHint")}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Only main content"
+        label={t("crawl.settings.onlyMainContent")}
         name="onlyMainContent"
         valuePropName="checked"
       >
         <Switch defaultChecked />
       </Form.Item>
       <Form.Item
-        label="Extract links"
+        label={t("crawl.settings.extractLinks")}
         name="extractLinks"
         valuePropName="checked"
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Exclude external images"
+        label={t("crawl.settings.excludeExternalImages")}
         name="excludeExternalImages"
         valuePropName="checked"
-        extra="Keep remote images/videos from partner CDNs by turning this off."
+        extra={t("crawl.settings.excludeExternalImagesHint")}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Wait for images"
+        label={t("crawl.settings.waitForImages")}
         name="waitForImages"
         valuePropName="checked"
-        extra="Ensures hero images and videos render before extraction—recommended when storing media."
+        extra={t("crawl.settings.waitForImagesHint")}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Full-page scanning"
+        label={t("crawl.settings.scanFullPage")}
         name="scanFullPage"
         valuePropName="checked"
       >
         <Switch />
       </Form.Item>
-      <Form.Item label="Scroll delay (ms)" name="scrollDelayMs">
+      <Form.Item label={t("crawl.settings.scrollDelay")} name="scrollDelayMs">
         <InputNumber
           min={0}
           max={5000}
           style={{ width: "100%" }}
-          placeholder="Default: 200"
+          placeholder={t("crawl.settings.placeholders.scrollDelay")}
           disabled={!scanFullPage}
         />
       </Form.Item>
       <Form.Item
-        label="Dynamic viewport adjustment"
+        label={t("crawl.settings.adjustViewport")}
         name="adjustViewportToContent"
         valuePropName="checked"
         extra={
           <span>
-            Auto-resize the browser viewport to fit responsive layouts per{" "}
+            {t("crawl.settings.adjustViewportHint")}{" "}
             <Typography.Link
               href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/blog/releases/0.4.1.md"
               target="_blank"
               rel="noreferrer"
             >
-              Crawl4AI 0.4.1
+              {t("crawl.settings.adjustViewportLink")}
             </Typography.Link>
-            .
+            {t("common.punctuation.period")}
           </span>
         }
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Simulate user actions"
+        label={t("crawl.settings.simulateUser")}
         name="simulateUser"
         valuePropName="checked"
-        extra="Adds cursor movement / delays to mimic humans"
+        extra={t("crawl.settings.simulateUserHint")}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Override navigator()"
+        label={t("crawl.settings.overrideNavigator")}
         name="overrideNavigator"
         valuePropName="checked"
-        extra="Spoofs browser navigator properties"
+        extra={t("crawl.settings.overrideNavigatorHint")}
       >
         <Switch />
       </Form.Item>
       <Card
-        title="Dynamic crawling (JS + wait)"
+        title={t("crawl.dynamic.title")}
         size="small"
         style={{ marginBottom: 16 }}
         extra={
@@ -230,14 +233,12 @@ function CrawlSettingsForm({
             target="_blank"
             rel="noreferrer"
           >
-            Docs
+            {t("common.docs")}
           </Typography.Link>
         }
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          Inject custom JavaScript (e.g., click & scroll) and block until a
-          selector or async JS condition resolves before Crawl4AI captures the
-          HTML snapshot.
+          {t("crawl.dynamic.description")}
         </Typography.Paragraph>
         <Form.List name="jsCode">
           {(fields, { add, remove }) => (
@@ -246,15 +247,15 @@ function CrawlSettingsForm({
                 <Space key={field.key} align="start">
                   <Form.Item
                     {...field}
-                    label={`JS step ${index + 1}`}
+                    label={t("crawl.dynamic.jsStep", { index: index + 1 })}
                     style={{ flex: 1 }}
                     rules={[
-                      { required: true, message: "Provide a JS snippet" },
+                      { required: true, message: t("crawl.dynamic.jsRequired") },
                     ]}
                   >
                     <Input.TextArea
                       rows={3}
-                      placeholder="document.querySelector('.load-more')?.click();"
+                      placeholder={t("crawl.dynamic.placeholders.jsSnippet")}
                     />
                   </Form.Item>
                   <Button
@@ -271,193 +272,192 @@ function CrawlSettingsForm({
                 icon={<PlusOutlined />}
                 block
               >
-                Add JS step
+                {t("crawl.dynamic.addJsStep")}
               </Button>
             </Space>
           )}
         </Form.List>
         <Form.Item
-          label="JS-only navigation"
+          label={t("crawl.dynamic.jsOnly")}
           name="jsOnly"
           valuePropName="checked"
-          extra="Use when only JS mutations (no fresh navigation) are required."
+          extra={t("crawl.dynamic.jsOnlyHint")}
         >
           <Switch />
         </Form.Item>
         <Form.Item
-          label="Wait for selector"
+          label={t("crawl.dynamic.waitForSelector")}
           name="waitForSelector"
-          extra="Automatically prefixed with css: when sent to Crawl4AI."
+          extra={t("crawl.dynamic.waitForSelectorHint")}
         >
-          <Input placeholder=".article-list .item:nth-child(10)" />
+          <Input placeholder={t("crawl.dynamic.placeholders.selector")} />
         </Form.Item>
         <Form.Item
-          label="Wait for JS expression"
+          label={t("crawl.dynamic.waitForScript")}
           name="waitForScript"
-          extra="Provide the body of an async () => boolean function; we add js: for you."
+          extra={t("crawl.dynamic.waitForScriptHint")}
         >
           <Input.TextArea
             rows={3}
-            placeholder="() => window.dataLoaded === true"
+            placeholder={t("crawl.dynamic.placeholders.script")}
           />
         </Form.Item>
         <Form.Item
-          label="Wait timeout (ms)"
+          label={t("crawl.dynamic.waitTimeout")}
           name="waitForTimeoutMs"
-          extra="Defaults to Crawl4AI's internal timeout if left blank."
+          extra={t("crawl.dynamic.waitTimeoutHint")}
         >
           <InputNumber
             min={500}
             max={60000}
             style={{ width: "100%" }}
-            placeholder="10000"
+            placeholder={t("crawl.dynamic.placeholders.waitTimeout")}
           />
         </Form.Item>
       </Card>
       <Form.Item
-        label="Additional URLs"
+        label={t("crawl.markdown.additionalUrls")}
         name="additionalUrls"
-        extra="Crawl these URLs in the same batch (uses the base strategy unless overridden below)."
+        extra={t("crawl.markdown.additionalUrlsHint")}
       >
         <Select
           mode="tags"
           tokenSeparators={[",", " "]}
-          placeholder="https://example.com/archive"
+          placeholder={t("crawl.markdown.placeholders.additionalUrls")}
           style={{ width: "100%" }}
         />
       </Form.Item>
       <Form.Item
-        label="Markdown source"
+        label={t("crawl.markdown.source")}
         name={["markdownOptions", "contentSource"]}
-        extra="Choose which HTML snapshot feeds the Markdown generator."
+        extra={t("crawl.markdown.sourceHint")}
       >
         <Select
           allowClear
-          placeholder="Default: cleaned_html"
+          placeholder={t("crawl.markdown.placeholders.source")}
           options={[
-            { value: "cleaned_html", label: "Cleaned HTML (default)" },
-            { value: "raw_html", label: "Raw HTML" },
-            { value: "fit_html", label: "Fit HTML (schema optimized)" },
+            { value: "cleaned_html", label: t("crawl.markdown.sourceOptions.cleaned") },
+            { value: "raw_html", label: t("crawl.markdown.sourceOptions.raw") },
+            { value: "fit_html", label: t("crawl.markdown.sourceOptions.fit") },
           ]}
         />
       </Form.Item>
       <Form.Item
-        label="Ignore links"
+        label={t("crawl.markdown.ignoreLinks")}
         name={["markdownOptions", "ignoreLinks"]}
         valuePropName="checked"
-        extra="Drop hyperlink references from generated Markdown."
+        extra={t("crawl.markdown.ignoreLinksHint")}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Escape HTML"
+        label={t("crawl.markdown.escapeHtml")}
         name={["markdownOptions", "escapeHtml"]}
         valuePropName="checked"
-        extra="HTML entities remain encoded when enabled."
+        extra={t("crawl.markdown.escapeHtmlHint")}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Body width"
+        label={t("crawl.markdown.bodyWidth")}
         name={["markdownOptions", "bodyWidth"]}
-        extra="Wrap Markdown paragraphs at a custom width."
+        extra={t("crawl.markdown.bodyWidthHint")}
       >
         <InputNumber
           min={40}
           max={200}
-          placeholder="80"
+          placeholder={t("crawl.markdown.placeholders.bodyWidth")}
           style={{ width: "100%" }}
         />
       </Form.Item>
       <Form.Item
-        label="Markdown filter"
+        label={t("crawl.markdown.filter")}
         name={["markdownFilter", "type"]}
-        extra="Optionally enable Crawl4AI's content filters (e.g., pruning) before Markdown output."
+        extra={t("crawl.markdown.filterHint")}
       >
         <Select
           allowClear
-          placeholder="None"
-          options={[{ value: "pruning", label: "PruningContentFilter" }]}
+          placeholder={t("crawl.markdown.placeholders.filter")}
+          options={[{ value: "pruning", label: t("crawl.markdown.filterOptions.pruning") }]}
         />
       </Form.Item>
       <Form.Item
-        label="Pruning threshold"
+        label={t("crawl.markdown.pruningThreshold")}
         name={["markdownFilter", "threshold"]}
         hidden={markdownFilterType !== "pruning"}
-        extra="Keep content whose relevance score is above this threshold (0-1)."
+        extra={t("crawl.markdown.pruningThresholdHint")}
       >
         <InputNumber
           min={0}
           max={1}
           step={0.05}
           style={{ width: "100%" }}
-          placeholder="0.6"
+          placeholder={t("crawl.markdown.placeholders.pruningThreshold")}
         />
       </Form.Item>
       <Form.Item
-        label="Threshold mode"
+        label={t("crawl.markdown.thresholdMode")}
         name={["markdownFilter", "thresholdType"]}
         hidden={markdownFilterType !== "pruning"}
-        extra="Choose between fixed or dynamic heuristics per Crawl4AI Fit Markdown guide."
+        extra={t("crawl.markdown.thresholdModeHint")}
       >
         <Select
           allowClear
-          placeholder="dynamic"
+          placeholder={t("crawl.markdown.placeholders.thresholdMode")}
           options={[
-            { value: "dynamic", label: "Dynamic (auto adjusts per page)" },
-            { value: "fixed", label: "Fixed (use provided score)" },
+            { value: "dynamic", label: t("crawl.markdown.thresholdModeOptions.dynamic") },
+            { value: "fixed", label: t("crawl.markdown.thresholdModeOptions.fixed") },
           ]}
         />
       </Form.Item>
       <Form.Item
-        label="Min words per block"
+        label={t("crawl.markdown.minWords")}
         name={["markdownFilter", "minWordThreshold"]}
         hidden={markdownFilterType !== "pruning"}
-        extra="Ignore nodes shorter than this count before scoring (Fit Markdown heuristic)."
+        extra={t("crawl.markdown.minWordsHint")}
       >
         <InputNumber
           min={0}
           max={500}
           step={1}
           style={{ width: "100%" }}
-          placeholder="5"
+          placeholder={t("crawl.markdown.placeholders.minWords")}
         />
       </Form.Item>
       <Typography.Title level={5} style={{ marginTop: 24 }}>
-        Custom Markdown strategy
+        {t("crawl.markdown.customStrategy.title")}
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-        Provide the Crawl4AI strategy class name plus optional JSON params per
-        the{" "}
+        {t("crawl.markdown.customStrategy.description")}{" "}
         <Typography.Link
           href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/markdown-generation.md#custom-strategies"
           target="_blank"
           rel="noreferrer"
         >
-          Custom Strategies guide
+          {t("crawl.markdown.customStrategy.linkText")}
         </Typography.Link>
-        . Leave blank to use the default generator above.
+        {t("crawl.markdown.customStrategy.trailing")}
       </Typography.Paragraph>
       <Form.Item
-        label="Strategy type"
+        label={t("crawl.markdown.customStrategy.type")}
         name={["markdownStrategy", "type"]}
-        extra="Matches the Python class registered with Crawl4AI (e.g. MyMarkdownGenerator)."
+        extra={t("crawl.markdown.customStrategy.typeHint")}
       >
-        <Input placeholder="MyMarkdownGenerator" maxLength={128} />
+        <Input placeholder={t("crawl.markdown.customStrategy.placeholders.type")} maxLength={128} />
       </Form.Item>
       <Form.Item
-        label="Params (JSON)"
+        label={t("crawl.markdown.customStrategy.params")}
         name={["markdownStrategy", "params"]}
-        extra="Arbitrary JSON object passed verbatim to your strategy constructor."
+        extra={t("crawl.markdown.customStrategy.paramsHint")}
       >
         <Input.TextArea
           rows={4}
-          placeholder='{ "content_source": "raw_html" }'
+          placeholder={t("crawl.markdown.customStrategy.placeholders.params")}
         />
       </Form.Item>
       <Card
         size="small"
-        title="Clean Markdown"
+        title={t("crawl.markdown.clean.title")}
         style={{ marginBottom: 16 }}
         extra={
           <Typography.Link
@@ -465,77 +465,75 @@ function CrawlSettingsForm({
             target="_blank"
             rel="noreferrer"
           >
-            crawl4ai docs
+            {t("common.docs")}
           </Typography.Link>
         }
       >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          Mirror Crawl4AI&apos;s Clean Markdown recipe to strip nav/footer
-          blocks, remove overlays, and drop short fragments for accurately
-          formatted Markdown output (per the{" "}
+          {t("crawl.markdown.clean.description")}{" "}
           <Typography.Link
             href="https://github.com/unclecode/crawl4ai/blob/main/docs/examples/quickstart.ipynb"
             target="_blank"
             rel="noreferrer"
           >
-            official quickstart
+            {t("crawl.markdown.clean.linkText")}
           </Typography.Link>
-          ).
+          {t("crawl.markdown.clean.trailing")}
         </Typography.Paragraph>
         <Form.Item
-          label="Scoped CSS selector"
+          label={t("crawl.markdown.clean.cssSelector")}
           name={["cleanMarkdown", "cssSelector"]}
-          extra="Limit Markdown to a single region (e.g. #main-content)."
+          extra={t("crawl.markdown.clean.cssSelectorHint")}
         >
-          <Input placeholder="#main-content" maxLength={512} />
+          <Input placeholder={t("crawl.markdown.clean.placeholders.cssSelector")} maxLength={512} />
         </Form.Item>
         <Form.Item
-          label="Target elements"
+          label={t("crawl.markdown.clean.targetElements")}
           name={["cleanMarkdown", "targetElements"]}
-          extra="Provide multiple selectors for multi-column layouts."
+          extra={t("crawl.markdown.clean.targetElementsHint")}
         >
           <Select
             mode="tags"
             tokenSeparators={[",", " "]}
-            placeholder=".article, .sidebar"
+            placeholder={t("crawl.markdown.clean.placeholders.targetElements")}
             style={{ width: "100%" }}
           />
         </Form.Item>
         <Form.Item
-          label="Excluded tags"
+          label={t("crawl.markdown.clean.excludedTags")}
           name={["cleanMarkdown", "excludedTags"]}
-          extra="Drop repeating chrome such as nav, footer, form, aside."
+          extra={t("crawl.markdown.clean.excludedTagsHint")}
         >
           <Select
             mode="tags"
             tokenSeparators={[",", " "]}
-            placeholder="nav, footer, aside"
+            placeholder={t("crawl.markdown.clean.placeholders.excludedTags")}
             style={{ width: "100%" }}
           />
         </Form.Item>
         <Form.Item
-          label="Remove overlay elements"
+          label={t("crawl.markdown.clean.removeOverlay")}
           name={["cleanMarkdown", "removeOverlayElements"]}
           valuePropName="checked"
         >
           <Switch />
         </Form.Item>
         <Form.Item
-          label="Word count threshold"
+          label={t("crawl.markdown.clean.wordCount")}
           name={["cleanMarkdown", "wordCountThreshold"]}
-          extra="Ignore fragments below this number of words."
+          extra={t("crawl.markdown.clean.wordCountHint")}
         >
           <InputNumber
             min={0}
             max={2000}
-            placeholder="10"
+            placeholder={t("crawl.markdown.clean.placeholders.wordCount")}
             style={{ width: "100%" }}
           />
         </Form.Item>
       </Card>
       <Card
         size="small"
-        title="Enhanced table extraction"
+        title={t("crawl.tables.title")}
         style={{ marginBottom: 16 }}
         extra={
           <Typography.Link
@@ -543,144 +541,136 @@ function CrawlSettingsForm({
             target="_blank"
             rel="noreferrer"
           >
-            crawl4ai docs
+            {t("common.docs")}
           </Typography.Link>
         }
       >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          Leverages Crawl4AI&apos;s{" "}
-          <em>
-            Enhanced Table Extraction: Direct DataFrame conversion from web
-            tables
-          </em>{" "}
-          release (v0.7.3+) so every crawl can detect HTML tables, stream them
-          into DataFrame-ready records, and expose captions/source metadata for
-          downstream analytics.
+          {t("crawl.tables.description")}
         </Typography.Paragraph>
         <Form.Item
-          label="Table score threshold"
+          label={t("crawl.tables.scoreThreshold")}
           name="tableScoreThreshold"
-          extra="Controls CrawlerRunConfig.table_score_threshold (0-10). Higher scores keep only confident tables."
+          extra={t("crawl.tables.scoreThresholdHint")}
         >
           <InputNumber
             min={0}
             max={10}
             step={0.1}
-            placeholder="7"
+            placeholder={t("crawl.tables.placeholders.scoreThreshold")}
             style={{ width: "100%" }}
           />
         </Form.Item>
         <Form.Item
-          label="Strategy type"
+          label={t("crawl.tables.strategyType")}
           name={["tableExtraction", "type"]}
-          extra="Default to DefaultTableExtraction for min row/column control or switch to LLMTableExtraction for complex layouts."
+          extra={t("crawl.tables.strategyTypeHint")}
         >
-          <Input placeholder="DefaultTableExtraction" maxLength={128} />
+          <Input placeholder={t("crawl.tables.placeholders.strategyType")} maxLength={128} />
         </Form.Item>
         <Form.Item
-          label="Min rows"
+          label={t("crawl.tables.minRows")}
           name={["tableExtraction", "minRows"]}
-          extra="Maps to DefaultTableExtraction.min_rows to filter out small snippets."
+          extra={t("crawl.tables.minRowsHint")}
         >
           <InputNumber
             min={1}
             max={1000}
             style={{ width: "100%" }}
-            placeholder="2"
+            placeholder={t("crawl.tables.placeholders.minRows")}
           />
         </Form.Item>
         <Form.Item
-          label="Min columns"
+          label={t("crawl.tables.minCols")}
           name={["tableExtraction", "minCols"]}
-          extra="Maps to DefaultTableExtraction.min_cols."
+          extra={t("crawl.tables.minColsHint")}
         >
           <InputNumber
             min={1}
             max={50}
             style={{ width: "100%" }}
-            placeholder="2"
+            placeholder={t("crawl.tables.placeholders.minCols")}
           />
         </Form.Item>
         <Form.Item
-          label="Extra params (JSON)"
+          label={t("crawl.tables.extraParams")}
           name={["tableExtraction", "params"]}
-          extra="Optional JSON blob merged into the Crawl4AI strategy params (e.g., chunking or provider overrides)."
+          extra={t("crawl.tables.extraParamsHint")}
         >
           <Input.TextArea
             rows={3}
-            placeholder='{ "enable_chunking": true, "max_parallel_chunks": 5 }'
+            placeholder={t("crawl.tables.placeholders.extraParams")}
           />
         </Form.Item>
       </Card>
-      <Card size="small" title="Link analysis" style={{ marginBottom: 16 }}>
+      <Card size="small" title={t("crawl.links.title")} style={{ marginBottom: 16 }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          Enable Crawl4AI LinkPreviewConfig to pull internal/external links with
-          quality scores.
+          {t("crawl.links.description")}
         </Typography.Paragraph>
         <Form.Item
-          label="Score links"
+          label={t("crawl.links.scoreLinks")}
           name="scoreLinks"
           valuePropName="checked"
-          extra="Turns on intrinsic/contextual scoring for extracted links."
+          extra={t("crawl.links.scoreLinksHint")}
         >
           <Switch />
         </Form.Item>
         <Form.Item
-          label="Include internal links"
+          label={t("crawl.links.includeInternal")}
           name={["linkPreview", "includeInternal"]}
           valuePropName="checked"
         >
           <Switch disabled={linkPreviewDisabled} />
         </Form.Item>
         <Form.Item
-          label="Include external links"
+          label={t("crawl.links.includeExternal")}
           name={["linkPreview", "includeExternal"]}
           valuePropName="checked"
         >
           <Switch disabled={linkPreviewDisabled} />
         </Form.Item>
         <Form.Item
-          label="Include social media"
+          label={t("crawl.links.includeSocial")}
           name={["linkPreview", "includeSocial"]}
           valuePropName="checked"
         >
           <Switch disabled={linkPreviewDisabled} />
         </Form.Item>
-        <Form.Item label="Max links" name={["linkPreview", "maxLinks"]}>
+        <Form.Item label={t("crawl.links.maxLinks")} name={["linkPreview", "maxLinks"]}>
           <InputNumber
             min={1}
             max={500}
             style={{ width: "100%" }}
-            placeholder="200"
+            placeholder={t("crawl.links.placeholders.maxLinks")}
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
-        <Form.Item label="Concurrency" name={["linkPreview", "concurrency"]}>
+        <Form.Item label={t("crawl.links.concurrency")} name={["linkPreview", "concurrency"]}>
           <InputNumber
             min={1}
             max={50}
             style={{ width: "100%" }}
-            placeholder="10"
+            placeholder={t("crawl.links.placeholders.concurrency")}
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
-        <Form.Item label="Timeout (s)" name={["linkPreview", "timeoutSeconds"]}>
+        <Form.Item label={t("crawl.links.timeout")} name={["linkPreview", "timeoutSeconds"]}>
           <InputNumber
             min={1}
             max={60}
             style={{ width: "100%" }}
-            placeholder="5"
+            placeholder={t("crawl.links.placeholders.timeout")}
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
-        <Form.Item label="Context query" name={["linkPreview", "query"]}>
+        <Form.Item label={t("crawl.links.contextQuery")} name={["linkPreview", "query"]}>
           <Input
-            placeholder="machine learning tutorials"
+            placeholder={t("crawl.links.placeholders.contextQuery")}
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
         <Form.Item
-          label="Score threshold"
+          label={t("crawl.links.scoreThreshold")}
           name={["linkPreview", "scoreThreshold"]}
         >
           <InputNumber
@@ -688,36 +678,36 @@ function CrawlSettingsForm({
             max={1}
             step={0.05}
             style={{ width: "100%" }}
-            placeholder="0.3"
+            placeholder={t("crawl.links.placeholders.scoreThreshold")}
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
         <Form.Item
-          label="Verbose logging"
+          label={t("crawl.links.verbose")}
           name={["linkPreview", "verbose"]}
           valuePropName="checked"
         >
           <Switch disabled={linkPreviewDisabled} />
         </Form.Item>
         <Form.Item
-          label="Include patterns"
+          label={t("crawl.links.includePatterns")}
           name={["linkPreview", "includePatterns"]}
         >
           <Select
             mode="tags"
             tokenSeparators={[",", " "]}
-            placeholder="*/docs/*"
+            placeholder={t("crawl.links.placeholders.includePatterns")}
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
         <Form.Item
-          label="Exclude patterns"
+          label={t("crawl.links.excludePatterns")}
           name={["linkPreview", "excludePatterns"]}
         >
           <Select
             mode="tags"
             tokenSeparators={[",", " "]}
-            placeholder="*/login*"
+            placeholder={t("crawl.links.placeholders.excludePatterns")}
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
@@ -732,27 +722,26 @@ function CrawlSettingsForm({
                 alignItems: "center",
               }}
             >
-              <Typography.Text strong>Multi-URL strategies</Typography.Text>
+              <Typography.Text strong>{t("crawl.multiUrl.title")}</Typography.Text>
               <Button
                 type="dashed"
                 icon={<PlusOutlined />}
                 onClick={() => add()}
                 size="small"
               >
-                Add strategy
+                {t("crawl.multiUrl.add")}
               </Button>
             </div>
             {fields.length === 0 ? (
               <Typography.Text type="secondary">
-                Optional: match additional URL patterns to custom crawler
-                settings.
+                {t("crawl.multiUrl.empty")}
               </Typography.Text>
             ) : null}
             {fields.map((field, index) => (
               <Card
                 key={field.key}
                 size="small"
-                title={`Strategy ${index + 1}`}
+                title={t("crawl.multiUrl.strategyTitle", { index: index + 1 })}
                 extra={
                   <Button
                     type="link"
@@ -760,31 +749,31 @@ function CrawlSettingsForm({
                     icon={<MinusCircleOutlined />}
                     onClick={() => remove(field.name)}
                   >
-                    Remove
+                    {t("common.remove")}
                   </Button>
                 }
               >
-                <Form.Item label="Label" name={[field.name, "name"]}>
-                  <Input placeholder="e.g. PDF files" />
+                <Form.Item label={t("crawl.multiUrl.fields.label")} name={[field.name, "name"]}>
+                  <Input placeholder={t("crawl.multiUrl.placeholders.label")} />
                 </Form.Item>
                 <Form.Item
-                  label="Match mode"
+                  label={t("crawl.multiUrl.fields.matchMode")}
                   name={[field.name, "matcher", "matchMode"]}
-                  extra="Controls how patterns below are interpreted."
+                  extra={t("crawl.multiUrl.matchModeHint")}
                 >
                   <Select
                     allowClear
-                    placeholder="glob (default)"
+                    placeholder={t("crawl.multiUrl.placeholders.matchMode")}
                     options={[
-                      { value: "glob", label: "Glob (*.pdf)" },
-                      { value: "regex", label: "Regex" },
-                      { value: "substring", label: "Substring" },
-                      { value: "prefix", label: "Prefix" },
+                      { value: "glob", label: t("crawl.multiUrl.matchModeOptions.glob") },
+                      { value: "regex", label: t("crawl.multiUrl.matchModeOptions.regex") },
+                      { value: "substring", label: t("crawl.multiUrl.matchModeOptions.substring") },
+                      { value: "prefix", label: t("crawl.multiUrl.matchModeOptions.prefix") },
                     ]}
                   />
                 </Form.Item>
                 <Form.Item
-                  label="URL patterns"
+                  label={t("crawl.multiUrl.fields.patterns")}
                   name={[field.name, "matcher", "patterns"]}
                   rules={[
                     {
@@ -800,84 +789,84 @@ function CrawlSettingsForm({
                   <Select
                     mode="tags"
                     tokenSeparators={[",", " "]}
-                    placeholder="*.pdf"
+                    placeholder={t("crawl.multiUrl.placeholders.patterns")}
                     style={{ width: "100%" }}
                   />
                 </Form.Item>
                 <Form.Item
-                  label="Explicit URLs"
+                  label={t("crawl.multiUrl.fields.urls")}
                   name={[field.name, "urls"]}
-                  extra="Optional explicit URLs that should use this strategy."
+                  extra={t("crawl.multiUrl.urlsHint")}
                 >
                   <Select
                     mode="tags"
                     tokenSeparators={[",", " "]}
-                    placeholder="https://example.com/report.pdf"
+                    placeholder={t("crawl.multiUrl.placeholders.urls")}
                     style={{ width: "100%" }}
                   />
                 </Form.Item>
                 <Form.Item
-                  label="Cache mode"
+                  label={t("crawl.multiUrl.fields.cacheMode")}
                   name={[field.name, "options", "cacheMode"]}
                 >
                   <Select
                     allowClear
-                    placeholder="Default (bypass)"
+                    placeholder={t("crawl.multiUrl.placeholders.cacheMode")}
                     options={[
-                      { value: "bypass", label: "Bypass (fresh)" },
-                      { value: "prefer_cache", label: "Prefer cache" },
-                      { value: "force_cache", label: "Force cache" },
+                      { value: "bypass", label: t("crawl.multiUrl.cacheModes.bypass") },
+                      { value: "prefer_cache", label: t("crawl.multiUrl.cacheModes.prefer") },
+                      { value: "force_cache", label: t("crawl.multiUrl.cacheModes.force") },
                     ]}
                   />
                 </Form.Item>
                 <Form.Item
-                  label="Full-page scanning"
+                  label={t("crawl.settings.scanFullPage")}
                   name={[field.name, "options", "scanFullPage"]}
                   valuePropName="checked"
                 >
                   <Switch />
                 </Form.Item>
                 <Form.Item
-                  label="Scroll delay (ms)"
+                  label={t("crawl.settings.scrollDelay")}
                   name={[field.name, "options", "scrollDelayMs"]}
                 >
                   <InputNumber
                     min={0}
                     max={5000}
                     style={{ width: "100%" }}
-                    placeholder="Default: 200"
+                    placeholder={t("crawl.settings.placeholders.scrollDelay")}
                   />
                 </Form.Item>
                 <Form.Item
-                  label="Dynamic viewport adjustment"
+                  label={t("crawl.settings.adjustViewport")}
                   name={[field.name, "options", "adjustViewportToContent"]}
                   valuePropName="checked"
                 >
                   <Switch />
                 </Form.Item>
                 <Form.Item
-                  label="Only main content"
+                  label={t("crawl.settings.onlyMainContent")}
                   name={[field.name, "options", "onlyMainContent"]}
                   valuePropName="checked"
                 >
                   <Switch />
                 </Form.Item>
                 <Form.Item
-                  label="Extract links"
+                  label={t("crawl.settings.extractLinks")}
                   name={[field.name, "options", "extractLinks"]}
                   valuePropName="checked"
                 >
                   <Switch />
                 </Form.Item>
                 <Form.Item
-                  label="Simulate user actions"
+                  label={t("crawl.settings.simulateUser")}
                   name={[field.name, "options", "simulateUser"]}
                   valuePropName="checked"
                 >
                   <Switch />
                 </Form.Item>
                 <Form.Item
-                  label="Override navigator()"
+                  label={t("crawl.settings.overrideNavigator")}
                   name={[field.name, "options", "overrideNavigator"]}
                   valuePropName="checked"
                 >
@@ -887,7 +876,7 @@ function CrawlSettingsForm({
                   strong
                   style={{ marginBottom: 8, display: "block" }}
                 >
-                  Dynamic crawling overrides
+                  {t("crawl.multiUrl.dynamicOverrides")}
                 </Typography.Text>
                 <Form.List name={[field.name, "options", "jsCode"]}>
                   {(jsFields, { add: addJs, remove: removeJs }) => (
@@ -896,12 +885,12 @@ function CrawlSettingsForm({
                         <Space key={jsField.key} align="start">
                           <Form.Item
                             {...jsField}
-                            label={`JS step ${jsIndex + 1}`}
+                            label={t("crawl.dynamic.jsStep", { index: jsIndex + 1 })}
                             style={{ flex: 1 }}
                           >
                             <Input.TextArea
                               rows={2}
-                              placeholder="document.querySelector('.load-more')?.click();"
+                              placeholder={t("crawl.dynamic.placeholders.jsSnippet")}
                             />
                           </Form.Item>
                           <Button
@@ -917,42 +906,42 @@ function CrawlSettingsForm({
                         icon={<PlusOutlined />}
                         onClick={() => addJs()}
                       >
-                        Add JS step
+                        {t("crawl.dynamic.addJsStep")}
                       </Button>
                     </Space>
                   )}
                 </Form.List>
                 <Form.Item
-                  label="JS-only navigation"
+                  label={t("crawl.dynamic.jsOnly")}
                   name={[field.name, "options", "jsOnly"]}
                   valuePropName="checked"
                 >
                   <Switch />
                 </Form.Item>
                 <Form.Item
-                  label="Wait for selector"
+                  label={t("crawl.dynamic.waitForSelector")}
                   name={[field.name, "options", "waitForSelector"]}
                 >
-                  <Input placeholder=".feed > article:last-child" />
+                  <Input placeholder={t("crawl.dynamic.placeholders.selectorAlt")} />
                 </Form.Item>
                 <Form.Item
-                  label="Wait for JS expression"
+                  label={t("crawl.dynamic.waitForScript")}
                   name={[field.name, "options", "waitForScript"]}
                 >
                   <Input.TextArea
                     rows={2}
-                    placeholder="() => document.querySelectorAll(...).length > 20"
+                    placeholder={t("crawl.dynamic.placeholders.scriptAlt")}
                   />
                 </Form.Item>
                 <Form.Item
-                  label="Wait timeout (ms)"
+                  label={t("crawl.dynamic.waitTimeout")}
                   name={[field.name, "options", "waitForTimeoutMs"]}
                 >
                   <InputNumber
                     min={500}
                     max={60000}
                     style={{ width: "100%" }}
-                    placeholder="10000"
+                    placeholder={t("crawl.dynamic.placeholders.waitTimeout")}
                   />
                 </Form.Item>
               </Card>
@@ -977,57 +966,58 @@ function BrowserConfigForm({
   proxyUrlActive,
   proxyObjectActive,
 }: BrowserConfigFormProps) {
+  const { t } = useTranslation();
   return (
     <>
       <Form.Item
-        label="Undetected browser"
+        label={t("crawl.browser.undetected")}
         name="enableUndetectedBrowser"
         valuePropName="checked"
-        extra="Bypasses bot detection using Crawl4AI's UndetectedAdapter"
+        extra={t("crawl.browser.undetectedHint")}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Stealth mode"
+        label={t("crawl.browser.stealth")}
         name="enableStealthMode"
         valuePropName="checked"
-        extra="Tweaks browser fingerprints for basic evasion"
+        extra={t("crawl.browser.stealthHint")}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="Managed browser"
+        label={t("crawl.browser.managed")}
         name="useManagedBrowser"
         valuePropName="checked"
         extra={
           <span>
-            Reuse your own browser session per
+            {t("crawl.browser.managedHint")}{" "}
             <Typography.Link
               href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/advanced/identity-based-crawling.md"
               target="_blank"
               rel="noreferrer"
               style={{ marginLeft: 4 }}
             >
-              Crawl4AI managed browser docs
+              {t("crawl.browser.managedLink")}
             </Typography.Link>
-            .
+            {t("common.punctuation.period")}
           </span>
         }
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label="User data directory"
+        label={t("crawl.browser.userDataDir")}
         name="userDataDir"
-        extra="Absolute path to your Chrome/Edge profile (e.g. ~/.config/chrome-profile)."
+        extra={t("crawl.browser.userDataDirHint")}
       >
         <Input
-          placeholder="/home/me/.crawl4ai/profiles/news"
+          placeholder={t("crawl.browser.placeholders.userDataDir")}
           disabled={!useManagedBrowserValue}
         />
       </Form.Item>
       <Card
-        title="Browser identity"
+        title={t("crawl.browser.identity.title")}
         size="small"
         style={{ marginBottom: 16 }}
         extra={
@@ -1036,113 +1026,112 @@ function BrowserConfigForm({
             target="_blank"
             rel="noreferrer"
           >
-            Docs
+            {t("common.docs")}
           </Typography.Link>
         }
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          Override Crawl4AI&apos;s BrowserConfig to send first-party cookies,
-          custom headers, and rotating user agents for harder-to-detect crawls.
+          {t("crawl.browser.identity.description")}
         </Typography.Paragraph>
         <Form.Item
-          label="Custom user agent"
+          label={t("crawl.browser.identity.customUserAgent")}
           name="userAgent"
-          extra="Leave blank to reuse Crawl4AI defaults."
+          extra={t("crawl.browser.identity.customUserAgentHint")}
         >
-          <Input placeholder="Mozilla/5.0 ..." maxLength={768} />
+          <Input placeholder={t("crawl.browser.identity.placeholders.userAgent")} maxLength={768} />
         </Form.Item>
         <Form.Item
-          label="User agent mode"
+          label={t("crawl.browser.identity.userAgentMode")}
           name="userAgentMode"
-          extra="Enable Crawl4AI's random generator for every navigation."
+          extra={t("crawl.browser.identity.userAgentModeHint")}
         >
           <Select
             allowClear
-            placeholder="Default (static)"
-            options={[{ value: "random", label: "Random rotation" }]}
+            placeholder={t("crawl.browser.identity.placeholders.userAgentMode")}
+            options={[{ value: "random", label: t("crawl.browser.identity.userAgentModeRandom") }]}
           />
         </Form.Item>
         <Form.Item
-          label="Generator platform"
+          label={t("crawl.browser.identity.generatorPlatform")}
           name={["userAgentGenerator", "platform"]}
         >
           <Select
             allowClear
-            placeholder="windows / macos / linux / android / ios"
+            placeholder={t("crawl.browser.identity.placeholders.platform")}
             disabled={userAgentModeValue !== "random"}
             options={[
-              { value: "windows", label: "Windows" },
-              { value: "macos", label: "macOS" },
-              { value: "linux", label: "Linux" },
-              { value: "android", label: "Android" },
-              { value: "ios", label: "iOS" },
+              { value: "windows", label: t("crawl.browser.identity.platforms.windows") },
+              { value: "macos", label: t("crawl.browser.identity.platforms.macos") },
+              { value: "linux", label: t("crawl.browser.identity.platforms.linux") },
+              { value: "android", label: t("crawl.browser.identity.platforms.android") },
+              { value: "ios", label: t("crawl.browser.identity.platforms.ios") },
             ]}
           />
         </Form.Item>
         <Form.Item
-          label="Generator browser"
+          label={t("crawl.browser.identity.generatorBrowser")}
           name={["userAgentGenerator", "browser"]}
         >
           <Select
             allowClear
-            placeholder="chrome / firefox / safari / edge"
+            placeholder={t("crawl.browser.identity.placeholders.browser")}
             disabled={userAgentModeValue !== "random"}
             options={[
-              { value: "chrome", label: "Chrome" },
-              { value: "firefox", label: "Firefox" },
-              { value: "safari", label: "Safari" },
-              { value: "edge", label: "Edge" },
+              { value: "chrome", label: t("crawl.browser.identity.browsers.chrome") },
+              { value: "firefox", label: t("crawl.browser.identity.browsers.firefox") },
+              { value: "safari", label: t("crawl.browser.identity.browsers.safari") },
+              { value: "edge", label: t("crawl.browser.identity.browsers.edge") },
             ]}
           />
         </Form.Item>
         <Form.Item
-          label="Generator device"
+          label={t("crawl.browser.identity.generatorDevice")}
           name={["userAgentGenerator", "deviceType"]}
         >
           <Select
             allowClear
-            placeholder="desktop / mobile / tablet"
+            placeholder={t("crawl.browser.identity.placeholders.device")}
             disabled={userAgentModeValue !== "random"}
             options={[
-              { value: "desktop", label: "Desktop" },
-              { value: "mobile", label: "Mobile" },
-              { value: "tablet", label: "Tablet" },
+              { value: "desktop", label: t("crawl.browser.identity.devices.desktop") },
+              { value: "mobile", label: t("crawl.browser.identity.devices.mobile") },
+              { value: "tablet", label: t("crawl.browser.identity.devices.tablet") },
             ]}
           />
         </Form.Item>
         <Form.Item
-          label="Generator locale"
+          label={t("crawl.browser.identity.generatorLocale")}
           name={["userAgentGenerator", "locale"]}
-          extra="Overrides Accept-Language inside the rotating agent."
+          extra={t("crawl.browser.identity.generatorLocaleHint")}
         >
           <Input
-            placeholder="en-US"
+            placeholder={t("crawl.browser.identity.placeholders.locale")}
             maxLength={16}
             disabled={userAgentModeValue !== "random"}
           />
         </Form.Item>
         <Form.Item
-          label="Browser locale"
+          label={t("crawl.browser.identity.browserLocale")}
           name="locale"
-          extra="Sets navigator.language and Accept-Language headers."
+          extra={t("crawl.browser.identity.browserLocaleHint")}
         >
-          <Input placeholder="en-US" maxLength={16} />
+          <Input placeholder={t("crawl.browser.identity.placeholders.locale")} maxLength={16} />
         </Form.Item>
         <Form.Item
-          label="Timezone ID"
+          label={t("crawl.browser.identity.timezoneId")}
           name="timezoneId"
-          extra="IANA timezone applied to the Playwright context."
+          extra={t("crawl.browser.identity.timezoneHint")}
         >
-          <Input placeholder="America/New_York" maxLength={64} />
+          <Input placeholder={t("crawl.browser.identity.placeholders.timezone")} maxLength={64} />
         </Form.Item>
         <Form.Item
-          label="Geolocation"
-          extra="Latitude / longitude (optional accuracy in meters) forwarded to the browser context."
+          label={t("crawl.browser.identity.geolocation")}
+          extra={t("crawl.browser.identity.geolocationHint")}
         >
           <Space wrap>
             <Form.Item name={["geolocation", "latitude"]} noStyle>
               <InputNumber
-                placeholder="Latitude"
+                placeholder={t("crawl.browser.identity.placeholders.latitude")}
                 min={-90}
                 max={90}
                 step={0.1}
@@ -1151,7 +1140,7 @@ function BrowserConfigForm({
             </Form.Item>
             <Form.Item name={["geolocation", "longitude"]} noStyle>
               <InputNumber
-                placeholder="Longitude"
+                placeholder={t("crawl.browser.identity.placeholders.longitude")}
                 min={-180}
                 max={180}
                 step={0.1}
@@ -1160,7 +1149,7 @@ function BrowserConfigForm({
             </Form.Item>
             <Form.Item name={["geolocation", "accuracy"]} noStyle>
               <InputNumber
-                placeholder="Accuracy"
+                placeholder={t("crawl.browser.identity.placeholders.accuracy")}
                 min={1}
                 max={5000}
                 step={1}
@@ -1170,7 +1159,7 @@ function BrowserConfigForm({
           </Space>
         </Form.Item>
         <Typography.Title level={5} style={{ marginTop: 16 }}>
-          Custom headers
+          {t("crawl.browser.headers.title")}
         </Typography.Title>
         <Form.List name="browserHeaders">
           {(fields, { add, remove }) => (
@@ -1182,10 +1171,10 @@ function BrowserConfigForm({
                   style={{ width: "100%" }}
                 >
                   <Form.Item name={[field.name, "name"]} style={{ flex: 1 }}>
-                    <Input placeholder="Header name" />
+                    <Input placeholder={t("crawl.browser.headers.placeholders.name")} />
                   </Form.Item>
                   <Form.Item name={[field.name, "value"]} style={{ flex: 2 }}>
-                    <Input placeholder="Header value" />
+                    <Input placeholder={t("crawl.browser.headers.placeholders.value")} />
                   </Form.Item>
                   <Button
                     type="text"
@@ -1201,13 +1190,13 @@ function BrowserConfigForm({
                 icon={<PlusOutlined />}
                 block
               >
-                Add header
+                {t("crawl.browser.headers.add")}
               </Button>
             </Space>
           )}
         </Form.List>
         <Typography.Title level={5} style={{ marginTop: 24 }}>
-          Cookies
+          {t("crawl.browser.cookies.title")}
         </Typography.Title>
         <Form.List name="browserCookies">
           {(fields, { add, remove }) => (
@@ -1219,19 +1208,19 @@ function BrowserConfigForm({
                   style={{ width: "100%" }}
                 >
                   <Form.Item name={[field.name, "name"]} style={{ flex: 1 }}>
-                    <Input placeholder="Name" />
+                    <Input placeholder={t("crawl.browser.cookies.placeholders.name")} />
                   </Form.Item>
                   <Form.Item name={[field.name, "value"]} style={{ flex: 2 }}>
-                    <Input placeholder="Value" />
+                    <Input placeholder={t("crawl.browser.cookies.placeholders.value")} />
                   </Form.Item>
                   <Form.Item
                     name={[field.name, "domain"]}
                     style={{ flex: 1.3 }}
                   >
-                    <Input placeholder="example.com" />
+                    <Input placeholder={t("crawl.browser.cookies.placeholders.domain")} />
                   </Form.Item>
                   <Form.Item name={[field.name, "path"]} style={{ flex: 1 }}>
-                    <Input placeholder="/" />
+                    <Input placeholder={t("crawl.browser.cookies.placeholders.path")} />
                   </Form.Item>
                   <Button
                     type="text"
@@ -1247,14 +1236,14 @@ function BrowserConfigForm({
                 icon={<PlusOutlined />}
                 block
               >
-                Add cookie
+                {t("crawl.browser.cookies.add")}
               </Button>
             </Space>
           )}
         </Form.List>
       </Card>
       <Card
-        title="Session management"
+        title={t("crawl.session.title")}
         size="small"
         style={{ marginBottom: 16 }}
         extra={
@@ -1263,61 +1252,59 @@ function BrowserConfigForm({
             target="_blank"
             rel="noreferrer"
           >
-            Docs
+            {t("common.docs")}
           </Typography.Link>
         }
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          Provide a Crawl4AI session identifier to reuse the same browser tab
-          across multiple requests, and optionally preload cookies/localStorage
-          via a storage_state JSON blob (or a path on the Crawl4AI host).
+          {t("crawl.session.description")}
         </Typography.Paragraph>
         <Form.Item
-          label="Session ID"
+          label={t("crawl.session.sessionId")}
           name="sessionId"
-          extra="Add a human-friendly ID (letters, numbers, hyphen) to reuse this browser state later."
+          extra={t("crawl.session.sessionIdHint")}
         >
-          <Input placeholder="e.g. newsroom-auth-session" maxLength={160} />
+          <Input placeholder={t("crawl.session.placeholders.sessionId")} maxLength={160} />
         </Form.Item>
         <Form.Item
-          label="Storage state (JSON or path)"
+          label={t("crawl.session.storageState")}
           name="storageState"
-          extra="Paste Crawl4AI storage_state JSON (cookies/localStorage) or provide an absolute path accessible to the crawler."
+          extra={t("crawl.session.storageStateHint")}
         >
           <Input.TextArea
             rows={4}
-            placeholder='{ "cookies": [...] }'
+            placeholder={t("crawl.session.placeholders.storageState")}
             maxLength={12000}
           />
         </Form.Item>
       </Card>
-      <Card title="Proxy" size="small" style={{ marginBottom: 16 }}>
+      <Card title={t("crawl.proxy.title")} size="small" style={{ marginBottom: 16 }}>
         <Form.Item
-          label="Proxy URL"
+          label={t("crawl.proxy.url")}
           name="proxyUrl"
-          extra="Send a single proxy string (e.g. http://user:pass@proxy:8080 or socks5://proxy:1080)."
+          extra={t("crawl.proxy.urlHint")}
         >
           <Input
-            placeholder="http://proxy.example.com:8080"
+            placeholder={t("crawl.proxy.placeholders.url")}
             disabled={proxyObjectActive}
           />
         </Form.Item>
         <Form.Item
-          label="Proxy server"
+          label={t("crawl.proxy.server")}
           name={["proxyConfig", "server"]}
-          extra="Dict format from Crawl4AI v0.7.4+; fill this when the proxy requires separate auth fields."
+          extra={t("crawl.proxy.serverHint")}
         >
           <Input
-            placeholder="http://proxy.example.com:8080"
+            placeholder={t("crawl.proxy.placeholders.server")}
             disabled={proxyUrlActive}
           />
         </Form.Item>
-        <Form.Item label="Proxy username" name={["proxyConfig", "username"]}>
-          <Input placeholder="Optional username" disabled={proxyUrlActive} />
+        <Form.Item label={t("crawl.proxy.username")} name={["proxyConfig", "username"]}>
+          <Input placeholder={t("crawl.proxy.placeholders.username")} disabled={proxyUrlActive} />
         </Form.Item>
-        <Form.Item label="Proxy password" name={["proxyConfig", "password"]}>
+        <Form.Item label={t("crawl.proxy.password")} name={["proxyConfig", "password"]}>
           <Input.Password
-            placeholder="Optional password"
+            placeholder={t("crawl.proxy.placeholders.password")}
             disabled={proxyUrlActive}
           />
         </Form.Item>

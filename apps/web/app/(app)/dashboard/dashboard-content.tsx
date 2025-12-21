@@ -16,6 +16,7 @@ import {
   message,
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   AlertSeverity,
@@ -41,6 +42,7 @@ import { DrilldownChart } from "./drilldown-chart";
 import { LiveAlertsToasts } from "./live-alerts";
 import { QueueChart } from "./queue-chart";
 import { useQueueEvents } from "./use-queue-events";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 interface QueueLog {
   event: string;
@@ -74,6 +76,8 @@ const dedupeLogs = (logs: QueueLog[], limit: number): QueueLog[] => {
 };
 
 export function DashboardContent() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data, loading, error, refetch } = useQueueStatsQuery();
   const {
     data: dashboardsData,
@@ -124,9 +128,9 @@ export function DashboardContent() {
 
   useEffect(() => {
     if (connectionError) {
-      message.error(`Queue live connection failed: ${connectionError}`);
+      message.error(t("dashboard.queue.connectionFailed", { error: connectionError }));
     }
-  }, [connectionError]);
+  }, [connectionError, t]);
 
   useEffect(() => {
     if (!lastEvent) return;
@@ -149,13 +153,13 @@ export function DashboardContent() {
     );
     void refetch();
     if (lastEvent.event === "FAILED") {
-      message.error(`Queue job ${lastEvent.jobId} failed`);
+      message.error(t("dashboard.queue.jobFailed", { jobId: lastEvent.jobId }));
     } else if (lastEvent.event === "COMPLETED") {
-      message.success(`Queue job ${lastEvent.jobId} completed`);
+      message.success(t("dashboard.queue.jobCompleted", { jobId: lastEvent.jobId }));
     } else if (lastEvent.event === "ACTIVE") {
-      message.info(`Queue job ${lastEvent.jobId} started`);
+      message.info(t("dashboard.queue.jobStarted", { jobId: lastEvent.jobId }));
     }
-  }, [lastEvent, refetch]);
+  }, [lastEvent, refetch, t]);
 
   const recentLogs = data?.queueStats?.recentLogs;
   const combinedLogs = useMemo(
@@ -196,7 +200,7 @@ export function DashboardContent() {
   }
 
   if (error || !data?.queueStats) {
-    return <Empty description="Unable to load dashboard metrics" />;
+    return <Empty description={t("dashboard.errors.metricsUnavailable")} />;
   }
 
   const { counts, processedCount, itemCount } = data.queueStats;
@@ -217,12 +221,12 @@ export function DashboardContent() {
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} lg={8}>
           <Card className="content-card">
-            <Statistic title="Total Items" value={itemCount} />
+            <Statistic title={t("dashboard.stats.totalItems")} value={itemCount} />
           </Card>
         </Col>
         <Col xs={24} md={12} lg={8}>
           <Card className="content-card">
-            <Statistic title="Processed Items" value={processedCount} />
+            <Statistic title={t("dashboard.stats.processedItems")} value={processedCount} />
           </Card>
         </Col>
         <Col xs={24} md={24} lg={8}>
@@ -230,9 +234,9 @@ export function DashboardContent() {
             className="content-card"
             title={
               <Space size="small" align="center">
-                <span>Queue Snapshot</span>
+                <span>{t("dashboard.queue.snapshot")}</span>
                 <Tag color={queueLive ? "green" : "default"}>
-                  {queueLive ? "Live" : "Offline"}
+                  {queueLive ? t("dashboard.queue.live") : t("dashboard.queue.offline")}
                 </Tag>
               </Space>
             }
@@ -243,7 +247,7 @@ export function DashboardContent() {
       </Row>
       <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
         <Col xs={24} md={12}>
-          <Card title="Recent Queue Activity" className="content-card">
+          <Card title={t("dashboard.queue.recentActivity")} className="content-card">
             <List
               rowKey={(item) => item.jobId}
               dataSource={parsedLogs}
@@ -253,9 +257,18 @@ export function DashboardContent() {
                     title={`${item.event} • ${item.jobId}`}
                     description={
                       <Typography.Text type="secondary">
-                        {new Date(item.timestamp).toLocaleString()}
+                        {formatDateTime(item.timestamp, locale, {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit"
+                        })}
                         {item.payload?.message
-                          ? ` — ${item.payload?.message}`
+                          ? t("dashboard.queue.payloadMessage", {
+                              message: item.payload?.message
+                            })
                           : ""}
                       </Typography.Text>
                     }
@@ -264,26 +277,25 @@ export function DashboardContent() {
               )}
             />
             {parsedLogs.length === 0 && (
-              <Empty description="No recent queue logs" />
+              <Empty description={t("dashboard.queue.noRecentLogs")} />
             )}
           </Card>
         </Col>
         <Col xs={24} md={12}>
-          <Card title="Next Actions" className="content-card">
+          <Card title={t("dashboard.nextActions.title")} className="content-card">
             <Typography.Paragraph>
-              Queue jobs are processed through the dedupe → transform → tag →
-              score pipeline. Monitor the queue metrics to ensure SLAs are met.
+              {t("dashboard.nextActions.description")}
             </Typography.Paragraph>
             <Row gutter={[12, 12]}>
               <Col xs={24} md={12}>
                 <Typography.Text strong>
-                  Latest anomaly signals
+                  {t("dashboard.nextActions.anomalies")}
                 </Typography.Text>
                 <List
                   size="small"
                   loading={analysisLoading}
                   dataSource={recentAnomalies}
-                  locale={{ emptyText: "No anomalies detected" }}
+                  locale={{ emptyText: t("dashboard.nextActions.noAnomalies") }}
                   renderItem={(item) => (
                     <List.Item>
                       <List.Item.Meta
@@ -291,13 +303,19 @@ export function DashboardContent() {
                           <Space>
                             <Tag>{item.status}</Tag>
                             <Typography.Text>
-                              {new Date(item.createdAt).toLocaleString()}
+                              {formatDateTime(item.createdAt, locale, {
+                                year: "numeric",
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}
                             </Typography.Text>
                           </Space>
                         }
                         description={
                           <Typography.Text type="secondary">
-                            {item.summary ?? "Pending analysis summary"}
+                            {item.summary ?? t("dashboard.nextActions.pendingSummary")}
                           </Typography.Text>
                         }
                       />
@@ -306,12 +324,12 @@ export function DashboardContent() {
                 />
               </Col>
               <Col xs={24} md={12}>
-                <Typography.Text strong>Alert routing</Typography.Text>
+                <Typography.Text strong>{t("dashboard.nextActions.alertRouting")}</Typography.Text>
                 <List
                   size="small"
                   loading={alertRulesLoading}
                   dataSource={activeAlertRules.slice(0, 3)}
-                  locale={{ emptyText: "No active alert rules" }}
+                  locale={{ emptyText: t("dashboard.nextActions.noAlertRules") }}
                   renderItem={(rule) => (
                     <List.Item>
                       <List.Item.Meta
@@ -328,9 +346,12 @@ export function DashboardContent() {
                         }
                         description={
                           <Typography.Text type="secondary">
-                            Metric: {rule.metricSlug} • Channels:{" "}
-                            {rule.channels.map((c) => c.name).join(", ") ||
-                              "none configured"}
+                            {t("dashboard.nextActions.alertRoutingSummary", {
+                              metric: rule.metricSlug,
+                              channels:
+                                rule.channels.map((c) => c.name).join(", ") ||
+                                t("dashboard.nextActions.noneConfigured")
+                            })}
                           </Typography.Text>
                         }
                       />
@@ -344,12 +365,11 @@ export function DashboardContent() {
       </Row>
       <Row style={{ marginTop: "2rem" }}>
         <Col span={24}>
-          <Card title="Custom Dashboard Editor" className="content-card">
+          <Card title={t("dashboard.editor.title")} className="content-card">
             <Space direction="vertical" style={{ width: "100%" }}>
               <Space align="center">
                 <Typography.Text type="secondary">
-                  Drag and resize widgets, then persist layout through the
-                  dashboard GraphQL mutations. Layouts are stored in MySQL.
+                  {t("dashboard.editor.description")}
                 </Typography.Text>
                 <Select
                   size="small"
@@ -364,7 +384,7 @@ export function DashboardContent() {
                   style={{ width: 120 }}
                 />
                 <Select
-                  placeholder="Select dashboard"
+                  placeholder={t("dashboard.editor.selectDashboard")}
                   style={{ minWidth: 220 }}
                   value={activeDashboard?.id}
                   onChange={(val) => setActiveId(val)}
@@ -379,7 +399,7 @@ export function DashboardContent() {
                     setActiveId(undefined);
                   }}
                 >
-                  New Dashboard
+                  {t("dashboard.editor.newDashboard")}
                 </Button>
               </Space>
               <DashboardEditor
@@ -394,7 +414,7 @@ export function DashboardContent() {
                     ? async (id: string) => {
                         await deleteDashboard({ variables: { id } });
                         await refetchDashboards();
-                        message.success("Dashboard deleted");
+                        message.success(t("dashboard.editor.deleted"));
                         setActiveId(undefined);
                       }
                     : undefined
@@ -406,12 +426,12 @@ export function DashboardContent() {
       </Row>
       <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
         <Col xs={24} lg={12}>
-          <Card title="Smart Alerts" className="content-card">
+          <Card title={t("dashboard.panels.smartAlerts")} className="content-card">
             <AlertPanel />
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="AI Analysis" className="content-card">
+          <Card title={t("dashboard.panels.aiAnalysis")} className="content-card">
             <AnalysisPanel />
           </Card>
         </Col>
@@ -420,13 +440,13 @@ export function DashboardContent() {
         <Col xs={24} lg={24}>
           <DrilldownChart
             category="economic-short"
-            title="Economic Drilldown (linked zoom + click to drill)"
+            title={t("dashboard.drilldown.title")}
           />
         </Col>
       </Row>
       <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
         <Col xs={24} lg={24}>
-          <Card title="Alert Configuration" className="content-card">
+          <Card title={t("dashboard.alertConfig.title")} className="content-card">
             <AlertConfigForm />
           </Card>
         </Col>

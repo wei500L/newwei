@@ -1,27 +1,30 @@
 "use client";
 
 import { Alert, Button, Form, Input, Typography } from "antd";
+import type { TFunction } from "i18next";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { captureClientError } from "@/lib/client-telemetry";
 
 const { Title, Text } = Typography;
 
-const loginSchema = z.object({
-  email: z
-    .string({ required_error: "Email is required" })
-    .email("Invalid email"),
-  password: z
-    .string({ required_error: "Password is required" })
-    .min(8, "Password must be at least 8 characters"),
-  orgId: z
-    .string()
-    .trim()
-    .optional()
-    .transform((value) => (value ? value : undefined)),
-});
+const buildLoginSchema = (t: TFunction) =>
+  z.object({
+    email: z
+      .string({ required_error: t("auth.login.validation.emailRequired") })
+      .email(t("auth.login.validation.emailInvalid")),
+    password: z
+      .string({ required_error: t("auth.login.validation.passwordRequired") })
+      .min(8, t("auth.login.validation.passwordMin", { count: 8 })),
+    orgId: z
+      .string()
+      .trim()
+      .optional()
+      .transform((value) => (value ? value : undefined)),
+  });
 
 interface LoginFormValues {
   email: string;
@@ -30,6 +33,7 @@ interface LoginFormValues {
 }
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const [form] = Form.useForm<LoginFormValues>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +42,7 @@ export default function LoginPage() {
   const sessionExpired = searchParams.get("sessionExpired") === "1";
 
   const onFinish = async (values: LoginFormValues) => {
-    const parsed = loginSchema.safeParse(values);
+    const parsed = buildLoginSchema(t).safeParse(values);
     if (!parsed.success) {
       const fieldErrors = parsed.error.formErrors.fieldErrors;
       Object.entries(fieldErrors).forEach(([name, messages]) => {
@@ -67,8 +71,10 @@ export default function LoginPage() {
       if (result?.error) {
         setError(
           process.env.NODE_ENV === "production"
-            ? "Unable to sign in with provided credentials"
-            : `Unable to sign in (${result.error})`
+            ? t("auth.login.error.invalidCredentials")
+            : t("auth.login.error.invalidCredentialsWithReason", {
+                reason: result.error,
+              })
         );
         return;
       }
@@ -77,7 +83,7 @@ export default function LoginPage() {
       router.push(redirectTo);
     } catch (err) {
       captureClientError("Login failed", err);
-      setError("Unexpected error. Please try again later.");
+      setError(t("common.error.unexpected"));
     } finally {
       setLoading(false);
     }
@@ -86,9 +92,9 @@ export default function LoginPage() {
   return (
     <div className="auth-card">
       <Title level={3} style={{ marginBottom: "0.5rem" }}>
-        Welcome Back
+        {t("auth.login.title")}
       </Title>
-      <Text type="secondary">Sign in to access the operator console.</Text>
+      <Text type="secondary">{t("auth.login.subtitle")}</Text>
       <Form
         form={form}
         layout="vertical"
@@ -97,38 +103,38 @@ export default function LoginPage() {
       >
         {sessionExpired && (
           <Form.Item>
-            <Alert type="warning" message="Session expired. Please sign in again." showIcon />
+            <Alert type="warning" message={t("auth.login.sessionExpired")} showIcon />
           </Form.Item>
         )}
         <Form.Item
-          label="Email"
+          label={t("auth.login.fields.email.label")}
           name="email"
-          rules={[{ required: true, message: "Please enter your email" }]}
+          rules={[{ required: true, message: t("auth.login.fields.email.required") }]}
         >
           <Input
-            placeholder="admin@example.com"
+            placeholder={t("auth.login.fields.email.placeholder")}
             autoComplete="email"
             size="large"
           />
         </Form.Item>
         <Form.Item
-          label="Password"
+          label={t("auth.login.fields.password.label")}
           name="password"
-          rules={[{ required: true, message: "Please enter your password" }]}
+          rules={[{ required: true, message: t("auth.login.fields.password.required") }]}
         >
           <Input.Password
-            placeholder="********"
+            placeholder={t("auth.login.fields.password.placeholder")}
             autoComplete="current-password"
             size="large"
           />
         </Form.Item>
         <Form.Item
-          label="Organization"
+          label={t("auth.login.fields.organization.label")}
           name="orgId"
-          tooltip="Optional. Leave blank to use your default organization"
+          tooltip={t("auth.login.fields.organization.tooltip")}
         >
           <Input
-            placeholder="Org ID or slug (e.g. cmja... or acme)"
+            placeholder={t("auth.login.fields.organization.placeholder")}
             autoComplete="organization"
             size="large"
           />
@@ -146,7 +152,7 @@ export default function LoginPage() {
             block
             loading={loading}
           >
-            Sign In
+            {t("auth.login.submit")}
           </Button>
         </Form.Item>
       </Form>

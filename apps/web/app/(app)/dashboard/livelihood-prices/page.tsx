@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -11,13 +12,14 @@ import {
 } from "../utils/series";
 
 const agConfigs = [
-  { slug: "wheat_futures_main", label: "小麦" },
-  { slug: "corn_futures_main", label: "玉米" },
-  { slug: "soybean_futures_main", label: "大豆" },
-  { slug: "cotton_futures_main", label: "棉花" },
+  { slug: "wheat_futures_main", labelKey: "dashboard.livelihood.agri.wheat" },
+  { slug: "corn_futures_main", labelKey: "dashboard.livelihood.agri.corn" },
+  { slug: "soybean_futures_main", labelKey: "dashboard.livelihood.agri.soybean" },
+  { slug: "cotton_futures_main", labelKey: "dashboard.livelihood.agri.cotton" },
 ];
 
 export default function LivelihoodPricesPage() {
+  const { t } = useTranslation();
   const { loading, error, seriesMap } = useEconomicData({
     category: "livelihood-prices",
     pollInterval: 180_000,
@@ -25,19 +27,19 @@ export default function LivelihoodPricesPage() {
 
   const cpiTreeData = [
     {
-      name: "食品 (全国环比)",
+      name: t("dashboard.livelihood.cpi.food"),
       value:
         getLatestValue(getSeriesField(seriesMap, "china_cpi", "全国-环比增长"))
           ?.value ?? 0,
     },
     {
-      name: "居住 (城市环比)",
+      name: t("dashboard.livelihood.cpi.housing"),
       value:
         getLatestValue(getSeriesField(seriesMap, "china_cpi", "城市-环比增长"))
           ?.value ?? 0,
     },
     {
-      name: "交通 (农村环比)",
+      name: t("dashboard.livelihood.cpi.transport"),
       value:
         getLatestValue(getSeriesField(seriesMap, "china_cpi", "农村-环比增长"))
           ?.value ?? 0,
@@ -45,7 +47,10 @@ export default function LivelihoodPricesPage() {
   ];
 
   const treeOption = {
-    tooltip: { formatter: ({ name, value }: any) => `${name}：${value}%` },
+    tooltip: {
+      formatter: ({ name, value }: any) =>
+        t("dashboard.livelihood.cpi.tooltip", { name, value }),
+    },
     series: [
       {
         type: "treemap",
@@ -58,10 +63,11 @@ export default function LivelihoodPricesPage() {
   };
 
   const radarData = agConfigs.map((config) => {
+    const label = t(config.labelKey);
     const latest =
       getLatestValue(getSeriesField(seriesMap, config.slug, "收盘价"))?.value ??
       0;
-    return { name: config.label, value: latest };
+    return { name: label, value: latest };
   });
   const radarOption = {
     radar: {
@@ -76,7 +82,7 @@ export default function LivelihoodPricesPage() {
         data: [
           {
             value: radarData.map((item) => item.value),
-            name: "农产品价格",
+            name: t("dashboard.livelihood.agri.radarName"),
           },
         ],
       },
@@ -102,21 +108,26 @@ export default function LivelihoodPricesPage() {
   );
   const tourismOption = {
     tooltip: { trigger: "axis" },
-    legend: { data: ["外汇收入", "收入占比"] },
+    legend: {
+      data: [
+        t("dashboard.livelihood.tourism.fxIncome"),
+        t("dashboard.livelihood.tourism.incomeShare"),
+      ],
+    },
     xAxis: { type: "time" },
     yAxis: [
-      { type: "value", name: "百万美元" },
+      { type: "value", name: t("dashboard.livelihood.tourism.axisIncome") },
       { type: "value", name: "%", axisLabel: { formatter: "{value}%" } },
     ],
     series: [
       {
-        name: "外汇收入",
+        name: t("dashboard.livelihood.tourism.fxIncome"),
         type: "line",
         areaStyle: {},
         data: tourismValues.map((entry) => [entry.timestamp, entry.value]),
       },
       {
-        name: "收入占比",
+        name: t("dashboard.livelihood.tourism.incomeShare"),
         type: "line",
         yAxisIndex: 1,
         data: tourismValues.map((entry) => [
@@ -130,7 +141,7 @@ export default function LivelihoodPricesPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ marginBottom: 16 }}>
-        <Typography.Title level={4}>民生物价</Typography.Title>
+        <Typography.Title level={4}>{t("dashboard.livelihood.title")}</Typography.Title>
         <TimeRangeControls />
       </div>
       {loading && <Spin />}
@@ -139,31 +150,31 @@ export default function LivelihoodPricesPage() {
       )}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title="CPI分类环比树状图" className="content-card">
+          <Card title={t("dashboard.livelihood.cards.cpiTree")} className="content-card">
             {cpiTreeData.some((item) => item.value !== 0) ? (
               <DashboardChart option={treeOption} height={320} />
             ) : (
-              <Empty description="等待最新CPI分类数据" />
+              <Empty description={t("dashboard.livelihood.empty.cpi")} />
             )}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="主要农产品价格雷达图" className="content-card">
+          <Card title={t("dashboard.livelihood.cards.agriRadar")} className="content-card">
             {radarData.some((item) => item.value !== 0) ? (
               <DashboardChart option={radarOption} height={320} />
             ) : (
-              <Empty description="暂无农产品数据" />
+              <Empty description={t("dashboard.livelihood.empty.agri")} />
             )}
           </Card>
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col span={24}>
-          <Card title="国际旅游外汇收入趋势" className="content-card">
+          <Card title={t("dashboard.livelihood.cards.tourism")} className="content-card">
             {tourismValues.length > 0 ? (
               <DashboardChart option={tourismOption} height={320} />
             ) : (
-              <Empty description="暂无旅游外汇数据" />
+              <Empty description={t("dashboard.livelihood.empty.tourism")} />
             )}
           </Card>
         </Col>

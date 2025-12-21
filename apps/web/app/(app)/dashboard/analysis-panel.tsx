@@ -13,6 +13,7 @@ import {
 } from "antd";
 import dayjs from "dayjs";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   type AnomalyAnalysisInput,
@@ -25,8 +26,11 @@ import {
   type AnalysisResultsQuery,
   type AnalysisEventsSubscription,
 } from "@/graphql/generated";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 export function AnalysisPanel() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data, refetch } = useAnalysisResultsQuery({
     variables: { limit: 10 },
   });
@@ -58,7 +62,7 @@ export function AnalysisPanel() {
     },
     onError: (error) => {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      message.error(`Analysis stream error: ${errorMessage}`);
+      message.error(t("analysis.streamError", { error: errorMessage }));
     },
   });
 
@@ -91,27 +95,27 @@ export function AnalysisPanel() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <Card title="Correlation Analysis">
+      <Card title={t("analysis.correlation.title")}>
         <CorrelationForm
           loading={savingCorr}
           onSubmit={async (values) => {
             await requestCorrelation({ variables: { input: values } });
-            message.success("Correlation analysis submitted");
+            message.success(t("analysis.correlation.submitted"));
             await refetch();
           }}
         />
       </Card>
-      <Card title="Anomaly Explanation">
+      <Card title={t("analysis.anomaly.title")}>
         <AnomalyForm
           loading={savingAnomaly}
           onSubmit={async (values) => {
             await requestAnomaly({ variables: { input: values } });
-            message.success("Anomaly explanation submitted");
+            message.success(t("analysis.anomaly.submitted"));
             await refetch();
           }}
         />
       </Card>
-      <Card title="Recent Analysis Results">
+      <Card title={t("analysis.results.title")}>
         <List<AnalysisResultsQuery["analysisResults"][number]>
           dataSource={results}
           renderItem={(result) => (
@@ -121,7 +125,13 @@ export function AnalysisPanel() {
                   <Space>
                     <Typography.Text strong>{result.type}</Typography.Text>
                     <Typography.Text type="secondary">
-                      {dayjs(result.createdAt).format("YYYY-MM-DD HH:mm")}
+                      {formatDateTime(result.createdAt, locale, {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
                     </Typography.Text>
                     <Typography.Text type="secondary">
                       {result.status}
@@ -131,7 +141,9 @@ export function AnalysisPanel() {
                 description={
                   <Typography.Paragraph ellipsis={{ rows: 3 }}>
                     {result.summary ??
-                      (result.status === "running" ? "Generating..." : "Pending")}
+                      (result.status === "running"
+                        ? t("analysis.results.generating")
+                        : t("analysis.results.pending"))}
                   </Typography.Paragraph>
                 }
               />
@@ -149,13 +161,14 @@ interface CorrelationFormProps {
 }
 
 function CorrelationForm({ onSubmit, loading }: CorrelationFormProps) {
+  const { t } = useTranslation();
   const [form] = Form.useForm<CorrelationAnalysisInput>();
   return (
     <Form<CorrelationAnalysisInput>
       layout="inline"
       form={form}
       initialValues={{
-        indicatorName: "CPI",
+        indicatorName: t("analysis.correlation.defaults.indicator"),
         changePercent: 0,
         value: 0,
         startDate: dayjs().subtract(30, "day").format("YYYY-MM-DD"),
@@ -165,23 +178,23 @@ function CorrelationForm({ onSubmit, loading }: CorrelationFormProps) {
       onFinish={onSubmit}
     >
       <Form.Item name="indicatorName" rules={[{ required: true }]}>
-        <Input placeholder="Indicator" />
+        <Input placeholder={t("analysis.correlation.fields.indicator")} />
       </Form.Item>
       <Form.Item name="value" rules={[{ required: true }]}>
-        <InputNumber placeholder="Value" />
+        <InputNumber placeholder={t("analysis.correlation.fields.value")} />
       </Form.Item>
       <Form.Item name="changePercent" rules={[{ required: true }]}>
-        <InputNumber placeholder="Change %" />
+        <InputNumber placeholder={t("analysis.correlation.fields.changePercent")} />
       </Form.Item>
       <Form.Item name="startDate" rules={[{ required: true }]}>
-        <Input placeholder="Start date" />
+        <Input placeholder={t("analysis.correlation.fields.startDate")} />
       </Form.Item>
       <Form.Item name="endDate" rules={[{ required: true }]}>
-        <Input placeholder="End date" />
+        <Input placeholder={t("analysis.correlation.fields.endDate")} />
       </Form.Item>
       <Form.Item name="newsSummaries">
         <Input
-          placeholder="News summaries (comma separated)"
+          placeholder={t("analysis.correlation.fields.newsSummaries")}
           onChange={(e) =>
             form.setFieldValue(
               "newsSummaries",
@@ -195,7 +208,7 @@ function CorrelationForm({ onSubmit, loading }: CorrelationFormProps) {
       </Form.Item>
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={loading}>
-          Submit
+          {t("common.submit")}
         </Button>
       </Form.Item>
     </Form>
@@ -212,13 +225,14 @@ interface AnomalyFormProps {
 }
 
 function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
+  const { t } = useTranslation();
   const [form] = Form.useForm<AnomalyFormValues>();
   const parseSeriesJson = (raw?: string) => {
     if (!raw || !raw.trim()) return [];
     try {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
-        message.error("Series must be a JSON array");
+        message.error(t("analysis.anomaly.errors.seriesArray"));
         return null;
       }
       const normalized = parsed
@@ -241,11 +255,11 @@ function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
             !!point,
         );
       if (!normalized.length) {
-        message.warning("No valid series points parsed");
+        message.warning(t("analysis.anomaly.errors.seriesEmpty"));
       }
       return normalized;
     } catch {
-      message.error("Series JSON is invalid");
+      message.error(t("analysis.anomaly.errors.seriesInvalid"));
       return null;
     }
   };
@@ -255,7 +269,7 @@ function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
       layout="inline"
       form={form}
       initialValues={{
-        metric: "指数",
+        metric: t("analysis.anomaly.defaults.metric"),
         timestamp: dayjs().toISOString(),
         value: 0,
         deviationPercent: 0,
@@ -279,20 +293,20 @@ function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
       }}
     >
       <Form.Item name="metric" rules={[{ required: true }]}>
-        <Input placeholder="Metric" />
+        <Input placeholder={t("analysis.anomaly.fields.metric")} />
       </Form.Item>
       <Form.Item name="timestamp" rules={[{ required: true }]}>
-        <Input placeholder="Timestamp ISO" />
+        <Input placeholder={t("analysis.anomaly.fields.timestamp")} />
       </Form.Item>
       <Form.Item name="value" rules={[{ required: true }]}>
-        <InputNumber placeholder="Value" />
+        <InputNumber placeholder={t("analysis.anomaly.fields.value")} />
       </Form.Item>
       <Form.Item name="deviationPercent" rules={[{ required: true }]}>
-        <InputNumber placeholder="Deviation %" />
+        <InputNumber placeholder={t("analysis.anomaly.fields.deviationPercent")} />
       </Form.Item>
       <Form.Item name="newsList">
         <Input
-          placeholder="News list comma separated"
+          placeholder={t("analysis.anomaly.fields.newsList")}
           onChange={(e) =>
             form.setFieldValue(
               "newsList",
@@ -306,7 +320,7 @@ function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
       </Form.Item>
       <Form.Item name="policyList">
         <Input
-          placeholder="Policy list comma separated"
+          placeholder={t("analysis.anomaly.fields.policyList")}
           onChange={(e) =>
             form.setFieldValue(
               "policyList",
@@ -320,13 +334,13 @@ function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
       </Form.Item>
       <Form.Item name="seriesJson">
         <Input.TextArea
-          placeholder='Series JSON e.g. [{"timestamp":"2024-06-01","value":123}]'
+          placeholder={t("analysis.anomaly.fields.seriesJson")}
           autoSize={{ minRows: 2, maxRows: 4 }}
         />
       </Form.Item>
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={loading}>
-          Submit
+          {t("common.submit")}
         </Button>
       </Form.Item>
     </Form>

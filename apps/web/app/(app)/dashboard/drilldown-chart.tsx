@@ -4,6 +4,7 @@ import { Alert, Breadcrumb, Button, Card } from "antd";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApolloClient } from "@apollo/client";
+import { useTranslation } from "react-i18next";
 import { DashboardChart } from "@/components/echart";
 import { useDashboardRangeStore } from "@/store/time-range";
 import { EconomicDataDocument } from "@/graphql/generated";
@@ -17,6 +18,7 @@ export function DrilldownChart({
   category: string;
   title: string;
 }) {
+  const { t } = useTranslation();
   const [level, setLevel] = useState<number>(2); // start at month
   const client = useApolloClient();
   const { start, end, setCustomRange } = useDashboardRangeStore();
@@ -45,7 +47,7 @@ export function DrilldownChart({
   });
 
   const breadcrumbs = GRANS.slice(0, level + 1).map((g, idx) => ({
-    title: g,
+    title: t(`dashboard.granularity.${g}`),
     onClick: () => setLevel(idx),
   }));
 
@@ -83,11 +85,11 @@ export function DrilldownChart({
         <Alert
           type="error"
           showIcon
-          message="加载经济数据失败"
+          message={t("dashboard.drilldown.loadFailed")}
           description={error instanceof Error ? error.message : undefined}
           action={
             <Button size="small" onClick={() => refetch()}>
-              重试
+              {t("common.retry")}
             </Button>
           }
           style={{ marginBottom: 12 }}
@@ -96,7 +98,7 @@ export function DrilldownChart({
       {!isLoading && (!data || data.length === 0) ? (
         <Alert
           type="info"
-          message="暂无数据"
+          message={t("common.empty")}
           showIcon
           style={{ marginBottom: 12 }}
         />

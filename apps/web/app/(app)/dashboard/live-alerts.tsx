@@ -3,10 +3,12 @@
 import { useApolloClient } from "@apollo/client";
 import { message } from "antd";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AlertEventsStreamDocument, type AlertEventsStreamSubscription } from "@/graphql/generated";
 
 export function LiveAlertsToasts() {
+  const { t } = useTranslation();
   const client = useApolloClient();
   const notifiedRef = useRef(false);
 
@@ -20,7 +22,11 @@ export function LiveAlertsToasts() {
           const evt = payload.data?.alertEvents;
           if (evt) {
             message.warning(
-              `[Alert] ${evt.severity} • ${evt.message ?? "Triggered"} • value=${evt.metricValue ?? "n/a"}`,
+              t("alerts.live.message", {
+                severity: evt.severity,
+                message: evt.message ?? t("alerts.events.triggered"),
+                value: evt.metricValue ?? t("common.notAvailable")
+              })
             );
           }
         },
@@ -30,14 +36,14 @@ export function LiveAlertsToasts() {
           }
           notifiedRef.current = true;
           const errorMessage = error instanceof Error ? error.message : String(error);
-          message.error(`Alert stream error: ${errorMessage}`);
+          message.error(t("alerts.streamError", { error: errorMessage }));
         },
       });
     return () => {
       sub.unsubscribe();
       notifiedRef.current = false;
     };
-  }, [client]);
+  }, [client, t]);
 
   return null;
 }

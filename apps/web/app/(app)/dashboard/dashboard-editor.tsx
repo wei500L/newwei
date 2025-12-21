@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 import { useEffect, useMemo } from "react";
 import type { Layout } from "react-grid-layout";
+import { useTranslation } from "react-i18next";
 
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -59,14 +60,14 @@ const defaultWidgetSize: Record<DashboardWidgetType, { w: number; h: number }> =
   };
 
 const datasourceOptions = [
-  { label: "标普500", value: "economic:sp500_index" },
-  { label: "纳斯达克", value: "economic:nasdaq_index" },
-  { label: "道琼斯", value: "economic:dowjones_index" },
-  { label: "美元指数", value: "economic:usd_index_history" },
-  { label: "布伦特原油", value: "economic:brent_oil_price" },
-  { label: "CME Bitcoin", value: "economic:crypto_bitcoin_cme" },
-  { label: "Crypto Spot", value: "economic:crypto_js_spot" },
-  { label: "默认演示", value: "economic:economic-short" },
+  { labelKey: "dashboard.editor.dataSources.sp500", value: "economic:sp500_index" },
+  { labelKey: "dashboard.editor.dataSources.nasdaq", value: "economic:nasdaq_index" },
+  { labelKey: "dashboard.editor.dataSources.dowjones", value: "economic:dowjones_index" },
+  { labelKey: "dashboard.editor.dataSources.usdIndex", value: "economic:usd_index_history" },
+  { labelKey: "dashboard.editor.dataSources.brentOil", value: "economic:brent_oil_price" },
+  { labelKey: "dashboard.editor.dataSources.cmeBitcoin", value: "economic:crypto_bitcoin_cme" },
+  { labelKey: "dashboard.editor.dataSources.cryptoSpot", value: "economic:crypto_js_spot" },
+  { labelKey: "dashboard.editor.dataSources.demo", value: "economic:economic-short" },
 ];
 
 type DashboardRecord = DashboardsQuery["dashboards"][number] | undefined;
@@ -84,6 +85,7 @@ export function DashboardEditor({
   onSave,
   onDelete,
 }: DashboardEditorProps) {
+  const { t } = useTranslation();
   const {
     widgets,
     addWidget,
@@ -161,7 +163,7 @@ export function DashboardEditor({
     const defaultDataSource = datasourceOptions[0]?.value ?? "economic:default";
     addWidget({
       type,
-      title: `${type} widget`,
+      title: t("dashboard.editor.widgetTitle", { type }),
       dataSource: defaultDataSource,
       layout: { x: 0, y: Infinity, w: size.w, h: size.h },
       options: {},
@@ -171,25 +173,25 @@ export function DashboardEditor({
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <Card title="Dashboard Layout" extra={<TimeRangeControls />}>
+      <Card title={t("dashboard.editor.layoutTitle")} extra={<TimeRangeControls />}>
         <Space direction="vertical" style={{ width: "100%" }} size="small">
           <Space wrap>
             <Input
               style={{ width: 220 }}
               value={name}
-              placeholder="Dashboard name"
+              placeholder={t("dashboard.editor.fields.name")}
               onChange={(e) => setMeta({ name: e.target.value })}
             />
             <Input
               style={{ width: 200 }}
               value={slug}
-              placeholder="Slug"
+              placeholder={t("dashboard.editor.fields.slug")}
               onChange={(e) => setMeta({ slug: e.target.value })}
             />
             <Input
               style={{ width: 320 }}
               value={description}
-              placeholder="Description"
+              placeholder={t("dashboard.editor.fields.description")}
               onChange={(e) => setMeta({ description: e.target.value })}
             />
             <Select
@@ -198,13 +200,13 @@ export function DashboardEditor({
                 (dashboard?.theme as "light" | "dark" | undefined) ?? "light"
               }
               options={[
-                { label: "Light", value: "light" },
-                { label: "Dark", value: "dark" },
+                { label: t("dashboard.editor.theme.light"), value: "light" },
+                { label: t("dashboard.editor.theme.dark"), value: "dark" },
               ]}
               onChange={(theme) => setMeta({ theme })}
             />
             <Space align="center">
-              <Typography.Text type="secondary">Primary</Typography.Text>
+              <Typography.Text type="secondary">{t("dashboard.editor.fields.primary")}</Typography.Text>
               <input
                 type="color"
                 value={primaryColor}
@@ -247,30 +249,30 @@ export function DashboardEditor({
                   };
                   try {
                     await onSave(payload);
-                    message.success("Dashboard saved");
+                    message.success(t("dashboard.editor.saved"));
                   } catch (error: unknown) {
                     const errorMessage =
-                      error instanceof Error ? error.message : "Unable to persist dashboard";
+                      error instanceof Error ? error.message : t("dashboard.editor.saveFailed");
                     message.error(errorMessage);
                   }
                 }}
               >
-                Save
+                {t("common.save")}
               </Button>
               {dashboard?.id && onDelete ? (
                 <Button danger onClick={() => onDelete(dashboard.id)}>
-                  Delete
+                  {t("common.delete")}
                 </Button>
               ) : null}
-              <Button onClick={() => reset()}>Reset</Button>
+              <Button onClick={() => reset()}>{t("common.reset")}</Button>
             </Space>
           </Space>
         </Space>
         <Space wrap>
-          <Button onClick={() => handleAddWidget("line")}>Add Line</Button>
-          <Button onClick={() => handleAddWidget("bar")}>Add Bar</Button>
-          <Button onClick={() => handleAddWidget("pie")}>Add Pie</Button>
-          <Button onClick={() => handleAddWidget("kline")}>Add K线</Button>
+          <Button onClick={() => handleAddWidget("line")}>{t("dashboard.editor.add.line")}</Button>
+          <Button onClick={() => handleAddWidget("bar")}>{t("dashboard.editor.add.bar")}</Button>
+          <Button onClick={() => handleAddWidget("pie")}>{t("dashboard.editor.add.pie")}</Button>
+          <Button onClick={() => handleAddWidget("kline")}>{t("dashboard.editor.add.kline")}</Button>
         </Space>
       </Card>
       <ResponsiveGridLayout
@@ -304,7 +306,10 @@ export function DashboardEditor({
                     onChange={(val) =>
                       updateWidget(widget.id, { dataSource: val })
                     }
-                    options={datasourceOptions}
+                    options={datasourceOptions.map((option) => ({
+                      value: option.value,
+                      label: t(option.labelKey)
+                    }))}
                   />
                   <input
                     type="color"
@@ -330,7 +335,7 @@ export function DashboardEditor({
                     size="small"
                     onClick={() => removeWidget(widget.id)}
                   >
-                    Remove
+                    {t("common.remove")}
                   </Button>
                 </Space>
               }

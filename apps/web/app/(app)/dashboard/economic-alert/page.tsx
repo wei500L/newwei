@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -11,6 +12,7 @@ import {
 } from "../utils/series";
 
 export default function EconomicAlertPage() {
+  const { t } = useTranslation();
   const { loading, error, seriesMap, refetch } = useEconomicData({
     category: "economic-alert",
     pollInterval: 60_000,
@@ -66,16 +68,16 @@ export default function EconomicAlertPage() {
   const latestSpread = spreadSeries.at(-1)?.value ?? null;
   const alerts: string[] = [];
   if (cpiValue !== null && cpiValue > 3) {
-    alerts.push("CPI同比超过3%");
+    alerts.push(t("dashboard.economicAlert.alerts.cpiHigh"));
   }
   if (
     getLatestValue(chinaPmiSeries)?.value !== undefined &&
     (getLatestValue(chinaPmiSeries)?.value ?? 0) < 50
   ) {
-    alerts.push("中国PMI跌破荣枯线");
+    alerts.push(t("dashboard.economicAlert.alerts.chinaPmiLow"));
   }
   if (latestSpread !== null && latestSpread < 0) {
-    alerts.push("美国2Y/10Y收益率倒挂");
+    alerts.push(t("dashboard.economicAlert.alerts.usYieldInversion"));
   }
 
   const gaugeOption = {
@@ -86,7 +88,7 @@ export default function EconomicAlertPage() {
         max: 6,
         center: ["25%", "55%"],
         title: { offsetCenter: [0, "70%"] },
-        data: [{ value: cpiValue ?? 0, name: "CPI同比" }],
+        data: [{ value: cpiValue ?? 0, name: t("dashboard.economicAlert.gauges.cpi") }],
       },
       {
         type: "gauge",
@@ -94,20 +96,20 @@ export default function EconomicAlertPage() {
         max: 10,
         center: ["75%", "55%"],
         title: { offsetCenter: [0, "70%"] },
-        data: [{ value: ppiValue ?? 0, name: "PPI同比" }],
+        data: [{ value: ppiValue ?? 0, name: t("dashboard.economicAlert.gauges.ppi") }],
       },
     ],
   };
 
   const pmiOption = {
     tooltip: { trigger: "axis" },
-    legend: { data: ["中国PMI", "美国PMI"] },
+    legend: { data: [t("dashboard.economicAlert.pmi.china"), t("dashboard.economicAlert.pmi.us")] },
     grid: { left: 40, right: 20, top: 60, bottom: 60 },
     xAxis: { type: "time" },
     yAxis: { type: "value", min: 40, max: 60, splitNumber: 4 },
     series: [
       {
-        name: "中国PMI",
+        name: t("dashboard.economicAlert.pmi.china"),
         type: "line",
         data: getSortedValues(chinaPmiSeries).map((point) => [
           point.timestamp,
@@ -116,7 +118,7 @@ export default function EconomicAlertPage() {
         smooth: true,
       },
       {
-        name: "美国PMI",
+        name: t("dashboard.economicAlert.pmi.us"),
         type: "line",
         data: getSortedValues(usPmiSeries).map((point) => [
           point.timestamp,
@@ -126,7 +128,7 @@ export default function EconomicAlertPage() {
       },
       {
         type: "line",
-        name: "荣枯线",
+        name: t("dashboard.economicAlert.pmi.threshold"),
         data: getSortedValues(chinaPmiSeries)
           .slice(-50)
           .map((entry) => [entry.timestamp, 50]),
@@ -144,7 +146,7 @@ export default function EconomicAlertPage() {
     series: [
       {
         type: "line",
-        name: "10Y-2Y",
+        name: t("dashboard.economicAlert.yield.spread"),
         data: spreadSeries.map((entry) => [entry.timestamp, entry.value]),
         smooth: true,
         lineStyle: { width: 2 },
@@ -157,12 +159,12 @@ export default function EconomicAlertPage() {
       trigger: "axis",
       valueFormatter: (value: number) => `${value.toFixed(2)}%`,
     },
-    legend: { data: ["美国CPI", "美国PPI"] },
+    legend: { data: [t("dashboard.economicAlert.us.cpi"), t("dashboard.economicAlert.us.ppi")] },
     xAxis: { type: "time" },
     yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
     series: [
       {
-        name: "美国CPI",
+        name: t("dashboard.economicAlert.us.cpi"),
         type: "line",
         smooth: true,
         data: getSortedValues(usCpiSeries).map((point) => [
@@ -171,7 +173,7 @@ export default function EconomicAlertPage() {
         ]),
       },
       {
-        name: "美国PPI",
+        name: t("dashboard.economicAlert.us.ppi"),
         type: "line",
         smooth: true,
         data: getSortedValues(usPpiSeries).map((point) => [
@@ -184,12 +186,17 @@ export default function EconomicAlertPage() {
 
   const usPmiCompareOption = {
     tooltip: { trigger: "axis" },
-    legend: { data: ["制造业PMI", "服务业PMI"] },
+    legend: {
+      data: [
+        t("dashboard.economicAlert.us.manufacturingPmi"),
+        t("dashboard.economicAlert.us.servicesPmi"),
+      ],
+    },
     xAxis: { type: "time" },
     yAxis: { type: "value", min: 40, max: 65 },
     series: [
       {
-        name: "制造业PMI",
+        name: t("dashboard.economicAlert.us.manufacturingPmi"),
         type: "line",
         smooth: true,
         data: getSortedValues(usManufacturingPmiSeries).map((point) => [
@@ -198,7 +205,7 @@ export default function EconomicAlertPage() {
         ]),
       },
       {
-        name: "服务业PMI",
+        name: t("dashboard.economicAlert.us.servicesPmi"),
         type: "line",
         smooth: true,
         data: getSortedValues(usPmiSeries).map((point) => [
@@ -212,81 +219,81 @@ export default function EconomicAlertPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ marginBottom: 16 }}>
-        <Typography.Title level={4}>经济预警</Typography.Title>
+        <Typography.Title level={4}>{t("dashboard.economicAlert.title")}</Typography.Title>
         <TimeRangeControls />
       </div>
       {error ? (
         <Alert
           type="error"
-          message="经济数据加载失败"
+          message={t("dashboard.economicAlert.loadFailed")}
           description={error.message}
           showIcon
           action={
             <Button size="small" onClick={() => refetch()}>
-              重试
+              {t("common.retry")}
             </Button>
           }
         />
       ) : null}
       {!loading && seriesMap.size === 0 ? (
-        <Empty description="暂无宏观数据" />
+        <Empty description={t("dashboard.economicAlert.empty")} />
       ) : null}
       {alerts.length > 0 && (
         <Alert
           type="warning"
           showIcon
-          message="触发经济预警"
+          message={t("dashboard.economicAlert.triggered")}
           description={alerts.join("、")}
         />
       )}
       {loading && <Spin />}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title="CPI / PPI 同比仪表盘" className="content-card">
+          <Card title={t("dashboard.economicAlert.cards.cpiPpiGauge")} className="content-card">
             {cpiValue !== null || ppiValue !== null ? (
               <DashboardChart option={gaugeOption} height={360} />
             ) : (
-              <Empty description="暂未获取到CPI/PPI数据" />
+              <Empty description={t("dashboard.economicAlert.emptyCpiPpi")} />
             )}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="PMI荣枯线对比" className="content-card">
+          <Card title={t("dashboard.economicAlert.cards.pmiCompare")} className="content-card">
             {getSortedValues(chinaPmiSeries).length > 0 ? (
               <DashboardChart option={pmiOption} height={360} />
             ) : (
-              <Empty description="暂无PMI数据" />
+              <Empty description={t("dashboard.economicAlert.emptyPmi")} />
             )}
           </Card>
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col span={24}>
-          <Card title="国债收益率倒挂监测" className="content-card">
+          <Card title={t("dashboard.economicAlert.cards.yieldInversion")} className="content-card">
             {spreadSeries.length > 0 ? (
               <DashboardChart option={yieldOption} height={360} />
             ) : (
-              <Empty description="暂无收益率数据" />
+              <Empty description={t("dashboard.economicAlert.emptyYield")} />
             )}
           </Card>
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title="美国CPI / PPI走势" className="content-card">
+          <Card title={t("dashboard.economicAlert.cards.usInflation")} className="content-card">
             {getSortedValues(usCpiSeries).length > 0 ? (
               <DashboardChart option={usInflationOption} height={320} />
             ) : (
-              <Empty description="暂无美国通胀数据" />
+              <Empty description={t("dashboard.economicAlert.emptyUsInflation")} />
             )}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="美国PMI对比" className="content-card">
+          <Card title={t("dashboard.economicAlert.cards.usPmiCompare")} className="content-card">
             {getSortedValues(usManufacturingPmiSeries).length > 0 ? (
               <DashboardChart option={usPmiCompareOption} height={320} />
             ) : (
-              <Empty description="暂无美国PMI数据" />
+              <Empty description={t("dashboard.economicAlert.emptyUsPmi")} />
             )}
           </Card>
         </Col>

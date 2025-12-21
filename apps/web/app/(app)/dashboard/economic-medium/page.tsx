@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { DashboardChart } from "@/components/echart";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -10,14 +11,17 @@ import {
   getSeriesField,
   getSortedValues,
 } from "../utils/series";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const metalSeries = [
-  { slug: "copper_futures_main", label: "沪铜" },
-  { slug: "aluminum_futures_main", label: "沪铝" },
-  { slug: "rebar_futures_main", label: "螺纹钢" },
+  { slug: "copper_futures_main", labelKey: "dashboard.economicMedium.metals.copper" },
+  { slug: "aluminum_futures_main", labelKey: "dashboard.economicMedium.metals.aluminum" },
+  { slug: "rebar_futures_main", labelKey: "dashboard.economicMedium.metals.rebar" },
 ];
 
 export default function EconomicMediumPage() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { loading, error, seriesMap, refetch } = useEconomicData({
     category: "economic-medium",
     pollInterval: 120_000,
@@ -38,21 +42,21 @@ export default function EconomicMediumPage() {
 
   const dualAxisOption = {
     tooltip: { trigger: "axis" },
-    legend: { data: ["GDP同比", "M2同比"] },
+    legend: { data: [t("dashboard.economicMedium.gdpYoy"), t("dashboard.economicMedium.m2Yoy")] },
     xAxis: { type: "time" },
     yAxis: [
-      { type: "value", name: "GDP同比(%)" },
-      { type: "value", name: "M2同比(%)", alignTicks: true },
+      { type: "value", name: t("dashboard.economicMedium.gdpYoyAxis") },
+      { type: "value", name: t("dashboard.economicMedium.m2YoyAxis"), alignTicks: true },
     ],
     series: [
       {
-        name: "GDP同比",
+        name: t("dashboard.economicMedium.gdpYoy"),
         type: "line",
         smooth: true,
         data: gdpYoy.map((entry) => [entry.timestamp, entry.value]),
       },
       {
-        name: "M2同比",
+        name: t("dashboard.economicMedium.m2Yoy"),
         type: "line",
         smooth: true,
         yAxisIndex: 1,
@@ -61,11 +65,16 @@ export default function EconomicMediumPage() {
     ],
   };
 
-  const maSeries = metalSeries.map((metal) => {
+  const localizedMetals = metalSeries.map((metal) => ({
+    ...metal,
+    label: t(metal.labelKey),
+  }));
+
+  const maSeries = localizedMetals.map((metal) => {
     const source = getSeriesField(seriesMap, metal.slug, "收盘价");
     const averages = computeMovingAverage(source, 5);
     return {
-      name: `${metal.label}MA`,
+      name: t("dashboard.economicMedium.metalMa", { metal: metal.label }),
       data: averages.map((entry) => [entry.timestamp, entry.value]),
     };
   });
@@ -104,8 +113,10 @@ export default function EconomicMediumPage() {
     diff: number;
   }>;
   const formatLabel = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return `${date.getFullYear()}-${date.getMonth() + 1}`;
+    return formatDateTime(timestamp, locale, {
+      year: "numeric",
+      month: "2-digit"
+    });
   };
   const pmiOption = {
     tooltip: {
@@ -143,24 +154,30 @@ export default function EconomicMediumPage() {
       trigger: "axis",
       valueFormatter: (value: number) => `${value.toFixed(2)}%`,
     },
-    legend: { data: ["GDP", "CPI", "PPI"] },
+    legend: {
+      data: [
+        t("dashboard.economicMedium.us.gdp"),
+        t("dashboard.economicMedium.us.cpi"),
+        t("dashboard.economicMedium.us.ppi"),
+      ],
+    },
     xAxis: { type: "time" },
     yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
     series: [
       {
-        name: "GDP",
+        name: t("dashboard.economicMedium.us.gdp"),
         type: "line",
         smooth: true,
         data: usGdpSeries.map((entry) => [entry.timestamp, entry.value]),
       },
       {
-        name: "CPI",
+        name: t("dashboard.economicMedium.us.cpi"),
         type: "line",
         smooth: true,
         data: usCpiSeries.map((entry) => [entry.timestamp, entry.value]),
       },
       {
-        name: "PPI",
+        name: t("dashboard.economicMedium.us.ppi"),
         type: "line",
         smooth: true,
         data: usPpiSeries.map((entry) => [entry.timestamp, entry.value]),
@@ -176,12 +193,17 @@ export default function EconomicMediumPage() {
   );
   const usPmiOption = {
     tooltip: { trigger: "axis" },
-    legend: { data: ["制造业PMI", "服务业PMI"] },
+    legend: {
+      data: [
+        t("dashboard.economicMedium.us.manufacturingPmi"),
+        t("dashboard.economicMedium.us.servicesPmi"),
+      ],
+    },
     xAxis: { type: "time" },
     yAxis: { type: "value", min: 40, max: 65 },
     series: [
       {
-        name: "制造业PMI",
+        name: t("dashboard.economicMedium.us.manufacturingPmi"),
         type: "line",
         smooth: true,
         data: usManufacturingSeries.map((entry) => [
@@ -190,7 +212,7 @@ export default function EconomicMediumPage() {
         ]),
       },
       {
-        name: "服务业PMI",
+        name: t("dashboard.economicMedium.us.servicesPmi"),
         type: "line",
         smooth: true,
         data: usServicesSeries.map((entry) => [entry.timestamp, entry.value]),
@@ -201,72 +223,72 @@ export default function EconomicMediumPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ marginBottom: 16 }}>
-        <Typography.Title level={4}>经济中期趋势</Typography.Title>
+        <Typography.Title level={4}>{t("dashboard.economicMedium.title")}</Typography.Title>
         <TimeRangeControls />
       </div>
       {error ? (
         <Alert
           type="error"
           showIcon
-          message="获取经济中期数据失败"
+          message={t("dashboard.economicMedium.loadFailed")}
           action={
             <Button size="small" onClick={() => refetch()}>
-              重试
+              {t("common.retry")}
             </Button>
           }
         />
       ) : null}
       {!loading && seriesMap.size === 0 ? (
-        <Empty description="暂无数据" />
+        <Empty description={t("common.empty")} />
       ) : null}
       {loading && <Spin />}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title="近6个月GDP / M2增速" className="content-card">
+          <Card title={t("dashboard.economicMedium.cards.gdpM2")} className="content-card">
             {gdpYoy.length > 0 && m2Yoy.length > 0 ? (
               <DashboardChart option={dualAxisOption} height={320} />
             ) : (
-              <Empty description="暂无GDP/M2增速数据" />
+              <Empty description={t("dashboard.economicMedium.empty.gdpM2")} />
             )}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="工业金属移动平均线 (5期)" className="content-card">
+          <Card title={t("dashboard.economicMedium.cards.metalMa")} className="content-card">
             {maSeries.some((entry) => entry.data.length > 0) ? (
               <DashboardChart option={maOption} height={320} />
             ) : (
-              <Empty description="暂无金属价格数据" />
+              <Empty description={t("dashboard.economicMedium.empty.metals")} />
             )}
           </Card>
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col span={24}>
-          <Card title="PMI环比变化" className="content-card">
+          <Card title={t("dashboard.economicMedium.cards.pmiChanges")} className="content-card">
             {filteredChanges.length > 0 ? (
               <DashboardChart option={pmiOption} height={320} />
             ) : (
-              <Empty description="暂无PMI变化数据" />
+              <Empty description={t("dashboard.economicMedium.empty.pmi")} />
             )}
           </Card>
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title="美国GDP / CPI / PPI" className="content-card">
+          <Card title={t("dashboard.economicMedium.cards.usGrowth")} className="content-card">
             {usGdpSeries.length > 0 ? (
               <DashboardChart option={usGrowthOption} height={320} />
             ) : (
-              <Empty description="暂无美国经济数据" />
+              <Empty description={t("dashboard.economicMedium.empty.usEconomy")} />
             )}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="美国PMI走势" className="content-card">
+          <Card title={t("dashboard.economicMedium.cards.usPmi")} className="content-card">
             {usManufacturingSeries.length > 0 ? (
               <DashboardChart option={usPmiOption} height={320} />
             ) : (
-              <Empty description="暂无美国PMI数据" />
+              <Empty description={t("dashboard.economicMedium.empty.usPmi")} />
             )}
           </Card>
         </Col>

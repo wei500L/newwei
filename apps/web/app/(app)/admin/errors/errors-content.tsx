@@ -2,11 +2,12 @@
 
 import { Alert, Button, Card, Spin, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 type ExceptionEventKind = "http" | "graphql" | "unknown";
 
@@ -30,31 +31,36 @@ interface ListExceptionEventsResponse {
   items: ExceptionEvent[];
 }
 
-function renderKind(kind: ExceptionEventKind) {
+function renderKind(
+  kind: ExceptionEventKind,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   if (kind === "http") {
-    return <Tag color="blue">HTTP</Tag>;
+    return <Tag color="blue">{t("errors.kinds.http")}</Tag>;
   }
   if (kind === "graphql") {
-    return <Tag color="purple">GraphQL</Tag>;
+    return <Tag color="purple">{t("errors.kinds.graphql")}</Tag>;
   }
-  return <Tag>Unknown</Tag>;
+  return <Tag>{t("errors.kinds.unknown")}</Tag>;
 }
 
-function getLocation(event: ExceptionEvent) {
+function getLocation(event: ExceptionEvent, emptyLabel: string) {
   if (event.kind === "http") {
     const method = event.method ?? "";
     const path = event.path ?? "";
-    return `${method} ${path}`.trim() || "-";
+    return `${method} ${path}`.trim() || emptyLabel;
   }
   if (event.kind === "graphql") {
     const op = event.operation ?? "";
     const name = event.operationName ? ` (${event.operationName})` : "";
-    return (op ? `${op}${name}` : name).trim() || "-";
+    return (op ? `${op}${name}` : name).trim() || emptyLabel;
   }
-  return "-";
+  return emptyLabel;
 }
 
 export function ErrorsContent() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session, status } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const canView = session?.permissions?.includes("settings.manage") ?? false;
@@ -77,11 +83,11 @@ export function ErrorsContent() {
       setEvents(response.data.items ?? []);
     } catch (error) {
       captureClientError("Failed to load error events", error);
-      setErrorMessage("Failed to load recent errors");
+      setErrorMessage(t("errors.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [apiClient]);
+  }, [apiClient, t]);
 
   useEffect(() => {
     if (canView) {
@@ -99,11 +105,11 @@ export function ErrorsContent() {
 
   if (!canView) {
     return (
-      <Card className="content-card" title="Recent Errors">
+      <Card className="content-card" title={t("errors.title")}>
         <Alert
           type="warning"
-          message="Admins only"
-          description="Only administrators can view recent error events."
+          message={t("settings.adminOnly.title")}
+          description={t("errors.adminOnly")}
         />
       </Card>
     );
@@ -111,28 +117,39 @@ export function ErrorsContent() {
 
   const columns: ColumnsType<ExceptionEvent> = [
     {
-      title: "Time",
+      title: t("errors.columns.time"),
       dataIndex: "timestamp",
       key: "timestamp",
       width: 180,
-      render: (value: string) => (value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "-")
+      render: (value: string) =>
+        value
+          ? formatDateTime(value, locale, {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: false
+            })
+          : t("common.emptyValue")
     },
     {
-      title: "Kind",
+      title: t("errors.columns.kind"),
       dataIndex: "kind",
       key: "kind",
       width: 110,
-      render: (value: ExceptionEventKind) => renderKind(value)
+      render: (value: ExceptionEventKind) => renderKind(value, t)
     },
     {
-      title: "Status",
+      title: t("errors.columns.status"),
       dataIndex: "statusCode",
       key: "statusCode",
       width: 90,
-      render: (value?: number) => (value ? String(value) : "-")
+      render: (value?: number) => (value ? String(value) : t("common.emptyValue"))
     },
     {
-      title: "Trace ID",
+      title: t("errors.columns.traceId"),
       dataIndex: "traceId",
       key: "traceId",
       width: 260,
@@ -142,36 +159,37 @@ export function ErrorsContent() {
             {value}
           </Typography.Text>
         ) : (
-          "-"
+          t("common.emptyValue")
         )
     },
     {
-      title: "Location",
+      title: t("errors.columns.location"),
       key: "location",
-      render: (_, record) => <Typography.Text>{getLocation(record)}</Typography.Text>
+      render: (_, record) => (
+        <Typography.Text>{getLocation(record, t("common.emptyValue"))}</Typography.Text>
+      )
     },
     {
-      title: "Message",
+      title: t("errors.columns.message"),
       dataIndex: "message",
       key: "message",
-      render: (value: string) => <Typography.Text>{value || "-"}</Typography.Text>
+      render: (value: string) => <Typography.Text>{value || t("common.emptyValue")}</Typography.Text>
     }
   ];
 
   return (
     <Card
       className="content-card"
-      title="Recent Errors"
+      title={t("errors.title")}
       extra={
         <Button onClick={() => void fetchEvents()} loading={loading}>
-          Refresh
+          {t("common.refresh")}
         </Button>
       }
     >
       {contextHolder}
       <Typography.Paragraph type="secondary">
-        Shows recent HTTP and GraphQL exceptions captured by the API. Use the Trace ID to correlate
-        logs and traces.
+        {t("errors.description")}
       </Typography.Paragraph>
       {errorMessage ? (
         <Alert
@@ -186,7 +204,7 @@ export function ErrorsContent() {
                 void fetchEvents();
               }}
             >
-              Retry
+              {t("common.retry")}
             </Button>
           }
         />
@@ -203,7 +221,7 @@ export function ErrorsContent() {
             record.stack ? (
               <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{record.stack}</pre>
             ) : (
-              <Typography.Text type="secondary">No stack trace recorded.</Typography.Text>
+              <Typography.Text type="secondary">{t("errors.noStack")}</Typography.Text>
             )
         }}
       />

@@ -17,12 +17,13 @@ import {
 } from "antd";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import dayjs from "dayjs";
+import { useTranslation } from "react-i18next";
 import {
   CrawlTaskStatus,
   useCrawlTaskQuery,
   useRetryCrawlTaskMutation
 } from "@/graphql/generated";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const statusColors: Record<CrawlTaskStatus, string> = {
   pending: "gold",
@@ -34,9 +35,9 @@ const statusColors: Record<CrawlTaskStatus, string> = {
 };
 
 const limitOptions = [
-  { value: 10, label: "Latest 10" },
-  { value: 20, label: "Latest 20" },
-  { value: 50, label: "Latest 50" }
+  { value: 10, labelKey: "crawl.detail.results.latest10" },
+  { value: 20, labelKey: "crawl.detail.results.latest20" },
+  { value: 50, labelKey: "crawl.detail.results.latest50" }
 ];
 
 type CrawlMediaSource = {
@@ -117,6 +118,8 @@ function safeParseJson<T>(input?: string | null): T | null {
 }
 
 function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   if (!media) {
     return null;
   }
@@ -129,11 +132,11 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
   return (
     <Card
       size="small"
-      title="Media assets"
+      title={t("crawl.detail.media.title")}
       style={{ marginTop: 12 }}
       extra={
         <Typography.Link href={mediaDocsUrl} target="_blank" rel="noreferrer">
-          Crawl4AI doc
+          {t("common.docs")}
         </Typography.Link>
       }
     >
@@ -153,11 +156,11 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
                 dataSource={preview}
                 renderItem={(item, index) => (
                   <List.Item key={`${kind}-${index}-${item.src ?? "media"}`}>
-                    <Space align="start">
-                      {renderMediaPreview(kind, item)}
+                <Space align="start">
+                      {renderMediaPreview(kind, item, t)}
                       <Space direction="vertical" size={4}>
                         <Typography.Link href={item.src} target="_blank">
-                          {item.src ?? "View asset"}
+                          {item.src ?? t("crawl.detail.media.viewAsset")}
                         </Typography.Link>
                         {item.alt || item.title ? (
                           <Typography.Text strong>
@@ -170,13 +173,21 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
                           </Typography.Paragraph>
                         ) : null}
                         <Typography.Text type="secondary">
-                          {[item.type, item.format, formatDimensions(item), formatScore(item)]
+                          {[item.type, item.format, formatDimensions(item), formatScore(item, t)]
                             .filter(Boolean)
                             .join(" • ")}
                         </Typography.Text>
-                        {item.srcset ? renderSrcset(item.srcset) : null}
-                        {renderSourceList("picture", item.pictureSources)}
-                        {renderSourceList("responsive", item.responsiveSources)}
+                        {item.srcset ? renderSrcset(item.srcset, t) : null}
+                        {renderSourceList(
+                          t("crawl.detail.media.sourceTypes.picture"),
+                          item.pictureSources,
+                          t
+                        )}
+                        {renderSourceList(
+                          t("crawl.detail.media.sourceTypes.responsive"),
+                          item.responsiveSources,
+                          t
+                        )}
                       </Space>
                     </Space>
                   </List.Item>
@@ -184,7 +195,7 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
               />
               {remaining > 0 ? (
                 <Typography.Text type="secondary">
-                  +{remaining} more {kind} kept in the result payload
+                  {t("crawl.detail.media.more", { count: remaining, kind })}
                 </Typography.Text>
               ) : null}
             </div>
@@ -196,11 +207,12 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
 }
 
 function StoredMediaSection({ assets }: { assets: CrawlStoredMediaAsset[] | null }) {
+  const { t } = useTranslation();
   if (!assets || assets.length === 0) {
     return null;
   }
   return (
-    <Card size="small" title="Stored media blobs" style={{ marginTop: 12 }}>
+    <Card size="small" title={t("crawl.detail.media.storedTitle")} style={{ marginTop: 12 }}>
       <List
         size="small"
         split={false}
@@ -212,14 +224,14 @@ function StoredMediaSection({ assets }: { assets: CrawlStoredMediaAsset[] | null
               <Space direction="vertical" size={4}>
                 <Typography.Text strong>{asset.title ?? asset.alt ?? asset.kind}</Typography.Text>
                 <Typography.Text type="secondary">
-                  {(asset.contentType ?? "unknown mime").toUpperCase()} • {formatBytes(asset.bytes)}
+                  {(asset.contentType ?? t("crawl.detail.media.unknownMime")).toUpperCase()} • {formatBytes(asset.bytes)}
                 </Typography.Text>
                 <Typography.Paragraph style={{ marginBottom: 4 }}>
                   {asset.desc ?? asset.sourceUrl}
                 </Typography.Paragraph>
                 <Space size="small">
                   <Typography.Link href={asset.sourceUrl} target="_blank" rel="noreferrer">
-                    Source
+                    {t("common.source")}
                   </Typography.Link>
                   {asset.dataUri ? (
                     <Typography.Link
@@ -227,7 +239,7 @@ function StoredMediaSection({ assets }: { assets: CrawlStoredMediaAsset[] | null
                       download={`${asset.kind}-${asset.id}`}
                       rel="noreferrer"
                     >
-                      Download
+                      {t("common.download")}
                     </Typography.Link>
                   ) : null}
                 </Space>
@@ -253,17 +265,18 @@ function buildTableRecords(table: CrawlResultTable): CrawlResultTableRecord[] {
 }
 
 function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
+  const { t } = useTranslation();
   if (!tables || !tables.length) {
     return null;
   }
   return (
     <Card
       size="small"
-      title="Extracted tables"
+      title={t("crawl.detail.tables.title")}
       style={{ marginTop: 12 }}
       extra={
         <Typography.Link href={tableDocsUrl} target="_blank" rel="noreferrer">
-          Crawl4AI release notes
+          {t("crawl.detail.tables.releaseNotes")}
         </Typography.Link>
       }
     >
@@ -286,13 +299,15 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
               <Space direction="vertical" size={4} style={{ width: "100%" }}>
                 <Space wrap>
                   <Typography.Text strong>
-                    {table.caption || `Table ${table.id}`}
+                    {table.caption || t("crawl.detail.tables.defaultTitle", { id: table.id })}
                   </Typography.Text>
                   <Tag>
                     {table.rowCount} × {table.columnCount}
                   </Tag>
                   {table.source && (
-                    <Typography.Text type="secondary">Source: {table.source}</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {t("crawl.detail.tables.source", { source: table.source })}
+                    </Typography.Text>
                   )}
                 </Space>
                 {table.metadata && (
@@ -311,7 +326,10 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
               />
               {remaining > 0 && (
                 <Typography.Text type="secondary">
-                  Showing first {previewRows.length} rows (remaining {remaining}).
+                  {t("crawl.detail.tables.remaining", {
+                    preview: previewRows.length,
+                    remaining
+                  })}
                 </Typography.Text>
               )}
             </div>
@@ -322,7 +340,11 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
   );
 }
 
-function renderMediaPreview(kind: string, item: CrawlMediaItem) {
+function renderMediaPreview(
+  kind: string,
+  item: CrawlMediaItem,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   if (!item.src) {
     return null;
   }
@@ -331,7 +353,7 @@ function renderMediaPreview(kind: string, item: CrawlMediaItem) {
     return (
       <img
         src={item.src}
-        alt={item.alt || item.title || "Media thumbnail"}
+        alt={item.alt || item.title || t("crawl.detail.media.thumbnailAlt")}
         style={{
           width: 96,
           height: 96,
@@ -415,17 +437,23 @@ function formatDimensions(item: CrawlMediaItem) {
   return undefined;
 }
 
-function formatScore(item: CrawlMediaItem) {
+function formatScore(
+  item: CrawlMediaItem,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   if (typeof item.score === "number") {
-    return `score ${item.score.toFixed(2)}`;
+    return t("crawl.detail.media.score", { score: item.score.toFixed(2) });
   }
   return undefined;
 }
 
-function renderSrcset(srcset: string[]) {
+function renderSrcset(
+  srcset: string[],
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   return (
     <div>
-      <Typography.Text type="secondary">srcset variants</Typography.Text>
+      <Typography.Text type="secondary">{t("crawl.detail.media.srcsetVariants")}</Typography.Text>
       <pre
         style={{
           background: "#fafafa",
@@ -441,14 +469,18 @@ function renderSrcset(srcset: string[]) {
   );
 }
 
-function renderSourceList(label: string, sources?: CrawlMediaSource[]) {
+function renderSourceList(
+  label: string,
+  sources: CrawlMediaSource[] | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   if (!sources || sources.length === 0) {
     return null;
   }
   return (
     <div>
       <Typography.Text type="secondary">
-        {label} sources ({sources.length})
+        {t("crawl.detail.media.sources", { label, count: sources.length })}
       </Typography.Text>
       <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
         {sources.slice(0, 4).map((source, index) => (
@@ -464,6 +496,8 @@ function renderSourceList(label: string, sources?: CrawlMediaSource[]) {
 }
 
 export function CrawlTaskDetail({ taskId }: { taskId: string }) {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
   const { data, loading, refetch } = useCrawlTaskQuery({
@@ -491,7 +525,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
   const proxySummary = useMemo(() => {
     if (!config) {
-      return "Direct (no proxy)";
+      return t("crawl.detail.proxy.direct");
     }
     const proxyUrl =
       typeof config.proxyUrl === "string" && config.proxyUrl.length > 0 ? config.proxyUrl : null;
@@ -499,14 +533,16 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       | { server?: string; username?: string; password?: string }
       | undefined;
     if (proxyConfig?.server) {
-      const creds = proxyConfig.username ? ` • user ${proxyConfig.username}` : "";
-      return `Dict: ${proxyConfig.server}${creds}`;
+      return t("crawl.detail.proxy.dict", {
+        server: proxyConfig.server,
+        user: proxyConfig.username ?? null
+      });
     }
     if (proxyUrl) {
       return proxyUrl;
     }
-    return "Direct (no proxy)";
-  }, [config]);
+    return t("crawl.detail.proxy.direct");
+  }, [config, t]);
 
   const markdownOptions = useMemo(() => {
     if (!config || typeof config.markdownOptions !== "object") {
@@ -538,31 +574,39 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
   const markdownSummary = useMemo(() => {
     if (!markdownOptions) {
-      return "Default (cleaned_html)";
+      return t("crawl.detail.markdown.default");
     }
     const parts: string[] = [];
     if (typeof markdownOptions.contentSource === "string") {
-      parts.push(`source ${markdownOptions.contentSource}`);
+      parts.push(t("crawl.detail.markdown.source", { source: markdownOptions.contentSource }));
     }
     if (typeof markdownOptions.ignoreLinks === "boolean") {
-      parts.push(markdownOptions.ignoreLinks ? "ignore links" : "keep links");
+      parts.push(
+        markdownOptions.ignoreLinks
+          ? t("crawl.detail.markdown.ignoreLinks")
+          : t("crawl.detail.markdown.keepLinks")
+      );
     }
     if (typeof markdownOptions.escapeHtml === "boolean") {
-      parts.push(markdownOptions.escapeHtml ? "escape HTML" : "render HTML");
+      parts.push(
+        markdownOptions.escapeHtml
+          ? t("crawl.detail.markdown.escapeHtml")
+          : t("crawl.detail.markdown.renderHtml")
+      );
     }
     if (typeof markdownOptions.bodyWidth === "number") {
-      parts.push(`wrap ${markdownOptions.bodyWidth}`);
+      parts.push(t("crawl.detail.markdown.wrap", { width: markdownOptions.bodyWidth }));
     }
-    return parts.length ? parts.join(" • ") : "Default (cleaned_html)";
-  }, [markdownOptions]);
+    return parts.length ? parts.join(" • ") : t("crawl.detail.markdown.default");
+  }, [markdownOptions, t]);
 
   const markdownFilterSummary = useMemo(() => {
     if (!markdownFilter || typeof markdownFilter.type !== "string") {
-      return "Disabled";
+      return t("common.disabled");
     }
     const parts = [markdownFilter.type];
     if (typeof markdownFilter.threshold === "number") {
-      parts.push(`threshold ${markdownFilter.threshold}`);
+      parts.push(t("crawl.detail.markdownFilter.threshold", { value: markdownFilter.threshold }));
     }
     const thresholdTypeValue =
       typeof markdownFilter.thresholdType === "string"
@@ -571,7 +615,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           ? (markdownFilter.threshold_type as string)
           : undefined;
     if (thresholdTypeValue) {
-      parts.push(`${thresholdTypeValue} mode`);
+      parts.push(t("crawl.detail.markdownFilter.mode", { mode: thresholdTypeValue }));
     }
     const minWordValue =
       typeof markdownFilter.minWordThreshold === "number"
@@ -580,14 +624,14 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           ? (markdownFilter.min_word_threshold as number)
           : undefined;
     if (typeof minWordValue === "number") {
-      parts.push(`min words ${minWordValue}`);
+      parts.push(t("crawl.detail.markdownFilter.minWords", { count: minWordValue }));
     }
     return parts.join(" • ");
-  }, [markdownFilter]);
+  }, [markdownFilter, t]);
 
   const markdownStrategySummary = useMemo(() => {
     if (!markdownStrategy || typeof markdownStrategy.type !== "string") {
-      return "Default generator";
+      return t("crawl.detail.markdownStrategy.default");
     }
     const type = markdownStrategy.type;
     const params =
@@ -599,31 +643,47 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     const json = JSON.stringify(params);
     const snippet = json.length > 80 ? `${json.slice(0, 80)}...` : json;
-    return `${type} • ${snippet}`;
-  }, [markdownStrategy]);
+    return t("crawl.detail.markdownStrategy.withParams", { type, snippet });
+  }, [markdownStrategy, t]);
 
   const cleanMarkdownSummary = useMemo(() => {
     if (!cleanMarkdownOptions) {
-      return "Disabled";
+      return t("common.disabled");
     }
     const parts: string[] = [];
     if (typeof cleanMarkdownOptions.cssSelector === "string" && cleanMarkdownOptions.cssSelector.trim().length) {
-      parts.push(`scope ${cleanMarkdownOptions.cssSelector}`);
+      parts.push(t("crawl.detail.cleanMarkdown.scope", { selector: cleanMarkdownOptions.cssSelector }));
     }
     if (Array.isArray(cleanMarkdownOptions.targetElements) && cleanMarkdownOptions.targetElements.length) {
-      parts.push(`targets ${cleanMarkdownOptions.targetElements.join(", ")}`);
+      parts.push(
+        t("crawl.detail.cleanMarkdown.targets", {
+          targets: cleanMarkdownOptions.targetElements.join(", ")
+        })
+      );
     }
     if (Array.isArray(cleanMarkdownOptions.excludedTags) && cleanMarkdownOptions.excludedTags.length) {
-      parts.push(`exclude ${cleanMarkdownOptions.excludedTags.join(", ")}`);
+      parts.push(
+        t("crawl.detail.cleanMarkdown.excluded", {
+          tags: cleanMarkdownOptions.excludedTags.join(", ")
+        })
+      );
     }
     if (typeof cleanMarkdownOptions.wordCountThreshold === "number") {
-      parts.push(`min ${cleanMarkdownOptions.wordCountThreshold} words`);
+      parts.push(
+        t("crawl.detail.cleanMarkdown.minWords", {
+          count: cleanMarkdownOptions.wordCountThreshold
+        })
+      );
     }
     if (typeof cleanMarkdownOptions.removeOverlayElements === "boolean") {
-      parts.push(cleanMarkdownOptions.removeOverlayElements ? "remove overlays" : "keep overlays");
+      parts.push(
+        cleanMarkdownOptions.removeOverlayElements
+          ? t("crawl.detail.cleanMarkdown.removeOverlays")
+          : t("crawl.detail.cleanMarkdown.keepOverlays")
+      );
     }
-    return parts.length ? parts.join(" • ") : "Enabled";
-  }, [cleanMarkdownOptions]);
+    return parts.length ? parts.join(" • ") : t("common.enabled");
+  }, [cleanMarkdownOptions, t]);
 
   const browserHeaders = useMemo(() => {
     if (!Array.isArray(config?.browserHeaders)) {
@@ -676,7 +736,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     return trimmed.length ? trimmed : null;
   }, [config]);
 
-  const userAgentModeSummary = config?.userAgentMode === "random" ? "Random rotation" : "Default";
+  const userAgentModeSummary =
+    config?.userAgentMode === "random"
+      ? t("crawl.detail.userAgent.random")
+      : t("crawl.detail.userAgent.default");
 
   const userAgentGeneratorSummary = useMemo(() => {
     if (!config || typeof config.userAgentGenerator !== "object" || !config.userAgentGenerator) {
@@ -686,22 +749,22 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     const parts: string[] = [];
     const platform = typeof generator.platform === "string" ? generator.platform : null;
     if (platform) {
-      parts.push(`platform ${platform}`);
+      parts.push(t("crawl.detail.userAgentGenerator.platform", { value: platform }));
     }
     const browser = typeof generator.browser === "string" ? generator.browser : null;
     if (browser) {
-      parts.push(`browser ${browser}`);
+      parts.push(t("crawl.detail.userAgentGenerator.browser", { value: browser }));
     }
     const deviceType = typeof generator.deviceType === "string" ? generator.deviceType : null;
     if (deviceType) {
-      parts.push(`device ${deviceType}`);
+      parts.push(t("crawl.detail.userAgentGenerator.device", { value: deviceType }));
     }
     const locale = typeof generator.locale === "string" ? generator.locale : null;
     if (locale) {
-      parts.push(`locale ${locale}`);
+      parts.push(t("crawl.detail.userAgentGenerator.locale", { value: locale }));
     }
     return parts.length ? parts.join(" • ") : null;
-  }, [config]);
+  }, [config, t]);
 
   const browserLocale = useMemo(() => {
     if (!config || typeof config.locale !== "string") {
@@ -909,10 +972,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!task) return;
     try {
       await retryTask({ variables: { id: task.id } });
-      message.success("Task queued for retry");
+      message.success(t("crawl.detail.retryQueued"));
       await refetch();
     } catch (error: unknown) {
-      message.error((error as Error).message ?? "Failed to retry task");
+      message.error((error as Error).message ?? t("crawl.detail.retryFailed"));
     }
   };
 
@@ -927,7 +990,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   if (!task) {
     return (
       <div className="content-card">
-        <Typography.Text type="secondary">Task not found.</Typography.Text>
+        <Typography.Text type="secondary">{t("crawl.detail.notFound")}</Typography.Text>
       </div>
     );
   }
@@ -941,20 +1004,22 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   return (
     <div className="content-card">
       <Space style={{ marginBottom: 16 }} wrap>
-        <Link href="/crawl">← Back to tasks</Link>
-        <Tag color={statusColors[task.status]}>{task.status}</Tag>
+        <Link href="/crawl">{t("crawl.detail.backToTasks")}</Link>
+        <Tag color={statusColors[task.status]}>
+          {t(`crawl.status.${task.status}`, { defaultValue: task.status })}
+        </Tag>
         <Button onClick={handleRetry} loading={retrying}>
-          Retry crawl
+          {t("crawl.detail.retry")}
         </Button>
         <Typography.Link href={task.targetUrl} target="_blank" rel="noreferrer">
-          Open source site
+          {t("crawl.detail.openSource")}
         </Typography.Link>
       </Space>
       <Descriptions bordered column={1} size="small">
-        <Descriptions.Item label="Display name">
+        <Descriptions.Item label={t("crawl.detail.fields.displayName")}>
           {task.displayName ?? task.targetUrl}
         </Descriptions.Item>
-        <Descriptions.Item label="Keywords">
+        <Descriptions.Item label={t("crawl.detail.fields.keywords")}>
           {task.keywords.length ? (
             <Space wrap>
               {task.keywords.map((keyword) => (
@@ -962,56 +1027,62 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               ))}
             </Space>
           ) : (
-            "—"
+            t("common.emptyValue")
           )}
         </Descriptions.Item>
-        <Descriptions.Item label="Concurrency">{task.concurrency}</Descriptions.Item>
-        <Descriptions.Item label="Include images">
-          {includeImagesEnabled ? "Enabled" : "Disabled"}
+        <Descriptions.Item label={t("crawl.detail.fields.concurrency")}>
+          {task.concurrency}
         </Descriptions.Item>
-        <Descriptions.Item label="Store media assets">
-          {storeMediaEnabled ? "Enabled" : "Disabled"}
+        <Descriptions.Item label={t("crawl.detail.fields.includeImages")}>
+          {includeImagesEnabled ? t("common.enabled") : t("common.disabled")}
         </Descriptions.Item>
-        <Descriptions.Item label="Run count">{task.runCount}</Descriptions.Item>
-      <Descriptions.Item label="Full-page scanning">
+        <Descriptions.Item label={t("crawl.detail.fields.storeMedia")}>
+          {storeMediaEnabled ? t("common.enabled") : t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.runCount")}>{task.runCount}</Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.scanFullPage")}>
         {config?.scanFullPage
-          ? `Enabled (scroll delay ${config?.scrollDelayMs ?? 200} ms)`
-          : "Disabled"}
+          ? t("crawl.detail.scanFullPageEnabled", { delay: config?.scrollDelayMs ?? 200 })
+          : t("common.disabled")}
       </Descriptions.Item>
-      <Descriptions.Item label="Dynamic viewport">
-        {adjustViewportEnabled ? "Enabled" : "Disabled"}
+      <Descriptions.Item label={t("crawl.detail.fields.adjustViewport")}>
+        {adjustViewportEnabled ? t("common.enabled") : t("common.disabled")}
       </Descriptions.Item>
-      <Descriptions.Item label="Undetected browser">
-        {config?.enableUndetectedBrowser ? "Enabled" : "Disabled"}
+      <Descriptions.Item label={t("crawl.detail.fields.undetectedBrowser")}>
+        {config?.enableUndetectedBrowser ? t("common.enabled") : t("common.disabled")}
       </Descriptions.Item>
-      <Descriptions.Item label="Stealth mode">
-        {config?.enableStealthMode ? "Enabled" : "Disabled"}
+      <Descriptions.Item label={t("crawl.detail.fields.stealthMode")}>
+        {config?.enableStealthMode ? t("common.enabled") : t("common.disabled")}
       </Descriptions.Item>
-      <Descriptions.Item label="Managed browser">
-        {managedBrowserEnabled ? "Enabled" : "Disabled"}
+      <Descriptions.Item label={t("crawl.detail.fields.managedBrowser")}>
+        {managedBrowserEnabled ? t("common.enabled") : t("common.disabled")}
       </Descriptions.Item>
-      <Descriptions.Item label="User data dir">
-        {managedBrowserProfile ?? "—"}
+      <Descriptions.Item label={t("crawl.detail.fields.userDataDir")}>
+        {managedBrowserProfile ?? t("common.emptyValue")}
       </Descriptions.Item>
-      <Descriptions.Item label="User simulation">
-        {config?.simulateUser ? "Enabled" : "Disabled"}
+      <Descriptions.Item label={t("crawl.detail.fields.simulateUser")}>
+        {config?.simulateUser ? t("common.enabled") : t("common.disabled")}
       </Descriptions.Item>
-      <Descriptions.Item label="Override navigator">
-        {config?.overrideNavigator ? "Enabled" : "Disabled"}
+      <Descriptions.Item label={t("crawl.detail.fields.overrideNavigator")}>
+        {config?.overrideNavigator ? t("common.enabled") : t("common.disabled")}
       </Descriptions.Item>
-      <Descriptions.Item label="User agent">{userAgentValue ?? "Default"}</Descriptions.Item>
-      <Descriptions.Item label="User agent mode">{userAgentModeSummary}</Descriptions.Item>
-      <Descriptions.Item label="UA generator">
-        {userAgentGeneratorSummary ?? "Not configured"}
+      <Descriptions.Item label={t("crawl.detail.fields.userAgent")}>
+        {userAgentValue ?? t("crawl.detail.userAgent.default")}
       </Descriptions.Item>
-      <Descriptions.Item label="Browser locale">
-        {browserLocale ?? "Server default"}
+      <Descriptions.Item label={t("crawl.detail.fields.userAgentMode")}>{userAgentModeSummary}</Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.uaGenerator")}>
+        {userAgentGeneratorSummary ?? t("crawl.detail.userAgent.notConfigured")}
       </Descriptions.Item>
-      <Descriptions.Item label="Timezone">{timezonePreference ?? "Server default"}</Descriptions.Item>
-      <Descriptions.Item label="Geolocation">
-        {geolocationSummary ?? "Disabled"}
+      <Descriptions.Item label={t("crawl.detail.fields.browserLocale")}>
+        {browserLocale ?? t("crawl.detail.serverDefault")}
       </Descriptions.Item>
-      <Descriptions.Item label="Custom headers">
+      <Descriptions.Item label={t("crawl.detail.fields.timezone")}>
+        {timezonePreference ?? t("crawl.detail.serverDefault")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.geolocation")}>
+        {geolocationSummary ?? t("common.disabled")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.customHeaders")}>
         {browserHeaders.length ? (
           <Space direction="vertical" size={0}>
             {browserHeaders.map((header) => (
@@ -1021,10 +1092,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             ))}
           </Space>
         ) : (
-          "—"
+          t("common.emptyValue")
         )}
       </Descriptions.Item>
-      <Descriptions.Item label="Cookies">
+      <Descriptions.Item label={t("crawl.detail.fields.cookies")}>
         {browserCookies.length ? (
           <Space direction="vertical" size={0}>
             {browserCookies.map((cookie) => (
@@ -1034,19 +1105,23 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             ))}
           </Space>
         ) : (
-          "—"
+          t("common.emptyValue")
         )}
       </Descriptions.Item>
-      <Descriptions.Item label="Session ID">{sessionIdentifier ?? "—"}</Descriptions.Item>
-      <Descriptions.Item label="Storage state seed">
+      <Descriptions.Item label={t("crawl.detail.fields.sessionId")}>
+        {sessionIdentifier ?? t("common.emptyValue")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.storageState")}>
         {storageStatePreview ? (
           <Typography.Text code>{storageStatePreview}</Typography.Text>
         ) : (
-          "—"
+          t("common.emptyValue")
         )}
       </Descriptions.Item>
-      <Descriptions.Item label="JS-only mode">{jsOnlyMode ? "Enabled" : "Disabled"}</Descriptions.Item>
-      <Descriptions.Item label="JS steps">
+      <Descriptions.Item label={t("crawl.detail.fields.jsOnly")}>
+        {jsOnlyMode ? t("common.enabled") : t("common.disabled")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.jsSteps")}>
         {dynamicJsSteps.length ? (
           <Space direction="vertical" size={0}>
             {dynamicJsSteps.map((snippet, index) => (
@@ -1056,17 +1131,17 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             ))}
           </Space>
         ) : (
-          "—"
+          t("common.emptyValue")
         )}
       </Descriptions.Item>
-      <Descriptions.Item label="Wait condition">
-        {waitCondition ? shortenScript(waitCondition) : "—"}
+      <Descriptions.Item label={t("crawl.detail.fields.waitCondition")}>
+        {waitCondition ? shortenScript(waitCondition) : t("common.emptyValue")}
       </Descriptions.Item>
-      <Descriptions.Item label="Wait timeout">
-        {waitTimeoutMs ? `${waitTimeoutMs} ms` : "Default"}
+      <Descriptions.Item label={t("crawl.detail.fields.waitTimeout")}>
+        {waitTimeoutMs ? t("crawl.detail.waitTimeoutValue", { value: waitTimeoutMs }) : t("crawl.detail.default")}
       </Descriptions.Item>
-      <Descriptions.Item label="Proxy route">{proxySummary}</Descriptions.Item>
-      <Descriptions.Item label="Additional URLs">
+      <Descriptions.Item label={t("crawl.detail.fields.proxyRoute")}>{proxySummary}</Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.additionalUrls")}>
         {additionalUrls.length ? (
           <Space wrap>
             {additionalUrls.map((url) => (
@@ -1076,46 +1151,55 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             ))}
           </Space>
         ) : (
-          "—"
+          t("common.emptyValue")
         )}
       </Descriptions.Item>
-      <Descriptions.Item label="Markdown generator">{markdownSummary}</Descriptions.Item>
-      <Descriptions.Item label="Custom Markdown strategy">{markdownStrategySummary}</Descriptions.Item>
-      <Descriptions.Item label="Markdown filter">{markdownFilterSummary}</Descriptions.Item>
-      <Descriptions.Item label="Clean Markdown">{cleanMarkdownSummary}</Descriptions.Item>
-      <Descriptions.Item label="Last server memory">
-        {task.lastServerMemoryMb != null ? `${task.lastServerMemoryMb} MB` : "—"}
+      <Descriptions.Item label={t("crawl.detail.fields.markdownGenerator")}>{markdownSummary}</Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.markdownStrategy")}>{markdownStrategySummary}</Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.markdownFilter")}>{markdownFilterSummary}</Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.cleanMarkdown")}>{cleanMarkdownSummary}</Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.lastServerMemory")}>
+        {task.lastServerMemoryMb != null ? t("crawl.detail.memoryValue", { value: task.lastServerMemoryMb }) : t("common.emptyValue")}
       </Descriptions.Item>
-      <Descriptions.Item label="Last peak memory">
-        {task.lastPeakMemoryMb != null ? `${task.lastPeakMemoryMb} MB` : "—"}
+      <Descriptions.Item label={t("crawl.detail.fields.lastPeakMemory")}>
+        {task.lastPeakMemoryMb != null ? t("crawl.detail.memoryValue", { value: task.lastPeakMemoryMb }) : t("common.emptyValue")}
       </Descriptions.Item>
-      <Descriptions.Item label="Last memory efficiency">
-        {task.lastMemoryEfficiency != null ? `${task.lastMemoryEfficiency}%` : "—"}
+      <Descriptions.Item label={t("crawl.detail.fields.lastMemoryEfficiency")}>
+        {task.lastMemoryEfficiency != null ? t("crawl.detail.percentValue", { value: task.lastMemoryEfficiency }) : t("common.emptyValue")}
       </Descriptions.Item>
-      <Descriptions.Item label="Server memory">
-        {task.memoryStats?.serverMemoryMb != null ? `${task.memoryStats.serverMemoryMb} MB` : "—"}
+      <Descriptions.Item label={t("crawl.detail.fields.serverMemory")}>
+        {task.memoryStats?.serverMemoryMb != null ? t("crawl.detail.memoryValue", { value: task.memoryStats.serverMemoryMb }) : t("common.emptyValue")}
       </Descriptions.Item>
-      <Descriptions.Item label="Peak memory">
-        {task.memoryStats?.peakMemoryMb != null ? `${task.memoryStats.peakMemoryMb} MB` : "—"}
+      <Descriptions.Item label={t("crawl.detail.fields.peakMemory")}>
+        {task.memoryStats?.peakMemoryMb != null ? t("crawl.detail.memoryValue", { value: task.memoryStats.peakMemoryMb }) : t("common.emptyValue")}
       </Descriptions.Item>
-      <Descriptions.Item label="Efficiency">
-        {task.memoryStats?.efficiencyPercent != null ? `${task.memoryStats.efficiencyPercent}%` : "—"}
+      <Descriptions.Item label={t("crawl.detail.fields.efficiency")}>
+        {task.memoryStats?.efficiencyPercent != null ? t("crawl.detail.percentValue", { value: task.memoryStats.efficiencyPercent }) : t("common.emptyValue")}
       </Descriptions.Item>
-        <Descriptions.Item label="Last success">
-          {task.lastSuccessAt ? dayjs(task.lastSuccessAt).format("MMM D, HH:mm") : "Never"}
+        <Descriptions.Item label={t("crawl.detail.fields.lastSuccess")}>
+          {task.lastSuccessAt
+            ? formatDateTime(task.lastSuccessAt, locale, {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit"
+              })
+            : t("common.never")}
         </Descriptions.Item>
-        <Descriptions.Item label="Last error">{task.lastError ?? "—"}</Descriptions.Item>
-        <Descriptions.Item label="Configuration">
+        <Descriptions.Item label={t("crawl.detail.fields.lastError")}>
+          {task.lastError ?? t("common.emptyValue")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.configuration")}>
           {config ? (
             <pre className="markdown-preview">{JSON.stringify(config, null, 2)}</pre>
           ) : (
-            "Default"
+            t("crawl.detail.default")
           )}
         </Descriptions.Item>
       </Descriptions>
 
       {multiConfigs.length ? (
-        <Card title="Multi-URL strategies" style={{ marginTop: 24 }}>
+        <Card title={t("crawl.multiUrl.title")} style={{ marginTop: 24 }}>
           <List
             dataSource={multiConfigs}
             renderItem={(item, index) => {
@@ -1125,10 +1209,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               return (
                 <List.Item key={item?.name ?? `strategy-${index}`}>
                   <Space direction="vertical" style={{ width: "100%" }}>
-                    <Typography.Text strong>{item?.name ?? `Strategy #${index + 1}`}</Typography.Text>
+                    <Typography.Text strong>
+                      {item?.name ?? t("crawl.multiUrl.strategyTitle", { index: index + 1 })}
+                    </Typography.Text>
                     {matcher?.patterns?.length ? (
                       <Typography.Text type="secondary">
-                        Patterns ({matcher.matchMode ?? "glob"}): {matcher.patterns.join(", ")}
+                        {t("crawl.detail.multiUrl.patterns", {
+                          mode: matcher.matchMode ?? "glob",
+                          patterns: matcher.patterns.join(", ")
+                        })}
                       </Typography.Text>
                     ) : null}
                     {urls.length ? (
@@ -1142,10 +1231,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                     ) : null}
                     {Object.keys(options).length ? (
                       <Typography.Text>
-                        Overrides:{" "}
-                        {Object.entries(options)
-                          .map(([key, value]) => `${key}=${String(value)}`)
-                          .join(", ")}
+                        {t("crawl.detail.multiUrl.overrides", {
+                          overrides: Object.entries(options)
+                            .map(([key, value]) => `${key}=${String(value)}`)
+                            .join(", ")
+                        })}
                       </Typography.Text>
                     ) : null}
                   </Space>
@@ -1157,21 +1247,21 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       ) : null}
 
       {linkOverview ? (
-        <Card title="Link analysis" style={{ marginTop: 24 }}>
+        <Card title={t("crawl.links.title")} style={{ marginTop: 24 }}>
           <Space size="large" wrap>
             {[
-              { label: "Total links", value: linkOverview.stats.totalLinks },
-              { label: "Internal", value: linkOverview.stats.internalLinks },
-              { label: "External", value: linkOverview.stats.externalLinks },
-              { label: "High quality", value: linkOverview.stats.highQualityLinks },
-              { label: "Needs review", value: linkOverview.stats.lowQualityLinks },
+              { label: t("crawl.links.stats.total"), value: linkOverview.stats.totalLinks },
+              { label: t("crawl.links.stats.internal"), value: linkOverview.stats.internalLinks },
+              { label: t("crawl.links.stats.external"), value: linkOverview.stats.externalLinks },
+              { label: t("crawl.links.stats.highQuality"), value: linkOverview.stats.highQualityLinks },
+              { label: t("crawl.links.stats.needsReview"), value: linkOverview.stats.lowQualityLinks },
               {
-                label: "Avg intrinsic",
+                label: t("crawl.links.stats.avgIntrinsic"),
                 value:
                   linkOverview.stats.averageIntrinsic !== null &&
                   linkOverview.stats.averageIntrinsic !== undefined
                     ? linkOverview.stats.averageIntrinsic.toFixed(2)
-                    : "—"
+                    : t("common.emptyValue")
               }
             ].map((item) => (
               <Space key={item.label} direction="vertical" size={0}>
@@ -1185,12 +1275,12 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           {linkOverview.buckets.length ? (
             <>
               <Typography.Text strong style={{ display: "block", marginTop: 16 }}>
-                Buckets
+                {t("crawl.links.buckets")}
               </Typography.Text>
               <Space wrap>
                 {linkOverview.buckets.map((bucket) => (
                   <Tag key={bucket.kind}>
-                    {bucket.kind}: {bucket.count}
+                    {t("crawl.links.bucketItem", { kind: bucket.kind, count: bucket.count })}
                   </Tag>
                 ))}
               </Space>
@@ -1198,11 +1288,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           ) : null}
           <Space align="start" size="large" style={{ marginTop: 16 }} wrap>
             <div style={{ minWidth: 280 }}>
-              <Typography.Text strong>Top links</Typography.Text>
+              <Typography.Text strong>{t("crawl.links.topLinks")}</Typography.Text>
               <List
                 size="small"
                 dataSource={linkOverview.topLinks}
-                locale={{ emptyText: "No scored links yet." }}
+                locale={{ emptyText: t("crawl.links.emptyScored") }}
                 renderItem={(link) => (
                   <List.Item>
                     <Space direction="vertical" size={0}>
@@ -1210,8 +1300,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                         {link.text || link.href}
                       </Typography.Link>
                       <Typography.Text type="secondary">
-                        {(link.baseDomain ?? "link").toString()} • Score{" "}
-                        {getLinkScore(link).toFixed(2)}
+                        {t("crawl.links.linkScore", {
+                          domain: (link.baseDomain ?? "link").toString(),
+                          score: getLinkScore(link).toFixed(2)
+                        })}
                       </Typography.Text>
                     </Space>
                   </List.Item>
@@ -1219,11 +1311,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               />
             </div>
             <div style={{ minWidth: 280 }}>
-              <Typography.Text strong>Links to revisit</Typography.Text>
+              <Typography.Text strong>{t("crawl.links.lowQuality")}</Typography.Text>
               <List
                 size="small"
                 dataSource={linkOverview.lowLinks}
-                locale={{ emptyText: "No low quality links yet." }}
+                locale={{ emptyText: t("crawl.links.emptyLowQuality") }}
                 renderItem={(link) => (
                   <List.Item>
                     <Space direction="vertical" size={0}>
@@ -1231,8 +1323,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                         {link.text || link.href}
                       </Typography.Link>
                       <Typography.Text type="secondary">
-                        {(link.baseDomain ?? "link").toString()} • Intrinsic{" "}
-                        {(link.intrinsicScore ?? 0).toFixed(2)}
+                        {t("crawl.links.intrinsicScore", {
+                          domain: (link.baseDomain ?? "link").toString(),
+                          score: (link.intrinsicScore ?? 0).toFixed(2)
+                        })}
                       </Typography.Text>
                     </Space>
                   </List.Item>
@@ -1244,12 +1338,12 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       ) : null}
 
       <Card
-        title="Results"
+        title={t("crawl.detail.results.title")}
         style={{ marginTop: 24 }}
         extra={
           <Space>
             <Input.Search
-              placeholder="Filter by URL or metadata"
+              placeholder={t("crawl.detail.results.searchPlaceholder")}
               allowClear
               onSearch={(value) => setResultSearch(value || undefined)}
               onChange={(event) => {
@@ -1263,7 +1357,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               value={resultLimit}
               style={{ width: 140 }}
               onChange={setResultLimit}
-              options={limitOptions}
+              options={limitOptions.map((option) => ({
+                value: option.value,
+                label: t(option.labelKey)
+              }))}
             />
           </Space>
         }
@@ -1273,17 +1370,25 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         ) : (
           <List
             dataSource={results}
-            locale={{ emptyText: "No crawl results yet." }}
+            locale={{ emptyText: t("crawl.detail.results.empty") }}
             renderItem={(result) => {
               const metadata = result.metadata;
               const mediaPayload = safeParseJson<CrawlMediaCollection>(result.media);
               const storedAssets = safeParseJson<CrawlStoredMediaAsset[]>(result.mediaAssets);
               const tablesPayload = (result.tables ?? null) as CrawlResultTable[] | null;
               const variantEntries = [
-                { key: "raw", label: "Raw", content: result.markdown },
-                { key: "citations", label: "Citations", content: result.markdownWithCitations },
-                { key: "references", label: "References", content: result.referencesMarkdown },
-                { key: "fit", label: "Clean (fit)", content: result.fitMarkdown }
+                { key: "raw", label: t("crawl.detail.results.variants.raw"), content: result.markdown },
+                {
+                  key: "citations",
+                  label: t("crawl.detail.results.variants.citations"),
+                  content: result.markdownWithCitations
+                },
+                {
+                  key: "references",
+                  label: t("crawl.detail.results.variants.references"),
+                  content: result.referencesMarkdown
+                },
+                { key: "fit", label: t("crawl.detail.results.variants.cleanFit"), content: result.fitMarkdown }
               ].filter((entry) => entry.content && entry.content.length > 0);
               const defaultContent = (
                 <pre className="markdown-preview" style={{ marginTop: 8 }}>
@@ -1317,7 +1422,12 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                           {result.sourceUrl}
                         </Typography.Link>
                         <Typography.Text type="secondary">
-                          {dayjs(result.fetchedAt).format("MMM D, HH:mm")}
+                          {formatDateTime(result.fetchedAt, locale, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
                         </Typography.Text>
                       </Space>
                     }
