@@ -35,6 +35,8 @@ interface AkshareGatewayUpgradeStatusResponse {
   pipStdout: string | null;
   pipStderr: string | null;
   pid?: number;
+  upgradeEnabled?: boolean;
+  disabledReason?: string;
 }
 
 @ApiTags("akshare")
@@ -67,6 +69,25 @@ export class AdminAkshareController {
     throw error;
   }
 
+  private buildDisabledStatus(reason: string): AkshareGatewayUpgradeStatusResponse {
+    return {
+      inProgress: false,
+      stage: "idle",
+      requestId: null,
+      requestedAt: null,
+      startedAt: null,
+      finishedAt: null,
+      restartScheduledAt: null,
+      beforeVersion: null,
+      afterVersion: null,
+      error: null,
+      pipStdout: null,
+      pipStderr: null,
+      upgradeEnabled: false,
+      disabledReason: reason
+    };
+  }
+
   @Get("version")
   @Permissions("settings.manage")
   async version(): Promise<AkshareGatewayVersionResponse> {
@@ -78,6 +99,15 @@ export class AdminAkshareController {
       );
       return response.data;
     } catch (error) {
+      const axiosError = error as AxiosError | undefined;
+      const status = axiosError?.response?.status;
+      if (status === 404) {
+        this.logger.warn("Akshare gateway does not expose /version; returning fallback values");
+        return {
+          akshareVersion: "unknown",
+          pythonVersion: "unknown"
+        };
+      }
       this.handleGatewayError(error);
     }
   }
@@ -86,7 +116,7 @@ export class AdminAkshareController {
   @Permissions("settings.manage")
   async status(): Promise<AkshareGatewayUpgradeStatusResponse> {
     if (!this.adminToken) {
-      throw new ServiceUnavailableException(
+      return this.buildDisabledStatus(
         "AKSHARE_ADMIN_TOKEN is not configured; akshare gateway upgrade status is disabled"
       );
     }
@@ -100,6 +130,13 @@ export class AdminAkshareController {
       );
       return response.data;
     } catch (error) {
+      const axiosError = error as AxiosError | undefined;
+      const status = axiosError?.response?.status;
+      if (status === 404) {
+        return this.buildDisabledStatus(
+          "Akshare gateway does not expose admin endpoints; rebuild the gateway image to enable upgrades"
+        );
+      }
       this.handleGatewayError(error);
     }
   }

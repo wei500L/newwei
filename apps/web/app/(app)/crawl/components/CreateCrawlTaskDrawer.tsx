@@ -52,7 +52,7 @@ export function CreateCrawlTaskDrawer({
       width={420}
       open={open}
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form layout="vertical" form={form} onFinish={onSubmit}>
         <CrawlSettingsForm

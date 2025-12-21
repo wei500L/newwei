@@ -282,7 +282,7 @@ export function OrgAdminContent() {
         }}
         onOk={() => createForm.submit()}
         okButtonProps={{ loading: creating }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form<CreateOrgInput> form={createForm} layout="vertical" onFinish={handleCreate}>
           <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>
@@ -316,7 +316,7 @@ export function OrgAdminContent() {
         }}
         onOk={() => editForm.submit()}
         okButtonProps={{ loading: saving }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form<UpdateOrgInput> form={editForm} layout="vertical" onFinish={handleEdit}>
           <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>

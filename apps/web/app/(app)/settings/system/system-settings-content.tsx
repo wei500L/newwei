@@ -475,6 +475,8 @@ interface AkshareGatewayUpgradeStatusResponse {
   pipStdout: string | null;
   pipStderr: string | null;
   pid?: number;
+  upgradeEnabled?: boolean;
+  disabledReason?: string;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -529,6 +531,12 @@ function AkshareGatewaySettingsPanel() {
   }, [fetchStatus, fetchVersion]);
 
   const handleUpgrade = useCallback(() => {
+    if (status?.upgradeEnabled === false) {
+      const reason = status.disabledReason ?? "Akshare upgrade is disabled.";
+      messageApi.warning(reason);
+      return;
+    }
+
     Modal.confirm({
       title: "Upgrade Akshare to latest",
       content:
@@ -583,6 +591,11 @@ function AkshareGatewaySettingsPanel() {
             setErrorMessage("Akshare upgrade is disabled (missing AKSHARE_ADMIN_TOKEN)");
             return;
           }
+          if (statusCode === 404) {
+            messageApi.error("Akshare gateway does not expose admin endpoints");
+            setErrorMessage("Akshare gateway does not expose admin endpoints");
+            return;
+          }
 
           captureClientError("Failed to upgrade akshare gateway", error);
           messageApi.error("Failed to upgrade akshare");
@@ -593,11 +606,13 @@ function AkshareGatewaySettingsPanel() {
         }
       }
     });
-  }, [apiClient, fetchStatus, fetchVersion, messageApi]);
+  }, [apiClient, fetchStatus, fetchVersion, messageApi, status]);
 
   const currentVersion = version?.akshareVersion ?? "-";
   const pythonVersion = version?.pythonVersion ?? "-";
   const stage = status?.stage ?? "unknown";
+  const upgradeDisabledReason =
+    status?.upgradeEnabled === false ? status.disabledReason ?? "Akshare upgrade is disabled." : null;
   const stageColor =
     stage === "failed"
       ? "red"
@@ -619,6 +634,10 @@ function AkshareGatewaySettingsPanel() {
         <Alert style={{ marginBottom: "1rem" }} type="error" message={errorMessage} showIcon />
       ) : null}
 
+      {upgradeDisabledReason ? (
+        <Alert style={{ marginBottom: "1rem" }} type="warning" message={upgradeDisabledReason} showIcon />
+      ) : null}
+
       <Card size="small" title="Akshare Gateway" style={{ marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           <Typography.Text>Akshare</Typography.Text>
@@ -636,7 +655,7 @@ function AkshareGatewaySettingsPanel() {
             danger
             onClick={handleUpgrade}
             loading={upgrading}
-            disabled={loading || upgrading || Boolean(status?.inProgress)}
+            disabled={loading || upgrading || Boolean(status?.inProgress) || status?.upgradeEnabled === false}
           >
             Upgrade to latest
           </Button>
