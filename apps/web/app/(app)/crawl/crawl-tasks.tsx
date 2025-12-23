@@ -1,6 +1,7 @@
 "use client";
 
 import { sanitizeCrawlOptions } from "@modular/utils";
+import { SearchOutlined } from "@ant-design/icons";
 import {
   Button,
   Form,
@@ -43,6 +44,7 @@ export function CrawlTasksView() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [statusFilter, setStatusFilter] = useState<CrawlTaskStatus | null>(
     null,
   );
@@ -252,21 +254,37 @@ export function CrawlTasksView() {
   return (
     <div className="content-card">
       <Space style={{ marginBottom: 16 }} wrap>
-        <Input.Search
-          placeholder={t("crawl.search.placeholder")}
-          allowClear
-          onSearch={(value) => {
-            setPagination((prev) => ({ ...prev, current: 1 }));
-            setSearch(value);
-          }}
-          onChange={(event) => {
-            if (!event.target.value) {
-              setSearch("");
+        <Space.Compact style={{ width: 260 }}>
+          <Input
+            placeholder={t("crawl.search.placeholder")}
+            allowClear
+            value={searchInput}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSearchInput(value);
+              if (!value) {
+                setSearch("");
+                setPagination((prev) => ({ ...prev, current: 1 }));
+              }
+            }}
+            onPressEnter={() => {
+              const nextValue = searchInput.trim();
               setPagination((prev) => ({ ...prev, current: 1 }));
-            }
-          }}
-          style={{ width: 260 }}
-        />
+              setSearch(nextValue);
+              setSearchInput(nextValue);
+            }}
+          />
+          <Button
+            icon={<SearchOutlined />}
+            aria-label={t("crawl.search.placeholder")}
+            onClick={() => {
+              const nextValue = searchInput.trim();
+              setPagination((prev) => ({ ...prev, current: 1 }));
+              setSearch(nextValue);
+              setSearchInput(nextValue);
+            }}
+          />
+        </Space.Compact>
         <Select<CrawlTaskStatus | null>
           placeholder={t("crawl.filters.status")}
           allowClear

@@ -14,7 +14,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 
 import { getApolloClient } from "@/lib/apollo-client";
-import { initI18n, resolveLocale, type SupportedLocale } from "@/lib/i18n";
+import {
+  changeLanguage,
+  getStoredLanguage,
+  initI18n,
+  resolveLocale,
+  type SupportedLocale
+} from "@/lib/i18n";
 
 import { SessionErrorListener } from "./session-error-listener";
 import { UnauthorizedRedirect } from "./unauthorized-redirect";
@@ -60,6 +66,20 @@ export function AppProviders({ children }: PropsWithChildren) {
     return () => {
       i18nInstance.off("languageChanged", handleChange);
     };
+  }, []);
+
+  useEffect(() => {
+    const stored = getStoredLanguage();
+    if (stored && stored !== resolveLocale(i18nInstance.language)) {
+      void changeLanguage(stored);
+      return;
+    }
+    if (!stored && typeof navigator !== "undefined") {
+      const browserLocale = resolveLocale(navigator.language);
+      if (browserLocale !== resolveLocale(i18nInstance.language)) {
+        void i18nInstance.changeLanguage(browserLocale);
+      }
+    }
   }, []);
 
   useEffect(() => {

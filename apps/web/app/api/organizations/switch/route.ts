@@ -1,35 +1,49 @@
-import { NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { NextResponse } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 
-import type { BackendLoginResponse, TokenPayload } from "@/lib/auth";
-import { env } from "@/lib/env";
+import type { BackendLoginResponse, TokenPayload } from '@/lib/auth';
+import { serverEnv } from '@/lib/env.server';
 
 export async function POST(request: Request) {
-  const token = (await getToken({ req: request })) as TokenPayload | null;
+  let token: TokenPayload | null = null;
 
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    token = (await getToken({
+      req: request,
+      secret: serverEnv.NEXTAUTH_SECRET
+    })) as TokenPayload | null;
+  } catch {
+    token = null;
+  }
+
+  if (!token?.refreshToken) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const body = (await request.json().catch(() => ({}))) as { orgId?: string };
   const orgId = body.orgId?.trim();
 
   if (!orgId) {
-    return NextResponse.json({ error: "Organization ID is required" }, { status: 400 });
+    return NextResponse.json({ error: 'Organization ID is required' }, { status: 400 });
   }
 
-  const response = await fetch(`${env.apiBaseUrl}/auth/refresh`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ refreshToken: token.refreshToken, orgId })
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${serverEnv.apiBaseUrl}/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ refreshToken: token.refreshToken, orgId })
+    });
+  } catch {
+    return NextResponse.json({ error: 'Auth service unavailable' }, { status: 502 });
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
     return NextResponse.json(
-      { error: "Failed to switch organization", details: errorText || undefined },
+      { error: 'Failed to switch organization', details: errorText || undefined },
       { status: response.status }
     );
   }
@@ -37,4 +51,3 @@ export async function POST(request: Request) {
   const data = (await response.json()) as BackendLoginResponse;
   return NextResponse.json(data);
 }
-

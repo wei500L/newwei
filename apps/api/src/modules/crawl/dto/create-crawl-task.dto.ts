@@ -105,6 +105,189 @@ export class CrawlGeolocationDto {
   accuracy?: number;
 }
 
+export class CrawlMarkdownOptionsDto {
+  @IsOptional()
+  @IsIn(["raw_html", "cleaned_html", "fit_html"])
+  contentSource?: "raw_html" | "cleaned_html" | "fit_html";
+
+  @IsOptional()
+  @IsBoolean()
+  ignoreLinks?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  escapeHtml?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(40)
+  @Max(200)
+  bodyWidth?: number;
+}
+
+export class CrawlMarkdownFilterDto {
+  @IsOptional()
+  @IsIn(["pruning"])
+  type?: "pruning";
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: "threshold must be a number" })
+  @Min(0)
+  @Max(1)
+  threshold?: number;
+
+  @IsOptional()
+  @IsIn(["fixed", "dynamic"])
+  thresholdType?: "fixed" | "dynamic";
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(500)
+  minWordThreshold?: number;
+}
+
+export class CrawlMarkdownStrategyDto {
+  @IsString()
+  @MaxLength(128)
+  type!: string;
+
+  @IsOptional()
+  @IsObject()
+  params?: Record<string, unknown>;
+}
+
+export class CrawlTableExtractionStrategyDto {
+  @IsString()
+  @MaxLength(128)
+  type!: string;
+
+  @IsOptional()
+  @IsObject()
+  params?: Record<string, unknown>;
+}
+
+export class CrawlVirtualScrollConfigDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  containerSelector?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  scrollCount?: number;
+
+  @IsOptional()
+  @IsIn(["container_height", "viewport", "pixels"])
+  scrollBy?: "container_height" | "viewport" | "pixels";
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  waitAfterScrollMs?: number;
+}
+
+export class CrawlCleanMarkdownOptionsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cssSelector?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  targetElements?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  excludedTags?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  removeOverlayElements?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(2000)
+  wordCountThreshold?: number;
+}
+
+export class CrawlLinkPreviewOptionsDto {
+  @IsOptional()
+  @IsBoolean()
+  includeInternal?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  includeExternal?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  includeSocial?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  maxLinks?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  concurrency?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  timeoutSeconds?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  query?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: "scoreThreshold must be a number" })
+  @Min(0)
+  @Max(1)
+  scoreThreshold?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  verbose?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(25)
+  includePatterns?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(25)
+  excludePatterns?: string[];
+}
+
 export class CrawlOptionsDto {
   @IsOptional()
   @IsBoolean()
@@ -510,189 +693,6 @@ export class CrawlMultiUrlConfigDto {
   @ValidateNested()
   @Type(() => CrawlStrategyOverridesDto)
   options?: CrawlStrategyOverridesDto;
-}
-
-export class CrawlMarkdownOptionsDto {
-  @IsOptional()
-  @IsIn(["raw_html", "cleaned_html", "fit_html"])
-  contentSource?: "raw_html" | "cleaned_html" | "fit_html";
-
-  @IsOptional()
-  @IsBoolean()
-  ignoreLinks?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  escapeHtml?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(40)
-  @Max(200)
-  bodyWidth?: number;
-}
-
-export class CrawlMarkdownFilterDto {
-  @IsOptional()
-  @IsIn(["pruning"])
-  type?: "pruning";
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({}, { message: "threshold must be a number" })
-  @Min(0)
-  @Max(1)
-  threshold?: number;
-
-  @IsOptional()
-  @IsIn(["fixed", "dynamic"])
-  thresholdType?: "fixed" | "dynamic";
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(500)
-  minWordThreshold?: number;
-}
-
-export class CrawlMarkdownStrategyDto {
-  @IsString()
-  @MaxLength(128)
-  type!: string;
-
-  @IsOptional()
-  @IsObject()
-  params?: Record<string, unknown>;
-}
-
-export class CrawlTableExtractionStrategyDto {
-  @IsString()
-  @MaxLength(128)
-  type!: string;
-
-  @IsOptional()
-  @IsObject()
-  params?: Record<string, unknown>;
-}
-
-export class CrawlVirtualScrollConfigDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  containerSelector?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(200)
-  scrollCount?: number;
-
-  @IsOptional()
-  @IsIn(["container_height", "viewport", "pixels"])
-  scrollBy?: "container_height" | "viewport" | "pixels";
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(10000)
-  waitAfterScrollMs?: number;
-}
-
-export class CrawlCleanMarkdownOptionsDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  cssSelector?: string;
-
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(10)
-  @IsString({ each: true })
-  targetElements?: string[];
-
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(10)
-  @IsString({ each: true })
-  excludedTags?: string[];
-
-  @IsOptional()
-  @IsBoolean()
-  removeOverlayElements?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(2000)
-  wordCountThreshold?: number;
-}
-
-export class CrawlLinkPreviewOptionsDto {
-  @IsOptional()
-  @IsBoolean()
-  includeInternal?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  includeExternal?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  includeSocial?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(500)
-  maxLinks?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(50)
-  concurrency?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(60)
-  timeoutSeconds?: number;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(160)
-  query?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({}, { message: "scoreThreshold must be a number" })
-  @Min(0)
-  @Max(1)
-  scoreThreshold?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  verbose?: boolean;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  @ArrayMaxSize(25)
-  includePatterns?: string[];
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  @ArrayMaxSize(25)
-  excludePatterns?: string[];
 }
 
 export class CreateCrawlTaskDto {

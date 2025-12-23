@@ -1,5 +1,16 @@
 import { ArgsType, Field, ID, InputType, Int, Float, registerEnumType } from "@nestjs/graphql";
 import { CrawlTaskStatus } from "@prisma/client";
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Min
+} from "class-validator";
 import GraphQLJSONScalar from "graphql-type-json";
 
 @InputType()
@@ -404,84 +415,136 @@ export class CrawlOptionsInput {
 @InputType()
 export class CrawlMetadataInput {
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
   source?: string;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
   domain?: string;
 
   @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   urls?: string[];
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
   pattern?: string;
 
   @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   maxUrls?: number;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
   query?: string;
 
   @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @IsNumber()
   scoreThreshold?: number;
 
   @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
   extractJsonLd?: boolean;
 
   @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
   extractOpenGraph?: boolean;
 
   @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
   extractStandardMeta?: boolean;
 
   @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   concurrency?: number;
 }
 
 @InputType()
 export class CreateCrawlTaskInput {
   @Field()
+  @IsString()
   url!: string;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
   displayName?: string;
 
   @Field(() => CrawlTimeRangeInput, { nullable: true })
+  @IsOptional()
+  @IsObject()
   timeRange?: CrawlTimeRangeInput;
 
   @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   concurrency?: number;
 
   @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   keywords?: string[];
 
   @Field(() => CrawlOptionsInput, { nullable: true })
+  @IsOptional()
+  @IsObject()
   options?: CrawlOptionsInput;
 }
 
 @ArgsType()
 export class CrawlTasksQueryArgs {
   @Field(() => Int, { defaultValue: 20 })
+  @IsInt()
+  @Min(1)
   first!: number;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
   after?: string;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
   search?: string;
 
   @Field(() => CrawlTaskStatus, { nullable: true })
+  @IsOptional()
+  @IsEnum(CrawlTaskStatus)
   status?: CrawlTaskStatus;
 }
 
 @ArgsType()
 export class CrawlTaskDetailArgs {
   @Field(() => ID)
+  @IsString()
   id!: string;
 
   @Field(() => Int, { nullable: true, defaultValue: 20 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   resultLimit?: number;
 
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
   resultSearch?: string;
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { SearchOutlined } from "@ant-design/icons";
 import { Button, Input, Space, Table, Tag } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -202,20 +203,26 @@ export function ItemsTable() {
   return (
     <div className="content-card">
       <Space style={{ marginBottom: "1rem" }}>
-        <Input.Search
-          placeholder={t("items.search.placeholder")}
-          allowClear
-          value={searchInput}
-          onSearch={handleSearch}
-          onChange={(event) => {
-            const value = event.target.value;
-            setSearchInput(value);
-            if (!value) {
-              setQueryParams({ q: null, page: 1 });
-            }
-          }}
-          enterButton
-        />
+        <Space.Compact>
+          <Input
+            placeholder={t("items.search.placeholder")}
+            allowClear
+            value={searchInput}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSearchInput(value);
+              if (!value) {
+                setQueryParams({ q: null, page: 1 });
+              }
+            }}
+            onPressEnter={() => handleSearch(searchInput)}
+          />
+          <Button
+            icon={<SearchOutlined />}
+            aria-label={t("items.search.placeholder")}
+            onClick={() => handleSearch(searchInput)}
+          />
+        </Space.Compact>
         <Button type="primary" onClick={() => refetch()} loading={loading}>
           {t("common.refresh")}
         </Button>

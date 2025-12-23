@@ -1,5 +1,6 @@
 "use client";
 
+import { SearchOutlined } from "@ant-design/icons";
 import {
   Button,
   Card,
@@ -503,6 +504,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const locale = resolveLocale(i18n.language);
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
+  const [resultSearchInput, setResultSearchInput] = useState("");
   const { data, loading, refetch } = useCrawlTaskQuery({
     variables: {
       id: taskId,
@@ -1344,17 +1346,34 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         style={{ marginTop: 24 }}
         extra={
           <Space>
-            <Input.Search
-              placeholder={t("crawl.detail.results.searchPlaceholder")}
-              allowClear
-              onSearch={(value) => setResultSearch(value || undefined)}
-              onChange={(event) => {
-                if (!event.target.value) {
-                  setResultSearch(undefined);
-                }
-              }}
-              style={{ width: 260 }}
-            />
+            <Space.Compact style={{ width: 260 }}>
+              <Input
+                placeholder={t("crawl.detail.results.searchPlaceholder")}
+                allowClear
+                value={resultSearchInput}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setResultSearchInput(value);
+                  if (!value) {
+                    setResultSearch(undefined);
+                  }
+                }}
+                onPressEnter={() => {
+                  const nextValue = resultSearchInput.trim();
+                  setResultSearch(nextValue || undefined);
+                  setResultSearchInput(nextValue);
+                }}
+              />
+              <Button
+                icon={<SearchOutlined />}
+                aria-label={t("crawl.detail.results.searchPlaceholder")}
+                onClick={() => {
+                  const nextValue = resultSearchInput.trim();
+                  setResultSearch(nextValue || undefined);
+                  setResultSearchInput(nextValue);
+                }}
+              />
+            </Space.Compact>
             <Select
               value={resultLimit}
               style={{ width: 140 }}

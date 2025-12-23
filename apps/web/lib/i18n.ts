@@ -29,14 +29,24 @@ export function resolveLocale(locale?: string): SupportedLocale {
 }
 
 export function getInitialLanguage(): SupportedLocale {
+  if (typeof document !== "undefined") {
+    const htmlLang = document.documentElement.lang;
+    if (htmlLang) {
+      return resolveLocale(htmlLang);
+    }
+  }
+  return "en-US";
+}
+
+export function getStoredLanguage(): SupportedLocale | null {
   if (typeof window === "undefined") {
-    return "en-US";
+    return null;
   }
   const stored = window.localStorage.getItem(STORAGE_KEY);
   if (stored && supportedLocales.includes(stored as SupportedLocale)) {
     return stored as SupportedLocale;
   }
-  return resolveLocale(window.navigator.language);
+  return null;
 }
 
 export async function changeLanguage(next: SupportedLocale) {
