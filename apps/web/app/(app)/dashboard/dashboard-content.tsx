@@ -191,9 +191,7 @@ export function DashboardContent() {
 
   if (loading || dashboardsLoading) {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
+      <div className="flex justify-center mt-12">
         <Spin size="large" />
       </div>
     );
@@ -216,22 +214,22 @@ export function DashboardContent() {
   };
 
   return (
-    <div>
+    <div className="space-y-6 pb-8">
       <LiveAlertsToasts />
-      <Row gutter={[16, 16]}>
+      <Row gutter={[20, 20]}>
         <Col xs={24} md={12} lg={8}>
-          <Card className="content-card">
+          <Card className="content-card h-full flex flex-col justify-center">
             <Statistic title={t("dashboard.stats.totalItems")} value={itemCount} />
           </Card>
         </Col>
         <Col xs={24} md={12} lg={8}>
-          <Card className="content-card">
+          <Card className="content-card h-full flex flex-col justify-center">
             <Statistic title={t("dashboard.stats.processedItems")} value={processedCount} />
           </Card>
         </Col>
         <Col xs={24} md={24} lg={8}>
           <Card
-            className="content-card"
+            className="content-card h-full"
             title={
               <Space size="small" align="center">
                 <span>{t("dashboard.queue.snapshot")}</span>
@@ -245,18 +243,18 @@ export function DashboardContent() {
           </Card>
         </Col>
       </Row>
-      <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
+      <Row gutter={[20, 20]}>
         <Col xs={24} md={12}>
-          <Card title={t("dashboard.queue.recentActivity")} className="content-card">
+          <Card title={t("dashboard.queue.recentActivity")} className="content-card h-full">
             <List
               rowKey={(item) => item.jobId}
               dataSource={parsedLogs}
               renderItem={(item) => (
-                <List.Item>
+                <List.Item className="!px-0">
                   <List.Item.Meta
-                    title={`${item.event} • ${item.jobId}`}
+                    title={<span className="font-medium text-sm">{`${item.event} • ${item.jobId}`}</span>}
                     description={
-                      <Typography.Text type="secondary">
+                      <div className="text-xs text-gray-500">
                         {formatDateTime(item.timestamp, locale, {
                           year: "numeric",
                           month: "2-digit",
@@ -266,29 +264,27 @@ export function DashboardContent() {
                           second: "2-digit"
                         })}
                         {item.payload?.message
-                          ? t("dashboard.queue.payloadMessage", {
-                              message: item.payload?.message
-                            })
+                          ? <div className="mt-1">{t("dashboard.queue.payloadMessage", { message: item.payload?.message })}</div>
                           : ""}
-                      </Typography.Text>
+                      </div>
                     }
                   />
                 </List.Item>
               )}
             />
             {parsedLogs.length === 0 && (
-              <Empty description={t("dashboard.queue.noRecentLogs")} />
+              <Empty description={t("dashboard.queue.noRecentLogs")} className="my-8" />
             )}
           </Card>
         </Col>
         <Col xs={24} md={12}>
-          <Card title={t("dashboard.nextActions.title")} className="content-card">
-            <Typography.Paragraph>
+          <Card title={t("dashboard.nextActions.title")} className="content-card h-full">
+            <Typography.Paragraph className="mb-6 text-gray-600">
               {t("dashboard.nextActions.description")}
             </Typography.Paragraph>
-            <Row gutter={[12, 12]}>
+            <Row gutter={[16, 16]}>
               <Col xs={24} md={12}>
-                <Typography.Text strong>
+                <Typography.Text strong className="block mb-2">
                   {t("dashboard.nextActions.anomalies")}
                 </Typography.Text>
                 <List
@@ -297,26 +293,25 @@ export function DashboardContent() {
                   dataSource={recentAnomalies}
                   locale={{ emptyText: t("dashboard.nextActions.noAnomalies") }}
                   renderItem={(item) => (
-                    <List.Item>
+                    <List.Item className="!px-0">
                       <List.Item.Meta
                         title={
-                          <Space>
-                            <Tag>{item.status}</Tag>
-                            <Typography.Text>
+                          <Space size={4}>
+                            <Tag className="mr-0">{item.status}</Tag>
+                            <span className="text-xs text-gray-500">
                               {formatDateTime(item.createdAt, locale, {
-                                year: "numeric",
                                 month: "2-digit",
                                 day: "2-digit",
                                 hour: "2-digit",
                                 minute: "2-digit"
                               })}
-                            </Typography.Text>
+                            </span>
                           </Space>
                         }
                         description={
-                          <Typography.Text type="secondary">
+                          <div className="text-xs text-gray-500 line-clamp-2 mt-1">
                             {item.summary ?? t("dashboard.nextActions.pendingSummary")}
-                          </Typography.Text>
+                          </div>
                         }
                       />
                     </List.Item>
@@ -324,35 +319,32 @@ export function DashboardContent() {
                 />
               </Col>
               <Col xs={24} md={12}>
-                <Typography.Text strong>{t("dashboard.nextActions.alertRouting")}</Typography.Text>
+                <Typography.Text strong className="block mb-2">{t("dashboard.nextActions.alertRouting")}</Typography.Text>
                 <List
                   size="small"
                   loading={alertRulesLoading}
                   dataSource={activeAlertRules.slice(0, 3)}
                   locale={{ emptyText: t("dashboard.nextActions.noAlertRules") }}
                   renderItem={(rule) => (
-                    <List.Item>
+                    <List.Item className="!px-0">
                       <List.Item.Meta
                         title={
-                          <Space>
-                            <Typography.Text strong>
-                              {rule.name}
-                            </Typography.Text>
-                            <Tag color={severityColor[rule.severity]}>
+                          <Space size={4} wrap>
+                            <span className="font-medium text-sm">{rule.name}</span>
+                            <Tag color={severityColor[rule.severity]} className="mr-0">
                               {rule.severity}
                             </Tag>
-                            <Tag>{rule.metricProvider}</Tag>
                           </Space>
                         }
                         description={
-                          <Typography.Text type="secondary">
+                          <div className="text-xs text-gray-500 mt-1">
                             {t("dashboard.nextActions.alertRoutingSummary", {
                               metric: rule.metricSlug,
                               channels:
                                 rule.channels.map((c) => c.name).join(", ") ||
                                 t("dashboard.nextActions.noneConfigured")
                             })}
-                          </Typography.Text>
+                          </div>
                         }
                       />
                     </List.Item>
@@ -363,45 +355,47 @@ export function DashboardContent() {
           </Card>
         </Col>
       </Row>
-      <Row style={{ marginTop: "2rem" }}>
+      <Row>
         <Col span={24}>
           <Card title={t("dashboard.editor.title")} className="content-card">
-            <Space direction="vertical" style={{ width: "100%" }}>
-              <Space align="center">
-                <Typography.Text type="secondary">
+            <Space direction="vertical" className="w-full" size="middle">
+              <div className="flex flex-wrap items-center gap-4">
+                <Typography.Text type="secondary" className="hidden sm:inline">
                   {t("dashboard.editor.description")}
                 </Typography.Text>
-                <Select
-                  size="small"
-                  value={range !== "custom" ? range : undefined}
-                  onChange={(val) => setRange(val as DashboardRangePreset)}
-                  options={[
-                    { label: "1M", value: "1M" },
-                    { label: "3M", value: "3M" },
-                    { label: "6M", value: "6M" },
-                    { label: "1Y", value: "1Y" },
-                  ]}
-                  style={{ width: 120 }}
-                />
-                <Select
-                  placeholder={t("dashboard.editor.selectDashboard")}
-                  style={{ minWidth: 220 }}
-                  value={activeDashboard?.id}
-                  onChange={(val) => setActiveId(val)}
-                  options={dashboards.map((d) => ({
-                    label: d.name,
-                    value: d.id,
-                  }))}
-                />
-                <Button
-                  size="small"
-                  onClick={() => {
-                    setActiveId(undefined);
-                  }}
-                >
-                  {t("dashboard.editor.newDashboard")}
-                </Button>
-              </Space>
+                <div className="flex items-center gap-2 ml-auto">
+                  <Select
+                    size="small"
+                    value={range !== "custom" ? range : undefined}
+                    onChange={(val) => setRange(val as DashboardRangePreset)}
+                    options={[
+                      { label: "1M", value: "1M" },
+                      { label: "3M", value: "3M" },
+                      { label: "6M", value: "6M" },
+                      { label: "1Y", value: "1Y" },
+                    ]}
+                    className="w-[100px]"
+                  />
+                  <Select
+                    placeholder={t("dashboard.editor.selectDashboard")}
+                    className="min-w-[200px]"
+                    value={activeDashboard?.id}
+                    onChange={(val) => setActiveId(val)}
+                    options={dashboards.map((d) => ({
+                      label: d.name,
+                      value: d.id,
+                    }))}
+                  />
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setActiveId(undefined);
+                    }}
+                  >
+                    {t("dashboard.editor.newDashboard")}
+                  </Button>
+                </div>
+              </div>
               <DashboardEditor
                 dashboard={activeDashboard ?? undefined}
                 saving={savingDashboard}
@@ -424,19 +418,19 @@ export function DashboardContent() {
           </Card>
         </Col>
       </Row>
-      <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
+      <Row gutter={[20, 20]}>
         <Col xs={24} lg={12}>
-          <Card title={t("dashboard.panels.smartAlerts")} className="content-card">
+          <Card title={t("dashboard.panels.smartAlerts")} className="content-card h-full">
             <AlertPanel />
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title={t("dashboard.panels.aiAnalysis")} className="content-card">
+          <Card title={t("dashboard.panels.aiAnalysis")} className="content-card h-full">
             <AnalysisPanel />
           </Card>
         </Col>
       </Row>
-      <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
+      <Row gutter={[20, 20]}>
         <Col xs={24} lg={24}>
           <DrilldownChart
             category="economic-short"
@@ -444,7 +438,7 @@ export function DashboardContent() {
           />
         </Col>
       </Row>
-      <Row gutter={[16, 16]} style={{ marginTop: "1.5rem" }}>
+      <Row gutter={[20, 20]}>
         <Col xs={24} lg={24}>
           <Card title={t("dashboard.alertConfig.title")} className="content-card">
             <AlertConfigForm />

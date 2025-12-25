@@ -280,7 +280,69 @@ export function DashboardChart({
       await ensureRenderer(renderer);
       if (cancelled) return;
 
-      const chart = echarts.init(dom, theme, { renderer });
+      // Register Deep Sea Theme
+      echarts.registerTheme("deep-sea", {
+        color: [
+          "#0050b3", // Primary (Deep Blue)
+          "#faad14", // Secondary (Tech Gold)
+          "#13c2c2", // Accent (Cyan)
+          "#eb2f96", // Magenta
+          "#722ed1", // Purple
+          "#52c41a", // Green
+          "#fadb14", // Yellow
+          "#fa8c16", // Orange
+        ],
+        backgroundColor: "transparent",
+        tooltip: {
+          backgroundColor: "rgba(255, 255, 255, 0.95)",
+          borderColor: "#e5e7eb",
+          textStyle: {
+            color: "#1f2937",
+          },
+          padding: [10, 14],
+          extraCssText: "box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); border-radius: 8px;",
+        },
+        title: {
+          textStyle: {
+            color: "#111827",
+            fontWeight: 600,
+          },
+        },
+        legend: {
+          textStyle: {
+            color: "#4b5563",
+          },
+        },
+        categoryAxis: {
+          axisLine: {
+            lineStyle: {
+              color: "#e5e7eb",
+            },
+          },
+          axisLabel: {
+            color: "#6b7280",
+          },
+          splitLine: {
+            show: false,
+          },
+        },
+        valueAxis: {
+          axisLine: {
+            show: false,
+          },
+          axisLabel: {
+            color: "#6b7280",
+          },
+          splitLine: {
+            lineStyle: {
+              color: "#f3f4f6",
+              type: "dashed",
+            },
+          },
+        },
+      });
+
+      const chart = echarts.init(dom, theme || "deep-sea", { renderer });
       if (group) {
         chart.group = group;
         echarts.connect(group);

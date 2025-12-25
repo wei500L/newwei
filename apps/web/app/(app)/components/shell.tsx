@@ -148,28 +148,25 @@ export function ShellLayout({ children }: PropsWithChildren) {
     }));
 
   return (
-    <Layout className="main-layout">
+    <Layout className="main-layout min-h-screen">
       {contextHolder}
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={toggle}
-        width={220}
+        width={240}
         breakpoint="lg"
+        className="!bg-[#001529] shadow-xl z-20"
+        theme="dark"
       >
         <div
-          style={{
-            height: 64,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: collapsed ? "center" : "flex-start",
-            padding: collapsed ? 0 : "0 16px",
-            color: "#fff",
-            fontWeight: 600,
-            fontSize: collapsed ? 18 : 20,
-          }}
+          className={`h-16 flex items-center transition-all duration-300 ${
+            collapsed ? "justify-center px-0" : "justify-start px-6"
+          }`}
         >
-          {collapsed ? t("brand.short") : t("brand.full")}
+          <span className="text-white font-bold text-lg tracking-wide truncate">
+            {collapsed ? t("brand.short") : t("brand.full")}
+          </span>
         </div>
         <Menu
           theme="dark"
@@ -177,27 +174,24 @@ export function ShellLayout({ children }: PropsWithChildren) {
           selectedKeys={selectedKeys}
           items={navigationItems}
           onClick={(info) => router.push(info.key)}
+          className="!bg-transparent border-none"
         />
       </Sider>
       <Layout>
-        <Header
-          style={{
-            background: "#fff",
-            padding: "0 24px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
-          }}
-        >
-          <Breadcrumb items={breadcrumbs} />
+        <Header className="sticky top-0 z-10 w-full !bg-white/80 !backdrop-blur-md !px-6 flex items-center justify-between shadow-sm transition-all duration-200">
+          <Breadcrumb items={breadcrumbs} className="font-medium" />
           <Space align="center" size="large">
             <NotificationCenter />
             <LanguageSwitcher />
             <OrganizationSwitcher />
-            <Typography.Text>
-              {session.data?.user?.firstName} {session.data?.user?.lastName}
-            </Typography.Text>
+            <div className="flex flex-col items-end leading-tight">
+              <Typography.Text strong className="text-sm">
+                {session.data?.user?.firstName} {session.data?.user?.lastName}
+              </Typography.Text>
+              <Typography.Text type="secondary" className="text-xs">
+                {session.data?.user?.email}
+              </Typography.Text>
+            </div>
             <Dropdown.Button
               type="text"
               icon={<LogoutOutlined />}
@@ -224,8 +218,8 @@ export function ShellLayout({ children }: PropsWithChildren) {
             </Dropdown.Button>
           </Space>
         </Header>
-        <Content style={{ margin: "24px", display: "flex" }}>
-          <div style={{ width: "100%" }}>{children}</div>
+        <Content className="m-6 flex flex-col flex-1 min-w-0">
+          <div className="w-full max-w-[1600px] mx-auto">{children}</div>
         </Content>
       </Layout>
     </Layout>
