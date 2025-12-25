@@ -359,7 +359,7 @@ export function DashboardChart({
       // Register Smart Dark Theme
       echarts.registerTheme("smart-dark", {
         color: [
-          "#177ddc", // Blue
+          "#2563eb", // Vibrant Blue (was #177ddc)
           "#d48806", // Gold
           "#13a8a8", // Cyan
           "#cb2b83", // Magenta
@@ -370,18 +370,18 @@ export function DashboardChart({
         ],
         backgroundColor: "transparent",
         tooltip: {
-          backgroundColor: "rgba(31, 31, 31, 0.95)",
-          borderColor: "#303030",
+          backgroundColor: "rgba(15, 23, 42, 0.95)",
+          borderColor: "rgba(255, 255, 255, 0.1)",
           textStyle: {
-            color: "#e5e7eb",
+            color: "#e2e8f0",
           },
           padding: [10, 14],
-          extraCssText: "box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); border-radius: 8px;",
+          extraCssText: "box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); border-radius: 8px;",
         },
         title: {
           textStyle: {
             color: "#f3f4f6",
-            fontWeight: 600,
+            fontWeight: 700,
           },
         },
         legend: {
@@ -401,14 +401,14 @@ export function DashboardChart({
           axisLine: {
             show: true,
             lineStyle: {
-              color: "#303030",
+              color: "rgba(255, 255, 255, 0.1)",
             },
           },
           axisTick: {
             show: false
           },
           axisLabel: {
-            color: "#9ca3af",
+            color: "#cbd5e1",
             margin: 12
           },
           splitLine: {

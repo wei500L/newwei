@@ -3,13 +3,19 @@
 @tailwind utilities;
 
 :root {
-  /* Deep Sea / Bloomberg Dark Theme */
-  --background: #0b1121; /* Very dark slate/navy */
-  --foreground: #e2e8f0; /* Off-white text */
+  /* Complex Dark Theme */
+  --background: #0f172a; /* Slate 900 base */
+  --foreground: #e2e8f0;
 
-  /* Primary Action - Electric Cyan */
-  --primary: #00e5ff;
-  --primary-foreground: #000000;
+  /* Primary Action - Vibrant Blue */
+  --primary: #2563eb; /* Blue 600 - Vibrant, derived from #0050b3 ref */
+  --primary-foreground: #ffffff;
+
+  /* Semantic - Financial Trends */
+  --bullish: #10b981; /* Emerald 500 */
+  --bullish-foreground: #ffffff;
+  --bearish: #f43f5e; /* Rose 500 */
+  --bearish-foreground: #ffffff;
 
   /* Secondary - Muted Blue/Grey */
   --secondary: #1e293b;
@@ -20,13 +26,13 @@
   --accent-foreground: #000000;
 
   /* Destructive */
-  --destructive: #ff4d4f;
+  --destructive: #ef4444;
   --destructive-foreground: #ffffff;
 
   /* UI Elements */
-  --border: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.08);
   --input: rgba(255, 255, 255, 0.05);
-  --ring: rgba(0, 229, 255, 0.5);
+  --ring: rgba(37, 99, 235, 0.5);
   
   --radius: 4px; /* Crisp, tighter radius */
   --radius-lg: 8px;
@@ -34,12 +40,18 @@
 
 @layer base {
   body {
-    @apply bg-[var(--background)] text-[var(--foreground)] font-sans antialiased selection:bg-[var(--primary)] selection:text-[var(--primary-foreground)];
+    @apply bg-[var(--background)] text-[var(--foreground)] font-sans antialiased selection:bg-[var(--primary)] selection:text-[var(--primary-foreground)] tabular-nums;
+    /* Complex layered background */
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.15) 0px, transparent 50%), /* Primary glow top left */
+      radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.05) 0px, transparent 50%), /* Subtle Bullish tint top right */
+      radial-gradient(at 50% 100%, rgba(244, 63, 94, 0.05) 0px, transparent 50%); /* Subtle Bearish tint bottom */
+    background-attachment: fixed;
   }
 
   /* Typography Overrides */
   h1, h2, h3, h4, h5, h6 {
-    @apply font-medium tracking-tight text-white;
+    @apply font-bold tracking-tight text-white; /* Increased weight */
   }
   
   code, pre, .font-mono {
@@ -50,7 +62,7 @@
 @layer utilities {
   /* Glassmorphism Utilities */
   .glass {
-    @apply backdrop-blur-md bg-[#0b1121]/70 border border-white/10 shadow-xl;
+    @apply backdrop-blur-md bg-[#0f172a]/70 border border-white/5; /* Removed heavy shadow */
   }
   
   .glass-card {
@@ -70,7 +82,8 @@
 /* Auth Layout Styles */
 .auth-layout {
   @apply min-h-screen flex items-center justify-center p-8 relative overflow-hidden;
-  background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0b1121 100%);
+  /* Updated auth background to match new theme but darker */
+  background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 100%);
 }
 
 .auth-layout::before {
@@ -80,12 +93,13 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.5), transparent);
+  background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.5), transparent);
 }
 
 .auth-card {
   @apply w-full max-w-[420px] p-8 glass-card;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+  /* Lighter border, less shadow */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 /* Dashboard/Layout Styles */
@@ -98,7 +112,7 @@
 }
 
 .page-title {
-  @apply text-2xl font-semibold text-white tracking-tight;
+  @apply text-2xl font-bold text-white tracking-tight; /* Increased weight */
 }
 
 .content-card {
@@ -106,7 +120,7 @@
 }
 
 .content-card:hover {
-  @apply border-white/20 shadow-2xl shadow-cyan-900/10;
+  @apply border-white/20 bg-white/[0.03]; /* Slight background shift instead of shadow */
 }
 
 /* Cache/Data Components */

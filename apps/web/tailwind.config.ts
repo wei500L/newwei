@@ -29,6 +29,14 @@ const config: Config = {
           DEFAULT: 'var(--destructive)',
           foreground: 'var(--destructive-foreground)',
         },
+        bullish: {
+          DEFAULT: 'var(--bullish)',
+          foreground: 'var(--bullish-foreground)',
+        },
+        bearish: {
+          DEFAULT: 'var(--bearish)',
+          foreground: 'var(--bearish-foreground)',
+        },
         background: 'var(--background)',
         foreground: 'var(--foreground)',
         border: 'var(--border)',
