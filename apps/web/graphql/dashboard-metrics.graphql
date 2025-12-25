@@ -62,7 +62,7 @@ query MetricDrillDownDetails($category: String!, $start: DateTime!, $end: DateTi
       displayName
     }
   }
-  relatedAlerts: alertEvents(limit: 20, metricSlug: $category) {
+  relatedAlerts: alertEvents(limit: 20) {
     id
     severity
     message

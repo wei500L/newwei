@@ -1,0 +1,14 @@
+
+> @modular/db@0.1.0 typecheck D:\wei\packages\db
+> tsc -p tsconfig.build.json --noEmit
+
+src/client.ts(2,10): error TS2305: Module '"@prisma/client"' has no exported member 'PrismaClient'.
+src/client.ts(15,24): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/scripts/generate.ts(49,51): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string | number | boolean'.
+  Type 'undefined' is not assignable to type 'string | number | boolean'.
+src/scripts/migrate.ts(47,51): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string | number | boolean'.
+  Type 'undefined' is not assignable to type 'string | number | boolean'.
+src/seeds.ts(3,20): error TS7016: Could not find a declaration file for module 'bcrypt'. 'D:/wei/node_modules/.pnpm/bcrypt@5.1.1/node_modules/bcrypt/bcrypt.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/bcrypt` if it exists or add a new declaration (.d.ts) file containing `declare module 'bcrypt';`
+src/seeds.ts(4,19): error TS2307: Cannot find module 'dayjs' or its corresponding type declarations.
+ ELIFECYCLE  Command failed with exit code 2.

@@ -11,6 +11,8 @@ import {
   Table,
   Tag,
   Typography,
+  Grid,
+  List,
 } from "antd";
 import type { FormInstance } from "antd/es/form";
 import type { ColumnsType } from "antd/es/table";
@@ -39,6 +41,7 @@ export function MetadataExtractionCard({
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const metadataSource = Form.useWatch("source", form) ?? "sitemap";
+  const screens = Grid.useBreakpoint();
 
   const metadataColumns: ColumnsType<MetadataResultRow> = [
     {
@@ -260,17 +263,77 @@ export function MetadataExtractionCard({
           </Form.Item>
         </Space>
       </Form>
-      <Table<MetadataResultRow>
-        style={{ marginTop: 24 }}
-        rowKey={(record) =>
-          `${record.url}-${record.fetchedAt ?? record.status}`
-        }
-        columns={metadataColumns}
-        dataSource={results}
-        loading={loading}
-        pagination={false}
-        locale={{ emptyText: t("crawl.metadata.empty") }}
-      />
+      {!screens.md ? (
+        <List
+          style={{ marginTop: 24 }}
+          dataSource={results}
+          loading={loading}
+          locale={{ emptyText: t("crawl.metadata.empty") }}
+          renderItem={(record) => (
+            <List.Item>
+              <List.Item.Meta
+                title={
+                  <Space direction="vertical" size={0}>
+                    <Typography.Link href={record.url} target="_blank">
+                      {record.url}
+                    </Typography.Link>
+                    <Space>
+                      <Tag
+                        color={record.status === "success" ? "green" : "red"}
+                      >
+                        {t(`crawl.metadata.status.${record.status}`, {
+                          defaultValue: record.status.toUpperCase(),
+                        })}
+                      </Tag>
+                      {record.relevanceScore != null && (
+                        <Tag color="blue">
+                          {t("crawl.metadata.columns.score")}:{" "}
+                          {record.relevanceScore.toFixed(2)}
+                        </Tag>
+                      )}
+                    </Space>
+                  </Space>
+                }
+                description={
+                  <Space direction="vertical" size={4} className="mt-2 w-full">
+                    <Typography.Text strong>
+                      {record.title ?? t("crawl.metadata.untitled")}
+                    </Typography.Text>
+                    <Typography.Paragraph
+                      type="secondary"
+                      ellipsis={{ rows: 2 }}
+                    >
+                      {record.description ??
+                        t("crawl.metadata.noDescription")}
+                    </Typography.Paragraph>
+                    {record.keywords && record.keywords.length > 0 && (
+                      <Space wrap size={[0, 4]}>
+                        {record.keywords.slice(0, 3).map((keyword) => (
+                          <Tag key={`${record.url}-kw-${keyword}`}>
+                            {keyword}
+                          </Tag>
+                        ))}
+                      </Space>
+                    )}
+                  </Space>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      ) : (
+        <Table<MetadataResultRow>
+          style={{ marginTop: 24 }}
+          rowKey={(record) =>
+            `${record.url}-${record.fetchedAt ?? record.status}`
+          }
+          columns={metadataColumns}
+          dataSource={results}
+          loading={loading}
+          pagination={false}
+          locale={{ emptyText: t("crawl.metadata.empty") }}
+        />
+      )}
     </Card>
   );
 }

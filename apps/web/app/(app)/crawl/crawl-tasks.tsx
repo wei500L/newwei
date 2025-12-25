@@ -1,7 +1,7 @@
 "use client";
 
-import { sanitizeCrawlOptions } from "@modular/utils";
 import { SearchOutlined } from "@ant-design/icons";
+import { sanitizeCrawlOptions } from "@modular/utils";
 import {
   Button,
   Form,
@@ -12,6 +12,8 @@ import {
   Table,
   Tag,
   Typography,
+  List,
+  Grid,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import Link from "next/link";
@@ -43,6 +45,7 @@ const statusColors: Record<CrawlTaskStatus, string> = {
 export function CrawlTasksView() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const screens = Grid.useBreakpoint();
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [statusFilter, setStatusFilter] = useState<CrawlTaskStatus | null>(
@@ -307,19 +310,81 @@ export function CrawlTasksView() {
           {t("crawl.createTask")}
         </Button>
       </Space>
-      <Table
-        rowKey="id"
-        loading={loading}
-        columns={columns}
-        dataSource={tableData}
-        pagination={{
-          total: totalCount,
-          current,
-          pageSize,
-          showSizeChanger: true,
-        }}
-        onChange={(pager) => setPagination(pager)}
-      />
+      {!screens.md ? (
+        <List
+          itemLayout="vertical"
+          dataSource={tableData}
+          loading={loading}
+          pagination={{
+            total: totalCount,
+            current,
+            pageSize,
+            align: "center",
+            onChange: (page, size) => {
+              setPagination({ current: page, pageSize: size });
+            },
+          }}
+          renderItem={(record) => (
+            <List.Item
+              actions={[
+                <Link key="view" href={`/crawl/${record.id}`}>
+                  {t("common.view")}
+                </Link>,
+                <Button
+                  key="retry"
+                  size="small"
+                  type="link"
+                  onClick={() => handleRetry(record.id)}
+                  loading={retrying}
+                >
+                  {t("common.retry")}
+                </Button>,
+              ]}
+            >
+              <List.Item.Meta
+                title={
+                  <div>
+                    <div style={{ fontWeight: 600 }}>
+                      {record.displayName ?? record.targetUrl}
+                    </div>
+                    <Typography.Link
+                      href={record.targetUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-gray-400 break-all"
+                    >
+                      {record.targetUrl}
+                    </Typography.Link>
+                  </div>
+                }
+                description={
+                  <Space className="mt-2">
+                    <Tag color={statusColors[record.status]}>
+                      {t(`crawl.status.${record.status}`, {
+                        defaultValue: record.status,
+                      })}
+                    </Tag>
+                  </Space>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      ) : (
+        <Table
+          rowKey="id"
+          loading={loading}
+          columns={columns}
+          dataSource={tableData}
+          pagination={{
+            total: totalCount,
+            current,
+            pageSize,
+            showSizeChanger: true,
+          }}
+          onChange={(pager) => setPagination(pager)}
+        />
+      )}
       <MetadataExtractionCard
         form={metadataForm}
         loading={metadataLoading}

@@ -1,7 +1,7 @@
 "use client";
 
 import { SearchOutlined } from "@ant-design/icons";
-import { Button, Input, Space, Table, Tag } from "antd";
+import { Button, Input, Space, Table, Tag, List, Grid } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -32,6 +32,7 @@ export function ItemsTable() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const screens = Grid.useBreakpoint();
 
   const urlSearch = (searchParams.get("q") ?? "").trim();
   const current = parsePositiveInt(searchParams.get("page"), 1);
@@ -227,19 +228,62 @@ export function ItemsTable() {
           {t("common.refresh")}
         </Button>
       </Space>
-      <Table
-        rowKey="id"
-        columns={columns}
-        dataSource={pageData}
-        loading={loading || needsMoreForPage}
-        pagination={{
-          current,
-          pageSize,
-          total: totalCount,
-          showSizeChanger: true
-        }}
-        onChange={handleTableChange}
-      />
+      {!screens.md ? (
+        <List
+          itemLayout="horizontal"
+          dataSource={pageData}
+          loading={loading || needsMoreForPage}
+          pagination={{
+            current,
+            pageSize,
+            total: totalCount,
+            align: "center",
+            onChange: (page, size) => {
+              setQueryParams({
+                page,
+                pageSize: size,
+              });
+            },
+          }}
+          renderItem={(item) => (
+            <List.Item>
+              <List.Item.Meta
+                title={item.name}
+                description={
+                  <Space direction="vertical" size={0}>
+                    <Space>
+                      <Tag color={item.status === "active" ? "green" : "blue"}>
+                        {t(`items.status.${item.status}`, {
+                          defaultValue: item.status,
+                        })}
+                      </Tag>
+                      <span className="text-xs text-gray-400">
+                        {formatDateTime(item.createdAt, locale, {
+                          dateStyle: "short",
+                        })}
+                      </span>
+                    </Space>
+                  </Space>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      ) : (
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={pageData}
+          loading={loading || needsMoreForPage}
+          pagination={{
+            current,
+            pageSize,
+            total: totalCount,
+            showSizeChanger: true,
+          }}
+          onChange={handleTableChange}
+        />
+      )}
     </div>
   );
 }

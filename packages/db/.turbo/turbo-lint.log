@@ -1,4 +1,4 @@
 
-> @modular/db@0.1.0 lint /mnt/d/wei/packages/db
+> @modular/db@0.1.0 lint D:\wei\packages\db
 > eslint src --ext .ts
 

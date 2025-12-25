@@ -1,10 +1,10 @@
 "use client";
 
 import { ArrowDownOutlined, ArrowUpOutlined, MinusOutlined } from "@ant-design/icons";
-import { Card, Col, Row, Skeleton, Statistic, Typography } from "antd";
+import { Card, Col, Row, Skeleton, Typography } from "antd";
 import type { EChartsOption } from "echarts";
-import { useTranslation } from "react-i18next";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 
@@ -144,38 +144,38 @@ export function HeroSection({
   }
 
   return (
-    <div className="mb-6">
-      <Row gutter={[20, 20]}>
+    <div className="mb-10 bg-white/50 backdrop-blur-sm border border-gray-100/50 rounded-3xl p-8 shadow-sm">
+      <Row gutter={[32, 32]} align="middle">
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.key}>
-            <Card 
-              bordered={false} 
-              className="shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer hover:-translate-y-1"
+            <div 
+              className="flex flex-col h-full px-4 py-2 rounded-2xl transition-all duration-300 cursor-pointer hover:bg-white hover:shadow-md hover:-translate-y-1 group"
               onClick={() => onMetricClick?.(metric.key)}
             >
-              <div className="flex flex-col h-full">
-                <Typography.Text type="secondary" className="mb-1 text-xs uppercase font-semibold tracking-wider">
-                  {metric.title}
-                </Typography.Text>
-                <div className="flex items-end justify-between mb-2">
-                  <Statistic
-                    value={metric.value}
-                    precision={1}
-                    suffix={metric.suffix}
-                    valueStyle={{ fontWeight: 600, fontSize: "1.75rem", lineHeight: 1.2 }}
-                  />
-                  <div className={`flex items-center text-sm font-medium ${
-                    metric.trend > 0 ? "text-red-500" : metric.trend < 0 ? "text-green-500" : "text-gray-400"
-                  }`}>
-                    {metric.trend > 0 ? <ArrowUpOutlined /> : metric.trend < 0 ? <ArrowDownOutlined /> : <MinusOutlined />}
-                    <span className="ml-1">{Math.abs(metric.trend).toFixed(1)}%</span>
-                  </div>
-                </div>
-                <div className="mt-auto pt-2">
-                  <Sparkline data={metric.data} color={metric.color} />
+              <Typography.Text type="secondary" className="mb-3 text-[10px] uppercase font-bold tracking-[0.15em] opacity-70 group-hover:opacity-100 transition-opacity">
+                {metric.title}
+              </Typography.Text>
+              <div className="flex items-baseline gap-2 mb-4">
+                <span className="text-5xl font-extrabold text-gray-900 tracking-tighter">
+                  {/* @ts-expect-error - formatting numeric values */}
+                  {typeof metric.value === 'number' ? metric.value.toFixed(1) : metric.value}
+                  {metric.suffix && <span className="text-xl ml-1 text-gray-400 font-semibold">{metric.suffix}</span>}
+                </span>
+                <div className={`flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${
+                  metric.trend > 0 
+                    ? "bg-red-50 text-red-600" 
+                    : metric.trend < 0 
+                      ? "bg-green-50 text-green-600" 
+                      : "bg-gray-50 text-gray-400"
+                }`}>
+                  {metric.trend > 0 ? <ArrowUpOutlined className="text-[10px]" /> : metric.trend < 0 ? <ArrowDownOutlined className="text-[10px]" /> : <MinusOutlined className="text-[10px]" />}
+                  <span className="ml-1">{Math.abs(metric.trend).toFixed(1)}%</span>
                 </div>
               </div>
-            </Card>
+              <div className="mt-auto h-[50px] w-full opacity-60 group-hover:opacity-100 transition-all duration-500">
+                <Sparkline data={metric.data} color={metric.color} />
+              </div>
+            </div>
           </Col>
         ))}
       </Row>

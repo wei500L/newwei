@@ -1,5 +1,5 @@
 
-> @modular/web@0.1.0 lint /mnt/d/wei/apps/web
+> @modular/web@0.1.0 lint D:\wei\apps\web
 > next lint
 
 ✔ No ESLint warnings or errors

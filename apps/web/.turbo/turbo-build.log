@@ -1,0 +1,45 @@
+
+> @modular/web@0.1.0 prebuild D:\wei\apps\web
+> pnpm run generate
+
+
+> @modular/web@0.1.0 generate D:\wei\apps\web
+> graphql-codegen --config codegen.cjs
+
+[STARTED] Parse Configuration
+[SUCCESS] Parse Configuration
+[STARTED] Generate outputs
+[STARTED] Generate to graphql/generated.ts
+[STARTED] Load GraphQL schemas
+[SUCCESS] Load GraphQL schemas
+[STARTED] Load GraphQL documents
+[SUCCESS] Load GraphQL documents
+[STARTED] Generate
+[SUCCESS] Generate
+[SUCCESS] Generate to graphql/generated.ts
+[SUCCESS] Generate outputs
+
+> @modular/web@0.1.0 build D:\wei\apps\web
+> next build
+
+  ▲ Next.js 15.0.0-canary.45
+  - Environments: .env
+
+   Creating an optimized production build ...
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (128kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+Failed to compile.
+
+./..\..\packages\utils\src\tracing.js
+Dynamic Code Evaluation (e. g. 'eval', 'new Function', 'WebAssembly.compile') not allowed in Edge Runtime 
+Learn More: https://nextjs.org/docs/messages/edge-dynamic-code-evaluation
+
+Import trace for requested module:
+  ./..\..\packages\utils\src\tracing.js
+  ./..\..\packages\utils\src\index.js
+  ./lib\server-logger.ts
+  ./lib\auth.ts
+  ./middleware.ts
+
+
+> Build failed because of webpack errors
+ ELIFECYCLE  Command failed with exit code 1.

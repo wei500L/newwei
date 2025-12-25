@@ -203,9 +203,11 @@ export function ShellLayout({ children }: PropsWithChildren) {
       </Header>
       <Content className="flex flex-col flex-1 min-w-0 bg-gray-50/50">
         <div className="w-full max-w-[1600px] mx-auto p-6">
-          <div className="mb-6">
-            <Breadcrumb items={breadcrumbs} className="font-medium" />
-          </div>
+          {pathname !== "/dashboard" && (
+            <div className="mb-6">
+              <Breadcrumb items={breadcrumbs} className="font-medium" />
+            </div>
+          )}
           {children}
         </div>
       </Content>

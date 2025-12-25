@@ -1,0 +1,6 @@
+
+> @modular/web@0.1.0 typecheck D:\wei\apps\web
+> tsc --noEmit
+
+tsconfig.json(5,27): error TS5103: Invalid value for '--ignoreDeprecations'.
+ ELIFECYCLE  Command failed with exit code 2.

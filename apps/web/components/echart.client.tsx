@@ -280,8 +280,8 @@ export function DashboardChart({
       await ensureRenderer(renderer);
       if (cancelled) return;
 
-      // Register Deep Sea Theme
-      echarts.registerTheme("deep-sea", {
+      // Register Smart Light Theme
+      echarts.registerTheme("smart-light", {
         color: [
           "#0050b3", // Primary (Deep Blue)
           "#faad14", // Secondary (Tech Gold)
@@ -313,14 +313,27 @@ export function DashboardChart({
             color: "#4b5563",
           },
         },
+        grid: {
+          show: false,
+          top: 40,
+          bottom: 40,
+          left: 10,
+          right: 10,
+          containLabel: true
+        },
         categoryAxis: {
           axisLine: {
+            show: true,
             lineStyle: {
               color: "#e5e7eb",
             },
           },
+          axisTick: {
+            show: false
+          },
           axisLabel: {
             color: "#6b7280",
+            margin: 12
           },
           splitLine: {
             show: false,
@@ -330,19 +343,96 @@ export function DashboardChart({
           axisLine: {
             show: false,
           },
+          axisTick: {
+            show: false
+          },
           axisLabel: {
             color: "#6b7280",
+            margin: 12
           },
           splitLine: {
-            lineStyle: {
-              color: "#f3f4f6",
-              type: "dashed",
-            },
+            show: false
           },
         },
       });
 
-      const chart = echarts.init(dom, theme || "deep-sea", { renderer });
+      // Register Smart Dark Theme
+      echarts.registerTheme("smart-dark", {
+        color: [
+          "#177ddc", // Blue
+          "#d48806", // Gold
+          "#13a8a8", // Cyan
+          "#cb2b83", // Magenta
+          "#642ab5", // Purple
+          "#49aa19", // Green
+          "#d8bd14", // Yellow
+          "#d87a16", // Orange
+        ],
+        backgroundColor: "transparent",
+        tooltip: {
+          backgroundColor: "rgba(31, 31, 31, 0.95)",
+          borderColor: "#303030",
+          textStyle: {
+            color: "#e5e7eb",
+          },
+          padding: [10, 14],
+          extraCssText: "box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); border-radius: 8px;",
+        },
+        title: {
+          textStyle: {
+            color: "#f3f4f6",
+            fontWeight: 600,
+          },
+        },
+        legend: {
+          textStyle: {
+            color: "#9ca3af",
+          },
+        },
+        grid: {
+          show: false,
+          top: 40,
+          bottom: 40,
+          left: 10,
+          right: 10,
+          containLabel: true
+        },
+        categoryAxis: {
+          axisLine: {
+            show: true,
+            lineStyle: {
+              color: "#303030",
+            },
+          },
+          axisTick: {
+            show: false
+          },
+          axisLabel: {
+            color: "#9ca3af",
+            margin: 12
+          },
+          splitLine: {
+            show: false,
+          },
+        },
+        valueAxis: {
+          axisLine: {
+            show: false,
+          },
+          axisTick: {
+            show: false
+          },
+          axisLabel: {
+            color: "#9ca3af",
+            margin: 12
+          },
+          splitLine: {
+            show: false
+          },
+        },
+      });
+
+      const chart = echarts.init(dom, theme || "smart-light", { renderer });
       if (group) {
         chart.group = group;
         echarts.connect(group);

@@ -1,4 +1,4 @@
-import { CORE_PERMISSIONS, DEFAULT_ROLES, DEFAULT_USERS } from "@modular/config";
+import { CORE_PERMISSIONS, DEFAULT_ROLES, DEFAULT_USERS, DEMO_ECONOMIC_METRICS } from "@modular/config";
 import { normalizeCountryCode } from "@modular/utils";
 import bcrypt from "bcrypt";
 import dayjs from "dayjs";
@@ -176,12 +176,7 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
     });
 
     // --- Seed Dashboard Metrics (Real Data Simulation) ---
-    const metrics = [
-      { slug: "global-conflict-index", name: "Global Conflict Index", base: 65, vol: 5 },
-      { slug: "market-sentiment", name: "Market Sentiment", base: 50, vol: 10 },
-      { slug: "resource-scarcity", name: "Resource Scarcity", base: 60, vol: 3 },
-      { slug: "supply-chain-stability", name: "Supply Chain Stability", base: 85, vol: 2 }
-    ];
+    const metrics = DEMO_ECONOMIC_METRICS;
 
     for (const m of metrics) {
       // 1. Create/Update Item
@@ -190,7 +185,7 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
         update: {},
         create: {
           slug: m.slug,
-          displayName: m.name,
+          displayName: m.displayName,
           sourceFunction: "mock",
           sourceEndpoint: "mock",
           valueType: "index",
@@ -198,13 +193,36 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
         }
       });
 
+      const category = await prisma.economicCategory.upsert({
+        where: { key: m.slug },
+        update: { label: m.displayName },
+        create: {
+          key: m.slug,
+          label: m.displayName
+        }
+      });
+
+      await prisma.economicDataItemCategory.upsert({
+        where: {
+          itemId_categoryId: {
+            itemId: item.id,
+            categoryId: category.id
+          }
+        },
+        update: {},
+        create: {
+          itemId: item.id,
+          categoryId: category.id
+        }
+      });
+
       // 2. Generate History (last 90 days)
       const points = [];
-      let value = m.base;
+      let value = m.baseValue;
       for (let i = 90; i >= 0; i--) {
         const date = dayjs().subtract(i, "day").toDate();
         // Random walk
-        value += (Math.random() - 0.5) * m.vol; 
+        value += (Math.random() - 0.5) * m.volatility;
         value = Math.max(0, Math.min(100, value)); // Clamp 0-100
 
         points.push({
@@ -240,7 +258,7 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
         create: {
           id: `rule-${m.slug}`,
           orgId: org.id,
-          name: `${m.name} Monitor`,
+          name: `${m.displayName} Monitor`,
           metricSlug: m.slug,
           operator: "gt",
           thresholdValue: 80,
@@ -261,7 +279,7 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
             metricValue: 80 + Math.random() * 20,
             severity: Math.random() > 0.5 ? "high" : "medium",
             status: "pending",
-            message: `${m.name} spike detected in ${country} region due to volatility.`,
+            message: `${m.displayName} spike detected in ${country} region due to volatility.`,
             context: {
               country: country,
               ...(countryCode ? { countryCode } : {}),

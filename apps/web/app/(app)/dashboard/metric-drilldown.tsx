@@ -1,16 +1,16 @@
 "use client";
 
 import { GlobalOutlined, UnorderedListOutlined, LineChartOutlined } from "@ant-design/icons";
+import { extractCountryCodeFromText, getCountryName, normalizeCountryCode } from "@modular/utils";
 import { Badge, Card, Col, Modal, Row, Spin, Tag, Timeline, Typography } from "antd";
+import dayjs from "dayjs";
 import type { EChartsOption } from "echarts";
 import * as echarts from "echarts/core";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import dayjs from "dayjs";
 
 import { DashboardChart } from "@/components/echart";
 import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
-import { extractCountryCodeFromText, getCountryName, normalizeCountryCode } from "@modular/utils";
 
 interface MetricDrillDownProps {
   visible: boolean;
@@ -62,7 +62,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     
     data.relatedAlerts.forEach(alert => {
       let found = false;
-      const ctx = alert.context as Record<string, any>;
+      const ctx = alert.context as Record<string, unknown>;
       
       // 1. Try structural context first
       if (ctx?.country || ctx?.countryCode) {
@@ -121,7 +121,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     return {
       tooltip: {
         trigger: 'item',
-        formatter: (params: any) => {
+        formatter: (params: { name: string; value: number | unknown }) => {
           const name = getCountryName(params?.name) ?? params?.name ?? "Unknown";
           const value = typeof params?.value === "number" ? params.value : 0;
           return `${name}: ${value} Events`;

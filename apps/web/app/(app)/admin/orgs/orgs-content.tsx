@@ -1,7 +1,7 @@
 "use client";
 
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Form, Input, Modal, Space, Switch, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Form, Input, Modal, Space, Switch, Table, Tag, Typography, message, List, Grid } from "antd";
 import { useSession } from "next-auth/react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -126,6 +126,7 @@ export function OrgAdminContent() {
 
   const rows = data?.myOrganizations ?? EMPTY_ROWS;
   const tableData = useMemo(() => rows.map((row) => ({ key: row.id, ...row })), [rows]);
+  const screens = Grid.useBreakpoint();
 
   if (status === "loading" || loading) {
     return (
@@ -219,74 +220,135 @@ export function OrgAdminContent() {
           </Button>
         }
       >
-        <Table
-          dataSource={tableData}
-          pagination={{ pageSize: 10 }}
-          columns={[
-            {
-              title: t("orgAdmin.columns.name"),
-              dataIndex: "name",
-              key: "name",
-              render: (value: string) => <Typography.Text strong>{value}</Typography.Text>
-            },
-            {
-              title: t("orgAdmin.columns.slug"),
-              dataIndex: "slug",
-              key: "slug",
-              render: (value: string) => <Typography.Text code>{value}</Typography.Text>
-            },
-            {
-              title: t("orgAdmin.columns.status"),
-              dataIndex: "isActive",
-              key: "isActive",
-              render: (value: boolean) => (
-                <Tag color={value ? "green" : "red"}>
-                  {value ? t("orgAdmin.active") : t("orgAdmin.inactive")}
-                </Tag>
-              )
-            },
-            {
-              title: t("orgAdmin.columns.updated"),
-              dataIndex: "updatedAt",
-              key: "updatedAt",
-              render: (value: string) =>
-                formatDateTime(value, locale, {
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })
-            },
-            {
-              title: t("common.actions"),
-              key: "actions",
-              render: (_: unknown, org: OrgRow) => (
-                <Space>
+        {!screens.md ? (
+          <List
+            dataSource={tableData}
+            pagination={{ pageSize: 10, align: "center" }}
+            renderItem={(org) => (
+              <List.Item
+                actions={[
                   <Button
+                    key="edit"
                     size="small"
                     onClick={() => {
                       setEditingOrg(org);
                       editForm.setFieldsValue({
                         name: org.name,
                         slug: org.slug,
-                        description: org.description ?? ""
+                        description: org.description ?? "",
                       });
                     }}
                   >
                     {t("common.edit")}
-                  </Button>
+                  </Button>,
                   <Switch
+                    key="toggle"
                     size="small"
                     checked={org.isActive}
                     loading={toggling}
                     onChange={(checked) => handleToggleActive(org, checked)}
-                  />
-                </Space>
-              )
-            }
-          ]}
-        />
+                  />,
+                ]}
+              >
+                <List.Item.Meta
+                  title={
+                    <Space>
+                      <Typography.Text strong>{org.name}</Typography.Text>
+                      <Tag color={org.isActive ? "green" : "red"}>
+                        {org.isActive
+                          ? t("orgAdmin.active")
+                          : t("orgAdmin.inactive")}
+                      </Tag>
+                    </Space>
+                  }
+                  description={
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text code>{org.slug}</Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {formatDateTime(org.updatedAt, locale, {
+                          dateStyle: "medium",
+                        })}
+                      </Typography.Text>
+                    </Space>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        ) : (
+          <Table
+            dataSource={tableData}
+            pagination={{ pageSize: 10 }}
+            columns={[
+              {
+                title: t("orgAdmin.columns.name"),
+                dataIndex: "name",
+                key: "name",
+                render: (value: string) => (
+                  <Typography.Text strong>{value}</Typography.Text>
+                ),
+              },
+              {
+                title: t("orgAdmin.columns.slug"),
+                dataIndex: "slug",
+                key: "slug",
+                render: (value: string) => (
+                  <Typography.Text code>{value}</Typography.Text>
+                ),
+              },
+              {
+                title: t("orgAdmin.columns.status"),
+                dataIndex: "isActive",
+                key: "isActive",
+                render: (value: boolean) => (
+                  <Tag color={value ? "green" : "red"}>
+                    {value ? t("orgAdmin.active") : t("orgAdmin.inactive")}
+                  </Tag>
+                ),
+              },
+              {
+                title: t("orgAdmin.columns.updated"),
+                dataIndex: "updatedAt",
+                key: "updatedAt",
+                render: (value: string) =>
+                  formatDateTime(value, locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+              },
+              {
+                title: t("common.actions"),
+                key: "actions",
+                render: (_: unknown, org: OrgRow) => (
+                  <Space>
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setEditingOrg(org);
+                        editForm.setFieldsValue({
+                          name: org.name,
+                          slug: org.slug,
+                          description: org.description ?? "",
+                        });
+                      }}
+                    >
+                      {t("common.edit")}
+                    </Button>
+                    <Switch
+                      size="small"
+                      checked={org.isActive}
+                      loading={toggling}
+                      onChange={(checked) => handleToggleActive(org, checked)}
+                    />
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        )}
       </Card>
 
       <Modal

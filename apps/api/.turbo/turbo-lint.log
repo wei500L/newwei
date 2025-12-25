@@ -1,4 +1,4 @@
 
-> @modular/api@0.1.0 lint /mnt/d/wei/apps/api
+> @modular/api@0.1.0 lint D:\wei\apps\api
 > eslint src test --ext .ts
 

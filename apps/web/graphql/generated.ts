@@ -2375,7 +2375,7 @@ export const MetricDrillDownDetailsDocument = gql`
       displayName
     }
   }
-  relatedAlerts: alertEvents(limit: 20, metricSlug: $category) {
+  relatedAlerts: alertEvents(limit: 20) {
     id
     severity
     message

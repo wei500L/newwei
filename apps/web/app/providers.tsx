@@ -107,20 +107,27 @@ export function AppProviders({ children }: PropsWithChildren) {
       <ConfigProvider
         locale={antdLocale}
         theme={{
-          algorithm: theme.defaultAlgorithm,
+          algorithm: theme.darkAlgorithm,
           token: {
-            colorPrimary: "#0050b3",
-            borderRadius: 12,
-            fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            colorPrimary: "#00e5ff",
+            colorBgBase: "#0b1121",
+            colorBgContainer: "#151e32",
+            borderRadius: 4,
+            fontFamily: "var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
           },
           components: {
             Card: {
-              borderRadiusLG: 16,
-              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.06)",
+              borderRadiusLG: 8,
+              colorBgContainer: "rgba(21, 30, 50, 0.6)", // Semi-transparent for glass effect
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.2)",
             },
             Button: {
-              borderRadius: 8,
+              borderRadius: 4,
               controlHeight: 40,
+              primaryShadow: "0 0 10px rgba(0, 229, 255, 0.3)", // Glow effect
+            },
+            Table: {
+              colorBgContainer: "transparent",
             }
           }
         }}

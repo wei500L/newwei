@@ -14,7 +14,8 @@ import {
   Table,
   Tabs,
   Tag,
-  Typography
+  Typography,
+  Grid
 } from "antd";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -268,6 +269,7 @@ function buildTableRecords(table: CrawlResultTable): CrawlResultTableRecord[] {
 
 function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
   const { t } = useTranslation();
+  const screens = Grid.useBreakpoint();
   if (!tables || !tables.length) {
     return null;
   }
@@ -318,14 +320,43 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
                   </Typography.Text>
                 )}
               </Space>
-              <Table
-                columns={columns}
-                dataSource={previewRows}
-                size="small"
-                pagination={false}
-                style={{ marginTop: 8 }}
-                scroll={{ x: true }}
-              />
+              {!screens.md ? (
+                <List
+                  dataSource={previewRows}
+                  size="small"
+                  style={{ marginTop: 8 }}
+                  renderItem={(item, i) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        title={`${t("common.row")} ${i + 1}`}
+                        description={
+                          <Space direction="vertical" size={0}>
+                            {columns.slice(0, 3).map((col) => (
+                              <div key={col.key}>
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  {col.title}:
+                                </Typography.Text>{" "}
+                                <Typography.Text style={{ fontSize: 12 }}>
+                                  {String(item[col.dataIndex] ?? "")}
+                                </Typography.Text>
+                              </div>
+                            ))}
+                          </Space>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              ) : (
+                <Table
+                  columns={columns}
+                  dataSource={previewRows}
+                  size="small"
+                  pagination={false}
+                  style={{ marginTop: 8 }}
+                  scroll={{ x: true }}
+                />
+              )}
               {remaining > 0 && (
                 <Typography.Text type="secondary">
                   {t("crawl.detail.tables.remaining", {
