@@ -1,9 +1,11 @@
 "use client";
 
+import { ReloadOutlined } from "@ant-design/icons";
 import {
   Button,
   Card,
   Col,
+  Collapse,
   Empty,
   List,
   Row,
@@ -12,12 +14,14 @@ import {
   Spin,
   Statistic,
   Tag,
+  Timeline,
   Typography,
   message,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
+import { useSession } from "next-auth/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   AlertSeverity,
@@ -31,6 +35,8 @@ import {
   useQueueStatsQuery,
   useUpsertDashboardMutation,
 } from "@/graphql/generated";
+import { createApiClient } from "@/lib/api-client";
+import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
   useDashboardRangeStore,
@@ -82,6 +88,8 @@ const dedupeLogs = (logs: QueueLog[], limit: number): QueueLog[] => {
 export function DashboardContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const { data: session } = useSession();
+  const [messageApi, messageContext] = message.useMessage();
   const { data, loading, error, refetch } = useQueueStatsQuery();
   const {
     data: dashboardsData,
@@ -95,7 +103,7 @@ export function DashboardContent() {
     end: dayjs().endOf('day').toISOString()
   }), []);
 
-  const { data: heroData, loading: heroLoading } = useDashboardHeroMetricsQuery({
+  const { data: heroData, loading: heroLoading, refetch: refetchHero } = useDashboardHeroMetricsQuery({
     variables: heroDateRange,
     fetchPolicy: "cache-and-network"
   });
@@ -117,6 +125,12 @@ export function DashboardContent() {
   const [liveLogs, setLiveLogs] = useState<QueueLog[]>([]);
   const [activeId, setActiveId] = useState<string | undefined>();
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
+  const [refreshingDemoData, setRefreshingDemoData] = useState(false);
+
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken: session?.accessToken }),
+    [session?.accessToken]
+  );
 
   const dashboards = useMemo(
     () => dashboardsData?.dashboards ?? [],
@@ -148,6 +162,21 @@ export function DashboardContent() {
       message.error(t("dashboard.queue.connectionFailed", { error: connectionError }));
     }
   }, [connectionError, t]);
+
+  const handleRefreshDemoData = useCallback(async () => {
+    if (refreshingDemoData) return;
+    setRefreshingDemoData(true);
+    try {
+      await apiClient.post("dashboard/demo-metrics/refresh", {}, { timeout: 10_000 });
+      messageApi.success(t("dashboard.demoData.refreshed"));
+      await refetchHero();
+    } catch (error) {
+      captureClientError("Failed to refresh demo dashboard metrics", error);
+      messageApi.error(t("dashboard.demoData.refreshFailed"));
+    } finally {
+      setRefreshingDemoData(false);
+    }
+  }, [apiClient, messageApi, refetchHero, refreshingDemoData, t]);
 
   useEffect(() => {
     if (!lastEvent) return;
@@ -231,16 +260,34 @@ export function DashboardContent() {
   };
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="space-y-10 pb-12">
+      {messageContext}
       <LiveAlertsToasts />
-      <HeroSection 
-        loading={heroLoading}
-        conflictData={heroData?.conflict ?? []}
-        marketData={heroData?.market ?? []}
-        resourceData={heroData?.resource ?? []}
-        supplyData={heroData?.supply ?? []}
-        onMetricClick={setActiveDrillDownKey} 
-      />
+      
+      <div className="relative">
+        <HeroSection 
+          loading={heroLoading}
+          conflictData={heroData?.conflict ?? []}
+          marketData={heroData?.market ?? []}
+          resourceData={heroData?.resource ?? []}
+          supplyData={heroData?.supply ?? []}
+          onMetricClick={setActiveDrillDownKey} 
+        />
+        {process.env.NODE_ENV !== "production" && (
+          <div className="absolute -top-6 right-0 opacity-20 hover:opacity-100 transition-opacity">
+            <Button
+              icon={<ReloadOutlined />}
+              size="small"
+              type="text"
+              loading={refreshingDemoData}
+              onClick={handleRefreshDemoData}
+            >
+              <span className="text-[10px]">{t("dashboard.demoData.refresh")}</span>
+            </Button>
+          </div>
+        )}
+      </div>
+
       <MetricDrillDown 
         visible={!!activeDrillDownKey} 
         metricKey={activeDrillDownKey} 
@@ -276,33 +323,88 @@ export function DashboardContent() {
       <Row gutter={[20, 20]}>
         <Col xs={24} md={12}>
           <Card title={t("dashboard.queue.recentActivity")} className="content-card h-full">
-            <List
-              rowKey={(item) => item.jobId}
-              dataSource={parsedLogs}
-              renderItem={(item) => (
-                <List.Item className="!px-0">
-                  <List.Item.Meta
-                    title={<span className="font-medium text-sm">{`${item.event} • ${item.jobId}`}</span>}
-                    description={
-                      <div className="text-xs text-gray-500">
+            {parsedLogs.length > 0 ? (
+              <Timeline
+                mode="left"
+                items={parsedLogs.map((item) => {
+                  let color = "blue";
+                  if (item.event === "FAILED") color = "red";
+                  if (item.event === "COMPLETED") color = "green";
+                  if (item.event === "WAITING") color = "gray";
+
+                  const payload = item.payload as Record<string, unknown> | undefined;
+                  let errorMessage: string | undefined;
+
+                  if (item.event === "FAILED") {
+                    if (typeof payload?.error === "string") {
+                      errorMessage = payload.error;
+                    } else if (
+                      payload?.error &&
+                      typeof payload.error === "object" &&
+                      "message" in payload.error &&
+                      typeof payload.error.message === "string"
+                    ) {
+                      errorMessage = payload.error.message;
+                    } else if (typeof payload?.message === "string") {
+                      errorMessage = payload.message;
+                    }
+                  } else if (typeof payload?.message === "string") {
+                    errorMessage = payload.message;
+                  }
+
+                  return {
+                    color,
+                    label: (
+                      <span className="text-xs text-gray-400">
                         {formatDateTime(item.timestamp, locale, {
-                          year: "numeric",
-                          month: "2-digit",
-                          day: "2-digit",
                           hour: "2-digit",
                           minute: "2-digit",
-                          second: "2-digit"
+                          second: "2-digit",
                         })}
-                        {item.payload?.message
-                          ? <div className="mt-1">{t("dashboard.queue.payloadMessage", { message: item.payload?.message })}</div>
-                          : ""}
+                      </span>
+                    ),
+                    children: (
+                      <div className="mb-4">
+                        <Space wrap>
+                          <Tag color={color} className="mr-0">
+                            {item.event}
+                          </Tag>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {item.jobId}
+                          </Typography.Text>
+                        </Space>
+                        
+                        {errorMessage && (
+                          <div className="mt-1">
+                            <Typography.Text type={item.event === "FAILED" ? "danger" : undefined}>
+                              {String(errorMessage)}
+                            </Typography.Text>
+                          </div>
+                        )}
+
+                        {payload && (
+                          <Collapse
+                            ghost
+                            size="small"
+                            items={[
+                              {
+                                key: "1",
+                                label: <span style={{ fontSize: 12 }}>{t("common.details")}</span>,
+                                children: (
+                                  <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto max-h-40">
+                                    {JSON.stringify(payload, null, 2)}
+                                  </pre>
+                                ),
+                              },
+                            ]}
+                          />
+                        )}
                       </div>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-            {parsedLogs.length === 0 && (
+                    ),
+                  };
+                })}
+              />
+            ) : (
               <Empty description={t("dashboard.queue.noRecentLogs")} className="my-8" />
             )}
           </Card>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Spin, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Spin, Table, Tag, Typography, message, List, Grid, Space } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -68,6 +68,7 @@ export function ErrorsContent() {
   const [loading, setLoading] = useState(false);
   const [events, setEvents] = useState<ExceptionEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const screens = Grid.useBreakpoint();
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -210,22 +211,67 @@ export function ErrorsContent() {
           }
         />
       ) : null}
-      <Table
-        rowKey="id"
-        style={{ marginTop: "1rem" }}
-        loading={loading}
-        columns={columns}
-        dataSource={events}
-        pagination={{ pageSize: 20, showSizeChanger: true }}
-        expandable={{
-          expandedRowRender: (record) =>
-            record.stack ? (
-              <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{record.stack}</pre>
-            ) : (
-              <Typography.Text type="secondary">{t("errors.noStack")}</Typography.Text>
-            )
-        }}
-      />
+      {!screens.md ? (
+        <List
+          dataSource={events}
+          loading={loading}
+          pagination={{ pageSize: 20, align: "center" }}
+          renderItem={(item) => (
+            <List.Item>
+              <List.Item.Meta
+                title={
+                  <Space>
+                    {renderKind(item.kind, t)}
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {formatDateTime(item.timestamp, locale, {
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Typography.Text>
+                  </Space>
+                }
+                description={
+                  <Space direction="vertical" size={0} className="w-full mt-2">
+                    <Typography.Text strong>
+                      {getLocation(item, t("common.emptyValue"))}
+                    </Typography.Text>
+                    {item.statusCode && (
+                      <Tag>{t("errors.columns.status")}: {item.statusCode}</Tag>
+                    )}
+                    <Typography.Text className="line-clamp-2">
+                      {item.message || t("common.emptyValue")}
+                    </Typography.Text>
+                    {item.traceId && (
+                      <Typography.Text type="secondary" copyable className="text-xs">
+                        {item.traceId}
+                      </Typography.Text>
+                    )}
+                  </Space>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      ) : (
+        <Table
+          rowKey="id"
+          style={{ marginTop: "1rem" }}
+          loading={loading}
+          columns={columns}
+          dataSource={events}
+          pagination={{ pageSize: 20, showSizeChanger: true }}
+          expandable={{
+            expandedRowRender: (record) =>
+              record.stack ? (
+                <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{record.stack}</pre>
+              ) : (
+                <Typography.Text type="secondary">{t("errors.noStack")}</Typography.Text>
+              )
+          }}
+        />
+      )}
     </Card>
   );
 }

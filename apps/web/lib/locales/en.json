@@ -158,7 +158,13 @@
     "punctuation": {
       "period": "."
     },
-    "cancel": "Cancel"
+    "above": "above",
+    "below": "below",
+    "increase": "increase",
+    "decrease": "decrease",
+    "cancel": "Cancel",
+    "previous": "Previous",
+    "next": "Next"
   },
   "orgSwitcher": {
     "error": {
@@ -231,6 +237,11 @@
     "stats": {
       "totalItems": "Total items",
       "processedItems": "Processed items"
+    },
+    "demoData": {
+      "refresh": "Refresh demo data",
+      "refreshed": "Demo data updated",
+      "refreshFailed": "Failed to refresh demo data"
     },
     "nextActions": {
       "title": "Next actions",
@@ -456,6 +467,11 @@
         "agri": "Agri",
         "tourism": "Tourism"
       }
+    },
+    "insight": {
+      "volatility": "Current value is {{percent}}% {{direction}} historical average, indicating high volatility.",
+      "trend": "Strong {{direction}} trend observed ({{percent}}% change from previous period).",
+      "stable": "Data remains stable within historical range."
     }
   },
   "language": {
@@ -754,6 +770,22 @@
     "editTitle": "Edit title"
   },
   "crawl": {
+    "templates": {
+      "selectTitle": "Select a template to start",
+      "general": "General",
+      "generalDesc": "Standard crawling for any website",
+      "news": "News Website",
+      "newsDesc": "Optimized for articles and news feeds",
+      "forum": "Forum",
+      "forumDesc": "Best for threads and discussions",
+      "social": "Social Media",
+      "socialDesc": "For dynamic content (requires stealth)"
+    },
+    "steps": {
+      "template": "Template",
+      "basic": "Basic Info",
+      "advanced": "Configuration"
+    },
     "columns": {
       "task": "Task",
       "status": "Status",

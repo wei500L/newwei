@@ -4,7 +4,10 @@
   "private": false,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist", "prisma"],
+  "files": [
+    "dist",
+    "prisma"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "migrate": "tsx src/scripts/migrate.ts",
@@ -15,7 +18,8 @@
   },
   "dependencies": {
     "@modular/utils": "workspace:*",
-    "bcrypt": "^5.1.1"
+    "bcrypt": "^5.1.1",
+    "dayjs": "^1.11.13"
   },
   "peerDependencies": {
     "@prisma/client": "^5.16.0"

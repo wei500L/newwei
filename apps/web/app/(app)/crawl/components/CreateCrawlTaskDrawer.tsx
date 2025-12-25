@@ -1,21 +1,32 @@
 "use client";
 
-import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
+import {
+  GlobalOutlined,
+  MinusCircleOutlined,
+  PlusOutlined,
+  ReadOutlined,
+  RobotOutlined,
+  TeamOutlined,
+} from "@ant-design/icons";
 import {
   Button,
   Card,
+  Col,
   DatePicker,
   Drawer,
   Form,
   Input,
   InputNumber,
+  Row,
   Select,
   Space,
+  Steps,
   Switch,
   Typography,
 } from "antd";
 import type { FormInstance } from "antd/es/form";
 import dayjs from "dayjs";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { CreateCrawlTaskFormValues } from "../types";
@@ -28,6 +39,33 @@ interface CreateCrawlTaskDrawerProps {
   onSubmit: (values: CreateCrawlTaskFormValues) => void | Promise<void>;
 }
 
+const TEMPLATES = [
+  {
+    key: "general",
+    icon: <GlobalOutlined />,
+    label: "crawl.templates.general",
+    description: "crawl.templates.generalDesc",
+  },
+  {
+    key: "news",
+    icon: <ReadOutlined />,
+    label: "crawl.templates.news",
+    description: "crawl.templates.newsDesc",
+  },
+  {
+    key: "forum",
+    icon: <TeamOutlined />,
+    label: "crawl.templates.forum",
+    description: "crawl.templates.forumDesc",
+  },
+  {
+    key: "social",
+    icon: <RobotOutlined />,
+    label: "crawl.templates.social",
+    description: "crawl.templates.socialDesc",
+  },
+];
+
 export function CreateCrawlTaskDrawer({
   form,
   open,
@@ -36,6 +74,9 @@ export function CreateCrawlTaskDrawer({
   onSubmit,
 }: CreateCrawlTaskDrawerProps) {
   const { t } = useTranslation();
+  const [currentStep, setCurrentStep] = useState(0);
+  const [selectedTemplate, setSelectedTemplate] = useState("general");
+
   const scanFullPage = Form.useWatch("scanFullPage", form);
   const proxyUrlValue = Form.useWatch("proxyUrl", form);
   const proxyConfigValue = Form.useWatch("proxyConfig", form);
@@ -48,33 +89,171 @@ export function CreateCrawlTaskDrawer({
   const proxyObjectActive = Boolean(proxyConfigValue?.server?.trim().length);
   const linkPreviewDisabled = !scoreLinksValue;
 
+  const handleNext = async () => {
+    try {
+      if (currentStep === 1) {
+        await form.validateFields(["displayName", "url"]);
+      }
+      setCurrentStep(currentStep + 1);
+    } catch {
+      // Validation failed
+    }
+  };
+
+  const handlePrev = () => {
+    setCurrentStep(currentStep - 1);
+  };
+
+  const handleTemplateSelect = (templateKey: string) => {
+    setSelectedTemplate(templateKey);
+    // Set default values based on template
+    switch (templateKey) {
+      case "general":
+        form.setFieldsValue({
+          onlyMainContent: true,
+          scanFullPage: false,
+          extractLinks: false,
+        });
+        break;
+      case "news":
+        form.setFieldsValue({
+          onlyMainContent: true,
+          extractLinks: false,
+          scanFullPage: false,
+          includeImages: true,
+          markdownFilter: { type: "pruning" },
+        });
+        break;
+      case "forum":
+        form.setFieldsValue({
+          onlyMainContent: false,
+          scanFullPage: true,
+          extractLinks: false,
+          scrollDelayMs: 1000,
+        });
+        break;
+      case "social":
+        form.setFieldsValue({
+          enableStealthMode: true,
+          enableUndetectedBrowser: true,
+          scanFullPage: true,
+          onlyMainContent: false,
+          waitForTimeoutMs: 5000,
+          scrollDelayMs: 2000,
+          userAgentMode: "random",
+        });
+        break;
+    }
+  };
+
+  const resetAndClose = () => {
+    setCurrentStep(0);
+    onClose();
+  };
+
   return (
     <Drawer
       title={t("crawl.createDrawer.title")}
       placement="right"
-      width={420}
+      width={600}
       open={open}
-      onClose={onClose}
+      onClose={resetAndClose}
       destroyOnHidden
-    >
-      <Form layout="vertical" form={form} onFinish={onSubmit}>
-        <CrawlSettingsForm
-          scanFullPage={scanFullPage}
-          markdownFilterType={markdownFilterType}
-          linkPreviewDisabled={linkPreviewDisabled}
-        />
-        <BrowserConfigForm
-          userAgentModeValue={userAgentModeValue}
-          useManagedBrowserValue={useManagedBrowserValue}
-          proxyUrlActive={proxyUrlActive}
-          proxyObjectActive={proxyObjectActive}
-        />
-        <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-          <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button type="primary" htmlType="submit" loading={loading}>
-            {t("crawl.createDrawer.submit")}
-          </Button>
+      extra={
+        <Space>
+          <Button onClick={resetAndClose}>{t("common.cancel")}</Button>
         </Space>
+      }
+    >
+      <Steps
+        current={currentStep}
+        items={[
+          { title: t("crawl.steps.template") },
+          { title: t("crawl.steps.basic") },
+          { title: t("crawl.steps.advanced") },
+        ]}
+        style={{ marginBottom: 24 }}
+      />
+
+      <Form layout="vertical" form={form} onFinish={onSubmit}>
+        <div style={{ display: currentStep === 0 ? "block" : "none" }}>
+          <Typography.Title level={5}>{t("crawl.templates.selectTitle")}</Typography.Title>
+          <Row gutter={[16, 16]}>
+            {TEMPLATES.map((template) => (
+              <Col span={12} key={template.key}>
+                <Card
+                  hoverable
+                  onClick={() => handleTemplateSelect(template.key)}
+                  className={selectedTemplate === template.key ? "border-primary" : ""}
+                  style={{
+                    borderColor: selectedTemplate === template.key ? "#1677ff" : undefined,
+                    borderWidth: selectedTemplate === template.key ? 2 : 1,
+                    height: "100%",
+                  }}
+                >
+                  <Space direction="vertical" align="center" style={{ width: "100%" }}>
+                    <div style={{ fontSize: 24, color: "#1677ff" }}>{template.icon}</div>
+                    <Typography.Text strong>{t(template.label)}</Typography.Text>
+                    <Typography.Text type="secondary" style={{ fontSize: 12, textAlign: 'center' }}>
+                      {t(template.description)}
+                    </Typography.Text>
+                  </Space>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </div>
+
+        <div style={{ display: currentStep === 1 ? "block" : "none" }}>
+          <Form.Item
+            label={t("crawl.settings.displayName")}
+            name="displayName"
+            rules={[{ max: 80, message: t("crawl.settings.validation.displayNameMax", { count: 80 }) }]}
+          >
+            <Input placeholder={t("crawl.settings.placeholders.displayName")} />
+          </Form.Item>
+          <Form.Item
+            label={t("crawl.settings.targetUrl")}
+            name="url"
+            rules={[{ required: true, message: t("crawl.settings.validation.urlRequired") }]}
+          >
+            <Input placeholder={t("crawl.settings.placeholders.url")} />
+          </Form.Item>
+        </div>
+
+        <div style={{ display: currentStep === 2 ? "block" : "none" }}>
+          <CrawlSettingsForm
+            scanFullPage={scanFullPage}
+            markdownFilterType={markdownFilterType}
+            linkPreviewDisabled={linkPreviewDisabled}
+          />
+          <BrowserConfigForm
+            userAgentModeValue={userAgentModeValue}
+            useManagedBrowserValue={useManagedBrowserValue}
+            proxyUrlActive={proxyUrlActive}
+            proxyObjectActive={proxyObjectActive}
+          />
+        </div>
+
+        <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between" }}>
+          {currentStep > 0 && (
+            <Button onClick={handlePrev}>
+              {t("common.previous")}
+            </Button>
+          )}
+          <div style={{ marginLeft: "auto" }}>
+             {currentStep < 2 && (
+              <Button type="primary" onClick={handleNext}>
+                {t("common.next")}
+              </Button>
+            )}
+            {currentStep === 2 && (
+              <Button type="primary" htmlType="submit" loading={loading}>
+                {t("crawl.createDrawer.submit")}
+              </Button>
+            )}
+          </div>
+        </div>
       </Form>
     </Drawer>
   );
@@ -94,20 +273,8 @@ function CrawlSettingsForm({
   const { t } = useTranslation();
   return (
     <>
-      <Form.Item
-        label={t("crawl.settings.displayName")}
-        name="displayName"
-        rules={[{ max: 80, message: t("crawl.settings.validation.displayNameMax", { count: 80 }) }]}
-      >
-        <Input placeholder={t("crawl.settings.placeholders.displayName")} />
-      </Form.Item>
-      <Form.Item
-        label={t("crawl.settings.targetUrl")}
-        name="url"
-        rules={[{ required: true, message: t("crawl.settings.validation.urlRequired") }]}
-      >
-        <Input placeholder={t("crawl.settings.placeholders.url")} />
-      </Form.Item>
+      {/* Moved displayName and url to Step 1 */}
+      
       <Form.Item label={t("crawl.settings.keywords")} name="keywords">
         <Select mode="tags" placeholder={t("crawl.settings.placeholders.keywords")} />
       </Form.Item>

@@ -158,7 +158,13 @@
     "punctuation": {
       "period": "。"
     },
-    "cancel": "取消"
+    "above": "高于",
+    "below": "低于",
+    "increase": "上涨",
+    "decrease": "下跌",
+    "cancel": "取消",
+    "previous": "上一步",
+    "next": "下一步"
   },
   "orgSwitcher": {
     "error": {
@@ -231,6 +237,11 @@
     "stats": {
       "totalItems": "总计条目",
       "processedItems": "已处理条目"
+    },
+    "demoData": {
+      "refresh": "刷新演示数据",
+      "refreshed": "演示数据已更新",
+      "refreshFailed": "刷新演示数据失败"
     },
     "nextActions": {
       "title": "下一步操作",
@@ -456,6 +467,11 @@
         "agri": "农业",
         "tourism": "旅游"
       }
+    },
+    "insight": {
+      "volatility": "当前值{{direction}}历史均值 {{percent}}%，波动较为剧烈。",
+      "trend": "观察到强劲的{{direction}}趋势（较上一周期变化 {{percent}}%）。",
+      "stable": "数据在历史范围内保持稳定。"
     }
   },
   "language": {
@@ -753,6 +769,22 @@
     "editTitle": "编辑标题"
   },
   "crawl": {
+    "templates": {
+      "selectTitle": "选择一个模板开始",
+      "general": "通用",
+      "generalDesc": "适用于任何网站的标准抓取",
+      "news": "新闻网站",
+      "newsDesc": "针对文章和新闻源优化",
+      "forum": "论坛",
+      "forumDesc": "最适合帖子和讨论",
+      "social": "社交媒体",
+      "socialDesc": "针对动态内容（需要隐身模式）"
+    },
+    "steps": {
+      "template": "选择模板",
+      "basic": "基础信息",
+      "advanced": "详细配置"
+    },
     "columns": {
       "task": "任务",
       "status": "状态",
