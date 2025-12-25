@@ -1,0 +1,74 @@
+query DashboardHeroMetrics($start: DateTime!, $end: DateTime!) {
+  conflict: getEconomicData(
+    category: "global-conflict-index"
+    timeRange: { start: $start, end: $end }
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+  market: getEconomicData(
+    category: "market-sentiment"
+    timeRange: { start: $start, end: $end }
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+  resource: getEconomicData(
+    category: "resource-scarcity"
+    timeRange: { start: $start, end: $end }
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+  supply: getEconomicData(
+    category: "supply-chain-stability"
+    timeRange: { start: $start, end: $end }
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+}
+
+query MetricDrillDownDetails($category: String!, $start: DateTime!, $end: DateTime!) {
+  history: getEconomicData(
+    category: $category
+    timeRange: { start: $start, end: $end }
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+  relatedAlerts: alertEvents(limit: 20, metricSlug: $category) {
+    id
+    severity
+    message
+    triggeredAt
+    status
+    metricValue
+    context
+  }
+}

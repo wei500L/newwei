@@ -131,9 +131,15 @@ export class AlertsService {
     });
   }
 
-  async listEvents(orgId: string, limit = 50) {
+  async listEvents(orgId: string, limit = 50, metricSlug?: string) {
+    const normalizedMetricSlug = metricSlug?.trim();
     return this.prisma.alertEvent.findMany({
-      where: { rule: { orgId } },
+      where: {
+        rule: {
+          orgId,
+          ...(normalizedMetricSlug ? { metricSlug: normalizedMetricSlug } : {})
+        }
+      },
       include: { rule: true, deliveries: { include: { channel: true } } },
       orderBy: { triggeredAt: "desc" },
       take: limit

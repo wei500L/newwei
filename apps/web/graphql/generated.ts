@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -1304,6 +1306,23 @@ export type CrawlMetadataQueryVariables = Exact<{
 
 export type CrawlMetadataQuery = { __typename?: 'Query', crawlMetadata: Array<{ __typename?: 'CrawlMetadataResultModel', url: string, status: string, httpStatus?: number | null, fetchedAt?: any | null, title?: string | null, description?: string | null, keywords?: Array<string> | null, author?: string | null, relevanceScore?: number | null, error?: string | null, jsonLd: Array<string>, metaTags: Array<{ __typename?: 'CrawlMetadataTagModel', name: string, value: string }>, openGraph: Array<{ __typename?: 'CrawlMetadataTagModel', name: string, value: string }> }> };
 
+export type DashboardHeroMetricsQueryVariables = Exact<{
+  start: Scalars['DateTime']['input'];
+  end: Scalars['DateTime']['input'];
+}>;
+
+
+export type DashboardHeroMetricsQuery = { __typename?: 'Query', conflict: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }>, market: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }>, resource: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }>, supply: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }> };
+
+export type MetricDrillDownDetailsQueryVariables = Exact<{
+  category: Scalars['String']['input'];
+  start: Scalars['DateTime']['input'];
+  end: Scalars['DateTime']['input'];
+}>;
+
+
+export type MetricDrillDownDetailsQuery = { __typename?: 'Query', history: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }>, relatedAlerts: Array<{ __typename?: 'AlertEventModel', id: string, severity: AlertSeverity, message?: string | null, triggeredAt: any, status: AlertEventStatus, metricValue: number, context?: any | null }> };
+
 export type DashboardsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -2256,6 +2275,152 @@ export type CrawlMetadataQueryHookResult = ReturnType<typeof useCrawlMetadataQue
 export type CrawlMetadataLazyQueryHookResult = ReturnType<typeof useCrawlMetadataLazyQuery>;
 export type CrawlMetadataSuspenseQueryHookResult = ReturnType<typeof useCrawlMetadataSuspenseQuery>;
 export type CrawlMetadataQueryResult = Apollo.QueryResult<CrawlMetadataQuery, CrawlMetadataQueryVariables>;
+export const DashboardHeroMetricsDocument = gql`
+    query DashboardHeroMetrics($start: DateTime!, $end: DateTime!) {
+  conflict: getEconomicData(
+    category: "global-conflict-index"
+    timeRange: {start: $start, end: $end}
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+  market: getEconomicData(
+    category: "market-sentiment"
+    timeRange: {start: $start, end: $end}
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+  resource: getEconomicData(
+    category: "resource-scarcity"
+    timeRange: {start: $start, end: $end}
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+  supply: getEconomicData(
+    category: "supply-chain-stability"
+    timeRange: {start: $start, end: $end}
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+}
+    `;
+
+/**
+ * __useDashboardHeroMetricsQuery__
+ *
+ * To run a query within a React component, call `useDashboardHeroMetricsQuery` and pass it any options that fit your needs.
+ * When your component renders, `useDashboardHeroMetricsQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useDashboardHeroMetricsQuery({
+ *   variables: {
+ *      start: // value for 'start'
+ *      end: // value for 'end'
+ *   },
+ * });
+ */
+export function useDashboardHeroMetricsQuery(baseOptions: Apollo.QueryHookOptions<DashboardHeroMetricsQuery, DashboardHeroMetricsQueryVariables> & ({ variables: DashboardHeroMetricsQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<DashboardHeroMetricsQuery, DashboardHeroMetricsQueryVariables>(DashboardHeroMetricsDocument, options);
+      }
+export function useDashboardHeroMetricsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<DashboardHeroMetricsQuery, DashboardHeroMetricsQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<DashboardHeroMetricsQuery, DashboardHeroMetricsQueryVariables>(DashboardHeroMetricsDocument, options);
+        }
+export function useDashboardHeroMetricsSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<DashboardHeroMetricsQuery, DashboardHeroMetricsQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<DashboardHeroMetricsQuery, DashboardHeroMetricsQueryVariables>(DashboardHeroMetricsDocument, options);
+        }
+export type DashboardHeroMetricsQueryHookResult = ReturnType<typeof useDashboardHeroMetricsQuery>;
+export type DashboardHeroMetricsLazyQueryHookResult = ReturnType<typeof useDashboardHeroMetricsLazyQuery>;
+export type DashboardHeroMetricsSuspenseQueryHookResult = ReturnType<typeof useDashboardHeroMetricsSuspenseQuery>;
+export type DashboardHeroMetricsQueryResult = Apollo.QueryResult<DashboardHeroMetricsQuery, DashboardHeroMetricsQueryVariables>;
+export const MetricDrillDownDetailsDocument = gql`
+    query MetricDrillDownDetails($category: String!, $start: DateTime!, $end: DateTime!) {
+  history: getEconomicData(
+    category: $category
+    timeRange: {start: $start, end: $end}
+    granularity: day
+  ) {
+    timestamp
+    value
+    unit
+    item {
+      displayName
+    }
+  }
+  relatedAlerts: alertEvents(limit: 20, metricSlug: $category) {
+    id
+    severity
+    message
+    triggeredAt
+    status
+    metricValue
+    context
+  }
+}
+    `;
+
+/**
+ * __useMetricDrillDownDetailsQuery__
+ *
+ * To run a query within a React component, call `useMetricDrillDownDetailsQuery` and pass it any options that fit your needs.
+ * When your component renders, `useMetricDrillDownDetailsQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useMetricDrillDownDetailsQuery({
+ *   variables: {
+ *      category: // value for 'category'
+ *      start: // value for 'start'
+ *      end: // value for 'end'
+ *   },
+ * });
+ */
+export function useMetricDrillDownDetailsQuery(baseOptions: Apollo.QueryHookOptions<MetricDrillDownDetailsQuery, MetricDrillDownDetailsQueryVariables> & ({ variables: MetricDrillDownDetailsQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<MetricDrillDownDetailsQuery, MetricDrillDownDetailsQueryVariables>(MetricDrillDownDetailsDocument, options);
+      }
+export function useMetricDrillDownDetailsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<MetricDrillDownDetailsQuery, MetricDrillDownDetailsQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<MetricDrillDownDetailsQuery, MetricDrillDownDetailsQueryVariables>(MetricDrillDownDetailsDocument, options);
+        }
+export function useMetricDrillDownDetailsSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<MetricDrillDownDetailsQuery, MetricDrillDownDetailsQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<MetricDrillDownDetailsQuery, MetricDrillDownDetailsQueryVariables>(MetricDrillDownDetailsDocument, options);
+        }
+export type MetricDrillDownDetailsQueryHookResult = ReturnType<typeof useMetricDrillDownDetailsQuery>;
+export type MetricDrillDownDetailsLazyQueryHookResult = ReturnType<typeof useMetricDrillDownDetailsLazyQuery>;
+export type MetricDrillDownDetailsSuspenseQueryHookResult = ReturnType<typeof useMetricDrillDownDetailsSuspenseQuery>;
+export type MetricDrillDownDetailsQueryResult = Apollo.QueryResult<MetricDrillDownDetailsQuery, MetricDrillDownDetailsQueryVariables>;
 export const DashboardsDocument = gql`
     query Dashboards {
   dashboards {

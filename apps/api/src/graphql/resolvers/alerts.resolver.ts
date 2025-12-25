@@ -79,13 +79,14 @@ export class AlertsResolver {
   @Query(() => [AlertEventModel])
   async alertEvents(
     @Context("req") req: GqlRequest,
-    @Args("limit", { type: () => Int, nullable: true }) limit?: number
+    @Args("limit", { type: () => Int, nullable: true }) limit?: number,
+    @Args("metricSlug", { type: () => String, nullable: true }) metricSlug?: string
   ): Promise<AlertEventModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
-    const events = await this.alerts.listEvents(requester.orgId, limit ?? 50);
+    const events = await this.alerts.listEvents(requester.orgId, limit ?? 50, metricSlug);
     return events.map((event) => ({
       id: event.id,
       triggeredAt: event.triggeredAt,

@@ -1,4 +1,4 @@
-const schemaUrl = process.env.GRAPHQL_SCHEMA_URL || 'http://localhost:4000/graphql';
+const schemaUrl = process.env.GRAPHQL_SCHEMA_URL || '../api/schema.gql';
 
 /** @type {import('@graphql-codegen/cli').CodegenConfig} */
 module.exports = {

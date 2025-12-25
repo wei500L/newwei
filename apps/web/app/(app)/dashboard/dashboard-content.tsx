@@ -17,6 +17,7 @@ import {
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import dayjs from "dayjs";
 
 import {
   AlertSeverity,
@@ -24,6 +25,7 @@ import {
   AnalysisType,
   useAlertRulesQuery,
   useAnalysisResultsQuery,
+  useDashboardHeroMetricsQuery,
   useDashboardsQuery,
   useDeleteDashboardMutation,
   useQueueStatsQuery,
@@ -40,7 +42,9 @@ import { AlertPanel } from "./alert-panel";
 import { AnalysisPanel } from "./analysis-panel";
 import { DashboardEditor } from "./dashboard-editor";
 import { DrilldownChart } from "./drilldown-chart";
+import { HeroSection } from "./hero-section";
 import { LiveAlertsToasts } from "./live-alerts";
+import { MetricDrillDown } from "./metric-drilldown";
 import { QueueChart } from "./queue-chart";
 import { useQueueEvents } from "./use-queue-events";
 
@@ -84,6 +88,18 @@ export function DashboardContent() {
     loading: dashboardsLoading,
     refetch: refetchDashboards,
   } = useDashboardsQuery();
+
+  // Hero Metrics Query
+  const heroDateRange = useMemo(() => ({
+    start: dayjs().subtract(30, 'day').startOf('day').toISOString(),
+    end: dayjs().endOf('day').toISOString()
+  }), []);
+
+  const { data: heroData, loading: heroLoading } = useDashboardHeroMetricsQuery({
+    variables: heroDateRange,
+    fetchPolicy: "cache-and-network"
+  });
+
   const [saveDashboard, { loading: savingDashboard }] =
     useUpsertDashboardMutation();
   const [deleteDashboard] = useDeleteDashboardMutation();
@@ -100,6 +116,7 @@ export function DashboardContent() {
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
   const [liveLogs, setLiveLogs] = useState<QueueLog[]>([]);
   const [activeId, setActiveId] = useState<string | undefined>();
+  const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
 
   const dashboards = useMemo(
     () => dashboardsData?.dashboards ?? [],
@@ -216,6 +233,19 @@ export function DashboardContent() {
   return (
     <div className="space-y-6 pb-8">
       <LiveAlertsToasts />
+      <HeroSection 
+        loading={heroLoading}
+        conflictData={heroData?.conflict ?? []}
+        marketData={heroData?.market ?? []}
+        resourceData={heroData?.resource ?? []}
+        supplyData={heroData?.supply ?? []}
+        onMetricClick={setActiveDrillDownKey} 
+      />
+      <MetricDrillDown 
+        visible={!!activeDrillDownKey} 
+        metricKey={activeDrillDownKey} 
+        onClose={() => setActiveDrillDownKey(null)} 
+      />
       <Row gutter={[20, 20]}>
         <Col xs={24} md={12} lg={8}>
           <Card className="content-card h-full flex flex-col justify-center">

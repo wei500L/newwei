@@ -1,14 +1,14 @@
 "use client";
 
 import {
+  ApartmentOutlined,
+  BugOutlined,
+  ControlOutlined,
   DashboardOutlined,
   LogoutOutlined,
   RadarChartOutlined,
   SettingOutlined,
   TableOutlined,
-  ApartmentOutlined,
-  BugOutlined,
-  ControlOutlined,
 } from "@ant-design/icons";
 import { Breadcrumb, Dropdown, Layout, Menu, Space, Typography, message } from "antd";
 import { usePathname, useRouter } from "next/navigation";
@@ -19,13 +19,12 @@ import { useTranslation } from "react-i18next";
 
 import { captureClientError } from "@/lib/client-telemetry";
 import { createTraceHeaders } from "@/lib/trace";
-import { useSidebarStore } from "@/store/sidebar";
 
 import { LanguageSwitcher } from "./language-switcher";
 import { NotificationCenter } from "./notification-center";
 import { OrganizationSwitcher } from "./organization-switcher";
 
-const { Header, Sider, Content } = Layout;
+const { Header, Content } = Layout;
 
 export function ShellLayout({ children }: PropsWithChildren) {
   const { t } = useTranslation();
@@ -34,8 +33,6 @@ export function ShellLayout({ children }: PropsWithChildren) {
   const [loggingOutAll, setLoggingOutAll] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-  const collapsed = useSidebarStore((state) => state.collapsed);
-  const toggle = useSidebarStore((state) => state.toggle);
   const session = useSession();
 
   const handleLogout = useCallback(
@@ -150,78 +147,68 @@ export function ShellLayout({ children }: PropsWithChildren) {
   return (
     <Layout className="main-layout min-h-screen">
       {contextHolder}
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={toggle}
-        width={240}
-        breakpoint="lg"
-        className="!bg-[#001529] shadow-xl z-20"
-        theme="dark"
-      >
-        <div
-          className={`h-16 flex items-center transition-all duration-300 ${
-            collapsed ? "justify-center px-0" : "justify-start px-6"
-          }`}
-        >
-          <span className="text-white font-bold text-lg tracking-wide truncate">
-            {collapsed ? t("brand.short") : t("brand.full")}
-          </span>
+      <Header className="sticky top-0 z-10 w-full !bg-white/90 !backdrop-blur-md border-b border-gray-100 !px-6 flex items-center justify-between shadow-sm transition-all duration-200 h-16">
+        <div className="flex items-center gap-8 flex-1">
+           <div className="flex items-center shrink-0">
+             <span className="text-gray-900 font-bold text-lg tracking-wide whitespace-nowrap">
+               {t("brand.full")}
+             </span>
+           </div>
+           <Menu
+             mode="horizontal"
+             selectedKeys={selectedKeys}
+             items={navigationItems}
+             onClick={(info) => router.push(info.key)}
+             className="!bg-transparent border-none flex-1 min-w-0 [&_.ant-menu-item]:!px-4"
+           />
         </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={selectedKeys}
-          items={navigationItems}
-          onClick={(info) => router.push(info.key)}
-          className="!bg-transparent border-none"
-        />
-      </Sider>
-      <Layout>
-        <Header className="sticky top-0 z-10 w-full !bg-white/80 !backdrop-blur-md !px-6 flex items-center justify-between shadow-sm transition-all duration-200">
-          <Breadcrumb items={breadcrumbs} className="font-medium" />
-          <Space align="center" size="large">
-            <NotificationCenter />
-            <LanguageSwitcher />
-            <OrganizationSwitcher />
-            <div className="flex flex-col items-end leading-tight">
-              <Typography.Text strong className="text-sm">
-                {session.data?.user?.firstName} {session.data?.user?.lastName}
-              </Typography.Text>
-              <Typography.Text type="secondary" className="text-xs">
-                {session.data?.user?.email}
-              </Typography.Text>
-            </div>
-            <Dropdown.Button
-              type="text"
-              icon={<LogoutOutlined />}
-              loading={isLoggingOut}
-              onClick={() => handleLogout(false)}
-              menu={{
-                items: [
-                  {
-                    key: "logout",
-                    label: t("auth.logoutThisDevice"),
-                    onClick: () => handleLogout(false),
-                    disabled: isLoggingOut
-                  },
-                  {
-                    key: "logoutAll",
-                    label: t("auth.logoutAllDevices"),
-                    onClick: () => handleLogout(true),
-                    disabled: isLoggingOut
-                  }
-                ]
-              }}
-            >
-              {t("auth.logout")}
-            </Dropdown.Button>
-          </Space>
-        </Header>
-        <Content className="m-6 flex flex-col flex-1 min-w-0">
-          <div className="w-full max-w-[1600px] mx-auto">{children}</div>
-        </Content>
-      </Layout>
+
+        <Space align="center" size="large" className="shrink-0 ml-4">
+          <NotificationCenter />
+          <LanguageSwitcher />
+          <OrganizationSwitcher />
+          <div className="hidden md:flex flex-col items-end leading-tight">
+            <Typography.Text strong className="text-sm">
+              {session.data?.user?.firstName} {session.data?.user?.lastName}
+            </Typography.Text>
+            <Typography.Text type="secondary" className="text-xs">
+              {session.data?.user?.email}
+            </Typography.Text>
+          </div>
+          <Dropdown.Button
+            type="text"
+            icon={<LogoutOutlined />}
+            loading={isLoggingOut}
+            onClick={() => handleLogout(false)}
+            menu={{
+              items: [
+                {
+                  key: "logout",
+                  label: t("auth.logoutThisDevice"),
+                  onClick: () => handleLogout(false),
+                  disabled: isLoggingOut
+                },
+                {
+                  key: "logoutAll",
+                  label: t("auth.logoutAllDevices"),
+                  onClick: () => handleLogout(true),
+                  disabled: isLoggingOut
+                }
+              ]
+            }}
+          >
+            {t("auth.logout")}
+          </Dropdown.Button>
+        </Space>
+      </Header>
+      <Content className="flex flex-col flex-1 min-w-0 bg-gray-50/50">
+        <div className="w-full max-w-[1600px] mx-auto p-6">
+          <div className="mb-6">
+            <Breadcrumb items={breadcrumbs} className="font-medium" />
+          </div>
+          {children}
+        </div>
+      </Content>
     </Layout>
   );
 }
