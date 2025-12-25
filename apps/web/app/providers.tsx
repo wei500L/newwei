@@ -109,7 +109,19 @@ export function AppProviders({ children }: PropsWithChildren) {
         theme={{
           algorithm: theme.defaultAlgorithm,
           token: {
-            colorPrimary: "#1677ff"
+            colorPrimary: "#0050b3",
+            borderRadius: 12,
+            fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          },
+          components: {
+            Card: {
+              borderRadiusLG: 16,
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.06)",
+            },
+            Button: {
+              borderRadius: 8,
+              controlHeight: 40,
+            }
           }
         }}
       >
