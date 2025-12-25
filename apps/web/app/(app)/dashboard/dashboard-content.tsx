@@ -13,6 +13,7 @@ import {
   Space,
   Spin,
   Statistic,
+  Switch,
   Tag,
   Timeline,
   Typography,
@@ -46,6 +47,9 @@ import {
 import { AlertConfigForm } from "./alert-config-form";
 import { AlertPanel } from "./alert-panel";
 import { AnalysisPanel } from "./analysis-panel";
+import { BreakingNewsStream } from "./components/breaking-news-stream";
+import { GlobalSentimentTrend } from "./components/global-sentiment-trend";
+import { MarketPulse } from "./components/market-pulse";
 import { DashboardEditor } from "./dashboard-editor";
 import { DrilldownChart } from "./drilldown-chart";
 import { HeroSection } from "./hero-section";
@@ -126,6 +130,7 @@ export function DashboardContent() {
   const [activeId, setActiveId] = useState<string | undefined>();
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
   const [refreshingDemoData, setRefreshingDemoData] = useState(false);
+  const [showSystemStats, setShowSystemStats] = useState(false);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -264,8 +269,16 @@ export function DashboardContent() {
       {messageContext}
       <LiveAlertsToasts />
       
+      {/* View Toggle */}
+      <div className="flex justify-end mb-2">
+         <Space>
+           <span className="text-xs text-gray-500">System Status</span>
+           <Switch size="small" checked={showSystemStats} onChange={setShowSystemStats} />
+         </Space>
+      </div>
+
       <div className="relative">
-        <HeroSection 
+        <MarketPulse 
           loading={heroLoading}
           conflictData={heroData?.conflict ?? []}
           marketData={heroData?.market ?? []}
@@ -293,124 +306,26 @@ export function DashboardContent() {
         metricKey={activeDrillDownKey} 
         onClose={() => setActiveDrillDownKey(null)} 
       />
+
+      {/* Bento Grid Layout */}
       <Row gutter={[20, 20]}>
-        <Col xs={24} md={12} lg={8}>
-          <Card className="content-card h-full flex flex-col justify-center">
-            <Statistic title={t("dashboard.stats.totalItems")} value={itemCount} />
-          </Card>
+        {/* Left Column: Sentiment Trend (Dominant) */}
+        <Col xs={24} lg={16}>
+           <GlobalSentimentTrend 
+             loading={heroLoading} 
+             data={heroData?.market ?? []} // Using market data as proxy for sentiment trend
+           />
         </Col>
-        <Col xs={24} md={12} lg={8}>
-          <Card className="content-card h-full flex flex-col justify-center">
-            <Statistic title={t("dashboard.stats.processedItems")} value={processedCount} />
-          </Card>
-        </Col>
-        <Col xs={24} md={24} lg={8}>
-          <Card
-            className="content-card h-full"
-            title={
-              <Space size="small" align="center">
-                <span>{t("dashboard.queue.snapshot")}</span>
-                <Tag color={queueLive ? "green" : "default"}>
-                  {queueLive ? t("dashboard.queue.live") : t("dashboard.queue.offline")}
-                </Tag>
-              </Space>
-            }
-          >
-            <QueueChart data={chartData} />
-          </Card>
+
+        {/* Right Column: News Stream */}
+        <Col xs={24} lg={8}>
+           <BreakingNewsStream />
         </Col>
       </Row>
+
       <Row gutter={[20, 20]}>
         <Col xs={24} md={12}>
-          <Card title={t("dashboard.queue.recentActivity")} className="content-card h-full">
-            {parsedLogs.length > 0 ? (
-              <Timeline
-                mode="left"
-                items={parsedLogs.map((item) => {
-                  let color = "blue";
-                  if (item.event === "FAILED") color = "red";
-                  if (item.event === "COMPLETED") color = "green";
-                  if (item.event === "WAITING") color = "gray";
-
-                  const payload = item.payload as Record<string, unknown> | undefined;
-                  let errorMessage: string | undefined;
-
-                  if (item.event === "FAILED") {
-                    if (typeof payload?.error === "string") {
-                      errorMessage = payload.error;
-                    } else if (
-                      payload?.error &&
-                      typeof payload.error === "object" &&
-                      "message" in payload.error &&
-                      typeof payload.error.message === "string"
-                    ) {
-                      errorMessage = payload.error.message;
-                    } else if (typeof payload?.message === "string") {
-                      errorMessage = payload.message;
-                    }
-                  } else if (typeof payload?.message === "string") {
-                    errorMessage = payload.message;
-                  }
-
-                  return {
-                    color,
-                    label: (
-                      <span className="text-xs text-gray-400">
-                        {formatDateTime(item.timestamp, locale, {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
-                      </span>
-                    ),
-                    children: (
-                      <div className="mb-4">
-                        <Space wrap>
-                          <Tag color={color} className="mr-0">
-                            {item.event}
-                          </Tag>
-                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                            {item.jobId}
-                          </Typography.Text>
-                        </Space>
-                        
-                        {errorMessage && (
-                          <div className="mt-1">
-                            <Typography.Text type={item.event === "FAILED" ? "danger" : undefined}>
-                              {String(errorMessage)}
-                            </Typography.Text>
-                          </div>
-                        )}
-
-                        {payload && (
-                          <Collapse
-                            ghost
-                            size="small"
-                            items={[
-                              {
-                                key: "1",
-                                label: <span style={{ fontSize: 12 }}>{t("common.details")}</span>,
-                                children: (
-                                  <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto max-h-40">
-                                    {JSON.stringify(payload, null, 2)}
-                                  </pre>
-                                ),
-                              },
-                            ]}
-                          />
-                        )}
-                      </div>
-                    ),
-                  };
-                })}
-              />
-            ) : (
-              <Empty description={t("dashboard.queue.noRecentLogs")} className="my-8" />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} md={12}>
-          <Card title={t("dashboard.nextActions.title")} className="content-card h-full">
+          <Card title={t("dashboard.nextActions.title")} className="content-card h-full border-none shadow-sm">
             <Typography.Paragraph className="mb-6 text-gray-600">
               {t("dashboard.nextActions.description")}
             </Typography.Paragraph>
@@ -486,7 +401,140 @@ export function DashboardContent() {
             </Row>
           </Card>
         </Col>
+
+        {/* AI & Alerts */}
+        <Col xs={24} lg={12}>
+          <div className="flex flex-col gap-5 h-full">
+            <Card title={t("dashboard.panels.smartAlerts")} className="content-card flex-1 border-none shadow-sm">
+              <AlertPanel />
+            </Card>
+            <Card title={t("dashboard.panels.aiAnalysis")} className="content-card flex-1 border-none shadow-sm">
+              <AnalysisPanel />
+            </Card>
+          </div>
+        </Col>
       </Row>
+
+      {/* System Stats (Hidden by default) */}
+      <div style={{ display: showSystemStats ? 'block' : 'none' }}>
+        <Row gutter={[20, 20]} className="mb-6">
+          <Col xs={24} md={12} lg={8}>
+            <Card className="content-card h-full flex flex-col justify-center">
+              <Statistic title={t("dashboard.stats.totalItems")} value={itemCount} />
+            </Card>
+          </Col>
+          <Col xs={24} md={12} lg={8}>
+            <Card className="content-card h-full flex flex-col justify-center">
+              <Statistic title={t("dashboard.stats.processedItems")} value={processedCount} />
+            </Card>
+          </Col>
+          <Col xs={24} md={24} lg={8}>
+            <Card
+              className="content-card h-full"
+              title={
+                <Space size="small" align="center">
+                  <span>{t("dashboard.queue.snapshot")}</span>
+                  <Tag color={queueLive ? "green" : "default"}>
+                    {queueLive ? t("dashboard.queue.live") : t("dashboard.queue.offline")}
+                  </Tag>
+                </Space>
+              }
+            >
+              <QueueChart data={chartData} />
+            </Card>
+          </Col>
+        </Row>
+        <Row gutter={[20, 20]}>
+          <Col xs={24} md={12}>
+            <Card title={t("dashboard.queue.recentActivity")} className="content-card h-full">
+              {parsedLogs.length > 0 ? (
+                <Timeline
+                  mode="left"
+                  items={parsedLogs.map((item) => {
+                    let color = "blue";
+                    if (item.event === "FAILED") color = "red";
+                    if (item.event === "COMPLETED") color = "green";
+                    if (item.event === "WAITING") color = "gray";
+
+                    const payload = item.payload as Record<string, unknown> | undefined;
+                    let errorMessage: string | undefined;
+
+                    if (item.event === "FAILED") {
+                      if (typeof payload?.error === "string") {
+                        errorMessage = payload.error;
+                      } else if (
+                        payload?.error &&
+                        typeof payload.error === "object" &&
+                        "message" in payload.error &&
+                        typeof payload.error.message === "string"
+                      ) {
+                        errorMessage = payload.error.message;
+                      } else if (typeof payload?.message === "string") {
+                        errorMessage = payload.message;
+                      }
+                    } else if (typeof payload?.message === "string") {
+                      errorMessage = payload.message;
+                    }
+
+                    return {
+                      color,
+                      label: (
+                        <span className="text-xs text-gray-400">
+                          {formatDateTime(item.timestamp, locale, {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </span>
+                      ),
+                      children: (
+                        <div className="mb-4">
+                          <Space wrap>
+                            <Tag color={color} className="mr-0">
+                              {item.event}
+                            </Tag>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              {item.jobId}
+                            </Typography.Text>
+                          </Space>
+                          
+                          {errorMessage && (
+                            <div className="mt-1">
+                              <Typography.Text type={item.event === "FAILED" ? "danger" : undefined}>
+                                {String(errorMessage)}
+                              </Typography.Text>
+                            </div>
+                          )}
+
+                          {payload && (
+                            <Collapse
+                              ghost
+                              size="small"
+                              items={[
+                                {
+                                  key: "1",
+                                  label: <span style={{ fontSize: 12 }}>{t("common.details")}</span>,
+                                  children: (
+                                    <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto max-h-40">
+                                      {JSON.stringify(payload, null, 2)}
+                                    </pre>
+                                  ),
+                                },
+                              ]}
+                            />
+                          )}
+                        </div>
+                      ),
+                    };
+                  })}
+                />
+              ) : (
+                <Empty description={t("dashboard.queue.noRecentLogs")} className="my-8" />
+              )}
+            </Card>
+          </Col>
+        </Row>
+      </div>
       <Row>
         <Col span={24}>
           <Card title={t("dashboard.editor.title")} className="content-card">
