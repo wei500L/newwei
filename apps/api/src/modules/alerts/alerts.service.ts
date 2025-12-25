@@ -1,4 +1,4 @@
-import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
+import { createLogger, ensureTraceId, getCountryName, getCurrentTraceId, normalizeCountryCode } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable } from "@nestjs/common";
 import {
@@ -302,6 +302,7 @@ export class AlertsService {
       return null;
     }
 
+    const context = this.normalizeAlertContext({ ...(providerContext ?? {}), ...(triggered.context ?? {}) });
     const event = await this.prisma.alertEvent.create({
       data: {
         ruleId: rule.id,
@@ -311,7 +312,7 @@ export class AlertsService {
         severity: rule.severity,
         status: AlertEventStatus.pending,
         message: triggered.message,
-        context: { ...(providerContext ?? {}), ...(triggered.context ?? {}) }
+        context
       }
     });
 
@@ -357,6 +358,35 @@ export class AlertsService {
 
   private resolveMetricProvider(rule: { metricProvider: AlertMetricProvider }) {
     return this.metricProviders.find((provider) => provider.supports(rule));
+  }
+
+  private normalizeAlertContext(context?: Record<string, unknown> | null): Record<string, unknown> | undefined {
+    if (!context) {
+      return context ?? undefined;
+    }
+
+    const normalizedContext = { ...context };
+    const rawCountry = typeof normalizedContext.country === "string" ? normalizedContext.country : null;
+    const rawCountryCode = typeof normalizedContext.countryCode === "string" ? normalizedContext.countryCode : null;
+    const countryValue = rawCountryCode ?? rawCountry;
+    const normalizedCountry = normalizeCountryCode(countryValue);
+
+    if (normalizedCountry) {
+      normalizedContext.countryCode = normalizedCountry;
+      if (!normalizedContext.countryName) {
+        const rawCountryLooksLikeCode = rawCountry ? /^[A-Za-z]{2,3}$/.test(rawCountry.trim()) : false;
+        if (rawCountry && rawCountry !== normalizedCountry && !rawCountryLooksLikeCode) {
+          normalizedContext.countryName = rawCountry;
+        } else {
+          const resolvedName = getCountryName(normalizedCountry);
+          if (resolvedName) {
+            normalizedContext.countryName = resolvedName;
+          }
+        }
+      }
+    }
+
+    return normalizedContext;
   }
 
   private shouldTrigger(

@@ -4,3 +4,4 @@ export * from "./date";
 export * from "./number";
 export * from "./crawl";
 export * from "./tracing";
+export * from "./geo";

@@ -10,26 +10,13 @@ import dayjs from "dayjs";
 
 import { DashboardChart } from "@/components/echart";
 import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
+import { extractCountryCodeFromText, getCountryName, normalizeCountryCode } from "@modular/utils";
 
 interface MetricDrillDownProps {
   visible: boolean;
   metricKey: string | null;
   onClose: () => void;
 }
-
-// Simple country name mapping for text analysis
-const KNOWN_LOCATIONS = [
-  "China", "USA", "United States", "Russia", "Ukraine", "Taiwan", 
-  "Japan", "Korea", "Germany", "France", "UK", "United Kingdom",
-  "Iran", "Israel", "Gaza", "India", "Brazil"
-];
-
-const LOCATION_NORMALIZE: Record<string, string> = {
-  "United States": "United States of America",
-  "USA": "United States of America",
-  "UK": "United Kingdom",
-  "Korea": "South Korea"
-};
 
 export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDownProps) {
   const { t } = useTranslation();
@@ -78,20 +65,21 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       const ctx = alert.context as Record<string, any>;
       
       // 1. Try structural context first
-      if (ctx?.country) {
-        const name = LOCATION_NORMALIZE[ctx.country] || ctx.country;
-        counts[name] = (counts[name] || 0) + 1;
-        found = true;
+      if (ctx?.country || ctx?.countryCode) {
+        const code = normalizeCountryCode(
+          typeof ctx?.countryCode === "string" ? ctx.countryCode : typeof ctx?.country === "string" ? ctx.country : null
+        );
+        if (code) {
+          counts[code] = (counts[code] || 0) + 1;
+          found = true;
+        }
       }
       
       // 2. Fallback to text analysis of message
       if (!found && alert.message) {
-        for (const loc of KNOWN_LOCATIONS) {
-          if (alert.message.includes(loc)) {
-            const name = LOCATION_NORMALIZE[loc] || loc;
-            counts[name] = (counts[name] || 0) + 1;
-            break; // Count once per alert
-          }
+        const code = extractCountryCodeFromText(alert.message);
+        if (code) {
+          counts[code] = (counts[code] || 0) + 1;
         }
       }
     });
@@ -133,7 +121,11 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     return {
       tooltip: {
         trigger: 'item',
-        formatter: '{b}: {c} Events'
+        formatter: (params: any) => {
+          const name = getCountryName(params?.name) ?? params?.name ?? "Unknown";
+          const value = typeof params?.value === "number" ? params.value : 0;
+          return `${name}: ${value} Events`;
+        }
       },
       visualMap: {
         left: 'right',
@@ -152,6 +144,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           type: 'map',
           roam: true,
           map: 'world',
+          nameProperty: 'A3',
           emphasis: {
             label: { show: true },
             itemStyle: { areaColor: '#ffbb00' }
