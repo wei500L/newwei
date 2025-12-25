@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
-import { ItemsTable } from "./items-table";
+import { ItemsView } from "./items-view";
 
 export default async function ItemsPage() {
   const session = await auth();
@@ -10,5 +10,5 @@ export default async function ItemsPage() {
     redirect("/login");
   }
 
-  return <ItemsTable />;
+  return <ItemsView />;
 }

@@ -1380,7 +1380,7 @@ export type ItemsQueryVariables = Exact<{
 }>;
 
 
-export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null }, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any } }> } };
+export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, processed?: { __typename?: 'ProcessedItemModelGraph', result?: string | null, tags: Array<string> } | null, raw?: { __typename?: 'RawItemModelGraph', payload: string, source?: string | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
 
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2733,20 +2733,28 @@ export type TriggerEconomicDataFetchMutationOptions = Apollo.BaseMutationOptions
 export const ItemsDocument = gql`
     query Items($first: Int!, $after: String, $search: String) {
   items(first: $first, after: $after, search: $search) {
-    totalCount
-    pageInfo {
-      hasNextPage
-      endCursor
-    }
     edges {
-      cursor
       node {
         id
         title
         status
         createdAt
+        processed {
+          result
+          tags
+        }
+        raw {
+          payload
+          source
+        }
       }
+      cursor
     }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    totalCount
   }
 }
     `;

@@ -1,18 +1,26 @@
 query Items($first: Int!, $after: String, $search: String) {
   items(first: $first, after: $after, search: $search) {
-    totalCount
-    pageInfo {
-      hasNextPage
-      endCursor
-    }
     edges {
-      cursor
       node {
         id
         title
         status
         createdAt
+        processed {
+          result
+          tags
+        }
+        raw {
+          payload
+          source
+        }
       }
+      cursor
     }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    totalCount
   }
 }
