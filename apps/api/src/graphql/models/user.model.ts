@@ -16,6 +16,15 @@ export class UserModel {
   @Field()
   lastName!: string;
 
+  @Field({ nullable: true })
+  avatarUrl?: string;
+
+  @Field({ nullable: true })
+  planTier?: string;
+
+  @Field({ nullable: true })
+  subscriptionStatus?: string;
+
   @Field()
   orgId!: string;
 

@@ -34,6 +34,7 @@ interface UserRecord {
   email: string;
   firstName?: string | null;
   lastName?: string | null;
+  avatarUrl?: string | null;
   memberships?: UserMembershipRecord[] | null;
 }
 
@@ -166,6 +167,7 @@ export class UsersResolver {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      avatarUrl: user.avatarUrl ?? null,
       orgId: membership?.orgId ?? orgId,
       roleIds: Array.from(roleIds),
       permissions: Array.from(permissions)
@@ -178,6 +180,9 @@ export class UsersResolver {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      avatarUrl: user.avatarUrl ?? undefined,
+      planTier: user.planTier ?? undefined,
+      subscriptionStatus: user.subscriptionStatus ?? undefined,
       orgId: user.orgId,
       roleIds: user.roleIds,
       permissions: user.permissions

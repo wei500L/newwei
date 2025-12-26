@@ -11,9 +11,11 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { OrgService } from "../org/org.service";
 import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
+import { StorageService } from "../storage/storage.service";
 
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { AuthCacheSettingsService } from "./auth-cache-settings.service";
+import { UpdateProfileDto } from "./dto/profile.dto";
 
 export interface JwtPayload {
   sub: string;
@@ -32,6 +34,9 @@ export interface AuthenticatedUser {
   permissions: string[];
   firstName: string;
   lastName: string;
+  avatarUrl?: string | null;
+  planTier?: string | null;
+  subscriptionStatus?: string | null;
   accessTokenId?: string;
   accessTokenExpiresAt?: number;
 }
@@ -53,6 +58,7 @@ interface MembershipRecord {
   roleId?: string | null;
   roles?: MembershipRoleLink[] | null;
   role?: MembershipRole | null;
+  org?: { planTier?: string | null; subscriptionStatus?: string | null } | null;
 }
 
 @Injectable()
@@ -65,7 +71,8 @@ export class AuthService {
     private readonly cache: CacheService,
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
     private readonly authCacheSettings: AuthCacheSettingsService,
-    private readonly orgService: OrgService
+    private readonly orgService: OrgService,
+    private readonly storageService: StorageService
   ) {}
 
   private async validateRateLimit(identifier: string) {
@@ -110,7 +117,9 @@ export class AuthService {
     return membership;
   }
 
-  private buildMembershipClaims(membership: MembershipRecord): Pick<AuthenticatedUser, "roleIds" | "permissions"> {
+  private buildMembershipClaims(
+    membership: MembershipRecord
+  ): Pick<AuthenticatedUser, "roleIds" | "permissions" | "planTier" | "subscriptionStatus"> {
     const roleIds = new Set<string>();
     const permissions = new Set<string>();
 
@@ -145,7 +154,9 @@ export class AuthService {
 
     return {
       roleIds: Array.from(roleIds),
-      permissions: Array.from(permissions)
+      permissions: Array.from(permissions),
+      planTier: membership.org?.planTier ?? null,
+      subscriptionStatus: membership.org?.subscriptionStatus ?? null
     };
   }
 
@@ -197,16 +208,20 @@ export class AuthService {
       throw new UnauthorizedException("Organization disabled");
     }
 
-    const { roleIds, permissions } = this.buildMembershipClaims(primaryMembership);
+    const { roleIds, permissions, planTier, subscriptionStatus } =
+      this.buildMembershipClaims(primaryMembership);
 
     return {
       id: user.id,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      avatarUrl: user.avatarUrl,
       orgId: primaryMembership.orgId,
       roleIds,
-      permissions
+      permissions,
+      planTier,
+      subscriptionStatus
     };
   }
 
@@ -411,16 +426,20 @@ export class AuthService {
           throw new UnauthorizedException("Organization disabled");
         }
 
-        const { roleIds, permissions } = this.buildMembershipClaims(primaryMembership);
+        const { roleIds, permissions, planTier, subscriptionStatus } =
+          this.buildMembershipClaims(primaryMembership);
 
         const authUser: AuthenticatedUser = {
           id: user.id,
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          avatarUrl: user.avatarUrl,
           orgId: primaryMembership.orgId,
           roleIds,
-          permissions
+          permissions,
+          planTier,
+          subscriptionStatus
         };
 
         const { token: accessToken, expiresAt } = this.signAccessToken(authUser);
@@ -504,6 +523,33 @@ export class AuthService {
     }
   }
 
+  async updateProfile(userId: string, orgId: string | undefined, input: UpdateProfileDto) {
+    const updates: { avatarUrl?: string | null } = {};
+
+    if (input.avatarUrl !== undefined) {
+      const trimmed = input.avatarUrl.trim();
+      if (!trimmed) {
+        throw new BadRequestException("Avatar URL cannot be empty");
+      }
+      if (!(await this.storageService.isPublicUrl(trimmed))) {
+        throw new BadRequestException("Avatar URL must use the approved storage base URL");
+      }
+      updates.avatarUrl = trimmed;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return this.getUserProfile(userId, orgId);
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: updates
+    });
+
+    await this.cache.del(`profile:${userId}:${orgId ?? "default"}`);
+    return this.getUserProfile(userId, orgId);
+  }
+
   async getUserProfile(userId: string, orgId?: string) {
     const cacheKey = `profile:${userId}:${orgId ?? "default"}`;
     const settings = await this.authCacheSettings.getSettings();
@@ -550,16 +596,20 @@ export class AuthService {
           throw new UnauthorizedException("User disabled");
         }
 
-        const { roleIds, permissions } = this.buildMembershipClaims(membership);
+        const { roleIds, permissions, planTier, subscriptionStatus } =
+          this.buildMembershipClaims(membership);
 
         return {
           id: user.id,
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          avatarUrl: user.avatarUrl,
           orgId: membership.orgId,
           roleIds,
-          permissions
+          permissions,
+          planTier,
+          subscriptionStatus
         };
       },
       {

@@ -20,6 +20,9 @@ export interface AuthenticatedUser {
   roleIds: string[];
   permissions: string[];
   organizations?: OrganizationOption[];
+  avatarUrl?: string | null;
+  planTier?: string | null;
+  subscriptionStatus?: string | null;
 }
 
 export interface BackendLoginResponse {
@@ -246,7 +249,8 @@ const config: NextAuthConfig = {
         ...session,
         user: {
           ...typedToken.user,
-          organizations: typedToken.organizations
+          organizations: typedToken.organizations,
+          image: typedToken.user.avatarUrl ?? null
         },
         accessToken: typedToken.accessToken,
         accessTokenExpires: typedToken.accessTokenExpires,

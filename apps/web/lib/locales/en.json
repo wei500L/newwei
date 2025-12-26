@@ -483,8 +483,10 @@
     "dashboard": "Dashboard",
     "items": "Items",
     "crawlTasks": "Crawl Tasks",
+    "profile": "Profile",
     "organizations": "Organizations",
     "errors": "Errors",
+    "storage": "Storage",
     "systemSettings": "System Settings",
     "adminSettings": "Admin Settings",
     "admin": "Admin",
@@ -652,6 +654,49 @@
       "empty": "No Permissions"
     },
     "footerNote": "Footer note"
+  },
+  "storageSettings": {
+    "title": "Storage settings",
+    "description": "Manage S3 storage settings used for avatar uploads.",
+    "loadFailed": "Failed to load storage settings",
+    "saved": "Saved",
+    "saveFailed": "Failed to save storage settings",
+    "fields": {
+      "endpoint": "S3 endpoint",
+      "region": "S3 region",
+      "bucket": "S3 bucket",
+      "publicBaseUrl": "Public base URL"
+    },
+    "validation": {
+      "endpoint": "Enter a valid URL",
+      "region": "Region is required",
+      "bucket": "Bucket is required",
+      "publicBaseUrl": "Public base URL is required"
+    },
+    "placeholders": {
+      "endpoint": "https://s3.amazonaws.com",
+      "region": "us-east-1",
+      "bucket": "my-bucket",
+      "publicBaseUrl": "https://my-bucket.s3.amazonaws.com"
+    }
+  },
+  "profile": {
+    "title": "Profile",
+    "description": "Manage your personal profile information.",
+    "avatar": {
+      "title": "Avatar",
+      "description": "Upload a new profile image to personalize your account.",
+      "upload": "Upload avatar",
+      "uploading": "Uploading...",
+      "requirements": "JPG, PNG, or WEBP up to 2 MB.",
+      "success": "Avatar updated.",
+      "errors": {
+        "invalidType": "Only JPG, PNG, or WEBP files are allowed.",
+        "tooLarge": "File size must be 2 MB or less.",
+        "invalidFile": "The selected file is invalid.",
+        "uploadFailed": "Failed to update avatar."
+      }
+    }
   },
   "systemSettings": {
     "akshare": {

@@ -62,6 +62,17 @@ export interface WebSocketRedisAdapterConfig {
   key: string;
 }
 
+export interface StorageConfig {
+  accessKeyId: string;
+  secretAccessKey: string;
+  region: string;
+  bucket: string;
+  endpoint?: string;
+  publicBaseUrl: string;
+  forcePathStyle: boolean;
+  presignedUrlTtlSeconds: number;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -184,6 +195,24 @@ export class EnvService extends ConfigService<ApiEnv> {
     return {
       enabled: this.get<boolean>("WS_REDIS_ADAPTER_ENABLED", { infer: true }) ?? true,
       key: this.get<string>("WS_REDIS_ADAPTER_KEY", { infer: true }) ?? "socket.io"
+    };
+  }
+
+  get systemSettingsEncryptionKey(): string | undefined {
+    return this.get<string | undefined>("SYSTEM_SETTINGS_ENCRYPTION_KEY", { infer: true });
+  }
+
+  get storageConfig(): StorageConfig {
+    return {
+      accessKeyId: this.get<string>("S3_ACCESS_KEY_ID", { infer: true }) ?? "",
+      secretAccessKey: this.get<string>("S3_SECRET_ACCESS_KEY", { infer: true }) ?? "",
+      region: this.get<string>("S3_REGION", { infer: true }) ?? "us-east-1",
+      bucket: this.get<string | undefined>("S3_BUCKET", { infer: true }) ?? "",
+      endpoint: this.get<string | undefined>("S3_ENDPOINT", { infer: true }),
+      publicBaseUrl: this.get<string | undefined>("S3_PUBLIC_BASE_URL", { infer: true }) ?? "",
+      forcePathStyle: this.get<boolean>("S3_FORCE_PATH_STYLE", { infer: true }) ?? false,
+      presignedUrlTtlSeconds:
+        this.get<number>("S3_PRESIGNED_URL_TTL_SECONDS", { infer: true }) ?? 300
     };
   }
 

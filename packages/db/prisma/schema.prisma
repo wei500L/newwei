@@ -15,6 +15,8 @@ model Org {
   name        String
   slug        String       @unique
   description String?
+  planTier    String?
+  subscriptionStatus String?
   isActive    Boolean      @default(true)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -42,6 +44,7 @@ model User {
   passwordHash  String
   firstName     String
   lastName      String
+  avatarUrl     String?
   isActive      Boolean       @default(true)
   lastLoginAt   DateTime?
   createdAt     DateTime      @default(now())
@@ -219,6 +222,7 @@ model CrawlResult {
 model SystemSetting {
   key         String   @id
   value       Json
+  isPublic    Boolean  @default(false)
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

@@ -2,5 +2,81 @@
 > @modular/web@0.1.0 typecheck D:\wei\apps\web
 > tsc --noEmit
 
-tsconfig.json(5,27): error TS5103: Invalid value for '--ignoreDeprecations'.
+app/(app)/components/sidebar.tsx(148,24): error TS2339: Property 'image' does not exist on type '{ id: string; email: string; firstName: string; lastName: string; orgId: string; permissions: string[]; roleIds: string[]; organizations?: SessionOrganization[] | undefined; }'.
+app/(app)/crawl/[taskId]/task-detail.tsx(340,43): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ key: string; }'.
+  No index signature with a parameter of type 'string' was found on type '{ key: string; }'.
+app/(app)/dashboard/components/economic-chart-card.tsx(59,20): error TS18048: 'current' is possibly 'undefined'.
+app/(app)/dashboard/components/economic-chart-card.tsx(59,36): error TS18048: 'prev' is possibly 'undefined'.
+app/(app)/dashboard/components/economic-chart-card.tsx(60,37): error TS18048: 'prev' is possibly 'undefined'.
+app/(app)/dashboard/components/economic-chart-card.tsx(64,27): error TS18048: 'current' is possibly 'undefined'.
+app/(app)/dashboard/components/economic-chart-card.tsx(87,21): error TS18048: 'current' is possibly 'undefined'.
+app/(app)/dashboard/components/market-pulse.tsx(29,36): error TS18048: 'current' is possibly 'undefined'.
+app/(app)/dashboard/components/market-pulse.tsx(29,46): error TS18048: 'previous' is possibly 'undefined'.
+app/(app)/dashboard/components/market-pulse.tsx(29,58): error TS18048: 'previous' is possibly 'undefined'.
+app/(app)/dashboard/components/market-pulse.tsx(84,9): error TS18048: 'conflict.value' is possibly 'undefined'.
+app/(app)/dashboard/components/market-pulse.tsx(85,14): error TS18048: 'conflict.value' is possibly 'undefined'.
+app/(app)/dashboard/components/market-pulse.tsx(86,14): error TS18048: 'conflict.value' is possibly 'undefined'.
+app/(app)/dashboard/components/market-pulse.tsx(87,14): error TS18048: 'conflict.value' is possibly 'undefined'.
+app/(app)/dashboard/components/market-pulse.tsx(145,12): error TS2322: Type 'number | undefined' is not assignable to type 'string | number'.
+  Type 'undefined' is not assignable to type 'string | number'.
+app/(app)/dashboard/components/market-pulse.tsx(147,19): error TS18048: 'metrics.conflict.value' is possibly 'undefined'.
+app/(app)/dashboard/components/market-pulse.tsx(152,12): error TS2322: Type 'number | undefined' is not assignable to type 'string | number'.
+  Type 'undefined' is not assignable to type 'string | number'.
+app/(app)/dashboard/components/market-pulse.tsx(159,12): error TS2322: Type 'number | undefined' is not assignable to type 'string | number'.
+  Type 'undefined' is not assignable to type 'string | number'.
+app/(app)/dashboard/components/market-pulse.tsx(166,12): error TS2322: Type 'number | undefined' is not assignable to type 'string | number'.
+  Type 'undefined' is not assignable to type 'string | number'.
+app/(app)/dashboard/drilldown-chart.tsx(130,13): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: EchartProps, context?: any): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | ... 4 more ... | undefined', gave the following error.
+    Type '(params: DataZoomEvent) => void' is not assignable to type '(params: unknown, chart: EChartsType) => void'.
+      Types of parameters 'params' and 'params' are incompatible.
+        Type 'unknown' is not assignable to type 'DataZoomEvent'.
+  Overload 2 of 2, '(props: EchartProps): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<...> | Promise<...> | Component<...> | null | undefined', gave the following error.
+    Type '(params: DataZoomEvent) => void' is not assignable to type '(params: unknown, chart: EChartsType) => void'.
+      Types of parameters 'params' and 'params' are incompatible.
+        Type 'unknown' is not assignable to type 'DataZoomEvent'.
+app/(app)/dashboard/economic-long/page.tsx(211,5): error TS2322: Type '{ title: { text: string; }; series: { type: string; data: number[]; name: string; areaStyle: { opacity: number; }; }[]; }[]' is not assignable to type 'EChartsOption[]'.
+  Type '{ title: { text: string; }; series: { type: string; data: number[]; name: string; areaStyle: { opacity: number; }; }[]; }' is not assignable to type 'EChartsOption'.
+    Types of property 'series' are incompatible.
+      Type '{ type: string; data: number[]; name: string; areaStyle: { opacity: number; }; }[]' is not assignable to type 'SeriesOption$1 | SeriesOption$1[] | undefined'.
+        Type '{ type: string; data: number[]; name: string; areaStyle: { opacity: number; }; }[]' is not assignable to type 'MapSeriesOption$1 | BarSeriesOption$1 | LineSeriesOption$1 | PieSeriesOption$1 | RadarSeriesOption$1 | ... 17 more ... | SeriesOption$1[]'.
+          Type '{ type: string; data: number[]; name: string; areaStyle: { opacity: number; }; }[]' is not assignable to type 'SeriesOption$1[]'.
+            Type '{ type: string; data: number[]; name: string; areaStyle: { opacity: number; }; }' is not assignable to type 'SeriesOption$1'.
+              Type '{ type: string; data: number[]; name: string; areaStyle: { opacity: number; }; }' is not assignable to type 'RadarSeriesOption$1'.
+                Type '{ type: string; data: number[]; name: string; areaStyle: { opacity: number; }; }' is not assignable to type 'RadarSeriesOption'.
+                  Types of property 'type' are incompatible.
+                    Type 'string' is not assignable to type '"radar"'.
+app/(app)/dashboard/economic-medium/page.tsx(4,15): error TS2305: Module '"echarts"' has no exported member 'CallbackDataParams'.
+app/(app)/dashboard/economic-short/page.tsx(14,15): error TS2305: Module '"echarts"' has no exported member 'CallbackDataParams'.
+app/(app)/dashboard/hero-section.tsx(73,36): error TS18048: 'current' is possibly 'undefined'.
+app/(app)/dashboard/hero-section.tsx(73,46): error TS18048: 'previous' is possibly 'undefined'.
+app/(app)/dashboard/hero-section.tsx(73,58): error TS18048: 'previous' is possibly 'undefined'.
+app/(app)/dashboard/hero-section.tsx(87,41): error TS2345: Argument of type '() => ({ key: string; title: string; value: number | undefined; trend: number; data: number[]; color: string; suffix?: undefined; } | { key: string; title: string; value: number | undefined; trend: number; data: number[]; color: string; suffix: string; })[]' is not assignable to parameter of type '() => HeroMetric[]'.
+  Type '({ key: string; title: string; value: number | undefined; trend: number; data: number[]; color: string; suffix?: undefined; } | { key: string; title: string; value: number | undefined; trend: number; data: number[]; color: string; suffix: string; })[]' is not assignable to type 'HeroMetric[]'.
+    Type '{ key: string; title: string; value: number | undefined; trend: number; data: number[]; color: string; suffix?: undefined; } | { key: string; title: string; value: number | undefined; trend: number; data: number[]; color: string; suffix: string; }' is not assignable to type 'HeroMetric'.
+      Type '{ key: string; title: string; value: number | undefined; trend: number; data: number[]; color: string; suffix?: undefined; }' is not assignable to type 'HeroMetric'.
+        Types of property 'value' are incompatible.
+          Type 'number | undefined' is not assignable to type 'number'.
+            Type 'undefined' is not assignable to type 'number'.
+app/(app)/dashboard/hero-section.tsx(160,20): error TS2578: Unused '@ts-expect-error' directive.
+app/(app)/dashboard/livelihood-prices/page.tsx(4,15): error TS2305: Module '"echarts"' has no exported member 'CallbackDataParams'.
+app/(app)/dashboard/metric-drilldown.tsx(119,44): error TS2345: Argument of type '() => { tooltip?: undefined; visualMap?: undefined; series?: undefined; } | { tooltip: { trigger: "item"; formatter: (params: { name: string; value: number | unknown; }) => string; }; visualMap: { ...; }; series: { ...; }[]; }' is not assignable to parameter of type '() => EChartsOption'.
+  Type '{ tooltip?: undefined; visualMap?: undefined; series?: undefined; } | { tooltip: { trigger: "item"; formatter: (params: { name: string; value: unknown; }) => string; }; visualMap: { left: string; min: number; max: number; inRange: { ...; }; text: string[]; calculable: true; show: boolean; }; series: { ...; }[]; }' is not assignable to type 'EChartsOption'.
+    Type '{ tooltip: { trigger: "item"; formatter: (params: { name: string; value: number | unknown; }) => string; }; visualMap: { left: string; min: number; max: number; inRange: { color: string[]; }; text: string[]; calculable: true; show: boolean; }; series: { ...; }[]; }' is not assignable to type 'EChartsOption'.
+      Types of property 'tooltip' are incompatible.
+        Type '{ trigger: "item"; formatter: (params: { name: string; value: number | unknown; }) => string; }' is not assignable to type 'TooltipOption | TooltipOption[] | undefined'.
+          Type '{ trigger: "item"; formatter: (params: { name: string; value: number | unknown; }) => string; }' is not assignable to type 'TooltipOption'.
+            Types of property 'formatter' are incompatible.
+              Type '(params: { name: string; value: number | unknown; }) => string' is not assignable to type 'string | TooltipFormatterCallback<TopLevelFormatterParams> | undefined'.
+                Type '(params: { name: string; value: number | unknown; }) => string' is not assignable to type 'TooltipFormatterCallback<TopLevelFormatterParams>'.
+                  Types of parameters 'params' and 'params' are incompatible.
+                    Type 'TopLevelFormatterParams' is not assignable to type '{ name: string; value: unknown; }'.
+                      Type 'CallbackDataParams[]' is missing the following properties from type '{ name: string; value: unknown; }': name, value
+app/(app)/dashboard/military-alert/page.tsx(14,15): error TS2305: Module '"echarts"' has no exported member 'CallbackDataParams'.
+app/(auth)/login/page.tsx(52,13): error TS2322: Type 'string' is not assignable to type '"email" | "password" | "orgId" | ["email"] | ["password"] | ["orgId"] | undefined'.
+lib/auth.ts(195,11): error TS2322: Type '({ token, user, trigger, session }: { token: JWT; user: User | AdapterUser; account?: Account | null | undefined; profile?: Profile | undefined; trigger?: "update" | "signIn" | "signUp" | undefined; isNewUser?: boolean | undefined; session?: any; }) => Promise<...>' is not assignable to type '(params: { token: JWT; user: User | AdapterUser; account?: Account | null | undefined; profile?: Profile | undefined; trigger?: "update" | "signIn" | "signUp" | undefined; isNewUser?: boolean | undefined; session?: any; }) => Awaitable<...>'.
+  Type 'Promise<TokenPayload>' is not assignable to type 'Awaitable<JWT | null>'.
+    Type 'Promise<TokenPayload>' is missing the following properties from type 'JWT': accessToken, refreshToken, accessTokenExpires, user
+lib/client-telemetry.ts(51,32): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
  ELIFECYCLE  Command failed with exit code 2.

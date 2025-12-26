@@ -1,15 +1,18 @@
-import { Body, Controller, Get, HttpCode, Post, Req } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Patch, Post, Req } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 
 import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Public } from "../../common/decorators/public.decorator";
+import { StorageService } from "../storage/storage.service";
 
 import { AuthService } from "./auth.service";
 import type { AuthenticatedUser } from "./auth.service";
+import { AvatarPresignRequestDto, AvatarPresignResponseDto } from "./dto/avatar.dto";
 import { LoginDto } from "./dto/login.dto";
 import { LogoutDto } from "./dto/logout.dto";
+import { UpdateProfileDto } from "./dto/profile.dto";
 import { RefreshDto } from "./dto/refresh.dto";
 
 
@@ -17,7 +20,10 @@ import { RefreshDto } from "./dto/refresh.dto";
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly storageService: StorageService
+  ) {}
 
   @Public()
   @Post("login")
@@ -57,6 +63,29 @@ export class AuthController {
       body?.logoutAll
     );
     return { ok: true };
+  }
+
+  @Post("avatar/presigned-url")
+  @AllowAuthenticated()
+  async createAvatarPresignedUrl(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: AvatarPresignRequestDto
+  ): Promise<AvatarPresignResponseDto> {
+    return this.storageService.createAvatarUploadUrl({
+      userId: user.id,
+      orgId: user.orgId,
+      contentType: body.contentType,
+      contentLength: body.contentLength
+    });
+  }
+
+  @Patch("profile")
+  @AllowAuthenticated()
+  async updateProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: UpdateProfileDto
+  ) {
+    return this.authService.updateProfile(user.id, user.orgId, body);
   }
 
   @Get("me")

@@ -483,8 +483,10 @@
     "dashboard": "仪表盘",
     "items": "条目",
     "crawlTasks": "抓取任务",
+    "profile": "个人资料",
     "organizations": "组织",
     "errors": "错误",
+    "storage": "存储",
     "systemSettings": "系统设置",
     "adminSettings": "管理员设置",
     "admin": "管理",
@@ -651,6 +653,49 @@
       "empty": "暂无权限"
     },
     "footerNote": "页脚说明"
+  },
+  "storageSettings": {
+    "title": "存储设置",
+    "description": "管理用于头像上传的 S3 存储配置。",
+    "loadFailed": "加载存储设置失败",
+    "saved": "已保存",
+    "saveFailed": "保存存储设置失败",
+    "fields": {
+      "endpoint": "S3 端点",
+      "region": "S3 区域",
+      "bucket": "S3 存储桶",
+      "publicBaseUrl": "公开基础地址"
+    },
+    "validation": {
+      "endpoint": "请输入有效的 URL",
+      "region": "区域不能为空",
+      "bucket": "存储桶不能为空",
+      "publicBaseUrl": "公开基础地址不能为空"
+    },
+    "placeholders": {
+      "endpoint": "https://s3.amazonaws.com",
+      "region": "us-east-1",
+      "bucket": "my-bucket",
+      "publicBaseUrl": "https://my-bucket.s3.amazonaws.com"
+    }
+  },
+  "profile": {
+    "title": "个人资料",
+    "description": "管理你的个人资料信息。",
+    "avatar": {
+      "title": "头像",
+      "description": "上传新的头像用于个性化你的账号。",
+      "upload": "上传头像",
+      "uploading": "上传中...",
+      "requirements": "支持 JPG、PNG 或 WEBP，最大 2 MB。",
+      "success": "头像已更新。",
+      "errors": {
+        "invalidType": "仅支持 JPG、PNG 或 WEBP 文件。",
+        "tooLarge": "文件大小不能超过 2 MB。",
+        "invalidFile": "选择的文件无效。",
+        "uploadFailed": "更新头像失败。"
+      }
+    }
   },
   "systemSettings": {
     "akshare": {

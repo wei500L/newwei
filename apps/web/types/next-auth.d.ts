@@ -24,6 +24,10 @@ declare module "next-auth" {
       permissions: string[];
       roleIds: string[];
       organizations?: SessionOrganization[];
+      avatarUrl?: string | null;
+      planTier?: string | null;
+      subscriptionStatus?: string | null;
+      image?: string | null;
     };
   }
 

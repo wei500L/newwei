@@ -109,6 +109,15 @@ export const apiEnvSchema = baseEnvSchema.extend({
   ANALYSIS_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
   ANALYSIS_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   ANALYSIS_AUTOTRIGGER_ENABLED: z.coerce.boolean().default(false),
+  SYSTEM_SETTINGS_ENCRYPTION_KEY: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_REGION: z.string().default("us-east-1"),
+  S3_BUCKET: z.string().optional(),
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_PUBLIC_BASE_URL: z.string().url().optional(),
+  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(false),
+  S3_PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().default(300),
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
