@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { EconomicDataDocument } from "@/graphql/generated";
+import dayjs from "@/lib/dayjs";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useDashboardRangeStore } from "@/store/time-range";
 
@@ -66,7 +67,7 @@ export function DrilldownChart({
   const option = useMemo(() => {
     const seriesData =
       data?.map((point: { timestamp: string; value: number }) => ({
-        name: new Date(point.timestamp).toISOString(),
+        name: dayjs(point.timestamp).toISOString(),
         value: [point.timestamp, point.value],
       })) ?? [];
     return {
@@ -170,10 +171,10 @@ export function DrilldownChart({
                 p.batch?.[0]?.end ??
                 undefined;
               if (startVal && endVal) {
-                const startDate = new Date(startVal);
-                const endDate = new Date(endVal);
-                if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
-                  setCustomRange(startDate, endDate);
+                const startDate = dayjs(startVal);
+                const endDate = dayjs(endVal);
+                if (startDate.isValid() && endDate.isValid()) {
+                  setCustomRange(startDate.toDate(), endDate.toDate());
                 }
               }
             },

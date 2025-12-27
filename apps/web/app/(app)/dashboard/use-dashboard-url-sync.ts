@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import dayjs from "@/lib/dayjs";
 import {
   QUEUE_STATUS_KEYS,
   type QueueStatusKey,
@@ -29,8 +30,8 @@ const DEFAULT_RANGE: DashboardRangePreset = "1M";
 
 const parseDate = (value: string | null): Date | null => {
   if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.toDate() : null;
 };
 
 const normalizeRange = (value: string | null): DashboardRangePreset | null => {

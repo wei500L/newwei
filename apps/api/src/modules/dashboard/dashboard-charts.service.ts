@@ -123,6 +123,18 @@ interface DateRange {
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
+const alignUtcDayStart = (value: Date) => {
+  const normalized = new Date(value);
+  normalized.setUTCHours(0, 0, 0, 0);
+  return normalized;
+};
+
+const alignUtcDayEnd = (value: Date) => {
+  const normalized = new Date(value);
+  normalized.setUTCHours(23, 59, 59, 999);
+  return normalized;
+};
+
 const resolveSeverity = (value: number): WarEventSeverity => {
   if (value >= 70) return "high";
   if (value >= 40) return "medium";
@@ -142,11 +154,14 @@ export class DashboardChartsService {
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new BadRequestException("Invalid date range");
     }
-    if (start > end) {
+    const alignedStart = alignUtcDayStart(start);
+    const alignedEnd = alignUtcDayEnd(end);
+
+    if (alignedStart > alignedEnd) {
       throw new BadRequestException("Start must be before end");
     }
 
-    return { start, end };
+    return { start: alignedStart, end: alignedEnd };
   }
 
   getWarMapGeoJson(): WarMapGeoJsonResponse {

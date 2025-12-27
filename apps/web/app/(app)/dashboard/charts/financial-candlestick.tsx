@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { DashboardChart } from "@/components/echart";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { createApiClient } from "@/lib/api-client";
+import dayjs from "@/lib/dayjs";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useDashboardRangeStore } from "@/store/time-range";
 
@@ -75,14 +77,12 @@ const sanitizeFilename = (value: string) => {
 };
 
 const formatDateForFilename = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return dayjs.utc(date).format("YYYY-MM-DD");
 };
 
 export function FinancialCandlestick() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const { start, end } = useDashboardRangeStore();
   const theme = useChartTheme();
@@ -140,7 +140,9 @@ export function FinancialCandlestick() {
       backgroundColor: "transparent",
       title: {
         text: data.symbol || t("dashboard.charts.financialCandlestick.title", { defaultValue: "Market Index" }),
-        subtext: data.updatedAt ? new Date(data.updatedAt).toLocaleString() : undefined,
+        subtext: data.updatedAt
+          ? formatDateTime(data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
+          : undefined,
         left: 0,
         textStyle: { color: theme.colors.tooltipText, fontFamily: theme.fontFamily },
       },
@@ -208,7 +210,7 @@ export function FinancialCandlestick() {
         },
       ],
     };
-  }, [theme, data, t]);
+  }, [theme, data, locale, t]);
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.points.length === 0) return;

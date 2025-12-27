@@ -8,6 +8,7 @@ import { DashboardChart } from "@/components/echart";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import type { EconomicSeriesGroup } from "@/hooks/useEconomicData";
 import { useEconomicData  } from "@/hooks/useEconomicData";
+import dayjs from "@/lib/dayjs";
 
 import {
   filterValuesByDays,
@@ -29,7 +30,7 @@ export default function EconomicLongPage() {
   );
   const gdpByYear = new Map<number, number>();
   for (const point of getSortedValues(gdpSeries)) {
-    const year = new Date(point.timestamp).getFullYear();
+    const year = dayjs(point.timestamp).year();
     gdpByYear.set(year, (gdpByYear.get(year) ?? 0) + point.value);
   }
   const gdpBarData = Array.from(gdpByYear.entries())
@@ -160,10 +161,10 @@ function buildYieldTimeline(
   }
   const yearSnapshots = new Map<number, string>();
   const sortedDates = Array.from(buckets.keys()).sort(
-    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
+    (a, b) => dayjs(a).valueOf() - dayjs(b).valueOf(),
   );
   for (const date of sortedDates) {
-    const year = new Date(date).getFullYear();
+    const year = dayjs(date).year();
     yearSnapshots.set(year, date);
   }
   const selectedDates = Array.from(yearSnapshots.entries())
@@ -174,7 +175,7 @@ function buildYieldTimeline(
     return null;
   }
   const timelineLabels = selectedDates.map((date) =>
-    new Date(date).getFullYear().toString(),
+    dayjs(date).year().toString(),
   );
   const options = selectedDates.map((date, index) => {
     const values = buckets.get(date);

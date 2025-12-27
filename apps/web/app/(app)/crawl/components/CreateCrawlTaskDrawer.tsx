@@ -25,7 +25,7 @@ import {
   Typography,
 } from "antd";
 import type { FormInstance } from "antd/es/form";
-import dayjs from "dayjs";
+import dayjs from "@/lib/dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 

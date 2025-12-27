@@ -3,6 +3,7 @@ import type {
   EconomicSeriesGroup,
   EconomicSeriesMap,
 } from "@/hooks/useEconomicData";
+import dayjs from "@/lib/dayjs";
 
 export function getSeriesField(
   seriesMap: EconomicSeriesMap,
@@ -25,7 +26,7 @@ export function getSortedValues(series?: EconomicSeriesField) {
     return [];
   }
   return [...series.values].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    (a, b) => dayjs(a.timestamp).valueOf() - dayjs(b.timestamp).valueOf(),
   );
 }
 
@@ -49,9 +50,8 @@ export function filterValuesByDays(
   if (!last) {
     return [];
   }
-  const cutoff = new Date(last.timestamp);
-  cutoff.setDate(cutoff.getDate() - days);
-  return values.filter((entry) => new Date(entry.timestamp) >= cutoff);
+  const cutoff = dayjs(last.timestamp).subtract(days, "day").valueOf();
+  return values.filter((entry) => dayjs(entry.timestamp).valueOf() >= cutoff);
 }
 
 export function calculatePercentChange(
@@ -66,8 +66,7 @@ export function calculatePercentChange(
   if (!latest) {
     return null;
   }
-  const baseTime = new Date(latest.timestamp);
-  baseTime.setDate(baseTime.getDate() - lookback);
+  const baseTime = dayjs(latest.timestamp).subtract(lookback, "day").valueOf();
   let base = values[0];
   if (!base) {
     return null;
@@ -75,7 +74,7 @@ export function calculatePercentChange(
   for (let i = values.length - 2; i >= 0; i -= 1) {
     const candidate = values[i];
     if (!candidate) continue;
-    if (new Date(candidate.timestamp) <= baseTime) {
+    if (dayjs(candidate.timestamp).valueOf() <= baseTime) {
       base = candidate;
       break;
     }
@@ -147,7 +146,7 @@ export function getCandlestickSeries(group?: EconomicSeriesGroup) {
   assign(highSeries, "high");
 
   const sortedTimestamps = Array.from(buckets.keys()).sort(
-    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
+    (a, b) => dayjs(a).valueOf() - dayjs(b).valueOf(),
   );
   return sortedTimestamps
     .map((timestamp) => {

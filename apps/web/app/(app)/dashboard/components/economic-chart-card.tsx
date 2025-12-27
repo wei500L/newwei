@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import type { EconomicSeriesMap } from "@/hooks/useEconomicData";
+import dayjs from "@/lib/dayjs";
 
 export interface SeriesConfig {
   slug: string;
@@ -50,7 +51,7 @@ export function EconomicChartCard({
     if (!fieldSeries || fieldSeries.values.length < 2) return null;
 
     const sorted = [...fieldSeries.values].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      (a, b) => dayjs(a.timestamp).valueOf() - dayjs(b.timestamp).valueOf()
     );
     
     const current = sorted[sorted.length - 1];
@@ -181,7 +182,7 @@ function buildOption(
         areaStyle: config.type === "area" ? {} : undefined,
         data: fieldSeries.values
           .map<[string, number]>((point) => [point.timestamp, point.value])
-          .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime()),
+          .sort((a, b) => dayjs(a[0]).valueOf() - dayjs(b[0]).valueOf()),
       };
     })
     .filter(Boolean) as SeriesOption[];

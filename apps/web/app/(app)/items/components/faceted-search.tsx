@@ -1,7 +1,9 @@
 "use client";
 
 import { Card, Checkbox, Collapse, DatePicker, Space, Typography } from "antd";
-import dayjs, { Dayjs } from "dayjs";
+import type { Dayjs } from "dayjs";
+
+import dayjs from "@/lib/dayjs";
 import { useTranslation } from "react-i18next";
 
 const { RangePicker } = DatePicker;

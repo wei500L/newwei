@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { DashboardChart } from "@/components/echart";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { createApiClient } from "@/lib/api-client";
+import dayjs from "@/lib/dayjs";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -77,10 +78,7 @@ const sanitizeFilename = (value: string) => {
 };
 
 const formatDateForFilename = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return dayjs.utc(date).format("YYYY-MM-DD");
 };
 
 export function SectorHeatmap() {

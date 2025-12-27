@@ -3,7 +3,7 @@
 import { GlobalOutlined, UnorderedListOutlined, LineChartOutlined } from "@ant-design/icons";
 import { extractCountryCodeFromText, getCountryName, normalizeCountryCode } from "@modular/utils";
 import { Badge, Card, Col, Modal, Row, Spin, Tag, Timeline, Typography } from "antd";
-import dayjs from "dayjs";
+import dayjs from "@/lib/dayjs";
 import type { EChartsOption } from "echarts";
 import * as echarts from "echarts/core";
 import { useEffect, useMemo, useState } from "react";
@@ -24,8 +24,8 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   
   // Calculate date range for the last 90 days
   const { start, end } = useMemo(() => ({
-    start: dayjs().subtract(90, 'day').startOf('day').toISOString(),
-    end: dayjs().endOf('day').toISOString()
+    start: dayjs.utc().subtract(90, "day").startOf("day").toISOString(),
+    end: dayjs.utc().endOf("day").toISOString()
   }), []);
 
   const { data, loading } = useMetricDrillDownDetailsQuery({

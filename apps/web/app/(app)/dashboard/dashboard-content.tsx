@@ -19,7 +19,7 @@ import {
   Typography,
   message,
 } from "antd";
-import dayjs from "dayjs";
+import dayjs from "@/lib/dayjs";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -127,8 +127,8 @@ export function DashboardContent() {
 
   // Hero Metrics Query
   const heroDateRange = useMemo(() => ({
-    start: dayjs().subtract(30, 'day').startOf('day').toISOString(),
-    end: dayjs().endOf('day').toISOString()
+    start: dayjs.utc().subtract(30, "day").startOf("day").toISOString(),
+    end: dayjs.utc().endOf("day").toISOString()
   }), []);
 
   const { data: heroData, loading: heroLoading, refetch: refetchHero } = useDashboardHeroMetricsQuery({

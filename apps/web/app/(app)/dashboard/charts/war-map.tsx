@@ -11,6 +11,8 @@ import { useTranslation } from "react-i18next";
 import { DashboardChart } from "@/components/echart";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { createApiClient } from "@/lib/api-client";
+import dayjs from "@/lib/dayjs";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useDashboardRangeStore } from "@/store/time-range";
 
@@ -95,10 +97,7 @@ const severityLabel = (severity: WarEventSeverity) => {
 const isFiniteNumber = (value: number) => Number.isFinite(value);
 
 const formatDateForFilename = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return dayjs.utc(date).format("YYYY-MM-DD");
 };
 
 const getApiErrorMessage = (error: unknown): string | undefined => {
@@ -128,7 +127,8 @@ const getApiErrorMessage = (error: unknown): string | undefined => {
 };
 
 export function WarMap() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const { start, end } = useDashboardRangeStore();
   const { echartsTheme, colors } = useChartTheme();
@@ -251,9 +251,9 @@ export function WarMap() {
           const intensity = data.value?.[2] ?? 0;
           const severityColor = data.itemStyle?.color ?? "#fff";
           const updatedStr = data.updatedAt
-            ? new Date(data.updatedAt).toLocaleString()
+            ? formatDateTime(data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
             : eventsQuery.data?.updatedAt
-              ? new Date(eventsQuery.data.updatedAt).toLocaleString()
+              ? formatDateTime(eventsQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
               : "N/A";
 
           return `
@@ -315,7 +315,7 @@ export function WarMap() {
         }
       ]
     };
-  }, [colors, eventsQuery.data, geoQuery.data, mapReady, t]);
+  }, [colors, eventsQuery.data, geoQuery.data, locale, mapReady, t]);
 
   const geoErrorMessage = getApiErrorMessage(geoQuery.error);
   const eventsErrorMessage = getApiErrorMessage(eventsQuery.error);

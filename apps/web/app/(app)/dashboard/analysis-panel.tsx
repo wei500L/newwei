@@ -11,7 +11,7 @@ import {
   Typography,
   message,
 } from "antd";
-import dayjs from "dayjs";
+import dayjs from "@/lib/dayjs";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 

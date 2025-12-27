@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 interface DataPoint {
   timestamp: string;
@@ -18,12 +19,15 @@ interface GlobalSentimentTrendProps {
 }
 
 export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
 
   const option = useMemo<EChartsOption>(() => {
     if (!data || data.length === 0) return {};
 
-    const dates = data.map(d => new Date(d.timestamp).toLocaleDateString());
+    const dates = data.map((d) =>
+      formatDateTime(d.timestamp, locale, { dateStyle: "medium" })
+    );
     const values = data.map(d => d.value);
 
     return {
@@ -73,7 +77,7 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
         }
       ]
     };
-  }, [data, t]);
+  }, [data, locale, t]);
 
   return (
     <Card 

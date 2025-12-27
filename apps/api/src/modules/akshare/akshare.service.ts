@@ -890,12 +890,21 @@ export class AkshareService implements OnModuleInit {
     return d.toISOString();
   }
 
+  private alignRangeToUtc(start: Date, end: Date) {
+    const normalizedStart = new Date(start);
+    normalizedStart.setUTCHours(0, 0, 0, 0);
+    const normalizedEnd = new Date(end);
+    normalizedEnd.setUTCHours(23, 59, 59, 999);
+    return { start: normalizedStart, end: normalizedEnd };
+  }
+
   async getDataByCategory(categoryKey: string, start: Date, end: Date, granularity?: string) {
+    const range = granularity ? this.alignRangeToUtc(start, end) : { start, end };
     const points = await this.prisma.economicDataPoint.findMany({
       where: {
         recordedAt: {
-          gte: start,
-          lte: end
+          gte: range.start,
+          lte: range.end
         },
         item: {
           categories: {

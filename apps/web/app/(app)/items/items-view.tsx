@@ -3,7 +3,7 @@
 import { SearchOutlined } from "@ant-design/icons";
 import { Button, Col, Drawer, Grid, Input, List, Row, Space, Table, Tag } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import dayjs from "dayjs";
+import dayjs from "@/lib/dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -187,13 +187,24 @@ export function ItemsView() {
         // console.warn("Failed to parse processed result", e);
       }
 
+      const processed = parsedProcessed as { published_at?: string | null };
+      const raw = parsedRaw as { publishedAt?: string | null; published_at?: string | null };
+      const publishedAt =
+        processed.published_at ??
+        raw.publishedAt ??
+        raw.published_at ??
+        undefined;
+      const createdAt = publishedAt
+        ? dayjs(publishedAt).toISOString()
+        : dayjs(edge.node.createdAt).toISOString();
+
       return {
         ...edge.node,
         ...parsedRaw,
         ...parsedProcessed,
         name: edge.node.title,
         tags: edge.node.processed?.tags || [],
-        createdAt: new Date(edge.node.createdAt).toISOString()
+        createdAt
       } as ParsedItem;
     });
   }, [current, edges, pageSize]);

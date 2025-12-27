@@ -1,6 +1,8 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 
+import dayjs from "@/lib/dayjs";
+
 import en from "./locales/en.json";
 import zh from "./locales/zh.json";
 
@@ -83,6 +85,12 @@ export function formatDateTime(
   locale: SupportedLocale,
   options: Intl.DateTimeFormatOptions
 ) {
-  const date = value instanceof Date ? value : new Date(value);
-  return new Intl.DateTimeFormat(locale, options).format(date);
+  const timeZone = options.timeZone ?? dayjs.tz.guess();
+  const zoned = dayjs(value).tz(timeZone);
+  if (!zoned.isValid()) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(locale, { ...options, timeZone }).format(
+    zoned.toDate()
+  );
 }

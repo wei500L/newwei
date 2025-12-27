@@ -2,8 +2,9 @@
 
 import { DatePicker, Segmented, Space } from "antd";
 import type { SegmentedValue } from "antd/es/segmented";
-import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
+
+import dayjs from "@/lib/dayjs";
 
 import type { DashboardRangePreset } from "@/store/time-range";
 import { useDashboardRangeStore } from "@/store/time-range";

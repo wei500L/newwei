@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import dayjs from "@/lib/dayjs";
+
 export type DashboardRangePreset = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "3Y" | "custom";
 
 export interface DashboardRangeState {
@@ -11,37 +13,37 @@ export interface DashboardRangeState {
   setCustomRange: (start: Date, end: Date) => void;
 }
 
-const now = () => new Date();
+const now = () => dayjs();
 
 const calculateRange = (preset: DashboardRangePreset) => {
   const end = now();
-  const start = new Date(end);
+  let start = end;
   switch (preset) {
     case "1D":
-      start.setDate(end.getDate() - 1);
+      start = end.subtract(1, "day");
       break;
     case "1W":
-      start.setDate(end.getDate() - 7);
+      start = end.subtract(7, "day");
       break;
     case "1M":
-      start.setMonth(end.getMonth() - 1);
+      start = end.subtract(1, "month");
       break;
     case "3M":
-      start.setMonth(end.getMonth() - 3);
+      start = end.subtract(3, "month");
       break;
     case "6M":
-      start.setMonth(end.getMonth() - 6);
+      start = end.subtract(6, "month");
       break;
     case "1Y":
-      start.setFullYear(end.getFullYear() - 1);
+      start = end.subtract(1, "year");
       break;
     case "3Y":
-      start.setFullYear(end.getFullYear() - 3);
+      start = end.subtract(3, "year");
       break;
     default:
-      start.setMonth(end.getMonth() - 1);
+      start = end.subtract(1, "month");
   }
-  return { start, end };
+  return { start: start.toDate(), end: end.toDate() };
 };
 
 export const useDashboardRangeStore = create<DashboardRangeState>((set) => ({
