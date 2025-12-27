@@ -439,7 +439,35 @@
       "alertItemDescription": "告警条目说明"
     },
     "charts": {
-      "noCandlestick": "无K线图"
+      "noCandlestick": "无K线图",
+      "noDataRange": "所选范围暂无数据",
+      "exportImage": "导出图片",
+      "downloadCsv": "下载 CSV",
+      "exporting": "导出中...",
+      "exportSuccess": "导出完成",
+      "exportFailed": "导出失败",
+      "downloadSuccess": "下载完成",
+      "downloadFailed": "下载失败",
+      "sectorHeatmap": "行业表现",
+      "financialCandlestick": {
+        "title": "市场指数"
+      },
+      "warMap": {
+        "title": "冲突区域",
+        "series": "冲突"
+      }
+    },
+    "stream": {
+      "status": {
+        "live": "实时",
+        "polling": "轮询",
+        "offline": "离线"
+      },
+      "fallback": "实时更新中断，已切换为轮询",
+      "offline": "实时更新不可用"
+    },
+    "filters": {
+      "resetAll": "重置全部筛选"
     },
     "livelihood": {
       "cpi": {

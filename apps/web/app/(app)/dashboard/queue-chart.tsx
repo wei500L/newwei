@@ -1,56 +1,109 @@
 "use client";
 
-import { init } from "echarts";
-import { useEffect, useRef } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { DashboardChart } from "@/components/echart";
+import { useChartTheme } from "@/hooks/use-chart-theme";
+import type { QueueStatusKey } from "@/store/dashboard-filters";
+import { QUEUE_STATUS_KEYS } from "@/store/dashboard-filters";
+
 interface QueueChartProps {
-  data: Record<string, number>;
+  data: Record<QueueStatusKey, number>;
+  activeStatus?: QueueStatusKey | null;
+  onFilterChange?: (status: QueueStatusKey | null) => void;
 }
 
-export function QueueChart({ data }: QueueChartProps) {
-  const chartRef = useRef<HTMLDivElement>(null);
+interface QueueChartClickParams {
+  dataIndex?: number;
+}
+
+export function QueueChart({
+  data,
+  activeStatus,
+  onFilterChange
+}: QueueChartProps) {
   const { t } = useTranslation();
+  const { echartsTheme, colors } = useChartTheme();
 
-  useEffect(() => {
-    if (!chartRef.current) {
-      return;
-    }
+  const option = useMemo(() => {
+    const labels = QUEUE_STATUS_KEYS.map((key) =>
+      t(`dashboard.queue.states.${key}`, { defaultValue: key })
+    );
 
-    const keys = Object.keys(data);
-    const labels = keys.map((key) => t(`dashboard.queue.states.${key}`, { defaultValue: key }));
-    const chart = init(chartRef.current);
-    const option = {
+    return {
       tooltip: {
         trigger: "axis",
+      },
+      grid: {
+        top: 30,
+        bottom: 30,
+        left: 20,
+        right: 20,
+        containLabel: true,
       },
       xAxis: {
         type: "category",
         data: labels,
+        axisLabel: {
+          color: colors?.foreground,
+        },
       },
       yAxis: {
         type: "value",
+        splitLine: {
+          lineStyle: {
+            color: colors?.border,
+            type: "dashed",
+          },
+        },
       },
       series: [
         {
-          data: keys.map((key) => data[key] ?? 0),
+          data: QUEUE_STATUS_KEYS.map((key) => ({
+            value: data[key] ?? 0,
+            itemStyle: {
+              opacity:
+                activeStatus && activeStatus !== key
+                  ? 0.35
+                  : 1,
+              color:
+                key === "failed"
+                  ? colors?.destructive
+                  : key === "completed"
+                    ? colors?.bullish
+                    : colors?.primary,
+            },
+          })),
           type: "bar",
+          barMaxWidth: 60,
           itemStyle: {
-            color: "#1677ff",
+            borderRadius: [4, 4, 0, 0],
           },
         },
       ],
     };
+  }, [activeStatus, data, t, colors]);
 
-    chart.setOption(option);
-    const onResize = () => chart.resize();
-    window.addEventListener("resize", onResize);
-
-    return () => {
-      window.removeEventListener("resize", onResize);
-      chart.dispose();
-    };
-  }, [data, t]);
-
-  return <div ref={chartRef} style={{ width: "100%", height: 260 }} />;
+  return (
+    <DashboardChart
+      group="dashboard-charts"
+      option={option}
+      theme={echartsTheme}
+      height={260}
+      onEvents={[
+        {
+          type: "click",
+          handler: (params: unknown) => {
+            if (!onFilterChange) return;
+            const payload = params as QueueChartClickParams;
+            const index = payload.dataIndex ?? -1;
+            if (index < 0 || index >= QUEUE_STATUS_KEYS.length) return;
+            const nextStatus = QUEUE_STATUS_KEYS[index] ?? null;
+            onFilterChange(nextStatus === activeStatus ? null : nextStatus);
+          },
+        },
+      ]}
+    />
+  );
 }

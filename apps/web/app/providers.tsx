@@ -12,6 +12,7 @@ import type { PropsWithChildren } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
+import { Toaster } from "sonner";
 
 import { getApolloClient } from "@/lib/apollo-client";
 import {
@@ -137,6 +138,7 @@ export function AppProviders({ children }: PropsWithChildren) {
             <QueryClientProvider client={queryClient}>
               <UnauthorizedRedirect />
               <SessionErrorListener />
+              <Toaster position="top-right" theme="dark" richColors />
               {children}
             </QueryClientProvider>
           </ApolloProvider>

@@ -21,8 +21,10 @@ import {
 } from "antd";
 import dayjs from "dayjs";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import {
   AlertSeverity,
@@ -43,6 +45,11 @@ import {
   useDashboardRangeStore,
   type DashboardRangePreset,
 } from "@/store/time-range";
+import {
+  QUEUE_STATUS_KEYS,
+  type QueueStatusKey,
+  useDashboardFiltersStore
+} from "@/store/dashboard-filters";
 
 import { AlertConfigForm } from "./alert-config-form";
 import { AlertPanel } from "./alert-panel";
@@ -57,6 +64,11 @@ import { LiveAlertsToasts } from "./live-alerts";
 import { MetricDrillDown } from "./metric-drilldown";
 import { QueueChart } from "./queue-chart";
 import { useQueueEvents } from "./use-queue-events";
+import { useDashboardStream, type DashboardStreamStatus } from "./use-dashboard-stream";
+import { useDashboardUrlSync } from "./use-dashboard-url-sync";
+import { SectorHeatmap } from "./charts/sector-heatmap";
+import { WarMap } from "./charts/war-map";
+import { FinancialCandlestick } from "./charts/financial-candlestick";
 
 interface QueueLog {
   event: string;
@@ -73,6 +85,7 @@ const severityColor: Record<AlertSeverity, string> = {
 
 const LIVE_LOGS_LIMIT = 50;
 const DISPLAY_LOG_LIMIT = 15;
+const QUEUE_STATUS_SET = new Set<QueueStatusKey>(QUEUE_STATUS_KEYS);
 
 const dedupeLogs = (logs: QueueLog[], limit: number): QueueLog[] => {
   const seen = new Set<string>();
@@ -89,10 +102,21 @@ const dedupeLogs = (logs: QueueLog[], limit: number): QueueLog[] => {
   return result;
 };
 
+const extractQueueStatus = (event: string): QueueStatusKey | null => {
+  const normalized = event.trim().toLowerCase();
+  if (!normalized) return null;
+  const parts = normalized.split(":");
+  const candidate = (parts[parts.length - 1] ?? "").trim();
+  return QUEUE_STATUS_SET.has(candidate as QueueStatusKey)
+    ? (candidate as QueueStatusKey)
+    : null;
+};
+
 export function DashboardContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
+  const queryClient = useQueryClient();
   const [messageApi, messageContext] = message.useMessage();
   const { data, loading, error, refetch } = useQueueStatsQuery();
   const {
@@ -115,7 +139,7 @@ export function DashboardContent() {
   const [saveDashboard, { loading: savingDashboard }] =
     useUpsertDashboardMutation();
   const [deleteDashboard] = useDeleteDashboardMutation();
-  const { range, setRange } = useDashboardRangeStore();
+  const { range, setRange, start, end } = useDashboardRangeStore();
   const { data: alertRulesData, loading: alertRulesLoading } =
     useAlertRulesQuery({
       fetchPolicy: "cache-first",
@@ -126,11 +150,47 @@ export function DashboardContent() {
       fetchPolicy: "cache-first",
     });
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
+  const { queueStatus, selectedSector, setQueueStatus } =
+    useDashboardFiltersStore();
+  const streamState = useDashboardStream({
+    accessToken: session?.accessToken,
+    start,
+    end,
+    queueStatus,
+    selectedSector,
+    enabled: Boolean(session?.accessToken)
+  });
+  const { resetFilters, hasActiveFilters } = useDashboardUrlSync();
+  const queueFilterMounted = useRef(false);
   const [liveLogs, setLiveLogs] = useState<QueueLog[]>([]);
   const [activeId, setActiveId] = useState<string | undefined>();
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
   const [refreshingDemoData, setRefreshingDemoData] = useState(false);
   const [showSystemStats, setShowSystemStats] = useState(false);
+  const lastStreamStatusRef = useRef<DashboardStreamStatus | null>(null);
+
+  const streamStatusMeta = useMemo(() => {
+    const status = streamState.status;
+    if (status === "live") {
+      return {
+        label: t("dashboard.stream.status.live", { defaultValue: "Live" }),
+        dotClass: "bg-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.7)]",
+        pulse: true
+      };
+    }
+    if (status === "polling") {
+      return {
+        label: t("dashboard.stream.status.polling", { defaultValue: "Polling" }),
+        dotClass: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]",
+        pulse: false
+      };
+    }
+    return {
+      label: t("dashboard.stream.status.offline", { defaultValue: "Offline" }),
+      dotClass: "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]",
+      pulse: false
+    };
+  }, [streamState.status, t]);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -167,6 +227,27 @@ export function DashboardContent() {
       message.error(t("dashboard.queue.connectionFailed", { error: connectionError }));
     }
   }, [connectionError, t]);
+
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    const prevStatus = lastStreamStatusRef.current;
+    if (prevStatus === streamState.status) return;
+    lastStreamStatusRef.current = streamState.status;
+    if (prevStatus === null) return;
+    if (streamState.status === "polling") {
+      toast.error(
+        t("dashboard.stream.fallback", {
+          defaultValue: "Live updates interrupted; using polling"
+        })
+      );
+    } else if (streamState.status === "offline") {
+      toast.error(
+        t("dashboard.stream.offline", {
+          defaultValue: "Live updates unavailable"
+        })
+      );
+    }
+  }, [session?.accessToken, streamState.status, t]);
 
   const handleRefreshDemoData = useCallback(async () => {
     if (refreshingDemoData) return;
@@ -212,6 +293,15 @@ export function DashboardContent() {
     }
   }, [lastEvent, refetch, t]);
 
+  useEffect(() => {
+    if (!queueFilterMounted.current) {
+      queueFilterMounted.current = true;
+      return;
+    }
+    void refetch();
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  }, [queueStatus, queryClient, refetch]);
+
   const recentLogs = data?.queueStats?.recentLogs;
   const combinedLogs = useMemo(
     () =>
@@ -221,9 +311,15 @@ export function DashboardContent() {
       ),
     [liveLogs, recentLogs],
   );
+  const filteredLogs = useMemo(() => {
+    if (!queueStatus) return combinedLogs;
+    return combinedLogs.filter(
+      (log) => extractQueueStatus(log.event) === queueStatus,
+    );
+  }, [combinedLogs, queueStatus]);
   const parsedLogs = useMemo(
     () =>
-      combinedLogs.map((log) => {
+      filteredLogs.map((log) => {
         let parsedPayload: Record<string, unknown> | undefined;
         if (log.data) {
           try {
@@ -237,7 +333,7 @@ export function DashboardContent() {
           payload: parsedPayload,
         };
       }),
-    [combinedLogs],
+    [filteredLogs],
   );
 
   if (loading || dashboardsLoading) {
@@ -256,7 +352,7 @@ export function DashboardContent() {
   const activeDashboard =
     dashboards.find((d) => d.id === activeId) ?? dashboards[0] ?? null;
 
-  const chartData: Record<string, number> = {
+  const chartData: Record<QueueStatusKey, number> = {
     waiting: counts.waiting,
     active: counts.active,
     completed: counts.completed,
@@ -270,7 +366,14 @@ export function DashboardContent() {
       <LiveAlertsToasts />
       
       {/* View Toggle */}
-      <div className="flex justify-end mb-2">
+      <div className="flex items-center justify-between mb-2">
+         <div className="flex items-center gap-2 text-xs text-slate-400" role="status" aria-live="polite">
+           <span
+             className={`h-2 w-2 rounded-full ${streamStatusMeta.dotClass} ${streamStatusMeta.pulse ? "animate-pulse" : ""}`}
+             aria-hidden="true"
+           />
+           <span>{streamStatusMeta.label}</span>
+         </div>
          <Space>
            <span className="text-xs text-gray-500">System Status</span>
            <Switch size="small" checked={showSystemStats} onChange={setShowSystemStats} />
@@ -440,13 +543,40 @@ export function DashboardContent() {
                 </Space>
               }
             >
-              <QueueChart data={chartData} />
+              <QueueChart
+                data={chartData}
+                activeStatus={queueStatus}
+                onFilterChange={setQueueStatus}
+              />
             </Card>
           </Col>
         </Row>
         <Row gutter={[20, 20]}>
           <Col xs={24} md={12}>
-            <Card title={t("dashboard.queue.recentActivity")} className="content-card h-full">
+            <Card
+              title={t("dashboard.queue.recentActivity")}
+              className="content-card h-full"
+              extra={
+                hasActiveFilters ? (
+                  <Space size={6} wrap>
+                    {queueStatus ? (
+                      <Tag color="blue" closable onClose={resetFilters}>
+                        {t(`dashboard.queue.states.${queueStatus}`, {
+                          defaultValue: queueStatus
+                        })}
+                      </Tag>
+                    ) : null}
+                    <Tag
+                      color="cyan"
+                      onClick={resetFilters}
+                      className="cursor-pointer !rounded-full !px-3"
+                    >
+                      {t("dashboard.filters.resetAll", { defaultValue: "Reset All Filters" })}
+                    </Tag>
+                  </Space>
+                ) : undefined
+              }
+            >
               {parsedLogs.length > 0 ? (
                 <Timeline
                   mode="left"
@@ -610,6 +740,25 @@ export function DashboardContent() {
           </Card>
         </Col>
       </Row>
+      
+      <Row gutter={[20, 20]}>
+        <Col xs={24} md={12} lg={6}>
+          <Card title={t("dashboard.charts.sectorHeatmap", { defaultValue: "Sector Performance" })} className="content-card h-full">
+             <SectorHeatmap />
+          </Card>
+        </Col>
+        <Col xs={24} md={24} lg={12}>
+           <Card className="content-card h-full" bodyStyle={{ padding: 0 }}>
+             <WarMap />
+           </Card>
+        </Col>
+        <Col xs={24} md={12} lg={6}>
+           <Card className="content-card h-full">
+             <FinancialCandlestick />
+           </Card>
+        </Col>
+      </Row>
+
       <Row gutter={[20, 20]}>
         <Col xs={24} lg={24}>
           <DrilldownChart

@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { EconomicDataDocument } from "@/graphql/generated";
+import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 const GRANS = ["year", "quarter", "month", "week", "day"] as const;
@@ -29,6 +30,7 @@ export function DrilldownChart({
   title: string;
 }) {
   const { t } = useTranslation();
+  const { echartsTheme, colors } = useChartTheme();
   const [level, setLevel] = useState<number>(2); // start at month
   const client = useApolloClient();
   const { start, end, setCustomRange } = useDashboardRangeStore();
@@ -73,6 +75,12 @@ export function DrilldownChart({
       xAxis: { type: "time" },
       yAxis: { type: "value" },
       dataZoom: [{ type: "inside" }, { type: "slider" }],
+      grid: {
+        left: 20,
+        right: 20,
+        bottom: 40,
+        containLabel: true,
+      },
       series: [
         {
           name: category,
@@ -80,10 +88,33 @@ export function DrilldownChart({
           smooth: true,
           showSymbol: false,
           data: seriesData,
+          itemStyle: {
+            color: colors?.primary,
+          },
+          areaStyle: {
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                {
+                  offset: 0,
+                  color: colors?.primary ?? "#1677ff", // color at 0%
+                },
+                {
+                  offset: 1,
+                  color: "transparent", // color at 100%
+                },
+              ],
+            },
+            opacity: 0.1,
+          },
         },
       ],
     };
-  }, [category, data, title]);
+  }, [category, data, title, colors]);
 
   return (
     <Card
@@ -114,8 +145,9 @@ export function DrilldownChart({
         />
       ) : null}
       <DashboardChart
-        group="linked-charts"
+        group="dashboard-charts"
         option={option}
+        theme={echartsTheme}
         onEvents={[
           {
             type: "click",
@@ -127,14 +159,15 @@ export function DrilldownChart({
           },
           {
             type: "dataZoom",
-            handler: (params: DataZoomEvent) => {
+            handler: (params: unknown) => {
+              const p = params as DataZoomEvent;
               const startVal =
-                params.batch?.[0]?.startValue ??
-                params.batch?.[0]?.start ??
+                p.batch?.[0]?.startValue ??
+                p.batch?.[0]?.start ??
                 undefined;
               const endVal =
-                params.batch?.[0]?.endValue ??
-                params.batch?.[0]?.end ??
+                p.batch?.[0]?.endValue ??
+                p.batch?.[0]?.end ??
                 undefined;
               if (startVal && endVal) {
                 const startDate = new Date(startVal);

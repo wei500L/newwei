@@ -439,7 +439,35 @@
       "alertItemDescription": "Alert item description"
     },
     "charts": {
-      "noCandlestick": "No candlestick"
+      "noCandlestick": "No candlestick",
+      "noDataRange": "No Data Found for Selected Range",
+      "exportImage": "Export Image",
+      "downloadCsv": "Download CSV",
+      "exporting": "Exporting...",
+      "exportSuccess": "Export completed",
+      "exportFailed": "Export failed",
+      "downloadSuccess": "Download completed",
+      "downloadFailed": "Download failed",
+      "sectorHeatmap": "Sector Performance",
+      "financialCandlestick": {
+        "title": "Market Index"
+      },
+      "warMap": {
+        "title": "Conflict Zones",
+        "series": "Conflict"
+      }
+    },
+    "stream": {
+      "status": {
+        "live": "Live",
+        "polling": "Polling",
+        "offline": "Offline"
+      },
+      "fallback": "Live updates interrupted; using polling",
+      "offline": "Live updates unavailable"
+    },
+    "filters": {
+      "resetAll": "Reset All Filters"
     },
     "livelihood": {
       "cpi": {

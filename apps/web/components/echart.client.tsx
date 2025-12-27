@@ -1,7 +1,10 @@
 "use client";
 
 import * as echarts from "echarts/core";
-import { useEffect, useRef } from "react";
+import { Button } from "antd";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 type Installer = Parameters<typeof echarts.use>[0];
 
@@ -72,6 +75,20 @@ const optionNeedsGrid = (option: echarts.EChartsCoreOption, seriesTypes: Set<str
   return false;
 };
 
+const optionNeedsGeo = (option: echarts.EChartsCoreOption, seriesTypes: Set<string>) => {
+  const o = option as Record<string, unknown>;
+  if (o.geo) return true;
+  if (seriesTypes.has("map")) return true;
+  const series = normalizeToArray(o.series);
+  return series.some((s) => {
+    if (!s || typeof s !== "object") return false;
+    const coord = (s as { coordinateSystem?: unknown }).coordinateSystem;
+    if (coord === "geo") return true;
+    const map = (s as { map?: unknown }).map;
+    return typeof map === "string";
+  });
+};
+
 const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
   const seriesTypes = inferSeriesTypes(option);
   const o = option as Record<string, unknown>;
@@ -112,6 +129,14 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
     promises.push(
       installOnce("component:grid", async () => {
         const m = await import("echarts/lib/component/grid/install.js");
+        return m.install;
+      }),
+    );
+  }
+  if (optionNeedsGeo(option, seriesTypes)) {
+    promises.push(
+      installOnce("component:geo", async () => {
+        const m = await import("echarts/lib/component/geo/install.js");
         return m.install;
       }),
     );
@@ -229,6 +254,14 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
           }),
         );
         break;
+      case "map":
+        promises.push(
+          installOnce("chart:map", async () => {
+            const m = await import("echarts/lib/chart/map/install.js");
+            return m.install;
+          }),
+        );
+        break;
       case "treemap":
         promises.push(
           installOnce("chart:treemap", async () => {
@@ -255,7 +288,69 @@ export interface EchartProps {
     type: string;
     handler: (params: unknown, chart: echarts.ECharts) => void;
   }[];
+  actions?: ReactNode;
+  showExportImage?: boolean;
+  exportFilename?: string;
+  exportPixelRatio?: number;
+  exportBackgroundColor?: string;
 }
+
+const sanitizeFilename = (value: string) => {
+  const normalized = value.trim().replace(/[^a-zA-Z0-9-_]+/g, "-");
+  const trimmed = normalized.replace(/^-+|-+$/g, "");
+  return trimmed || "chart";
+};
+
+const resolveExportBackground = (
+  theme: string | object | undefined,
+  override?: string,
+) => {
+  if (override) return override;
+  if (theme && typeof theme === "object") {
+    const candidate = (theme as Record<string, unknown>).backgroundColor;
+    if (typeof candidate === "string" && candidate.trim() && candidate !== "transparent") {
+      return candidate;
+    }
+  }
+  if (typeof document !== "undefined") {
+    const bodyBackground = getComputedStyle(document.body).backgroundColor;
+    if (bodyBackground && bodyBackground !== "transparent") {
+      return bodyBackground;
+    }
+  }
+  if (theme === "smart-dark") {
+    return "#0f172a";
+  }
+  return "#ffffff";
+};
+
+const renderSvgToPng = (
+  svgDataUrl: string,
+  width: number,
+  height: number,
+  pixelRatio: number,
+  backgroundColor: string,
+) =>
+  new Promise<string>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.floor(width * pixelRatio));
+      canvas.height = Math.max(1, Math.floor(height * pixelRatio));
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("Unable to export image"));
+        return;
+      }
+      context.fillStyle = backgroundColor;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.scale(pixelRatio, pixelRatio);
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    image.onerror = () => reject(new Error("Unable to export image"));
+    image.src = svgDataUrl;
+  });
 
 export function DashboardChart({
   option,
@@ -264,11 +359,39 @@ export function DashboardChart({
   group,
   theme,
   onEvents,
+  actions,
+  showExportImage = false,
+  exportFilename,
+  exportPixelRatio = 2,
+  exportBackgroundColor,
 }: EchartProps) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.EChartsType | null>(null);
   const initPromiseRef = useRef<Promise<echarts.EChartsType | undefined> | null>(
     null,
   );
+  const [exporting, setExporting] = useState(false);
+  const [supportsHover, setSupportsHover] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(hover: hover)");
+    const updateSupport = () => setSupportsHover(media.matches);
+    updateSupport();
+    if (media.addEventListener) {
+      media.addEventListener("change", updateSupport);
+    } else {
+      media.addListener(updateSupport);
+    }
+    return () => {
+      if (media.addEventListener) {
+        media.removeEventListener("change", updateSupport);
+      } else {
+        media.removeListener(updateSupport);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const dom = ref.current;
@@ -433,6 +556,7 @@ export function DashboardChart({
       });
 
       const chart = echarts.init(dom, theme || "smart-light", { renderer });
+      chartRef.current = chart;
       if (group) {
         chart.group = group;
         echarts.connect(group);
@@ -454,6 +578,7 @@ export function DashboardChart({
             window.removeEventListener("resize", handleResize);
           }
           chart?.dispose();
+          chartRef.current = null;
         })
         .catch(() => undefined);
       initPromiseRef.current = null;
@@ -504,5 +629,80 @@ export function DashboardChart({
     };
   }, [onEvents, renderer, group, theme]);
 
-  return <div ref={ref} style={{ width: "100%", height }} />;
+  const handleExport = async () => {
+    if (exporting) return;
+    const chart = chartRef.current ?? (await initPromiseRef.current);
+    if (!chart) {
+      toast.error(
+        t("dashboard.charts.exportFailed", { defaultValue: "Export failed" }),
+      );
+      return;
+    }
+    setExporting(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const background = resolveExportBackground(theme, exportBackgroundColor);
+      const dataUrl =
+        renderer === "svg"
+          ? await renderSvgToPng(
+              chart.getDataURL({ type: "svg" }),
+              chart.getWidth(),
+              chart.getHeight(),
+              exportPixelRatio,
+              background,
+            )
+          : chart.getDataURL({
+              type: "png",
+              pixelRatio: exportPixelRatio,
+              backgroundColor: background,
+            });
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `${sanitizeFilename(exportFilename ?? "chart")}.png`;
+      link.rel = "noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success(
+        t("dashboard.charts.exportSuccess", { defaultValue: "Export completed" }),
+      );
+    } catch (error) {
+      toast.error(
+        t("dashboard.charts.exportFailed", { defaultValue: "Export failed" }),
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportLabel = exporting
+    ? t("dashboard.charts.exporting", { defaultValue: "Exporting..." })
+    : t("dashboard.charts.exportImage", { defaultValue: "Export Image" });
+
+  const renderActions = showExportImage || actions;
+  const actionClassName = supportsHover
+    ? "absolute right-2 top-2 z-10 flex items-center gap-2 opacity-0 pointer-events-none transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
+    : "absolute right-2 top-2 z-10 flex items-center gap-2";
+
+  return (
+    <div className="group relative w-full" style={{ height }}>
+      <div ref={ref} className="h-full w-full" />
+      {renderActions ? (
+        <div className={actionClassName}>
+          {actions}
+          {showExportImage ? (
+            <Button
+              size="small"
+              type="default"
+              onClick={handleExport}
+              loading={exporting}
+              aria-label={exportLabel}
+            >
+              {exportLabel}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
