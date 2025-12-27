@@ -55,6 +55,14 @@ interface LlmCallMetadata {
   latencyMs: number | null;
 }
 
+interface SummaryDedupeResult {
+  summaryEmbedding?: number[] | null;
+  summaryEmbeddingModel?: string | null;
+  duplicateOf?: string | null;
+  duplicateSimilarity?: number | null;
+  thresholdUsed?: number | null;
+}
+
 interface ProcessedItemOutboxPayload {
   type: MongoOutboxType.processed_item;
   document: {
@@ -66,6 +74,10 @@ interface ProcessedItemOutboxPayload {
     tags: string[];
     result: CleanedNews;
     llm: LlmCallMetadata;
+    summaryEmbedding?: number[];
+    summaryEmbeddingModel?: string | null;
+    duplicateOf?: string | null;
+    duplicateSimilarity?: number | null;
     error?: unknown;
   };
 }
@@ -80,6 +92,11 @@ const NullableFiniteNumberSchema = z.preprocess(
     typeof value === "number" && Number.isFinite(value) ? value : null,
   z.number().finite().nullable(),
 );
+
+const OptionalNumberArraySchema = z.preprocess(
+  (value) => (Array.isArray(value) ? value : undefined),
+  z.array(z.number().finite()),
+).optional();
 
 const LlmCallMetadataSchema: z.ZodType<LlmCallMetadata> = z.object({
   model: NullableStringSchema,
@@ -103,6 +120,10 @@ const ProcessedItemOutboxPayloadSchema: z.ZodType<ProcessedItemOutboxPayload> =
       tags: z.array(z.string()).default([]),
       result: CleanedNewsSchema,
       llm: LlmCallMetadataSchema,
+      summaryEmbedding: OptionalNumberArraySchema,
+      summaryEmbeddingModel: NullableStringSchema.optional(),
+      duplicateOf: NullableStringSchema.optional(),
+      duplicateSimilarity: NullableFiniteNumberSchema.optional(),
       error: z.unknown().optional(),
     }),
   });
@@ -193,7 +214,13 @@ export class NewsPipelineService {
       },
     );
 
-    const { cleaned, llm, contentHash, processedArticleId } = await this.runStage(
+    const {
+      cleaned,
+      llm,
+      contentHash,
+      processedArticleId,
+      contentDuplicateOf,
+    } = await this.runStage(
       job,
       "llm",
       async () => this.cleanArticle(payload, article, job),
@@ -215,6 +242,29 @@ export class NewsPipelineService {
       },
     );
 
+    const dedupe = await this.runStage(
+      job,
+      "dedupe",
+      async () =>
+        this.evaluateSummaryDedupe({
+          job,
+          cleaned,
+          contentDuplicateOf,
+        }),
+      {
+        onProcessingData: () => ({
+          itemMetaId: job.itemMetaId,
+          summaryLength: cleaned.summary?.length ?? 0,
+        }),
+        onSuccessData: (result) => ({
+          duplicateOf: result.duplicateOf ?? undefined,
+          similarity: result.duplicateSimilarity ?? undefined,
+          embeddingModel: result.summaryEmbeddingModel ?? undefined,
+          threshold: result.thresholdUsed ?? undefined,
+        }),
+      },
+    );
+
     const persistResult = await this.runStage(
       job,
       "persist",
@@ -228,6 +278,10 @@ export class NewsPipelineService {
           llm,
           contentHash,
           processedArticleId,
+          summaryEmbedding: dedupe.summaryEmbedding ?? undefined,
+          summaryEmbeddingModel: dedupe.summaryEmbeddingModel ?? undefined,
+          duplicateOf: dedupe.duplicateOf ?? undefined,
+          duplicateSimilarity: dedupe.duplicateSimilarity ?? undefined,
         }),
       {
         onProcessingData: () => ({
@@ -261,6 +315,10 @@ export class NewsPipelineService {
     llm: LlmCallMetadata;
     contentHash: string;
     processedArticleId?: string | null;
+    summaryEmbedding?: number[] | null;
+    summaryEmbeddingModel?: string | null;
+    duplicateOf?: string | null;
+    duplicateSimilarity?: number | null;
   }): Promise<PersistResult> {
     const processedItemId = new Types.ObjectId().toHexString();
     const outboxPayload = this.buildProcessedItemOutboxPayload({
@@ -270,6 +328,10 @@ export class NewsPipelineService {
       payload: options.payload,
       cleaned: options.cleaned,
       llm: options.llm,
+      summaryEmbedding: options.summaryEmbedding ?? undefined,
+      summaryEmbeddingModel: options.summaryEmbeddingModel ?? undefined,
+      duplicateOf: options.duplicateOf ?? undefined,
+      duplicateSimilarity: options.duplicateSimilarity ?? undefined,
     });
 
     const outboxEntry = await this.createOutboxEntry({
@@ -436,17 +498,22 @@ export class NewsPipelineService {
     llm: LlmCallMetadata;
     contentHash: string;
     processedArticleId?: string | null;
+    contentDuplicateOf?: string | null;
   }> {
     const contentHash = article.contentHash ?? this.hashContent(article.markdown);
     const existing = await this.findProcessedArticle(contentHash);
     if (existing) {
       const cleanedFromExisting = await this.resolveCleanedNews(existing);
       if (cleanedFromExisting) {
+        const contentDuplicateOf = this.normalizeProcessedItemRef(
+          existing.cleanedMarkdownRef,
+        );
         return {
           cleaned: cleanedFromExisting,
           llm: this.buildLlmMetadataFromProcessed(existing),
           contentHash,
           processedArticleId: existing.id,
+          contentDuplicateOf,
         };
       }
     }
@@ -506,6 +573,212 @@ export class NewsPipelineService {
       latencyMs: response.latencyMs ?? null,
     };
     return { cleaned, llm, contentHash };
+  }
+
+  private async evaluateSummaryDedupe(options: {
+    job: PipelineJobContext;
+    cleaned: CleanedNews;
+    contentDuplicateOf?: string | null;
+  }): Promise<SummaryDedupeResult> {
+    const cfg = this.configService.config.pipeline;
+    if (options.contentDuplicateOf) {
+      await this.markItemMetaDuplicate(
+        options.job,
+        options.contentDuplicateOf,
+        1,
+      );
+      return {
+        duplicateOf: options.contentDuplicateOf,
+        duplicateSimilarity: 1,
+      };
+    }
+
+    if (!cfg.summaryDedupEnabled) {
+      return {};
+    }
+
+    const summary = options.cleaned.summary?.trim();
+    if (!summary || summary.length < cfg.summaryDedupMinChars) {
+      return {};
+    }
+
+    const embeddingData = await this.buildSummaryEmbedding(summary, options.job);
+    if (!embeddingData) {
+      return {};
+    }
+
+    const threshold = this.resolveSummaryDedupThreshold(summary.length);
+    const baseResult: SummaryDedupeResult = {
+      summaryEmbedding: embeddingData.embedding,
+      summaryEmbeddingModel: embeddingData.model,
+      thresholdUsed: threshold,
+    };
+    const duplicate = await this.findSemanticDuplicate(
+      options.job.orgId,
+      embeddingData.embedding,
+      embeddingData.model,
+      threshold,
+    );
+    if (!duplicate) {
+      return baseResult;
+    }
+
+    await this.markItemMetaDuplicate(
+      options.job,
+      duplicate.id,
+      duplicate.similarity,
+    );
+
+    return {
+      ...baseResult,
+      duplicateOf: duplicate.id,
+      duplicateSimilarity: duplicate.similarity,
+    };
+  }
+
+  private async buildSummaryEmbedding(
+    summary: string,
+    job: PipelineJobContext,
+  ): Promise<{ embedding: number[]; model: string } | null> {
+    const model = this.configService.config.litellm.embeddingModel;
+    if (!model) {
+      this.logger.warn(
+        { jobId: job.jobId },
+        "Summary embedding model not configured; skipping semantic dedupe",
+      );
+      return null;
+    }
+
+    try {
+      const response = await this.liteLlm.embedding({
+        model,
+        input: summary,
+        metadata: {
+          jobId: job.jobId,
+          source: "news-pipeline",
+          stage: "dedupe",
+        },
+      });
+      const embedding = response.data?.[0]?.embedding;
+      if (!embedding || embedding.length === 0) {
+        return null;
+      }
+      return { embedding, model: response.model ?? model };
+    } catch (error) {
+      this.logger.warn(
+        { error, jobId: job.jobId },
+        "Failed to generate summary embedding",
+      );
+      return null;
+    }
+  }
+
+  private async findSemanticDuplicate(
+    orgId: string,
+    embedding: number[],
+    model: string,
+    threshold: number,
+  ): Promise<{ id: string; similarity: number } | null> {
+    const cfg = this.configService.config.pipeline;
+    const lookbackMs = cfg.summaryDedupLookbackHours * 60 * 60 * 1000;
+    const cutoff = new Date(Date.now() - lookbackMs);
+
+    const candidates = await ProcessedItemModel.find({
+      orgId,
+      status: "completed",
+      summaryEmbeddingModel: model,
+      summaryEmbedding: { $exists: true, $ne: [] },
+      duplicateOf: null,
+      createdAt: { $gte: cutoff },
+    })
+      .select({ summaryEmbedding: 1 })
+      .sort({ createdAt: -1 })
+      .limit(cfg.summaryDedupMaxCandidates)
+      .lean();
+
+    let best: { id: string; similarity: number } | null = null;
+    for (const candidate of candidates) {
+      const vector = (candidate as { summaryEmbedding?: number[] })
+        .summaryEmbedding;
+      if (!Array.isArray(vector) || vector.length !== embedding.length) {
+        continue;
+      }
+      const similarity = this.cosineSimilarity(embedding, vector);
+      if (!Number.isFinite(similarity)) {
+        continue;
+      }
+      if (similarity < threshold) {
+        continue;
+      }
+      if (!best || similarity > best.similarity) {
+        const rawId = (candidate as { _id: unknown })._id;
+        const id = typeof rawId === "string" ? rawId : rawId?.toString?.();
+        if (!id) {
+          continue;
+        }
+        best = { id, similarity };
+      }
+    }
+
+    return best;
+  }
+
+  private resolveSummaryDedupThreshold(summaryLength: number) {
+    const base = this.configService.config.pipeline.summaryDedupThreshold;
+    if (summaryLength < 80) {
+      return Math.min(0.96, base + 0.04);
+    }
+    if (summaryLength < 120) {
+      return Math.min(0.94, base + 0.02);
+    }
+    if (summaryLength > 280) {
+      return Math.max(0.86, base - 0.03);
+    }
+    if (summaryLength > 200) {
+      return Math.max(0.88, base - 0.02);
+    }
+    return base;
+  }
+
+  private async markItemMetaDuplicate(
+    job: PipelineJobContext,
+    duplicateOf: string,
+    similarity: number,
+  ) {
+    try {
+      await this.prisma.itemMeta.update({
+        where: { id: job.itemMetaId },
+        data: { status: "duplicate" },
+      });
+    } catch (error) {
+      this.logger.warn(
+        { error, duplicateOf, similarity, itemMetaId: job.itemMetaId },
+        "Failed to mark item meta as duplicate",
+      );
+    }
+  }
+
+  private cosineSimilarity(a: number[], b: number[]) {
+    if (a.length !== b.length || a.length === 0) {
+      return 0;
+    }
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i += 1) {
+      const ai = a[i];
+      const bi = b[i];
+      if (!Number.isFinite(ai) || !Number.isFinite(bi)) {
+        return 0;
+      }
+      dot += ai * bi;
+      normA += ai * ai;
+      normB += bi * bi;
+    }
+    if (normA === 0 || normB === 0) {
+      return 0;
+    }
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
   private async findProcessedArticle(contentHash: string) {
@@ -880,6 +1153,10 @@ export class NewsPipelineService {
     payload: NormalizedNewsPayload;
     cleaned: CleanedNews;
     llm: LlmCallMetadata;
+    summaryEmbedding?: number[] | null;
+    summaryEmbeddingModel?: string | null;
+    duplicateOf?: string | null;
+    duplicateSimilarity?: number | null;
   }): ProcessedItemOutboxPayload {
     return {
       type: MongoOutboxType.processed_item,
@@ -892,6 +1169,10 @@ export class NewsPipelineService {
         tags: this.buildTags(options.payload, options.cleaned),
         result: options.cleaned,
         llm: options.llm,
+        summaryEmbedding: options.summaryEmbedding ?? undefined,
+        summaryEmbeddingModel: options.summaryEmbeddingModel ?? undefined,
+        duplicateOf: options.duplicateOf ?? undefined,
+        duplicateSimilarity: options.duplicateSimilarity ?? undefined,
         error: undefined,
       },
     };
@@ -1020,8 +1301,11 @@ export class NewsPipelineService {
     document: ProcessedItemOutboxPayload["document"],
   ): Promise<ProcessedItemDocument> {
     try {
+      const duplicateRef = this.normalizeProcessedItemRef(document.duplicateOf);
+      const duplicateOf = duplicateRef ? new Types.ObjectId(duplicateRef) : undefined;
       return await ProcessedItemModel.create({
         ...document,
+        duplicateOf,
         _id: new Types.ObjectId(document._id),
         rawItemId: new Types.ObjectId(document.rawItemId),
       });
@@ -1144,6 +1428,13 @@ export class NewsPipelineService {
       .filter(
         (entity): entity is CleanedNews["entities"][number] => Boolean(entity),
       );
+  }
+
+  private normalizeProcessedItemRef(ref?: string | null) {
+    if (!ref) {
+      return null;
+    }
+    return Types.ObjectId.isValid(ref) ? ref : null;
   }
 
   private cacheKey(orgId: string, url: string) {

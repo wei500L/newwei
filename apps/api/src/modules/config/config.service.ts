@@ -5,6 +5,7 @@ import { ApiEnv } from "./env.schema";
 
 export interface LiteLlmEnvConfig {
   model: string;
+  embeddingModel?: string;
   apiBase: string;
   apiKey?: string;
   timeoutMs: number;
@@ -290,6 +291,9 @@ export class EnvService extends ConfigService<ApiEnv> {
       model:
         this.get<string>("LITELLM_MODEL", { infer: true }) ??
         "openai/gpt-4o-mini",
+      embeddingModel: this.get<string | undefined>("LITELLM_EMBEDDING_MODEL", {
+        infer: true,
+      }),
       apiBase,
       apiKey: this.get<string | undefined>("LITELLM_API_KEY", { infer: true }),
       timeoutMs:

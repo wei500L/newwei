@@ -19,6 +19,7 @@ jest.mock("@modular/mongo", () => ({
       _id: { toString: () => "processed-id" },
       toJSON: () => ({ id: "processed-id" })
     }),
+    find: jest.fn(),
     findById: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue(null)
     })
@@ -41,6 +42,7 @@ jest.mock("@modular/utils", () => {
 const baseConfig: NewsPipelineConfig = {
   litellm: {
     model: "openai/gpt-4o-mini",
+    embeddingModel: "openai/text-embedding-3-small",
     apiBase: "http://localhost:4001",
     apiKey: "test",
     timeoutMs: 60000,
@@ -70,6 +72,11 @@ const baseConfig: NewsPipelineConfig = {
     rateLimitWindowSeconds: 60,
     allowMediaEmbedding: true,
     detectLanguage: true,
+    summaryDedupEnabled: true,
+    summaryDedupThreshold: 0.9,
+    summaryDedupLookbackHours: 48,
+    summaryDedupMaxCandidates: 100,
+    summaryDedupMinChars: 40,
     configPath: "config/news-pipeline.config.yaml"
   }
 };
@@ -137,6 +144,10 @@ describe("NewsPipelineService", () => {
           }
         }
       ]
+    })),
+    embedding: jest.fn(async () => ({
+      model: "openai/text-embedding-3-small",
+      data: [{ index: 0, embedding: [1, 0, 0] }]
     }))
   };
 
@@ -176,6 +187,9 @@ describe("NewsPipelineService", () => {
     },
     article: {
       upsert: jest.fn().mockResolvedValue({ id: "article-1" })
+    },
+    itemMeta: {
+      update: jest.fn().mockResolvedValue(null)
     },
     mongoOutbox,
     runInTransaction: jest.fn()
@@ -221,6 +235,8 @@ describe("NewsPipelineService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    baseConfig.pipeline.summaryDedupMinChars = 40;
+    baseConfig.pipeline.summaryDedupThreshold = 0.9;
     (prisma.processedArticle.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.article.upsert as jest.Mock).mockResolvedValue({ id: "article-1" });
     (prisma.processedArticle.upsert as jest.Mock).mockResolvedValue(null);
@@ -240,6 +256,13 @@ describe("NewsPipelineService", () => {
     (ProcessedItemModel.findById as jest.Mock).mockReturnValue({
       lean: jest.fn().mockResolvedValue(null)
     });
+    const findChain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([])
+    };
+    (ProcessedItemModel.find as jest.Mock).mockReturnValue(findChain);
   });
 
   afterEach(async () => {
@@ -358,6 +381,35 @@ describe("NewsPipelineService", () => {
     expect(prisma.mongoOutbox.create).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.delete).toHaveBeenCalledTimes(1);
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks item meta as duplicate when summary similarity is high", async () => {
+    baseConfig.pipeline.summaryDedupMinChars = 1;
+    baseConfig.pipeline.summaryDedupThreshold = 0.8;
+
+    const duplicateId = "64b5f0c4f6e4b0495c3f4a10";
+    (liteLlm.embedding as jest.Mock).mockResolvedValueOnce({
+      model: "openai/text-embedding-3-small",
+      data: [{ index: 0, embedding: [1, 0] }]
+    });
+
+    const findChain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { _id: duplicateId, summaryEmbedding: [0.99, 0.01] }
+      ])
+    };
+    (ProcessedItemModel.find as jest.Mock).mockReturnValueOnce(findChain);
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(prisma.itemMeta.update).toHaveBeenCalledWith({
+      where: { id: job.itemMetaId },
+      data: { status: "duplicate" }
+    });
   });
 
   it("fails fast when existing processed article cannot be mapped", async () => {

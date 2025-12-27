@@ -38,6 +38,11 @@ export interface PipelineRuntimeConfig
   rateLimitWindowSeconds: number;
   allowMediaEmbedding: boolean;
   detectLanguage: boolean;
+  summaryDedupEnabled: boolean;
+  summaryDedupThreshold: number;
+  summaryDedupLookbackHours: number;
+  summaryDedupMaxCandidates: number;
+  summaryDedupMinChars: number;
 }
 
 export interface NewsPipelineConfig {
@@ -48,6 +53,7 @@ export interface NewsPipelineConfig {
 
 interface LiteLlmFileConfig {
   model?: string;
+  embedding_model?: string;
   api_base?: string;
   api_key?: string;
   timeout_ms?: number;
@@ -82,6 +88,11 @@ interface PipelineFileConfig {
   rate_limit_window_seconds?: number;
   allow_media_embedding?: boolean;
   detect_language?: boolean;
+  summary_dedup_enabled?: boolean;
+  summary_dedup_threshold?: number;
+  summary_dedup_lookback_hours?: number;
+  summary_dedup_max_candidates?: number;
+  summary_dedup_min_chars?: number;
 }
 
 interface PipelineConfigFile {
@@ -225,6 +236,7 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
     const retryAttempts = raw?.retry_attempts ?? raw?.max_retries;
     return {
       model: raw?.model ?? envConfig.model,
+      embeddingModel: raw?.embedding_model ?? envConfig.embeddingModel,
       apiBase,
       apiKey: envConfig.apiKey ?? raw?.api_key,
       timeoutMs: this.ensurePositive(raw?.timeout_ms, envConfig.timeoutMs),
@@ -328,6 +340,20 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
       ),
       allowMediaEmbedding: raw?.allow_media_embedding ?? true,
       detectLanguage: raw?.detect_language ?? true,
+      summaryDedupEnabled: raw?.summary_dedup_enabled ?? true,
+      summaryDedupThreshold: this.clamp(raw?.summary_dedup_threshold ?? 0.9, 0, 1),
+      summaryDedupLookbackHours: this.ensurePositiveInt(
+        raw?.summary_dedup_lookback_hours,
+        48,
+      ),
+      summaryDedupMaxCandidates: this.ensurePositiveInt(
+        raw?.summary_dedup_max_candidates,
+        100,
+      ),
+      summaryDedupMinChars: this.ensurePositiveInt(
+        raw?.summary_dedup_min_chars,
+        40,
+      ),
       configPath: envConfig.configPath,
     };
   }

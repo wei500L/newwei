@@ -63,6 +63,7 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CRAWL_MEDIA_MAX_BYTES: z.coerce.number().int().positive().default(2_097_152),
   CRAWL_MEDIA_MAX_PER_RESULT: z.coerce.number().int().positive().default(6),
   LITELLM_MODEL: z.string().min(1).default("openai/gpt-4o-mini"),
+  LITELLM_EMBEDDING_MODEL: z.string().optional(),
   LITELLM_API_URL: z.string().url().optional(),
   LITELLM_API_BASE: z.string().url().default("http://localhost:4001"),
   LITELLM_API_KEY: z.string().optional(),

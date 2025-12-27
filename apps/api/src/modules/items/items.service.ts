@@ -111,8 +111,9 @@ export class ItemsService {
       };
     }
 
+    const baseWhere = this.buildBaseWhere(orgId);
     const where =
-      strategy.type === "prefix" ? this.buildPrefixWhere(orgId, strategy.term) : { orgId };
+      strategy.type === "prefix" ? this.buildPrefixWhere(baseWhere, strategy.term) : baseWhere;
 
     const [items, total] = await Promise.all([
       this.prisma.itemMeta.findMany({
@@ -141,8 +142,9 @@ export class ItemsService {
       return this.listWithCursorFullText(orgId, take, cursorId, strategy.query);
     }
 
+    const baseWhere = this.buildBaseWhere(orgId);
     const where =
-      strategy.type === "prefix" ? this.buildPrefixWhere(orgId, strategy.term) : { orgId };
+      strategy.type === "prefix" ? this.buildPrefixWhere(baseWhere, strategy.term) : baseWhere;
 
     const items = await this.prisma.itemMeta.findMany({
       where,
@@ -276,9 +278,13 @@ export class ItemsService {
     return tokens.map((token) => `${token}*`).join(" ");
   }
 
-  private buildPrefixWhere(orgId: string, term: string) {
+  private buildBaseWhere(orgId: string) {
+    return { orgId, status: { not: "duplicate" } };
+  }
+
+  private buildPrefixWhere(baseWhere: { orgId: string; status: { not: string } }, term: string) {
     return {
-      orgId,
+      ...baseWhere,
       OR: [
         { name: { startsWith: term } },
         { externalId: { startsWith: term } }
@@ -291,6 +297,7 @@ export class ItemsService {
       SELECT \`id\`, \`orgId\`, \`externalId\`, \`name\`, \`status\`, \`mongoRef\`, \`version\`, \`createdAt\`, \`updatedAt\`
       FROM \`ItemMeta\`
       WHERE \`orgId\` = ${orgId}
+        AND \`status\` <> 'duplicate'
         AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
       ORDER BY \`createdAt\` DESC, \`id\` DESC
       LIMIT ${take} OFFSET ${skip}
@@ -300,6 +307,7 @@ export class ItemsService {
       SELECT COUNT(*) AS count
       FROM \`ItemMeta\`
       WHERE \`orgId\` = ${orgId}
+        AND \`status\` <> 'duplicate'
         AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
     `;
 
@@ -333,6 +341,7 @@ export class ItemsService {
       SELECT \`id\`, \`orgId\`, \`externalId\`, \`name\`, \`status\`, \`mongoRef\`, \`version\`, \`createdAt\`, \`updatedAt\`
       FROM \`ItemMeta\`
       WHERE \`orgId\` = ${orgId}
+        AND \`status\` <> 'duplicate'
         AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
         ${cursorClause}
       ORDER BY \`createdAt\` DESC, \`id\` DESC
@@ -343,6 +352,7 @@ export class ItemsService {
       SELECT COUNT(*) AS count
       FROM \`ItemMeta\`
       WHERE \`orgId\` = ${orgId}
+        AND \`status\` <> 'duplicate'
         AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
     `;
 

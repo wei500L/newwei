@@ -1,5 +1,6 @@
 litellm_config:
   model: openai/gpt-4o-mini
+  embedding_model: openai/text-embedding-3-small
   api_url: http://localhost:4001
   api_key: ""
   timeout_ms: 60000
@@ -56,3 +57,8 @@ pipeline:
   rate_limit_window_seconds: 60
   allow_media_embedding: true
   detect_language: true
+  summary_dedup_enabled: true
+  summary_dedup_threshold: 0.9
+  summary_dedup_lookback_hours: 48
+  summary_dedup_max_candidates: 100
+  summary_dedup_min_chars: 40

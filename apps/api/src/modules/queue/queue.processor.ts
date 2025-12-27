@@ -109,16 +109,6 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
               throw new QueuePermanentError("Raw item not found");
             }
 
-            await TaskLogModel.create({
-              queue: ITEM_PIPELINE_QUEUE_NAME,
-              jobId: job.id,
-              orgId,
-              stage: "dedupe",
-              status: "completed",
-              message: "Item deduplicated",
-              data: { itemMetaId },
-            });
-
             const pipelineJob: PipelineJobContext = {
               queue: ITEM_PIPELINE_QUEUE_NAME,
               jobId: job.id ? String(job.id) : "",

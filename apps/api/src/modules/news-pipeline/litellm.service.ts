@@ -58,6 +58,23 @@ export interface LiteLlmCompletionResponse {
   latencyMs?: number;
 }
 
+export interface LiteLlmEmbeddingParams {
+  model?: string;
+  input: string | string[];
+  metadata?: Record<string, unknown>;
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
+export interface LiteLlmEmbeddingResponse {
+  model: string;
+  data: { index: number; embedding: number[] }[];
+  usage?: { prompt_tokens: number; total_tokens: number };
+  response_cost?: number;
+  costUsd?: number;
+  latencyMs?: number;
+}
+
 export interface LiteLlmStreamChunk {
   model: string;
   raw: unknown;
@@ -108,6 +125,18 @@ export class LiteLlmService {
     throw lastError instanceof Error
       ? lastError
       : new Error("LiteLLM completion failed");
+  }
+
+  async embedding(
+    params: LiteLlmEmbeddingParams,
+  ): Promise<LiteLlmEmbeddingResponse> {
+    await this.enforceRateLimit();
+    const cfg = this.configService.config.litellm;
+    const model = params.model ?? cfg.embeddingModel ?? cfg.model;
+    if (!model) {
+      throw new Error("LiteLLM embedding model is not configured");
+    }
+    return this.executeEmbeddingWithRetry(model, params);
   }
 
   async *stream(params: LiteLlmCompletionParams): AsyncGenerator<LiteLlmStreamChunk> {
@@ -253,6 +282,66 @@ export class LiteLlmService {
         yield { model, raw: parsed, finishReason };
       }
     }
+  }
+
+  private async executeEmbeddingWithRetry(
+    model: string,
+    params: LiteLlmEmbeddingParams,
+  ) {
+    const cfg = this.configService.config.litellm;
+    const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
+    let attempt = 0;
+    let delayMs = 1_000;
+    let lastError: unknown;
+
+    while (attempt < maxAttempts) {
+      try {
+        const payload = {
+          model,
+          input: params.input,
+          metadata: params.metadata,
+        };
+        const start = Date.now();
+        const response = await this.client.post<LiteLlmEmbeddingResponse>(
+          "/v1/embeddings",
+          payload,
+          {
+            timeout: params.timeoutMs ?? cfg.timeoutMs,
+          },
+        );
+        const latencyMs = Date.now() - start;
+        const headerCost = this.extractHeaderCost(
+          response.headers?.["x-litellm-cost"] ??
+            response.headers?.["litellm-cost"],
+        );
+        const payloadCost = this.extractHeaderCost(
+          (response.data as Record<string, unknown>).response_cost,
+        );
+        const usageCost = this.extractHeaderCost(
+          response.data.usage
+            ? (response.data.usage as Record<string, unknown>).response_cost
+            : undefined,
+        );
+        const costUsd = headerCost ?? payloadCost ?? usageCost;
+        return {
+          ...response.data,
+          costUsd: costUsd ?? undefined,
+          latencyMs,
+        } satisfies LiteLlmEmbeddingResponse;
+      } catch (error) {
+        lastError = error;
+        attempt += 1;
+        if (attempt >= maxAttempts || !this.isRetryable(error)) {
+          throw error;
+        }
+        await sleep(delayMs);
+        delayMs = Math.min(delayMs * 2, 10_000);
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("LiteLLM embedding exhausted retries");
   }
 
   private async *iterateSseData(stream: Readable): AsyncGenerator<string> {

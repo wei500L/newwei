@@ -63,6 +63,10 @@ const ProcessedItemSchema = new Schema(
       costUsd: { type: Number },
       latencyMs: { type: Number },
     },
+    summaryEmbedding: { type: [Number], default: undefined },
+    summaryEmbeddingModel: { type: String, default: null },
+    duplicateOf: { type: Schema.Types.ObjectId, ref: "ProcessedItem", default: null },
+    duplicateSimilarity: { type: Number, min: 0, max: 1, default: null },
   },
   {
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" },
