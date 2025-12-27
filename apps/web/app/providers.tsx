@@ -110,22 +110,22 @@ export function AppProviders({ children }: PropsWithChildren) {
         theme={{
           algorithm: theme.darkAlgorithm,
           token: {
-            colorPrimary: "#00e5ff",
-            colorBgBase: "#0b1121",
-            colorBgContainer: "#151e32",
+            colorPrimary: "#2563eb",
+            colorBgBase: "#0f172a",
+            colorBgContainer: "#1e293b",
             borderRadius: 4,
             fontFamily: "var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
           },
           components: {
             Card: {
               borderRadiusLG: 8,
-              colorBgContainer: "rgba(21, 30, 50, 0.6)", // Semi-transparent for glass effect
-              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.2)",
+              colorBgContainer: "rgba(30, 41, 59, 0.7)", // Slate 800 with opacity for glass effect
+              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
             },
             Button: {
               borderRadius: 4,
-              controlHeight: 40,
-              primaryShadow: "0 0 10px rgba(0, 229, 255, 0.3)", // Glow effect
+              controlHeight: 36,
+              primaryShadow: "0 0 15px rgba(37, 99, 235, 0.3)", // Blue 600 glow
             },
             Table: {
               colorBgContainer: "transparent",

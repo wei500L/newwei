@@ -361,419 +361,140 @@ export function DashboardContent() {
   };
 
   return (
-    <div className="space-y-10 pb-12">
+    <div className="flex gap-6 h-full items-start">
       {messageContext}
       <LiveAlertsToasts />
       
-      {/* View Toggle */}
-      <div className="flex items-center justify-between mb-2">
-         <div className="flex items-center gap-2 text-xs text-slate-400" role="status" aria-live="polite">
-           <span
-             className={`h-2 w-2 rounded-full ${streamStatusMeta.dotClass} ${streamStatusMeta.pulse ? "animate-pulse" : ""}`}
-             aria-hidden="true"
-           />
-           <span>{streamStatusMeta.label}</span>
-         </div>
-         <Space>
-           <span className="text-xs text-gray-500">System Status</span>
-           <Switch size="small" checked={showSystemStats} onChange={setShowSystemStats} />
-         </Space>
-      </div>
+      {/* Center Column: Market Feed & Visuals */}
+      <div className="flex-1 flex flex-col gap-6 min-w-0">
+        
+        {/* Status Bar */}
+        <div className="flex items-center justify-between">
+           <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
+             <span
+               className={`h-2 w-2 rounded-full ${streamStatusMeta.dotClass} ${streamStatusMeta.pulse ? "animate-pulse" : ""}`}
+               aria-hidden="true"
+             />
+             <span>{streamStatusMeta.label}</span>
+             <span className="text-slate-600">|</span>
+             <span>Last Update: {dayjs().format('HH:mm:ss')}</span>
+           </div>
+           <Space>
+             {process.env.NODE_ENV !== "production" && (
+                <Button
+                  icon={<ReloadOutlined />}
+                  size="small"
+                  type="text"
+                  loading={refreshingDemoData}
+                  onClick={handleRefreshDemoData}
+                  className="text-slate-500 hover:text-white"
+                >
+                </Button>
+             )}
+             <span className="text-xs text-slate-500">System Status</span>
+             <Switch size="small" checked={showSystemStats} onChange={setShowSystemStats} />
+           </Space>
+        </div>
 
-      <div className="relative">
-        <MarketPulse 
-          loading={heroLoading}
-          conflictData={heroData?.conflict ?? []}
-          marketData={heroData?.market ?? []}
-          resourceData={heroData?.resource ?? []}
-          supplyData={heroData?.supply ?? []}
-          onMetricClick={setActiveDrillDownKey} 
+        {/* Hero / Market Pulse */}
+        <div className="relative">
+          <MarketPulse 
+            loading={heroLoading}
+            conflictData={heroData?.conflict ?? []}
+            marketData={heroData?.market ?? []}
+            resourceData={heroData?.resource ?? []}
+            supplyData={heroData?.supply ?? []}
+            onMetricClick={setActiveDrillDownKey} 
+          />
+        </div>
+
+        <MetricDrillDown 
+          visible={!!activeDrillDownKey} 
+          metricKey={activeDrillDownKey} 
+          onClose={() => setActiveDrillDownKey(null)} 
         />
-        {process.env.NODE_ENV !== "production" && (
-          <div className="absolute -top-6 right-0 opacity-20 hover:opacity-100 transition-opacity">
-            <Button
-              icon={<ReloadOutlined />}
-              size="small"
-              type="text"
-              loading={refreshingDemoData}
-              onClick={handleRefreshDemoData}
-            >
-              <span className="text-[10px]">{t("dashboard.demoData.refresh")}</span>
-            </Button>
-          </div>
-        )}
-      </div>
 
-      <MetricDrillDown 
-        visible={!!activeDrillDownKey} 
-        metricKey={activeDrillDownKey} 
-        onClose={() => setActiveDrillDownKey(null)} 
-      />
-
-      {/* Bento Grid Layout */}
-      <Row gutter={[20, 20]}>
-        {/* Left Column: Sentiment Trend (Dominant) */}
-        <Col xs={24} lg={16}>
-           <GlobalSentimentTrend 
-             loading={heroLoading} 
-             data={heroData?.market ?? []} // Using market data as proxy for sentiment trend
-           />
-        </Col>
-
-        {/* Right Column: News Stream */}
-        <Col xs={24} lg={8}>
-           <BreakingNewsStream />
-        </Col>
-      </Row>
-
-      <Row gutter={[20, 20]}>
-        <Col xs={24} md={12}>
-          <Card title={t("dashboard.nextActions.title")} className="content-card h-full border-none shadow-sm">
-            <Typography.Paragraph className="mb-6 text-gray-600">
-              {t("dashboard.nextActions.description")}
-            </Typography.Paragraph>
-            <Row gutter={[16, 16]}>
-              <Col xs={24} md={12}>
-                <Typography.Text strong className="block mb-2">
-                  {t("dashboard.nextActions.anomalies")}
-                </Typography.Text>
-                <List
-                  size="small"
-                  loading={analysisLoading}
-                  dataSource={recentAnomalies}
-                  locale={{ emptyText: t("dashboard.nextActions.noAnomalies") }}
-                  renderItem={(item) => (
-                    <List.Item className="!px-0">
-                      <List.Item.Meta
-                        title={
-                          <Space size={4}>
-                            <Tag className="mr-0">{item.status}</Tag>
-                            <span className="text-xs text-gray-500">
-                              {formatDateTime(item.createdAt, locale, {
-                                month: "2-digit",
-                                day: "2-digit",
-                                hour: "2-digit",
-                                minute: "2-digit"
-                              })}
-                            </span>
-                          </Space>
-                        }
-                        description={
-                          <div className="text-xs text-gray-500 line-clamp-2 mt-1">
-                            {item.summary ?? t("dashboard.nextActions.pendingSummary")}
-                          </div>
-                        }
-                      />
-                    </List.Item>
-                  )}
-                />
-              </Col>
-              <Col xs={24} md={12}>
-                <Typography.Text strong className="block mb-2">{t("dashboard.nextActions.alertRouting")}</Typography.Text>
-                <List
-                  size="small"
-                  loading={alertRulesLoading}
-                  dataSource={activeAlertRules.slice(0, 3)}
-                  locale={{ emptyText: t("dashboard.nextActions.noAlertRules") }}
-                  renderItem={(rule) => (
-                    <List.Item className="!px-0">
-                      <List.Item.Meta
-                        title={
-                          <Space size={4} wrap>
-                            <span className="font-medium text-sm">{rule.name}</span>
-                            <Tag color={severityColor[rule.severity]} className="mr-0">
-                              {rule.severity}
-                            </Tag>
-                          </Space>
-                        }
-                        description={
-                          <div className="text-xs text-gray-500 mt-1">
-                            {t("dashboard.nextActions.alertRoutingSummary", {
-                              metric: rule.metricSlug,
-                              channels:
-                                rule.channels.map((c) => c.name).join(", ") ||
-                                t("dashboard.nextActions.noneConfigured")
-                            })}
-                          </div>
-                        }
-                      />
-                    </List.Item>
-                  )}
-                />
-              </Col>
-            </Row>
-          </Card>
-        </Col>
-
-        {/* AI & Alerts */}
-        <Col xs={24} lg={12}>
-          <div className="flex flex-col gap-5 h-full">
-            <Card title={t("dashboard.panels.smartAlerts")} className="content-card flex-1 border-none shadow-sm">
-              <AlertPanel />
-            </Card>
-            <Card title={t("dashboard.panels.aiAnalysis")} className="content-card flex-1 border-none shadow-sm">
-              <AnalysisPanel />
-            </Card>
-          </div>
-        </Col>
-      </Row>
-
-      {/* System Stats (Hidden by default) */}
-      <div style={{ display: showSystemStats ? 'block' : 'none' }}>
-        <Row gutter={[20, 20]} className="mb-6">
-          <Col xs={24} md={12} lg={8}>
-            <Card className="content-card h-full flex flex-col justify-center">
-              <Statistic title={t("dashboard.stats.totalItems")} value={itemCount} />
-            </Card>
-          </Col>
-          <Col xs={24} md={12} lg={8}>
-            <Card className="content-card h-full flex flex-col justify-center">
-              <Statistic title={t("dashboard.stats.processedItems")} value={processedCount} />
-            </Card>
-          </Col>
-          <Col xs={24} md={24} lg={8}>
-            <Card
-              className="content-card h-full"
-              title={
-                <Space size="small" align="center">
-                  <span>{t("dashboard.queue.snapshot")}</span>
-                  <Tag color={queueLive ? "green" : "default"}>
-                    {queueLive ? t("dashboard.queue.live") : t("dashboard.queue.offline")}
-                  </Tag>
-                </Space>
-              }
-            >
-              <QueueChart
-                data={chartData}
-                activeStatus={queueStatus}
-                onFilterChange={setQueueStatus}
-              />
-            </Card>
-          </Col>
-        </Row>
-        <Row gutter={[20, 20]}>
-          <Col xs={24} md={12}>
-            <Card
-              title={t("dashboard.queue.recentActivity")}
-              className="content-card h-full"
-              extra={
-                hasActiveFilters ? (
-                  <Space size={6} wrap>
-                    {queueStatus ? (
-                      <Tag color="blue" closable onClose={resetFilters}>
-                        {t(`dashboard.queue.states.${queueStatus}`, {
-                          defaultValue: queueStatus
-                        })}
-                      </Tag>
-                    ) : null}
-                    <Tag
-                      color="cyan"
-                      onClick={resetFilters}
-                      className="cursor-pointer !rounded-full !px-3"
-                    >
-                      {t("dashboard.filters.resetAll", { defaultValue: "Reset All Filters" })}
-                    </Tag>
-                  </Space>
-                ) : undefined
-              }
-            >
-              {parsedLogs.length > 0 ? (
-                <Timeline
-                  mode="left"
-                  items={parsedLogs.map((item) => {
-                    let color = "blue";
-                    if (item.event === "FAILED") color = "red";
-                    if (item.event === "COMPLETED") color = "green";
-                    if (item.event === "WAITING") color = "gray";
-
-                    const payload = item.payload as Record<string, unknown> | undefined;
-                    let errorMessage: string | undefined;
-
-                    if (item.event === "FAILED") {
-                      if (typeof payload?.error === "string") {
-                        errorMessage = payload.error;
-                      } else if (
-                        payload?.error &&
-                        typeof payload.error === "object" &&
-                        "message" in payload.error &&
-                        typeof payload.error.message === "string"
-                      ) {
-                        errorMessage = payload.error.message;
-                      } else if (typeof payload?.message === "string") {
-                        errorMessage = payload.message;
-                      }
-                    } else if (typeof payload?.message === "string") {
-                      errorMessage = payload.message;
-                    }
-
-                    return {
-                      color,
-                      label: (
-                        <span className="text-xs text-gray-400">
-                          {formatDateTime(item.timestamp, locale, {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
-                        </span>
-                      ),
-                      children: (
-                        <div className="mb-4">
-                          <Space wrap>
-                            <Tag color={color} className="mr-0">
-                              {item.event}
-                            </Tag>
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {item.jobId}
-                            </Typography.Text>
-                          </Space>
-                          
-                          {errorMessage && (
-                            <div className="mt-1">
-                              <Typography.Text type={item.event === "FAILED" ? "danger" : undefined}>
-                                {String(errorMessage)}
-                              </Typography.Text>
-                            </div>
-                          )}
-
-                          {payload && (
-                            <Collapse
-                              ghost
-                              size="small"
-                              items={[
-                                {
-                                  key: "1",
-                                  label: <span style={{ fontSize: 12 }}>{t("common.details")}</span>,
-                                  children: (
-                                    <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto max-h-40">
-                                      {JSON.stringify(payload, null, 2)}
-                                    </pre>
-                                  ),
-                                },
-                              ]}
-                            />
-                          )}
-                        </div>
-                      ),
-                    };
-                  })}
-                />
-              ) : (
-                <Empty description={t("dashboard.queue.noRecentLogs")} className="my-8" />
-              )}
-            </Card>
-          </Col>
-        </Row>
-      </div>
-      <Row>
-        <Col span={24}>
-          <Card title={t("dashboard.editor.title")} className="content-card">
-            <Space direction="vertical" className="w-full" size="middle">
-              <div className="flex flex-wrap items-center gap-4">
-                <Typography.Text type="secondary" className="hidden sm:inline">
-                  {t("dashboard.editor.description")}
-                </Typography.Text>
-                <div className="flex items-center gap-2 ml-auto">
-                  <Select
-                    size="small"
-                    value={range !== "custom" ? range : undefined}
-                    onChange={(val) => setRange(val as DashboardRangePreset)}
-                    options={[
-                      { label: "1M", value: "1M" },
-                      { label: "3M", value: "3M" },
-                      { label: "6M", value: "6M" },
-                      { label: "1Y", value: "1Y" },
-                    ]}
-                    className="w-[100px]"
-                  />
-                  <Select
-                    placeholder={t("dashboard.editor.selectDashboard")}
-                    className="min-w-[200px]"
-                    value={activeDashboard?.id}
-                    onChange={(val) => setActiveId(val)}
-                    options={dashboards.map((d) => ({
-                      label: d.name,
-                      value: d.id,
-                    }))}
-                  />
-                  <Button
-                    size="small"
-                    onClick={() => {
-                      setActiveId(undefined);
-                    }}
-                  >
-                    {t("dashboard.editor.newDashboard")}
-                  </Button>
-                </div>
-              </div>
-              <DashboardEditor
-                dashboard={activeDashboard ?? undefined}
-                saving={savingDashboard}
-                onSave={async (input) => {
-                  await saveDashboard({ variables: { input } });
-                  await refetchDashboards();
-                }}
-                onDelete={
-                  activeDashboard?.id
-                    ? async (id: string) => {
-                        await deleteDashboard({ variables: { id } });
-                        await refetchDashboards();
-                        message.success(t("dashboard.editor.deleted"));
-                        setActiveId(undefined);
-                      }
-                    : undefined
-                }
-              />
-            </Space>
-          </Card>
-        </Col>
-      </Row>
-      <Row gutter={[20, 20]}>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.panels.smartAlerts")} className="content-card h-full">
-            <AlertPanel />
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.panels.aiAnalysis")} className="content-card h-full">
-            <AnalysisPanel />
-          </Card>
-        </Col>
-      </Row>
-      
-      <Row gutter={[20, 20]}>
-        <Col xs={24} md={12} lg={6}>
-          <Card title={t("dashboard.charts.sectorHeatmap", { defaultValue: "Sector Performance" })} className="content-card h-full">
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+           <Card title={t("dashboard.charts.sectorHeatmap", { defaultValue: "Sector Performance" })} className="content-card h-[400px]">
              <SectorHeatmap />
-          </Card>
-        </Col>
-        <Col xs={24} md={24} lg={12}>
-           <Card className="content-card h-full" bodyStyle={{ padding: 0 }}>
+           </Card>
+           <Card className="content-card h-[400px]" bodyStyle={{ padding: 0 }}>
              <WarMap />
            </Card>
-        </Col>
-        <Col xs={24} md={12} lg={6}>
-           <Card className="content-card h-full">
-             <FinancialCandlestick />
-           </Card>
-        </Col>
-      </Row>
+        </div>
 
-      <Row gutter={[20, 20]}>
-        <Col xs={24} lg={24}>
-          <DrilldownChart
-            category="economic-short"
-            title={t("dashboard.drilldown.title")}
-          />
-        </Col>
-      </Row>
-      <Row gutter={[20, 20]}>
-        <Col xs={24} lg={24}>
-          <Card title={t("dashboard.alertConfig.title")} className="content-card">
-            <AlertConfigForm />
-          </Card>
-        </Col>
-      </Row>
+        {/* Financial Candlestick & Sentiment */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+           <div className="xl:col-span-2">
+             <GlobalSentimentTrend 
+               loading={heroLoading} 
+               data={heroData?.market ?? []} 
+             />
+           </div>
+           <div className="xl:col-span-1">
+             <Card className="content-card h-full">
+               <FinancialCandlestick />
+             </Card>
+           </div>
+        </div>
+
+        {/* System Stats (Hidden by default) */}
+        {showSystemStats && (
+          <div className="animate-in fade-in slide-in-from-top-4 duration-300">
+            <Row gutter={[20, 20]} className="mb-6">
+              <Col xs={24} md={12} lg={8}>
+                <Card className="content-card h-full flex flex-col justify-center">
+                  <Statistic title={t("dashboard.stats.totalItems")} value={itemCount} valueStyle={{ color: '#fff', fontFamily: 'monospace' }} />
+                </Card>
+              </Col>
+              <Col xs={24} md={12} lg={8}>
+                <Card className="content-card h-full flex flex-col justify-center">
+                  <Statistic title={t("dashboard.stats.processedItems")} value={processedCount} valueStyle={{ color: '#fff', fontFamily: 'monospace' }} />
+                </Card>
+              </Col>
+              <Col xs={24} md={24} lg={8}>
+                <Card
+                  className="content-card h-full"
+                  title={
+                    <Space size="small" align="center">
+                      <span>{t("dashboard.queue.snapshot")}</span>
+                      <Tag color={queueLive ? "green" : "default"}>
+                        {queueLive ? t("dashboard.queue.live") : t("dashboard.queue.offline")}
+                      </Tag>
+                    </Space>
+                  }
+                >
+                  <QueueChart
+                    data={chartData}
+                    activeStatus={queueStatus}
+                    onFilterChange={setQueueStatus}
+                  />
+                </Card>
+              </Col>
+            </Row>
+          </div>
+        )}
+
+      </div>
+
+      {/* Right Column: Data Board & Intelligence */}
+      <div className="w-[400px] flex-shrink-0 flex flex-col gap-6 hidden 2xl:flex sticky top-0 h-fit">
+         {/* Live News Feed */}
+         <div className="h-[600px]">
+            <BreakingNewsStream />
+         </div>
+
+         {/* AI Analysis */}
+         <Card title={t("dashboard.panels.aiAnalysis")} className="content-card flex-1 border-none shadow-sm min-h-[300px]">
+            <AnalysisPanel />
+         </Card>
+
+         {/* Alerts */}
+         <Card title={t("dashboard.panels.smartAlerts")} className="content-card flex-1 border-none shadow-sm min-h-[200px]">
+            <AlertPanel />
+         </Card>
+      </div>
     </div>
   );
 }

@@ -1,12 +1,13 @@
 "use client";
 
-import { ClockCircleOutlined, GlobalOutlined } from "@ant-design/icons";
-import { Avatar, Card, List, Tag, Typography } from "antd";
+import { ClockCircleOutlined, ThunderboltFilled } from "@ant-design/icons";
+import { Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 interface NewsItem {
   id: string;
   title: string;
+  summary: string;
   source: string;
   time: string;
   tag: string;
@@ -16,96 +17,97 @@ interface NewsItem {
 const MOCK_NEWS: NewsItem[] = [
   {
     id: '1',
-    title: 'Major trade route blockage reported in Suez Canal',
-    source: 'Global Trade Wire',
-    time: '10 mins ago',
+    title: 'Suez Canal Blockage Reports Confirmed',
+    summary: 'Satellite imagery confirms massive container ship stuck in southern canal section, potential 3-day backlog.',
+    source: 'Reuters',
+    time: '2m ago',
     tag: 'Logistics',
     priority: 'high'
   },
   {
     id: '2',
-    title: 'Tech stocks rally amid new AI regulations',
-    source: 'Market Watch',
-    time: '25 mins ago',
-    tag: 'Technology',
-    priority: 'medium'
+    title: 'Fed Signals Rate Cut Possibility',
+    summary: 'Chairman Powell hints at 25bps cut in next meeting if inflation data remains stable.',
+    source: 'Bloomberg',
+    time: '15m ago',
+    tag: 'Finance',
+    priority: 'high'
   },
   {
     id: '3',
-    title: 'Energy summit concludes with new green initiatives',
-    source: 'EcoTimes',
-    time: '1 hour ago',
-    tag: 'Energy',
-    priority: 'low'
+    title: 'New Lithium Deposit Discovered in Chile',
+    summary: 'Estimated 500k tons of high-grade ore found in Atacama region.',
+    source: 'Mining Weekly',
+    time: '42m ago',
+    tag: 'Resources',
+    priority: 'medium'
   },
   {
     id: '4',
-    title: 'Rare earth metal shortage predicted for Q3',
-    source: 'Resource Insider',
-    time: '2 hours ago',
-    tag: 'Resources',
-    priority: 'high'
+    title: 'OPEC+ Meeting Ends Without Consensus',
+    summary: 'Oil output quotas remain unchanged as members fail to agree on cuts.',
+    source: 'OilPrice.com',
+    time: '1h ago',
+    tag: 'Energy',
+    priority: 'medium'
   },
-  {
-    id: '5',
-    title: 'Central Bank announces interest rate decision',
-    source: 'Financial Daily',
-    time: '3 hours ago',
-    tag: 'Finance',
-    priority: 'high'
-  }
 ];
 
 export function BreakingNewsStream() {
   const { t } = useTranslation();
 
   return (
-    <Card 
-      title={
+    <div className="flex flex-col h-full bg-[#1e293b]/50 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden shadow-lg">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/5">
         <div className="flex items-center gap-2">
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
           </span>
-          {t("dashboard.news.title", "Breaking News Stream")}
+          <span className="text-sm font-bold text-white tracking-wide uppercase">
+            {t("dashboard.news.title", "Live Wire")}
+          </span>
         </div>
-      } 
-      className="h-full shadow-sm"
-      bordered={false}
-      bodyStyle={{ padding: '0 12px' }}
-    >
-      <List
-        itemLayout="horizontal"
-        dataSource={MOCK_NEWS}
-        renderItem={(item) => (
-          <List.Item className="hover:bg-gray-50 transition-colors p-3 rounded-lg cursor-pointer my-1">
-            <List.Item.Meta
-              avatar={
-                <Avatar icon={<GlobalOutlined />} style={{ backgroundColor: item.priority === 'high' ? '#ff4d4f' : '#1890ff' }} />
+        <Tag className="border-0 bg-rose-500/20 text-rose-400 text-[10px] font-mono px-1">LIVE</Tag>
+      </div>
+
+      {/* Feed List */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent p-2 space-y-2">
+        {MOCK_NEWS.map((item) => (
+          <div 
+            key={item.id}
+            className={`
+              relative p-3 rounded-xl border transition-all duration-200 cursor-pointer group
+              ${item.priority === 'high' 
+                ? 'bg-gradient-to-r from-rose-500/10 to-transparent border-rose-500/20 hover:border-rose-500/40' 
+                : 'bg-white/5 border-white/5 hover:border-white/20'
               }
-              title={
-                <div className="flex justify-between items-start">
-                  <Typography.Text strong className="line-clamp-1 mr-2" style={{ fontSize: '14px' }}>
-                    {item.title}
-                  </Typography.Text>
-                  <Tag color={item.priority === 'high' ? 'red' : item.priority === 'medium' ? 'orange' : 'blue'} className="mr-0 text-[10px]">
-                    {item.tag}
-                  </Tag>
-                </div>
-              }
-              description={
-                <div className="flex items-center justify-between mt-1">
-                  <span className="text-xs text-gray-500">{item.source}</span>
-                  <div className="flex items-center text-xs text-gray-400">
-                    <ClockCircleOutlined className="mr-1" />
-                    {item.time}
-                  </div>
-                </div>
-              }
-            />
-          </List.Item>
-        )}
-      />
-    </Card>
+            `}
+          >
+            <div className="flex justify-between items-start mb-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-blue-400">{item.source}</span>
+                <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                  <ClockCircleOutlined /> {item.time}
+                </span>
+              </div>
+              {item.priority === 'high' && (
+                <ThunderboltFilled className="text-rose-500 animate-pulse text-xs" />
+              )}
+            </div>
+            
+            <h4 className="text-sm font-semibold text-gray-200 mb-1 group-hover:text-white transition-colors">
+              {item.title}
+            </h4>
+            
+            <p className="text-xs text-gray-500 leading-relaxed font-mono">
+              <span className="text-emerald-500 font-bold mr-1">AI:</span>
+              {item.summary}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

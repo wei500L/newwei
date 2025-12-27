@@ -85,7 +85,7 @@ export function FinancialCandlestick() {
   const { t } = useTranslation();
   const { data: session } = useSession();
   const { start, end } = useDashboardRangeStore();
-  const { echartsTheme, colors } = useChartTheme();
+  const theme = useChartTheme();
   const [exportingCsv, setExportingCsv] = useState(false);
   const emptyMessage = t("dashboard.charts.noDataRange", {
     defaultValue: "No Data Found for Selected Range"
@@ -137,16 +137,21 @@ export function FinancialCandlestick() {
     ]);
 
     return {
+      backgroundColor: "transparent",
       title: {
         text: data.symbol || t("dashboard.charts.financialCandlestick.title", { defaultValue: "Market Index" }),
         subtext: data.updatedAt ? new Date(data.updatedAt).toLocaleString() : undefined,
         left: 0,
+        textStyle: { color: theme.colors.tooltipText, fontFamily: theme.fontFamily },
       },
       tooltip: {
         trigger: "axis",
         axisPointer: {
           type: "cross",
         },
+        backgroundColor: theme.colors.tooltipBg,
+        borderColor: theme.colors.grid,
+        textStyle: { color: theme.colors.tooltipText },
       },
       grid: {
         left: "10%",
@@ -158,7 +163,8 @@ export function FinancialCandlestick() {
         data: timestamps,
         scale: true,
         boundaryGap: false,
-        axisLine: { onZero: false },
+        axisLine: { onZero: false, lineStyle: { color: theme.colors.grid } },
+        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily },
         splitLine: { show: false },
         splitNumber: 20,
       },
@@ -166,7 +172,10 @@ export function FinancialCandlestick() {
         scale: true,
         splitArea: {
           show: true,
+          areaStyle: { color: ["rgba(255,255,255,0.02)", "rgba(255,255,255,0.05)"] }
         },
+        splitLine: { lineStyle: { color: theme.colors.grid } },
+        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily },
       },
       dataZoom: [
         {
@@ -180,6 +189,8 @@ export function FinancialCandlestick() {
           top: "90%",
           start: 0,
           end: 100,
+          borderColor: theme.colors.grid,
+          textStyle: { color: theme.colors.foreground },
         },
       ],
       animationDurationUpdate: 300,
@@ -189,15 +200,15 @@ export function FinancialCandlestick() {
           type: "candlestick",
           data: ohlc,
           itemStyle: {
-            color: colors?.bullish ?? "#ef232a",
-            color0: colors?.bearish ?? "#14b143",
-            borderColor: colors?.bullish ?? "#ef232a",
-            borderColor0: colors?.bearish ?? "#14b143",
+            color: theme.colors.bullish,
+            color0: theme.colors.bearish,
+            borderColor: theme.colors.bullish,
+            borderColor0: theme.colors.bearish,
           },
         },
       ],
     };
-  }, [colors, data, t]);
+  }, [theme, data, t]);
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.points.length === 0) return;
@@ -278,7 +289,6 @@ export function FinancialCandlestick() {
       <DashboardChart
         group="dashboard-charts"
         option={option}
-        theme={echartsTheme}
         height="100%"
         exportFilename={`financial-candlestick-${formatDateForFilename(
           start

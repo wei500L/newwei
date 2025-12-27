@@ -1,105 +1,61 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import { theme } from "antd";
 
-// Mapping from semantic names to Tailwind CSS variables
-const TAILWIND_VARS = {
-  primary: "--primary",
-  secondary: "--secondary",
-  accent: "--accent",
-  destructive: "--destructive",
-  bullish: "--bullish",
-  bearish: "--bearish",
-  background: "--background",
-  foreground: "--foreground",
-  border: "--border",
-} as const;
+export interface ChartTheme {
+  colors: {
+    bullish: string;
+    bearish: string;
+    accent: string;
+    background: string;
+    foreground: string;
+    grid: string;
+    tooltipBg: string;
+    tooltipText: string;
+  };
+  fontFamily: string;
+}
 
-type ThemeColors = Record<keyof typeof TAILWIND_VARS, string>;
+const DEFAULT_THEME: ChartTheme = {
+  colors: {
+    bullish: "#10b981",
+    bearish: "#f43f5e",
+    accent: "#ffab00",
+    background: "transparent",
+    foreground: "#94a3b8", // Slate 400
+    grid: "rgba(255, 255, 255, 0.05)",
+    tooltipBg: "rgba(15, 23, 42, 0.9)", // Slate 900
+    tooltipText: "#e2e8f0",
+  },
+  fontFamily: "var(--font-roboto-mono), monospace",
+};
 
-export function useChartTheme() {
+export function useChartTheme(): ChartTheme {
   const { token } = theme.useToken();
-  const [colors, setColors] = useState<ThemeColors | null>(null);
+  const [chartTheme, setChartTheme] = useState<ChartTheme>(DEFAULT_THEME);
 
   useEffect(() => {
-    // Function to read CSS variable
-    const getVar = (name: string) => {
-      if (typeof window === "undefined") return "";
-      return getComputedStyle(document.documentElement)
-        .getPropertyValue(name)
-        .trim();
+    // Helper to get CSS variable value
+    const getVar = (name: string, fallback: string) => {
+      const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return value || fallback;
     };
 
-    // Initialize with current values
-    const newColors = Object.entries(TAILWIND_VARS).reduce((acc, [key, varName]) => {
-      acc[key as keyof ThemeColors] = getVar(varName);
-      return acc;
-    }, {} as ThemeColors);
+    setChartTheme({
+      colors: {
+        bullish: getVar("--bullish", "#10b981"),
+        bearish: getVar("--bearish", "#f43f5e"),
+        accent: getVar("--accent", "#ffab00"),
+        background: "transparent",
+        foreground: getVar("--foreground", "#94a3b8"),
+        grid: "rgba(255, 255, 255, 0.05)",
+        tooltipBg: "#1e293b", // Slate 800
+        tooltipText: "#f8fafc", // Slate 50
+      },
+      fontFamily: "var(--font-roboto-mono), monospace",
+    });
+  }, [token]); // Re-run if AntD theme changes, though mainly dependent on CSS vars
 
-    setColors(newColors);
-  }, []); // Empty dependency array means this runs once on mount. 
-          // If theme changes dynamically without reload, we might need to listen to changes,
-          // but usually CSS vars updates are handled by CSS. 
-          // However, for JS-side consumption, we might need a trigger.
-          // For now, assuming static theme or reload on theme change.
-
-  return {
-    colors,
-    echartsTheme: colors ? {
-      color: [
-        colors.primary,
-        colors.secondary,
-        colors.accent,
-        colors.bullish,
-        colors.bearish,
-        "#fac858",
-        "#ee6666",
-        "#73c0de",
-        "#3ba272",
-        "#fc8452",
-        "#9a60b4",
-        "#ea7ccc"
-      ],
-      backgroundColor: "transparent",
-      tooltip: {
-        backgroundColor: colors.background,
-        borderColor: colors.border,
-        textStyle: {
-          color: colors.foreground,
-        },
-      },
-      title: {
-        textStyle: {
-          color: colors.foreground,
-        },
-      },
-      textStyle: {
-        color: colors.foreground,
-      },
-      legend: {
-        textStyle: {
-          color: colors.foreground,
-        },
-      },
-      categoryAxis: {
-        axisLine: {
-          lineStyle: {
-            color: colors.border,
-          },
-        },
-        axisLabel: {
-          color: colors.foreground,
-        },
-      },
-      valueAxis: {
-        splitLine: {
-          lineStyle: {
-            color: colors.border,
-          },
-        },
-        axisLabel: {
-          color: colors.foreground,
-        },
-      },
-    } : undefined
-  };
+  return chartTheme;
 }

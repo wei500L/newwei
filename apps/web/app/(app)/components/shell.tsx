@@ -1,78 +1,27 @@
 "use client";
 
-import { Breadcrumb, Layout, Space, message, theme } from "antd";
-import { usePathname } from "next/navigation";
+import { Layout, message, theme } from "antd";
 import type { PropsWithChildren } from "react";
-import { useTranslation } from "react-i18next";
-
-import { LanguageSwitcher } from "./language-switcher";
-import { NotificationCenter } from "./notification-center";
-import { OrganizationSwitcher } from "./organization-switcher";
-import { Sidebar } from "./sidebar";
-
-const { Content } = Layout;
+import { TopNav } from "./top-nav";
+import { ActionRail } from "./action-rail";
 
 export function ShellLayout({ children }: PropsWithChildren) {
-  const { t } = useTranslation();
   const [messageApi, contextHolder] = message.useMessage();
-  const pathname = usePathname();
-  const { token } = theme.useToken();
-
-  const breadcrumbLabels: Record<string, string> = {
-    dashboard: t("nav.dashboard"),
-    "key-monitor": t("dashboard.tabs.keyMonitor"),
-    "military-alert": t("dashboard.tabs.militaryAlert"),
-    "economic-alert": t("dashboard.tabs.economicAlert"),
-    "economic-short": t("dashboard.tabs.economicShort"),
-    "economic-medium": t("dashboard.tabs.economicMedium"),
-    "economic-long": t("dashboard.tabs.economicLong"),
-    "livelihood-prices": t("dashboard.tabs.livelihoodPrices"),
-    items: t("nav.items"),
-    crawl: t("nav.crawlTasks"),
-    profile: t("nav.profile"),
-    admin: t("nav.admin"),
-    orgs: t("nav.organizations"),
-    errors: t("nav.errors"),
-    storage: t("nav.storage"),
-    settings: t("nav.settings"),
-    system: t("nav.systemSettings")
-  };
-
-  const breadcrumbs = pathname
-    .split("/")
-    .filter(Boolean)
-    .map((segment, index) => ({
-      title: breadcrumbLabels[segment] ?? segment,
-      key: `${segment}-${index}`,
-    }));
-
+  
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50/50">
+    <div className="flex flex-col h-screen bg-[var(--background)] overflow-hidden">
       {contextHolder}
       
-      {/* Sidebar */}
-      <Sidebar />
+      {/* Top Navigation */}
+      <TopNav />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Bar */}
-        <header className="flex items-center justify-between px-6 py-4 bg-white/50 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-10">
-           <div className="flex-1 min-w-0">
-             {pathname !== "/dashboard" && (
-                <Breadcrumb items={breadcrumbs} className="font-medium" />
-             )}
-           </div>
-
-           <Space align="center" size="middle" className="shrink-0 ml-4">
-              <NotificationCenter />
-              <LanguageSwitcher />
-              <OrganizationSwitcher />
-           </Space>
-        </header>
-
-        {/* Scrollable Content */}
-        <main className="flex-1 overflow-auto">
-           <div className="w-full max-w-[1600px] mx-auto p-6">
+      {/* Main Layout: Rail + Content */}
+      <div className="flex flex-1 overflow-hidden pt-16">
+        <ActionRail />
+        
+        {/* Main Content Area */}
+        <main className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+           <div className="w-full max-w-[1800px] mx-auto p-6">
               {children}
            </div>
         </main>
