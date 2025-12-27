@@ -35,6 +35,28 @@ const CLEANED_NEWS_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
   },
 };
 
+const DEFAULT_REMOVED_NOISE_TYPES = [
+  "nav",
+  "header",
+  "footer",
+  "sidebar",
+  "ads",
+  "promo",
+  "subscription",
+  "social",
+  "related_links",
+  "comments",
+  "legal",
+  "cookie_banner",
+  "author_bio",
+  "tag_cloud",
+  "unrelated",
+  "garbled_text",
+  "scripts",
+  "tracking",
+  "other",
+];
+
 @Injectable()
 export class NewsPromptBuilder {
   buildSystemPrompt(config: NewsPromptConfig, language?: string) {
@@ -43,6 +65,12 @@ export class NewsPromptBuilder {
       : "";
     return this.renderTemplate(config.systemPromptTemplate, {
       language_hint: languageHint,
+    });
+  }
+
+  buildDenoisePrompt(config: NewsPromptConfig) {
+    return this.renderTemplate(config.denoisePromptTemplate, {
+      noise_type_list: DEFAULT_REMOVED_NOISE_TYPES.join(", "),
     });
   }
 

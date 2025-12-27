@@ -27,6 +27,12 @@ describe("NewsPromptBuilder", () => {
     expect(prompt).toContain("# Title");
   });
 
+  it("builds denoise prompts with noise type guidance", () => {
+    const prompt = builder.buildDenoisePrompt(DEFAULT_NEWS_PROMPT_CONFIG);
+    expect(prompt).toContain("removed_noise_types");
+    expect(prompt).toContain("garbled_text");
+  });
+
   it("returns a json schema response format with required fields", () => {
     const format = builder.buildResponseFormat();
     expect(format.type).toBe("json_schema");

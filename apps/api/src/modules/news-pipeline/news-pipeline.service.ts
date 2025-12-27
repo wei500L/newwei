@@ -465,6 +465,10 @@ export class NewsPipelineService {
         },
         {
           role: "user",
+          content: this.promptBuilder.buildDenoisePrompt(promptConfig),
+        },
+        {
+          role: "user",
           content: this.promptBuilder.buildUserPrompt(promptConfig, {
             url: article.sourceUrl,
             markdown: truncated,

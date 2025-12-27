@@ -6,6 +6,7 @@ import { PrismaService } from "../config/prisma.service";
 export interface NewsPromptConfig {
   version: string;
   systemPromptTemplate: string;
+  denoisePromptTemplate: string;
   userPromptTemplate: string;
 }
 
@@ -15,11 +16,19 @@ export const DEFAULT_SYSTEM_PROMPT_TEMPLATE = [
   "Summaries must be 200-300 Chinese characters describing who/what/when/where/why.",
   "Return 5-8 key_points as single-sentence bullets emphasizing chronology, numbers, and impact.",
   "Entities must include type (person/org/location/product/index/policy/other) and confidence 0-1.",
-  "Set removed_noise_types to the categories you deleted (e.g., footer, nav, ads).",
+  "Always populate removed_noise_types with every noise category you remove, including garbled_text for encoding noise.",
   "quality_score is a decimal 0-1 reflecting completeness, readability, and de-noising success.",
   "Use null for fields you cannot infer, never omit required properties.",
   "{{language_hint}}"
 ].join(" ");
+
+export const DEFAULT_DENOISE_PROMPT_TEMPLATE = [
+  "Denoise step (do this before extracting fields):",
+  "Keep the article headline, lead, body text, and relevant quotes/figures.",
+  "Remove site chrome and boilerplate such as navigation/menus, headers/footers, sidebars, tag clouds, related links/recommendations, comments, cookie/privacy/legal notices, author bios, social/share widgets, subscription/paywall prompts, ads/sponsored/promos, tracking/scripts/styles, and unrelated content.",
+  "Drop garbled or non-language text (mojibake, replacement characters, repeated symbols).",
+  "Record every removed category in removed_noise_types using snake_case from: {{noise_type_list}}. If nothing removed, return []."
+].join("\n");
 
 export const DEFAULT_USER_PROMPT_TEMPLATE = [
   "URL: {{url}}",
@@ -33,8 +42,9 @@ export const DEFAULT_USER_PROMPT_TEMPLATE = [
 ].join("\n");
 
 export const DEFAULT_NEWS_PROMPT_CONFIG: NewsPromptConfig = {
-  version: "news-clean-v2",
+  version: "news-clean-v3",
   systemPromptTemplate: DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+  denoisePromptTemplate: DEFAULT_DENOISE_PROMPT_TEMPLATE,
   userPromptTemplate: DEFAULT_USER_PROMPT_TEMPLATE
 };
 
@@ -57,7 +67,7 @@ export class NewsPromptConfigService {
   async updateConfig(
     orgId: string,
     actorId: string,
-    input: NewsPromptConfig
+    input: Partial<NewsPromptConfig>
   ): Promise<NewsPromptConfig> {
     const normalized = this.normalize(input);
     await this.prisma.systemSetting.upsert({
@@ -97,6 +107,9 @@ export class NewsPromptConfigService {
     const systemPromptTemplate =
       this.cleanString(config.systemPromptTemplate) ??
       DEFAULT_NEWS_PROMPT_CONFIG.systemPromptTemplate;
+    const denoisePromptTemplate =
+      this.cleanString(config.denoisePromptTemplate) ??
+      DEFAULT_NEWS_PROMPT_CONFIG.denoisePromptTemplate;
     const userPromptTemplate =
       this.cleanString(config.userPromptTemplate) ??
       DEFAULT_NEWS_PROMPT_CONFIG.userPromptTemplate;
@@ -104,6 +117,7 @@ export class NewsPromptConfigService {
     return {
       version: version ?? DEFAULT_NEWS_PROMPT_CONFIG.version,
       systemPromptTemplate,
+      denoisePromptTemplate,
       userPromptTemplate
     };
   }
