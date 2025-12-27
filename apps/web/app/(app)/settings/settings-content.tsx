@@ -20,6 +20,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import type {
   UpdateAuditLogRetentionMutationVariables,
   UpdateAuthCacheSettingsMutationVariables,
@@ -234,6 +235,11 @@ export function SettingsContent() {
     key: "rateLimits",
     label: t("settings.tabs.rateLimits"),
     children: <RateLimitSettingsPanel />
+  });
+  tabItems.push({
+    key: "rateLimitPolicies",
+    label: t("settings.tabs.rateLimitPolicies"),
+    children: <RateLimitPoliciesPanel />
   });
   tabItems.push({
     key: "crawlClient",

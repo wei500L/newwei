@@ -10,6 +10,7 @@ import { Prisma } from "@prisma/client";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
+import { resolveRequestIp } from "../../common/request-ip";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { PrismaService } from "../../modules/config/prisma.service";
 import { CrawlMetadataService } from "../../modules/crawl/crawl-metadata.service";
@@ -153,7 +154,12 @@ export class CrawlResolver {
       options: input.options ?? undefined
     };
 
-    const created = await this.crawlTaskService.createTask(requester.orgId, requester.id, dto);
+    const created = await this.crawlTaskService.createTask(
+      requester.orgId,
+      requester.id,
+      dto,
+      resolveRequestIp(req)
+    );
     return this.toGraphTask(created);
   }
 
@@ -165,7 +171,12 @@ export class CrawlResolver {
       throw new BadRequestException("Unauthenticated");
     }
 
-    const task = await this.crawlTaskService.retryTask(requester.orgId, requester.id, id);
+    const task = await this.crawlTaskService.retryTask(
+      requester.orgId,
+      requester.id,
+      id,
+      resolveRequestIp(req)
+    );
     return this.toGraphTask(task);
   }
 

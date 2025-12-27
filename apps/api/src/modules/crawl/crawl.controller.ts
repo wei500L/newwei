@@ -1,8 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Query, Req } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import type { Request } from "express";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
+import { resolveRequestIp } from "../../common/request-ip";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { CrawlMetadataService } from "./crawl-metadata.service";
@@ -38,8 +40,12 @@ export class CrawlController {
 
   @Permissions("crawl.write")
   @Post()
-  async create(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateCrawlTaskDto) {
-    return this.crawlTaskService.createTask(user.orgId, user.id, body);
+  async create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: CreateCrawlTaskDto,
+    @Req() req: Request
+  ) {
+    return this.crawlTaskService.createTask(user.orgId, user.id, body, resolveRequestIp(req));
   }
 
   @Permissions("crawl.write")
@@ -51,8 +57,8 @@ export class CrawlController {
 
   @Permissions("crawl.write")
   @Post(":id/retry")
-  async retry(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
-    return this.crawlTaskService.retryTask(user.orgId, user.id, id);
+  async retry(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.crawlTaskService.retryTask(user.orgId, user.id, id, resolveRequestIp(req));
   }
 
   @Permissions("crawl.read")

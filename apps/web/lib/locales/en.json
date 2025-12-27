@@ -557,6 +557,52 @@
         "description": "RBAC write description"
       }
     },
+    "rateLimitPolicies": {
+      "description": "Manage per-feature throttling for user and IP traffic.",
+      "actions": {
+        "new": "New policy"
+      },
+      "columns": {
+        "feature": "Feature",
+        "userPerMinute": "User / min",
+        "ipPerMinute": "IP / min",
+        "windowSeconds": "Window (s)",
+        "status": "Status"
+      },
+      "fields": {
+        "feature": "Feature key",
+        "userLimit": "User limit",
+        "ipLimit": "IP limit",
+        "windowSeconds": "Window (seconds)",
+        "enabled": "Enabled",
+        "description": "Description"
+      },
+      "placeholders": {
+        "feature": "e.g. analysis.run",
+        "description": "Optional note"
+      },
+      "validation": {
+        "featureRequired": "Feature is required",
+        "featurePattern": "Use lowercase letters, numbers, dots, and underscores",
+        "userLimitRequired": "User limit is required",
+        "ipLimitRequired": "IP limit is required",
+        "windowRequired": "Window is required"
+      },
+      "modal": {
+        "createTitle": "New rate limit policy",
+        "editTitle": "Edit rate limit policy"
+      },
+      "messages": {
+        "created": "Created",
+        "updated": "Updated"
+      },
+      "errors": {
+        "loadFailed": "Failed to load rate limit policies",
+        "createFailed": "Failed to create rate limit policy",
+        "updateFailed": "Failed to update rate limit policy",
+        "toggleFailed": "Failed to update policy status"
+      }
+    },
     "auditLog": {
       "saved": "Saved",
       "saveFailed": "Failed to save",
@@ -650,6 +696,7 @@
     },
     "tabs": {
       "rateLimits": "Rate limits",
+      "rateLimitPolicies": "Rate limit policies",
       "auditLog": "Audit log",
       "authCache": "Auth cache",
       "crawlClient": "Crawl client",

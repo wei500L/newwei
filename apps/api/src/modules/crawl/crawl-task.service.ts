@@ -44,8 +44,8 @@ export class CrawlTaskService {
     private readonly actionRateLimit: ActionRateLimitService
   ) {}
 
-  async createTask(orgId: string, userId: string, dto: CreateCrawlTaskDto) {
-    await this.actionRateLimit.enforceCrawlTaskCreate(orgId, userId);
+  async createTask(orgId: string, userId: string, dto: CreateCrawlTaskDto, ip?: string) {
+    await this.actionRateLimit.enforceCrawlTaskCreate(orgId, userId, ip);
 
     const rawOptions = dto.options ?? undefined;
     const normalizedRawOptions = await this.normalizeActorOptions(orgId, userId, rawOptions);
@@ -264,7 +264,8 @@ export class CrawlTaskService {
     };
   }
 
-  async retryTask(orgId: string, userId: string, id: string) {
+  async retryTask(orgId: string, userId: string, id: string, ip?: string) {
+    await this.actionRateLimit.enforceCrawlTaskCreate(orgId, userId, ip);
     const task = await this.prisma.crawlTask.findFirst({
       where: { id, orgId },
       include: { _count: { select: { results: true } } }

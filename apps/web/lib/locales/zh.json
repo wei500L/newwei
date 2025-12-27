@@ -556,6 +556,52 @@
         "description": "RBAC 写入说明"
       }
     },
+    "rateLimitPolicies": {
+      "description": "管理按功能划分的用户/IP 限流策略。",
+      "actions": {
+        "new": "新增桶位"
+      },
+      "columns": {
+        "feature": "功能名",
+        "userPerMinute": "用户 / 分钟",
+        "ipPerMinute": "IP / 分钟",
+        "windowSeconds": "窗口(秒)",
+        "status": "状态"
+      },
+      "fields": {
+        "feature": "功能标识",
+        "userLimit": "用户阈值",
+        "ipLimit": "IP 阈值",
+        "windowSeconds": "时间窗口(秒)",
+        "enabled": "启用",
+        "description": "说明"
+      },
+      "placeholders": {
+        "feature": "例如 analysis.run",
+        "description": "可选备注"
+      },
+      "validation": {
+        "featureRequired": "请填写功能标识",
+        "featurePattern": "仅支持小写字母、数字、点和下划线",
+        "userLimitRequired": "请填写用户阈值",
+        "ipLimitRequired": "请填写 IP 阈值",
+        "windowRequired": "请填写时间窗口"
+      },
+      "modal": {
+        "createTitle": "新增限流策略",
+        "editTitle": "编辑限流策略"
+      },
+      "messages": {
+        "created": "创建成功",
+        "updated": "更新成功"
+      },
+      "errors": {
+        "loadFailed": "加载限流策略失败",
+        "createFailed": "创建限流策略失败",
+        "updateFailed": "更新限流策略失败",
+        "toggleFailed": "切换限流状态失败"
+      }
+    },
     "auditLog": {
       "saved": "已保存",
       "saveFailed": "保存失败",
@@ -649,6 +695,7 @@
     },
     "tabs": {
       "rateLimits": "速率限制",
+      "rateLimitPolicies": "限流配置",
       "auditLog": "审计日志",
       "authCache": "认证缓存",
       "crawlClient": "抓取客户端",

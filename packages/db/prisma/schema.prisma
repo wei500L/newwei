@@ -58,6 +58,7 @@ model User {
   alertRulesCreated AlertRule[] @relation("AlertRuleCreatedBy")
   alertChannelsCreated AlertNotificationChannel[] @relation("AlertChannelCreatedBy")
   systemSettingsUpdated SystemSetting[] @relation("SystemSettingUpdatedBy")
+  rateLimitPoliciesUpdated RateLimitPolicy[] @relation("RateLimitPolicyUpdatedBy")
   notifications Notification[]
 }
 
@@ -228,6 +229,19 @@ model SystemSetting {
   updatedAt   DateTime @updatedAt
   updatedBy   User?    @relation("SystemSettingUpdatedBy", fields: [updatedById], references: [id])
   updatedById String?
+}
+
+model RateLimitPolicy {
+  feature       String   @id
+  userLimit     Int
+  ipLimit       Int
+  windowSeconds Int
+  enabled       Boolean  @default(true)
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  updatedBy     User?    @relation("RateLimitPolicyUpdatedBy", fields: [updatedById], references: [id])
+  updatedById   String?
 }
 
 enum CrawlTaskStatus {

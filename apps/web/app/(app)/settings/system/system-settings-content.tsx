@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import {
   useAuditLogRetentionQuery,
   useAuthCacheSettingsQuery,
@@ -722,6 +723,11 @@ export function SystemSettingsContent() {
 
   const items = [
     { key: "rateLimits", label: t("settings.tabs.rateLimits"), children: <RateLimitSettingsPanel /> },
+    {
+      key: "rateLimitPolicies",
+      label: t("settings.tabs.rateLimitPolicies"),
+      children: <RateLimitPoliciesPanel />
+    },
     { key: "auditLog", label: t("settings.tabs.auditLog"), children: <AuditLogRetentionPanel /> },
     { key: "authCache", label: t("settings.tabs.authCache"), children: <AuthCacheSettingsPanel /> },
     { key: "crawlClient", label: t("settings.tabs.crawlClient"), children: <CrawlClientSettingsPanel /> },
