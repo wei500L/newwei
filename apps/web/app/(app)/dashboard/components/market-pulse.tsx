@@ -62,10 +62,10 @@ const MetricValue = ({ value, suffix }: { value: number | string, suffix?: strin
     return () => clearTimeout(timer);
   }, [value]);
 
-  const flashClass = flash === "up" ? "bg-emerald-500/30 text-emerald-100" : flash === "down" ? "bg-rose-500/30 text-rose-100" : "";
+  const flashClass = flash === "up" ? "bg-[var(--bullish)]/10 text-[var(--bullish)] text-glow-green" : flash === "down" ? "bg-[var(--bearish)]/10 text-[var(--bearish)] text-glow-red" : "";
 
   return (
-    <span className={`text-5xl font-extrabold tracking-tighter font-mono transition-all duration-500 px-2 rounded-lg ${flash ? flashClass : "text-white"}`}>
+    <span className={`text-4xl font-bold tracking-tighter font-mono transition-all duration-500 px-1 ${flash ? flashClass : "text-white"}`}>
       {typeof value === 'number' ? value.toFixed(1) : value}
       {suffix && <span className="text-xl ml-1 text-gray-500 font-semibold">{suffix}</span>}
     </span>
@@ -180,32 +180,32 @@ export function MarketPulse({
   }
 
   return (
-    <div className="mb-6 bg-[#1e293b]/50 backdrop-blur-sm border border-white/10 rounded-3xl p-8 shadow-sm">
-      <Row gutter={[32, 32]} align="middle">
+    <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_0_20px_rgba(0,0,0,0.3)]">
+      <Row gutter={[24, 24]} align="middle">
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.key}>
             <div 
-              className="flex flex-col h-full px-4 py-2 rounded-2xl transition-all duration-300 cursor-pointer hover:bg-white/5 hover:shadow-md hover:-translate-y-1 group border border-transparent hover:border-white/10"
+              className="flex flex-col h-full px-4 py-3 transition-all duration-300 cursor-pointer hover:bg-[var(--primary)]/5 group border-l border-[var(--border)] first:border-l-0"
               onClick={() => onMetricClick?.(metric.key)}
             >
-              <Typography.Text type="secondary" className="mb-3 text-[10px] uppercase font-bold tracking-[0.15em] opacity-70 group-hover:opacity-100 transition-opacity text-gray-400">
+              <Typography.Text type="secondary" className="mb-2 text-[11px] uppercase font-bold tracking-[0.2em] text-gray-500 group-hover:text-[var(--primary)] transition-colors">
                 {metric.title}
               </Typography.Text>
-              <div className="flex items-baseline gap-2 mb-4">
+              <div className="flex items-baseline gap-3 mb-2">
                 <MetricValue value={metric.value} suffix={metric.suffix} />
                 
-                <div className={`flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${
+                <div className={`flex items-center text-xs font-bold px-1.5 py-0.5 ${
                   metric.trend > 0 
-                    ? "bg-emerald-500/10 text-emerald-400" 
+                    ? "text-[var(--bullish)] text-glow-green" 
                     : metric.trend < 0 
-                      ? "bg-rose-500/10 text-rose-400" 
-                      : "bg-gray-500/10 text-gray-400"
+                      ? "text-[var(--bearish)] text-glow-red" 
+                      : "text-gray-400"
                 }`}>
                   {metric.trend > 0 ? <ArrowUpOutlined className="text-[10px]" /> : metric.trend < 0 ? <ArrowDownOutlined className="text-[10px]" /> : <MinusOutlined className="text-[10px]" />}
-                  <span className="ml-1">{Math.abs(metric.trend).toFixed(1)}%</span>
+                  <span className="ml-1 font-mono">{Math.abs(metric.trend).toFixed(1)}%</span>
                 </div>
               </div>
-              <div className="mt-auto h-[50px] w-full opacity-60 group-hover:opacity-100 transition-all duration-500">
+              <div className="mt-auto h-[40px] w-full opacity-50 group-hover:opacity-100 transition-all duration-500">
                 <Sparkline data={metric.data} color={metric.color} />
               </div>
             </div>

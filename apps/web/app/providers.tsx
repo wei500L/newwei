@@ -110,25 +110,35 @@ export function AppProviders({ children }: PropsWithChildren) {
         theme={{
           algorithm: theme.darkAlgorithm,
           token: {
-            colorPrimary: "#2563eb",
-            colorBgBase: "#0f172a",
-            colorBgContainer: "#1e293b",
-            borderRadius: 4,
+            colorPrimary: "#00f0ff", // Neon Cyan
+            colorBgBase: "#030712", // Gray 950
+            colorBgContainer: "#0b1221",
+            borderRadius: 0, // Sharp edges for military feel
             fontFamily: "var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            colorBorder: "rgba(0, 240, 255, 0.15)",
           },
           components: {
             Card: {
-              borderRadiusLG: 8,
-              colorBgContainer: "rgba(30, 41, 59, 0.7)", // Slate 800 with opacity for glass effect
-              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+              borderRadiusLG: 0,
+              colorBgContainer: "rgba(11, 18, 33, 0.6)", // Transparent dark blue
+              boxShadow: "0 0 0 1px rgba(0, 240, 255, 0.1)", // Subtle border glow instead of drop shadow
             },
             Button: {
-              borderRadius: 4,
+              borderRadius: 0,
               controlHeight: 36,
-              primaryShadow: "0 0 15px rgba(37, 99, 235, 0.3)", // Blue 600 glow
+              primaryShadow: "0 0 10px rgba(0, 240, 255, 0.4)", // Cyan glow
             },
             Table: {
               colorBgContainer: "transparent",
+              borderColor: "rgba(255,255,255,0.05)",
+            },
+            Menu: {
+              colorBgContainer: "transparent",
+            },
+            Modal: {
+              borderRadiusLG: 0,
+              colorBgElevated: "#030712",
+              boxShadow: "0 0 30px rgba(0, 240, 255, 0.1)",
             }
           }
         }}

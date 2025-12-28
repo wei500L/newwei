@@ -233,16 +233,18 @@ export function WarMap() {
       }));
     const useLargeMode = scatterData.length >= 500;
 
-    const areaColor = colors?.secondary ?? "#1f2937";
-    const borderColor = colors?.border ?? "#334155";
+    const areaColor = "rgba(30, 41, 59, 0.3)"; // Semi-transparent slate
+    const borderColor = colors?.primary ?? "#00f0ff"; // Neon border
 
     return {
-      title: {
-        text: t("dashboard.charts.warMap.title", { defaultValue: "Conflict Zones" }),
-        left: "center"
-      },
+      // Title handled externally by container
       tooltip: {
         trigger: "item",
+        backgroundColor: "rgba(3, 7, 18, 0.9)",
+        borderColor: colors?.primary ?? "#00f0ff",
+        textStyle: {
+          color: "#fff"
+        },
         formatter: (params: any) => {
           const payload = Array.isArray(params) ? params[0] : params;
           if (!payload) return "";
@@ -258,16 +260,16 @@ export function WarMap() {
 
           return `
             <div style="min-width: 200px; font-family: sans-serif;">
-              <div style="font-weight: bold; margin-bottom: 6px; font-size: 14px;">${data.name}</div>
+              <div style="font-weight: bold; margin-bottom: 6px; font-size: 14px; color: ${colors?.primary ?? '#00f0ff'}; text-transform: uppercase;">${data.name}</div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: ${colors?.foreground ?? '#666'};">Severity:</span>
-                <span style="color: ${severityColor}; font-weight: bold; text-transform: capitalize;">${severityLabel(data.severity)}</span>
+                <span style="color: #94a3b8;">Severity:</span>
+                <span style="color: ${severityColor}; font-weight: bold; text-transform: capitalize; text-shadow: 0 0 5px ${severityColor};">${severityLabel(data.severity)}</span>
               </div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: ${colors?.foreground ?? '#666'};">Intensity:</span>
-                <span>${intensity}</span>
+                <span style="color: #94a3b8;">Intensity:</span>
+                <span style="font-family: monospace;">${intensity}</span>
               </div>
-              <div style="margin-top: 8px; font-size: 0.85em; color: ${colors?.foreground ?? '#666'}; opacity: 0.8; border-top: 1px solid ${colors?.border ?? '#ccc'}; padding-top: 4px;">
+              <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
                 Updated: ${updatedStr}
               </div>
             </div>
@@ -277,22 +279,30 @@ export function WarMap() {
       geo: {
         map: geoQuery.data.name,
         roam: true,
-        zoom: geoQuery.data.zoom ?? 1.1,
+        zoom: geoQuery.data.zoom ?? 1.2,
         center: geoQuery.data.center,
         itemStyle: {
           areaColor,
           borderColor,
-          borderWidth: 0.6
+          borderWidth: 1,
+          shadowColor: 'rgba(0, 240, 255, 0.2)',
+          shadowBlur: 10
         },
         emphasis: {
           itemStyle: {
-            areaColor: colors?.accent ?? "#475569"
+            areaColor: "rgba(0, 240, 255, 0.2)",
+            borderColor: "#fff"
+          },
+          label: {
+            show: true,
+            color: "#fff"
           }
         },
         label: {
           show: false
         }
       },
+      backgroundColor: 'transparent',
       series: [
         {
           name: t("dashboard.charts.warMap.series", { defaultValue: "Conflict" }),
@@ -311,6 +321,10 @@ export function WarMap() {
             if (!Array.isArray(value)) return 8;
             const intensity = typeof value[2] === "number" ? value[2] : 0;
             return Math.max(6, Math.min(26, Math.sqrt(intensity) * 2));
+          },
+          itemStyle: {
+             shadowBlur: 10,
+             shadowColor: 'inherit'
           }
         }
       ]

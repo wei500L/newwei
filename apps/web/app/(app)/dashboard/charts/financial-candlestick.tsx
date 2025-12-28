@@ -138,75 +138,85 @@ export function FinancialCandlestick() {
 
     return {
       backgroundColor: "transparent",
-      title: {
-        text: data.symbol || t("dashboard.charts.financialCandlestick.title", { defaultValue: "Market Index" }),
-        subtext: data.updatedAt
-          ? formatDateTime(data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
-          : undefined,
-        left: 0,
-        textStyle: { color: theme.colors.tooltipText, fontFamily: theme.fontFamily },
-      },
       tooltip: {
         trigger: "axis",
         axisPointer: {
           type: "cross",
+          label: {
+            backgroundColor: "#283b56"
+          }
         },
-        backgroundColor: theme.colors.tooltipBg,
-        borderColor: theme.colors.grid,
-        textStyle: { color: theme.colors.tooltipText },
+        backgroundColor: "rgba(3, 7, 18, 0.9)",
+        borderColor: "#00f0ff",
+        textStyle: { color: "#fff", fontFamily: "monospace" },
+        borderWidth: 1,
       },
       grid: {
-        left: "10%",
-        right: "10%",
-        bottom: "15%",
+        left: "2%",
+        right: "2%",
+        bottom: "10%",
+        top: "10%",
+        containLabel: true
       },
       xAxis: {
         type: "category",
         data: timestamps,
         scale: true,
-        boundaryGap: false,
-        axisLine: { onZero: false, lineStyle: { color: theme.colors.grid } },
-        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily },
-        splitLine: { show: false },
-        splitNumber: 20,
+        boundaryGap: true, // Candles need gap usually
+        axisLine: { onZero: false, lineStyle: { color: "#334155" } },
+        axisLabel: { color: "#94a3b8", fontFamily: "monospace" },
+        splitLine: { show: false }, // No grid
+        axisTick: { show: false }
       },
       yAxis: {
         scale: true,
-        splitArea: {
-          show: true,
-          areaStyle: { color: ["rgba(255,255,255,0.02)", "rgba(255,255,255,0.05)"] }
-        },
-        splitLine: { lineStyle: { color: theme.colors.grid } },
-        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily },
+        splitArea: { show: false },
+        splitLine: { show: false }, // No grid
+        axisLabel: { color: "#94a3b8", fontFamily: "monospace" },
+        axisLine: { show: false }
       },
       dataZoom: [
         {
           type: "inside",
-          start: 0,
+          start: 50,
           end: 100,
-        },
-        {
-          show: true,
-          type: "slider",
-          top: "90%",
-          start: 0,
-          end: 100,
-          borderColor: theme.colors.grid,
-          textStyle: { color: theme.colors.foreground },
         },
       ],
-      animationDurationUpdate: 300,
       series: [
         {
           name: data.symbol ?? "Index",
           type: "candlestick",
           data: ohlc,
           itemStyle: {
-            color: theme.colors.bullish,
-            color0: theme.colors.bearish,
-            borderColor: theme.colors.bullish,
-            borderColor0: theme.colors.bearish,
+            color: "#00ff9d", // Neon Green (Bullish)
+            color0: "#ff0055", // Neon Red (Bearish)
+            borderColor: "#00ff9d",
+            borderColor0: "#ff0055",
+            shadowBlur: 5,
+            shadowColor: "inherit" // Glow effect
           },
+          markLine: {
+             symbol: ['none', 'none'],
+             data: [
+                {
+                   yAxis: ohlc[ohlc.length - 1][1], // Last Close
+                   label: {
+                      show: true,
+                      position: 'end',
+                      backgroundColor: '#00f0ff',
+                      color: '#000',
+                      padding: [2, 4],
+                      borderRadius: 2,
+                      formatter: '{c}'
+                   },
+                   lineStyle: {
+                      color: '#00f0ff',
+                      type: 'dashed',
+                      opacity: 0.5
+                   }
+                }
+             ]
+          }
         },
       ],
     };

@@ -414,13 +414,19 @@ export function DashboardContent() {
           onClose={() => setActiveDrillDownKey(null)} 
         />
 
-        {/* Charts Section */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-           <Card title={t("dashboard.charts.sectorHeatmap", { defaultValue: "Sector Performance" })} className="content-card h-[400px]">
-             <SectorHeatmap />
-           </Card>
-           <Card className="content-card h-[400px]" bodyStyle={{ padding: 0 }}>
+        {/* Charts Section - Immersive Map & Analytics */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+           {/* War Map - Dominant Central Feature */}
+           <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--primary)]/20 relative overflow-hidden">
+             <div className="absolute top-4 left-4 z-10">
+               <h3 className="text-lg text-[var(--primary)] text-glow uppercase tracking-widest">{t("dashboard.charts.warMap.title", { defaultValue: "Global Conflict Zones" })}</h3>
+             </div>
              <WarMap />
+           </div>
+
+           {/* Sector Heatmap - Side Panel */}
+           <Card title={t("dashboard.charts.sectorHeatmap", { defaultValue: "Sector Performance" })} className="glass-card h-[500px]" bordered={false}>
+             <SectorHeatmap />
            </Card>
         </div>
 
@@ -433,7 +439,7 @@ export function DashboardContent() {
              />
            </div>
            <div className="xl:col-span-1">
-             <Card className="content-card h-full">
+             <Card className="glass-card h-full" bordered={false}>
                <FinancialCandlestick />
              </Card>
            </div>

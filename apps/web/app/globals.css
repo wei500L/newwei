@@ -3,55 +3,57 @@
 @tailwind utilities;
 
 :root {
-  /* Complex Dark Theme */
-  --background: #0f172a; /* Slate 900 base */
-  --foreground: #e2e8f0;
+  /* Command Center Theme */
+  --background: #030712; /* Gray 950 - Almost Black */
+  --foreground: #f8fafc; /* Slate 50 */
 
-  /* Primary Action - Vibrant Blue */
-  --primary: #2563eb; /* Blue 600 - Vibrant, derived from #0050b3 ref */
-  --primary-foreground: #ffffff;
+  /* Neon Accents - Cyberpunk/HUD Style */
+  --primary: #00f0ff; /* Neon Cyan */
+  --primary-foreground: #000000;
 
-  /* Semantic - Financial Trends */
-  --bullish: #10b981; /* Emerald 500 */
-  --bullish-foreground: #ffffff;
-  --bearish: #f43f5e; /* Rose 500 */
+  /* Semantic - High Contrast */
+  --bullish: #00ff9d; /* Neon Green */
+  --bullish-foreground: #000000;
+  --bearish: #ff0055; /* Neon Red/Pink */
   --bearish-foreground: #ffffff;
 
-  /* Secondary - Muted Blue/Grey */
-  --secondary: #1e293b;
+  /* Secondary - Deep Slate */
+  --secondary: #111827; /* Gray 900 */
   --secondary-foreground: #94a3b8;
 
-  /* Accent - Bloomberg Amber/Gold for Data */
-  --accent: #ffab00;
+  /* Accent - Warning/Data */
+  --accent: #ffb700; /* Amber */
   --accent-foreground: #000000;
 
   /* Destructive */
-  --destructive: #ef4444;
+  --destructive: #ff3333;
   --destructive-foreground: #ffffff;
 
-  /* UI Elements */
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.05);
-  --ring: rgba(37, 99, 235, 0.5);
+  /* UI Elements - Glowing Borders */
+  --border: rgba(0, 240, 255, 0.15); /* Subtle cyan tint */
+  --input: rgba(17, 24, 39, 0.8);
+  --ring: rgba(0, 240, 255, 0.5);
   
-  --radius: 4px; /* Crisp, tighter radius */
-  --radius-lg: 8px;
+  --radius: 0px; /* Military/Industrial Sharpness */
+  --radius-lg: 2px;
 }
 
 @layer base {
   body {
     @apply bg-[var(--background)] text-[var(--foreground)] font-sans antialiased selection:bg-[var(--primary)] selection:text-[var(--primary-foreground)] tabular-nums;
-    /* Complex layered background */
+    /* Grid Pattern Overlay */
     background-image: 
-      radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.15) 0px, transparent 50%), /* Primary glow top left */
-      radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.05) 0px, transparent 50%), /* Subtle Bullish tint top right */
-      radial-gradient(at 50% 100%, rgba(244, 63, 94, 0.05) 0px, transparent 50%); /* Subtle Bearish tint bottom */
+      linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+      radial-gradient(at 50% 50%, rgba(17, 24, 39, 0) 0%, rgba(3, 7, 18, 1) 100%);
+    background-size: 50px 50px, 50px 50px, 100% 100%;
     background-attachment: fixed;
   }
 
   /* Typography Overrides */
   h1, h2, h3, h4, h5, h6 {
-    @apply font-bold tracking-tight text-white; /* Increased weight */
+    @apply font-bold tracking-tight text-white uppercase; /* Uppercase headers for command feel */
+    text-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
   }
   
   code, pre, .font-mono {
@@ -60,83 +62,41 @@
 }
 
 @layer utilities {
-  /* Glassmorphism Utilities */
+  /* HUD Glassmorphism */
   .glass {
-    @apply backdrop-blur-md bg-[#0f172a]/70 border border-white/5; /* Removed heavy shadow */
+    @apply backdrop-blur-md bg-[#030712]/80 border-b border-[var(--border)];
   }
   
   .glass-card {
-    @apply glass rounded-[var(--radius-lg)];
+    @apply backdrop-blur-xl bg-[#0b1221]/60 border border-[var(--border)] shadow-[0_0_15px_rgba(0,240,255,0.05)];
   }
 
   .glass-panel {
-    @apply glass rounded-[var(--radius)];
+    @apply backdrop-blur-md bg-[#111827]/80 border border-white/5;
   }
 
-  /* Bloomberg-style crisp borders */
-  .border-crisp {
-    @apply border border-white/10;
+  /* Neon Text Utilities */
+  .text-glow {
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
   }
-}
+  
+  .text-glow-green {
+    text-shadow: 0 0 10px rgba(0, 255, 157, 0.5);
+  }
 
-/* Auth Layout Styles */
-.auth-layout {
-  @apply min-h-screen flex items-center justify-center p-8 relative overflow-hidden;
-  /* Updated auth background to match new theme but darker */
-  background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 100%);
-}
+  .text-glow-red {
+    text-shadow: 0 0 10px rgba(255, 0, 85, 0.5);
+  }
 
-.auth-layout::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.5), transparent);
-}
-
-.auth-card {
-  @apply w-full max-w-[420px] p-8 glass-card;
-  /* Lighter border, less shadow */
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
-}
-
-/* Dashboard/Layout Styles */
-.main-layout {
-  @apply min-h-screen flex flex-col;
-}
-
-.page-heading {
-  @apply flex items-center justify-between mb-8;
-}
-
-.page-title {
-  @apply text-2xl font-bold text-white tracking-tight; /* Increased weight */
-}
-
-.content-card {
-  @apply glass-card p-6 transition-all duration-300;
-}
-
-.content-card:hover {
-  @apply border-white/20 bg-white/[0.03]; /* Slight background shift instead of shadow */
-}
-
-/* Cache/Data Components */
-.cache-summary {
-  @apply grid gap-4 mb-6;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-}
-
-.cache-pill {
-  @apply flex items-center justify-between p-4 glass-panel cursor-pointer hover:bg-white/5 transition-colors;
-}
-
-.cache-card {
-  @apply glass-panel p-4;
-}
-
-.markdown-preview {
-  @apply bg-[#080c15] border border-white/10 rounded-[var(--radius)] p-4 overflow-auto max-h-[300px] text-[13px] font-mono text-gray-300;
+  /* Ticker Animation */
+  @keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .animate-ticker {
+    animation: ticker 60s linear infinite;
+  }
+  .animate-ticker:hover {
+    animation-play-state: paused;
+  }
 }

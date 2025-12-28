@@ -148,6 +148,9 @@ export function SectorHeatmap() {
     return {
       tooltip: {
         position: "top",
+        backgroundColor: "rgba(3, 7, 18, 0.9)",
+        borderColor: "#00f0ff",
+        textStyle: { color: "#fff", fontFamily: "monospace" },
         formatter: (params: any) => {
           const value = params.value;
           if (!Array.isArray(value)) return "";
@@ -156,8 +159,11 @@ export function SectorHeatmap() {
         }
       },
       grid: {
-        height: "80%",
-        top: "10%"
+        height: "90%",
+        top: "5%",
+        bottom: "5%",
+        left: "2%",
+        right: "2%"
       },
       xAxis: {
         type: "category",
@@ -172,15 +178,13 @@ export function SectorHeatmap() {
       visualMap: {
         min: -maxChange,
         max: maxChange,
-        calculable: true,
-        orient: "horizontal",
-        left: "center",
-        bottom: 0,
+        calculable: false, // Cleaner look
+        show: false, // Hide the bar, rely on color
         inRange: {
           color: [
-            colors?.bearish ?? "#ef4444",
-            "#f3f4f6",
-            colors?.bullish ?? "#22c55e"
+            "#ff0055", // Neon Red
+            "#1e293b", // Slate 800 (Neutral)
+            "#00ff9d"  // Neon Green
           ]
         }
       },
@@ -191,6 +195,9 @@ export function SectorHeatmap() {
           data: heatmapData,
           label: {
             show: true,
+            fontFamily: "monospace",
+            fontSize: 10,
+            color: "#fff",
             formatter: (params: any) => {
               const value = params.value;
               if (!Array.isArray(value)) return "";
@@ -198,10 +205,15 @@ export function SectorHeatmap() {
               return `${name}\n${change}%`;
             }
           },
+          itemStyle: {
+            borderColor: '#030712', // Match background for spacing
+            borderWidth: 2
+          },
           emphasis: {
             itemStyle: {
               shadowBlur: 10,
-              shadowColor: 'rgba(0, 0, 0, 0.5)'
+              shadowColor: '#fff',
+              borderColor: '#fff'
             }
           }
         }
