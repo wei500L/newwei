@@ -12,8 +12,5 @@ TypeScript strict mode is on; exported symbols need explicit types and enums sho
 ## Testing Guidelines
 Backend suites use Jest: `pnpm --filter @modular/api test` covers units, and `pnpm --filter @modular/api test:e2e` validates `/api/healthz` plus login flows. Front-end work should add Vitest or Playwright specs under `apps/web/tests` until the planned suites are merged. Name files `{feature}.spec.ts` for units and `{feature}.e2e-spec.ts` for end-to-end cases, and stash builders in `__fixtures__`. Touching guards, RBAC policies, or Prisma models should bump coverage and include at least one regression test.
 
-## Commit & Pull Request Guidelines
-Commits follow Conventional Commits (`feat:`, `fix:`, `chore:`) enforced by Husky + Commitlint; keep messages imperative and scope-aware, and **all commit descriptions must be written in Simplified Chinese (e.g., `fix(web-auth): 处理无效的 MFA 令牌`)**. Pull requests need a concise summary, linked issue, verification notes (e.g., `pnpm test`, screenshots for UI), and mention of schema or env changes. Default to squash merges unless documenting a multi-step migration.
-
 ## Environment & Ops Tips
 Configure secrets by copying `.env.example` to `.env` and `infra/docker/.env.sample` to `infra/docker/.env`, then running `pnpm --filter infra-scripts run env:check`. Avoid committing local overrides; use Docker Compose profiles or `.env.local`. When adding services, extend `infra/docker/docker-compose.yml` and note exposed ports in README and this guide.

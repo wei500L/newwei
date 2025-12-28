@@ -731,6 +731,7 @@ export class AlertsService {
         }
       }
     }
-    await this.queue.removeJobs([`evaluate:${ruleId}`, this.buildRuleJobName(ruleId)]);
+    await this.queue.remove(`evaluate:${ruleId}`);
+    await this.queue.remove(this.buildRuleJobName(ruleId));
   }
 }

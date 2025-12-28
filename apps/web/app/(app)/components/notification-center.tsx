@@ -1,7 +1,7 @@
 "use client";
 
 import { BellOutlined } from "@ant-design/icons";
-import { Badge, Button, List, Popover, Space, Spin, Tag, Typography, message } from "antd";
+import { App, Badge, Button, List, Popover, Space, Spin, Tag, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -32,6 +32,7 @@ const MAX_ITEMS = 30;
 
 export function NotificationCenter() {
   const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const { data, loading, refetch } = useNotificationsQuery({
     variables: { limit: MAX_ITEMS }
@@ -65,7 +66,7 @@ export function NotificationCenter() {
       message.info(incoming.title);
       void refetchUnread();
     },
-    [refetchUnread]
+    [message, refetchUnread]
   );
 
   const { connectionError } = useNotificationStream(handleIncoming);
@@ -74,7 +75,7 @@ export function NotificationCenter() {
     if (connectionError) {
       message.warning(connectionError);
     }
-  }, [connectionError]);
+  }, [connectionError, message]);
 
   const markOneAsRead = useCallback(
     async (id: string) => {

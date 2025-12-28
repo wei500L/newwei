@@ -159,6 +159,20 @@ services:
       sh -ec "
       echo '[web] pnpm install...';
       pnpm install --unsafe-perm;
+      echo '[web] waiting for api...';
+      i=0;
+      while [ $$i -lt 150 ]; do
+        if curl -fsS http://api:4000/api/healthz/live >/dev/null; then
+          echo '[web] api ready';
+          break;
+        fi;
+        i=$$((i + 1));
+        sleep 2;
+      done;
+      if ! curl -fsS http://api:4000/api/healthz/live >/dev/null; then
+        echo '[web] api not ready after 300s';
+        exit 1;
+      fi;
       echo '[web] starting dev server...';
       pnpm --filter @modular/web run dev:turbo
       "

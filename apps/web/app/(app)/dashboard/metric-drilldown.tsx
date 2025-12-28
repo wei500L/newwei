@@ -220,7 +220,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 title={<><UnorderedListOutlined /> {t("dashboard.drilldown.relatedIntelligence", "Related Intelligence")}</>} 
                 bordered={false}
                 className="h-full border border-gray-100"
-                bodyStyle={{ maxHeight: 400, overflowY: 'auto' }}
+                styles={{ body: { maxHeight: 400, overflowY: "auto" } }}
               >
                 {data?.relatedAlerts && data.relatedAlerts.length > 0 ? (
                    <Timeline

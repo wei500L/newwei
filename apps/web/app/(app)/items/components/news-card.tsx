@@ -47,7 +47,7 @@ export function NewsCard({ item }: NewsCardProps) {
         ) : null
       }
       style={{ height: "100%", display: "flex", flexDirection: "column" }}
-      bodyStyle={{ flex: 1, display: "flex", flexDirection: "column" }}
+      styles={{ body: { flex: 1, display: "flex", flexDirection: "column" } }}
     >
       <Space direction="vertical" size="small" style={{ width: "100%", flex: 1 }}>
         <Space wrap>
@@ -60,23 +60,20 @@ export function NewsCard({ item }: NewsCardProps) {
             {formatDateTime(item.createdAt, locale, { dateStyle: "medium" })}
           </Text>
         </Space>
-        
         <Title level={5} ellipsis={{ rows: 2 }}>
           {item.title}
         </Title>
-        
         {item.summary && (
           <Paragraph ellipsis={{ rows: 3 }} type="secondary">
             {item.summary}
           </Paragraph>
         )}
       </Space>
-      
       {item.source && (
         <div style={{ marginTop: "auto", paddingTop: "12px" }}>
-           <Text type="secondary" style={{ fontSize: "12px" }}>
-             {item.source}
-           </Text>
+          <Text type="secondary" style={{ fontSize: "12px" }}>
+            {item.source}
+          </Text>
         </div>
       )}
     </Card>

@@ -3,6 +3,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
+import { emitUnauthorized } from '@/lib/auth-events';
 import { env } from '@/lib/env';
 
 enum WarEventSeverity {
@@ -243,6 +244,24 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       scheduleReconnect();
     };
 
+    const handleUnauthorized = (status: number) => {
+      if (!active) return;
+      emitUnauthorized({ status });
+      stopPolling();
+      if (reconnectRef.current) {
+        clearTimeout(reconnectRef.current);
+        reconnectRef.current = null;
+      }
+      retryRef.current = 0;
+      statusRef.current = 'offline';
+      const message = `Dashboard stream unauthorized (${status})`;
+      setState((prev) =>
+        prev.status === 'offline' && prev.error === message && !prev.connected
+          ? prev
+          : { connected: false, status: 'offline', error: message },
+      );
+    };
+
     const handleEvent = (eventType: string, rawData: string) => {
       const payload = parseStreamData(rawData);
       if (eventType === 'war-map-events' && isWarMapEventsResponse(payload)) {
@@ -291,6 +310,10 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         });
 
         if (!response.ok || !response.body) {
+          if (response.status === 401) {
+            handleUnauthorized(response.status);
+            return;
+          }
           handleError(`Dashboard stream failed (${response.status})`, 'polling');
           return;
         }

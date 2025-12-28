@@ -752,7 +752,7 @@ type ProcessedItemModelGraph {
 
 type Query {
   alertChannels: [AlertChannelModel!]!
-  alertEvents(limit: Int): [AlertEventModel!]!
+  alertEvents(limit: Int, metricSlug: String): [AlertEventModel!]!
   alertRules: [AlertRuleModel!]!
   analysisResults(limit: Int): [AnalysisResultModel!]!
   auditLogRetention: AuditLogRetentionModel!
@@ -945,11 +945,14 @@ input UpsertDashboardInput {
 }
 
 type UserModel {
+  avatarUrl: String
   email: String!
   firstName: String!
   id: String!
   lastName: String!
   orgId: String!
   permissions: [String!]!
+  planTier: String
   roleIds: [String!]!
+  subscriptionStatus: String
 }

@@ -4,10 +4,16 @@ import process from 'node:process';
 
 import { seed } from '../seeds';
 
-loadAndValidateEnv(baseEnvSchema, {
+const env = loadAndValidateEnv(baseEnvSchema, {
   dotenvPath: path.resolve(process.cwd(), '../../.env'),
   overrideProcessEnv: true
 });
+
+const connectionString =
+  process.env.DATABASE_URL ??
+  `mysql://${env.MYSQL_USER}:${encodeURIComponent(env.MYSQL_PASSWORD)}@${env.MYSQL_HOST}:${env.MYSQL_PORT}/${env.MYSQL_DB}`;
+
+process.env.DATABASE_URL = connectionString;
 
 seed()
   .then(() => {
