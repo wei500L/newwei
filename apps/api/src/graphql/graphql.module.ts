@@ -60,6 +60,7 @@ import { NotificationResolver } from "./resolvers/notification.resolver";
 import { OrgResolver } from "./resolvers/org.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
 import { SettingsResolver } from "./resolvers/settings.resolver";
+import { TopicsResolver } from "./resolvers/topics.resolver";
 import { UsersResolver } from "./resolvers/user.resolver";
 
 const logger = createLogger({ name: "graphql" });
@@ -215,6 +216,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
   providers: [
     UsersResolver,
     ItemsResolver,
+    TopicsResolver,
     RbacResolver,
     DashboardResolver,
     CrawlResolver,

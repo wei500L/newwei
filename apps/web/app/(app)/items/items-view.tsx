@@ -51,7 +51,7 @@ interface ParsedItem {
   history?: { timestamp: string; value: number }[];
 }
 
-export function ItemsView() {
+export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
@@ -66,7 +66,7 @@ export function ItemsView() {
   
   // Local State
   const [searchInput, setSearchInput] = useState(urlSearch);
-  const [view, setView] = useState<ItemViewType>("list");
+  const [view, setView] = useState<ItemViewType>(initialView);
   const [filters, setFilters] = useState<FilterState>({});
   const [showFilters, setShowFilters] = useState(false);
 

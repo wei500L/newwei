@@ -18,6 +18,10 @@ import { UpdateItemDto } from "./dto/update-item.dto";
 
 const MAX_CURSOR_PAGE_SIZE = 50;
 const FULLTEXT_MIN_TOKEN_LENGTH = 3;
+const MAX_TOPIC_GROUPS = 50;
+const MAX_TOPIC_ITEMS = 8;
+const DEFAULT_TOPIC_WINDOW_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 type SearchStrategy =
   | { type: "none" }
@@ -34,6 +38,23 @@ interface ItemMetaRow {
   version: number;
   createdAt: Date;
   updatedAt: Date;
+}
+
+interface TopicGroupItem {
+  processedId: string;
+  itemMetaId: string;
+  title?: string | null;
+  summary?: string | null;
+  source?: string | null;
+  publishedAt?: string | null;
+  createdAt: Date;
+}
+
+interface TopicGroup {
+  topic: string;
+  count: number;
+  latestAt: Date;
+  items: TopicGroupItem[];
 }
 
 @Injectable()
@@ -249,6 +270,116 @@ export class ItemsService {
     ).catch(() => undefined);
 
     return updated;
+  }
+
+  async listTopicGroups(
+    orgId: string,
+    options?: { limit?: number; itemsPerGroup?: number; windowDays?: number }
+  ): Promise<TopicGroup[]> {
+    const normalizedLimit = Math.min(
+      Math.max(options?.limit ?? 12, 1),
+      MAX_TOPIC_GROUPS
+    );
+    const normalizedItems = Math.min(
+      Math.max(options?.itemsPerGroup ?? 5, 1),
+      MAX_TOPIC_ITEMS
+    );
+    const windowDays = Math.min(
+      Math.max(options?.windowDays ?? DEFAULT_TOPIC_WINDOW_DAYS, 1),
+      DEFAULT_TOPIC_WINDOW_DAYS * 6
+    );
+    const since = new Date(Date.now() - windowDays * DAY_MS);
+
+    const pipeline = [
+      {
+        $match: {
+          orgId,
+          status: 'completed',
+          createdAt: { $gte: since },
+          'result.topics.0': { $exists: true }
+        }
+      },
+      {
+        $project: {
+          itemMetaId: 1,
+          createdAt: 1,
+          result: 1
+        }
+      },
+      {
+        $unwind: '$result.topics'
+      },
+      {
+        $match: {
+          'result.topics': { $nin: [null, ''] }
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $group: {
+          _id: '$result.topics',
+          count: { $sum: 1 },
+          latestAt: { $first: '$createdAt' },
+          items: {
+            $push: {
+              processedId: '$_id',
+              itemMetaId: '$itemMetaId',
+              title: '$result.title',
+              summary: '$result.summary',
+              source: '$result.source',
+              publishedAt: '$result.published_at',
+              createdAt: '$createdAt'
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          count: 1,
+          latestAt: 1,
+          items: { $slice: ['$items', normalizedItems] }
+        }
+      },
+      {
+        $sort: { latestAt: -1, count: -1 }
+      },
+      {
+        $limit: normalizedLimit
+      }
+    ];
+
+    const groups = await ProcessedItemModel.aggregate<{
+      _id: string;
+      count: number;
+      latestAt: Date;
+      items: Array<{
+        processedId: { toString: () => string };
+        itemMetaId: string;
+        title?: string | null;
+        summary?: string | null;
+        source?: string | null;
+        publishedAt?: string | null;
+        createdAt: Date;
+      }>;
+    }>(pipeline);
+
+    return groups.map((group) => ({
+      topic: group._id,
+      count: group.count,
+      latestAt: group.latestAt,
+      items: group.items.map((item) => ({
+        processedId: item.processedId.toString(),
+        itemMetaId: item.itemMetaId,
+        title: item.title ?? undefined,
+        summary: item.summary ?? undefined,
+        source: item.source ?? undefined,
+        publishedAt: item.publishedAt ?? undefined,
+        createdAt: item.createdAt
+      }))
+    }));
   }
 
   private resolveSearchStrategy(search?: string): SearchStrategy {

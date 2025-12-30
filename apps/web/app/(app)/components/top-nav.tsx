@@ -136,7 +136,7 @@ export function TopNav() {
                   menu={{
                   items: [
                       {
-                          key: "profile",
+                          key: "profile-info",
                           label: (
                               <div className="flex flex-col">
                                   <span className="font-medium text-white">{displayNameOrEmail}</span>
@@ -147,6 +147,12 @@ export function TopNav() {
                           className: "cursor-default opacity-100 hover:bg-transparent"
                       },
                       { type: 'divider' },
+                      {
+                          key: "profile",
+                          label: t("nav.profile", { defaultValue: "Profile" }),
+                          icon: <UserOutlined />,
+                          onClick: () => router.push("/profile")
+                      },
                       {
                           key: "logout",
                           label: t("auth.logout"),
