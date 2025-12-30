@@ -11,10 +11,16 @@ export interface NewsCardProps {
     id: string;
     title: string;
     createdAt: string;
+    publishedAt?: string;
+    ingestedAt?: string;
     summary?: string;
     thumbnail?: string;
     sentiment?: string;
     source?: string;
+    topics?: string[];
+    tags?: string[];
+    qualityScore?: number;
+    url?: string;
   };
 }
 
@@ -34,6 +40,16 @@ export function NewsCard({ item }: NewsCardProps) {
     }
   };
 
+  const publishedLabel = t("items.time.published", { defaultValue: "Published" });
+  const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
+  const hasPublished = Boolean(item.publishedAt);
+  const displayPublished = item.publishedAt ?? item.createdAt;
+  const displayIngested = item.ingestedAt ?? item.createdAt;
+  const showIngested = Boolean(item.ingestedAt) && (!hasPublished || item.ingestedAt !== item.publishedAt);
+  const topicTags = [...(item.topics ?? []), ...(item.tags ?? [])].slice(0, 3);
+  const qualityScore =
+    typeof item.qualityScore === "number" ? Math.round(item.qualityScore * 100) : null;
+
   return (
     <Card
       hoverable
@@ -51,29 +67,55 @@ export function NewsCard({ item }: NewsCardProps) {
     >
       <Space direction="vertical" size="small" style={{ width: "100%", flex: 1 }}>
         <Space wrap>
-          {item.sentiment && (
+          {item.sentiment ? (
             <Tag color={sentimentColor(item.sentiment)}>
               {t(`items.sentiment.${item.sentiment}`, { defaultValue: item.sentiment })}
             </Tag>
+          ) : null}
+          {qualityScore !== null ? <Tag color="blue">Quality {qualityScore}%</Tag> : null}
+          {topicTags.map((tag) => (
+            <Tag key={tag}>{tag}</Tag>
+          ))}
+        </Space>
+        <Space direction="vertical" size={0}>
+          {hasPublished ? (
+            <Text type="secondary" style={{ fontSize: "12px" }}>
+              {publishedLabel}: {formatDateTime(displayPublished, locale, { dateStyle: "medium" })}
+            </Text>
+          ) : (
+            <Text type="secondary" style={{ fontSize: "12px" }}>
+              {ingestedLabel}: {formatDateTime(displayIngested, locale, { dateStyle: "medium" })}
+            </Text>
           )}
-          <Text type="secondary" style={{ fontSize: "12px" }}>
-            {formatDateTime(item.createdAt, locale, { dateStyle: "medium" })}
-          </Text>
+          {showIngested ? (
+            <Text type="secondary" style={{ fontSize: "12px" }}>
+              {ingestedLabel}: {formatDateTime(displayIngested, locale, { dateStyle: "medium" })}
+            </Text>
+          ) : null}
         </Space>
         <Title level={5} ellipsis={{ rows: 2 }}>
           {item.title}
         </Title>
         {item.summary && (
-          <Paragraph ellipsis={{ rows: 3 }} type="secondary">
+          <Paragraph ellipsis={{ rows: 2 }} type="secondary">
             {item.summary}
           </Paragraph>
         )}
       </Space>
-      {item.source && (
+      {(item.source || item.url) && (
         <div style={{ marginTop: "auto", paddingTop: "12px" }}>
-          <Text type="secondary" style={{ fontSize: "12px" }}>
-            {item.source}
-          </Text>
+          <Space size="small">
+            {item.source ? (
+              <Text type="secondary" style={{ fontSize: "12px" }}>
+                {item.source}
+              </Text>
+            ) : null}
+            {item.url ? (
+              <Typography.Link href={item.url} target="_blank" rel="noreferrer">
+                Read original
+              </Typography.Link>
+            ) : null}
+          </Space>
         </div>
       )}
     </Card>

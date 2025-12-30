@@ -1,7 +1,7 @@
 'use client';
 
 import { gql, useQuery } from '@apollo/client';
-import { Button, Card, Col, Empty, Grid, Row, Space, Spin, Tag, Typography } from 'antd';
+import { Button, Card, Col, Empty, Grid, Row, Skeleton, Space, Tag, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import { NewsCard } from '@/app/(app)/items/components/news-card';
@@ -66,9 +66,9 @@ export function TopicsContent() {
 
   if (loading && groups.length === 0) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
-        <Spin />
-      </div>
+      <Card className="content-card">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </Card>
     );
   }
 
@@ -124,7 +124,10 @@ export function TopicsContent() {
                       title: item.title ?? group.topic,
                       summary: item.summary ?? undefined,
                       source: item.source ?? undefined,
-                      createdAt: item.publishedAt ?? item.createdAt
+                      createdAt: item.createdAt,
+                      publishedAt: item.publishedAt ?? undefined,
+                      ingestedAt: item.createdAt,
+                      topics: [group.topic]
                     }}
                   />
                 </Col>

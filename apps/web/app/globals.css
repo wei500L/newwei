@@ -3,89 +3,108 @@
 @tailwind utilities;
 
 :root {
-  /* Command Center Theme */
-  --background: #030712; /* Gray 950 - Almost Black */
-  --foreground: #f8fafc; /* Slate 50 */
+  --background: #f7f6f2;
+  --foreground: #1f2933;
 
-  /* Neon Accents - Cyberpunk/HUD Style */
-  --primary: #00f0ff; /* Neon Cyan */
-  --primary-foreground: #000000;
+  --primary: #1f3b7b;
+  --primary-foreground: #ffffff;
 
-  /* Semantic - High Contrast */
-  --bullish: #00ff9d; /* Neon Green */
-  --bullish-foreground: #000000;
-  --bearish: #ff0055; /* Neon Red/Pink */
+  --bullish: #1b9e77;
+  --bullish-foreground: #ffffff;
+  --bearish: #d95f02;
   --bearish-foreground: #ffffff;
 
-  /* Secondary - Deep Slate */
-  --secondary: #111827; /* Gray 900 */
-  --secondary-foreground: #94a3b8;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #475569;
 
-  /* Accent - Warning/Data */
-  --accent: #ffb700; /* Amber */
-  --accent-foreground: #000000;
+  --accent: #d97706;
+  --accent-foreground: #ffffff;
 
-  /* Destructive */
-  --destructive: #ff3333;
+  --destructive: #dc2626;
   --destructive-foreground: #ffffff;
 
-  /* UI Elements - Glowing Borders */
-  --border: rgba(0, 240, 255, 0.15); /* Subtle cyan tint */
-  --input: rgba(17, 24, 39, 0.8);
-  --ring: rgba(0, 240, 255, 0.5);
-  
-  --radius: 0px; /* Military/Industrial Sharpness */
-  --radius-lg: 2px;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #94a3b8;
+
+  --radius: 10px;
+  --radius-lg: 14px;
 }
 
 @layer base {
   body {
     @apply bg-[var(--background)] text-[var(--foreground)] font-sans antialiased selection:bg-[var(--primary)] selection:text-[var(--primary-foreground)] tabular-nums;
-    /* Grid Pattern Overlay */
-    background-image: 
-      linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px),
-      radial-gradient(at 50% 50%, rgba(17, 24, 39, 0) 0%, rgba(3, 7, 18, 1) 100%);
-    background-size: 50px 50px, 50px 50px, 100% 100%;
+    line-height: 1.6;
+    color-scheme: light;
+    background-image:
+      radial-gradient(circle at 20% 0%, rgba(31, 59, 123, 0.08), transparent 45%),
+      radial-gradient(circle at 80% 20%, rgba(217, 119, 6, 0.06), transparent 40%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 246, 242, 0.9));
     background-attachment: fixed;
   }
 
-  /* Typography Overrides */
   h1, h2, h3, h4, h5, h6 {
-    @apply font-bold tracking-tight text-white uppercase; /* Uppercase headers for command feel */
-    text-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
+    @apply font-semibold tracking-tight text-[var(--foreground)] font-serif;
   }
-  
+
   code, pre, .font-mono {
-    font-family: var(--font-roboto-mono), monospace;
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
   }
 }
 
 @layer utilities {
   /* HUD Glassmorphism */
   .glass {
-    @apply backdrop-blur-md bg-[#030712]/80 border-b border-[var(--border)];
+    @apply backdrop-blur-md bg-white/80 border-b border-[var(--border)];
   }
-  
+
   .glass-card {
-    @apply backdrop-blur-xl bg-[#0b1221]/60 border border-[var(--border)] shadow-[0_0_15px_rgba(0,240,255,0.05)];
+    @apply backdrop-blur-xl bg-white/90 border border-[var(--border)] shadow-[0_8px_20px_rgba(15,23,42,0.06)];
   }
 
   .glass-panel {
-    @apply backdrop-blur-md bg-[#111827]/80 border border-white/5;
+    @apply backdrop-blur-md bg-white/70 border border-[var(--border)];
   }
 
-  /* Neon Text Utilities */
-  .text-glow {
-    text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+  .content-card {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background-color: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
   }
-  
+
+  .auth-layout {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .auth-card {
+    width: min(420px, 100%);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background-color: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+    padding: 32px;
+  }
+
+  .text-glow {
+    text-shadow: none;
+  }
+
   .text-glow-green {
-    text-shadow: 0 0 10px rgba(0, 255, 157, 0.5);
+    text-shadow: none;
   }
 
   .text-glow-red {
-    text-shadow: 0 0 10px rgba(255, 0, 85, 0.5);
+    text-shadow: none;
   }
 
   /* Ticker Animation */

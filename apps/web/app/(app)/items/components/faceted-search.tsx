@@ -3,7 +3,6 @@
 import { Card, Checkbox, Collapse, DatePicker, Space, Typography } from "antd";
 import type { Dayjs } from "dayjs";
 
-import dayjs from "@/lib/dayjs";
 import { useTranslation } from "react-i18next";
 
 const { RangePicker } = DatePicker;
@@ -24,8 +23,8 @@ interface FacetedSearchProps {
 export function FacetedSearch({
   filters,
   onFilterChange,
-  regions = ["US", "EU", "Asia", "Global"],
-  topics = ["Tech", "Finance", "Politics", "Energy"],
+  regions = [],
+  topics = [],
 }: FacetedSearchProps) {
   const { t } = useTranslation();
 
@@ -46,30 +45,38 @@ export function FacetedSearch({
   };
 
   const collapseItems = [
-    {
-      key: "region",
-      label: t("items.filters.region", { defaultValue: "Region" }),
-      children: (
-        <Checkbox.Group
-          options={regions}
-          value={filters.regions}
-          onChange={handleRegionChange}
-          style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-        />
-      )
-    },
-    {
-      key: "topic",
-      label: t("items.filters.topic", { defaultValue: "Topic" }),
-      children: (
-        <Checkbox.Group
-          options={topics}
-          value={filters.topics}
-          onChange={handleTopicChange}
-          style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-        />
-      )
-    },
+    ...(regions.length
+      ? [
+          {
+            key: "region",
+            label: t("items.filters.region", { defaultValue: "Region" }),
+            children: (
+              <Checkbox.Group
+                options={regions}
+                value={filters.regions}
+                onChange={handleRegionChange}
+                style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+              />
+            )
+          }
+        ]
+      : []),
+    ...(topics.length
+      ? [
+          {
+            key: "topic",
+            label: t("items.filters.topic", { defaultValue: "Topic" }),
+            children: (
+              <Checkbox.Group
+                options={topics}
+                value={filters.topics}
+                onChange={handleTopicChange}
+                style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+              />
+            )
+          }
+        ]
+      : []),
     {
       key: "sentiment",
       label: t("items.filters.sentiment", { defaultValue: "Sentiment" }),
@@ -102,11 +109,17 @@ export function FacetedSearch({
           />
         </Space>
 
-        <Collapse
-          defaultActiveKey={["region", "topic", "sentiment"]}
-          ghost
-          items={collapseItems}
-        />
+        {collapseItems.length ? (
+          <Collapse
+            defaultActiveKey={["region", "topic", "sentiment"]}
+            ghost
+            items={collapseItems}
+          />
+        ) : (
+          <Typography.Text type="secondary">
+            {t("items.filters.empty", { defaultValue: "No filter options for current results." })}
+          </Typography.Text>
+        )}
       </Space>
     </Card>
   );

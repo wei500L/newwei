@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { Card, Col, Empty, Row, Skeleton, Typography } from "antd";
 import type { CallbackDataParams } from "echarts";
 import { useTranslation } from "react-i18next";
 
@@ -27,6 +27,7 @@ export default function LivelihoodPricesPage() {
     category: "livelihood-prices",
     pollInterval: 180_000,
   });
+  const isInitialLoading = loading && seriesMap.size === 0;
 
   const cpiTreeData = [
     {
@@ -147,41 +148,46 @@ export default function LivelihoodPricesPage() {
         <Typography.Title level={4}>{t("dashboard.livelihood.title")}</Typography.Title>
         <TimeRangeControls />
       </div>
-      {loading && <Spin />}
       {error && (
         <Typography.Text type="danger">{error.message}</Typography.Text>
       )}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.livelihood.cards.cpiTree")} className="content-card">
-            {cpiTreeData.some((item) => item.value !== 0) ? (
-              <DashboardChart option={treeOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.livelihood.empty.cpi")} />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.livelihood.cards.agriRadar")} className="content-card">
-            {radarData.some((item) => item.value !== 0) ? (
-              <DashboardChart option={radarOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.livelihood.empty.agri")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col span={24}>
-          <Card title={t("dashboard.livelihood.cards.tourism")} className="content-card">
-            {tourismValues.length > 0 ? (
-              <DashboardChart option={tourismOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.livelihood.empty.tourism")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
+      {isInitialLoading ? (
+        <Skeleton active paragraph={{ rows: 8 }} />
+      ) : (
+        <>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.livelihood.cards.cpiTree")} className="content-card">
+                {cpiTreeData.some((item) => item.value !== 0) ? (
+                  <DashboardChart option={treeOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.livelihood.empty.cpi")} />
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.livelihood.cards.agriRadar")} className="content-card">
+                {radarData.some((item) => item.value !== 0) ? (
+                  <DashboardChart option={radarOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.livelihood.empty.agri")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]}>
+            <Col span={24}>
+              <Card title={t("dashboard.livelihood.cards.tourism")} className="content-card">
+                {tourismValues.length > 0 ? (
+                  <DashboardChart option={tourismOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.livelihood.empty.tourism")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
     </div>
   );
 }

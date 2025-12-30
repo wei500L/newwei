@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Spin } from "antd";
+import { Alert, Button, Skeleton } from "antd";
 import type { EChartsOption } from "echarts";
 import * as echarts from "echarts/core";
 import { useSession } from "next-auth/react";
@@ -131,7 +131,7 @@ export function WarMap() {
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const { start, end } = useDashboardRangeStore();
-  const { echartsTheme, colors } = useChartTheme();
+  const { echartsTheme, colors, fontFamily } = useChartTheme();
   const registeredMapsRef = useRef(new Set<string>());
   const [mapReady, setMapReady] = useState(false);
   const emptyMessage = t("dashboard.charts.noDataRange", {
@@ -203,12 +203,12 @@ export function WarMap() {
     const resolveSeverityColor = (severity: WarEventSeverity) => {
       switch (severity) {
         case WarEventSeverity.High:
-          return colors?.destructive ?? "#ef4444";
+          return colors?.bearish ?? "#d95f02";
         case WarEventSeverity.Medium:
-          return colors?.accent ?? "#f59e0b";
+          return colors?.accent ?? "#d97706";
         case WarEventSeverity.Low:
         default:
-          return colors?.primary ?? "#3b82f6";
+          return colors?.primary ?? "#1f3b7b";
       }
     };
     const scatterData: WarMapScatterPoint[] = events
@@ -233,17 +233,18 @@ export function WarMap() {
       }));
     const useLargeMode = scatterData.length >= 500;
 
-    const areaColor = "rgba(30, 41, 59, 0.3)"; // Semi-transparent slate
-    const borderColor = colors?.primary ?? "#00f0ff"; // Neon border
+    const areaColor = "rgba(148, 163, 184, 0.25)";
+    const borderColor = colors?.border ?? "#e2e8f0";
 
     return {
       // Title handled externally by container
       tooltip: {
         trigger: "item",
-        backgroundColor: "rgba(3, 7, 18, 0.9)",
-        borderColor: colors?.primary ?? "#00f0ff",
+        backgroundColor: colors?.tooltipBg ?? "#0f172a",
+        borderColor: colors?.primary ?? "#1f3b7b",
         textStyle: {
-          color: "#fff"
+          color: colors?.tooltipText ?? "#f8fafc",
+          fontFamily
         },
         formatter: (params: any) => {
           const payload = Array.isArray(params) ? params[0] : params;
@@ -259,15 +260,15 @@ export function WarMap() {
               : "N/A";
 
           return `
-            <div style="min-width: 200px; font-family: sans-serif;">
-              <div style="font-weight: bold; margin-bottom: 6px; font-size: 14px; color: ${colors?.primary ?? '#00f0ff'}; text-transform: uppercase;">${data.name}</div>
+            <div style="min-width: 200px;">
+              <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${colors?.primary ?? '#1f3b7b'};">${data.name}</div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                 <span style="color: #94a3b8;">Severity:</span>
-                <span style="color: ${severityColor}; font-weight: bold; text-transform: capitalize; text-shadow: 0 0 5px ${severityColor};">${severityLabel(data.severity)}</span>
+                <span style="color: ${severityColor}; font-weight: 600;">${severityLabel(data.severity)}</span>
               </div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                 <span style="color: #94a3b8;">Intensity:</span>
-                <span style="font-family: monospace;">${intensity}</span>
+                <span>${intensity}</span>
               </div>
               <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
                 Updated: ${updatedStr}
@@ -285,17 +286,17 @@ export function WarMap() {
           areaColor,
           borderColor,
           borderWidth: 1,
-          shadowColor: 'rgba(0, 240, 255, 0.2)',
-          shadowBlur: 10
+          shadowColor: "rgba(15, 23, 42, 0.1)",
+          shadowBlur: 6
         },
         emphasis: {
           itemStyle: {
-            areaColor: "rgba(0, 240, 255, 0.2)",
-            borderColor: "#fff"
+            areaColor: "rgba(31, 59, 123, 0.18)",
+            borderColor: colors?.primary ?? "#1f3b7b"
           },
           label: {
             show: true,
-            color: "#fff"
+            color: colors?.primary ?? "#1f3b7b"
           }
         },
         label: {
@@ -323,13 +324,13 @@ export function WarMap() {
             return Math.max(6, Math.min(26, Math.sqrt(intensity) * 2));
           },
           itemStyle: {
-             shadowBlur: 10,
-             shadowColor: 'inherit'
+             shadowBlur: 6,
+             shadowColor: "rgba(15, 23, 42, 0.2)"
           }
         }
       ]
     };
-  }, [colors, eventsQuery.data, geoQuery.data, locale, mapReady, t]);
+  }, [colors, eventsQuery.data, fontFamily, geoQuery.data, locale, mapReady, t]);
 
   const geoErrorMessage = getApiErrorMessage(geoQuery.error);
   const eventsErrorMessage = getApiErrorMessage(eventsQuery.error);
@@ -337,8 +338,8 @@ export function WarMap() {
 
   if (geoQuery.isLoading && !geoQuery.data) {
     return (
-      <div className="flex h-[400px] items-center justify-center">
-        <Spin />
+      <div className="h-[400px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
   }
@@ -373,8 +374,8 @@ export function WarMap() {
 
   if (!mapReady) {
     return (
-      <div className="flex h-[400px] items-center justify-center">
-        <Spin />
+      <div className="h-[400px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
   }
@@ -392,7 +393,7 @@ export function WarMap() {
       />
       {eventsQuery.isLoading ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Spin />
+          <Skeleton active paragraph={{ rows: 4 }} />
         </div>
       ) : null}
       {!eventsQuery.isLoading && eventsQuery.isError ? (

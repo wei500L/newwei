@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Spin } from "antd";
+import { Alert, Button, Skeleton } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
@@ -143,12 +143,12 @@ export function FinancialCandlestick() {
         axisPointer: {
           type: "cross",
           label: {
-            backgroundColor: "#283b56"
+            backgroundColor: theme.colors.primary
           }
         },
-        backgroundColor: "rgba(3, 7, 18, 0.9)",
-        borderColor: "#00f0ff",
-        textStyle: { color: "#fff", fontFamily: "monospace" },
+        backgroundColor: theme.colors.tooltipBg,
+        borderColor: theme.colors.primary,
+        textStyle: { color: theme.colors.tooltipText, fontFamily: theme.fontFamily },
         borderWidth: 1,
       },
       grid: {
@@ -163,8 +163,8 @@ export function FinancialCandlestick() {
         data: timestamps,
         scale: true,
         boundaryGap: true, // Candles need gap usually
-        axisLine: { onZero: false, lineStyle: { color: "#334155" } },
-        axisLabel: { color: "#94a3b8", fontFamily: "monospace" },
+        axisLine: { onZero: false, lineStyle: { color: theme.colors.grid } },
+        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily },
         splitLine: { show: false }, // No grid
         axisTick: { show: false }
       },
@@ -172,7 +172,7 @@ export function FinancialCandlestick() {
         scale: true,
         splitArea: { show: false },
         splitLine: { show: false }, // No grid
-        axisLabel: { color: "#94a3b8", fontFamily: "monospace" },
+        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily },
         axisLine: { show: false }
       },
       dataZoom: [
@@ -188,10 +188,10 @@ export function FinancialCandlestick() {
           type: "candlestick",
           data: ohlc,
           itemStyle: {
-            color: "#00ff9d", // Neon Green (Bullish)
-            color0: "#ff0055", // Neon Red (Bearish)
-            borderColor: "#00ff9d",
-            borderColor0: "#ff0055",
+            color: theme.colors.bullish,
+            color0: theme.colors.bearish,
+            borderColor: theme.colors.bullish,
+            borderColor0: theme.colors.bearish,
             shadowBlur: 5,
             shadowColor: "inherit" // Glow effect
           },
@@ -203,14 +203,14 @@ export function FinancialCandlestick() {
                    label: {
                       show: true,
                       position: 'end',
-                      backgroundColor: '#00f0ff',
-                      color: '#000',
+                      backgroundColor: theme.colors.primary,
+                      color: '#ffffff',
                       padding: [2, 4],
                       borderRadius: 2,
                       formatter: '{c}'
                    },
                    lineStyle: {
-                      color: '#00f0ff',
+                      color: theme.colors.primary,
                       type: 'dashed',
                       opacity: 0.5
                    }
@@ -262,8 +262,8 @@ export function FinancialCandlestick() {
 
   if (isLoading && !data) {
     return (
-      <div className="flex h-[350px] items-center justify-center">
-        <Spin />
+      <div className="h-[350px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
   }
@@ -320,7 +320,7 @@ export function FinancialCandlestick() {
       />
       {isLoading ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Spin />
+          <Skeleton active paragraph={{ rows: 4 }} />
         </div>
       ) : null}
     </div>

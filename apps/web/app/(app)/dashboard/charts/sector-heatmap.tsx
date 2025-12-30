@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Spin, message } from "antd";
+import { Alert, Button, Skeleton, message } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
@@ -85,7 +85,7 @@ export function SectorHeatmap() {
   const { t } = useTranslation();
   const { data: session } = useSession();
   const { start, end } = useDashboardRangeStore();
-  const { echartsTheme, colors } = useChartTheme();
+  const { echartsTheme, colors, fontFamily } = useChartTheme();
   const { selectedSector, setSelectedSector } = useDashboardFiltersStore();
   const [exportingCsv, setExportingCsv] = useState(false);
   const emptyMessage = t("dashboard.charts.noDataRange", {
@@ -133,7 +133,7 @@ export function SectorHeatmap() {
       return {
         value: [cell.x, cell.y, cell.change, cell.name, cell.value] as HeatmapValue,
         itemStyle: {
-          borderColor: isSelected ? (colors?.primary ?? "#1677ff") : (colors?.background ?? "#fff"),
+          borderColor: isSelected ? (colors?.primary ?? "#1f3b7b") : (colors?.border ?? "#e2e8f0"),
           borderWidth: isSelected ? 4 : 2,
           borderRadius: 8
         }
@@ -148,9 +148,9 @@ export function SectorHeatmap() {
     return {
       tooltip: {
         position: "top",
-        backgroundColor: "rgba(3, 7, 18, 0.9)",
-        borderColor: "#00f0ff",
-        textStyle: { color: "#fff", fontFamily: "monospace" },
+        backgroundColor: colors?.tooltipBg ?? "#0f172a",
+        borderColor: colors?.primary ?? "#1f3b7b",
+        textStyle: { color: colors?.tooltipText ?? "#f8fafc", fontFamily },
         formatter: (params: any) => {
           const value = params.value;
           if (!Array.isArray(value)) return "";
@@ -182,9 +182,9 @@ export function SectorHeatmap() {
         show: false, // Hide the bar, rely on color
         inRange: {
           color: [
-            "#ff0055", // Neon Red
-            "#1e293b", // Slate 800 (Neutral)
-            "#00ff9d"  // Neon Green
+            colors?.bearish ?? "#d95f02",
+            "#cbd5e1",
+            colors?.bullish ?? "#1b9e77"
           ]
         }
       },
@@ -195,9 +195,9 @@ export function SectorHeatmap() {
           data: heatmapData,
           label: {
             show: true,
-            fontFamily: "monospace",
+            fontFamily,
             fontSize: 10,
-            color: "#fff",
+            color: colors?.tooltipText ?? "#f8fafc",
             formatter: (params: any) => {
               const value = params.value;
               if (!Array.isArray(value)) return "";
@@ -206,7 +206,7 @@ export function SectorHeatmap() {
             }
           },
           itemStyle: {
-            borderColor: '#030712', // Match background for spacing
+            borderColor: colors?.border ?? "#e2e8f0",
             borderWidth: 2
           },
           emphasis: {
@@ -219,7 +219,7 @@ export function SectorHeatmap() {
         }
       ]
     };
-  }, [colors, data, selectedSector]);
+  }, [colors, data, fontFamily, selectedSector]);
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.cells.length === 0) return;
@@ -261,8 +261,8 @@ export function SectorHeatmap() {
 
   if (isLoading && !data) {
     return (
-      <div className="flex h-[300px] items-center justify-center">
-        <Spin />
+      <div className="h-[300px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
   }
@@ -335,7 +335,7 @@ export function SectorHeatmap() {
       />
       {isLoading ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Spin />
+          <Skeleton active paragraph={{ rows: 4 }} />
         </div>
       ) : null}
     </div>

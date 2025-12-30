@@ -8,7 +8,7 @@ import {
   Empty,
   List,
   Row,
-  Spin,
+  Skeleton,
   Typography,
 } from "antd";
 import type { CallbackDataParams } from "echarts";
@@ -41,6 +41,7 @@ export default function MilitaryAlertPage() {
     category: "military-alert",
     pollInterval: 60_000,
   });
+  const isInitialLoading = loading && seriesMap.size === 0;
 
   const radarIndicators: { name: string; max: number }[] = [];
   const radarValues: number[] = [];
@@ -125,93 +126,98 @@ export default function MilitaryAlertPage() {
           description={error.message}
         />
       )}
-      {loading && <Spin />}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.militaryAlert.cards.metalRadar")} className="content-card">
-            {radarValues.some((value) => value > 0) ? (
-              <DashboardChart option={radarOption} height={360} />
-            ) : (
-              <Empty description={t("dashboard.militaryAlert.empty.metalRadar")} />
-            )}
-            <List
-              dataSource={alertItems}
-              size="small"
-              renderItem={(item) => (
-                <List.Item>
-                  <List.Item.Meta
-                    title={
-                      <span>
-                        {item.title}
-                        {Math.abs(item.dailyChange) >= 5 && (
-                          <Badge
-                            color="red"
-                            text={t("dashboard.militaryAlert.badges.daily")}
-                            style={{ marginLeft: 8 }}
-                          />
-                        )}
-                        {item.sameDirection && (
-                          <Badge
-                            color="orange"
-                            text={t("dashboard.militaryAlert.badges.threeDay")}
-                            style={{ marginLeft: 8 }}
-                          />
-                        )}
-                      </span>
-                    }
-                    description={
-                      <Typography.Text
-                        type={
-                          Math.abs(item.dailyChange) >= 5
-                            ? "danger"
-                            : "secondary"
+      {isInitialLoading ? (
+        <Skeleton active paragraph={{ rows: 10 }} />
+      ) : (
+        <>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.militaryAlert.cards.metalRadar")} className="content-card">
+                {radarValues.some((value) => value > 0) ? (
+                  <DashboardChart option={radarOption} height={360} />
+                ) : (
+                  <Empty description={t("dashboard.militaryAlert.empty.metalRadar")} />
+                )}
+                <List
+                  dataSource={alertItems}
+                  size="small"
+                  renderItem={(item) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        title={
+                          <span>
+                            {item.title}
+                            {Math.abs(item.dailyChange) >= 5 && (
+                              <Badge
+                                color="red"
+                                text={t("dashboard.militaryAlert.badges.daily")}
+                                style={{ marginLeft: 8 }}
+                              />
+                            )}
+                            {item.sameDirection && (
+                              <Badge
+                                color="orange"
+                                text={t("dashboard.militaryAlert.badges.threeDay")}
+                                style={{ marginLeft: 8 }}
+                              />
+                            )}
+                          </span>
                         }
-                      >
-                        {t("dashboard.militaryAlert.alertItemDescription", {
-                          daily: item.dailyChange.toFixed(2),
-                          threeDay: item.swing3d.toFixed(2),
-                        })}
-                      </Typography.Text>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.militaryAlert.cards.agriAlert")} className="content-card">
-            {agBarData.some((item) => item.change !== 0) ? (
-              <DashboardChart option={agOption} height={360} />
-            ) : (
-              <Empty description={t("dashboard.militaryAlert.empty.agri")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col span={24}>
-          <EconomicChartCard
-            title={t("dashboard.militaryAlert.cards.energy.title")}
-            description={t("dashboard.militaryAlert.cards.energy.description")}
-            seriesMap={seriesMap}
-            series={[
-              {
-                slug: "crude_oil_futures_main",
-                label: t("dashboard.militaryAlert.cards.energy.oil"),
-                field: "收盘价",
-                type: "area",
-              },
-              {
-                slug: "natural_gas_futures_main",
-                label: t("dashboard.militaryAlert.cards.energy.gas"),
-                field: "收盘价",
-                type: "area",
-              },
-            ]}
-          />
-        </Col>
-      </Row>
+                        description={
+                          <Typography.Text
+                            type={
+                              Math.abs(item.dailyChange) >= 5
+                                ? "danger"
+                                : "secondary"
+                            }
+                          >
+                            {t("dashboard.militaryAlert.alertItemDescription", {
+                              daily: item.dailyChange.toFixed(2),
+                              threeDay: item.swing3d.toFixed(2),
+                            })}
+                          </Typography.Text>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.militaryAlert.cards.agriAlert")} className="content-card">
+                {agBarData.some((item) => item.change !== 0) ? (
+                  <DashboardChart option={agOption} height={360} />
+                ) : (
+                  <Empty description={t("dashboard.militaryAlert.empty.agri")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]}>
+            <Col span={24}>
+              <EconomicChartCard
+                title={t("dashboard.militaryAlert.cards.energy.title")}
+                description={t("dashboard.militaryAlert.cards.energy.description")}
+                seriesMap={seriesMap}
+                series={[
+                  {
+                    slug: "crude_oil_futures_main",
+                    label: t("dashboard.militaryAlert.cards.energy.oil"),
+                    field: "收盘价",
+                    type: "area",
+                  },
+                  {
+                    slug: "natural_gas_futures_main",
+                    label: t("dashboard.militaryAlert.cards.energy.gas"),
+                    field: "收盘价",
+                    type: "area",
+                  },
+                ]}
+              />
+            </Col>
+          </Row>
+        </>
+      )}
     </div>
   );
 }

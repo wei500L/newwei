@@ -59,7 +59,7 @@ export function ActionRail() {
       <div className="
         flex flex-col items-center py-4 gap-2
         glass-panel rounded-2xl border border-[var(--border)]
-        shadow-[0_0_20px_rgba(0,0,0,0.5)]
+        shadow-[0_10px_30px_rgba(15,23,42,0.08)]
       ">
         {/* Main Navigation */}
         <div className="flex flex-col gap-2 w-full px-2 pb-4 border-b border-white/5">
@@ -72,8 +72,8 @@ export function ActionRail() {
                   className={`
                     w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200
                     ${isActive 
-                      ? "bg-[var(--primary)] text-black shadow-[0_0_10px_rgba(0,240,255,0.5)] scale-110" 
-                      : "text-gray-400 hover:text-white hover:bg-white/10"
+                      ? "bg-[var(--primary)] text-white shadow-sm" 
+                      : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-50"
                     }
                   `}
                 >
@@ -95,8 +95,8 @@ export function ActionRail() {
                     className={`
                       w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200
                       ${isActive 
-                        ? "bg-[var(--primary)] text-black shadow-[0_0_10px_rgba(0,240,255,0.5)] scale-110" 
-                        : "text-gray-400 hover:text-white hover:bg-white/10"
+                        ? "bg-[var(--primary)] text-white shadow-sm" 
+                        : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-50"
                       }
                     `}
                   >

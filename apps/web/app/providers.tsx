@@ -108,37 +108,39 @@ export function AppProviders({ children }: PropsWithChildren) {
       <ConfigProvider
         locale={antdLocale}
         theme={{
-          algorithm: theme.darkAlgorithm,
+          algorithm: theme.defaultAlgorithm,
           token: {
-            colorPrimary: "#00f0ff", // Neon Cyan
-            colorBgBase: "#030712", // Gray 950
-            colorBgContainer: "#0b1221",
-            borderRadius: 0, // Sharp edges for military feel
-            fontFamily: "var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-            colorBorder: "rgba(0, 240, 255, 0.15)",
+            colorPrimary: "var(--primary)",
+            colorBgBase: "var(--background)",
+            colorBgContainer: "#ffffff",
+            colorTextBase: "var(--foreground)",
+            borderRadius: 10,
+            fontFamily:
+              "var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            colorBorder: "var(--border)",
           },
           components: {
             Card: {
-              borderRadiusLG: 0,
-              colorBgContainer: "rgba(11, 18, 33, 0.6)", // Transparent dark blue
-              boxShadow: "0 0 0 1px rgba(0, 240, 255, 0.1)", // Subtle border glow instead of drop shadow
+              borderRadiusLG: 12,
+              colorBgContainer: "#ffffff",
+              boxShadow: "0 8px 20px rgba(15, 23, 42, 0.08)",
             },
             Button: {
-              borderRadius: 0,
+              borderRadius: 8,
               controlHeight: 36,
-              primaryShadow: "0 0 10px rgba(0, 240, 255, 0.4)", // Cyan glow
+              primaryShadow: "none",
             },
             Table: {
-              colorBgContainer: "transparent",
-              borderColor: "rgba(255,255,255,0.05)",
+              colorBgContainer: "#ffffff",
+              borderColor: "var(--border)",
             },
             Menu: {
               colorBgContainer: "transparent",
             },
             Modal: {
-              borderRadiusLG: 0,
-              colorBgElevated: "#030712",
-              boxShadow: "0 0 30px rgba(0, 240, 255, 0.1)",
+              borderRadiusLG: 12,
+              colorBgElevated: "#ffffff",
+              boxShadow: "0 16px 40px rgba(15, 23, 42, 0.18)",
             }
           }
         }}
@@ -148,7 +150,7 @@ export function AppProviders({ children }: PropsWithChildren) {
             <QueryClientProvider client={queryClient}>
               <UnauthorizedRedirect />
               <SessionErrorListener />
-              <Toaster position="top-right" theme="dark" richColors />
+              <Toaster position="top-right" theme="light" richColors />
               {children}
             </QueryClientProvider>
           </ApolloProvider>

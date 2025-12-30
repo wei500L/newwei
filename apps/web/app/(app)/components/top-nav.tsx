@@ -1,15 +1,11 @@
 "use client";
 
 import {
-  DashboardOutlined,
   LogoutOutlined,
   PlusOutlined,
-  RadarChartOutlined,
-  SettingOutlined,
-  TableOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Badge, Button, Dropdown, Skeleton, Tooltip, Typography } from "antd";
+import { Button, Dropdown, Skeleton } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -92,8 +88,8 @@ export function TopNav() {
       <header className="h-16 flex items-center justify-between px-6 border-b border-[var(--border)] shrink-0 glass relative">
         {/* Left: Logo */}
         <div className="flex items-center gap-8 min-w-[200px]">
-          <span className="text-white font-bold text-lg tracking-wide whitespace-nowrap font-mono text-glow flex items-center gap-2">
-               <div className="w-2 h-2 bg-[var(--primary)] rounded-full animate-pulse" />
+          <span className="text-[var(--foreground)] font-semibold text-lg tracking-tight whitespace-nowrap font-serif flex items-center gap-2">
+               <div className="w-2 h-2 bg-[var(--primary)] rounded-full" />
                {t("brand.full")}
           </span>
         </div>
@@ -107,7 +103,7 @@ export function TopNav() {
         <div className="flex items-center gap-4 min-w-[200px] justify-end">
           <SystemDefcon />
           
-          <div className="h-6 w-px bg-white/10 mx-2" />
+          <div className="h-6 w-px bg-[var(--border)] mx-2" />
           
           {canStartCrawl && (
               <Button
@@ -115,7 +111,7 @@ export function TopNav() {
                   icon={<PlusOutlined />}
                   size="small"
                   onClick={() => router.push("/crawl?new=true")}
-                  className="shadow-[0_0_10px_rgba(0,240,255,0.3)] border-0 flex items-center font-mono uppercase text-xs"
+                  className="shadow-none"
               >
                   {startNewCrawlLabel}
               </Button>
@@ -127,7 +123,7 @@ export function TopNav() {
               <OrganizationSwitcher />
           </div>
 
-          <div className="h-6 w-px bg-white/10 mx-2" />
+          <div className="h-6 w-px bg-[var(--border)] mx-2" />
 
           {isLoadingSession ? (
             <Skeleton.Avatar active size="default" />
@@ -139,8 +135,8 @@ export function TopNav() {
                           key: "profile-info",
                           label: (
                               <div className="flex flex-col">
-                                  <span className="font-medium text-white">{displayNameOrEmail}</span>
-                                  <span className="text-xs text-gray-500">{planBadgeLabel}</span>
+                                  <span className="font-medium">{displayNameOrEmail}</span>
+                                  <span className="text-xs text-slate-500">{planBadgeLabel}</span>
                               </div>
                           ),
                           disabled: true,
@@ -171,7 +167,7 @@ export function TopNav() {
                           src={avatarSrc}
                           name={displayName}
                           email={displayEmail}
-                          className="bg-[var(--primary)] text-black border border-white/10 font-bold"
+                          className="bg-[var(--primary)] text-white border border-[var(--border)] font-bold"
                       />
                   </div>
               </Dropdown>

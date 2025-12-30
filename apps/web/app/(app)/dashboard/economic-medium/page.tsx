@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Row, Skeleton, Typography } from "antd";
 import type { CallbackDataParams } from "echarts";
 import { useTranslation } from "react-i18next";
 
@@ -29,6 +29,7 @@ export default function EconomicMediumPage() {
     category: "economic-medium",
     pollInterval: 120_000,
   });
+  const isInitialLoading = loading && seriesMap.size === 0;
 
   const gdpYoy = filterValuesByDays(
     getSeriesField(seriesMap, "china_gdp", "国内生产总值-同比增长"),
@@ -246,58 +247,63 @@ export default function EconomicMediumPage() {
       {!loading && seriesMap.size === 0 ? (
         <Empty description={t("common.empty")} />
       ) : null}
-      {loading && <Spin />}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicMedium.cards.gdpM2")} className="content-card">
-            {gdpYoy.length > 0 && m2Yoy.length > 0 ? (
-              <DashboardChart option={dualAxisOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicMedium.empty.gdpM2")} />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicMedium.cards.metalMa")} className="content-card">
-            {maSeries.some((entry) => entry.data.length > 0) ? (
-              <DashboardChart option={maOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicMedium.empty.metals")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col span={24}>
-          <Card title={t("dashboard.economicMedium.cards.pmiChanges")} className="content-card">
-            {filteredChanges.length > 0 ? (
-              <DashboardChart option={pmiOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicMedium.empty.pmi")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicMedium.cards.usGrowth")} className="content-card">
-            {usGdpSeries.length > 0 ? (
-              <DashboardChart option={usGrowthOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicMedium.empty.usEconomy")} />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicMedium.cards.usPmi")} className="content-card">
-            {usManufacturingSeries.length > 0 ? (
-              <DashboardChart option={usPmiOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicMedium.empty.usPmi")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
+      {isInitialLoading ? (
+        <Skeleton active paragraph={{ rows: 10 }} />
+      ) : (
+        <>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicMedium.cards.gdpM2")} className="content-card">
+                {gdpYoy.length > 0 && m2Yoy.length > 0 ? (
+                  <DashboardChart option={dualAxisOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicMedium.empty.gdpM2")} />
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicMedium.cards.metalMa")} className="content-card">
+                {maSeries.some((entry) => entry.data.length > 0) ? (
+                  <DashboardChart option={maOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicMedium.empty.metals")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]}>
+            <Col span={24}>
+              <Card title={t("dashboard.economicMedium.cards.pmiChanges")} className="content-card">
+                {filteredChanges.length > 0 ? (
+                  <DashboardChart option={pmiOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicMedium.empty.pmi")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicMedium.cards.usGrowth")} className="content-card">
+                {usGdpSeries.length > 0 ? (
+                  <DashboardChart option={usGrowthOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicMedium.empty.usEconomy")} />
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicMedium.cards.usPmi")} className="content-card">
+                {usManufacturingSeries.length > 0 ? (
+                  <DashboardChart option={usPmiOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicMedium.empty.usPmi")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
     </div>
   );
 }

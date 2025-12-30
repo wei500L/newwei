@@ -10,8 +10,8 @@ import {
   List,
   Row,
   Select,
+  Skeleton,
   Space,
-  Spin,
   Statistic,
   Switch,
   Tag,
@@ -174,20 +174,20 @@ export function DashboardContent() {
     if (status === "live") {
       return {
         label: t("dashboard.stream.status.live", { defaultValue: "Live" }),
-        dotClass: "bg-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.7)]",
+        dotClass: "bg-emerald-500",
         pulse: true
       };
     }
     if (status === "polling") {
       return {
         label: t("dashboard.stream.status.polling", { defaultValue: "Polling" }),
-        dotClass: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]",
+        dotClass: "bg-amber-500",
         pulse: false
       };
     }
     return {
       label: t("dashboard.stream.status.offline", { defaultValue: "Offline" }),
-      dotClass: "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]",
+      dotClass: "bg-red-500",
       pulse: false
     };
   }, [streamState.status, t]);
@@ -338,8 +338,10 @@ export function DashboardContent() {
 
   if (loading || dashboardsLoading) {
     return (
-      <div className="flex justify-center mt-12">
-        <Spin size="large" />
+      <div className="flex flex-col gap-6">
+        <Skeleton active paragraph={{ rows: 2 }} />
+        <Skeleton active paragraph={{ rows: 6 }} />
+        <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
   }
@@ -387,7 +389,7 @@ export function DashboardContent() {
                   type="text"
                   loading={refreshingDemoData}
                   onClick={handleRefreshDemoData}
-                  className="text-slate-500 hover:text-white"
+                  className="text-slate-500 hover:text-[var(--primary)]"
                 >
                 </Button>
              )}
@@ -417,9 +419,9 @@ export function DashboardContent() {
         {/* Charts Section - Immersive Map & Analytics */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
            {/* War Map - Dominant Central Feature */}
-           <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--primary)]/20 relative overflow-hidden">
+           <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] relative overflow-hidden">
              <div className="absolute top-4 left-4 z-10">
-               <h3 className="text-lg text-[var(--primary)] text-glow uppercase tracking-widest">{t("dashboard.charts.warMap.title", { defaultValue: "Global Conflict Zones" })}</h3>
+               <h3 className="text-lg text-slate-700">{t("dashboard.charts.warMap.title", { defaultValue: "Global Conflict Zones" })}</h3>
              </div>
              <WarMap />
            </div>
@@ -451,12 +453,12 @@ export function DashboardContent() {
             <Row gutter={[20, 20]} className="mb-6">
               <Col xs={24} md={12} lg={8}>
                 <Card className="content-card h-full flex flex-col justify-center">
-                  <Statistic title={t("dashboard.stats.totalItems")} value={itemCount} valueStyle={{ color: '#fff', fontFamily: 'monospace' }} />
+                  <Statistic title={t("dashboard.stats.totalItems")} value={itemCount} valueStyle={{ color: '#1f2933', fontFamily: 'var(--font-mono)' }} />
                 </Card>
               </Col>
               <Col xs={24} md={12} lg={8}>
                 <Card className="content-card h-full flex flex-col justify-center">
-                  <Statistic title={t("dashboard.stats.processedItems")} value={processedCount} valueStyle={{ color: '#fff', fontFamily: 'monospace' }} />
+                  <Statistic title={t("dashboard.stats.processedItems")} value={processedCount} valueStyle={{ color: '#1f2933', fontFamily: 'var(--font-mono)' }} />
                 </Card>
               </Col>
               <Col xs={24} md={24} lg={8}>

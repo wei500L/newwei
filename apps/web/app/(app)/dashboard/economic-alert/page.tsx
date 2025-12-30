@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Row, Skeleton, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
@@ -19,6 +19,7 @@ export default function EconomicAlertPage() {
     category: "economic-alert",
     pollInterval: 60_000,
   });
+  const isInitialLoading = loading && seriesMap.size === 0;
 
   const cpiSeries = getSeriesField(seriesMap, "china_cpi", "全国-同比增长");
   const cpiValue = getLatestValue(cpiSeries)?.value ?? null;
@@ -248,58 +249,63 @@ export default function EconomicAlertPage() {
           description={alerts.join("、")}
         />
       )}
-      {loading && <Spin />}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicAlert.cards.cpiPpiGauge")} className="content-card">
-            {cpiValue !== null || ppiValue !== null ? (
-              <DashboardChart option={gaugeOption} height={360} />
-            ) : (
-              <Empty description={t("dashboard.economicAlert.emptyCpiPpi")} />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicAlert.cards.pmiCompare")} className="content-card">
-            {getSortedValues(chinaPmiSeries).length > 0 ? (
-              <DashboardChart option={pmiOption} height={360} />
-            ) : (
-              <Empty description={t("dashboard.economicAlert.emptyPmi")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col span={24}>
-          <Card title={t("dashboard.economicAlert.cards.yieldInversion")} className="content-card">
-            {spreadSeries.length > 0 ? (
-              <DashboardChart option={yieldOption} height={360} />
-            ) : (
-              <Empty description={t("dashboard.economicAlert.emptyYield")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicAlert.cards.usInflation")} className="content-card">
-            {getSortedValues(usCpiSeries).length > 0 ? (
-              <DashboardChart option={usInflationOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicAlert.emptyUsInflation")} />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicAlert.cards.usPmiCompare")} className="content-card">
-            {getSortedValues(usManufacturingPmiSeries).length > 0 ? (
-              <DashboardChart option={usPmiCompareOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicAlert.emptyUsPmi")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
+      {isInitialLoading ? (
+        <Skeleton active paragraph={{ rows: 10 }} />
+      ) : (
+        <>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicAlert.cards.cpiPpiGauge")} className="content-card">
+                {cpiValue !== null || ppiValue !== null ? (
+                  <DashboardChart option={gaugeOption} height={360} />
+                ) : (
+                  <Empty description={t("dashboard.economicAlert.emptyCpiPpi")} />
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicAlert.cards.pmiCompare")} className="content-card">
+                {getSortedValues(chinaPmiSeries).length > 0 ? (
+                  <DashboardChart option={pmiOption} height={360} />
+                ) : (
+                  <Empty description={t("dashboard.economicAlert.emptyPmi")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]}>
+            <Col span={24}>
+              <Card title={t("dashboard.economicAlert.cards.yieldInversion")} className="content-card">
+                {spreadSeries.length > 0 ? (
+                  <DashboardChart option={yieldOption} height={360} />
+                ) : (
+                  <Empty description={t("dashboard.economicAlert.emptyYield")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicAlert.cards.usInflation")} className="content-card">
+                {getSortedValues(usCpiSeries).length > 0 ? (
+                  <DashboardChart option={usInflationOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicAlert.emptyUsInflation")} />
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicAlert.cards.usPmiCompare")} className="content-card">
+                {getSortedValues(usManufacturingPmiSeries).length > 0 ? (
+                  <DashboardChart option={usPmiCompareOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicAlert.emptyUsPmi")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
     </div>
   );
 }

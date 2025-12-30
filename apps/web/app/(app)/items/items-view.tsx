@@ -1,7 +1,7 @@
 "use client";
 
 import { SearchOutlined } from "@ant-design/icons";
-import { Button, Col, Drawer, Grid, Input, List, Row, Space, Table, Tag } from "antd";
+import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import dayjs from "@/lib/dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -38,6 +38,8 @@ interface ParsedItem {
   name: string;
   status: string;
   createdAt: string;
+  publishedAt?: string;
+  ingestedAt?: string;
   sentiment?: string;
   summary?: string;
   thumbnail?: string;
@@ -46,8 +48,11 @@ interface ParsedItem {
   change?: number;
   ticker?: string;
   region?: string;
+  location?: string;
   tags?: string[];
-  topic?: string;
+  topics?: string[];
+  qualityScore?: number;
+  url?: string;
   history?: { timestamp: string; value: number }[];
 }
 
@@ -187,16 +192,25 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
         // console.warn("Failed to parse processed result", e);
       }
 
-      const processed = parsedProcessed as { published_at?: string | null };
-      const raw = parsedRaw as { publishedAt?: string | null; published_at?: string | null };
+      const processed = parsedProcessed as {
+        published_at?: string | null;
+        source?: string | null;
+        topics?: string[] | null;
+        quality_score?: number | null;
+        location?: string | null;
+      };
+      const raw = parsedRaw as {
+        publishedAt?: string | null;
+        published_at?: string | null;
+        url?: string | null;
+        sourceName?: string | null;
+      };
       const publishedAt =
         processed.published_at ??
         raw.publishedAt ??
         raw.published_at ??
         undefined;
-      const createdAt = publishedAt
-        ? dayjs(publishedAt).toISOString()
-        : dayjs(edge.node.createdAt).toISOString();
+      const ingestedAt = dayjs(edge.node.createdAt).toISOString();
 
       return {
         ...edge.node,
@@ -204,7 +218,15 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
         ...parsedProcessed,
         name: edge.node.title,
         tags: edge.node.processed?.tags || [],
-        createdAt
+        publishedAt,
+        ingestedAt,
+        createdAt: ingestedAt,
+        source: processed.source ?? raw.sourceName ?? undefined,
+        topics: Array.isArray(processed.topics) ? processed.topics : [],
+        qualityScore:
+          typeof processed.quality_score === "number" ? processed.quality_score : undefined,
+        url: raw.url ?? undefined,
+        location: processed.location ?? undefined
       } as ParsedItem;
     });
   }, [current, edges, pageSize]);
@@ -215,26 +237,43 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
   const filteredData = useMemo(() => {
     return pageData.filter(item => {
       if (filters.regions?.length) {
-         if (item.region && !filters.regions.includes(item.region)) return false;
+         const regionValue = item.region ?? item.location;
+         if (regionValue && !filters.regions.includes(regionValue)) return false;
       }
       if (filters.sentiments?.length) {
          if (item.sentiment && !filters.sentiments.includes(item.sentiment.toLowerCase())) return false;
       }
       if (filters.topics?.length) {
-        const itemTags = item.tags || [];
-        const matchesTopic = item.topic && filters.topics.includes(item.topic);
-        const matchesTags = itemTags.some(tag => filters.topics?.includes(tag));
-        if (!matchesTopic && !matchesTags) return false;
+        const itemTopics = [
+          ...(item.topics ?? []),
+          ...(item.tags ?? [])
+        ];
+        const matches = itemTopics.some(tag => filters.topics?.includes(tag));
+        if (!matches) return false;
       }
       if (filters.dateRange) {
         const [start, end] = filters.dateRange;
-        const itemDate = dayjs(item.createdAt);
+        const itemDate = dayjs(item.publishedAt ?? item.ingestedAt ?? item.createdAt);
         if (start && itemDate.isBefore(start, 'day')) return false;
         if (end && itemDate.isAfter(end, 'day')) return false;
       }
       return true;
     });
   }, [pageData, filters]);
+
+  const availableRegions = useMemo(() => {
+    const regions = pageData
+      .map((item) => item.region ?? item.location)
+      .filter((value): value is string => Boolean(value));
+    return Array.from(new Set(regions));
+  }, [pageData]);
+
+  const availableTopics = useMemo(() => {
+    const topics = pageData
+      .flatMap((item) => [...(item.topics ?? []), ...(item.tags ?? [])])
+      .filter((value): value is string => Boolean(value));
+    return Array.from(new Set(topics));
+  }, [pageData]);
 
 
   const handleTableChange = (pager: TablePaginationConfig) => {
@@ -258,39 +297,59 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
 
   const columns: ColumnsType<ParsedItem> = [
     {
-      title: t("items.columns.name"),
+      title: t("items.columns.name", { defaultValue: "Title" }),
       dataIndex: "name",
       key: "name"
     },
     {
-      title: t("items.columns.status"),
-      dataIndex: "status",
-      key: "status",
-      render: (status: string) => (
-        <Tag color={status === "active" ? "green" : "blue"}>
-          {t(`items.status.${status}`, { defaultValue: status })}
-        </Tag>
-      )
+      title: t("items.columns.source", { defaultValue: "Source" }),
+      dataIndex: "source",
+      key: "source",
+      render: (value: string | undefined) => value ?? t("common.notAvailable")
     },
     {
-      title: t("items.columns.created"),
-      dataIndex: "createdAt",
-      key: "createdAt",
-      render: (value: string) =>
-        formatDateTime(value, locale, {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit"
-        })
+      title: t("items.columns.published", { defaultValue: "Published" }),
+      dataIndex: "publishedAt",
+      key: "publishedAt",
+      render: (_: string | undefined, record) => {
+        const value = record.publishedAt ?? record.ingestedAt ?? record.createdAt;
+        const label = record.publishedAt
+          ? t("items.time.published", { defaultValue: "Published" })
+          : t("items.time.ingested", { defaultValue: "Ingested" });
+        return (
+          <Space direction="vertical" size={0}>
+            <Typography.Text>
+              {formatDateTime(value, locale, {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit"
+              })}
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {label}
+            </Typography.Text>
+          </Space>
+        );
+      }
+    },
+    {
+      title: t("items.columns.quality", { defaultValue: "Quality" }),
+      dataIndex: "qualityScore",
+      key: "qualityScore",
+      render: (value: number | undefined) =>
+        typeof value === "number" ? (
+          <Tag color="blue">{Math.round(value * 100)}%</Tag>
+        ) : (
+          <Tag>{t("common.notAvailable")}</Tag>
+        )
     }
   ];
 
   const renderContent = () => {
     if (loading && !pageData.length) {
-      return <div style={{ padding: 20, textAlign: "center" }}>Loading...</div>;
+      return <Skeleton active paragraph={{ rows: 6 }} />;
     }
 
     if (view === "list") {
@@ -329,7 +388,16 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
                {(item.price !== undefined || item.ticker) ? (
                  <FinancialCard item={item} />
                ) : (
-                 <NewsCard item={item} />
+                 <NewsCard
+                   item={{
+                     ...item,
+                     publishedAt: item.publishedAt,
+                     ingestedAt: item.ingestedAt,
+                     topics: item.topics,
+                     qualityScore: item.qualityScore,
+                     url: item.url
+                   }}
+                 />
                )}
             </List.Item>
           )}
@@ -351,7 +419,16 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
               }}
               renderItem={(item) => (
                 <List.Item>
-                   <NewsCard item={item} />
+                   <NewsCard
+                     item={{
+                       ...item,
+                       publishedAt: item.publishedAt,
+                       ingestedAt: item.ingestedAt,
+                       topics: item.topics,
+                       qualityScore: item.qualityScore,
+                       url: item.url
+                     }}
+                   />
                 </List.Item>
               )}
             />
@@ -410,7 +487,12 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
         <Row gutter={24}>
            {screens.lg && (
              <Col flex="280px">
-                <FacetedSearch filters={filters} onFilterChange={setFilters} />
+                <FacetedSearch
+                  filters={filters}
+                  onFilterChange={setFilters}
+                  regions={availableRegions}
+                  topics={availableTopics}
+                />
              </Col>
            )}
            <Col flex="auto">
@@ -426,7 +508,12 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
         onClose={() => setShowFilters(false)}
         open={showFilters}
       >
-         <FacetedSearch filters={filters} onFilterChange={setFilters} />
+         <FacetedSearch
+           filters={filters}
+           onFilterChange={setFilters}
+           regions={availableRegions}
+           topics={availableTopics}
+         />
       </Drawer>
     </div>
   );

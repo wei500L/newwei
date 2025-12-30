@@ -5,11 +5,13 @@ import { theme } from "antd";
 
 export interface ChartTheme {
   colors: {
+    primary: string;
     bullish: string;
     bearish: string;
     accent: string;
     background: string;
     foreground: string;
+    border: string;
     grid: string;
     tooltipBg: string;
     tooltipText: string;
@@ -19,16 +21,18 @@ export interface ChartTheme {
 
 const DEFAULT_THEME: ChartTheme = {
   colors: {
-    bullish: "#00ff9d", // Neon Green
-    bearish: "#ff0055", // Neon Red
-    accent: "#ffb700", // Amber
+    primary: "#1f3b7b",
+    bullish: "#1b9e77",
+    bearish: "#d95f02",
+    accent: "#d97706",
     background: "transparent",
-    foreground: "#94a3b8", // Slate 400
-    grid: "rgba(0, 240, 255, 0.05)", // Subtle Cyan Grid
-    tooltipBg: "rgba(3, 7, 18, 0.95)", // Gray 950
-    tooltipText: "#f8fafc", // Slate 50
+    foreground: "#475569",
+    border: "#e2e8f0",
+    grid: "rgba(15, 23, 42, 0.08)",
+    tooltipBg: "#0f172a",
+    tooltipText: "#f8fafc",
   },
-  fontFamily: "var(--font-roboto-mono), monospace",
+  fontFamily: "var(--font-mono), monospace",
 };
 
 export function useChartTheme(): ChartTheme {
@@ -45,16 +49,18 @@ export function useChartTheme(): ChartTheme {
 
     setChartTheme({
       colors: {
-        bullish: getVar("--bullish", "#00ff9d"),
-        bearish: getVar("--bearish", "#ff0055"),
-        accent: getVar("--accent", "#ffb700"),
+        primary: getVar("--primary", "#1f3b7b"),
+        bullish: getVar("--bullish", "#1b9e77"),
+        bearish: getVar("--bearish", "#d95f02"),
+        accent: getVar("--accent", "#d97706"),
         background: "transparent",
-        foreground: getVar("--foreground", "#94a3b8"),
-        grid: "rgba(0, 240, 255, 0.05)",
-        tooltipBg: "rgba(3, 7, 18, 0.95)",
+        foreground: getVar("--foreground", "#475569"),
+        border: getVar("--border", "#e2e8f0"),
+        grid: "rgba(15, 23, 42, 0.08)",
+        tooltipBg: "#0f172a",
         tooltipText: "#f8fafc",
       },
-      fontFamily: "var(--font-roboto-mono), monospace",
+      fontFamily: "var(--font-mono), monospace",
     });
   }, [token]);
 

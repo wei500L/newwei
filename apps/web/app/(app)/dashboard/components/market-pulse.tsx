@@ -13,8 +13,6 @@ import { useChartTheme } from "@/hooks/use-chart-theme";
 // Actually, I'll update Sparkline to use theme for area gradient properly if needed, but it takes `color` prop.
 
 const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
-  const theme = useChartTheme();
-  
   const option: EChartsOption = {
     grid: { left: 0, right: 0, top: 5, bottom: 5 },
     xAxis: { type: "category", show: false },
@@ -62,12 +60,16 @@ const MetricValue = ({ value, suffix }: { value: number | string, suffix?: strin
     return () => clearTimeout(timer);
   }, [value]);
 
-  const flashClass = flash === "up" ? "bg-[var(--bullish)]/10 text-[var(--bullish)] text-glow-green" : flash === "down" ? "bg-[var(--bearish)]/10 text-[var(--bearish)] text-glow-red" : "";
+  const flashClass = flash === "up"
+    ? "bg-emerald-50 text-[var(--bullish)]"
+    : flash === "down"
+      ? "bg-amber-50 text-[var(--bearish)]"
+      : "";
 
   return (
-    <span className={`text-4xl font-bold tracking-tighter font-mono transition-all duration-500 px-1 ${flash ? flashClass : "text-white"}`}>
+    <span className={`text-3xl font-semibold tracking-tight transition-all duration-500 px-1 ${flash ? flashClass : "text-slate-900"}`}>
       {typeof value === 'number' ? value.toFixed(1) : value}
-      {suffix && <span className="text-xl ml-1 text-gray-500 font-semibold">{suffix}</span>}
+      {suffix && <span className="text-lg ml-1 text-slate-400 font-medium">{suffix}</span>}
     </span>
   );
 };
@@ -180,29 +182,29 @@ export function MarketPulse({
   }
 
   return (
-    <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_0_20px_rgba(0,0,0,0.3)]">
+    <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
       <Row gutter={[24, 24]} align="middle">
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.key}>
             <div 
-              className="flex flex-col h-full px-4 py-3 transition-all duration-300 cursor-pointer hover:bg-[var(--primary)]/5 group border-l border-[var(--border)] first:border-l-0"
+              className="flex flex-col h-full px-4 py-3 transition-all duration-300 cursor-pointer hover:bg-slate-50 group border-l border-[var(--border)] first:border-l-0"
               onClick={() => onMetricClick?.(metric.key)}
             >
-              <Typography.Text type="secondary" className="mb-2 text-[11px] uppercase font-bold tracking-[0.2em] text-gray-500 group-hover:text-[var(--primary)] transition-colors">
+              <Typography.Text type="secondary" className="mb-2 text-[12px] font-medium tracking-wide text-slate-500 group-hover:text-[var(--primary)] transition-colors">
                 {metric.title}
               </Typography.Text>
               <div className="flex items-baseline gap-3 mb-2">
                 <MetricValue value={metric.value} suffix={metric.suffix} />
                 
                 <div className={`flex items-center text-xs font-bold px-1.5 py-0.5 ${
-                  metric.trend > 0 
-                    ? "text-[var(--bullish)] text-glow-green" 
-                    : metric.trend < 0 
-                      ? "text-[var(--bearish)] text-glow-red" 
-                      : "text-gray-400"
+                  metric.trend > 0
+                    ? "text-[var(--bullish)]"
+                    : metric.trend < 0
+                      ? "text-[var(--bearish)]"
+                      : "text-slate-400"
                 }`}>
                   {metric.trend > 0 ? <ArrowUpOutlined className="text-[10px]" /> : metric.trend < 0 ? <ArrowDownOutlined className="text-[10px]" /> : <MinusOutlined className="text-[10px]" />}
-                  <span className="ml-1 font-mono">{Math.abs(metric.trend).toFixed(1)}%</span>
+                  <span className="ml-1">{Math.abs(metric.trend).toFixed(1)}%</span>
                 </div>
               </div>
               <div className="mt-auto h-[40px] w-full opacity-50 group-hover:opacity-100 transition-all duration-500">
@@ -215,4 +217,3 @@ export function MarketPulse({
     </div>
   );
 }
-

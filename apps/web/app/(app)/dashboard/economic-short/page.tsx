@@ -7,7 +7,7 @@ import {
   Col,
   Empty,
   Row,
-  Spin,
+  Skeleton,
   Tabs,
   Typography,
 } from "antd";
@@ -51,6 +51,7 @@ export default function EconomicShortPage() {
     pollInterval: 60_000,
   });
   const [activeIndex, setActiveIndex] = useState(indexTabs[0]?.key ?? "growth");
+  const isInitialLoading = loading && seriesMap.size === 0;
 
   const heatmapData = fxPairs.flatMap((pair, xIndex) =>
     heatmapBuckets.map((bucket, yIndex) => {
@@ -160,47 +161,52 @@ export default function EconomicShortPage() {
       {!loading && seriesMap.size === 0 ? (
         <Empty description={t("dashboard.economicShort.empty")} />
       ) : null}
-      {loading && <Spin />}
-      <Row gutter={[16, 16]}>
-        <Col span={24}>
-          <Card className="content-card" title={t("dashboard.economicShort.cards.indexCandlestick")}>
-            <Tabs
-              activeKey={activeIndex}
-              onChange={setActiveIndex}
-              items={indexTabs.map((tab) => ({
-                key: tab.key,
-                label: t(tab.labelKey),
-                children: (
-                  <CandlestickCard
-                    title={t(tab.labelKey)}
-                    group={seriesMap.get(tab.key)}
-                  />
-                ),
-              }))}
-            />
-          </Card>
-        </Col>
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicShort.cards.fxHeatmap")} className="content-card">
-            {heatmapData.some((entry) => entry[2] !== 0) ? (
-              <DashboardChart option={heatmapOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicShort.heatmap.empty")} />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title={t("dashboard.economicShort.cards.cryptoPrices")} className="content-card">
-            {btcValues.length > 0 ? (
-              <DashboardChart option={cryptoOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicShort.crypto.empty")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
+      {isInitialLoading ? (
+        <Skeleton active paragraph={{ rows: 8 }} />
+      ) : (
+        <>
+          <Row gutter={[16, 16]}>
+            <Col span={24}>
+              <Card className="content-card" title={t("dashboard.economicShort.cards.indexCandlestick")}>
+                <Tabs
+                  activeKey={activeIndex}
+                  onChange={setActiveIndex}
+                  items={indexTabs.map((tab) => ({
+                    key: tab.key,
+                    label: t(tab.labelKey),
+                    children: (
+                      <CandlestickCard
+                        title={t(tab.labelKey)}
+                        group={seriesMap.get(tab.key)}
+                      />
+                    ),
+                  }))}
+                />
+              </Card>
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicShort.cards.fxHeatmap")} className="content-card">
+                {heatmapData.some((entry) => entry[2] !== 0) ? (
+                  <DashboardChart option={heatmapOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicShort.heatmap.empty")} />
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title={t("dashboard.economicShort.cards.cryptoPrices")} className="content-card">
+                {btcValues.length > 0 ? (
+                  <DashboardChart option={cryptoOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicShort.crypto.empty")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
     </div>
   );
 }

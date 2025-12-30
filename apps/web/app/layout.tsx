@@ -1,21 +1,27 @@
 import "./globals.css";
 import type { ReactNode } from "react";
-import { Inter, Roboto_Mono } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Serif } from "next/font/google";
 
 import { auth } from "@/lib/auth";
 
 import { AppProviders } from "./providers";
 import { SessionProviders } from "./session-provider";
 
-const inter = Inter({
+const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-sans",
   display: "swap",
 });
 
-const robotoMono = Roboto_Mono({
+const plexSerif = IBM_Plex_Serif({
   subsets: ["latin"],
-  variable: "--font-roboto-mono",
+  variable: "--font-serif",
+  display: "swap",
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
   display: "swap",
 });
 
@@ -27,7 +33,7 @@ export const metadata = {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const session = await auth();
   return (
-    <html lang="en" className={`${inter.variable} ${robotoMono.variable}`}>
+    <html lang="en" className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable}`}>
       <body className="font-sans bg-background text-foreground antialiased">
         <SessionProviders session={session}>
           <AppProviders>{children}</AppProviders>

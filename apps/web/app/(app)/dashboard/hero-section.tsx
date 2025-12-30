@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
+import { useChartTheme } from "@/hooks/use-chart-theme";
 
 const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
   const option: EChartsOption = {
@@ -83,6 +84,7 @@ export function HeroSection({
   onMetricClick 
 }: HeroSectionProps) {
   const { t } = useTranslation();
+  const theme = useChartTheme();
 
   const metrics = useMemo<HeroMetric[]>(() => {
     const conflict = processSeries(conflictData);
@@ -97,7 +99,7 @@ export function HeroSection({
         value: conflict.value,
         trend: conflict.trend,
         data: conflict.history,
-        color: "#ff4d4f",
+        color: theme.colors.bearish,
       },
       {
         key: "market-sentiment",
@@ -105,7 +107,7 @@ export function HeroSection({
         value: market.value,
         trend: market.trend,
         data: market.history,
-        color: "#faad14",
+        color: theme.colors.accent,
       },
       {
         key: "resource-scarcity",
@@ -113,7 +115,7 @@ export function HeroSection({
         value: resource.value,
         trend: resource.trend,
         data: resource.history,
-        color: "#13c2c2",
+        color: theme.colors.primary,
       },
       {
         key: "supply-chain-stability",
@@ -121,11 +123,11 @@ export function HeroSection({
         value: supply.value,
         trend: supply.trend,
         data: supply.history,
-        color: "#52c41a",
+        color: theme.colors.bullish,
         suffix: "%",
       },
     ];
-  }, [t, conflictData, marketData, resourceData, supplyData]);
+  }, [t, conflictData, marketData, resourceData, supplyData, theme.colors]);
 
   if (loading) {
     return (
@@ -144,29 +146,29 @@ export function HeroSection({
   }
 
   return (
-    <div className="mb-10 bg-[#1e293b]/50 backdrop-blur-sm border border-white/10 rounded-3xl p-8 shadow-sm">
+    <div className="mb-10 glass-panel border border-[var(--border)] rounded-3xl p-8 shadow-sm">
       <Row gutter={[32, 32]} align="middle">
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.key}>
             <div 
-              className="flex flex-col h-full px-4 py-2 rounded-2xl transition-all duration-300 cursor-pointer hover:bg-white/5 hover:shadow-md hover:-translate-y-1 group border border-transparent hover:border-white/10"
+              className="flex flex-col h-full px-4 py-2 rounded-2xl transition-all duration-300 cursor-pointer hover:bg-slate-50 hover:shadow-md hover:-translate-y-1 group border border-transparent hover:border-[var(--border)]"
               onClick={() => onMetricClick?.(metric.key)}
             >
-              <Typography.Text type="secondary" className="mb-3 text-[10px] uppercase font-bold tracking-[0.15em] opacity-70 group-hover:opacity-100 transition-opacity text-gray-400">
+              <Typography.Text type="secondary" className="mb-3 text-[12px] font-medium tracking-wide opacity-70 group-hover:opacity-100 transition-opacity text-slate-500">
                 {metric.title}
               </Typography.Text>
               <div className="flex items-baseline gap-2 mb-4">
-                <span className="text-5xl font-extrabold text-white tracking-tighter font-mono">
+                <span className="text-4xl font-semibold text-slate-900 tracking-tight">
                   {/* @ts-expect-error - formatting numeric values */}
                   {typeof metric.value === 'number' ? metric.value.toFixed(1) : metric.value}
-                  {metric.suffix && <span className="text-xl ml-1 text-gray-500 font-semibold">{metric.suffix}</span>}
+                  {metric.suffix && <span className="text-xl ml-1 text-slate-400 font-medium">{metric.suffix}</span>}
                 </span>
                 <div className={`flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${
                   metric.trend > 0 
-                    ? "bg-red-500/10 text-red-400" 
+                    ? "bg-emerald-50 text-[var(--bullish)]" 
                     : metric.trend < 0 
-                      ? "bg-green-500/10 text-green-400" 
-                      : "bg-gray-500/10 text-gray-400"
+                      ? "bg-amber-50 text-[var(--bearish)]" 
+                      : "bg-slate-100 text-slate-400"
                 }`}>
                   {metric.trend > 0 ? <ArrowUpOutlined className="text-[10px]" /> : metric.trend < 0 ? <ArrowDownOutlined className="text-[10px]" /> : <MinusOutlined className="text-[10px]" />}
                   <span className="ml-1">{Math.abs(metric.trend).toFixed(1)}%</span>

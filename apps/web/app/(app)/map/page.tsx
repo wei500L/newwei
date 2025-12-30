@@ -12,9 +12,9 @@ export default function MapPage() {
         <Typography.Title level={4}>Map Overview</Typography.Title>
         <TimeRangeControls />
       </div>
-      <div className="glass-panel border border-[var(--primary)]/20 h-[600px] relative overflow-hidden">
+      <div className="glass-panel border border-[var(--border)] h-[600px] relative overflow-hidden">
         <div className="absolute top-4 left-4 z-10">
-          <Typography.Text className="text-[var(--primary)] uppercase tracking-widest">
+          <Typography.Text className="text-slate-600">
             Regional Situation Map
           </Typography.Text>
         </div>

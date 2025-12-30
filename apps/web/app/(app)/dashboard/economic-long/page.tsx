@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Col, Empty, Row, Spin, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Row, Skeleton, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useTranslation } from "react-i18next";
 
@@ -22,6 +22,7 @@ export default function EconomicLongPage() {
     category: "economic-long",
     pollInterval: 300_000,
   });
+  const isInitialLoading = loading && seriesMap.size === 0;
 
   const gdpSeries = getSeriesField(
     seriesMap,
@@ -95,38 +96,43 @@ export default function EconomicLongPage() {
       {!loading && seriesMap.size === 0 ? (
         <Empty description={t("common.empty")} />
       ) : null}
-      {loading && <Spin />}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={8}>
-          <Card title={t("dashboard.economicLong.cards.gdp3y")} className="content-card">
-            {gdpBarData.length > 0 ? (
-              <DashboardChart option={gdpOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicLong.empty.gdp")} />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={16}>
-          <Card title={t("dashboard.economicLong.cards.yieldCurve")} className="content-card">
-            {yieldTimelineOption ? (
-              <DashboardChart option={yieldTimelineOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicLong.empty.yieldCurve")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col span={24}>
-          <Card title={t("dashboard.economicLong.cards.reserves")} className="content-card">
-            {reserveSeries.length > 0 ? (
-              <DashboardChart option={reserveOption} height={320} />
-            ) : (
-              <Empty description={t("dashboard.economicLong.empty.reserves")} />
-            )}
-          </Card>
-        </Col>
-      </Row>
+      {isInitialLoading ? (
+        <Skeleton active paragraph={{ rows: 8 }} />
+      ) : (
+        <>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={8}>
+              <Card title={t("dashboard.economicLong.cards.gdp3y")} className="content-card">
+                {gdpBarData.length > 0 ? (
+                  <DashboardChart option={gdpOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicLong.empty.gdp")} />
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} lg={16}>
+              <Card title={t("dashboard.economicLong.cards.yieldCurve")} className="content-card">
+                {yieldTimelineOption ? (
+                  <DashboardChart option={yieldTimelineOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicLong.empty.yieldCurve")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]}>
+            <Col span={24}>
+              <Card title={t("dashboard.economicLong.cards.reserves")} className="content-card">
+                {reserveSeries.length > 0 ? (
+                  <DashboardChart option={reserveOption} height={320} />
+                ) : (
+                  <Empty description={t("dashboard.economicLong.empty.reserves")} />
+                )}
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
     </div>
   );
 }

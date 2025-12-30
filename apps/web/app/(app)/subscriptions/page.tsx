@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge, Button, Card, Col, List, Row, Space, Spin, Tag, Typography } from 'antd';
+import { Badge, Button, Card, Col, List, Row, Skeleton, Space, Tag, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import { AlertConfigForm } from '@/app/(app)/dashboard/alert-config-form';
@@ -41,6 +41,8 @@ export default function SubscriptionsPage() {
   const unreadCount = unreadData?.unreadNotificationCount ?? 0;
   const channels = channelsData?.alertChannels ?? [];
   const notifications = notificationsData?.notifications ?? [];
+  const isChannelsInitialLoading = channelsLoading && channels.length === 0;
+  const isNotificationsInitialLoading = notificationsLoading && notifications.length === 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -62,7 +64,6 @@ export default function SubscriptionsPage() {
             title={
               <Space size="middle" align="center">
                 <Typography.Text strong>Alert Channels</Typography.Text>
-                {channelsLoading ? <Spin size="small" /> : null}
               </Space>
             }
             extra={
@@ -71,23 +72,27 @@ export default function SubscriptionsPage() {
               </Button>
             }
           >
-            <List
-              dataSource={channels}
-              locale={{ emptyText: 'No alert channels configured.' }}
-              renderItem={(channel) => (
-                <List.Item>
-                  <List.Item.Meta
-                    title={
-                      <Space size="small">
-                        <Typography.Text strong>{channel.name}</Typography.Text>
-                        <Tag>{channel.type}</Tag>
-                      </Space>
-                    }
-                    description={<Typography.Text type="secondary">{channel.target}</Typography.Text>}
-                  />
-                </List.Item>
-              )}
-            />
+            {isChannelsInitialLoading ? (
+              <Skeleton active paragraph={{ rows: 3 }} />
+            ) : (
+              <List
+                dataSource={channels}
+                locale={{ emptyText: 'No alert channels configured.' }}
+                renderItem={(channel) => (
+                  <List.Item>
+                    <List.Item.Meta
+                      title={
+                        <Space size="small">
+                          <Typography.Text strong>{channel.name}</Typography.Text>
+                          <Tag>{channel.type}</Tag>
+                        </Space>
+                      }
+                      description={<Typography.Text type="secondary">{channel.target}</Typography.Text>}
+                    />
+                  </List.Item>
+                )}
+              />
+            )}
           </Card>
         </Col>
 
@@ -117,10 +122,8 @@ export default function SubscriptionsPage() {
               </Space>
             }
           >
-            {notificationsLoading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}>
-                <Spin />
-              </div>
+            {isNotificationsInitialLoading ? (
+              <Skeleton active paragraph={{ rows: 4 }} />
             ) : (
               <List
                 dataSource={notifications}
