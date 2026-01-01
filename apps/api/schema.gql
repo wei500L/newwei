@@ -49,13 +49,22 @@ enum AlertDeliveryStatus {
 
 type AlertEventModel {
   changePercent: Float
+  changeWindowMin: Float
   context: JSON
   deliveries: [AlertDeliveryModel!]!
   id: String!
   message: String
+  metricProvider: AlertMetricProvider
+  metricSlug: String
   metricValue: Float!
+  operator: AlertOperator
+  ruleId: String
+  ruleName: String
   severity: AlertSeverity!
   status: AlertEventStatus!
+  thresholdLower: Float
+  thresholdUpper: Float
+  thresholdValue: Float
   triggeredAt: DateTime!
 }
 

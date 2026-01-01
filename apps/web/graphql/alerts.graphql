@@ -43,6 +43,16 @@ query AlertEvents($limit: Int) {
     severity
     status
     message
+    ruleId
+    ruleName
+    metricProvider
+    metricSlug
+    operator
+    thresholdValue
+    thresholdLower
+    thresholdUpper
+    changeWindowMin
+    context
     deliveries {
       id
       status

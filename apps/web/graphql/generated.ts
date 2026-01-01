@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -59,13 +61,22 @@ export enum AlertDeliveryStatus {
 export type AlertEventModel = {
   __typename?: 'AlertEventModel';
   changePercent?: Maybe<Scalars['Float']['output']>;
+  changeWindowMin?: Maybe<Scalars['Float']['output']>;
   context?: Maybe<Scalars['JSON']['output']>;
   deliveries: Array<AlertDeliveryModel>;
   id: Scalars['String']['output'];
   message?: Maybe<Scalars['String']['output']>;
+  metricProvider?: Maybe<AlertMetricProvider>;
+  metricSlug?: Maybe<Scalars['String']['output']>;
   metricValue: Scalars['Float']['output'];
+  operator?: Maybe<AlertOperator>;
+  ruleId?: Maybe<Scalars['String']['output']>;
+  ruleName?: Maybe<Scalars['String']['output']>;
   severity: AlertSeverity;
   status: AlertEventStatus;
+  thresholdLower?: Maybe<Scalars['Float']['output']>;
+  thresholdUpper?: Maybe<Scalars['Float']['output']>;
+  thresholdValue?: Maybe<Scalars['Float']['output']>;
   triggeredAt: Scalars['DateTime']['output'];
 };
 
@@ -1214,7 +1225,7 @@ export type AlertEventsQueryVariables = Exact<{
 }>;
 
 
-export type AlertEventsQuery = { __typename?: 'Query', alertEvents: Array<{ __typename?: 'AlertEventModel', id: string, triggeredAt: any, metricValue: number, changePercent?: number | null, severity: AlertSeverity, status: AlertEventStatus, message?: string | null, deliveries: Array<{ __typename?: 'AlertDeliveryModel', id: string, status: AlertDeliveryStatus, channelType: AlertChannelType, sentAt?: any | null, error?: string | null }> }> };
+export type AlertEventsQuery = { __typename?: 'Query', alertEvents: Array<{ __typename?: 'AlertEventModel', id: string, triggeredAt: any, metricValue: number, changePercent?: number | null, severity: AlertSeverity, status: AlertEventStatus, message?: string | null, ruleId?: string | null, ruleName?: string | null, metricProvider?: AlertMetricProvider | null, metricSlug?: string | null, operator?: AlertOperator | null, thresholdValue?: number | null, thresholdLower?: number | null, thresholdUpper?: number | null, changeWindowMin?: number | null, context?: any | null, deliveries: Array<{ __typename?: 'AlertDeliveryModel', id: string, status: AlertDeliveryStatus, channelType: AlertChannelType, sentAt?: any | null, error?: string | null }> }> };
 
 export type UpsertAlertRuleMutationVariables = Exact<{
   input: UpsertAlertRuleInput;
@@ -1636,6 +1647,16 @@ export const AlertEventsDocument = gql`
     severity
     status
     message
+    ruleId
+    ruleName
+    metricProvider
+    metricSlug
+    operator
+    thresholdValue
+    thresholdLower
+    thresholdUpper
+    changeWindowMin
+    context
     deliveries {
       id
       status

@@ -1,5 +1,5 @@
-import KeyMonitorPage from "@/app/(app)/dashboard/key-monitor/page";
+import { redirect } from "next/navigation";
 
 export default function FinanceKeyMonitorPage() {
-  return <KeyMonitorPage />;
+  redirect("/finance?tab=monitor");
 }

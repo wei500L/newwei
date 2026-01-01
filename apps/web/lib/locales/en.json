@@ -53,6 +53,55 @@
       "title": "Alert events",
       "metrics": "Value {{value}} · Change {{change}}%"
     },
+    "rules": {
+      "title": "Rules",
+      "triggerNow": "Trigger now",
+      "summary": "Provider {{provider}} · Metric {{metric}} · Cooldown {{cooldown}}s · Interval {{interval}}s",
+      "channels": "Channels: {{channels}}"
+    },
+    "center": {
+      "title": "Alert Center",
+      "rulesTitle": "Rules",
+      "eventsTitle": "Trigger History",
+      "evidenceTitle": "Evidence Details",
+      "emptyRules": "No alert rules configured.",
+      "emptyEvents": "No alert events yet.",
+      "selectEvent": "Select an event to see evidence details.",
+      "deliveriesEmpty": "No delivery records.",
+      "threshold": {
+        "outside": "Outside {{range}}",
+        "within": "Within {{range}}",
+        "changePct": "Change {{symbol}} {{value}}%"
+      },
+      "detail": {
+        "triggeredAt": "Triggered at",
+        "metricValue": "Metric value",
+        "changePercent": "Change {{value}}",
+        "status": "Status",
+        "message": "Message",
+        "deliveries": "Deliveries",
+        "rule": "Rule",
+        "metric": "Metric {{metric}}",
+        "provider": "Provider {{provider}}",
+        "operator": "Operator {{operator}}",
+        "threshold": "Threshold",
+        "window": "Window {{minutes}} min",
+        "objects": "Objects",
+        "objectsEmpty": "No object context.",
+        "context": "Context",
+        "contextEmpty": "No additional context.",
+        "object": {
+          "country": "Country",
+          "countryCode": "Country code",
+          "resource": "Resource",
+          "action": "Action",
+          "queue": "Queue",
+          "source": "Source",
+          "actor": "Actor",
+          "statuses": "Statuses"
+        }
+      }
+    },
     "streamError": "Alert stream error: {{error}}",
     "config": {
       "title": "Config",
@@ -453,8 +502,8 @@
         "title": "Market Index"
       },
       "warMap": {
-        "title": "Conflict Zones",
-        "series": "Conflict"
+        "title": "Indicator Situation Map",
+        "series": "Indicator"
       }
     },
     "stream": {
@@ -518,7 +567,53 @@
     "systemSettings": "System Settings",
     "adminSettings": "Admin Settings",
     "admin": "Admin",
-    "settings": "Settings"
+    "settings": "Settings",
+    "commandPlaceholder": "Search news, topics, entities... (Cmd+K)",
+    "main": {
+      "today": "Today",
+      "topics": "Topics & Events",
+      "map": "Situation Map",
+      "finance": "Finance Panel",
+      "alerts": "Alert Center",
+      "search": "Search",
+      "subscriptions": "My Subscriptions"
+    }
+  },
+  "pages": {
+    "today": {
+      "title": "Today Brief",
+      "subtitle": "Get a quick read on today's most important news."
+    },
+    "map": {
+      "title": "Indicator Situation Map",
+      "subtitle": "Macro indicators by region",
+      "overlay": "Indicator Situation Overview"
+    },
+    "topics": {
+      "title": "Topics & Events",
+      "empty": "No topics available yet."
+    }
+  },
+  "finance": {
+    "nav": {
+      "market": "Market",
+      "macro": "Macro",
+      "livelihood": "Livelihood"
+    },
+    "market": {
+      "overview": "Market Overview",
+      "monitor": "Key Monitor"
+    },
+    "macro": {
+      "overview": "Macro Overview",
+      "longTerm": "Long-term Trends"
+    }
+  },
+  "subscriptions": {
+    "title": "My Subscriptions",
+    "channelsTitle": "Alert Channels",
+    "channelsEmpty": "No alert channels configured.",
+    "notificationsTitle": "Notifications"
   },
   "brand": {
     "short": "M",
@@ -1493,12 +1588,32 @@
   },
   "items": {
     "columns": {
-      "name": "Name",
+      "name": "Title",
+      "source": "Source",
+      "published": "Published",
+      "quality": "Quality",
       "status": "Status",
       "created": "Created"
     },
     "search": {
-      "placeholder": "Enter "
+      "placeholder": "Search news, topics, entities"
+    },
+    "filters": {
+      "button": "Filters",
+      "title": "Filters"
+    },
+    "time": {
+      "published": "Published",
+      "ingested": "Ingested"
+    },
+    "empty": {
+      "defaultTitle": "No items found",
+      "defaultDescription": "Try adjusting filters or refresh.",
+      "todayTitle": "No news yet",
+      "todayDescription": "No items ingested or processed yet.",
+      "todayAction": "Go to Crawl",
+      "searchTitle": "No results",
+      "searchDescription": "Try adjusting your keywords or filters."
     },
     "status": {
       "active": "Active",

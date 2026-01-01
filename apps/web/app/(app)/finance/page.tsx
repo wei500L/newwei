@@ -1,5 +1,5 @@
-import EconomicShortPage from "@/app/(app)/dashboard/economic-short/page";
+import { MarketContent } from "./market-content";
 
 export default function FinancePage() {
-  return <EconomicShortPage />;
+  return <MarketContent />;
 }

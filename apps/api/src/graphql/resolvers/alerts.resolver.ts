@@ -95,6 +95,15 @@ export class AlertsResolver {
       severity: event.severity,
       status: event.status,
       message: event.message ?? undefined,
+      ruleId: event.ruleId,
+      ruleName: event.rule?.name ?? undefined,
+      metricProvider: event.rule?.metricProvider ?? undefined,
+      metricSlug: event.rule?.metricSlug ?? undefined,
+      operator: event.rule?.operator ?? undefined,
+      thresholdValue: event.rule?.thresholdValue ? Number(event.rule.thresholdValue) : null,
+      thresholdLower: event.rule?.thresholdLower ? Number(event.rule.thresholdLower) : null,
+      thresholdUpper: event.rule?.thresholdUpper ? Number(event.rule.thresholdUpper) : null,
+      changeWindowMin: event.rule?.changeWindowMin ?? null,
       context: event.context as Record<string, unknown> | null,
       deliveries:
         event.deliveries?.map((delivery) => ({
@@ -203,6 +212,7 @@ export class AlertsResolver {
       severity: payload.event.severity,
       status: payload.event.status,
       message: payload.event.message ?? undefined,
+      ruleId: payload.event.ruleId ?? undefined,
       deliveries: []
     })
   })

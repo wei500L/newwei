@@ -1,7 +1,7 @@
 "use client";
 
 import { SearchOutlined } from "@ant-design/icons";
-import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Typography } from "antd";
+import { Button, Col, Drawer, Empty, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import dayjs from "@/lib/dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -32,6 +32,15 @@ type ItemEdge = ItemsQuery["items"]["edges"][number];
 
 const EMPTY_EDGES: ItemEdge[] = [];
 
+type EmptyStateVariant = "default" | "today" | "search";
+type ItemsSortMode = "default" | "publishedDesc";
+
+interface ItemsViewProps {
+  initialView?: ItemViewType;
+  emptyStateVariant?: EmptyStateVariant;
+  sortMode?: ItemsSortMode;
+}
+
 interface ParsedItem {
   id: string;
   title: string;
@@ -56,7 +65,11 @@ interface ParsedItem {
   history?: { timestamp: string; value: number }[];
 }
 
-export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType }) {
+export function ItemsView({
+  initialView = "list",
+  emptyStateVariant = "default",
+  sortMode = "default"
+}: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
@@ -275,6 +288,46 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
     return Array.from(new Set(topics));
   }, [pageData]);
 
+  const emptyStateConfig = useMemo(() => {
+    if (emptyStateVariant === "today") {
+      return {
+        title: t("items.empty.todayTitle", { defaultValue: "No news yet" }),
+        description: t("items.empty.todayDescription", {
+          defaultValue: "No items ingested or processed yet."
+        }),
+        actionLabel: t("items.empty.todayAction", { defaultValue: "Go to Crawl" }),
+        actionHref: "/crawl"
+      };
+    }
+
+    if (emptyStateVariant === "search") {
+      return {
+        title: t("items.empty.searchTitle", { defaultValue: "No results" }),
+        description: t("items.empty.searchDescription", {
+          defaultValue: "Try adjusting your keywords or filters."
+        })
+      };
+    }
+
+    return {
+      title: t("items.empty.defaultTitle", { defaultValue: "No items found" }),
+      description: t("items.empty.defaultDescription", {
+        defaultValue: "Try adjusting filters or refresh."
+      })
+    };
+  }, [emptyStateVariant, t]);
+
+  const sortedData = useMemo(() => {
+    if (sortMode !== "publishedDesc") {
+      return filteredData;
+    }
+    return [...filteredData].sort((a, b) => {
+      const aTime = dayjs(a.publishedAt ?? a.ingestedAt ?? a.createdAt).valueOf();
+      const bTime = dayjs(b.publishedAt ?? b.ingestedAt ?? b.createdAt).valueOf();
+      return bTime - aTime;
+    });
+  }, [filteredData, sortMode]);
+
 
   const handleTableChange = (pager: TablePaginationConfig) => {
     const nextPageSize = pager.pageSize ?? pageSize;
@@ -352,12 +405,35 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
       return <Skeleton active paragraph={{ rows: 6 }} />;
     }
 
+    if (!loading && sortedData.length === 0) {
+      return (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={
+            <Space direction="vertical" align="center" size={4}>
+              <Typography.Text strong>{emptyStateConfig.title}</Typography.Text>
+              {emptyStateConfig.description ? (
+                <Typography.Text type="secondary">
+                  {emptyStateConfig.description}
+                </Typography.Text>
+              ) : null}
+              {emptyStateConfig.actionLabel && emptyStateConfig.actionHref ? (
+                <Button size="small" type="primary" onClick={() => router.push(emptyStateConfig.actionHref)}>
+                  {emptyStateConfig.actionLabel}
+                </Button>
+              ) : null}
+            </Space>
+          }
+        />
+      );
+    }
+
     if (view === "list") {
       return (
         <Table
           rowKey="id"
           columns={columns}
-          dataSource={filteredData}
+          dataSource={sortedData}
           loading={loading || needsMoreForPage}
           pagination={{
             current,
@@ -374,7 +450,7 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
       return (
         <List
           grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
-          dataSource={filteredData}
+          dataSource={sortedData}
           pagination={{
              current,
              pageSize,
@@ -409,7 +485,7 @@ export function ItemsView({ initialView = "list" }: { initialView?: ItemViewType
         return (
             <List
               itemLayout="vertical"
-              dataSource={filteredData}
+              dataSource={sortedData}
               pagination={{
                  current,
                  pageSize,

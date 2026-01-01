@@ -2,16 +2,20 @@
 
 import { Tabs } from "antd";
 import { usePathname, useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 
-const financeRoutes = [
-  { key: "/finance", label: "Market" },
-  { key: "/finance/macro", label: "Macro" },
-  { key: "/finance/trends", label: "Trends" },
-  { key: "/finance/livelihood", label: "Livelihood" },
-  { key: "/finance/key-monitor", label: "Key Monitor" }
+const financeRoutes: Array<{
+  key: string;
+  labelKey: string;
+  defaultLabel: string;
+}> = [
+  { key: "/finance", labelKey: "finance.nav.market", defaultLabel: "Market" },
+  { key: "/finance/macro", labelKey: "finance.nav.macro", defaultLabel: "Macro" },
+  { key: "/finance/livelihood", labelKey: "finance.nav.livelihood", defaultLabel: "Livelihood" }
 ];
 
 export function FinanceNav() {
+  const { t } = useTranslation();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -27,7 +31,7 @@ export function FinanceNav() {
       onChange={(key) => router.push(key)}
       items={financeRoutes.map((route) => ({
         key: route.key,
-        label: route.label
+        label: t(route.labelKey, { defaultValue: route.defaultLabel })
       }))}
     />
   );

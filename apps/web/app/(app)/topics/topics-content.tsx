@@ -75,7 +75,7 @@ export function TopicsContent() {
   if (!loading && groups.length === 0) {
     return (
       <Empty
-        description="No topics available yet."
+        description={t("pages.topics.empty", { defaultValue: "No topics available yet." })}
         image={Empty.PRESENTED_IMAGE_SIMPLE}
       />
     );
@@ -85,7 +85,7 @@ export function TopicsContent() {
     <div className="flex flex-col gap-6">
       <Space align="center" size="middle">
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Topics & Events
+          {t("pages.topics.title", { defaultValue: "Topics & Events" })}
         </Typography.Title>
         <Button size="small" onClick={() => void refetch()}>
           {t('common.refresh')}

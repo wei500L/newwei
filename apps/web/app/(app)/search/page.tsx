@@ -9,5 +9,5 @@ export default async function SearchPage() {
     redirect("/login");
   }
 
-  return <ItemsView initialView="list" />;
+  return <ItemsView initialView="list" emptyStateVariant="search" />;
 }

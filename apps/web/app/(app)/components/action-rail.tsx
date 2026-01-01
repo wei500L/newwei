@@ -3,6 +3,7 @@
 import {
   AppstoreOutlined,
   BellOutlined,
+  ExclamationCircleOutlined,
   FundOutlined,
   GlobalOutlined,
   ReadOutlined,
@@ -15,6 +16,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import { useSession } from "next-auth/react";
+import { useTranslation } from "react-i18next";
 
 interface ActionItem {
   key: string;
@@ -24,6 +26,7 @@ interface ActionItem {
 }
 
 export function ActionRail() {
+  const { t } = useTranslation();
   const pathname = usePathname();
   const { data: session } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
@@ -32,27 +35,78 @@ export function ActionRail() {
   const canManageAdmin = permissions.includes("org.write") || permissions.includes("users.write");
 
   const mainNavItems: ActionItem[] = [
-    { key: "/today", icon: <ReadOutlined />, label: "Today", path: "/today" },
-    { key: "/topics", icon: <AppstoreOutlined />, label: "Topics", path: "/topics" },
-    { key: "/map", icon: <GlobalOutlined />, label: "Map", path: "/map" },
-    { key: "/finance", icon: <FundOutlined />, label: "Finance", path: "/finance" },
-    { key: "/search", icon: <SearchOutlined />, label: "Search", path: "/search" },
-    { key: "/subscriptions", icon: <BellOutlined />, label: "Subscriptions", path: "/subscriptions" }
+    {
+      key: "/today",
+      icon: <ReadOutlined />,
+      label: t("nav.main.today", { defaultValue: "Today" }),
+      path: "/today"
+    },
+    {
+      key: "/topics",
+      icon: <AppstoreOutlined />,
+      label: t("nav.main.topics", { defaultValue: "Topics & Events" }),
+      path: "/topics"
+    },
+    {
+      key: "/map",
+      icon: <GlobalOutlined />,
+      label: t("nav.main.map", { defaultValue: "Situation Map" }),
+      path: "/map"
+    },
+    {
+      key: "/finance",
+      icon: <FundOutlined />,
+      label: t("nav.main.finance", { defaultValue: "Finance Panel" }),
+      path: "/finance"
+    },
+    {
+      key: "/alerts",
+      icon: <ExclamationCircleOutlined />,
+      label: t("nav.main.alerts", { defaultValue: "Alert Center" }),
+      path: "/alerts"
+    },
+    {
+      key: "/search",
+      icon: <SearchOutlined />,
+      label: t("nav.main.search", { defaultValue: "Search" }),
+      path: "/search"
+    },
+    {
+      key: "/subscriptions",
+      icon: <BellOutlined />,
+      label: t("nav.main.subscriptions", { defaultValue: "My Subscriptions" }),
+      path: "/subscriptions"
+    }
   ];
 
   const adminNavItems = useMemo<ActionItem[]>(() => {
     const items: ActionItem[] = [];
     if (canManageCrawl) {
-      items.push({ key: "/crawl", icon: <RadarChartOutlined />, label: "Sources", path: "/crawl" });
+      items.push({
+        key: "/crawl",
+        icon: <RadarChartOutlined />,
+        label: t("nav.crawlTasks", { defaultValue: "Crawl Tasks" }),
+        path: "/crawl"
+      });
     }
     if (canManageSettings) {
-      items.push({ key: "/settings", icon: <SettingOutlined />, label: "Settings", path: "/settings" });
+      items.push({
+        key: "/settings",
+        icon: <SettingOutlined />,
+        label: t("nav.settings", { defaultValue: "Settings" }),
+        path: "/settings"
+      });
     }
     if (canManageAdmin) {
-      items.push({ key: "/admin", icon: <SettingOutlined />, label: "Admin", path: "/admin" });
+      items.push({
+        key: "/admin",
+        icon: <SettingOutlined />,
+        label: t("nav.admin", { defaultValue: "Admin" }),
+        path: "/admin"
+      });
     }
     return items;
-  }, [canManageAdmin, canManageCrawl, canManageSettings]);
+  }, [canManageAdmin, canManageCrawl, canManageSettings, t]);
 
   return (
     <aside className="hidden md:flex flex-col justify-center h-full pl-4 pr-2 z-40">

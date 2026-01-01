@@ -53,6 +53,55 @@
       "title": "告警事件",
       "metrics": "值 {{value}} · 变化 {{change}}%"
     },
+    "rules": {
+      "title": "规则",
+      "triggerNow": "立即触发",
+      "summary": "提供方 {{provider}} · 指标 {{metric}} · 冷却 {{cooldown}} 秒 · 间隔 {{interval}} 秒",
+      "channels": "渠道：{{channels}}"
+    },
+    "center": {
+      "title": "预警中心",
+      "rulesTitle": "规则列表",
+      "eventsTitle": "触发历史",
+      "evidenceTitle": "证据详情",
+      "emptyRules": "暂无预警规则。",
+      "emptyEvents": "暂无预警事件。",
+      "selectEvent": "选择一条事件查看证据详情。",
+      "deliveriesEmpty": "暂无投递记录。",
+      "threshold": {
+        "outside": "超出 {{range}}",
+        "within": "位于 {{range}}",
+        "changePct": "变化 {{symbol}} {{value}}%"
+      },
+      "detail": {
+        "triggeredAt": "触发时间",
+        "metricValue": "指标值",
+        "changePercent": "变化 {{value}}",
+        "status": "状态",
+        "message": "说明",
+        "deliveries": "投递记录",
+        "rule": "规则",
+        "metric": "指标 {{metric}}",
+        "provider": "提供方 {{provider}}",
+        "operator": "运算符 {{operator}}",
+        "threshold": "阈值",
+        "window": "窗口 {{minutes}} 分钟",
+        "objects": "对象",
+        "objectsEmpty": "暂无对象信息。",
+        "context": "上下文",
+        "contextEmpty": "暂无额外上下文。",
+        "object": {
+          "country": "国家/地区",
+          "countryCode": "国家/地区代码",
+          "resource": "资源",
+          "action": "动作",
+          "queue": "队列",
+          "source": "来源",
+          "actor": "执行人",
+          "statuses": "状态"
+        }
+      }
+    },
     "streamError": "告警流错误：{{error}}",
     "config": {
       "title": "配置",
@@ -453,8 +502,8 @@
         "title": "市场指数"
       },
       "warMap": {
-        "title": "冲突区域",
-        "series": "冲突"
+        "title": "指标态势图",
+        "series": "指标"
       }
     },
     "stream": {
@@ -518,7 +567,53 @@
     "systemSettings": "系统设置",
     "adminSettings": "管理员设置",
     "admin": "管理",
-    "settings": "设置"
+    "settings": "设置",
+    "commandPlaceholder": "搜索新闻、专题、实体... (Cmd+K)",
+    "main": {
+      "today": "今日要闻",
+      "topics": "专题/事件",
+      "map": "地图态势",
+      "finance": "金融面板",
+      "alerts": "预警中心",
+      "search": "搜索",
+      "subscriptions": "我的订阅"
+    }
+  },
+  "pages": {
+    "today": {
+      "title": "今日要闻",
+      "subtitle": "快速理解今日重要新闻。"
+    },
+    "map": {
+      "title": "指标态势图",
+      "subtitle": "区域宏观指标概览",
+      "overlay": "指标态势概览"
+    },
+    "topics": {
+      "title": "专题/事件",
+      "empty": "暂无专题/事件。"
+    }
+  },
+  "finance": {
+    "nav": {
+      "market": "市场",
+      "macro": "宏观",
+      "livelihood": "民生"
+    },
+    "market": {
+      "overview": "市场概览",
+      "monitor": "重点监测"
+    },
+    "macro": {
+      "overview": "宏观概览",
+      "longTerm": "长期趋势"
+    }
+  },
+  "subscriptions": {
+    "title": "我的订阅",
+    "channelsTitle": "预警渠道",
+    "channelsEmpty": "暂无预警渠道。",
+    "notificationsTitle": "通知"
   },
   "brand": {
     "short": "M",
@@ -1491,12 +1586,32 @@
   },
   "items": {
     "columns": {
-      "name": "名称",
+      "name": "标题",
+      "source": "来源",
+      "published": "发布时间",
+      "quality": "质量",
       "status": "状态",
       "created": "已创建"
     },
     "search": {
-      "placeholder": "请输入"
+      "placeholder": "搜索新闻、专题、实体"
+    },
+    "filters": {
+      "button": "筛选",
+      "title": "筛选"
+    },
+    "time": {
+      "published": "已发布",
+      "ingested": "已入库"
+    },
+    "empty": {
+      "defaultTitle": "暂无内容",
+      "defaultDescription": "可调整筛选或刷新。",
+      "todayTitle": "今日暂无要闻",
+      "todayDescription": "暂无抓取/处理完成",
+      "todayAction": "前往采集入口",
+      "searchTitle": "无匹配结果",
+      "searchDescription": "请调整关键词或筛选条件。"
     },
     "status": {
       "active": "启用",

@@ -1,10 +1,8 @@
 'use client';
 
-import { Badge, Button, Card, Col, List, Row, Skeleton, Space, Tag, Typography } from 'antd';
+import { Badge, Button, Card, Col, List, Row, Skeleton, Space, Tag, Typography } from "antd";
 import { useTranslation } from 'react-i18next';
 
-import { AlertConfigForm } from '@/app/(app)/dashboard/alert-config-form';
-import { AlertPanel } from '@/app/(app)/dashboard/alert-panel';
 import {
   NotificationType,
   useAlertChannelsQuery,
@@ -46,16 +44,9 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Typography.Title level={4}>Subscription Center</Typography.Title>
-
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={14}>
-          <AlertPanel />
-        </Col>
-        <Col xs={24} xl={10}>
-          <AlertConfigForm />
-        </Col>
-      </Row>
+      <Typography.Title level={4}>
+        {t("subscriptions.title", { defaultValue: "My Subscriptions" })}
+      </Typography.Title>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
@@ -63,7 +54,9 @@ export default function SubscriptionsPage() {
             className="content-card"
             title={
               <Space size="middle" align="center">
-                <Typography.Text strong>Alert Channels</Typography.Text>
+                <Typography.Text strong>
+                  {t("subscriptions.channelsTitle", { defaultValue: "Alert Channels" })}
+                </Typography.Text>
               </Space>
             }
             extra={
@@ -77,7 +70,11 @@ export default function SubscriptionsPage() {
             ) : (
               <List
                 dataSource={channels}
-                locale={{ emptyText: 'No alert channels configured.' }}
+                locale={{
+                  emptyText: t("subscriptions.channelsEmpty", {
+                    defaultValue: "No alert channels configured."
+                  })
+                }}
                 renderItem={(channel) => (
                   <List.Item>
                     <List.Item.Meta
@@ -101,7 +98,9 @@ export default function SubscriptionsPage() {
             className="content-card"
             title={
               <Space size="middle" align="center">
-                <Typography.Text strong>Notifications</Typography.Text>
+                <Typography.Text strong>
+                  {t("subscriptions.notificationsTitle", { defaultValue: "Notifications" })}
+                </Typography.Text>
                 <Badge count={unreadCount} size="small" />
               </Space>
             }

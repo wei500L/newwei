@@ -80,6 +80,33 @@ export class AlertEventModel {
   @Field({ nullable: true })
   message?: string;
 
+  @Field({ nullable: true })
+  ruleId?: string;
+
+  @Field({ nullable: true })
+  ruleName?: string;
+
+  @Field(() => AlertMetricProvider, { nullable: true })
+  metricProvider?: AlertMetricProvider;
+
+  @Field({ nullable: true })
+  metricSlug?: string;
+
+  @Field(() => AlertOperator, { nullable: true })
+  operator?: AlertOperator;
+
+  @Field(() => Number, { nullable: true })
+  thresholdValue?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  thresholdLower?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  thresholdUpper?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  changeWindowMin?: number | null;
+
   @Field(() => GraphQLJSONScalar, { nullable: true })
   context?: Record<string, unknown>;
 

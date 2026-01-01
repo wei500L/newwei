@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
-import { ItemsView } from "@/app/(app)/items/items-view";
+import { TodayContent } from "./today-content";
 
 export default async function TodayPage() {
   const session = await auth();
@@ -9,5 +9,5 @@ export default async function TodayPage() {
     redirect("/login");
   }
 
-  return <ItemsView initialView="feed" />;
+  return <TodayContent />;
 }

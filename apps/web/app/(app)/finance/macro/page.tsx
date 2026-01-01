@@ -1,5 +1,5 @@
-import EconomicMediumPage from "@/app/(app)/dashboard/economic-medium/page";
+import { MacroContent } from "./macro-content";
 
 export default function FinanceMacroPage() {
-  return <EconomicMediumPage />;
+  return <MacroContent />;
 }

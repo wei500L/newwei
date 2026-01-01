@@ -1,5 +1,5 @@
-import EconomicLongPage from "@/app/(app)/dashboard/economic-long/page";
+import { redirect } from "next/navigation";
 
 export default function FinanceTrendsPage() {
-  return <EconomicLongPage />;
+  redirect("/finance/macro?tab=long");
 }

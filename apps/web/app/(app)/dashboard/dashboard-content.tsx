@@ -421,7 +421,9 @@ export function DashboardContent() {
            {/* War Map - Dominant Central Feature */}
            <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] relative overflow-hidden">
              <div className="absolute top-4 left-4 z-10">
-               <h3 className="text-lg text-slate-700">{t("dashboard.charts.warMap.title", { defaultValue: "Global Conflict Zones" })}</h3>
+               <h3 className="text-lg text-slate-700">
+                 {t("dashboard.charts.warMap.title", { defaultValue: "Indicator Situation Map" })}
+               </h3>
              </div>
              <WarMap />
            </div>
