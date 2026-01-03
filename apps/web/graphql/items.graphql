@@ -24,3 +24,35 @@ query Items($first: Int!, $after: String, $search: String) {
     totalCount
   }
 }
+
+query Item($id: String!) {
+  item(id: $id) {
+    id
+    title
+    status
+    createdAt
+    updatedAt
+    meta {
+      id
+      externalId
+      name
+      status
+      createdAt
+      updatedAt
+    }
+    raw {
+      id
+      payload
+      source
+      createdAt
+      updatedAt
+    }
+    processed {
+      id
+      status
+      tags
+      result
+      createdAt
+    }
+  }
+}

@@ -1,10 +1,14 @@
 'use client';
 
 import { gql, useQuery } from '@apollo/client';
-import { Button, Card, Col, Empty, Grid, Row, Skeleton, Space, Tag, Typography } from 'antd';
+import { Button, Card, Col, Drawer, Empty, Grid, List, Row, Select, Skeleton, Space, Tag, Typography } from 'antd';
+import type { ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'next/navigation';
 
 import { NewsCard } from '@/app/(app)/items/components/news-card';
+import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
 interface TopicGroupItem {
@@ -24,12 +28,68 @@ interface TopicGroup {
   items: TopicGroupItem[];
 }
 
+interface EventGroupItem {
+  id: string;
+  itemMetaId: string;
+  title?: string | null;
+  summary?: string | null;
+  source?: string | null;
+  publishedAt?: string | null;
+  createdAt: string;
+}
+
+interface EventGroup {
+  eventId: string;
+  count: number;
+  latestAt: string;
+  title?: string | null;
+  summary?: string | null;
+  source?: string | null;
+  publishedAt?: string | null;
+  topics?: string[] | null;
+  entities?: string[] | null;
+  items: EventGroupItem[];
+}
+
 const TOPIC_GROUPS_QUERY = gql`
-  query TopicGroups($limit: Int, $itemsPerGroup: Int, $windowDays: Int) {
+  query TopicGroups(
+    $limit: Int
+    $itemsPerGroup: Int
+    $windowDays: Int
+    $eventLimit: Int
+    $eventItemsPerGroup: Int
+    $eventWindowDays: Int
+    $eventMinGroupSize: Int
+  ) {
     topicGroups(limit: $limit, itemsPerGroup: $itemsPerGroup, windowDays: $windowDays) {
       topic
       count
       latestAt
+      items {
+        id
+        itemMetaId
+        title
+        summary
+        source
+        publishedAt
+        createdAt
+      }
+    }
+    eventGroups(
+      limit: $eventLimit
+      itemsPerGroup: $eventItemsPerGroup
+      windowDays: $eventWindowDays
+      minGroupSize: $eventMinGroupSize
+    ) {
+      eventId
+      count
+      latestAt
+      title
+      summary
+      source
+      publishedAt
+      topics
+      entities
       items {
         id
         itemMetaId
@@ -46,66 +106,310 @@ const TOPIC_GROUPS_QUERY = gql`
 const DEFAULT_LIMIT = 12;
 const DEFAULT_ITEMS_PER_GROUP = 4;
 const DEFAULT_WINDOW_DAYS = 30;
+const DEFAULT_EVENT_LIMIT = 8;
+const DEFAULT_EVENT_ITEMS_PER_GROUP = 4;
+const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
 
 export function TopicsContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const screens = Grid.useBreakpoint();
+  const [selectedEvent, setSelectedEvent] = useState<EventGroup | null>(null);
+  const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
+  const [minGroupSize, setMinGroupSize] = useState(DEFAULT_EVENT_MIN_GROUP_SIZE);
+  const router = useRouter();
 
-  const { data, loading, refetch } = useQuery<{ topicGroups: TopicGroup[] }>(TOPIC_GROUPS_QUERY, {
+  const { data, loading, refetch } = useQuery<{
+    topicGroups: TopicGroup[];
+    eventGroups: EventGroup[];
+  }>(TOPIC_GROUPS_QUERY, {
     variables: {
       limit: DEFAULT_LIMIT,
       itemsPerGroup: DEFAULT_ITEMS_PER_GROUP,
-      windowDays: DEFAULT_WINDOW_DAYS
+      windowDays,
+      eventLimit: DEFAULT_EVENT_LIMIT,
+      eventItemsPerGroup: DEFAULT_EVENT_ITEMS_PER_GROUP,
+      eventWindowDays: windowDays,
+      eventMinGroupSize: minGroupSize
     },
     fetchPolicy: 'network-only'
   });
 
   const groups = data?.topicGroups ?? [];
+  const eventGroups = data?.eventGroups ?? [];
   const cardSpan = screens.xl ? 6 : screens.lg ? 8 : screens.md ? 12 : 24;
+  const drawerWidth = screens.lg ? 720 : undefined;
+  const windowOptions = useMemo(
+    () =>
+      [7, 14, 30, 90].map((days) => ({
+        value: days,
+        label: t('pages.topics.filters.windowOption', {
+          defaultValue: '{{days}} days',
+          days
+        })
+      })),
+    [t]
+  );
+  const groupSizeOptions = useMemo(
+    () =>
+      [2, 3, 5].map((size) => ({
+        value: size,
+        label: t('pages.topics.filters.groupOption', {
+          defaultValue: '{{count}}+ reports',
+          count: size
+        })
+      })),
+    [t]
+  );
 
-  if (loading && groups.length === 0) {
+  const resolveEventTitle = (group: EventGroup) => {
+    const topics = group.topics ?? [];
+    const entities = group.entities ?? [];
     return (
+      group.title ??
+      entities[0] ??
+      topics[0] ??
+      t('pages.topics.eventFallbackTitle', { defaultValue: 'Untitled Event' })
+    );
+  };
+
+  const selectedEventTitle = selectedEvent ? resolveEventTitle(selectedEvent) : '';
+  const selectedEventTopics = selectedEvent?.topics ?? [];
+  const selectedEventEntities = selectedEvent?.entities ?? [];
+  const selectedEventSources = useMemo(() => {
+    if (!selectedEvent) {
+      return [];
+    }
+    const sources = selectedEvent.items
+      .map((item) => item.source)
+      .filter((source): source is string => Boolean(source));
+    return Array.from(new Set(sources));
+  }, [selectedEvent]);
+  const selectedEventItems = useMemo(() => {
+    if (!selectedEvent) {
+      return [];
+    }
+    return [...selectedEvent.items].sort((a, b) => {
+      const aTime = dayjs(a.publishedAt ?? a.createdAt).valueOf();
+      const bTime = dayjs(b.publishedAt ?? b.createdAt).valueOf();
+      return bTime - aTime;
+    });
+  }, [selectedEvent]);
+
+  let content: ReactNode;
+  if (loading && groups.length === 0 && eventGroups.length === 0) {
+    content = (
       <Card className="content-card">
         <Skeleton active paragraph={{ rows: 6 }} />
       </Card>
     );
-  }
-
-  if (!loading && groups.length === 0) {
-    return (
+  } else if (!loading && groups.length === 0 && eventGroups.length === 0) {
+    content = (
       <Empty
-        description={t("pages.topics.empty", { defaultValue: "No topics available yet." })}
+        description={t('pages.topics.empty', { defaultValue: 'No topics available yet.' })}
         image={Empty.PRESENTED_IMAGE_SIMPLE}
       />
+    );
+  } else {
+    content = (
+      <div className="flex flex-col gap-6">
+        <Space align="center" size="middle" wrap>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {t('pages.topics.title', { defaultValue: 'Topics & Events' })}
+          </Typography.Title>
+          <Button size="small" onClick={() => void refetch()}>
+            {t('common.refresh')}
+          </Button>
+          <Space size="small" align="center">
+            <Typography.Text type="secondary">
+              {t('pages.topics.filters.windowLabel', { defaultValue: 'Window' })}
+            </Typography.Text>
+            <Select
+              size="small"
+              value={windowDays}
+              options={windowOptions}
+              onChange={(value) => setWindowDays(value)}
+            />
+          </Space>
+          <Space size="small" align="center">
+            <Typography.Text type="secondary">
+              {t('pages.topics.filters.groupLabel', { defaultValue: 'Min group size' })}
+            </Typography.Text>
+            <Select
+              size="small"
+              value={minGroupSize}
+              options={groupSizeOptions}
+              onChange={(value) => setMinGroupSize(value)}
+            />
+          </Space>
+        </Space>
+
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          <div className="flex flex-col gap-3">
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              {t('pages.topics.eventsTitle', { defaultValue: 'Events' })}
+            </Typography.Title>
+            {eventGroups.length === 0 ? (
+              <Empty
+                description={t('pages.topics.eventsEmpty', { defaultValue: 'No event clusters yet.' })}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            ) : (
+              eventGroups.map((group) => {
+                const topics = group.topics ?? [];
+                const entities = group.entities ?? [];
+                const eventTitle = resolveEventTitle(group);
+
+                return (
+                  <Card
+                    key={group.eventId}
+                    className="content-card"
+                    title={
+                      <Space size="small" align="center">
+                        <Typography.Text strong>{eventTitle}</Typography.Text>
+                        <Tag>{group.count}</Tag>
+                      </Space>
+                    }
+                    extra={
+                      <Space size="small" align="center">
+                        <Typography.Text type="secondary">
+                          {formatDateTime(group.latestAt, locale, {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </Typography.Text>
+                        <Button size="small" onClick={() => setSelectedEvent(group)}>
+                          {t('pages.topics.eventDetail.action', { defaultValue: 'Details' })}
+                        </Button>
+                      </Space>
+                    }
+                  >
+                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                      {group.summary ? (
+                        <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }}>
+                          {group.summary}
+                        </Typography.Paragraph>
+                      ) : null}
+                      {(topics.length > 0 || entities.length > 0) && (
+                        <Space wrap size={[6, 6]}>
+                          {topics.slice(0, 3).map((topic) => (
+                            <Tag key={`topic-${group.eventId}-${topic}`} color="blue">
+                              {topic}
+                            </Tag>
+                          ))}
+                          {entities.slice(0, 3).map((entity) => (
+                            <Tag key={`entity-${group.eventId}-${entity}`} color="purple">
+                              {entity}
+                            </Tag>
+                          ))}
+                        </Space>
+                      )}
+                      <Row gutter={[16, 16]}>
+                        {group.items.map((item) => (
+                          <Col key={item.id} xs={24} md={cardSpan}>
+                            <NewsCard
+                              item={{
+                                id: item.itemMetaId,
+                                title: item.title ?? eventTitle,
+                                summary: item.summary ?? undefined,
+                                source: item.source ?? undefined,
+                                createdAt: item.createdAt,
+                                publishedAt: item.publishedAt ?? undefined,
+                                ingestedAt: item.createdAt,
+                                topics: topics,
+                                tags: entities
+                              }}
+                            />
+                          </Col>
+                        ))}
+                      </Row>
+                    </Space>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              {t('pages.topics.topicsTitle', { defaultValue: 'Topics' })}
+            </Typography.Title>
+            {groups.length === 0 ? (
+              <Empty
+                description={t('pages.topics.topicsEmpty', { defaultValue: 'No topics available yet.' })}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            ) : (
+              groups.map((group) => (
+                <Card
+                  key={group.topic}
+                  className="content-card"
+                  title={
+                    <Space size="small" align="center">
+                      <Typography.Text strong>{group.topic}</Typography.Text>
+                      <Tag>{group.count}</Tag>
+                    </Space>
+                  }
+                  extra={
+                    <Typography.Text type="secondary">
+                      {formatDateTime(group.latestAt, locale, {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </Typography.Text>
+                  }
+                >
+                  <Row gutter={[16, 16]}>
+                    {group.items.map((item) => (
+                      <Col key={item.id} xs={24} md={cardSpan}>
+                        <NewsCard
+                          item={{
+                            id: item.itemMetaId,
+                            title: item.title ?? group.topic,
+                            summary: item.summary ?? undefined,
+                            source: item.source ?? undefined,
+                            createdAt: item.createdAt,
+                            publishedAt: item.publishedAt ?? undefined,
+                            ingestedAt: item.createdAt,
+                            topics: [group.topic]
+                          }}
+                        />
+                      </Col>
+                    ))}
+                  </Row>
+                </Card>
+              ))
+            )}
+          </div>
+        </Space>
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <Space align="center" size="middle">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("pages.topics.title", { defaultValue: "Topics & Events" })}
-        </Typography.Title>
-        <Button size="small" onClick={() => void refetch()}>
-          {t('common.refresh')}
-        </Button>
-      </Space>
-
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        {groups.map((group) => (
-          <Card
-            key={group.topic}
-            className="content-card"
-            title={
-              <Space size="small" align="center">
-                <Typography.Text strong>{group.topic}</Typography.Text>
-                <Tag>{group.count}</Tag>
-              </Space>
-            }
-            extra={
+    <>
+      {content}
+      <Drawer
+        title={t('pages.topics.eventDetail.title', { defaultValue: 'Event Details' })}
+        width={drawerWidth}
+        open={Boolean(selectedEvent)}
+        onClose={() => setSelectedEvent(null)}
+        destroyOnClose
+      >
+        {selectedEvent ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Space direction="vertical" size={2}>
+              <Typography.Title level={5} style={{ margin: 0 }}>
+                {selectedEventTitle}
+              </Typography.Title>
               <Typography.Text type="secondary">
-                {formatDateTime(group.latestAt, locale, {
+                {formatDateTime(selectedEvent.latestAt, locale, {
                   year: 'numeric',
                   month: '2-digit',
                   day: '2-digit',
@@ -113,29 +417,105 @@ export function TopicsContent() {
                   minute: '2-digit'
                 })}
               </Typography.Text>
-            }
-          >
-            <Row gutter={[16, 16]}>
-              {group.items.map((item) => (
-                <Col key={item.id} xs={24} md={cardSpan}>
-                  <NewsCard
-                    item={{
-                      id: item.itemMetaId,
-                      title: item.title ?? group.topic,
-                      summary: item.summary ?? undefined,
-                      source: item.source ?? undefined,
-                      createdAt: item.createdAt,
-                      publishedAt: item.publishedAt ?? undefined,
-                      ingestedAt: item.createdAt,
-                      topics: [group.topic]
-                    }}
-                  />
-                </Col>
-              ))}
-            </Row>
-          </Card>
-        ))}
-      </Space>
-    </div>
+            </Space>
+
+            {selectedEvent.summary ? (
+              <Typography.Paragraph type="secondary">
+                {selectedEvent.summary}
+              </Typography.Paragraph>
+            ) : null}
+
+            <Space direction="vertical" size="small">
+              <Typography.Text type="secondary">
+                {t('pages.topics.eventDetail.count', {
+                  defaultValue: '{{count}} reports',
+                  count: selectedEvent.count
+                })}
+              </Typography.Text>
+              {(selectedEventTopics.length > 0 || selectedEventEntities.length > 0) && (
+                <Space wrap size={[6, 6]}>
+                  {selectedEventTopics.map((topic) => (
+                    <Tag key={`detail-topic-${selectedEvent.eventId}-${topic}`} color="blue">
+                      {topic}
+                    </Tag>
+                  ))}
+                  {selectedEventEntities.map((entity) => (
+                    <Tag key={`detail-entity-${selectedEvent.eventId}-${entity}`} color="purple">
+                      {entity}
+                    </Tag>
+                  ))}
+                </Space>
+              )}
+              {selectedEventSources.length > 0 && (
+                <Space wrap size={[6, 6]}>
+                  {selectedEventSources.map((source) => (
+                    <Tag key={`detail-source-${selectedEvent.eventId}-${source}`} color="geekblue">
+                      {source}
+                    </Tag>
+                  ))}
+                </Space>
+              )}
+            </Space>
+
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              {t('pages.topics.eventDetail.timelineTitle', { defaultValue: 'Timeline' })}
+            </Typography.Title>
+            <List
+              dataSource={selectedEventItems}
+              locale={{
+                emptyText: t('pages.topics.eventDetail.timelineEmpty', {
+                  defaultValue: 'No related items.'
+                })
+              }}
+              renderItem={(item) => {
+                const timestamp = item.publishedAt ?? item.createdAt;
+                return (
+                  <List.Item
+                    actions={[
+                      <Button
+                        key="open"
+                        size="small"
+                        onClick={() => router.push(`/items/${item.itemMetaId}`)}
+                      >
+                        {t('pages.topics.eventDetail.openItem', { defaultValue: 'Open item' })}
+                      </Button>
+                    ]}
+                  >
+                    <List.Item.Meta
+                      title={
+                        <Space size="small">
+                          <Typography.Text strong>
+                            {item.title ?? selectedEventTitle}
+                          </Typography.Text>
+                          {item.source ? <Tag>{item.source}</Tag> : null}
+                        </Space>
+                      }
+                      description={
+                        <Space direction="vertical" size={0}>
+                          <Typography.Text type="secondary">
+                            {formatDateTime(timestamp, locale, {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </Typography.Text>
+                          {item.summary ? (
+                            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }} ellipsis={{ rows: 2 }}>
+                              {item.summary}
+                            </Typography.Paragraph>
+                          ) : null}
+                        </Space>
+                      }
+                    />
+                  </List.Item>
+                );
+              }}
+            />
+          </Space>
+        ) : null}
+      </Drawer>
+    </>
   );
 }

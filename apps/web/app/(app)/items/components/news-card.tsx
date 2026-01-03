@@ -1,6 +1,7 @@
 "use client";
 
-import { Card, Space, Tag, Typography } from "antd";
+import { Button, Card, Space, Tag, Typography } from "antd";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
@@ -26,6 +27,7 @@ export interface NewsCardProps {
 
 export function NewsCard({ item }: NewsCardProps) {
   const { t, i18n } = useTranslation();
+  const router = useRouter();
   const locale = resolveLocale(i18n.language);
 
   const sentimentColor = (sentiment?: string) => {
@@ -42,6 +44,7 @@ export function NewsCard({ item }: NewsCardProps) {
 
   const publishedLabel = t("items.time.published", { defaultValue: "Published" });
   const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
+  const openLabel = t("items.detail.openItem", { defaultValue: "Open item" });
   const hasPublished = Boolean(item.publishedAt);
   const displayPublished = item.publishedAt ?? item.createdAt;
   const displayIngested = item.ingestedAt ?? item.createdAt;
@@ -49,6 +52,7 @@ export function NewsCard({ item }: NewsCardProps) {
   const topicTags = [...(item.topics ?? []), ...(item.tags ?? [])].slice(0, 3);
   const qualityScore =
     typeof item.qualityScore === "number" ? Math.round(item.qualityScore * 100) : null;
+  const showFooter = Boolean(item.source || item.url || item.id);
 
   return (
     <Card
@@ -102,9 +106,9 @@ export function NewsCard({ item }: NewsCardProps) {
           </Paragraph>
         )}
       </Space>
-      {(item.source || item.url) && (
+      {showFooter && (
         <div style={{ marginTop: "auto", paddingTop: "12px" }}>
-          <Space size="small">
+          <Space size="small" wrap>
             {item.source ? (
               <Text type="secondary" style={{ fontSize: "12px" }}>
                 {item.source}
@@ -114,6 +118,16 @@ export function NewsCard({ item }: NewsCardProps) {
               <Typography.Link href={item.url} target="_blank" rel="noreferrer">
                 Read original
               </Typography.Link>
+            ) : null}
+            {item.id ? (
+              <Button
+                type="link"
+                size="small"
+                onClick={() => router.push(`/items/${item.id}`)}
+                className="px-0"
+              >
+                {openLabel}
+              </Button>
             ) : null}
           </Space>
         </div>

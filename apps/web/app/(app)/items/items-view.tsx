@@ -397,6 +397,15 @@ export function ItemsView({
         ) : (
           <Tag>{t("common.notAvailable")}</Tag>
         )
+    },
+    {
+      title: t("items.columns.open", { defaultValue: "Open" }),
+      key: "open",
+      render: (_: unknown, record) => (
+        <Button type="link" size="small" onClick={() => router.push(`/items/${record.id}`)} className="px-0">
+          {t("items.detail.openItem", { defaultValue: "Open item" })}
+        </Button>
+      )
     }
   ];
 

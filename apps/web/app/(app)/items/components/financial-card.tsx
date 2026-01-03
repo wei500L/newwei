@@ -1,7 +1,9 @@
 "use client";
 
 import { ArrowDownOutlined, ArrowUpOutlined } from "@ant-design/icons";
-import { Card, Space, Statistic, Typography } from "antd";
+import { Button, Card, Space, Statistic, Typography } from "antd";
+import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import { DashboardChart } from "@/components/echart";
 
 const { Text, Title } = Typography;
@@ -17,8 +19,11 @@ export interface FinancialCardProps {
 }
 
 export function FinancialCard({ item }: FinancialCardProps) {
+  const { t } = useTranslation();
+  const router = useRouter();
   const isPositive = (item.change ?? 0) >= 0;
   const color = isPositive ? "#3f8600" : "#cf1322";
+  const openLabel = t("items.detail.openItem", { defaultValue: "Open item" });
 
   const chartOption = item.history
     ? {
@@ -91,6 +96,11 @@ export function FinancialCard({ item }: FinancialCardProps) {
             <DashboardChart option={chartOption} height={60} />
           </div>
         )}
+        <div style={{ marginTop: "auto" }}>
+          <Button type="link" size="small" onClick={() => router.push(`/items/${item.id}`)} className="px-0">
+            {openLabel}
+          </Button>
+        </div>
       </Space>
     </Card>
   );

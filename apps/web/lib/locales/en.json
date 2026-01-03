@@ -591,7 +591,26 @@
     },
     "topics": {
       "title": "Topics & Events",
-      "empty": "No topics available yet."
+      "empty": "No topics available yet.",
+      "eventsTitle": "Events",
+      "eventsEmpty": "No event clusters yet.",
+      "topicsTitle": "Topics",
+      "topicsEmpty": "No topics available yet.",
+      "eventFallbackTitle": "Untitled Event",
+      "filters": {
+        "windowLabel": "Window",
+        "groupLabel": "Min group size",
+        "windowOption": "{{days}} days",
+        "groupOption": "{{count}}+ reports"
+      },
+      "eventDetail": {
+        "title": "Event Details",
+        "action": "Details",
+        "count": "{{count}} reports",
+        "openItem": "Open item",
+        "timelineTitle": "Timeline",
+        "timelineEmpty": "No related items."
+      }
     }
   },
   "finance": {
@@ -1587,11 +1606,43 @@
     "noStack": "No stack"
   },
   "items": {
+    "detail": {
+      "summaryTitle": "Summary",
+      "summaryEmpty": "No summary available.",
+      "keyPointsTitle": "Key points",
+      "keyPointsEmpty": "No key points.",
+      "metaTitle": "Metadata",
+      "contextTitle": "Context",
+      "contextEmpty": "No tags or entities.",
+      "payloadTitle": "Payload",
+      "payloadEmpty": "No payload available.",
+      "payloadProcessed": "Processed JSON",
+      "payloadRaw": "Raw JSON",
+      "payloadMarkdown": "Cleaned Markdown",
+      "readOriginal": "Read original",
+      "openItem": "Open item",
+      "empty": "Item not found.",
+      "fields": {
+        "itemId": "Item ID",
+        "externalId": "External ID",
+        "status": "Status",
+        "createdAt": "Created at",
+        "updatedAt": "Updated at",
+        "publishedAt": "Published at",
+        "source": "Source",
+        "author": "Author",
+        "language": "Language",
+        "location": "Location",
+        "category": "Category",
+        "quality": "Quality"
+      }
+    },
     "columns": {
       "name": "Title",
       "source": "Source",
       "published": "Published",
       "quality": "Quality",
+      "open": "Open",
       "status": "Status",
       "created": "Created"
     },

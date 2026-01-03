@@ -591,7 +591,26 @@
     },
     "topics": {
       "title": "专题/事件",
-      "empty": "暂无专题/事件。"
+      "empty": "暂无专题/事件。",
+      "eventsTitle": "事件聚合",
+      "eventsEmpty": "暂无事件聚合。",
+      "topicsTitle": "专题",
+      "topicsEmpty": "暂无专题/事件。",
+      "eventFallbackTitle": "未命名事件",
+      "filters": {
+        "windowLabel": "时间窗口",
+        "groupLabel": "最小事件量",
+        "windowOption": "近{{days}}天",
+        "groupOption": "{{count}}+ 报道"
+      },
+      "eventDetail": {
+        "title": "事件详情",
+        "action": "详情",
+        "count": "{{count}} 篇报道",
+        "openItem": "打开条目",
+        "timelineTitle": "时间线",
+        "timelineEmpty": "暂无相关内容。"
+      }
     }
   },
   "finance": {
@@ -1585,11 +1604,43 @@
     "noStack": "无堆栈"
   },
   "items": {
+    "detail": {
+      "summaryTitle": "摘要",
+      "summaryEmpty": "暂无摘要。",
+      "keyPointsTitle": "关键点",
+      "keyPointsEmpty": "暂无关键点。",
+      "metaTitle": "元数据",
+      "contextTitle": "上下文",
+      "contextEmpty": "暂无标签或实体。",
+      "payloadTitle": "载荷",
+      "payloadEmpty": "暂无载荷。",
+      "payloadProcessed": "处理结果 JSON",
+      "payloadRaw": "原始 JSON",
+      "payloadMarkdown": "清洗后 Markdown",
+      "readOriginal": "查看原文",
+      "openItem": "打开条目",
+      "empty": "未找到条目。",
+      "fields": {
+        "itemId": "条目 ID",
+        "externalId": "外部 ID",
+        "status": "状态",
+        "createdAt": "创建时间",
+        "updatedAt": "更新时间",
+        "publishedAt": "发布时间",
+        "source": "来源",
+        "author": "作者",
+        "language": "语言",
+        "location": "地点",
+        "category": "分类",
+        "quality": "质量"
+      }
+    },
     "columns": {
       "name": "标题",
       "source": "来源",
       "published": "发布时间",
       "quality": "质量",
+      "open": "打开",
       "status": "状态",
       "created": "已创建"
     },

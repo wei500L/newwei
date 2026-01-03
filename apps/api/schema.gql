@@ -773,6 +773,7 @@ type Query {
   dashboards: [DashboardModel!]!
   economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
   getEconomicData(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicDataPointModel!]!
+  eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!
   item(id: String!): ItemModel
   items(after: String, first: Int! = 10, search: String): ItemConnection!
   me: UserModel!
@@ -784,6 +785,7 @@ type Query {
   queueStats: QueueStatsModel!
   rateLimitSettings: RateLimitSettingsModel!
   roles(includeSystem: Boolean): [RoleModel!]!
+  topicGroups(itemsPerGroup: Int, limit: Int, windowDays: Int): [TopicGroupModel!]!
   unreadNotificationCount: Int!
   users(after: String, first: Int, search: String): [UserModel!]!
 }
@@ -843,6 +845,46 @@ type RoleModel {
   isSystem: Boolean!
   name: String!
   permissions: [PermissionModel!]!
+}
+
+type TopicGroupModel {
+  count: Int!
+  items: [TopicItemModel!]!
+  latestAt: DateTime!
+  topic: String!
+}
+
+type TopicItemModel {
+  createdAt: DateTime!
+  id: ID!
+  itemMetaId: String!
+  publishedAt: String
+  source: String
+  summary: String
+  title: String
+}
+
+type EventGroupModel {
+  count: Int!
+  entities: [String!]!
+  eventId: String!
+  items: [EventGroupItemModel!]!
+  latestAt: DateTime!
+  publishedAt: String
+  source: String
+  summary: String
+  title: String
+  topics: [String!]!
+}
+
+type EventGroupItemModel {
+  createdAt: DateTime!
+  id: ID!
+  itemMetaId: String!
+  publishedAt: String
+  source: String
+  summary: String
+  title: String
 }
 
 input SeriesPointInput {

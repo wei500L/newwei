@@ -21,6 +21,10 @@ const FULLTEXT_MIN_TOKEN_LENGTH = 3;
 const MAX_TOPIC_GROUPS = 50;
 const MAX_TOPIC_ITEMS = 8;
 const DEFAULT_TOPIC_WINDOW_DAYS = 30;
+const MAX_EVENT_GROUPS = 50;
+const MAX_EVENT_ITEMS = 8;
+const DEFAULT_EVENT_WINDOW_DAYS = 30;
+const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type SearchStrategy =
@@ -55,6 +59,29 @@ interface TopicGroup {
   count: number;
   latestAt: Date;
   items: TopicGroupItem[];
+}
+
+interface EventGroupItem {
+  processedId: string;
+  itemMetaId: string;
+  title?: string | null;
+  summary?: string | null;
+  source?: string | null;
+  publishedAt?: string | null;
+  createdAt: Date;
+}
+
+interface EventGroup {
+  eventId: string;
+  count: number;
+  latestAt: Date;
+  title?: string | null;
+  summary?: string | null;
+  source?: string | null;
+  publishedAt?: string | null;
+  topics: string[];
+  entities: string[];
+  items: EventGroupItem[];
 }
 
 @Injectable()
@@ -380,6 +407,227 @@ export class ItemsService {
         createdAt: item.createdAt
       }))
     }));
+  }
+
+  async listEventGroups(
+    orgId: string,
+    options?: { limit?: number; itemsPerGroup?: number; windowDays?: number; minGroupSize?: number }
+  ): Promise<EventGroup[]> {
+    const normalizedLimit = Math.min(
+      Math.max(options?.limit ?? 12, 1),
+      MAX_EVENT_GROUPS
+    );
+    const normalizedItems = Math.min(
+      Math.max(options?.itemsPerGroup ?? 5, 1),
+      MAX_EVENT_ITEMS
+    );
+    const windowDays = Math.min(
+      Math.max(options?.windowDays ?? DEFAULT_EVENT_WINDOW_DAYS, 1),
+      DEFAULT_EVENT_WINDOW_DAYS * 6
+    );
+    const minGroupSize = Math.min(
+      Math.max(options?.minGroupSize ?? DEFAULT_EVENT_MIN_GROUP_SIZE, 1),
+      50
+    );
+    const since = new Date(Date.now() - windowDays * DAY_MS);
+
+    const pipeline = [
+      {
+        $match: {
+          orgId,
+          status: "completed",
+          createdAt: { $gte: since }
+        }
+      },
+      {
+        $project: {
+          itemMetaId: 1,
+          createdAt: 1,
+          duplicateOf: 1,
+          result: 1
+        }
+      },
+      {
+        $addFields: {
+          primaryTopic: {
+            $arrayElemAt: [{ $ifNull: ["$result.topics", []] }, 0]
+          },
+          primaryEntity: {
+            $arrayElemAt: [
+              {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: { $ifNull: ["$result.entities", []] },
+                      as: "entity",
+                      cond: {
+                        $and: [
+                          { $ne: ["$$entity.name", null] },
+                          { $ne: ["$$entity.name", ""] }
+                        ]
+                      }
+                    }
+                  },
+                  as: "entity",
+                  in: "$$entity.name"
+                }
+              },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $addFields: {
+          entityKey: {
+            $cond: [
+              {
+                $and: [
+                  { $ne: ["$primaryEntity", null] },
+                  { $ne: ["$primaryEntity", ""] }
+                ]
+              },
+              { $concat: ["entity:", "$primaryEntity"] },
+              null
+            ]
+          },
+          topicKey: {
+            $cond: [
+              {
+                $and: [
+                  { $ne: ["$primaryTopic", null] },
+                  { $ne: ["$primaryTopic", ""] }
+                ]
+              },
+              { $concat: ["topic:", "$primaryTopic"] },
+              null
+            ]
+          }
+        }
+      },
+      {
+        $addFields: {
+          groupId: {
+            $ifNull: [
+              "$duplicateOf",
+              {
+                $ifNull: ["$entityKey", { $ifNull: ["$topicKey", "$_id"] }]
+              }
+            ]
+          }
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $group: {
+          _id: "$groupId",
+          count: { $sum: 1 },
+          latestAt: { $first: "$createdAt" },
+          title: { $first: "$result.title" },
+          summary: { $first: "$result.summary" },
+          source: { $first: "$result.source" },
+          publishedAt: { $first: "$result.published_at" },
+          topics: { $first: "$result.topics" },
+          entities: { $first: "$result.entities" },
+          items: {
+            $push: {
+              processedId: "$_id",
+              itemMetaId: "$itemMetaId",
+              title: "$result.title",
+              summary: "$result.summary",
+              source: "$result.source",
+              publishedAt: "$result.published_at",
+              createdAt: "$createdAt"
+            }
+          }
+        }
+      },
+      {
+        $match: {
+          count: { $gte: minGroupSize }
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          count: 1,
+          latestAt: 1,
+          title: 1,
+          summary: 1,
+          source: 1,
+          publishedAt: 1,
+          topics: 1,
+          entities: 1,
+          items: { $slice: ["$items", normalizedItems] }
+        }
+      },
+      {
+        $sort: { latestAt: -1, count: -1 }
+      },
+      {
+        $limit: normalizedLimit
+      }
+    ];
+
+    const groups = await ProcessedItemModel.aggregate<{
+      _id: { toString: () => string };
+      count: number;
+      latestAt: Date;
+      title?: string | null;
+      summary?: string | null;
+      source?: string | null;
+      publishedAt?: string | null;
+      topics?: string[] | null;
+      entities?: Array<{ name?: string | null } | null> | null;
+      items: Array<{
+        processedId: { toString: () => string };
+        itemMetaId: string;
+        title?: string | null;
+        summary?: string | null;
+        source?: string | null;
+        publishedAt?: string | null;
+        createdAt: Date;
+      }>;
+    }>(pipeline);
+
+    return groups.map((group) => {
+      const topics = Array.isArray(group.topics)
+        ? group.topics.filter((topic): topic is string => Boolean(topic))
+        : [];
+      const rawEntities = Array.isArray(group.entities) ? group.entities : [];
+      const entityNames = Array.from(
+        new Set(
+          rawEntities
+            .map((entity) =>
+              entity && typeof entity.name === "string" ? entity.name : null
+            )
+            .filter((name): name is string => Boolean(name))
+        )
+      );
+
+      return {
+        eventId: group._id.toString(),
+        count: group.count,
+        latestAt: group.latestAt,
+        title: group.title ?? undefined,
+        summary: group.summary ?? undefined,
+        source: group.source ?? undefined,
+        publishedAt: group.publishedAt ?? undefined,
+        topics,
+        entities: entityNames,
+        items: group.items.map((item) => ({
+          processedId: item.processedId.toString(),
+          itemMetaId: item.itemMetaId,
+          title: item.title ?? undefined,
+          summary: item.summary ?? undefined,
+          source: item.source ?? undefined,
+          publishedAt: item.publishedAt ?? undefined,
+          createdAt: item.createdAt
+        }))
+      };
+    });
   }
 
   private resolveSearchStrategy(search?: string): SearchStrategy {

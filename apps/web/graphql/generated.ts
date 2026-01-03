@@ -655,6 +655,31 @@ export enum EconomicDataValueType {
   Yield = 'yield'
 }
 
+export type EventGroupItemModel = {
+  __typename?: 'EventGroupItemModel';
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  itemMetaId: Scalars['String']['output'];
+  publishedAt?: Maybe<Scalars['String']['output']>;
+  source?: Maybe<Scalars['String']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+};
+
+export type EventGroupModel = {
+  __typename?: 'EventGroupModel';
+  count: Scalars['Int']['output'];
+  entities: Array<Scalars['String']['output']>;
+  eventId: Scalars['String']['output'];
+  items: Array<EventGroupItemModel>;
+  latestAt: Scalars['DateTime']['output'];
+  publishedAt?: Maybe<Scalars['String']['output']>;
+  source?: Maybe<Scalars['String']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+  topics: Array<Scalars['String']['output']>;
+};
+
 export type ItemConnection = {
   __typename?: 'ItemConnection';
   edges: Array<ItemEdge>;
@@ -941,6 +966,7 @@ export type Query = {
   crawlTasks: CrawlTaskConnection;
   dashboards: Array<DashboardModel>;
   economicDataFetchConfigs: Array<EconomicDataFetchConfigModel>;
+  eventGroups: Array<EventGroupModel>;
   getEconomicData: Array<EconomicDataPointModel>;
   item?: Maybe<ItemModel>;
   items: ItemConnection;
@@ -953,6 +979,7 @@ export type Query = {
   queueStats: QueueStatsModel;
   rateLimitSettings: RateLimitSettingsModel;
   roles: Array<RoleModel>;
+  topicGroups: Array<TopicGroupModel>;
   unreadNotificationCount: Scalars['Int']['output'];
   users: Array<UserModel>;
 };
@@ -989,6 +1016,14 @@ export type QueryCrawlTasksArgs = {
 };
 
 
+export type QueryEventGroupsArgs = {
+  itemsPerGroup?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  minGroupSize?: InputMaybe<Scalars['Int']['input']>;
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QueryGetEconomicDataArgs = {
   category: Scalars['String']['input'];
   granularity?: InputMaybe<TimeGranularity>;
@@ -1015,6 +1050,13 @@ export type QueryNotificationsArgs = {
 
 export type QueryRolesArgs = {
   includeSystem?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type QueryTopicGroupsArgs = {
+  itemsPerGroup?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -1111,6 +1153,25 @@ export enum TimeGranularity {
   Week = 'week',
   Year = 'year'
 }
+
+export type TopicGroupModel = {
+  __typename?: 'TopicGroupModel';
+  count: Scalars['Int']['output'];
+  items: Array<TopicItemModel>;
+  latestAt: Scalars['DateTime']['output'];
+  topic: Scalars['String']['output'];
+};
+
+export type TopicItemModel = {
+  __typename?: 'TopicItemModel';
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  itemMetaId: Scalars['String']['output'];
+  publishedAt?: Maybe<Scalars['String']['output']>;
+  source?: Maybe<Scalars['String']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+};
 
 export type TriggerDataFetchInput = {
   slugs: Array<Scalars['String']['input']>;
@@ -1394,6 +1455,13 @@ export type ItemsQueryVariables = Exact<{
 
 
 export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, processed?: { __typename?: 'ProcessedItemModelGraph', result?: string | null, tags: Array<string> } | null, raw?: { __typename?: 'RawItemModelGraph', payload: string, source?: string | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
+
+export type ItemQueryVariables = Exact<{
+  id: Scalars['String']['input'];
+}>;
+
+
+export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, result?: string | null, createdAt: any } | null } | null };
 
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2816,6 +2884,72 @@ export type ItemsQueryHookResult = ReturnType<typeof useItemsQuery>;
 export type ItemsLazyQueryHookResult = ReturnType<typeof useItemsLazyQuery>;
 export type ItemsSuspenseQueryHookResult = ReturnType<typeof useItemsSuspenseQuery>;
 export type ItemsQueryResult = Apollo.QueryResult<ItemsQuery, ItemsQueryVariables>;
+export const ItemDocument = gql`
+    query Item($id: String!) {
+  item(id: $id) {
+    id
+    title
+    status
+    createdAt
+    updatedAt
+    meta {
+      id
+      externalId
+      name
+      status
+      createdAt
+      updatedAt
+    }
+    raw {
+      id
+      payload
+      source
+      createdAt
+      updatedAt
+    }
+    processed {
+      id
+      status
+      tags
+      result
+      createdAt
+    }
+  }
+}
+    `;
+
+/**
+ * __useItemQuery__
+ *
+ * To run a query within a React component, call `useItemQuery` and pass it any options that fit your needs.
+ * When your component renders, `useItemQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useItemQuery({
+ *   variables: {
+ *      id: // value for 'id'
+ *   },
+ * });
+ */
+export function useItemQuery(baseOptions: Apollo.QueryHookOptions<ItemQuery, ItemQueryVariables> & ({ variables: ItemQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<ItemQuery, ItemQueryVariables>(ItemDocument, options);
+      }
+export function useItemLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<ItemQuery, ItemQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<ItemQuery, ItemQueryVariables>(ItemDocument, options);
+        }
+export function useItemSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<ItemQuery, ItemQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<ItemQuery, ItemQueryVariables>(ItemDocument, options);
+        }
+export type ItemQueryHookResult = ReturnType<typeof useItemQuery>;
+export type ItemLazyQueryHookResult = ReturnType<typeof useItemLazyQuery>;
+export type ItemSuspenseQueryHookResult = ReturnType<typeof useItemSuspenseQuery>;
+export type ItemQueryResult = Apollo.QueryResult<ItemQuery, ItemQueryVariables>;
 export const MeDocument = gql`
     query Me {
   me {
