@@ -1,12 +1,13 @@
 "use client";
 
-import { Card, Col, Empty, Row, Skeleton, Typography } from "antd";
+import { Alert, Card, Col, Empty, Row, Skeleton, Typography } from "antd";
 import type { CallbackDataParams } from "echarts";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import {
   getLatestValue,
@@ -22,33 +23,37 @@ const agConfigs = [
 ];
 
 export default function LivelihoodPricesPage() {
-  const { t } = useTranslation();
-  const { loading, error, seriesMap } = useEconomicData({
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
+  const { loading, error, seriesMap, hasData, latestTimestamp, isDelayed } = useEconomicData({
     category: "livelihood-prices",
     pollInterval: 180_000,
   });
-  const isInitialLoading = loading && seriesMap.size === 0;
+  const isInitialLoading = loading && !hasData;
 
   const cpiTreeData = [
     {
       name: t("dashboard.livelihood.cpi.food"),
       value:
         getLatestValue(getSeriesField(seriesMap, "china_cpi", "全国-环比增长"))
-          ?.value ?? 0,
+          ?.value ?? null,
     },
     {
       name: t("dashboard.livelihood.cpi.housing"),
       value:
         getLatestValue(getSeriesField(seriesMap, "china_cpi", "城市-环比增长"))
-          ?.value ?? 0,
+          ?.value ?? null,
     },
     {
       name: t("dashboard.livelihood.cpi.transport"),
       value:
         getLatestValue(getSeriesField(seriesMap, "china_cpi", "农村-环比增长"))
-          ?.value ?? 0,
+          ?.value ?? null,
     },
   ];
+  const validCpiData = cpiTreeData.filter(
+    (item): item is { name: string; value: number } => typeof item.value === "number",
+  );
 
   const treeOption = {
     tooltip: {
@@ -58,7 +63,7 @@ export default function LivelihoodPricesPage() {
     series: [
       {
         type: "treemap",
-        data: cpiTreeData.map((item) => ({
+        data: validCpiData.map((item) => ({
           ...item,
           value: Number(item.value.toFixed(2)),
         })),
@@ -70,14 +75,21 @@ export default function LivelihoodPricesPage() {
     const label = t(config.labelKey);
     const latest =
       getLatestValue(getSeriesField(seriesMap, config.slug, "收盘价"))?.value ??
-      0;
+      null;
     return { name: label, value: latest };
   });
+  const validRadarData = radarData.filter(
+    (item): item is { name: string; value: number } => typeof item.value === "number",
+  );
+  const radarMax =
+    validRadarData.length > 0
+      ? Math.max(...validRadarData.map((entry) => entry.value))
+      : 1;
   const radarOption = {
     radar: {
-      indicator: radarData.map((item) => ({
+      indicator: validRadarData.map((item) => ({
         name: item.name,
-        max: Math.max(...radarData.map((entry) => entry.value)) || 1,
+        max: radarMax,
       })),
     },
     series: [
@@ -85,7 +97,7 @@ export default function LivelihoodPricesPage() {
         type: "radar",
         data: [
           {
-            value: radarData.map((item) => item.value),
+            value: validRadarData.map((item) => item.value),
             name: t("dashboard.livelihood.agri.radarName"),
           },
         ],
@@ -151,6 +163,27 @@ export default function LivelihoodPricesPage() {
       {error && (
         <Typography.Text type="danger">{error.message}</Typography.Text>
       )}
+      {isDelayed ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          description={
+            latestTimestamp
+              ? t("dashboard.dataDelayed.latest", {
+                  defaultValue: "Latest data at {{time}}.",
+                  time: formatDateTime(latestTimestamp.toISOString(), locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                })
+              : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
+          }
+        />
+      ) : null}
       {isInitialLoading ? (
         <Skeleton active paragraph={{ rows: 8 }} />
       ) : (
@@ -158,7 +191,7 @@ export default function LivelihoodPricesPage() {
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <Card title={t("dashboard.livelihood.cards.cpiTree")} className="content-card">
-                {cpiTreeData.some((item) => item.value !== 0) ? (
+                {validCpiData.length > 0 ? (
                   <DashboardChart option={treeOption} height={320} />
                 ) : (
                   <Empty description={t("dashboard.livelihood.empty.cpi")} />
@@ -167,7 +200,7 @@ export default function LivelihoodPricesPage() {
             </Col>
             <Col xs={24} lg={12}>
               <Card title={t("dashboard.livelihood.cards.agriRadar")} className="content-card">
-                {radarData.some((item) => item.value !== 0) ? (
+                {validRadarData.length > 0 ? (
                   <DashboardChart option={radarOption} height={320} />
                 ) : (
                   <Empty description={t("dashboard.livelihood.empty.agri")} />

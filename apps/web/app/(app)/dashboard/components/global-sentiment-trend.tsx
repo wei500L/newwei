@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { useChartTheme } from "@/hooks/use-chart-theme";
 
 interface DataPoint {
   timestamp: string;
@@ -21,6 +22,7 @@ interface GlobalSentimentTrendProps {
 export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const theme = useChartTheme();
 
   const option = useMemo<EChartsOption>(() => {
     if (!data || data.length === 0) return {};
@@ -47,11 +49,13 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
         type: 'category',
         boundaryGap: false,
         data: dates,
-        axisLine: { lineStyle: { color: '#ccc' } }
+        axisLine: { lineStyle: { color: theme.colors.border } },
+        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily }
       },
       yAxis: {
         type: 'value',
-        splitLine: { lineStyle: { type: 'dashed' } }
+        splitLine: { lineStyle: { type: 'dashed', color: theme.colors.grid } },
+        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily }
       },
       series: [
         {
@@ -64,20 +68,20 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
               type: 'linear',
               x: 0, y: 0, x2: 0, y2: 1,
               colorStops: [
-                { offset: 0, color: 'rgba(250, 173, 20, 0.5)' }, // Start color
-                { offset: 1, color: 'rgba(250, 173, 20, 0)' }   // End color
+                { offset: 0, color: 'rgba(217, 119, 6, 0.45)' },
+                { offset: 1, color: 'rgba(217, 119, 6, 0)' }
               ]
             }
           },
           lineStyle: {
-            color: '#faad14',
+            color: theme.colors.accent,
             width: 3
           },
           data: values
         }
       ]
     };
-  }, [data, locale, t]);
+  }, [data, locale, t, theme]);
 
   return (
     <Card 
@@ -87,7 +91,7 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
       bordered={false}
     >
       <div className="h-[250px] w-full">
-        <DashboardChart option={option} height="100%" />
+        <DashboardChart option={option} height="100%" theme={theme.echartsTheme} />
       </div>
     </Card>
   );

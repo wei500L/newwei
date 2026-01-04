@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { DashboardChart } from "@/components/echart";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import { EconomicChartCard } from "../components/economic-chart-card";
 import { calculatePercentChange, getSeriesField } from "../utils/series";
@@ -36,26 +37,33 @@ const agConfigs = [
 ];
 
 export default function MilitaryAlertPage() {
-  const { t } = useTranslation();
-  const { loading, error, seriesMap } = useEconomicData({
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
+  const { loading, error, seriesMap, hasData, latestTimestamp, isDelayed } = useEconomicData({
     category: "military-alert",
     pollInterval: 60_000,
   });
-  const isInitialLoading = loading && seriesMap.size === 0;
+  const isInitialLoading = loading && !hasData;
 
   const radarIndicators: { name: string; max: number }[] = [];
   const radarValues: number[] = [];
   const alertItems = metalConfigs.map((config) => {
     const label = t(config.labelKey);
     const latestSeries = getSeriesField(seriesMap, config.slug, "收盘价");
-    const dailyChange = calculatePercentChange(latestSeries, 1) ?? 0;
-    const swing3d = calculatePercentChange(latestSeries, 3) ?? 0;
+    const dailyChange = calculatePercentChange(latestSeries, 1);
+    const swing3d = calculatePercentChange(latestSeries, 3);
+    const hasChange = typeof dailyChange === "number";
+    const hasSwing = typeof swing3d === "number";
     const sameDirection =
+      hasChange &&
+      hasSwing &&
       Math.sign(dailyChange) !== 0 &&
       Math.sign(dailyChange) === Math.sign(swing3d) &&
       Math.abs(swing3d) >= 10;
-    radarIndicators.push({ name: label, max: 12 });
-    radarValues.push(Math.min(Math.abs(dailyChange), 12));
+    if (hasChange) {
+      radarIndicators.push({ name: label, max: 12 });
+      radarValues.push(Math.min(Math.abs(dailyChange), 12));
+    }
     return {
       title: label,
       dailyChange,
@@ -87,21 +95,27 @@ export default function MilitaryAlertPage() {
   const agBarData = agConfigs.map((config) => {
     const label = t(config.labelKey);
     const series = getSeriesField(seriesMap, config.slug, "收盘价");
-    const change = calculatePercentChange(series, 7) ?? 0;
+    const change = calculatePercentChange(series, 7);
     return { name: label, change };
   });
+  const hasAgData = agBarData.some((item) => typeof item.change === "number");
 
   const agOption = {
     tooltip: {
       trigger: "axis",
-      valueFormatter: (value: number) => `${value.toFixed(2)}%`,
+      valueFormatter: (value: number) =>
+        typeof value === "number"
+          ? `${value.toFixed(2)}%`
+          : t("common.notAvailable", { defaultValue: "N/A" }),
     },
     xAxis: { type: "category", data: agBarData.map((item) => item.name) },
     yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
     series: [
       {
         type: "bar",
-        data: agBarData.map((item) => item.change),
+        data: agBarData.map((item) =>
+          typeof item.change === "number" ? item.change : null,
+        ),
         itemStyle: {
           color: (params: CallbackDataParams) => {
             const value = typeof params.value === "number" ? params.value : 0;
@@ -126,6 +140,27 @@ export default function MilitaryAlertPage() {
           description={error.message}
         />
       )}
+      {isDelayed ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          description={
+            latestTimestamp
+              ? t("dashboard.dataDelayed.latest", {
+                  defaultValue: "Latest data at {{time}}.",
+                  time: formatDateTime(latestTimestamp.toISOString(), locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                })
+              : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
+          }
+        />
+      ) : null}
       {isInitialLoading ? (
         <Skeleton active paragraph={{ rows: 10 }} />
       ) : (
@@ -133,7 +168,7 @@ export default function MilitaryAlertPage() {
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <Card title={t("dashboard.militaryAlert.cards.metalRadar")} className="content-card">
-                {radarValues.some((value) => value > 0) ? (
+                {radarValues.length > 0 ? (
                   <DashboardChart option={radarOption} height={360} />
                 ) : (
                   <Empty description={t("dashboard.militaryAlert.empty.metalRadar")} />
@@ -147,7 +182,7 @@ export default function MilitaryAlertPage() {
                         title={
                           <span>
                             {item.title}
-                            {Math.abs(item.dailyChange) >= 5 && (
+                            {typeof item.dailyChange === "number" && Math.abs(item.dailyChange) >= 5 && (
                               <Badge
                                 color="red"
                                 text={t("dashboard.militaryAlert.badges.daily")}
@@ -166,14 +201,20 @@ export default function MilitaryAlertPage() {
                         description={
                           <Typography.Text
                             type={
-                              Math.abs(item.dailyChange) >= 5
+                              typeof item.dailyChange === "number" && Math.abs(item.dailyChange) >= 5
                                 ? "danger"
                                 : "secondary"
                             }
                           >
                             {t("dashboard.militaryAlert.alertItemDescription", {
-                              daily: item.dailyChange.toFixed(2),
-                              threeDay: item.swing3d.toFixed(2),
+                              daily:
+                                typeof item.dailyChange === "number"
+                                  ? item.dailyChange.toFixed(2)
+                                  : t("common.notAvailable", { defaultValue: "N/A" }),
+                              threeDay:
+                                typeof item.swing3d === "number"
+                                  ? item.swing3d.toFixed(2)
+                                  : t("common.notAvailable", { defaultValue: "N/A" }),
                             })}
                           </Typography.Text>
                         }
@@ -185,7 +226,7 @@ export default function MilitaryAlertPage() {
             </Col>
             <Col xs={24} lg={12}>
               <Card title={t("dashboard.militaryAlert.cards.agriAlert")} className="content-card">
-                {agBarData.some((item) => item.change !== 0) ? (
+                {hasAgData ? (
                   <DashboardChart option={agOption} height={360} />
                 ) : (
                   <Empty description={t("dashboard.militaryAlert.empty.agri")} />

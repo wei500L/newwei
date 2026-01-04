@@ -25,11 +25,11 @@ const metalSeries = [
 export default function EconomicMediumPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { loading, error, seriesMap, refetch } = useEconomicData({
+  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed } = useEconomicData({
     category: "economic-medium",
     pollInterval: 120_000,
   });
-  const isInitialLoading = loading && seriesMap.size === 0;
+  const isInitialLoading = loading && !hasData;
 
   const gdpYoy = filterValuesByDays(
     getSeriesField(seriesMap, "china_gdp", "国内生产总值-同比增长"),
@@ -244,7 +244,28 @@ export default function EconomicMediumPage() {
           }
         />
       ) : null}
-      {!loading && seriesMap.size === 0 ? (
+      {isDelayed ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          description={
+            latestTimestamp
+              ? t("dashboard.dataDelayed.latest", {
+                  defaultValue: "Latest data at {{time}}.",
+                  time: formatDateTime(latestTimestamp.toISOString(), locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                })
+              : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
+          }
+        />
+      ) : null}
+      {!loading && !hasData ? (
         <Empty description={t("common.empty")} />
       ) : null}
       {isInitialLoading ? (

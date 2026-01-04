@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import { DashboardChart } from "@/components/echart";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import { CandlestickCard } from "../components/candlestick-card";
 import {
@@ -45,19 +46,25 @@ const heatmapBuckets = [
 ];
 
 export default function EconomicShortPage() {
-  const { t } = useTranslation();
-  const { loading, seriesMap, error, refetch } = useEconomicData({
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
+  const { loading, seriesMap, error, refetch, hasData, latestTimestamp, isDelayed } = useEconomicData({
     category: "economic-short",
     pollInterval: 60_000,
   });
   const [activeIndex, setActiveIndex] = useState(indexTabs[0]?.key ?? "growth");
-  const isInitialLoading = loading && seriesMap.size === 0;
+  const isInitialLoading = loading && !hasData;
 
   const heatmapData = fxPairs.flatMap((pair, xIndex) =>
     heatmapBuckets.map((bucket, yIndex) => {
       const series = getSeriesField(seriesMap, pair.slug, "最新价");
-      const change = calculatePercentChange(series, bucket.period) ?? 0;
-      return [xIndex, yIndex, Number(change.toFixed(3))];
+      const change = calculatePercentChange(series, bucket.period);
+      const isValidChange = typeof change === "number" && Number.isFinite(change);
+      return [
+        xIndex,
+        yIndex,
+        isValidChange ? Number(change.toFixed(3)) : null,
+      ];
     }),
   );
 
@@ -81,10 +88,14 @@ export default function EconomicShortPage() {
         const bucket = localizedBuckets[bucketIndex];
         const pair = localizedPairs[pairIndex];
         if (!bucket || !pair) return "";
+        const formattedScore =
+          typeof score === "number"
+            ? score
+            : t("common.notAvailable", { defaultValue: "N/A" });
         return t("dashboard.economicShort.heatmap.tooltip", {
           period: bucket.label,
           pair: pair.label,
-          value: score,
+          value: formattedScore,
         });
       },
     },
@@ -111,8 +122,8 @@ export default function EconomicShortPage() {
           formatter: (params: CallbackDataParams) => {
             const values = Array.isArray(params.value) ? params.value : [];
             const score = values[2];
-            const numericScore = typeof score === "number" ? score : 0;
-            return `${numericScore}%`;
+            const numericScore = typeof score === "number" ? score : null;
+            return numericScore === null ? "-" : `${numericScore}%`;
           },
         },
       },
@@ -158,7 +169,28 @@ export default function EconomicShortPage() {
           }
         />
       ) : null}
-      {!loading && seriesMap.size === 0 ? (
+      {isDelayed ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          description={
+            latestTimestamp
+              ? t("dashboard.dataDelayed.latest", {
+                  defaultValue: "Latest data at {{time}}.",
+                  time: formatDateTime(latestTimestamp.toISOString(), locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                })
+              : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
+          }
+        />
+      ) : null}
+      {!loading && !hasData ? (
         <Empty description={t("dashboard.economicShort.empty")} />
       ) : null}
       {isInitialLoading ? (
@@ -188,7 +220,9 @@ export default function EconomicShortPage() {
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <Card title={t("dashboard.economicShort.cards.fxHeatmap")} className="content-card">
-                {heatmapData.some((entry) => entry[2] !== 0) ? (
+                {heatmapData.some(
+                  (entry) => typeof entry[2] === "number" && Number.isFinite(entry[2]),
+                ) ? (
                   <DashboardChart option={heatmapOption} height={320} />
                 ) : (
                   <Empty description={t("dashboard.economicShort.heatmap.empty")} />

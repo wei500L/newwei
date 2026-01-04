@@ -6,6 +6,7 @@ import { Queue, QueueEvents } from "bullmq";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
 import { EmailModule } from "../email/email.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
 import { ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, ALERTS_QUEUE_NAME, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
@@ -22,6 +23,7 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
   imports: [
     DatabaseModule,
     EmailModule,
+    NotificationsModule,
     HttpModule.registerAsync({
       inject: [EnvService],
       useFactory: (env: EnvService) => ({

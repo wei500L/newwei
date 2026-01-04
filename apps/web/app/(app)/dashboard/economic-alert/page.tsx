@@ -1,11 +1,13 @@
 "use client";
 
 import { Alert, Button, Card, Col, Empty, Row, Skeleton, Typography } from "antd";
+import type { EChartsOption, SeriesOption } from "echarts";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import {
   getLatestValue,
@@ -14,12 +16,13 @@ import {
 } from "../utils/series";
 
 export default function EconomicAlertPage() {
-  const { t } = useTranslation();
-  const { loading, error, seriesMap, refetch } = useEconomicData({
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
+  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed } = useEconomicData({
     category: "economic-alert",
     pollInterval: 60_000,
   });
-  const isInitialLoading = loading && seriesMap.size === 0;
+  const isInitialLoading = loading && !hasData;
 
   const cpiSeries = getSeriesField(seriesMap, "china_cpi", "全国-同比增长");
   const cpiValue = getLatestValue(cpiSeries)?.value ?? null;
@@ -69,40 +72,43 @@ export default function EconomicAlertPage() {
     .filter(Boolean) as { timestamp: string; value: number }[];
 
   const latestSpread = spreadSeries.at(-1)?.value ?? null;
+  const chinaPmiLatest = getLatestValue(chinaPmiSeries)?.value;
   const alerts: string[] = [];
   if (cpiValue !== null && cpiValue > 3) {
     alerts.push(t("dashboard.economicAlert.alerts.cpiHigh"));
   }
-  if (
-    getLatestValue(chinaPmiSeries)?.value !== undefined &&
-    (getLatestValue(chinaPmiSeries)?.value ?? 0) < 50
-  ) {
+  if (chinaPmiLatest !== undefined && chinaPmiLatest < 50) {
     alerts.push(t("dashboard.economicAlert.alerts.chinaPmiLow"));
   }
   if (latestSpread !== null && latestSpread < 0) {
     alerts.push(t("dashboard.economicAlert.alerts.usYieldInversion"));
   }
 
-  const gaugeOption = {
-    series: [
-      {
-        type: "gauge",
-        min: -5,
-        max: 6,
-        center: ["25%", "55%"],
-        title: { offsetCenter: [0, "70%"] },
-        data: [{ value: cpiValue ?? 0, name: t("dashboard.economicAlert.gauges.cpi") }],
-      },
-      {
-        type: "gauge",
-        min: -10,
-        max: 10,
-        center: ["75%", "55%"],
-        title: { offsetCenter: [0, "70%"] },
-        data: [{ value: ppiValue ?? 0, name: t("dashboard.economicAlert.gauges.ppi") }],
-      },
-    ],
-  };
+  const hasCpi = typeof cpiValue === "number";
+  const hasPpi = typeof ppiValue === "number";
+  const gaugeSeries: SeriesOption[] = [];
+  if (hasCpi) {
+    gaugeSeries.push({
+      type: "gauge",
+      min: -5,
+      max: 6,
+      center: [hasPpi ? "25%" : "50%", "55%"],
+      title: { offsetCenter: [0, "70%"] },
+      data: [{ value: cpiValue, name: t("dashboard.economicAlert.gauges.cpi") }],
+    });
+  }
+  if (hasPpi) {
+    gaugeSeries.push({
+      type: "gauge",
+      min: -10,
+      max: 10,
+      center: [hasCpi ? "75%" : "50%", "55%"],
+      title: { offsetCenter: [0, "70%"] },
+      data: [{ value: ppiValue, name: t("dashboard.economicAlert.gauges.ppi") }],
+    });
+  }
+  const gaugeOption: EChartsOption | null =
+    gaugeSeries.length > 0 ? { series: gaugeSeries } : null;
 
   const pmiOption = {
     tooltip: { trigger: "axis" },
@@ -238,7 +244,28 @@ export default function EconomicAlertPage() {
           }
         />
       ) : null}
-      {!loading && seriesMap.size === 0 ? (
+      {isDelayed ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          description={
+            latestTimestamp
+              ? t("dashboard.dataDelayed.latest", {
+                  defaultValue: "Latest data at {{time}}.",
+                  time: formatDateTime(latestTimestamp.toISOString(), locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                })
+              : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
+          }
+        />
+      ) : null}
+      {!loading && !hasData ? (
         <Empty description={t("dashboard.economicAlert.empty")} />
       ) : null}
       {alerts.length > 0 && (
@@ -256,7 +283,7 @@ export default function EconomicAlertPage() {
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <Card title={t("dashboard.economicAlert.cards.cpiPpiGauge")} className="content-card">
-                {cpiValue !== null || ppiValue !== null ? (
+                {gaugeOption ? (
                   <DashboardChart option={gaugeOption} height={360} />
                 ) : (
                   <Empty description={t("dashboard.economicAlert.emptyCpiPpi")} />

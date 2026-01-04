@@ -29,14 +29,32 @@ export class EconomicDataMetricProvider implements MetricProvider {
     const points = await this.prisma.economicDataPoint.findMany({
       where,
       orderBy: { recordedAt: "desc" },
-      take
+      take,
+      include: { item: true }
     });
     if (!points.length) {
       return { latest: null, previous: null, changePercent: null };
     }
-    const latest = Number(points[0].value);
-    const previous = points.length > 1 ? Number(points[1].value) : null;
+    const [latestPoint, previousPoint] = points;
+    const latest = Number(latestPoint.value);
+    const previous = previousPoint ? Number(previousPoint.value) : null;
     const changePercent = previous ? ((latest - previous) / previous) * 100 : null;
-    return { latest, previous, changePercent };
+    const item = latestPoint.item;
+    const unit = latestPoint.unit ?? item.defaultUnit ?? null;
+    const sourceName = item.sourceEndpoint || item.sourceFunction;
+    return {
+      latest,
+      previous,
+      changePercent,
+      context: {
+        windowMinutes: rule.changeWindowMin ?? null,
+        sourceName,
+        sourceField: latestPoint.sourceField,
+        sourceDocUrl: item.sourceDocUrl ?? null,
+        unit,
+        recordedAt: latestPoint.recordedAt.toISOString(),
+        itemName: item.displayName
+      }
+    };
   }
 }

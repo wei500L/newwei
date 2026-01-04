@@ -41,7 +41,15 @@ const toEntityNames = (value: unknown): string[] => {
     return [];
   }
   return value
-    .map((entry) => (entry && typeof entry === 'object' ? (entry as { name?: unknown }).name : undefined))
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        return entry;
+      }
+      if (entry && typeof entry === 'object') {
+        return (entry as { name?: unknown }).name;
+      }
+      return undefined;
+    })
     .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
 };
 
@@ -71,6 +79,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   );
   const processedStatus = item?.processed?.status ?? null;
   const rawSource = item?.raw?.source ?? null;
+  const duplicateSimilarity = item?.processed?.duplicateSimilarity ?? null;
+  const duplicateOf = item?.processed?.duplicateOf ?? null;
+  const llm = item?.processed?.llm ?? null;
 
   const summary = toString(processedResult?.summary);
   const keyPoints = toStringList(processedResult?.key_points);
@@ -88,6 +99,23 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const originalUrl = toString(rawPayload?.url);
   const cleanedMarkdown = toString(processedResult?.cleaned_markdown);
   const hasSummaryContent = Boolean(summary) || keyPoints.length > 0;
+  const duplicateScoreLabel =
+    typeof duplicateSimilarity === 'number'
+      ? `${Math.round(duplicateSimilarity * 100)}%`
+      : t('common.notAvailable');
+  const llmModel = llm?.model ?? t('common.notAvailable');
+  const llmLatency =
+    typeof llm?.latencyMs === 'number'
+      ? `${Math.round(llm.latencyMs)} ms`
+      : t('common.notAvailable');
+  const llmCost =
+    typeof llm?.costUsd === 'number'
+      ? `$${llm.costUsd.toFixed(4)}`
+      : t('common.notAvailable');
+  const llmTokens =
+    typeof llm?.totalTokens === 'number'
+      ? Math.round(llm.totalTokens).toString()
+      : t('common.notAvailable');
 
   const formattedPublishedAt = publishedAt
     ? formatDateTime(publishedAt, locale, {
@@ -235,6 +263,36 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 label={t('items.detail.fields.processedStatus', { defaultValue: 'Processed status' })}
               >
                 {processedStatus ? <Tag color="geekblue">{processedStatus}</Tag> : t('common.notAvailable')}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t('items.detail.fields.duplicateSimilarity', { defaultValue: 'Duplicate similarity' })}
+              >
+                {duplicateScoreLabel}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t('items.detail.fields.duplicateOf', { defaultValue: 'Duplicate of' })}
+              >
+                {duplicateOf ?? t('common.notAvailable')}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t('items.detail.fields.llmModel', { defaultValue: 'LLM model' })}
+              >
+                {llmModel}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t('items.detail.fields.llmLatency', { defaultValue: 'LLM latency' })}
+              >
+                {llmLatency}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t('items.detail.fields.llmCost', { defaultValue: 'LLM cost' })}
+              >
+                {llmCost}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t('items.detail.fields.llmTokens', { defaultValue: 'LLM total tokens' })}
+              >
+                {llmTokens}
               </Descriptions.Item>
               <Descriptions.Item label={t('items.detail.fields.createdAt', { defaultValue: 'Created at' })}>
                 {formatDateTime(item.createdAt, locale, {

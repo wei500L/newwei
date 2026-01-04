@@ -6,9 +6,10 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { TimeRangeControls } from "@/components/time-range-controls";
-import type { EconomicSeriesGroup } from "@/hooks/useEconomicData";
-import { useEconomicData  } from "@/hooks/useEconomicData";
+import type { EconomicSeriesMap } from "@/hooks/useEconomicData";
+import { useEconomicData } from "@/hooks/useEconomicData";
 import dayjs from "@/lib/dayjs";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import {
   filterValuesByDays,
@@ -17,12 +18,13 @@ import {
 } from "../utils/series";
 
 export default function EconomicLongPage() {
-  const { t } = useTranslation();
-  const { loading, error, seriesMap, refetch } = useEconomicData({
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
+  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed } = useEconomicData({
     category: "economic-long",
     pollInterval: 300_000,
   });
-  const isInitialLoading = loading && seriesMap.size === 0;
+  const isInitialLoading = loading && !hasData;
 
   const gdpSeries = getSeriesField(
     seriesMap,
@@ -54,12 +56,13 @@ export default function EconomicLongPage() {
   };
 
   const yieldTimelineOption = buildYieldTimeline(
-    seriesMap.get("us_treasury_yield_curve"),
+    seriesMap,
+    "us_treasury_yield_curve",
     t,
   );
 
   const reserveSeries = filterValuesByDays(
-    getSeriesField(seriesMap, "china_fx_gold", "国家外汇储备-数值"),
+    getSeriesField(seriesMap, "china_fx_gold_reserve", "国家外汇储备-数值"),
     730,
   );
   const reserveOption = {
@@ -93,7 +96,28 @@ export default function EconomicLongPage() {
           }
         />
       ) : null}
-      {!loading && seriesMap.size === 0 ? (
+      {isDelayed ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          description={
+            latestTimestamp
+              ? t("dashboard.dataDelayed.latest", {
+                  defaultValue: "Latest data at {{time}}.",
+                  time: formatDateTime(latestTimestamp.toISOString(), locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                })
+              : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
+          }
+        />
+      ) : null}
+      {!loading && !hasData ? (
         <Empty description={t("common.empty")} />
       ) : null}
       {isInitialLoading ? (
@@ -138,10 +162,11 @@ export default function EconomicLongPage() {
 }
 
 function buildYieldTimeline(
-  group: EconomicSeriesGroup | undefined,
+  seriesMap: EconomicSeriesMap,
+  slug: string,
   t: (key: string, options?: Record<string, unknown>) => string
 ): EChartsOption | null {
-  if (!group) {
+  if (!seriesMap.get(slug)) {
     return null;
   }
   const fieldMap = [
@@ -150,15 +175,22 @@ function buildYieldTimeline(
     { field: "美国国债收益率10年", label: "10Y" },
     { field: "美国国债收益率30年", label: "30Y" },
   ];
+  const seriesEntries = fieldMap
+    .map((field) => ({
+      label: field.label,
+      series: getSeriesField(seriesMap, slug, field.field),
+    }))
+    .filter((entry): entry is { label: string; series: { values: { timestamp: string; value: number }[] } } =>
+      Boolean(entry.series),
+    );
+  if (seriesEntries.length === 0) {
+    return null;
+  }
   const buckets = new Map<
     string,
     Record<string, number>
   >();
-  for (const { field, label } of fieldMap) {
-    const series = group.fields.get(field);
-    if (!series) {
-      continue;
-    }
+  for (const { label, series } of seriesEntries) {
     for (const entry of series.values) {
       const bucket = buckets.get(entry.timestamp) ?? {};
       bucket[label] = entry.value;
@@ -190,7 +222,10 @@ function buildYieldTimeline(
       series: [
         {
           type: "line",
-          data: fieldMap.map((field) => values?.[field.label] ?? 0),
+          data: fieldMap.map((field) => {
+            const value = values?.[field.label];
+            return typeof value === "number" ? value : null;
+          }),
           name: t("dashboard.economicLong.yieldCurve.yieldLabel"),
           areaStyle: { opacity: 0.15 },
         },

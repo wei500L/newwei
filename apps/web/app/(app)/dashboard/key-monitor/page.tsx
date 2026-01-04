@@ -5,17 +5,19 @@ import { useTranslation } from "react-i18next";
 
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import { CandlestickCard } from "../components/candlestick-card";
 import { EconomicChartCard } from "../components/economic-chart-card";
 
 export default function KeyMonitorPage() {
-  const { t } = useTranslation();
-  const { loading, seriesMap, error, refetch } = useEconomicData({
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
+  const { loading, seriesMap, error, refetch, hasData, latestTimestamp, isDelayed } = useEconomicData({
     category: "key-monitor",
     pollInterval: 30_000,
   });
-  const isInitialLoading = loading && seriesMap.size === 0;
+  const isInitialLoading = loading && !hasData;
   const goldSeries = seriesMap.get("gold_futures_main");
   const oilSeries = seriesMap.get("crude_oil_futures_main");
   const copperSeries = seriesMap.get("copper_futures_main");
@@ -38,7 +40,28 @@ export default function KeyMonitorPage() {
           }
         />
       ) : null}
-      {!loading && seriesMap.size === 0 ? (
+      {isDelayed ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          description={
+            latestTimestamp
+              ? t("dashboard.dataDelayed.latest", {
+                  defaultValue: "Latest data at {{time}}.",
+                  time: formatDateTime(latestTimestamp.toISOString(), locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                })
+              : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
+          }
+        />
+      ) : null}
+      {!loading && !hasData ? (
         <Empty description={t("dashboard.keyMonitor.empty")} />
       ) : null}
       {isInitialLoading ? (

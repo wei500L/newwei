@@ -1,4 +1,4 @@
-import { Field, GraphQLISODateTime, HideField, ID, Int, ObjectType } from "@nestjs/graphql";
+import { Field, Float, GraphQLISODateTime, HideField, ID, Int, ObjectType } from "@nestjs/graphql";
 
 import { HasPermission } from "../decorators/has-permission.decorator";
 
@@ -66,8 +66,41 @@ export class ProcessedItemModelGraph {
   @Field(() => String, { nullable: true })
   result?: string;
 
+  @Field(() => String, { nullable: true })
+  duplicateOf?: string | null;
+
+  @Field(() => Float, { nullable: true })
+  duplicateSimilarity?: number | null;
+
+  @Field(() => ProcessedItemLlmModel, { nullable: true })
+  llm?: ProcessedItemLlmModel | null;
+
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
+}
+
+@ObjectType()
+export class ProcessedItemLlmModel {
+  @Field({ nullable: true })
+  model?: string | null;
+
+  @Field({ nullable: true })
+  promptVersion?: string | null;
+
+  @Field(() => Float, { nullable: true })
+  promptTokens?: number | null;
+
+  @Field(() => Float, { nullable: true })
+  completionTokens?: number | null;
+
+  @Field(() => Float, { nullable: true })
+  totalTokens?: number | null;
+
+  @Field(() => Float, { nullable: true })
+  costUsd?: number | null;
+
+  @Field(() => Float, { nullable: true })
+  latencyMs?: number | null;
 }
 
 @ObjectType()

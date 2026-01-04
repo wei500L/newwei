@@ -77,6 +77,8 @@
       "detail": {
         "triggeredAt": "Triggered at",
         "metricValue": "Metric value",
+        "previousValue": "Previous {{value}}",
+        "recordedAt": "Recorded at {{time}}",
         "changePercent": "Change {{value}}",
         "status": "Status",
         "message": "Message",
@@ -87,6 +89,7 @@
         "operator": "Operator {{operator}}",
         "threshold": "Threshold",
         "window": "Window {{minutes}} min",
+        "source": "Source",
         "objects": "Objects",
         "objectsEmpty": "No object context.",
         "context": "Context",
@@ -130,7 +133,9 @@
         "cooldown": "Cooldown",
         "checkInterval": "Check interval",
         "channels": "Channels",
-        "channelsPlaceholder": "Enter Channels"
+        "channelsPlaceholder": "Enter Channels",
+        "muteUntil": "Mute until",
+        "notifyAllMembers": "Notify all members"
       },
       "pipeline": {
         "title": "Pipeline",
@@ -1616,6 +1621,21 @@
       "http": "HTTP",
       "graphql": "Graphql",
       "unknown": "Unknown"
+    },
+    "filters": {
+      "timeRange": "Time range",
+      "kind": "Type",
+      "kindAll": "All types"
+    },
+    "stats": {
+      "total": "Total",
+      "http": "HTTP",
+      "graphql": "GraphQL",
+      "unknown": "Unknown",
+      "daily": "Daily counts",
+      "date": "Date",
+      "count": "Count",
+      "empty": "No stats for current filter"
     },
     "loadFailed": "Failed to load",
     "title": "Errors",

@@ -2,12 +2,14 @@
 
 import {
   Button,
+  DatePicker,
   Divider,
   Form,
   Input,
   InputNumber,
   Select,
   Space,
+  Switch,
   Typography,
   message,
 } from "antd";
@@ -24,6 +26,15 @@ import {
   useCreateAlertChannelMutation,
   useUpsertAlertRuleMutation,
 } from "@/graphql/generated";
+import dayjs, { toUtcIsoString } from "@/lib/dayjs";
+
+const parseDateValue = (value: unknown) => {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return null;
+  }
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed : null;
+};
 
 const operatorOptions = Object.values(AlertOperator).map((op) => ({
   labelKey: `alerts.operators.${op}`,
@@ -111,6 +122,8 @@ export function AlertConfigForm() {
             crawlStatuses: existingRule?.metadata?.statuses ?? ["failed"],
             crawlCreatedById: existingRule?.metadata?.createdById,
             systemCurrentValue: existingRule?.metadata?.currentValue,
+            muteUntil: parseDateValue(existingRule?.metadata?.muteUntil),
+            notifyAllMembers: existingRule?.metadata?.notifyAllMembers ?? false,
             operator: existingRule?.operator ?? AlertOperator.Gt,
             thresholdValue: existingRule?.thresholdValue ?? 100,
             thresholdLower: existingRule?.thresholdLower ?? undefined,
@@ -143,6 +156,34 @@ export function AlertConfigForm() {
               message.error(t("alerts.config.errors.systemMetricSlug"));
               return;
             }
+            const baseMetadata: Record<string, unknown> = {};
+            if (values.muteUntil) {
+              baseMetadata.muteUntil = toUtcIsoString(values.muteUntil);
+            }
+            if (values.notifyAllMembers) {
+              baseMetadata.notifyAllMembers = true;
+            }
+            const providerMetadata =
+              values.metricProvider === AlertMetricProvider.PipelineJob
+                ? {
+                    statuses: values.pipelineStatuses,
+                    queueName: values.pipelineQueueName,
+                    sourceId: values.pipelineSourceId,
+                  }
+                : values.metricProvider === AlertMetricProvider.CrawlTask
+                  ? {
+                      statuses: values.crawlStatuses,
+                      createdById: values.crawlCreatedById,
+                    }
+                  : values.metricProvider === AlertMetricProvider.SystemMetric
+                    ? {
+                        currentValue: values.systemCurrentValue,
+                      }
+                    : {};
+            const metadata =
+              Object.keys(baseMetadata).length || Object.keys(providerMetadata).length
+                ? { ...providerMetadata, ...baseMetadata }
+                : undefined;
             await upsertRule({
               variables: {
                 input: {
@@ -158,24 +199,7 @@ export function AlertConfigForm() {
                   status: values.status,
                   cooldownSeconds: values.cooldownSeconds,
                   checkIntervalSec: values.checkIntervalSec,
-                  metadata:
-                    values.metricProvider === AlertMetricProvider.PipelineJob
-                      ? {
-                          statuses: values.pipelineStatuses,
-                          queueName: values.pipelineQueueName,
-                          sourceId: values.pipelineSourceId,
-                        }
-                      : values.metricProvider === AlertMetricProvider.CrawlTask
-                        ? {
-                            statuses: values.crawlStatuses,
-                            createdById: values.crawlCreatedById,
-                          }
-                        : values.metricProvider ===
-                            AlertMetricProvider.SystemMetric
-                          ? {
-                              currentValue: values.systemCurrentValue,
-                            }
-                          : undefined,
+                  metadata,
                   channelIds: values.channelIds,
                 },
               },
@@ -377,6 +401,18 @@ export function AlertConfigForm() {
               rules={[{ required: true }]}
             >
               <InputNumber />
+            </Form.Item>
+          </Space>
+          <Space size="large" align="start">
+            <Form.Item label={t("alerts.config.fields.muteUntil")} name="muteUntil">
+              <DatePicker showTime allowClear />
+            </Form.Item>
+            <Form.Item
+              label={t("alerts.config.fields.notifyAllMembers")}
+              name="notifyAllMembers"
+              valuePropName="checked"
+            >
+              <Switch />
             </Form.Item>
           </Space>
           <Form.Item label={t("alerts.config.fields.channels")} name="channelIds">

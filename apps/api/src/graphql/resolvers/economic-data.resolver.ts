@@ -34,7 +34,9 @@ export class EconomicDataResolver {
       item: {
         slug: point.item.slug,
         displayName: point.item.displayName,
-        groupLabel: point.item.groupLabel ?? undefined
+        groupLabel: point.item.groupLabel ?? undefined,
+        defaultUnit: point.item.defaultUnit ?? null,
+        metadata: (point.item.metadata as Record<string, unknown> | null) ?? null
       }
     }));
   }
@@ -54,7 +56,9 @@ export class EconomicDataResolver {
       item: {
         slug: config.item.slug,
         displayName: config.item.displayName,
-        groupLabel: config.item.groupLabel ?? undefined
+        groupLabel: config.item.groupLabel ?? undefined,
+        defaultUnit: config.item.defaultUnit ?? null,
+        metadata: (config.item.metadata as Record<string, unknown> | null) ?? null
       }
     }));
   }
@@ -83,7 +87,9 @@ export class EconomicDataResolver {
       item: {
         slug,
         displayName: updated.item?.displayName ?? slug,
-        groupLabel: updated.item?.groupLabel ?? undefined
+        groupLabel: updated.item?.groupLabel ?? undefined,
+        defaultUnit: updated.item?.defaultUnit ?? null,
+        metadata: (updated.item?.metadata as Record<string, unknown> | null) ?? null
       }
     };
   }

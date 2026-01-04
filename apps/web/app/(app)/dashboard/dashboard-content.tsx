@@ -428,7 +428,7 @@ export function DashboardContent() {
 
         {/* Charts Section - Immersive Map & Analytics */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-           {/* War Map - Dominant Central Feature */}
+           {/* Indicator Map - Dominant Central Feature */}
            <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] relative overflow-hidden">
              <div className="absolute top-4 left-4 z-10">
                <h3 className="text-lg text-slate-700">

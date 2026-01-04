@@ -5,6 +5,51 @@ import type {
 } from "@/hooks/useEconomicData";
 import dayjs from "@/lib/dayjs";
 
+type ParserFieldConfig = { field?: string; label?: string };
+type ParserConfig = {
+  valueFields?: ParserFieldConfig[];
+  seriesFields?: ParserFieldConfig[];
+};
+
+const getParserFields = (group: EconomicSeriesGroup | undefined) => {
+  const raw = group?.metadata;
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  const parser = (raw as { parser?: ParserConfig }).parser;
+  const valueFields = Array.isArray(parser?.valueFields) ? parser?.valueFields : [];
+  const seriesFields = Array.isArray(parser?.seriesFields) ? parser?.seriesFields : [];
+  return [...valueFields, ...seriesFields].filter(Boolean);
+};
+
+const resolveFieldKey = (group: EconomicSeriesGroup, field?: string) => {
+  if (!field) return undefined;
+  if (group.fields.has(field)) {
+    return field;
+  }
+  const parserFields = getParserFields(group);
+  const candidate = parserFields.find((entry) => entry.label === field || entry.field === field);
+  const candidateField = candidate?.field;
+  if (candidateField && group.fields.has(candidateField)) {
+    return candidateField;
+  }
+  if (candidateField) {
+    const suffixMatches = Array.from(group.fields.keys()).filter((key) =>
+      key.endsWith(`:${candidateField}`)
+    );
+    if (suffixMatches.length === 1) {
+      return suffixMatches[0];
+    }
+  }
+  const suffixMatches = Array.from(group.fields.keys()).filter((key) =>
+    key.endsWith(`:${field}`)
+  );
+  if (suffixMatches.length === 1) {
+    return suffixMatches[0];
+  }
+  return undefined;
+};
+
 export function getSeriesField(
   seriesMap: EconomicSeriesMap,
   slug: string,
@@ -14,8 +59,9 @@ export function getSeriesField(
   if (!group || group.fields.size === 0) {
     return undefined;
   }
-  if (field && group.fields.has(field)) {
-    return group.fields.get(field);
+  const resolvedKey = resolveFieldKey(group, field);
+  if (resolvedKey) {
+    return group.fields.get(resolvedKey);
   }
   const [first] = group.fields.values();
   return first;
@@ -119,10 +165,14 @@ export function getCandlestickSeries(group?: EconomicSeriesGroup) {
   if (!group) {
     return [];
   }
-  const openSeries = group.fields.get("开盘价");
-  const closeSeries = group.fields.get("收盘价");
-  const lowSeries = group.fields.get("最低价");
-  const highSeries = group.fields.get("最高价");
+  const openKey = resolveFieldKey(group, "open") ?? resolveFieldKey(group, "开盘价");
+  const closeKey = resolveFieldKey(group, "close") ?? resolveFieldKey(group, "收盘价");
+  const lowKey = resolveFieldKey(group, "low") ?? resolveFieldKey(group, "最低价");
+  const highKey = resolveFieldKey(group, "high") ?? resolveFieldKey(group, "最高价");
+  const openSeries = openKey ? group.fields.get(openKey) : undefined;
+  const closeSeries = closeKey ? group.fields.get(closeKey) : undefined;
+  const lowSeries = lowKey ? group.fields.get(lowKey) : undefined;
+  const highSeries = highKey ? group.fields.get(highKey) : undefined;
   if (!openSeries || !closeSeries || !lowSeries || !highSeries) {
     return [];
   }

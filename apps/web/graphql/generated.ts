@@ -622,8 +622,10 @@ export enum EconomicDataFrequency {
 
 export type EconomicDataItemModel = {
   __typename?: 'EconomicDataItemModel';
+  defaultUnit?: Maybe<Scalars['String']['output']>;
   displayName: Scalars['String']['output'];
   groupLabel?: Maybe<Scalars['String']['output']>;
+  metadata?: Maybe<Scalars['JSON']['output']>;
   slug: Scalars['String']['output'];
 };
 
@@ -942,11 +944,25 @@ export type PermissionModel = {
   name: Scalars['String']['output'];
 };
 
+export type ProcessedItemLlmModel = {
+  __typename?: 'ProcessedItemLlmModel';
+  completionTokens?: Maybe<Scalars['Float']['output']>;
+  costUsd?: Maybe<Scalars['Float']['output']>;
+  latencyMs?: Maybe<Scalars['Float']['output']>;
+  model?: Maybe<Scalars['String']['output']>;
+  promptTokens?: Maybe<Scalars['Float']['output']>;
+  promptVersion?: Maybe<Scalars['String']['output']>;
+  totalTokens?: Maybe<Scalars['Float']['output']>;
+};
+
 export type ProcessedItemModelGraph = {
   __typename?: 'ProcessedItemModelGraph';
   createdAt: Scalars['DateTime']['output'];
+  duplicateOf?: Maybe<Scalars['String']['output']>;
+  duplicateSimilarity?: Maybe<Scalars['Float']['output']>;
   id: Scalars['ID']['output'];
   itemMetaId: Scalars['String']['output'];
+  llm?: Maybe<ProcessedItemLlmModel>;
   result?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
   tags: Array<Scalars['String']['output']>;
@@ -1423,12 +1439,12 @@ export type EconomicDataQueryVariables = Exact<{
 }>;
 
 
-export type EconomicDataQuery = { __typename?: 'Query', getEconomicData: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, sourceField?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string } }> };
+export type EconomicDataQuery = { __typename?: 'Query', getEconomicData: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, sourceField?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } }> };
 
 export type EconomicFetchConfigsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type EconomicFetchConfigsQuery = { __typename?: 'Query', economicDataFetchConfigs: Array<{ __typename?: 'EconomicDataFetchConfigModel', id: string, frequency: EconomicDataFrequency, repeatCron?: string | null, isEnabled: boolean, lastRunAt?: any | null, lastStatus?: EconomicDataRunStatus | null, lastError?: string | null, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string } }> };
+export type EconomicFetchConfigsQuery = { __typename?: 'Query', economicDataFetchConfigs: Array<{ __typename?: 'EconomicDataFetchConfigModel', id: string, frequency: EconomicDataFrequency, repeatCron?: string | null, isEnabled: boolean, lastRunAt?: any | null, lastStatus?: EconomicDataRunStatus | null, lastError?: string | null, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } }> };
 
 export type UpdateEconomicFetchConfigMutationVariables = Exact<{
   slug: Scalars['String']['input'];
@@ -1438,7 +1454,7 @@ export type UpdateEconomicFetchConfigMutationVariables = Exact<{
 }>;
 
 
-export type UpdateEconomicFetchConfigMutation = { __typename?: 'Mutation', updateEconomicDataFetchConfig: { __typename?: 'EconomicDataFetchConfigModel', id: string, frequency: EconomicDataFrequency, repeatCron?: string | null, isEnabled: boolean, lastRunAt?: any | null, lastStatus?: EconomicDataRunStatus | null, lastError?: string | null, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string } } };
+export type UpdateEconomicFetchConfigMutation = { __typename?: 'Mutation', updateEconomicDataFetchConfig: { __typename?: 'EconomicDataFetchConfigModel', id: string, frequency: EconomicDataFrequency, repeatCron?: string | null, isEnabled: boolean, lastRunAt?: any | null, lastStatus?: EconomicDataRunStatus | null, lastError?: string | null, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } } };
 
 export type TriggerEconomicDataFetchMutationVariables = Exact<{
   slugs: Array<Scalars['String']['input']> | Scalars['String']['input'];
@@ -1454,14 +1470,14 @@ export type ItemsQueryVariables = Exact<{
 }>;
 
 
-export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, processed?: { __typename?: 'ProcessedItemModelGraph', result?: string | null, tags: Array<string> } | null, raw?: { __typename?: 'RawItemModelGraph', payload: string, source?: string | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
+export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, processed?: { __typename?: 'ProcessedItemModelGraph', result?: string | null, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, raw?: { __typename?: 'RawItemModelGraph', payload: string, source?: string | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
 
 export type ItemQueryVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, result?: string | null, createdAt: any } | null } | null };
+export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null, result?: string | null, createdAt: any } | null } | null };
 
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2651,6 +2667,9 @@ export const EconomicDataDocument = gql`
     item {
       slug
       displayName
+      groupLabel
+      defaultUnit
+      metadata
     }
   }
 }
@@ -2703,6 +2722,9 @@ export const EconomicFetchConfigsDocument = gql`
     item {
       slug
       displayName
+      groupLabel
+      defaultUnit
+      metadata
     }
   }
 }
@@ -2757,6 +2779,9 @@ export const UpdateEconomicFetchConfigDocument = gql`
     item {
       slug
       displayName
+      groupLabel
+      defaultUnit
+      metadata
     }
   }
 }
@@ -2833,6 +2858,17 @@ export const ItemsDocument = gql`
         processed {
           result
           tags
+          duplicateOf
+          duplicateSimilarity
+          llm {
+            model
+            promptVersion
+            promptTokens
+            completionTokens
+            totalTokens
+            costUsd
+            latencyMs
+          }
         }
         raw {
           payload
@@ -2911,6 +2947,17 @@ export const ItemDocument = gql`
       id
       status
       tags
+      duplicateOf
+      duplicateSimilarity
+      llm {
+        model
+        promptVersion
+        promptTokens
+        completionTokens
+        totalTokens
+        costUsd
+        latencyMs
+      }
       result
       createdAt
     }

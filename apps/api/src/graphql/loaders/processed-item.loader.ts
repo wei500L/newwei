@@ -9,11 +9,25 @@ export interface ProcessedItemDoc {
   status: string;
   tags: string[];
   result?: Record<string, unknown>;
+  duplicateOf?: string | null;
+  duplicateSimilarity?: number | null;
+  llm?: {
+    model?: string | null;
+    promptVersion?: string | null;
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    totalTokens?: number | null;
+    costUsd?: number | null;
+    latencyMs?: number | null;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
 
-type ProcessedItemRecord = ProcessedItemDoc & { _id: { toString(): string } };
+type ProcessedItemRecord = ProcessedItemDoc & {
+  _id: { toString(): string };
+  duplicateOf?: { toString(): string } | string | null;
+};
 
 @Injectable({ scope: Scope.REQUEST })
 export class ProcessedItemLoader implements NestDataLoader<string, ProcessedItemDoc | null> {
@@ -31,6 +45,12 @@ export class ProcessedItemLoader implements NestDataLoader<string, ProcessedItem
             status: doc.status,
             tags: doc.tags ?? [],
             result: doc.result ?? undefined,
+            duplicateOf: doc.duplicateOf ? doc.duplicateOf.toString() : null,
+            duplicateSimilarity:
+              typeof doc.duplicateSimilarity === "number"
+                ? doc.duplicateSimilarity
+                : null,
+            llm: doc.llm ?? undefined,
             createdAt: doc.createdAt,
             updatedAt: doc.updatedAt
           });

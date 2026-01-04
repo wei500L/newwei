@@ -9,6 +9,7 @@ import {
   AlertOperator,
   AlertSeverity,
   AlertStatus,
+  NotificationType,
   Prisma
 } from "@prisma/client";
 import { DelayedError, Job, Queue } from "bullmq";
@@ -18,6 +19,7 @@ import { firstValueFrom } from "rxjs";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
 import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
@@ -76,12 +78,14 @@ export class AlertsService {
   private readonly http: HttpService;
   private readonly metricProviders: MetricProvider[];
   private readonly notificationThrottle: AlertsNotificationThrottleService;
+  private readonly notifications: NotificationsService;
 
   constructor(
     prisma: PrismaService,
     email: EmailService,
     http: HttpService,
     notificationThrottle: AlertsNotificationThrottleService,
+    notifications: NotificationsService,
     private readonly env: EnvService,
     @Inject(ALERTS_QUEUE) private readonly queue: Queue<AlertJobPayload>,
     @Inject(ALERTS_PUBSUB) private readonly pubsub: PubSubEngine,
@@ -92,6 +96,7 @@ export class AlertsService {
     this.http = http;
     this.metricProviders = metricProviders;
     this.notificationThrottle = notificationThrottle;
+    this.notifications = notifications;
   }
 
   async listChannels(orgId: string) {
@@ -302,7 +307,13 @@ export class AlertsService {
       return null;
     }
 
-    const context = this.normalizeAlertContext({ ...(providerContext ?? {}), ...(triggered.context ?? {}) });
+    const context = this.normalizeAlertContext({
+      latest,
+      previous,
+      changePercent,
+      ...(providerContext ?? {}),
+      ...(triggered.context ?? {})
+    });
     const event = await this.prisma.alertEvent.create({
       data: {
         ruleId: rule.id,
@@ -339,6 +350,7 @@ export class AlertsService {
     );
 
     await this.enqueueNotificationJobs(event.id, deliveries);
+    void this.notifyInApp(rule, event);
     await this.pubsub.publish("alertEvents", {
       orgId: rule.orgId,
       event: {
@@ -354,6 +366,86 @@ export class AlertsService {
     } satisfies AlertEventPayload);
 
     return { event, deliveries };
+  }
+
+  private async notifyInApp(
+    rule: { id: string; orgId: string; name: string; metricSlug: string; severity: AlertSeverity; createdById?: string | null; metadata?: Prisma.JsonValue | null },
+    event: { id: string; metricValue: Prisma.Decimal; message?: string | null }
+  ) {
+    try {
+      const muteUntilMs = this.extractMuteUntilMs(rule.metadata);
+      if (this.notificationThrottle.isMutedNow(muteUntilMs)) {
+        return;
+      }
+      const recipients = await this.resolveInAppRecipients(rule);
+      if (!recipients.length) {
+        return;
+      }
+      const metricValue = Number(event.metricValue);
+      const title = `Alert triggered: ${rule.name}`;
+      const body =
+        event.message ??
+        `Metric ${rule.metricSlug} triggered at ${Number.isFinite(metricValue) ? metricValue : "N/A"}`;
+      await Promise.all(
+        recipients.map((userId) =>
+          this.notifications.notify({
+            orgId: rule.orgId,
+            userId,
+            type: NotificationType.alert_triggered,
+            title,
+            body,
+            data: {
+              alertEventId: event.id,
+              ruleId: rule.id,
+              metricSlug: rule.metricSlug,
+              metricValue
+            }
+          })
+        )
+      );
+    } catch (error) {
+      logger.warn({ ruleId: rule.id, eventId: event.id, error }, "Failed to send in-app alert notification");
+    }
+  }
+
+  private async resolveInAppRecipients(rule: { orgId: string; createdById?: string | null; metadata?: Prisma.JsonValue | null }) {
+    const metadata = this.toMetadata(rule.metadata);
+    const recipients = new Set<string>();
+    const configuredUsers = this.toStringArray(metadata?.notifyUserIds);
+    if (configuredUsers.length) {
+      configuredUsers.forEach((userId) => recipients.add(userId));
+    }
+    const notifyAll = metadata?.notifyAllMembers === true || metadata?.notifyAllUsers === true;
+    if (notifyAll) {
+      const members = await this.prisma.membership.findMany({
+        where: {
+          orgId: rule.orgId,
+          user: { isActive: true }
+        },
+        select: { userId: true }
+      });
+      members.forEach((member) => recipients.add(member.userId));
+    }
+    if (!recipients.size && rule.createdById) {
+      recipients.add(rule.createdById);
+    }
+    return Array.from(recipients);
+  }
+
+  private toStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0);
+  }
+
+  private toMetadata(value: Prisma.JsonValue | null | undefined): Record<string, unknown> | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    return value as Record<string, unknown>;
   }
 
   private resolveMetricProvider(rule: { metricProvider: AlertMetricProvider }) {

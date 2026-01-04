@@ -9,6 +9,17 @@ query Items($first: Int!, $after: String, $search: String) {
         processed {
           result
           tags
+          duplicateOf
+          duplicateSimilarity
+          llm {
+            model
+            promptVersion
+            promptTokens
+            completionTokens
+            totalTokens
+            costUsd
+            latencyMs
+          }
         }
         raw {
           payload
@@ -51,6 +62,17 @@ query Item($id: String!) {
       id
       status
       tags
+      duplicateOf
+      duplicateSimilarity
+      llm {
+        model
+        promptVersion
+        promptTokens
+        completionTokens
+        totalTokens
+        costUsd
+        latencyMs
+      }
       result
       createdAt
     }

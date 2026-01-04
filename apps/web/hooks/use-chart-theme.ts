@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { theme } from "antd";
 
 export interface ChartTheme {
+  echartsTheme: string;
   colors: {
     primary: string;
     bullish: string;
@@ -15,11 +16,13 @@ export interface ChartTheme {
     grid: string;
     tooltipBg: string;
     tooltipText: string;
+    secondary: string;
   };
   fontFamily: string;
 }
 
 const DEFAULT_THEME: ChartTheme = {
+  echartsTheme: "smart-light",
   colors: {
     primary: "#1f3b7b",
     bullish: "#1b9e77",
@@ -31,6 +34,7 @@ const DEFAULT_THEME: ChartTheme = {
     grid: "rgba(15, 23, 42, 0.08)",
     tooltipBg: "#0f172a",
     tooltipText: "#f8fafc",
+    secondary: "#e2e8f0"
   },
   fontFamily: "var(--font-mono), monospace",
 };
@@ -48,6 +52,7 @@ export function useChartTheme(): ChartTheme {
     };
 
     setChartTheme({
+      echartsTheme: "smart-light",
       colors: {
         primary: getVar("--primary", "#1f3b7b"),
         bullish: getVar("--bullish", "#1b9e77"),
@@ -59,6 +64,7 @@ export function useChartTheme(): ChartTheme {
         grid: "rgba(15, 23, 42, 0.08)",
         tooltipBg: "#0f172a",
         tooltipText: "#f8fafc",
+        secondary: getVar("--secondary", "#e2e8f0")
       },
       fontFamily: "var(--font-mono), monospace",
     });

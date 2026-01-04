@@ -10,6 +10,8 @@ import { DashboardChart } from "@/components/echart";
 import type { EconomicSeriesMap } from "@/hooks/useEconomicData";
 import dayjs from "@/lib/dayjs";
 
+import { getSeriesField } from "../utils/series";
+
 export interface SeriesConfig {
   slug: string;
   label?: string;
@@ -44,9 +46,8 @@ export function EconomicChartCard({
     const config = series[0];
     const record = seriesMap.get(config.slug);
     if (!record || record.fields.size === 0) return null;
-    
-    const fieldKey = config.field ?? Array.from(record.fields.keys())[0];
-    const fieldSeries = fieldKey ? record.fields.get(fieldKey) : undefined;
+
+    const fieldSeries = getSeriesField(seriesMap, config.slug, config.field);
     
     if (!fieldSeries || fieldSeries.values.length < 2) return null;
 
@@ -88,7 +89,7 @@ export function EconomicChartCard({
       currentValue: current.value,
       change,
       percentChange,
-      unit: record.unit,
+      unit: fieldSeries.unit ?? record.unit,
       insight
     };
   }, [seriesMap, series, seriesList, t]);
@@ -165,17 +166,16 @@ function buildOption(
 ): EChartsOption {
   const dataset = configs
     .map((config) => {
-      const record = seriesMap.get(config.slug);
-      if (!record || record.fields.size === 0) {
-        return undefined;
-      }
-      const fieldKey = config.field ?? Array.from(record.fields.keys())[0];
-      const fieldSeries = fieldKey ? record.fields.get(fieldKey) : undefined;
-      if (!fieldSeries) {
-        return undefined;
-      }
-      return {
-        name: config.label ?? fieldSeries.label ?? record.name,
+    const record = seriesMap.get(config.slug);
+    if (!record || record.fields.size === 0) {
+      return undefined;
+    }
+    const fieldSeries = getSeriesField(seriesMap, config.slug, config.field);
+    if (!fieldSeries) {
+      return undefined;
+    }
+    return {
+      name: config.label ?? fieldSeries.label ?? record.name,
         type: config.type === "bar" ? "bar" : "line",
         smooth: true,
         showSymbol: false,

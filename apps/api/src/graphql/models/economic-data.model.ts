@@ -1,4 +1,5 @@
 import { Field, Float, GraphQLISODateTime, ObjectType, registerEnumType } from "@nestjs/graphql";
+import GraphQLJSONScalar from "graphql-type-json";
 import { EconomicDataFrequency, EconomicDataRunStatus, EconomicDataValueType } from "@prisma/client";
 
 export enum TimeGranularity {
@@ -33,6 +34,12 @@ export class EconomicDataItemModel {
 
   @Field({ nullable: true })
   groupLabel?: string;
+
+  @Field({ nullable: true })
+  defaultUnit?: string | null;
+
+  @Field(() => GraphQLJSONScalar, { nullable: true })
+  metadata?: Record<string, unknown> | null;
 }
 
 @ObjectType()

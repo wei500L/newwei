@@ -306,7 +306,7 @@ export function WarMap() {
       backgroundColor: 'transparent',
       series: [
         {
-          name: t("dashboard.charts.warMap.series", { defaultValue: "Conflict" }),
+          name: t("dashboard.charts.warMap.series", { defaultValue: "Indicators" }),
           type: "scatter",
           coordinateSystem: "geo",
           data: scatterData,

@@ -60,7 +60,19 @@ interface ParsedItem {
   location?: string;
   tags?: string[];
   topics?: string[];
+  entities?: string[];
   qualityScore?: number;
+  duplicateSimilarity?: number;
+  duplicateOf?: string | null;
+  llm?: {
+    model?: string | null;
+    promptVersion?: string | null;
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    totalTokens?: number | null;
+    costUsd?: number | null;
+    latencyMs?: number | null;
+  };
   url?: string;
   history?: { timestamp: string; value: number }[];
 }
@@ -209,6 +221,7 @@ export function ItemsView({
         published_at?: string | null;
         source?: string | null;
         topics?: string[] | null;
+        entities?: Array<{ name?: string | null } | string> | null;
         quality_score?: number | null;
         location?: string | null;
       };
@@ -224,6 +237,23 @@ export function ItemsView({
         raw.published_at ??
         undefined;
       const ingestedAt = dayjs(edge.node.createdAt).toISOString();
+      const entities = Array.isArray(processed.entities)
+        ? Array.from(
+            new Set(
+              processed.entities
+                .map((entity) => {
+                  if (typeof entity === "string") {
+                    return entity;
+                  }
+                  if (entity && typeof entity.name === "string") {
+                    return entity.name;
+                  }
+                  return null;
+                })
+                .filter((name): name is string => Boolean(name))
+            )
+          )
+        : [];
 
       return {
         ...edge.node,
@@ -236,8 +266,15 @@ export function ItemsView({
         createdAt: ingestedAt,
         source: processed.source ?? raw.sourceName ?? undefined,
         topics: Array.isArray(processed.topics) ? processed.topics : [],
+        entities,
         qualityScore:
           typeof processed.quality_score === "number" ? processed.quality_score : undefined,
+        duplicateSimilarity:
+          typeof edge.node.processed?.duplicateSimilarity === "number"
+            ? edge.node.processed.duplicateSimilarity
+            : undefined,
+        duplicateOf: edge.node.processed?.duplicateOf ?? null,
+        llm: edge.node.processed?.llm ?? undefined,
         url: raw.url ?? undefined,
         location: processed.location ?? undefined
       } as ParsedItem;
@@ -259,7 +296,8 @@ export function ItemsView({
       if (filters.topics?.length) {
         const itemTopics = [
           ...(item.topics ?? []),
-          ...(item.tags ?? [])
+          ...(item.tags ?? []),
+          ...(item.entities ?? [])
         ];
         const matches = itemTopics.some(tag => filters.topics?.includes(tag));
         if (!matches) return false;
@@ -283,7 +321,11 @@ export function ItemsView({
 
   const availableTopics = useMemo(() => {
     const topics = pageData
-      .flatMap((item) => [...(item.topics ?? []), ...(item.tags ?? [])])
+      .flatMap((item) => [
+        ...(item.topics ?? []),
+        ...(item.tags ?? []),
+        ...(item.entities ?? [])
+      ])
       .filter((value): value is string => Boolean(value));
     return Array.from(new Set(topics));
   }, [pageData]);
@@ -399,6 +441,20 @@ export function ItemsView({
         )
     },
     {
+      title: t("items.columns.duplicate", { defaultValue: "Duplicate" }),
+      dataIndex: "duplicateSimilarity",
+      key: "duplicateSimilarity",
+      render: (value: number | undefined, record) => {
+        if (typeof value !== "number") {
+          return <Tag>{t("common.notAvailable")}</Tag>;
+        }
+        const label = record.duplicateOf
+          ? t("items.duplicate.duplicate", { defaultValue: "Duplicate" })
+          : t("items.duplicate.similarity", { defaultValue: "Similarity" });
+        return <Tag color="gold">{label} {Math.round(value * 100)}%</Tag>;
+      }
+    },
+    {
       title: t("items.columns.open", { defaultValue: "Open" }),
       key: "open",
       render: (_: unknown, record) => (
@@ -479,7 +535,11 @@ export function ItemsView({
                      publishedAt: item.publishedAt,
                      ingestedAt: item.ingestedAt,
                      topics: item.topics,
+                     entities: item.entities,
                      qualityScore: item.qualityScore,
+                     duplicateSimilarity: item.duplicateSimilarity,
+                     duplicateOf: item.duplicateOf,
+                     llm: item.llm,
                      url: item.url
                    }}
                  />
@@ -510,7 +570,11 @@ export function ItemsView({
                        publishedAt: item.publishedAt,
                        ingestedAt: item.ingestedAt,
                        topics: item.topics,
+                       entities: item.entities,
                        qualityScore: item.qualityScore,
+                       duplicateSimilarity: item.duplicateSimilarity,
+                       duplicateOf: item.duplicateOf,
+                       llm: item.llm,
                        url: item.url
                      }}
                    />

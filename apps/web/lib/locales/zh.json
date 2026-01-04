@@ -77,6 +77,8 @@
       "detail": {
         "triggeredAt": "触发时间",
         "metricValue": "指标值",
+        "previousValue": "前值 {{value}}",
+        "recordedAt": "记录时间 {{time}}",
         "changePercent": "变化 {{value}}",
         "status": "状态",
         "message": "说明",
@@ -87,6 +89,7 @@
         "operator": "运算符 {{operator}}",
         "threshold": "阈值",
         "window": "窗口 {{minutes}} 分钟",
+        "source": "来源",
         "objects": "对象",
         "objectsEmpty": "暂无对象信息。",
         "context": "上下文",
@@ -130,7 +133,9 @@
         "cooldown": "冷却",
         "checkInterval": "检查间隔",
         "channels": "渠道",
-        "channelsPlaceholder": "请输入渠道"
+        "channelsPlaceholder": "请输入渠道",
+        "muteUntil": "静默至",
+        "notifyAllMembers": "通知全部成员"
       },
       "pipeline": {
         "title": "流水线",
@@ -1614,6 +1619,21 @@
       "http": "HTTP",
       "graphql": "GraphQL",
       "unknown": "未知"
+    },
+    "filters": {
+      "timeRange": "时间范围",
+      "kind": "类型",
+      "kindAll": "全部类型"
+    },
+    "stats": {
+      "total": "总计",
+      "http": "HTTP",
+      "graphql": "GraphQL",
+      "unknown": "未知",
+      "daily": "每日数量",
+      "date": "日期",
+      "count": "数量",
+      "empty": "当前筛选下暂无统计"
     },
     "loadFailed": "加载失败",
     "title": "错误",

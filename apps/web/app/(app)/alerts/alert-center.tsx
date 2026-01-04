@@ -75,6 +75,17 @@ const formatContextValue = (value: unknown): string => {
   }
 };
 
+const toStringValue = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toString();
+  }
+  return undefined;
+};
+
 const DetailRow = ({ label, children }: { label: string; children: ReactNode }) => (
   <div>
     <Typography.Text type="secondary">{label}</Typography.Text>
@@ -170,10 +181,20 @@ export function AlertCenterContent() {
   const excludedContextKeys = new Set([
     ...objectKeys.map((entry) => entry.key),
     "latest",
+    "previous",
     "threshold",
     "lower",
     "upper",
-    "changePercent"
+    "changePercent",
+    "windowMinutes",
+    "sourceName",
+    "sourceEndpoint",
+    "sourceFunction",
+    "sourceDocUrl",
+    "sourceField",
+    "unit",
+    "recordedAt",
+    "itemName"
   ]);
   const additionalContext = contextEntries.filter(([key]) => !excludedContextKeys.has(key));
 
@@ -190,6 +211,31 @@ export function AlertCenterContent() {
       .filter((entry) => entry.value !== null && entry.value !== undefined && entry.value !== "")
       .slice(0, 4);
   };
+
+  const evidenceWindowMinutes =
+    selectedEvent?.changeWindowMin ?? toNumber(context?.windowMinutes);
+  const evidenceUnit = toStringValue(context?.unit);
+  const evidencePrevious = toNumber(context?.previous);
+  const evidenceRecordedAt =
+    typeof context?.recordedAt === "string" || typeof context?.recordedAt === "number"
+      ? context?.recordedAt
+      : undefined;
+  const evidenceRecordedAtLabel = evidenceRecordedAt
+    ? formatDateTime(evidenceRecordedAt, locale, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      })
+    : "";
+  const evidenceSource =
+    toStringValue(context?.sourceName) ??
+    toStringValue(context?.sourceEndpoint) ??
+    toStringValue(context?.sourceFunction) ??
+    toStringValue(context?.sourceField);
+  const evidenceSourceDoc = toStringValue(context?.sourceDocUrl);
 
   const thresholdSummary = (() => {
     if (!selectedEvent) {
@@ -447,11 +493,11 @@ export function AlertCenterContent() {
                       })}
                     </Typography.Text>
                     <Typography.Text type="secondary">{thresholdSummary}</Typography.Text>
-                    {selectedEvent.changeWindowMin !== null && selectedEvent.changeWindowMin !== undefined ? (
+                    {evidenceWindowMinutes !== null && evidenceWindowMinutes !== undefined ? (
                       <Typography.Text type="secondary">
                         {t("alerts.center.detail.window", {
                           defaultValue: "Window {{minutes}} min",
-                          minutes: selectedEvent.changeWindowMin
+                          minutes: evidenceWindowMinutes
                         })}
                       </Typography.Text>
                     ) : null}
@@ -470,23 +516,60 @@ export function AlertCenterContent() {
                   </Typography.Text>
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.metricValue", { defaultValue: "Metric value" })}>
-                  <Space>
-                    <Typography.Text strong>{selectedEvent.metricValue}</Typography.Text>
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.changePercent", {
-                        defaultValue: "Change {{value}}",
-                        value: formatMetricChange(
-                          selectedEvent.changePercent,
-                          t("common.notAvailable")
-                        )
-                      })}
-                    </Typography.Text>
+                  <Space direction="vertical" size={2}>
+                    <Space size="small" align="baseline">
+                      <Typography.Text strong>{selectedEvent.metricValue}</Typography.Text>
+                      {evidenceUnit ? (
+                        <Typography.Text type="secondary">{evidenceUnit}</Typography.Text>
+                      ) : null}
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.changePercent", {
+                          defaultValue: "Change {{value}}",
+                          value: formatMetricChange(
+                            selectedEvent.changePercent,
+                            t("common.notAvailable")
+                          )
+                        })}
+                      </Typography.Text>
+                    </Space>
+                    {evidencePrevious !== undefined ? (
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.previousValue", {
+                          defaultValue: "Previous {{value}}",
+                          value: evidencePrevious
+                        })}
+                      </Typography.Text>
+                    ) : null}
+                    {evidenceRecordedAtLabel ? (
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.recordedAt", {
+                          defaultValue: "Recorded at {{time}}",
+                          time: evidenceRecordedAtLabel
+                        })}
+                      </Typography.Text>
+                    ) : null}
                   </Space>
+                </DetailRow>
+                <DetailRow label={t("alerts.center.detail.source", { defaultValue: "Source" })}>
+                  {evidenceSource || evidenceSourceDoc ? (
+                    <Space direction="vertical" size={2}>
+                      {evidenceSource ? <Typography.Text>{evidenceSource}</Typography.Text> : null}
+                      {evidenceSourceDoc ? (
+                        <Typography.Link href={evidenceSourceDoc} target="_blank" rel="noreferrer">
+                          {evidenceSourceDoc}
+                        </Typography.Link>
+                      ) : null}
+                    </Space>
+                  ) : (
+                    <Typography.Text type="secondary">
+                      {t("common.notAvailable")}
+                    </Typography.Text>
+                  )}
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.objects", { defaultValue: "Objects" })}>
                   {objectEntries.length > 0 ? (
                     <Space size={[8, 8]} wrap>
-                    {objectEntries.map((entry) => (
+                      {objectEntries.map((entry) => (
                         <Tag key={entry.key}>
                           {entry.label}: {formatContextValue(entry.value)}
                         </Tag>

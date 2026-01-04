@@ -20,7 +20,19 @@ export interface NewsCardProps {
     source?: string;
     topics?: string[];
     tags?: string[];
+    entities?: string[];
     qualityScore?: number;
+    duplicateSimilarity?: number;
+    duplicateOf?: string | null;
+    llm?: {
+      model?: string | null;
+      promptVersion?: string | null;
+      promptTokens?: number | null;
+      completionTokens?: number | null;
+      totalTokens?: number | null;
+      costUsd?: number | null;
+      latencyMs?: number | null;
+    };
     url?: string;
   };
 }
@@ -52,9 +64,28 @@ export function NewsCard({ item }: NewsCardProps) {
   const displayIngested = item.ingestedAt ?? item.createdAt;
   const showIngested = Boolean(item.ingestedAt) && (!hasPublished || item.ingestedAt !== item.publishedAt);
   const topicTags = [...(item.topics ?? []), ...(item.tags ?? [])].slice(0, 3);
+  const entityTags = (item.entities ?? []).slice(0, 2);
   const qualityScore =
     typeof item.qualityScore === "number" ? Math.round(item.qualityScore * 100) : null;
-  const showFooter = Boolean(item.source || item.url || item.id);
+  const duplicateScore =
+    typeof item.duplicateSimilarity === "number"
+      ? Math.round(item.duplicateSimilarity * 100)
+      : null;
+  const duplicateLabel = item.duplicateOf
+    ? t("items.duplicate.duplicate", { defaultValue: "Duplicate" })
+    : t("items.duplicate.similarity", { defaultValue: "Similarity" });
+  const llmBits: string[] = [];
+  if (item.llm?.model) {
+    llmBits.push(item.llm.model);
+  }
+  if (typeof item.llm?.latencyMs === "number") {
+    llmBits.push(`${Math.round(item.llm.latencyMs)}ms`);
+  }
+  if (typeof item.llm?.costUsd === "number") {
+    llmBits.push(`$${item.llm.costUsd.toFixed(4)}`);
+  }
+  const llmSummary = llmBits.length > 0 ? llmBits.join(" | ") : null;
+  const showFooter = Boolean(item.source || item.url || item.id || llmSummary);
 
   return (
     <Card
@@ -79,8 +110,18 @@ export function NewsCard({ item }: NewsCardProps) {
             </Tag>
           ) : null}
           {qualityScore !== null ? <Tag color="blue">{qualityLabel} {qualityScore}%</Tag> : null}
+          {duplicateScore !== null ? (
+            <Tag color="gold">
+              {duplicateLabel} {duplicateScore}%
+            </Tag>
+          ) : null}
           {topicTags.map((tag) => (
             <Tag key={tag}>{tag}</Tag>
+          ))}
+          {entityTags.map((tag) => (
+            <Tag key={`entity-${tag}`} color="purple">
+              {tag}
+            </Tag>
           ))}
         </Space>
         <Space direction="vertical" size={0}>
@@ -114,6 +155,11 @@ export function NewsCard({ item }: NewsCardProps) {
             {item.source ? (
               <Text type="secondary" style={{ fontSize: "12px" }}>
                 {item.source}
+              </Text>
+            ) : null}
+            {llmSummary ? (
+              <Text type="secondary" style={{ fontSize: "12px" }}>
+                {llmSummary}
               </Text>
             ) : null}
             {item.url ? (

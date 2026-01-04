@@ -12,6 +12,7 @@ import type { Request, Response } from "express";
 import { GraphQLError } from "graphql";
 
 import { ExceptionEventsService } from "../../modules/observability/exception-events.service";
+import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 
 interface NormalizedHttpResponse {
   statusCode: number;
@@ -66,6 +67,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const httpStatus = this.resolveStatus(exception);
     const normalized = this.normalizeResponse(exception, httpStatus);
+    const user = (request as Request & { user?: AuthenticatedUser } | undefined)?.user;
 
     response?.setHeader("x-trace-id", traceId ?? "");
     this.logger.error(
@@ -84,6 +86,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       this.exceptionEvents.record({
         kind: "http",
         traceId: traceId ?? "",
+        orgId: user?.orgId,
+        userId: user?.id,
         statusCode: httpStatus,
         message: normalized.message,
         path: request?.url,
@@ -114,6 +118,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const statusCode = this.resolveStatus(exception);
     const normalized = this.normalizeResponse(exception, statusCode);
+    const user = (ctx?.req as Request & { user?: AuthenticatedUser } | undefined)?.user;
 
     ctx?.res?.setHeader("x-trace-id", traceId ?? "");
     this.logger.error(
@@ -131,6 +136,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       this.exceptionEvents.record({
         kind: "graphql",
         traceId: traceId ?? "",
+        orgId: user?.orgId,
+        userId: user?.id,
         statusCode,
         message: normalized.message,
         operation: info?.fieldName ?? String(info?.path?.key ?? ""),
