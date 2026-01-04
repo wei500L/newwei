@@ -7,6 +7,7 @@ import dayjs from "@/lib/dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSession } from "next-auth/react";
 
 import type { ItemsQuery } from "@/graphql/generated";
 import { useItemsQuery } from "@/graphql/generated";
@@ -84,10 +85,13 @@ export function ItemsView({
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const { data: session } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const screens = Grid.useBreakpoint();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
 
   // URL State
   const urlSearch = (searchParams.get("q") ?? "").trim();
@@ -332,13 +336,26 @@ export function ItemsView({
 
   const emptyStateConfig = useMemo(() => {
     if (emptyStateVariant === "today") {
+      const action = canManageCrawl
+        ? {
+            label: t("items.empty.todayActionAdmin", {
+              defaultValue: "Manage crawl tasks"
+            }),
+            href: "/crawl"
+          }
+        : {
+            label: t("items.empty.todayActionSubscriber", {
+              defaultValue: "Manage subscriptions"
+            }),
+            href: "/subscriptions"
+          };
       return {
         title: t("items.empty.todayTitle", { defaultValue: "No news yet" }),
         description: t("items.empty.todayDescription", {
-          defaultValue: "No items ingested or processed yet."
+          defaultValue: "No processed news yet. Check subscriptions or crawl tasks."
         }),
-        actionLabel: t("items.empty.todayAction", { defaultValue: "Go to Crawl" }),
-        actionHref: "/crawl"
+        actionLabel: action.label,
+        actionHref: action.href
       };
     }
 
@@ -357,7 +374,7 @@ export function ItemsView({
         defaultValue: "Try adjusting filters or refresh."
       })
     };
-  }, [emptyStateVariant, t]);
+  }, [canManageCrawl, emptyStateVariant, t]);
 
   const sortedData = useMemo(() => {
     if (sortMode !== "publishedDesc") {

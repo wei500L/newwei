@@ -52,9 +52,12 @@ export class DashboardController {
 
   @Permissions("dashboards.read")
   @Get("war-map/events")
-  async warMapEvents(@Query() query: DashboardTimeRangeQueryDto) {
+  async warMapEvents(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardTimeRangeQueryDto
+  ) {
     const range = this.chartsService.resolveRange(query);
-    return this.chartsService.getWarMapEvents(range);
+    return this.chartsService.getWarMapEvents(range, user.orgId);
   }
 
   @Permissions("dashboards.read")
@@ -73,7 +76,10 @@ export class DashboardController {
 
   @Permissions("dashboards.read")
   @Sse("stream")
-  dashboardStream(@Query() query: DashboardTimeRangeQueryDto): Observable<MessageEvent> {
+  dashboardStream(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardTimeRangeQueryDto
+  ): Observable<MessageEvent> {
     const range = this.chartsService.resolveRange(query);
     const intervalMs = 10_000;
     const pingMs = 25_000;
@@ -89,7 +95,7 @@ export class DashboardController {
         inflight = true;
         try {
           const [warEvents, candlestick] = await Promise.all([
-            this.chartsService.getWarMapEvents(range),
+            this.chartsService.getWarMapEvents(range, user.orgId),
             this.chartsService.getFinancialCandlestick(range)
           ]);
 

@@ -108,7 +108,9 @@ export function CommandBar() {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={t("nav.commandPlaceholder", { defaultValue: "Search news, topics, entities... (Cmd+K)" })}
+          placeholder={t("nav.commandPlaceholder", {
+            defaultValue: "Search titles, summaries, topics, entities... (Cmd+K)"
+          })}
           className="bg-transparent border-none outline-none text-[var(--foreground)] placeholder-slate-400 w-full text-sm"
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 200)}

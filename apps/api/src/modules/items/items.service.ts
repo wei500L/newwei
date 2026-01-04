@@ -1,7 +1,6 @@
 import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
 import type { MongoConnection } from "@modular/mongo";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
@@ -18,6 +17,8 @@ import { UpdateItemDto } from "./dto/update-item.dto";
 
 const MAX_CURSOR_PAGE_SIZE = 50;
 const FULLTEXT_MIN_TOKEN_LENGTH = 3;
+const MONGO_MIN_TOKEN_LENGTH = 2;
+const MAX_SEARCH_MATCHES = 5000;
 const MAX_TOPIC_GROUPS = 50;
 const MAX_TOPIC_ITEMS = 8;
 const DEFAULT_TOPIC_WINDOW_DAYS = 30;
@@ -31,18 +32,6 @@ type SearchStrategy =
   | { type: "none" }
   | { type: "fulltext"; query: string }
   | { type: "prefix"; term: string };
-
-interface ItemMetaRow {
-  id: string;
-  orgId: string;
-  externalId: string;
-  name: string;
-  status: string;
-  mongoRef: string;
-  version: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
 
 interface TopicGroupItem {
   processedId: string;
@@ -147,10 +136,20 @@ export class ItemsService {
   async list(orgId: string, page = 1, pageSize = 10, search?: string) {
     const take = Math.max(pageSize, 1);
     const skip = (page - 1) * take;
-    const strategy = this.resolveSearchStrategy(search);
+    const normalizedSearch = search?.trim();
 
-    if (strategy.type === "fulltext") {
-      const { items, total } = await this.listWithFullText(orgId, strategy.query, skip, take);
+    if (!normalizedSearch) {
+      const baseWhere = this.buildBaseWhere(orgId);
+      const [items, total] = await Promise.all([
+        this.prisma.itemMeta.findMany({
+          where: baseWhere,
+          skip,
+          take,
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }]
+        }),
+        this.prisma.itemMeta.count({ where: baseWhere })
+      ]);
+
       return {
         items,
         total,
@@ -159,23 +158,29 @@ export class ItemsService {
       };
     }
 
-    const baseWhere = this.buildBaseWhere(orgId);
-    const where =
-      strategy.type === "prefix" ? this.buildPrefixWhere(baseWhere, strategy.term) : baseWhere;
+    const searchIds = await this.resolveSearchIds(orgId, normalizedSearch);
+    if (searchIds.length === 0) {
+      return {
+        items: [],
+        total: 0,
+        page,
+        pageSize: take
+      };
+    }
 
-    const [items, total] = await Promise.all([
-      this.prisma.itemMeta.findMany({
-        where,
-        skip,
-        take,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }]
-      }),
-      this.prisma.itemMeta.count({ where })
-    ]);
+    const baseWhere = this.buildBaseWhere(orgId);
+    const where = { ...baseWhere, id: { in: searchIds } };
+
+    const items = await this.prisma.itemMeta.findMany({
+      where,
+      skip,
+      take,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }]
+    });
 
     return {
       items,
-      total,
+      total: searchIds.length,
       page,
       pageSize: take
     };
@@ -183,17 +188,43 @@ export class ItemsService {
 
   async listWithCursor(orgId: string, first = 10, cursorId?: string, search?: string) {
     const take = Math.min(Math.max(first, 1), MAX_CURSOR_PAGE_SIZE);
+    const normalizedSearch = search?.trim();
 
-    const strategy = this.resolveSearchStrategy(search);
+    if (!normalizedSearch) {
+      const baseWhere = this.buildBaseWhere(orgId);
+      const items = await this.prisma.itemMeta.findMany({
+        where: baseWhere,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: take + 1,
+        ...(cursorId
+          ? {
+              skip: 1,
+              cursor: { id: cursorId }
+            }
+          : {})
+      });
 
-    if (strategy.type === "fulltext") {
-      return this.listWithCursorFullText(orgId, take, cursorId, strategy.query);
+      const hasNextPage = items.length > take;
+      const totalCount = await this.prisma.itemMeta.count({ where: baseWhere });
+
+      return {
+        items: items.slice(0, take),
+        hasNextPage,
+        totalCount
+      };
+    }
+
+    const searchIds = await this.resolveSearchIds(orgId, normalizedSearch);
+    if (searchIds.length === 0 || (cursorId && !searchIds.includes(cursorId))) {
+      return {
+        items: [],
+        hasNextPage: false,
+        totalCount: searchIds.length
+      };
     }
 
     const baseWhere = this.buildBaseWhere(orgId);
-    const where =
-      strategy.type === "prefix" ? this.buildPrefixWhere(baseWhere, strategy.term) : baseWhere;
-
+    const where = { ...baseWhere, id: { in: searchIds } };
     const items = await this.prisma.itemMeta.findMany({
       where,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -207,12 +238,11 @@ export class ItemsService {
     });
 
     const hasNextPage = items.length > take;
-    const totalCount = await this.prisma.itemMeta.count({ where });
 
     return {
       items: items.slice(0, take),
       hasNextPage,
-      totalCount
+      totalCount: searchIds.length
     };
   }
 
@@ -645,16 +675,104 @@ export class ItemsService {
   }
 
   private buildFullTextQuery(search: string): string | null {
-    const tokens = search
-      .split(/\s+/)
-      .map((token) => token.replace(/[+-><()~"*@]+/g, ""))
-      .filter((token) => token.length >= FULLTEXT_MIN_TOKEN_LENGTH);
+    const tokens = this.tokenizeSearch(search, FULLTEXT_MIN_TOKEN_LENGTH);
 
     if (tokens.length === 0) {
       return null;
     }
 
     return tokens.map((token) => `${token}*`).join(" ");
+  }
+
+  private tokenizeSearch(search: string, minLength: number) {
+    return search
+      .split(/\s+/)
+      .map((token) => token.replace(/[+-><()~"*@]+/g, ""))
+      .filter((token) => token.length >= minLength);
+  }
+
+  private escapeRegex(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  private async resolveSearchIds(orgId: string, search: string) {
+    const strategy = this.resolveSearchStrategy(search);
+    if (strategy.type === "none") {
+      return [];
+    }
+
+    const [metaIds, processedIds] = await Promise.all([
+      this.resolveMetaSearchIds(orgId, strategy),
+      this.resolveProcessedSearchIds(orgId, search)
+    ]);
+
+    const combined = new Set<string>();
+    metaIds.forEach((id) => combined.add(id));
+    processedIds.forEach((id) => combined.add(id));
+    return Array.from(combined);
+  }
+
+  private async resolveMetaSearchIds(orgId: string, strategy: SearchStrategy) {
+    if (strategy.type === "none") {
+      return [];
+    }
+
+    if (strategy.type === "fulltext") {
+      const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT \`id\`
+        FROM \`ItemMeta\`
+        WHERE \`orgId\` = ${orgId}
+          AND \`status\` <> 'duplicate'
+          AND MATCH(\`name\`, \`externalId\`) AGAINST (${strategy.query} IN BOOLEAN MODE)
+        ORDER BY \`createdAt\` DESC, \`id\` DESC
+        LIMIT ${MAX_SEARCH_MATCHES}
+      `;
+      return rows.map((row) => row.id);
+    }
+
+    const baseWhere = this.buildBaseWhere(orgId);
+    const where = this.buildPrefixWhere(baseWhere, strategy.term);
+    const items = await this.prisma.itemMeta.findMany({
+      where,
+      select: { id: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: MAX_SEARCH_MATCHES
+    });
+    return items.map((item) => item.id);
+  }
+
+  private async resolveProcessedSearchIds(orgId: string, search: string) {
+    const tokens = this.tokenizeSearch(search, MONGO_MIN_TOKEN_LENGTH);
+    if (tokens.length === 0) {
+      return [];
+    }
+
+    const regexes = tokens.map((token) => new RegExp(this.escapeRegex(token), "i"));
+    const tokenFilters = regexes.map((regex) => ({
+      $or: [
+        { "result.title": regex },
+        { "result.subtitle": regex },
+        { "result.summary": regex },
+        { "result.topics": regex },
+        { "result.key_points": regex },
+        { "result.entities.name": regex },
+        { "result.location": regex },
+        { tags: regex }
+      ]
+    }));
+
+    const match = {
+      orgId,
+      status: "completed",
+      ...(tokenFilters.length ? { $and: tokenFilters } : {})
+    };
+
+    const records = await ProcessedItemModel.find(match, { itemMetaId: 1 })
+      .sort({ createdAt: -1 })
+      .limit(MAX_SEARCH_MATCHES)
+      .lean();
+
+    return records.map((record) => record.itemMetaId).filter(Boolean);
   }
 
   private buildBaseWhere(orgId: string) {
@@ -668,79 +786,6 @@ export class ItemsService {
         { name: { startsWith: term } },
         { externalId: { startsWith: term } }
       ]
-    };
-  }
-
-  private async listWithFullText(orgId: string, query: string, skip: number, take: number) {
-    const items = await this.prisma.$queryRaw<ItemMetaRow[]>`
-      SELECT \`id\`, \`orgId\`, \`externalId\`, \`name\`, \`status\`, \`mongoRef\`, \`version\`, \`createdAt\`, \`updatedAt\`
-      FROM \`ItemMeta\`
-      WHERE \`orgId\` = ${orgId}
-        AND \`status\` <> 'duplicate'
-        AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
-      ORDER BY \`createdAt\` DESC, \`id\` DESC
-      LIMIT ${take} OFFSET ${skip}
-    `;
-
-    const totalResult = await this.prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT COUNT(*) AS count
-      FROM \`ItemMeta\`
-      WHERE \`orgId\` = ${orgId}
-        AND \`status\` <> 'duplicate'
-        AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
-    `;
-
-    const total = Number(totalResult[0]?.count ?? 0);
-
-    return { items, total };
-  }
-
-  private async listWithCursorFullText(
-    orgId: string,
-    take: number,
-    cursorId: string | undefined,
-    query: string
-  ) {
-    const cursor = cursorId
-      ? await this.prisma.itemMeta.findFirst({
-          where: { id: cursorId, orgId },
-          select: { id: true, createdAt: true }
-        })
-      : null;
-
-    if (cursorId && !cursor) {
-      throw new NotFoundException("Cursor not found");
-    }
-
-    const cursorClause = cursor
-      ? Prisma.sql`AND (\`createdAt\` < ${cursor.createdAt} OR (\`createdAt\` = ${cursor.createdAt} AND \`id\` < ${cursor.id}))`
-      : Prisma.sql``;
-
-    const items = await this.prisma.$queryRaw<ItemMetaRow[]>`
-      SELECT \`id\`, \`orgId\`, \`externalId\`, \`name\`, \`status\`, \`mongoRef\`, \`version\`, \`createdAt\`, \`updatedAt\`
-      FROM \`ItemMeta\`
-      WHERE \`orgId\` = ${orgId}
-        AND \`status\` <> 'duplicate'
-        AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
-        ${cursorClause}
-      ORDER BY \`createdAt\` DESC, \`id\` DESC
-      LIMIT ${take + 1}
-    `;
-
-    const totalCountResult = await this.prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT COUNT(*) AS count
-      FROM \`ItemMeta\`
-      WHERE \`orgId\` = ${orgId}
-        AND \`status\` <> 'duplicate'
-        AND MATCH(\`name\`, \`externalId\`) AGAINST (${query} IN BOOLEAN MODE)
-    `;
-
-    const totalCount = Number(totalCountResult[0]?.count ?? 0);
-
-    return {
-      items: items.slice(0, take),
-      hasNextPage: items.length > take,
-      totalCount
     };
   }
 

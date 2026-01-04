@@ -1,6 +1,11 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { extractCountryCodeFromText, normalizeCountryCode } from "@modular/utils";
+import type { MongoConnection } from "@modular/mongo";
+import { ProcessedItemModel } from "@modular/mongo";
+import { AlertSeverity } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
+import { MONGO_CONNECTION } from "../config/mongo.provider";
 
 import worldGeoJson from "./assets/world.geo.json";
 import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
@@ -26,42 +31,35 @@ const OHLC_FIELD_ALIASES = {
   close: ["close", "收盘价"]
 } as const;
 
-const WAR_EVENT_SEEDS = [
-  {
-    id: "taiwan-strait",
-    name: "Taiwan Strait",
-    lat: 23.7,
-    lng: 121.0,
-    metricSlug: "global-conflict-index",
-    weight: 1
-  },
-  {
-    id: "eastern-europe",
-    name: "Eastern Europe",
-    lat: 49.0,
-    lng: 31.0,
-    metricSlug: "resource-scarcity",
-    weight: 0.9
-  },
-  {
-    id: "middle-east",
-    name: "Levant Corridor",
-    lat: 33.5,
-    lng: 36.2,
-    metricSlug: "market-sentiment",
-    weight: 0.8
-  },
-  {
-    id: "sahel",
-    name: "Sahel Region",
-    lat: 15.2,
-    lng: 15.2,
-    metricSlug: "supply-chain-stability",
-    weight: 0.75
-  }
-] as const;
-
 type WarEventSeverity = "high" | "medium" | "low";
+
+interface GeoJsonGeometry {
+  type:
+    | "Point"
+    | "MultiPoint"
+    | "LineString"
+    | "MultiLineString"
+    | "Polygon"
+    | "MultiPolygon"
+    | "GeometryCollection";
+  coordinates?: unknown;
+  geometries?: GeoJsonGeometry[];
+  [key: string]: unknown;
+}
+
+interface GeoJsonFeature {
+  type: "Feature";
+  geometry: GeoJsonGeometry | null;
+  properties?: Record<string, unknown> | null;
+  id?: string;
+  [key: string]: unknown;
+}
+
+interface GeoJsonFeatureCollection {
+  type: "FeatureCollection";
+  features: GeoJsonFeature[];
+  [key: string]: unknown;
+}
 
 interface WarMapGeoJsonResponse {
   name: string;
@@ -120,9 +118,6 @@ interface DateRange {
   end: Date;
 }
 
-const clamp = (value: number, min: number, max: number) =>
-  Math.max(min, Math.min(max, value));
-
 const alignUtcDayStart = (value: Date) => {
   const normalized = new Date(value);
   normalized.setUTCHours(0, 0, 0, 0);
@@ -135,15 +130,48 @@ const alignUtcDayEnd = (value: Date) => {
   return normalized;
 };
 
-const resolveSeverity = (value: number): WarEventSeverity => {
-  if (value >= 70) return "high";
-  if (value >= 40) return "medium";
+const resolveSeverityFromScore = (score: number): WarEventSeverity => {
+  if (score >= 10) return "high";
+  if (score >= 4) return "medium";
   return "low";
+};
+
+const normalizeGeoId = (input?: string | null): string | null => {
+  if (!input || typeof input !== "string") {
+    return null;
+  }
+  const normalized = normalizeCountryCode(input);
+  return normalized ? normalized.toUpperCase() : null;
+};
+
+const severityRank: Record<WarEventSeverity, number> = {
+  low: 1,
+  medium: 2,
+  high: 3
+};
+
+const severityByRank: Record<number, WarEventSeverity> = {
+  1: "low",
+  2: "medium",
+  3: "high"
+};
+
+const alertSeverityRank: Record<AlertSeverity, number> = {
+  low: 1,
+  medium: 2,
+  high: 3
 };
 
 @Injectable()
 export class DashboardChartsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private geoIndex: Map<string, { name: string; lat: number; lng: number }> | null = null;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection
+  ) {
+    void this._mongo;
+  }
 
   resolveRange(query: DashboardTimeRangeQueryDto): DateRange {
     const end = query.end ? new Date(query.end) : new Date();
@@ -177,57 +205,243 @@ export class DashboardChartsService {
     };
   }
 
-  async getWarMapEvents(range: DateRange): Promise<WarMapEventsResponse> {
-    const slugs = Array.from(new Set(WAR_EVENT_SEEDS.map((seed) => seed.metricSlug)));
-    const points = await this.prisma.economicDataPoint.findMany({
+  async getWarMapEvents(range: DateRange, orgId: string): Promise<WarMapEventsResponse> {
+    const geoIndex = this.getGeoIndex();
+    const signals = new Map<
+      string,
+      {
+        name: string;
+        lat: number;
+        lng: number;
+        alertScore: number;
+        itemCount: number;
+        maxSeverityRank: number;
+        latestAt?: Date;
+      }
+    >();
+
+    const alertEvents = await this.prisma.alertEvent.findMany({
       where: {
-        recordedAt: {
+        triggeredAt: {
           gte: range.start,
           lte: range.end
         },
-        sourceField: "value",
-        item: {
-          slug: { in: slugs }
+        rule: {
+          orgId
         }
       },
-      include: {
-        item: true
+      select: {
+        triggeredAt: true,
+        severity: true,
+        context: true
       },
-      orderBy: { recordedAt: "asc" }
+      orderBy: { triggeredAt: "desc" }
     });
 
-    const latestBySlug = new Map<string, { value: number; timestamp: Date }>();
-    for (const point of points) {
-      latestBySlug.set(point.item.slug, {
-        value: Number(point.value),
-        timestamp: point.recordedAt
-      });
+    for (const event of alertEvents) {
+      const context =
+        event.context && typeof event.context === "object" && !Array.isArray(event.context)
+          ? (event.context as Record<string, unknown>)
+          : null;
+      const rawCountry =
+        typeof context?.countryCode === "string"
+          ? context?.countryCode
+          : typeof context?.countryName === "string"
+            ? context?.countryName
+            : typeof context?.country === "string"
+              ? context?.country
+              : null;
+      const resolvedCode =
+        normalizeGeoId(rawCountry) ?? extractCountryCodeFromText(rawCountry ?? null);
+      if (!resolvedCode) {
+        continue;
+      }
+      const geo = geoIndex.get(resolvedCode);
+      if (!geo) {
+        continue;
+      }
+      const entry = signals.get(resolvedCode) ?? {
+        name: geo.name,
+        lat: geo.lat,
+        lng: geo.lng,
+        alertScore: 0,
+        itemCount: 0,
+        maxSeverityRank: 0
+      };
+      const severityValue = alertSeverityRank[event.severity] ?? 1;
+      entry.alertScore += severityValue;
+      entry.maxSeverityRank = Math.max(entry.maxSeverityRank, severityValue);
+      entry.latestAt =
+        !entry.latestAt || event.triggeredAt > entry.latestAt ? event.triggeredAt : entry.latestAt;
+      signals.set(resolvedCode, entry);
+    }
+
+    const locationGroups = await ProcessedItemModel.aggregate<{
+      _id: string;
+      count: number;
+      latestAt: Date;
+    }>([
+      {
+        $match: {
+          orgId,
+          status: "completed",
+          createdAt: { $gte: range.start, $lte: range.end },
+          "result.location": { $nin: [null, ""] }
+        }
+      },
+      {
+        $group: {
+          _id: "$result.location",
+          count: { $sum: 1 },
+          latestAt: { $max: "$createdAt" }
+        }
+      },
+      {
+        $sort: { latestAt: -1 }
+      },
+      {
+        $limit: 500
+      }
+    ]);
+
+    for (const group of locationGroups) {
+      const location = typeof group._id === "string" ? group._id : "";
+      if (!location) {
+        continue;
+      }
+      const resolvedCode =
+        extractCountryCodeFromText(location) ?? normalizeGeoId(location);
+      if (!resolvedCode) {
+        continue;
+      }
+      const geo = geoIndex.get(resolvedCode);
+      if (!geo) {
+        continue;
+      }
+      const entry = signals.get(resolvedCode) ?? {
+        name: geo.name,
+        lat: geo.lat,
+        lng: geo.lng,
+        alertScore: 0,
+        itemCount: 0,
+        maxSeverityRank: 0
+      };
+      entry.itemCount += group.count;
+      entry.latestAt =
+        !entry.latestAt || group.latestAt > entry.latestAt ? group.latestAt : entry.latestAt;
+      signals.set(resolvedCode, entry);
     }
 
     let latestTimestamp: Date | undefined;
     const events: WarMapEvent[] = [];
-    for (const seed of WAR_EVENT_SEEDS) {
-      const metric = latestBySlug.get(seed.metricSlug);
-      if (!metric) {
+
+    for (const [code, entry] of signals.entries()) {
+      if (!entry.latestAt) {
         continue;
       }
-      const weighted = clamp(metric.value * seed.weight, 0, 100);
+      const totalScore = entry.alertScore + entry.itemCount;
+      const severityFromScore = resolveSeverityFromScore(totalScore);
+      const maxSeverityFromAlerts =
+        entry.maxSeverityRank > 0 ? severityByRank[entry.maxSeverityRank] : null;
+      const severity = maxSeverityFromAlerts
+        ? (severityRank[maxSeverityFromAlerts] >= severityRank[severityFromScore]
+            ? maxSeverityFromAlerts
+            : severityFromScore)
+        : severityFromScore;
+      const value = Math.max(1, Number(totalScore.toFixed(2)));
       events.push({
-        id: seed.id,
-        name: seed.name,
-        lat: seed.lat,
-        lng: seed.lng,
-        severity: resolveSeverity(weighted),
-        value: Number(weighted.toFixed(2))
+        id: code.toLowerCase(),
+        name: entry.name,
+        lat: entry.lat,
+        lng: entry.lng,
+        severity,
+        value
       });
-      if (!latestTimestamp || metric.timestamp > latestTimestamp) {
-        latestTimestamp = metric.timestamp;
+      if (!latestTimestamp || entry.latestAt > latestTimestamp) {
+        latestTimestamp = entry.latestAt;
       }
     }
 
     return {
       events,
       updatedAt: latestTimestamp ? latestTimestamp.toISOString() : undefined
+    };
+  }
+
+  private getGeoIndex() {
+    if (this.geoIndex) {
+      return this.geoIndex;
+    }
+    const index = new Map<string, { name: string; lat: number; lng: number }>();
+    const payload = worldGeoJson as GeoJsonFeatureCollection;
+    for (const feature of payload.features) {
+      const name = typeof feature.properties?.name === "string" ? feature.properties?.name : null;
+      const id = typeof feature.id === "string" ? feature.id : null;
+      const code = normalizeGeoId(id ?? name);
+      if (!code || !name || !feature.geometry) {
+        continue;
+      }
+      const centroid = this.resolveCentroid(feature.geometry);
+      if (!centroid) {
+        continue;
+      }
+      index.set(code, { name, lat: centroid.lat, lng: centroid.lng });
+    }
+    this.geoIndex = index;
+    return index;
+  }
+
+  private resolveCentroid(geometry: GeoJsonGeometry): { lat: number; lng: number } | null {
+    const positions: Array<[number, number]> = [];
+    const collectPositions = (input: unknown) => {
+      if (!input) {
+        return;
+      }
+      if (Array.isArray(input)) {
+        if (
+          input.length >= 2 &&
+          typeof input[0] === "number" &&
+          typeof input[1] === "number"
+        ) {
+          positions.push([input[0], input[1]]);
+          return;
+        }
+        input.forEach((entry) => collectPositions(entry));
+      }
+    };
+
+    if (geometry.type === "GeometryCollection" && Array.isArray(geometry.geometries)) {
+      geometry.geometries.forEach((child) => collectPositions(child.coordinates));
+    } else {
+      collectPositions(geometry.coordinates);
+    }
+
+    if (!positions.length) {
+      return null;
+    }
+
+    let minLng = Number.POSITIVE_INFINITY;
+    let maxLng = Number.NEGATIVE_INFINITY;
+    let minLat = Number.POSITIVE_INFINITY;
+    let maxLat = Number.NEGATIVE_INFINITY;
+
+    for (const [lng, lat] of positions) {
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+        continue;
+      }
+      minLng = Math.min(minLng, lng);
+      maxLng = Math.max(maxLng, lng);
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+    }
+
+    if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) {
+      return null;
+    }
+
+    return {
+      lng: (minLng + maxLng) / 2,
+      lat: (minLat + maxLat) / 2
     };
   }
 

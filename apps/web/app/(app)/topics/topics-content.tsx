@@ -176,6 +176,24 @@ export function TopicsContent() {
 
   const groups = data?.topicGroups ?? [];
   const eventGroups = data?.eventGroups ?? [];
+  const sortedEventGroups = useMemo(() => {
+    return [...eventGroups].sort((a, b) => {
+      const timeDiff = dayjs(b.latestAt).valueOf() - dayjs(a.latestAt).valueOf();
+      if (timeDiff !== 0) {
+        return timeDiff;
+      }
+      return b.count - a.count;
+    });
+  }, [eventGroups]);
+  const sortedGroups = useMemo(() => {
+    return [...groups].sort((a, b) => {
+      const timeDiff = dayjs(b.latestAt).valueOf() - dayjs(a.latestAt).valueOf();
+      if (timeDiff !== 0) {
+        return timeDiff;
+      }
+      return b.count - a.count;
+    });
+  }, [groups]);
   const cardSpan = screens.xl ? 6 : screens.lg ? 8 : screens.md ? 12 : 24;
   const drawerWidth = screens.lg ? 720 : undefined;
   const windowOptions = useMemo(
@@ -236,16 +254,18 @@ export function TopicsContent() {
   }, [selectedEvent]);
 
   let content: ReactNode;
-  if (loading && groups.length === 0 && eventGroups.length === 0) {
+  if (loading && sortedGroups.length === 0 && sortedEventGroups.length === 0) {
     content = (
       <Card className="content-card">
         <Skeleton active paragraph={{ rows: 6 }} />
       </Card>
     );
-  } else if (!loading && groups.length === 0 && eventGroups.length === 0) {
+  } else if (!loading && sortedGroups.length === 0 && sortedEventGroups.length === 0) {
     content = (
       <Empty
-        description={t('pages.topics.empty', { defaultValue: 'No topics available yet.' })}
+        description={t('pages.topics.empty', {
+          defaultValue: 'Not enough items to build aggregations yet.'
+        })}
         image={Empty.PRESENTED_IMAGE_SIMPLE}
       />
     );
@@ -288,13 +308,15 @@ export function TopicsContent() {
             <Typography.Title level={5} style={{ margin: 0 }}>
               {t('pages.topics.eventsTitle', { defaultValue: 'Events' })}
             </Typography.Title>
-            {eventGroups.length === 0 ? (
+            {sortedEventGroups.length === 0 ? (
               <Empty
-                description={t('pages.topics.eventsEmpty', { defaultValue: 'No event clusters yet.' })}
+                description={t('pages.topics.eventsEmpty', {
+                  defaultValue: 'Not enough items to form event clusters.'
+                })}
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
               />
             ) : (
-              eventGroups.map((group) => {
+              sortedEventGroups.map((group) => {
                 const topics = group.topics ?? [];
                 const entities = group.entities ?? [];
                 const eventTitle = resolveEventTitle(group);
@@ -376,13 +398,15 @@ export function TopicsContent() {
             <Typography.Title level={5} style={{ margin: 0 }}>
               {t('pages.topics.topicsTitle', { defaultValue: 'Topics' })}
             </Typography.Title>
-            {groups.length === 0 ? (
+            {sortedGroups.length === 0 ? (
               <Empty
-                description={t('pages.topics.topicsEmpty', { defaultValue: 'No topics available yet.' })}
+                description={t('pages.topics.topicsEmpty', {
+                  defaultValue: 'Not enough items to form topic clusters.'
+                })}
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
               />
             ) : (
-              groups.map((group) => (
+              sortedGroups.map((group) => (
                 <Card
                   key={group.topic}
                   className="content-card"

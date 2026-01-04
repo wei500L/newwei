@@ -3,13 +3,15 @@
 import {
   AppstoreOutlined,
   BellOutlined,
+  DashboardOutlined,
   ExclamationCircleOutlined,
   FundOutlined,
   GlobalOutlined,
   ReadOutlined,
   SearchOutlined,
   SettingOutlined,
-  RadarChartOutlined
+  RadarChartOutlined,
+  UserOutlined
 } from "@ant-design/icons";
 import { Tooltip } from "antd";
 import Link from "next/link";
@@ -33,6 +35,7 @@ export function ActionRail() {
   const canManageSettings = permissions.includes("settings.manage");
   const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManageAdmin = permissions.includes("org.write") || permissions.includes("users.write");
+  const canViewDashboards = permissions.includes("dashboards.read");
 
   const mainNavItems: ActionItem[] = [
     {
@@ -74,13 +77,27 @@ export function ActionRail() {
     {
       key: "/subscriptions",
       icon: <BellOutlined />,
-      label: t("nav.main.subscriptions", { defaultValue: "My Subscriptions" }),
+      label: t("nav.main.subscriptions", { defaultValue: "Subscriptions & Notifications" }),
       path: "/subscriptions"
+    },
+    {
+      key: "/profile",
+      icon: <UserOutlined />,
+      label: t("nav.main.profile", { defaultValue: "Profile" }),
+      path: "/profile"
     }
   ];
 
   const adminNavItems = useMemo<ActionItem[]>(() => {
     const items: ActionItem[] = [];
+    if (canViewDashboards) {
+      items.push({
+        key: "/dashboard",
+        icon: <DashboardOutlined />,
+        label: t("nav.dashboard", { defaultValue: "Dashboard" }),
+        path: "/dashboard"
+      });
+    }
     if (canManageCrawl) {
       items.push({
         key: "/crawl",
@@ -106,7 +123,7 @@ export function ActionRail() {
       });
     }
     return items;
-  }, [canManageAdmin, canManageCrawl, canManageSettings, t]);
+  }, [canManageAdmin, canManageCrawl, canManageSettings, canViewDashboards, t]);
 
   return (
     <aside className="hidden md:flex flex-col justify-center h-full pl-4 pr-2 z-40">

@@ -47,9 +47,16 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Typography.Title level={4}>
-        {t("subscriptions.title", { defaultValue: "My Subscriptions" })}
-      </Typography.Title>
+      <Space direction="vertical" size={2}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {t("subscriptions.title", { defaultValue: "My Subscriptions" })}
+        </Typography.Title>
+        <Typography.Text type="secondary">
+          {t("subscriptions.subtitle", {
+            defaultValue: "Review channels, rules, and notification history in one place."
+          })}
+        </Typography.Text>
+      </Space>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>

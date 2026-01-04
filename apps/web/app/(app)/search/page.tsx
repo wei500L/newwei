@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
-import { ItemsView } from "@/app/(app)/items/items-view";
+
+import { SearchContent } from "./search-content";
 
 export default async function SearchPage() {
   const session = await auth();
@@ -9,5 +10,5 @@ export default async function SearchPage() {
     redirect("/login");
   }
 
-  return <ItemsView initialView="list" emptyStateVariant="search" />;
+  return <SearchContent />;
 }

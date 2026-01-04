@@ -508,8 +508,8 @@
         "title": "市场指数"
       },
       "warMap": {
-        "title": "指标态势图",
-        "series": "指标"
+        "title": "区域信号态势图",
+        "series": "信号"
       }
     },
     "stream": {
@@ -574,7 +574,7 @@
     "adminSettings": "管理员设置",
     "admin": "管理",
     "settings": "设置",
-    "commandPlaceholder": "搜索新闻、专题、实体... (Cmd+K)",
+    "commandPlaceholder": "搜索标题、摘要、专题、实体... (Cmd+K)",
     "commandEmpty": "暂无匹配结果。",
     "newCrawl": "新建采集",
     "main": {
@@ -584,7 +584,8 @@
       "finance": "金融面板",
       "alerts": "预警中心",
       "search": "搜索",
-      "subscriptions": "我的订阅"
+      "subscriptions": "订阅与通知",
+      "profile": "个人中心"
     }
   },
   "pages": {
@@ -593,17 +594,25 @@
       "subtitle": "快速理解今日重要新闻。"
     },
     "map": {
-      "title": "指标态势图",
-      "subtitle": "区域宏观指标概览",
-      "overlay": "指标态势概览"
+      "title": "区域信号态势图",
+      "subtitle": "基于预警与地理标注新闻的区域信号。",
+      "overlay": "预警与新闻态势概览",
+      "demoBadge": "演示",
+      "demoNote": "当前为演示指标，待接入真实预警地理上下文。"
+    },
+    "search": {
+      "title": "搜索",
+      "subtitle": "检索已处理内容。",
+      "noticeTitle": "检索范围",
+      "noticeDescription": "支持标题、摘要、专题、实体、地点与外部 ID 的检索。"
     },
     "topics": {
       "title": "专题/事件",
-      "empty": "暂无专题/事件。",
+      "empty": "聚合不足，暂无法形成专题/事件。",
       "eventsTitle": "事件聚合",
-      "eventsEmpty": "暂无事件聚合。",
+      "eventsEmpty": "聚合不足，暂无法形成事件。",
       "topicsTitle": "专题",
-      "topicsEmpty": "暂无专题/事件。",
+      "topicsEmpty": "聚合不足，暂无法形成专题。",
       "eventFallbackTitle": "未命名事件",
       "filters": {
         "windowLabel": "时间窗口",
@@ -656,6 +665,7 @@
   },
   "subscriptions": {
     "title": "我的订阅",
+    "subtitle": "统一查看渠道、规则与通知历史。",
     "channelsTitle": "预警渠道",
     "channelsEmpty": "暂无预警渠道。",
     "notificationsTitle": "通知"
@@ -1693,7 +1703,7 @@
       "created": "已创建"
     },
     "search": {
-      "placeholder": "搜索新闻、专题、实体"
+      "placeholder": "搜索标题、摘要、专题、实体、地点"
     },
     "filters": {
       "button": "筛选",
@@ -1706,9 +1716,10 @@
     "empty": {
       "defaultTitle": "暂无内容",
       "defaultDescription": "可调整筛选或刷新。",
-      "todayTitle": "今日暂无要闻",
-      "todayDescription": "暂无抓取/处理完成",
-      "todayAction": "前往采集入口",
+      "todayTitle": "尚无已处理新闻",
+      "todayDescription": "暂无已处理新闻，可检查订阅或采集任务。",
+      "todayActionAdmin": "管理采集任务",
+      "todayActionSubscriber": "管理订阅",
       "searchTitle": "无匹配结果",
       "searchDescription": "请调整关键词或筛选条件。"
     },

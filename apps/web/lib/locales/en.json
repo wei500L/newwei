@@ -508,8 +508,8 @@
         "title": "Market Index"
       },
       "warMap": {
-        "title": "Indicator Situation Map",
-        "series": "Indicator"
+        "title": "Regional Signals Map",
+        "series": "Signals"
       }
     },
     "stream": {
@@ -574,7 +574,7 @@
     "adminSettings": "Admin Settings",
     "admin": "Admin",
     "settings": "Settings",
-    "commandPlaceholder": "Search news, topics, entities... (Cmd+K)",
+    "commandPlaceholder": "Search titles, summaries, topics, entities... (Cmd+K)",
     "commandEmpty": "No results found.",
     "newCrawl": "New Crawl",
     "main": {
@@ -584,7 +584,8 @@
       "finance": "Finance Panel",
       "alerts": "Alert Center",
       "search": "Search",
-      "subscriptions": "My Subscriptions"
+      "subscriptions": "Subscriptions & Notifications",
+      "profile": "Profile"
     }
   },
   "pages": {
@@ -593,17 +594,25 @@
       "subtitle": "Get a quick read on today's most important news."
     },
     "map": {
-      "title": "Indicator Situation Map",
-      "subtitle": "Macro indicators by region",
-      "overlay": "Indicator Situation Overview"
+      "title": "Regional Signals Map",
+      "subtitle": "Alerts and geo-tagged news signals by region.",
+      "overlay": "Alert & News Signals Overview",
+      "demoBadge": "Demo",
+      "demoNote": "Demo indicators until alert geo context is connected."
+    },
+    "search": {
+      "title": "Search",
+      "subtitle": "Search across processed items.",
+      "noticeTitle": "Search scope",
+      "noticeDescription": "Searches titles, summaries, topics, entities, locations, and external IDs."
     },
     "topics": {
       "title": "Topics & Events",
-      "empty": "No topics available yet.",
+      "empty": "Not enough items to build aggregations yet.",
       "eventsTitle": "Events",
-      "eventsEmpty": "No event clusters yet.",
+      "eventsEmpty": "Not enough items to form event clusters.",
       "topicsTitle": "Topics",
-      "topicsEmpty": "No topics available yet.",
+      "topicsEmpty": "Not enough items to form topic clusters.",
       "eventFallbackTitle": "Untitled Event",
       "filters": {
         "windowLabel": "Window",
@@ -656,6 +665,7 @@
   },
   "subscriptions": {
     "title": "My Subscriptions",
+    "subtitle": "Review channels, rules, and notification history in one place.",
     "channelsTitle": "Alert Channels",
     "channelsEmpty": "No alert channels configured.",
     "notificationsTitle": "Notifications"
@@ -1695,7 +1705,7 @@
       "created": "Created"
     },
     "search": {
-      "placeholder": "Search news, topics, entities"
+      "placeholder": "Search titles, summaries, topics, entities, locations"
     },
     "filters": {
       "button": "Filters",
@@ -1708,9 +1718,10 @@
     "empty": {
       "defaultTitle": "No items found",
       "defaultDescription": "Try adjusting filters or refresh.",
-      "todayTitle": "No news yet",
-      "todayDescription": "No items ingested or processed yet.",
-      "todayAction": "Go to Crawl",
+      "todayTitle": "No processed news yet",
+      "todayDescription": "No processed news yet. Check subscriptions or crawl tasks.",
+      "todayActionAdmin": "Manage crawl tasks",
+      "todayActionSubscriber": "Manage subscriptions",
       "searchTitle": "No results",
       "searchDescription": "Try adjusting your keywords or filters."
     },
