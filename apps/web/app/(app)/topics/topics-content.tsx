@@ -3,9 +3,9 @@
 import { gql, useQuery } from '@apollo/client';
 import { Button, Card, Col, Drawer, Empty, Grid, List, Row, Select, Skeleton, Space, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { NewsCard } from '@/app/(app)/items/components/news-card';
 import dayjs from '@/lib/dayjs';
@@ -110,14 +110,53 @@ const DEFAULT_EVENT_LIMIT = 8;
 const DEFAULT_EVENT_ITEMS_PER_GROUP = 4;
 const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
 
+const parsePositiveInt = (value: string | null, fallback: number) => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+  return parsed;
+};
+
 export function TopicsContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const screens = Grid.useBreakpoint();
   const [selectedEvent, setSelectedEvent] = useState<EventGroup | null>(null);
-  const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
-  const [minGroupSize, setMinGroupSize] = useState(DEFAULT_EVENT_MIN_GROUP_SIZE);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
+  const windowDays = useMemo(
+    () => parsePositiveInt(searchParams.get('window'), DEFAULT_WINDOW_DAYS),
+    [searchParams]
+  );
+  const minGroupSize = useMemo(
+    () => parsePositiveInt(searchParams.get('minGroup'), DEFAULT_EVENT_MIN_GROUP_SIZE),
+    [searchParams]
+  );
+  const updateFilters = useCallback(
+    (updates: { windowDays?: number; minGroupSize?: number }) => {
+      const next = new URLSearchParams(searchParams.toString());
+      const nextWindow = updates.windowDays ?? windowDays;
+      const nextMinGroup = updates.minGroupSize ?? minGroupSize;
+      if (nextWindow === DEFAULT_WINDOW_DAYS) {
+        next.delete('window');
+      } else {
+        next.set('window', String(nextWindow));
+      }
+      if (nextMinGroup === DEFAULT_EVENT_MIN_GROUP_SIZE) {
+        next.delete('minGroup');
+      } else {
+        next.set('minGroup', String(nextMinGroup));
+      }
+      const nextQuery = next.toString();
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    },
+    [minGroupSize, pathname, router, searchParams, windowDays]
+  );
 
   const { data, loading, refetch } = useQuery<{
     topicGroups: TopicGroup[];
@@ -228,7 +267,7 @@ export function TopicsContent() {
               size="small"
               value={windowDays}
               options={windowOptions}
-              onChange={(value) => setWindowDays(value)}
+              onChange={(value) => updateFilters({ windowDays: value })}
             />
           </Space>
           <Space size="small" align="center">
@@ -239,7 +278,7 @@ export function TopicsContent() {
               size="small"
               value={minGroupSize}
               options={groupSizeOptions}
-              onChange={(value) => setMinGroupSize(value)}
+              onChange={(value) => updateFilters({ minGroupSize: value })}
             />
           </Space>
         </Space>

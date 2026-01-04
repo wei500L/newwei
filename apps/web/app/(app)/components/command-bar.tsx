@@ -31,6 +31,7 @@ export function CommandBar() {
   const inputRef = useRef<HTMLInputElement>(null);
   
   const debouncedQuery = useDebounceValue(query, 500);
+  const emptyLabel = t("nav.commandEmpty", { defaultValue: "No results found." });
 
   const apiClient = createApiClient({ accessToken: session?.accessToken });
 
@@ -126,11 +127,15 @@ export function CommandBar() {
         <div className="absolute top-full left-0 right-0 mt-2 glass-card border border-[var(--border)] max-h-[300px] overflow-auto animate-in fade-in slide-in-from-top-2">
           {data?.length === 0 && !isLoading && (
             <div className="p-4 text-center text-slate-500 text-xs">
-              No results found.
+              {emptyLabel}
             </div>
           )}
           
-          {data?.map((edge: any) => (
+          {data?.map((edge: any) => {
+            const status = edge.node.status ?? "";
+            const statusLabel = t(`items.status.${status}`, { defaultValue: status });
+            const externalIdLabel = t("items.detail.fields.externalId", { defaultValue: "External ID" });
+            return (
             <div 
               key={edge.node.id}
               onClick={() => handleSelect(edge.node.id)}
@@ -143,15 +148,16 @@ export function CommandBar() {
                      {edge.node.title}
                    </span>
                    <span className="text-[10px] text-slate-500">
-                     ID: {edge.node.meta.externalId}
+                     {externalIdLabel}: {edge.node.meta.externalId}
                    </span>
                  </div>
               </div>
               <span className="text-[10px] text-[var(--accent)] border border-[var(--accent)]/30 px-1.5 py-0.5 rounded-sm">
-                 {edge.node.status}
+                 {statusLabel}
               </span>
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
     </div>

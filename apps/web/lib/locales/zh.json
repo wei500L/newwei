@@ -68,6 +68,7 @@
       "emptyEvents": "暂无预警事件。",
       "selectEvent": "选择一条事件查看证据详情。",
       "deliveriesEmpty": "暂无投递记录。",
+      "eventSummary": "规则 {{rule}} · 指标 {{metric}}",
       "threshold": {
         "outside": "超出 {{range}}",
         "within": "位于 {{range}}",
@@ -569,6 +570,8 @@
     "admin": "管理",
     "settings": "设置",
     "commandPlaceholder": "搜索新闻、专题、实体... (Cmd+K)",
+    "commandEmpty": "暂无匹配结果。",
+    "newCrawl": "新建采集",
     "main": {
       "today": "今日要闻",
       "topics": "专题/事件",
@@ -613,6 +616,24 @@
       }
     }
   },
+  "adminConsole": {
+    "title": "管理控制台",
+    "subtitle": "管理组织、存储与系统错误。",
+    "links": {
+      "orgs": {
+        "title": "组织管理",
+        "description": "维护组织与成员"
+      },
+      "errors": {
+        "title": "错误事件",
+        "description": "查看系统错误记录"
+      },
+      "storage": {
+        "title": "存储设置",
+        "description": "配置存储后端"
+      }
+    }
+  },
   "finance": {
     "nav": {
       "market": "市场",
@@ -642,7 +663,12 @@
     "title": "通知",
     "unreadCount_other": "{{count}} 条未读通知",
     "markAllRead": "全部标为已读",
-    "empty": "暂无通知"
+    "empty": "暂无通知",
+    "openLink": "打开",
+    "openTask": "查看任务",
+    "openItem": "查看条目",
+    "openAnalysis": "查看分析",
+    "openAlert": "查看预警"
   },
   "settings": {
     "rateLimits": {
@@ -1624,10 +1650,12 @@
         "itemId": "条目 ID",
         "externalId": "外部 ID",
         "status": "状态",
+        "processedStatus": "处理状态",
         "createdAt": "创建时间",
         "updatedAt": "更新时间",
         "publishedAt": "发布时间",
         "source": "来源",
+        "rawSource": "原始来源",
         "author": "作者",
         "language": "语言",
         "location": "地点",

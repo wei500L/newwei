@@ -68,6 +68,7 @@
       "emptyEvents": "No alert events yet.",
       "selectEvent": "Select an event to see evidence details.",
       "deliveriesEmpty": "No delivery records.",
+      "eventSummary": "Rule {{rule}} · Metric {{metric}}",
       "threshold": {
         "outside": "Outside {{range}}",
         "within": "Within {{range}}",
@@ -569,6 +570,8 @@
     "admin": "Admin",
     "settings": "Settings",
     "commandPlaceholder": "Search news, topics, entities... (Cmd+K)",
+    "commandEmpty": "No results found.",
+    "newCrawl": "New Crawl",
     "main": {
       "today": "Today",
       "topics": "Topics & Events",
@@ -613,6 +616,24 @@
       }
     }
   },
+  "adminConsole": {
+    "title": "Admin Console",
+    "subtitle": "Manage organizations, storage, and system errors.",
+    "links": {
+      "orgs": {
+        "title": "Organizations",
+        "description": "Manage orgs and memberships"
+      },
+      "errors": {
+        "title": "Error Events",
+        "description": "Inspect recent system errors"
+      },
+      "storage": {
+        "title": "Storage Settings",
+        "description": "Configure storage backends"
+      }
+    }
+  },
   "finance": {
     "nav": {
       "market": "Market",
@@ -643,7 +664,12 @@
     "unreadCount_one": "{{count}} unread notification",
     "unreadCount_other": "{{count}} unread notifications",
     "markAllRead": "Mark all as read",
-    "empty": "No notifications yet"
+    "empty": "No notifications yet",
+    "openLink": "Open",
+    "openTask": "Open task",
+    "openItem": "Open item",
+    "openAnalysis": "Open analysis",
+    "openAlert": "Open alert"
   },
   "settings": {
     "rateLimits": {
@@ -1626,10 +1652,12 @@
         "itemId": "Item ID",
         "externalId": "External ID",
         "status": "Status",
+        "processedStatus": "Processed status",
         "createdAt": "Created at",
         "updatedAt": "Updated at",
         "publishedAt": "Published at",
         "source": "Source",
+        "rawSource": "Raw source",
         "author": "Author",
         "language": "Language",
         "location": "Location",

@@ -2,6 +2,7 @@
 
 import { BellOutlined } from "@ant-design/icons";
 import { App, Badge, Button, List, Popover, Space, Spin, Tag, Typography } from "antd";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -13,6 +14,7 @@ import {
   useUnreadNotificationCountQuery
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { resolveNotificationLink } from "@/lib/notifications";
 
 import { useNotificationStream, type NotificationMessage } from "./use-notification-stream";
 
@@ -34,6 +36,7 @@ export function NotificationCenter() {
   const { t, i18n } = useTranslation();
   const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
+  const router = useRouter();
   const { data, loading, refetch } = useNotificationsQuery({
     variables: { limit: MAX_ITEMS }
   });
@@ -130,6 +133,7 @@ export function NotificationCenter() {
             locale={{ emptyText: t("notifications.empty") }}
             renderItem={(item) => {
               const isUnread = !item.readAt;
+              const action = resolveNotificationLink(item.data ?? null, t);
               return (
                 <List.Item
                   key={item.id}
@@ -161,17 +165,34 @@ export function NotificationCenter() {
                             {item.body}
                           </Typography.Paragraph>
                         ) : null}
-                        <Typography.Text type="secondary">
-                          {formatDateTime(item.createdAt, locale, {
-                            year: "numeric",
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                            hour12: false
-                          })}
-                        </Typography.Text>
+                        <Space size="small" align="center">
+                          <Typography.Text type="secondary">
+                            {formatDateTime(item.createdAt, locale, {
+                              year: "numeric",
+                              month: "2-digit",
+                              day: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                              hour12: false
+                            })}
+                          </Typography.Text>
+                          {action ? (
+                            <Button
+                              type="link"
+                              size="small"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void markOneAsRead(item.id);
+                                router.push(action.href);
+                                setOpen(false);
+                              }}
+                              className="px-0"
+                            >
+                              {action.label}
+                            </Button>
+                          ) : null}
+                        </Space>
                       </div>
                     }
                   />
@@ -183,7 +204,7 @@ export function NotificationCenter() {
         )}
       </div>
     );
-  }, [items, loading, locale, markAllAsRead, markOneAsRead, refetch, t, unread]);
+  }, [items, loading, locale, markAllAsRead, markOneAsRead, refetch, router, t, unread]);
 
   return (
     <Popover

@@ -69,6 +69,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     () => parseJson<Record<string, unknown>>(item?.raw?.payload),
     [item?.raw?.payload]
   );
+  const processedStatus = item?.processed?.status ?? null;
+  const rawSource = item?.raw?.source ?? null;
 
   const summary = toString(processedResult?.summary);
   const keyPoints = toStringList(processedResult?.key_points);
@@ -229,6 +231,11 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               <Descriptions.Item label={t('items.detail.fields.status', { defaultValue: 'Status' })}>
                 <Tag color="blue">{item.status}</Tag>
               </Descriptions.Item>
+              <Descriptions.Item
+                label={t('items.detail.fields.processedStatus', { defaultValue: 'Processed status' })}
+              >
+                {processedStatus ? <Tag color="geekblue">{processedStatus}</Tag> : t('common.notAvailable')}
+              </Descriptions.Item>
               <Descriptions.Item label={t('items.detail.fields.createdAt', { defaultValue: 'Created at' })}>
                 {formatDateTime(item.createdAt, locale, {
                   year: 'numeric',
@@ -252,6 +259,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               </Descriptions.Item>
               <Descriptions.Item label={t('items.detail.fields.source', { defaultValue: 'Source' })}>
                 {source ?? t('common.notAvailable')}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('items.detail.fields.rawSource', { defaultValue: 'Raw source' })}>
+                {rawSource ?? t('common.notAvailable')}
               </Descriptions.Item>
               <Descriptions.Item label={t('items.detail.fields.author', { defaultValue: 'Author' })}>
                 {author ?? t('common.notAvailable')}

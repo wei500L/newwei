@@ -45,6 +45,8 @@ export function NewsCard({ item }: NewsCardProps) {
   const publishedLabel = t("items.time.published", { defaultValue: "Published" });
   const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
   const openLabel = t("items.detail.openItem", { defaultValue: "Open item" });
+  const qualityLabel = t("items.columns.quality", { defaultValue: "Quality" });
+  const readOriginalLabel = t("items.detail.readOriginal", { defaultValue: "Read original" });
   const hasPublished = Boolean(item.publishedAt);
   const displayPublished = item.publishedAt ?? item.createdAt;
   const displayIngested = item.ingestedAt ?? item.createdAt;
@@ -76,7 +78,7 @@ export function NewsCard({ item }: NewsCardProps) {
               {t(`items.sentiment.${item.sentiment}`, { defaultValue: item.sentiment })}
             </Tag>
           ) : null}
-          {qualityScore !== null ? <Tag color="blue">Quality {qualityScore}%</Tag> : null}
+          {qualityScore !== null ? <Tag color="blue">{qualityLabel} {qualityScore}%</Tag> : null}
           {topicTags.map((tag) => (
             <Tag key={tag}>{tag}</Tag>
           ))}
@@ -116,7 +118,7 @@ export function NewsCard({ item }: NewsCardProps) {
             ) : null}
             {item.url ? (
               <Typography.Link href={item.url} target="_blank" rel="noreferrer">
-                Read original
+                {readOriginalLabel}
               </Typography.Link>
             ) : null}
             {item.id ? (

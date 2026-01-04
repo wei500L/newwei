@@ -77,7 +77,7 @@ export function TopNav() {
   const statusLabel = subscriptionStatus ? formatLabel(subscriptionStatus) : null;
   const planBadgeLabel = statusLabel ? `${planLabel} · ${statusLabel}` : planLabel;
   const isFreePlan = !planTier;
-  const startNewCrawlLabel = "New Crawl";
+  const startNewCrawlLabel = t("nav.newCrawl", { defaultValue: "New Crawl" });
 
   return (
     <div className="fixed top-0 left-0 right-0 z-50 flex flex-col">

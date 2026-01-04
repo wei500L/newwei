@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge, Button, Card, Col, List, Row, Skeleton, Space, Tag, Typography } from "antd";
+import { useRouter } from "next/navigation";
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -12,6 +13,7 @@ import {
   useUnreadNotificationCountQuery
 } from '@/graphql/generated';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
+import { resolveNotificationLink } from '@/lib/notifications';
 
 const typeColor: Record<NotificationType, string> = {
   [NotificationType.CrawlCompleted]: 'green',
@@ -26,6 +28,7 @@ const typeColor: Record<NotificationType, string> = {
 export default function SubscriptionsPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const router = useRouter();
   const { data: channelsData, loading: channelsLoading, refetch: refetchChannels } = useAlertChannelsQuery();
   const {
     data: notificationsData,
@@ -127,7 +130,9 @@ export default function SubscriptionsPage() {
               <List
                 dataSource={notifications}
                 locale={{ emptyText: t('notifications.empty') }}
-                renderItem={(item) => (
+                renderItem={(item) => {
+                  const action = resolveNotificationLink(item.data ?? null, t);
+                  return (
                   <List.Item
                     onClick={async () => {
                       if (!item.readAt) {
@@ -157,22 +162,42 @@ export default function SubscriptionsPage() {
                               {item.body}
                             </Typography.Paragraph>
                           ) : null}
-                          <Typography.Text type="secondary">
-                            {formatDateTime(item.createdAt, locale, {
-                              year: 'numeric',
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                              hour12: false
-                            })}
-                          </Typography.Text>
+                          <Space size="small" align="center">
+                            <Typography.Text type="secondary">
+                              {formatDateTime(item.createdAt, locale, {
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                hour12: false
+                              })}
+                            </Typography.Text>
+                            {action ? (
+                              <Button
+                                type="link"
+                                size="small"
+                                onClick={async (event) => {
+                                  event.stopPropagation();
+                                  if (!item.readAt) {
+                                    await markRead({ variables: { id: item.id } });
+                                    await Promise.all([refetchNotifications(), refetchUnread()]);
+                                  }
+                                  router.push(action.href);
+                                }}
+                                className="px-0"
+                              >
+                                {action.label}
+                              </Button>
+                            ) : null}
+                          </Space>
                         </Space>
                       }
                     />
                   </List.Item>
-                )}
+                  );
+                }}
               />
             )}
           </Card>

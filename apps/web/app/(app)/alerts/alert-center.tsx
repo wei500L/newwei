@@ -5,6 +5,7 @@ import { Badge, Button, Card, Col, Empty, List, Row, Space, Tag, Typography } fr
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { AlertConfigForm } from "@/app/(app)/dashboard/alert-config-form";
 import {
@@ -86,6 +87,10 @@ export function AlertCenterContent() {
   const locale = resolveLocale(i18n.language);
   const client = useApolloClient();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const eventParam = searchParams.get("eventId");
 
   const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useAlertRulesQuery();
   const { data: eventsData, loading: eventsLoading, refetch: refetchEvents } = useAlertEventsQuery({
@@ -114,10 +119,22 @@ export function AlertCenterContent() {
       setSelectedEventId(null);
       return;
     }
+    if (eventParam && events.some((event) => event.id === eventParam)) {
+      setSelectedEventId(eventParam);
+      return;
+    }
     if (!selectedEventId || !events.some((event) => event.id === selectedEventId)) {
       setSelectedEventId(events[0]?.id ?? null);
     }
-  }, [events, selectedEventId]);
+  }, [eventParam, events, selectedEventId]);
+
+  const handleSelectEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("eventId", eventId);
+    const nextQuery = next.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+  };
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.id === selectedEventId) ?? null,
@@ -339,7 +356,7 @@ export function AlertCenterContent() {
                 const contextSummary = buildContextSummary(eventContext);
                 return (
                   <List.Item
-                    onClick={() => setSelectedEventId(event.id)}
+                    onClick={() => handleSelectEvent(event.id)}
                     className={isSelected ? "bg-slate-50" : undefined}
                     style={{ cursor: "pointer" }}
                   >
@@ -365,6 +382,13 @@ export function AlertCenterContent() {
                             {t("alerts.events.metrics", {
                               value: event.metricValue,
                               change: event.changePercent ?? t("common.notAvailable")
+                            })}
+                          </Typography.Text>
+                          <Typography.Text type="secondary">
+                            {t("alerts.center.eventSummary", {
+                              defaultValue: "Rule {{rule}} · Metric {{metric}}",
+                              rule: event.ruleName ?? t("common.notAvailable"),
+                              metric: event.metricSlug ?? t("common.notAvailable")
                             })}
                           </Typography.Text>
                           <Typography.Text type="secondary">

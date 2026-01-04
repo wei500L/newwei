@@ -21,6 +21,7 @@ import {
 } from "antd";
 import dayjs from "@/lib/dayjs";
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
@@ -117,6 +118,8 @@ export function DashboardContent() {
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const isAnalysisFocused = searchParams.get("panel") === "analysis";
   const [messageApi, messageContext] = message.useMessage();
   const { data, loading, error, refetch } = useQueueStatsQuery();
   const {
@@ -168,6 +171,7 @@ export function DashboardContent() {
   const [refreshingDemoData, setRefreshingDemoData] = useState(false);
   const [showSystemStats, setShowSystemStats] = useState(false);
   const lastStreamStatusRef = useRef<DashboardStreamStatus | null>(null);
+  const analysisPanelRef = useRef<HTMLDivElement | null>(null);
 
   const streamStatusMeta = useMemo(() => {
     const status = streamState.status;
@@ -248,6 +252,12 @@ export function DashboardContent() {
       );
     }
   }, [session?.accessToken, streamState.status, t]);
+
+  useEffect(() => {
+    if (searchParams.get("panel") === "analysis" && analysisPanelRef.current) {
+      analysisPanelRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [searchParams]);
 
   const handleRefreshDemoData = useCallback(async () => {
     if (refreshingDemoData) return;
@@ -496,9 +506,16 @@ export function DashboardContent() {
          </div>
 
          {/* AI Analysis */}
-         <Card title={t("dashboard.panels.aiAnalysis")} className="content-card flex-1 border-none shadow-sm min-h-[300px]">
-            <AnalysisPanel />
-         </Card>
+         <div ref={analysisPanelRef}>
+           <Card
+             title={t("dashboard.panels.aiAnalysis")}
+             className={`content-card flex-1 border-none shadow-sm min-h-[300px]${
+               isAnalysisFocused ? " ring-1 ring-[var(--primary)]" : ""
+             }`}
+           >
+             <AnalysisPanel />
+           </Card>
+         </div>
 
          {/* Alerts */}
          <Card title={t("dashboard.panels.smartAlerts")} className="content-card flex-1 border-none shadow-sm min-h-[200px]">
