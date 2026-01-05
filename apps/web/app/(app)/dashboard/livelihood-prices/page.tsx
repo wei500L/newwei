@@ -161,13 +161,18 @@ export default function LivelihoodPricesPage() {
         <TimeRangeControls />
       </div>
       {error && (
-        <Typography.Text type="danger">{error.message}</Typography.Text>
+        <Alert
+          type="error"
+          showIcon
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          description={error.message}
+        />
       )}
       {isDelayed ? (
         <Alert
           type="warning"
           showIcon
-          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {

@@ -1,11 +1,8 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { extractCountryCodeFromText, normalizeCountryCode } from "@modular/utils";
-import type { MongoConnection } from "@modular/mongo";
-import { ProcessedItemModel } from "@modular/mongo";
 import { AlertSeverity } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
-import { MONGO_CONNECTION } from "../config/mongo.provider";
 
 import worldGeoJson from "./assets/world.geo.json";
 import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
@@ -166,12 +163,7 @@ const alertSeverityRank: Record<AlertSeverity, number> = {
 export class DashboardChartsService {
   private geoIndex: Map<string, { name: string; lat: number; lng: number }> | null = null;
 
-  constructor(
-    private readonly prisma: PrismaService,
-    @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection
-  ) {
-    void this._mongo;
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   resolveRange(query: DashboardTimeRangeQueryDto): DateRange {
     const end = query.end ? new Date(query.end) : new Date();
@@ -214,7 +206,6 @@ export class DashboardChartsService {
         lat: number;
         lng: number;
         alertScore: number;
-        itemCount: number;
         maxSeverityRank: number;
         latestAt?: Date;
       }
@@ -265,7 +256,6 @@ export class DashboardChartsService {
         lat: geo.lat,
         lng: geo.lng,
         alertScore: 0,
-        itemCount: 0,
         maxSeverityRank: 0
       };
       const severityValue = alertSeverityRank[event.severity] ?? 1;
@@ -276,62 +266,6 @@ export class DashboardChartsService {
       signals.set(resolvedCode, entry);
     }
 
-    const locationGroups = await ProcessedItemModel.aggregate<{
-      _id: string;
-      count: number;
-      latestAt: Date;
-    }>([
-      {
-        $match: {
-          orgId,
-          status: "completed",
-          createdAt: { $gte: range.start, $lte: range.end },
-          "result.location": { $nin: [null, ""] }
-        }
-      },
-      {
-        $group: {
-          _id: "$result.location",
-          count: { $sum: 1 },
-          latestAt: { $max: "$createdAt" }
-        }
-      },
-      {
-        $sort: { latestAt: -1 }
-      },
-      {
-        $limit: 500
-      }
-    ]);
-
-    for (const group of locationGroups) {
-      const location = typeof group._id === "string" ? group._id : "";
-      if (!location) {
-        continue;
-      }
-      const resolvedCode =
-        extractCountryCodeFromText(location) ?? normalizeGeoId(location);
-      if (!resolvedCode) {
-        continue;
-      }
-      const geo = geoIndex.get(resolvedCode);
-      if (!geo) {
-        continue;
-      }
-      const entry = signals.get(resolvedCode) ?? {
-        name: geo.name,
-        lat: geo.lat,
-        lng: geo.lng,
-        alertScore: 0,
-        itemCount: 0,
-        maxSeverityRank: 0
-      };
-      entry.itemCount += group.count;
-      entry.latestAt =
-        !entry.latestAt || group.latestAt > entry.latestAt ? group.latestAt : entry.latestAt;
-      signals.set(resolvedCode, entry);
-    }
-
     let latestTimestamp: Date | undefined;
     const events: WarMapEvent[] = [];
 
@@ -339,7 +273,7 @@ export class DashboardChartsService {
       if (!entry.latestAt) {
         continue;
       }
-      const totalScore = entry.alertScore + entry.itemCount;
+      const totalScore = entry.alertScore;
       const severityFromScore = resolveSeverityFromScore(totalScore);
       const maxSeverityFromAlerts =
         entry.maxSeverityRank > 0 ? severityByRank[entry.maxSeverityRank] : null;

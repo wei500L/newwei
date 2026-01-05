@@ -134,9 +134,7 @@ export function WarMap() {
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const registeredMapsRef = useRef(new Set<string>());
   const [mapReady, setMapReady] = useState(false);
-  const emptyMessage = t("dashboard.charts.noDataRange", {
-    defaultValue: "No Data Found for Selected Range"
-  });
+  const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -350,9 +348,7 @@ export function WarMap() {
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.widgets.loadFailed", {
-            defaultValue: "Failed to load data"
-          })}
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={geoErrorMessage}
           action={
             <Button size="small" onClick={() => geoQuery.refetch()}>
@@ -401,9 +397,7 @@ export function WarMap() {
           <Alert
             type="error"
             showIcon
-            message={t("dashboard.widgets.loadFailed", {
-              defaultValue: "Failed to load data"
-            })}
+            message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
             description={eventsErrorMessage}
             action={
               <Button size="small" onClick={() => eventsQuery.refetch()}>

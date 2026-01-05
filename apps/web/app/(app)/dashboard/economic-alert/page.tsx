@@ -234,7 +234,7 @@ export default function EconomicAlertPage() {
       {error ? (
         <Alert
           type="error"
-          message={t("dashboard.economicAlert.loadFailed")}
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error.message}
           showIcon
           action={
@@ -248,7 +248,7 @@ export default function EconomicAlertPage() {
         <Alert
           type="warning"
           showIcon
-          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -266,7 +266,7 @@ export default function EconomicAlertPage() {
         />
       ) : null}
       {!loading && !hasData ? (
-        <Empty description={t("dashboard.economicAlert.empty")} />
+        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
       ) : null}
       {alerts.length > 0 && (
         <Alert

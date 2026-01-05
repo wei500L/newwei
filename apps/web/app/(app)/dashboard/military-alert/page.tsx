@@ -136,7 +136,7 @@ export default function MilitaryAlertPage() {
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.militaryAlert.loadFailed")}
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error.message}
         />
       )}
@@ -144,7 +144,7 @@ export default function MilitaryAlertPage() {
         <Alert
           type="warning"
           showIcon
-          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {

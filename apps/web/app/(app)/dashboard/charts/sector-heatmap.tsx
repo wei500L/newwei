@@ -88,9 +88,9 @@ export function SectorHeatmap() {
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const { selectedSector, setSelectedSector } = useDashboardFiltersStore();
   const [exportingCsv, setExportingCsv] = useState(false);
-  const emptyMessage = t("dashboard.charts.noDataRange", {
-    defaultValue: "No Data Found for Selected Range"
-  });
+  const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
+  const valueLabel = t("dashboard.charts.sectorHeatmapValueLabel", { defaultValue: "Value" });
+  const changeLabel = t("dashboard.charts.sectorHeatmapChangeLabel", { defaultValue: "Change" });
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -154,8 +154,8 @@ export function SectorHeatmap() {
         formatter: (params: any) => {
           const value = params.value;
           if (!Array.isArray(value)) return "";
-          const [, , change, name, volume] = value as HeatmapValue;
-          return `<b>${name}</b><br/>Change: ${change}%<br/>Volume: ${volume}`;
+          const [, , change, name, valuePoint] = value as HeatmapValue;
+          return `<b>${name}</b><br/>${changeLabel}: ${change}%<br/>${valueLabel}: ${valuePoint}`;
         }
       },
       grid: {
@@ -219,7 +219,7 @@ export function SectorHeatmap() {
         }
       ]
     };
-  }, [colors, data, fontFamily, selectedSector]);
+  }, [changeLabel, colors, data, fontFamily, selectedSector, valueLabel]);
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.cells.length === 0) return;
@@ -230,7 +230,7 @@ export function SectorHeatmap() {
         ? data.cells.filter((cell) => cell.name === selectedSector)
         : data.cells;
       const rows = [
-        ["Sector", "Group", "Row", "Value", "Change"],
+        ["Sector", "Group", "Row", valueLabel, changeLabel],
         ...filteredCells.map((cell) => {
           const xLabel = data.xLabels[cell.x] ?? String(cell.x);
           const yLabel = data.yLabels[cell.y] ?? String(cell.y);
@@ -253,7 +253,7 @@ export function SectorHeatmap() {
     } finally {
       setExportingCsv(false);
     }
-  }, [data, end, selectedSector, start, t]);
+  }, [changeLabel, data, end, selectedSector, start, t, valueLabel]);
 
   const csvLabel = exportingCsv
     ? t("dashboard.charts.exporting", { defaultValue: "Exporting..." })
@@ -273,9 +273,7 @@ export function SectorHeatmap() {
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.widgets.loadFailed", {
-            defaultValue: "Failed to load data"
-          })}
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error instanceof Error ? error.message : undefined}
           action={
             <Button size="small" onClick={() => refetch()}>

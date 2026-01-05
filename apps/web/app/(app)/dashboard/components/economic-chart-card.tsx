@@ -154,7 +154,7 @@ export function EconomicChartCard({
           )}
         </>
       ) : (
-        <Empty description={t("common.empty")} />
+        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
       )}
     </Card>
   );

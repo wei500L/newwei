@@ -87,9 +87,7 @@ export function FinancialCandlestick() {
   const { start, end } = useDashboardRangeStore();
   const theme = useChartTheme();
   const [exportingCsv, setExportingCsv] = useState(false);
-  const emptyMessage = t("dashboard.charts.noDataRange", {
-    defaultValue: "No Data Found for Selected Range"
-  });
+  const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -274,9 +272,7 @@ export function FinancialCandlestick() {
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.widgets.loadFailed", {
-            defaultValue: "Failed to load data"
-          })}
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error instanceof Error ? error.message : undefined}
           action={
             <Button size="small" onClick={() => refetch()}>

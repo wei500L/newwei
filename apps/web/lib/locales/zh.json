@@ -261,6 +261,13 @@
       "economicLong": "长期经济",
       "livelihoodPrices": "民生价格"
     },
+    "dataEmpty": "无数据",
+    "dataAbnormal": "数据异常",
+    "dataDelayed": {
+      "title": "数据延迟",
+      "latest": "最新数据时间：{{time}}。",
+      "missing": "无法获取最新数据时间。"
+    },
     "widgets": {
       "unsupportedSource": "不支持的数据源：{{source}}",
       "loadFailed": "加载失败"
@@ -504,6 +511,8 @@
       "downloadSuccess": "下载完成",
       "downloadFailed": "下载失败",
       "sectorHeatmap": "行业表现",
+      "sectorHeatmapValueLabel": "数值",
+      "sectorHeatmapChangeLabel": "涨跌幅",
       "financialCandlestick": {
         "title": "市场指数"
       },

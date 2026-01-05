@@ -160,7 +160,7 @@ export default function EconomicShortPage() {
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.economicShort.loadFailed")}
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error.message}
           action={
             <Button size="small" onClick={() => refetch()}>
@@ -173,7 +173,7 @@ export default function EconomicShortPage() {
         <Alert
           type="warning"
           showIcon
-          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -191,7 +191,7 @@ export default function EconomicShortPage() {
         />
       ) : null}
       {!loading && !hasData ? (
-        <Empty description={t("dashboard.economicShort.empty")} />
+        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
       ) : null}
       {isInitialLoading ? (
         <Skeleton active paragraph={{ rows: 8 }} />

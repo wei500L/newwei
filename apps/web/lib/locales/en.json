@@ -261,6 +261,13 @@
       "economicLong": "Economic long",
       "livelihoodPrices": "Livelihood prices"
     },
+    "dataEmpty": "No data",
+    "dataAbnormal": "Data error",
+    "dataDelayed": {
+      "title": "Data delayed",
+      "latest": "Latest data at {{time}}.",
+      "missing": "Latest data time unavailable."
+    },
     "widgets": {
       "unsupportedSource": "Unsupported data source: {{source}}",
       "loadFailed": "Failed to load"
@@ -504,6 +511,8 @@
       "downloadSuccess": "Download completed",
       "downloadFailed": "Download failed",
       "sectorHeatmap": "Sector Performance",
+      "sectorHeatmapValueLabel": "Value",
+      "sectorHeatmapChangeLabel": "Change",
       "financialCandlestick": {
         "title": "Market Index"
       },

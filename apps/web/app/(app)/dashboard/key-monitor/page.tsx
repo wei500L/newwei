@@ -32,7 +32,7 @@ export default function KeyMonitorPage() {
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.keyMonitor.loadFailed")}
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           action={
             <Button size="small" onClick={() => refetch()}>
               {t("common.retry")}
@@ -44,7 +44,7 @@ export default function KeyMonitorPage() {
         <Alert
           type="warning"
           showIcon
-          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -62,7 +62,7 @@ export default function KeyMonitorPage() {
         />
       ) : null}
       {!loading && !hasData ? (
-        <Empty description={t("dashboard.keyMonitor.empty")} />
+        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
       ) : null}
       {isInitialLoading ? (
         <Skeleton active paragraph={{ rows: 10 }} />

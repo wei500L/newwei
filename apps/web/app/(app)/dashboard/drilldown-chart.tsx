@@ -127,7 +127,7 @@ export function DrilldownChart({
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.drilldown.loadFailed")}
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error instanceof Error ? error.message : undefined}
           action={
             <Button size="small" onClick={() => refetch()}>
@@ -140,7 +140,7 @@ export function DrilldownChart({
       {!isLoading && (!data || data.length === 0) ? (
         <Alert
           type="info"
-          message={t("common.empty")}
+          message={t("dashboard.dataEmpty", { defaultValue: "No data" })}
           showIcon
           style={{ marginBottom: 12 }}
         />

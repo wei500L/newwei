@@ -88,7 +88,7 @@ export default function EconomicLongPage() {
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.economicLong.loadFailed")}
+          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           action={
             <Button size="small" onClick={() => refetch()}>
               {t("common.retry")}
@@ -100,7 +100,7 @@ export default function EconomicLongPage() {
         <Alert
           type="warning"
           showIcon
-          message={t("dashboard.dataDelayed", { defaultValue: "Data delayed" })}
+          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -118,7 +118,7 @@ export default function EconomicLongPage() {
         />
       ) : null}
       {!loading && !hasData ? (
-        <Empty description={t("common.empty")} />
+        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
       ) : null}
       {isInitialLoading ? (
         <Skeleton active paragraph={{ rows: 8 }} />

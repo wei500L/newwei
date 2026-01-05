@@ -207,7 +207,7 @@ export function WidgetRenderer({
       <Alert
         type="error"
         showIcon
-        message={t("dashboard.widgets.loadFailed")}
+        message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
         description={error.message}
         action={
           <Button size="small" onClick={() => refetch()}>
@@ -223,7 +223,11 @@ export function WidgetRenderer({
   }
 
   if (!resolvedData || resolvedData.length === 0) {
-    return <Typography.Text type="secondary">{t("common.empty")}</Typography.Text>;
+    return (
+      <Typography.Text type="secondary">
+        {t("dashboard.dataEmpty", { defaultValue: "No data" })}
+      </Typography.Text>
+    );
   }
 
   return (
