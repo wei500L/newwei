@@ -1,7 +1,7 @@
 "use client";
 
 import { useApolloClient } from "@apollo/client";
-import { Badge, Button, Card, Col, Empty, List, Row, Space, Tag, Typography } from "antd";
+import { Badge, Button, Card, Col, List, Row, Space, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,7 @@ import {
   useTriggerAlertRuleMutation
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -32,6 +33,53 @@ const deliveryStatusColor: Record<string, string> = {
   pending: "orange",
   sent: "green",
   failed: "red"
+};
+
+const buildThresholdSummary = (
+  operator: string | null | undefined,
+  thresholdValue: number | undefined,
+  lower: number | undefined,
+  upper: number | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string
+) => {
+  if (!operator) {
+    return t("common.notAvailable");
+  }
+  const operatorSymbolMap: Record<string, string> = {
+    gt: ">",
+    gte: ">=",
+    lt: "<",
+    lte: "<=",
+    eq: "="
+  };
+  if (operator === "outside_range" || operator === "within_range") {
+    if (lower === undefined || upper === undefined) {
+      return t("common.notAvailable");
+    }
+    const range = `${lower} - ${upper}`;
+    return t(
+      operator === "outside_range"
+        ? "alerts.center.threshold.outside"
+        : "alerts.center.threshold.within",
+      { defaultValue: `${operator === "outside_range" ? "Outside" : "Within"} ${range}`, range }
+    );
+  }
+  if (operator === "change_up_pct" || operator === "change_down_pct") {
+    if (thresholdValue === undefined) {
+      return t("common.notAvailable");
+    }
+    const symbol = operator === "change_up_pct" ? ">=" : "<=";
+    return t("alerts.center.threshold.changePct", {
+      defaultValue: `Change ${symbol} ${thresholdValue}%`,
+      symbol,
+      value: thresholdValue
+    });
+  }
+  if (thresholdValue === undefined) {
+    return t("common.notAvailable");
+  }
+  const symbol = operatorSymbolMap[operator] ?? operator;
+  return `${symbol} ${thresholdValue}`;
 };
 
 const formatMetricChange = (value: number | null | undefined, fallback: string) => {
@@ -227,7 +275,8 @@ export function AlertCenterContent() {
         day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
-        second: "2-digit"
+        second: "2-digit",
+        timeZoneName: "short"
       })
     : "";
   const evidenceSource =
@@ -237,53 +286,15 @@ export function AlertCenterContent() {
     toStringValue(context?.sourceField);
   const evidenceSourceDoc = toStringValue(context?.sourceDocUrl);
 
-  const thresholdSummary = (() => {
-    if (!selectedEvent) {
-      return t("common.notAvailable");
-    }
-    const thresholdValue = selectedEvent.thresholdValue ?? toNumber(context?.threshold);
-    const lower = selectedEvent.thresholdLower ?? toNumber(context?.lower);
-    const upper = selectedEvent.thresholdUpper ?? toNumber(context?.upper);
-    const operator = selectedEvent.operator;
-    if (!operator) {
-      return t("common.notAvailable");
-    }
-    const operatorSymbolMap: Record<string, string> = {
-      gt: ">",
-      gte: ">=",
-      lt: "<",
-      lte: "<=",
-      eq: "="
-    };
-    if (operator === "outside_range" || operator === "within_range") {
-      if (lower === undefined || upper === undefined) {
-        return t("common.notAvailable");
-      }
-      const range = `${lower} - ${upper}`;
-      return t(
-        operator === "outside_range"
-          ? "alerts.center.threshold.outside"
-          : "alerts.center.threshold.within",
-        { defaultValue: `${operator === "outside_range" ? "Outside" : "Within"} ${range}`, range }
-      );
-    }
-    if (operator === "change_up_pct" || operator === "change_down_pct") {
-      if (thresholdValue === undefined) {
-        return t("common.notAvailable");
-      }
-      const symbol = operator === "change_up_pct" ? ">=" : "<=";
-      return t("alerts.center.threshold.changePct", {
-        defaultValue: `Change ${symbol} ${thresholdValue}%`,
-        symbol,
-        value: thresholdValue
-      });
-    }
-    if (thresholdValue === undefined) {
-      return t("common.notAvailable");
-    }
-    const symbol = operatorSymbolMap[operator] ?? operator;
-    return `${symbol} ${thresholdValue}`;
-  })();
+  const thresholdSummary = selectedEvent
+    ? buildThresholdSummary(
+        selectedEvent.operator,
+        selectedEvent.thresholdValue ?? toNumber(context?.threshold),
+        selectedEvent.thresholdLower ?? toNumber(context?.lower),
+        selectedEvent.thresholdUpper ?? toNumber(context?.upper),
+        t
+      )
+    : t("common.notAvailable");
 
   return (
     <div className="flex flex-col gap-6">
@@ -311,9 +322,14 @@ export function AlertCenterContent() {
               loading={rulesLoading}
               dataSource={rules}
               locale={{
-                emptyText: t("alerts.center.emptyRules", {
-                  defaultValue: "No alert rules configured."
-                })
+                emptyText: (
+                  <ChartEmptyState
+                    className="h-auto py-6"
+                    description={t("alerts.center.emptyRules", {
+                      defaultValue: "No alert rules configured."
+                    })}
+                  />
+                )
               }}
               renderItem={(rule) => (
                 <List.Item
@@ -349,6 +365,18 @@ export function AlertCenterContent() {
                             interval: rule.checkIntervalSec,
                             defaultValue:
                               "Provider {{provider}} · Metric {{metric}} · Cooldown {{cooldown}}s · Interval {{interval}}s"
+                          })}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          {t("alerts.rules.threshold", {
+                            defaultValue: "Threshold {{threshold}}",
+                            threshold: buildThresholdSummary(
+                              rule.operator,
+                              rule.thresholdValue ?? undefined,
+                              rule.thresholdLower ?? undefined,
+                              rule.thresholdUpper ?? undefined,
+                              t
+                            )
                           })}
                         </Typography.Text>
                         <Typography.Text type="secondary">
@@ -389,9 +417,14 @@ export function AlertCenterContent() {
               loading={eventsLoading}
               dataSource={events}
               locale={{
-                emptyText: t("alerts.center.emptyEvents", {
-                  defaultValue: "No alert events yet."
-                })
+                emptyText: (
+                  <ChartEmptyState
+                    className="h-auto py-6"
+                    description={t("alerts.center.emptyEvents", {
+                      defaultValue: "No alert events yet."
+                    })}
+                  />
+                )
               }}
               renderItem={(event) => {
                 const isSelected = event.id === selectedEventId;
@@ -400,11 +433,32 @@ export function AlertCenterContent() {
                     ? (event.context as Record<string, unknown>)
                     : null;
                 const contextSummary = buildContextSummary(eventContext);
+                const eventThresholdSummary = buildThresholdSummary(
+                  event.operator,
+                  event.thresholdValue ?? toNumber(eventContext?.threshold),
+                  event.thresholdLower ?? toNumber(eventContext?.lower),
+                  event.thresholdUpper ?? toNumber(eventContext?.upper),
+                  t
+                );
+                const eventEvidenceSource =
+                  toStringValue(eventContext?.sourceName) ??
+                  toStringValue(eventContext?.sourceEndpoint) ??
+                  toStringValue(eventContext?.sourceField) ??
+                  toStringValue(eventContext?.sourceFunction);
                 return (
                   <List.Item
                     onClick={() => handleSelectEvent(event.id)}
                     className={isSelected ? "bg-slate-50" : undefined}
                     style={{ cursor: "pointer" }}
+                    role="button"
+                    tabIndex={0}
+                    aria-selected={isSelected}
+                    onKeyDown={(eventKey) => {
+                      if (eventKey.key === "Enter" || eventKey.key === " ") {
+                        eventKey.preventDefault();
+                        handleSelectEvent(event.id);
+                      }
+                    }}
                   >
                     <List.Item.Meta
                       title={
@@ -416,7 +470,8 @@ export function AlertCenterContent() {
                               month: "2-digit",
                               day: "2-digit",
                               hour: "2-digit",
-                              minute: "2-digit"
+                              minute: "2-digit",
+                              timeZoneName: "short"
                             })}
                           </Typography.Text>
                           <Tag color={severityColor[event.severity] ?? "blue"}>{event.severity}</Tag>
@@ -428,6 +483,13 @@ export function AlertCenterContent() {
                             {t("alerts.events.metrics", {
                               value: event.metricValue,
                               change: event.changePercent ?? t("common.notAvailable")
+                            })}
+                          </Typography.Text>
+                          <Typography.Text type="secondary">
+                            {t("alerts.events.evidence", {
+                              defaultValue: "Evidence {{source}} · Threshold {{threshold}}",
+                              source: eventEvidenceSource ?? t("common.notAvailable"),
+                              threshold: eventThresholdSummary
                             })}
                           </Typography.Text>
                           <Typography.Text type="secondary">
@@ -511,7 +573,8 @@ export function AlertCenterContent() {
                       day: "2-digit",
                       hour: "2-digit",
                       minute: "2-digit",
-                      second: "2-digit"
+                      second: "2-digit",
+                      timeZoneName: "short"
                     })}
                   </Typography.Text>
                 </DetailRow>
@@ -633,7 +696,8 @@ export function AlertCenterContent() {
                                   month: "2-digit",
                                   day: "2-digit",
                                   hour: "2-digit",
-                                  minute: "2-digit"
+                                  minute: "2-digit",
+                                  timeZoneName: "short"
                                 })
                               : t("common.notAvailable")}
                           </Typography.Text>
@@ -647,8 +711,8 @@ export function AlertCenterContent() {
                 </DetailRow>
               </Space>
             ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              <ChartEmptyState
+                className="h-auto py-6"
                 description={t("alerts.center.selectEvent", {
                   defaultValue: "Select an event to see evidence details."
                 })}

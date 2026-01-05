@@ -16,13 +16,14 @@ export function ViewSwitcher({ view, onChange }: ViewSwitcherProps) {
 
   return (
     <Segmented
+      aria-label={t("items.view.label", { defaultValue: "View mode" })}
       value={view}
       onChange={(value) => onChange(value as ItemViewType)}
       options={[
         {
-          value: "list",
-          icon: <UnorderedListOutlined />,
-          label: t("items.view.list", { defaultValue: "List" }),
+          value: "feed",
+          icon: <BarsOutlined />,
+          label: t("items.view.feed", { defaultValue: "Feed" }),
         },
         {
           value: "grid",
@@ -30,9 +31,9 @@ export function ViewSwitcher({ view, onChange }: ViewSwitcherProps) {
           label: t("items.view.grid", { defaultValue: "Grid" }),
         },
         {
-          value: "feed",
-          icon: <BarsOutlined />,
-          label: t("items.view.feed", { defaultValue: "Feed" }),
+          value: "list",
+          icon: <UnorderedListOutlined />,
+          label: t("items.view.list", { defaultValue: "List" }),
         },
       ]}
     />

@@ -69,7 +69,7 @@ export function FinancialCard({ item }: FinancialCardProps) {
     : null;
 
   return (
-    <Card hoverable style={{ height: "100%" }}>
+    <Card hoverable className="glass-card" style={{ height: "100%" }}>
       <Space direction="vertical" style={{ width: "100%" }}>
         <Title level={5}>{item.title}</Title>
         <Space size="large" align="baseline">

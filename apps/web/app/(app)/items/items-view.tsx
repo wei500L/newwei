@@ -1,7 +1,7 @@
 "use client";
 
 import { SearchOutlined } from "@ant-design/icons";
-import { Button, Col, Drawer, Empty, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Typography } from "antd";
+import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import dayjs from "@/lib/dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -12,6 +12,7 @@ import { useSession } from "next-auth/react";
 import type { ItemsQuery } from "@/graphql/generated";
 import { useItemsQuery } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 
 import { FacetedSearch, FilterState } from "./components/faceted-search";
 import { FinancialCard } from "./components/financial-card";
@@ -79,7 +80,7 @@ interface ParsedItem {
 }
 
 export function ItemsView({
-  initialView = "list",
+  initialView = "feed",
   emptyStateVariant = "default",
   sortMode = "default"
 }: ItemsViewProps) {
@@ -103,6 +104,7 @@ export function ItemsView({
   const [view, setView] = useState<ItemViewType>(initialView);
   const [filters, setFilters] = useState<FilterState>({});
   const [showFilters, setShowFilters] = useState(false);
+  const [showDelayHint, setShowDelayHint] = useState(false);
 
   useEffect(() => {
     setSearchInput(urlSearch);
@@ -152,6 +154,15 @@ export function ItemsView({
     },
     notifyOnNetworkStatusChange: true
   });
+
+  useEffect(() => {
+    if (!loading) {
+      setShowDelayHint(false);
+      return;
+    }
+    const timeout = setTimeout(() => setShowDelayHint(true), 1200);
+    return () => clearTimeout(timeout);
+  }, [loading]);
 
   const edges = data?.items.edges ?? EMPTY_EDGES;
   const totalCount = data?.items.totalCount ?? 0;
@@ -436,7 +447,8 @@ export function ItemsView({
                 month: "2-digit",
                 day: "2-digit",
                 hour: "2-digit",
-                minute: "2-digit"
+                minute: "2-digit",
+                timeZoneName: "short"
               })}
             </Typography.Text>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -484,29 +496,38 @@ export function ItemsView({
 
   const renderContent = () => {
     if (loading && !pageData.length) {
-      return <Skeleton active paragraph={{ rows: 6 }} />;
+      return (
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          <Skeleton active paragraph={{ rows: 6 }} />
+          {showDelayHint ? (
+            <ChartEmptyState
+              className="h-auto"
+              description={t("common.loadingDelayed", {
+                defaultValue: "Data is taking longer than usual. Please hold on or refresh."
+              })}
+            />
+          ) : null}
+        </Space>
+      );
     }
 
     if (!loading && sortedData.length === 0) {
       return (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            <Space direction="vertical" align="center" size={4}>
-              <Typography.Text strong>{emptyStateConfig.title}</Typography.Text>
-              {emptyStateConfig.description ? (
-                <Typography.Text type="secondary">
-                  {emptyStateConfig.description}
-                </Typography.Text>
-              ) : null}
-              {emptyStateConfig.actionLabel && emptyStateConfig.actionHref ? (
-                <Button size="small" type="primary" onClick={() => router.push(emptyStateConfig.actionHref)}>
-                  {emptyStateConfig.actionLabel}
-                </Button>
-              ) : null}
-            </Space>
-          }
-        />
+        <Space direction="vertical" align="center" size="middle" style={{ width: "100%" }}>
+          <ChartEmptyState
+            className="h-auto"
+            description={
+              emptyStateConfig.description
+                ? `${emptyStateConfig.title} · ${emptyStateConfig.description}`
+                : emptyStateConfig.title
+            }
+          />
+          {emptyStateConfig.actionLabel && emptyStateConfig.actionHref ? (
+            <Button size="small" type="primary" onClick={() => router.push(emptyStateConfig.actionHref)}>
+              {emptyStateConfig.actionLabel}
+            </Button>
+          ) : null}
+        </Space>
       );
     }
 
@@ -517,6 +538,7 @@ export function ItemsView({
           columns={columns}
           dataSource={sortedData}
           loading={loading || needsMoreForPage}
+          size="large"
           pagination={{
             current,
             pageSize,

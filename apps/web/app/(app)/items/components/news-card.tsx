@@ -63,8 +63,17 @@ export function NewsCard({ item }: NewsCardProps) {
   const displayPublished = item.publishedAt ?? item.createdAt;
   const displayIngested = item.ingestedAt ?? item.createdAt;
   const showIngested = Boolean(item.ingestedAt) && (!hasPublished || item.ingestedAt !== item.publishedAt);
-  const topicTags = [...(item.topics ?? []), ...(item.tags ?? [])].slice(0, 3);
-  const entityTags = (item.entities ?? []).slice(0, 2);
+  const topicTags = [...(item.topics ?? []), ...(item.tags ?? [])].map((label) => ({
+    label,
+    color: "default" as const
+  }));
+  const entityTags = (item.entities ?? []).map((label) => ({
+    label,
+    color: "purple" as const
+  }));
+  const allTags = [...topicTags, ...entityTags];
+  const displayTags = allTags.slice(0, 5);
+  const extraTagCount = Math.max(allTags.length - displayTags.length, 0);
   const qualityScore =
     typeof item.qualityScore === "number" ? Math.round(item.qualityScore * 100) : null;
   const duplicateScore =
@@ -86,10 +95,16 @@ export function NewsCard({ item }: NewsCardProps) {
   }
   const llmSummary = llmBits.length > 0 ? llmBits.join(" | ") : null;
   const showFooter = Boolean(item.source || item.url || item.id || llmSummary);
+  const summaryText = item.summary?.trim();
+  const trimmedSummary =
+    summaryText && summaryText.length > 300
+      ? `${summaryText.slice(0, 300)}…`
+      : summaryText;
 
   return (
     <Card
       hoverable
+      className="glass-card"
       cover={
         item.thumbnail ? (
           <img
@@ -100,9 +115,16 @@ export function NewsCard({ item }: NewsCardProps) {
         ) : null
       }
       style={{ height: "100%", display: "flex", flexDirection: "column" }}
-      styles={{ body: { flex: 1, display: "flex", flexDirection: "column" } }}
+      styles={{
+        body: {
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          padding: "20px"
+        }
+      }}
     >
-      <Space direction="vertical" size="small" style={{ width: "100%", flex: 1 }}>
+      <Space direction="vertical" size="middle" style={{ width: "100%", flex: 1 }}>
         <Space wrap>
           {item.sentiment ? (
             <Tag color={sentimentColor(item.sentiment)}>
@@ -115,37 +137,56 @@ export function NewsCard({ item }: NewsCardProps) {
               {duplicateLabel} {duplicateScore}%
             </Tag>
           ) : null}
-          {topicTags.map((tag) => (
-            <Tag key={tag}>{tag}</Tag>
-          ))}
-          {entityTags.map((tag) => (
-            <Tag key={`entity-${tag}`} color="purple">
-              {tag}
+          {displayTags.map((tag) => (
+            <Tag key={`${tag.color}-${tag.label}`} color={tag.color} className="text-xs">
+              {tag.label}
             </Tag>
           ))}
+          {extraTagCount > 0 ? (
+            <Tag className="text-xs">+{extraTagCount}</Tag>
+          ) : null}
         </Space>
         <Space direction="vertical" size={0}>
           {hasPublished ? (
             <Text type="secondary" style={{ fontSize: "12px" }}>
-              {publishedLabel}: {formatDateTime(displayPublished, locale, { dateStyle: "medium" })}
+              {publishedLabel}:{" "}
+              {formatDateTime(displayPublished, locale, {
+                dateStyle: "medium",
+                timeStyle: "short",
+                timeZoneName: "short"
+              })}
             </Text>
           ) : (
             <Text type="secondary" style={{ fontSize: "12px" }}>
-              {ingestedLabel}: {formatDateTime(displayIngested, locale, { dateStyle: "medium" })}
+              {ingestedLabel}:{" "}
+              {formatDateTime(displayIngested, locale, {
+                dateStyle: "medium",
+                timeStyle: "short",
+                timeZoneName: "short"
+              })}
             </Text>
           )}
           {showIngested ? (
             <Text type="secondary" style={{ fontSize: "12px" }}>
-              {ingestedLabel}: {formatDateTime(displayIngested, locale, { dateStyle: "medium" })}
+              {ingestedLabel}:{" "}
+              {formatDateTime(displayIngested, locale, {
+                dateStyle: "medium",
+                timeStyle: "short",
+                timeZoneName: "short"
+              })}
             </Text>
           ) : null}
         </Space>
-        <Title level={5} ellipsis={{ rows: 2 }}>
+        <Title level={4} ellipsis={{ rows: 2 }}>
           {item.title}
         </Title>
-        {item.summary && (
-          <Paragraph ellipsis={{ rows: 2 }} type="secondary">
-            {item.summary}
+        {trimmedSummary && (
+          <Paragraph
+            ellipsis={{ rows: 3 }}
+            type="secondary"
+            style={{ lineHeight: 1.75, marginBottom: 0 }}
+          >
+            {trimmedSummary}
           </Paragraph>
         )}
       </Space>

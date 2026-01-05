@@ -21,6 +21,53 @@ const severityColor: Record<string, string> = {
   high: "red",
 };
 
+const buildThresholdSummary = (
+  operator: string | null | undefined,
+  thresholdValue: number | undefined,
+  lower: number | undefined,
+  upper: number | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string
+) => {
+  if (!operator) {
+    return t("common.notAvailable");
+  }
+  const operatorSymbolMap: Record<string, string> = {
+    gt: ">",
+    gte: ">=",
+    lt: "<",
+    lte: "<=",
+    eq: "="
+  };
+  if (operator === "outside_range" || operator === "within_range") {
+    if (lower === undefined || upper === undefined) {
+      return t("common.notAvailable");
+    }
+    const range = `${lower} - ${upper}`;
+    return t(
+      operator === "outside_range"
+        ? "alerts.center.threshold.outside"
+        : "alerts.center.threshold.within",
+      { defaultValue: `${operator === "outside_range" ? "Outside" : "Within"} ${range}`, range }
+    );
+  }
+  if (operator === "change_up_pct" || operator === "change_down_pct") {
+    if (thresholdValue === undefined) {
+      return t("common.notAvailable");
+    }
+    const symbol = operator === "change_up_pct" ? ">=" : "<=";
+    return t("alerts.center.threshold.changePct", {
+      defaultValue: `Change ${symbol} ${thresholdValue}%`,
+      symbol,
+      value: thresholdValue
+    });
+  }
+  if (thresholdValue === undefined) {
+    return t("common.notAvailable");
+  }
+  const symbol = operatorSymbolMap[operator] ?? operator;
+  return `${symbol} ${thresholdValue}`;
+};
+
 export function AlertPanel() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -90,6 +137,18 @@ export function AlertPanel() {
                       })}
                     </Typography.Text>
                     <Typography.Text type="secondary">
+                      {t("alerts.rules.threshold", {
+                        defaultValue: "Threshold {{threshold}}",
+                        threshold: buildThresholdSummary(
+                          rule.operator,
+                          rule.thresholdValue ?? undefined,
+                          rule.thresholdLower ?? undefined,
+                          rule.thresholdUpper ?? undefined,
+                          t
+                        )
+                      })}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
                       {t("alerts.rules.channels", {
                         channels:
                           rule.channels.map((c) => c.name).join(", ") ||
@@ -128,7 +187,8 @@ export function AlertPanel() {
                         month: "2-digit",
                         day: "2-digit",
                         hour: "2-digit",
-                        minute: "2-digit"
+                        minute: "2-digit",
+                        timeZoneName: "short"
                       })}
                     </Typography.Text>
                     <Tag color={severityColor[event.severity] ?? "blue"}>
@@ -142,6 +202,19 @@ export function AlertPanel() {
                       {t("alerts.events.metrics", {
                         value: event.metricValue,
                         change: event.changePercent ?? t("common.notAvailable")
+                      })}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      {t("alerts.events.evidence", {
+                        defaultValue: "Metric {{metric}} · Threshold {{threshold}}",
+                        metric: event.metricSlug ?? t("common.notAvailable"),
+                        threshold: buildThresholdSummary(
+                          event.operator,
+                          event.thresholdValue ?? undefined,
+                          event.thresholdLower ?? undefined,
+                          event.thresholdUpper ?? undefined,
+                          t
+                        )
                       })}
                     </Typography.Text>
                     <Typography.Text type="secondary">

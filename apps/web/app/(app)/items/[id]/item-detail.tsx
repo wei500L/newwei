@@ -1,12 +1,13 @@
 'use client';
 
-import { Card, Col, Collapse, Descriptions, Empty, List, Row, Skeleton, Space, Tag, Typography } from 'antd';
+import { Card, Col, Collapse, Descriptions, List, Row, Skeleton, Space, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useItemQuery } from '@/graphql/generated';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
+import { ChartEmptyState } from '@/components/chart-empty-state';
 
 interface ItemDetailProps {
   itemId: string;
@@ -67,6 +68,16 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const { data, loading, error } = useItemQuery({
     variables: { id: itemId }
   });
+  const [showDelayHint, setShowDelayHint] = useState(false);
+
+  useEffect(() => {
+    if (!loading) {
+      setShowDelayHint(false);
+      return;
+    }
+    const timeout = setTimeout(() => setShowDelayHint(true), 1200);
+    return () => clearTimeout(timeout);
+  }, [loading]);
 
   const item = data?.item ?? null;
   const processedResult = useMemo(
@@ -99,6 +110,19 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const originalUrl = toString(rawPayload?.url);
   const cleanedMarkdown = toString(processedResult?.cleaned_markdown);
   const hasSummaryContent = Boolean(summary) || keyPoints.length > 0;
+  const summaryText = summary?.trim();
+  const trimmedSummary =
+    summaryText && summaryText.length > 300
+      ? `${summaryText.slice(0, 300)}…`
+      : summaryText;
+  const keyPointsDisplay = keyPoints.slice(0, 8);
+  const extraKeyPoints = Math.max(keyPoints.length - keyPointsDisplay.length, 0);
+  const topicsDisplay = topics.slice(0, 5);
+  const entitiesDisplay = entities.slice(0, 5);
+  const tagsDisplay = tags.slice(0, 5);
+  const extraTopics = Math.max(topics.length - topicsDisplay.length, 0);
+  const extraEntities = Math.max(entities.length - entitiesDisplay.length, 0);
+  const extraTags = Math.max(tags.length - tagsDisplay.length, 0);
   const duplicateScoreLabel =
     typeof duplicateSimilarity === 'number'
       ? `${Math.round(duplicateSimilarity * 100)}%`
@@ -123,14 +147,25 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZoneName: 'short'
       })
     : t('common.notAvailable');
 
   if (loading && !item) {
     return (
       <Card className="content-card">
-        <Skeleton active paragraph={{ rows: 8 }} />
+        <Space direction="vertical" size="large">
+          <Skeleton active paragraph={{ rows: 8 }} />
+          {showDelayHint ? (
+            <ChartEmptyState
+              className="h-auto"
+              description={t('common.loadingDelayed', {
+                defaultValue: 'Data is taking longer than usual. Please hold on or refresh.'
+              })}
+            />
+          ) : null}
+        </Space>
       </Card>
     );
   }
@@ -141,9 +176,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
 
   if (!item) {
     return (
-      <Empty
+      <ChartEmptyState
+        className="h-auto py-12"
         description={t('items.detail.empty', { defaultValue: 'Item not found.' })}
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
       />
     );
   }
@@ -197,7 +232,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             <Tag color="purple">{t('items.detail.fields.quality', { defaultValue: 'Quality' })}: {Math.round(qualityScore * 100)}%</Tag>
           ) : null}
         </Space>
-        <Typography.Text type="secondary">
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {t('items.detail.fields.publishedAt', { defaultValue: 'Published at' })}: {formattedPublishedAt}
         </Typography.Text>
         {originalUrl ? (
@@ -210,25 +245,37 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       <Card className="content-card" title={t('items.detail.summaryTitle', { defaultValue: 'Summary' })}>
         {hasSummaryContent ? (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            {summary ? <Typography.Paragraph>{summary}</Typography.Paragraph> : (
+            {trimmedSummary ? (
+              <Typography.Paragraph style={{ lineHeight: 1.8, marginBottom: 0 }}>
+                {trimmedSummary}
+              </Typography.Paragraph>
+            ) : (
               <Typography.Text type="secondary">
                 {t('items.detail.summaryEmpty', { defaultValue: 'No summary available.' })}
               </Typography.Text>
             )}
-            {keyPoints.length > 0 ? (
+            {keyPointsDisplay.length > 0 ? (
               <div>
                 <Typography.Text strong>
                   {t('items.detail.keyPointsTitle', { defaultValue: 'Key points' })}
                 </Typography.Text>
                 <List
                   size="small"
-                  dataSource={keyPoints}
+                  dataSource={keyPointsDisplay}
                   renderItem={(point) => (
                     <List.Item>
                       <Typography.Text type="secondary">{point}</Typography.Text>
                     </List.Item>
                   )}
                 />
+                {extraKeyPoints > 0 ? (
+                  <Typography.Text type="secondary">
+                    {t('items.detail.keyPointsMore', {
+                      defaultValue: '+{{count}} more',
+                      count: extraKeyPoints
+                    })}
+                  </Typography.Text>
+                ) : null}
               </div>
             ) : (
               <Typography.Text type="secondary">
@@ -237,9 +284,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             )}
           </Space>
         ) : (
-          <Empty
+          <ChartEmptyState
+            className="h-auto py-6"
             description={t('items.detail.summaryEmpty', { defaultValue: 'No summary available.' })}
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         )}
       </Card>
@@ -247,7 +294,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card className="content-card" title={t('items.detail.metaTitle', { defaultValue: 'Metadata' })}>
-            <Descriptions bordered column={1} size="small">
+            <Descriptions column={1} size="small">
               <Descriptions.Item label={t('items.detail.fields.itemId', { defaultValue: 'Item ID' })}>
                 {item.id}
               </Descriptions.Item>
@@ -300,7 +347,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                   month: '2-digit',
                   day: '2-digit',
                   hour: '2-digit',
-                  minute: '2-digit'
+                  minute: '2-digit',
+                  timeZoneName: 'short'
                 })}
               </Descriptions.Item>
               <Descriptions.Item label={t('items.detail.fields.updatedAt', { defaultValue: 'Updated at' })}>
@@ -309,7 +357,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                   month: '2-digit',
                   day: '2-digit',
                   hour: '2-digit',
-                  minute: '2-digit'
+                  minute: '2-digit',
+                  timeZoneName: 'short'
                 })}
               </Descriptions.Item>
               <Descriptions.Item label={t('items.detail.fields.publishedAt', { defaultValue: 'Published at' })}>
@@ -339,35 +388,38 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         <Col xs={24} lg={12}>
           <Card className="content-card" title={t('items.detail.contextTitle', { defaultValue: 'Context' })}>
             {topics.length === 0 && entities.length === 0 && tags.length === 0 ? (
-              <Empty
+              <ChartEmptyState
+                className="h-auto py-6"
                 description={t('items.detail.contextEmpty', { defaultValue: 'No tags or entities.' })}
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
               />
             ) : (
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                {topics.length > 0 ? (
+                {topicsDisplay.length > 0 ? (
                   <Space wrap size={[6, 6]}>
-                    {topics.map((topic) => (
+                    {topicsDisplay.map((topic) => (
                       <Tag key={`topic-${topic}`} color="blue">
                         {topic}
                       </Tag>
                     ))}
+                    {extraTopics > 0 ? <Tag>+{extraTopics}</Tag> : null}
                   </Space>
                 ) : null}
-                {entities.length > 0 ? (
+                {entitiesDisplay.length > 0 ? (
                   <Space wrap size={[6, 6]}>
-                    {entities.map((entity) => (
+                    {entitiesDisplay.map((entity) => (
                       <Tag key={`entity-${entity}`} color="purple">
                         {entity}
                       </Tag>
                     ))}
+                    {extraEntities > 0 ? <Tag>+{extraEntities}</Tag> : null}
                   </Space>
                 ) : null}
-                {tags.length > 0 ? (
+                {tagsDisplay.length > 0 ? (
                   <Space wrap size={[6, 6]}>
-                    {tags.map((tag) => (
+                    {tagsDisplay.map((tag) => (
                       <Tag key={`tag-${tag}`}>{tag}</Tag>
                     ))}
+                    {extraTags > 0 ? <Tag>+{extraTags}</Tag> : null}
                   </Space>
                 ) : null}
               </Space>
@@ -376,13 +428,13 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         </Col>
       </Row>
 
-      <Card className="content-card" title={t('items.detail.payloadTitle', { defaultValue: 'Payload' })}>
+      <Card className="content-card" title={t('items.detail.payloadTitle', { defaultValue: 'Full text & JSON' })}>
         {payloadPanels.length > 0 ? (
-          <Collapse items={payloadPanels} />
+          <Collapse items={payloadPanels} ghost />
         ) : (
-          <Empty
+          <ChartEmptyState
+            className="h-auto py-6"
             description={t('items.detail.payloadEmpty', { defaultValue: 'No payload available.' })}
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         )}
       </Card>
