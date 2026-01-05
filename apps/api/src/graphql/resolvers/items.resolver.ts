@@ -16,12 +16,25 @@ import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { ItemsService } from "../../modules/items/items.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { ItemsQueryArgs, CreateItemInput, UpdateItemInput } from "../dto/item.input";
+import {
+  ItemsQueryArgs,
+  CreateItemInput,
+  UpdateItemInput,
+  ItemsFacetsArgs
+} from "../dto/item.input";
 import type { GqlRequest } from "../graphql.types";
 import { ItemMetaLoader } from "../loaders/item-meta.loader";
 import { ProcessedItemLoader } from "../loaders/processed-item.loader";
 import { RawItemLoader } from "../loaders/raw-item.loader";
-import { ItemModel, ItemConnection, ItemEdge, ItemMetaModel, RawItemModelGraph, ProcessedItemModelGraph } from "../models/item.model";
+import {
+  ItemModel,
+  ItemConnection,
+  ItemEdge,
+  ItemMetaModel,
+  RawItemModelGraph,
+  ProcessedItemModelGraph,
+  ItemFacets
+} from "../models/item.model";
 import { PageInfo } from "../models/page-info.model";
 
 function encodeCursor(value: string) {
@@ -53,7 +66,8 @@ export class ItemsResolver {
       requester.orgId,
       args.first,
       cursorId,
-      args.search
+      args.search,
+      args.filters
     );
 
     const edges: ItemEdge[] = items.map((item) => ({
@@ -71,6 +85,20 @@ export class ItemsResolver {
       pageInfo,
       totalCount
     };
+  }
+
+  @HasPermission("items.read")
+  @Query(() => ItemFacets)
+  async itemFacets(
+    @Context("req") req: GqlRequest,
+    @Args() args: ItemsFacetsArgs
+  ): Promise<ItemFacets> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+
+    return this.itemsService.getFacets(requester.orgId, args.search, args.filters);
   }
 
   @HasPermission("items.read")

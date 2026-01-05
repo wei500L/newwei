@@ -27,11 +27,30 @@ const MAX_EVENT_ITEMS = 8;
 const DEFAULT_EVENT_WINDOW_DAYS = 30;
 const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ITEMS_FILTERS_SEARCH_PREFIX = "__items_filters__:";
+const MAX_FACET_OPTIONS = 50;
 
 type SearchStrategy =
   | { type: "none" }
   | { type: "fulltext"; query: string }
   | { type: "prefix"; term: string };
+
+interface ItemDateRangeFilter {
+  start?: Date;
+  end?: Date;
+}
+
+interface ItemFilters {
+  regions?: string[];
+  topics?: string[];
+  sentiments?: string[];
+  dateRange?: ItemDateRangeFilter;
+}
+
+interface ParsedSearchPayload {
+  search?: string;
+  filters?: ItemFilters;
+}
 
 interface TopicGroupItem {
   processedId: string;
@@ -133,12 +152,22 @@ export class ItemsService {
     };
   }
 
-  async list(orgId: string, page = 1, pageSize = 10, search?: string) {
+  async list(orgId: string, page = 1, pageSize = 10, search?: string, filters?: ItemFilters) {
     const take = Math.max(pageSize, 1);
     const skip = (page - 1) * take;
-    const normalizedSearch = search?.trim();
+    const { search: normalizedSearch, filters: legacyFilters } = this.parseSearchPayload(search);
+    const effectiveFilters = filters ?? legacyFilters;
+    const scopedIds = await this.resolveScopedIds(orgId, normalizedSearch, effectiveFilters);
+    if (scopedIds && scopedIds.length === 0) {
+      return {
+        items: [],
+        total: 0,
+        page,
+        pageSize: take
+      };
+    }
 
-    if (!normalizedSearch) {
+    if (!normalizedSearch && !scopedIds) {
       const baseWhere = this.buildBaseWhere(orgId);
       const [items, total] = await Promise.all([
         this.prisma.itemMeta.findMany({
@@ -158,18 +187,8 @@ export class ItemsService {
       };
     }
 
-    const searchIds = await this.resolveSearchIds(orgId, normalizedSearch);
-    if (searchIds.length === 0) {
-      return {
-        items: [],
-        total: 0,
-        page,
-        pageSize: take
-      };
-    }
-
     const baseWhere = this.buildBaseWhere(orgId);
-    const where = { ...baseWhere, id: { in: searchIds } };
+    const where = scopedIds ? { ...baseWhere, id: { in: scopedIds } } : baseWhere;
 
     const items = await this.prisma.itemMeta.findMany({
       where,
@@ -180,17 +199,32 @@ export class ItemsService {
 
     return {
       items,
-      total: searchIds.length,
+      total: scopedIds?.length ?? 0,
       page,
       pageSize: take
     };
   }
 
-  async listWithCursor(orgId: string, first = 10, cursorId?: string, search?: string) {
+  async listWithCursor(
+    orgId: string,
+    first = 10,
+    cursorId?: string,
+    search?: string,
+    filters?: ItemFilters
+  ) {
     const take = Math.min(Math.max(first, 1), MAX_CURSOR_PAGE_SIZE);
-    const normalizedSearch = search?.trim();
+    const { search: normalizedSearch, filters: legacyFilters } = this.parseSearchPayload(search);
+    const effectiveFilters = filters ?? legacyFilters;
+    const scopedIds = await this.resolveScopedIds(orgId, normalizedSearch, effectiveFilters);
+    if (scopedIds && scopedIds.length === 0) {
+      return {
+        items: [],
+        hasNextPage: false,
+        totalCount: 0
+      };
+    }
 
-    if (!normalizedSearch) {
+    if (!normalizedSearch && !scopedIds) {
       const baseWhere = this.buildBaseWhere(orgId);
       const items = await this.prisma.itemMeta.findMany({
         where: baseWhere,
@@ -214,17 +248,19 @@ export class ItemsService {
       };
     }
 
-    const searchIds = await this.resolveSearchIds(orgId, normalizedSearch);
-    if (searchIds.length === 0 || (cursorId && !searchIds.includes(cursorId))) {
-      return {
-        items: [],
-        hasNextPage: false,
-        totalCount: searchIds.length
-      };
+    if (scopedIds) {
+      const scopedSet = new Set(scopedIds);
+      if (cursorId && !scopedSet.has(cursorId)) {
+        return {
+          items: [],
+          hasNextPage: false,
+          totalCount: scopedIds.length
+        };
+      }
     }
 
     const baseWhere = this.buildBaseWhere(orgId);
-    const where = { ...baseWhere, id: { in: searchIds } };
+    const where = scopedIds ? { ...baseWhere, id: { in: scopedIds } } : baseWhere;
     const items = await this.prisma.itemMeta.findMany({
       where,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -242,7 +278,114 @@ export class ItemsService {
     return {
       items: items.slice(0, take),
       hasNextPage,
-      totalCount: searchIds.length
+      totalCount: scopedIds?.length ?? 0
+    };
+  }
+
+  async getFacets(orgId: string, search?: string, filters?: ItemFilters) {
+    const { search: normalizedSearch, filters: legacyFilters } = this.parseSearchPayload(search);
+    const effectiveFilters = filters ?? legacyFilters;
+    const scopedIds = await this.resolveScopedIds(orgId, normalizedSearch, effectiveFilters);
+    if (scopedIds && scopedIds.length === 0) {
+      return { regions: [], topics: [], sentiments: [] };
+    }
+
+    const match: Record<string, unknown> = {
+      orgId,
+      status: "completed",
+      ...(scopedIds ? { itemMetaId: { $in: scopedIds } } : {})
+    };
+
+    const records = await ProcessedItemModel.find(
+      match,
+      {
+        tags: 1,
+        result: 1
+      }
+    )
+      .sort({ createdAt: -1 })
+      .limit(MAX_SEARCH_MATCHES)
+      .lean();
+
+    const regionCounts = new Map<string, number>();
+    const topicCounts = new Map<string, number>();
+    const sentimentCounts = new Map<string, number>();
+    const allowedSentiments = new Set(["positive", "neutral", "negative"]);
+
+    for (const record of records) {
+      const result = record.result as
+        | {
+            location?: string | null;
+            region?: string | null;
+            topics?: string[] | null;
+            entities?: Array<{ name?: string | null } | string> | null;
+            sentiment?: string | null;
+            sentiment_label?: string | null;
+          }
+        | undefined;
+
+      const regionValue = result?.location ?? result?.region ?? null;
+      if (regionValue) {
+        this.incrementFacetCount(regionCounts, regionValue);
+      }
+
+      const topicSet = new Set<string>();
+      if (Array.isArray(result?.topics)) {
+        result.topics.forEach((topic) => {
+          if (typeof topic === "string" && topic.trim()) {
+            topicSet.add(topic.trim());
+          }
+        });
+      }
+      if (Array.isArray(record.tags)) {
+        record.tags.forEach((tag) => {
+          if (typeof tag === "string" && tag.trim()) {
+            topicSet.add(tag.trim());
+          }
+        });
+      }
+      if (Array.isArray(result?.entities)) {
+        result.entities.forEach((entity) => {
+          if (typeof entity === "string" && entity.trim()) {
+            topicSet.add(entity.trim());
+            return;
+          }
+          if (entity && typeof entity.name === "string" && entity.name.trim()) {
+            topicSet.add(entity.name.trim());
+          }
+        });
+      }
+      topicSet.forEach((topic) => this.incrementFacetCount(topicCounts, topic));
+
+      const sentimentSet = new Set<string>();
+      if (typeof result?.sentiment === "string" && result.sentiment.trim()) {
+        sentimentSet.add(result.sentiment.trim().toLowerCase());
+      }
+      if (typeof result?.sentiment_label === "string" && result.sentiment_label.trim()) {
+        sentimentSet.add(result.sentiment_label.trim().toLowerCase());
+      }
+      if (Array.isArray(record.tags)) {
+        record.tags.forEach((tag) => {
+          if (typeof tag !== "string") {
+            return;
+          }
+          const normalized = tag.trim().toLowerCase();
+          if (allowedSentiments.has(normalized)) {
+            sentimentSet.add(normalized);
+          }
+        });
+      }
+      sentimentSet.forEach((sentiment) => {
+        if (allowedSentiments.has(sentiment)) {
+          this.incrementFacetCount(sentimentCounts, sentiment);
+        }
+      });
+    }
+
+    return {
+      regions: this.buildFacetOptions(regionCounts),
+      topics: this.buildFacetOptions(topicCounts),
+      sentiments: this.buildFacetOptions(sentimentCounts)
     };
   }
 
@@ -660,6 +803,137 @@ export class ItemsService {
     });
   }
 
+  private parseSearchPayload(search?: string): ParsedSearchPayload {
+    const normalized = search?.trim();
+    if (!normalized) {
+      return {};
+    }
+    if (!normalized.startsWith(ITEMS_FILTERS_SEARCH_PREFIX)) {
+      return { search: normalized };
+    }
+    const payload = normalized.slice(ITEMS_FILTERS_SEARCH_PREFIX.length);
+    if (!payload) {
+      return {};
+    }
+    try {
+      const decoded = decodeURIComponent(payload);
+      const parsed = JSON.parse(decoded) as { q?: unknown; filters?: unknown };
+      const searchValue = typeof parsed.q === "string" ? parsed.q.trim() : undefined;
+      return {
+        search: searchValue || undefined,
+        filters: this.normalizeFilters(parsed.filters)
+      };
+    } catch {
+      return { search: normalized };
+    }
+  }
+
+  private normalizeFilters(raw: unknown): ItemFilters | undefined {
+    if (!raw || typeof raw !== "object") {
+      return undefined;
+    }
+    const input = raw as Record<string, unknown>;
+    const regions = this.normalizeFilterList(input.regions);
+    const topics = this.normalizeFilterList(input.topics);
+    const sentiments = this.normalizeFilterList(input.sentiments, { lowerCase: true });
+    const dateRange = this.normalizeDateRange(input.dateRange);
+    if (!regions && !topics && !sentiments && !dateRange) {
+      return undefined;
+    }
+    return {
+      regions,
+      topics,
+      sentiments,
+      dateRange
+    };
+  }
+
+  private normalizeFilterList(
+    value: unknown,
+    options?: { lowerCase?: boolean }
+  ): string[] | undefined {
+    const values = Array.isArray(value) ? value : [];
+    const normalized = values
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0)
+      .map((entry) => (options?.lowerCase ? entry.toLowerCase() : entry));
+    if (normalized.length === 0) {
+      return undefined;
+    }
+    return Array.from(new Set(normalized));
+  }
+
+  private normalizeDateRange(raw: unknown): ItemDateRangeFilter | undefined {
+    if (!raw || typeof raw !== "object") {
+      return undefined;
+    }
+    const input = raw as Record<string, unknown>;
+    const start = this.parseDateValue(input.start);
+    const end = this.parseDateValue(input.end);
+    if (!start && !end) {
+      return undefined;
+    }
+    return { start, end };
+  }
+
+  private parseDateValue(value: unknown): Date | undefined {
+    if (value instanceof Date && Number.isFinite(value.valueOf())) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const parsed = new Date(value);
+      if (Number.isFinite(parsed.valueOf())) {
+        return parsed;
+      }
+    }
+    return undefined;
+  }
+
+  private hasActiveFilters(filters?: ItemFilters): boolean {
+    if (!filters) {
+      return false;
+    }
+    return Boolean(
+      (filters.regions && filters.regions.length > 0) ||
+        (filters.topics && filters.topics.length > 0) ||
+        (filters.sentiments && filters.sentiments.length > 0) ||
+        filters.dateRange?.start ||
+        filters.dateRange?.end
+    );
+  }
+
+  private combineSearchAndFilterIds(
+    searchIds?: string[],
+    filterIds?: string[]
+  ): string[] | null {
+    if (searchIds && filterIds) {
+      const filterSet = new Set(filterIds);
+      const intersection = searchIds.filter((id) => filterSet.has(id));
+      return Array.from(new Set(intersection));
+    }
+    if (searchIds) {
+      return Array.from(new Set(searchIds));
+    }
+    if (filterIds) {
+      return Array.from(new Set(filterIds));
+    }
+    return null;
+  }
+
+  private async resolveScopedIds(orgId: string, search?: string, filters?: ItemFilters) {
+    const normalizedSearch = search?.trim();
+    const normalizedFilters = filters ? this.normalizeFilters(filters) ?? filters : undefined;
+    const hasFilters = this.hasActiveFilters(normalizedFilters);
+    if (!normalizedSearch && !hasFilters) {
+      return null;
+    }
+    const [searchIds, filterIds] = await Promise.all([
+      normalizedSearch ? this.resolveSearchIds(orgId, normalizedSearch) : undefined,
+      hasFilters && normalizedFilters ? this.resolveFilterIds(orgId, normalizedFilters) : undefined
+    ]);
+    return this.combineSearchAndFilterIds(searchIds, filterIds);
+  }
+
   private resolveSearchStrategy(search?: string): SearchStrategy {
     const normalized = search?.trim();
     if (!normalized) {
@@ -672,6 +946,26 @@ export class ItemsService {
     }
 
     return { type: "prefix", term: normalized };
+  }
+
+  private incrementFacetCount(target: Map<string, number>, value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+    target.set(trimmed, (target.get(trimmed) ?? 0) + 1);
+  }
+
+  private buildFacetOptions(target: Map<string, number>) {
+    return Array.from(target.entries())
+      .sort((a, b) => {
+        if (b[1] !== a[1]) {
+          return b[1] - a[1];
+        }
+        return a[0].localeCompare(b[0]);
+      })
+      .slice(0, MAX_FACET_OPTIONS)
+      .map(([value, count]) => ({ value, count }));
   }
 
   private buildFullTextQuery(search: string): string | null {
@@ -710,6 +1004,77 @@ export class ItemsService {
     metaIds.forEach((id) => combined.add(id));
     processedIds.forEach((id) => combined.add(id));
     return Array.from(combined);
+  }
+
+  private async resolveFilterIds(orgId: string, filters: ItemFilters) {
+    const matchFilters: Record<string, unknown>[] = [];
+    if (filters.regions?.length) {
+      matchFilters.push({
+        $or: [
+          { "result.location": { $in: filters.regions } },
+          { "result.region": { $in: filters.regions } }
+        ]
+      });
+    }
+    if (filters.topics?.length) {
+      matchFilters.push({
+        $or: [
+          { "result.topics": { $in: filters.topics } },
+          { tags: { $in: filters.topics } },
+          { "result.entities.name": { $in: filters.topics } }
+        ]
+      });
+    }
+    if (filters.sentiments?.length) {
+      const sentimentMatchers = filters.sentiments.map(
+        (value) => new RegExp(`^${this.escapeRegex(value)}$`, "i")
+      );
+      matchFilters.push({
+        $or: [
+          { "result.sentiment": { $in: sentimentMatchers } },
+          { "result.sentiment_label": { $in: sentimentMatchers } },
+          { tags: { $in: sentimentMatchers } }
+        ]
+      });
+    }
+
+    const match: Record<string, unknown> = {
+      orgId,
+      status: "completed",
+      ...(matchFilters.length ? { $and: matchFilters } : {})
+    };
+
+    const pipeline: Record<string, unknown>[] = [{ $match: match }];
+    if (filters.dateRange?.start || filters.dateRange?.end) {
+      pipeline.push({
+        $addFields: {
+          publishedAt: {
+            $dateFromString: {
+              dateString: { $ifNull: ["$result.published_at", null] },
+              onError: "$createdAt",
+              onNull: "$createdAt"
+            }
+          }
+        }
+      });
+      const dateMatch: Record<string, Date> = {};
+      if (filters.dateRange.start) {
+        dateMatch.$gte = filters.dateRange.start;
+      }
+      if (filters.dateRange.end) {
+        dateMatch.$lte = filters.dateRange.end;
+      }
+      pipeline.push({ $match: { publishedAt: dateMatch } });
+    }
+
+    pipeline.push(
+      { $sort: { createdAt: -1 } },
+      { $limit: MAX_SEARCH_MATCHES },
+      { $project: { itemMetaId: 1 } }
+    );
+
+    const records = await ProcessedItemModel.aggregate<{ itemMetaId: string }>(pipeline);
+    return records.map((record) => record.itemMetaId).filter(Boolean);
   }
 
   private async resolveMetaSearchIds(orgId: string, strategy: SearchStrategy) {

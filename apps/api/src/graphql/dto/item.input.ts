@@ -1,5 +1,15 @@
-import { ArgsType, Field, InputType, Int } from "@nestjs/graphql";
-import { IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, MinLength } from "class-validator";
+import { ArgsType, Field, GraphQLISODateTime, InputType, Int } from "@nestjs/graphql";
+import {
+  IsArray,
+  IsDate,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength
+} from "class-validator";
 
 @InputType()
 export class CreateItemInput {
@@ -47,6 +57,44 @@ export class UpdateItemInput {
   payload?: string;
 }
 
+@InputType()
+export class ItemsDateRangeInput {
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  @IsOptional()
+  @IsDate()
+  start?: Date;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  @IsOptional()
+  @IsDate()
+  end?: Date;
+}
+
+@InputType()
+export class ItemsFiltersInput {
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  regions?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  topics?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  sentiments?: string[];
+
+  @Field(() => ItemsDateRangeInput, { nullable: true })
+  @IsOptional()
+  dateRange?: ItemsDateRangeInput;
+}
+
 @ArgsType()
 export class ItemsQueryArgs {
   @Field(() => Int, { defaultValue: 10 })
@@ -63,4 +111,20 @@ export class ItemsQueryArgs {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @Field(() => ItemsFiltersInput, { nullable: true })
+  @IsOptional()
+  filters?: ItemsFiltersInput;
+}
+
+@ArgsType()
+export class ItemsFacetsArgs {
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @Field(() => ItemsFiltersInput, { nullable: true })
+  @IsOptional()
+  filters?: ItemsFiltersInput;
 }

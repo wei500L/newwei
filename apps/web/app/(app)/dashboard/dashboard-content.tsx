@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import dynamic from "next/dynamic";
 
 import {
   AlertSeverity,
@@ -53,10 +54,6 @@ import {
 } from "@/store/dashboard-filters";
 
 import { AlertConfigForm } from "./alert-config-form";
-import { AlertPanel } from "./alert-panel";
-import { AnalysisPanel } from "./analysis-panel";
-import { BreakingNewsStream } from "./components/breaking-news-stream";
-import { GlobalSentimentTrend } from "./components/global-sentiment-trend";
 import { MarketPulse } from "./components/market-pulse";
 import { DashboardEditor } from "./dashboard-editor";
 import { DrilldownChart } from "./drilldown-chart";
@@ -67,9 +64,46 @@ import { QueueChart } from "./queue-chart";
 import { useQueueEvents } from "./use-queue-events";
 import { useDashboardStream, type DashboardStreamStatus } from "./use-dashboard-stream";
 import { useDashboardUrlSync } from "./use-dashboard-url-sync";
-import { SectorHeatmap } from "./charts/sector-heatmap";
-import { WarMap } from "./charts/war-map";
-import { FinancialCandlestick } from "./charts/financial-candlestick";
+
+const AlertPanel = dynamic(() => import("./alert-panel").then((mod) => mod.AlertPanel), {
+  loading: () => <Skeleton active paragraph={{ rows: 4 }} />
+});
+
+const AnalysisPanel = dynamic(() => import("./analysis-panel").then((mod) => mod.AnalysisPanel), {
+  loading: () => <Skeleton active paragraph={{ rows: 4 }} />
+});
+
+const BreakingNewsStream = dynamic(
+  () => import("./components/breaking-news-stream").then((mod) => mod.BreakingNewsStream),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+  }
+);
+
+const GlobalSentimentTrend = dynamic(
+  () => import("./components/global-sentiment-trend").then((mod) => mod.GlobalSentimentTrend),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 4 }} />
+  }
+);
+
+const SectorHeatmap = dynamic(
+  () => import("./charts/sector-heatmap").then((mod) => mod.SectorHeatmap),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+  }
+);
+
+const WarMap = dynamic(() => import("./charts/war-map").then((mod) => mod.WarMap), {
+  loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+});
+
+const FinancialCandlestick = dynamic(
+  () => import("./charts/financial-candlestick").then((mod) => mod.FinancialCandlestick),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+  }
+);
 
 interface QueueLog {
   event: string;

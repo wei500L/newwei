@@ -3,6 +3,7 @@
 import { SearchOutlined } from "@ant-design/icons";
 import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import { gql, useQuery } from "@apollo/client";
 import dayjs from "@/lib/dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -10,7 +11,6 @@ import { useTranslation } from "react-i18next";
 import { useSession } from "next-auth/react";
 
 import type { ItemsQuery } from "@/graphql/generated";
-import { useItemsQuery } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 
@@ -30,6 +30,145 @@ function parsePositiveInt(value: string | null, fallback: number) {
   return parsed;
 }
 
+function normalizeFilterList(
+  values?: string[],
+  options?: { lowerCase?: boolean }
+): string[] | undefined {
+  if (!values) {
+    return undefined;
+  }
+  const normalized = values
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .map((value) => (options?.lowerCase ? value.toLowerCase() : value));
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  return Array.from(new Set(normalized));
+}
+
+interface ItemsDateRangeInput {
+  start?: string;
+  end?: string;
+}
+
+interface ItemsFiltersInput {
+  regions?: string[];
+  topics?: string[];
+  sentiments?: string[];
+  dateRange?: ItemsDateRangeInput;
+}
+
+interface ItemsQueryVariables {
+  first: number;
+  after?: string | null;
+  search?: string | null;
+  filters?: ItemsFiltersInput | null;
+}
+
+interface ItemFacetOption {
+  value: string;
+  count: number;
+}
+
+interface ItemFacetsQuery {
+  itemFacets: {
+    regions: ItemFacetOption[];
+    topics: ItemFacetOption[];
+    sentiments: ItemFacetOption[];
+  };
+}
+
+interface ItemFacetsQueryVariables {
+  search?: string | null;
+  filters?: ItemsFiltersInput | null;
+}
+
+const ITEMS_QUERY = gql`
+  query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput) {
+    items(first: $first, after: $after, search: $search, filters: $filters) {
+      edges {
+        node {
+          id
+          title
+          status
+          createdAt
+          processed {
+            result
+            tags
+            duplicateOf
+            duplicateSimilarity
+            llm {
+              model
+              promptVersion
+              promptTokens
+              completionTokens
+              totalTokens
+              costUsd
+              latencyMs
+            }
+          }
+          raw {
+            payload
+            source
+          }
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      totalCount
+    }
+  }
+`;
+
+const ITEM_FACETS_QUERY = gql`
+  query ItemFacets($search: String, $filters: ItemsFiltersInput) {
+    itemFacets(search: $search, filters: $filters) {
+      regions {
+        value
+        count
+      }
+      topics {
+        value
+        count
+      }
+      sentiments {
+        value
+        count
+      }
+    }
+  }
+`;
+
+function buildFiltersInput(filters: FilterState): ItemsFiltersInput | null {
+  const regions = normalizeFilterList(filters.regions);
+  const topics = normalizeFilterList(filters.topics);
+  const sentiments = normalizeFilterList(filters.sentiments, { lowerCase: true });
+  const rangeStart = filters.dateRange?.[0]?.startOf("day");
+  const rangeEnd = filters.dateRange?.[1]?.endOf("day");
+  const dateRange =
+    rangeStart || rangeEnd
+      ? {
+          ...(rangeStart ? { start: rangeStart.toISOString() } : {}),
+          ...(rangeEnd ? { end: rangeEnd.toISOString() } : {})
+        }
+      : undefined;
+
+  if (!regions && !topics && !sentiments && !dateRange) {
+    return null;
+  }
+
+  return {
+    ...(regions ? { regions } : {}),
+    ...(topics ? { topics } : {}),
+    ...(sentiments ? { sentiments } : {}),
+    ...(dateRange ? { dateRange } : {})
+  };
+}
+
 type ItemEdge = ItemsQuery["items"]["edges"][number];
 
 const EMPTY_EDGES: ItemEdge[] = [];
@@ -41,6 +180,7 @@ interface ItemsViewProps {
   initialView?: ItemViewType;
   emptyStateVariant?: EmptyStateVariant;
   sortMode?: ItemsSortMode;
+  initialData?: ItemsQuery | null;
 }
 
 interface ParsedItem {
@@ -82,7 +222,8 @@ interface ParsedItem {
 export function ItemsView({
   initialView = "feed",
   emptyStateVariant = "default",
-  sortMode = "default"
+  sortMode = "default",
+  initialData = null
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -109,6 +250,8 @@ export function ItemsView({
   useEffect(() => {
     setSearchInput(urlSearch);
   }, [urlSearch]);
+
+  const filtersInput = useMemo(() => buildFiltersInput(filters), [filters]);
 
   const setQueryParams = useCallback(
     (updates: { q?: string | null; page?: number | null; pageSize?: number | null }) => {
@@ -146,13 +289,35 @@ export function ItemsView({
     [pathname, router, searchParams]
   );
 
-  const { data, loading, refetch, fetchMore } = useItemsQuery({
+  const handleFilterChange = useCallback(
+    (nextFilters: FilterState) => {
+      setFilters(nextFilters);
+      setQueryParams({ page: 1 });
+    },
+    [setQueryParams]
+  );
+
+  const {
+    data,
+    loading,
+    refetch,
+    fetchMore
+  } = useQuery<ItemsQuery, ItemsQueryVariables>(ITEMS_QUERY, {
     variables: {
       first: pageSize,
       after: null,
-      search: urlSearch || null
+      search: urlSearch || null,
+      filters: filtersInput
     },
     notifyOnNetworkStatusChange: true
+  });
+
+  const { data: facetsData } = useQuery<ItemFacetsQuery, ItemFacetsQueryVariables>(ITEM_FACETS_QUERY, {
+    variables: {
+      search: urlSearch || null,
+      filters: filtersInput
+    },
+    fetchPolicy: "cache-and-network"
   });
 
   useEffect(() => {
@@ -164,9 +329,11 @@ export function ItemsView({
     return () => clearTimeout(timeout);
   }, [loading]);
 
-  const edges = data?.items.edges ?? EMPTY_EDGES;
-  const totalCount = data?.items.totalCount ?? 0;
-  const needsMoreForPage = Boolean(data?.items.pageInfo.hasNextPage) && edges.length < current * pageSize;
+  const resolvedData = data ?? initialData ?? undefined;
+  const edges = resolvedData?.items.edges ?? EMPTY_EDGES;
+  const totalCount = resolvedData?.items.totalCount ?? 0;
+  const needsMoreForPage =
+    Boolean(resolvedData?.items.pageInfo.hasNextPage) && edges.length < current * pageSize;
 
   const ensurePageData = useCallback(
     async (targetPage: number, size: number) => {
@@ -183,7 +350,8 @@ export function ItemsView({
           variables: {
             first: size,
             after: currentItems.pageInfo.endCursor,
-            search: urlSearch || null
+            search: urlSearch || null,
+            filters: filtersInput
           },
           updateQuery: (prev, { fetchMoreResult }) => {
             if (!fetchMoreResult) {
@@ -203,7 +371,7 @@ export function ItemsView({
         currentItems = result.data.items;
       }
     },
-    [data?.items, fetchMore, urlSearch]
+    [data?.items, fetchMore, filtersInput, urlSearch]
   );
 
   useEffect(() => {
@@ -296,54 +464,31 @@ export function ItemsView({
     });
   }, [current, edges, pageSize]);
 
-  // Note: Filtering is currently performed client-side on the fetched page of data.
-  // The backend GraphQL API currently only supports a simple 'search' string.
-  // For production with large datasets, these filters should be implemented on the server.
-  const filteredData = useMemo(() => {
-    return pageData.filter(item => {
-      if (filters.regions?.length) {
-         const regionValue = item.region ?? item.location;
-         if (regionValue && !filters.regions.includes(regionValue)) return false;
-      }
-      if (filters.sentiments?.length) {
-         if (item.sentiment && !filters.sentiments.includes(item.sentiment.toLowerCase())) return false;
-      }
-      if (filters.topics?.length) {
-        const itemTopics = [
-          ...(item.topics ?? []),
-          ...(item.tags ?? []),
-          ...(item.entities ?? [])
-        ];
-        const matches = itemTopics.some(tag => filters.topics?.includes(tag));
-        if (!matches) return false;
-      }
-      if (filters.dateRange) {
-        const [start, end] = filters.dateRange;
-        const itemDate = dayjs(item.publishedAt ?? item.ingestedAt ?? item.createdAt);
-        if (start && itemDate.isBefore(start, 'day')) return false;
-        if (end && itemDate.isAfter(end, 'day')) return false;
-      }
-      return true;
-    });
-  }, [pageData, filters]);
-
   const availableRegions = useMemo(() => {
-    const regions = pageData
+    const regions = facetsData?.itemFacets?.regions;
+    if (regions && regions.length > 0) {
+      return regions.map((region) => region.value);
+    }
+    const fallback = pageData
       .map((item) => item.region ?? item.location)
       .filter((value): value is string => Boolean(value));
-    return Array.from(new Set(regions));
-  }, [pageData]);
+    return Array.from(new Set(fallback));
+  }, [facetsData, pageData]);
 
   const availableTopics = useMemo(() => {
-    const topics = pageData
+    const topics = facetsData?.itemFacets?.topics;
+    if (topics && topics.length > 0) {
+      return topics.map((topic) => topic.value);
+    }
+    const fallback = pageData
       .flatMap((item) => [
         ...(item.topics ?? []),
         ...(item.tags ?? []),
         ...(item.entities ?? [])
       ])
       .filter((value): value is string => Boolean(value));
-    return Array.from(new Set(topics));
-  }, [pageData]);
+    return Array.from(new Set(fallback));
+  }, [facetsData, pageData]);
 
   const emptyStateConfig = useMemo(() => {
     if (emptyStateVariant === "today") {
@@ -389,14 +534,14 @@ export function ItemsView({
 
   const sortedData = useMemo(() => {
     if (sortMode !== "publishedDesc") {
-      return filteredData;
+      return pageData;
     }
-    return [...filteredData].sort((a, b) => {
+    return [...pageData].sort((a, b) => {
       const aTime = dayjs(a.publishedAt ?? a.ingestedAt ?? a.createdAt).valueOf();
       const bTime = dayjs(b.publishedAt ?? b.ingestedAt ?? b.createdAt).valueOf();
       return bTime - aTime;
     });
-  }, [filteredData, sortMode]);
+  }, [pageData, sortMode]);
 
 
   const handleTableChange = (pager: TablePaginationConfig) => {
@@ -677,11 +822,11 @@ export function ItemsView({
              <Col flex="280px">
                 <FacetedSearch
                   filters={filters}
-                  onFilterChange={setFilters}
+                  onFilterChange={handleFilterChange}
                   regions={availableRegions}
                   topics={availableTopics}
                 />
-             </Col>
+              </Col>
            )}
            <Col flex="auto">
               {renderContent()}
@@ -698,7 +843,7 @@ export function ItemsView({
       >
          <FacetedSearch
            filters={filters}
-           onFilterChange={setFilters}
+           onFilterChange={handleFilterChange}
            regions={availableRegions}
            topics={availableTopics}
          />

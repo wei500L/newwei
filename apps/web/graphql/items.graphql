@@ -1,5 +1,5 @@
-query Items($first: Int!, $after: String, $search: String) {
-  items(first: $first, after: $after, search: $search) {
+query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput) {
+  items(first: $first, after: $after, search: $search, filters: $filters) {
     edges {
       node {
         id
@@ -33,6 +33,23 @@ query Items($first: Int!, $after: String, $search: String) {
       endCursor
     }
     totalCount
+  }
+}
+
+query ItemFacets($search: String, $filters: ItemsFiltersInput) {
+  itemFacets(search: $search, filters: $filters) {
+    regions {
+      value
+      count
+    }
+    topics {
+      value
+      count
+    }
+    sentiments {
+      value
+      count
+    }
   }
 }
 

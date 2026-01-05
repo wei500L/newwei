@@ -159,3 +159,24 @@ export class ItemConnection {
   @Field(() => Int)
   totalCount!: number;
 }
+
+@ObjectType()
+export class ItemFacetOption {
+  @Field()
+  value!: string;
+
+  @Field(() => Int)
+  count!: number;
+}
+
+@ObjectType()
+export class ItemFacets {
+  @Field(() => [ItemFacetOption])
+  regions!: ItemFacetOption[];
+
+  @Field(() => [ItemFacetOption])
+  topics!: ItemFacetOption[];
+
+  @Field(() => [ItemFacetOption])
+  sentiments!: ItemFacetOption[];
+}

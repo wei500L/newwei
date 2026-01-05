@@ -3,9 +3,14 @@
 import { Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
+import type { ItemsQuery } from "@/graphql/generated";
 import { ItemsView } from "@/app/(app)/items/items-view";
 
-export function TodayContent() {
+interface TodayContentProps {
+  initialData?: ItemsQuery | null;
+}
+
+export function TodayContent({ initialData = null }: TodayContentProps) {
   const { t } = useTranslation();
 
   return (
@@ -20,7 +25,12 @@ export function TodayContent() {
           })}
         </Typography.Text>
       </Space>
-      <ItemsView initialView="feed" emptyStateVariant="today" sortMode="publishedDesc" />
+      <ItemsView
+        initialView="feed"
+        emptyStateVariant="today"
+        sortMode="publishedDesc"
+        initialData={initialData}
+      />
     </div>
   );
 }

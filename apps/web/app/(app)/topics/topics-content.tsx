@@ -11,7 +11,7 @@ import { NewsCard } from '@/app/(app)/items/components/news-card';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
-interface TopicGroupItem {
+export interface TopicGroupItem {
   id: string;
   itemMetaId: string;
   title?: string | null;
@@ -21,14 +21,14 @@ interface TopicGroupItem {
   createdAt: string;
 }
 
-interface TopicGroup {
+export interface TopicGroup {
   topic: string;
   count: number;
   latestAt: string;
   items: TopicGroupItem[];
 }
 
-interface EventGroupItem {
+export interface EventGroupItem {
   id: string;
   itemMetaId: string;
   title?: string | null;
@@ -38,7 +38,7 @@ interface EventGroupItem {
   createdAt: string;
 }
 
-interface EventGroup {
+export interface EventGroup {
   eventId: string;
   count: number;
   latestAt: string;
@@ -110,6 +110,13 @@ const DEFAULT_EVENT_LIMIT = 8;
 const DEFAULT_EVENT_ITEMS_PER_GROUP = 4;
 const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
 
+interface TopicsContentProps {
+  initialData?: {
+    topicGroups: TopicGroup[];
+    eventGroups: EventGroup[];
+  } | null;
+}
+
 const parsePositiveInt = (value: string | null, fallback: number) => {
   if (!value) {
     return fallback;
@@ -121,7 +128,7 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
   return parsed;
 };
 
-export function TopicsContent() {
+export function TopicsContent({ initialData = null }: TopicsContentProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const screens = Grid.useBreakpoint();
@@ -174,8 +181,9 @@ export function TopicsContent() {
     fetchPolicy: 'network-only'
   });
 
-  const groups = data?.topicGroups ?? [];
-  const eventGroups = data?.eventGroups ?? [];
+  const resolvedData = data ?? initialData ?? undefined;
+  const groups = resolvedData?.topicGroups ?? [];
+  const eventGroups = resolvedData?.eventGroups ?? [];
   const sortedEventGroups = useMemo(() => {
     return [...eventGroups].sort((a, b) => {
       const timeDiff = dayjs(b.latestAt).valueOf() - dayjs(a.latestAt).valueOf();
