@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Form, Input, InputNumber, Modal, Spin, Tabs, Tag, Typography, message } from "antd";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -105,6 +106,18 @@ function RateLimitSettingsPanel() {
   return (
     <>
       {contextHolder}
+      <Alert
+        type="warning"
+        showIcon
+        message={t("settings.rateLimits.riskTitle")}
+        description={
+          <span>
+            {t("settings.rateLimits.riskDescription")}{" "}
+            <Link href="/admin/audit-logs">{t("settings.rateLimits.auditLink")}</Link>
+          </span>
+        }
+        style={{ marginBottom: "1rem" }}
+      />
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
         {t("settings.rateLimits.description")}
       </Typography.Paragraph>

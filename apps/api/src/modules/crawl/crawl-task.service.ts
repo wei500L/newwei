@@ -8,6 +8,7 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import {
+  collectCrawlTaskConfigSensitiveFields,
   CrawlTaskConfigEncryptionRequiredError,
   decodeCrawlTaskConfigKey,
   protectCrawlTaskConfigForStorage,
@@ -86,6 +87,9 @@ export class CrawlTaskService {
       scoreLinks: normalizedRawOptions?.scoreLinks,
       linkPreview: normalizedRawOptions?.linkPreview
     });
+    const configSensitiveFields = collectCrawlTaskConfigSensitiveFields(
+      normalizedOptions as Record<string, unknown>
+    );
 
     const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
     const concurrency = Math.min(dto.concurrency ?? defaultConcurrency, defaultConcurrency);
@@ -121,6 +125,15 @@ export class CrawlTaskService {
       include: { _count: { select: { results: true } } }
     });
 
+    const auditMetadata: Record<string, unknown> = {
+      targetUrl: dto.url,
+      keywords,
+      concurrency
+    };
+    if (configSensitiveFields.length > 0) {
+      auditMetadata.configSensitiveFields = configSensitiveFields;
+    }
+
     await writeAuditLogBestEffort(
       this.prisma,
       {
@@ -129,11 +142,7 @@ export class CrawlTaskService {
           actorId: userId,
           resource: "crawlTask",
           action: "create",
-          metadata: {
-            targetUrl: dto.url,
-            keywords,
-            concurrency
-          }
+          metadata: auditMetadata
         }
       },
       { orgId, actorId: userId, resource: "crawlTask", action: "create" }

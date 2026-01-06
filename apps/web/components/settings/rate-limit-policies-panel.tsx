@@ -17,6 +17,7 @@ import {
   message
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -247,6 +248,17 @@ export function RateLimitPoliciesPanel() {
         size="middle"
         style={{ display: "flex", marginBottom: "1rem" }}
       >
+        <Alert
+          type="warning"
+          showIcon
+          message={t("settings.rateLimits.riskTitle")}
+          description={
+            <span>
+              {t("settings.rateLimits.riskDescription")}{" "}
+              <Link href="/admin/audit-logs">{t("settings.rateLimits.auditLink")}</Link>
+            </span>
+          }
+        />
         <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
           <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
             {t("settings.rateLimitPolicies.description")}

@@ -34,7 +34,10 @@ export function ActionRail() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageSettings = permissions.includes("settings.manage");
   const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
-  const canManageAdmin = permissions.includes("org.write") || permissions.includes("users.write");
+  const canManageAdmin =
+    permissions.includes("settings.manage") ||
+    permissions.includes("org.write") ||
+    permissions.includes("users.write");
   const canViewDashboards = permissions.includes("dashboards.read");
 
   const mainNavItems: ActionItem[] = [

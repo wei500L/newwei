@@ -202,6 +202,7 @@
     "reset": "Reset",
     "remove": "Remove",
     "emptyValue": "—",
+    "redacted": "Redacted",
     "view": "View",
     "update": "Update",
     "docs": "Docs",
@@ -641,7 +642,7 @@
   },
   "adminConsole": {
     "title": "Admin Console",
-    "subtitle": "Manage organizations, storage, and system errors.",
+    "subtitle": "Manage organizations, storage, system errors, and audit logs.",
     "links": {
       "orgs": {
         "title": "Organizations",
@@ -654,7 +655,28 @@
       "storage": {
         "title": "Storage Settings",
         "description": "Configure storage backends"
+      },
+      "audit": {
+        "title": "Audit Logs",
+        "description": "Review configuration and access events"
       }
+    }
+  },
+  "auditLogs": {
+    "title": "Audit Logs",
+    "description": "Recent configuration and access events for compliance and forensic review.",
+    "loadFailed": "Failed to load audit logs",
+    "adminOnly": "Admin only",
+    "systemActor": "System",
+    "searchPlaceholder": "Search by resource, action, actor, or IP",
+    "limitLabel": "Last {{count}}",
+    "columns": {
+      "time": "Time",
+      "actor": "Actor",
+      "resource": "Resource",
+      "action": "Action",
+      "ipAddress": "IP",
+      "metadata": "Metadata"
     }
   },
   "finance": {
@@ -697,6 +719,9 @@
   },
   "settings": {
     "rateLimits": {
+      "riskTitle": "Security impact",
+      "riskDescription": "Rate limit and policy changes can lock out users or weaken protections. Review the audit trail in",
+      "auditLink": "Audit logs",
       "fields": {
         "maxAttempts": "Max attempts",
         "windowSeconds": "Window seconds"

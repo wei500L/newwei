@@ -533,6 +533,7 @@ function renderSourceList(
 export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const redactedLabel = t("common.redacted");
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
   const [resultSearchInput, setResultSearchInput] = useState("");
@@ -575,10 +576,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       });
     }
     if (proxyUrl) {
-      return proxyUrl;
+      return proxyUrl === "[REDACTED]" ? redactedLabel : proxyUrl;
     }
     return t("crawl.detail.proxy.direct");
-  }, [config, t]);
+  }, [config, redactedLabel, t]);
 
   const markdownOptions = useMemo(() => {
     if (!config || typeof config.markdownOptions !== "object") {
@@ -738,6 +739,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   }, [config]);
 
   const browserCookies = useMemo(() => {
+    if (typeof config?.browserCookies === "string") {
+      return config.browserCookies === "[REDACTED]" ? [redactedLabel] : [];
+    }
     if (!Array.isArray(config?.browserCookies)) {
       return [] as string[];
     }
@@ -754,7 +758,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         return `${name}=${value} @ ${target}`;
       })
       .filter((entry): entry is string => Boolean(entry));
-  }, [config]);
+  }, [config, redactedLabel]);
 
   const managedBrowserProfile = useMemo(() => {
     if (!config || typeof config.userDataDir !== "string") {
@@ -873,8 +877,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return null;
     }
     const raw = typeof config.storageState === "string" ? config.storageState.trim() : "";
+    if (raw === "[REDACTED]") {
+      return redactedLabel;
+    }
     return raw.length ? shortenScript(raw) : null;
-  }, [config]);
+  }, [config, redactedLabel]);
   const jsOnlyMode = Boolean(config?.jsOnly);
 
   const linkOverview = useMemo(() => {

@@ -2,6 +2,8 @@ import { randomBytes } from "crypto";
 
 import {
   CrawlTaskConfigEncryptionRequiredError,
+  collectCrawlTaskConfigSensitiveFields,
+  CRAWL_TASK_CONFIG_REDACTED_VALUE,
   decodeCrawlTaskConfigKey,
   isEncryptedJsonValueV1,
   protectCrawlTaskConfigForStorage,
@@ -58,13 +60,47 @@ describe("crawl-config-secrets", () => {
     const input = {
       browserCookies: [{ name: "session", value: "token", domain: "example.com" }],
       proxyUrl: "http://user:pass@proxy.local:8080",
-      proxyConfig: { server: "http://proxy.local:8080", username: "u", password: "p" }
+      proxyConfig: { server: "http://proxy.local:8080", username: "u", password: "p" },
+      storageState: "{\"cookies\":[]}",
+      browserHeaders: [
+        { name: "Authorization", value: "Bearer abc" },
+        { name: "X-Trace-Id", value: "trace-1" }
+      ]
     };
     const redacted = redactCrawlTaskConfigForView(input);
     expect(redacted).toEqual({
+      browserCookies: CRAWL_TASK_CONFIG_REDACTED_VALUE,
       proxyUrl: "http://user:***@proxy.local:8080",
-      proxyConfig: { server: "http://proxy.local:8080", username: "u", password: "[REDACTED]" }
+      proxyConfig: { server: "http://proxy.local:8080", username: "u", password: CRAWL_TASK_CONFIG_REDACTED_VALUE },
+      storageState: CRAWL_TASK_CONFIG_REDACTED_VALUE,
+      browserHeaders: [
+        { name: "Authorization", value: CRAWL_TASK_CONFIG_REDACTED_VALUE },
+        { name: "X-Trace-Id", value: "trace-1" }
+      ]
     });
+  });
+
+  it("collects sensitive fields for audit", () => {
+    const input = {
+      browserCookies: [{ name: "session", value: "token", domain: "example.com" }],
+      proxyUrl: "http://user:pass@proxy.local:8080",
+      proxyConfig: { server: "http://proxy.local:8080", username: "u", password: "p" },
+      storageState: "{\"cookies\":[]}",
+      browserHeaders: [
+        { name: "Authorization", value: "Bearer abc" },
+        { name: "X-Trace-Id", value: "trace-1" }
+      ]
+    };
+    const fields = collectCrawlTaskConfigSensitiveFields(input);
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        "browserCookies",
+        "proxyUrl",
+        "proxyConfig.password",
+        "storageState",
+        "browserHeaders"
+      ])
+    );
   });
 
   it("decodes base64 and hex encryption keys", () => {
@@ -73,4 +109,3 @@ describe("crawl-config-secrets", () => {
     expect(decodeCrawlTaskConfigKey(raw.toString("hex"))).toEqual(raw);
   });
 });
-

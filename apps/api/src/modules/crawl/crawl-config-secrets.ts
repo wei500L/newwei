@@ -3,6 +3,17 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 export const CRAWL_TASK_CONFIG_ENCRYPTION_ENV = 'CRAWL_TASK_CONFIG_ENCRYPTION_KEY';
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const KEY_BYTES = 32;
+export const CRAWL_TASK_CONFIG_REDACTED_VALUE = '[REDACTED]';
+const SENSITIVE_HEADER_NAMES = new Set([
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'proxy-authorization',
+  'x-api-key',
+  'x-auth-token',
+  'x-access-token',
+  'x-session-id',
+]);
 
 export interface EncryptedJsonValueV1 {
   __enc: 'crawl-task-config:v1';
@@ -96,6 +107,74 @@ export function decryptJsonValueV1(payload: EncryptedJsonValueV1, key: Buffer): 
 
 function hasProxyUrlCredentials(proxyUrl: string): boolean {
   return /:\/\/[^/]*:[^/]*@/.test(proxyUrl);
+}
+
+function isSensitiveHeaderName(name: string): boolean {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (SENSITIVE_HEADER_NAMES.has(normalized)) {
+    return true;
+  }
+  if (normalized.startsWith('x-api-')) {
+    return true;
+  }
+  if (normalized.startsWith('x-auth-')) {
+    return true;
+  }
+  return false;
+}
+
+export function collectCrawlTaskConfigSensitiveFields(
+  config: CrawlTaskConfigRecord | null | undefined,
+): string[] {
+  if (!config) {
+    return [];
+  }
+  const fields = new Set<string>();
+  const record = config as Record<string, unknown>;
+
+  const cookies = record.browserCookies;
+  if (isEncryptedJsonValueV1(cookies)) {
+    fields.add('browserCookies');
+  } else if (Array.isArray(cookies) && cookies.length > 0) {
+    fields.add('browserCookies');
+  } else if (typeof cookies === 'string' && cookies.trim().length > 0) {
+    fields.add('browserCookies');
+  }
+  if (typeof record.storageState === 'string' && record.storageState.trim().length > 0) {
+    fields.add('storageState');
+  }
+  if (typeof record.proxyUrl === 'string' && hasProxyUrlCredentials(record.proxyUrl)) {
+    fields.add('proxyUrl');
+  }
+  if (isEncryptedJsonValueV1(record.proxyUrl)) {
+    fields.add('proxyUrl');
+  }
+  if (record.proxyConfig && typeof record.proxyConfig === 'object') {
+    const proxyConfig = record.proxyConfig as Record<string, unknown>;
+    if (typeof proxyConfig.password === 'string' && proxyConfig.password.trim().length > 0) {
+      fields.add('proxyConfig.password');
+    }
+    if (isEncryptedJsonValueV1(proxyConfig.password)) {
+      fields.add('proxyConfig.password');
+    }
+  }
+  if (Array.isArray(record.browserHeaders)) {
+    const hasSensitiveHeader = record.browserHeaders.some((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return false;
+      }
+      const header = entry as Record<string, unknown>;
+      return typeof header.name === 'string' && isSensitiveHeaderName(header.name);
+    });
+    if (hasSensitiveHeader) {
+      fields.add('browserHeaders');
+    }
+  }
+
+  return Array.from(fields);
 }
 
 export function protectCrawlTaskConfigForStorage(
@@ -214,22 +293,54 @@ export function redactCrawlTaskConfigForView(
   const next: CrawlTaskConfigRecord = { ...config };
 
   if ('browserCookies' in next) {
-    delete next.browserCookies;
+    const cookies = next.browserCookies;
+    if (isEncryptedJsonValueV1(cookies)) {
+      next.browserCookies = CRAWL_TASK_CONFIG_REDACTED_VALUE;
+    } else if (Array.isArray(cookies) ? cookies.length > 0 : cookies != null) {
+      next.browserCookies = CRAWL_TASK_CONFIG_REDACTED_VALUE;
+    }
   }
 
   if (typeof next.proxyUrl === 'string' && hasProxyUrlCredentials(next.proxyUrl)) {
     next.proxyUrl = redactProxyUrl(next.proxyUrl);
   } else if (isEncryptedJsonValueV1(next.proxyUrl)) {
-    next.proxyUrl = '[REDACTED]';
+    next.proxyUrl = CRAWL_TASK_CONFIG_REDACTED_VALUE;
   }
 
   if (next.proxyConfig && typeof next.proxyConfig === 'object') {
     const proxyConfig = next.proxyConfig as Record<string, unknown>;
     if ('password' in proxyConfig) {
-      next.proxyConfig = { ...proxyConfig, password: '[REDACTED]' };
+      const password = proxyConfig.password;
+      if (
+        isEncryptedJsonValueV1(password) ||
+        (typeof password === 'string' && password.trim().length > 0)
+      ) {
+        next.proxyConfig = { ...proxyConfig, password: CRAWL_TASK_CONFIG_REDACTED_VALUE };
+      }
     }
+  }
+
+  if (typeof next.storageState === 'string' && next.storageState.trim().length > 0) {
+    next.storageState = CRAWL_TASK_CONFIG_REDACTED_VALUE;
+  }
+
+  if (Array.isArray(next.browserHeaders)) {
+    next.browserHeaders = next.browserHeaders.map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return entry;
+      }
+      const header = entry as Record<string, unknown>;
+      const name = typeof header.name === 'string' ? header.name : '';
+      const value = typeof header.value === 'string' ? header.value : '';
+      if (!name || !value) {
+        return entry;
+      }
+      if (!isSensitiveHeaderName(name)) {
+        return entry;
+      }
+      return { ...header, value: CRAWL_TASK_CONFIG_REDACTED_VALUE };
+    });
   }
 
   return next;
 }
-
