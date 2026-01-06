@@ -68,6 +68,14 @@ const buildThresholdSummary = (
   return `${symbol} ${thresholdValue}`;
 };
 
+const eventStatusBadge: Record<string, "success" | "processing" | "error" | "default"> = {
+  delivered: "success",
+  pending: "processing",
+  failed: "error",
+  confirmed: "success",
+  ignored: "default"
+};
+
 export function AlertPanel() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -173,13 +181,7 @@ export function AlertPanel() {
                 title={
                   <Space>
                     <Badge
-                      status={
-                        event.status === "delivered"
-                          ? "success"
-                          : event.status === "pending"
-                            ? "processing"
-                            : "error"
-                      }
+                      status={eventStatusBadge[event.status] ?? "default"}
                     />
                     <Typography.Text>
                       {formatDateTime(event.triggeredAt, locale, {

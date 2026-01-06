@@ -1,5 +1,12 @@
 import { Field, InputType, Int } from "@nestjs/graphql";
-import { AlertChannelType, AlertMetricProvider, AlertOperator, AlertSeverity, AlertStatus } from "@prisma/client";
+import {
+  AlertChannelType,
+  AlertEventStatus,
+  AlertMetricProvider,
+  AlertOperator,
+  AlertSeverity,
+  AlertStatus
+} from "@prisma/client";
 import { IsArray, IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from "class-validator";
 import GraphQLJSONScalar from "graphql-type-json";
 
@@ -101,4 +108,15 @@ export class UpsertAlertRuleInput {
   @Field(() => GraphQLJSONScalar, { nullable: true })
   @IsOptional()
   metadata?: Record<string, unknown>;
+}
+
+@InputType()
+export class UpdateAlertEventStatusInput {
+  @Field()
+  @IsString()
+  eventId!: string;
+
+  @Field(() => AlertEventStatus)
+  @IsEnum(AlertEventStatus)
+  status!: AlertEventStatus;
 }

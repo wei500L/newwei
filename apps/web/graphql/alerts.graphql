@@ -83,6 +83,13 @@ mutation TriggerAlertRule($ruleId: String!) {
   triggerAlertRule(ruleId: $ruleId)
 }
 
+mutation UpdateAlertEventStatus($input: UpdateAlertEventStatusInput!) {
+  updateAlertEventStatus(input: $input) {
+    id
+    status
+  }
+}
+
 subscription AlertEventsStream {
   alertEvents {
     id

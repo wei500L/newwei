@@ -37,6 +37,14 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     skip: !visible || !metricKey
   });
 
+  const statusColor: Record<string, string> = {
+    pending: "processing",
+    delivered: "success",
+    failed: "error",
+    confirmed: "success",
+    ignored: "default"
+  };
+
   // Load World Map
   useEffect(() => {
     if (mapLoaded) return;
@@ -234,7 +242,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                               {dayjs(event.triggeredAt).format('MMM D, HH:mm')}
                             </span>
                           </div>
-                          <Tag className="mt-1 mr-0" color={event.status === 'pending' ? 'processing' : 'default'}>
+                          <Tag className="mt-1 mr-0" color={statusColor[event.status] ?? "default"}>
                             {event.status.toUpperCase()}
                           </Tag>
                           <span className="text-xs text-gray-500 ml-2">Value: {event.metricValue}</span>
@@ -247,7 +255,6 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                     {t("dashboard.drilldown.noEvents", "No related intelligence events found in the recent period.")}
                   </div>
                 )}
-               
               </Card>
             </Col>
           </Row>

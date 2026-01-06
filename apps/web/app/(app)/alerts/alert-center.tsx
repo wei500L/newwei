@@ -1,6 +1,6 @@
 "use client";
 
-import { useApolloClient } from "@apollo/client";
+import { gql, useApolloClient, useMutation } from "@apollo/client";
 import { Badge, Button, Card, Col, List, Row, Space, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -26,13 +26,35 @@ const severityColor: Record<string, string> = {
 const eventStatusBadge: Record<string, "success" | "processing" | "error" | "default"> = {
   delivered: "success",
   pending: "processing",
-  failed: "error"
+  failed: "error",
+  confirmed: "success",
+  ignored: "default"
 };
 
 const deliveryStatusColor: Record<string, string> = {
   pending: "orange",
   sent: "green",
   failed: "red"
+};
+
+const UPDATE_ALERT_EVENT_STATUS = gql`
+  mutation UpdateAlertEventStatus($input: UpdateAlertEventStatusInput!) {
+    updateAlertEventStatus(input: $input) {
+      id
+      status
+    }
+  }
+`;
+
+type UpdateAlertEventStatusData = {
+  updateAlertEventStatus: { id: string; status: string };
+};
+
+type UpdateAlertEventStatusVariables = {
+  input: {
+    eventId: string;
+    status: string;
+  };
 };
 
 const buildThresholdSummary = (
@@ -156,6 +178,10 @@ export function AlertCenterContent() {
     variables: { limit: 20 }
   });
   const [triggerRule, { loading: triggeringRule }] = useTriggerAlertRuleMutation();
+  const [updateEventStatus, { loading: updatingStatus }] = useMutation<
+    UpdateAlertEventStatusData,
+    UpdateAlertEventStatusVariables
+  >(UPDATE_ALERT_EVENT_STATUS);
 
   useEffect(() => {
     const sub = client
@@ -202,6 +228,21 @@ export function AlertCenterContent() {
 
   const handleRefresh = async () => {
     await Promise.all([refetchRules(), refetchEvents()]);
+  };
+
+  const handleEventStatusUpdate = async (status: string) => {
+    if (!selectedEvent) {
+      return;
+    }
+    await updateEventStatus({
+      variables: {
+        input: {
+          eventId: selectedEvent.id,
+          status
+        }
+      }
+    });
+    await refetchEvents();
   };
 
   const context =
@@ -650,6 +691,27 @@ export function AlertCenterContent() {
                       {selectedEvent.severity}
                     </Tag>
                     <Tag>{selectedEvent.status}</Tag>
+                  </Space>
+                </DetailRow>
+                <DetailRow label={t("alerts.center.detail.feedback", { defaultValue: "Feedback" })}>
+                  <Space>
+                    <Button
+                      type="primary"
+                      size="small"
+                      loading={updatingStatus}
+                      disabled={selectedEvent.status === "confirmed"}
+                      onClick={() => void handleEventStatusUpdate("confirmed")}
+                    >
+                      {t("alerts.center.detail.confirm", { defaultValue: "Confirm" })}
+                    </Button>
+                    <Button
+                      size="small"
+                      loading={updatingStatus}
+                      disabled={selectedEvent.status === "ignored"}
+                      onClick={() => void handleEventStatusUpdate("ignored")}
+                    >
+                      {t("alerts.center.detail.ignore", { defaultValue: "Ignore" })}
+                    </Button>
                   </Space>
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.message", { defaultValue: "Message" })}>

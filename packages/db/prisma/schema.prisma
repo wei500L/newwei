@@ -593,6 +593,8 @@ enum AlertEventStatus {
   pending
   delivered
   failed
+  confirmed
+  ignored
 }
 
 enum AlertDeliveryStatus {

@@ -151,6 +151,24 @@ export class AlertsService {
     });
   }
 
+  async updateEventStatus(orgId: string, eventId: string, status: AlertEventStatus) {
+    if (![AlertEventStatus.confirmed, AlertEventStatus.ignored].includes(status)) {
+      throw new Error("Unsupported alert event status update");
+    }
+    const existing = await this.prisma.alertEvent.findUnique({
+      where: { id: eventId },
+      include: { rule: true }
+    });
+    if (!existing || existing.rule?.orgId !== orgId) {
+      throw new Error("Alert event not found for this org");
+    }
+    return this.prisma.alertEvent.update({
+      where: { id: eventId },
+      data: { status },
+      include: { rule: true, deliveries: { include: { channel: true } } }
+    });
+  }
+
   async upsertRule(orgId: string, input: UpsertAlertRuleInput, createdById?: string) {
     const existingRule = input.id ? await this.prisma.alertRule.findUnique({ where: { id: input.id } }) : null;
     if (input.id && (!existingRule || existingRule.orgId !== orgId)) {
@@ -699,6 +717,17 @@ export class AlertsService {
   }
 
   private async updateEventStatus(eventId: string) {
+    const current = await this.prisma.alertEvent.findUnique({
+      where: { id: eventId },
+      select: { status: true }
+    });
+    if (
+      !current ||
+      current.status === AlertEventStatus.confirmed ||
+      current.status === AlertEventStatus.ignored
+    ) {
+      return;
+    }
     const deliveries = await this.prisma.alertDelivery.findMany({ where: { eventId } });
     if (!deliveries.length) {
       return;

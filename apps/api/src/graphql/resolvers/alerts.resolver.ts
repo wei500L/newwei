@@ -8,7 +8,7 @@ import { ALERTS_PUBSUB } from "../../modules/alerts/alerts.pubsub";
 import { AlertsService } from "../../modules/alerts/alerts.service";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { AlertChannelInput, UpsertAlertRuleInput } from "../dto/alert.input";
+import { AlertChannelInput, UpdateAlertEventStatusInput, UpsertAlertRuleInput } from "../dto/alert.input";
 import type { GqlRequest } from "../graphql.types";
 import { AlertChannelModel, AlertEventModel, AlertRuleModel } from "../models/alert.model";
 
@@ -199,6 +199,46 @@ export class AlertsResolver {
   async triggerAlertRule(@Args("ruleId") ruleId: string): Promise<boolean> {
     await this.alerts.enqueueRuleCheck(ruleId);
     return true;
+  }
+
+  @HasPermission("alerts.manage")
+  @Mutation(() => AlertEventModel)
+  async updateAlertEventStatus(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateAlertEventStatusInput
+  ): Promise<AlertEventModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    const event = await this.alerts.updateEventStatus(requester.orgId, input.eventId, input.status);
+    return {
+      id: event.id,
+      triggeredAt: event.triggeredAt,
+      metricValue: Number(event.metricValue),
+      changePercent: event.changePercent ?? undefined,
+      severity: event.severity,
+      status: event.status,
+      message: event.message ?? undefined,
+      ruleId: event.ruleId,
+      ruleName: event.rule?.name ?? undefined,
+      metricProvider: event.rule?.metricProvider ?? undefined,
+      metricSlug: event.rule?.metricSlug ?? undefined,
+      operator: event.rule?.operator ?? undefined,
+      thresholdValue: event.rule?.thresholdValue ? Number(event.rule.thresholdValue) : null,
+      thresholdLower: event.rule?.thresholdLower ? Number(event.rule.thresholdLower) : null,
+      thresholdUpper: event.rule?.thresholdUpper ? Number(event.rule.thresholdUpper) : null,
+      changeWindowMin: event.rule?.changeWindowMin ?? null,
+      context: event.context as Record<string, unknown> | null,
+      deliveries:
+        event.deliveries?.map((delivery) => ({
+          id: delivery.id,
+          status: delivery.status,
+          error: delivery.error ?? undefined,
+          sentAt: delivery.sentAt ?? undefined,
+          channelType: delivery.channelType
+        })) ?? []
+    };
   }
 
   @HasPermission("alerts.read")

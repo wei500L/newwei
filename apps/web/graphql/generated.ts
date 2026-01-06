@@ -81,8 +81,10 @@ export type AlertEventModel = {
 };
 
 export enum AlertEventStatus {
+  Confirmed = 'confirmed',
   Delivered = 'delivered',
   Failed = 'failed',
+  Ignored = 'ignored',
   Pending = 'pending'
 }
 
