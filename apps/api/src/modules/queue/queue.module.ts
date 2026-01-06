@@ -20,6 +20,7 @@ import {
 import { QueueGateway } from "./queue.gateway";
 import { QueueProcessor } from "./queue.processor";
 import { QueueService } from "./queue.service";
+import { NewsSourceSchedulerService } from "./news-source.scheduler.service";
 
 @Module({
   imports: [CacheModule, NewsPipelineModule, AuthModule],
@@ -102,7 +103,8 @@ import { QueueService } from "./queue.service";
     QueueEventPublisher,
     QueueOrgStatsService,
     QueueOrgStatsTracker,
-    QueueGateway
+    QueueGateway,
+    NewsSourceSchedulerService
   ],
   exports: [
     QueueService,

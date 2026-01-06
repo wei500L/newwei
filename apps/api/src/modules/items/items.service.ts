@@ -1,7 +1,9 @@
 import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
 import type { MongoConnection } from "@modular/mongo";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Types } from "mongoose";
 
+import { ItemStatus, PipelineStageStatus } from "../../common/pipeline-status";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
@@ -111,7 +113,7 @@ export class ItemsService {
           orgId,
           externalId: dto.externalId,
           name: dto.name,
-          status: dto.status ?? "pending",
+          status: dto.status ?? ItemStatus.Pending,
           mongoRef: ""
         }
       });
@@ -292,7 +294,7 @@ export class ItemsService {
 
     const match: Record<string, unknown> = {
       orgId,
-      status: "completed",
+      status: PipelineStageStatus.Completed,
       ...(scopedIds ? { itemMetaId: { $in: scopedIds } } : {})
     };
 
@@ -608,7 +610,7 @@ export class ItemsService {
       {
         $match: {
           orgId,
-          status: "completed",
+          status: PipelineStageStatus.Completed,
           createdAt: { $gte: since }
         }
       },
@@ -995,14 +997,16 @@ export class ItemsService {
       return [];
     }
 
-    const [metaIds, processedIds] = await Promise.all([
+    const [metaIds, processedIds, processedArticleIds] = await Promise.all([
       this.resolveMetaSearchIds(orgId, strategy),
-      this.resolveProcessedSearchIds(orgId, search)
+      this.resolveProcessedSearchIds(orgId, search),
+      this.resolveProcessedArticleSearchIds(orgId, strategy)
     ]);
 
     const combined = new Set<string>();
     metaIds.forEach((id) => combined.add(id));
     processedIds.forEach((id) => combined.add(id));
+    processedArticleIds.forEach((id) => combined.add(id));
     return Array.from(combined);
   }
 
@@ -1040,7 +1044,7 @@ export class ItemsService {
 
     const match: Record<string, unknown> = {
       orgId,
-      status: "completed",
+      status: PipelineStageStatus.Completed,
       ...(matchFilters.length ? { $and: matchFilters } : {})
     };
 
@@ -1087,7 +1091,7 @@ export class ItemsService {
         SELECT \`id\`
         FROM \`ItemMeta\`
         WHERE \`orgId\` = ${orgId}
-          AND \`status\` <> 'duplicate'
+          AND \`status\` <> ${ItemStatus.Duplicate}
           AND MATCH(\`name\`, \`externalId\`) AGAINST (${strategy.query} IN BOOLEAN MODE)
         ORDER BY \`createdAt\` DESC, \`id\` DESC
         LIMIT ${MAX_SEARCH_MATCHES}
@@ -1128,7 +1132,7 @@ export class ItemsService {
 
     const match = {
       orgId,
-      status: "completed",
+      status: PipelineStageStatus.Completed,
       ...(tokenFilters.length ? { $and: tokenFilters } : {})
     };
 
@@ -1140,8 +1144,60 @@ export class ItemsService {
     return records.map((record) => record.itemMetaId).filter(Boolean);
   }
 
+  private async resolveProcessedArticleSearchIds(orgId: string, strategy: SearchStrategy) {
+    if (strategy.type === "none") {
+      return [];
+    }
+
+    let refs: string[] = [];
+    if (strategy.type === "fulltext") {
+      const rows = await this.prisma.$queryRaw<{ cleanedMarkdownRef: string | null }[]>`
+        SELECT pa.cleanedMarkdownRef
+        FROM \`ProcessedArticle\` pa
+        INNER JOIN \`Article\` a ON a.id = pa.articleId
+        WHERE a.orgId = ${orgId}
+          AND pa.cleanedMarkdownRef IS NOT NULL
+          AND MATCH(pa.title, pa.summary) AGAINST (${strategy.query} IN BOOLEAN MODE)
+        ORDER BY pa.updatedAt DESC, pa.id DESC
+        LIMIT ${MAX_SEARCH_MATCHES}
+      `;
+      refs = rows.map((row) => row.cleanedMarkdownRef ?? "").filter(Boolean);
+    } else {
+      const rows = await this.prisma.processedArticle.findMany({
+        where: {
+          article: { orgId },
+          cleanedMarkdownRef: { not: null },
+          OR: [
+            { title: { contains: strategy.term } },
+            { summary: { contains: strategy.term } }
+          ]
+        },
+        select: { cleanedMarkdownRef: true },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        take: MAX_SEARCH_MATCHES
+      });
+      refs = rows.map((row) => row.cleanedMarkdownRef ?? "").filter(Boolean);
+    }
+
+    const objectIds = refs
+      .filter((ref) => Types.ObjectId.isValid(ref))
+      .map((ref) => new Types.ObjectId(ref));
+    if (objectIds.length === 0) {
+      return [];
+    }
+
+    const records = await ProcessedItemModel.find(
+      { _id: { $in: objectIds } },
+      { itemMetaId: 1 }
+    )
+      .limit(MAX_SEARCH_MATCHES)
+      .lean();
+
+    return records.map((record) => record.itemMetaId).filter(Boolean);
+  }
+
   private buildBaseWhere(orgId: string) {
-    return { orgId, status: { not: "duplicate" } };
+    return { orgId, status: { not: ItemStatus.Duplicate } };
   }
 
   private buildPrefixWhere(baseWhere: { orgId: string; status: { not: string } }, term: string) {

@@ -1,4 +1,4 @@
-import { RawItemModel, TaskLogModel } from "@modular/mongo";
+import { ProcessedItemModel, RawItemModel, TaskLogModel } from "@modular/mongo";
 import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 import {
   Inject,
@@ -7,9 +7,13 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import type { Queue } from "bullmq";
-import { Worker , UnrecoverableError } from "bullmq";
+import { Worker, UnrecoverableError } from "bullmq";
+import { PipelineJobStatus } from "@prisma/client";
+import { Types } from "mongoose";
 
+import { ItemStatus } from "../../common/pipeline-status";
 import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
 import { NewsPipelineService } from "../news-pipeline/news-pipeline.service";
 import type {
   PipelineJobContext,
@@ -34,6 +38,9 @@ interface PipelineQueueJobData {
   itemMetaId: string;
   orgId?: string;
   traceId?: string;
+  processedItemId?: string;
+  pipelineJobId?: string;
+  sourceId?: string;
 }
 
 interface PipelineQueueDlqData {
@@ -41,6 +48,9 @@ interface PipelineQueueDlqData {
   itemMetaId?: string;
   orgId?: string;
   traceId?: string;
+  processedItemId?: string;
+  pipelineJobId?: string;
+  sourceId?: string;
   originalQueue: string;
   originalJobId?: string;
   failedAt: string;
@@ -59,6 +69,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     @Inject(PIPELINE_DLQ_QUEUE) private readonly dlqQueue: Queue,
     private readonly env: EnvService,
     private readonly pipeline: NewsPipelineService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async onModuleInit() {
@@ -80,6 +91,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
               typeof jobData.itemMetaId === "string" ? jobData.itemMetaId : undefined;
             const jobOrgId =
               typeof jobData.orgId === "string" ? jobData.orgId : undefined;
+            const pipelineJobId =
+              typeof jobData.pipelineJobId === "string" ? jobData.pipelineJobId : undefined;
+            const sourceId =
+              typeof jobData.sourceId === "string" ? jobData.sourceId : undefined;
 
             if (!rawItemId || !itemMetaId) {
               throw new QueuePermanentError(
@@ -94,6 +109,21 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
             const orgId = jobOrgId;
             logger.info({ jobId: job.id }, "Processing item pipeline job");
+            const processedItemId =
+              typeof jobData.processedItemId === "string" && jobData.processedItemId.length > 0
+                ? jobData.processedItemId
+                : Types.ObjectId.isValid(rawItemId)
+                  ? rawItemId
+                  : new Types.ObjectId().toHexString();
+
+            await this.markProcessingState({
+              itemMetaId,
+              rawItemId,
+              orgId,
+              processedItemId,
+              pipelineJobId,
+              sourceId,
+            });
 
             const rawItem = await RawItemModel.findById(rawItemId);
             if (!rawItem) {
@@ -115,6 +145,9 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
               itemMetaId,
               rawItemId,
               orgId,
+              processedItemId,
+              pipelineJobId,
+              sourceId,
             };
 
             const rawPayload: RawPipelineItem = {
@@ -125,6 +158,12 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
             };
 
             const processed = await this.pipeline.process(pipelineJob, rawPayload);
+
+            await this.markSuccessState({
+              itemMetaId,
+              pipelineJobId,
+              sourceId,
+            });
 
             await TaskLogModel.create({
               queue: ITEM_PIPELINE_QUEUE_NAME,
@@ -185,6 +224,17 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           const jobOrgId =
             typeof data.orgId === "string" ? data.orgId : "unknown";
 
+          const rawItemId =
+            typeof data.rawItemId === "string" ? data.rawItemId : undefined;
+          const itemMetaId =
+            typeof data.itemMetaId === "string" ? data.itemMetaId : undefined;
+          const processedItemId =
+            typeof data.processedItemId === "string" && data.processedItemId.length > 0
+              ? data.processedItemId
+              : rawItemId && Types.ObjectId.isValid(rawItemId)
+                ? rawItemId
+                : undefined;
+
           await TaskLogModel.create({
             queue: ITEM_PIPELINE_QUEUE_NAME,
             jobId: job.id,
@@ -203,6 +253,19 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
           const shouldSendToDlq =
             classified.kind === QueueErrorKind.Permanent || remainingAttempts === 0;
+
+          await this.markFailureState({
+            itemMetaId,
+            rawItemId,
+            orgId: jobOrgId,
+            processedItemId,
+            pipelineJobId:
+              typeof data.pipelineJobId === "string" ? data.pipelineJobId : undefined,
+            sourceId: typeof data.sourceId === "string" ? data.sourceId : undefined,
+            error: classified.error,
+            attemptsMade,
+            finalFailure: shouldSendToDlq,
+          });
 
           if (!shouldSendToDlq) {
             return;
@@ -251,6 +314,246 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         await handler();
       }
     });
+  }
+
+  private normalizeError(error: unknown) {
+    if (error instanceof Error) {
+      return {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      };
+    }
+    return {
+      message: String(error),
+    };
+  }
+
+  private async updateItemMetaStatus(
+    itemMetaId: string,
+    status: ItemStatus,
+    options?: { skipIfDuplicate?: boolean },
+  ) {
+    try {
+      await this.prisma.itemMeta.updateMany({
+        where: {
+          id: itemMetaId,
+          ...(options?.skipIfDuplicate ? { status: { not: ItemStatus.Duplicate } } : {}),
+        },
+        data: { status },
+      });
+    } catch (error) {
+      logger.warn({ itemMetaId, status, error }, "Failed to update item meta status");
+    }
+  }
+
+  private async upsertProcessedItemStatus(options: {
+    processedItemId: string;
+    rawItemId: string;
+    itemMetaId: string;
+    orgId: string;
+    status: ItemStatus;
+    error?: { message: string; name?: string; stack?: string };
+  }) {
+    if (
+      !Types.ObjectId.isValid(options.processedItemId) ||
+      !Types.ObjectId.isValid(options.rawItemId)
+    ) {
+      logger.warn(
+        { processedItemId: options.processedItemId, rawItemId: options.rawItemId },
+        "Skipped processed item upsert due to invalid object id",
+      );
+      return;
+    }
+
+    const now = new Date();
+    const processedId = new Types.ObjectId(options.processedItemId);
+    const rawId = new Types.ObjectId(options.rawItemId);
+    const update: Record<string, unknown> = {
+      rawItemId: rawId,
+      itemMetaId: options.itemMetaId,
+      orgId: options.orgId,
+      status: options.status,
+      updatedAt: now,
+      ...(options.error ? { error: options.error } : {}),
+    };
+    const unset: Record<string, 1> = {
+      result: 1,
+      duplicateOf: 1,
+      duplicateSimilarity: 1,
+      summaryEmbedding: 1,
+      summaryEmbeddingModel: 1,
+    };
+    if (!options.error) {
+      unset.error = 1;
+    }
+
+    await ProcessedItemModel.updateOne(
+      { _id: processedId },
+      {
+        $set: update,
+        $unset: unset,
+        $setOnInsert: {
+          _id: processedId,
+          createdAt: now,
+          tags: [],
+        },
+      },
+      { upsert: true },
+    );
+  }
+
+  private async markProcessingState(options: {
+    itemMetaId: string;
+    rawItemId: string;
+    orgId: string;
+    processedItemId: string;
+    pipelineJobId?: string;
+    sourceId?: string;
+  }) {
+    const now = new Date();
+    const actions: Promise<unknown>[] = [
+      this.updateItemMetaStatus(options.itemMetaId, ItemStatus.Processing, {
+        skipIfDuplicate: true,
+      }),
+      this.upsertProcessedItemStatus({
+        processedItemId: options.processedItemId,
+        rawItemId: options.rawItemId,
+        itemMetaId: options.itemMetaId,
+        orgId: options.orgId,
+        status: ItemStatus.Processing,
+      }),
+    ];
+
+    if (options.pipelineJobId) {
+      actions.push(
+        this.prisma.pipelineJob.updateMany({
+          where: { id: options.pipelineJobId },
+          data: {
+            status: PipelineJobStatus.running,
+            startedAt: now,
+            error: null,
+          },
+        }),
+      );
+    }
+
+    if (options.sourceId) {
+      actions.push(
+        this.prisma.newsSource.updateMany({
+          where: { id: options.sourceId },
+          data: { lastRunAt: now },
+        }),
+      );
+    }
+
+    try {
+      await Promise.all(actions);
+    } catch (error) {
+      logger.warn({ error, itemMetaId: options.itemMetaId }, "Failed to mark processing state");
+    }
+  }
+
+  private async markSuccessState(options: {
+    itemMetaId: string;
+    pipelineJobId?: string;
+    sourceId?: string;
+  }) {
+    const now = new Date();
+    const actions: Promise<unknown>[] = [];
+
+    if (options.pipelineJobId) {
+      actions.push(
+        this.prisma.pipelineJob.updateMany({
+          where: { id: options.pipelineJobId },
+          data: {
+            status: PipelineJobStatus.completed,
+            completedAt: now,
+            error: null,
+          },
+        }),
+      );
+    }
+
+    if (options.sourceId) {
+      actions.push(
+        this.prisma.newsSource.updateMany({
+          where: { id: options.sourceId },
+          data: { lastSuccessAt: now },
+        }),
+      );
+    }
+
+    try {
+      await Promise.all(actions);
+    } catch (error) {
+      logger.warn({ error, itemMetaId: options.itemMetaId }, "Failed to mark success state");
+    }
+  }
+
+  private async markFailureState(options: {
+    itemMetaId?: string;
+    rawItemId?: string;
+    orgId: string;
+    processedItemId?: string;
+    pipelineJobId?: string;
+    sourceId?: string;
+    error: unknown;
+    attemptsMade: number;
+    finalFailure: boolean;
+  }) {
+    const now = new Date();
+    const actions: Promise<unknown>[] = [];
+    if (options.itemMetaId && options.finalFailure) {
+      actions.push(
+        this.updateItemMetaStatus(options.itemMetaId, ItemStatus.Failed, {
+          skipIfDuplicate: true,
+        }),
+      );
+    }
+    if (options.processedItemId && options.rawItemId && options.itemMetaId) {
+      actions.push(
+        this.upsertProcessedItemStatus({
+          processedItemId: options.processedItemId,
+          rawItemId: options.rawItemId,
+          itemMetaId: options.itemMetaId,
+          orgId: options.orgId,
+          status: ItemStatus.Failed,
+          error: this.normalizeError(options.error),
+        }),
+      );
+    }
+
+    if (options.pipelineJobId) {
+      actions.push(
+        this.prisma.pipelineJob.updateMany({
+          where: { id: options.pipelineJobId },
+          data: {
+            status: options.finalFailure
+              ? PipelineJobStatus.failed
+              : PipelineJobStatus.delayed,
+            completedAt: options.finalFailure ? now : null,
+            error: this.normalizeError(options.error).message,
+            attempts: Math.max(options.attemptsMade, 0),
+          },
+        }),
+      );
+    }
+
+    if (options.sourceId && options.finalFailure) {
+      actions.push(
+        this.prisma.newsSource.updateMany({
+          where: { id: options.sourceId },
+          data: { lastRunAt: now },
+        }),
+      );
+    }
+
+    try {
+      await Promise.all(actions);
+    } catch (error) {
+      logger.warn({ error, itemMetaId: options.itemMetaId }, "Failed to mark failure state");
+    }
   }
 
   async onModuleDestroy() {

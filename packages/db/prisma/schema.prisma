@@ -333,6 +333,7 @@ model ProcessedArticle {
   id                 String   @id @default(cuid())
   article            Article  @relation(fields: [articleId], references: [id])
   articleId          String   @unique
+  status             ProcessedArticleStatus @default(completed)
   title              String?
   subtitle           String?
   author             String?
@@ -358,6 +359,8 @@ model ProcessedArticle {
   createdAt          DateTime @default(now())
   processedAt        DateTime @default(now())
   updatedAt          DateTime @updatedAt
+
+  @@fulltext([title, summary])
 }
 
 model MongoOutbox {
@@ -632,6 +635,13 @@ enum PipelineJobStatus {
   completed
   failed
   delayed
+}
+
+enum ProcessedArticleStatus {
+  pending
+  processing
+  completed
+  failed
 }
 
 model RefreshToken {

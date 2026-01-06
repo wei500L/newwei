@@ -15,10 +15,11 @@ jest.mock("@modular/mongo", () => ({
     create: jest.fn().mockResolvedValue(undefined)
   },
   ProcessedItemModel: {
-    create: jest.fn().mockResolvedValue({
+    findOneAndUpdate: jest.fn().mockResolvedValue({
       _id: { toString: () => "processed-id" },
       toJSON: () => ({ id: "processed-id" })
     }),
+    create: jest.fn(),
     find: jest.fn(),
     findById: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue(null)
@@ -189,7 +190,8 @@ describe("NewsPipelineService", () => {
       upsert: jest.fn().mockResolvedValue({ id: "article-1" })
     },
     itemMeta: {
-      update: jest.fn().mockResolvedValue(null)
+      update: jest.fn().mockResolvedValue(null),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 })
     },
     mongoOutbox,
     runInTransaction: jest.fn()
@@ -377,7 +379,7 @@ describe("NewsPipelineService", () => {
     expect(liteLlm.acompletion).not.toHaveBeenCalled();
     expect(prisma.article.upsert).not.toHaveBeenCalled();
     expect(prisma.processedArticle.upsert).not.toHaveBeenCalled();
-    expect(ProcessedItemModel.create).toHaveBeenCalledTimes(1);
+    expect(ProcessedItemModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.create).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.delete).toHaveBeenCalledTimes(1);
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
@@ -564,7 +566,7 @@ describe("NewsPipelineService", () => {
         })
       })
     );
-    expect(ProcessedItemModel.create).not.toHaveBeenCalled();
+    expect(ProcessedItemModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it("replays stale locked outbox entry to Mongo and deletes it", async () => {
@@ -625,8 +627,8 @@ describe("NewsPipelineService", () => {
       id: "outbox-stale",
       attempts: 1
     });
-    const createSpy = ProcessedItemModel.create as jest.Mock;
-    createSpy.mockResolvedValueOnce({
+    const upsertSpy = ProcessedItemModel.findOneAndUpdate as jest.Mock;
+    upsertSpy.mockResolvedValueOnce({
       _id: { toString: () => validPayload.document._id },
       toJSON: () => ({ id: validPayload.document._id })
     });
@@ -634,12 +636,15 @@ describe("NewsPipelineService", () => {
     await service.retryPendingOutbox();
 
     expect(mongoOutbox.delete).toHaveBeenCalledWith({ where: { id: "outbox-stale" } });
-    expect(createSpy).toHaveBeenCalledWith(
+    expect(upsertSpy).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
-        _id: expect.anything(),
-        rawItemId: expect.anything(),
-        result: validPayload.document.result
-      })
+        $set: expect.objectContaining({
+          rawItemId: expect.anything(),
+          result: validPayload.document.result
+        })
+      }),
+      expect.objectContaining({ upsert: true, new: true })
     );
   });
 
@@ -703,8 +708,8 @@ describe("NewsPipelineService", () => {
     await service.retryPendingOutbox();
 
     expect(mongoOutbox.delete).toHaveBeenCalledWith({ where: { id: "outbox-dirty" } });
-    const createArgs = (ProcessedItemModel.create as jest.Mock).mock.calls[0]?.[0];
-    expect(createArgs.tags).toEqual([]);
-    expect(createArgs.llm.promptTokens).toBeNull();
+    const updateArgs = (ProcessedItemModel.findOneAndUpdate as jest.Mock).mock.calls[0]?.[1];
+    expect(updateArgs.$set.tags).toEqual([]);
+    expect(updateArgs.$set.llm.promptTokens).toBeNull();
   });
 });

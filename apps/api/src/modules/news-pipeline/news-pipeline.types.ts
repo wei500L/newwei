@@ -11,6 +11,9 @@ export interface PipelineJobContext {
   itemMetaId: string;
   rawItemId: string;
   orgId: string;
+  processedItemId?: string;
+  pipelineJobId?: string;
+  sourceId?: string;
 }
 
 export interface CrawlCacheEntry {

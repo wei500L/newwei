@@ -8,7 +8,7 @@ jest.mock("@modular/utils", () => {
 
 jest.mock("@modular/mongo", () => ({
   RawItemModel: { create: jest.fn() },
-  ProcessedItemModel: { findOne: jest.fn() }
+  ProcessedItemModel: { findOne: jest.fn(), find: jest.fn() }
 }));
 
 jest.mock("../config/prisma.service", () => ({
@@ -93,5 +93,30 @@ describe("ItemsService", () => {
     expect(queueServiceMock.enqueueItem).toHaveBeenCalledWith("org-1", "item-1", "raw-1");
 
     await new Promise((resolve) => setImmediate(resolve));
+  });
+
+  it("resolves search ids from processed articles", async () => {
+    const mongoMock = jest.requireMock("@modular/mongo");
+    const mockFind = jest.fn().mockReturnThis();
+    mongoMock.ProcessedItemModel.find.mockReturnValue({
+      limit: mockFind,
+      lean: jest.fn().mockResolvedValue([{ itemMetaId: "meta-1" }])
+    });
+
+    const prismaMock = {
+      $queryRaw: jest.fn().mockResolvedValue([
+        { cleanedMarkdownRef: "507f1f77bcf86cd799439011" }
+      ])
+    } as any;
+
+    const service = new ItemsService(prismaMock, {} as any, {} as any);
+
+    const ids = await (service as any).resolveProcessedArticleSearchIds("org-1", {
+      type: "fulltext",
+      query: "article*"
+    });
+
+    expect(prismaMock.$queryRaw).toHaveBeenCalled();
+    expect(ids).toEqual(["meta-1"]);
   });
 });

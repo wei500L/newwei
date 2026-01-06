@@ -9,6 +9,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import {
   MongoOutboxStatus,
   MongoOutboxType,
+  ProcessedArticleStatus,
   type Article,
   type Prisma,
   type ProcessedArticle,
@@ -22,6 +23,7 @@ import { z } from "zod";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { Crawl4aiClient } from "../crawl/crawl4ai.client";
+import { ItemStatus } from "../../common/pipeline-status";
 
 
 import { LiteLlmService } from "./litellm.service";
@@ -278,6 +280,7 @@ export class NewsPipelineService {
           llm,
           contentHash,
           processedArticleId,
+          processedItemId: job.processedItemId,
           summaryEmbedding: dedupe.summaryEmbedding ?? undefined,
           summaryEmbeddingModel: dedupe.summaryEmbeddingModel ?? undefined,
           duplicateOf: dedupe.duplicateOf ?? undefined,
@@ -315,12 +318,16 @@ export class NewsPipelineService {
     llm: LlmCallMetadata;
     contentHash: string;
     processedArticleId?: string | null;
+    processedItemId?: string;
     summaryEmbedding?: number[] | null;
     summaryEmbeddingModel?: string | null;
     duplicateOf?: string | null;
     duplicateSimilarity?: number | null;
   }): Promise<PersistResult> {
-    const processedItemId = new Types.ObjectId().toHexString();
+    const processedItemId =
+      options.processedItemId && Types.ObjectId.isValid(options.processedItemId)
+        ? options.processedItemId
+        : new Types.ObjectId().toHexString();
     const outboxPayload = this.buildProcessedItemOutboxPayload({
       processedItemId,
       raw: options.raw,
@@ -748,7 +755,7 @@ export class NewsPipelineService {
     try {
       await this.prisma.itemMeta.update({
         where: { id: job.itemMetaId },
-        data: { status: "duplicate" },
+        data: { status: ItemStatus.Duplicate },
       });
     } catch (error) {
       this.logger.warn(
@@ -1078,6 +1085,7 @@ export class NewsPipelineService {
       await tx.processedArticle.upsert({
         where: { articleId: articleRecord.id },
         update: {
+          status: ProcessedArticleStatus.completed,
           title: options.cleaned.title ?? null,
           subtitle: options.cleaned.subtitle ?? null,
           author: options.cleaned.author ?? null,
@@ -1108,6 +1116,7 @@ export class NewsPipelineService {
         },
         create: {
           articleId: articleRecord.id,
+          status: ProcessedArticleStatus.completed,
           title: options.cleaned.title ?? null,
           subtitle: options.cleaned.subtitle ?? null,
           author: options.cleaned.author ?? null,
@@ -1196,6 +1205,13 @@ export class NewsPipelineService {
 
     try {
       const created = await this.writeProcessedItemFromPayload(payload.document);
+      await this.prisma.itemMeta.updateMany({
+        where: {
+          id: payload.document.itemMetaId,
+          status: { not: ItemStatus.Duplicate },
+        },
+        data: { status: ItemStatus.Completed },
+      });
       await this.prisma.mongoOutbox.delete({ where: { id: outboxId } });
       this.clearOutboxRetry(outboxId);
       return created;
@@ -1303,12 +1319,40 @@ export class NewsPipelineService {
     try {
       const duplicateRef = this.normalizeProcessedItemRef(document.duplicateOf);
       const duplicateOf = duplicateRef ? new Types.ObjectId(duplicateRef) : undefined;
-      return await ProcessedItemModel.create({
-        ...document,
+      const processedId = new Types.ObjectId(document._id);
+      const rawItemId = new Types.ObjectId(document.rawItemId);
+      const update: Record<string, unknown> = {
+        rawItemId,
+        itemMetaId: document.itemMetaId,
+        orgId: document.orgId,
+        status: document.status,
+        tags: document.tags,
+        result: document.result,
+        llm: document.llm,
+        summaryEmbedding: document.summaryEmbedding,
+        summaryEmbeddingModel: document.summaryEmbeddingModel ?? null,
         duplicateOf,
-        _id: new Types.ObjectId(document._id),
-        rawItemId: new Types.ObjectId(document.rawItemId),
-      });
+        duplicateSimilarity: document.duplicateSimilarity ?? null,
+        error: document.error ?? undefined,
+      };
+      const unset: Record<string, 1> = {};
+      if (!document.error) {
+        unset.error = 1;
+      }
+
+      const updated = await ProcessedItemModel.findOneAndUpdate(
+        { _id: processedId },
+        {
+          $set: update,
+          ...(Object.keys(unset).length ? { $unset: unset } : {}),
+          $setOnInsert: { _id: processedId },
+        },
+        { upsert: true, new: true },
+      );
+      if (!updated) {
+        throw new Error("Processed item upsert returned no document");
+      }
+      return updated;
     } catch (error) {
       if (this.isDuplicateKeyError(error)) {
         const existing = await ProcessedItemModel.findById(document._id);

@@ -2,9 +2,16 @@ import { TaskLogModel } from "@modular/mongo";
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 import { Queue, JobsOptions } from "bullmq";
+import { Types } from "mongoose";
 
 import { QueueOrgStatsService, type TrackedJobStatus } from "./queue-org-stats.service";
 import { ITEM_PIPELINE_QUEUE_NAME, PIPELINE_QUEUE } from "./queue.constants";
+
+interface PipelineJobMeta {
+  pipelineJobId?: string;
+  sourceId?: string;
+  processedItemId?: string;
+}
 
 @Injectable()
 export class QueueService {
@@ -27,12 +34,30 @@ export class QueueService {
     }
   }
 
-  async enqueueItem(orgId: string, itemMetaId: string, rawItemId: string, opts: JobsOptions = {}) {
+  async enqueueItem(
+    orgId: string,
+    itemMetaId: string,
+    rawItemId: string,
+    opts: JobsOptions = {},
+    meta: PipelineJobMeta = {}
+  ) {
     const jobId = `${itemMetaId}:${rawItemId}`;
     const traceId = ensureTraceId(getCurrentTraceId());
+    const processedItemId =
+      typeof meta.processedItemId === "string" && meta.processedItemId.length > 0
+        ? meta.processedItemId
+        : new Types.ObjectId().toHexString();
     const job = await this.queue.add(
       "process-item",
-      { itemMetaId, rawItemId, orgId, traceId },
+      {
+        itemMetaId,
+        rawItemId,
+        orgId,
+        traceId,
+        processedItemId,
+        pipelineJobId: meta.pipelineJobId,
+        sourceId: meta.sourceId,
+      },
       {
         jobId,
         removeOnComplete: true,

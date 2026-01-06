@@ -50,6 +50,12 @@ export interface CrawlTaskJanitorConfig {
   lockTtlMs: number;
 }
 
+export interface NewsSourceSchedulerConfig {
+  enabled: boolean;
+  batchSize: number;
+  lockTtlMs: number;
+}
+
 export interface WebSocketSecurityConfig {
   maxConnectionsPerUser: number;
   maxConnectionsPerIp: number;
@@ -330,6 +336,20 @@ export class EnvService extends ConfigService<ApiEnv> {
       processQueueRateLimit:
         this.get<number>("NEWS_PROCESS_QUEUE_RATE_LIMIT", { infer: true }) ??
         12,
+    };
+  }
+
+  get newsSourceSchedulerConfig(): NewsSourceSchedulerConfig {
+    return {
+      enabled:
+        this.get<boolean>("NEWS_SOURCE_SCHEDULER_ENABLED", { infer: true }) ??
+        true,
+      batchSize:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_BATCH_SIZE", { infer: true }) ??
+        20,
+      lockTtlMs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_LOCK_TTL_MS", { infer: true }) ??
+        120_000,
     };
   }
 
