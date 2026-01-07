@@ -2,13 +2,17 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
-import { CrawlTasksView } from "./crawl-tasks";
-
-export default async function CrawlTasksPage() {
+export default async function CrawlTasksPage({
+  searchParams
+}: {
+  searchParams?: { [key: string]: string | string[] | undefined };
+}) {
   const session = await auth();
   if (!session) {
     redirect("/login");
   }
 
-  return <CrawlTasksView />;
+  const newParam = searchParams?.new;
+  const query = newParam ? "?new=true" : "";
+  redirect(`/admin/ops/crawl-tasks${query}`);
 }

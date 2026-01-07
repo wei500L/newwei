@@ -56,6 +56,8 @@
     "rules": {
       "title": "规则",
       "triggerNow": "立即触发",
+      "triggered": "已加入预警队列。",
+      "triggerFailed": "触发预警失败。",
       "summary": "提供方 {{provider}} · 指标 {{metric}} · 冷却 {{cooldown}} 秒 · 间隔 {{interval}} 秒",
       "channels": "渠道：{{channels}}"
     },
@@ -67,6 +69,11 @@
       "emptyRules": "暂无预警规则。",
       "emptyEvents": "暂无预警事件。",
       "selectEvent": "选择一条事件查看证据详情。",
+      "configNotice": {
+        "title": "预警规则已移至管理后台",
+        "link": "打开预警配置",
+        "description": "预警规则配置仅管理员可用。"
+      },
       "deliveriesEmpty": "暂无投递记录。",
       "eventSummary": "规则 {{rule}} · 指标 {{metric}}",
       "threshold": {
@@ -81,6 +88,7 @@
         "recordedAt": "记录时间 {{time}}",
         "changePercent": "变化 {{value}}",
         "status": "状态",
+        "feedbackAdminOnly": "仅管理员可处理反馈。",
         "message": "说明",
         "deliveries": "投递记录",
         "rule": "规则",
@@ -109,6 +117,7 @@
     "streamError": "告警流错误：{{error}}",
     "config": {
       "title": "配置",
+      "rulesTitle": "规则",
       "defaults": {
         "name": "名称"
       },
@@ -187,6 +196,7 @@
   },
   "common": {
     "notAvailable": "不可用",
+    "loading": "加载中...",
     "error": {
       "unexpected": "发生未知错误"
     },
@@ -235,6 +245,11 @@
     "switch": "切换组织"
   },
   "dashboard": {
+    "admin": {
+      "title": "仪表盘配置",
+      "new": "新建仪表盘",
+      "select": "选择仪表盘"
+    },
     "economicLong": {
       "title": "长期经济",
       "loadFailed": "加载失败",
@@ -337,6 +352,7 @@
       },
       "saved": "已保存",
       "saveFailed": "保存失败",
+      "deleteFailed": "删除失败",
       "add": {
         "line": "折线图",
         "bar": "柱状图",
@@ -642,11 +658,23 @@
   },
   "adminConsole": {
     "title": "管理控制台",
-    "subtitle": "管理组织、存储、系统错误与审计日志。",
+    "subtitle": "管理运维、组织、仪表盘、预警与系统设置。",
     "links": {
+      "ops": {
+        "title": "运维操作",
+        "description": "管理抓取任务与数据源调度"
+      },
       "orgs": {
         "title": "组织管理",
         "description": "维护组织与成员"
+      },
+      "dashboards": {
+        "title": "仪表盘配置",
+        "description": "编辑看板布局与指标"
+      },
+      "alerts": {
+        "title": "预警规则",
+        "description": "配置预警规则与通知渠道"
       },
       "errors": {
         "title": "错误事件",
@@ -659,6 +687,28 @@
       "audit": {
         "title": "审计日志",
         "description": "查看配置与访问事件"
+      },
+      "settings": {
+        "title": "访问控制",
+        "description": "管理角色、权限与成员"
+      },
+      "system": {
+        "title": "系统设置",
+        "description": "调整缓存、限流与抓取默认值"
+      }
+    }
+  },
+  "ops": {
+    "title": "运维操作",
+    "subtitle": "管理抓取流水线与数据源调度。",
+    "links": {
+      "crawlTasks": {
+        "title": "抓取任务",
+        "description": "管理抓取任务与执行状态"
+      },
+      "newsSources": {
+        "title": "新闻数据源",
+        "description": "管理数据源调度与抓取配置"
       }
     }
   },
@@ -677,6 +727,69 @@
       "action": "动作",
       "ipAddress": "IP",
       "metadata": "元数据"
+    }
+  },
+  "newsSources": {
+    "title": "新闻数据源",
+    "searchPlaceholder": "按名称或 URL 搜索",
+    "columns": {
+      "name": "名称",
+      "type": "类型",
+      "frequency": "频率(秒)",
+      "priority": "优先级",
+      "status": "状态",
+      "nextRun": "下次运行",
+      "lastRun": "上次运行"
+    },
+    "types": {
+      "general": "综合",
+      "finance": "财经",
+      "technology": "科技",
+      "politics": "政治",
+      "regulatory": "监管",
+      "other": "其他"
+    },
+    "actions": {
+      "new": "新增数据源",
+      "edit": "编辑数据源",
+      "runNow": "立即运行"
+    },
+    "fields": {
+      "name": "名称",
+      "url": "URL",
+      "type": "类型",
+      "language": "语言",
+      "languageHint": "例如 en, zh",
+      "frequency": "频率（秒）",
+      "priority": "优先级",
+      "active": "启用",
+      "keywords": "关键词",
+      "keywordsHint": "每行一个关键词",
+      "tags": "标签",
+      "tagsHint": "每行一个标签",
+      "summaryHints": "摘要提示",
+      "summaryHintsHint": "每行一个提示",
+      "metadata": "元数据（JSON）",
+      "crawlOptions": "抓取选项（JSON）",
+      "forceRefresh": "强制刷新"
+    },
+    "messages": {
+      "created": "已创建数据源。",
+      "updated": "已更新数据源。",
+      "enabled": "已启用数据源。",
+      "disabled": "已停用数据源。",
+      "runQueued": "已加入抓取队列。",
+      "deleted": "已删除数据源。"
+    },
+    "errors": {
+      "loadFailed": "加载数据源失败。",
+      "saveFailed": "保存数据源失败。",
+      "runFailed": "调度失败。",
+      "deleteFailed": "删除数据源失败。"
+    },
+    "delete": {
+      "title": "删除数据源？",
+      "description": "将移除数据源并停止调度。"
     }
   },
   "finance": {

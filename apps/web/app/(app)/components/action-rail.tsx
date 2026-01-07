@@ -32,12 +32,15 @@ export function ActionRail() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canManageSettings = permissions.includes("settings.manage");
   const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManageAdmin =
     permissions.includes("settings.manage") ||
     permissions.includes("org.write") ||
-    permissions.includes("users.write");
+    permissions.includes("users.write") ||
+    permissions.includes("crawl.read") ||
+    permissions.includes("crawl.write") ||
+    permissions.includes("dashboards.write") ||
+    permissions.includes("alerts.manage");
   const canViewDashboards = permissions.includes("dashboards.read");
 
   const mainNavItems: ActionItem[] = [
@@ -103,18 +106,10 @@ export function ActionRail() {
     }
     if (canManageCrawl) {
       items.push({
-        key: "/crawl",
+        key: "/admin/ops/crawl-tasks",
         icon: <RadarChartOutlined />,
         label: t("nav.crawlTasks", { defaultValue: "Crawl Tasks" }),
-        path: "/crawl"
-      });
-    }
-    if (canManageSettings) {
-      items.push({
-        key: "/settings",
-        icon: <SettingOutlined />,
-        label: t("nav.settings", { defaultValue: "Settings" }),
-        path: "/settings"
+        path: "/admin/ops/crawl-tasks"
       });
     }
     if (canManageAdmin) {
@@ -126,7 +121,7 @@ export function ActionRail() {
       });
     }
     return items;
-  }, [canManageAdmin, canManageCrawl, canManageSettings, canViewDashboards, t]);
+  }, [canManageAdmin, canManageCrawl, canViewDashboards, t]);
 
   return (
     <aside className="hidden md:flex flex-col justify-center h-full pl-4 pr-2 z-40">

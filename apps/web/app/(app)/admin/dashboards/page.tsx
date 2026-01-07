@@ -2,11 +2,13 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
-export default async function SettingsPage() {
+import { DashboardsContent } from "./dashboards-content";
+
+export default async function AdminDashboardsPage() {
   const session = await auth();
   if (!session) {
     redirect("/login");
   }
 
-  redirect("/admin/settings");
+  return <DashboardsContent />;
 }

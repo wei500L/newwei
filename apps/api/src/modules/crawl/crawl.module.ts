@@ -19,6 +19,8 @@ import { CrawlController } from "./crawl.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
 import type { CrawlJobData } from "./crawl.types";
 import { Crawl4aiClient } from "./crawl4ai.client";
+import { NewsSourceController } from "./news-source.controller";
+import { NewsSourceService } from "./news-source.service";
 
 
 @Module({
@@ -40,7 +42,7 @@ import { Crawl4aiClient } from "./crawl4ai.client";
       }
     })
   ],
-  controllers: [CrawlController],
+  controllers: [CrawlController, NewsSourceController],
   providers: [
     CrawlSettingsService,
     CrawlTaskService,
@@ -48,6 +50,7 @@ import { Crawl4aiClient } from "./crawl4ai.client";
     CrawlExecutionService,
     CrawlQueueService,
     CrawlResultService,
+    NewsSourceService,
     CrawlCleanupOutboxService,
     CrawlMetadataService,
     Crawl4aiClient,

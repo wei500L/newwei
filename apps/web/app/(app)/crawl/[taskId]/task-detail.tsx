@@ -2,6 +2,7 @@
 
 import { SearchOutlined } from "@ant-design/icons";
 import {
+  Alert,
   Button,
   Card,
   Descriptions,
@@ -20,6 +21,7 @@ import {
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSession } from "next-auth/react";
 
 import type {
   CrawlTaskStatus} from "@/graphql/generated";
@@ -533,6 +535,10 @@ function renderSourceList(
 export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const { data: session, status } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const canManage = permissions.includes("crawl.write");
   const redactedLabel = t("common.redacted");
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
@@ -543,7 +549,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       resultLimit,
       resultSearch: resultSearch ?? null
     },
-    fetchPolicy: "network-only"
+    fetchPolicy: "network-only",
+    skip: !canView
   });
 
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
@@ -1021,6 +1028,26 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
   };
 
+  if (status === "loading") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
+        <Typography.Text type="secondary">{t("common.loading", { defaultValue: "Loading..." })}</Typography.Text>
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <Card className="content-card" title={t("crawl.detail.title", { defaultValue: "Crawl Task" })}>
+        <Alert
+          type="warning"
+          message={t("settings.adminOnly.title")}
+          description={t("settings.adminOnly.description")}
+        />
+      </Card>
+    );
+  }
+
   if (loading && !task) {
     return (
       <div className="content-card" style={{ textAlign: "center" }}>
@@ -1046,13 +1073,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   return (
     <div className="content-card">
       <Space style={{ marginBottom: 16 }} wrap>
-        <Link href="/crawl">{t("crawl.detail.backToTasks")}</Link>
+        <Link href="/admin/ops/crawl-tasks">{t("crawl.detail.backToTasks")}</Link>
         <Tag color={statusColors[task.status]}>
           {t(`crawl.status.${task.status}`, { defaultValue: task.status })}
         </Tag>
-        <Button onClick={handleRetry} loading={retrying}>
-          {t("crawl.detail.retry")}
-        </Button>
+        {canManage ? (
+          <Button onClick={handleRetry} loading={retrying}>
+            {t("crawl.detail.retry")}
+          </Button>
+        ) : null}
         <Typography.Link href={task.targetUrl} target="_blank" rel="noreferrer">
           {t("crawl.detail.openSource")}
         </Typography.Link>

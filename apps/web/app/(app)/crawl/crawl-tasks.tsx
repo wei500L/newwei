@@ -3,7 +3,9 @@
 import { SearchOutlined } from "@ant-design/icons";
 import { sanitizeCrawlOptions } from "@modular/utils";
 import {
+  Alert,
   Button,
+  Card,
   Form,
   Input,
   message,
@@ -17,8 +19,10 @@ import {
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 import type { CrawlMetadataInput, CrawlTaskStatus } from "@/graphql/generated";
 import {
@@ -45,6 +49,11 @@ const statusColors: Record<CrawlTaskStatus, string> = {
 export function CrawlTasksView() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const canManage = permissions.includes("crawl.write");
   const screens = Grid.useBreakpoint();
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -70,6 +79,7 @@ export function CrawlTasksView() {
       status: statusFilter ?? null,
     },
     fetchPolicy: "network-only",
+    skip: !canView,
   });
 
   const [createTask, { loading: creating }] = useCreateCrawlTaskMutation();
@@ -156,15 +166,17 @@ export function CrawlTasksView() {
       key: "actions",
       render: (_, record) => (
         <Space>
-          <Link href={`/crawl/${record.id}`}>{t("common.view")}</Link>
-          <Button
-            size="small"
-            type="link"
-            onClick={() => handleRetry(record.id)}
-            loading={retrying}
-          >
-            {t("common.retry")}
-          </Button>
+          <Link href={`/admin/ops/crawl-tasks/${record.id}`}>{t("common.view")}</Link>
+          {canManage ? (
+            <Button
+              size="small"
+              type="link"
+              onClick={() => handleRetry(record.id)}
+              loading={retrying}
+            >
+              {t("common.retry")}
+            </Button>
+          ) : null}
         </Space>
       ),
     },
@@ -254,6 +266,35 @@ export function CrawlTasksView() {
     }
   };
 
+  useEffect(() => {
+    if (!canManage) {
+      return;
+    }
+    if (searchParams.get("new") === "true") {
+      setDrawerOpen(true);
+    }
+  }, [canManage, searchParams]);
+
+  if (status === "loading") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
+        <Typography.Text type="secondary">{t("common.loading", { defaultValue: "Loading..." })}</Typography.Text>
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <Card className="content-card" title={t("crawl.title", { defaultValue: "Crawl Tasks" })}>
+        <Alert
+          type="warning"
+          message={t("settings.adminOnly.title")}
+          description={t("settings.adminOnly.description")}
+        />
+      </Card>
+    );
+  }
+
   return (
     <div className="content-card">
       <Space style={{ marginBottom: 16 }} wrap>
@@ -306,9 +347,11 @@ export function CrawlTasksView() {
             setPagination((prev) => ({ ...prev, current: 1 }));
           }}
         />
-        <Button type="primary" onClick={() => setDrawerOpen(true)}>
-          {t("crawl.createTask")}
-        </Button>
+        {canManage ? (
+          <Button type="primary" onClick={() => setDrawerOpen(true)}>
+            {t("crawl.createTask")}
+          </Button>
+        ) : null}
       </Space>
       {!screens.md ? (
         <List
@@ -327,19 +370,21 @@ export function CrawlTasksView() {
           renderItem={(record) => (
             <List.Item
               actions={[
-                <Link key="view" href={`/crawl/${record.id}`}>
+                <Link key="view" href={`/admin/ops/crawl-tasks/${record.id}`}>
                   {t("common.view")}
                 </Link>,
-                <Button
-                  key="retry"
-                  size="small"
-                  type="link"
-                  onClick={() => handleRetry(record.id)}
-                  loading={retrying}
-                >
-                  {t("common.retry")}
-                </Button>,
-              ]}
+                canManage ? (
+                  <Button
+                    key="retry"
+                    size="small"
+                    type="link"
+                    onClick={() => handleRetry(record.id)}
+                    loading={retrying}
+                  >
+                    {t("common.retry")}
+                  </Button>
+                ) : null,
+              ].filter(Boolean)}
             >
               <List.Item.Meta
                 title={
@@ -385,19 +430,23 @@ export function CrawlTasksView() {
           onChange={(pager) => setPagination(pager)}
         />
       )}
-      <MetadataExtractionCard
-        form={metadataForm}
-        loading={metadataLoading}
-        results={metadataResults}
-        onSubmit={handleMetadataSubmit}
-      />
-      <CreateCrawlTaskDrawer
-        form={form}
-        open={drawerOpen}
-        loading={creating}
-        onClose={() => setDrawerOpen(false)}
-        onSubmit={handleCreate}
-      />
+      {canManage ? (
+        <>
+          <MetadataExtractionCard
+            form={metadataForm}
+            loading={metadataLoading}
+            results={metadataResults}
+            onSubmit={handleMetadataSubmit}
+          />
+          <CreateCrawlTaskDrawer
+            form={form}
+            open={drawerOpen}
+            loading={creating}
+            onClose={() => setDrawerOpen(false)}
+            onSubmit={handleCreate}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

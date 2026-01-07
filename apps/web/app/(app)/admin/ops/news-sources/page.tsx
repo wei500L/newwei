@@ -2,11 +2,13 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
-export default async function SettingsPage() {
+import { NewsSourcesContent } from "./news-sources-content";
+
+export default async function AdminNewsSourcesPage() {
   const session = await auth();
   if (!session) {
     redirect("/login");
   }
 
-  redirect("/admin/settings");
+  return <NewsSourcesContent />;
 }

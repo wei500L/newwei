@@ -12,9 +12,22 @@ export function AdminContent() {
   const canViewAdmin =
     permissions.includes("settings.manage") ||
     permissions.includes("org.write") ||
-    permissions.includes("users.write");
+    permissions.includes("users.write") ||
+    permissions.includes("crawl.read") ||
+    permissions.includes("crawl.write") ||
+    permissions.includes("dashboards.write") ||
+    permissions.includes("alerts.manage");
 
   const adminLinks = [
+    {
+      key: "ops",
+      title: t("adminConsole.links.ops.title", { defaultValue: "Operations" }),
+      description: t("adminConsole.links.ops.description", {
+        defaultValue: "Manage crawl tasks and source scheduling"
+      }),
+      href: "/admin/ops",
+      permission: "crawl.read"
+    },
     {
       key: "orgs",
       title: t("adminConsole.links.orgs.title", { defaultValue: "Organizations" }),
@@ -23,6 +36,24 @@ export function AdminContent() {
       }),
       href: "/admin/orgs",
       permission: "org.write"
+    },
+    {
+      key: "dashboards",
+      title: t("adminConsole.links.dashboards.title", { defaultValue: "Dashboard Config" }),
+      description: t("adminConsole.links.dashboards.description", {
+        defaultValue: "Edit dashboard layouts and metrics"
+      }),
+      href: "/admin/dashboards",
+      permission: "dashboards.write"
+    },
+    {
+      key: "alerts",
+      title: t("adminConsole.links.alerts.title", { defaultValue: "Alert Rules" }),
+      description: t("adminConsole.links.alerts.description", {
+        defaultValue: "Configure alert rules and channels"
+      }),
+      href: "/admin/alerts",
+      permission: "alerts.manage"
     },
     {
       key: "errors",
@@ -50,12 +81,36 @@ export function AdminContent() {
       }),
       href: "/admin/audit-logs",
       permission: "settings.manage"
+    },
+    {
+      key: "settings",
+      title: t("adminConsole.links.settings.title", { defaultValue: "Access Settings" }),
+      description: t("adminConsole.links.settings.description", {
+        defaultValue: "Manage roles, permissions, and memberships"
+      }),
+      href: "/admin/settings",
+      permission: "settings.manage"
+    },
+    {
+      key: "system",
+      title: t("adminConsole.links.system.title", { defaultValue: "System Settings" }),
+      description: t("adminConsole.links.system.description", {
+        defaultValue: "Tune cache, rate limits, and crawl defaults"
+      }),
+      href: "/admin/system",
+      permission: "settings.manage"
     }
   ];
 
-  const visibleLinks = adminLinks.filter((link) =>
-    link.permission ? permissions.includes(link.permission) : true
-  );
+  const visibleLinks = adminLinks.filter((link) => {
+    if (!link.permission) {
+      return true;
+    }
+    if (permissions.includes(link.permission)) {
+      return true;
+    }
+    return link.permission === "crawl.read" && permissions.includes("crawl.write");
+  });
 
   if (status === "loading") {
     return (
@@ -85,7 +140,7 @@ export function AdminContent() {
         </Typography.Title>
         <Typography.Text type="secondary">
           {t("adminConsole.subtitle", {
-            defaultValue: "Manage organizations, storage, system errors, and audit logs."
+            defaultValue: "Manage operations, organizations, dashboards, alerts, and system settings."
           })}
         </Typography.Text>
       </Space>

@@ -2,11 +2,13 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
-export default async function SettingsPage() {
+import { CrawlTasksView } from "@/app/(app)/crawl/crawl-tasks";
+
+export default async function AdminCrawlTasksPage() {
   const session = await auth();
   if (!session) {
     redirect("/login");
   }
 
-  redirect("/admin/settings");
+  return <CrawlTasksView />;
 }

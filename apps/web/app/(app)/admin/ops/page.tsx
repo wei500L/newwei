@@ -2,11 +2,13 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
-export default async function SettingsPage() {
+import { OpsContent } from "./ops-content";
+
+export default async function OpsPage() {
   const session = await auth();
   if (!session) {
     redirect("/login");
   }
 
-  redirect("/admin/settings");
+  return <OpsContent />;
 }

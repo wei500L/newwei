@@ -56,6 +56,8 @@
     "rules": {
       "title": "Rules",
       "triggerNow": "Trigger now",
+      "triggered": "Alert rule queued.",
+      "triggerFailed": "Failed to trigger rule.",
       "summary": "Provider {{provider}} · Metric {{metric}} · Cooldown {{cooldown}}s · Interval {{interval}}s",
       "channels": "Channels: {{channels}}"
     },
@@ -67,6 +69,11 @@
       "emptyRules": "No alert rules configured.",
       "emptyEvents": "No alert events yet.",
       "selectEvent": "Select an event to see evidence details.",
+      "configNotice": {
+        "title": "Alert rules are managed in Admin",
+        "link": "Open alert configuration",
+        "description": "Alert rule configuration is limited to administrators."
+      },
       "deliveriesEmpty": "No delivery records.",
       "eventSummary": "Rule {{rule}} · Metric {{metric}}",
       "threshold": {
@@ -81,6 +88,7 @@
         "recordedAt": "Recorded at {{time}}",
         "changePercent": "Change {{value}}",
         "status": "Status",
+        "feedbackAdminOnly": "Feedback actions are available to administrators only.",
         "message": "Message",
         "deliveries": "Deliveries",
         "rule": "Rule",
@@ -109,6 +117,7 @@
     "streamError": "Alert stream error: {{error}}",
     "config": {
       "title": "Config",
+      "rulesTitle": "Rules",
       "defaults": {
         "name": "Name"
       },
@@ -187,6 +196,7 @@
   },
   "common": {
     "notAvailable": "Not available",
+    "loading": "Loading...",
     "error": {
       "unexpected": "Unexpected error"
     },
@@ -235,6 +245,11 @@
     "switch": "Switch organization"
   },
   "dashboard": {
+    "admin": {
+      "title": "Dashboard Config",
+      "new": "New dashboard",
+      "select": "Select dashboard"
+    },
     "economicLong": {
       "title": "Economic long",
       "loadFailed": "Failed to load",
@@ -337,6 +352,7 @@
       },
       "saved": "Saved",
       "saveFailed": "Failed to save",
+      "deleteFailed": "Failed to delete",
       "add": {
         "line": "Line",
         "bar": "Bar",
@@ -642,11 +658,23 @@
   },
   "adminConsole": {
     "title": "Admin Console",
-    "subtitle": "Manage organizations, storage, system errors, and audit logs.",
+    "subtitle": "Manage operations, organizations, dashboards, alerts, and system settings.",
     "links": {
+      "ops": {
+        "title": "Operations",
+        "description": "Manage crawl tasks and source scheduling"
+      },
       "orgs": {
         "title": "Organizations",
         "description": "Manage orgs and memberships"
+      },
+      "dashboards": {
+        "title": "Dashboard Config",
+        "description": "Edit dashboard layouts and metrics"
+      },
+      "alerts": {
+        "title": "Alert Rules",
+        "description": "Configure alert rules and channels"
       },
       "errors": {
         "title": "Error Events",
@@ -659,6 +687,28 @@
       "audit": {
         "title": "Audit Logs",
         "description": "Review configuration and access events"
+      },
+      "settings": {
+        "title": "Access Settings",
+        "description": "Manage roles, permissions, and memberships"
+      },
+      "system": {
+        "title": "System Settings",
+        "description": "Tune cache, rate limits, and crawl defaults"
+      }
+    }
+  },
+  "ops": {
+    "title": "Operations",
+    "subtitle": "Manage crawl pipelines and source schedules.",
+    "links": {
+      "crawlTasks": {
+        "title": "Crawl Tasks",
+        "description": "Manage crawl jobs and task execution"
+      },
+      "newsSources": {
+        "title": "News Sources",
+        "description": "Manage source scheduling and crawl configs"
       }
     }
   },
@@ -677,6 +727,69 @@
       "action": "Action",
       "ipAddress": "IP",
       "metadata": "Metadata"
+    }
+  },
+  "newsSources": {
+    "title": "News Sources",
+    "searchPlaceholder": "Search by name or URL",
+    "columns": {
+      "name": "Name",
+      "type": "Type",
+      "frequency": "Frequency (s)",
+      "priority": "Priority",
+      "status": "Status",
+      "nextRun": "Next run",
+      "lastRun": "Last run"
+    },
+    "types": {
+      "general": "General",
+      "finance": "Finance",
+      "technology": "Technology",
+      "politics": "Politics",
+      "regulatory": "Regulatory",
+      "other": "Other"
+    },
+    "actions": {
+      "new": "New source",
+      "edit": "Edit source",
+      "runNow": "Run now"
+    },
+    "fields": {
+      "name": "Name",
+      "url": "URL",
+      "type": "Type",
+      "language": "Language",
+      "languageHint": "e.g. en, zh",
+      "frequency": "Frequency (seconds)",
+      "priority": "Priority",
+      "active": "Active",
+      "keywords": "Keywords",
+      "keywordsHint": "One keyword per line",
+      "tags": "Tags",
+      "tagsHint": "One tag per line",
+      "summaryHints": "Summary hints",
+      "summaryHintsHint": "One hint per line",
+      "metadata": "Metadata (JSON)",
+      "crawlOptions": "Crawl options (JSON)",
+      "forceRefresh": "Force refresh"
+    },
+    "messages": {
+      "created": "News source created.",
+      "updated": "News source updated.",
+      "enabled": "Source enabled.",
+      "disabled": "Source disabled.",
+      "runQueued": "Source queued for crawl.",
+      "deleted": "News source deleted."
+    },
+    "errors": {
+      "loadFailed": "Failed to load news sources.",
+      "saveFailed": "Failed to save news source.",
+      "runFailed": "Failed to schedule source.",
+      "deleteFailed": "Failed to delete news source."
+    },
+    "delete": {
+      "title": "Delete source?",
+      "description": "This removes the source and stops scheduled crawls."
     }
   },
   "finance": {

@@ -5,17 +5,13 @@ import {
   Button,
   Card,
   Col,
-  Collapse,
   Empty,
-  List,
   Row,
-  Select,
   Skeleton,
   Space,
   Statistic,
   Switch,
   Tag,
-  Timeline,
   Typography,
   message,
 } from "antd";
@@ -28,24 +24,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import dynamic from "next/dynamic";
 
-import {
-  AlertSeverity,
-  AlertStatus,
-  AnalysisType,
-  useAlertRulesQuery,
-  useAnalysisResultsQuery,
-  useDashboardHeroMetricsQuery,
-  useDashboardsQuery,
-  useDeleteDashboardMutation,
-  useQueueStatsQuery,
-  useUpsertDashboardMutation,
-} from "@/graphql/generated";
+import { useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
   useDashboardRangeStore,
-  type DashboardRangePreset,
 } from "@/store/time-range";
 import {
   QUEUE_STATUS_KEYS,
@@ -53,17 +36,12 @@ import {
   useDashboardFiltersStore
 } from "@/store/dashboard-filters";
 
-import { AlertConfigForm } from "./alert-config-form";
 import { MarketPulse } from "./components/market-pulse";
-import { DashboardEditor } from "./dashboard-editor";
-import { DrilldownChart } from "./drilldown-chart";
-import { HeroSection } from "./hero-section";
 import { LiveAlertsToasts } from "./live-alerts";
 import { MetricDrillDown } from "./metric-drilldown";
 import { QueueChart } from "./queue-chart";
 import { useQueueEvents } from "./use-queue-events";
 import { useDashboardStream, type DashboardStreamStatus } from "./use-dashboard-stream";
-import { useDashboardUrlSync } from "./use-dashboard-url-sync";
 
 const AlertPanel = dynamic(() => import("./alert-panel").then((mod) => mod.AlertPanel), {
   loading: () => <Skeleton active paragraph={{ rows: 4 }} />
@@ -112,12 +90,6 @@ interface QueueLog {
   timestamp: string;
 }
 
-const severityColor: Record<AlertSeverity, string> = {
-  [AlertSeverity.Low]: "green",
-  [AlertSeverity.Medium]: "orange",
-  [AlertSeverity.High]: "red",
-};
-
 const LIVE_LOGS_LIMIT = 50;
 const DISPLAY_LOG_LIMIT = 15;
 const QUEUE_STATUS_SET = new Set<QueueStatusKey>(QUEUE_STATUS_KEYS);
@@ -148,19 +120,13 @@ const extractQueueStatus = (event: string): QueueStatusKey | null => {
 };
 
 export function DashboardContent() {
-  const { t, i18n } = useTranslation();
-  const locale = resolveLocale(i18n.language);
+  const { t } = useTranslation();
   const { data: session } = useSession();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const isAnalysisFocused = searchParams.get("panel") === "analysis";
   const [messageApi, messageContext] = message.useMessage();
   const { data, loading, error, refetch } = useQueueStatsQuery();
-  const {
-    data: dashboardsData,
-    loading: dashboardsLoading,
-    refetch: refetchDashboards,
-  } = useDashboardsQuery();
 
   // Hero Metrics Query
   const heroDateRange = useMemo(() => ({
@@ -173,19 +139,7 @@ export function DashboardContent() {
     fetchPolicy: "cache-and-network"
   });
 
-  const [saveDashboard, { loading: savingDashboard }] =
-    useUpsertDashboardMutation();
-  const [deleteDashboard] = useDeleteDashboardMutation();
-  const { range, setRange, start, end } = useDashboardRangeStore();
-  const { data: alertRulesData, loading: alertRulesLoading } =
-    useAlertRulesQuery({
-      fetchPolicy: "cache-first",
-    });
-  const { data: analysisData, loading: analysisLoading } =
-    useAnalysisResultsQuery({
-      variables: { limit: 5 },
-      fetchPolicy: "cache-first",
-    });
+  const { start, end } = useDashboardRangeStore();
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
   const { queueStatus, selectedSector, setQueueStatus } =
     useDashboardFiltersStore();
@@ -197,10 +151,8 @@ export function DashboardContent() {
     selectedSector,
     enabled: Boolean(session?.accessToken)
   });
-  const { resetFilters, hasActiveFilters } = useDashboardUrlSync();
   const queueFilterMounted = useRef(false);
   const [liveLogs, setLiveLogs] = useState<QueueLog[]>([]);
-  const [activeId, setActiveId] = useState<string | undefined>();
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
   const [refreshingDemoData, setRefreshingDemoData] = useState(false);
   const [showSystemStats, setShowSystemStats] = useState(false);
@@ -234,31 +186,6 @@ export function DashboardContent() {
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken]
   );
-
-  const dashboards = useMemo(
-    () => dashboardsData?.dashboards ?? [],
-    [dashboardsData],
-  );
-  const activeAlertRules = useMemo(
-    () =>
-      (alertRulesData?.alertRules ?? []).filter(
-        (rule) => rule.status === AlertStatus.Active,
-      ),
-    [alertRulesData],
-  );
-  const recentAnomalies = useMemo(
-    () =>
-      (analysisData?.analysisResults ?? [])
-        .filter((result) => result.type === AnalysisType.Anomaly)
-        .slice(0, 3),
-    [analysisData],
-  );
-
-  useEffect(() => {
-    if (dashboards.length > 0 && !activeId) {
-      setActiveId(dashboards[0]?.id);
-    }
-  }, [dashboards, activeId]);
 
   useEffect(() => {
     if (connectionError) {
@@ -380,7 +307,7 @@ export function DashboardContent() {
     [filteredLogs],
   );
 
-  if (loading || dashboardsLoading) {
+  if (loading) {
     return (
       <div className="flex flex-col gap-6">
         <Skeleton active paragraph={{ rows: 2 }} />
@@ -395,8 +322,6 @@ export function DashboardContent() {
   }
 
   const { counts, processedCount, itemCount } = data.queueStats;
-  const activeDashboard =
-    dashboards.find((d) => d.id === activeId) ?? dashboards[0] ?? null;
 
   const chartData: Record<QueueStatusKey, number> = {
     waiting: counts.waiting,

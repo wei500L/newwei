@@ -497,7 +497,7 @@ export function ItemsView({
             label: t("items.empty.todayActionAdmin", {
               defaultValue: "Manage crawl tasks"
             }),
-            href: "/crawl"
+            href: "/admin/ops/crawl-tasks"
           }
         : {
             label: t("items.empty.todayActionSubscriber", {

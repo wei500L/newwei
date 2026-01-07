@@ -63,8 +63,6 @@ export function TopNav() {
 
   const user = session?.user;
   const permissions = session?.permissions ?? user?.permissions ?? [];
-  const canManageSettings = permissions.includes("settings.manage");
-  const canManageOrganizations = permissions.includes("org.write");
   const canStartCrawl = permissions.includes("crawl.write");
 
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
@@ -110,7 +108,7 @@ export function TopNav() {
                   type="primary"
                   icon={<PlusOutlined />}
                   size="small"
-                  onClick={() => router.push("/crawl?new=true")}
+                  onClick={() => router.push("/admin/ops/crawl-tasks?new=true")}
                   className="shadow-none"
               >
                   {startNewCrawlLabel}

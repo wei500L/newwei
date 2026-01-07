@@ -1,71 +1,20 @@
 "use client";
 
 import { useApolloClient } from "@apollo/client";
-import { Badge, Button, Divider, List, Space, Tag, Typography } from "antd";
+import { Alert, Badge, Divider, List, Space, Tag, Typography } from "antd";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
-import type {
-  AlertEventsStreamSubscription} from "@/graphql/generated";
-import {
-  useAlertEventsQuery,
-  useAlertRulesQuery,
-  useTriggerAlertRuleMutation,
-  AlertEventsStreamDocument
-} from "@/graphql/generated";
+import type { AlertEventsStreamSubscription } from "@/graphql/generated";
+import { AlertEventsStreamDocument, useAlertEventsQuery } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const severityColor: Record<string, string> = {
   low: "green",
   medium: "orange",
-  high: "red",
-};
-
-const buildThresholdSummary = (
-  operator: string | null | undefined,
-  thresholdValue: number | undefined,
-  lower: number | undefined,
-  upper: number | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string
-) => {
-  if (!operator) {
-    return t("common.notAvailable");
-  }
-  const operatorSymbolMap: Record<string, string> = {
-    gt: ">",
-    gte: ">=",
-    lt: "<",
-    lte: "<=",
-    eq: "="
-  };
-  if (operator === "outside_range" || operator === "within_range") {
-    if (lower === undefined || upper === undefined) {
-      return t("common.notAvailable");
-    }
-    const range = `${lower} - ${upper}`;
-    return t(
-      operator === "outside_range"
-        ? "alerts.center.threshold.outside"
-        : "alerts.center.threshold.within",
-      { defaultValue: `${operator === "outside_range" ? "Outside" : "Within"} ${range}`, range }
-    );
-  }
-  if (operator === "change_up_pct" || operator === "change_down_pct") {
-    if (thresholdValue === undefined) {
-      return t("common.notAvailable");
-    }
-    const symbol = operator === "change_up_pct" ? ">=" : "<=";
-    return t("alerts.center.threshold.changePct", {
-      defaultValue: `Change ${symbol} ${thresholdValue}%`,
-      symbol,
-      value: thresholdValue
-    });
-  }
-  if (thresholdValue === undefined) {
-    return t("common.notAvailable");
-  }
-  const symbol = operatorSymbolMap[operator] ?? operator;
-  return `${symbol} ${thresholdValue}`;
+  high: "red"
 };
 
 const eventStatusBadge: Record<string, "success" | "processing" | "error" | "default"> = {
@@ -79,97 +28,48 @@ const eventStatusBadge: Record<string, "success" | "processing" | "error" | "def
 export function AlertPanel() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { data: rulesData, refetch: refetchRules } = useAlertRulesQuery();
   const { data: eventsData, refetch: refetchEvents } = useAlertEventsQuery({
-    variables: { limit: 10 },
+    variables: { limit: 10 }
   });
-  const [triggerRule, { loading }] = useTriggerAlertRuleMutation();
   const client = useApolloClient();
+  const { data: session } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canManageAlerts = permissions.includes("alerts.manage");
 
   useEffect(() => {
     const sub = client
       .subscribe<AlertEventsStreamSubscription>({
-        query: AlertEventsStreamDocument,
+        query: AlertEventsStreamDocument
       })
       .subscribe({
         next: () => {
-          void Promise.all([refetchRules(), refetchEvents()]);
-        },
+          void refetchEvents();
+        }
       });
     return () => sub.unsubscribe();
-  }, [client, refetchEvents, refetchRules]);
+  }, [client, refetchEvents]);
 
-  const rules = rulesData?.alertRules ?? [];
   const events = eventsData?.alertEvents ?? [];
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <div>
-        <Typography.Title level={5}>{t("alerts.rules.title")}</Typography.Title>
-        <List
-          dataSource={rules}
-          renderItem={(rule) => (
-            <List.Item
-              actions={[
-                <Button
-                  key="trigger"
-                  size="small"
-                  loading={loading}
-                  onClick={async () => {
-                    await triggerRule({ variables: { ruleId: rule.id } });
-                    await Promise.all([refetchRules(), refetchEvents()]);
-                  }}
-                >
-                  {t("alerts.rules.triggerNow")}
-                </Button>,
-              ]}
-            >
-              <List.Item.Meta
-                title={
-                  <Space>
-                    <Typography.Text strong>{rule.name}</Typography.Text>
-                    <Tag color={severityColor[rule.severity] ?? "blue"}>
-                      {rule.severity}
-                    </Tag>
-                    <Tag>{rule.operator}</Tag>
-                  </Space>
-                }
-                description={
-                  <Space direction="vertical" size={0}>
-                    <Typography.Text type="secondary">
-                      {t("alerts.rules.summary", {
-                        provider: rule.metricProvider,
-                        metric: rule.metricSlug,
-                        cooldown: rule.cooldownSeconds,
-                        interval: rule.checkIntervalSec
-                      })}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      {t("alerts.rules.threshold", {
-                        defaultValue: "Threshold {{threshold}}",
-                        threshold: buildThresholdSummary(
-                          rule.operator,
-                          rule.thresholdValue ?? undefined,
-                          rule.thresholdLower ?? undefined,
-                          rule.thresholdUpper ?? undefined,
-                          t
-                        )
-                      })}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      {t("alerts.rules.channels", {
-                        channels:
-                          rule.channels.map((c) => c.name).join(", ") ||
-                          t("common.notAvailable")
-                      })}
-                    </Typography.Text>
-                  </Space>
-                }
-              />
-            </List.Item>
-          )}
-        />
-      </div>
+      <Alert
+        type={canManageAlerts ? "info" : "warning"}
+        message={t("alerts.center.configNotice.title", {
+          defaultValue: "Alert rules are managed in Admin"
+        })}
+        description={
+          canManageAlerts ? (
+            <Link href="/admin/alerts">
+              {t("alerts.center.configNotice.link", { defaultValue: "Open alert configuration" })}
+            </Link>
+          ) : (
+            t("alerts.center.configNotice.description", {
+              defaultValue: "Alert rule configuration is limited to administrators."
+            })
+          )
+        }
+      />
       <Divider />
       <div>
         <Typography.Title level={5}>{t("alerts.events.title")}</Typography.Title>
@@ -180,9 +80,7 @@ export function AlertPanel() {
               <List.Item.Meta
                 title={
                   <Space>
-                    <Badge
-                      status={eventStatusBadge[event.status] ?? "default"}
-                    />
+                    <Badge status={eventStatusBadge[event.status] ?? "default"} />
                     <Typography.Text>
                       {formatDateTime(event.triggeredAt, locale, {
                         year: "numeric",
@@ -199,28 +97,21 @@ export function AlertPanel() {
                   </Space>
                 }
                 description={
-                  <Space direction="vertical">
+                  <Space direction="vertical" size={0}>
                     <Typography.Text type="secondary">
                       {t("alerts.events.metrics", {
                         value: event.metricValue,
-                        change: event.changePercent ?? t("common.notAvailable")
+                        change:
+                          typeof event.changePercent === "number"
+                            ? event.changePercent.toFixed(2)
+                            : t("common.notAvailable")
                       })}
                     </Typography.Text>
                     <Typography.Text type="secondary">
-                      {t("alerts.events.evidence", {
-                        defaultValue: "Metric {{metric}} · Threshold {{threshold}}",
-                        metric: event.metricSlug ?? t("common.notAvailable"),
-                        threshold: buildThresholdSummary(
-                          event.operator,
-                          event.thresholdValue ?? undefined,
-                          event.thresholdLower ?? undefined,
-                          event.thresholdUpper ?? undefined,
-                          t
-                        )
+                      {t("alerts.center.eventSummary", {
+                        rule: event.ruleName ?? t("common.notAvailable"),
+                        metric: event.metricSlug ?? t("common.notAvailable")
                       })}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      {event.message ?? t("alerts.events.triggered")}
                     </Typography.Text>
                   </Space>
                 }

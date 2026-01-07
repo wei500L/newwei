@@ -1,18 +1,17 @@
 "use client";
 
 import { gql, useApolloClient, useMutation } from "@apollo/client";
-import { Badge, Button, Card, Col, List, Row, Space, Tag, Typography } from "antd";
+import { Alert, Badge, Button, Card, Col, List, Row, Space, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
 
-import { AlertConfigForm } from "@/app/(app)/dashboard/alert-config-form";
 import {
   AlertEventsStreamDocument,
   useAlertEventsQuery,
-  useAlertRulesQuery,
-  useTriggerAlertRuleMutation
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -167,17 +166,18 @@ export function AlertCenterContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const client = useApolloClient();
+  const { data: session } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canManageAlerts = permissions.includes("alerts.manage");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const eventParam = searchParams.get("eventId");
 
-  const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useAlertRulesQuery();
   const { data: eventsData, loading: eventsLoading, refetch: refetchEvents } = useAlertEventsQuery({
     variables: { limit: 20 }
   });
-  const [triggerRule, { loading: triggeringRule }] = useTriggerAlertRuleMutation();
   const [updateEventStatus, { loading: updatingStatus }] = useMutation<
     UpdateAlertEventStatusData,
     UpdateAlertEventStatusVariables
@@ -190,13 +190,11 @@ export function AlertCenterContent() {
       })
       .subscribe({
         next: () => {
-          void Promise.all([refetchRules(), refetchEvents()]);
+          void refetchEvents();
         }
       });
     return () => sub.unsubscribe();
-  }, [client, refetchEvents, refetchRules]);
-
-  const rules = rulesData?.alertRules ?? [];
+  }, [client, refetchEvents]);
   const events = eventsData?.alertEvents ?? [];
 
   useEffect(() => {
@@ -227,11 +225,11 @@ export function AlertCenterContent() {
   );
 
   const handleRefresh = async () => {
-    await Promise.all([refetchRules(), refetchEvents()]);
+    await refetchEvents();
   };
 
   const handleEventStatusUpdate = async (status: string) => {
-    if (!selectedEvent) {
+    if (!selectedEvent || !canManageAlerts) {
       return;
     }
     await updateEventStatus({
@@ -348,100 +346,25 @@ export function AlertCenterContent() {
         </Button>
       </Space>
 
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={14}>
-          <Card
-            className="content-card"
-            title={t("alerts.center.rulesTitle", { defaultValue: "Rules" })}
-            extra={
-              <Button size="small" onClick={() => void refetchRules()}>
-                {t("common.refresh")}
-              </Button>
-            }
-          >
-            <List
-              loading={rulesLoading}
-              dataSource={rules}
-              locale={{
-                emptyText: (
-                  <ChartEmptyState
-                    className="h-auto py-6"
-                    description={t("alerts.center.emptyRules", {
-                      defaultValue: "No alert rules configured."
-                    })}
-                  />
-                )
-              }}
-              renderItem={(rule) => (
-                <List.Item
-                  actions={[
-                    <Button
-                      key="trigger"
-                      size="small"
-                      loading={triggeringRule}
-                      onClick={async () => {
-                        await triggerRule({ variables: { ruleId: rule.id } });
-                        await Promise.all([refetchRules(), refetchEvents()]);
-                      }}
-                    >
-                      {t("alerts.rules.triggerNow", { defaultValue: "Trigger now" })}
-                    </Button>
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={
-                      <Space size="small">
-                        <Typography.Text strong>{rule.name}</Typography.Text>
-                        <Tag color={severityColor[rule.severity] ?? "blue"}>{rule.severity}</Tag>
-                        <Tag>{rule.operator}</Tag>
-                      </Space>
-                    }
-                    description={
-                      <Space direction="vertical" size={0}>
-                        <Typography.Text type="secondary">
-                          {t("alerts.rules.summary", {
-                            provider: rule.metricProvider,
-                            metric: rule.metricSlug,
-                            cooldown: rule.cooldownSeconds,
-                            interval: rule.checkIntervalSec,
-                            defaultValue:
-                              "Provider {{provider}} · Metric {{metric}} · Cooldown {{cooldown}}s · Interval {{interval}}s"
-                          })}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          {t("alerts.rules.threshold", {
-                            defaultValue: "Threshold {{threshold}}",
-                            threshold: buildThresholdSummary(
-                              rule.operator,
-                              rule.thresholdValue ?? undefined,
-                              rule.thresholdLower ?? undefined,
-                              rule.thresholdUpper ?? undefined,
-                              t
-                            )
-                          })}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          {t("alerts.rules.channels", {
-                            channels:
-                              rule.channels.map((channel) => channel.name).join(", ") ||
-                              t("common.notAvailable"),
-                            defaultValue: "Channels: {{channels}}"
-                          })}
-                        </Typography.Text>
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} xl={10}>
-          <Card className="content-card">
-            <AlertConfigForm />
-          </Card>
-        </Col>
-      </Row>
+      <Card className="content-card">
+        <Alert
+          type={canManageAlerts ? "info" : "warning"}
+          message={t("alerts.center.configNotice.title", {
+            defaultValue: "Alert rules are managed in Admin"
+          })}
+          description={
+            canManageAlerts ? (
+              <Link href="/admin/alerts">
+                {t("alerts.center.configNotice.link", { defaultValue: "Open alert configuration" })}
+              </Link>
+            ) : (
+              t("alerts.center.configNotice.description", {
+                defaultValue: "Alert rule configuration is limited to administrators."
+              })
+            )
+          }
+        />
+      </Card>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>
@@ -694,25 +617,33 @@ export function AlertCenterContent() {
                   </Space>
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.feedback", { defaultValue: "Feedback" })}>
-                  <Space>
-                    <Button
-                      type="primary"
-                      size="small"
-                      loading={updatingStatus}
-                      disabled={selectedEvent.status === "confirmed"}
-                      onClick={() => void handleEventStatusUpdate("confirmed")}
-                    >
-                      {t("alerts.center.detail.confirm", { defaultValue: "Confirm" })}
-                    </Button>
-                    <Button
-                      size="small"
-                      loading={updatingStatus}
-                      disabled={selectedEvent.status === "ignored"}
-                      onClick={() => void handleEventStatusUpdate("ignored")}
-                    >
-                      {t("alerts.center.detail.ignore", { defaultValue: "Ignore" })}
-                    </Button>
-                  </Space>
+                  {canManageAlerts ? (
+                    <Space>
+                      <Button
+                        type="primary"
+                        size="small"
+                        loading={updatingStatus}
+                        disabled={selectedEvent.status === "confirmed"}
+                        onClick={() => void handleEventStatusUpdate("confirmed")}
+                      >
+                        {t("alerts.center.detail.confirm", { defaultValue: "Confirm" })}
+                      </Button>
+                      <Button
+                        size="small"
+                        loading={updatingStatus}
+                        disabled={selectedEvent.status === "ignored"}
+                        onClick={() => void handleEventStatusUpdate("ignored")}
+                      >
+                        {t("alerts.center.detail.ignore", { defaultValue: "Ignore" })}
+                      </Button>
+                    </Space>
+                  ) : (
+                    <Typography.Text type="secondary">
+                      {t("alerts.center.detail.feedbackAdminOnly", {
+                        defaultValue: "Feedback actions are available to administrators only."
+                      })}
+                    </Typography.Text>
+                  )}
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.message", { defaultValue: "Message" })}>
                   <Typography.Text>
