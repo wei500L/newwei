@@ -1,13 +1,45 @@
 "use client";
 
 import { SearchOutlined, LoadingOutlined, FileTextOutlined } from "@ant-design/icons";
+import { gql, useQuery } from "@apollo/client";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { createApiClient } from "@/lib/api-client";
 
+interface SearchItemsQueryData {
+  items: {
+    edges: Array<{
+      node: {
+        id: string;
+        title: string;
+        status: string;
+        meta?: { externalId?: string | null } | null;
+      };
+    }>;
+  };
+}
+
+interface SearchItemsQueryVariables {
+  search?: string | null;
+}
+
+const SEARCH_ITEMS_QUERY = gql`
+  query SearchItems($search: String) {
+    items(search: $search, first: 5) {
+      edges {
+        node {
+          id
+          title
+          status
+          meta {
+            externalId
+          }
+        }
+      }
+    }
+  }
+`;
 
 function useDebounceValue<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -25,7 +57,7 @@ function useDebounceValue<T>(value: T, delay: number): T {
 export function CommandBar() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { data: session } = useSession();
+  const { status } = useSession();
   const [focused, setFocused] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -33,35 +65,16 @@ export function CommandBar() {
   const debouncedQuery = useDebounceValue(query, 500);
   const emptyLabel = t("nav.commandEmpty", { defaultValue: "No results found." });
 
-  const apiClient = createApiClient({ accessToken: session?.accessToken });
+  const { data, loading } = useQuery<SearchItemsQueryData, SearchItemsQueryVariables>(
+    SEARCH_ITEMS_QUERY,
+    {
+      variables: { search: debouncedQuery },
+      skip: status !== "authenticated" || !focused || debouncedQuery.length < 2,
+      fetchPolicy: "no-cache",
+    }
+  );
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["command-bar", "search", debouncedQuery],
-    queryFn: async () => {
-      if (!debouncedQuery || debouncedQuery.length < 2) return [];
-      const response = await apiClient.post("graphql", {
-        query: `
-          query SearchItems($search: String) {
-            items(search: $search, first: 5) {
-              edges {
-                node {
-                  id
-                  title
-                  status
-                  meta {
-                    externalId
-                  }
-                }
-              }
-            }
-          }
-        `,
-        variables: { search: debouncedQuery }
-      });
-      return response.data?.data?.items?.edges ?? [];
-    },
-    enabled: Boolean(debouncedQuery.length >= 2),
-  });
+  const edges = data?.items.edges ?? [];
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -97,7 +110,7 @@ export function CommandBar() {
         }
       `}
       >
-        {isLoading ? (
+        {loading ? (
            <LoadingOutlined className="text-lg mr-3 text-[var(--primary)]" />
         ) : (
            <SearchOutlined className={`text-lg mr-3 ${focused ? "text-[var(--primary)]" : "text-slate-500"}`} />
@@ -127,15 +140,15 @@ export function CommandBar() {
       {/* Results Dropdown */}
       {focused && query.length >= 2 && (
         <div className="absolute top-full left-0 right-0 mt-2 glass-card border border-[var(--border)] max-h-[300px] overflow-auto animate-in fade-in slide-in-from-top-2">
-          {data?.length === 0 && !isLoading && (
+          {edges.length === 0 && !loading && (
             <div className="p-4 text-center text-slate-500 text-xs">
               {emptyLabel}
             </div>
           )}
           
-          {data?.map((edge: any) => {
-            const status = edge.node.status ?? "";
-            const statusLabel = t(`items.status.${status}`, { defaultValue: status });
+          {edges.map((edge) => {
+            const statusText = edge.node.status ?? "";
+            const statusLabel = t(`items.status.${statusText}`, { defaultValue: statusText });
             const externalIdLabel = t("items.detail.fields.externalId", { defaultValue: "External ID" });
             return (
             <div 
@@ -150,7 +163,7 @@ export function CommandBar() {
                      {edge.node.title}
                    </span>
                    <span className="text-[10px] text-slate-500">
-                     {externalIdLabel}: {edge.node.meta.externalId}
+                     {externalIdLabel}: {edge.node.meta?.externalId ?? "-"}
                    </span>
                  </div>
               </div>

@@ -5,12 +5,12 @@ import type { ReactNode } from "react";
 
 import { useChartTheme } from "@/hooks/use-chart-theme";
 
-type ChartEmptyStateVariant = "empty" | "delayed" | "backfilling" | "error";
+type ChartEmptyStateVariant = "empty" | "delayed" | "backfilling" | "offline" | "error";
 type ChartEmptyStatePresentation = "center" | "banner";
 
 interface ChartEmptyStateProps {
   title?: string;
-  description: string;
+  description: ReactNode;
   variant?: ChartEmptyStateVariant;
   presentation?: ChartEmptyStatePresentation;
   actionLabel?: string;
@@ -38,6 +38,8 @@ export function ChartEmptyState({
         return "rgba(220, 38, 38, 0.55)";
       case "delayed":
         return "rgba(245, 158, 11, 0.6)";
+      case "offline":
+        return "rgba(100, 116, 139, 0.6)";
       case "backfilling":
         return colors?.primary ?? "rgba(56, 189, 248, 0.6)";
       case "empty":
@@ -51,6 +53,8 @@ export function ChartEmptyState({
       ? "#dc2626"
       : variant === "delayed"
         ? "#d97706"
+        : variant === "offline"
+          ? "#475569"
         : "#0f172a";
   const actionNode =
     action ??
@@ -64,7 +68,7 @@ export function ChartEmptyState({
     const alertType =
       variant === "error"
         ? "error"
-        : variant === "delayed"
+        : variant === "delayed" || variant === "offline"
           ? "warning"
           : variant === "backfilling"
             ? "info"

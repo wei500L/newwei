@@ -152,6 +152,43 @@ export class ItemsResolver {
       throw new BadRequestException("Unauthenticated");
     }
 
+    if (args.after && args.page) {
+      throw new BadRequestException("Use either 'after' cursor or 'page' pagination, not both.");
+    }
+
+    const orderBy = args.orderBy === ItemsOrderBy.PUBLISHED_DESC ? "PUBLISHED_DESC" : "CREATED_DESC";
+
+    if (typeof args.page === "number") {
+      const { items, total, page, pageSize } = await this.itemsService.list(
+        requester.orgId,
+        args.page,
+        args.first,
+        args.search,
+        args.filters,
+        orderBy
+      );
+
+      const edges: ItemEdge[] = items.map((item) => ({
+        cursor: encodeCursor(
+          orderBy === "PUBLISHED_DESC"
+            ? { id: item.id, sortAt: item.sortAt?.toISOString?.() }
+            : { id: item.id, createdAt: item.createdAt.toISOString() }
+        ),
+        node: this.toItemModel(item)
+      }));
+
+      const pageInfo: PageInfo = {
+        hasNextPage: page * pageSize < total,
+        endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null
+      };
+
+      return {
+        edges,
+        pageInfo,
+        totalCount: total
+      };
+    }
+
     const cursor = decodeCursor(args.after);
     const { items, hasNextPage, totalCount } = await this.itemsService.listWithCursor(
       requester.orgId,
@@ -159,12 +196,12 @@ export class ItemsResolver {
       cursor,
       args.search,
       args.filters,
-      args.orderBy
+      orderBy
     );
 
     const edges: ItemEdge[] = items.map((item) => ({
       cursor: encodeCursor(
-        args.orderBy === ItemsOrderBy.PublishedDesc
+        orderBy === "PUBLISHED_DESC"
           ? { id: item.id, sortAt: item.sortAt?.toISOString?.() }
           : { id: item.id, createdAt: item.createdAt.toISOString() }
       ),

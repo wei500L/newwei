@@ -10,6 +10,7 @@ type Installer = Parameters<typeof echarts.use>[0];
 
 const installed = new Set<string>();
 const installPromises = new Map<string, Promise<void>>();
+let themesRegistered = false;
 
 const installOnce = (key: string, loader: () => Promise<Installer>) => {
   if (installed.has(key)) {
@@ -281,6 +282,8 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
 export interface EchartProps {
   option: echarts.EChartsCoreOption;
   height?: number | string;
+  lazy?: boolean;
+  lazyRootMargin?: string;
   renderer?: "canvas" | "svg";
   group?: string;
   theme?: string | object;
@@ -355,6 +358,8 @@ const renderSvgToPng = (
 export function DashboardChart({
   option,
   height = 360,
+  lazy = true,
+  lazyRootMargin = "200px",
   renderer = "canvas",
   group,
   theme,
@@ -373,29 +378,58 @@ export function DashboardChart({
   );
   const [exporting, setExporting] = useState(false);
   const [supportsHover, setSupportsHover] = useState(true);
+  const [isInView, setIsInView] = useState(!lazy);
+  const [shouldInit, setShouldInit] = useState(!lazy);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const media = window.matchMedia("(hover: hover)");
     const updateSupport = () => setSupportsHover(media.matches);
     updateSupport();
-    if (media.addEventListener) {
-      media.addEventListener("change", updateSupport);
-    } else {
-      media.addListener(updateSupport);
-    }
+    media.addEventListener("change", updateSupport);
     return () => {
-      if (media.addEventListener) {
-        media.removeEventListener("change", updateSupport);
-      } else {
-        media.removeListener(updateSupport);
-      }
+      media.removeEventListener("change", updateSupport);
     };
   }, []);
 
   useEffect(() => {
+    if (!lazy) {
+      setIsInView(true);
+      setShouldInit(true);
+      return;
+    }
+
     const dom = ref.current;
-    if (!dom) return;
+    if (!dom) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      setIsInView(true);
+      setShouldInit(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        const intersecting = Boolean(entry?.isIntersecting);
+        setIsInView(intersecting);
+        if (intersecting) {
+          setShouldInit(true);
+        }
+      },
+      { rootMargin: lazyRootMargin }
+    );
+
+    observer.observe(dom);
+
+    return () => observer.disconnect();
+  }, [lazy, lazyRootMargin]);
+
+	  useEffect(() => {
+	    const dom = ref.current;
+	    if (!dom || !shouldInit) return;
 
     let cancelled = false;
     let handleResize: (() => void) | undefined;
@@ -403,8 +437,9 @@ export function DashboardChart({
       await ensureRenderer(renderer);
       if (cancelled) return;
 
-      // Register Smart Light Theme
-      echarts.registerTheme("smart-light", {
+      if (!themesRegistered) {
+        // Register Smart Light Theme
+        echarts.registerTheme("smart-light", {
         color: [
           "#0050b3", // Primary (Deep Blue)
           "#faad14", // Secondary (Tech Gold)
@@ -479,8 +514,8 @@ export function DashboardChart({
         },
       });
 
-      // Register Smart Dark Theme
-      echarts.registerTheme("smart-dark", {
+        // Register Smart Dark Theme
+        echarts.registerTheme("smart-dark", {
         color: [
           "#2563eb", // Vibrant Blue (was #177ddc)
           "#d48806", // Gold
@@ -555,6 +590,9 @@ export function DashboardChart({
         },
       });
 
+        themesRegistered = true;
+      }
+
       const chart = echarts.init(dom, theme || "smart-light", { renderer });
       chartRef.current = chart;
       if (group) {
@@ -583,11 +621,12 @@ export function DashboardChart({
         .catch(() => undefined);
       initPromiseRef.current = null;
     };
-  }, [renderer, group, theme]);
+	  }, [renderer, group, theme, shouldInit]);
 
-  useEffect(() => {
-    const p = initPromiseRef.current;
-    if (!p) return;
+	  useEffect(() => {
+	    if (!shouldInit || !isInView) return;
+	    const p = initPromiseRef.current;
+	    if (!p) return;
 
     let cancelled = false;
     (async () => {
@@ -601,11 +640,12 @@ export function DashboardChart({
     return () => {
       cancelled = true;
     };
-  }, [option, renderer, group, theme]);
+	  }, [option, renderer, group, theme, isInView, shouldInit]);
 
-  useEffect(() => {
-    const p = initPromiseRef.current;
-    if (!p || !onEvents?.length) return;
+	  useEffect(() => {
+	    if (!shouldInit) return;
+	    const p = initPromiseRef.current;
+	    if (!p || !onEvents?.length) return;
 
     let cancelled = false;
     let cleanup: (() => void) | undefined;
@@ -627,7 +667,7 @@ export function DashboardChart({
       cancelled = true;
       cleanup?.();
     };
-  }, [onEvents, renderer, group, theme]);
+	  }, [onEvents, renderer, group, theme, shouldInit]);
 
   const handleExport = async () => {
     if (exporting) return;

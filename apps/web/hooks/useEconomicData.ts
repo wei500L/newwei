@@ -122,6 +122,21 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     return intervals[Math.floor(intervals.length / 2)] ?? null;
   }, [points]);
 
+  const expectedIntervalMs = useMemo(() => medianIntervalMs ?? 24 * 60 * 60 * 1000, [medianIntervalMs]);
+
+  const delayMs = useMemo(() => {
+    if (!latestTimestamp) {
+      return null;
+    }
+    const latest = latestTimestamp.getTime();
+    const rangeEnd = end.getTime();
+    if (!Number.isFinite(latest) || !Number.isFinite(rangeEnd)) {
+      return null;
+    }
+    const delta = rangeEnd - latest;
+    return delta > 0 ? delta : 0;
+  }, [end, latestTimestamp]);
+
   const isDelayed = useMemo(() => {
     if (!latestTimestamp) {
       return false;
@@ -131,9 +146,8 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     if (!Number.isFinite(latest) || rangeEnd <= latest) {
       return false;
     }
-    const expected = medianIntervalMs ?? 24 * 60 * 60 * 1000;
-    return rangeEnd - latest > expected * 2;
-  }, [end, latestTimestamp, medianIntervalMs]);
+    return rangeEnd - latest > expectedIntervalMs * 2;
+  }, [end, expectedIntervalMs, latestTimestamp]);
 
   const chartState: ChartDataState = useMemo(() => {
     if (error) {
@@ -159,6 +173,8 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     hasData: points.length > 0,
     latestTimestamp,
     isDelayed,
+    delayMs,
+    expectedIntervalMs,
     chartState
   };
 }

@@ -162,9 +162,19 @@ export class ItemsService {
     };
   }
 
-  async list(orgId: string, page = 1, pageSize = 10, search?: string, filters?: ItemFilters) {
-    const take = Math.max(pageSize, 1);
-    const skip = (page - 1) * take;
+  async list(
+    orgId: string,
+    page = 1,
+    pageSize = 10,
+    search?: string,
+    filters?: ItemFilters,
+    orderBy: ItemsOrderBy = "CREATED_DESC"
+  ) {
+    const normalizedPageSize = Number.isFinite(pageSize) ? Math.floor(pageSize) : 10;
+    const take = Math.min(Math.max(normalizedPageSize, 1), MAX_CURSOR_PAGE_SIZE);
+    const normalizedPage = Number.isFinite(page) ? Math.floor(page) : 1;
+    const safePage = Math.max(normalizedPage, 1);
+    const skip = (safePage - 1) * take;
     const { search: normalizedSearch, filters: legacyFilters } = this.parseSearchPayload(search);
     const effectiveFilters = filters ?? legacyFilters;
     const scopedIds = await this.resolveScopedIds(orgId, normalizedSearch, effectiveFilters);
@@ -172,10 +182,16 @@ export class ItemsService {
       return {
         items: [],
         total: 0,
-        page,
+        page: safePage,
         pageSize: take
       };
     }
+
+    const orderField = orderBy === "PUBLISHED_DESC" ? "sortAt" : "createdAt";
+    const orderByClause =
+      orderField === "sortAt"
+        ? [{ sortAt: "desc" }, { id: "desc" }]
+        : [{ createdAt: "desc" }, { id: "desc" }];
 
     if (!normalizedSearch && !scopedIds) {
       const baseWhere = this.buildBaseWhere(orgId);
@@ -184,7 +200,7 @@ export class ItemsService {
           where: baseWhere,
           skip,
           take,
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }]
+          orderBy: orderByClause
         }),
         this.prisma.itemMeta.count({ where: baseWhere })
       ]);
@@ -192,7 +208,7 @@ export class ItemsService {
       return {
         items,
         total,
-        page,
+        page: safePage,
         pageSize: take
       };
     }
@@ -204,13 +220,13 @@ export class ItemsService {
       where,
       skip,
       take,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }]
+      orderBy: orderByClause
     });
 
     return {
       items,
       total: scopedIds?.length ?? 0,
-      page,
+      page: safePage,
       pageSize: take
     };
   }

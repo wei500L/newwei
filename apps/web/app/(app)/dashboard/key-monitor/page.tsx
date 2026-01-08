@@ -4,10 +4,10 @@ import { Col, Row, Skeleton, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { ChartDataMeta } from "@/components/chart-data-meta";
-import { ChartEmptyState } from "@/components/chart-empty-state";
+import { ChartStateBanner } from "@/components/chart-state-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { resolveLocale } from "@/lib/i18n";
 
 import { CandlestickCard } from "../components/candlestick-card";
 import { EconomicChartCard } from "../components/economic-chart-card";
@@ -15,12 +15,21 @@ import { EconomicChartCard } from "../components/economic-chart-card";
 export default function KeyMonitorPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { loading, seriesMap, error, refetch, hasData, latestTimestamp, isDelayed, chartState } = useEconomicData({
+  const {
+    loading,
+    seriesMap,
+    error,
+    refetch,
+    hasData,
+    latestTimestamp,
+    delayMs,
+    expectedIntervalMs,
+    chartState
+  } = useEconomicData({
     category: "key-monitor",
     pollInterval: 30_000,
   });
   const isInitialLoading = loading && !hasData;
-  const isBackfilling = loading && hasData;
   const goldSeries = seriesMap.get("gold_futures_main");
   const oilSeries = seriesMap.get("crude_oil_futures_main");
   const copperSeries = seriesMap.get("copper_futures_main");
@@ -39,55 +48,16 @@ export default function KeyMonitorPage() {
         <Typography.Title level={4}>{t("dashboard.keyMonitor.title")}</Typography.Title>
         <TimeRangeControls />
       </div>
-      {error ? (
-        <ChartEmptyState
-          presentation="banner"
-          variant="error"
-          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={error.message}
-          actionLabel={t("common.retry")}
-          onAction={() => refetch()}
-        />
-      ) : null}
-      {isBackfilling ? (
-        <ChartEmptyState
-          presentation="banner"
-          variant="backfilling"
-          title={t("dashboard.dataBackfilling.title", { defaultValue: "Updating data" })}
-          description={t("dashboard.dataBackfilling.description", {
-            defaultValue: "Data is being backfilled. Values may update shortly."
-          })}
-        />
-      ) : null}
-      {!isBackfilling && isDelayed ? (
-        <ChartEmptyState
-          presentation="banner"
-          variant="delayed"
-          title={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
-          description={
-            latestTimestamp
-              ? t("dashboard.dataDelayed.latest", {
-                  defaultValue: "Latest data at {{time}}.",
-                  time: formatDateTime(latestTimestamp.toISOString(), locale, {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  }),
-                })
-              : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
-          }
-          actionLabel={t("common.refresh")}
-          onAction={() => refetch()}
-        />
-      ) : null}
-      {!loading && !hasData ? (
-        <ChartEmptyState
-          title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
-          description={t("dashboard.dataEmpty", { defaultValue: "No data" })}
-        />
-      ) : null}
+      <ChartStateBanner
+        state={chartState}
+        hasData={hasData}
+        error={error}
+        latestTimestamp={latestTimestamp}
+        delayMs={delayMs}
+        expectedIntervalMs={expectedIntervalMs}
+        locale={locale}
+        onRetry={() => refetch()}
+      />
       {isInitialLoading ? (
         <Skeleton active paragraph={{ rows: 10 }} />
       ) : (

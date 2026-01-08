@@ -6,8 +6,8 @@ import { fetchGraphql } from "@/lib/server-graphql";
 import { TodayContent } from "./today-content";
 
 const ITEMS_QUERY = `
-  query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy) {
-    items(first: $first, after: $after, search: $search, filters: $filters, orderBy: $orderBy) {
+  query Items($first: Int!, $after: String, $page: Int, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy) {
+    items(first: $first, after: $after, page: $page, search: $search, filters: $filters, orderBy: $orderBy) {
       edges {
         node {
           id
@@ -69,55 +69,23 @@ export default async function TodayPage({
   }
 
   const current = parsePositiveInt(searchParams?.page, 1);
-  const pageSize = parsePositiveInt(searchParams?.pageSize, 10);
+  const pageSize = Math.min(parsePositiveInt(searchParams?.pageSize, 10), 50);
   const search = typeof searchParams?.q === "string" ? searchParams.q.trim() : "";
 
-  let accumulatedEdges: ItemsQuery["items"]["edges"] = [];
-  let endCursor: string | null = null;
-  let hasNextPage = false;
-  let totalCount = 0;
+  const data = await fetchGraphql<ItemsQuery>({
+    query: ITEMS_QUERY,
+    variables: {
+      first: pageSize,
+      after: null,
+      page: current,
+      search: search || null,
+      filters: null,
+      orderBy: "PUBLISHED_DESC"
+    },
+    accessToken: session.accessToken
+  });
 
-  while (accumulatedEdges.length < current * pageSize) {
-    const data = await fetchGraphql<ItemsQuery>({
-      query: ITEMS_QUERY,
-      variables: {
-        first: pageSize,
-        after: endCursor,
-        search: search || null,
-        filters: null,
-        orderBy: "PUBLISHED_DESC"
-      },
-      accessToken: session.accessToken
-    });
-
-    const items = data?.items;
-    if (!items) {
-      break;
-    }
-
-    accumulatedEdges = [...accumulatedEdges, ...items.edges];
-    endCursor = items.pageInfo.endCursor ?? null;
-    hasNextPage = items.pageInfo.hasNextPage;
-    totalCount = items.totalCount ?? totalCount;
-
-    if (!hasNextPage || !endCursor) {
-      break;
-    }
-  }
-
-  const initialData: ItemsQuery | null =
-    accumulatedEdges.length > 0
-      ? {
-          items: {
-            edges: accumulatedEdges,
-            pageInfo: {
-              hasNextPage,
-              endCursor
-            },
-            totalCount
-          }
-        }
-      : null;
+  const initialData = data?.items ? data : null;
 
   return <TodayContent initialData={initialData} />;
 }

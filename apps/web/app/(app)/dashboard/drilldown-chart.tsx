@@ -1,18 +1,22 @@
 "use client";
 
-import { useApolloClient } from "@apollo/client";
-import { useQuery } from "@tanstack/react-query";
 import { Alert, Breadcrumb, Button, Card } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
-import { EconomicDataDocument } from "@/graphql/generated";
+import { TimeGranularity, useEconomicDataQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useDashboardRangeStore } from "@/store/time-range";
 
-const GRANS = ["year", "quarter", "month", "week", "day"] as const;
+const GRANS = [
+  TimeGranularity.Year,
+  TimeGranularity.Quarter,
+  TimeGranularity.Month,
+  TimeGranularity.Week,
+  TimeGranularity.Day,
+] as const;
 
 interface DataZoomEvent {
   batch?: {
@@ -33,31 +37,24 @@ export function DrilldownChart({
   const { t } = useTranslation();
   const { echartsTheme, colors } = useChartTheme();
   const [level, setLevel] = useState<number>(2); // start at month
-  const client = useApolloClient();
   const { start, end, setCustomRange } = useDashboardRangeStore();
 
-  const { data, isLoading, isError, refetch, error } = useQuery({
-    queryKey: [
-      "economicData",
+  const {
+    data,
+    loading: isLoading,
+    error,
+    refetch,
+  } = useEconomicDataQuery({
+    variables: {
       category,
-      level,
-      start.toISOString(),
-      end.toISOString(),
-    ],
-    queryFn: async () => {
-      const res = await client.query({
-        query: EconomicDataDocument,
-        variables: {
-          category,
-          timeRange: { start: start.toISOString(), end: end.toISOString() },
-          granularity: GRANS[level],
-        },
-        fetchPolicy: "network-only",
-      });
-      return res.data.getEconomicData;
+      timeRange: { start: start.toISOString(), end: end.toISOString() },
+      granularity: GRANS[level],
     },
-    staleTime: 60_000,
+    fetchPolicy: "network-only",
+    notifyOnNetworkStatusChange: true,
   });
+  const isError = Boolean(error);
+  const points = data?.getEconomicData ?? [];
 
   const breadcrumbs = GRANS.slice(0, level + 1).map((g, idx) => ({
     title: t(`dashboard.granularity.${g}`),
@@ -66,7 +63,7 @@ export function DrilldownChart({
 
   const option = useMemo(() => {
     const seriesData =
-      data?.map((point: { timestamp: string; value: number }) => ({
+      points.map((point: { timestamp: string; value: number }) => ({
         name: dayjs(point.timestamp).toISOString(),
         value: [point.timestamp, point.value],
       })) ?? [];
@@ -115,7 +112,7 @@ export function DrilldownChart({
         },
       ],
     };
-  }, [category, data, title, colors]);
+  }, [category, points, title, colors]);
 
   return (
     <Card
@@ -128,7 +125,7 @@ export function DrilldownChart({
           type="error"
           showIcon
           message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={error instanceof Error ? error.message : undefined}
+          description={error?.message}
           action={
             <Button size="small" onClick={() => refetch()}>
               {t("common.retry")}
@@ -137,7 +134,7 @@ export function DrilldownChart({
           style={{ marginBottom: 12 }}
         />
       ) : null}
-      {!isLoading && (!data || data.length === 0) ? (
+      {!isLoading && points.length === 0 ? (
         <Alert
           type="info"
           message={t("dashboard.dataEmpty", { defaultValue: "No data" })}

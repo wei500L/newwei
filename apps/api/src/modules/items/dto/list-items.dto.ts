@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsNumberString, IsOptional, IsString } from "class-validator";
+import { IsIn, IsNumberString, IsOptional, IsString } from "class-validator";
 
 export class ListItemsDto {
   @ApiPropertyOptional()
@@ -16,4 +16,9 @@ export class ListItemsDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({ enum: ["CREATED_DESC", "PUBLISHED_DESC"] })
+  @IsOptional()
+  @IsIn(["CREATED_DESC", "PUBLISHED_DESC"])
+  orderBy?: string;
 }

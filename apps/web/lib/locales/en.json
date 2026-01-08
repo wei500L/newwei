@@ -280,10 +280,24 @@
       "livelihoodPrices": "Livelihood prices"
     },
     "dataEmpty": "No data",
+    "dataEmptyHint": "No data for the selected range. Try expanding the range.",
     "dataAbnormal": "Data error",
+    "dataOffline": {
+      "title": "Offline",
+      "description": "Cannot reach the service. Check your connection and retry."
+    },
+    "dataBackfilling": {
+      "title": "Updating data",
+      "description": "Data is being backfilled. Values may update shortly.",
+      "short": "Updating",
+      "tooltip": "Data is being backfilled and may update shortly."
+    },
     "dataDelayed": {
       "title": "Data delayed",
+      "short": "Delayed",
+      "tooltip": "Data is delayed. Latest point is behind the selected range.",
       "latest": "Latest data at {{time}}.",
+      "explained": "Latest data at {{time}} (≈{{lag}} behind). Expected interval ≈{{interval}}.",
       "missing": "Latest data time unavailable."
     },
     "widgets": {

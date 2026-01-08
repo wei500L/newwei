@@ -4,6 +4,7 @@ import { InfoCircleOutlined, SearchOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
 import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,9 +18,13 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
 
 import { FacetedSearch, type FilterState } from "./components/faceted-search";
-import { FinancialCard } from "./components/financial-card";
 import { NewsCard } from "./components/news-card";
 import { type ItemViewType, ViewSwitcher } from "./components/view-switcher";
+
+const FinancialCard = dynamic(
+  () => import("./components/financial-card").then((mod) => mod.FinancialCard),
+  { loading: () => <Skeleton active paragraph={{ rows: 3 }} /> }
+);
 
 function parsePositiveInt(value: string | null, fallback: number) {
   if (!value) {
@@ -67,6 +72,8 @@ function withMetricTooltip(label: string, tooltip: string) {
     </Space>
   );
 }
+
+const MAX_ITEMS_PAGE_SIZE = 50;
 
 const loggedProcessedResultParseErrors = new Set<string>();
 
@@ -123,6 +130,7 @@ type ItemsOrderBy = "CREATED_DESC" | "PUBLISHED_DESC";
 interface ItemsQueryVariables {
   first: number;
   after?: string | null;
+  page?: number | null;
   search?: string | null;
   filters?: ItemsFiltersInput | null;
   orderBy?: ItemsOrderBy | null;
@@ -147,8 +155,8 @@ interface ItemFacetsQueryVariables {
 }
 
 const ITEMS_QUERY = gql`
-  query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy) {
-    items(first: $first, after: $after, search: $search, filters: $filters, orderBy: $orderBy) {
+  query Items($first: Int!, $after: String, $page: Int, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy) {
+    items(first: $first, after: $after, page: $page, search: $search, filters: $filters, orderBy: $orderBy) {
       edges {
         node {
           id
@@ -301,7 +309,8 @@ export function ItemsView({
   // URL State
   const urlSearch = (searchParams.get("q") ?? "").trim();
   const current = parsePositiveInt(searchParams.get("page"), 1);
-  const pageSize = parsePositiveInt(searchParams.get("pageSize"), 10);
+  const rawPageSize = parsePositiveInt(searchParams.get("pageSize"), 10);
+  const pageSize = Math.min(rawPageSize, MAX_ITEMS_PAGE_SIZE);
   
   // Local State
   const [searchInput, setSearchInput] = useState(urlSearch);
@@ -356,6 +365,13 @@ export function ItemsView({
     [pathname, router, searchParams]
   );
 
+  useEffect(() => {
+    if (rawPageSize === pageSize) {
+      return;
+    }
+    setQueryParams({ pageSize });
+  }, [pageSize, rawPageSize, setQueryParams]);
+
   const handleFilterChange = useCallback(
     (nextFilters: FilterState) => {
       setFilters(nextFilters);
@@ -368,12 +384,12 @@ export function ItemsView({
     data,
     loading,
     error,
-    refetch,
-    fetchMore
+    refetch
   } = useQuery<ItemsQuery, ItemsQueryVariables>(ITEMS_QUERY, {
     variables: {
       first: pageSize,
       after: null,
+      page: current,
       search: urlSearch || null,
       filters: filtersInput,
       orderBy
@@ -401,62 +417,9 @@ export function ItemsView({
   const resolvedData = data ?? initialData ?? undefined;
   const edges = resolvedData?.items.edges ?? EMPTY_EDGES;
   const totalCount = resolvedData?.items.totalCount ?? 0;
-  const needsMoreForPage =
-    Boolean(resolvedData?.items.pageInfo.hasNextPage) && edges.length < current * pageSize;
-
-  const ensurePageData = useCallback(
-    async (targetPage: number, size: number) => {
-      if (!data?.items) {
-        return;
-      }
-      let currentItems = data.items;
-      while (
-        currentItems.edges.length < targetPage * size &&
-        currentItems.pageInfo.hasNextPage &&
-        currentItems.pageInfo.endCursor
-      ) {
-        const result = await fetchMore({
-          variables: {
-            first: size,
-            after: currentItems.pageInfo.endCursor,
-            search: urlSearch || null,
-            filters: filtersInput,
-            orderBy
-          },
-          updateQuery: (prev, { fetchMoreResult }) => {
-            if (!fetchMoreResult) {
-              return prev;
-            }
-            return {
-              ...fetchMoreResult,
-              items: {
-                ...fetchMoreResult.items,
-                edges: [...prev.items.edges, ...fetchMoreResult.items.edges],
-                totalCount: fetchMoreResult.items.totalCount,
-                pageInfo: fetchMoreResult.items.pageInfo
-              }
-            };
-          }
-        });
-        currentItems = result.data.items;
-      }
-    },
-    [data?.items, fetchMore, filtersInput, orderBy, urlSearch]
-  );
-
-  useEffect(() => {
-    if (!data?.items) {
-      return;
-    }
-    if (needsMoreForPage) {
-      void ensurePageData(current, pageSize);
-    }
-  }, [current, data?.items, ensurePageData, needsMoreForPage, pageSize]);
 
   const pageData = useMemo<ParsedItem[]>(() => {
-    const startIndex = (current - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-    return edges.slice(startIndex, endIndex).map((edge) => {
+    return edges.map((edge) => {
       let parsedRaw = {};
       try {
         parsedRaw = JSON.parse(edge.node.raw?.payload || "{}");
@@ -530,7 +493,7 @@ export function ItemsView({
         location: processed.location ?? undefined
       } as ParsedItem;
     });
-  }, [current, edges, pageSize]);
+  }, [edges]);
 
   const availableRegions = useMemo(() => {
     const regions = facetsData?.itemFacets?.regions;
@@ -829,13 +792,14 @@ export function ItemsView({
           rowKey="id"
           columns={columns}
           dataSource={pageData}
-          loading={loading || needsMoreForPage}
+          loading={loading}
           size="large"
           pagination={{
             current,
             pageSize,
             total: totalCount,
             showSizeChanger: true,
+            pageSizeOptions: ["10", "20", "50"]
           }}
           onChange={handleTableChange}
         />
@@ -852,6 +816,8 @@ export function ItemsView({
              pageSize,
              total: totalCount,
              onChange: (page, size) => setQueryParams({ page, pageSize: size }),
+             showSizeChanger: true,
+             pageSizeOptions: ["10", "20", "50"],
              align: 'center'
           }}
           renderItem={(item) => (
@@ -886,13 +852,15 @@ export function ItemsView({
             <List
               itemLayout="vertical"
               dataSource={pageData}
-              pagination={{
-                 current,
-                 pageSize,
-                 total: totalCount,
-                 onChange: (page, size) => setQueryParams({ page, pageSize: size }),
-                 align: 'center'
-              }}
+	              pagination={{
+	                 current,
+	                 pageSize,
+	                 total: totalCount,
+	                 onChange: (page, size) => setQueryParams({ page, pageSize: size }),
+	                 showSizeChanger: true,
+	                 pageSizeOptions: ["10", "20", "50"],
+	                 align: 'center'
+	              }}
               renderItem={(item) => (
                 <List.Item>
                    <NewsCard

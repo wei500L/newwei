@@ -36,10 +36,7 @@ import {
   useDashboardFiltersStore
 } from "@/store/dashboard-filters";
 
-import { MarketPulse } from "./components/market-pulse";
 import { LiveAlertsToasts } from "./live-alerts";
-import { MetricDrillDown } from "./metric-drilldown";
-import { QueueChart } from "./queue-chart";
 import { useQueueEvents } from "./use-queue-events";
 import { useDashboardStream, type DashboardStreamStatus } from "./use-dashboard-stream";
 
@@ -81,6 +78,20 @@ const FinancialCandlestick = dynamic(
   {
     loading: () => <Skeleton active paragraph={{ rows: 6 }} />
   }
+);
+
+const MarketPulse = dynamic(
+  () => import("./components/market-pulse").then((mod) => mod.MarketPulse),
+  { loading: () => <Skeleton active paragraph={{ rows: 2 }} /> }
+);
+
+const MetricDrillDown = dynamic(
+  () => import("./metric-drilldown").then((mod) => mod.MetricDrillDown)
+);
+
+const QueueChart = dynamic(
+  () => import("./queue-chart").then((mod) => mod.QueueChart),
+  { loading: () => <Skeleton active paragraph={{ rows: 4 }} /> }
 );
 
 interface QueueLog {
@@ -379,11 +390,13 @@ export function DashboardContent() {
           />
         </div>
 
-        <MetricDrillDown 
-          visible={!!activeDrillDownKey} 
-          metricKey={activeDrillDownKey} 
-          onClose={() => setActiveDrillDownKey(null)} 
-        />
+        {activeDrillDownKey ? (
+          <MetricDrillDown 
+            visible 
+            metricKey={activeDrillDownKey} 
+            onClose={() => setActiveDrillDownKey(null)} 
+          />
+        ) : null}
 
         {/* Charts Section - Immersive Map & Analytics */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

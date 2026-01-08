@@ -1,53 +1,21 @@
 "use client";
 
 import { LoadingOutlined } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
 import { useSession } from "next-auth/react";
-import { useMemo } from "react";
 
-import { createApiClient } from "@/lib/api-client";
-import { AnalysisResultModel, AnalysisType } from "@/graphql/generated";
+import { AnalysisType, useAnalysisResultsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 
-// Type definition for the query response
-interface AnalysisResultsResponse {
-  analysisResults: AnalysisResultModel[];
-}
-
 export function AnalysisStream() {
-  const { t } = useTranslation();
-  const { data: session } = useSession();
+  const { status } = useSession();
 
-  const apiClient = useMemo(
-    () => createApiClient({ accessToken: session?.accessToken }),
-    [session?.accessToken]
-  );
-
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["dashboard", "analysis-stream"],
-    queryFn: async () => {
-      const response = await apiClient.post<{ data: AnalysisResultsResponse }>(
-        "graphql",
-        {
-          query: `
-            query GetAnalysisStream {
-              analysisResults(limit: 20) {
-                id
-                type
-                summary
-                createdAt
-                status
-              }
-            }
-          `,
-        }
-      );
-      return response.data?.data?.analysisResults ?? [];
-    },
-    refetchInterval: 10000,
-    enabled: Boolean(session?.accessToken),
+  const { data, loading, error } = useAnalysisResultsQuery({
+    variables: { limit: 20 },
+    pollInterval: 10_000,
+    skip: status !== "authenticated",
   });
+
+  const results = data?.analysisResults ?? [];
 
   return (
     <div className="flex flex-col h-full glass-panel overflow-hidden relative text-sm">
@@ -62,16 +30,16 @@ export function AnalysisStream() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-           {isLoading && <LoadingOutlined className="text-[var(--primary)]" />}
+           {loading && <LoadingOutlined className="text-[var(--primary)]" />}
            <span className="text-[10px] text-slate-500">
-             {data?.length ?? 0} updates
+             {results.length} updates
            </span>
         </div>
       </div>
 
       {/* Terminal Feed */}
       <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--primary)]/20 scrollbar-track-transparent p-4 space-y-4">
-        {isLoading && !data && (
+        {loading && results.length === 0 && (
           <div className="text-slate-500 animate-pulse">
             Preparing analysis stream...
           </div>
@@ -83,13 +51,13 @@ export function AnalysisStream() {
            </div>
         )}
 
-        {!isLoading && data?.length === 0 && (
+        {!loading && results.length === 0 && (
           <div className="text-slate-500">
             No analysis updates yet.
           </div>
         )}
 
-        {data?.map((item) => (
+        {results.map((item) => (
           <div 
             key={item.id}
             className="group relative pl-4 border-l border-slate-200 hover:border-[var(--primary)] transition-colors duration-200"

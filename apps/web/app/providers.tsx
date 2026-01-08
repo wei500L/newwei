@@ -1,7 +1,7 @@
 "use client";
 
 import { ApolloProvider } from "@apollo/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App as AntApp, ConfigProvider, theme, unstableSetRender } from "antd";
 import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
@@ -14,6 +14,7 @@ import { I18nextProvider } from "react-i18next";
 import { Toaster } from "sonner";
 
 import { getApolloClient } from "@/lib/apollo-client";
+import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import {
   changeLanguage,
@@ -46,6 +47,22 @@ unstableSetRender((node, container) => {
 export function AppProviders({ children }: PropsWithChildren) {
   const [queryClient] = useState(() =>
     new QueryClient({
+      queryCache: new QueryCache({
+        onError: (error, query) => {
+          captureClientError("React Query request failed", error, {
+            tags: { area: "react-query", queryHash: query.queryHash },
+            extras: { queryKey: query.queryKey }
+          });
+        }
+      }),
+      mutationCache: new MutationCache({
+        onError: (error, variables, _, mutation) => {
+          captureClientError("React Query mutation failed", error, {
+            tags: { area: "react-query", mutationKey: String(mutation.options.mutationKey ?? "unknown") },
+            extras: { variables }
+          });
+        }
+      }),
       defaultOptions: {
         queries: {
           refetchOnWindowFocus: false,

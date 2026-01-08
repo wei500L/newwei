@@ -20,7 +20,8 @@ export class ItemsController {
   async list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListItemsDto) {
     const page = query.page ? Number(query.page) : 1;
     const pageSize = query.pageSize ? Number(query.pageSize) : 10;
-    return this.itemsService.list(user.orgId, page, pageSize, query.search);
+    const orderBy = query.orderBy === "PUBLISHED_DESC" ? "PUBLISHED_DESC" : "CREATED_DESC";
+    return this.itemsService.list(user.orgId, page, pageSize, query.search, undefined, orderBy);
   }
 
   @Permissions("items.write")

@@ -280,10 +280,24 @@
       "livelihoodPrices": "民生价格"
     },
     "dataEmpty": "无数据",
+    "dataEmptyHint": "所选时间范围内暂无数据，请尝试扩大时间范围。",
     "dataAbnormal": "数据异常",
+    "dataOffline": {
+      "title": "离线",
+      "description": "无法连接服务，请检查网络后重试。"
+    },
+    "dataBackfilling": {
+      "title": "更新中",
+      "description": "正在回填数据，数值可能会很快更新。",
+      "short": "更新中",
+      "tooltip": "正在回填数据，数值可能会很快更新。"
+    },
     "dataDelayed": {
       "title": "数据延迟",
+      "short": "延迟",
+      "tooltip": "数据延迟：最新点落后于所选范围。",
       "latest": "最新数据时间：{{time}}。",
+      "explained": "最新数据时间：{{time}}（约落后 {{lag}}），预计更新间隔约 {{interval}}。",
       "missing": "无法获取最新数据时间。"
     },
     "widgets": {

@@ -1,5 +1,12 @@
-query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy) {
-  items(first: $first, after: $after, search: $search, filters: $filters, orderBy: $orderBy) {
+query Items(
+  $first: Int!
+  $after: String
+  $page: Int
+  $search: String
+  $filters: ItemsFiltersInput
+  $orderBy: ItemsOrderBy = CREATED_DESC
+) {
+  items(first: $first, after: $after, page: $page, search: $search, filters: $filters, orderBy: $orderBy) {
     edges {
       node {
         id

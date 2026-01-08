@@ -81,10 +81,8 @@ export type AlertEventModel = {
 };
 
 export enum AlertEventStatus {
-  Confirmed = 'confirmed',
   Delivered = 'delivered',
   Failed = 'failed',
-  Ignored = 'ignored',
   Pending = 'pending'
 }
 
@@ -697,6 +695,19 @@ export type ItemEdge = {
   node: ItemModel;
 };
 
+export type ItemFacetOption = {
+  __typename?: 'ItemFacetOption';
+  count: Scalars['Int']['output'];
+  value: Scalars['String']['output'];
+};
+
+export type ItemFacets = {
+  __typename?: 'ItemFacets';
+  regions: Array<ItemFacetOption>;
+  sentiments: Array<ItemFacetOption>;
+  topics: Array<ItemFacetOption>;
+};
+
 export type ItemMetaModel = {
   __typename?: 'ItemMetaModel';
   createdAt: Scalars['DateTime']['output'];
@@ -712,14 +723,33 @@ export type ItemModel = {
   __typename?: 'ItemModel';
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
+  ingestedAt: Scalars['DateTime']['output'];
   meta: ItemMetaModel;
   orgId: Scalars['String']['output'];
   processed?: Maybe<ProcessedItemModelGraph>;
+  publishedAt?: Maybe<Scalars['String']['output']>;
   raw?: Maybe<RawItemModelGraph>;
   status: Scalars['String']['output'];
   title: Scalars['String']['output'];
   updatedAt: Scalars['DateTime']['output'];
 };
+
+export type ItemsDateRangeInput = {
+  end?: InputMaybe<Scalars['DateTime']['input']>;
+  start?: InputMaybe<Scalars['DateTime']['input']>;
+};
+
+export type ItemsFiltersInput = {
+  dateRange?: InputMaybe<ItemsDateRangeInput>;
+  regions?: InputMaybe<Array<Scalars['String']['input']>>;
+  sentiments?: InputMaybe<Array<Scalars['String']['input']>>;
+  topics?: InputMaybe<Array<Scalars['String']['input']>>;
+};
+
+export enum ItemsOrderBy {
+  CreatedDesc = 'CREATED_DESC',
+  PublishedDesc = 'PUBLISHED_DESC'
+}
 
 export type MembershipModel = {
   __typename?: 'MembershipModel';
@@ -748,6 +778,7 @@ export type Mutation = {
   setOrgActive: OrgModel;
   triggerAlertRule: Scalars['Boolean']['output'];
   triggerDataFetch: Scalars['Boolean']['output'];
+  updateAlertEventStatus: AlertEventModel;
   updateAuditLogRetention: AuditLogRetentionModel;
   updateAuthCacheSettings: AuthCacheSettingsModel;
   updateCrawlClientSettings: CrawlClientSettingsModel;
@@ -834,6 +865,11 @@ export type MutationTriggerAlertRuleArgs = {
 
 export type MutationTriggerDataFetchArgs = {
   input: TriggerDataFetchInput;
+};
+
+
+export type MutationUpdateAlertEventStatusArgs = {
+  input: UpdateAlertEventStatusInput;
 };
 
 
@@ -987,6 +1023,7 @@ export type Query = {
   eventGroups: Array<EventGroupModel>;
   getEconomicData: Array<EconomicDataPointModel>;
   item?: Maybe<ItemModel>;
+  itemFacets: ItemFacets;
   items: ItemConnection;
   me: UserModel;
   memberships: Array<MembershipModel>;
@@ -1054,9 +1091,18 @@ export type QueryItemArgs = {
 };
 
 
+export type QueryItemFacetsArgs = {
+  filters?: InputMaybe<ItemsFiltersInput>;
+  search?: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type QueryItemsArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
+  filters?: InputMaybe<ItemsFiltersInput>;
   first?: Scalars['Int']['input'];
+  orderBy?: ItemsOrderBy;
+  page?: InputMaybe<Scalars['Int']['input']>;
   search?: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -1195,6 +1241,11 @@ export type TriggerDataFetchInput = {
   slugs: Array<Scalars['String']['input']>;
 };
 
+export type UpdateAlertEventStatusInput = {
+  eventId: Scalars['String']['input'];
+  status: AlertEventStatus;
+};
+
 export type UpdateAuditLogRetentionInput = {
   retentionDays: Scalars['Int']['input'];
 };
@@ -1326,6 +1377,13 @@ export type TriggerAlertRuleMutationVariables = Exact<{
 
 
 export type TriggerAlertRuleMutation = { __typename?: 'Mutation', triggerAlertRule: boolean };
+
+export type UpdateAlertEventStatusMutationVariables = Exact<{
+  input: UpdateAlertEventStatusInput;
+}>;
+
+
+export type UpdateAlertEventStatusMutation = { __typename?: 'Mutation', updateAlertEventStatus: { __typename?: 'AlertEventModel', id: string, status: AlertEventStatus } };
 
 export type AlertEventsStreamSubscriptionVariables = Exact<{ [key: string]: never; }>;
 
@@ -1468,18 +1526,29 @@ export type TriggerEconomicDataFetchMutation = { __typename?: 'Mutation', trigge
 export type ItemsQueryVariables = Exact<{
   first: Scalars['Int']['input'];
   after?: InputMaybe<Scalars['String']['input']>;
+  page?: InputMaybe<Scalars['Int']['input']>;
   search?: InputMaybe<Scalars['String']['input']>;
+  filters?: InputMaybe<ItemsFiltersInput>;
+  orderBy?: InputMaybe<ItemsOrderBy>;
 }>;
 
 
 export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, processed?: { __typename?: 'ProcessedItemModelGraph', result?: string | null, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, raw?: { __typename?: 'RawItemModelGraph', payload: string, source?: string | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
+
+export type ItemFacetsQueryVariables = Exact<{
+  search?: InputMaybe<Scalars['String']['input']>;
+  filters?: InputMaybe<ItemsFiltersInput>;
+}>;
+
+
+export type ItemFacetsQuery = { __typename?: 'Query', itemFacets: { __typename?: 'ItemFacets', regions: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }>, topics: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }>, sentiments: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }> } };
 
 export type ItemQueryVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, ingestedAt: any, publishedAt?: string | null, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null, result?: string | null, createdAt: any } | null } | null };
+export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, ingestedAt: any, publishedAt?: string | null, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, result?: string | null, createdAt: any, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null } | null };
 
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -1887,6 +1956,40 @@ export function useTriggerAlertRuleMutation(baseOptions?: Apollo.MutationHookOpt
 export type TriggerAlertRuleMutationHookResult = ReturnType<typeof useTriggerAlertRuleMutation>;
 export type TriggerAlertRuleMutationResult = Apollo.MutationResult<TriggerAlertRuleMutation>;
 export type TriggerAlertRuleMutationOptions = Apollo.BaseMutationOptions<TriggerAlertRuleMutation, TriggerAlertRuleMutationVariables>;
+export const UpdateAlertEventStatusDocument = gql`
+    mutation UpdateAlertEventStatus($input: UpdateAlertEventStatusInput!) {
+  updateAlertEventStatus(input: $input) {
+    id
+    status
+  }
+}
+    `;
+export type UpdateAlertEventStatusMutationFn = Apollo.MutationFunction<UpdateAlertEventStatusMutation, UpdateAlertEventStatusMutationVariables>;
+
+/**
+ * __useUpdateAlertEventStatusMutation__
+ *
+ * To run a mutation, you first call `useUpdateAlertEventStatusMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useUpdateAlertEventStatusMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [updateAlertEventStatusMutation, { data, loading, error }] = useUpdateAlertEventStatusMutation({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useUpdateAlertEventStatusMutation(baseOptions?: Apollo.MutationHookOptions<UpdateAlertEventStatusMutation, UpdateAlertEventStatusMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<UpdateAlertEventStatusMutation, UpdateAlertEventStatusMutationVariables>(UpdateAlertEventStatusDocument, options);
+      }
+export type UpdateAlertEventStatusMutationHookResult = ReturnType<typeof useUpdateAlertEventStatusMutation>;
+export type UpdateAlertEventStatusMutationResult = Apollo.MutationResult<UpdateAlertEventStatusMutation>;
+export type UpdateAlertEventStatusMutationOptions = Apollo.BaseMutationOptions<UpdateAlertEventStatusMutation, UpdateAlertEventStatusMutationVariables>;
 export const AlertEventsStreamDocument = gql`
     subscription AlertEventsStream {
   alertEvents {
@@ -2849,8 +2952,15 @@ export type TriggerEconomicDataFetchMutationHookResult = ReturnType<typeof useTr
 export type TriggerEconomicDataFetchMutationResult = Apollo.MutationResult<TriggerEconomicDataFetchMutation>;
 export type TriggerEconomicDataFetchMutationOptions = Apollo.BaseMutationOptions<TriggerEconomicDataFetchMutation, TriggerEconomicDataFetchMutationVariables>;
 export const ItemsDocument = gql`
-    query Items($first: Int!, $after: String, $search: String) {
-  items(first: $first, after: $after, search: $search) {
+    query Items($first: Int!, $after: String, $page: Int, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy = CREATED_DESC) {
+  items(
+    first: $first
+    after: $after
+    page: $page
+    search: $search
+    filters: $filters
+    orderBy: $orderBy
+  ) {
     edges {
       node {
         id
@@ -2904,7 +3014,10 @@ export const ItemsDocument = gql`
  *   variables: {
  *      first: // value for 'first'
  *      after: // value for 'after'
+ *      page: // value for 'page'
  *      search: // value for 'search'
+ *      filters: // value for 'filters'
+ *      orderBy: // value for 'orderBy'
  *   },
  * });
  */
@@ -2924,6 +3037,58 @@ export type ItemsQueryHookResult = ReturnType<typeof useItemsQuery>;
 export type ItemsLazyQueryHookResult = ReturnType<typeof useItemsLazyQuery>;
 export type ItemsSuspenseQueryHookResult = ReturnType<typeof useItemsSuspenseQuery>;
 export type ItemsQueryResult = Apollo.QueryResult<ItemsQuery, ItemsQueryVariables>;
+export const ItemFacetsDocument = gql`
+    query ItemFacets($search: String, $filters: ItemsFiltersInput) {
+  itemFacets(search: $search, filters: $filters) {
+    regions {
+      value
+      count
+    }
+    topics {
+      value
+      count
+    }
+    sentiments {
+      value
+      count
+    }
+  }
+}
+    `;
+
+/**
+ * __useItemFacetsQuery__
+ *
+ * To run a query within a React component, call `useItemFacetsQuery` and pass it any options that fit your needs.
+ * When your component renders, `useItemFacetsQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useItemFacetsQuery({
+ *   variables: {
+ *      search: // value for 'search'
+ *      filters: // value for 'filters'
+ *   },
+ * });
+ */
+export function useItemFacetsQuery(baseOptions?: Apollo.QueryHookOptions<ItemFacetsQuery, ItemFacetsQueryVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<ItemFacetsQuery, ItemFacetsQueryVariables>(ItemFacetsDocument, options);
+      }
+export function useItemFacetsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<ItemFacetsQuery, ItemFacetsQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<ItemFacetsQuery, ItemFacetsQueryVariables>(ItemFacetsDocument, options);
+        }
+export function useItemFacetsSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<ItemFacetsQuery, ItemFacetsQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<ItemFacetsQuery, ItemFacetsQueryVariables>(ItemFacetsDocument, options);
+        }
+export type ItemFacetsQueryHookResult = ReturnType<typeof useItemFacetsQuery>;
+export type ItemFacetsLazyQueryHookResult = ReturnType<typeof useItemFacetsLazyQuery>;
+export type ItemFacetsSuspenseQueryHookResult = ReturnType<typeof useItemFacetsSuspenseQuery>;
+export type ItemFacetsQueryResult = Apollo.QueryResult<ItemFacetsQuery, ItemFacetsQueryVariables>;
 export const ItemDocument = gql`
     query Item($id: String!) {
   item(id: $id) {

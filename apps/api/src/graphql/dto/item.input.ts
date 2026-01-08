@@ -12,8 +12,8 @@ import {
 } from "class-validator";
 
 export enum ItemsOrderBy {
-  CreatedDesc = "CREATED_DESC",
-  PublishedDesc = "PUBLISHED_DESC"
+  CREATED_DESC = "CREATED_DESC",
+  PUBLISHED_DESC = "PUBLISHED_DESC"
 }
 
 registerEnumType(ItemsOrderBy, { name: "ItemsOrderBy" });
@@ -114,6 +114,12 @@ export class ItemsQueryArgs {
   @IsString()
   after?: string;
 
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  page?: number;
+
   @Field({ nullable: true })
   @IsOptional()
   @IsString()
@@ -123,9 +129,9 @@ export class ItemsQueryArgs {
   @IsOptional()
   filters?: ItemsFiltersInput;
 
-  @Field(() => ItemsOrderBy, { defaultValue: ItemsOrderBy.CreatedDesc })
+  @Field(() => ItemsOrderBy, { defaultValue: ItemsOrderBy.CREATED_DESC })
   @IsOptional()
-  orderBy: ItemsOrderBy = ItemsOrderBy.CreatedDesc;
+  orderBy: ItemsOrderBy = ItemsOrderBy.CREATED_DESC;
 }
 
 @ArgsType()

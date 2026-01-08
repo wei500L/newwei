@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "antd";
 import type { EChartsOption } from "echarts";
-import * as echarts from "echarts/core";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -131,11 +130,39 @@ export function WarMap() {
   const { data: session } = useSession();
   const { start, end } = useDashboardRangeStore();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [inView, setInView] = useState(false);
   const registeredMapsRef = useRef(new Set<string>());
   const [mapReady, setMapReady] = useState(false);
   const emptyMessage = t("pages.map.empty", {
     defaultValue: "No alerts triggered in the selected range."
   });
+
+  useEffect(() => {
+    const dom = containerRef.current;
+    if (!dom) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      setInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        setInView(Boolean(entry?.isIntersecting));
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(dom);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const enabled = Boolean(session?.accessToken && inView);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -151,7 +178,7 @@ export function WarMap() {
       return response.data;
     },
     staleTime: 60 * 60 * 1000,
-    enabled: Boolean(session?.accessToken)
+    enabled
   });
 
   const eventsQuery = useQuery({
@@ -175,13 +202,12 @@ export function WarMap() {
       return response.data;
     },
     staleTime: 30_000,
-    enabled: Boolean(session?.accessToken),
+    enabled,
     placeholderData: (previous) => previous
   });
 
   useEffect(() => {
-    if (!geoQuery.data) {
-      setMapReady(false);
+    if (!enabled || !geoQuery.data) {
       return;
     }
     const mapName = geoQuery.data.name;
@@ -189,15 +215,32 @@ export function WarMap() {
       setMapReady(false);
       return;
     }
-    if (!registeredMapsRef.current.has(mapName)) {
-      echarts.registerMap(mapName, geoQuery.data.geoJson as any);
-      registeredMapsRef.current.add(mapName);
+    if (registeredMapsRef.current.has(mapName)) {
+      setMapReady(true);
+      return;
     }
-    setMapReady(true);
-  }, [geoQuery.data]);
+
+    let cancelled = false;
+    void import("echarts/core")
+      .then((echartsModule) => {
+        if (cancelled) return;
+        echartsModule.registerMap(mapName, geoQuery.data.geoJson as any);
+        registeredMapsRef.current.add(mapName);
+        setMapReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMapReady(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, geoQuery.data]);
 
   const option = useMemo<EChartsOption>(() => {
-    if (!geoQuery.data || !mapReady) return {};
+    if (!enabled || !geoQuery.data || !mapReady) return {};
     const events = eventsQuery.data?.events ?? [];
     const resolveSeverityColor = (severity: WarEventSeverity) => {
       switch (severity) {
@@ -329,15 +372,23 @@ export function WarMap() {
         }
       ]
     };
-  }, [colors, eventsQuery.data, fontFamily, geoQuery.data, locale, mapReady, t]);
+  }, [colors, enabled, eventsQuery.data, fontFamily, geoQuery.data, locale, mapReady, t]);
 
   const geoErrorMessage = getApiErrorMessage(geoQuery.error);
   const eventsErrorMessage = getApiErrorMessage(eventsQuery.error);
   const hasEvents = (eventsQuery.data?.events?.length ?? 0) > 0;
 
+  if (!inView) {
+    return (
+      <div ref={containerRef} className="h-[400px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </div>
+    );
+  }
+
   if (geoQuery.isLoading && !geoQuery.data) {
     return (
-      <div className="h-[400px] flex items-center">
+      <div ref={containerRef} className="h-[400px] flex items-center">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -345,7 +396,7 @@ export function WarMap() {
 
   if (geoQuery.isError && !geoQuery.data) {
     return (
-      <div className="h-[400px]">
+      <div ref={containerRef} className="h-[400px]">
         <ChartEmptyState
           variant="error"
           title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
@@ -364,7 +415,7 @@ export function WarMap() {
 
   if (!geoQuery.data) {
     return (
-      <div className="h-[400px]">
+      <div ref={containerRef} className="h-[400px]">
         <ChartEmptyState description={emptyMessage} />
       </div>
     );
@@ -372,14 +423,14 @@ export function WarMap() {
 
   if (!mapReady) {
     return (
-      <div className="h-[400px] flex items-center">
+      <div ref={containerRef} className="h-[400px] flex items-center">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
   }
 
   return (
-    <div className="relative h-[400px]">
+    <div ref={containerRef} className="relative h-[400px]">
       <DashboardChart
         option={option}
         theme={echartsTheme}
