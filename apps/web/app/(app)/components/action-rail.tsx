@@ -53,19 +53,19 @@ export function ActionRail() {
     {
       key: "/topics",
       icon: <AppstoreOutlined />,
-      label: t("nav.main.topics", { defaultValue: "Topics & Events" }),
+      label: t("nav.main.topics", { defaultValue: "Topics" }),
       path: "/topics"
     },
     {
       key: "/map",
       icon: <GlobalOutlined />,
-      label: t("nav.main.map", { defaultValue: "Situation Map" }),
+      label: t("nav.main.map", { defaultValue: "Map" }),
       path: "/map"
     },
     {
       key: "/finance",
       icon: <FundOutlined />,
-      label: t("nav.main.finance", { defaultValue: "Finance Panel" }),
+      label: t("nav.main.finance", { defaultValue: "Finance" }),
       path: "/finance"
     },
     {
@@ -83,7 +83,7 @@ export function ActionRail() {
     {
       key: "/subscriptions",
       icon: <BellOutlined />,
-      label: t("nav.main.subscriptions", { defaultValue: "Subscriptions & Notifications" }),
+      label: t("nav.main.subscriptions", { defaultValue: "Subscriptions" }),
       path: "/subscriptions"
     },
     {
@@ -154,7 +154,10 @@ export function ActionRail() {
         </div>
 
         {adminNavItems.length > 0 ? (
-          <div className="flex flex-col gap-2 w-full px-2 pt-2">
+          <div className="flex flex-col gap-2 w-full px-2 pt-3">
+            <span className="px-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+              {t("nav.adminGroup", { defaultValue: "Admin" })}
+            </span>
             {adminNavItems.map((item) => {
               const isActive = item.path ? pathname.startsWith(item.path) : false;
               return (

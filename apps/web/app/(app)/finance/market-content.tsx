@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import EconomicShortPage from "@/app/(app)/dashboard/economic-short/page";
+import { MarketOverview } from "./market-overview";
 import KeyMonitorPage from "@/app/(app)/dashboard/key-monitor/page";
 
 const DEFAULT_TAB = "overview";
@@ -21,7 +21,7 @@ export function MarketContent() {
       {
         key: "overview",
         label: t("finance.market.overview", { defaultValue: "Market Overview" }),
-        content: <EconomicShortPage />
+        content: <MarketOverview />
       },
       {
         key: "monitor",

@@ -272,7 +272,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
     content = (
       <Empty
         description={t('pages.topics.empty', {
-          defaultValue: 'Not enough items to build aggregations yet.'
+          defaultValue: 'Aggregation not ready yet. Try widening the window.'
         })}
         image={Empty.PRESENTED_IMAGE_SIMPLE}
       />
@@ -319,7 +319,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
             {sortedEventGroups.length === 0 ? (
               <Empty
                 description={t('pages.topics.eventsEmpty', {
-                  defaultValue: 'Not enough items to form event clusters.'
+                  defaultValue: 'Aggregation not ready for events yet.'
                 })}
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
               />
@@ -409,7 +409,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
             {sortedGroups.length === 0 ? (
               <Empty
                 description={t('pages.topics.topicsEmpty', {
-                  defaultValue: 'Not enough items to form topic clusters.'
+                  defaultValue: 'Aggregation not ready for topics yet.'
                 })}
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
               />

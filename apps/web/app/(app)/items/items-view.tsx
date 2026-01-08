@@ -300,6 +300,7 @@ export function ItemsView({
   const {
     data,
     loading,
+    error,
     refetch,
     fetchMore
   } = useQuery<ItemsQuery, ItemsQueryVariables>(ITEMS_QUERY, {
@@ -494,9 +495,7 @@ export function ItemsView({
     if (emptyStateVariant === "today") {
       const action = canManageCrawl
         ? {
-            label: t("items.empty.todayActionAdmin", {
-              defaultValue: "Manage crawl tasks"
-            }),
+            label: t("items.empty.todayActionAdmin", { defaultValue: "Manage crawl tasks" }),
             href: "/admin/ops/crawl-tasks"
           }
         : {
@@ -506,9 +505,9 @@ export function ItemsView({
             href: "/subscriptions"
           };
       return {
-        title: t("items.empty.todayTitle", { defaultValue: "No news yet" }),
+        title: t("items.empty.todayTitle", { defaultValue: "No news in this window" }),
         description: t("items.empty.todayDescription", {
-          defaultValue: "No processed news yet. Check subscriptions or crawl tasks."
+          defaultValue: "Try adjusting filters or check back later."
         }),
         actionLabel: action.label,
         actionHref: action.href
@@ -652,6 +651,22 @@ export function ItemsView({
               })}
             />
           ) : null}
+        </Space>
+      );
+    }
+
+    if (error && sortedData.length === 0) {
+      return (
+        <Space direction="vertical" align="center" size="middle" style={{ width: "100%" }}>
+          <ChartEmptyState
+            className="h-auto"
+            description={t("common.serviceUnavailable", {
+              defaultValue: "Service is unavailable. Please try again."
+            })}
+          />
+          <Button size="small" type="primary" onClick={() => refetch()}>
+            {t("common.retry")}
+          </Button>
         </Space>
       );
     }

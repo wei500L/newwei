@@ -509,6 +509,18 @@ export class ItemsService {
         }
       },
       {
+        $addFields: {
+          sortAt: {
+            $convert: {
+              input: "$result.published_at",
+              to: "date",
+              onError: "$createdAt",
+              onNull: "$createdAt"
+            }
+          }
+        }
+      },
+      {
         $unwind: '$result.topics'
       },
       {
@@ -517,13 +529,13 @@ export class ItemsService {
         }
       },
       {
-        $sort: { createdAt: -1 }
+        $sort: { sortAt: -1 }
       },
       {
         $group: {
           _id: '$result.topics',
           count: { $sum: 1 },
-          latestAt: { $first: '$createdAt' },
+          latestAt: { $first: '$sortAt' },
           items: {
             $push: {
               processedId: '$_id',
@@ -649,6 +661,14 @@ export class ItemsService {
               },
               0
             ]
+          },
+          sortAt: {
+            $convert: {
+              input: "$result.published_at",
+              to: "date",
+              onError: "$createdAt",
+              onNull: "$createdAt"
+            }
           }
         }
       },
@@ -693,13 +713,13 @@ export class ItemsService {
         }
       },
       {
-        $sort: { createdAt: -1 }
+        $sort: { sortAt: -1 }
       },
       {
         $group: {
           _id: "$groupId",
           count: { $sum: 1 },
-          latestAt: { $first: "$createdAt" },
+          latestAt: { $first: "$sortAt" },
           title: { $first: "$result.title" },
           summary: { $first: "$result.summary" },
           source: { $first: "$result.source" },

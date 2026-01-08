@@ -196,20 +196,27 @@ export function AlertCenterContent() {
     return () => sub.unsubscribe();
   }, [client, refetchEvents]);
   const events = eventsData?.alertEvents ?? [];
+  const sortedEvents = useMemo(() => {
+    return [...events].sort((a, b) => {
+      const aTime = new Date(a.triggeredAt).getTime();
+      const bTime = new Date(b.triggeredAt).getTime();
+      return bTime - aTime;
+    });
+  }, [events]);
 
   useEffect(() => {
-    if (events.length === 0) {
+    if (sortedEvents.length === 0) {
       setSelectedEventId(null);
       return;
     }
-    if (eventParam && events.some((event) => event.id === eventParam)) {
+    if (eventParam && sortedEvents.some((event) => event.id === eventParam)) {
       setSelectedEventId(eventParam);
       return;
     }
-    if (!selectedEventId || !events.some((event) => event.id === selectedEventId)) {
-      setSelectedEventId(events[0]?.id ?? null);
+    if (!selectedEventId || !sortedEvents.some((event) => event.id === selectedEventId)) {
+      setSelectedEventId(sortedEvents[0]?.id ?? null);
     }
-  }, [eventParam, events, selectedEventId]);
+  }, [eventParam, sortedEvents, selectedEventId]);
 
   const handleSelectEvent = (eventId: string) => {
     setSelectedEventId(eventId);
@@ -379,13 +386,13 @@ export function AlertCenterContent() {
           >
             <List
               loading={eventsLoading}
-              dataSource={events}
+              dataSource={sortedEvents}
               locale={{
                 emptyText: (
                   <ChartEmptyState
                     className="h-auto py-6"
                     description={t("alerts.center.emptyEvents", {
-                      defaultValue: "No alert events yet."
+                      defaultValue: "No recent alerts."
                     })}
                   />
                 )

@@ -134,7 +134,9 @@ export function WarMap() {
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const registeredMapsRef = useRef(new Set<string>());
   const [mapReady, setMapReady] = useState(false);
-  const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
+  const emptyMessage = t("pages.map.empty", {
+    defaultValue: "No alerts triggered in the selected range."
+  });
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),

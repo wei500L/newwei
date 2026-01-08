@@ -183,6 +183,18 @@ export default function SubscriptionsPage() {
     }
     return grouped;
   }, [alertNotifications, eventById]);
+  const orderedNotifications = useMemo(() => {
+    return [...notifications].sort((a, b) => {
+      const aUnread = !a.readAt;
+      const bUnread = !b.readAt;
+      if (aUnread !== bUnread) {
+        return aUnread ? -1 : 1;
+      }
+      const aTime = new Date(a.createdAt).getTime();
+      const bTime = new Date(b.createdAt).getTime();
+      return bTime - aTime;
+    });
+  }, [notifications]);
 
   const resolveAlertEvent = (notification: (typeof notifications)[number]) => {
     const payload = notification.data ?? null;
@@ -458,7 +470,7 @@ export default function SubscriptionsPage() {
               <Skeleton active paragraph={{ rows: 4 }} />
             ) : (
               <List
-                dataSource={notifications}
+                dataSource={orderedNotifications}
                 locale={{ emptyText: t('notifications.empty') }}
                 renderItem={(item) => {
                   const action = resolveNotificationLink(item.data ?? null, t);
@@ -472,6 +484,7 @@ export default function SubscriptionsPage() {
                       }
                     }}
                     style={{ cursor: 'pointer' }}
+                    className={!item.readAt ? "bg-slate-50" : undefined}
                   >
                     <List.Item.Meta
                       title={
