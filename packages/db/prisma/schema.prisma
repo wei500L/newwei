@@ -557,6 +557,7 @@ model AlertRuleChannel {
 enum AlertChannelType {
   email
   webhook
+  in_app
 }
 
 enum AlertSeverity {

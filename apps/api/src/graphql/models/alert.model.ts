@@ -55,6 +55,39 @@ export class AlertDeliveryModel {
 
   @Field(() => AlertChannelType)
   channelType!: AlertChannelType;
+
+  @Field({ nullable: true })
+  channelName?: string;
+
+  @Field({ nullable: true })
+  target?: string;
+}
+
+@ObjectType()
+export class AlertEventReplayPointModel {
+  @Field(() => GraphQLISODateTime)
+  timestamp!: Date;
+
+  @Field(() => Number)
+  value!: number;
+}
+
+@ObjectType()
+export class AlertEventReplayModel {
+  @Field()
+  eventId!: string;
+
+  @Field(() => AlertMetricProvider)
+  metricProvider!: AlertMetricProvider;
+
+  @Field()
+  metricSlug!: string;
+
+  @Field({ nullable: true })
+  unit?: string | null;
+
+  @Field(() => [AlertEventReplayPointModel])
+  points!: AlertEventReplayPointModel[];
 }
 
 @ObjectType()

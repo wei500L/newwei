@@ -40,16 +40,19 @@ export type AlertChannelModel = {
 
 export enum AlertChannelType {
   Email = 'email',
+  InApp = 'in_app',
   Webhook = 'webhook'
 }
 
 export type AlertDeliveryModel = {
   __typename?: 'AlertDeliveryModel';
+  channelName?: Maybe<Scalars['String']['output']>;
   channelType: AlertChannelType;
   error?: Maybe<Scalars['String']['output']>;
   id: Scalars['String']['output'];
   sentAt?: Maybe<Scalars['DateTime']['output']>;
   status: AlertDeliveryStatus;
+  target?: Maybe<Scalars['String']['output']>;
 };
 
 export enum AlertDeliveryStatus {
@@ -80,9 +83,26 @@ export type AlertEventModel = {
   triggeredAt: Scalars['DateTime']['output'];
 };
 
+export type AlertEventReplayModel = {
+  __typename?: 'AlertEventReplayModel';
+  eventId: Scalars['String']['output'];
+  metricProvider: AlertMetricProvider;
+  metricSlug: Scalars['String']['output'];
+  points: Array<AlertEventReplayPointModel>;
+  unit?: Maybe<Scalars['String']['output']>;
+};
+
+export type AlertEventReplayPointModel = {
+  __typename?: 'AlertEventReplayPointModel';
+  timestamp: Scalars['DateTime']['output'];
+  value: Scalars['Float']['output'];
+};
+
 export enum AlertEventStatus {
+  Confirmed = 'confirmed',
   Delivered = 'delivered',
   Failed = 'failed',
+  Ignored = 'ignored',
   Pending = 'pending'
 }
 
@@ -1009,6 +1029,7 @@ export type ProcessedItemModelGraph = {
 export type Query = {
   __typename?: 'Query';
   alertChannels: Array<AlertChannelModel>;
+  alertEventReplay?: Maybe<AlertEventReplayModel>;
   alertEvents: Array<AlertEventModel>;
   alertRules: Array<AlertRuleModel>;
   analysisResults: Array<AnalysisResultModel>;
@@ -1037,6 +1058,12 @@ export type Query = {
   topicGroups: Array<TopicGroupModel>;
   unreadNotificationCount: Scalars['Int']['output'];
   users: Array<UserModel>;
+};
+
+
+export type QueryAlertEventReplayArgs = {
+  eventId: Scalars['String']['input'];
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -1355,7 +1382,7 @@ export type AlertEventsQueryVariables = Exact<{
 }>;
 
 
-export type AlertEventsQuery = { __typename?: 'Query', alertEvents: Array<{ __typename?: 'AlertEventModel', id: string, triggeredAt: any, metricValue: number, changePercent?: number | null, severity: AlertSeverity, status: AlertEventStatus, message?: string | null, ruleId?: string | null, ruleName?: string | null, metricProvider?: AlertMetricProvider | null, metricSlug?: string | null, operator?: AlertOperator | null, thresholdValue?: number | null, thresholdLower?: number | null, thresholdUpper?: number | null, changeWindowMin?: number | null, context?: any | null, deliveries: Array<{ __typename?: 'AlertDeliveryModel', id: string, status: AlertDeliveryStatus, channelType: AlertChannelType, sentAt?: any | null, error?: string | null }> }> };
+export type AlertEventsQuery = { __typename?: 'Query', alertEvents: Array<{ __typename?: 'AlertEventModel', id: string, triggeredAt: any, metricValue: number, changePercent?: number | null, severity: AlertSeverity, status: AlertEventStatus, message?: string | null, ruleId?: string | null, ruleName?: string | null, metricProvider?: AlertMetricProvider | null, metricSlug?: string | null, operator?: AlertOperator | null, thresholdValue?: number | null, thresholdLower?: number | null, thresholdUpper?: number | null, changeWindowMin?: number | null, context?: any | null, deliveries: Array<{ __typename?: 'AlertDeliveryModel', id: string, status: AlertDeliveryStatus, channelType: AlertChannelType, channelName?: string | null, target?: string | null, sentAt?: any | null, error?: string | null }> }> };
 
 export type UpsertAlertRuleMutationVariables = Exact<{
   input: UpsertAlertRuleInput;
@@ -1385,10 +1412,18 @@ export type UpdateAlertEventStatusMutationVariables = Exact<{
 
 export type UpdateAlertEventStatusMutation = { __typename?: 'Mutation', updateAlertEventStatus: { __typename?: 'AlertEventModel', id: string, status: AlertEventStatus } };
 
+export type AlertEventReplayQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type AlertEventReplayQuery = { __typename?: 'Query', alertEventReplay?: { __typename?: 'AlertEventReplayModel', eventId: string, metricProvider: AlertMetricProvider, metricSlug: string, unit?: string | null, points: Array<{ __typename?: 'AlertEventReplayPointModel', timestamp: any, value: number }> } | null };
+
 export type AlertEventsStreamSubscriptionVariables = Exact<{ [key: string]: never; }>;
 
 
-export type AlertEventsStreamSubscription = { __typename?: 'Subscription', alertEvents: { __typename?: 'AlertEventModel', id: string, triggeredAt: any, severity: AlertSeverity, message?: string | null, metricValue: number } };
+export type AlertEventsStreamSubscription = { __typename?: 'Subscription', alertEvents: { __typename?: 'AlertEventModel', id: string, triggeredAt: any, severity: AlertSeverity, message?: string | null, metricValue: number, changePercent?: number | null, ruleName?: string | null, metricSlug?: string | null, context?: any | null } };
 
 export type AnalysisResultsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -1816,6 +1851,8 @@ export const AlertEventsDocument = gql`
       id
       status
       channelType
+      channelName
+      target
       sentAt
       error
     }
@@ -1990,6 +2027,54 @@ export function useUpdateAlertEventStatusMutation(baseOptions?: Apollo.MutationH
 export type UpdateAlertEventStatusMutationHookResult = ReturnType<typeof useUpdateAlertEventStatusMutation>;
 export type UpdateAlertEventStatusMutationResult = Apollo.MutationResult<UpdateAlertEventStatusMutation>;
 export type UpdateAlertEventStatusMutationOptions = Apollo.BaseMutationOptions<UpdateAlertEventStatusMutation, UpdateAlertEventStatusMutationVariables>;
+export const AlertEventReplayDocument = gql`
+    query AlertEventReplay($eventId: String!, $windowDays: Int) {
+  alertEventReplay(eventId: $eventId, windowDays: $windowDays) {
+    eventId
+    metricProvider
+    metricSlug
+    unit
+    points {
+      timestamp
+      value
+    }
+  }
+}
+    `;
+
+/**
+ * __useAlertEventReplayQuery__
+ *
+ * To run a query within a React component, call `useAlertEventReplayQuery` and pass it any options that fit your needs.
+ * When your component renders, `useAlertEventReplayQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useAlertEventReplayQuery({
+ *   variables: {
+ *      eventId: // value for 'eventId'
+ *      windowDays: // value for 'windowDays'
+ *   },
+ * });
+ */
+export function useAlertEventReplayQuery(baseOptions: Apollo.QueryHookOptions<AlertEventReplayQuery, AlertEventReplayQueryVariables> & ({ variables: AlertEventReplayQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<AlertEventReplayQuery, AlertEventReplayQueryVariables>(AlertEventReplayDocument, options);
+      }
+export function useAlertEventReplayLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<AlertEventReplayQuery, AlertEventReplayQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<AlertEventReplayQuery, AlertEventReplayQueryVariables>(AlertEventReplayDocument, options);
+        }
+export function useAlertEventReplaySuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<AlertEventReplayQuery, AlertEventReplayQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<AlertEventReplayQuery, AlertEventReplayQueryVariables>(AlertEventReplayDocument, options);
+        }
+export type AlertEventReplayQueryHookResult = ReturnType<typeof useAlertEventReplayQuery>;
+export type AlertEventReplayLazyQueryHookResult = ReturnType<typeof useAlertEventReplayLazyQuery>;
+export type AlertEventReplaySuspenseQueryHookResult = ReturnType<typeof useAlertEventReplaySuspenseQuery>;
+export type AlertEventReplayQueryResult = Apollo.QueryResult<AlertEventReplayQuery, AlertEventReplayQueryVariables>;
 export const AlertEventsStreamDocument = gql`
     subscription AlertEventsStream {
   alertEvents {
@@ -1998,6 +2083,10 @@ export const AlertEventsStreamDocument = gql`
     severity
     message
     metricValue
+    changePercent
+    ruleName
+    metricSlug
+    context
   }
 }
     `;

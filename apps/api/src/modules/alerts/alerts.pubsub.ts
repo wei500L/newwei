@@ -1,4 +1,5 @@
 import { PubSub } from "graphql-subscriptions";
+import { AlertEventStatus, AlertMetricProvider, AlertSeverity } from "@prisma/client";
 
 export const ALERTS_PUBSUB = Symbol("ALERTS_PUBSUB");
 
@@ -7,12 +8,16 @@ export interface AlertEventPayload {
   event: {
     id: string;
     ruleId: string;
-    triggeredAt: string;
+    ruleName?: string;
+    metricProvider?: AlertMetricProvider;
+    metricSlug?: string;
+    triggeredAt: Date;
     message?: string;
-    severity: string;
+    severity: AlertSeverity;
     metricValue: number;
     changePercent?: number | null;
-    status: string;
+    status: AlertEventStatus;
+    context?: Record<string, unknown> | null;
   };
 }
 

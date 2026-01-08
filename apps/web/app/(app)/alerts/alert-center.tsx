@@ -1,7 +1,8 @@
 "use client";
 
 import { gql, useApolloClient, useMutation } from "@apollo/client";
-import { Alert, Badge, Button, Card, Col, List, Row, Space, Tag, Typography } from "antd";
+import { Alert, Badge, Button, Card, Col, List, Modal, Row, Space, Spin, Tag, Typography } from "antd";
+import type { EChartsOption } from "echarts";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,10 +12,13 @@ import { useSession } from "next-auth/react";
 
 import {
   AlertEventsStreamDocument,
+  useAlertEventReplayLazyQuery,
   useAlertEventsQuery,
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DashboardChart } from "@/components/echart";
+import { useChartTheme } from "@/hooks/use-chart-theme";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -174,6 +178,10 @@ export function AlertCenterContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const eventParam = searchParams.get("eventId");
+  const [replayOpen, setReplayOpen] = useState(false);
+  const { echartsTheme, colors, fontFamily } = useChartTheme();
+  const [loadReplay, { data: replayData, loading: replayLoading, error: replayError }] =
+    useAlertEventReplayLazyQuery();
 
   const { data: eventsData, loading: eventsLoading, refetch: refetchEvents } = useAlertEventsQuery({
     variables: { limit: 20 }
@@ -230,6 +238,109 @@ export function AlertCenterContent() {
     () => events.find((event) => event.id === selectedEventId) ?? null,
     [events, selectedEventId]
   );
+
+  useEffect(() => {
+    setReplayOpen(false);
+  }, [selectedEventId]);
+
+  const replay =
+    replayData?.alertEventReplay && replayData.alertEventReplay.eventId === selectedEvent?.id
+      ? replayData.alertEventReplay
+      : null;
+  const replayPoints = replay?.points ?? [];
+  const replayUnit = replay?.unit ?? null;
+  const replayOption = useMemo(() => {
+    if (!replay || replayPoints.length === 0) {
+      return {};
+    }
+
+    const operator = selectedEvent?.operator ?? null;
+    const thresholdValue =
+      typeof selectedEvent?.thresholdValue === "number" && Number.isFinite(selectedEvent.thresholdValue)
+        ? selectedEvent.thresholdValue
+        : null;
+    const thresholdLower =
+      typeof selectedEvent?.thresholdLower === "number" && Number.isFinite(selectedEvent.thresholdLower)
+        ? selectedEvent.thresholdLower
+        : null;
+    const thresholdUpper =
+      typeof selectedEvent?.thresholdUpper === "number" && Number.isFinite(selectedEvent.thresholdUpper)
+        ? selectedEvent.thresholdUpper
+        : null;
+
+    const markLineData: any[] = [];
+    if (operator && ["gt", "gte", "lt", "lte", "eq"].includes(operator) && thresholdValue !== null) {
+      markLineData.push({
+        yAxis: thresholdValue,
+        lineStyle: { type: "dashed", color: colors.accent },
+        label: { formatter: `threshold ${thresholdValue}` }
+      });
+    }
+    if (operator && ["outside_range", "within_range"].includes(operator) && thresholdLower !== null && thresholdUpper !== null) {
+      markLineData.push(
+        {
+          yAxis: thresholdLower,
+          lineStyle: { type: "dashed", color: colors.accent },
+          label: { formatter: `lower ${thresholdLower}` }
+        },
+        {
+          yAxis: thresholdUpper,
+          lineStyle: { type: "dashed", color: colors.accent },
+          label: { formatter: `upper ${thresholdUpper}` }
+        }
+      );
+    }
+
+    return {
+      tooltip: { trigger: "axis" },
+      grid: { top: 20, left: 40, right: 20, bottom: 30, containLabel: true },
+      xAxis: { type: "time" },
+      yAxis: { type: "value", name: replayUnit ?? undefined },
+      series: [
+        {
+          type: "line",
+          smooth: true,
+          showSymbol: false,
+          data: replayPoints.map((point) => [point.timestamp, point.value]),
+          lineStyle: { width: 2, color: colors.primary },
+          areaStyle: { opacity: 0.06, color: colors.primary },
+          ...(markLineData.length > 0
+            ? {
+                markLine: {
+                  symbol: "none",
+                  data: markLineData
+                } as any
+              }
+            : {})
+        }
+      ],
+      textStyle: { fontFamily }
+    };
+  }, [
+    colors.accent,
+    colors.primary,
+    fontFamily,
+    replay,
+    replayPoints,
+    replayUnit,
+    selectedEvent?.operator,
+    selectedEvent?.thresholdLower,
+    selectedEvent?.thresholdUpper,
+    selectedEvent?.thresholdValue
+  ]) as EChartsOption;
+
+  const handleOpenReplay = () => {
+    if (!selectedEvent) {
+      return;
+    }
+    setReplayOpen(true);
+    loadReplay({
+      variables: {
+        eventId: selectedEvent.id,
+        windowDays: 30
+      }
+    });
+  };
 
   const handleRefresh = async () => {
     await refetchEvents();
@@ -584,6 +695,63 @@ export function AlertCenterContent() {
                     ) : null}
                   </Space>
                 </DetailRow>
+                <DetailRow label={t("alerts.center.detail.replay", { defaultValue: "Replay" })}>
+                  <>
+                    <Space size="small">
+                      <Button size="small" onClick={handleOpenReplay} disabled={!selectedEvent} loading={replayLoading}>
+                        {t("alerts.center.detail.openReplay", { defaultValue: "Open replay" })}
+                      </Button>
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.replayHint", {
+                          defaultValue: "Shows recent metric history around this alert."
+                        })}
+                      </Typography.Text>
+                    </Space>
+                    <Modal
+                      title={t("alerts.center.detail.replayTitle", {
+                        defaultValue: "Replay: {{metric}}",
+                        metric: selectedEvent.metricSlug ?? t("common.notAvailable")
+                      })}
+                      open={replayOpen}
+                      onCancel={() => setReplayOpen(false)}
+                      footer={null}
+                      width={840}
+                      destroyOnClose
+                    >
+                      {replayLoading ? (
+                        <div className="flex justify-center py-10">
+                          <Spin />
+                        </div>
+                      ) : replayError ? (
+                        <Alert
+                          type="error"
+                          showIcon
+                          message={t("alerts.center.detail.replayError", { defaultValue: "Failed to load replay." })}
+                          description={replayError.message}
+                        />
+                      ) : replay ? (
+                        replayPoints.length > 0 ? (
+                          <DashboardChart option={replayOption} theme={echartsTheme} height={320} />
+                        ) : (
+                          <ChartEmptyState
+                            className="h-auto py-8"
+                            description={t("alerts.center.detail.replayEmpty", {
+                              defaultValue: "No replay data available for this event."
+                            })}
+                          />
+                        )
+                      ) : (
+                        <Alert
+                          type="info"
+                          showIcon
+                          message={t("alerts.center.detail.replayUnsupported", {
+                            defaultValue: "Replay is not available for this provider."
+                          })}
+                        />
+                      )}
+                    </Modal>
+                  </>
+                </DetailRow>
                 <DetailRow label={t("alerts.center.detail.source", { defaultValue: "Source" })}>
                   {evidenceSource || evidenceSourceDoc ? (
                     <Space direction="vertical" size={2}>
@@ -689,6 +857,15 @@ export function AlertCenterContent() {
                             {delivery.status}
                           </Tag>
                           <Tag>{delivery.channelType}</Tag>
+                          {delivery.channelName ? (
+                            <Typography.Text>{delivery.channelName}</Typography.Text>
+                          ) : null}
+                          {!delivery.channelName && delivery.target ? (
+                            <Typography.Text>{delivery.target}</Typography.Text>
+                          ) : null}
+                          {delivery.channelName && delivery.target ? (
+                            <Typography.Text type="secondary">{delivery.target}</Typography.Text>
+                          ) : null}
                           <Typography.Text type="secondary">
                             {delivery.sentAt
                               ? formatDateTime(delivery.sentAt, locale, {

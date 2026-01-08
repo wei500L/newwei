@@ -151,6 +151,58 @@ export class AlertsService {
     });
   }
 
+  async getEventReplay(orgId: string, eventId: string, windowDays = 30) {
+    const normalizedDays = Math.min(Math.max(Math.trunc(windowDays), 1), 365);
+    const event = await this.prisma.alertEvent.findUnique({
+      where: { id: eventId },
+      include: { rule: true }
+    });
+    if (!event || !event.rule || event.rule.orgId !== orgId) {
+      return null;
+    }
+    if (event.rule.metricProvider !== AlertMetricProvider.economic_data) {
+      return null;
+    }
+    const metricSlug = event.rule.metricSlug;
+    const context =
+      event.context && typeof event.context === "object" && !Array.isArray(event.context)
+        ? (event.context as Record<string, unknown>)
+        : null;
+    const recordedAtRaw = typeof context?.recordedAt === "string" ? context.recordedAt : null;
+    const center = recordedAtRaw ? new Date(recordedAtRaw) : event.triggeredAt;
+    const windowMs = normalizedDays * 24 * 60 * 60 * 1000;
+    const start = new Date(center.getTime() - windowMs);
+    const end = new Date(center.getTime() + windowMs);
+
+    const points = await this.prisma.economicDataPoint.findMany({
+      where: {
+        item: { slug: metricSlug },
+        recordedAt: {
+          gte: start,
+          lte: end
+        }
+      },
+      orderBy: { recordedAt: "asc" },
+      select: {
+        recordedAt: true,
+        value: true,
+        unit: true
+      }
+    });
+
+    const unit = points.find((point) => point.unit)?.unit ?? null;
+    return {
+      eventId: event.id,
+      metricProvider: event.rule.metricProvider,
+      metricSlug,
+      unit,
+      points: points.map((point) => ({
+        timestamp: point.recordedAt,
+        value: Number(point.value)
+      }))
+    };
+  }
+
   async updateEventStatus(orgId: string, eventId: string, status: AlertEventStatus) {
     if (![AlertEventStatus.confirmed, AlertEventStatus.ignored].includes(status)) {
       throw new Error("Unsupported alert event status update");
@@ -354,7 +406,7 @@ export class AlertsService {
       .map((link) => link.channel)
       .filter((channel): channel is NonNullable<typeof channel> => !!channel && channel.isActive);
 
-    const deliveries = await Promise.all(
+    const externalDeliveries = await Promise.all(
       activeChannels.map((channel) =>
         this.prisma.alertDelivery.create({
           data: {
@@ -367,62 +419,171 @@ export class AlertsService {
       )
     );
 
-    await this.enqueueNotificationJobs(event.id, deliveries);
-    void this.notifyInApp(rule, event);
+    const inAppDeliveries = await this.createInAppDeliveries(rule, event.id);
+
+    if (externalDeliveries.length > 0) {
+      await this.enqueueNotificationJobs(externalDeliveries);
+    }
+
+    const hasAnyDeliveries = externalDeliveries.length > 0 || inAppDeliveries.length > 0;
+    if (!hasAnyDeliveries) {
+      await this.prisma.alertEvent.update({
+        where: { id: event.id },
+        data: { status: AlertEventStatus.delivered }
+      });
+    }
+
+    if (inAppDeliveries.length > 0) {
+      void this.deliverInAppNotifications(
+        rule,
+        {
+          id: event.id,
+          metricValue: event.metricValue,
+          changePercent: event.changePercent ?? null,
+          message: event.message,
+          context: context ?? null
+        },
+        inAppDeliveries
+      );
+    }
+
+    const streamStatus = hasAnyDeliveries ? event.status : AlertEventStatus.delivered;
     await this.pubsub.publish("alertEvents", {
       orgId: rule.orgId,
       event: {
         id: event.id,
         ruleId: rule.id,
-        triggeredAt: event.triggeredAt.toISOString(),
+        ruleName: rule.name,
+        metricProvider: rule.metricProvider,
+        metricSlug: rule.metricSlug,
+        triggeredAt: event.triggeredAt,
         message: triggered.message,
         severity: rule.severity,
         metricValue: Number(event.metricValue),
         changePercent: event.changePercent ?? null,
-        status: "pending"
+        status: streamStatus,
+        context: (context as Record<string, unknown> | undefined) ?? null
       }
     } satisfies AlertEventPayload);
 
-    return { event, deliveries };
+    return { event, deliveries: externalDeliveries };
   }
 
-  private async notifyInApp(
-    rule: { id: string; orgId: string; name: string; metricSlug: string; severity: AlertSeverity; createdById?: string | null; metadata?: Prisma.JsonValue | null },
-    event: { id: string; metricValue: Prisma.Decimal; message?: string | null }
+  private async createInAppDeliveries(
+    rule: { orgId: string; createdById?: string | null; metadata?: Prisma.JsonValue | null },
+    eventId: string
   ) {
+    const muteUntilMs = this.extractMuteUntilMs(rule.metadata);
+    if (this.notificationThrottle.isMutedNow(muteUntilMs)) {
+      return [] as { id: string; userId: string }[];
+    }
+    const recipients = await this.resolveInAppRecipients(rule);
+    if (!recipients.length) {
+      return [] as { id: string; userId: string }[];
+    }
+    const created = await Promise.all(
+      recipients.map(async (userId) => {
+        const delivery = await this.prisma.alertDelivery.create({
+          data: {
+            eventId,
+            channelType: AlertChannelType.in_app,
+            targetSnapshot: { userId }
+          }
+        });
+        return { id: delivery.id, userId };
+      })
+    );
+    return created;
+  }
+
+  private async deliverInAppNotifications(
+    rule: { id: string; orgId: string; name: string; metricSlug: string; severity: AlertSeverity; createdById?: string | null; metadata?: Prisma.JsonValue | null },
+    event: {
+      id: string;
+      metricValue: Prisma.Decimal;
+      changePercent?: number | null;
+      message?: string | null;
+      context?: Record<string, unknown> | null;
+    },
+    deliveries: { id: string; userId: string }[]
+  ) {
+    const metricValue = Number(event.metricValue);
+    const title = `Alert triggered: ${rule.name}`;
+    const changeText =
+      typeof event.changePercent === "number" && Number.isFinite(event.changePercent)
+        ? ` (${event.changePercent.toFixed(2)}%)`
+        : "";
+    const body =
+      event.message ??
+      `Metric ${rule.metricSlug} triggered at ${Number.isFinite(metricValue) ? metricValue : "N/A"}${changeText}`;
+    const context =
+      event.context && typeof event.context === "object" && !Array.isArray(event.context)
+        ? (event.context as Record<string, unknown>)
+        : null;
+    const contextSummary = context
+      ? {
+          countryCode: typeof context.countryCode === "string" ? context.countryCode : undefined,
+          countryName: typeof context.countryName === "string" ? context.countryName : undefined,
+          itemName: typeof context.itemName === "string" ? context.itemName : undefined,
+          sourceName: typeof context.sourceName === "string" ? context.sourceName : undefined,
+          recordedAt: typeof context.recordedAt === "string" ? context.recordedAt : undefined,
+          unit: typeof context.unit === "string" ? context.unit : undefined
+        }
+      : null;
+
     try {
-      const muteUntilMs = this.extractMuteUntilMs(rule.metadata);
-      if (this.notificationThrottle.isMutedNow(muteUntilMs)) {
-        return;
-      }
-      const recipients = await this.resolveInAppRecipients(rule);
-      if (!recipients.length) {
-        return;
-      }
-      const metricValue = Number(event.metricValue);
-      const title = `Alert triggered: ${rule.name}`;
-      const body =
-        event.message ??
-        `Metric ${rule.metricSlug} triggered at ${Number.isFinite(metricValue) ? metricValue : "N/A"}`;
       await Promise.all(
-        recipients.map((userId) =>
-          this.notifications.notify({
-            orgId: rule.orgId,
-            userId,
-            type: NotificationType.alert_triggered,
-            title,
-            body,
-            data: {
-              alertEventId: event.id,
-              ruleId: rule.id,
-              metricSlug: rule.metricSlug,
-              metricValue
-            }
-          })
-        )
+        deliveries.map(async (delivery) => {
+          const userId = delivery.userId;
+          try {
+            const record = await this.notifications.notify({
+              orgId: rule.orgId,
+              userId,
+              type: NotificationType.alert_triggered,
+              title,
+              body,
+              data: {
+                alertEventId: event.id,
+                ruleId: rule.id,
+                metricSlug: rule.metricSlug,
+                metricValue,
+                ...(typeof event.changePercent === "number" && Number.isFinite(event.changePercent)
+                  ? { changePercent: event.changePercent }
+                  : {}),
+                ...(contextSummary ? { context: contextSummary } : {})
+              }
+            });
+            await this.prisma.alertDelivery.update({
+              where: { id: delivery.id },
+              data: {
+                status: AlertDeliveryStatus.sent,
+                sentAt: new Date(),
+                error: null,
+                targetSnapshot: {
+                  userId,
+                  notificationId: record.id
+                }
+              }
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            await this.prisma.alertDelivery.update({
+              where: { id: delivery.id },
+              data: {
+                status: AlertDeliveryStatus.failed,
+                error: message,
+                targetSnapshot: {
+                  userId
+                }
+              }
+            });
+          }
+        })
       );
     } catch (error) {
       logger.warn({ ruleId: rule.id, eventId: event.id, error }, "Failed to send in-app alert notification");
+    } finally {
+      await this.reconcileEventStatus(event.id);
     }
   }
 
@@ -561,12 +722,8 @@ export class AlertsService {
     }
   }
 
-  private async enqueueNotificationJobs(eventId: string, deliveries: { id: string }[]) {
+  private async enqueueNotificationJobs(deliveries: { id: string }[]) {
     if (deliveries.length === 0) {
-      await this.prisma.alertEvent.update({
-        where: { id: eventId },
-        data: { status: AlertEventStatus.delivered }
-      });
       return;
     }
     const attempts = NOTIFICATION_BACKOFF_DELAYS_MS.length + 1;
@@ -607,11 +764,11 @@ export class AlertsService {
         where: { id: delivery.id },
         data: { status: AlertDeliveryStatus.failed, error: "Invalid channel snapshot" }
       });
-      await this.updateEventStatus(delivery.eventId);
+      await this.reconcileEventStatus(delivery.eventId);
       return;
     }
     if (delivery.status !== AlertDeliveryStatus.pending) {
-      await this.updateEventStatus(delivery.eventId);
+      await this.reconcileEventStatus(delivery.eventId);
       return;
     }
 
@@ -627,7 +784,7 @@ export class AlertsService {
           error: `suppressed: muted until ${new Date(muteUntilMs!).toISOString()}`
         }
       });
-      await this.updateEventStatus(delivery.eventId);
+      await this.reconcileEventStatus(delivery.eventId);
       return;
     }
 
@@ -688,7 +845,7 @@ export class AlertsService {
       );
       throw error;
     } finally {
-      await this.updateEventStatus(delivery.eventId);
+      await this.reconcileEventStatus(delivery.eventId);
     }
   }
 
@@ -716,7 +873,7 @@ export class AlertsService {
     return NOTIFICATION_BACKOFF_DELAYS_MS[index];
   }
 
-  private async updateEventStatus(eventId: string) {
+  private async reconcileEventStatus(eventId: string) {
     const current = await this.prisma.alertEvent.findUnique({
       where: { id: eventId },
       select: { status: true }

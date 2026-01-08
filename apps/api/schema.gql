@@ -36,14 +36,17 @@ type AlertChannelModel {
 enum AlertChannelType {
   email
   webhook
+  in_app
 }
 
 type AlertDeliveryModel {
   channelType: AlertChannelType!
+  channelName: String
   error: String
   id: String!
   sentAt: DateTime
   status: AlertDeliveryStatus!
+  target: String
 }
 
 enum AlertDeliveryStatus {
@@ -73,9 +76,24 @@ type AlertEventModel {
   triggeredAt: DateTime!
 }
 
+type AlertEventReplayModel {
+  eventId: String!
+  metricProvider: AlertMetricProvider!
+  metricSlug: String!
+  points: [AlertEventReplayPointModel!]!
+  unit: String
+}
+
+type AlertEventReplayPointModel {
+  timestamp: DateTime!
+  value: Float!
+}
+
 enum AlertEventStatus {
+  confirmed
   delivered
   failed
+  ignored
   pending
 }
 
@@ -812,6 +830,7 @@ type ProcessedItemLlmModel {
 
 type Query {
   alertChannels: [AlertChannelModel!]!
+  alertEventReplay(eventId: String!, windowDays: Int): AlertEventReplayModel
   alertEvents(limit: Int, metricSlug: String): [AlertEventModel!]!
   alertRules: [AlertRuleModel!]!
   analysisResults(limit: Int): [AnalysisResultModel!]!

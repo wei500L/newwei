@@ -21,11 +21,35 @@ export function LiveAlertsToasts() {
         next: (payload) => {
           const evt = payload.data?.alertEvents;
           if (evt) {
+            const metricValue =
+              typeof evt.metricValue === "number" && Number.isFinite(evt.metricValue)
+                ? evt.metricValue
+                : null;
+            const changePercent =
+              typeof evt.changePercent === "number" && Number.isFinite(evt.changePercent)
+                ? evt.changePercent
+                : null;
+            const context =
+              evt.context && typeof evt.context === "object" && !Array.isArray(evt.context)
+                ? (evt.context as Record<string, unknown>)
+                : null;
+            const contextTags = [
+              typeof context?.countryName === "string" ? context.countryName : null,
+              typeof context?.countryCode === "string" ? context.countryCode : null,
+              typeof context?.itemName === "string" ? context.itemName : null,
+              typeof context?.resource === "string" ? context.resource : null,
+              typeof context?.action === "string" ? context.action : null
+            ].filter(Boolean) as string[];
+            const contextSuffix = contextTags.length > 0 ? ` · ${contextTags.slice(0, 3).join(" · ")}` : "";
             message.warning(
               t("alerts.live.message", {
+                defaultValue: "[{{severity}}] {{title}} · value {{value}} · change {{change}}{{context}}",
                 severity: evt.severity,
-                message: evt.message ?? t("alerts.events.triggered"),
-                value: evt.metricValue ?? t("common.notAvailable")
+                title: evt.ruleName ?? evt.metricSlug ?? t("alerts.events.triggered", { defaultValue: "Alert triggered" }),
+                value: metricValue ?? t("common.notAvailable", { defaultValue: "N/A" }),
+                change:
+                  changePercent !== null ? `${changePercent.toFixed(2)}%` : t("common.notAvailable", { defaultValue: "N/A" }),
+                context: contextSuffix
               })
             );
           }

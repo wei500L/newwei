@@ -4,13 +4,13 @@ import { PubSubEngine , withFilter } from "graphql-subscriptions";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { ALERTS_PUBSUB } from "../../modules/alerts/alerts.pubsub";
+import { ALERTS_PUBSUB, type AlertEventPayload } from "../../modules/alerts/alerts.pubsub";
 import { AlertsService } from "../../modules/alerts/alerts.service";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { AlertChannelInput, UpdateAlertEventStatusInput, UpsertAlertRuleInput } from "../dto/alert.input";
 import type { GqlRequest } from "../graphql.types";
-import { AlertChannelModel, AlertEventModel, AlertRuleModel } from "../models/alert.model";
+import { AlertChannelModel, AlertEventModel, AlertEventReplayModel, AlertRuleModel } from "../models/alert.model";
 
 
 @Resolver()
@@ -106,14 +106,43 @@ export class AlertsResolver {
       changeWindowMin: event.rule?.changeWindowMin ?? null,
       context: event.context as Record<string, unknown> | null,
       deliveries:
-        event.deliveries?.map((delivery) => ({
-          id: delivery.id,
-          status: delivery.status,
-          error: delivery.error ?? undefined,
-          sentAt: delivery.sentAt ?? undefined,
-          channelType: delivery.channelType
-        })) ?? []
+        event.deliveries?.map((delivery) => {
+          const snapshot =
+            delivery.targetSnapshot && typeof delivery.targetSnapshot === "object" && !Array.isArray(delivery.targetSnapshot)
+              ? (delivery.targetSnapshot as Record<string, unknown>)
+              : null;
+          const snapshotTarget =
+            typeof snapshot?.target === "string"
+              ? snapshot.target
+              : typeof snapshot?.userId === "string"
+                ? snapshot.userId
+                : undefined;
+          const snapshotName = typeof snapshot?.name === "string" ? snapshot.name : undefined;
+          return {
+            id: delivery.id,
+            status: delivery.status,
+            error: delivery.error ?? undefined,
+            sentAt: delivery.sentAt ?? undefined,
+            channelType: delivery.channelType,
+            channelName: delivery.channel?.name ?? snapshotName ?? (delivery.channelType === "in_app" ? "In-app" : undefined),
+            target: delivery.channel?.target ?? snapshotTarget
+          };
+        }) ?? []
     }));
+  }
+
+  @HasPermission("alerts.read")
+  @Query(() => AlertEventReplayModel, { nullable: true })
+  async alertEventReplay(
+    @Context("req") req: GqlRequest,
+    @Args("eventId") eventId: string,
+    @Args("windowDays", { type: () => Int, nullable: true }) windowDays?: number
+  ): Promise<AlertEventReplayModel | null> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    return this.alerts.getEventReplay(requester.orgId, eventId, windowDays ?? 30);
   }
 
   @HasPermission("alerts.manage")
@@ -231,30 +260,52 @@ export class AlertsResolver {
       changeWindowMin: event.rule?.changeWindowMin ?? null,
       context: event.context as Record<string, unknown> | null,
       deliveries:
-        event.deliveries?.map((delivery) => ({
-          id: delivery.id,
-          status: delivery.status,
-          error: delivery.error ?? undefined,
-          sentAt: delivery.sentAt ?? undefined,
-          channelType: delivery.channelType
-        })) ?? []
+        event.deliveries?.map((delivery) => {
+          const snapshot =
+            delivery.targetSnapshot && typeof delivery.targetSnapshot === "object" && !Array.isArray(delivery.targetSnapshot)
+              ? (delivery.targetSnapshot as Record<string, unknown>)
+              : null;
+          const snapshotTarget =
+            typeof snapshot?.target === "string"
+              ? snapshot.target
+              : typeof snapshot?.userId === "string"
+                ? snapshot.userId
+                : undefined;
+          const snapshotName = typeof snapshot?.name === "string" ? snapshot.name : undefined;
+          return {
+            id: delivery.id,
+            status: delivery.status,
+            error: delivery.error ?? undefined,
+            sentAt: delivery.sentAt ?? undefined,
+            channelType: delivery.channelType,
+            channelName: delivery.channel?.name ?? snapshotName ?? (delivery.channelType === "in_app" ? "In-app" : undefined),
+            target: delivery.channel?.target ?? snapshotTarget
+          };
+        }) ?? []
     };
   }
 
   @HasPermission("alerts.read")
   @Subscription(() => AlertEventModel, {
     name: "alertEvents",
-    resolve: (payload: { event: AlertEventModel }) => ({
-      id: payload.event.id,
-      triggeredAt: payload.event.triggeredAt,
-      metricValue: payload.event.metricValue,
-      changePercent: payload.event.changePercent ?? null,
-      severity: payload.event.severity,
-      status: payload.event.status,
-      message: payload.event.message ?? undefined,
-      ruleId: payload.event.ruleId ?? undefined,
-      deliveries: []
-    })
+    resolve: (payload: AlertEventPayload) => {
+      const triggeredAt = payload.event.triggeredAt instanceof Date ? payload.event.triggeredAt : new Date(payload.event.triggeredAt);
+      return {
+        id: payload.event.id,
+        triggeredAt,
+        metricValue: payload.event.metricValue,
+        changePercent: payload.event.changePercent ?? null,
+        severity: payload.event.severity,
+        status: payload.event.status,
+        message: payload.event.message ?? undefined,
+        ruleId: payload.event.ruleId ?? undefined,
+        ruleName: payload.event.ruleName ?? undefined,
+        metricProvider: payload.event.metricProvider ?? undefined,
+        metricSlug: payload.event.metricSlug ?? undefined,
+        context: payload.event.context ?? null,
+        deliveries: []
+      };
+    }
   })
   alertEventsSubscription(@Context("req") req: GqlRequest) {
     const requester = req?.user as AuthenticatedUser | undefined;

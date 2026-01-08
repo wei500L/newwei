@@ -57,6 +57,8 @@ query AlertEvents($limit: Int) {
       id
       status
       channelType
+      channelName
+      target
       sentAt
       error
     }
@@ -90,6 +92,19 @@ mutation UpdateAlertEventStatus($input: UpdateAlertEventStatusInput!) {
   }
 }
 
+query AlertEventReplay($eventId: String!, $windowDays: Int) {
+  alertEventReplay(eventId: $eventId, windowDays: $windowDays) {
+    eventId
+    metricProvider
+    metricSlug
+    unit
+    points {
+      timestamp
+      value
+    }
+  }
+}
+
 subscription AlertEventsStream {
   alertEvents {
     id
@@ -97,5 +112,9 @@ subscription AlertEventsStream {
     severity
     message
     metricValue
+    changePercent
+    ruleName
+    metricSlug
+    context
   }
 }
