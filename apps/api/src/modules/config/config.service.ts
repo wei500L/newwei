@@ -54,6 +54,9 @@ export interface NewsSourceSchedulerConfig {
   enabled: boolean;
   batchSize: number;
   lockTtlMs: number;
+  inFlightLookbackMs: number;
+  inFlightRescheduleDelayMs: number;
+  failureRecoveryDelayMs: number;
 }
 
 export interface WebSocketSecurityConfig {
@@ -350,6 +353,15 @@ export class EnvService extends ConfigService<ApiEnv> {
       lockTtlMs:
         this.get<number>("NEWS_SOURCE_SCHEDULER_LOCK_TTL_MS", { infer: true }) ??
         120_000,
+      inFlightLookbackMs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS", { infer: true }) ??
+        21_600_000,
+      inFlightRescheduleDelayMs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_INFLIGHT_RESCHEDULE_DELAY_MS", { infer: true }) ??
+        300_000,
+      failureRecoveryDelayMs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS", { infer: true }) ??
+        600_000,
     };
   }
 

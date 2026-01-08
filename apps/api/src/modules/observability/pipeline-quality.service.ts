@@ -1,5 +1,8 @@
 import { ProcessedItemModel, TaskLogModel } from "@modular/mongo";
 import { Injectable } from "@nestjs/common";
+import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
+
+import { PrismaService } from "../config/prisma.service";
 
 export interface PipelineQualitySummary {
   windowMinutes: number;
@@ -12,20 +15,44 @@ export interface PipelineQualitySummary {
   };
   successRate: number | null;
   averageLatencyMs: number | null;
-  failureTypes: Array<{
+  failureTypes: {
     stage: string;
     errorName: string;
     count: number;
-  }>;
+  }[];
+  llmModels?: {
+    model: string;
+    count: number;
+    avgLatencyMs: number | null;
+    avgCostUsd: number | null;
+    avgTotalTokens: number | null;
+  }[];
+  outbox?: {
+    totals: {
+      total: number;
+      pending: number;
+      processing: number;
+      failed: number;
+      staleProcessing: number;
+    };
+    oldestCreatedAt: string | null;
+    oldestAgeMinutes: number | null;
+  };
 }
 
 @Injectable()
 export class PipelineQualityService {
+  private readonly outboxStaleLockMs = 5 * 60_000;
+
+  constructor(private readonly prisma: PrismaService) {}
+
   async summary(orgId: string, windowMinutes = 60): Promise<PipelineQualitySummary> {
     const normalizedWindow = Math.max(5, Math.min(60 * 24 * 14, Math.floor(windowMinutes)));
     const since = new Date(Date.now() - normalizedWindow * 60 * 1000);
+    const now = new Date();
+    const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
 
-    const [statusAgg, latencyAgg, failureAgg] = await Promise.all([
+    const [statusAgg, latencyAgg, failureAgg, llmAgg, outboxStatusAgg, outboxStaleProcessing, outboxOldest] = await Promise.all([
       ProcessedItemModel.aggregate([
         { $match: { orgId, createdAt: { $gte: since } } },
         {
@@ -68,6 +95,70 @@ export class PipelineQualityService {
         { $sort: { count: -1 } },
         { $limit: 20 },
       ]),
+      ProcessedItemModel.aggregate([
+        {
+          $match: {
+            orgId,
+            createdAt: { $gte: since },
+            status: "completed"
+          }
+        },
+        {
+          $project: {
+            model: { $ifNull: ["$llm.model", "unknown"] },
+            latencyMs: {
+              $cond: [
+                { $eq: [{ $type: "$llm.latencyMs" }, "number"] },
+                "$llm.latencyMs",
+                null
+              ]
+            },
+            costUsd: {
+              $cond: [
+                { $eq: [{ $type: "$llm.costUsd" }, "number"] },
+                "$llm.costUsd",
+                null
+              ]
+            },
+            totalTokens: {
+              $cond: [
+                { $eq: [{ $type: "$llm.totalTokens" }, "number"] },
+                "$llm.totalTokens",
+                null
+              ]
+            }
+          }
+        },
+        {
+          $group: {
+            _id: "$model",
+            count: { $sum: 1 },
+            avgLatencyMs: { $avg: "$latencyMs" },
+            avgCostUsd: { $avg: "$costUsd" },
+            avgTotalTokens: { $avg: "$totalTokens" }
+          }
+        },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ]),
+      this.prisma.mongoOutbox.groupBy({
+        by: ["status"],
+        where: { orgId, type: MongoOutboxType.processed_item },
+        _count: { _all: true }
+      }),
+      this.prisma.mongoOutbox.count({
+        where: {
+          orgId,
+          type: MongoOutboxType.processed_item,
+          status: MongoOutboxStatus.processing,
+          lockedAt: { lt: staleLockCutoff }
+        }
+      }),
+      this.prisma.mongoOutbox.findFirst({
+        where: { orgId, type: MongoOutboxType.processed_item },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true }
+      })
     ]);
 
     const totals = {
@@ -100,12 +191,50 @@ export class PipelineQualityService {
       count: Number(entry.count ?? 0),
     }));
 
+    const llmModels = llmAgg.map((entry) => ({
+      model: String(entry._id ?? "unknown"),
+      count: Number(entry.count ?? 0),
+      avgLatencyMs: Number.isFinite(entry.avgLatencyMs) ? Math.round(entry.avgLatencyMs) : null,
+      avgCostUsd: Number.isFinite(entry.avgCostUsd) ? Math.round(entry.avgCostUsd * 1000) / 1000 : null,
+      avgTotalTokens: Number.isFinite(entry.avgTotalTokens) ? Math.round(entry.avgTotalTokens) : null
+    }));
+
+    const outboxTotals = {
+      total: 0,
+      pending: 0,
+      processing: 0,
+      failed: 0,
+      staleProcessing: outboxStaleProcessing
+    };
+    for (const entry of outboxStatusAgg) {
+      const status = entry.status;
+      const count = entry._count?._all ?? 0;
+      outboxTotals.total += count;
+      if (status === MongoOutboxStatus.pending) {
+        outboxTotals.pending = count;
+      } else if (status === MongoOutboxStatus.processing) {
+        outboxTotals.processing = count;
+      } else if (status === MongoOutboxStatus.failed) {
+        outboxTotals.failed = count;
+      }
+    }
+    const oldestCreatedAt = outboxOldest?.createdAt ? outboxOldest.createdAt.toISOString() : null;
+    const oldestAgeMinutes = outboxOldest?.createdAt
+      ? Math.max(0, Math.round((Date.now() - outboxOldest.createdAt.getTime()) / 60_000))
+      : null;
+
     return {
       windowMinutes: normalizedWindow,
       totals,
       successRate,
       averageLatencyMs,
       failureTypes,
+      llmModels,
+      outbox: {
+        totals: outboxTotals,
+        oldestCreatedAt,
+        oldestAgeMinutes
+      }
     };
   }
 }

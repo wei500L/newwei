@@ -1,4 +1,7 @@
 jest.mock("@modular/mongo", () => ({
+  ProcessedItemModel: {
+    updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+  },
   TaskLogModel: {
     find: jest.fn(() => ({
       sort: jest.fn().mockReturnThis(),
@@ -68,10 +71,16 @@ describe("QueueService", () => {
     } as any;
 
     const service = new QueueService(queue, orgStats);
-    await service.enqueueItem("org-1", "meta-1", "raw-1", { delay: 10 });
+    await service.enqueueItem(
+      "org-1",
+      "meta-1",
+      "65f1c2d3e4f5a6b7c8d9e0f1",
+      { delay: 10 },
+      { processedItemId: "65f1c2d3e4f5a6b7c8d9e0f2" }
+    );
 
     expect(orgStats.upsertJobMetaAndCount).toHaveBeenCalledWith({
-      jobId: "meta-1:raw-1",
+      jobId: "meta-1:65f1c2d3e4f5a6b7c8d9e0f1",
       orgId: "org-1",
       status: "delayed",
       keepCompleted: false,

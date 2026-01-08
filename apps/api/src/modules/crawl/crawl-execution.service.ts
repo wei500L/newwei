@@ -44,6 +44,12 @@ import { Crawl4aiRequestException } from "./crawl4ai.exception";
 
 const logger = createLogger({ name: "crawl-execution-service" });
 
+export interface CrawlExecutionRetryContext {
+  attempt?: number;
+  maxAttempts?: number;
+  backoffDelayMs?: number | null;
+}
+
 @Injectable()
 export class CrawlExecutionService {
   private readonly retryableStatusCodes = new Set([408, 423, 425, 429, 500, 502, 503, 504]);
@@ -56,7 +62,12 @@ export class CrawlExecutionService {
     private readonly notifications: NotificationsService
   ) {}
 
-  async runTask(taskId: string, orgId: string, triggeredById?: string): Promise<CrawlExecutionSummary> {
+  async runTask(
+    taskId: string,
+    orgId: string,
+    triggeredById?: string,
+    retryContext?: CrawlExecutionRetryContext
+  ): Promise<CrawlExecutionSummary> {
     const task = await this.prisma.crawlTask.findFirst({ where: { id: taskId, orgId } });
     if (!task) {
       logger.warn({ taskId }, "Attempted to run missing crawl task");
@@ -81,7 +92,12 @@ export class CrawlExecutionService {
       stage: "start",
       status: "processing",
       message: "crawl task started",
-      data: { taskId, triggeredById }
+      data: {
+        taskId,
+        triggeredById,
+        attempt: retryContext?.attempt ?? null,
+        maxAttempts: retryContext?.maxAttempts ?? null
+      }
     });
 
     try {
@@ -188,11 +204,35 @@ export class CrawlExecutionService {
           ? error.message
           : error instanceof Crawl4aiRequestException
             ? error.message
-            : "crawl job failed";
+            : error instanceof Error
+              ? error.message
+              : "crawl job failed";
+
+      const attempt = retryContext?.attempt;
+      const maxAttempts = retryContext?.maxAttempts;
+      const backoffDelayMs = retryContext?.backoffDelayMs;
+      const retryable =
+        error instanceof CrawlTaskConfigEncryptionRequiredError
+          ? false
+          : error instanceof Crawl4aiRequestException
+            ? this.isRetryableStatus(error.status, error.message)
+            : this.isRetryableStatus(undefined, message);
+      const shouldRetry =
+        retryable &&
+        typeof attempt === "number" &&
+        Number.isFinite(attempt) &&
+        typeof maxAttempts === "number" &&
+        Number.isFinite(maxAttempts) &&
+        attempt < maxAttempts;
+      const nextRetryAt =
+        shouldRetry && typeof backoffDelayMs === "number" && Number.isFinite(backoffDelayMs)
+          ? new Date(Date.now() + Math.max(0, Math.round(backoffDelayMs)))
+          : null;
+
       await this.prisma.crawlTask.update({
         where: { id: task.id },
         data: {
-          status: "failed",
+          status: shouldRetry ? "queued" : "failed",
           lastError: message
         }
       });
@@ -203,11 +243,22 @@ export class CrawlExecutionService {
         stage: "error",
         status: "failed",
         error: {
-          message
+          message,
+          name: error instanceof Error ? error.name : undefined,
+          stack: error instanceof Error ? error.stack : undefined,
+          status: error instanceof Crawl4aiRequestException ? error.status : undefined
+        },
+        data: {
+          attempt: attempt ?? null,
+          maxAttempts: maxAttempts ?? null,
+          backoffDelayMs: backoffDelayMs ?? null,
+          retryable,
+          willRetry: shouldRetry,
+          nextRetryAt: nextRetryAt ? nextRetryAt.toISOString() : null
         }
       });
 
-      if (triggeredById) {
+      if (triggeredById && !shouldRetry) {
         await this.safeNotifyCrawl(
           task,
           { inserted: 0, skipped: 0 },

@@ -46,6 +46,9 @@ const ProcessedItemSchema = new Schema(
     rawItemId: { type: Schema.Types.ObjectId, ref: "RawItem", required: true },
     itemMetaId: { type: String, index: true, required: true },
     orgId: { type: String, index: true, required: true },
+    traceId: { type: String, index: true, default: null },
+    pipelineJobId: { type: String, index: true, default: null },
+    sourceId: { type: String, index: true, default: null },
     status: {
       type: String,
       enum: ["pending", "processing", "completed", "failed"],
@@ -72,6 +75,11 @@ const ProcessedItemSchema = new Schema(
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" },
   },
 );
+
+ProcessedItemSchema.index({ orgId: 1, createdAt: -1 });
+ProcessedItemSchema.index({ orgId: 1, status: 1, createdAt: -1 });
+ProcessedItemSchema.index({ orgId: 1, duplicateOf: 1, createdAt: -1 });
+ProcessedItemSchema.index({ orgId: 1, status: 1, summaryEmbeddingModel: 1, duplicateOf: 1, createdAt: -1 });
 
 ProcessedItemSchema.pre("validate", function (next) {
   const doc = this as unknown as { status?: string; result?: unknown; error?: unknown };

@@ -1,4 +1,4 @@
-import { TaskLogModel } from "@modular/mongo";
+import { ProcessedItemModel, TaskLogModel } from "@modular/mongo";
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 import { Queue, JobsOptions } from "bullmq";
@@ -47,6 +47,39 @@ export class QueueService {
       typeof meta.processedItemId === "string" && meta.processedItemId.length > 0
         ? meta.processedItemId
         : new Types.ObjectId().toHexString();
+
+    const now = new Date();
+    try {
+      if (Types.ObjectId.isValid(processedItemId) && Types.ObjectId.isValid(rawItemId)) {
+        await ProcessedItemModel.updateOne(
+          { _id: new Types.ObjectId(processedItemId) },
+          {
+            $set: {
+              traceId,
+              pipelineJobId: meta.pipelineJobId ?? null,
+              sourceId: meta.sourceId ?? null,
+              updatedAt: now
+            },
+            $setOnInsert: {
+              _id: new Types.ObjectId(processedItemId),
+              rawItemId: new Types.ObjectId(rawItemId),
+              itemMetaId,
+              orgId,
+              status: "pending",
+              tags: [],
+              createdAt: now
+            }
+          },
+          { upsert: true }
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        { error, orgId, itemMetaId, rawItemId, processedItemId },
+        "Failed to upsert pending processed item"
+      );
+    }
+
     const job = await this.queue.add(
       "process-item",
       {

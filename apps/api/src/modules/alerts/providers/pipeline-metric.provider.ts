@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { AlertMetricProvider, AlertRule, PipelineJobStatus, Prisma } from "@prisma/client";
+import { AlertMetricProvider, AlertRule, MongoOutboxStatus, MongoOutboxType, PipelineJobStatus, Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../config/prisma.service";
 
@@ -8,6 +8,7 @@ import { MetricEvaluation, MetricProvider } from "./metric-provider";
 @Injectable()
 export class PipelineMetricProvider implements MetricProvider {
   readonly type = AlertMetricProvider.pipeline_job;
+  private readonly outboxStaleLockMs = 5 * 60_000;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -18,6 +19,10 @@ export class PipelineMetricProvider implements MetricProvider {
   async fetch(
     rule: Pick<AlertRule, "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId">
   ): Promise<MetricEvaluation> {
+    if (rule.metricSlug.startsWith("mongo_outbox.")) {
+      return this.fetchMongoOutboxMetric(rule);
+    }
+
     const windowMinutes = rule.changeWindowMin ?? 60;
     const windowMs = windowMinutes * 60 * 1000;
     const now = Date.now();
@@ -68,5 +73,77 @@ export class PipelineMetricProvider implements MetricProvider {
       changePercent,
       context: { windowMinutes, statuses, queueName, sourceId }
     };
+  }
+
+  private async fetchMongoOutboxMetric(
+    rule: Pick<AlertRule, "metricSlug" | "metadata" | "orgId">
+  ): Promise<MetricEvaluation> {
+    const now = new Date();
+    const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
+    const allowedStatuses = Object.values(MongoOutboxStatus);
+    const requestedStatuses = Array.isArray(rule.metadata?.statuses)
+      ? rule.metadata.statuses
+      : rule.metadata?.status
+        ? [rule.metadata.status]
+        : undefined;
+
+    const baseWhere: Prisma.MongoOutboxWhereInput = {
+      orgId: rule.orgId,
+      type: MongoOutboxType.processed_item
+    };
+
+    const slug = rule.metricSlug.trim();
+    if (slug === "mongo_outbox.oldest_age_minutes") {
+      const oldest = await this.prisma.mongoOutbox.findFirst({
+        where: baseWhere,
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true }
+      });
+      const latest = oldest?.createdAt
+        ? Math.max(0, (now.getTime() - oldest.createdAt.getTime()) / 60_000)
+        : null;
+      return {
+        latest: latest !== null ? Math.round(latest) : null,
+        previous: null,
+        changePercent: null,
+        context: { type: baseWhere.type, oldestCreatedAt: oldest?.createdAt?.toISOString() ?? null }
+      };
+    }
+
+    if (slug === "mongo_outbox.stale_processing") {
+      const latest = await this.prisma.mongoOutbox.count({
+        where: {
+          ...baseWhere,
+          status: MongoOutboxStatus.processing,
+          lockedAt: { lt: staleLockCutoff }
+        }
+      });
+      return { latest, previous: null, changePercent: null, context: { type: baseWhere.type, staleLockCutoff } };
+    }
+
+    const defaultStatusesBySlug: Record<string, MongoOutboxStatus[]> = {
+      "mongo_outbox.backlog": [MongoOutboxStatus.pending, MongoOutboxStatus.failed, MongoOutboxStatus.processing],
+      "mongo_outbox.pending": [MongoOutboxStatus.pending],
+      "mongo_outbox.failed": [MongoOutboxStatus.failed],
+      "mongo_outbox.processing": [MongoOutboxStatus.processing],
+    };
+
+    const fallbackStatuses = defaultStatusesBySlug[slug] ?? defaultStatusesBySlug["mongo_outbox.backlog"];
+    const statuses =
+      (requestedStatuses?.filter((status): status is MongoOutboxStatus =>
+        allowedStatuses.includes(status as MongoOutboxStatus)
+      ) ?? fallbackStatuses);
+
+    const where: Prisma.MongoOutboxWhereInput = {
+      ...baseWhere,
+      status: { in: statuses }
+    };
+
+    if (slug === "mongo_outbox.pending") {
+      where.availableAt = { lte: now };
+    }
+
+    const latest = await this.prisma.mongoOutbox.count({ where });
+    return { latest, previous: null, changePercent: null, context: { type: baseWhere.type, statuses } };
   }
 }

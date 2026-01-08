@@ -6,9 +6,8 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import type { Queue } from "bullmq";
-import { Worker, UnrecoverableError } from "bullmq";
 import { PipelineJobStatus } from "@prisma/client";
+import { Worker, UnrecoverableError, type Queue } from "bullmq";
 import { Types } from "mongoose";
 
 import { ItemStatus } from "../../common/pipeline-status";
@@ -541,10 +540,19 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     }
 
     if (options.sourceId && options.finalFailure) {
+      const recoveryAt = new Date(
+        now.getTime() + this.env.newsSourceSchedulerConfig.failureRecoveryDelayMs,
+      );
       actions.push(
         this.prisma.newsSource.updateMany({
-          where: { id: options.sourceId },
-          data: { lastRunAt: now },
+          where: {
+            id: options.sourceId,
+            OR: [{ nextRunAt: null }, { nextRunAt: { gt: recoveryAt } }],
+          },
+          data: {
+            lastRunAt: now,
+            nextRunAt: recoveryAt,
+          },
         }),
       );
     }

@@ -13,6 +13,12 @@ import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
 import { QueueService } from "./queue.service";
 
 const logger = createLogger({ name: "news-source-scheduler" });
+const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
+  PipelineJobStatus.pending,
+  PipelineJobStatus.queued,
+  PipelineJobStatus.running,
+  PipelineJobStatus.delayed,
+];
 
 @Injectable()
 export class NewsSourceSchedulerService {
@@ -86,6 +92,50 @@ export class NewsSourceSchedulerService {
     });
 
     for (const source of sources) {
+      const activeCutoff = new Date(now.getTime() - this.env.newsSourceSchedulerConfig.inFlightLookbackMs);
+      const activeJob = await this.prisma.pipelineJob.findFirst({
+        where: {
+          sourceId: source.id,
+          status: { in: ACTIVE_PIPELINE_JOB_STATUSES },
+          createdAt: { gte: activeCutoff },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, status: true, createdAt: true },
+      });
+
+      if (activeJob) {
+        const rescheduleAt = new Date(
+          now.getTime() + this.env.newsSourceSchedulerConfig.inFlightRescheduleDelayMs,
+        );
+        try {
+          await this.prisma.newsSource.updateMany({
+            where: {
+              id: source.id,
+              OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }],
+            },
+            data: { nextRunAt: rescheduleAt },
+          });
+        } catch (error) {
+          logger.warn(
+            { error, sourceId: source.id, orgId: source.orgId },
+            "Failed to reschedule news source with in-flight pipeline job",
+          );
+        }
+
+        logger.info(
+          {
+            sourceId: source.id,
+            orgId: source.orgId,
+            activeJobId: activeJob.id,
+            activeJobStatus: activeJob.status,
+            activeJobCreatedAt: activeJob.createdAt,
+            rescheduleAt,
+          },
+          "Skipped scheduling due to in-flight pipeline job",
+        );
+        continue;
+      }
+
       const scheduledFor = source.nextRunAt ?? now;
       const nextRunAt = new Date(
         scheduledFor.getTime() + source.frequencySeconds * 1000,
@@ -128,6 +178,17 @@ export class NewsSourceSchedulerService {
             await tx.itemMeta.update({
               where: { id: itemMeta.id },
               data: { mongoRef: rawItem.id },
+            });
+
+            await tx.pipelineJob.update({
+              where: { id: pipelineJob.id },
+              data: {
+                metadata: {
+                  ...(pipelineJob.metadata as Record<string, unknown> | null | undefined),
+                  itemMetaId: itemMeta.id,
+                  rawItemId: rawItem.id,
+                },
+              },
             });
 
             await tx.newsSource.update({
