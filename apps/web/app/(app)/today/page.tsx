@@ -6,14 +6,16 @@ import { fetchGraphql } from "@/lib/server-graphql";
 import { TodayContent } from "./today-content";
 
 const ITEMS_QUERY = `
-  query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput) {
-    items(first: $first, after: $after, search: $search, filters: $filters) {
+  query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy) {
+    items(first: $first, after: $after, search: $search, filters: $filters, orderBy: $orderBy) {
       edges {
         node {
           id
           title
           status
           createdAt
+          ingestedAt
+          publishedAt
           processed {
             result
             tags
@@ -82,7 +84,8 @@ export default async function TodayPage({
         first: pageSize,
         after: endCursor,
         search: search || null,
-        filters: null
+        filters: null,
+        orderBy: "PUBLISHED_DESC"
       },
       accessToken: session.accessToken
     });

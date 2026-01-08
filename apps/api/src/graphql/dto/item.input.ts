@@ -1,4 +1,4 @@
-import { ArgsType, Field, GraphQLISODateTime, InputType, Int } from "@nestjs/graphql";
+import { ArgsType, Field, GraphQLISODateTime, InputType, Int, registerEnumType } from "@nestjs/graphql";
 import {
   IsArray,
   IsDate,
@@ -10,6 +10,13 @@ import {
   Min,
   MinLength
 } from "class-validator";
+
+export enum ItemsOrderBy {
+  CreatedDesc = "CREATED_DESC",
+  PublishedDesc = "PUBLISHED_DESC"
+}
+
+registerEnumType(ItemsOrderBy, { name: "ItemsOrderBy" });
 
 @InputType()
 export class CreateItemInput {
@@ -115,6 +122,10 @@ export class ItemsQueryArgs {
   @Field(() => ItemsFiltersInput, { nullable: true })
   @IsOptional()
   filters?: ItemsFiltersInput;
+
+  @Field(() => ItemsOrderBy, { defaultValue: ItemsOrderBy.CreatedDesc })
+  @IsOptional()
+  orderBy: ItemsOrderBy = ItemsOrderBy.CreatedDesc;
 }
 
 @ArgsType()

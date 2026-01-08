@@ -1,10 +1,12 @@
 "use client";
 
-import { Alert, Button, Card, Col, Empty, Row, Skeleton, Typography } from "antd";
+import { Alert, Col, Row, Skeleton, Typography } from "antd";
 import type { EChartsOption, SeriesOption } from "echarts";
 import { useTranslation } from "react-i18next";
 
-import { DashboardChart } from "@/components/echart";
+import { ChartDataMeta } from "@/components/chart-data-meta";
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DashboardChartCard } from "@/components/dashboard-chart-card";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -18,11 +20,20 @@ import {
 export default function EconomicAlertPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed } = useEconomicData({
+  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed, chartState } = useEconomicData({
     category: "economic-alert",
     pollInterval: 60_000,
   });
   const isInitialLoading = loading && !hasData;
+  const isBackfilling = loading && hasData;
+  const chartMeta = (
+    <ChartDataMeta
+      state={chartState}
+      latestTimestamp={latestTimestamp}
+      locale={locale}
+      onRefresh={() => refetch()}
+    />
+  );
 
   const cpiSeries = getSeriesField(seriesMap, "china_cpi", "全国-同比增长");
   const cpiValue = getLatestValue(cpiSeries)?.value ?? null;
@@ -232,23 +243,30 @@ export default function EconomicAlertPage() {
         <TimeRangeControls />
       </div>
       {error ? (
-        <Alert
-          type="error"
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+        <ChartEmptyState
+          presentation="banner"
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error.message}
-          showIcon
-          action={
-            <Button size="small" onClick={() => refetch()}>
-              {t("common.retry")}
-            </Button>
-          }
+          actionLabel={t("common.retry")}
+          onAction={() => refetch()}
         />
       ) : null}
-      {isDelayed ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
+      {isBackfilling ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="backfilling"
+          title={t("dashboard.dataBackfilling.title", { defaultValue: "Updating data" })}
+          description={t("dashboard.dataBackfilling.description", {
+            defaultValue: "Data is being backfilled. Values may update shortly."
+          })}
+        />
+      ) : null}
+      {!isBackfilling && isDelayed ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="delayed"
+          title={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -263,10 +281,15 @@ export default function EconomicAlertPage() {
                 })
               : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
           }
+          actionLabel={t("common.refresh")}
+          onAction={() => refetch()}
         />
       ) : null}
       {!loading && !hasData ? (
-        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
+        <ChartEmptyState
+          title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+          description={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+        />
       ) : null}
       {alerts.length > 0 && (
         <Alert
@@ -282,53 +305,62 @@ export default function EconomicAlertPage() {
         <>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicAlert.cards.cpiPpiGauge")} className="content-card">
-                {gaugeOption ? (
-                  <DashboardChart option={gaugeOption} height={360} />
-                ) : (
-                  <Empty description={t("dashboard.economicAlert.emptyCpiPpi")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicAlert.cards.cpiPpiGauge")}
+                className="content-card"
+                extra={chartMeta}
+                option={gaugeOption}
+                height={360}
+                emptyDescription={t("dashboard.economicAlert.emptyCpiPpi")}
+              />
             </Col>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicAlert.cards.pmiCompare")} className="content-card">
-                {getSortedValues(chinaPmiSeries).length > 0 ? (
-                  <DashboardChart option={pmiOption} height={360} />
-                ) : (
-                  <Empty description={t("dashboard.economicAlert.emptyPmi")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicAlert.cards.pmiCompare")}
+                className="content-card"
+                extra={chartMeta}
+                option={getSortedValues(chinaPmiSeries).length > 0 ? pmiOption : null}
+                height={360}
+                emptyDescription={t("dashboard.economicAlert.emptyPmi")}
+              />
             </Col>
           </Row>
           <Row gutter={[16, 16]}>
             <Col span={24}>
-              <Card title={t("dashboard.economicAlert.cards.yieldInversion")} className="content-card">
-                {spreadSeries.length > 0 ? (
-                  <DashboardChart option={yieldOption} height={360} />
-                ) : (
-                  <Empty description={t("dashboard.economicAlert.emptyYield")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicAlert.cards.yieldInversion")}
+                className="content-card"
+                extra={chartMeta}
+                option={spreadSeries.length > 0 ? yieldOption : null}
+                height={360}
+                emptyDescription={t("dashboard.economicAlert.emptyYield")}
+              />
             </Col>
           </Row>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicAlert.cards.usInflation")} className="content-card">
-                {getSortedValues(usCpiSeries).length > 0 ? (
-                  <DashboardChart option={usInflationOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicAlert.emptyUsInflation")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicAlert.cards.usInflation")}
+                className="content-card"
+                extra={chartMeta}
+                option={getSortedValues(usCpiSeries).length > 0 ? usInflationOption : null}
+                height={320}
+                emptyDescription={t("dashboard.economicAlert.emptyUsInflation")}
+              />
             </Col>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicAlert.cards.usPmiCompare")} className="content-card">
-                {getSortedValues(usManufacturingPmiSeries).length > 0 ? (
-                  <DashboardChart option={usPmiCompareOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicAlert.emptyUsPmi")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicAlert.cards.usPmiCompare")}
+                className="content-card"
+                extra={chartMeta}
+                option={
+                  getSortedValues(usManufacturingPmiSeries).length > 0
+                    ? usPmiCompareOption
+                    : null
+                }
+                height={320}
+                emptyDescription={t("dashboard.economicAlert.emptyUsPmi")}
+              />
             </Col>
           </Row>
         </>

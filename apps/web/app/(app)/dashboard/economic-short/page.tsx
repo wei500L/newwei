@@ -1,11 +1,9 @@
 "use client";
 
 import {
-  Alert,
   Button,
   Card,
   Col,
-  Empty,
   Row,
   Skeleton,
   Tabs,
@@ -15,6 +13,8 @@ import type { CallbackDataParams } from "echarts";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartDataMeta } from "@/components/chart-data-meta";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -48,12 +48,21 @@ const heatmapBuckets = [
 export default function EconomicShortPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { loading, seriesMap, error, refetch, hasData, latestTimestamp, isDelayed } = useEconomicData({
+  const { loading, seriesMap, error, refetch, hasData, latestTimestamp, isDelayed, chartState } = useEconomicData({
     category: "economic-short",
     pollInterval: 60_000,
   });
   const [activeIndex, setActiveIndex] = useState(indexTabs[0]?.key ?? "growth");
   const isInitialLoading = loading && !hasData;
+  const isBackfilling = loading && hasData;
+  const chartMeta = (
+    <ChartDataMeta
+      state={chartState}
+      latestTimestamp={latestTimestamp}
+      locale={locale}
+      onRefresh={() => refetch()}
+    />
+  );
 
   const heatmapData = fxPairs.flatMap((pair, xIndex) =>
     heatmapBuckets.map((bucket, yIndex) => {
@@ -157,23 +166,30 @@ export default function EconomicShortPage() {
         <TimeRangeControls />
       </div>
       {error ? (
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+        <ChartEmptyState
+          presentation="banner"
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error.message}
-          action={
-            <Button size="small" onClick={() => refetch()}>
-              {t("common.retry")}
-            </Button>
-          }
+          actionLabel={t("common.retry")}
+          onAction={() => refetch()}
         />
       ) : null}
-      {isDelayed ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
+      {isBackfilling ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="backfilling"
+          title={t("dashboard.dataBackfilling.title", { defaultValue: "Updating data" })}
+          description={t("dashboard.dataBackfilling.description", {
+            defaultValue: "Data is being backfilled. Values may update shortly."
+          })}
+        />
+      ) : null}
+      {!isBackfilling && isDelayed ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="delayed"
+          title={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -188,10 +204,15 @@ export default function EconomicShortPage() {
                 })
               : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
           }
+          actionLabel={t("common.refresh")}
+          onAction={() => refetch()}
         />
       ) : null}
       {!loading && !hasData ? (
-        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
+        <ChartEmptyState
+          title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+          description={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+        />
       ) : null}
       {isInitialLoading ? (
         <Skeleton active paragraph={{ rows: 8 }} />
@@ -199,7 +220,11 @@ export default function EconomicShortPage() {
         <>
           <Row gutter={[16, 16]}>
             <Col span={24}>
-              <Card className="content-card" title={t("dashboard.economicShort.cards.indexCandlestick")}>
+              <Card
+                className="content-card"
+                title={t("dashboard.economicShort.cards.indexCandlestick")}
+                extra={chartMeta}
+              >
                 <Tabs
                   activeKey={activeIndex}
                   onChange={setActiveIndex}
@@ -219,7 +244,11 @@ export default function EconomicShortPage() {
           </Row>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicShort.cards.fxHeatmap")} className="content-card">
+              <Card
+                title={t("dashboard.economicShort.cards.fxHeatmap")}
+                className="content-card"
+                extra={chartMeta}
+              >
                 {heatmapData.some(
                   (entry) => typeof entry[2] === "number" && Number.isFinite(entry[2]),
                 ) ? (
@@ -230,7 +259,11 @@ export default function EconomicShortPage() {
               </Card>
             </Col>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicShort.cards.cryptoPrices")} className="content-card">
+              <Card
+                title={t("dashboard.economicShort.cards.cryptoPrices")}
+                className="content-card"
+                extra={chartMeta}
+              >
                 {btcValues.length > 0 ? (
                   <DashboardChart option={cryptoOption} height={320} />
                 ) : (

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Alert,
   Badge,
   Card,
   Col,
@@ -14,6 +13,8 @@ import {
 import type { CallbackDataParams } from "echarts";
 import { useTranslation } from "react-i18next";
 
+import { ChartDataMeta } from "@/components/chart-data-meta";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -39,11 +40,20 @@ const agConfigs = [
 export default function MilitaryAlertPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { loading, error, seriesMap, hasData, latestTimestamp, isDelayed } = useEconomicData({
+  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed, chartState } = useEconomicData({
     category: "military-alert",
     pollInterval: 60_000,
   });
   const isInitialLoading = loading && !hasData;
+  const isBackfilling = loading && hasData;
+  const chartMeta = (
+    <ChartDataMeta
+      state={chartState}
+      latestTimestamp={latestTimestamp}
+      locale={locale}
+      onRefresh={() => refetch()}
+    />
+  );
 
   const radarIndicators: { name: string; max: number }[] = [];
   const radarValues: number[] = [];
@@ -132,19 +142,31 @@ export default function MilitaryAlertPage() {
         <Typography.Title level={4}>{t("dashboard.militaryAlert.title")}</Typography.Title>
         <TimeRangeControls />
       </div>
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+      {error ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error.message}
+          actionLabel={t("common.retry")}
+          onAction={() => refetch()}
         />
-      )}
-      {isDelayed ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
+      ) : null}
+      {isBackfilling ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="backfilling"
+          title={t("dashboard.dataBackfilling.title", { defaultValue: "Updating data" })}
+          description={t("dashboard.dataBackfilling.description", {
+            defaultValue: "Data is being backfilled. Values may update shortly."
+          })}
+        />
+      ) : null}
+      {!isBackfilling && isDelayed ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="delayed"
+          title={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -159,6 +181,8 @@ export default function MilitaryAlertPage() {
                 })
               : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
           }
+          actionLabel={t("common.refresh")}
+          onAction={() => refetch()}
         />
       ) : null}
       {isInitialLoading ? (
@@ -167,7 +191,7 @@ export default function MilitaryAlertPage() {
         <>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.militaryAlert.cards.metalRadar")} className="content-card">
+              <Card title={t("dashboard.militaryAlert.cards.metalRadar")} className="content-card" extra={chartMeta}>
                 {radarValues.length > 0 ? (
                   <DashboardChart option={radarOption} height={360} />
                 ) : (
@@ -225,7 +249,7 @@ export default function MilitaryAlertPage() {
               </Card>
             </Col>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.militaryAlert.cards.agriAlert")} className="content-card">
+              <Card title={t("dashboard.militaryAlert.cards.agriAlert")} className="content-card" extra={chartMeta}>
                 {hasAgData ? (
                   <DashboardChart option={agOption} height={360} />
                 ) : (
@@ -240,6 +264,7 @@ export default function MilitaryAlertPage() {
                 title={t("dashboard.militaryAlert.cards.energy.title")}
                 description={t("dashboard.militaryAlert.cards.energy.description")}
                 seriesMap={seriesMap}
+                meta={chartMeta}
                 series={[
                   {
                     slug: "crude_oil_futures_main",

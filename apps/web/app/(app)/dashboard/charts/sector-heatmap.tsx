@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Skeleton, message } from "antd";
+import { Button, Skeleton, message } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
@@ -22,6 +22,8 @@ interface SectorHeatmapCell {
   name: string;
   value: number;
   change: number;
+  unit?: string | null;
+  sourceField?: string;
 }
 
 interface SectorHeatmapResponse {
@@ -50,7 +52,11 @@ const yieldToMain = () =>
 const buildCsv = async (rows: Array<Array<string | number | null | undefined>>) => {
   const lines: string[] = [];
   for (let i = 0; i < rows.length; i += 1) {
-    lines.push(rows[i].map(escapeCsvValue).join(","));
+    const row = rows[i];
+    if (!row) {
+      continue;
+    }
+    lines.push(row.map(escapeCsvValue).join(","));
     if (i > 0 && i % 500 === 0) {
       await yieldToMain();
     }
@@ -132,6 +138,8 @@ export function SectorHeatmap() {
       const isSelected = selectedSector === cell.name;
       return {
         value: [cell.x, cell.y, cell.change, cell.name, cell.value] as HeatmapValue,
+        unit: cell.unit ?? null,
+        sourceField: cell.sourceField ?? null,
         itemStyle: {
           borderColor: isSelected ? (colors?.primary ?? "#1f3b7b") : (colors?.border ?? "#e2e8f0"),
           borderWidth: isSelected ? 4 : 2,
@@ -154,8 +162,16 @@ export function SectorHeatmap() {
         formatter: (params: any) => {
           const value = params.value;
           if (!Array.isArray(value)) return "";
+          const unit =
+            params?.data && typeof params.data.unit === "string" ? params.data.unit : null;
+          const sourceField =
+            params?.data && typeof params.data.sourceField === "string"
+              ? params.data.sourceField
+              : null;
           const [, , change, name, valuePoint] = value as HeatmapValue;
-          return `<b>${name}</b><br/>${changeLabel}: ${change}%<br/>${valueLabel}: ${valuePoint}`;
+          const valueText = unit ? `${valuePoint} ${unit}` : String(valuePoint);
+          const sourceText = sourceField ? `<br/>Source: ${sourceField}` : "";
+          return `<b>${name}</b><br/>${changeLabel}: ${change}%<br/>${valueLabel}: ${valueText}${sourceText}`;
         }
       },
       grid: {
@@ -230,11 +246,19 @@ export function SectorHeatmap() {
         ? data.cells.filter((cell) => cell.name === selectedSector)
         : data.cells;
       const rows = [
-        ["Sector", "Group", "Row", valueLabel, changeLabel],
+        ["Sector", "Group", "Row", valueLabel, "Unit", "Source field", changeLabel],
         ...filteredCells.map((cell) => {
           const xLabel = data.xLabels[cell.x] ?? String(cell.x);
           const yLabel = data.yLabels[cell.y] ?? String(cell.y);
-          return [cell.name, xLabel, yLabel, cell.value, cell.change];
+          return [
+            cell.name,
+            xLabel,
+            yLabel,
+            cell.value,
+            cell.unit ?? "",
+            cell.sourceField ?? "",
+            cell.change
+          ];
         })
       ];
       const csv = await buildCsv(rows);
@@ -269,17 +293,13 @@ export function SectorHeatmap() {
 
   if (isError && !data) {
     return (
-      <div className="flex h-[300px] items-center justify-center">
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={error instanceof Error ? error.message : undefined}
-          action={
-            <Button size="small" onClick={() => refetch()}>
-              {t("common.retry")}
-            </Button>
-          }
+      <div className="h-[300px]">
+        <ChartEmptyState
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          description={error instanceof Error ? error.message : emptyMessage}
+          actionLabel={t("common.retry")}
+          onAction={() => refetch()}
         />
       </div>
     );

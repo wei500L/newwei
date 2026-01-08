@@ -3,7 +3,7 @@
 import { ArrowDownOutlined, ArrowUpOutlined, BulbOutlined } from "@ant-design/icons";
 import { Card, Empty, Flex, Statistic, Typography, theme } from "antd";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
@@ -24,6 +24,7 @@ export interface EconomicChartCardProps {
   description?: string;
   seriesMap: EconomicSeriesMap;
   series: SeriesConfig[];
+  meta?: ReactNode;
 }
 
 export function EconomicChartCard({
@@ -31,6 +32,7 @@ export function EconomicChartCard({
   description,
   seriesMap,
   series,
+  meta,
 }: EconomicChartCardProps) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
@@ -55,8 +57,11 @@ export function EconomicChartCard({
       (a, b) => dayjs(a.timestamp).valueOf() - dayjs(b.timestamp).valueOf()
     );
     
-    const current = sorted[sorted.length - 1];
-    const prev = sorted[sorted.length - 2];
+    const current = sorted.at(-1);
+    const prev = sorted.at(-2);
+    if (!current || !prev) {
+      return null;
+    }
     
     const change = current.value - prev.value;
     const percentChange = (change / prev.value) * 100;
@@ -108,26 +113,31 @@ export function EconomicChartCard({
               </Typography.Paragraph>
             )}
           </div>
-          {stats && (
-            <Flex vertical align="end">
-              <Statistic 
-                value={stats.currentValue} 
-                precision={2} 
-                suffix={<span style={{ fontSize: 14, color: token.colorTextSecondary }}>{stats.unit}</span>}
-                valueStyle={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2 }}
-              />
-              <Flex gap={4} align="center">
-                <Typography.Text 
-                  type={stats.percentChange > 0 ? "success" : stats.percentChange < 0 ? "danger" : "secondary"}
-                  style={{ fontSize: 12, fontWeight: 500 }}
-                >
-                   {stats.percentChange > 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                   {Math.abs(stats.percentChange).toFixed(2)}%
-                </Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>vs prev</Typography.Text>
-              </Flex>
+          {stats || meta ? (
+            <Flex vertical align="end" gap={4}>
+              {meta ? <div>{meta}</div> : null}
+              {stats ? (
+                <>
+                  <Statistic 
+                    value={stats.currentValue} 
+                    precision={2} 
+                    suffix={<span style={{ fontSize: 14, color: token.colorTextSecondary }}>{stats.unit}</span>}
+                    valueStyle={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2 }}
+                  />
+                  <Flex gap={4} align="center">
+                    <Typography.Text 
+                      type={stats.percentChange > 0 ? "success" : stats.percentChange < 0 ? "danger" : "secondary"}
+                      style={{ fontSize: 12, fontWeight: 500 }}
+                    >
+                      {stats.percentChange > 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+                      {Math.abs(stats.percentChange).toFixed(2)}%
+                    </Typography.Text>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>vs prev</Typography.Text>
+                  </Flex>
+                </>
+              ) : null}
             </Flex>
-          )}
+          ) : null}
         </Flex>
       }
     >
@@ -164,6 +174,7 @@ function buildOption(
   seriesMap: EconomicSeriesMap,
   configs: SeriesConfig[],
 ): EChartsOption {
+  const unitBySeriesName = new Map<string, string>();
   const dataset = configs
     .map((config) => {
     const record = seriesMap.get(config.slug);
@@ -174,8 +185,13 @@ function buildOption(
     if (!fieldSeries) {
       return undefined;
     }
+    const unit = fieldSeries.unit ?? record.unit;
+    const seriesName = config.label ?? fieldSeries.label ?? record.name;
+    if (unit) {
+      unitBySeriesName.set(seriesName, unit);
+    }
     return {
-      name: config.label ?? fieldSeries.label ?? record.name,
+      name: seriesName,
         type: config.type === "bar" ? "bar" : "line",
         smooth: true,
         showSymbol: false,
@@ -187,9 +203,28 @@ function buildOption(
     })
     .filter(Boolean) as SeriesOption[];
 
+  const uniqueUnits = Array.from(new Set(Array.from(unitBySeriesName.values()))).filter(Boolean);
+  const yAxisUnitSuffix = uniqueUnits.length === 1 ? ` ${uniqueUnits[0]}` : "";
+
   return {
     tooltip: {
       trigger: "axis",
+      formatter: (params: any) => {
+        const entries = Array.isArray(params) ? params : [params];
+        if (entries.length === 0) {
+          return "";
+        }
+        const axisValue = entries[0]?.axisValueLabel ?? entries[0]?.axisValue ?? "";
+        const lines = [`<div>${axisValue}</div>`];
+        entries.forEach((entry: any) => {
+          const seriesName = entry?.seriesName ?? "";
+          const marker = entry?.marker ?? "";
+          const rawValue = Array.isArray(entry?.value) ? entry.value[1] : entry?.value;
+          const unit = unitBySeriesName.get(seriesName);
+          lines.push(`${marker}${seriesName}: ${rawValue}${unit ? ` ${unit}` : ""}`);
+        });
+        return lines.join("<br/>");
+      }
     },
     legend: {
       top: 0,
@@ -212,6 +247,9 @@ function buildOption(
     yAxis: {
       type: "value",
       scale: true,
+      axisLabel: {
+        formatter: (value: unknown) => `${value}${yAxisUnitSuffix}`
+      }
     },
     dataZoom: [
       {

@@ -8,7 +8,7 @@ export interface ProcessedItemDoc {
   itemMetaId: string;
   status: string;
   tags: string[];
-  result?: Record<string, unknown>;
+  result?: Record<string, unknown> | string | null;
   duplicateOf?: string | null;
   duplicateSimilarity?: number | null;
   llm?: {

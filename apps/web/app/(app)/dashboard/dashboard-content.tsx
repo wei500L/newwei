@@ -51,8 +51,8 @@ const AnalysisPanel = dynamic(() => import("./analysis-panel").then((mod) => mod
   loading: () => <Skeleton active paragraph={{ rows: 4 }} />
 });
 
-const BreakingNewsStream = dynamic(
-  () => import("./components/breaking-news-stream").then((mod) => mod.BreakingNewsStream),
+const AnalysisStream = dynamic(
+  () => import("./components/analysis-stream").then((mod) => mod.AnalysisStream),
   {
     loading: () => <Skeleton active paragraph={{ rows: 6 }} />
   }
@@ -461,7 +461,7 @@ export function DashboardContent() {
       <div className="w-[400px] flex-shrink-0 flex flex-col gap-6 hidden 2xl:flex sticky top-0 h-fit">
          {/* Live News Feed */}
          <div className="h-[600px]">
-            <BreakingNewsStream />
+            <AnalysisStream />
          </div>
 
          {/* AI Analysis */}

@@ -18,6 +18,7 @@ interface FacetedSearchProps {
   onFilterChange: (filters: FilterState) => void;
   regions?: string[];
   topics?: string[];
+  sentiments?: string[];
 }
 
 export function FacetedSearch({
@@ -25,6 +26,7 @@ export function FacetedSearch({
   onFilterChange,
   regions = [],
   topics = [],
+  sentiments = [],
 }: FacetedSearchProps) {
   const { t } = useTranslation();
 
@@ -43,6 +45,11 @@ export function FacetedSearch({
   const handleSentimentChange = (checkedValues: any[]) => {
     onFilterChange({ ...filters, sentiments: checkedValues as string[] });
   };
+
+  const orderedSentiments = [
+    ...["positive", "neutral", "negative"].filter((value) => sentiments.includes(value)),
+    ...sentiments.filter((value) => !["positive", "neutral", "negative"].includes(value))
+  ];
 
   const collapseItems = [
     ...(regions.length
@@ -77,23 +84,35 @@ export function FacetedSearch({
           }
         ]
       : []),
-    {
-      key: "sentiment",
-      label: t("items.filters.sentiment", { defaultValue: "Sentiment" }),
-      children: (
-        <Checkbox.Group
-          options={[
-            { label: t("items.sentiment.positive", { defaultValue: "Positive" }), value: "positive" },
-            { label: t("items.sentiment.neutral", { defaultValue: "Neutral" }), value: "neutral" },
-            { label: t("items.sentiment.negative", { defaultValue: "Negative" }), value: "negative" }
-          ]}
-          value={filters.sentiments}
-          onChange={handleSentimentChange}
-          style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-        />
-      )
-    }
+    ...(orderedSentiments.length
+      ? [
+          {
+            key: "sentiment",
+            label: t("items.filters.sentiment", { defaultValue: "Sentiment" }),
+            children: (
+              <Checkbox.Group
+                options={orderedSentiments.map((value) => ({
+                  value,
+                  label:
+                    value === "positive"
+                      ? t("items.sentiment.positive", { defaultValue: "Positive" })
+                      : value === "neutral"
+                        ? t("items.sentiment.neutral", { defaultValue: "Neutral" })
+                        : value === "negative"
+                          ? t("items.sentiment.negative", { defaultValue: "Negative" })
+                          : value
+                }))}
+                value={filters.sentiments}
+                onChange={handleSentimentChange}
+                style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+              />
+            )
+          }
+        ]
+      : [])
   ];
+
+  const defaultActiveKey = collapseItems.map((item) => item.key);
 
   return (
     <Card className="h-full" styles={{ body: { padding: "12px" } }}>
@@ -111,7 +130,7 @@ export function FacetedSearch({
 
         {collapseItems.length ? (
           <Collapse
-            defaultActiveKey={["region", "topic", "sentiment"]}
+            defaultActiveKey={defaultActiveKey}
             ghost
             items={collapseItems}
           />

@@ -54,6 +54,14 @@ interface ParsedSearchPayload {
   filters?: ItemFilters;
 }
 
+export type ItemsOrderBy = "CREATED_DESC" | "PUBLISHED_DESC";
+
+export interface ItemsCursorPayload {
+  id: string;
+  createdAt?: string;
+  sortAt?: string;
+}
+
 interface TopicGroupItem {
   processedId: string;
   itemMetaId: string;
@@ -210,9 +218,10 @@ export class ItemsService {
   async listWithCursor(
     orgId: string,
     first = 10,
-    cursorId?: string,
+    cursor?: ItemsCursorPayload,
     search?: string,
-    filters?: ItemFilters
+    filters?: ItemFilters,
+    orderBy: ItemsOrderBy = "CREATED_DESC"
   ) {
     const take = Math.min(Math.max(first, 1), MAX_CURSOR_PAGE_SIZE);
     const { search: normalizedSearch, filters: legacyFilters } = this.parseSearchPayload(search);
@@ -226,30 +235,8 @@ export class ItemsService {
       };
     }
 
-    if (!normalizedSearch && !scopedIds) {
-      const baseWhere = this.buildBaseWhere(orgId);
-      const items = await this.prisma.itemMeta.findMany({
-        where: baseWhere,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: take + 1,
-        ...(cursorId
-          ? {
-              skip: 1,
-              cursor: { id: cursorId }
-            }
-          : {})
-      });
-
-      const hasNextPage = items.length > take;
-      const totalCount = await this.prisma.itemMeta.count({ where: baseWhere });
-
-      return {
-        items: items.slice(0, take),
-        hasNextPage,
-        totalCount
-      };
-    }
-
+    const baseWhere = this.buildBaseWhere(orgId);
+    const cursorId = cursor?.id;
     if (scopedIds) {
       const scopedSet = new Set(scopedIds);
       if (cursorId && !scopedSet.has(cursorId)) {
@@ -261,26 +248,72 @@ export class ItemsService {
       }
     }
 
-    const baseWhere = this.buildBaseWhere(orgId);
-    const where = scopedIds ? { ...baseWhere, id: { in: scopedIds } } : baseWhere;
+    const whereBase = scopedIds ? { ...baseWhere, id: { in: scopedIds } } : baseWhere;
+    const orderField = orderBy === "PUBLISHED_DESC" ? "sortAt" : "createdAt";
+
+    let cursorTimestamp: Date | null = null;
+    if (cursorId) {
+      const timestampString = orderField === "sortAt" ? cursor?.sortAt : cursor?.createdAt;
+      if (timestampString) {
+        const parsed = new Date(timestampString);
+        if (Number.isFinite(parsed.valueOf())) {
+          cursorTimestamp = parsed;
+        }
+      }
+
+      if (!cursorTimestamp) {
+        const cursorRow = await this.prisma.itemMeta.findFirst({
+          where: { id: cursorId, orgId },
+          select: { createdAt: true, sortAt: true }
+        });
+        if (!cursorRow) {
+          return {
+            items: [],
+            hasNextPage: false,
+            totalCount: scopedIds?.length ?? 0
+          };
+        }
+        cursorTimestamp = orderField === "sortAt" ? cursorRow.sortAt : cursorRow.createdAt;
+      }
+    }
+
+    const paginationWhere =
+      cursorTimestamp && cursorId
+        ? orderField === "sortAt"
+          ? {
+              OR: [
+                { sortAt: { lt: cursorTimestamp } },
+                { sortAt: cursorTimestamp, id: { lt: cursorId } }
+              ]
+            }
+          : {
+              OR: [
+                { createdAt: { lt: cursorTimestamp } },
+                { createdAt: cursorTimestamp, id: { lt: cursorId } }
+              ]
+            }
+        : undefined;
+
+    const where = paginationWhere ? { AND: [whereBase, paginationWhere] } : whereBase;
+
+    const orderByClause =
+      orderField === "sortAt"
+        ? [{ sortAt: "desc" }, { id: "desc" }]
+        : [{ createdAt: "desc" }, { id: "desc" }];
+
     const items = await this.prisma.itemMeta.findMany({
       where,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: take + 1,
-      ...(cursorId
-        ? {
-            skip: 1,
-            cursor: { id: cursorId }
-          }
-        : {})
+      orderBy: orderByClause,
+      take: take + 1
     });
 
     const hasNextPage = items.length > take;
+    const totalCount = await this.prisma.itemMeta.count({ where: whereBase });
 
     return {
       items: items.slice(0, take),
       hasNextPage,
-      totalCount: scopedIds?.length ?? 0
+      totalCount
     };
   }
 
@@ -497,7 +530,6 @@ export class ItemsService {
         $match: {
           orgId,
           status: 'completed',
-          createdAt: { $gte: since },
           'result.topics.0': { $exists: true }
         }
       },
@@ -518,6 +550,11 @@ export class ItemsService {
               onNull: "$createdAt"
             }
           }
+        }
+      },
+      {
+        $match: {
+          sortAt: { $gte: since }
         }
       },
       {
@@ -623,7 +660,6 @@ export class ItemsService {
         $match: {
           orgId,
           status: PipelineStageStatus.Completed,
-          createdAt: { $gte: since }
         }
       },
       {
@@ -670,6 +706,11 @@ export class ItemsService {
               onNull: "$createdAt"
             }
           }
+        }
+      },
+      {
+        $match: {
+          sortAt: { $gte: since }
         }
       },
       {

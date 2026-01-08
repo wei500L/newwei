@@ -651,9 +651,11 @@ type ItemMetaModel {
 type ItemModel {
   createdAt: DateTime!
   id: ID!
+  ingestedAt: DateTime!
   meta: ItemMetaModel!
   orgId: String!
   processed: ProcessedItemModelGraph
+  publishedAt: String
   raw: RawItemModelGraph
   status: String!
   title: String!

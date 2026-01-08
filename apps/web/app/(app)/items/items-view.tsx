@@ -1,8 +1,8 @@
 "use client";
 
-import { SearchOutlined } from "@ant-design/icons";
+import { InfoCircleOutlined, SearchOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
-import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Typography } from "antd";
+import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -12,7 +12,9 @@ import { useTranslation } from "react-i18next";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import type { ItemsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
+import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatRatioAsPercent } from "@/lib/metrics-format";
 
 import { FacetedSearch, type FilterState } from "./components/faceted-search";
 import { FinancialCard } from "./components/financial-card";
@@ -55,6 +57,55 @@ function toNonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function withMetricTooltip(label: string, tooltip: string) {
+  return (
+    <Space size={6}>
+      <span>{label}</span>
+      <Tooltip title={tooltip}>
+        <InfoCircleOutlined className="text-slate-400" />
+      </Tooltip>
+    </Space>
+  );
+}
+
+const loggedProcessedResultParseErrors = new Set<string>();
+
+function parseProcessedResult(result: string | null | undefined, itemId: string): Record<string, unknown> {
+  if (!result) {
+    return {};
+  }
+
+  const reportOnce = (error: unknown) => {
+    if (loggedProcessedResultParseErrors.has(itemId)) {
+      return;
+    }
+    loggedProcessedResultParseErrors.add(itemId);
+    captureClientError("Failed to parse processed.result", error, {
+      tags: { area: "items", field: "processed.result" },
+      extras: { itemId, resultLength: result.length }
+    });
+  };
+
+  try {
+    const parsed = JSON.parse(result) as unknown;
+    if (typeof parsed === "string") {
+      try {
+        const parsedAgain = JSON.parse(parsed) as unknown;
+        return parsedAgain && typeof parsedAgain === "object" && !Array.isArray(parsedAgain)
+          ? (parsedAgain as Record<string, unknown>)
+          : {};
+      } catch (error) {
+        reportOnce(error);
+        return {};
+      }
+    }
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch (error) {
+    reportOnce(error);
+    return {};
+  }
+}
+
 interface ItemsDateRangeInput {
   start?: string;
   end?: string;
@@ -67,11 +118,14 @@ interface ItemsFiltersInput {
   dateRange?: ItemsDateRangeInput;
 }
 
+type ItemsOrderBy = "CREATED_DESC" | "PUBLISHED_DESC";
+
 interface ItemsQueryVariables {
   first: number;
   after?: string | null;
   search?: string | null;
   filters?: ItemsFiltersInput | null;
+  orderBy?: ItemsOrderBy | null;
 }
 
 interface ItemFacetOption {
@@ -93,14 +147,16 @@ interface ItemFacetsQueryVariables {
 }
 
 const ITEMS_QUERY = gql`
-  query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput) {
-    items(first: $first, after: $after, search: $search, filters: $filters) {
+  query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy) {
+    items(first: $first, after: $after, search: $search, filters: $filters, orderBy: $orderBy) {
       edges {
         node {
           id
           title
           status
           createdAt
+          ingestedAt
+          publishedAt
           processed {
             result
             tags
@@ -259,6 +315,10 @@ export function ItemsView({
   }, [urlSearch]);
 
   const filtersInput = useMemo(() => buildFiltersInput(filters), [filters]);
+  const orderBy = useMemo<ItemsOrderBy>(
+    () => (sortMode === "publishedDesc" ? "PUBLISHED_DESC" : "CREATED_DESC"),
+    [sortMode]
+  );
 
   const setQueryParams = useCallback(
     (updates: { q?: string | null; page?: number | null; pageSize?: number | null }) => {
@@ -315,7 +375,8 @@ export function ItemsView({
       first: pageSize,
       after: null,
       search: urlSearch || null,
-      filters: filtersInput
+      filters: filtersInput,
+      orderBy
     },
     notifyOnNetworkStatusChange: true
   });
@@ -359,7 +420,8 @@ export function ItemsView({
             first: size,
             after: currentItems.pageInfo.endCursor,
             search: urlSearch || null,
-            filters: filtersInput
+            filters: filtersInput,
+            orderBy
           },
           updateQuery: (prev, { fetchMoreResult }) => {
             if (!fetchMoreResult) {
@@ -379,7 +441,7 @@ export function ItemsView({
         currentItems = result.data.items;
       }
     },
-    [data?.items, fetchMore, filtersInput, urlSearch]
+    [data?.items, fetchMore, filtersInput, orderBy, urlSearch]
   );
 
   useEffect(() => {
@@ -396,19 +458,13 @@ export function ItemsView({
     const endIndex = startIndex + pageSize;
     return edges.slice(startIndex, endIndex).map((edge) => {
       let parsedRaw = {};
-      let parsedProcessed = {};
       try {
         parsedRaw = JSON.parse(edge.node.raw?.payload || "{}");
       } catch {
         // console.warn("Failed to parse raw payload", e);
       }
-      try {
-        parsedProcessed = JSON.parse(edge.node.processed?.result || "{}");
-      } catch {
-        // console.warn("Failed to parse processed result", e);
-      }
 
-      const processed = parsedProcessed as {
+      const processed = parseProcessedResult(edge.node.processed?.result, edge.node.id) as {
         published_at?: string | null;
         source?: string | null;
         topics?: string[] | null;
@@ -422,12 +478,8 @@ export function ItemsView({
         url?: string | null;
         sourceName?: string | null;
       };
-      const publishedAt =
-        toNonEmptyString(processed.published_at) ??
-        toNonEmptyString(raw.publishedAt) ??
-        toNonEmptyString(raw.published_at) ??
-        undefined;
-      const ingestedAt = dayjs(edge.node.createdAt).toISOString();
+      const publishedAt = toNonEmptyString(edge.node.publishedAt) ?? undefined;
+      const ingestedAt = dayjs(edge.node.ingestedAt ?? edge.node.createdAt).toISOString();
       const topics = Array.isArray(processed.topics)
         ? Array.from(
             new Set(
@@ -458,7 +510,7 @@ export function ItemsView({
       return {
         ...edge.node,
         ...parsedRaw,
-        ...parsedProcessed,
+        ...processed,
         name: edge.node.title,
         publishedAt,
         ingestedAt,
@@ -504,6 +556,28 @@ export function ItemsView({
     return Array.from(new Set(fallback));
   }, [facetsData, pageData]);
 
+  const availableSentiments = useMemo(() => {
+    const sentiments = facetsData?.itemFacets?.sentiments;
+    if (!sentiments || sentiments.length === 0) {
+      return [];
+    }
+    const allowed = new Set(["positive", "neutral", "negative"]);
+    const values = sentiments
+      .map((sentiment) => sentiment.value.trim().toLowerCase())
+      .filter((value) => value.length > 0 && allowed.has(value));
+    return Array.from(new Set(values));
+  }, [facetsData]);
+
+  useEffect(() => {
+    if (availableSentiments.length > 0) {
+      return;
+    }
+    if (!filters.sentiments || filters.sentiments.length === 0) {
+      return;
+    }
+    setFilters((current) => ({ ...current, sentiments: undefined }));
+  }, [availableSentiments.length, filters.sentiments]);
+
   const emptyStateConfig = useMemo(() => {
     if (emptyStateVariant === "today") {
       const action = canManageCrawl
@@ -544,18 +618,6 @@ export function ItemsView({
     };
   }, [canManageCrawl, emptyStateVariant, t]);
 
-  const sortedData = useMemo(() => {
-    if (sortMode !== "publishedDesc") {
-      return pageData;
-    }
-    return [...pageData].sort((a, b) => {
-      const aTime = dayjs(a.publishedAt ?? a.ingestedAt ?? a.createdAt).valueOf();
-      const bTime = dayjs(b.publishedAt ?? b.ingestedAt ?? b.createdAt).valueOf();
-      return bTime - aTime;
-    });
-  }, [pageData, sortMode]);
-
-
   const handleTableChange = (pager: TablePaginationConfig) => {
     const nextPageSize = pager.pageSize ?? pageSize;
     const pageSizeChanged = nextPageSize !== pageSize;
@@ -592,14 +654,27 @@ export function ItemsView({
       dataIndex: "publishedAt",
       key: "publishedAt",
       render: (_: string | undefined, record) => {
-        const value = record.publishedAt ?? record.ingestedAt ?? record.createdAt;
-        const label = record.publishedAt
-          ? t("items.time.published", { defaultValue: "Published" })
-          : t("items.time.ingested", { defaultValue: "Ingested" });
+        const publishedLabel = t("items.time.published", { defaultValue: "Published" });
+        const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
+        const ingestedAt = record.ingestedAt ?? record.createdAt;
         return (
           <Space direction="vertical" size={0}>
             <Typography.Text>
-              {formatDateTime(value, locale, {
+              {publishedLabel}:{" "}
+              {record.publishedAt
+                ? formatDateTime(record.publishedAt, locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    timeZoneName: "short"
+                  })
+                : t("common.notAvailable")}
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {ingestedLabel}:{" "}
+              {formatDateTime(ingestedAt, locale, {
                 year: "numeric",
                 month: "2-digit",
                 day: "2-digit",
@@ -608,36 +683,80 @@ export function ItemsView({
                 timeZoneName: "short"
               })}
             </Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {label}
-            </Typography.Text>
           </Space>
         );
       }
     },
     {
-      title: t("items.columns.quality", { defaultValue: "Quality" }),
+      title: withMetricTooltip(
+        t("items.columns.quality", { defaultValue: "Quality" }),
+        t("items.metrics.quality.tooltip", {
+          defaultValue: "Quality score from LLM cleaning stage (0–1, shown as %)."
+        })
+      ),
       dataIndex: "qualityScore",
       key: "qualityScore",
-      render: (value: number | undefined) =>
-        typeof value === "number" ? (
-          <Tag color="blue">{Math.round(value * 100)}%</Tag>
-        ) : (
-          <Tag>{t("common.notAvailable")}</Tag>
-        )
+      render: (value: number | undefined, record) => {
+        const formatted = formatRatioAsPercent(value, locale);
+        if (!formatted) {
+          return <Tag>{t("common.notAvailable")}</Tag>;
+        }
+
+        const tooltip = (
+          <div className="text-xs">
+            <div>
+              {t("items.metrics.quality.tooltip", {
+                defaultValue: "Quality score from LLM cleaning stage (0–1, shown as %)."
+              })}
+            </div>
+            {record.llm?.model ? <div>Model: {record.llm.model}</div> : null}
+            {record.llm?.promptVersion ? <div>Prompt: {record.llm.promptVersion}</div> : null}
+          </div>
+        );
+
+        return (
+          <Tooltip title={tooltip}>
+            <Tag color="blue">{formatted}</Tag>
+          </Tooltip>
+        );
+      }
     },
     {
-      title: t("items.columns.duplicate", { defaultValue: "Duplicate" }),
+      title: withMetricTooltip(
+        t("items.columns.duplicate", { defaultValue: "Duplicate" }),
+        t("items.metrics.duplicate.tooltip", {
+          defaultValue: "Duplicate similarity from dedup stage (0–1, shown as %)."
+        })
+      ),
       dataIndex: "duplicateSimilarity",
       key: "duplicateSimilarity",
       render: (value: number | undefined, record) => {
-        if (typeof value !== "number") {
+        const formatted = formatRatioAsPercent(value, locale);
+        if (!formatted) {
           return <Tag>{t("common.notAvailable")}</Tag>;
         }
         const label = record.duplicateOf
           ? t("items.duplicate.duplicate", { defaultValue: "Duplicate" })
           : t("items.duplicate.similarity", { defaultValue: "Similarity" });
-        return <Tag color="gold">{label} {Math.round(value * 100)}%</Tag>;
+
+        const tooltip = (
+          <div className="text-xs">
+            <div>
+              {t("items.metrics.duplicate.tooltip", {
+                defaultValue: "Duplicate similarity from dedup stage (0–1, shown as %)."
+              })}
+            </div>
+            {record.duplicateOf ? <div>Duplicate of: {record.duplicateOf}</div> : null}
+          </div>
+        );
+
+        return (
+          <Tooltip title={tooltip}>
+            <Tag color="gold">
+              {label} {formatted}
+            </Tag>
+          </Tooltip>
+        );
       }
     },
     {
@@ -668,7 +787,7 @@ export function ItemsView({
       );
     }
 
-    if (error && sortedData.length === 0) {
+    if (error && pageData.length === 0) {
       return (
         <Space direction="vertical" align="center" size="middle" style={{ width: "100%" }}>
           <ChartEmptyState
@@ -684,7 +803,7 @@ export function ItemsView({
       );
     }
 
-    if (!loading && sortedData.length === 0) {
+    if (!loading && pageData.length === 0) {
       return (
         <Space direction="vertical" align="center" size="middle" style={{ width: "100%" }}>
           <ChartEmptyState
@@ -709,7 +828,7 @@ export function ItemsView({
         <Table
           rowKey="id"
           columns={columns}
-          dataSource={sortedData}
+          dataSource={pageData}
           loading={loading || needsMoreForPage}
           size="large"
           pagination={{
@@ -727,7 +846,7 @@ export function ItemsView({
       return (
         <List
           grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
-          dataSource={sortedData}
+          dataSource={pageData}
           pagination={{
              current,
              pageSize,
@@ -766,7 +885,7 @@ export function ItemsView({
         return (
             <List
               itemLayout="vertical"
-              dataSource={sortedData}
+              dataSource={pageData}
               pagination={{
                  current,
                  pageSize,
@@ -853,6 +972,7 @@ export function ItemsView({
                   onFilterChange={handleFilterChange}
                   regions={availableRegions}
                   topics={availableTopics}
+                  sentiments={availableSentiments}
                 />
               </Col>
            )}
@@ -874,6 +994,7 @@ export function ItemsView({
            onFilterChange={handleFilterChange}
            regions={availableRegions}
            topics={availableTopics}
+           sentiments={availableSentiments}
          />
       </Drawer>
     </div>

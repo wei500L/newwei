@@ -166,11 +166,14 @@ model ItemMeta {
   status      String   @default("draft")
   mongoRef    String   // references packages/mongo RawItem document id
   version     Int      @default(1)
+  publishedAt DateTime?
+  sortAt      DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@unique([orgId, externalId])
   @@index([orgId, name])
+  @@index([orgId, sortAt, id])
   @@fulltext([name, externalId])
 }
 

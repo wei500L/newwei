@@ -1,10 +1,12 @@
 "use client";
 
-import { Alert, Button, Card, Col, Empty, Row, Skeleton, Typography } from "antd";
+import { Col, Row, Skeleton, Typography } from "antd";
 import type { CallbackDataParams } from "echarts";
 import { useTranslation } from "react-i18next";
 
-import { DashboardChart } from "@/components/echart";
+import { ChartDataMeta } from "@/components/chart-data-meta";
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DashboardChartCard } from "@/components/dashboard-chart-card";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -25,11 +27,20 @@ const metalSeries = [
 export default function EconomicMediumPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed } = useEconomicData({
+  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed, chartState } = useEconomicData({
     category: "economic-medium",
     pollInterval: 120_000,
   });
   const isInitialLoading = loading && !hasData;
+  const isBackfilling = loading && hasData;
+  const chartMeta = (
+    <ChartDataMeta
+      state={chartState}
+      latestTimestamp={latestTimestamp}
+      locale={locale}
+      onRefresh={() => refetch()}
+    />
+  );
 
   const gdpYoy = filterValuesByDays(
     getSeriesField(seriesMap, "china_gdp", "国内生产总值-同比增长"),
@@ -233,22 +244,30 @@ export default function EconomicMediumPage() {
         <TimeRangeControls />
       </div>
       {error ? (
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          action={
-            <Button size="small" onClick={() => refetch()}>
-              {t("common.retry")}
-            </Button>
-          }
+        <ChartEmptyState
+          presentation="banner"
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          description={error.message}
+          actionLabel={t("common.retry")}
+          onAction={() => refetch()}
         />
       ) : null}
-      {isDelayed ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
+      {isBackfilling ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="backfilling"
+          title={t("dashboard.dataBackfilling.title", { defaultValue: "Updating data" })}
+          description={t("dashboard.dataBackfilling.description", {
+            defaultValue: "Data is being backfilled. Values may update shortly."
+          })}
+        />
+      ) : null}
+      {!isBackfilling && isDelayed ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="delayed"
+          title={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -263,10 +282,15 @@ export default function EconomicMediumPage() {
                 })
               : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
           }
+          actionLabel={t("common.refresh")}
+          onAction={() => refetch()}
         />
       ) : null}
       {!loading && !hasData ? (
-        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
+        <ChartEmptyState
+          title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+          description={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+        />
       ) : null}
       {isInitialLoading ? (
         <Skeleton active paragraph={{ rows: 10 }} />
@@ -274,53 +298,58 @@ export default function EconomicMediumPage() {
         <>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicMedium.cards.gdpM2")} className="content-card">
-                {gdpYoy.length > 0 && m2Yoy.length > 0 ? (
-                  <DashboardChart option={dualAxisOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicMedium.empty.gdpM2")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicMedium.cards.gdpM2")}
+                className="content-card"
+                extra={chartMeta}
+                option={gdpYoy.length > 0 && m2Yoy.length > 0 ? dualAxisOption : null}
+                height={320}
+                emptyDescription={t("dashboard.economicMedium.empty.gdpM2")}
+              />
             </Col>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicMedium.cards.metalMa")} className="content-card">
-                {maSeries.some((entry) => entry.data.length > 0) ? (
-                  <DashboardChart option={maOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicMedium.empty.metals")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicMedium.cards.metalMa")}
+                className="content-card"
+                extra={chartMeta}
+                option={maSeries.some((entry) => entry.data.length > 0) ? maOption : null}
+                height={320}
+                emptyDescription={t("dashboard.economicMedium.empty.metals")}
+              />
             </Col>
           </Row>
           <Row gutter={[16, 16]}>
             <Col span={24}>
-              <Card title={t("dashboard.economicMedium.cards.pmiChanges")} className="content-card">
-                {filteredChanges.length > 0 ? (
-                  <DashboardChart option={pmiOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicMedium.empty.pmi")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicMedium.cards.pmiChanges")}
+                className="content-card"
+                extra={chartMeta}
+                option={filteredChanges.length > 0 ? pmiOption : null}
+                height={320}
+                emptyDescription={t("dashboard.economicMedium.empty.pmi")}
+              />
             </Col>
           </Row>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicMedium.cards.usGrowth")} className="content-card">
-                {usGdpSeries.length > 0 ? (
-                  <DashboardChart option={usGrowthOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicMedium.empty.usEconomy")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicMedium.cards.usGrowth")}
+                className="content-card"
+                extra={chartMeta}
+                option={usGdpSeries.length > 0 ? usGrowthOption : null}
+                height={320}
+                emptyDescription={t("dashboard.economicMedium.empty.usEconomy")}
+              />
             </Col>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.economicMedium.cards.usPmi")} className="content-card">
-                {usManufacturingSeries.length > 0 ? (
-                  <DashboardChart option={usPmiOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicMedium.empty.usPmi")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicMedium.cards.usPmi")}
+                className="content-card"
+                extra={chartMeta}
+                option={usManufacturingSeries.length > 0 ? usPmiOption : null}
+                height={320}
+                emptyDescription={t("dashboard.economicMedium.empty.usPmi")}
+              />
             </Col>
           </Row>
         </>

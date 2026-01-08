@@ -1,7 +1,7 @@
 'use client';
 
 import { gql, useQuery } from '@apollo/client';
-import { Button, Card, Col, Drawer, Empty, Grid, List, Row, Select, Skeleton, Space, Tag, Typography } from 'antd';
+import { Button, Card, Col, Drawer, Empty, Grid, List, Row, Select, Skeleton, Space, Tag, Tooltip, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -131,6 +131,10 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
 export function TopicsContent({ initialData = null }: TopicsContentProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const latestAtLabel = t('pages.topics.latestAtLabel', { defaultValue: 'Latest' });
+  const latestAtHelp = t('pages.topics.latestAtHelp', {
+    defaultValue: 'Sorted by Published time when available; falls back to Ingested time.'
+  });
   const screens = Grid.useBreakpoint();
   const [selectedEvent, setSelectedEvent] = useState<EventGroup | null>(null);
   const pathname = usePathname();
@@ -341,15 +345,18 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                     }
                     extra={
                       <Space size="small" align="center">
-                        <Typography.Text type="secondary">
-                          {formatDateTime(group.latestAt, locale, {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </Typography.Text>
+                        <Tooltip title={latestAtHelp}>
+                          <Typography.Text type="secondary">
+                            {latestAtLabel}:{' '}
+                            {formatDateTime(group.latestAt, locale, {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </Typography.Text>
+                        </Tooltip>
                         <Button size="small" onClick={() => setSelectedEvent(group)}>
                           {t('pages.topics.eventDetail.action', { defaultValue: 'Details' })}
                         </Button>
@@ -425,15 +432,18 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                     </Space>
                   }
                   extra={
-                    <Typography.Text type="secondary">
-                      {formatDateTime(group.latestAt, locale, {
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </Typography.Text>
+                    <Tooltip title={latestAtHelp}>
+                      <Typography.Text type="secondary">
+                        {latestAtLabel}:{' '}
+                        {formatDateTime(group.latestAt, locale, {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </Typography.Text>
+                    </Tooltip>
                   }
                 >
                   <Row gutter={[16, 16]}>
@@ -479,15 +489,18 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               <Typography.Title level={5} style={{ margin: 0 }}>
                 {selectedEventTitle}
               </Typography.Title>
-              <Typography.Text type="secondary">
-                {formatDateTime(selectedEvent.latestAt, locale, {
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
-              </Typography.Text>
+              <Tooltip title={latestAtHelp}>
+                <Typography.Text type="secondary">
+                  {latestAtLabel}:{' '}
+                  {formatDateTime(selectedEvent.latestAt, locale, {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </Typography.Text>
+              </Tooltip>
             </Space>
 
             {selectedEvent.summary ? (

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseDateTime } from "@modular/utils";
 
 import type { CrawlTaskOptions } from "../crawl/crawl.types";
 
@@ -35,6 +36,24 @@ const optionalNullableTrimmedString = z
     return trimmed.length > 0 ? trimmed : undefined;
   });
 
+const optionalNullableIsoDateTimeString = z
+  .union([z.string(), z.null()])
+  .optional()
+  .transform((value) => {
+    if (value === null) {
+      return null;
+    }
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = parseDateTime(trimmed);
+    return parsed ? parsed.toISOString() : null;
+  });
+
 const crawlOptionsSchema: z.ZodType<Partial<CrawlTaskOptions>> = z
   .object({})
   .catchall(z.unknown());
@@ -69,7 +88,7 @@ export const CleanedNewsSchema = z.object({
   subtitle: z.string().nullable().optional(),
   author: z.string().nullable().optional(),
   source: z.string().nullable().optional(),
-  published_at: z.string().nullable().optional(),
+  published_at: optionalNullableIsoDateTimeString,
   language: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
   category: z.string().nullable().optional(),

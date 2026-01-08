@@ -1,10 +1,12 @@
 "use client";
 
-import { Alert, Card, Col, Empty, Row, Skeleton, Typography } from "antd";
+import { Col, Row, Skeleton, Typography } from "antd";
 import type { CallbackDataParams } from "echarts";
 import { useTranslation } from "react-i18next";
 
-import { DashboardChart } from "@/components/echart";
+import { ChartDataMeta } from "@/components/chart-data-meta";
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DashboardChartCard } from "@/components/dashboard-chart-card";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -25,11 +27,20 @@ const agConfigs = [
 export default function LivelihoodPricesPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { loading, error, seriesMap, hasData, latestTimestamp, isDelayed } = useEconomicData({
+  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed, chartState } = useEconomicData({
     category: "livelihood-prices",
     pollInterval: 180_000,
   });
   const isInitialLoading = loading && !hasData;
+  const isBackfilling = loading && hasData;
+  const chartMeta = (
+    <ChartDataMeta
+      state={chartState}
+      latestTimestamp={latestTimestamp}
+      locale={locale}
+      onRefresh={() => refetch()}
+    />
+  );
 
   const cpiTreeData = [
     {
@@ -160,19 +171,31 @@ export default function LivelihoodPricesPage() {
         <Typography.Title level={4}>{t("dashboard.livelihood.title")}</Typography.Title>
         <TimeRangeControls />
       </div>
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+      {error ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error.message}
+          actionLabel={t("common.retry")}
+          onAction={() => refetch()}
         />
-      )}
-      {isDelayed ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
+      ) : null}
+      {isBackfilling ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="backfilling"
+          title={t("dashboard.dataBackfilling.title", { defaultValue: "Updating data" })}
+          description={t("dashboard.dataBackfilling.description", {
+            defaultValue: "Data is being backfilled. Values may update shortly."
+          })}
+        />
+      ) : null}
+      {!isBackfilling && isDelayed ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="delayed"
+          title={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -187,6 +210,8 @@ export default function LivelihoodPricesPage() {
                 })
               : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
           }
+          actionLabel={t("common.refresh")}
+          onAction={() => refetch()}
         />
       ) : null}
       {isInitialLoading ? (
@@ -195,33 +220,36 @@ export default function LivelihoodPricesPage() {
         <>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.livelihood.cards.cpiTree")} className="content-card">
-                {validCpiData.length > 0 ? (
-                  <DashboardChart option={treeOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.livelihood.empty.cpi")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.livelihood.cards.cpiTree")}
+                className="content-card"
+                extra={chartMeta}
+                option={validCpiData.length > 0 ? treeOption : null}
+                height={320}
+                emptyDescription={t("dashboard.livelihood.empty.cpi")}
+              />
             </Col>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.livelihood.cards.agriRadar")} className="content-card">
-                {validRadarData.length > 0 ? (
-                  <DashboardChart option={radarOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.livelihood.empty.agri")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.livelihood.cards.agriRadar")}
+                className="content-card"
+                extra={chartMeta}
+                option={validRadarData.length > 0 ? radarOption : null}
+                height={320}
+                emptyDescription={t("dashboard.livelihood.empty.agri")}
+              />
             </Col>
           </Row>
           <Row gutter={[16, 16]}>
             <Col span={24}>
-              <Card title={t("dashboard.livelihood.cards.tourism")} className="content-card">
-                {tourismValues.length > 0 ? (
-                  <DashboardChart option={tourismOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.livelihood.empty.tourism")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.livelihood.cards.tourism")}
+                className="content-card"
+                extra={chartMeta}
+                option={tourismValues.length > 0 ? tourismOption : null}
+                height={320}
+                emptyDescription={t("dashboard.livelihood.empty.tourism")}
+              />
             </Col>
           </Row>
         </>

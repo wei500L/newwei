@@ -28,8 +28,6 @@ const OHLC_FIELD_ALIASES = {
   close: ["close", "收盘价"]
 } as const;
 
-type WarEventSeverity = "high" | "medium" | "low";
-
 interface GeoJsonGeometry {
   type:
     | "Point"
@@ -70,7 +68,12 @@ interface WarMapEvent {
   name: string;
   lat: number;
   lng: number;
-  severity: WarEventSeverity;
+  severity: AlertSeverity;
+  /**
+   * Aggregated score for the location, derived from alert severities.
+   * Current algorithm: sum of severity ranks (low=1, medium=2, high=3).
+   */
+  derivedScore: number;
   value: number;
 }
 
@@ -85,6 +88,8 @@ interface SectorHeatmapCell {
   name: string;
   value: number;
   change: number;
+  unit?: string | null;
+  sourceField?: string;
 }
 
 interface SectorHeatmapResponse {
@@ -107,6 +112,8 @@ interface FinancialCandlestickResponse {
   symbol: string;
   interval: string;
   points: FinancialCandlestickPoint[];
+  unit?: string | null;
+  sourceFields?: Record<string, string>;
   updatedAt?: string;
 }
 
@@ -127,12 +134,6 @@ const alignUtcDayEnd = (value: Date) => {
   return normalized;
 };
 
-const resolveSeverityFromScore = (score: number): WarEventSeverity => {
-  if (score >= 10) return "high";
-  if (score >= 4) return "medium";
-  return "low";
-};
-
 const normalizeGeoId = (input?: string | null): string | null => {
   if (!input || typeof input !== "string") {
     return null;
@@ -141,22 +142,16 @@ const normalizeGeoId = (input?: string | null): string | null => {
   return normalized ? normalized.toUpperCase() : null;
 };
 
-const severityRank: Record<WarEventSeverity, number> = {
-  low: 1,
-  medium: 2,
-  high: 3
-};
-
-const severityByRank: Record<number, WarEventSeverity> = {
-  1: "low",
-  2: "medium",
-  3: "high"
-};
-
 const alertSeverityRank: Record<AlertSeverity, number> = {
   low: 1,
   medium: 2,
   high: 3
+};
+
+const alertSeverityByRank: Record<number, AlertSeverity> = {
+  1: AlertSeverity.low,
+  2: AlertSeverity.medium,
+  3: AlertSeverity.high
 };
 
 @Injectable()
@@ -273,23 +268,19 @@ export class DashboardChartsService {
       if (!entry.latestAt) {
         continue;
       }
-      const totalScore = entry.alertScore;
-      const severityFromScore = resolveSeverityFromScore(totalScore);
-      const maxSeverityFromAlerts =
-        entry.maxSeverityRank > 0 ? severityByRank[entry.maxSeverityRank] : null;
-      const severity = maxSeverityFromAlerts
-        ? (severityRank[maxSeverityFromAlerts] >= severityRank[severityFromScore]
-            ? maxSeverityFromAlerts
-            : severityFromScore)
-        : severityFromScore;
-      const value = Math.max(1, Number(totalScore.toFixed(2)));
+      const derivedScore = Math.max(1, Number(entry.alertScore.toFixed(2)));
+      const severity =
+        entry.maxSeverityRank > 0
+          ? (alertSeverityByRank[entry.maxSeverityRank] ?? AlertSeverity.low)
+          : AlertSeverity.low;
       events.push({
         id: code.toLowerCase(),
         name: entry.name,
         lat: entry.lat,
         lng: entry.lng,
         severity,
-        value
+        derivedScore,
+        value: derivedScore
       });
       if (!latestTimestamp || entry.latestAt > latestTimestamp) {
         latestTimestamp = entry.latestAt;
@@ -393,7 +384,8 @@ export class DashboardChartsService {
       },
       select: {
         id: true,
-        displayName: true
+        displayName: true,
+        defaultUnit: true
       },
       orderBy: { displayName: "asc" },
       take: MAX_SECTOR_CELLS
@@ -454,6 +446,7 @@ export class DashboardChartsService {
       const firstValue = Number(series[0]?.value ?? 0);
       const lastPoint = series[series.length - 1];
       const lastValue = Number(lastPoint?.value ?? 0);
+      const unit = (lastPoint?.unit as string | null | undefined) ?? item.defaultUnit ?? null;
       const change =
         firstValue === 0 ? 0 : ((lastValue - firstValue) / Math.abs(firstValue)) * 100;
 
@@ -465,7 +458,9 @@ export class DashboardChartsService {
         y,
         name: item.displayName,
         value: Number(lastValue.toFixed(2)),
-        change: Number(change.toFixed(2))
+        change: Number(change.toFixed(2)),
+        unit,
+        sourceField: fieldKey
       });
 
       if (lastPoint && (!updatedAt || lastPoint.recordedAt > updatedAt)) {
@@ -492,7 +487,8 @@ export class DashboardChartsService {
       select: {
         id: true,
         displayName: true,
-        defaultFrequency: true
+        defaultFrequency: true,
+        defaultUnit: true
       }
     });
 
@@ -523,6 +519,11 @@ export class DashboardChartsService {
       orderBy: { recordedAt: "asc" }
     });
 
+    const unit =
+      (points.find((point) => point.unit)?.unit as string | null | undefined) ??
+      item.defaultUnit ??
+      null;
+    const sourceFields: Partial<Record<keyof typeof OHLC_FIELD_ALIASES, string>> = {};
     const grouped = new Map<
       string,
       {
@@ -537,6 +538,9 @@ export class DashboardChartsService {
     for (const point of points) {
       const field = aliasToField.get(point.sourceField);
       if (!field) continue;
+      if (!sourceFields[field]) {
+        sourceFields[field] = point.sourceField;
+      }
       const key = point.recordedAt.toISOString();
       const entry =
         grouped.get(key) ?? {
@@ -574,6 +578,8 @@ export class DashboardChartsService {
       symbol: item.displayName,
       interval: item.defaultFrequency,
       points: resultPoints,
+      unit,
+      sourceFields: Object.keys(sourceFields).length > 0 ? (sourceFields as Record<string, string>) : undefined,
       updatedAt: updatedAt ? updatedAt.toISOString() : undefined
     };
   }

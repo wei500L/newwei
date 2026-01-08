@@ -15,7 +15,7 @@ interface AnalysisResultsResponse {
   analysisResults: AnalysisResultModel[];
 }
 
-export function BreakingNewsStream() {
+export function AnalysisStream() {
   const { t } = useTranslation();
   const { data: session } = useSession();
 

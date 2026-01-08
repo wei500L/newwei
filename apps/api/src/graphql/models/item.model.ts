@@ -117,6 +117,12 @@ export class ItemModel {
   @Field()
   status!: string;
 
+  @Field(() => GraphQLISODateTime, { description: "Item ingested time (record createdAt)" })
+  ingestedAt!: Date;
+
+  @Field({ nullable: true, description: "Content published time (ISO8601)" })
+  publishedAt?: string | null;
+
   @Field()
   createdAt!: Date;
 

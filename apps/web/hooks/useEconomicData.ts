@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import { useEconomicDataQuery } from "@/graphql/generated";
 import { useDashboardRangeStore } from "@/store/time-range";
+import type { ChartDataState } from "@/lib/chart-data-state";
 
 export interface EconomicSeriesOptions {
   category: string;
@@ -45,21 +46,35 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
       const slug = point.item.slug;
       const fieldKey = point.sourceField ?? `${slug}-default`;
       const existing = map.get(point.item.slug);
+      const pointUnit = point.unit ?? null;
+      const defaultUnit = point.item.defaultUnit ?? null;
       const group: EconomicSeriesGroup =
         existing ??
         {
           name: point.item.displayName,
-          unit: point.unit ?? point.item.defaultUnit ?? null,
+          unit: pointUnit ?? defaultUnit,
           metadata: point.item.metadata ?? null,
           dataType: point.dataType,
           fields: new Map()
         };
+
+      if (pointUnit && group.unit !== pointUnit) {
+        group.unit = pointUnit;
+      } else if (!group.unit && defaultUnit) {
+        group.unit = defaultUnit;
+      }
+
       const fieldSeries = group.fields.get(fieldKey) ?? {
         key: fieldKey,
         label: point.sourceField ?? point.item.displayName,
-        unit: point.unit ?? group.unit ?? null,
+        unit: pointUnit ?? group.unit ?? defaultUnit,
         values: []
       };
+      if (pointUnit && fieldSeries.unit !== pointUnit) {
+        fieldSeries.unit = pointUnit;
+      } else if (!fieldSeries.unit && group.unit) {
+        fieldSeries.unit = group.unit;
+      }
       fieldSeries.values.push({
         timestamp: point.timestamp,
         value: point.value
@@ -93,7 +108,15 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     timestamps.sort((a, b) => a - b);
     const intervals: number[] = [];
     for (let i = 1; i < timestamps.length; i += 1) {
-      intervals.push(timestamps[i] - timestamps[i - 1]);
+      const current = timestamps[i];
+      const previous = timestamps[i - 1];
+      if (current === undefined || previous === undefined) {
+        continue;
+      }
+      if (!Number.isFinite(current) || !Number.isFinite(previous)) {
+        continue;
+      }
+      intervals.push(current - previous);
     }
     intervals.sort((a, b) => a - b);
     return intervals[Math.floor(intervals.length / 2)] ?? null;
@@ -112,6 +135,22 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     return rangeEnd - latest > expected * 2;
   }, [end, latestTimestamp, medianIntervalMs]);
 
+  const chartState: ChartDataState = useMemo(() => {
+    if (error) {
+      return "error";
+    }
+    if (loading) {
+      return "backfilling";
+    }
+    if (points.length === 0) {
+      return "empty";
+    }
+    if (isDelayed) {
+      return "delayed";
+    }
+    return "ok";
+  }, [error, isDelayed, loading, points.length]);
+
   return {
     loading,
     error,
@@ -119,6 +158,7 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     seriesMap: grouped,
     hasData: points.length > 0,
     latestTimestamp,
-    isDelayed
+    isDelayed,
+    chartState
   };
 }

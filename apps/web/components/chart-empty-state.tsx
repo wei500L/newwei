@@ -1,16 +1,18 @@
 "use client";
 
-import { Button, Empty, Typography } from "antd";
+import { Alert, Button, Empty, Typography } from "antd";
 import type { ReactNode } from "react";
 
 import { useChartTheme } from "@/hooks/use-chart-theme";
 
-type ChartEmptyStateVariant = "empty" | "error";
+type ChartEmptyStateVariant = "empty" | "delayed" | "backfilling" | "error";
+type ChartEmptyStatePresentation = "center" | "banner";
 
 interface ChartEmptyStateProps {
   title?: string;
   description: string;
   variant?: ChartEmptyStateVariant;
+  presentation?: ChartEmptyStatePresentation;
   actionLabel?: string;
   onAction?: () => void;
   action?: ReactNode;
@@ -21,6 +23,7 @@ export function ChartEmptyState({
   title,
   description,
   variant = "empty",
+  presentation = "center",
   actionLabel,
   onAction,
   action,
@@ -29,12 +32,26 @@ export function ChartEmptyState({
   const { colors } = useChartTheme();
   const stroke = colors?.border ?? "rgba(148, 163, 184, 0.4)";
   const fill = colors?.secondary ?? "rgba(148, 163, 184, 0.08)";
-  const accent =
-    variant === "error"
-      ? "rgba(220, 38, 38, 0.55)"
-      : colors?.accent ?? "rgba(56, 189, 248, 0.6)";
+  const accent = (() => {
+    switch (variant) {
+      case "error":
+        return "rgba(220, 38, 38, 0.55)";
+      case "delayed":
+        return "rgba(245, 158, 11, 0.6)";
+      case "backfilling":
+        return colors?.primary ?? "rgba(56, 189, 248, 0.6)";
+      case "empty":
+      default:
+        return colors?.accent ?? "rgba(56, 189, 248, 0.6)";
+    }
+  })();
   const textColor = colors?.foreground ?? "#94a3b8";
-  const titleColor = variant === "error" ? "#dc2626" : "#0f172a";
+  const titleColor =
+    variant === "error"
+      ? "#dc2626"
+      : variant === "delayed"
+        ? "#d97706"
+        : "#0f172a";
   const actionNode =
     action ??
     (onAction && actionLabel ? (
@@ -42,6 +59,27 @@ export function ChartEmptyState({
         {actionLabel}
       </Button>
     ) : null);
+
+  if (presentation === "banner") {
+    const alertType =
+      variant === "error"
+        ? "error"
+        : variant === "delayed"
+          ? "warning"
+          : variant === "backfilling"
+            ? "info"
+            : "info";
+    return (
+      <Alert
+        className={className}
+        type={alertType}
+        showIcon
+        message={title}
+        description={description}
+        action={actionNode}
+      />
+    );
+  }
 
   return (
     <div className={`flex h-full items-center justify-center ${className ?? ""}`}>

@@ -10,6 +10,7 @@ import {
 } from "@nestjs/graphql";
 import type DataLoader from "dataloader";
 import { Loader } from "nestjs-dataloader";
+import { parseDateTime } from "@modular/utils";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
@@ -20,11 +21,14 @@ import {
   ItemsQueryArgs,
   CreateItemInput,
   UpdateItemInput,
-  ItemsFacetsArgs
+  ItemsFacetsArgs,
+  ItemsOrderBy
 } from "../dto/item.input";
 import type { GqlRequest } from "../graphql.types";
 import { ItemMetaLoader } from "../loaders/item-meta.loader";
+import type { ProcessedItemDoc } from "../loaders/processed-item.loader";
 import { ProcessedItemLoader } from "../loaders/processed-item.loader";
+import type { RawItemDoc } from "../loaders/raw-item.loader";
 import { RawItemLoader } from "../loaders/raw-item.loader";
 import {
   ItemModel,
@@ -37,12 +41,99 @@ import {
 } from "../models/item.model";
 import { PageInfo } from "../models/page-info.model";
 
-function encodeCursor(value: string) {
-  return Buffer.from(value, "utf8").toString("base64");
+interface ItemsCursorPayload {
+  id: string;
+  createdAt?: string;
+  sortAt?: string;
 }
 
-function decodeCursor(cursor?: string | null) {
-  return cursor ? Buffer.from(cursor, "base64").toString("utf8") : undefined;
+function encodeCursor(value: ItemsCursorPayload) {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+}
+
+function decodeCursor(cursor?: string | null): ItemsCursorPayload | undefined {
+  if (!cursor) {
+    return undefined;
+  }
+  try {
+    const decoded = Buffer.from(cursor, "base64").toString("utf8");
+    if (!decoded) {
+      return undefined;
+    }
+    if (decoded.startsWith("{")) {
+      const parsed = JSON.parse(decoded) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return undefined;
+      }
+      const payload = parsed as Record<string, unknown>;
+      const id = typeof payload.id === "string" ? payload.id : undefined;
+      if (!id) {
+        return undefined;
+      }
+      return {
+        id,
+        createdAt: typeof payload.createdAt === "string" ? payload.createdAt : undefined,
+        sortAt: typeof payload.sortAt === "string" ? payload.sortAt : undefined
+      };
+    }
+
+    return { id: decoded };
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeProcessedResult(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (typeof parsed === "string") {
+        return normalizeProcessedResult(parsed);
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+  return value;
+}
+
+function normalizeIsoDateTimeString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = parseDateTime(trimmed);
+  return parsed ? parsed.toISOString() : null;
+}
+
+function resolvePublishedAtFromProcessedResult(result: unknown): string | null {
+  const normalized = normalizeProcessedResult(result);
+  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) {
+    return null;
+  }
+  const candidate = (normalized as { published_at?: unknown }).published_at;
+  return normalizeIsoDateTimeString(candidate);
+}
+
+function resolvePublishedAtFromRawPayload(payload?: Record<string, unknown>): string | null {
+  if (!payload) {
+    return null;
+  }
+  const candidate =
+    (payload as { publishedAt?: unknown }).publishedAt ??
+    (payload as { published_at?: unknown }).published_at;
+  return normalizeIsoDateTimeString(candidate);
 }
 
 @Resolver(() => ItemModel)
@@ -61,17 +152,22 @@ export class ItemsResolver {
       throw new BadRequestException("Unauthenticated");
     }
 
-    const cursorId = decodeCursor(args.after);
+    const cursor = decodeCursor(args.after);
     const { items, hasNextPage, totalCount } = await this.itemsService.listWithCursor(
       requester.orgId,
       args.first,
-      cursorId,
+      cursor,
       args.search,
-      args.filters
+      args.filters,
+      args.orderBy
     );
 
     const edges: ItemEdge[] = items.map((item) => ({
-      cursor: encodeCursor(item.id),
+      cursor: encodeCursor(
+        args.orderBy === ItemsOrderBy.PublishedDesc
+          ? { id: item.id, sortAt: item.sortAt?.toISOString?.() }
+          : { id: item.id, createdAt: item.createdAt.toISOString() }
+      ),
       node: this.toItemModel(item)
     }));
 
@@ -196,11 +292,29 @@ export class ItemsResolver {
     };
   }
 
+  @ResolveField(() => String, { nullable: true })
+  async publishedAt(
+    @Parent() item: ItemModel,
+    @Loader(ProcessedItemLoader) processedLoader: DataLoader<string, ProcessedItemDoc | null>,
+    @Loader(RawItemLoader) rawLoader: DataLoader<string, RawItemDoc | null>
+  ): Promise<string | null> {
+    const processed = await processedLoader.load(item.metaId);
+    const publishedFromProcessed = processed
+      ? resolvePublishedAtFromProcessedResult(processed.result)
+      : null;
+    if (publishedFromProcessed) {
+      return publishedFromProcessed;
+    }
+
+    const raw = await rawLoader.load(item.metaId);
+    return raw ? resolvePublishedAtFromRawPayload(raw.payload) : null;
+  }
+
   @ResolveField(() => RawItemModelGraph, { nullable: true })
   async raw(
     @Parent() item: ItemModel,
-    @Loader(RawItemLoader) rawLoader: DataLoader<string, RawItemModelGraph | null>
-  ) {
+    @Loader(RawItemLoader) rawLoader: DataLoader<string, RawItemDoc | null>
+  ): Promise<RawItemModelGraph | null> {
     const raw = await rawLoader.load(item.metaId);
     if (!raw) {
       return null;
@@ -214,15 +328,16 @@ export class ItemsResolver {
   @ResolveField(() => ProcessedItemModelGraph, { nullable: true })
   async processed(
     @Parent() item: ItemModel,
-    @Loader(ProcessedItemLoader) processedLoader: DataLoader<string, ProcessedItemModelGraph | null>
-  ) {
+    @Loader(ProcessedItemLoader) processedLoader: DataLoader<string, ProcessedItemDoc | null>
+  ): Promise<ProcessedItemModelGraph | null> {
     const processed = await processedLoader.load(item.metaId);
     if (!processed) {
       return null;
     }
+    const normalizedResult = normalizeProcessedResult(processed.result);
     return {
       ...processed,
-      result: processed.result ? JSON.stringify(processed.result) : undefined
+      result: normalizedResult === null ? undefined : JSON.stringify(normalizedResult)
     };
   }
 
@@ -239,6 +354,7 @@ export class ItemsResolver {
       metaId: meta.id,
       title: meta.name,
       status: meta.status,
+      ingestedAt: meta.createdAt,
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
       orgId: meta.orgId,

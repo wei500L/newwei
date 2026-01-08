@@ -28,8 +28,8 @@ interface WarMapEvent {
   lat: number;
   lng: number;
   severity: WarEventSeverity;
-  value: number;
-  updatedAt?: string;
+  derivedScore?: number;
+  value?: number;
 }
 
 interface GeoJsonGeometry {
@@ -75,7 +75,6 @@ interface WarMapScatterPoint {
   name: string;
   value: [number, number, number];
   severity: WarEventSeverity;
-  updatedAt?: string;
   itemStyle?: {
     color: string;
   };
@@ -222,15 +221,17 @@ export function WarMap() {
           Math.abs(lng) <= 180
         );
       })
-      .map((event) => ({
-        name: event.name,
-        value: [event.lng, event.lat, event.value],
-        severity: event.severity,
-        updatedAt: event.updatedAt,
-        itemStyle: {
-          color: resolveSeverityColor(event.severity)
-        }
-      }));
+      .map((event) => {
+        const score = typeof event.derivedScore === "number" ? event.derivedScore : (event.value ?? 0);
+        return {
+          name: event.name,
+          value: [event.lng, event.lat, score],
+          severity: event.severity,
+          itemStyle: {
+            color: resolveSeverityColor(event.severity)
+          }
+        };
+      });
     const useLargeMode = scatterData.length >= 500;
 
     const areaColor = "rgba(148, 163, 184, 0.25)";
@@ -251,13 +252,11 @@ export function WarMap() {
           if (!payload) return "";
           const data = payload.data;
           if (!data) return payload.name ?? "";
-          const intensity = data.value?.[2] ?? 0;
+          const derivedScore = data.value?.[2] ?? 0;
           const severityColor = data.itemStyle?.color ?? "#fff";
-          const updatedStr = data.updatedAt
-            ? formatDateTime(data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
-            : eventsQuery.data?.updatedAt
-              ? formatDateTime(eventsQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
-              : "N/A";
+          const updatedStr = eventsQuery.data?.updatedAt
+            ? formatDateTime(eventsQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
+            : "N/A";
 
           return `
             <div style="min-width: 200px;">
@@ -267,8 +266,8 @@ export function WarMap() {
                 <span style="color: ${severityColor}; font-weight: 600;">${severityLabel(data.severity)}</span>
               </div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: #94a3b8;">Intensity:</span>
-                <span>${intensity}</span>
+                <span style="color: #94a3b8;">Derived score:</span>
+                <span>${derivedScore}</span>
               </div>
               <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
                 Updated: ${updatedStr}

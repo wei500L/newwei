@@ -1,11 +1,13 @@
-query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput) {
-  items(first: $first, after: $after, search: $search, filters: $filters) {
+query Items($first: Int!, $after: String, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy) {
+  items(first: $first, after: $after, search: $search, filters: $filters, orderBy: $orderBy) {
     edges {
       node {
         id
         title
         status
         createdAt
+        ingestedAt
+        publishedAt
         processed {
           result
           tags
@@ -60,6 +62,8 @@ query Item($id: String!) {
     status
     createdAt
     updatedAt
+    ingestedAt
+    publishedAt
     meta {
       id
       externalId

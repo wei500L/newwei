@@ -2,6 +2,7 @@
 
 import { Card, Empty } from "antd";
 import type { EChartsOption } from "echarts";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
@@ -13,15 +14,18 @@ export interface CandlestickCardProps {
   title: string;
   group?: EconomicSeriesGroup;
   height?: number;
+  meta?: ReactNode;
 }
 
 export function CandlestickCard({
   title,
   group,
   height = 320,
+  meta,
 }: CandlestickCardProps) {
   const { t } = useTranslation();
   const candlestick = getCandlestickSeries(group);
+  const unitSuffix = group?.unit ? ` ${group.unit}` : "";
   const option: EChartsOption = {
     title: {
       text: title,
@@ -40,6 +44,9 @@ export function CandlestickCard({
     },
     yAxis: {
       scale: true,
+      axisLabel: {
+        formatter: (value: unknown) => `${value}${unitSuffix}`,
+      },
     },
     series: [
       {
@@ -52,6 +59,7 @@ export function CandlestickCard({
 
   return (
     <Card className="content-card">
+      {meta ? <div className="mb-2 flex justify-end">{meta}</div> : null}
       {candlestick.length > 0 ? (
         <DashboardChart option={option} height={height} />
       ) : (

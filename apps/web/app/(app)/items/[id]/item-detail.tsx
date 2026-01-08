@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { ChartEmptyState } from '@/components/chart-empty-state';
 import { useItemQuery } from '@/graphql/generated';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
+import { formatRatioAsPercent } from '@/lib/metrics-format';
 
 interface ItemDetailProps {
   itemId: string;
@@ -100,7 +101,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const keyPoints = toStringList(processedResult?.key_points);
   const topics = toStringList(processedResult?.topics);
   const entities = toEntityNames(processedResult?.entities);
-  const publishedAt = toString(processedResult?.published_at);
+  const publishedAt = toString(item?.publishedAt) ?? toString(processedResult?.published_at);
   const source =
     toString(processedResult?.source) ?? toString(rawPayload?.sourceName) ?? toString(item?.raw?.source);
   const author = toString(processedResult?.author);
@@ -108,6 +109,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const location = toString(processedResult?.location);
   const category = toString(processedResult?.category);
   const qualityScore = typeof processedResult?.quality_score === 'number' ? processedResult.quality_score : undefined;
+  const qualityScoreLabel = formatRatioAsPercent(qualityScore, locale);
   const originalUrl = toString(rawPayload?.url);
   const cleanedMarkdown = toString(processedResult?.cleaned_markdown);
   const hasSummaryContent = Boolean(summary) || keyPoints.length > 0;
@@ -125,10 +127,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const entitiesDisplay = entities.slice(0, 5);
   const extraTopics = Math.max(topics.length - topicsDisplay.length, 0);
   const extraEntities = Math.max(entities.length - entitiesDisplay.length, 0);
+  const duplicateScore = formatRatioAsPercent(duplicateSimilarity, locale);
   const duplicateScoreLabel =
-    typeof duplicateSimilarity === 'number'
-      ? `${Math.round(duplicateSimilarity * 100)}%`
-      : t('common.notAvailable');
+    duplicateScore ?? t('common.notAvailable');
   const llmModel = llm?.model ?? t('common.notAvailable');
   const llmLatency =
     typeof llm?.latencyMs === 'number'
@@ -204,7 +205,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     );
   }
 
-  const formattedIngestedAt = formatDateTime(item.createdAt, locale, {
+  const ingestedAt = item.ingestedAt ?? item.createdAt;
+  const formattedIngestedAt = formatDateTime(ingestedAt, locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -257,16 +259,45 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         </Typography.Title>
         <Space size={[8, 8]} wrap>
           <Tag color="blue">{item.status}</Tag>
-          {qualityScore !== undefined ? (
-            <Tag color="purple">{t('items.detail.fields.quality', { defaultValue: 'Quality' })}: {Math.round(qualityScore * 100)}%</Tag>
+          {qualityScoreLabel ? (
+            <Tooltip
+              title={
+                <div className="text-xs">
+                  <div>
+                    {t('items.metrics.quality.tooltip', {
+                      defaultValue: 'Quality score from LLM cleaning stage (0–1, shown as %).'
+                    })}
+                  </div>
+                  {llm?.model ? <div>Model: {llm.model}</div> : null}
+                  {llm?.promptVersion ? <div>Prompt: {llm.promptVersion}</div> : null}
+                </div>
+              }
+            >
+              <Tag color="purple">
+                {t('items.detail.fields.quality', { defaultValue: 'Quality' })}: {qualityScoreLabel}
+              </Tag>
+            </Tooltip>
           ) : null}
-          {typeof duplicateSimilarity === 'number' ? (
-            <Tag color="gold">
-              {duplicateOf
-                ? t('items.duplicate.duplicate', { defaultValue: 'Duplicate' })
-                : t('items.duplicate.similarity', { defaultValue: 'Similarity' })}{' '}
-              {Math.round(duplicateSimilarity * 100)}%
-            </Tag>
+          {duplicateScore ? (
+            <Tooltip
+              title={
+                <div className="text-xs">
+                  <div>
+                    {t('items.metrics.duplicate.tooltip', {
+                      defaultValue: 'Duplicate similarity from dedup stage (0–1, shown as %).'
+                    })}
+                  </div>
+                  {duplicateOf ? <div>Duplicate of: {duplicateOf}</div> : null}
+                </div>
+              }
+            >
+              <Tag color="gold">
+                {duplicateOf
+                  ? t('items.duplicate.duplicate', { defaultValue: 'Duplicate' })
+                  : t('items.duplicate.similarity', { defaultValue: 'Similarity' })}{' '}
+                {duplicateScore}
+              </Tag>
+            </Tooltip>
           ) : null}
         </Space>
         <Space size={[8, 0]} wrap align="center">
@@ -275,11 +306,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               {source}
             </Typography.Text>
           ) : null}
-          {publishedAt ? (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {publishedLabel}: {formattedPublishedAt}
-            </Typography.Text>
-          ) : null}
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {publishedLabel}: {formattedPublishedAt}
+          </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {ingestedLabel}: {formattedIngestedAt}
           </Typography.Text>

@@ -1205,12 +1205,17 @@ export class NewsPipelineService {
 
     try {
       const created = await this.writeProcessedItemFromPayload(payload.document);
+      const publishedAt = this.parseDate(payload.document.result?.published_at ?? null);
       await this.prisma.itemMeta.updateMany({
         where: {
           id: payload.document.itemMetaId,
           status: { not: ItemStatus.Duplicate },
         },
-        data: { status: ItemStatus.Completed },
+        data: {
+          status: ItemStatus.Completed,
+          publishedAt: publishedAt ?? null,
+          ...(publishedAt ? { sortAt: publishedAt } : {})
+        },
       });
       await this.prisma.mongoOutbox.delete({ where: { id: outboxId } });
       this.clearOutboxRetry(outboxId);

@@ -1,10 +1,12 @@
 "use client";
 
-import { Alert, Button, Card, Col, Empty, Row, Skeleton, Typography } from "antd";
+import { Col, Row, Skeleton, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useTranslation } from "react-i18next";
 
-import { DashboardChart } from "@/components/echart";
+import { ChartDataMeta } from "@/components/chart-data-meta";
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DashboardChartCard } from "@/components/dashboard-chart-card";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import type { EconomicSeriesMap } from "@/hooks/useEconomicData";
 import { useEconomicData } from "@/hooks/useEconomicData";
@@ -20,11 +22,20 @@ import {
 export default function EconomicLongPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed } = useEconomicData({
+  const { loading, error, seriesMap, refetch, hasData, latestTimestamp, isDelayed, chartState } = useEconomicData({
     category: "economic-long",
     pollInterval: 300_000,
   });
   const isInitialLoading = loading && !hasData;
+  const isBackfilling = loading && hasData;
+  const chartMeta = (
+    <ChartDataMeta
+      state={chartState}
+      latestTimestamp={latestTimestamp}
+      locale={locale}
+      onRefresh={() => refetch()}
+    />
+  );
 
   const gdpSeries = getSeriesField(
     seriesMap,
@@ -85,22 +96,30 @@ export default function EconomicLongPage() {
         <TimeRangeControls />
       </div>
       {error ? (
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          action={
-            <Button size="small" onClick={() => refetch()}>
-              {t("common.retry")}
-            </Button>
-          }
+        <ChartEmptyState
+          presentation="banner"
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          description={error.message}
+          actionLabel={t("common.retry")}
+          onAction={() => refetch()}
         />
       ) : null}
-      {isDelayed ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
+      {isBackfilling ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="backfilling"
+          title={t("dashboard.dataBackfilling.title", { defaultValue: "Updating data" })}
+          description={t("dashboard.dataBackfilling.description", {
+            defaultValue: "Data is being backfilled. Values may update shortly."
+          })}
+        />
+      ) : null}
+      {!isBackfilling && isDelayed ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="delayed"
+          title={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
           description={
             latestTimestamp
               ? t("dashboard.dataDelayed.latest", {
@@ -115,10 +134,15 @@ export default function EconomicLongPage() {
                 })
               : t("dashboard.dataDelayed.missing", { defaultValue: "Latest data time unavailable." })
           }
+          actionLabel={t("common.refresh")}
+          onAction={() => refetch()}
         />
       ) : null}
       {!loading && !hasData ? (
-        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
+        <ChartEmptyState
+          title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+          description={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+        />
       ) : null}
       {isInitialLoading ? (
         <Skeleton active paragraph={{ rows: 8 }} />
@@ -126,33 +150,36 @@ export default function EconomicLongPage() {
         <>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={8}>
-              <Card title={t("dashboard.economicLong.cards.gdp3y")} className="content-card">
-                {gdpBarData.length > 0 ? (
-                  <DashboardChart option={gdpOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicLong.empty.gdp")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicLong.cards.gdp3y")}
+                className="content-card"
+                extra={chartMeta}
+                option={gdpBarData.length > 0 ? gdpOption : null}
+                height={320}
+                emptyDescription={t("dashboard.economicLong.empty.gdp")}
+              />
             </Col>
             <Col xs={24} lg={16}>
-              <Card title={t("dashboard.economicLong.cards.yieldCurve")} className="content-card">
-                {yieldTimelineOption ? (
-                  <DashboardChart option={yieldTimelineOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicLong.empty.yieldCurve")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicLong.cards.yieldCurve")}
+                className="content-card"
+                extra={chartMeta}
+                option={yieldTimelineOption}
+                height={320}
+                emptyDescription={t("dashboard.economicLong.empty.yieldCurve")}
+              />
             </Col>
           </Row>
           <Row gutter={[16, 16]}>
             <Col span={24}>
-              <Card title={t("dashboard.economicLong.cards.reserves")} className="content-card">
-                {reserveSeries.length > 0 ? (
-                  <DashboardChart option={reserveOption} height={320} />
-                ) : (
-                  <Empty description={t("dashboard.economicLong.empty.reserves")} />
-                )}
-              </Card>
+              <DashboardChartCard
+                title={t("dashboard.economicLong.cards.reserves")}
+                className="content-card"
+                extra={chartMeta}
+                option={reserveSeries.length > 0 ? reserveOption : null}
+                height={320}
+                emptyDescription={t("dashboard.economicLong.empty.reserves")}
+              />
             </Col>
           </Row>
         </>

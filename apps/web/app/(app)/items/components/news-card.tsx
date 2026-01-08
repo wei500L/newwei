@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatRatioAsPercent } from "@/lib/metrics-format";
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -51,11 +52,7 @@ export function NewsCard({ item }: NewsCardProps) {
   const openLabel = t("items.detail.openItem", { defaultValue: "Open item" });
   const qualityLabel = t("items.columns.quality", { defaultValue: "Quality" });
   const readOriginalLabel = t("items.detail.readOriginal", { defaultValue: "Read original" });
-  const hasPublished = Boolean(item.publishedAt);
-  const displayPublished = item.publishedAt ?? item.createdAt;
   const displayIngested = item.ingestedAt ?? item.createdAt;
-  const showIngested =
-    Boolean(item.ingestedAt) && hasPublished && item.ingestedAt !== item.publishedAt;
   const topicTags = Array.from(new Set(item.topics ?? []))
     .map((label) => label.trim())
     .filter((label) => label.length > 0)
@@ -73,12 +70,8 @@ export function NewsCard({ item }: NewsCardProps) {
   const allTags = [...topicTags, ...entityTags];
   const displayTags = allTags.slice(0, 5);
   const extraTagCount = Math.max(allTags.length - displayTags.length, 0);
-  const qualityScore =
-    typeof item.qualityScore === "number" ? Math.round(item.qualityScore * 100) : null;
-  const duplicateScore =
-    typeof item.duplicateSimilarity === "number"
-      ? Math.round(item.duplicateSimilarity * 100)
-      : null;
+  const qualityScore = formatRatioAsPercent(item.qualityScore, locale);
+  const duplicateScore = formatRatioAsPercent(item.duplicateSimilarity, locale);
   const duplicateLabel = item.duplicateOf
     ? t("items.duplicate.duplicate", { defaultValue: "Duplicate" })
     : t("items.duplicate.similarity", { defaultValue: "Similarity" });
@@ -128,11 +121,40 @@ export function NewsCard({ item }: NewsCardProps) {
     >
       <Space direction="vertical" size="middle" style={{ width: "100%", flex: 1 }}>
         <Space wrap>
-          {qualityScore !== null ? <Tag color="blue">{qualityLabel} {qualityScore}%</Tag> : null}
-          {duplicateScore !== null ? (
-            <Tag color="gold">
-              {duplicateLabel} {duplicateScore}%
-            </Tag>
+          {qualityScore ? (
+            <Tooltip
+              title={
+                <div className="text-xs">
+                  <div>
+                    {t("items.metrics.quality.tooltip", {
+                      defaultValue: "Quality score from LLM cleaning stage (0–1, shown as %)."
+                    })}
+                  </div>
+                  {item.llm?.model ? <div>Model: {item.llm.model}</div> : null}
+                  {item.llm?.promptVersion ? <div>Prompt: {item.llm.promptVersion}</div> : null}
+                </div>
+              }
+            >
+              <Tag color="blue">{qualityLabel} {qualityScore}</Tag>
+            </Tooltip>
+          ) : null}
+          {duplicateScore ? (
+            <Tooltip
+              title={
+                <div className="text-xs">
+                  <div>
+                    {t("items.metrics.duplicate.tooltip", {
+                      defaultValue: "Duplicate similarity from dedup stage (0–1, shown as %)."
+                    })}
+                  </div>
+                  {item.duplicateOf ? <div>Duplicate of: {item.duplicateOf}</div> : null}
+                </div>
+              }
+            >
+              <Tag color="gold">
+                {duplicateLabel} {duplicateScore}
+              </Tag>
+            </Tooltip>
           ) : null}
           {displayTags.map((tag) => (
             <Tag key={`${tag.color}-${tag.label}`} color={tag.color} className="text-xs">
@@ -145,23 +167,23 @@ export function NewsCard({ item }: NewsCardProps) {
         </Space>
         <Space size={[8, 0]} wrap align="center">
           <Text type="secondary" style={{ fontSize: "12px" }}>
-            {(hasPublished ? publishedLabel : ingestedLabel)}:{" "}
-            {formatDateTime(hasPublished ? displayPublished : displayIngested, locale, {
+            {publishedLabel}:{" "}
+            {item.publishedAt
+              ? formatDateTime(item.publishedAt, locale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                  timeZoneName: "short"
+                })
+              : t("common.notAvailable")}
+          </Text>
+          <Text type="secondary" style={{ fontSize: "12px" }}>
+            {ingestedLabel}:{" "}
+            {formatDateTime(displayIngested, locale, {
               dateStyle: "medium",
               timeStyle: "short",
               timeZoneName: "short"
             })}
           </Text>
-          {showIngested ? (
-            <Text type="secondary" style={{ fontSize: "12px" }}>
-              {ingestedLabel}:{" "}
-              {formatDateTime(displayIngested, locale, {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZoneName: "short"
-              })}
-            </Text>
-          ) : null}
           {item.source ? (
             <Text type="secondary" style={{ fontSize: "12px" }}>
               {item.source}

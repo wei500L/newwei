@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Skeleton } from "antd";
+import { Button, Skeleton } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
@@ -29,6 +29,8 @@ interface FinancialCandlestickResponse {
   symbol: string;
   interval: string;
   points: FinancialCandlePoint[];
+  unit?: string | null;
+  sourceFields?: Record<string, string>;
   updatedAt?: string;
 }
 
@@ -49,7 +51,11 @@ const yieldToMain = () =>
 const buildCsv = async (rows: Array<Array<string | number | null | undefined>>) => {
   const lines: string[] = [];
   for (let i = 0; i < rows.length; i += 1) {
-    lines.push(rows[i].map(escapeCsvValue).join(","));
+    const row = rows[i];
+    if (!row) {
+      continue;
+    }
+    lines.push(row.map(escapeCsvValue).join(","));
     if (i > 0 && i % 500 === 0) {
       await yieldToMain();
     }
@@ -133,6 +139,8 @@ export function FinancialCandlestick() {
       point.low,
       point.high
     ]);
+    const unitSuffix = data.unit ? ` ${data.unit}` : "";
+    const lastClose = data.points.at(-1)?.close;
 
     return {
       backgroundColor: "transparent",
@@ -170,7 +178,11 @@ export function FinancialCandlestick() {
         scale: true,
         splitArea: { show: false },
         splitLine: { show: false }, // No grid
-        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily },
+        axisLabel: {
+          color: theme.colors.foreground,
+          fontFamily: theme.fontFamily,
+          formatter: (value: unknown) => `${value}${unitSuffix}`
+        },
         axisLine: { show: false }
       },
       dataZoom: [
@@ -193,28 +205,31 @@ export function FinancialCandlestick() {
             shadowBlur: 5,
             shadowColor: "inherit" // Glow effect
           },
-          markLine: {
-             symbol: ['none', 'none'],
-             data: [
-                {
-                   yAxis: ohlc[ohlc.length - 1][1], // Last Close
-                   label: {
-                      show: true,
-                      position: 'end',
-                      backgroundColor: theme.colors.primary,
-                      color: '#ffffff',
-                      padding: [2, 4],
-                      borderRadius: 2,
-                      formatter: '{c}'
-                   },
-                   lineStyle: {
-                      color: theme.colors.primary,
-                      type: 'dashed',
-                      opacity: 0.5
-                   }
+          markLine:
+            typeof lastClose === "number"
+              ? {
+                  symbol: ["none", "none"],
+                  data: [
+                    {
+                      yAxis: lastClose,
+                      label: {
+                        show: true,
+                        position: "end",
+                        backgroundColor: theme.colors.primary,
+                        color: "#ffffff",
+                        padding: [2, 4],
+                        borderRadius: 2,
+                        formatter: unitSuffix ? `{c}${unitSuffix}` : "{c}"
+                      },
+                      lineStyle: {
+                        color: theme.colors.primary,
+                        type: "dashed",
+                        opacity: 0.5
+                      }
+                    }
+                  ]
                 }
-             ]
-          }
+              : undefined
         },
       ],
     };
@@ -268,17 +283,13 @@ export function FinancialCandlestick() {
 
   if (isError && !data) {
     return (
-      <div className="flex h-[350px] items-center justify-center">
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={error instanceof Error ? error.message : undefined}
-          action={
-            <Button size="small" onClick={() => refetch()}>
-              {t("common.retry")}
-            </Button>
-          }
+      <div className="h-[350px]">
+        <ChartEmptyState
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          description={error instanceof Error ? error.message : emptyMessage}
+          actionLabel={t("common.retry")}
+          onAction={() => refetch()}
         />
       </div>
     );
