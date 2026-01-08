@@ -112,8 +112,11 @@ export function AppProviders({ children }: PropsWithChildren) {
           token: {
             colorPrimary: "var(--primary)",
             colorBgBase: "var(--background)",
+            colorBgLayout: "var(--background)",
             colorBgContainer: "#ffffff",
             colorTextBase: "var(--foreground)",
+            colorTextSecondary: "var(--secondary-foreground)",
+            colorFillSecondary: "var(--secondary)",
             borderRadius: 10,
             fontFamily:
               "var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",

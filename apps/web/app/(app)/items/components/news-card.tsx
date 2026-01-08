@@ -1,8 +1,11 @@
 "use client";
 
-import { Button, Card, Space, Tag, Typography } from "antd";
+import { InfoCircleOutlined } from "@ant-design/icons";
+import { Button, Card, Space, Tag, Tooltip, Typography } from "antd";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const { Text, Title, Paragraph } = Typography;
@@ -41,18 +44,7 @@ export function NewsCard({ item }: NewsCardProps) {
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const locale = resolveLocale(i18n.language);
-
-  const sentimentColor = (sentiment?: string) => {
-    switch (sentiment?.toLowerCase()) {
-      case "positive":
-        return "green";
-      case "negative":
-        return "red";
-      case "neutral":
-      default:
-        return "default";
-    }
-  };
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   const publishedLabel = t("items.time.published", { defaultValue: "Published" });
   const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
@@ -62,15 +54,22 @@ export function NewsCard({ item }: NewsCardProps) {
   const hasPublished = Boolean(item.publishedAt);
   const displayPublished = item.publishedAt ?? item.createdAt;
   const displayIngested = item.ingestedAt ?? item.createdAt;
-  const showIngested = Boolean(item.ingestedAt) && (!hasPublished || item.ingestedAt !== item.publishedAt);
-  const topicTags = [...(item.topics ?? []), ...(item.tags ?? [])].map((label) => ({
-    label,
-    color: "default" as const
-  }));
-  const entityTags = (item.entities ?? []).map((label) => ({
-    label,
-    color: "purple" as const
-  }));
+  const showIngested =
+    Boolean(item.ingestedAt) && hasPublished && item.ingestedAt !== item.publishedAt;
+  const topicTags = Array.from(new Set(item.topics ?? []))
+    .map((label) => label.trim())
+    .filter((label) => label.length > 0)
+    .map((label) => ({
+      label,
+      color: "blue" as const
+    }));
+  const entityTags = Array.from(new Set(item.entities ?? []))
+    .map((label) => label.trim())
+    .filter((label) => label.length > 0)
+    .map((label) => ({
+      label,
+      color: "purple" as const
+    }));
   const allTags = [...topicTags, ...entityTags];
   const displayTags = allTags.slice(0, 5);
   const extraTagCount = Math.max(allTags.length - displayTags.length, 0);
@@ -94,12 +93,15 @@ export function NewsCard({ item }: NewsCardProps) {
     llmBits.push(`$${item.llm.costUsd.toFixed(4)}`);
   }
   const llmSummary = llmBits.length > 0 ? llmBits.join(" | ") : null;
-  const showFooter = Boolean(item.source || item.url || item.id || llmSummary);
+  const showFooter = Boolean(item.url || item.id || llmSummary);
   const summaryText = item.summary?.trim();
-  const trimmedSummary =
-    summaryText && summaryText.length > 300
-      ? `${summaryText.slice(0, 300)}…`
+  const canExpandSummary = Boolean(summaryText && summaryText.length > 300);
+  const displaySummary =
+    summaryText && !summaryExpanded && canExpandSummary
+      ? `${summaryText.slice(0, 300).trimEnd()}…`
       : summaryText;
+  const expandLabel = t("common.expand", { defaultValue: "Show more" });
+  const collapseLabel = t("common.collapse", { defaultValue: "Show less" });
 
   return (
     <Card
@@ -126,11 +128,6 @@ export function NewsCard({ item }: NewsCardProps) {
     >
       <Space direction="vertical" size="middle" style={{ width: "100%", flex: 1 }}>
         <Space wrap>
-          {item.sentiment ? (
-            <Tag color={sentimentColor(item.sentiment)}>
-              {t(`items.sentiment.${item.sentiment}`, { defaultValue: item.sentiment })}
-            </Tag>
-          ) : null}
           {qualityScore !== null ? <Tag color="blue">{qualityLabel} {qualityScore}%</Tag> : null}
           {duplicateScore !== null ? (
             <Tag color="gold">
@@ -146,26 +143,15 @@ export function NewsCard({ item }: NewsCardProps) {
             <Tag className="text-xs">+{extraTagCount}</Tag>
           ) : null}
         </Space>
-        <Space direction="vertical" size={0}>
-          {hasPublished ? (
-            <Text type="secondary" style={{ fontSize: "12px" }}>
-              {publishedLabel}:{" "}
-              {formatDateTime(displayPublished, locale, {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZoneName: "short"
-              })}
-            </Text>
-          ) : (
-            <Text type="secondary" style={{ fontSize: "12px" }}>
-              {ingestedLabel}:{" "}
-              {formatDateTime(displayIngested, locale, {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZoneName: "short"
-              })}
-            </Text>
-          )}
+        <Space size={[8, 0]} wrap align="center">
+          <Text type="secondary" style={{ fontSize: "12px" }}>
+            {(hasPublished ? publishedLabel : ingestedLabel)}:{" "}
+            {formatDateTime(hasPublished ? displayPublished : displayIngested, locale, {
+              dateStyle: "medium",
+              timeStyle: "short",
+              timeZoneName: "short"
+            })}
+          </Text>
           {showIngested ? (
             <Text type="secondary" style={{ fontSize: "12px" }}>
               {ingestedLabel}:{" "}
@@ -176,32 +162,67 @@ export function NewsCard({ item }: NewsCardProps) {
               })}
             </Text>
           ) : null}
+          {item.source ? (
+            <Text type="secondary" style={{ fontSize: "12px" }}>
+              {item.source}
+            </Text>
+          ) : null}
         </Space>
-        <Title level={4} ellipsis={{ rows: 2 }}>
+        <Title level={4} ellipsis={{ rows: 2 }} style={{ margin: 0 }}>
           {item.title}
         </Title>
-        {trimmedSummary && (
-          <Paragraph
-            ellipsis={{ rows: 3 }}
-            type="secondary"
-            style={{ lineHeight: 1.75, marginBottom: 0 }}
-          >
-            {trimmedSummary}
-          </Paragraph>
+        {displaySummary && (
+          <div>
+            <Paragraph
+              ellipsis={summaryExpanded ? false : { rows: 3 }}
+              type="secondary"
+              style={{ lineHeight: 1.75, marginBottom: 0 }}
+            >
+              {displaySummary}
+            </Paragraph>
+            {canExpandSummary ? (
+              <Button
+                type="link"
+                size="small"
+                className="px-0"
+                onClick={() => setSummaryExpanded((expanded) => !expanded)}
+              >
+                {summaryExpanded ? collapseLabel : expandLabel}
+              </Button>
+            ) : null}
+          </div>
         )}
       </Space>
       {showFooter && (
         <div style={{ marginTop: "auto", paddingTop: "12px" }}>
           <Space size="small" wrap>
-            {item.source ? (
-              <Text type="secondary" style={{ fontSize: "12px" }}>
-                {item.source}
-              </Text>
-            ) : null}
             {llmSummary ? (
-              <Text type="secondary" style={{ fontSize: "12px" }}>
-                {llmSummary}
-              </Text>
+              <Tooltip
+                title={
+                  <div className="text-xs">
+                    {item.llm?.model ? <div>Model: {item.llm.model}</div> : null}
+                    {item.llm?.promptVersion ? (
+                      <div>Prompt: {item.llm.promptVersion}</div>
+                    ) : null}
+                    {typeof item.llm?.totalTokens === "number" ? (
+                      <div>Tokens: {Math.round(item.llm.totalTokens)}</div>
+                    ) : null}
+                    {typeof item.llm?.latencyMs === "number" ? (
+                      <div>Latency: {Math.round(item.llm.latencyMs)} ms</div>
+                    ) : null}
+                    {typeof item.llm?.costUsd === "number" ? (
+                      <div>Cost: ${item.llm.costUsd.toFixed(4)}</div>
+                    ) : null}
+                  </div>
+                }
+              >
+                <Space size={4}>
+                  <InfoCircleOutlined className="text-slate-400" />
+                  <Text type="secondary" style={{ fontSize: "12px" }}>
+                    LLM: {llmSummary}
+                  </Text>
+                </Space>
+              </Tooltip>
             ) : null}
             {item.url ? (
               <Typography.Link href={item.url} target="_blank" rel="noreferrer">

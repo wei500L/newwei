@@ -1,20 +1,47 @@
 "use client";
 
-import { Empty } from "antd";
+import { Button, Empty, Typography } from "antd";
+import type { ReactNode } from "react";
 
 import { useChartTheme } from "@/hooks/use-chart-theme";
 
+type ChartEmptyStateVariant = "empty" | "error";
+
 interface ChartEmptyStateProps {
+  title?: string;
   description: string;
+  variant?: ChartEmptyStateVariant;
+  actionLabel?: string;
+  onAction?: () => void;
+  action?: ReactNode;
   className?: string;
 }
 
-export function ChartEmptyState({ description, className }: ChartEmptyStateProps) {
+export function ChartEmptyState({
+  title,
+  description,
+  variant = "empty",
+  actionLabel,
+  onAction,
+  action,
+  className,
+}: ChartEmptyStateProps) {
   const { colors } = useChartTheme();
   const stroke = colors?.border ?? "rgba(148, 163, 184, 0.4)";
   const fill = colors?.secondary ?? "rgba(148, 163, 184, 0.08)";
-  const accent = colors?.accent ?? "rgba(56, 189, 248, 0.6)";
+  const accent =
+    variant === "error"
+      ? "rgba(220, 38, 38, 0.55)"
+      : colors?.accent ?? "rgba(56, 189, 248, 0.6)";
   const textColor = colors?.foreground ?? "#94a3b8";
+  const titleColor = variant === "error" ? "#dc2626" : "#0f172a";
+  const actionNode =
+    action ??
+    (onAction && actionLabel ? (
+      <Button size="small" type="primary" onClick={onAction}>
+        {actionLabel}
+      </Button>
+    ) : null);
 
   return (
     <div className={`flex h-full items-center justify-center ${className ?? ""}`}>
@@ -41,7 +68,19 @@ export function ChartEmptyState({ description, className }: ChartEmptyStateProps
             <circle cx="84" cy="44" r="6" fill={accent} opacity="0.7" />
           </svg>
         }
-        description={<span className="text-xs" style={{ color: textColor }}>{description}</span>}
+        description={
+          <div className="flex flex-col items-center gap-1">
+            {title ? (
+              <Typography.Text strong style={{ color: titleColor }}>
+                {title}
+              </Typography.Text>
+            ) : null}
+            <span className="text-xs" style={{ color: textColor }}>
+              {description}
+            </span>
+            {actionNode ? <div className="pt-1">{actionNode}</div> : null}
+          </div>
+        }
       />
     </div>
   );

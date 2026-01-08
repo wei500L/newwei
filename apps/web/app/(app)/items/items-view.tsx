@@ -1,23 +1,23 @@
 "use client";
 
 import { SearchOutlined } from "@ant-design/icons";
+import { gql, useQuery } from "@apollo/client";
 import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import { gql, useQuery } from "@apollo/client";
-import dayjs from "@/lib/dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSession } from "next-auth/react";
 
-import type { ItemsQuery } from "@/graphql/generated";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import type { ItemsQuery } from "@/graphql/generated";
+import dayjs from "@/lib/dayjs";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
-import { FacetedSearch, FilterState } from "./components/faceted-search";
+import { FacetedSearch, type FilterState } from "./components/faceted-search";
 import { FinancialCard } from "./components/financial-card";
 import { NewsCard } from "./components/news-card";
-import { ItemViewType, ViewSwitcher } from "./components/view-switcher";
+import { type ItemViewType, ViewSwitcher } from "./components/view-switcher";
 
 function parsePositiveInt(value: string | null, fallback: number) {
   if (!value) {
@@ -45,6 +45,14 @@ function normalizeFilterList(
     return undefined;
   }
   return Array.from(new Set(normalized));
+}
+
+function toNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 interface ItemsDateRangeInput {
@@ -200,7 +208,6 @@ interface ParsedItem {
   ticker?: string;
   region?: string;
   location?: string;
-  tags?: string[];
   topics?: string[];
   entities?: string[];
   qualityScore?: number;
@@ -391,13 +398,13 @@ export function ItemsView({
       let parsedRaw = {};
       let parsedProcessed = {};
       try {
-        parsedRaw = JSON.parse(edge.node.raw?.payload || '{}');
-      } catch (e) {
+        parsedRaw = JSON.parse(edge.node.raw?.payload || "{}");
+      } catch {
         // console.warn("Failed to parse raw payload", e);
       }
       try {
-        parsedProcessed = JSON.parse(edge.node.processed?.result || '{}');
-      } catch (e) {
+        parsedProcessed = JSON.parse(edge.node.processed?.result || "{}");
+      } catch {
         // console.warn("Failed to parse processed result", e);
       }
 
@@ -405,7 +412,7 @@ export function ItemsView({
         published_at?: string | null;
         source?: string | null;
         topics?: string[] | null;
-        entities?: Array<{ name?: string | null } | string> | null;
+        entities?: ({ name?: string | null } | string)[] | null;
         quality_score?: number | null;
         location?: string | null;
       };
@@ -416,25 +423,34 @@ export function ItemsView({
         sourceName?: string | null;
       };
       const publishedAt =
-        processed.published_at ??
-        raw.publishedAt ??
-        raw.published_at ??
+        toNonEmptyString(processed.published_at) ??
+        toNonEmptyString(raw.publishedAt) ??
+        toNonEmptyString(raw.published_at) ??
         undefined;
       const ingestedAt = dayjs(edge.node.createdAt).toISOString();
+      const topics = Array.isArray(processed.topics)
+        ? Array.from(
+            new Set(
+              processed.topics
+                .map((topic) => (typeof topic === "string" ? topic.trim() : ""))
+                .filter((topic) => topic.length > 0)
+            )
+          )
+        : [];
       const entities = Array.isArray(processed.entities)
         ? Array.from(
             new Set(
               processed.entities
                 .map((entity) => {
                   if (typeof entity === "string") {
-                    return entity;
+                    return entity.trim();
                   }
                   if (entity && typeof entity.name === "string") {
-                    return entity.name;
+                    return entity.name.trim();
                   }
-                  return null;
+                  return "";
                 })
-                .filter((name): name is string => Boolean(name))
+                .filter((name) => name.length > 0)
             )
           )
         : [];
@@ -444,12 +460,11 @@ export function ItemsView({
         ...parsedRaw,
         ...parsedProcessed,
         name: edge.node.title,
-        tags: edge.node.processed?.tags || [],
         publishedAt,
         ingestedAt,
         createdAt: ingestedAt,
-        source: processed.source ?? raw.sourceName ?? undefined,
-        topics: Array.isArray(processed.topics) ? processed.topics : [],
+        source: toNonEmptyString(processed.source) ?? toNonEmptyString(raw.sourceName) ?? undefined,
+        topics,
         entities,
         qualityScore:
           typeof processed.quality_score === "number" ? processed.quality_score : undefined,
@@ -459,7 +474,7 @@ export function ItemsView({
             : undefined,
         duplicateOf: edge.node.processed?.duplicateOf ?? null,
         llm: edge.node.processed?.llm ?? undefined,
-        url: raw.url ?? undefined,
+        url: toNonEmptyString(raw.url) ?? undefined,
         location: processed.location ?? undefined
       } as ParsedItem;
     });
@@ -484,8 +499,6 @@ export function ItemsView({
     const fallback = pageData
       .flatMap((item) => [
         ...(item.topics ?? []),
-        ...(item.tags ?? []),
-        ...(item.entities ?? [])
       ])
       .filter((value): value is string => Boolean(value));
     return Array.from(new Set(fallback));
@@ -575,7 +588,7 @@ export function ItemsView({
       render: (value: string | undefined) => value ?? t("common.notAvailable")
     },
     {
-      title: t("items.columns.published", { defaultValue: "Published" }),
+      title: t("items.columns.time", { defaultValue: "Time" }),
       dataIndex: "publishedAt",
       key: "publishedAt",
       render: (_: string | undefined, record) => {

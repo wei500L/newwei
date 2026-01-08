@@ -1,19 +1,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Skeleton } from "antd";
+import { Skeleton } from "antd";
 import type { EChartsOption } from "echarts";
 import * as echarts from "echarts/core";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { DashboardChart } from "@/components/echart";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DashboardChart } from "@/components/echart";
+import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 enum WarEventSeverity {
@@ -346,17 +346,18 @@ export function WarMap() {
 
   if (geoQuery.isError && !geoQuery.data) {
     return (
-      <div className="flex h-[400px] items-center justify-center">
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={geoErrorMessage}
-          action={
-            <Button size="small" onClick={() => geoQuery.refetch()}>
-              {t("common.retry")}
-            </Button>
+      <div className="h-[400px]">
+        <ChartEmptyState
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          description={
+            geoErrorMessage ??
+            t("common.serviceUnavailable", {
+              defaultValue: "Service is unavailable. Please try again."
+            })
           }
+          actionLabel={t("common.retry")}
+          onAction={() => geoQuery.refetch()}
         />
       </div>
     );
@@ -395,17 +396,18 @@ export function WarMap() {
         </div>
       ) : null}
       {!eventsQuery.isLoading && eventsQuery.isError ? (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Alert
-            type="error"
-            showIcon
-            message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-            description={eventsErrorMessage}
-            action={
-              <Button size="small" onClick={() => eventsQuery.refetch()}>
-                {t("common.retry")}
-              </Button>
+        <div className="absolute inset-0">
+          <ChartEmptyState
+            variant="error"
+            title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+            description={
+              eventsErrorMessage ??
+              t("common.serviceUnavailable", {
+                defaultValue: "Service is unavailable. Please try again."
+              })
             }
+            actionLabel={t("common.retry")}
+            onAction={() => eventsQuery.refetch()}
           />
         </div>
       ) : null}

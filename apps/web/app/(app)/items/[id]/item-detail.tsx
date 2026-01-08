@@ -1,13 +1,14 @@
 'use client';
 
-import { Card, Col, Collapse, Descriptions, List, Row, Skeleton, Space, Tag, Typography } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
+import { Card, Col, Collapse, Descriptions, List, Row, Skeleton, Space, Tag, Tooltip, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ChartEmptyState } from '@/components/chart-empty-state';
 import { useItemQuery } from '@/graphql/generated';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
-import { ChartEmptyState } from '@/components/chart-empty-state';
 
 interface ItemDetailProps {
   itemId: string;
@@ -69,6 +70,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     variables: { id: itemId }
   });
   const [showDelayHint, setShowDelayHint] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   useEffect(() => {
     if (!loading) {
@@ -98,7 +100,6 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const keyPoints = toStringList(processedResult?.key_points);
   const topics = toStringList(processedResult?.topics);
   const entities = toEntityNames(processedResult?.entities);
-  const tags = toStringList(item?.processed?.tags);
   const publishedAt = toString(processedResult?.published_at);
   const source =
     toString(processedResult?.source) ?? toString(rawPayload?.sourceName) ?? toString(item?.raw?.source);
@@ -111,18 +112,19 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const cleanedMarkdown = toString(processedResult?.cleaned_markdown);
   const hasSummaryContent = Boolean(summary) || keyPoints.length > 0;
   const summaryText = summary?.trim();
-  const trimmedSummary =
-    summaryText && summaryText.length > 300
-      ? `${summaryText.slice(0, 300)}…`
+  const canExpandSummary = Boolean(summaryText && summaryText.length > 300);
+  const displaySummary =
+    summaryText && !summaryExpanded && canExpandSummary
+      ? `${summaryText.slice(0, 300).trimEnd()}…`
       : summaryText;
+  const expandLabel = t('common.expand', { defaultValue: 'Show more' });
+  const collapseLabel = t('common.collapse', { defaultValue: 'Show less' });
   const keyPointsDisplay = keyPoints.slice(0, 8);
   const extraKeyPoints = Math.max(keyPoints.length - keyPointsDisplay.length, 0);
   const topicsDisplay = topics.slice(0, 5);
   const entitiesDisplay = entities.slice(0, 5);
-  const tagsDisplay = tags.slice(0, 5);
   const extraTopics = Math.max(topics.length - topicsDisplay.length, 0);
   const extraEntities = Math.max(entities.length - entitiesDisplay.length, 0);
-  const extraTags = Math.max(tags.length - tagsDisplay.length, 0);
   const duplicateScoreLabel =
     typeof duplicateSimilarity === 'number'
       ? `${Math.round(duplicateSimilarity * 100)}%`
@@ -140,6 +142,21 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     typeof llm?.totalTokens === 'number'
       ? Math.round(llm.totalTokens).toString()
       : t('common.notAvailable');
+  const llmSummary = useMemo(() => {
+    const bits: string[] = [];
+    if (llm?.model) {
+      bits.push(llm.model);
+    }
+    if (typeof llm?.latencyMs === 'number') {
+      bits.push(`${Math.round(llm.latencyMs)} ms`);
+    }
+    if (typeof llm?.costUsd === 'number') {
+      bits.push(`$${llm.costUsd.toFixed(4)}`);
+    }
+    return bits.length > 0 ? bits.join(' | ') : null;
+  }, [llm?.costUsd, llm?.latencyMs, llm?.model]);
+  const publishedLabel = t('items.time.published', { defaultValue: 'Published' });
+  const ingestedLabel = t('items.time.ingested', { defaultValue: 'Ingested' });
 
   const formattedPublishedAt = publishedAt
     ? formatDateTime(publishedAt, locale, {
@@ -151,6 +168,10 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         timeZoneName: 'short'
       })
     : t('common.notAvailable');
+
+  useEffect(() => {
+    setSummaryExpanded(false);
+  }, [itemId]);
 
   if (loading && !item) {
     return (
@@ -182,6 +203,15 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       />
     );
   }
+
+  const formattedIngestedAt = formatDateTime(item.createdAt, locale, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  });
 
   const payloadPanels = [
     processedResult
@@ -222,19 +252,64 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   return (
     <div className="flex flex-col gap-6">
       <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
+        <Typography.Title level={4} ellipsis={{ rows: 2 }} style={{ margin: 0 }}>
           {item.title}
         </Typography.Title>
         <Space size={[8, 8]} wrap>
           <Tag color="blue">{item.status}</Tag>
-          {source ? <Tag color="geekblue">{source}</Tag> : null}
           {qualityScore !== undefined ? (
             <Tag color="purple">{t('items.detail.fields.quality', { defaultValue: 'Quality' })}: {Math.round(qualityScore * 100)}%</Tag>
           ) : null}
+          {typeof duplicateSimilarity === 'number' ? (
+            <Tag color="gold">
+              {duplicateOf
+                ? t('items.duplicate.duplicate', { defaultValue: 'Duplicate' })
+                : t('items.duplicate.similarity', { defaultValue: 'Similarity' })}{' '}
+              {Math.round(duplicateSimilarity * 100)}%
+            </Tag>
+          ) : null}
         </Space>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {t('items.detail.fields.publishedAt', { defaultValue: 'Published at' })}: {formattedPublishedAt}
-        </Typography.Text>
+        <Space size={[8, 0]} wrap align="center">
+          {source ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {source}
+            </Typography.Text>
+          ) : null}
+          {publishedAt ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {publishedLabel}: {formattedPublishedAt}
+            </Typography.Text>
+          ) : null}
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {ingestedLabel}: {formattedIngestedAt}
+          </Typography.Text>
+          {llmSummary ? (
+            <Tooltip
+              title={
+                <div className="text-xs">
+                  {llm?.model ? <div>Model: {llm.model}</div> : null}
+                  {llm?.promptVersion ? <div>Prompt: {llm.promptVersion}</div> : null}
+                  {typeof llm?.totalTokens === 'number' ? (
+                    <div>Tokens: {Math.round(llm.totalTokens)}</div>
+                  ) : null}
+                  {typeof llm?.latencyMs === 'number' ? (
+                    <div>Latency: {Math.round(llm.latencyMs)} ms</div>
+                  ) : null}
+                  {typeof llm?.costUsd === 'number' ? (
+                    <div>Cost: ${llm.costUsd.toFixed(4)}</div>
+                  ) : null}
+                </div>
+              }
+            >
+              <Space size={4}>
+                <InfoCircleOutlined className="text-slate-400" />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  LLM: {llmSummary}
+                </Typography.Text>
+              </Space>
+            </Tooltip>
+          ) : null}
+        </Space>
         {originalUrl ? (
           <Typography.Link href={originalUrl} target="_blank" rel="noreferrer">
             {t('items.detail.readOriginal', { defaultValue: 'Read original' })}
@@ -245,10 +320,23 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       <Card className="content-card" title={t('items.detail.summaryTitle', { defaultValue: 'Summary' })}>
         {hasSummaryContent ? (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            {trimmedSummary ? (
-              <Typography.Paragraph style={{ lineHeight: 1.8, marginBottom: 0 }}>
-                {trimmedSummary}
-              </Typography.Paragraph>
+            {displaySummary ? (
+              <div>
+                <Typography.Paragraph
+                  ellipsis={summaryExpanded ? false : { rows: 3 }}
+                  style={{ lineHeight: 1.8, marginBottom: 0 }}
+                >
+                  {displaySummary}
+                </Typography.Paragraph>
+                {canExpandSummary ? (
+                  <Typography.Link
+                    onClick={() => setSummaryExpanded((expanded) => !expanded)}
+                    style={{ fontSize: 12 }}
+                  >
+                    {summaryExpanded ? collapseLabel : expandLabel}
+                  </Typography.Link>
+                ) : null}
+              </div>
             ) : (
               <Typography.Text type="secondary">
                 {t('items.detail.summaryEmpty', { defaultValue: 'No summary available.' })}
@@ -387,10 +475,10 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         </Col>
         <Col xs={24} lg={12}>
           <Card className="content-card" title={t('items.detail.contextTitle', { defaultValue: 'Context' })}>
-            {topics.length === 0 && entities.length === 0 && tags.length === 0 ? (
+            {topics.length === 0 && entities.length === 0 ? (
               <ChartEmptyState
                 className="h-auto py-6"
-                description={t('items.detail.contextEmpty', { defaultValue: 'No tags or entities.' })}
+                description={t('items.detail.contextEmpty', { defaultValue: 'No topics or entities.' })}
               />
             ) : (
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -412,14 +500,6 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                       </Tag>
                     ))}
                     {extraEntities > 0 ? <Tag>+{extraEntities}</Tag> : null}
-                  </Space>
-                ) : null}
-                {tagsDisplay.length > 0 ? (
-                  <Space wrap size={[6, 6]}>
-                    {tagsDisplay.map((tag) => (
-                      <Tag key={`tag-${tag}`}>{tag}</Tag>
-                    ))}
-                    {extraTags > 0 ? <Tag>+{extraTags}</Tag> : null}
                   </Space>
                 ) : null}
               </Space>
