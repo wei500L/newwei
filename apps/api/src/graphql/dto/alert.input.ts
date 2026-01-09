@@ -7,7 +7,7 @@ import {
   AlertSeverity,
   AlertStatus
 } from "@prisma/client";
-import { IsArray, IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from "class-validator";
+import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from "class-validator";
 import GraphQLJSONScalar from "graphql-type-json";
 
 @InputType()
@@ -25,9 +25,41 @@ export class AlertChannelInput {
   @IsString()
   target!: string;
 
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
   @Field(() => GraphQLJSONScalar, { nullable: true })
   @IsOptional()
-  config?: Record<string, unknown>;
+  config?: Record<string, unknown> | null;
+}
+
+@InputType()
+export class UpdateAlertChannelInput {
+  @Field()
+  @IsString()
+  id!: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  name?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  target?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @Field(() => GraphQLJSONScalar, { nullable: true })
+  @IsOptional()
+  config?: Record<string, unknown> | null;
 }
 
 @InputType()
@@ -119,4 +151,10 @@ export class UpdateAlertEventStatusInput {
   @Field(() => AlertEventStatus)
   @IsEnum(AlertEventStatus)
   status!: AlertEventStatus;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }

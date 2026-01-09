@@ -1,20 +1,26 @@
 'use client';
 
-import { Badge, Button, Card, Col, List, Row, Skeleton, Space, Tag, Typography } from "antd";
+import { Badge, Button, Card, Col, DatePicker, Form, Input, List, Modal, Row, Select, Skeleton, Space, Switch, Tag, Typography, message, Popconfirm } from "antd";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from 'react-i18next';
+import { useSession } from "next-auth/react";
 
 import {
   NotificationType,
   useAlertEventsQuery,
   useAlertRulesQuery,
   useAlertChannelsQuery,
+  useCreateAlertChannelMutation,
+  useDeleteAlertChannelMutation,
   useMarkAllNotificationsReadMutation,
   useMarkNotificationReadMutation,
   useNotificationsQuery,
+  useUpdateAlertChannelMutation,
+  useUpsertAlertRuleMutation,
   useUnreadNotificationCountQuery
 } from '@/graphql/generated';
+import dayjs, { toUtcIsoString } from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 import { resolveNotificationLink } from '@/lib/notifications';
 
@@ -120,6 +126,81 @@ const toStringValue = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const parseDateValue = (value: unknown) => {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return null;
+  }
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed : null;
+};
+
+const toRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+};
+
+const extractMuteUntil = (config: Record<string, unknown> | null) => {
+  const raw =
+    config?.muteUntil ??
+    config?.mutedUntil ??
+    config?.silenceUntil ??
+    config?.silencedUntil ??
+    config?.mute_until ??
+    config?.muted_until ??
+    null;
+  return parseDateValue(raw);
+};
+
+const extractNotifyIntervalSeconds = (config: Record<string, unknown> | null) => {
+  const rawSeconds =
+    config?.notifyIntervalSeconds ??
+    config?.notifyIntervalSec ??
+    config?.notify_interval_seconds ??
+    config?.notify_interval_sec ??
+    config?.frequencySeconds ??
+    config?.frequencySec ??
+    config?.frequency_seconds ??
+    config?.frequency_sec ??
+    config?.minIntervalSeconds ??
+    config?.minIntervalSec ??
+    config?.min_interval_seconds ??
+    config?.min_interval_sec ??
+    null;
+  const rawMinutes =
+    config?.notifyIntervalMinutes ??
+    config?.notifyIntervalMin ??
+    config?.notify_interval_minutes ??
+    config?.notify_interval_min ??
+    config?.frequencyMinutes ??
+    config?.frequencyMin ??
+    config?.frequency_minutes ??
+    config?.frequency_min ??
+    null;
+
+  const parsePositive = (value: unknown) => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value > 0 ? value : null;
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value.trim());
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    return null;
+  };
+
+  const seconds = parsePositive(rawSeconds);
+  if (seconds !== null) {
+    return Math.max(1, Math.trunc(seconds));
+  }
+  const minutes = parsePositive(rawMinutes);
+  if (minutes !== null) {
+    return Math.max(1, Math.trunc(minutes * 60));
+  }
+  return null;
+};
+
 const extractAlertEventId = (payload: Record<string, unknown> | null | undefined): string | undefined => {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
@@ -140,6 +221,9 @@ export default function SubscriptionsPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
+  const { data: session } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canManageAlerts = permissions.includes("alerts.manage");
   const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useAlertRulesQuery();
   const { data: channelsData, loading: channelsLoading, refetch: refetchChannels } = useAlertChannelsQuery();
   const { data: eventsData, loading: eventsLoading, refetch: refetchEvents } = useAlertEventsQuery({
@@ -153,6 +237,19 @@ export default function SubscriptionsPage() {
   const { data: unreadData, refetch: refetchUnread } = useUnreadNotificationCountQuery();
   const [markRead] = useMarkNotificationReadMutation();
   const [markAll] = useMarkAllNotificationsReadMutation();
+  const [createChannel, { loading: creatingChannel }] = useCreateAlertChannelMutation();
+  const [updateChannel, { loading: updatingChannel }] = useUpdateAlertChannelMutation();
+  const [deleteChannel, { loading: deletingChannel }] = useDeleteAlertChannelMutation();
+  const [upsertRule, { loading: updatingRule }] = useUpsertAlertRuleMutation();
+
+  const [channelModalOpen, setChannelModalOpen] = useState(false);
+  const [channelModalMode, setChannelModalMode] = useState<"create" | "edit">("create");
+  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [channelForm] = Form.useForm();
+
+  const [ruleModalOpen, setRuleModalOpen] = useState(false);
+  const [activeRuleId, setActiveRuleId] = useState<string | null>(null);
+  const [ruleForm] = Form.useForm();
 
   const unreadCount = unreadData?.unreadNotificationCount ?? 0;
   const rules = rulesData?.alertRules ?? [];
@@ -195,6 +292,57 @@ export default function SubscriptionsPage() {
       return bTime - aTime;
     });
   }, [notifications]);
+
+  const activeChannel = useMemo(
+    () => channels.find((channel) => channel.id === activeChannelId) ?? null,
+    [activeChannelId, channels]
+  );
+  const activeRule = useMemo(() => rules.find((rule) => rule.id === activeRuleId) ?? null, [activeRuleId, rules]);
+
+  useEffect(() => {
+    if (!channelModalOpen) {
+      return;
+    }
+    if (channelModalMode === "create") {
+      channelForm.setFieldsValue({
+        name: "",
+        type: "webhook",
+        target: "",
+        isActive: true,
+        muteUntil: null,
+        notifyIntervalSeconds: null
+      });
+      return;
+    }
+    if (!activeChannel) {
+      return;
+    }
+    const config = toRecord(activeChannel.config);
+    channelForm.setFieldsValue({
+      id: activeChannel.id,
+      name: activeChannel.name,
+      type: activeChannel.type,
+      target: activeChannel.target,
+      isActive: activeChannel.isActive ?? true,
+      muteUntil: extractMuteUntil(config),
+      notifyIntervalSeconds: extractNotifyIntervalSeconds(config)
+    });
+  }, [activeChannel, channelForm, channelModalMode, channelModalOpen]);
+
+  useEffect(() => {
+    if (!ruleModalOpen) {
+      return;
+    }
+    if (!activeRule) {
+      return;
+    }
+    const metadata = toRecord(activeRule.metadata);
+    ruleForm.setFieldsValue({
+      channelIds: (activeRule.channels ?? []).map((channel) => channel.id),
+      muteUntil: parseDateValue(metadata?.muteUntil),
+      notifyAllMembers: metadata?.notifyAllMembers === true || metadata?.notifyAllUsers === true
+    });
+  }, [activeRule, ruleForm, ruleModalOpen]);
 
   const resolveAlertEvent = (notification: (typeof notifications)[number]) => {
     const payload = notification.data ?? null;
@@ -278,6 +426,137 @@ export default function SubscriptionsPage() {
     );
   };
 
+  const handleSubmitChannel = async (values: any) => {
+    const config = toRecord(activeChannel?.config) ?? {};
+    const nextConfig: Record<string, unknown> = { ...config };
+    if (values.muteUntil) {
+      nextConfig.muteUntil = toUtcIsoString(values.muteUntil);
+    } else {
+      delete nextConfig.muteUntil;
+      delete nextConfig.mutedUntil;
+      delete nextConfig.silenceUntil;
+      delete nextConfig.silencedUntil;
+    }
+    if (typeof values.notifyIntervalSeconds === "number" && values.notifyIntervalSeconds > 0) {
+      nextConfig.notifyIntervalSeconds = Math.max(1, Math.trunc(values.notifyIntervalSeconds));
+    } else {
+      delete nextConfig.notifyIntervalSeconds;
+      delete nextConfig.notifyIntervalSec;
+      delete nextConfig.notifyIntervalMinutes;
+    }
+
+    try {
+      if (channelModalMode === "create") {
+        await createChannel({
+          variables: {
+            input: {
+              type: values.type,
+              name: values.name,
+              target: values.target,
+              isActive: values.isActive ?? true,
+              config: nextConfig
+            }
+          }
+        });
+        message.success(t("subscriptions.channelCreated", { defaultValue: "Channel created" }));
+      } else {
+        await updateChannel({
+          variables: {
+            input: {
+              id: values.id,
+              name: values.name,
+              target: values.target,
+              isActive: values.isActive,
+              config: nextConfig
+            }
+          }
+        });
+        message.success(t("subscriptions.channelUpdated", { defaultValue: "Channel updated" }));
+      }
+      setChannelModalOpen(false);
+      await refetchChannels();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("common.error.unexpected"));
+    }
+  };
+
+  const handleDeleteChannel = async (channelId: string) => {
+    try {
+      await deleteChannel({ variables: { channelId } });
+      message.success(t("subscriptions.channelDeleted", { defaultValue: "Channel deleted" }));
+      await refetchChannels();
+      await refetchRules();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("common.error.unexpected"));
+    }
+  };
+
+  const handleToggleChannelActive = async (channelId: string, isActive: boolean) => {
+    try {
+      await updateChannel({
+        variables: {
+          input: {
+            id: channelId,
+            isActive
+          }
+        }
+      });
+      await refetchChannels();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("common.error.unexpected"));
+    }
+  };
+
+  const handleSubmitRuleSubscriptions = async (values: any) => {
+    if (!activeRule) {
+      return;
+    }
+    const existingMetadata = toRecord(activeRule.metadata) ?? {};
+    const nextMetadata: Record<string, unknown> = { ...existingMetadata };
+    if (values.muteUntil) {
+      nextMetadata.muteUntil = toUtcIsoString(values.muteUntil);
+    } else {
+      delete nextMetadata.muteUntil;
+      delete nextMetadata.mutedUntil;
+    }
+    if (values.notifyAllMembers) {
+      nextMetadata.notifyAllMembers = true;
+    } else {
+      delete nextMetadata.notifyAllMembers;
+      delete nextMetadata.notifyAllUsers;
+    }
+
+    try {
+      await upsertRule({
+        variables: {
+          input: {
+            id: activeRule.id,
+            name: activeRule.name,
+            description: activeRule.description ?? undefined,
+            severity: activeRule.severity,
+            status: activeRule.status,
+            metricProvider: activeRule.metricProvider,
+            metricSlug: activeRule.metricSlug,
+            operator: activeRule.operator,
+            thresholdValue: typeof activeRule.thresholdValue === "number" ? activeRule.thresholdValue : undefined,
+            thresholdLower: typeof activeRule.thresholdLower === "number" ? activeRule.thresholdLower : undefined,
+            thresholdUpper: typeof activeRule.thresholdUpper === "number" ? activeRule.thresholdUpper : undefined,
+            changeWindowMin: typeof activeRule.changeWindowMin === "number" ? activeRule.changeWindowMin : undefined,
+            cooldownSeconds: activeRule.cooldownSeconds,
+            checkIntervalSec: activeRule.checkIntervalSec,
+            channelIds: Array.isArray(values.channelIds) ? values.channelIds : [],
+            metadata: nextMetadata
+          }
+        }
+      });
+      message.success(t("subscriptions.ruleUpdated", { defaultValue: "Rule subscriptions updated" }));
+      setRuleModalOpen(false);
+      await Promise.all([refetchRules(), refetchChannels(), refetchEvents(), refetchNotifications()]);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("common.error.unexpected"));
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <Space direction="vertical" size={2}>
@@ -322,6 +601,9 @@ export default function SubscriptionsPage() {
               })
             }}
             renderItem={(rule) => {
+              const ruleMetadata = toRecord(rule.metadata);
+              const ruleMuteUntil = parseDateValue(ruleMetadata?.muteUntil);
+              const isRuleMuted = !!ruleMuteUntil && ruleMuteUntil.isAfter(dayjs());
               const ruleNotifications = notificationsByRuleId.get(rule.id) ?? [];
               const latestNotification = ruleNotifications[0];
               const latestNotificationTime = latestNotification
@@ -343,6 +625,14 @@ export default function SubscriptionsPage() {
                         <Typography.Text strong>{rule.name}</Typography.Text>
                         <Tag>{rule.severity}</Tag>
                         <Tag>{rule.operator}</Tag>
+                        {isRuleMuted ? (
+                          <Tag color="gold">
+                            {t("subscriptions.mutedUntil", {
+                              defaultValue: "Muted until {{time}}",
+                              time: ruleMuteUntil?.format("YYYY-MM-DD HH:mm")
+                            })}
+                          </Tag>
+                        ) : null}
                       </Space>
                     }
                     description={
@@ -363,6 +653,12 @@ export default function SubscriptionsPage() {
                           {t("alerts.center.detail.window", {
                             defaultValue: "Window {{minutes}} min",
                             minutes: rule.changeWindowMin ?? t("common.notAvailable")
+                          })}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          {t("subscriptions.ruleCooldown", {
+                            defaultValue: "Cooldown {{seconds}}s",
+                            seconds: rule.cooldownSeconds
                           })}
                         </Typography.Text>
                         <Space size={[4, 4]} wrap>
@@ -386,6 +682,17 @@ export default function SubscriptionsPage() {
                       </Space>
                     }
                   />
+                  {canManageAlerts ? (
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setActiveRuleId(rule.id);
+                        setRuleModalOpen(true);
+                      }}
+                    >
+                      {t("subscriptions.manageRule", { defaultValue: "Manage" })}
+                    </Button>
+                  ) : null}
                 </List.Item>
               );
             }}
@@ -405,9 +712,24 @@ export default function SubscriptionsPage() {
               </Space>
             }
             extra={
-              <Button size="small" onClick={() => void refetchChannels()}>
-                {t('common.refresh')}
-              </Button>
+              <Space size="small">
+                <Button size="small" onClick={() => void refetchChannels()}>
+                  {t('common.refresh')}
+                </Button>
+                {canManageAlerts ? (
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => {
+                      setChannelModalMode("create");
+                      setActiveChannelId(null);
+                      setChannelModalOpen(true);
+                    }}
+                  >
+                    {t("subscriptions.addChannel", { defaultValue: "Add channel" })}
+                  </Button>
+                ) : null}
+              </Space>
             }
           >
             {isChannelsInitialLoading ? (
@@ -421,15 +743,85 @@ export default function SubscriptionsPage() {
                   })
                 }}
                 renderItem={(channel) => (
-                  <List.Item>
+                  <List.Item
+                    actions={
+                      canManageAlerts
+                        ? [
+                            <Switch
+                              key="active"
+                              size="small"
+                              checked={channel.isActive ?? true}
+                              onChange={(checked) => void handleToggleChannelActive(channel.id, checked)}
+                            />,
+                            <Button
+                              key="edit"
+                              size="small"
+                              onClick={() => {
+                                setChannelModalMode("edit");
+                                setActiveChannelId(channel.id);
+                                setChannelModalOpen(true);
+                              }}
+                            >
+                              {t("common.edit")}
+                            </Button>,
+                            <Popconfirm
+                              key="delete"
+                              title={t("subscriptions.deleteChannelConfirm", {
+                                defaultValue: "Delete this channel?"
+                              })}
+                              onConfirm={() => void handleDeleteChannel(channel.id)}
+                            >
+                              <Button size="small" danger loading={deletingChannel}>
+                                {t("common.delete")}
+                              </Button>
+                            </Popconfirm>
+                          ]
+                        : undefined
+                    }
+                  >
                     <List.Item.Meta
                       title={
                         <Space size="small">
                           <Typography.Text strong>{channel.name}</Typography.Text>
                           <Tag>{channel.type}</Tag>
+                          {channel.isActive ? (
+                            <Tag color="green">{t("common.enabled")}</Tag>
+                          ) : (
+                            <Tag color="default">{t("common.disabled")}</Tag>
+                          )}
                         </Space>
                       }
-                      description={<Typography.Text type="secondary">{channel.target}</Typography.Text>}
+                      description={
+                        (() => {
+                          const config = toRecord(channel.config);
+                          const muteUntil = extractMuteUntil(config);
+                          const isMuted = !!muteUntil && muteUntil.isAfter(dayjs());
+                          const intervalSeconds = extractNotifyIntervalSeconds(config);
+                          const intervalLabel = intervalSeconds
+                            ? t("subscriptions.notifyEvery", {
+                                defaultValue: "Every {{minutes}} min",
+                                minutes: Math.max(1, Math.round(intervalSeconds / 60))
+                              })
+                            : t("subscriptions.notifyImmediate", { defaultValue: "Immediate" });
+                          return (
+                            <Space direction="vertical" size={0}>
+                              <Typography.Text type="secondary">{channel.target}</Typography.Text>
+                              <Typography.Text type="secondary">
+                                {t("subscriptions.channelFrequency", {
+                                  defaultValue: "Frequency: {{frequency}}",
+                                  frequency: intervalLabel
+                                })}
+                                {isMuted
+                                  ? ` · ${t("subscriptions.mutedUntil", {
+                                      defaultValue: "Muted until {{time}}",
+                                      time: muteUntil?.format("YYYY-MM-DD HH:mm")
+                                    })}`
+                                  : ""}
+                              </Typography.Text>
+                            </Space>
+                          );
+                        })()
+                      }
                     />
                   </List.Item>
                 )}
@@ -548,6 +940,121 @@ export default function SubscriptionsPage() {
           </Card>
         </Col>
       </Row>
+
+      <Modal
+        title={
+          channelModalMode === "create"
+            ? t("subscriptions.addChannel", { defaultValue: "Add channel" })
+            : t("subscriptions.editChannel", { defaultValue: "Edit channel" })
+        }
+        open={channelModalOpen}
+        onCancel={() => setChannelModalOpen(false)}
+        okText={t("common.save")}
+        onOk={() => channelForm.submit()}
+        confirmLoading={creatingChannel || updatingChannel}
+        destroyOnClose
+      >
+        <Form form={channelForm} layout="vertical" onFinish={handleSubmitChannel}>
+          <Form.Item name="id" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label={t("alerts.channels.fields.name", { defaultValue: "Name" })}
+            name="name"
+            rules={[{ required: true }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label={t("alerts.channels.fields.type", { defaultValue: "Type" })}
+            name="type"
+            rules={[{ required: true }]}
+          >
+            <Select
+              disabled={channelModalMode === "edit"}
+              options={[
+                { label: t("alerts.channels.types.webhook", { defaultValue: "Webhook" }), value: "webhook" },
+                { label: t("alerts.channels.types.email", { defaultValue: "Email" }), value: "email" }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t("alerts.channels.fields.target", { defaultValue: "Target" })}
+            name="target"
+            rules={[{ required: true }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label={t("subscriptions.channelActive", { defaultValue: "Enabled" })}
+            name="isActive"
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label={t("subscriptions.channelMuteUntil", { defaultValue: "Mute until" })}
+            name="muteUntil"
+          >
+            <DatePicker showTime allowClear style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            label={t("subscriptions.channelNotifyInterval", { defaultValue: "Notification frequency" })}
+            name="notifyIntervalSeconds"
+          >
+            <Select
+              allowClear
+              placeholder={t("subscriptions.notifyImmediate", { defaultValue: "Immediate" })}
+              options={[
+                { value: 300, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 5 }) },
+                { value: 900, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 15 }) },
+                { value: 3600, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 60 }) },
+                { value: 21600, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 360 }) },
+                { value: 86400, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 1440 }) }
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={t("subscriptions.manageRule", { defaultValue: "Manage rule" })}
+        open={ruleModalOpen}
+        onCancel={() => setRuleModalOpen(false)}
+        okText={t("common.save")}
+        onOk={() => ruleForm.submit()}
+        confirmLoading={updatingRule}
+        destroyOnClose
+      >
+        <Form form={ruleForm} layout="vertical" onFinish={handleSubmitRuleSubscriptions}>
+          <Form.Item
+            label={t("alerts.config.fields.channels", { defaultValue: "Channels" })}
+            name="channelIds"
+          >
+            <Select
+              mode="multiple"
+              placeholder={t("alerts.config.fields.channelsPlaceholder", { defaultValue: "Select channels" })}
+              options={channels.map((channel) => ({
+                label: `${channel.name}${channel.isActive ? "" : ` (${t("common.disabled")})`}`,
+                value: channel.id
+              }))}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t("alerts.config.fields.muteUntil", { defaultValue: "Mute until" })}
+            name="muteUntil"
+          >
+            <DatePicker showTime allowClear style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            label={t("alerts.config.fields.notifyAllMembers", { defaultValue: "Notify all members" })}
+            name="notifyAllMembers"
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

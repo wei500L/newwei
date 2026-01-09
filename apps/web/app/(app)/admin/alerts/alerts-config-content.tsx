@@ -171,6 +171,12 @@ export function AlertsConfigContent() {
                           })}
                         </Typography.Text>
                         <Typography.Text type="secondary">
+                          {t("alerts.center.detail.window", {
+                            defaultValue: "Window {{minutes}} min",
+                            minutes: rule.changeWindowMin ?? t("common.notAvailable")
+                          })}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
                           {t("alerts.rules.threshold", {
                             defaultValue: "Threshold {{threshold}}",
                             threshold: buildThresholdSummary(

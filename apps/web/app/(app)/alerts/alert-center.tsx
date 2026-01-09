@@ -1,7 +1,7 @@
 "use client";
 
 import { gql, useApolloClient, useMutation } from "@apollo/client";
-import { Alert, Badge, Button, Card, Col, List, Modal, Row, Space, Spin, Tag, Typography } from "antd";
+import { Alert, Badge, Button, Card, Col, Input, List, Modal, Row, Space, Spin, Tag, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -14,6 +14,7 @@ import {
   AlertEventsStreamDocument,
   useAlertEventReplayLazyQuery,
   useAlertEventsQuery,
+  useAlertRuleTuningSuggestionQuery,
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -57,6 +58,7 @@ type UpdateAlertEventStatusVariables = {
   input: {
     eventId: string;
     status: string;
+    note?: string | null;
   };
 };
 
@@ -174,6 +176,7 @@ export function AlertCenterContent() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageAlerts = permissions.includes("alerts.manage");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [feedbackNote, setFeedbackNote] = useState<string>("");
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -185,6 +188,18 @@ export function AlertCenterContent() {
 
   const { data: eventsData, loading: eventsLoading, refetch: refetchEvents } = useAlertEventsQuery({
     variables: { limit: 20 }
+  });
+  const selectedRuleId = selectedEventId
+    ? eventsData?.alertEvents?.find((event) => event.id === selectedEventId)?.ruleId ?? null
+    : null;
+  const {
+    data: tuningData,
+    loading: tuningLoading,
+    error: tuningError,
+    refetch: refetchTuning
+  } = useAlertRuleTuningSuggestionQuery({
+    variables: { ruleId: selectedRuleId ?? "", windowDays: 30 },
+    skip: !canManageAlerts || !selectedRuleId
   });
   const [updateEventStatus, { loading: updatingStatus }] = useMutation<
     UpdateAlertEventStatusData,
@@ -238,6 +253,23 @@ export function AlertCenterContent() {
     () => events.find((event) => event.id === selectedEventId) ?? null,
     [events, selectedEventId]
   );
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      setFeedbackNote("");
+      return;
+    }
+    const context =
+      selectedEvent.context && typeof selectedEvent.context === "object"
+        ? (selectedEvent.context as Record<string, unknown>)
+        : null;
+    const feedback =
+      context?.feedback && typeof context.feedback === "object" && !Array.isArray(context.feedback)
+        ? (context.feedback as Record<string, unknown>)
+        : null;
+    const note = typeof feedback?.note === "string" ? feedback.note : "";
+    setFeedbackNote(note);
+  }, [selectedEvent]);
 
   useEffect(() => {
     setReplayOpen(false);
@@ -354,11 +386,15 @@ export function AlertCenterContent() {
       variables: {
         input: {
           eventId: selectedEvent.id,
-          status
+          status,
+          note: feedbackNote?.trim() ? feedbackNote.trim() : null
         }
       }
     });
     await refetchEvents();
+    if (canManageAlerts && selectedEvent.ruleId) {
+      await refetchTuning({ ruleId: selectedEvent.ruleId, windowDays: 30 });
+    }
   };
 
   const context =
@@ -793,25 +829,103 @@ export function AlertCenterContent() {
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.feedback", { defaultValue: "Feedback" })}>
                   {canManageAlerts ? (
-                    <Space>
-                      <Button
-                        type="primary"
-                        size="small"
-                        loading={updatingStatus}
-                        disabled={selectedEvent.status === "confirmed"}
-                        onClick={() => void handleEventStatusUpdate("confirmed")}
-                      >
-                        {t("alerts.center.detail.confirm", { defaultValue: "Confirm" })}
-                      </Button>
-                      <Button
-                        size="small"
-                        loading={updatingStatus}
-                        disabled={selectedEvent.status === "ignored"}
-                        onClick={() => void handleEventStatusUpdate("ignored")}
-                      >
-                        {t("alerts.center.detail.ignore", { defaultValue: "Ignore" })}
-                      </Button>
+                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                      <Input.TextArea
+                        value={feedbackNote}
+                        onChange={(event) => setFeedbackNote(event.target.value)}
+                        rows={2}
+                        placeholder={t("alerts.center.detail.feedbackNotePlaceholder", {
+                          defaultValue: "Optional note (why confirmed/ignored)"
+                        })}
+                      />
+                      <Space>
+                        <Button
+                          type="primary"
+                          size="small"
+                          loading={updatingStatus}
+                          disabled={selectedEvent.status === "confirmed"}
+                          onClick={() => void handleEventStatusUpdate("confirmed")}
+                        >
+                          {t("alerts.center.detail.confirm", { defaultValue: "Confirm" })}
+                        </Button>
+                        <Button
+                          size="small"
+                          loading={updatingStatus}
+                          disabled={selectedEvent.status === "ignored"}
+                          onClick={() => void handleEventStatusUpdate("ignored")}
+                        >
+                          {t("alerts.center.detail.ignore", { defaultValue: "Ignore" })}
+                        </Button>
+                      </Space>
                     </Space>
+                  ) : (
+                    <Typography.Text type="secondary">
+                      {t("alerts.center.detail.feedbackAdminOnly", {
+                        defaultValue: "Feedback actions are available to administrators only."
+                      })}
+                    </Typography.Text>
+                  )}
+                </DetailRow>
+                <DetailRow label={t("alerts.center.detail.tuning", { defaultValue: "Tuning suggestion" })}>
+                  {canManageAlerts ? (
+                    tuningLoading ? (
+                      <Spin size="small" />
+                    ) : tuningError ? (
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.tuningError", {
+                          defaultValue: "Failed to load tuning suggestion."
+                        })}
+                      </Typography.Text>
+                    ) : tuningData?.alertRuleTuningSuggestion ? (
+                      <Space direction="vertical" size={2}>
+                        <Typography.Text type="secondary">
+                          {t("alerts.center.detail.tuningStats", {
+                            defaultValue:
+                              "Reviewed {{reviewed}} · Confirmed {{confirmed}} · Ignored {{ignored}} · FP rate {{rate}}",
+                            reviewed: tuningData.alertRuleTuningSuggestion.reviewedEvents,
+                            confirmed: tuningData.alertRuleTuningSuggestion.confirmedEvents,
+                            ignored: tuningData.alertRuleTuningSuggestion.ignoredEvents,
+                            rate:
+                              typeof tuningData.alertRuleTuningSuggestion.falsePositiveRate === "number"
+                                ? `${(tuningData.alertRuleTuningSuggestion.falsePositiveRate * 100).toFixed(1)}%`
+                                : t("common.notAvailable")
+                          })}
+                        </Typography.Text>
+                        {tuningData.alertRuleTuningSuggestion.message ? (
+                          <Typography.Text>{tuningData.alertRuleTuningSuggestion.message}</Typography.Text>
+                        ) : (
+                          <Typography.Text type="secondary">
+                            {t("alerts.center.detail.tuningEmpty", { defaultValue: "No tuning suggestion." })}
+                          </Typography.Text>
+                        )}
+                        {typeof tuningData.alertRuleTuningSuggestion.suggestedThresholdValue === "number" ? (
+                          <Typography.Text type="secondary">
+                            {t("alerts.center.detail.tuningThreshold", {
+                              defaultValue: "Suggested threshold {{value}}",
+                              value: tuningData.alertRuleTuningSuggestion.suggestedThresholdValue
+                            })}
+                          </Typography.Text>
+                        ) : null}
+                        {typeof tuningData.alertRuleTuningSuggestion.suggestedThresholdLower === "number" ||
+                        typeof tuningData.alertRuleTuningSuggestion.suggestedThresholdUpper === "number" ? (
+                          <Typography.Text type="secondary">
+                            {t("alerts.center.detail.tuningRange", {
+                              defaultValue: "Suggested range {{lower}} - {{upper}}",
+                              lower:
+                                tuningData.alertRuleTuningSuggestion.suggestedThresholdLower ??
+                                t("common.notAvailable"),
+                              upper:
+                                tuningData.alertRuleTuningSuggestion.suggestedThresholdUpper ??
+                                t("common.notAvailable")
+                            })}
+                          </Typography.Text>
+                        ) : null}
+                      </Space>
+                    ) : (
+                      <Typography.Text type="secondary">
+                        {t("common.notAvailable")}
+                      </Typography.Text>
+                    )
                   ) : (
                     <Typography.Text type="secondary">
                       {t("alerts.center.detail.feedbackAdminOnly", {

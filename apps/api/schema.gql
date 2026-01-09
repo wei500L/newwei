@@ -14,19 +14,31 @@ directive @hasPermission(name: String!) on FIELD_DEFINITION | OBJECT
 
 input AlertChannelInput {
   config: JSON
+  isActive: Boolean
   name: String!
   target: String!
   type: AlertChannelType!
 }
 
+input UpdateAlertChannelInput {
+  config: JSON
+  id: String!
+  isActive: Boolean
+  name: String
+  target: String
+}
+
 input UpdateAlertEventStatusInput {
   eventId: String!
+  note: String
   status: AlertEventStatus!
 }
 
 type AlertChannelModel {
+  config: JSON
   createdAt: DateTime!
   id: String!
+  isActive: Boolean!
   name: String!
   target: String!
   type: AlertChannelType!
@@ -137,6 +149,21 @@ type AlertRuleModel {
   thresholdValue: Float
 }
 
+type AlertRuleTuningSuggestionModel {
+  action: AlertTuningAction!
+  confirmedEvents: Int!
+  falsePositiveRate: Float
+  ignoredEvents: Int!
+  message: String
+  reviewedEvents: Int!
+  ruleId: String!
+  suggestedThresholdLower: Float
+  suggestedThresholdUpper: Float
+  suggestedThresholdValue: Float
+  totalEvents: Int!
+  windowDays: Int!
+}
+
 enum AlertSeverity {
   high
   low
@@ -148,6 +175,13 @@ enum AlertStatus {
   archived
   draft
   paused
+}
+
+enum AlertTuningAction {
+  adjust_range
+  decrease_threshold
+  increase_threshold
+  none
 }
 
 type AnalysisResultModel {
@@ -734,6 +768,7 @@ type Mutation {
   createCrawlTask(input: CreateCrawlTaskInput!): CrawlTaskModel!
   createItem(input: CreateItemInput!): ItemModel!
   createOrg(input: CreateOrgInput!): OrgModel!
+  deleteAlertChannel(channelId: String!): Boolean!
   deleteAlertRule(ruleId: String!): Boolean!
   deleteCrawlTask(id: String!): Boolean!
   deleteDashboard(id: String!): Boolean!
@@ -745,6 +780,7 @@ type Mutation {
   setOrgActive(input: SetOrgActiveInput!): OrgModel!
   triggerAlertRule(ruleId: String!): Boolean!
   triggerDataFetch(input: TriggerDataFetchInput!): Boolean!
+  updateAlertChannel(input: UpdateAlertChannelInput!): AlertChannelModel!
   updateAlertEventStatus(input: UpdateAlertEventStatusInput!): AlertEventModel!
   updateAuditLogRetention(input: UpdateAuditLogRetentionInput!): AuditLogRetentionModel!
   updateAuthCacheSettings(input: UpdateAuthCacheSettingsInput!): AuthCacheSettingsModel!
@@ -833,6 +869,7 @@ type Query {
   alertChannels: [AlertChannelModel!]!
   alertEventReplay(eventId: String!, windowDays: Int): AlertEventReplayModel
   alertEvents(limit: Int, metricSlug: String): [AlertEventModel!]!
+  alertRuleTuningSuggestion(ruleId: String!, windowDays: Int): AlertRuleTuningSuggestionModel
   alertRules: [AlertRuleModel!]!
   analysisResults(limit: Int): [AnalysisResultModel!]!
   auditLogRetention: AuditLogRetentionModel!

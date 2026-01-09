@@ -60,4 +60,31 @@ describe("AlertsNotificationThrottleService", () => {
 
     expect(scheduled).toEqual([now, now + 500, now + 1000]);
   });
+
+  it("honors per-channel min interval pacing", async () => {
+    const scheduled: number[] = [];
+    scheduled.push(
+      await service.reserveNotificationScheduleMs({
+        channelType: "email",
+        channelId: "channel-1",
+        minIntervalSeconds: 60
+      })
+    );
+    scheduled.push(
+      await service.reserveNotificationScheduleMs({
+        channelType: "email",
+        channelId: "channel-1",
+        minIntervalSeconds: 60
+      })
+    );
+    scheduled.push(
+      await service.reserveNotificationScheduleMs({
+        channelType: "email",
+        channelId: "channel-1",
+        minIntervalSeconds: 60
+      })
+    );
+
+    expect(scheduled).toEqual([now, now + 60_000, now + 120_000]);
+  });
 });

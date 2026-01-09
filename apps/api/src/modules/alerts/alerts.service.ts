@@ -24,6 +24,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
 import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
 import { ALERTS_PUBSUB, AlertEventPayload } from "./alerts.pubsub";
+import { AlertRuleTuningSuggestion, AlertTuningAction, quantile, safeMean } from "./alerts-tuning";
 import { MetricProvider } from "./providers/metric-provider";
 
 export interface AlertChannelInput {
@@ -31,7 +32,14 @@ export interface AlertChannelInput {
   type: AlertChannelType;
   name: string;
   target: string;
-  config?: Record<string, unknown>;
+  config?: Record<string, unknown> | null;
+  isActive?: boolean;
+}
+
+export interface UpdateAlertChannelInput {
+  name?: string;
+  target?: string;
+  config?: Record<string, unknown> | null;
   isActive?: boolean;
 }
 
@@ -120,6 +128,56 @@ export class AlertsService {
     });
   }
 
+  async updateChannel(orgId: string, channelId: string, input: UpdateAlertChannelInput) {
+    const existing = await this.prisma.alertNotificationChannel.findUnique({ where: { id: channelId } });
+    if (!existing || existing.orgId !== orgId) {
+      throw new Error("Alert channel not found for this org");
+    }
+
+    const data: Prisma.AlertNotificationChannelUpdateInput = {};
+    if (input.name !== undefined) {
+      data.name = input.name;
+    }
+    if (input.target !== undefined) {
+      data.target = input.target;
+    }
+    if (input.isActive !== undefined) {
+      data.isActive = input.isActive;
+    }
+    if (input.config !== undefined) {
+      data.config = input.config ?? {};
+    }
+
+    return this.prisma.alertNotificationChannel.update({
+      where: { id: channelId },
+      data
+    });
+  }
+
+  async deleteChannel(orgId: string, channelId: string) {
+    const existing = await this.prisma.alertNotificationChannel.findUnique({ where: { id: channelId } });
+    if (!existing || existing.orgId !== orgId) {
+      return false;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.alertDelivery.updateMany({
+        where: { channelId, status: AlertDeliveryStatus.pending },
+        data: {
+          status: AlertDeliveryStatus.failed,
+          error: "channel deleted"
+        }
+      });
+      await tx.alertDelivery.updateMany({
+        where: { channelId },
+        data: { channelId: null }
+      });
+      await tx.alertNotificationChannel.delete({ where: { id: channelId } });
+    });
+
+    return true;
+  }
+
   async listChannelMap(orgId: string) {
     const channels = await this.listChannels(orgId);
     return new Map(channels.map((c) => [c.id, c]));
@@ -203,7 +261,218 @@ export class AlertsService {
     };
   }
 
-  async updateEventStatus(orgId: string, eventId: string, status: AlertEventStatus) {
+  async getRuleTuningSuggestion(orgId: string, ruleId: string, windowDays = 30): Promise<AlertRuleTuningSuggestion | null> {
+    const normalizedDays = Math.min(Math.max(Math.trunc(windowDays), 1), 365);
+    const rule = await this.prisma.alertRule.findUnique({ where: { id: ruleId } });
+    if (!rule || rule.orgId !== orgId) {
+      return null;
+    }
+
+    const since = new Date(Date.now() - normalizedDays * 24 * 60 * 60 * 1000);
+    const events = await this.prisma.alertEvent.findMany({
+      where: {
+        ruleId: rule.id,
+        triggeredAt: { gte: since }
+      },
+      orderBy: { triggeredAt: "desc" },
+      take: 500,
+      select: {
+        status: true,
+        metricValue: true,
+        changePercent: true
+      }
+    });
+
+    const totalEvents = events.length;
+    const confirmed: number[] = [];
+    const ignored: number[] = [];
+
+    for (const event of events) {
+      if (![AlertEventStatus.confirmed, AlertEventStatus.ignored].includes(event.status)) {
+        continue;
+      }
+      let value: number | null = null;
+      if (rule.operator === AlertOperator.change_up_pct || rule.operator === AlertOperator.change_down_pct) {
+        if (typeof event.changePercent !== "number" || !Number.isFinite(event.changePercent)) {
+          continue;
+        }
+        value = rule.operator === AlertOperator.change_down_pct ? -event.changePercent : event.changePercent;
+      } else {
+        value = Number(event.metricValue);
+      }
+      if (value === null || !Number.isFinite(value)) {
+        continue;
+      }
+      if (event.status === AlertEventStatus.confirmed) {
+        confirmed.push(value);
+      } else {
+        ignored.push(value);
+      }
+    }
+
+    const confirmedEvents = confirmed.length;
+    const ignoredEvents = ignored.length;
+    const reviewedEvents = confirmedEvents + ignoredEvents;
+    const falsePositiveRate = reviewedEvents ? ignoredEvents / reviewedEvents : null;
+
+    const base: AlertRuleTuningSuggestion = {
+      ruleId: rule.id,
+      windowDays: normalizedDays,
+      totalEvents,
+      reviewedEvents,
+      confirmedEvents,
+      ignoredEvents,
+      falsePositiveRate,
+      action: AlertTuningAction.none,
+      message: null,
+      suggestedThresholdValue: null,
+      suggestedThresholdLower: null,
+      suggestedThresholdUpper: null
+    };
+
+    if (reviewedEvents < 5) {
+      return {
+        ...base,
+        message: "Not enough reviewed alerts yet. Confirm/Ignore a few events to generate tuning suggestions."
+      };
+    }
+
+    const currentThresholdValue =
+      rule.thresholdValue !== null && rule.thresholdValue !== undefined ? Number(rule.thresholdValue) : null;
+    const currentLower = rule.thresholdLower !== null && rule.thresholdLower !== undefined ? Number(rule.thresholdLower) : null;
+    const currentUpper = rule.thresholdUpper !== null && rule.thresholdUpper !== undefined ? Number(rule.thresholdUpper) : null;
+
+    const suggestHighThreshold = (current: number | null) => {
+      if (!ignored.length) {
+        return null;
+      }
+      const maxIgnored = Math.max(...ignored);
+      const minConfirmed = confirmed.length ? Math.min(...confirmed) : null;
+      if (minConfirmed !== null && minConfirmed > maxIgnored) {
+        return (minConfirmed + maxIgnored) / 2;
+      }
+      const p90 = quantile(ignored, 0.9);
+      if (typeof p90 === "number" && Number.isFinite(p90)) {
+        return current !== null ? Math.max(current, p90) : p90;
+      }
+      return current;
+    };
+
+    const suggestLowThreshold = (current: number | null) => {
+      if (!ignored.length) {
+        return null;
+      }
+      const minIgnored = Math.min(...ignored);
+      const maxConfirmed = confirmed.length ? Math.max(...confirmed) : null;
+      if (maxConfirmed !== null && maxConfirmed < minIgnored) {
+        return (maxConfirmed + minIgnored) / 2;
+      }
+      const p10 = quantile(ignored, 0.1);
+      if (typeof p10 === "number" && Number.isFinite(p10)) {
+        return current !== null ? Math.min(current, p10) : p10;
+      }
+      return current;
+    };
+
+    if ([AlertOperator.gt, AlertOperator.gte, AlertOperator.change_up_pct, AlertOperator.change_down_pct].includes(rule.operator)) {
+      const suggested = suggestHighThreshold(currentThresholdValue);
+      if (suggested !== null && currentThresholdValue !== null && suggested > currentThresholdValue) {
+        const ignoredAvg = safeMean(ignored);
+        const confirmedAvg = safeMean(confirmed);
+        return {
+          ...base,
+          action: AlertTuningAction.increase_threshold,
+          suggestedThresholdValue: suggested,
+          message: `High false-positive rate: consider raising threshold from ${currentThresholdValue} to ~${suggested.toFixed(4)} (ignored avg ${ignoredAvg?.toFixed(4) ?? "n/a"}, confirmed avg ${confirmedAvg?.toFixed(4) ?? "n/a"}).`
+        };
+      }
+      return base;
+    }
+
+    if ([AlertOperator.lt, AlertOperator.lte].includes(rule.operator)) {
+      const suggested = suggestLowThreshold(currentThresholdValue);
+      if (suggested !== null && currentThresholdValue !== null && suggested < currentThresholdValue) {
+        const ignoredAvg = safeMean(ignored);
+        const confirmedAvg = safeMean(confirmed);
+        return {
+          ...base,
+          action: AlertTuningAction.decrease_threshold,
+          suggestedThresholdValue: suggested,
+          message: `High false-positive rate: consider lowering threshold from ${currentThresholdValue} to ~${suggested.toFixed(4)} (ignored avg ${ignoredAvg?.toFixed(4) ?? "n/a"}, confirmed avg ${confirmedAvg?.toFixed(4) ?? "n/a"}).`
+        };
+      }
+      return base;
+    }
+
+    if (rule.operator === AlertOperator.outside_range && currentLower !== null && currentUpper !== null) {
+      const lowerIgnored: number[] = [];
+      const lowerConfirmed: number[] = [];
+      const upperIgnored: number[] = [];
+      const upperConfirmed: number[] = [];
+
+      for (const event of events) {
+        if (![AlertEventStatus.confirmed, AlertEventStatus.ignored].includes(event.status)) {
+          continue;
+        }
+        const value = Number(event.metricValue);
+        if (!Number.isFinite(value)) {
+          continue;
+        }
+        const target = value < currentLower ? "lower" : value > currentUpper ? "upper" : null;
+        if (!target) {
+          continue;
+        }
+        if (target === "lower") {
+          (event.status === AlertEventStatus.confirmed ? lowerConfirmed : lowerIgnored).push(value);
+        } else {
+          (event.status === AlertEventStatus.confirmed ? upperConfirmed : upperIgnored).push(value);
+        }
+      }
+
+      const suggestLower = () => {
+        if (!lowerIgnored.length) {
+          return null;
+        }
+        const minIgnored = Math.min(...lowerIgnored);
+        const maxConfirmed = lowerConfirmed.length ? Math.max(...lowerConfirmed) : null;
+        if (maxConfirmed !== null && maxConfirmed < minIgnored) {
+          return (maxConfirmed + minIgnored) / 2;
+        }
+        const p10 = quantile(lowerIgnored, 0.1);
+        return typeof p10 === "number" && Number.isFinite(p10) ? Math.min(currentLower, p10) : null;
+      };
+
+      const suggestUpper = () => {
+        if (!upperIgnored.length) {
+          return null;
+        }
+        const maxIgnored = Math.max(...upperIgnored);
+        const minConfirmed = upperConfirmed.length ? Math.min(...upperConfirmed) : null;
+        if (minConfirmed !== null && minConfirmed > maxIgnored) {
+          return (minConfirmed + maxIgnored) / 2;
+        }
+        const p90 = quantile(upperIgnored, 0.9);
+        return typeof p90 === "number" && Number.isFinite(p90) ? Math.max(currentUpper, p90) : null;
+      };
+
+      const suggestedLower = suggestLower();
+      const suggestedUpper = suggestUpper();
+      if (suggestedLower === null && suggestedUpper === null) {
+        return base;
+      }
+      return {
+        ...base,
+        action: AlertTuningAction.adjust_range,
+        suggestedThresholdLower: suggestedLower ?? null,
+        suggestedThresholdUpper: suggestedUpper ?? null,
+        message: `Consider adjusting range from [${currentLower}, ${currentUpper}] to [${suggestedLower?.toFixed(4) ?? currentLower}, ${suggestedUpper?.toFixed(4) ?? currentUpper}] based on ignored/confirmed splits.`
+      };
+    }
+
+    return base;
+  }
+
+  async updateEventStatus(orgId: string, eventId: string, status: AlertEventStatus, note?: string, updatedById?: string) {
     if (![AlertEventStatus.confirmed, AlertEventStatus.ignored].includes(status)) {
       throw new Error("Unsupported alert event status update");
     }
@@ -214,9 +483,36 @@ export class AlertsService {
     if (!existing || existing.rule?.orgId !== orgId) {
       throw new Error("Alert event not found for this org");
     }
+    const trimmedNote = typeof note === "string" ? note.trim() : undefined;
+    const existingContext =
+      existing.context && typeof existing.context === "object" && !Array.isArray(existing.context)
+        ? (existing.context as Record<string, unknown>)
+        : null;
+    const existingFeedback =
+      existingContext?.feedback && typeof existingContext.feedback === "object" && !Array.isArray(existingContext.feedback)
+        ? (existingContext.feedback as Record<string, unknown>)
+        : null;
+    const nextContext =
+      trimmedNote !== undefined || note !== undefined || updatedById
+        ? {
+            ...(existingContext ?? {}),
+            feedback: {
+              ...(existingFeedback ?? {}),
+              ...(note !== undefined
+                ? trimmedNote
+                  ? { note: trimmedNote }
+                  : { note: null }
+                : {}),
+              ...(updatedById ? { updatedById } : {}),
+              status,
+              updatedAt: new Date().toISOString()
+            }
+          }
+        : undefined;
+
     return this.prisma.alertEvent.update({
       where: { id: eventId },
-      data: { status },
+      data: { status, ...(nextContext ? { context: nextContext } : {}) },
       include: { rule: true, deliveries: { include: { channel: true } } }
     });
   }
@@ -788,6 +1084,16 @@ export class AlertsService {
       return;
     }
 
+    const minIntervalSeconds = this.extractNotifyIntervalSeconds(channel.config);
+    if (channel.type !== AlertChannelType.email && channel.type !== AlertChannelType.webhook) {
+      await this.prisma.alertDelivery.update({
+        where: { id: delivery.id },
+        data: { status: AlertDeliveryStatus.failed, error: `Unsupported channel type ${channel.type}` }
+      });
+      await this.reconcileEventStatus(delivery.eventId);
+      return;
+    }
+
     try {
       const hadScheduledAtMs = !!job.data.scheduledAtMs;
       if (job.data.scheduledAtMs && Date.now() < job.data.scheduledAtMs) {
@@ -796,9 +1102,11 @@ export class AlertsService {
       }
 
       if (!job.data.scheduledAtMs) {
+        const channelType = channel.type;
         const scheduledAtMs = await this.notificationThrottle.reserveNotificationScheduleMs({
-          channelType: channel.type,
-          channelId: delivery.channelId ?? channel.id ?? null
+          channelType,
+          channelId: delivery.channelId ?? channel.id ?? null,
+          minIntervalSeconds
         });
         if (scheduledAtMs > Date.now()) {
           await job.updateData({ ...job.data, scheduledAtMs });
@@ -866,6 +1174,64 @@ export class AlertsService {
         ? value
         : null;
     return this.notificationThrottle.parseMuteUntilMs(parsed);
+  }
+
+  private extractNotifyIntervalSeconds(input: unknown): number | null {
+    if (!input || typeof input !== "object") {
+      return null;
+    }
+    const config = input as Record<string, unknown>;
+    const secondsValue =
+      config["notifyIntervalSeconds"] ??
+      config["notifyIntervalSec"] ??
+      config["notify_interval_seconds"] ??
+      config["notify_interval_sec"] ??
+      config["frequencySeconds"] ??
+      config["frequencySec"] ??
+      config["frequency_seconds"] ??
+      config["frequency_sec"] ??
+      config["minIntervalSeconds"] ??
+      config["minIntervalSec"] ??
+      config["min_interval_seconds"] ??
+      config["min_interval_sec"];
+    const minutesValue =
+      config["notifyIntervalMinutes"] ??
+      config["notifyIntervalMin"] ??
+      config["notify_interval_minutes"] ??
+      config["notify_interval_min"] ??
+      config["frequencyMinutes"] ??
+      config["frequencyMin"] ??
+      config["frequency_minutes"] ??
+      config["frequency_min"];
+
+    const seconds = this.toPositiveFiniteNumber(secondsValue);
+    if (seconds !== null) {
+      return this.clampSeconds(seconds);
+    }
+
+    const minutes = this.toPositiveFiniteNumber(minutesValue);
+    if (minutes !== null) {
+      return this.clampSeconds(minutes * 60);
+    }
+
+    return null;
+  }
+
+  private toPositiveFiniteNumber(value: unknown): number | null {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value > 0 ? value : null;
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value.trim());
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    return null;
+  }
+
+  private clampSeconds(value: number): number {
+    const normalized = Math.trunc(value);
+    const maxSeconds = 365 * 24 * 3600;
+    return Math.min(Math.max(normalized, 1), maxSeconds);
   }
 
   getNotificationBackoffDelay(attemptsMade: number) {

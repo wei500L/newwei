@@ -69,7 +69,11 @@ export class AlertsNotificationThrottleService {
     return muteUntilMs !== null && nowMs < muteUntilMs;
   }
 
-  async reserveNotificationScheduleMs(input: { channelType: "email" | "webhook"; channelId?: string | null }): Promise<number> {
+  async reserveNotificationScheduleMs(input: {
+    channelType: "email" | "webhook";
+    channelId?: string | null;
+    minIntervalSeconds?: number | null;
+  }): Promise<number> {
     const now = Date.now();
     const schedules: number[] = [];
     const keyPrefix = `${this.env.bullmqConfig.namespace}:alerts:notify`;
@@ -90,6 +94,15 @@ export class AlertsNotificationThrottleService {
       if (perChannel > 0) {
         schedules.push(await this.reserveScheduledAtMs(`${keyPrefix}:channel:${input.channelId}`, now, perChannel));
       }
+      if (input.minIntervalSeconds && Number.isFinite(input.minIntervalSeconds) && input.minIntervalSeconds > 0) {
+        schedules.push(
+          await this.reserveScheduledAtMs(
+            `${keyPrefix}:interval:${input.channelId}`,
+            now,
+            1 / input.minIntervalSeconds
+          )
+        );
+      }
     }
 
     return Math.max(now, ...schedules);
@@ -99,7 +112,7 @@ export class AlertsNotificationThrottleService {
     if (!maxPerSecond || maxPerSecond <= 0) {
       return nowMs;
     }
-    const intervalMs = Math.ceil(1000 / Math.max(1, maxPerSecond));
+    const intervalMs = Math.max(1, Math.ceil(1000 / maxPerSecond));
     const ttlMs = Math.max(this.env.alertingConfig.notifyLimiterTtlMs, intervalMs * 10);
     const delay = (await this.redis.eval(PACE_LUA_SCRIPT, LUA_KEYS, key, nowMs, intervalMs, ttlMs)) as number;
     const safeDelayMs = Number.isFinite(delay) ? Math.max(0, delay) : 0;

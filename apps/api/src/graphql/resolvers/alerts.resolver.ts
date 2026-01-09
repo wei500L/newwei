@@ -8,9 +8,9 @@ import { ALERTS_PUBSUB, type AlertEventPayload } from "../../modules/alerts/aler
 import { AlertsService } from "../../modules/alerts/alerts.service";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { AlertChannelInput, UpdateAlertEventStatusInput, UpsertAlertRuleInput } from "../dto/alert.input";
+import { AlertChannelInput, UpdateAlertChannelInput, UpdateAlertEventStatusInput, UpsertAlertRuleInput } from "../dto/alert.input";
 import type { GqlRequest } from "../graphql.types";
-import { AlertChannelModel, AlertEventModel, AlertEventReplayModel, AlertRuleModel } from "../models/alert.model";
+import { AlertChannelModel, AlertEventModel, AlertEventReplayModel, AlertRuleModel, AlertRuleTuningSuggestionModel } from "../models/alert.model";
 
 
 @Resolver()
@@ -31,6 +31,8 @@ export class AlertsResolver {
       name: channel.name,
       type: channel.type,
       target: channel.target,
+      isActive: channel.isActive,
+      config: (channel.config as Record<string, unknown> | null) ?? null,
       createdAt: channel.createdAt,
       updatedAt: channel.updatedAt
     }));
@@ -69,6 +71,8 @@ export class AlertsResolver {
           name: channel.name,
           type: channel.type,
           target: channel.target,
+          isActive: channel.isActive,
+          config: (channel.config as Record<string, unknown> | null) ?? null,
           createdAt: channel.createdAt,
           updatedAt: channel.updatedAt
         }))
@@ -146,6 +150,20 @@ export class AlertsResolver {
   }
 
   @HasPermission("alerts.manage")
+  @Query(() => AlertRuleTuningSuggestionModel, { nullable: true })
+  async alertRuleTuningSuggestion(
+    @Context("req") req: GqlRequest,
+    @Args("ruleId") ruleId: string,
+    @Args("windowDays", { type: () => Int, nullable: true }) windowDays?: number
+  ): Promise<AlertRuleTuningSuggestionModel | null> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    return this.alerts.getRuleTuningSuggestion(requester.orgId, ruleId, windowDays ?? 30);
+  }
+
+  @HasPermission("alerts.manage")
   @Mutation(() => AlertRuleModel)
   async upsertAlertRule(
     @Context("req") req: GqlRequest,
@@ -186,6 +204,8 @@ export class AlertsResolver {
           name: channel.name,
           type: channel.type,
           target: channel.target,
+          isActive: channel.isActive,
+          config: (channel.config as Record<string, unknown> | null) ?? null,
           createdAt: channel.createdAt,
           updatedAt: channel.updatedAt
         }))
@@ -218,9 +238,44 @@ export class AlertsResolver {
       name: channel.name,
       type: channel.type,
       target: channel.target,
+      isActive: channel.isActive,
+      config: (channel.config as Record<string, unknown> | null) ?? null,
       createdAt: channel.createdAt,
       updatedAt: channel.updatedAt
     };
+  }
+
+  @HasPermission("alerts.manage")
+  @Mutation(() => AlertChannelModel)
+  async updateAlertChannel(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateAlertChannelInput
+  ): Promise<AlertChannelModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    const channel = await this.alerts.updateChannel(requester.orgId, input.id, input);
+    return {
+      id: channel.id,
+      name: channel.name,
+      type: channel.type,
+      target: channel.target,
+      isActive: channel.isActive,
+      config: (channel.config as Record<string, unknown> | null) ?? null,
+      createdAt: channel.createdAt,
+      updatedAt: channel.updatedAt
+    };
+  }
+
+  @HasPermission("alerts.manage")
+  @Mutation(() => Boolean)
+  async deleteAlertChannel(@Context("req") req: GqlRequest, @Args("channelId") channelId: string): Promise<boolean> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    return this.alerts.deleteChannel(requester.orgId, channelId);
   }
 
   @HasPermission("alerts.manage")
@@ -240,7 +295,7 @@ export class AlertsResolver {
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
-    const event = await this.alerts.updateEventStatus(requester.orgId, input.eventId, input.status);
+    const event = await this.alerts.updateEventStatus(requester.orgId, input.eventId, input.status, input.note, requester.id);
     return {
       id: event.id,
       triggeredAt: event.triggeredAt,

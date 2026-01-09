@@ -23,6 +23,7 @@ export type Scalars = {
 
 export type AlertChannelInput = {
   config?: InputMaybe<Scalars['JSON']['input']>;
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
   name: Scalars['String']['input'];
   target: Scalars['String']['input'];
   type: AlertChannelType;
@@ -30,8 +31,10 @@ export type AlertChannelInput = {
 
 export type AlertChannelModel = {
   __typename?: 'AlertChannelModel';
+  config?: Maybe<Scalars['JSON']['output']>;
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['String']['output'];
+  isActive: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
   target: Scalars['String']['output'];
   type: AlertChannelType;
@@ -147,6 +150,22 @@ export type AlertRuleModel = {
   thresholdValue?: Maybe<Scalars['Float']['output']>;
 };
 
+export type AlertRuleTuningSuggestionModel = {
+  __typename?: 'AlertRuleTuningSuggestionModel';
+  action: AlertTuningAction;
+  confirmedEvents: Scalars['Int']['output'];
+  falsePositiveRate?: Maybe<Scalars['Float']['output']>;
+  ignoredEvents: Scalars['Int']['output'];
+  message?: Maybe<Scalars['String']['output']>;
+  reviewedEvents: Scalars['Int']['output'];
+  ruleId: Scalars['String']['output'];
+  suggestedThresholdLower?: Maybe<Scalars['Float']['output']>;
+  suggestedThresholdUpper?: Maybe<Scalars['Float']['output']>;
+  suggestedThresholdValue?: Maybe<Scalars['Float']['output']>;
+  totalEvents: Scalars['Int']['output'];
+  windowDays: Scalars['Int']['output'];
+};
+
 export enum AlertSeverity {
   High = 'high',
   Low = 'low',
@@ -158,6 +177,13 @@ export enum AlertStatus {
   Archived = 'archived',
   Draft = 'draft',
   Paused = 'paused'
+}
+
+export enum AlertTuningAction {
+  AdjustRange = 'adjust_range',
+  DecreaseThreshold = 'decrease_threshold',
+  IncreaseThreshold = 'increase_threshold',
+  None = 'none'
 }
 
 export type AnalysisResultModel = {
@@ -787,6 +813,7 @@ export type Mutation = {
   createCrawlTask: CrawlTaskModel;
   createItem: ItemModel;
   createOrg: OrgModel;
+  deleteAlertChannel: Scalars['Boolean']['output'];
   deleteAlertRule: Scalars['Boolean']['output'];
   deleteCrawlTask: Scalars['Boolean']['output'];
   deleteDashboard: Scalars['Boolean']['output'];
@@ -798,6 +825,7 @@ export type Mutation = {
   setOrgActive: OrgModel;
   triggerAlertRule: Scalars['Boolean']['output'];
   triggerDataFetch: Scalars['Boolean']['output'];
+  updateAlertChannel: AlertChannelModel;
   updateAlertEventStatus: AlertEventModel;
   updateAuditLogRetention: AuditLogRetentionModel;
   updateAuthCacheSettings: AuthCacheSettingsModel;
@@ -835,6 +863,11 @@ export type MutationCreateItemArgs = {
 
 export type MutationCreateOrgArgs = {
   input: CreateOrgInput;
+};
+
+
+export type MutationDeleteAlertChannelArgs = {
+  channelId: Scalars['String']['input'];
 };
 
 
@@ -885,6 +918,11 @@ export type MutationTriggerAlertRuleArgs = {
 
 export type MutationTriggerDataFetchArgs = {
   input: TriggerDataFetchInput;
+};
+
+
+export type MutationUpdateAlertChannelArgs = {
+  input: UpdateAlertChannelInput;
 };
 
 
@@ -1032,6 +1070,7 @@ export type Query = {
   alertChannels: Array<AlertChannelModel>;
   alertEventReplay?: Maybe<AlertEventReplayModel>;
   alertEvents: Array<AlertEventModel>;
+  alertRuleTuningSuggestion?: Maybe<AlertRuleTuningSuggestionModel>;
   alertRules: Array<AlertRuleModel>;
   analysisResults: Array<AnalysisResultModel>;
   auditLogRetention: AuditLogRetentionModel;
@@ -1071,6 +1110,12 @@ export type QueryAlertEventReplayArgs = {
 export type QueryAlertEventsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   metricSlug?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryAlertRuleTuningSuggestionArgs = {
+  ruleId: Scalars['String']['input'];
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -1269,8 +1314,17 @@ export type TriggerDataFetchInput = {
   slugs: Array<Scalars['String']['input']>;
 };
 
+export type UpdateAlertChannelInput = {
+  config?: InputMaybe<Scalars['JSON']['input']>;
+  id: Scalars['String']['input'];
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  target?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type UpdateAlertEventStatusInput = {
   eventId: Scalars['String']['input'];
+  note?: InputMaybe<Scalars['String']['input']>;
   status: AlertEventStatus;
 };
 
@@ -1376,7 +1430,7 @@ export type AlertRulesQuery = { __typename?: 'Query', alertRules: Array<{ __type
 export type AlertChannelsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type AlertChannelsQuery = { __typename?: 'Query', alertChannels: Array<{ __typename?: 'AlertChannelModel', id: string, name: string, type: AlertChannelType, target: string }> };
+export type AlertChannelsQuery = { __typename?: 'Query', alertChannels: Array<{ __typename?: 'AlertChannelModel', id: string, name: string, type: AlertChannelType, target: string, isActive: boolean, config?: any | null }> };
 
 export type AlertEventsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -1397,7 +1451,21 @@ export type CreateAlertChannelMutationVariables = Exact<{
 }>;
 
 
-export type CreateAlertChannelMutation = { __typename?: 'Mutation', createAlertChannel: { __typename?: 'AlertChannelModel', id: string, name: string, type: AlertChannelType, target: string } };
+export type CreateAlertChannelMutation = { __typename?: 'Mutation', createAlertChannel: { __typename?: 'AlertChannelModel', id: string, name: string, type: AlertChannelType, target: string, isActive: boolean, config?: any | null } };
+
+export type UpdateAlertChannelMutationVariables = Exact<{
+  input: UpdateAlertChannelInput;
+}>;
+
+
+export type UpdateAlertChannelMutation = { __typename?: 'Mutation', updateAlertChannel: { __typename?: 'AlertChannelModel', id: string, name: string, type: AlertChannelType, target: string, isActive: boolean, config?: any | null } };
+
+export type DeleteAlertChannelMutationVariables = Exact<{
+  channelId: Scalars['String']['input'];
+}>;
+
+
+export type DeleteAlertChannelMutation = { __typename?: 'Mutation', deleteAlertChannel: boolean };
 
 export type TriggerAlertRuleMutationVariables = Exact<{
   ruleId: Scalars['String']['input'];
@@ -1420,6 +1488,14 @@ export type AlertEventReplayQueryVariables = Exact<{
 
 
 export type AlertEventReplayQuery = { __typename?: 'Query', alertEventReplay?: { __typename?: 'AlertEventReplayModel', eventId: string, metricProvider: AlertMetricProvider, metricSlug: string, unit?: string | null, points: Array<{ __typename?: 'AlertEventReplayPointModel', timestamp: any, value: number }> } | null };
+
+export type AlertRuleTuningSuggestionQueryVariables = Exact<{
+  ruleId: Scalars['String']['input'];
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type AlertRuleTuningSuggestionQuery = { __typename?: 'Query', alertRuleTuningSuggestion?: { __typename?: 'AlertRuleTuningSuggestionModel', ruleId: string, windowDays: number, totalEvents: number, reviewedEvents: number, confirmedEvents: number, ignoredEvents: number, falsePositiveRate?: number | null, action: AlertTuningAction, message?: string | null, suggestedThresholdValue?: number | null, suggestedThresholdLower?: number | null, suggestedThresholdUpper?: number | null } | null };
 
 export type AlertEventsStreamSubscriptionVariables = Exact<{ [key: string]: never; }>;
 
@@ -1793,6 +1869,8 @@ export const AlertChannelsDocument = gql`
     name
     type
     target
+    isActive
+    config
   }
 }
     `;
@@ -1934,6 +2012,8 @@ export const CreateAlertChannelDocument = gql`
     name
     type
     target
+    isActive
+    config
   }
 }
     `;
@@ -1963,6 +2043,75 @@ export function useCreateAlertChannelMutation(baseOptions?: Apollo.MutationHookO
 export type CreateAlertChannelMutationHookResult = ReturnType<typeof useCreateAlertChannelMutation>;
 export type CreateAlertChannelMutationResult = Apollo.MutationResult<CreateAlertChannelMutation>;
 export type CreateAlertChannelMutationOptions = Apollo.BaseMutationOptions<CreateAlertChannelMutation, CreateAlertChannelMutationVariables>;
+export const UpdateAlertChannelDocument = gql`
+    mutation UpdateAlertChannel($input: UpdateAlertChannelInput!) {
+  updateAlertChannel(input: $input) {
+    id
+    name
+    type
+    target
+    isActive
+    config
+  }
+}
+    `;
+export type UpdateAlertChannelMutationFn = Apollo.MutationFunction<UpdateAlertChannelMutation, UpdateAlertChannelMutationVariables>;
+
+/**
+ * __useUpdateAlertChannelMutation__
+ *
+ * To run a mutation, you first call `useUpdateAlertChannelMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useUpdateAlertChannelMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [updateAlertChannelMutation, { data, loading, error }] = useUpdateAlertChannelMutation({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useUpdateAlertChannelMutation(baseOptions?: Apollo.MutationHookOptions<UpdateAlertChannelMutation, UpdateAlertChannelMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<UpdateAlertChannelMutation, UpdateAlertChannelMutationVariables>(UpdateAlertChannelDocument, options);
+      }
+export type UpdateAlertChannelMutationHookResult = ReturnType<typeof useUpdateAlertChannelMutation>;
+export type UpdateAlertChannelMutationResult = Apollo.MutationResult<UpdateAlertChannelMutation>;
+export type UpdateAlertChannelMutationOptions = Apollo.BaseMutationOptions<UpdateAlertChannelMutation, UpdateAlertChannelMutationVariables>;
+export const DeleteAlertChannelDocument = gql`
+    mutation DeleteAlertChannel($channelId: String!) {
+  deleteAlertChannel(channelId: $channelId)
+}
+    `;
+export type DeleteAlertChannelMutationFn = Apollo.MutationFunction<DeleteAlertChannelMutation, DeleteAlertChannelMutationVariables>;
+
+/**
+ * __useDeleteAlertChannelMutation__
+ *
+ * To run a mutation, you first call `useDeleteAlertChannelMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useDeleteAlertChannelMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [deleteAlertChannelMutation, { data, loading, error }] = useDeleteAlertChannelMutation({
+ *   variables: {
+ *      channelId: // value for 'channelId'
+ *   },
+ * });
+ */
+export function useDeleteAlertChannelMutation(baseOptions?: Apollo.MutationHookOptions<DeleteAlertChannelMutation, DeleteAlertChannelMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<DeleteAlertChannelMutation, DeleteAlertChannelMutationVariables>(DeleteAlertChannelDocument, options);
+      }
+export type DeleteAlertChannelMutationHookResult = ReturnType<typeof useDeleteAlertChannelMutation>;
+export type DeleteAlertChannelMutationResult = Apollo.MutationResult<DeleteAlertChannelMutation>;
+export type DeleteAlertChannelMutationOptions = Apollo.BaseMutationOptions<DeleteAlertChannelMutation, DeleteAlertChannelMutationVariables>;
 export const TriggerAlertRuleDocument = gql`
     mutation TriggerAlertRule($ruleId: String!) {
   triggerAlertRule(ruleId: $ruleId)
@@ -2076,6 +2225,58 @@ export type AlertEventReplayQueryHookResult = ReturnType<typeof useAlertEventRep
 export type AlertEventReplayLazyQueryHookResult = ReturnType<typeof useAlertEventReplayLazyQuery>;
 export type AlertEventReplaySuspenseQueryHookResult = ReturnType<typeof useAlertEventReplaySuspenseQuery>;
 export type AlertEventReplayQueryResult = Apollo.QueryResult<AlertEventReplayQuery, AlertEventReplayQueryVariables>;
+export const AlertRuleTuningSuggestionDocument = gql`
+    query AlertRuleTuningSuggestion($ruleId: String!, $windowDays: Int) {
+  alertRuleTuningSuggestion(ruleId: $ruleId, windowDays: $windowDays) {
+    ruleId
+    windowDays
+    totalEvents
+    reviewedEvents
+    confirmedEvents
+    ignoredEvents
+    falsePositiveRate
+    action
+    message
+    suggestedThresholdValue
+    suggestedThresholdLower
+    suggestedThresholdUpper
+  }
+}
+    `;
+
+/**
+ * __useAlertRuleTuningSuggestionQuery__
+ *
+ * To run a query within a React component, call `useAlertRuleTuningSuggestionQuery` and pass it any options that fit your needs.
+ * When your component renders, `useAlertRuleTuningSuggestionQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useAlertRuleTuningSuggestionQuery({
+ *   variables: {
+ *      ruleId: // value for 'ruleId'
+ *      windowDays: // value for 'windowDays'
+ *   },
+ * });
+ */
+export function useAlertRuleTuningSuggestionQuery(baseOptions: Apollo.QueryHookOptions<AlertRuleTuningSuggestionQuery, AlertRuleTuningSuggestionQueryVariables> & ({ variables: AlertRuleTuningSuggestionQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<AlertRuleTuningSuggestionQuery, AlertRuleTuningSuggestionQueryVariables>(AlertRuleTuningSuggestionDocument, options);
+      }
+export function useAlertRuleTuningSuggestionLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<AlertRuleTuningSuggestionQuery, AlertRuleTuningSuggestionQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<AlertRuleTuningSuggestionQuery, AlertRuleTuningSuggestionQueryVariables>(AlertRuleTuningSuggestionDocument, options);
+        }
+export function useAlertRuleTuningSuggestionSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<AlertRuleTuningSuggestionQuery, AlertRuleTuningSuggestionQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<AlertRuleTuningSuggestionQuery, AlertRuleTuningSuggestionQueryVariables>(AlertRuleTuningSuggestionDocument, options);
+        }
+export type AlertRuleTuningSuggestionQueryHookResult = ReturnType<typeof useAlertRuleTuningSuggestionQuery>;
+export type AlertRuleTuningSuggestionLazyQueryHookResult = ReturnType<typeof useAlertRuleTuningSuggestionLazyQuery>;
+export type AlertRuleTuningSuggestionSuspenseQueryHookResult = ReturnType<typeof useAlertRuleTuningSuggestionSuspenseQuery>;
+export type AlertRuleTuningSuggestionQueryResult = Apollo.QueryResult<AlertRuleTuningSuggestionQuery, AlertRuleTuningSuggestionQueryVariables>;
 export const AlertEventsStreamDocument = gql`
     subscription AlertEventsStream {
   alertEvents {

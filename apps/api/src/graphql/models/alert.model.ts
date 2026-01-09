@@ -1,4 +1,4 @@
-import { Field, GraphQLISODateTime, ObjectType, registerEnumType } from "@nestjs/graphql";
+import { Field, GraphQLISODateTime, Int, ObjectType, registerEnumType } from "@nestjs/graphql";
 import {
   AlertChannelType,
   AlertDeliveryStatus,
@@ -10,6 +10,8 @@ import {
 } from "@prisma/client";
 import GraphQLJSONScalar from "graphql-type-json";
 
+import { AlertTuningAction } from "../../modules/alerts/alerts-tuning";
+
 registerEnumType(AlertSeverity, { name: "AlertSeverity" });
 registerEnumType(AlertStatus, { name: "AlertStatus" });
 registerEnumType(AlertOperator, { name: "AlertOperator" });
@@ -17,6 +19,7 @@ registerEnumType(AlertMetricProvider, { name: "AlertMetricProvider" });
 registerEnumType(AlertChannelType, { name: "AlertChannelType" });
 registerEnumType(AlertEventStatus, { name: "AlertEventStatus" });
 registerEnumType(AlertDeliveryStatus, { name: "AlertDeliveryStatus" });
+registerEnumType(AlertTuningAction, { name: "AlertTuningAction" });
 
 @ObjectType()
 export class AlertChannelModel {
@@ -31,6 +34,12 @@ export class AlertChannelModel {
 
   @Field()
   target!: string;
+
+  @Field()
+  isActive!: boolean;
+
+  @Field(() => GraphQLJSONScalar, { nullable: true })
+  config?: Record<string, unknown> | null;
 
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
@@ -199,4 +208,43 @@ export class AlertRuleModel {
 
   @Field(() => [AlertChannelModel])
   channels!: AlertChannelModel[];
+}
+
+@ObjectType()
+export class AlertRuleTuningSuggestionModel {
+  @Field()
+  ruleId!: string;
+
+  @Field(() => Int)
+  windowDays!: number;
+
+  @Field(() => Int)
+  totalEvents!: number;
+
+  @Field(() => Int)
+  reviewedEvents!: number;
+
+  @Field(() => Int)
+  confirmedEvents!: number;
+
+  @Field(() => Int)
+  ignoredEvents!: number;
+
+  @Field(() => Number, { nullable: true })
+  falsePositiveRate?: number | null;
+
+  @Field(() => AlertTuningAction)
+  action!: AlertTuningAction;
+
+  @Field({ nullable: true })
+  message?: string | null;
+
+  @Field(() => Number, { nullable: true })
+  suggestedThresholdValue?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  suggestedThresholdLower?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  suggestedThresholdUpper?: number | null;
 }
