@@ -1,5 +1,5 @@
 
-import { TaskLogModel, ProcessedItemModel } from "@modular/mongo";
+import { RawItemModel, TaskLogModel, ProcessedItemModel } from "@modular/mongo";
 import { createHash } from "crypto";
 
 import type { Crawl4aiResponse } from "../../crawl/crawl4ai.client";
@@ -13,6 +13,11 @@ import { NewsPromptBuilder } from "../news-prompt.builder";
 jest.mock("@modular/mongo", () => ({
   TaskLogModel: {
     create: jest.fn().mockResolvedValue(undefined)
+  },
+  RawItemModel: {
+    findById: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null)
+    })
   },
   ProcessedItemModel: {
     findOneAndUpdate: jest.fn().mockResolvedValue({
@@ -190,6 +195,12 @@ describe("NewsPipelineService", () => {
       upsert: jest.fn().mockResolvedValue({ id: "article-1" })
     },
     itemMeta: {
+      findUnique: jest.fn().mockResolvedValue({
+        id: "meta-1",
+        orgId: "org-1",
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+        publishedAt: null
+      }),
       update: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn().mockResolvedValue({ count: 1 })
     },
@@ -256,6 +267,9 @@ describe("NewsPipelineService", () => {
     mongoOutbox.findMany.mockResolvedValue([]);
     mongoOutbox.update.mockResolvedValue(undefined);
     (ProcessedItemModel.findById as jest.Mock).mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null)
+    });
+    (RawItemModel.findById as jest.Mock).mockReturnValue({
       lean: jest.fn().mockResolvedValue(null)
     });
     const findChain = {
@@ -636,15 +650,15 @@ describe("NewsPipelineService", () => {
     await service.retryPendingOutbox();
 
     expect(mongoOutbox.delete).toHaveBeenCalledWith({ where: { id: "outbox-stale" } });
-    expect(upsertSpy).toHaveBeenCalledWith(
-      expect.anything(),
+    const updateArgs = upsertSpy.mock.calls[0]?.[1] as { $set?: Record<string, unknown> } | undefined;
+    expect(updateArgs?.$set).toEqual(
       expect.objectContaining({
-        $set: expect.objectContaining({
-          rawItemId: expect.anything(),
-          result: validPayload.document.result
+        rawItemId: expect.anything(),
+        result: expect.objectContaining({
+          title: "Existing title",
+          published_at: "2024-01-01T00:00:00.000Z"
         })
-      }),
-      expect.objectContaining({ upsert: true, new: true })
+      })
     );
   });
 

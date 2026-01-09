@@ -135,7 +135,7 @@ export function WarMap() {
   const registeredMapsRef = useRef(new Set<string>());
   const [mapReady, setMapReady] = useState(false);
   const emptyMessage = t("pages.map.empty", {
-    defaultValue: "No alerts triggered in the selected range."
+    defaultValue: "No alerts or geo-tagged news signals in the selected range."
   });
 
   useEffect(() => {

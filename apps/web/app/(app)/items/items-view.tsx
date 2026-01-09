@@ -77,8 +77,21 @@ const MAX_ITEMS_PAGE_SIZE = 50;
 
 const loggedProcessedResultParseErrors = new Set<string>();
 
-function parseProcessedResult(result: string | null | undefined, itemId: string): Record<string, unknown> {
-  if (!result) {
+function parseProcessedResult(value: unknown, itemId: string): Record<string, unknown> {
+  if (value === null || value === undefined) {
+    return {};
+  }
+
+  if (typeof value === "object") {
+    return !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  }
+
+  if (typeof value !== "string") {
+    return {};
+  }
+
+  const resultString = value;
+  if (!resultString.trim()) {
     return {};
   }
 
@@ -89,24 +102,21 @@ function parseProcessedResult(result: string | null | undefined, itemId: string)
     loggedProcessedResultParseErrors.add(itemId);
     captureClientError("Failed to parse processed.result", error, {
       tags: { area: "items", field: "processed.result" },
-      extras: { itemId, resultLength: result.length }
+      extras: { itemId, resultLength: resultString.length }
     });
   };
 
   try {
-    const parsed = JSON.parse(result) as unknown;
-    if (typeof parsed === "string") {
-      try {
-        const parsedAgain = JSON.parse(parsed) as unknown;
-        return parsedAgain && typeof parsedAgain === "object" && !Array.isArray(parsedAgain)
-          ? (parsedAgain as Record<string, unknown>)
-          : {};
-      } catch (error) {
-        reportOnce(error);
-        return {};
+    let parsed: unknown = resultString;
+    for (let depth = 0; depth < 3; depth += 1) {
+      if (typeof parsed !== "string") {
+        break;
       }
+      parsed = JSON.parse(parsed) as unknown;
     }
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
   } catch (error) {
     reportOnce(error);
     return {};
@@ -167,6 +177,7 @@ const ITEMS_QUERY = gql`
           publishedAt
           processed {
             result
+            resultJson
             tags
             duplicateOf
             duplicateSimilarity
@@ -427,7 +438,10 @@ export function ItemsView({
         // console.warn("Failed to parse raw payload", e);
       }
 
-      const processed = parseProcessedResult(edge.node.processed?.result, edge.node.id) as {
+      const processed = parseProcessedResult(
+        edge.node.processed?.resultJson ?? edge.node.processed?.result,
+        edge.node.id
+      ) as {
         published_at?: string | null;
         source?: string | null;
         topics?: string[] | null;

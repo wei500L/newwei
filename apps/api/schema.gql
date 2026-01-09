@@ -814,6 +814,7 @@ type ProcessedItemModelGraph {
   itemMetaId: String!
   llm: ProcessedItemLlmModel
   result: String
+  resultJson: JSON
   status: String!
   tags: [String!]!
 }

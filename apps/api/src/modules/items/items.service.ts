@@ -553,18 +553,28 @@ export class ItemsService {
         $project: {
           itemMetaId: 1,
           createdAt: 1,
+          ingestedAt: 1,
+          sortAt: 1,
           result: 1
         }
       },
       {
         $addFields: {
+          ingestedAt: {
+            $ifNull: ["$ingestedAt", "$createdAt"]
+          },
           sortAt: {
-            $convert: {
-              input: "$result.published_at",
-              to: "date",
-              onError: "$createdAt",
-              onNull: "$createdAt"
-            }
+            $ifNull: [
+              "$sortAt",
+              {
+                $convert: {
+                  input: "$result.published_at",
+                  to: "date",
+                  onError: { $ifNull: ["$ingestedAt", "$createdAt"] },
+                  onNull: { $ifNull: ["$ingestedAt", "$createdAt"] }
+                }
+              }
+            ]
           }
         }
       },
@@ -597,7 +607,7 @@ export class ItemsService {
               summary: '$result.summary',
               source: '$result.source',
               publishedAt: '$result.published_at',
-              createdAt: '$createdAt'
+              createdAt: '$ingestedAt'
             }
           }
         }
@@ -682,6 +692,8 @@ export class ItemsService {
         $project: {
           itemMetaId: 1,
           createdAt: 1,
+          ingestedAt: 1,
+          sortAt: 1,
           duplicateOf: 1,
           result: 1
         }
@@ -714,13 +726,21 @@ export class ItemsService {
               0
             ]
           },
+          ingestedAt: {
+            $ifNull: ["$ingestedAt", "$createdAt"]
+          },
           sortAt: {
-            $convert: {
-              input: "$result.published_at",
-              to: "date",
-              onError: "$createdAt",
-              onNull: "$createdAt"
-            }
+            $ifNull: [
+              "$sortAt",
+              {
+                $convert: {
+                  input: "$result.published_at",
+                  to: "date",
+                  onError: { $ifNull: ["$ingestedAt", "$createdAt"] },
+                  onNull: { $ifNull: ["$ingestedAt", "$createdAt"] }
+                }
+              }
+            ]
           }
         }
       },
@@ -791,7 +811,7 @@ export class ItemsService {
               summary: "$result.summary",
               source: "$result.source",
               publishedAt: "$result.published_at",
-              createdAt: "$createdAt"
+              createdAt: "$ingestedAt"
             }
           }
         }
@@ -1129,12 +1149,17 @@ export class ItemsService {
     if (filters.dateRange?.start || filters.dateRange?.end) {
       pipeline.push({
         $addFields: {
-          publishedAt: {
-            $dateFromString: {
-              dateString: { $ifNull: ["$result.published_at", null] },
-              onError: "$createdAt",
-              onNull: "$createdAt"
-            }
+          sortAt: {
+            $ifNull: [
+              "$sortAt",
+              {
+                $dateFromString: {
+                  dateString: { $ifNull: ["$result.published_at", null] },
+                  onError: { $ifNull: ["$ingestedAt", "$createdAt"] },
+                  onNull: { $ifNull: ["$ingestedAt", "$createdAt"] }
+                }
+              }
+            ]
           }
         }
       });
@@ -1145,7 +1170,7 @@ export class ItemsService {
       if (filters.dateRange.end) {
         dateMatch.$lte = filters.dateRange.end;
       }
-      pipeline.push({ $match: { publishedAt: dateMatch } });
+      pipeline.push({ $match: { sortAt: dateMatch } });
     }
 
     pipeline.push(

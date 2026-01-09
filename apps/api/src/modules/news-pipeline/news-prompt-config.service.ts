@@ -18,6 +18,7 @@ export const DEFAULT_SYSTEM_PROMPT_TEMPLATE = [
   "Entities must include type (person/org/location/product/index/policy/other) and confidence 0-1.",
   "Always populate removed_noise_types with every noise category you remove, including garbled_text for encoding noise.",
   "quality_score is a decimal 0-1 reflecting completeness, readability, and de-noising success.",
+  "sentiment_label must be one of positive/neutral/negative reflecting the overall tone; use neutral when uncertain.",
   "Use null for fields you cannot infer, never omit required properties.",
   "{{language_hint}}"
 ].join(" ");

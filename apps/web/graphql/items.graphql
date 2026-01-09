@@ -17,6 +17,7 @@ query Items(
         publishedAt
         processed {
           result
+          resultJson
           tags
           duplicateOf
           duplicateSimilarity
@@ -102,6 +103,7 @@ query Item($id: String!) {
         latencyMs
       }
       result
+      resultJson
       createdAt
     }
   }

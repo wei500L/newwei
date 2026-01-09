@@ -1,5 +1,6 @@
 import {
   ProcessedItemModel,
+  RawItemModel,
   TaskLogModel,
   type ProcessedItemDocument,
 } from "@modular/mongo";
@@ -328,12 +329,17 @@ export class NewsPipelineService {
       options.processedItemId && Types.ObjectId.isValid(options.processedItemId)
         ? options.processedItemId
         : new Types.ObjectId().toHexString();
+    const crawlPublishedAt = this.parseDate(options.article.publishedAt)?.toISOString() ?? null;
+    const cleaned: CleanedNews = {
+      ...options.cleaned,
+      published_at: options.cleaned.published_at ?? crawlPublishedAt
+    };
     const outboxPayload = this.buildProcessedItemOutboxPayload({
       processedItemId,
       raw: options.raw,
       orgId: options.job.orgId,
       payload: options.payload,
-      cleaned: options.cleaned,
+      cleaned,
       llm: options.llm,
       summaryEmbedding: options.summaryEmbedding ?? undefined,
       summaryEmbeddingModel: options.summaryEmbeddingModel ?? undefined,
@@ -347,7 +353,7 @@ export class NewsPipelineService {
       processedItemId,
       contentHash: options.contentHash,
       article: options.article,
-      cleaned: options.cleaned,
+      cleaned,
       llm: options.llm,
       processedArticleId: options.processedArticleId,
       normalizedPayload: options.payload,
@@ -1204,8 +1210,32 @@ export class NewsPipelineService {
     }
 
     try {
-      const created = await this.writeProcessedItemFromPayload(payload.document);
-      const publishedAt = this.parseDate(payload.document.result?.published_at ?? null);
+      const itemMeta = await this.prisma.itemMeta.findUnique({
+        where: { id: payload.document.itemMetaId },
+        select: { id: true, orgId: true, createdAt: true, publishedAt: true }
+      });
+      const ingestedAt = itemMeta?.createdAt ?? new Date();
+      let publishedAt = this.parseDate(payload.document.result?.published_at ?? null);
+      if (!publishedAt && itemMeta?.publishedAt) {
+        publishedAt = itemMeta.publishedAt;
+      }
+      if (!publishedAt) {
+        const raw = await RawItemModel.findById(payload.document.rawItemId, { payload: 1 }).lean();
+        const rawPayload =
+          raw?.payload && typeof raw.payload === "object" && !Array.isArray(raw.payload)
+            ? (raw.payload as Record<string, unknown>)
+            : null;
+        const rawCandidate = rawPayload
+          ? ((rawPayload as { publishedAt?: unknown }).publishedAt ??
+              (rawPayload as { published_at?: unknown }).published_at)
+          : null;
+        publishedAt = this.parseDate(
+          typeof rawCandidate === "string" || rawCandidate instanceof Date ? rawCandidate : null
+        );
+      }
+
+      const sortAt = publishedAt ?? ingestedAt;
+      const created = await this.writeProcessedItemFromPayload(payload.document, { ingestedAt, sortAt });
       await this.prisma.itemMeta.updateMany({
         where: {
           id: payload.document.itemMetaId,
@@ -1213,8 +1243,7 @@ export class NewsPipelineService {
         },
         data: {
           status: ItemStatus.Completed,
-          publishedAt: publishedAt ?? null,
-          ...(publishedAt ? { sortAt: publishedAt } : {})
+          ...(publishedAt ? { publishedAt, sortAt: publishedAt } : {})
         },
       });
       await this.prisma.mongoOutbox.delete({ where: { id: outboxId } });
@@ -1320,6 +1349,7 @@ export class NewsPipelineService {
 
   private async writeProcessedItemFromPayload(
     document: ProcessedItemOutboxPayload["document"],
+    options?: { ingestedAt?: Date; sortAt?: Date },
   ): Promise<ProcessedItemDocument> {
     try {
       const duplicateRef = this.normalizeProcessedItemRef(document.duplicateOf);
@@ -1330,6 +1360,8 @@ export class NewsPipelineService {
         rawItemId,
         itemMetaId: document.itemMetaId,
         orgId: document.orgId,
+        ...(options?.ingestedAt ? { ingestedAt: options.ingestedAt } : {}),
+        ...(options?.sortAt ? { sortAt: options.sortAt } : {}),
         status: document.status,
         tags: document.tags,
         result: document.result,

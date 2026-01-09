@@ -54,6 +54,52 @@ const optionalNullableIsoDateTimeString = z
     return parsed ? parsed.toISOString() : null;
   });
 
+const optionalNullableSentimentLabel = z
+  .union([z.string(), z.null()])
+  .optional()
+  .transform((value) => {
+    if (value === null) {
+      return null;
+    }
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const normalized = trimmed.toLowerCase();
+    const isPositive =
+      normalized === "positive" ||
+      normalized.startsWith("pos") ||
+      normalized.includes("正面") ||
+      normalized.includes("积极") ||
+      normalized.includes("利好");
+    if (isPositive) {
+      return "positive";
+    }
+
+    const isNegative =
+      normalized === "negative" ||
+      normalized.startsWith("neg") ||
+      normalized.includes("负面") ||
+      normalized.includes("消极") ||
+      normalized.includes("利空");
+    if (isNegative) {
+      return "negative";
+    }
+
+    const isNeutral =
+      normalized === "neutral" ||
+      normalized.startsWith("neu") ||
+      normalized.includes("中性") ||
+      normalized.includes("中立");
+    if (isNeutral) {
+      return "neutral";
+    }
+    return normalized;
+  });
+
 const crawlOptionsSchema: z.ZodType<Partial<CrawlTaskOptions>> = z
   .object({})
   .catchall(z.unknown());
@@ -92,6 +138,8 @@ export const CleanedNewsSchema = z.object({
   language: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
+  sentiment: optionalNullableSentimentLabel,
+  sentiment_label: optionalNullableSentimentLabel,
   topics: z.array(z.string().min(1)).default([]),
   summary: z.string().nullable().optional(),
   key_points: z.array(z.string().min(1)).default([]),

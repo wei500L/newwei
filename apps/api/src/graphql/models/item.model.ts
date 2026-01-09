@@ -1,4 +1,5 @@
 import { Field, Float, GraphQLISODateTime, HideField, ID, Int, ObjectType } from "@nestjs/graphql";
+import GraphQLJSONScalar from "graphql-type-json";
 
 import { HasPermission } from "../decorators/has-permission.decorator";
 
@@ -65,6 +66,9 @@ export class ProcessedItemModelGraph {
 
   @Field(() => String, { nullable: true })
   result?: string;
+
+  @Field(() => GraphQLJSONScalar, { nullable: true, description: "Processed result JSON object" })
+  resultJson?: Record<string, unknown> | null;
 
   @Field(() => String, { nullable: true })
   duplicateOf?: string | null;

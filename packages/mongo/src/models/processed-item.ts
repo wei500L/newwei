@@ -28,6 +28,8 @@ const ProcessedItemResultSchema = new Schema(
     language: { type: String, default: null },
     location: { type: String, default: null },
     category: { type: String, default: null },
+    sentiment: { type: String, default: null },
+    sentiment_label: { type: String, default: null },
     topics: { type: [String], default: [] },
     summary: { type: String, default: null },
     key_points: { type: [String], default: [] },
@@ -46,6 +48,8 @@ const ProcessedItemSchema = new Schema(
     rawItemId: { type: Schema.Types.ObjectId, ref: "RawItem", required: true },
     itemMetaId: { type: String, index: true, required: true },
     orgId: { type: String, index: true, required: true },
+    ingestedAt: { type: Date, default: undefined },
+    sortAt: { type: Date, default: undefined },
     traceId: { type: String, index: true, default: null },
     pipelineJobId: { type: String, index: true, default: null },
     sourceId: { type: String, index: true, default: null },
@@ -78,6 +82,7 @@ const ProcessedItemSchema = new Schema(
 
 ProcessedItemSchema.index({ orgId: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, createdAt: -1 });
+ProcessedItemSchema.index({ orgId: 1, status: 1, sortAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, duplicateOf: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, summaryEmbeddingModel: 1, duplicateOf: 1, createdAt: -1 });
 

@@ -26,7 +26,14 @@ const parseJson = <T,>(value?: string | null): T | null => {
     return null;
   }
   try {
-    return JSON.parse(value) as T;
+    let parsed: unknown = value;
+    for (let depth = 0; depth < 3; depth += 1) {
+      if (typeof parsed !== 'string') {
+        break;
+      }
+      parsed = JSON.parse(parsed) as unknown;
+    }
+    return parsed as T;
   } catch {
     return null;
   }
@@ -83,10 +90,13 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   }, [loading]);
 
   const item = data?.item ?? null;
-  const processedResult = useMemo(
-    () => parseJson<Record<string, unknown>>(item?.processed?.result),
-    [item?.processed?.result]
-  );
+  const processedResult = useMemo(() => {
+    const candidate = item?.processed?.resultJson;
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate as Record<string, unknown>;
+    }
+    return parseJson<Record<string, unknown>>(item?.processed?.result);
+  }, [item?.processed?.result, item?.processed?.resultJson]);
   const rawPayload = useMemo(
     () => parseJson<Record<string, unknown>>(item?.raw?.payload),
     [item?.raw?.payload]

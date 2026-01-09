@@ -287,9 +287,114 @@ export class DashboardChartsService {
       }
     }
 
+    if (events.length > 0) {
+      return {
+        events,
+        updatedAt: latestTimestamp ? latestTimestamp.toISOString() : undefined
+      };
+    }
+
+    return this.getWarMapNewsSignals(range, orgId, geoIndex);
+  }
+
+  private async getWarMapNewsSignals(
+    range: DateRange,
+    orgId: string,
+    geoIndex: Map<string, { name: string; lat: number; lng: number }>
+  ): Promise<WarMapEventsResponse> {
+    const records = await this.prisma.processedArticle.findMany({
+      where: {
+        location: { not: null },
+        article: {
+          orgId,
+          crawlAt: {
+            gte: range.start,
+            lte: range.end
+          }
+        }
+      },
+      select: {
+        location: true,
+        processedAt: true,
+        article: {
+          select: {
+            crawlAt: true
+          }
+        }
+      },
+      orderBy: { processedAt: "desc" },
+      take: 2500
+    });
+
+    const signals = new Map<
+      string,
+      {
+        name: string;
+        lat: number;
+        lng: number;
+        count: number;
+        latestAt?: Date;
+      }
+    >();
+
+    for (const record of records) {
+      const location = record.location;
+      if (!location || typeof location !== "string") {
+        continue;
+      }
+      const resolvedCode = normalizeGeoId(extractCountryCodeFromText(location) ?? location);
+      if (!resolvedCode) {
+        continue;
+      }
+      const geo = geoIndex.get(resolvedCode);
+      if (!geo) {
+        continue;
+      }
+
+      const entry = signals.get(resolvedCode) ?? {
+        name: geo.name,
+        lat: geo.lat,
+        lng: geo.lng,
+        count: 0,
+        latestAt: undefined
+      };
+      entry.count += 1;
+      const latestAt = record.article.crawlAt ?? record.processedAt;
+      entry.latestAt =
+        !entry.latestAt || latestAt > entry.latestAt ? latestAt : entry.latestAt;
+      signals.set(resolvedCode, entry);
+    }
+
+    let updatedAt: Date | undefined;
+    const events: WarMapEvent[] = [];
+    for (const [code, entry] of signals.entries()) {
+      if (!entry.latestAt) {
+        continue;
+      }
+      const derivedScore = entry.count;
+      const severity =
+        derivedScore >= 8
+          ? AlertSeverity.high
+          : derivedScore >= 4
+            ? AlertSeverity.medium
+            : AlertSeverity.low;
+      events.push({
+        id: code.toLowerCase(),
+        name: entry.name,
+        lat: entry.lat,
+        lng: entry.lng,
+        severity,
+        derivedScore,
+        value: derivedScore
+      });
+      if (!updatedAt || entry.latestAt > updatedAt) {
+        updatedAt = entry.latestAt;
+      }
+    }
+
     return {
       events,
-      updatedAt: latestTimestamp ? latestTimestamp.toISOString() : undefined
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
     };
   }
 

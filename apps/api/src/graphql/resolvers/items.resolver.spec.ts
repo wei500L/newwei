@@ -26,6 +26,7 @@ describe("ItemsResolver.processed", () => {
     const result = await resolver.processed({ metaId: "meta-1" } as any, loader as any);
     expect(result?.result).toBeDefined();
     expect(JSON.parse(result!.result!)).toMatchObject({ title: "Hello" });
+    expect(result?.resultJson).toMatchObject({ title: "Hello" });
   });
 
   it("returns stable JSON string when result is an object", async () => {
@@ -38,6 +39,7 @@ describe("ItemsResolver.processed", () => {
 
     const result = await resolver.processed({ metaId: "meta-1" } as any, loader as any);
     expect(JSON.parse(result!.result!)).toMatchObject({ title: "Object Result", topics: ["t1"] });
+    expect(result?.resultJson).toMatchObject({ title: "Object Result", topics: ["t1"] });
   });
 
   it("returns undefined when result is invalid JSON", async () => {
@@ -50,6 +52,7 @@ describe("ItemsResolver.processed", () => {
 
     const result = await resolver.processed({ metaId: "meta-1" } as any, loader as any);
     expect(result?.result).toBeUndefined();
+    expect(result?.resultJson).toBeNull();
   });
 });
 

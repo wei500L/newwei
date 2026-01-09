@@ -372,9 +372,14 @@ export class ItemsResolver {
       return null;
     }
     const normalizedResult = normalizeProcessedResult(processed.result);
+    const resultJson =
+      normalizedResult && typeof normalizedResult === "object" && !Array.isArray(normalizedResult)
+        ? (normalizedResult as Record<string, unknown>)
+        : null;
     return {
       ...processed,
-      result: normalizedResult === null ? undefined : JSON.stringify(normalizedResult)
+      result: normalizedResult === null ? undefined : JSON.stringify(normalizedResult),
+      resultJson
     };
   }
 
