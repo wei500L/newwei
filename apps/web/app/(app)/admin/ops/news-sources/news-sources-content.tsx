@@ -32,6 +32,7 @@ type NewsSourceRecord = {
   url: string;
   siteType: string;
   language?: string | null;
+  crawlTemplateId?: string | null;
   frequencySeconds: number;
   priority: number;
   isActive: boolean;
@@ -40,11 +41,18 @@ type NewsSourceRecord = {
   config?: Record<string, unknown> | null;
 };
 
+type CrawlTemplateRecord = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
 type NewsSourceFormValues = {
   name: string;
   url: string;
   siteType: string;
   language?: string;
+  crawlTemplateId?: string;
   frequencySeconds: number;
   priority: number;
   isActive: boolean;
@@ -94,6 +102,7 @@ export function NewsSourcesContent() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sources, setSources] = useState<NewsSourceRecord[]>([]);
+  const [templates, setTemplates] = useState<CrawlTemplateRecord[]>([]);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState<NewsSourceRecord | null>(null);
@@ -120,11 +129,21 @@ export function NewsSourcesContent() {
     }
   }, [apiClient, messageApi, t]);
 
+  const loadTemplates = useCallback(async () => {
+    try {
+      const response = await apiClient.get<CrawlTemplateRecord[]>("admin/crawl-templates");
+      setTemplates(response.data ?? []);
+    } catch (error) {
+      captureClientError("Failed to load crawl templates", error);
+    }
+  }, [apiClient]);
+
   useEffect(() => {
     if (canView) {
       void loadSources();
+      void loadTemplates();
     }
-  }, [canView, loadSources]);
+  }, [canView, loadSources, loadTemplates]);
 
   const filteredSources = useMemo(() => {
     if (!search.trim()) {
@@ -147,6 +166,16 @@ export function NewsSourcesContent() {
     { value: "regulatory", label: t("newsSources.types.regulatory", { defaultValue: "Regulatory" }) },
     { value: "other", label: t("newsSources.types.other", { defaultValue: "Other" }) }
   ];
+
+  const templateMap = useMemo(() => new Map(templates.map((template) => [template.id, template])), [templates]);
+  const templateOptions = useMemo(
+    () =>
+      templates.map((template) => ({
+        value: template.id,
+        label: template.isActive ? template.name : `${template.name} (${t("common.disabled")})`
+      })),
+    [t, templates]
+  );
 
   const openCreate = () => {
     setEditingSource(null);
@@ -171,6 +200,7 @@ export function NewsSourcesContent() {
       url: source.url,
       siteType: source.siteType,
       language: source.language ?? "",
+      crawlTemplateId: source.crawlTemplateId ?? undefined,
       frequencySeconds: source.frequencySeconds,
       priority: source.priority,
       isActive: source.isActive,
@@ -224,6 +254,7 @@ export function NewsSourcesContent() {
         url: values.url,
         siteType: values.siteType,
         language: values.language?.trim() ?? "",
+        crawlTemplateId: values.crawlTemplateId?.trim() ? values.crawlTemplateId.trim() : null,
         frequencySeconds: values.frequencySeconds,
         priority: values.priority,
         isActive: values.isActive,
@@ -352,6 +383,25 @@ export function NewsSourcesContent() {
       render: (value: string) => {
         const label = siteTypeOptions.find((option) => option.value === value)?.label ?? value;
         return <Tag>{label}</Tag>;
+      }
+    },
+    {
+      title: t("newsSources.columns.template", { defaultValue: "Template" }),
+      dataIndex: "crawlTemplateId",
+      key: "crawlTemplateId",
+      render: (value?: string | null) => {
+        if (!value) {
+          return <Typography.Text type="secondary">-</Typography.Text>;
+        }
+        const template = templateMap.get(value);
+        if (!template) {
+          return <Tag color="default">{value}</Tag>;
+        }
+        return (
+          <Tag color={template.isActive ? "blue" : "orange"}>
+            {template.isActive ? template.name : `${template.name} (${t("common.disabled")})`}
+          </Tag>
+        );
       }
     },
     {
@@ -490,6 +540,17 @@ export function NewsSourcesContent() {
             label={t("newsSources.fields.language", { defaultValue: "Language" })}
           >
             <Input placeholder={t("newsSources.fields.languageHint", { defaultValue: "e.g. en, zh" })} />
+          </Form.Item>
+          <Form.Item
+            name="crawlTemplateId"
+            label={t("newsSources.fields.template", { defaultValue: "Crawl template" })}
+          >
+            <Select
+              showSearch
+              allowClear
+              options={templateOptions}
+              placeholder={t("common.none", { defaultValue: "None" })}
+            />
           </Form.Item>
           <Form.Item
             name="frequencySeconds"

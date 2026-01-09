@@ -478,7 +478,11 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
       actions.push(
         this.prisma.newsSource.updateMany({
           where: { id: options.sourceId },
-          data: { lastSuccessAt: now },
+          data: {
+            lastSuccessAt: now,
+            consecutiveFailures: 0,
+            circuitOpenUntil: null,
+          },
         }),
       );
     }
@@ -488,6 +492,72 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       logger.warn({ error, itemMetaId: options.itemMetaId }, "Failed to mark success state");
     }
+  }
+
+  private computeExponentialBackoffDelay(
+    baseDelayMs: number,
+    attempt: number,
+    maxDelayMs: number,
+  ) {
+    const normalizedAttempt = Math.max(1, Math.floor(attempt));
+    const exponential = baseDelayMs * 2 ** Math.max(0, normalizedAttempt - 1);
+    const capped = Math.min(exponential, maxDelayMs);
+    const jitterFactor = 0.75 + Math.random() * 0.5;
+    return Math.round(capped * jitterFactor);
+  }
+
+  private async markSourceFailureState(options: {
+    sourceId: string;
+    failureAt: Date;
+  }) {
+    const cfg = this.env.newsSourceSchedulerConfig;
+    const threshold = Math.max(0, Math.floor(cfg.circuitBreakerThreshold));
+
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.newsSource.findUnique({
+        where: { id: options.sourceId },
+        select: { consecutiveFailures: true, isActive: true },
+      });
+      if (!existing?.isActive) {
+        return;
+      }
+
+      const previousFailures = Number(existing.consecutiveFailures ?? 0);
+      const consecutiveFailures = previousFailures + 1;
+
+      const retryDelayMs = this.computeExponentialBackoffDelay(
+        cfg.failureRecoveryDelayMs,
+        consecutiveFailures,
+        cfg.failureMaxDelayMs,
+      );
+      const retryAt = new Date(options.failureAt.getTime() + retryDelayMs);
+
+      let circuitOpenUntil: Date | null = null;
+      if (threshold > 0 && consecutiveFailures >= threshold) {
+        const circuitAttempt = consecutiveFailures - threshold + 1;
+        const circuitDelayMs = this.computeExponentialBackoffDelay(
+          cfg.circuitBreakerBaseDelayMs,
+          circuitAttempt,
+          cfg.circuitBreakerMaxDelayMs,
+        );
+        circuitOpenUntil = new Date(options.failureAt.getTime() + circuitDelayMs);
+      }
+
+      const nextRunAt =
+        circuitOpenUntil && circuitOpenUntil.getTime() > retryAt.getTime()
+          ? circuitOpenUntil
+          : retryAt;
+
+      await tx.newsSource.update({
+        where: { id: options.sourceId },
+        data: {
+          lastFailureAt: options.failureAt,
+          consecutiveFailures,
+          circuitOpenUntil,
+          nextRunAt,
+        },
+      });
+    });
   }
 
   private async markFailureState(options: {
@@ -540,19 +610,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     }
 
     if (options.sourceId && options.finalFailure) {
-      const recoveryAt = new Date(
-        now.getTime() + this.env.newsSourceSchedulerConfig.failureRecoveryDelayMs,
-      );
       actions.push(
-        this.prisma.newsSource.updateMany({
-          where: {
-            id: options.sourceId,
-            OR: [{ nextRunAt: null }, { nextRunAt: { gt: recoveryAt } }],
-          },
-          data: {
-            lastRunAt: now,
-            nextRunAt: recoveryAt,
-          },
+        this.markSourceFailureState({
+          sourceId: options.sourceId,
+          failureAt: now,
         }),
       );
     }

@@ -57,6 +57,10 @@ export interface NewsSourceSchedulerConfig {
   inFlightLookbackMs: number;
   inFlightRescheduleDelayMs: number;
   failureRecoveryDelayMs: number;
+  failureMaxDelayMs: number;
+  circuitBreakerThreshold: number;
+  circuitBreakerBaseDelayMs: number;
+  circuitBreakerMaxDelayMs: number;
 }
 
 export interface WebSocketSecurityConfig {
@@ -362,6 +366,18 @@ export class EnvService extends ConfigService<ApiEnv> {
       failureRecoveryDelayMs:
         this.get<number>("NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS", { infer: true }) ??
         600_000,
+      failureMaxDelayMs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS", { infer: true }) ??
+        21_600_000,
+      circuitBreakerThreshold:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD", { infer: true }) ??
+        3,
+      circuitBreakerBaseDelayMs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS", { infer: true }) ??
+        3_600_000,
+      circuitBreakerMaxDelayMs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS", { infer: true }) ??
+        86_400_000,
     };
   }
 

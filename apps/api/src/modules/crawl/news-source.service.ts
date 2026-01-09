@@ -35,6 +35,10 @@ export class NewsSourceService {
       throw new BadRequestException("url is required");
     }
     const language = this.normalizeOptionalString(input.language);
+    const crawlTemplateId = this.normalizeOptionalNullableString(input.crawlTemplateId);
+    if (crawlTemplateId) {
+      await this.assertTemplateInOrg(orgId, crawlTemplateId);
+    }
     const config = this.normalizeConfig(input.config);
     const isActive = input.isActive ?? true;
     const nextRunAt = isActive ? new Date() : null;
@@ -46,6 +50,7 @@ export class NewsSourceService {
         url,
         siteType: input.siteType ?? NewsSourceType.general,
         language,
+        crawlTemplateId,
         frequencySeconds: input.frequencySeconds,
         priority: input.priority,
         isActive,
@@ -82,6 +87,13 @@ export class NewsSourceService {
     if (input.language !== undefined) {
       data.language = this.normalizeOptionalString(input.language);
     }
+    if (input.crawlTemplateId !== undefined) {
+      const crawlTemplateId = this.normalizeOptionalNullableString(input.crawlTemplateId);
+      if (crawlTemplateId) {
+        await this.assertTemplateInOrg(orgId, crawlTemplateId);
+      }
+      data.crawlTemplateId = crawlTemplateId;
+    }
     if (input.frequencySeconds !== undefined) {
       data.frequencySeconds = input.frequencySeconds;
     }
@@ -103,6 +115,10 @@ export class NewsSourceService {
       data.nextRunAt = null;
     } else if (isActivating || frequencyChanged) {
       data.nextRunAt = new Date();
+    }
+    if (isActivating) {
+      data.circuitOpenUntil = null;
+      data.consecutiveFailures = 0;
     }
 
     return this.prisma.newsSource.update({ where: { id }, data });
@@ -126,7 +142,8 @@ export class NewsSourceService {
       where: { id },
       data: {
         isActive: true,
-        nextRunAt: new Date()
+        nextRunAt: new Date(),
+        circuitOpenUntil: null
       }
     });
   }
@@ -137,6 +154,27 @@ export class NewsSourceService {
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private normalizeOptionalNullableString(value?: string | null) {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (value === null) {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private async assertTemplateInOrg(orgId: string, templateId: string) {
+    const template = await this.prisma.crawlTemplate.findUnique({
+      where: { id: templateId },
+      select: { orgId: true }
+    });
+    if (!template || template.orgId !== orgId) {
+      throw new BadRequestException("Invalid crawlTemplateId");
+    }
   }
 
   private normalizeConfig(config?: Record<string, unknown> | null) {

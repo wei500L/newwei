@@ -25,7 +25,14 @@ describe("ItemsService.listWithCursor", () => {
       }
     };
 
-    const service = new ItemsService(prisma as any, {} as any, {} as any);
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
 
     await service.listWithCursor(
       "org-1",
@@ -71,7 +78,14 @@ describe("ItemsService.listWithCursor", () => {
       }
     };
 
-    const service = new ItemsService(prisma as any, {} as any, {} as any);
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
 
     await service.listWithCursor(
       "org-1",
@@ -95,4 +109,3 @@ describe("ItemsService.listWithCursor", () => {
     );
   });
 });
-

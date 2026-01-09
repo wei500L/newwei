@@ -65,6 +65,15 @@ export function AdminContent() {
       permission: "settings.manage"
     },
     {
+      key: "quality",
+      title: t("adminConsole.links.quality.title", { defaultValue: "Data Quality" }),
+      description: t("adminConsole.links.quality.description", {
+        defaultValue: "Monitor pipeline success, latency, and source reliability"
+      }),
+      href: "/admin/quality",
+      permission: "settings.manage"
+    },
+    {
       key: "storage",
       title: t("adminConsole.links.storage.title", { defaultValue: "Storage Settings" }),
       description: t("adminConsole.links.storage.description", {

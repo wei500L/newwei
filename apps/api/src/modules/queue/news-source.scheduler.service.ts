@@ -2,7 +2,7 @@ import { RawItemModel } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { PipelineJobStatus, type NewsSource } from "@prisma/client";
+import { PipelineJobStatus, Prisma } from "@prisma/client";
 
 import { ItemStatus } from "../../common/pipeline-status";
 import { CacheService } from "../cache/cache.service";
@@ -19,6 +19,10 @@ const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
   PipelineJobStatus.running,
   PipelineJobStatus.delayed,
 ];
+
+type NewsSourceWithTemplate = Prisma.NewsSourceGetPayload<{
+  include: { crawlTemplate: { select: { id: true; isActive: true; crawlOptions: true } } };
+}>;
 
 @Injectable()
 export class NewsSourceSchedulerService {
@@ -52,7 +56,30 @@ export class NewsSourceSchedulerService {
       .filter((entry) => entry.length > 0);
   }
 
-  private buildPayload(source: NewsSource) {
+  private normalizeOptions(value: unknown): Record<string, unknown> | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    return value as Record<string, unknown>;
+  }
+
+  private mergeOptions(
+    base: Record<string, unknown> | undefined,
+    override: Record<string, unknown> | undefined
+  ) {
+    if (!base && !override) {
+      return undefined;
+    }
+    if (!base) {
+      return override;
+    }
+    if (!override) {
+      return base;
+    }
+    return { ...base, ...override };
+  }
+
+  private buildPayload(source: NewsSourceWithTemplate) {
     const config =
       source.config && typeof source.config === "object" && !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
@@ -71,12 +98,15 @@ export class NewsSourceSchedulerService {
       metadata: {
         sourceId: source.id,
         sourceType: source.siteType,
+        crawlTemplateId: source.crawlTemplateId ?? undefined,
         ...metadata,
       },
-      crawlOptions:
-        config.crawlOptions && typeof config.crawlOptions === "object"
-          ? config.crawlOptions
+      crawlOptions: this.mergeOptions(
+        source.crawlTemplate?.isActive
+          ? this.normalizeOptions(source.crawlTemplate.crawlOptions)
           : undefined,
+        this.normalizeOptions(config.crawlOptions)
+      ),
       forceRefresh: Boolean(config.forceRefresh),
     };
   }
@@ -85,7 +115,15 @@ export class NewsSourceSchedulerService {
     const sources = await this.prisma.newsSource.findMany({
       where: {
         isActive: true,
-        OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }],
+        AND: [
+          { OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] },
+          { OR: [{ circuitOpenUntil: null }, { circuitOpenUntil: { lte: now } }] },
+        ],
+      },
+      include: {
+        crawlTemplate: {
+          select: { id: true, isActive: true, crawlOptions: true }
+        }
       },
       orderBy: [{ nextRunAt: "asc" }, { updatedAt: "asc" }],
       take: batchSize,

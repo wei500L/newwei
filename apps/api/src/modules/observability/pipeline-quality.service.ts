@@ -15,6 +15,14 @@ export interface PipelineQualitySummary {
   };
   successRate: number | null;
   averageLatencyMs: number | null;
+  ingestionLatencyMs?: {
+    sampleSize: number;
+    averageMs: number | null;
+    p50Ms: number | null;
+    p90Ms: number | null;
+    p99Ms: number | null;
+    maxMs: number | null;
+  };
   failureTypes: {
     stage: string;
     errorName: string;
@@ -43,8 +51,71 @@ export interface PipelineQualitySummary {
 @Injectable()
 export class PipelineQualityService {
   private readonly outboxStaleLockMs = 5 * 60_000;
+  private readonly maxLatencySamples = 5_000;
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private percentile(sorted: number[], pct: number): number | null {
+    if (sorted.length === 0) {
+      return null;
+    }
+    const clamped = Math.min(1, Math.max(0, pct));
+    const index = Math.floor(clamped * (sorted.length - 1));
+    const value = sorted[index];
+    return Number.isFinite(value) ? value : null;
+  }
+
+  private async computeIngestionLatency(orgId: string, since: Date) {
+    const records = await ProcessedItemModel.find(
+      {
+        orgId,
+        createdAt: { $gte: since },
+        status: "completed",
+        ingestedAt: { $type: "date" }
+      },
+      { createdAt: 1, ingestedAt: 1 }
+    )
+      .sort({ createdAt: -1 })
+      .limit(this.maxLatencySamples)
+      .lean();
+
+    const latencies = records
+      .map((record) => {
+        const createdAt = (record as { createdAt?: Date }).createdAt;
+        const ingestedAt = (record as { ingestedAt?: Date }).ingestedAt;
+        if (!createdAt || !ingestedAt) {
+          return null;
+        }
+        const latency = createdAt.getTime() - ingestedAt.getTime();
+        return Number.isFinite(latency) && latency >= 0 ? latency : null;
+      })
+      .filter((latency): latency is number => latency !== null);
+
+    if (latencies.length === 0) {
+      return {
+        sampleSize: 0,
+        averageMs: null,
+        p50Ms: null,
+        p90Ms: null,
+        p99Ms: null,
+        maxMs: null
+      };
+    }
+
+    latencies.sort((a, b) => a - b);
+    const sum = latencies.reduce((acc, value) => acc + value, 0);
+    const averageMs = Math.round(sum / latencies.length);
+    const maxMs = latencies[latencies.length - 1];
+
+    return {
+      sampleSize: latencies.length,
+      averageMs,
+      p50Ms: this.percentile(latencies, 0.5),
+      p90Ms: this.percentile(latencies, 0.9),
+      p99Ms: this.percentile(latencies, 0.99),
+      maxMs
+    };
+  }
 
   async summary(orgId: string, windowMinutes = 60): Promise<PipelineQualitySummary> {
     const normalizedWindow = Math.max(5, Math.min(60 * 24 * 14, Math.floor(windowMinutes)));
@@ -52,7 +123,7 @@ export class PipelineQualityService {
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
 
-    const [statusAgg, latencyAgg, failureAgg, llmAgg, outboxStatusAgg, outboxStaleProcessing, outboxOldest] = await Promise.all([
+    const [statusAgg, latencyAgg, failureAgg, llmAgg, outboxStatusAgg, outboxStaleProcessing, outboxOldest, ingestionLatency] = await Promise.all([
       ProcessedItemModel.aggregate([
         { $match: { orgId, createdAt: { $gte: since } } },
         {
@@ -158,7 +229,8 @@ export class PipelineQualityService {
         where: { orgId, type: MongoOutboxType.processed_item },
         orderBy: { createdAt: "asc" },
         select: { createdAt: true }
-      })
+      }),
+      this.computeIngestionLatency(orgId, since)
     ]);
 
     const totals = {
@@ -228,6 +300,7 @@ export class PipelineQualityService {
       totals,
       successRate,
       averageLatencyMs,
+      ingestionLatencyMs: ingestionLatency,
       failureTypes,
       llmModels,
       outbox: {

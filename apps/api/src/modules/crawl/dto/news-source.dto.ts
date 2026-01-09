@@ -41,6 +41,11 @@ export class CreateNewsSourceDto {
   language?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  crawlTemplateId?: string | null;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(60)
@@ -83,6 +88,11 @@ export class UpdateNewsSourceDto {
   @IsString()
   @MaxLength(12)
   language?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  crawlTemplateId?: string | null;
 
   @IsOptional()
   @Type(() => Number)

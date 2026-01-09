@@ -2,15 +2,19 @@ import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
 import type { MongoConnection } from "@modular/mongo";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Types } from "mongoose";
+import { createHash } from "node:crypto";
 
 import { ItemStatus, PipelineStageStatus } from "../../common/pipeline-status";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
 import {
   NormalizedNewsPayload,
   NormalizedNewsPayloadSchema
 } from "../news-pipeline/news-pipeline.schema";
+import { LiteLlmService } from "../news-pipeline/litellm.service";
 import { QueueService } from "../queue/queue.service";
 
 import { CreateItemDto } from "./dto/create-item.dto";
@@ -31,6 +35,14 @@ const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ITEMS_FILTERS_SEARCH_PREFIX = "__items_filters__:";
 const MAX_FACET_OPTIONS = 50;
+const ITEMS_VECTOR_SEARCH_PREFIX = "__items_vector_search__:";
+const VECTOR_SEARCH_CACHE_TTL_SECONDS = 300;
+const VECTOR_SEARCH_MIN_SIMILARITY = 0.78;
+const VECTOR_SEARCH_MAX_RESULTS = 300;
+const VECTOR_SEARCH_MAX_CANDIDATES = 1200;
+const VECTOR_SEARCH_LOOKBACK_DAYS = 30;
+const TOPIC_GROUPS_CACHE_TTL_SECONDS = 120;
+const EVENT_GROUPS_CACHE_TTL_SECONDS = 120;
 
 type SearchStrategy =
   | { type: "none" }
@@ -79,6 +91,13 @@ interface TopicGroup {
   items: TopicGroupItem[];
 }
 
+interface CachedTopicGroup {
+  topic: string;
+  count: number;
+  latestAt: string;
+  items: Array<Omit<TopicGroupItem, "createdAt"> & { createdAt: string }>;
+}
+
 interface EventGroupItem {
   processedId: string;
   itemMetaId: string;
@@ -102,11 +121,27 @@ interface EventGroup {
   items: EventGroupItem[];
 }
 
+interface CachedEventGroup {
+  eventId: string;
+  count: number;
+  latestAt: string;
+  title?: string | null;
+  summary?: string | null;
+  source?: string | null;
+  publishedAt?: string | null;
+  topics: string[];
+  entities: string[];
+  items: Array<Omit<EventGroupItem, "createdAt"> & { createdAt: string }>;
+}
+
 @Injectable()
 export class ItemsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
+    private readonly cache: CacheService,
+    private readonly env: EnvService,
+    private readonly liteLlm: LiteLlmService,
     @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection
   ) {
     void this._mongo; // Ensure Mongo connection provider is instantiated.
@@ -541,6 +576,34 @@ export class ItemsService {
     );
     const since = new Date(Date.now() - windowDays * DAY_MS);
 
+    const cacheKey = `items:topic-groups:${orgId}:${normalizedLimit}:${normalizedItems}:${windowDays}`;
+    const cached = await this.cache.get<CachedTopicGroup[]>(cacheKey);
+    if (cached && Array.isArray(cached)) {
+      if (cached.length === 0) {
+        return [];
+      }
+      const parsed = cached
+        .map((group) => {
+          const latestAt = new Date(group.latestAt);
+          if (!Number.isFinite(latestAt.valueOf())) {
+            return null;
+          }
+          return {
+            topic: group.topic,
+            count: group.count,
+            latestAt,
+            items: group.items.map((item) => ({
+              ...item,
+              createdAt: new Date(item.createdAt)
+            }))
+          };
+        })
+        .filter((group): group is TopicGroup => Boolean(group));
+      if (parsed.length > 0) {
+        return parsed;
+      }
+    }
+
     const pipeline = [
       {
         $match: {
@@ -643,7 +706,7 @@ export class ItemsService {
       }>;
     }>(pipeline);
 
-    return groups.map((group) => ({
+    const mapped = groups.map((group) => ({
       topic: group._id,
       count: group.count,
       latestAt: group.latestAt,
@@ -657,6 +720,19 @@ export class ItemsService {
         createdAt: item.createdAt
       }))
     }));
+
+    const cachePayload: CachedTopicGroup[] = mapped.map((group) => ({
+      topic: group.topic,
+      count: group.count,
+      latestAt: group.latestAt.toISOString(),
+      items: group.items.map((item) => ({
+        ...item,
+        createdAt: item.createdAt.toISOString()
+      }))
+    }));
+    await this.cache.set(cacheKey, cachePayload, TOPIC_GROUPS_CACHE_TTL_SECONDS);
+
+    return mapped;
   }
 
   async listEventGroups(
@@ -680,6 +756,33 @@ export class ItemsService {
       50
     );
     const since = new Date(Date.now() - windowDays * DAY_MS);
+
+    const cacheKey = `items:event-groups:${orgId}:${normalizedLimit}:${normalizedItems}:${windowDays}:${minGroupSize}`;
+    const cached = await this.cache.get<CachedEventGroup[]>(cacheKey);
+    if (cached && Array.isArray(cached)) {
+      if (cached.length === 0) {
+        return [];
+      }
+      const parsed = cached
+        .map((group) => {
+          const latestAt = new Date(group.latestAt);
+          if (!Number.isFinite(latestAt.valueOf())) {
+            return null;
+          }
+          return {
+            ...group,
+            latestAt,
+            items: group.items.map((item) => ({
+              ...item,
+              createdAt: new Date(item.createdAt)
+            }))
+          };
+        })
+        .filter((group): group is EventGroup => Boolean(group));
+      if (parsed.length > 0) {
+        return parsed;
+      }
+    }
 
     const pipeline = [
       {
@@ -864,7 +967,7 @@ export class ItemsService {
       }>;
     }>(pipeline);
 
-    return groups.map((group) => {
+    const mapped = groups.map((group) => {
       const topics = Array.isArray(group.topics)
         ? group.topics.filter((topic): topic is string => Boolean(topic))
         : [];
@@ -900,6 +1003,18 @@ export class ItemsService {
         }))
       };
     });
+
+    const cachePayload: CachedEventGroup[] = mapped.map((group) => ({
+      ...group,
+      latestAt: group.latestAt.toISOString(),
+      items: group.items.map((item) => ({
+        ...item,
+        createdAt: item.createdAt.toISOString()
+      }))
+    }));
+    await this.cache.set(cacheKey, cachePayload, EVENT_GROUPS_CACHE_TTL_SECONDS);
+
+    return mapped;
   }
 
   private parseSearchPayload(search?: string): ParsedSearchPayload {
@@ -1088,22 +1203,152 @@ export class ItemsService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
+  private cosineSimilarity(a: number[], b: number[]) {
+    if (a.length !== b.length || a.length === 0) {
+      return 0;
+    }
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i += 1) {
+      const ai = a[i];
+      const bi = b[i];
+      if (!Number.isFinite(ai) || !Number.isFinite(bi)) {
+        return 0;
+      }
+      dot += ai * bi;
+      normA += ai * ai;
+      normB += bi * bi;
+    }
+    if (normA === 0 || normB === 0) {
+      return 0;
+    }
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  private vectorSearchCacheKey(orgId: string, query: string) {
+    const hash = createHash("sha256").update(query).digest("hex");
+    return `${ITEMS_VECTOR_SEARCH_PREFIX}${orgId}:${hash}`;
+  }
+
+  private async resolveVectorSearchIds(orgId: string, search: string): Promise<string[]> {
+    const embeddingModel = this.env.liteLlmConfig.embeddingModel;
+    if (!embeddingModel) {
+      return [];
+    }
+
+    const normalized = search.trim();
+    if (!normalized) {
+      return [];
+    }
+
+    const tokens = this.tokenizeSearch(normalized, MONGO_MIN_TOKEN_LENGTH);
+    if (tokens.length < 2 && normalized.length < 16) {
+      return [];
+    }
+
+    const cacheKey = this.vectorSearchCacheKey(orgId, normalized.toLowerCase());
+
+    const loader = async () => {
+      const response = await this.liteLlm.embedding({
+        model: embeddingModel,
+        input: normalized,
+        metadata: {
+          orgId,
+          source: "items-search",
+        },
+      });
+      const embedding = response.data?.[0]?.embedding;
+      if (!Array.isArray(embedding) || embedding.length === 0) {
+        return [];
+      }
+      const model = response.model ?? embeddingModel;
+      const cutoff = new Date(Date.now() - VECTOR_SEARCH_LOOKBACK_DAYS * DAY_MS);
+
+      const candidates = await ProcessedItemModel.find(
+        {
+          orgId,
+          status: PipelineStageStatus.Completed,
+          summaryEmbeddingModel: model,
+          summaryEmbedding: { $exists: true, $ne: [] },
+          duplicateOf: null,
+          createdAt: { $gte: cutoff },
+        },
+        { itemMetaId: 1, summaryEmbedding: 1 },
+      )
+        .sort({ createdAt: -1 })
+        .limit(VECTOR_SEARCH_MAX_CANDIDATES)
+        .lean();
+
+      const scored: Array<{ itemMetaId: string; score: number }> = [];
+      for (const candidate of candidates) {
+        const itemMetaId = (candidate as { itemMetaId?: unknown }).itemMetaId;
+        if (typeof itemMetaId !== "string" || itemMetaId.length === 0) {
+          continue;
+        }
+        const vector = (candidate as { summaryEmbedding?: unknown }).summaryEmbedding;
+        if (!Array.isArray(vector) || vector.length !== embedding.length) {
+          continue;
+        }
+        const similarity = this.cosineSimilarity(
+          embedding,
+          vector as number[],
+        );
+        if (!Number.isFinite(similarity) || similarity < VECTOR_SEARCH_MIN_SIMILARITY) {
+          continue;
+        }
+        scored.push({ itemMetaId, score: similarity });
+      }
+
+      scored.sort((a, b) => b.score - a.score);
+      const ids: string[] = [];
+      const seen = new Set<string>();
+      for (const entry of scored) {
+        if (seen.has(entry.itemMetaId)) {
+          continue;
+        }
+        ids.push(entry.itemMetaId);
+        seen.add(entry.itemMetaId);
+        if (ids.length >= VECTOR_SEARCH_MAX_RESULTS) {
+          break;
+        }
+      }
+      return ids;
+    };
+
+    try {
+      return await this.cache.wrap(cacheKey, VECTOR_SEARCH_CACHE_TTL_SECONDS, loader, {
+        lockTtlMs: 5_000,
+        retryDelayMs: 50,
+        maxWaitMs: 2_000,
+      });
+    } catch {
+      try {
+        return await loader();
+      } catch {
+        return [];
+      }
+    }
+  }
+
   private async resolveSearchIds(orgId: string, search: string) {
     const strategy = this.resolveSearchStrategy(search);
     if (strategy.type === "none") {
       return [];
     }
 
-    const [metaIds, processedIds, processedArticleIds] = await Promise.all([
+    const [metaIds, processedIds, processedArticleIds, vectorIds] = await Promise.all([
       this.resolveMetaSearchIds(orgId, strategy),
       this.resolveProcessedSearchIds(orgId, search),
-      this.resolveProcessedArticleSearchIds(orgId, strategy)
+      this.resolveProcessedArticleSearchIds(orgId, strategy),
+      this.resolveVectorSearchIds(orgId, search),
     ]);
 
     const combined = new Set<string>();
     metaIds.forEach((id) => combined.add(id));
     processedIds.forEach((id) => combined.add(id));
     processedArticleIds.forEach((id) => combined.add(id));
+    vectorIds.forEach((id) => combined.add(id));
     return Array.from(combined);
   }
 

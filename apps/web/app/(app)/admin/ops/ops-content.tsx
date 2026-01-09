@@ -30,6 +30,15 @@ export function OpsContent() {
       permission: "crawl.read"
     },
     {
+      key: "crawl-templates",
+      title: t("ops.links.crawlTemplates.title", { defaultValue: "Crawl Templates" }),
+      description: t("ops.links.crawlTemplates.description", {
+        defaultValue: "Manage reusable Crawl4ai configuration templates"
+      }),
+      href: "/admin/ops/crawl-templates",
+      permission: "crawl.read"
+    },
+    {
       key: "news-sources",
       title: t("ops.links.newsSources.title", { defaultValue: "News Sources" }),
       description: t("ops.links.newsSources.description", {

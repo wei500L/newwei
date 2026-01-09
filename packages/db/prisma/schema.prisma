@@ -29,6 +29,7 @@ model Org {
   auditLogOutbox AuditLogOutbox[]
   items       ItemMeta[]
   crawlTasks  CrawlTask[]
+  crawlTemplates CrawlTemplate[]
   newsSources NewsSource[]
   pipelineJobs PipelineJob[]
   articles    Article[]
@@ -257,6 +258,23 @@ enum CrawlTaskStatus {
   paused
 }
 
+model CrawlTemplate {
+  id           String   @id @default(cuid())
+  org          Org      @relation(fields: [orgId], references: [id])
+  orgId        String
+  name         String
+  description  String?
+  isActive     Boolean  @default(true)
+  crawlOptions Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  newsSources NewsSource[]
+
+  @@unique([orgId, name])
+  @@index([orgId, isActive])
+}
+
 model NewsSource {
   id               String          @id @default(cuid())
   org              Org             @relation(fields: [orgId], references: [id])
@@ -265,11 +283,17 @@ model NewsSource {
   url              String
   siteType         NewsSourceType  @default(general)
   language         String?
+  crawlTemplate    CrawlTemplate?  @relation(fields: [crawlTemplateId], references: [id], onDelete: SetNull)
+  crawlTemplateId  String?
   frequencySeconds Int             @default(3600)
   priority         Int             @default(0)
   isActive         Boolean         @default(true)
   config           Json?
   lastRunAt        DateTime?
+  lastSuccessAt    DateTime?
+  lastFailureAt    DateTime?
+  consecutiveFailures Int          @default(0)
+  circuitOpenUntil DateTime?
   nextRunAt        DateTime?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -277,6 +301,7 @@ model NewsSource {
   jobs     PipelineJob[]
   articles Article[]
 
+  @@index([isActive, nextRunAt])
   @@unique([orgId, url])
 }
 
