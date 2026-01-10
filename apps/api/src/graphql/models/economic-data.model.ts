@@ -35,7 +35,7 @@ export class EconomicDataItemModel {
   @Field({ nullable: true })
   groupLabel?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   defaultUnit?: string | null;
 
   @Field(() => GraphQLJSONScalar, { nullable: true })

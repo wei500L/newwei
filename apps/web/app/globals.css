@@ -68,7 +68,7 @@
   }
 
   .glass-panel {
-    @apply bg-white/92 border border-[var(--border)];
+    @apply bg-white/[0.92] border border-[var(--border)];
   }
 
   .content-card {

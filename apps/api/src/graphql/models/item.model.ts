@@ -85,10 +85,10 @@ export class ProcessedItemModelGraph {
 
 @ObjectType()
 export class ProcessedItemLlmModel {
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   model?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   promptVersion?: string | null;
 
   @Field(() => Float, { nullable: true })
@@ -124,7 +124,7 @@ export class ItemModel {
   @Field(() => GraphQLISODateTime, { description: "Item ingested time (record createdAt)" })
   ingestedAt!: Date;
 
-  @Field({ nullable: true, description: "Content published time (ISO8601)" })
+  @Field(() => String, { nullable: true, description: "Content published time (ISO8601)" })
   publishedAt?: string | null;
 
   @Field()

@@ -88,7 +88,7 @@ export function ChartEmptyState({
   return (
     <div className={`flex h-full items-center justify-center ${className ?? ""}`}>
       <Empty
-        imageStyle={{ height: 80 }}
+        styles={{ image: { height: 80 } }}
         image={
           <svg width="120" height="80" viewBox="0 0 120 80" fill="none">
             <rect

@@ -4,10 +4,10 @@
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "@modular/utils": ["../../packages/utils/src"],
-      "@modular/config": ["../../packages/config/src"],
-      "@modular/db": ["../../packages/db/src"],
-      "@modular/mongo": ["../../packages/mongo/src"]
+      "@modular/utils": ["../../packages/utils/src/index.ts"],
+      "@modular/config": ["../../packages/config/src/index.ts"],
+      "@modular/db": ["../../packages/db/src/index.ts"],
+      "@modular/mongo": ["../../packages/mongo/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],

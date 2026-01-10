@@ -85,12 +85,27 @@ export function formatDateTime(
   locale: SupportedLocale,
   options: Intl.DateTimeFormatOptions
 ) {
-  const timeZone = options.timeZone ?? dayjs.tz.guess();
+  const defaultTimeZone = process.env.NEXT_PUBLIC_TIME_ZONE ?? "Asia/Shanghai";
+  const timeZone = options.timeZone ?? defaultTimeZone;
   const zoned = dayjs(value).tz(timeZone);
   if (!zoned.isValid()) {
     return "";
   }
-  return new Intl.DateTimeFormat(locale, { ...options, timeZone }).format(
-    zoned.toDate()
-  );
+
+  let formatterOptions: Intl.DateTimeFormatOptions = { ...options, timeZone };
+  if ((formatterOptions.dateStyle || formatterOptions.timeStyle) && formatterOptions.timeZoneName) {
+    const { timeZoneName, ...rest } = formatterOptions;
+    formatterOptions = rest;
+  }
+
+  try {
+    return new Intl.DateTimeFormat(locale, formatterOptions).format(zoned.toDate());
+  } catch (error) {
+    const { timeZoneName, ...withoutTimeZoneName } = formatterOptions;
+    try {
+      return new Intl.DateTimeFormat(locale, withoutTimeZoneName).format(zoned.toDate());
+    } catch {
+      return zoned.format("YYYY-MM-DD HH:mm");
+    }
+  }
 }

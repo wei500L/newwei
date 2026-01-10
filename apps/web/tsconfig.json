@@ -7,6 +7,9 @@
         "./app/(app)/components/*",
         "./components/*"
       ],
+      "@/app/*": [
+        "./app/*"
+      ],
       "@/lib/*": [
         "./lib/*"
       ],
@@ -14,7 +17,7 @@
         "./graphql/generated"
       ],
       "@modular/utils": [
-        "../../packages/utils/src"
+        "../../packages/utils/src/index.ts"
       ],
       "@/hooks/*": [
         "./hooks/*"

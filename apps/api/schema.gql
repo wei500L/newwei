@@ -20,20 +20,6 @@ input AlertChannelInput {
   type: AlertChannelType!
 }
 
-input UpdateAlertChannelInput {
-  config: JSON
-  id: String!
-  isActive: Boolean
-  name: String
-  target: String
-}
-
-input UpdateAlertEventStatusInput {
-  eventId: String!
-  note: String
-  status: AlertEventStatus!
-}
-
 type AlertChannelModel {
   config: JSON
   createdAt: DateTime!
@@ -47,13 +33,13 @@ type AlertChannelModel {
 
 enum AlertChannelType {
   email
-  webhook
   in_app
+  webhook
 }
 
 type AlertDeliveryModel {
-  channelType: AlertChannelType!
   channelName: String
+  channelType: AlertChannelType!
   error: String
   id: String!
   sentAt: DateTime
@@ -686,6 +672,29 @@ enum EconomicDataValueType {
   yield
 }
 
+type EventGroupItemModel {
+  createdAt: DateTime!
+  id: ID!
+  itemMetaId: String!
+  publishedAt: String
+  source: String
+  summary: String
+  title: String
+}
+
+type EventGroupModel {
+  count: Int!
+  entities: [String!]!
+  eventId: String!
+  items: [EventGroupItemModel!]!
+  latestAt: DateTime!
+  publishedAt: String
+  source: String
+  summary: String
+  title: String
+  topics: [String!]!
+}
+
 type ItemConnection {
   edges: [ItemEdge!]!
   pageInfo: PageInfo!
@@ -695,6 +704,17 @@ type ItemConnection {
 type ItemEdge {
   cursor: String!
   node: ItemModel!
+}
+
+type ItemFacetOption {
+  count: Int!
+  value: String!
+}
+
+type ItemFacets {
+  regions: [ItemFacetOption!]!
+  sentiments: [ItemFacetOption!]!
+  topics: [ItemFacetOption!]!
 }
 
 type ItemMetaModel {
@@ -710,26 +730,19 @@ type ItemMetaModel {
 type ItemModel {
   createdAt: DateTime!
   id: ID!
+
+  """Item ingested time (record createdAt)"""
   ingestedAt: DateTime!
   meta: ItemMetaModel!
   orgId: String!
   processed: ProcessedItemModelGraph
+
+  """Content published time (ISO8601)"""
   publishedAt: String
   raw: RawItemModelGraph
   status: String!
   title: String!
   updatedAt: DateTime!
-}
-
-type ItemFacetOption {
-  count: Int!
-  value: String!
-}
-
-type ItemFacets {
-  regions: [ItemFacetOption!]!
-  sentiments: [ItemFacetOption!]!
-  topics: [ItemFacetOption!]!
 }
 
 input ItemsDateRangeInput {
@@ -842,19 +855,6 @@ type PermissionModel {
   name: String!
 }
 
-type ProcessedItemModelGraph {
-  createdAt: DateTime!
-  duplicateOf: String
-  duplicateSimilarity: Float
-  id: ID!
-  itemMetaId: String!
-  llm: ProcessedItemLlmModel
-  result: String
-  resultJson: JSON
-  status: String!
-  tags: [String!]!
-}
-
 type ProcessedItemLlmModel {
   completionTokens: Float
   costUsd: Float
@@ -863,6 +863,21 @@ type ProcessedItemLlmModel {
   promptTokens: Float
   promptVersion: String
   totalTokens: Float
+}
+
+type ProcessedItemModelGraph {
+  createdAt: DateTime!
+  duplicateOf: String
+  duplicateSimilarity: Float
+  id: ID!
+  itemMetaId: String!
+  llm: ProcessedItemLlmModel
+  result: String
+
+  """Processed result JSON object"""
+  resultJson: JSON
+  status: String!
+  tags: [String!]!
 }
 
 type Query {
@@ -880,11 +895,11 @@ type Query {
   crawlTasks(after: String, first: Int! = 20, search: String, status: CrawlTaskStatus): CrawlTaskConnection!
   dashboards: [DashboardModel!]!
   economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
-  getEconomicData(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicDataPointModel!]!
   eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!
+  getEconomicData(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicDataPointModel!]!
   item(id: String!): ItemModel
   itemFacets(filters: ItemsFiltersInput, search: String): ItemFacets!
-  items(after: String, first: Int! = 10, filters: ItemsFiltersInput, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, search: String): ItemConnection!
+  items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, search: String): ItemConnection!
   me: UserModel!
   memberships: [MembershipModel!]!
   myOrganizations: [OrgModel!]!
@@ -956,46 +971,6 @@ type RoleModel {
   permissions: [PermissionModel!]!
 }
 
-type TopicGroupModel {
-  count: Int!
-  items: [TopicItemModel!]!
-  latestAt: DateTime!
-  topic: String!
-}
-
-type TopicItemModel {
-  createdAt: DateTime!
-  id: ID!
-  itemMetaId: String!
-  publishedAt: String
-  source: String
-  summary: String
-  title: String
-}
-
-type EventGroupModel {
-  count: Int!
-  entities: [String!]!
-  eventId: String!
-  items: [EventGroupItemModel!]!
-  latestAt: DateTime!
-  publishedAt: String
-  source: String
-  summary: String
-  title: String
-  topics: [String!]!
-}
-
-type EventGroupItemModel {
-  createdAt: DateTime!
-  id: ID!
-  itemMetaId: String!
-  publishedAt: String
-  source: String
-  summary: String
-  title: String
-}
-
 input SeriesPointInput {
   timestamp: String!
   value: Float!
@@ -1020,8 +995,39 @@ enum TimeGranularity {
   year
 }
 
+type TopicGroupModel {
+  count: Int!
+  items: [TopicItemModel!]!
+  latestAt: DateTime!
+  topic: String!
+}
+
+type TopicItemModel {
+  createdAt: DateTime!
+  id: ID!
+  itemMetaId: String!
+  publishedAt: String
+  source: String
+  summary: String
+  title: String
+}
+
 input TriggerDataFetchInput {
   slugs: [String!]!
+}
+
+input UpdateAlertChannelInput {
+  config: JSON
+  id: String!
+  isActive: Boolean
+  name: String
+  target: String
+}
+
+input UpdateAlertEventStatusInput {
+  eventId: String!
+  note: String
+  status: AlertEventStatus!
 }
 
 input UpdateAuditLogRetentionInput {

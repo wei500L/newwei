@@ -221,18 +221,23 @@ export function WarMap() {
     }
 
     let cancelled = false;
-    void import("echarts/core")
-      .then((echartsModule) => {
-        if (cancelled) return;
-        echartsModule.registerMap(mapName, geoQuery.data.geoJson as any);
-        registeredMapsRef.current.add(mapName);
-        setMapReady(true);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMapReady(false);
-        }
-      });
+    void (async () => {
+      const echartsModule = await import("echarts/core");
+      const [installGeo, installMap] = await Promise.all([
+        import("echarts/lib/component/geo/install.js").then((m) => m.install),
+        import("echarts/lib/chart/map/install.js").then((m) => m.install),
+      ]);
+
+      echartsModule.use([installGeo, installMap]);
+      if (cancelled) return;
+      echartsModule.registerMap(mapName, geoQuery.data.geoJson as any);
+      registeredMapsRef.current.add(mapName);
+      setMapReady(true);
+    })().catch(() => {
+      if (!cancelled) {
+        setMapReady(false);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -358,8 +363,7 @@ export function WarMap() {
           progressiveThreshold: useLargeMode ? 800 : undefined,
           animation: !useLargeMode,
           animationDurationUpdate: useLargeMode ? 0 : 300,
-          hoverAnimation: !useLargeMode,
-          emphasis: useLargeMode ? { disabled: true } : undefined,
+          emphasis: useLargeMode ? { disabled: true } : { scale: true },
           symbolSize: (value: unknown) => {
             if (!Array.isArray(value)) return 8;
             const intensity = typeof value[2] === "number" ? value[2] : 0;

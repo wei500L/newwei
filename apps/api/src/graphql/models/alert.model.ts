@@ -92,7 +92,7 @@ export class AlertEventReplayModel {
   @Field()
   metricSlug!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   unit?: string | null;
 
   @Field(() => [AlertEventReplayPointModel])
@@ -236,7 +236,7 @@ export class AlertRuleTuningSuggestionModel {
   @Field(() => AlertTuningAction)
   action!: AlertTuningAction;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   message?: string | null;
 
   @Field(() => Number, { nullable: true })

@@ -15,9 +15,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
-  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -769,10 +767,12 @@ export type ItemModel = {
   __typename?: 'ItemModel';
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
+  /** Item ingested time (record createdAt) */
   ingestedAt: Scalars['DateTime']['output'];
   meta: ItemMetaModel;
   orgId: Scalars['String']['output'];
   processed?: Maybe<ProcessedItemModelGraph>;
+  /** Content published time (ISO8601) */
   publishedAt?: Maybe<Scalars['String']['output']>;
   raw?: Maybe<RawItemModelGraph>;
   status: Scalars['String']['output'];
@@ -1060,6 +1060,7 @@ export type ProcessedItemModelGraph = {
   itemMetaId: Scalars['String']['output'];
   llm?: Maybe<ProcessedItemLlmModel>;
   result?: Maybe<Scalars['String']['output']>;
+  /** Processed result JSON object */
   resultJson?: Maybe<Scalars['JSON']['output']>;
   status: Scalars['String']['output'];
   tags: Array<Scalars['String']['output']>;
