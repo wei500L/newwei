@@ -258,6 +258,36 @@ export default function MilitaryAlertPage() {
               />
             </Col>
           </Row>
+          <Row gutter={[16, 16]}>
+            <Col span={24}>
+              <EconomicChartCard
+                title={t("dashboard.militaryAlert.cards.risk.title")}
+                description={t("dashboard.militaryAlert.cards.risk.description")}
+                seriesMap={seriesMap}
+                meta={chartMeta}
+                series={[
+                  {
+                    slug: "global_shipping_bdi",
+                    label: t("dashboard.militaryAlert.cards.risk.bdi"),
+                    field: "BDI",
+                    type: "line",
+                  },
+                  {
+                    slug: "global_epu_index",
+                    label: t("dashboard.militaryAlert.cards.risk.epuGlobal"),
+                    field: "Global EPU",
+                    type: "line",
+                  },
+                  {
+                    slug: "china_epu_index",
+                    label: t("dashboard.militaryAlert.cards.risk.epuChina"),
+                    field: "China EPU",
+                    type: "line",
+                  },
+                ]}
+              />
+            </Col>
+          </Row>
         </>
       )}
     </div>

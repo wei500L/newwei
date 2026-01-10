@@ -8,9 +8,16 @@ import type { EChartsOption } from "echarts";
 import * as echarts from "echarts/core";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSession } from "next-auth/react";
 
 import { DashboardChart } from "@/components/echart";
 import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
+import { createApiClient } from "@/lib/api-client";
+
+interface WarMapGeoJsonResponse {
+  name: string;
+  geoJson: unknown;
+}
 
 interface MetricDrillDownProps {
   visible: boolean;
@@ -20,7 +27,10 @@ interface MetricDrillDownProps {
 
 export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDownProps) {
   const { t } = useTranslation();
+  const { data: session } = useSession();
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapName, setMapName] = useState<string | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
   
   // Calculate date range for the last 90 days
   const { start, end } = useMemo(() => ({
@@ -47,20 +57,41 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
 
   // Load World Map
   useEffect(() => {
+    if (!visible) return;
     if (mapLoaded) return;
-    fetch('https://cdn.jsdelivr.net/npm/@geo-maps/countries-land-10km/map.geo.json')
-      .then(response => {
-        if (!response.ok) throw new Error('Failed to load map');
-        return response.json();
+    if (!session?.accessToken) return;
+
+    const apiClient = createApiClient({ accessToken: session.accessToken });
+    let cancelled = false;
+    setMapError(null);
+
+    apiClient
+      .get<WarMapGeoJsonResponse>("dashboard/war-map/geojson", {
+        params: {
+          start,
+          end
+        }
       })
-      .then(mapJson => {
-        echarts.registerMap('world', mapJson);
+      .then((response) => {
+        if (cancelled) return;
+        const name = response.data.name || "world";
+        echarts.registerMap(name, response.data.geoJson as any);
+        setMapName(name);
         setMapLoaded(true);
       })
-      .catch(err => {
+      .catch((err) => {
         console.error("Failed to load world map:", err);
+        if (!cancelled) {
+          const message =
+            err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to load map";
+          setMapError(message);
+        }
       });
-  }, [mapLoaded]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [end, mapLoaded, session?.accessToken, start, visible]);
 
   // Process Real Data for Map
   const geoData = useMemo(() => {
@@ -78,7 +109,8 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           typeof ctx?.countryCode === "string" ? ctx.countryCode : typeof ctx?.country === "string" ? ctx.country : null
         );
         if (code) {
-          counts[code] = (counts[code] || 0) + 1;
+          const name = getCountryName(code) ?? code;
+          counts[name] = (counts[name] || 0) + 1;
           found = true;
         }
       }
@@ -87,7 +119,8 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       if (!found && alert.message) {
         const code = extractCountryCodeFromText(alert.message);
         if (code) {
-          counts[code] = (counts[code] || 0) + 1;
+          const name = getCountryName(code) ?? code;
+          counts[name] = (counts[name] || 0) + 1;
         }
       }
     });
@@ -125,7 +158,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   }, [historyData]);
 
   const mapOption = useMemo<EChartsOption>(() => {
-    if (!mapLoaded) return {};
+    if (!mapLoaded || !mapName) return {};
     return {
       tooltip: {
         trigger: 'item',
@@ -151,8 +184,8 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           name: 'Alert Frequency',
           type: 'map',
           roam: true,
-          map: 'world',
-          nameProperty: 'A3',
+          map: mapName,
+          nameProperty: 'name',
           emphasis: {
             label: { show: true },
             itemStyle: { areaColor: '#ffbb00' }
@@ -161,7 +194,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         }
       ]
     };
-  }, [mapLoaded, geoData]);
+  }, [geoData, mapLoaded, mapName]);
 
   const title = data?.history?.[0]?.item.displayName ?? metricKey;
 
@@ -209,6 +242,10 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
               >
                 {mapLoaded ? (
                    <DashboardChart option={mapOption} height={400} />
+                ) : mapError ? (
+                  <div className="h-[400px] flex items-center justify-center bg-gray-50 text-gray-400 text-sm px-6 text-center">
+                    {mapError}
+                  </div>
                 ) : (
                   <div className="h-[400px] flex items-center justify-center bg-gray-50 text-gray-400">
                     <Spin tip="Loading Map Geometry..." />

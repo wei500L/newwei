@@ -247,8 +247,27 @@ export class AkshareService implements OnModuleInit {
       const mergedMetadata = this.mergeMetadata(existingMetadata, seedMetadata);
 
       const updates: Prisma.EconomicDataItemUpdateInput = {};
+      const matchesSeedFunction = existingItem.sourceFunction === definition.sourceFunction;
       if (!existingItem.groupLabel && definition.categories[0]) {
         updates.groupLabel = definition.categories[0];
+      }
+      if (matchesSeedFunction && existingItem.sourceEndpoint !== definition.endpoint) {
+        updates.sourceEndpoint = definition.endpoint;
+      }
+      if (matchesSeedFunction && existingItem.sourceDocUrl !== definition.docUrl) {
+        updates.sourceDocUrl = definition.docUrl;
+      }
+      if (matchesSeedFunction && existingItem.valueType !== definition.valueType) {
+        updates.valueType = definition.valueType;
+      }
+      if (matchesSeedFunction && existingItem.defaultUnit !== definition.defaultUnit) {
+        updates.defaultUnit = definition.defaultUnit;
+      }
+      if (matchesSeedFunction && existingItem.defaultFrequency !== definition.defaultFrequency) {
+        updates.defaultFrequency = definition.defaultFrequency;
+      }
+      if (!existingItem.description && definition.description) {
+        updates.description = definition.description;
       }
       if (!this.metadataEquals(existingMetadata, mergedMetadata)) {
         updates.metadata = this.normalizeMetadata(mergedMetadata);
@@ -679,6 +698,8 @@ export class AkshareService implements OnModuleInit {
         return this.parseTimeseriesPayload(parser as Extract<AkshareParserConfig, { type: "timeseries" }>, payload);
       case "macro":
         return this.parseMacroPayload(parser as Extract<AkshareParserConfig, { type: "macro" }>, payload);
+      case "yearMonth":
+        return this.parseYearMonthPayload(parser as Extract<AkshareParserConfig, { type: "yearMonth" }>, payload);
       case "yieldCurve":
         return this.parseYieldCurvePayload(parser as Extract<AkshareParserConfig, { type: "yieldCurve" }>, payload);
       default: {
@@ -750,7 +771,7 @@ export class AkshareService implements OnModuleInit {
             meta: record
           };
         })
-        .filter((point) => point.value !== null);
+        .filter((point): point is ParsedDataPoint => Boolean(point) && point.value !== null);
     });
   }
 
@@ -778,7 +799,82 @@ export class AkshareService implements OnModuleInit {
             meta: record
           };
         })
-        .filter((point) => point.value !== null);
+        .filter((point): point is ParsedDataPoint => Boolean(point) && point.value !== null);
+    });
+  }
+
+  private parseYearMonthDate(input: { year: unknown; month: unknown; day?: unknown }) {
+    const year =
+      typeof input.year === "number"
+        ? input.year
+        : typeof input.year === "string"
+          ? Number(input.year.trim())
+          : Number.NaN;
+    const month =
+      typeof input.month === "number"
+        ? input.month
+        : typeof input.month === "string"
+          ? Number(input.month.trim())
+          : Number.NaN;
+    const day =
+      input.day === undefined
+        ? 1
+        : typeof input.day === "number"
+          ? input.day
+          : typeof input.day === "string"
+            ? Number(input.day.trim())
+            : Number.NaN;
+
+    if (
+      Number.isInteger(year) &&
+      Number.isInteger(month) &&
+      Number.isInteger(day) &&
+      year >= 1000 &&
+      year <= 9999 &&
+      month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= 31
+    ) {
+      return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    }
+
+    if (Number.isFinite(year) && Number.isFinite(month)) {
+      return this.parseDate(`${String(year)}-${String(month).padStart(2, "0")}-01`);
+    }
+
+    return new Date();
+  }
+
+  private parseYearMonthPayload(parser: Extract<AkshareParserConfig, { type: "yearMonth" }>, payload: unknown) {
+    const records = Array.isArray(payload) ? payload : [];
+    const seen = new Set<string>();
+    return records.flatMap((rawRecord) => {
+      const record = rawRecord as Record<string, unknown>;
+      const recordedAt = this.parseYearMonthDate({
+        year: record[parser.yearField],
+        month: record[parser.monthField],
+        day: parser.dayField ? record[parser.dayField] : undefined
+      });
+      return parser.valueFields
+        .map((field) => {
+          const category = parser.categoryField ? record[parser.categoryField] : undefined;
+          const sourceField = category ? `${category}:${field.field}` : field.field;
+          const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
+          if (seen.has(dedupeKey)) {
+            return undefined;
+          }
+          seen.add(dedupeKey);
+          return {
+            recordedAt,
+            value: this.normalizeNumber(record[field.field]),
+            unit: field.unit,
+            dataType: field.dataType ?? "index",
+            sourceField,
+            meta: record
+          };
+        })
+        .filter((point): point is ParsedDataPoint => Boolean(point) && point.value !== null);
     });
   }
 

@@ -1,4 +1,4 @@
-import type { EconomicDataFrequency} from "@prisma/client";
+import type { EconomicDataFrequency } from "@prisma/client";
 import { EconomicDataValueType } from "@prisma/client";
 
 import type { AkshareDataFieldConfig, AkshareDataItemDefinition } from "./akshare.types";
@@ -663,7 +663,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "中国CPI月度",
     categories: ["economic-alert", "livelihood-prices", "macro-china"],
     sourceFunction: "ak.macro_china_cpi",
-    endpoint: "/macro/china/cpi",
+    endpoint: "/macro_china_cpi",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -706,7 +706,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "中国GDP季度",
     categories: ["economic-long", "economic-medium", "macro-china"],
     sourceFunction: "ak.macro_china_gdp",
-    endpoint: "/macro/china/gdp",
+    endpoint: "/macro_china_gdp",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.index,
@@ -737,7 +737,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "中国M2月度",
     categories: ["economic-medium", "macro-china"],
     sourceFunction: "ak.macro_china_money_supply",
-    endpoint: "/macro/china/money_supply",
+    endpoint: "/macro_china_money_supply",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.index,
@@ -852,7 +852,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "中国PPI月度",
     categories: ["economic-alert", "livelihood-prices", "macro-china"],
     sourceFunction: "ak.macro_china_ppi_yearly",
-    endpoint: "/macro/china/ppi/yearly",
+    endpoint: "/macro_china_ppi_yearly",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -877,7 +877,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "中国官方制造业PMI",
     categories: ["economic-alert", "economic-medium", "macro-china"],
     sourceFunction: "ak.macro_china_pmi_yearly",
-    endpoint: "/macro/china/pmi_yearly",
+    endpoint: "/macro_china_pmi_yearly",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -902,7 +902,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "银行存款准备金率",
     categories: ["economic-alert", "macro-china"],
     sourceFunction: "ak.macro_china_reserve_requirement_ratio",
-    endpoint: "/macro/china/reserve-requirement-ratio",
+    endpoint: "/macro_china_reserve_requirement_ratio",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -933,7 +933,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "美国失业率",
     categories: ["economic-alert", "macro-us"],
     sourceFunction: "ak.macro_usa_unemployment_rate",
-    endpoint: "/macro/usa/unemployment_rate",
+    endpoint: "/macro_usa_unemployment_rate",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -958,7 +958,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "美国Markit服务业PMI",
     categories: ["economic-alert", "macro-us"],
     sourceFunction: "ak.macro_usa_services_pmi",
-    endpoint: "/macro/usa/services_pmi",
+    endpoint: "/macro_usa_services_pmi",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -983,7 +983,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "中国外商直接投资FDI",
     categories: ["economic-medium", "macro-china"],
     sourceFunction: "ak.macro_china_fdi",
-    endpoint: "/macro/china/fdi",
+    endpoint: "/macro_china_fdi",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.index,
@@ -1032,7 +1032,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "中国出口年率(美元)",
     categories: ["economic-short", "macro-china"],
     sourceFunction: "ak.macro_china_exports_yoy",
-    endpoint: "/macro/china/trade/exports/yoy",
+    endpoint: "/macro_china_exports_yoy",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -1069,7 +1069,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "中国进口年率(美元)",
     categories: ["economic-short", "macro-china"],
     sourceFunction: "ak.macro_china_imports_yoy",
-    endpoint: "/macro/china/trade/imports/yoy",
+    endpoint: "/macro_china_imports_yoy",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -1132,12 +1132,112 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     }
   },
   {
+    id: "global-shipping-bdi",
+    slug: "global_shipping_bdi",
+    displayName: "波罗的海干散货指数(BDI)",
+    description: "全球干散货运价指标，可用作供应链与地缘冲突扰动的风险代理指标之一",
+    categories: ["military-alert", "economic-alert", "macro"],
+    sourceFunction: "ak.macro_shipping_bdi",
+    endpoint: "/macro_shipping_bdi",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "点",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "最新值", label: "BDI", unit: "点", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近3月涨跌幅", label: "近3月涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近6月涨跌幅", label: "近6月涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近1年涨跌幅", label: "近1年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近2年涨跌幅", label: "近2年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近3年涨跌幅", label: "近3年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["shipping", "supply-chain", "geopolitics", "risk"]
+  },
+  {
+    id: "china-epu-index",
+    slug: "china_epu_index",
+    displayName: "经济政策不确定性指数(EPU)-中国",
+    description: "Economic Policy Uncertainty (EPU) 指数（按月），可用于风险偏好/地缘冲突背景下的政策不确定性观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "macro-china"],
+    sourceFunction: "ak.article_epu_index",
+    endpoint: "/article_epu_index",
+    docUrl: "https://akshare.akfamily.xyz/data/article/article.html",
+    method: "GET",
+    defaultParams: {
+      symbol: "China"
+    },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: MONTHLY,
+    parser: {
+      type: "yearMonth",
+      yearField: "year",
+      monthField: "month",
+      valueFields: [
+        { field: "China_Policy_Index", label: "China EPU", unit: "index", dataType: EconomicDataValueType.index }
+      ]
+    },
+    tags: ["policy", "uncertainty", "geopolitics", "risk"]
+  },
+  {
+    id: "global-epu-index",
+    slug: "global_epu_index",
+    displayName: "经济政策不确定性指数(EPU)-Global",
+    description: "Economic Policy Uncertainty (EPU) 指数（按月），可用于风险偏好/地缘冲突背景下的全球政策不确定性观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "macro", "global-conflict-index"],
+    sourceFunction: "ak.article_epu_index",
+    endpoint: "/article_epu_index",
+    docUrl: "https://akshare.akfamily.xyz/data/article/article.html",
+    method: "GET",
+    defaultParams: {
+      symbol: "Global"
+    },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: MONTHLY,
+    parser: {
+      type: "yearMonth",
+      yearField: "year",
+      monthField: "month",
+      valueFields: [
+        { field: "Global_Policy_Index", label: "Global EPU", unit: "index", dataType: EconomicDataValueType.index }
+      ]
+    },
+    tags: ["policy", "uncertainty", "geopolitics", "risk"]
+  },
+  {
+    id: "shipping-bdi-latest",
+    slug: "shipping_bdi_latest",
+    displayName: "供应链压力指标(BDI)",
+    description: "波罗的海干散货指数(BDI)最新值（按日），用于 supply-chain-stability 这类综合指标的单一输入",
+    categories: ["supply-chain-stability", "macro", "shipping", "geopolitics"],
+    sourceFunction: "ak.macro_shipping_bdi",
+    endpoint: "/macro_shipping_bdi",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "点",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [{ field: "最新值", label: "BDI", unit: "点", dataType: EconomicDataValueType.index }]
+    },
+    tags: ["shipping", "supply-chain", "risk"]
+  },
+  {
     id: "us-core-pce",
     slug: "us_core_pce",
     displayName: "美国核心PCE物价指数",
     categories: ["economic-alert", "macro-us"],
     sourceFunction: "ak.macro_usa_core_pce_price",
-    endpoint: "/api/macro/usa/core_pce_price",
+    endpoint: "/macro_usa_core_pce_price",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -1174,7 +1274,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "美国非农就业人数",
     categories: ["economic-alert", "macro-us"],
     sourceFunction: "ak.macro_usa_non_farm",
-    endpoint: "/api/macro/usa/non_farm",
+    endpoint: "/macro_usa_non_farm",
     docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
     method: "GET",
     valueType: EconomicDataValueType.quantity,
@@ -1211,7 +1311,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "美国CPI月率",
     categories: ["economic-alert", "macro-us"],
     sourceFunction: "ak.macro_usa_cpi_monthly",
-    endpoint: "/api/macro/usa/cpi",
+    endpoint: "/macro_usa_cpi_monthly",
     docUrl: "https://github.com/akfamily/akshare/blob/main/docs/data/macro/macro.md",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -1233,7 +1333,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "美国GDP月率",
     categories: ["economic-medium", "macro-us"],
     sourceFunction: "ak.macro_usa_gdp_monthly",
-    endpoint: "/api/macro/usa/gdp",
+    endpoint: "/macro_usa_gdp_monthly",
     docUrl: "https://github.com/akfamily/akshare/blob/main/docs/data/macro/macro.md",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -1255,7 +1355,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "美国PPI月率",
     categories: ["economic-alert", "macro-us"],
     sourceFunction: "ak.macro_usa_ppi",
-    endpoint: "/api/macro/usa/ppi",
+    endpoint: "/macro_usa_ppi",
     docUrl: "https://github.com/akfamily/akshare/blob/main/docs/data/macro/macro.md",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -1277,7 +1377,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     displayName: "美国Markit制造业PMI",
     categories: ["economic-alert", "macro-us"],
     sourceFunction: "ak.macro_usa_pmi",
-    endpoint: "/api/macro/usa/pmi",
+    endpoint: "/macro_usa_pmi",
     docUrl: "https://github.com/akfamily/akshare/blob/main/docs/data/macro/macro.md",
     method: "GET",
     valueType: EconomicDataValueType.percent,
@@ -1437,6 +1537,26 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
         { field: "XAUUSD", label: "XAU/USD", unit: "%", dataType: EconomicDataValueType.percent }
       ]
     }
+  },
+  {
+    id: "market-sentiment-usdx",
+    slug: "market_sentiment_usdx",
+    displayName: "市场情绪(USDX)",
+    description: "基于外汇情绪指标中的 USDX 分量，作为市场情绪的一个可观测代理指标",
+    categories: ["market-sentiment"],
+    sourceFunction: "ak.macro_fx_sentiment",
+    endpoint: "/macro_fx_sentiment",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: [{ field: "USDX", label: "USDX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["sentiment", "risk"]
   },
   {
     id: "usd-index-hist",
@@ -1683,5 +1803,25 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
         { field: "close", label: "收盘", unit: "USD", dataType: EconomicDataValueType.price }
       ]
     }
+  },
+  {
+    id: "resource-scarcity-brent",
+    slug: "resource_scarcity_brent",
+    displayName: "资源紧张(布伦特原油)",
+    description: "以布伦特原油收盘价作为资源紧张/能源压力的代理指标之一",
+    categories: ["resource-scarcity"],
+    sourceFunction: "ak.futures_uk_brent",
+    endpoint: "/futures_uk_brent",
+    docUrl: "https://akshare.akfamily.xyz",
+    method: "GET",
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: [{ field: "close", label: "Brent", unit: "USD", dataType: EconomicDataValueType.price }]
+    },
+    tags: ["energy", "commodity", "risk"]
   }
 ] satisfies AkshareDataItemDefinition[];

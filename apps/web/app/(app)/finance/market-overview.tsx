@@ -2,10 +2,12 @@
 
 import { Alert, Button, Card, Skeleton, Typography } from "antd";
 import { useTranslation } from "react-i18next";
+import { useState } from "react";
 
 import { useDashboardHeroMetricsQuery } from "@/graphql/generated";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { MarketPulse } from "@/app/(app)/dashboard/components/market-pulse";
+import { MetricDrillDown } from "@/app/(app)/dashboard/metric-drilldown";
 import { SectorHeatmap } from "@/app/(app)/dashboard/charts/sector-heatmap";
 import { FinancialCandlestick } from "@/app/(app)/dashboard/charts/financial-candlestick";
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -14,6 +16,7 @@ import { useDashboardRangeStore } from "@/store/time-range";
 export function MarketOverview() {
   const { t } = useTranslation();
   const { start, end } = useDashboardRangeStore();
+  const [activeMetricKey, setActiveMetricKey] = useState<string | null>(null);
 
   const {
     data: heroData,
@@ -73,6 +76,7 @@ export function MarketOverview() {
           marketData={heroData?.market ?? []}
           resourceData={heroData?.resource ?? []}
           supplyData={heroData?.supply ?? []}
+          onMetricClick={setActiveMetricKey}
         />
       ) : (
         <ChartEmptyState
@@ -80,6 +84,14 @@ export function MarketOverview() {
           description={t("dashboard.dataEmpty", { defaultValue: "No data" })}
         />
       )}
+
+      {activeMetricKey ? (
+        <MetricDrillDown
+          visible
+          metricKey={activeMetricKey}
+          onClose={() => setActiveMetricKey(null)}
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <Card

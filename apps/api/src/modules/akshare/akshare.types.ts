@@ -38,11 +38,21 @@ export interface AkshareMacroParserConfig {
   valueFields: AkshareDataFieldConfig[];
 }
 
+export interface AkshareYearMonthParserConfig {
+  type: "yearMonth";
+  yearField: string;
+  monthField: string;
+  dayField?: string;
+  categoryField?: string;
+  valueFields: AkshareDataFieldConfig[];
+}
+
 export type AkshareParserConfig =
   | AkshareTimeseriesParserConfig
   | AkshareLatestParserConfig
   | AkshareYieldCurveParserConfig
-  | AkshareMacroParserConfig;
+  | AkshareMacroParserConfig
+  | AkshareYearMonthParserConfig;
 
 export interface AkshareDataItemDefinition {
   id: string;

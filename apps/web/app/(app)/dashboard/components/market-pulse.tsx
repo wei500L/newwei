@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import dayjs from "@/lib/dayjs";
 
 // ... Sparkline component (update to use theme colors if possible, but it accepts color prop) ...
 // Actually, I'll update Sparkline to use theme for area gradient properly if needed, but it takes `color` prop.
@@ -88,6 +89,7 @@ interface HeroMetric {
 interface DataPoint {
   timestamp: string;
   value: number;
+  unit?: string | null;
 }
 
 interface MarketPulseProps {
@@ -101,13 +103,40 @@ interface MarketPulseProps {
 
 const processSeries = (data: DataPoint[] | undefined) => {
   if (!data || data.length === 0) {
-    return { value: 0, trend: 0, history: [] };
+    return { value: 0, trend: 0, history: [], unit: undefined as string | undefined };
   }
-  const history = data.map(d => d.value);
+
+  const normalized = data
+    .map((point) => {
+      const ts = dayjs(point.timestamp).valueOf();
+      return {
+        ts,
+        value: point.value,
+        unit: typeof point.unit === "string" && point.unit.trim() ? point.unit : undefined
+      };
+    })
+    .filter((point) => Number.isFinite(point.ts) && Number.isFinite(point.value))
+    .sort((a, b) => a.ts - b.ts);
+
+  if (normalized.length === 0) {
+    return { value: 0, trend: 0, history: [], unit: undefined as string | undefined };
+  }
+
+  const history = normalized.map((point) => point.value);
   const current = history[history.length - 1];
   const previous = history.length > 1 ? history[history.length - 2] : current;
   const trend = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
-  return { value: current, trend, history };
+  const unit = (() => {
+    for (let i = normalized.length - 1; i >= 0; i -= 1) {
+      const candidate = normalized[i]?.unit;
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return undefined;
+  })();
+
+  return { value: current ?? 0, trend, history, unit };
 };
 
 export function MarketPulse({ 
@@ -135,6 +164,7 @@ export function MarketPulse({
         trend: conflict.trend,
         data: conflict.history,
         color: theme.colors.bearish, // High conflict is bad/red (or bullish color if it means 'high' value? Usually red for danger)
+        suffix: conflict.unit,
       },
       {
         key: "market-sentiment",
@@ -143,6 +173,7 @@ export function MarketPulse({
         trend: market.trend,
         data: market.history,
         color: theme.colors.accent, // Neutral/Warning
+        suffix: market.unit,
       },
       {
         key: "resource-scarcity",
@@ -151,6 +182,7 @@ export function MarketPulse({
         trend: resource.trend,
         data: resource.history,
         color: "#13c2c2", // Cyan
+        suffix: resource.unit,
       },
       {
         key: "supply-chain-stability",
@@ -159,7 +191,7 @@ export function MarketPulse({
         trend: supply.trend,
         data: supply.history,
         color: theme.colors.bullish, // Stability is good
-        suffix: "%",
+        suffix: supply.unit,
       },
     ];
   }, [t, conflictData, marketData, resourceData, supplyData, theme.colors]);

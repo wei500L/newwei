@@ -59,7 +59,7 @@ describe("AkshareService bulk upsert", () => {
 
     prismaMock.$executeRaw.mockImplementation(async (query: any) => {
       callCount += 1;
-      if (Array.isArray(query?.values) && query.values.length > 7) {
+      if (Array.isArray(query?.values) && query.values.length > 8) {
         const error: any = new Error("Raw query failed");
         error.code = "P2010";
         error.meta = { code: "1153", message: "Got a packet bigger than 'max_allowed_packet' bytes" };
@@ -93,3 +93,60 @@ describe("AkshareService bulk upsert", () => {
   });
 });
 
+describe("AkshareService parsers", () => {
+  const createService = () => {
+    const prismaMock = {
+      $executeRaw: jest.fn()
+    };
+
+    const service = new AkshareService(prismaMock as any, {} as any, {} as any, {} as any, {} as any);
+
+    return { prismaMock, service };
+  };
+
+  it("parses year+month payload into UTC timestamps", () => {
+    const { service } = createService();
+    const parser = {
+      type: "yearMonth",
+      yearField: "year",
+      monthField: "month",
+      valueFields: [
+        {
+          field: "China_Policy_Index",
+          label: "China EPU",
+          unit: "index",
+          dataType: "index"
+        }
+      ]
+    };
+
+    const payload = [
+      { year: 1995, month: 1, China_Policy_Index: 192.91191 },
+      { year: "1995", month: "2", China_Policy_Index: "200.5" }
+    ];
+
+    const points = (service as any).parsePayload(parser, payload, { slug: "china_epu_index" });
+    expect(points).toHaveLength(2);
+    expect(points[0]?.recordedAt.toISOString()).toBe("1995-01-01T00:00:00.000Z");
+    expect(points[0]?.value).toBeCloseTo(192.91191);
+    expect(points[1]?.recordedAt.toISOString()).toBe("1995-02-01T00:00:00.000Z");
+    expect(points[1]?.value).toBeCloseTo(200.5);
+  });
+
+  it("does not throw when deduping timeseries payload rows", () => {
+    const { service } = createService();
+    const parser = {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: [{ field: "x", dataType: "index" }]
+    };
+    const payload = [
+      { date: "2024-01-01", x: 1 },
+      { date: "2024-01-01", x: 2 }
+    ];
+
+    const points = (service as any).parsePayload(parser, payload);
+    expect(points).toHaveLength(1);
+    expect(points[0]?.value).toBe(1);
+  });
+});

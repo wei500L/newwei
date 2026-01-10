@@ -521,6 +521,13 @@
           "description": "能源说明",
           "oil": "原油",
           "gas": "天然气"
+        },
+        "risk": {
+          "title": "地缘风险指标",
+          "description": "航运运价与政策不确定性等风险代理指标",
+          "bdi": "BDI 干散货",
+          "epuGlobal": "全球 EPU",
+          "epuChina": "中国 EPU"
         }
       },
       "empty": {

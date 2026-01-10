@@ -521,6 +521,13 @@
           "description": "Energy description",
           "oil": "Oil",
           "gas": "Gas"
+        },
+        "risk": {
+          "title": "Geopolitical risk",
+          "description": "Shipping and policy uncertainty risk proxies",
+          "bdi": "BDI",
+          "epuGlobal": "Global EPU",
+          "epuChina": "China EPU"
         }
       },
       "empty": {
