@@ -104,6 +104,39 @@ describe("AkshareService parsers", () => {
     return { prismaMock, service };
   };
 
+  it("parses intraday clock strings as Asia/Shanghai timestamps", () => {
+    const { service } = createService();
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date("2026-01-10T00:00:00.000Z"));
+      expect((service as any).parseDate("9:30:00").toISOString()).toBe("2026-01-10T01:30:00.000Z");
+      expect((service as any).parseDate("093000").toISOString()).toBe("2026-01-10T01:30:00.000Z");
+      expect((service as any).parseDate("0930").toISOString()).toBe("2026-01-10T01:30:00.000Z");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("resolves dynamic date templates in params", () => {
+    const { service } = createService();
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date("2026-01-10T00:00:00.000Z"));
+      const resolved = (service as any).resolveParams({
+        start_date: "${TODAY_YYYYMMDD-2}",
+        end_date: "${TODAY_YYYYMMDD+1}",
+        untouched: "x"
+      });
+      expect(resolved).toEqual({
+        start_date: "20260108",
+        end_date: "20260111",
+        untouched: "x"
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("parses year+month payload into UTC timestamps", () => {
     const { service } = createService();
     const parser = {

@@ -1,5 +1,5 @@
 import { AkshareResponseModel } from "@modular/mongo";
-import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime } from "@modular/utils";
+import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime, toISODateString } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
 import { EconomicDataRunStatus, Prisma } from "@prisma/client";
@@ -51,6 +51,8 @@ export class AkshareService implements OnModuleInit {
   private readonly logger = new Logger(AkshareService.name);
   private readonly dataPointBatchSize = 1000;
   private readonly dataPointBatchMaxBytes = 2_000_000;
+  private readonly forceParserSyncSlugs = new Set<string>(["global_epu_index", "china_fx_gold_reserves", "macro_fx_sentiment"]);
+  private readonly forceDefaultParamsSyncSlugs = new Set<string>(["macro_fx_sentiment", "market_sentiment_usdx"]);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -245,6 +247,12 @@ export class AkshareService implements OnModuleInit {
 
       const existingMetadata = this.parseMetadata(existingItem.metadata);
       const mergedMetadata = this.mergeMetadata(existingMetadata, seedMetadata);
+      const mergedMetadataWithOverrides = this.forceParserSyncSlugs.has(definition.slug)
+        ? { ...mergedMetadata, parser: seedMetadata.parser }
+        : mergedMetadata;
+      const mergedMetadataWithOverrides2 = this.forceDefaultParamsSyncSlugs.has(definition.slug)
+        ? { ...mergedMetadataWithOverrides, defaultParams: seedMetadata.defaultParams ?? null }
+        : mergedMetadataWithOverrides;
 
       const updates: Prisma.EconomicDataItemUpdateInput = {};
       const matchesSeedFunction = existingItem.sourceFunction === definition.sourceFunction;
@@ -269,8 +277,8 @@ export class AkshareService implements OnModuleInit {
       if (!existingItem.description && definition.description) {
         updates.description = definition.description;
       }
-      if (!this.metadataEquals(existingMetadata, mergedMetadata)) {
-        updates.metadata = this.normalizeMetadata(mergedMetadata);
+      if (!this.metadataEquals(existingMetadata, mergedMetadataWithOverrides2)) {
+        updates.metadata = this.normalizeMetadata(mergedMetadataWithOverrides2);
       }
 
       if (Object.keys(updates).length > 0) {
@@ -655,7 +663,7 @@ export class AkshareService implements OnModuleInit {
       ? definition.endpoint
       : `${config.baseUrl.replace(/\/$/, "")}${definition.endpoint.startsWith("/") ? "" : "/"}${definition.endpoint}`;
     const method = definition.method ?? "GET";
-    const params = definition.defaultParams ?? {};
+    const params = definition.defaultParams ? this.resolveParams(definition.defaultParams) : {};
     const request = async () => {
       const observable = this.http.request({
         method,
@@ -670,6 +678,33 @@ export class AkshareService implements OnModuleInit {
 
     const payload = await this.retry(request, config.maxRetries);
     return { definition, payload };
+  }
+
+  private resolveParams(params: Record<string, string | number>) {
+    const resolved: Record<string, string | number> = {};
+    for (const [key, value] of Object.entries(params)) {
+      resolved[key] = typeof value === "string" ? this.resolveParamTemplate(value) : value;
+    }
+    return resolved;
+  }
+
+  private resolveParamTemplate(value: string) {
+    return value.replace(/\$\{TODAY_YYYYMMDD([+-]\d+)?\}/g, (_match, deltaRaw) => {
+      const deltaDays = typeof deltaRaw === "string" ? Number(deltaRaw) : 0;
+      if (!Number.isFinite(deltaDays)) {
+        return this.getShanghaiDateYYYYMMDD(0);
+      }
+      return this.getShanghaiDateYYYYMMDD(deltaDays);
+    });
+  }
+
+  private getShanghaiDateYYYYMMDD(deltaDays: number) {
+    const now = new Date();
+    const todayShanghai = toISODateString(now, CommonTimeZone.AsiaShanghai);
+    const midnightShanghai =
+      parseDateTime(`${todayShanghai} 00:00:00`, { timeZone: CommonTimeZone.AsiaShanghai }) ?? now;
+    const shifted = new Date(midnightShanghai.getTime() + deltaDays * 24 * 60 * 60 * 1000);
+    return toISODateString(shifted, CommonTimeZone.AsiaShanghai).replace(/-/g, "");
   }
 
   private async retry<T>(fn: () => Promise<T>, attempts: number) {
@@ -899,13 +934,14 @@ export class AkshareService implements OnModuleInit {
   private parseDate(value: unknown) {
     if (typeof value === "string") {
       const trimmed = value.trim();
-      const hhmmssMatch = trimmed.match(/^(\d{2})(\d{2})(\d{2})$/);
-      const hhmmMatch = trimmed.match(/^(\d{2})(\d{2})$/);
-      const match = hhmmssMatch ?? hhmmMatch;
+      const compactHhmmssMatch = trimmed.match(/^(\d{2})(\d{2})(\d{2})$/);
+      const compactHhmmMatch = trimmed.match(/^(\d{2})(\d{2})$/);
+      const colonMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      const match = compactHhmmssMatch ?? compactHhmmMatch ?? colonMatch;
       if (match) {
         const hours = Number(match[1]);
         const minutes = Number(match[2]);
-        const seconds = match.length > 3 ? Number(match[3]) : 0;
+        const seconds = match.length > 3 && typeof match[3] === "string" ? Number(match[3]) : 0;
         if (
           Number.isInteger(hours) &&
           Number.isInteger(minutes) &&
@@ -917,8 +953,15 @@ export class AkshareService implements OnModuleInit {
           seconds >= 0 &&
           seconds <= 59
         ) {
-          const now = new Date();
-          return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, seconds, 0));
+          const todayShanghai = toISODateString(new Date(), CommonTimeZone.AsiaShanghai);
+          const timestamp = `${todayShanghai} ${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+            2,
+            "0"
+          )}:${String(seconds).padStart(2, "0")}`;
+          const parsedIntraday = parseDateTime(timestamp, { timeZone: CommonTimeZone.AsiaShanghai });
+          if (parsedIntraday) {
+            return parsedIntraday;
+          }
         }
       }
     }

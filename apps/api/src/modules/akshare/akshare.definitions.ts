@@ -37,30 +37,33 @@ const createOhlcFields = (unit: string): AkshareDataFieldConfig[] => [
   }
 ];
 
-const createEnglishOhlcFields = (unit: string): AkshareDataFieldConfig[] => [
+const createEnglishOhlcFields = (
+  unit: string,
+  dataType: EconomicDataValueType = EconomicDataValueType.price
+): AkshareDataFieldConfig[] => [
   {
     field: "open",
     label: "开盘价",
     unit,
-    dataType: EconomicDataValueType.price
+    dataType
   },
   {
     field: "high",
     label: "最高价",
     unit,
-    dataType: EconomicDataValueType.price
+    dataType
   },
   {
     field: "low",
     label: "最低价",
     unit,
-    dataType: EconomicDataValueType.price
+    dataType
   },
   {
     field: "close",
     label: "收盘价",
     unit,
-    dataType: EconomicDataValueType.price
+    dataType
   }
 ];
 
@@ -1160,6 +1163,90 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     tags: ["shipping", "supply-chain", "geopolitics", "risk"]
   },
   {
+    id: "global-shipping-bci",
+    slug: "global_shipping_bci",
+    displayName: "波罗的海好望角型指数(BCI)",
+    description: "全球干散货运价结构指标之一，可用作供应链与地缘冲突扰动的风险代理指标之一",
+    categories: ["military-alert", "economic-alert", "macro", "shipping", "geopolitics"],
+    sourceFunction: "ak.macro_shipping_bci",
+    endpoint: "/macro_shipping_bci",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "点",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "最新值", label: "BCI", unit: "点", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近3月涨跌幅", label: "近3月涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近6月涨跌幅", label: "近6月涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近1年涨跌幅", label: "近1年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近2年涨跌幅", label: "近2年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近3年涨跌幅", label: "近3年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["shipping", "supply-chain", "geopolitics", "risk"]
+  },
+  {
+    id: "global-shipping-bpi",
+    slug: "global_shipping_bpi",
+    displayName: "波罗的海巴拿马型指数(BPI)",
+    description: "全球干散货运价结构指标之一，可用作供应链与地缘冲突扰动的风险代理指标之一",
+    categories: ["military-alert", "economic-alert", "macro", "shipping", "geopolitics"],
+    sourceFunction: "ak.macro_shipping_bpi",
+    endpoint: "/macro_shipping_bpi",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "点",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "最新值", label: "BPI", unit: "点", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近3月涨跌幅", label: "近3月涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近6月涨跌幅", label: "近6月涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近1年涨跌幅", label: "近1年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近2年涨跌幅", label: "近2年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近3年涨跌幅", label: "近3年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["shipping", "supply-chain", "geopolitics", "risk"]
+  },
+  {
+    id: "global-shipping-bcti",
+    slug: "global_shipping_bcti",
+    displayName: "波罗的海成品油轮指数(BCTI)",
+    description: "油轮运价与能源运输风险代理指标之一，可用作供应链与地缘冲突扰动的风险观测",
+    categories: ["military-alert", "economic-alert", "macro", "shipping", "geopolitics"],
+    sourceFunction: "ak.macro_shipping_bcti",
+    endpoint: "/macro_shipping_bcti",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "点",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "最新值", label: "BCTI", unit: "点", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近3月涨跌幅", label: "近3月涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近6月涨跌幅", label: "近6月涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近1年涨跌幅", label: "近1年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近2年涨跌幅", label: "近2年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "近3年涨跌幅", label: "近3年涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["shipping", "supply-chain", "geopolitics", "risk"]
+  },
+  {
     id: "china-epu-index",
     slug: "china_epu_index",
     displayName: "经济政策不确定性指数(EPU)-中国",
@@ -1203,10 +1290,134 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     defaultFrequency: MONTHLY,
     parser: {
       type: "yearMonth",
-      yearField: "year",
-      monthField: "month",
+      yearField: "Year",
+      monthField: "Month",
       valueFields: [
-        { field: "Global_Policy_Index", label: "Global EPU", unit: "index", dataType: EconomicDataValueType.index }
+        { field: "GEPU_ppp", label: "Global EPU", unit: "index", dataType: EconomicDataValueType.index }
+      ]
+    },
+    tags: ["policy", "uncertainty", "geopolitics", "risk"]
+  },
+  {
+    id: "us-epu-index",
+    slug: "us_epu_index",
+    displayName: "经济政策不确定性指数(EPU)-美国",
+    description: "Economic Policy Uncertainty (EPU) 指数（按月），可用于全球风险偏好与政策不确定性观测",
+    categories: ["economic-alert", "sentiment", "macro-us", "geopolitics"],
+    sourceFunction: "ak.article_epu_index",
+    endpoint: "/article_epu_index",
+    docUrl: "https://akshare.akfamily.xyz/data/article/article.html",
+    method: "GET",
+    defaultParams: {
+      symbol: "USA"
+    },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: MONTHLY,
+    parser: {
+      type: "yearMonth",
+      yearField: "Year",
+      monthField: "Month",
+      valueFields: [
+        {
+          field: "News_Based_Policy_Uncert_Index",
+          label: "USA EPU",
+          unit: "index",
+          dataType: EconomicDataValueType.index
+        }
+      ]
+    },
+    tags: ["policy", "uncertainty", "geopolitics", "risk"]
+  },
+  {
+    id: "europe-epu-index",
+    slug: "europe_epu_index",
+    displayName: "经济政策不确定性指数(EPU)-欧洲",
+    description: "Economic Policy Uncertainty (EPU) 指数（按月），可用于全球风险偏好与政策不确定性观测",
+    categories: ["economic-alert", "sentiment", "macro", "geopolitics"],
+    sourceFunction: "ak.article_epu_index",
+    endpoint: "/article_epu_index",
+    docUrl: "https://akshare.akfamily.xyz/data/article/article.html",
+    method: "GET",
+    defaultParams: {
+      symbol: "Europe"
+    },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: MONTHLY,
+    parser: {
+      type: "yearMonth",
+      yearField: "Year",
+      monthField: "Month",
+      valueFields: [
+        {
+          field: "European_News_Index",
+          label: "Europe EPU",
+          unit: "index",
+          dataType: EconomicDataValueType.index
+        }
+      ]
+    },
+    tags: ["policy", "uncertainty", "geopolitics", "risk"]
+  },
+  {
+    id: "uk-epu-index",
+    slug: "uk_epu_index",
+    displayName: "经济政策不确定性指数(EPU)-英国",
+    description: "Economic Policy Uncertainty (EPU) 指数（按月），可用于全球风险偏好与政策不确定性观测",
+    categories: ["economic-alert", "sentiment", "macro", "geopolitics"],
+    sourceFunction: "ak.article_epu_index",
+    endpoint: "/article_epu_index",
+    docUrl: "https://akshare.akfamily.xyz/data/article/article.html",
+    method: "GET",
+    defaultParams: {
+      symbol: "UK"
+    },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: MONTHLY,
+    parser: {
+      type: "yearMonth",
+      yearField: "Year",
+      monthField: "Month",
+      valueFields: [
+        {
+          field: "UK_EPU_Index",
+          label: "UK EPU",
+          unit: "index",
+          dataType: EconomicDataValueType.index
+        }
+      ]
+    },
+    tags: ["policy", "uncertainty", "geopolitics", "risk"]
+  },
+  {
+    id: "japan-epu-index",
+    slug: "japan_epu_index",
+    displayName: "经济政策不确定性指数(EPU)-日本",
+    description: "Economic Policy Uncertainty (EPU) 指数（按月），可用于全球风险偏好与政策不确定性观测",
+    categories: ["economic-alert", "sentiment", "macro", "geopolitics"],
+    sourceFunction: "ak.article_epu_index",
+    endpoint: "/article_epu_index",
+    docUrl: "https://akshare.akfamily.xyz/data/article/article.html",
+    method: "GET",
+    defaultParams: {
+      symbol: "Japan"
+    },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: MONTHLY,
+    parser: {
+      type: "yearMonth",
+      yearField: "Year",
+      monthField: "Month",
+      valueFields: [
+        {
+          field: "Economic_Policy_Uncertainty_Index",
+          label: "Japan EPU",
+          unit: "index",
+          dataType: EconomicDataValueType.index
+        }
       ]
     },
     tags: ["policy", "uncertainty", "geopolitics", "risk"]
@@ -1507,36 +1718,192 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     }
   },
   {
+    id: "global-fx-eur-usd-spot",
+    slug: "global_fx_eur_usd_spot",
+    displayName: "EUR/USD 即期报价",
+    categories: ["key-monitor", "economic-alert", "fx", "geopolitics"],
+    sourceFunction: "ak.fx_pair_quote",
+    endpoint: "/fx_pair_quote",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    defaultParams: { symbol: "EUR/USD" },
+    valueType: EconomicDataValueType.fx,
+    defaultUnit: "",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      categoryField: "货币对",
+      valueFields: [
+        { field: "买报价", label: "买报价", unit: "", dataType: EconomicDataValueType.fx },
+        { field: "卖报价", label: "卖报价", unit: "", dataType: EconomicDataValueType.fx }
+      ]
+    },
+    tags: ["fx", "risk"]
+  },
+  {
+    id: "global-fx-usd-jpy-spot",
+    slug: "global_fx_usd_jpy_spot",
+    displayName: "USD/JPY 即期报价",
+    categories: ["key-monitor", "economic-alert", "fx", "geopolitics"],
+    sourceFunction: "ak.fx_pair_quote",
+    endpoint: "/fx_pair_quote",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    defaultParams: { symbol: "USD/JPY" },
+    valueType: EconomicDataValueType.fx,
+    defaultUnit: "",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      categoryField: "货币对",
+      valueFields: [
+        { field: "买报价", label: "买报价", unit: "", dataType: EconomicDataValueType.fx },
+        { field: "卖报价", label: "卖报价", unit: "", dataType: EconomicDataValueType.fx }
+      ]
+    },
+    tags: ["fx", "risk"]
+  },
+  {
+    id: "global-fx-usd-chf-spot",
+    slug: "global_fx_usd_chf_spot",
+    displayName: "USD/CHF 即期报价",
+    categories: ["key-monitor", "economic-alert", "fx", "geopolitics"],
+    sourceFunction: "ak.fx_pair_quote",
+    endpoint: "/fx_pair_quote",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    defaultParams: { symbol: "USD/CHF" },
+    valueType: EconomicDataValueType.fx,
+    defaultUnit: "",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      categoryField: "货币对",
+      valueFields: [
+        { field: "买报价", label: "买报价", unit: "", dataType: EconomicDataValueType.fx },
+        { field: "卖报价", label: "卖报价", unit: "", dataType: EconomicDataValueType.fx }
+      ]
+    },
+    tags: ["fx", "risk"]
+  },
+  {
+    id: "global-fx-gbp-usd-spot",
+    slug: "global_fx_gbp_usd_spot",
+    displayName: "GBP/USD 即期报价",
+    categories: ["key-monitor", "economic-alert", "fx", "geopolitics"],
+    sourceFunction: "ak.fx_pair_quote",
+    endpoint: "/fx_pair_quote",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    defaultParams: { symbol: "GBP/USD" },
+    valueType: EconomicDataValueType.fx,
+    defaultUnit: "",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      categoryField: "货币对",
+      valueFields: [
+        { field: "买报价", label: "买报价", unit: "", dataType: EconomicDataValueType.fx },
+        { field: "卖报价", label: "卖报价", unit: "", dataType: EconomicDataValueType.fx }
+      ]
+    },
+    tags: ["fx", "risk"]
+  },
+  {
+    id: "global-fx-usd-cad-spot",
+    slug: "global_fx_usd_cad_spot",
+    displayName: "USD/CAD 即期报价",
+    categories: ["key-monitor", "economic-alert", "fx", "geopolitics"],
+    sourceFunction: "ak.fx_pair_quote",
+    endpoint: "/fx_pair_quote",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    defaultParams: { symbol: "USD/CAD" },
+    valueType: EconomicDataValueType.fx,
+    defaultUnit: "",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      categoryField: "货币对",
+      valueFields: [
+        { field: "买报价", label: "买报价", unit: "", dataType: EconomicDataValueType.fx },
+        { field: "卖报价", label: "卖报价", unit: "", dataType: EconomicDataValueType.fx }
+      ]
+    },
+    tags: ["fx", "risk"]
+  },
+  {
+    id: "global-fx-aud-usd-spot",
+    slug: "global_fx_aud_usd_spot",
+    displayName: "AUD/USD 即期报价",
+    categories: ["key-monitor", "economic-alert", "fx", "geopolitics"],
+    sourceFunction: "ak.fx_pair_quote",
+    endpoint: "/fx_pair_quote",
+    docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
+    method: "GET",
+    defaultParams: { symbol: "AUD/USD" },
+    valueType: EconomicDataValueType.fx,
+    defaultUnit: "",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      categoryField: "货币对",
+      valueFields: [
+        { field: "买报价", label: "买报价", unit: "", dataType: EconomicDataValueType.fx },
+        { field: "卖报价", label: "卖报价", unit: "", dataType: EconomicDataValueType.fx }
+      ]
+    },
+    tags: ["fx", "risk"]
+  },
+  {
     id: "macro-fx-sentiment",
     slug: "macro_fx_sentiment",
     displayName: "外汇情绪指数",
-    categories: ["sentiment", "fx"],
+    description: "金十数据外汇投机情绪(SSI)多空比例指标，高频风险偏好代理，可用于地缘冲击/战争预警的情绪输入之一",
+    categories: ["military-alert", "economic-alert", "sentiment", "fx", "geopolitics"],
     sourceFunction: "ak.macro_fx_sentiment",
     endpoint: "/macro_fx_sentiment",
     docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
     method: "GET",
+    defaultParams: {
+      start_date: "${TODAY_YYYYMMDD-2}",
+      end_date: "${TODAY_YYYYMMDD+1}"
+    },
     valueType: EconomicDataValueType.percent,
-    defaultUnit: "percent",
+    defaultUnit: "%",
     defaultFrequency: HOURLY,
     parser: {
       type: "timeseries",
       timestampField: "date",
       valueFields: [
+        { field: "BTCUSD", label: "BTC/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "ETHUSD", label: "ETH/USD", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "AUDJPY", label: "AUD/JPY", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "AUDUSD", label: "AUD/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "XBRUSD", label: "Brent", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "GER40", label: "GER40", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "EURAUD", label: "EUR/AUD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "EURGBP", label: "EUR/GBP", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "EURJPY", label: "EUR/JPY", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "EURUSD", label: "EUR/USD", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "GBPJPY", label: "GBP/JPY", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "GBPUSD", label: "GBP/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "NAS100", label: "NAS100", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "NZDUSD", label: "NZD/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "SP500", label: "SP500", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "USDCAD", label: "USD/CAD", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "USDCHF", label: "USD/CHF", unit: "%", dataType: EconomicDataValueType.percent },
         { field: "USDJPY", label: "USD/JPY", unit: "%", dataType: EconomicDataValueType.percent },
-        { field: "USDX", label: "USDX", unit: "%", dataType: EconomicDataValueType.percent },
-        { field: "XAUUSD", label: "XAU/USD", unit: "%", dataType: EconomicDataValueType.percent }
+        { field: "XTIUSD", label: "WTI", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "XAGUSD", label: "XAG/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "XAUUSD", label: "XAU/USD", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "US30", label: "US30", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "GBPCHF", label: "GBP/CHF", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "EURCHF", label: "EUR/CHF", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "USDX", label: "USDX", unit: "%", dataType: EconomicDataValueType.percent }
       ]
-    }
+    },
+    tags: ["sentiment", "risk"]
   },
   {
     id: "market-sentiment-usdx",
@@ -1548,6 +1915,10 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     endpoint: "/macro_fx_sentiment",
     docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
     method: "GET",
+    defaultParams: {
+      start_date: "${TODAY_YYYYMMDD-2}",
+      end_date: "${TODAY_YYYYMMDD+1}"
+    },
     valueType: EconomicDataValueType.percent,
     defaultUnit: "%",
     defaultFrequency: HOURLY,
@@ -1557,6 +1928,366 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
       valueFields: [{ field: "USDX", label: "USDX", unit: "%", dataType: EconomicDataValueType.percent }]
     },
     tags: ["sentiment", "risk"]
+  },
+  {
+    id: "cn-qvix-50etf-min",
+    slug: "cn_qvix_50etf_min",
+    displayName: "QVIX-50ETF(分钟)",
+    description: "50ETF 期权隐含波动率指数 QVIX(分钟级)，可用于风险偏好/恐慌程度与地缘冲击的高频预警代理指标",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_50etf_min_qvix",
+    endpoint: "/index_option_50etf_min_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "time",
+      valueFields: [{ field: "qvix", label: "QVIX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-50etf-daily",
+    slug: "cn_qvix_50etf_daily",
+    displayName: "QVIX-50ETF(日线)",
+    description: "50ETF 期权隐含波动率指数 QVIX(日线 OHLC)，用于风险偏好/战争冲击的波动率观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_50etf_qvix",
+    endpoint: "/index_option_50etf_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: createEnglishOhlcFields("%", EconomicDataValueType.percent)
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-300etf-min",
+    slug: "cn_qvix_300etf_min",
+    displayName: "QVIX-300ETF(分钟)",
+    description: "300ETF 期权隐含波动率指数 QVIX(分钟级)，可用于风险偏好/恐慌程度与地缘冲击的高频预警代理指标",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_300etf_min_qvix",
+    endpoint: "/index_option_300etf_min_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "time",
+      valueFields: [{ field: "qvix", label: "QVIX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-300etf-daily",
+    slug: "cn_qvix_300etf_daily",
+    displayName: "QVIX-300ETF(日线)",
+    description: "300ETF 期权隐含波动率指数 QVIX(日线 OHLC)，用于风险偏好/战争冲击的波动率观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_300etf_qvix",
+    endpoint: "/index_option_300etf_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: createEnglishOhlcFields("%", EconomicDataValueType.percent)
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-500etf-min",
+    slug: "cn_qvix_500etf_min",
+    displayName: "QVIX-500ETF(分钟)",
+    description: "500ETF 期权隐含波动率指数 QVIX(分钟级)，可用于风险偏好/恐慌程度与地缘冲击的高频预警代理指标",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_500etf_min_qvix",
+    endpoint: "/index_option_500etf_min_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "time",
+      valueFields: [{ field: "qvix", label: "QVIX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-500etf-daily",
+    slug: "cn_qvix_500etf_daily",
+    displayName: "QVIX-500ETF(日线)",
+    description: "500ETF 期权隐含波动率指数 QVIX(日线 OHLC)，用于风险偏好/战争冲击的波动率观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_500etf_qvix",
+    endpoint: "/index_option_500etf_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: createEnglishOhlcFields("%", EconomicDataValueType.percent)
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-100etf-min",
+    slug: "cn_qvix_100etf_min",
+    displayName: "QVIX-100ETF(分钟)",
+    description: "100ETF 期权隐含波动率指数 QVIX(分钟级)，可用于风险偏好/恐慌程度与地缘冲击的高频预警代理指标",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_100etf_min_qvix",
+    endpoint: "/index_option_100etf_min_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "time",
+      valueFields: [{ field: "qvix", label: "QVIX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-100etf-daily",
+    slug: "cn_qvix_100etf_daily",
+    displayName: "QVIX-100ETF(日线)",
+    description: "100ETF 期权隐含波动率指数 QVIX(日线 OHLC)，用于风险偏好/战争冲击的波动率观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_100etf_qvix",
+    endpoint: "/index_option_100etf_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: createEnglishOhlcFields("%", EconomicDataValueType.percent)
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-50index-min",
+    slug: "cn_qvix_50index_min",
+    displayName: "QVIX-上证50(分钟)",
+    description: "上证50期权隐含波动率指数 QVIX(分钟级)，可用于风险偏好/恐慌程度与地缘冲击的高频预警代理指标",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_50index_min_qvix",
+    endpoint: "/index_option_50index_min_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "time",
+      valueFields: [{ field: "qvix", label: "QVIX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-50index-daily",
+    slug: "cn_qvix_50index_daily",
+    displayName: "QVIX-上证50(日线)",
+    description: "上证50期权隐含波动率指数 QVIX(日线 OHLC)，用于风险偏好/战争冲击的波动率观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_50index_qvix",
+    endpoint: "/index_option_50index_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: createEnglishOhlcFields("%", EconomicDataValueType.percent)
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-300index-min",
+    slug: "cn_qvix_300index_min",
+    displayName: "QVIX-沪深300(分钟)",
+    description: "沪深300期权隐含波动率指数 QVIX(分钟级)，可用于风险偏好/恐慌程度与地缘冲击的高频预警代理指标",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_300index_min_qvix",
+    endpoint: "/index_option_300index_min_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "time",
+      valueFields: [{ field: "qvix", label: "QVIX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-300index-daily",
+    slug: "cn_qvix_300index_daily",
+    displayName: "QVIX-沪深300(日线)",
+    description: "沪深300期权隐含波动率指数 QVIX(日线 OHLC)，用于风险偏好/战争冲击的波动率观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_300index_qvix",
+    endpoint: "/index_option_300index_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: createEnglishOhlcFields("%", EconomicDataValueType.percent)
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-1000index-min",
+    slug: "cn_qvix_1000index_min",
+    displayName: "QVIX-中证1000(分钟)",
+    description: "中证1000期权隐含波动率指数 QVIX(分钟级)，可用于风险偏好/恐慌程度与地缘冲击的高频预警代理指标",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_1000index_min_qvix",
+    endpoint: "/index_option_1000index_min_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "time",
+      valueFields: [{ field: "qvix", label: "QVIX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-1000index-daily",
+    slug: "cn_qvix_1000index_daily",
+    displayName: "QVIX-中证1000(日线)",
+    description: "中证1000期权隐含波动率指数 QVIX(日线 OHLC)，用于风险偏好/战争冲击的波动率观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_1000index_qvix",
+    endpoint: "/index_option_1000index_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: createEnglishOhlcFields("%", EconomicDataValueType.percent)
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-cyb-min",
+    slug: "cn_qvix_cyb_min",
+    displayName: "QVIX-创业板(分钟)",
+    description: "创业板期权隐含波动率指数 QVIX(分钟级)，可用于风险偏好/恐慌程度与地缘冲击的高频预警代理指标",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_cyb_min_qvix",
+    endpoint: "/index_option_cyb_min_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "time",
+      valueFields: [{ field: "qvix", label: "QVIX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-cyb-daily",
+    slug: "cn_qvix_cyb_daily",
+    displayName: "QVIX-创业板(日线)",
+    description: "创业板期权隐含波动率指数 QVIX(日线 OHLC)，用于风险偏好/战争冲击的波动率观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_cyb_qvix",
+    endpoint: "/index_option_cyb_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: createEnglishOhlcFields("%", EconomicDataValueType.percent)
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-kcb-min",
+    slug: "cn_qvix_kcb_min",
+    displayName: "QVIX-科创板(分钟)",
+    description: "科创板期权隐含波动率指数 QVIX(分钟级)，可用于风险偏好/恐慌程度与地缘冲击的高频预警代理指标",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_kcb_min_qvix",
+    endpoint: "/index_option_kcb_min_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "time",
+      valueFields: [{ field: "qvix", label: "QVIX", unit: "%", dataType: EconomicDataValueType.percent }]
+    },
+    tags: ["volatility", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-qvix-kcb-daily",
+    slug: "cn_qvix_kcb_daily",
+    displayName: "QVIX-科创板(日线)",
+    description: "科创板期权隐含波动率指数 QVIX(日线 OHLC)，用于风险偏好/战争冲击的波动率观测",
+    categories: ["military-alert", "economic-alert", "sentiment", "volatility", "geopolitics"],
+    sourceFunction: "ak.index_option_kcb_qvix",
+    endpoint: "/index_option_kcb_qvix",
+    docUrl: "https://akshare.akfamily.xyz/data/option/option.html",
+    method: "GET",
+    valueType: EconomicDataValueType.percent,
+    defaultUnit: "%",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "date",
+      valueFields: createEnglishOhlcFields("%", EconomicDataValueType.percent)
+    },
+    tags: ["volatility", "risk", "geopolitics"]
   },
   {
     id: "usd-index-hist",
@@ -1625,6 +2356,69 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
         { field: "COMEX白银库存量-盎司", label: "库存(盎司)", unit: "盎司", dataType: EconomicDataValueType.quantity }
       ]
     }
+  },
+  {
+    id: "spdr-gold-trust-holdings",
+    slug: "spdr_gold_trust_holdings",
+    displayName: "SPDR Gold Trust 持仓(黄金ETF)",
+    description: "全球最大黄金ETF SPDR Gold Trust(GLD)持仓/变动/总价值，用于避险需求与战争风险代理指标",
+    categories: ["military-alert", "economic-alert", "commodity", "precious-metal", "geopolitics"],
+    sourceFunction: "ak.macro_cons_gold",
+    endpoint: "/macro_cons_gold",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.quantity,
+    defaultUnit: "吨",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "总库存", label: "总库存", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "增持/减持", label: "增持/减持", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "总价值", label: "总价值", unit: "USD", dataType: EconomicDataValueType.price }
+      ]
+    },
+    tags: ["safe-haven", "gold", "risk", "geopolitics"]
+  },
+  {
+    id: "lme-metal-inventory",
+    slug: "lme_metal_inventory",
+    displayName: "LME金属库存与仓单",
+    description: "伦敦金属交易所(LME)库存/注册仓单/注销仓单，可用于供应链与地缘冲突扰动的库存压力观测",
+    categories: ["military-alert", "economic-alert", "commodity", "inventory", "geopolitics"],
+    sourceFunction: "ak.macro_euro_lme_stock",
+    endpoint: "/macro_euro_lme_stock",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.quantity,
+    defaultUnit: "吨",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "铜-库存", label: "铜-库存", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "铜-注册仓单", label: "铜-注册仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "铜-注销仓单", label: "铜-注销仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "铝-库存", label: "铝-库存", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "铝-注册仓单", label: "铝-注册仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "铝-注销仓单", label: "铝-注销仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "镍-库存", label: "镍-库存", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "镍-注册仓单", label: "镍-注册仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "镍-注销仓单", label: "镍-注销仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "锌-库存", label: "锌-库存", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "锌-注册仓单", label: "锌-注册仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "锌-注销仓单", label: "锌-注销仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "铅-库存", label: "铅-库存", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "铅-注册仓单", label: "铅-注册仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "铅-注销仓单", label: "铅-注销仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "锡-库存", label: "锡-库存", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "锡-注册仓单", label: "锡-注册仓单", unit: "吨", dataType: EconomicDataValueType.quantity },
+        { field: "锡-注销仓单", label: "锡-注销仓单", unit: "吨", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["supply-chain", "inventory", "metals", "risk", "geopolitics"]
   },
   {
     id: "spot-silver-benchmark",
@@ -1823,5 +2617,1263 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
       valueFields: [{ field: "close", label: "Brent", unit: "USD", dataType: EconomicDataValueType.price }]
     },
     tags: ["energy", "commodity", "risk"]
+  },
+  {
+    id: "global-spx-index-spot",
+    slug: "global_spx_index_spot",
+    displayName: "标普500指数(现货)",
+    description: "全球风险偏好关键代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "SPX" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "SPX", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-ndx-index-spot",
+    slug: "global_ndx_index_spot",
+    displayName: "纳斯达克指数(现货)",
+    description: "全球科技风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "NDX" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "NDX", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-djia-index-spot",
+    slug: "global_djia_index_spot",
+    displayName: "道琼斯指数(现货)",
+    description: "全球风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "DJIA" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "DJIA", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-usd-index-spot",
+    slug: "global_usd_index_spot",
+    displayName: "美元指数(现货)",
+    description: "全球避险/流动性代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "fx", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "UDI" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "index",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "USDX", unit: "index", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "fx", "risk"]
+  },
+  {
+    id: "global-crb-commodity-index-spot",
+    slug: "global_crb_commodity_index_spot",
+    displayName: "路透CRB商品指数(现货)",
+    description: "全球大宗商品景气/通胀压力代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "commodity", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "CRB" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "CRB", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "commodity", "risk"]
+  },
+  {
+    id: "global-bdi-index-spot",
+    slug: "global_bdi_index_spot",
+    displayName: "波罗的海BDI指数(现货)",
+    description: "全球航运/供应链扰动代理指标之一（来自东方财富全球指数现货）",
+    categories: ["military-alert", "economic-alert", "shipping", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "BDI" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "BDI", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["shipping", "supply-chain", "risk"]
+  },
+  {
+    id: "global-gdaxi-index-spot",
+    slug: "global_gdaxi_index_spot",
+    displayName: "德国DAX指数(现货)",
+    description: "欧洲风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "GDAXI" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "DAX", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-ftse100-index-spot",
+    slug: "global_ftse100_index_spot",
+    displayName: "英国富时100指数(现货)",
+    description: "欧洲风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "FTSE" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "FTSE100", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-cac40-index-spot",
+    slug: "global_cac40_index_spot",
+    displayName: "法国CAC40指数(现货)",
+    description: "欧洲风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "FCHI" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "CAC40", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-eurostoxx50-index-spot",
+    slug: "global_eurostoxx50_index_spot",
+    displayName: "欧洲斯托克50指数(现货)",
+    description: "欧洲风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "SX5E" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "STOXX50", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-nikkei225-index-spot",
+    slug: "global_nikkei225_index_spot",
+    displayName: "日经225指数(现货)",
+    description: "亚洲风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "N225" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "Nikkei225", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-hsi-index-spot",
+    slug: "global_hsi_index_spot",
+    displayName: "恒生指数(现货)",
+    description: "亚洲风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "HSI" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "HSI", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-kospi-index-spot",
+    slug: "global_kospi_index_spot",
+    displayName: "韩国KOSPI指数(现货)",
+    description: "亚洲风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "KS11" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "KOSPI", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-smi-index-spot",
+    slug: "global_smi_index_spot",
+    displayName: "瑞士SMI指数(现货)",
+    description: "欧洲风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "SSMI" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "SMI", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-rts-index-spot",
+    slug: "global_rts_index_spot",
+    displayName: "俄罗斯RTS指数(现货)",
+    description: "地缘冲突敏感市场代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "RTS" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "RTS", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "geopolitics", "risk"]
+  },
+  {
+    id: "global-bovespa-index-spot",
+    slug: "global_bovespa_index_spot",
+    displayName: "巴西BOVESPA指数(现货)",
+    description: "新兴市场风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "BVSP" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "BVSP", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-sensex-index-spot",
+    slug: "global_sensex_index_spot",
+    displayName: "印度SENSEX指数(现货)",
+    description: "新兴市场风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "SENSEX" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "SENSEX", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-ibex35-index-spot",
+    slug: "global_ibex35_index_spot",
+    displayName: "西班牙IBEX35指数(现货)",
+    description: "欧洲风险偏好代理指标之一（来自东方财富全球指数现货）",
+    categories: ["key-monitor", "economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.index_global_spot_em",
+    endpoint: "/index_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/index/index.html",
+    method: "GET",
+    defaultParams: { symbol: "IBEX" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      timestampField: "最新行情时间",
+      valueFields: [
+        { field: "最新价", label: "IBEX35", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-sox-index",
+    slug: "global_sox_index",
+    displayName: "全球半导体指数(SOX)",
+    description: "半导体景气与风险偏好代理指标之一（按日）",
+    categories: ["economic-alert", "global-index", "geopolitics"],
+    sourceFunction: "ak.macro_global_sox_index",
+    endpoint: "/macro_global_sox_index",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "最新值", label: "SOX", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-wti-crude-spot",
+    slug: "global_wti_crude_spot",
+    displayName: "WTI原油(全球连续合约现货)",
+    description: "能源供应冲击与冲突外溢风险的关键代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "key-monitor", "energy", "commodity", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "CL00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "WTI", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["energy", "commodity", "risk"]
+  },
+  {
+    id: "global-henry-hub-natural-gas-spot",
+    slug: "global_henry_hub_natural_gas_spot",
+    displayName: "天然气(全球连续合约现货)",
+    description: "能源供需与地缘冲突扰动的代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "key-monitor", "energy", "commodity", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "NG00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "NG", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["energy", "commodity", "risk"]
+  },
+  {
+    id: "global-comex-gold-spot",
+    slug: "global_comex_gold_spot",
+    displayName: "COMEX黄金(全球连续合约现货)",
+    description: "避险资产代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "key-monitor", "commodity", "precious-metal", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "GC00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "Gold", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["safe-haven", "risk"]
+  },
+  {
+    id: "global-comex-silver-spot",
+    slug: "global_comex_silver_spot",
+    displayName: "COMEX白银(全球连续合约现货)",
+    description: "避险/工业金属双属性代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "key-monitor", "commodity", "precious-metal", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "SI00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "Silver", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["safe-haven", "risk"]
+  },
+  {
+    id: "global-comex-copper-spot",
+    slug: "global_comex_copper_spot",
+    displayName: "COMEX铜(全球连续合约现货)",
+    description: "工业活动/供应链扰动代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "key-monitor", "commodity", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "HG00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "Copper", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["industrial", "supply-chain", "risk"]
+  },
+  {
+    id: "global-emini-sp500-spot",
+    slug: "global_emini_sp500_spot",
+    displayName: "E-mini标普500(全球连续合约现货)",
+    description: "全球风险偏好关键代理指标之一（来自东方财富全球期货现货）",
+    categories: ["key-monitor", "economic-alert", "derivatives", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "ES00Y" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "ES", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-emini-nasdaq-spot",
+    slug: "global_emini_nasdaq_spot",
+    displayName: "E-mini纳斯达克(全球连续合约现货)",
+    description: "全球科技风险偏好代理指标之一（来自东方财富全球期货现货）",
+    categories: ["key-monitor", "economic-alert", "derivatives", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "NQ00Y" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "NQ", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-mini-dow-spot",
+    slug: "global_mini_dow_spot",
+    displayName: "Mini道琼斯(全球连续合约现货)",
+    description: "全球风险偏好代理指标之一（来自东方财富全球期货现货）",
+    categories: ["key-monitor", "economic-alert", "derivatives", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "YM00Y" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "YM", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-us-treasury-2y-futures",
+    slug: "global_us_treasury_2y_futures_spot",
+    displayName: "美国2年期国债期货(连续)",
+    description: "利率预期与避险情绪的代理指标之一（来自东方财富全球期货现货）",
+    categories: ["key-monitor", "economic-alert", "macro-us", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "TU00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "price",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "US 2Y", unit: "price", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["rates", "risk"]
+  },
+  {
+    id: "global-us-treasury-5y-futures",
+    slug: "global_us_treasury_5y_futures_spot",
+    displayName: "美国5年期国债期货(连续)",
+    description: "利率预期与避险情绪的代理指标之一（来自东方财富全球期货现货）",
+    categories: ["key-monitor", "economic-alert", "macro-us", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "FV00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "price",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "US 5Y", unit: "price", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["rates", "risk"]
+  },
+  {
+    id: "global-us-treasury-10y-futures",
+    slug: "global_us_treasury_10y_futures_spot",
+    displayName: "美国10年期国债期货(连续)",
+    description: "利率预期与避险情绪的代理指标之一（来自东方财富全球期货现货）",
+    categories: ["key-monitor", "economic-alert", "macro-us", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "TY00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "price",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "US 10Y", unit: "price", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["rates", "risk"]
+  },
+  {
+    id: "global-us-treasury-30y-futures",
+    slug: "global_us_treasury_30y_futures_spot",
+    displayName: "美国30年期国债期货(连续)",
+    description: "利率预期与避险情绪的代理指标之一（来自东方财富全球期货现货）",
+    categories: ["key-monitor", "economic-alert", "macro-us", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "US00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "price",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "US 30Y", unit: "price", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["rates", "risk"]
+  },
+  {
+    id: "global-cn-a50-futures-spot",
+    slug: "global_cn_a50_futures_spot",
+    displayName: "A50期指(连续)",
+    description: "亚太风险偏好代理指标之一（来自东方财富全球期货现货）",
+    categories: ["key-monitor", "economic-alert", "derivatives", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "CN00Y" },
+    valueType: EconomicDataValueType.index,
+    defaultUnit: "pts",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "A50", unit: "pts", dataType: EconomicDataValueType.index },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["global", "equity", "risk"]
+  },
+  {
+    id: "global-nymex-gasoline-spot",
+    slug: "global_nymex_gasoline_spot",
+    displayName: "NYMEX汽油(连续)",
+    description: "成品油价格与能源供给扰动代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "key-monitor", "energy", "commodity", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "RB00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "Gasoline", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["energy", "commodity", "risk"]
+  },
+  {
+    id: "global-nymex-heating-oil-spot",
+    slug: "global_nymex_heating_oil_spot",
+    displayName: "NYMEX燃油(连续)",
+    description: "成品油价格与能源供给扰动代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "key-monitor", "energy", "commodity", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "HO00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "USD",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "HeatingOil", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent },
+        { field: "成交量", label: "成交量", unit: "", dataType: EconomicDataValueType.volume },
+        { field: "持仓量", label: "持仓量", unit: "", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["energy", "commodity", "risk"]
+  },
+  {
+    id: "global-wheat-spot",
+    slug: "global_wheat_spot",
+    displayName: "小麦(全球连续合约现货)",
+    description: "粮食价格/地缘冲突外溢风险代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "livelihood-prices", "commodity", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "ZW00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "Wheat", unit: "", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["food", "risk"]
+  },
+  {
+    id: "global-corn-spot",
+    slug: "global_corn_spot",
+    displayName: "玉米(全球连续合约现货)",
+    description: "粮食价格/地缘冲突外溢风险代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "livelihood-prices", "commodity", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "ZC00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "Corn", unit: "", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["food", "risk"]
+  },
+  {
+    id: "global-soybean-spot",
+    slug: "global_soybean_spot",
+    displayName: "大豆(全球连续合约现货)",
+    description: "粮食价格/地缘冲突外溢风险代理指标之一（来自东方财富全球期货现货）",
+    categories: ["military-alert", "livelihood-prices", "commodity", "geopolitics"],
+    sourceFunction: "ak.futures_global_spot_em",
+    endpoint: "/futures_global_spot_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "ZS00Y" },
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "",
+    defaultFrequency: HOURLY,
+    parser: {
+      type: "latest",
+      valueFields: [
+        { field: "最新价", label: "Soybeans", unit: "", dataType: EconomicDataValueType.price },
+        { field: "涨跌幅", label: "涨跌幅", unit: "%", dataType: EconomicDataValueType.percent }
+      ]
+    },
+    tags: ["food", "risk"]
+  },
+  {
+    id: "opec-crude-production",
+    slug: "opec_crude_production",
+    displayName: "OPEC原油产量(按月)",
+    description: "OPEC 成员国产量（按月），用于能源供给侧与地缘冲突风险的观测",
+    categories: ["military-alert", "economic-alert", "energy", "geopolitics"],
+    sourceFunction: "ak.macro_cons_opec_month",
+    endpoint: "/macro_cons_opec_month",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.quantity,
+    defaultUnit: "万桶/日",
+    defaultFrequency: MONTHLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "欧佩克产量", label: "OPEC总产量", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "沙特", label: "沙特", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "伊朗", label: "伊朗", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "伊拉克", label: "伊拉克", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "阿联酋", label: "阿联酋", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "科威特", label: "科威特", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "利比亚", label: "利比亚", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "尼日利亚", label: "尼日利亚", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "委内瑞拉", label: "委内瑞拉", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "阿尔及利亚", label: "阿尔及利亚", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "安哥拉", label: "安哥拉", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "加蓬", label: "加蓬", unit: "万桶/日", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["energy", "supply", "geopolitics", "risk"]
+  },
+  {
+    id: "us-api-crude-stock",
+    slug: "us_api_crude_stock",
+    displayName: "美国API原油库存(周)",
+    description: "API 周度原油库存变动/预测/前值，用于能源供给与突发冲击风险观测",
+    categories: ["military-alert", "economic-alert", "energy", "macro-us", "geopolitics"],
+    sourceFunction: "ak.macro_usa_api_crude_stock",
+    endpoint: "/macro_usa_api_crude_stock",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.quantity,
+    defaultUnit: "万桶",
+    defaultFrequency: WEEKLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "今值", label: "今值", unit: "万桶", dataType: EconomicDataValueType.quantity },
+        { field: "预测值", label: "预测值", unit: "万桶", dataType: EconomicDataValueType.quantity },
+        { field: "前值", label: "前值", unit: "万桶", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["energy", "inventory", "geopolitics", "risk"]
+  },
+  {
+    id: "us-crude-production",
+    slug: "us_crude_production",
+    displayName: "美国原油产量(周)",
+    description: "美国国内原油产量（总量/本土48州/阿拉斯加）与变化，用于能源供给侧与地缘冲突风险观测",
+    categories: ["military-alert", "economic-alert", "energy", "macro-us", "geopolitics"],
+    sourceFunction: "ak.macro_usa_crude_inner",
+    endpoint: "/macro_usa_crude_inner",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.quantity,
+    defaultUnit: "万桶/日",
+    defaultFrequency: WEEKLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "美国国内原油总量-产量", label: "总产量", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "美国国内原油总量-变化", label: "总量变化", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "美国本土48州原油产量-产量", label: "本土48州产量", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "美国本土48州原油产量-变化", label: "本土48州变化", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "美国阿拉斯加州原油产量-产量", label: "阿拉斯加产量", unit: "万桶/日", dataType: EconomicDataValueType.quantity },
+        { field: "美国阿拉斯加州原油产量-变化", label: "阿拉斯加变化", unit: "万桶/日", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["energy", "supply", "geopolitics", "risk"]
+  },
+  {
+    id: "us-rig-count",
+    slug: "us_rig_count",
+    displayName: "美国钻井数量(周)",
+    description: "贝克休斯钻井数据（总数/石油/天然气/混合）与变化，用于能源供给侧与地缘冲突风险观测",
+    categories: ["military-alert", "economic-alert", "energy", "macro-us", "geopolitics"],
+    sourceFunction: "ak.macro_usa_rig_count",
+    endpoint: "/macro_usa_rig_count",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.quantity,
+    defaultUnit: "座",
+    defaultFrequency: WEEKLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "钻井总数_钻井数", label: "钻井总数", unit: "座", dataType: EconomicDataValueType.quantity },
+        { field: "钻井总数_变化", label: "总数变化", unit: "座", dataType: EconomicDataValueType.quantity },
+        { field: "美国石油钻井_钻井数", label: "石油钻井", unit: "座", dataType: EconomicDataValueType.quantity },
+        { field: "美国石油钻井_变化", label: "石油变化", unit: "座", dataType: EconomicDataValueType.quantity },
+        { field: "美国天然气钻井_钻井数", label: "天然气钻井", unit: "座", dataType: EconomicDataValueType.quantity },
+        { field: "美国天然气钻井_变化", label: "天然气变化", unit: "座", dataType: EconomicDataValueType.quantity },
+        { field: "混合钻井_钻井数", label: "混合钻井", unit: "座", dataType: EconomicDataValueType.quantity },
+        { field: "混合钻井_变化", label: "混合变化", unit: "座", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["energy", "supply", "geopolitics", "risk"]
+  },
+  {
+    id: "cn-futures-inventory-fu",
+    slug: "cn_futures_inventory_fu",
+    displayName: "燃料油期货库存(国内)",
+    description: "国内燃料油库存数据（东财），可用于能源供给扰动与地缘冲击监测",
+    categories: ["military-alert", "economic-alert", "energy", "commodity", "inventory", "geopolitics"],
+    sourceFunction: "ak.futures_inventory_em",
+    endpoint: "/futures_inventory_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "fu" },
+    valueType: EconomicDataValueType.quantity,
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "库存", label: "库存", dataType: EconomicDataValueType.quantity },
+        { field: "增减", label: "增减", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["inventory", "energy", "risk", "geopolitics"]
+  },
+  {
+    id: "cn-futures-inventory-au",
+    slug: "cn_futures_inventory_au",
+    displayName: "黄金期货库存(国内)",
+    description: "国内黄金库存数据（东财），可用于避险需求与战争风险的库存侧观测",
+    categories: ["military-alert", "economic-alert", "commodity", "precious-metal", "inventory", "geopolitics"],
+    sourceFunction: "ak.futures_inventory_em",
+    endpoint: "/futures_inventory_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "au" },
+    valueType: EconomicDataValueType.quantity,
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "库存", label: "库存", dataType: EconomicDataValueType.quantity },
+        { field: "增减", label: "增减", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["inventory", "safe-haven", "gold", "risk"]
+  },
+  {
+    id: "cn-futures-inventory-ag",
+    slug: "cn_futures_inventory_ag",
+    displayName: "白银期货库存(国内)",
+    description: "国内白银库存数据（东财），可用于避险需求与战争风险的库存侧观测",
+    categories: ["military-alert", "economic-alert", "commodity", "precious-metal", "inventory", "geopolitics"],
+    sourceFunction: "ak.futures_inventory_em",
+    endpoint: "/futures_inventory_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "ag" },
+    valueType: EconomicDataValueType.quantity,
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "库存", label: "库存", dataType: EconomicDataValueType.quantity },
+        { field: "增减", label: "增减", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["inventory", "safe-haven", "silver", "risk"]
+  },
+  {
+    id: "cn-futures-inventory-cu",
+    slug: "cn_futures_inventory_cu",
+    displayName: "铜期货库存(国内)",
+    description: "国内铜库存数据（东财），可用于供应链压力与地缘冲突扰动观测",
+    categories: ["military-alert", "economic-alert", "commodity", "inventory", "geopolitics"],
+    sourceFunction: "ak.futures_inventory_em",
+    endpoint: "/futures_inventory_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "cu" },
+    valueType: EconomicDataValueType.quantity,
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "库存", label: "库存", dataType: EconomicDataValueType.quantity },
+        { field: "增减", label: "增减", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["inventory", "metals", "supply-chain", "risk"]
+  },
+  {
+    id: "cn-futures-inventory-al",
+    slug: "cn_futures_inventory_al",
+    displayName: "铝期货库存(国内)",
+    description: "国内铝库存数据（东财），可用于供应链压力与地缘冲突扰动观测",
+    categories: ["military-alert", "economic-alert", "commodity", "inventory", "geopolitics"],
+    sourceFunction: "ak.futures_inventory_em",
+    endpoint: "/futures_inventory_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "al" },
+    valueType: EconomicDataValueType.quantity,
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "库存", label: "库存", dataType: EconomicDataValueType.quantity },
+        { field: "增减", label: "增减", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["inventory", "metals", "supply-chain", "risk"]
+  },
+  {
+    id: "cn-futures-inventory-ni",
+    slug: "cn_futures_inventory_ni",
+    displayName: "镍期货库存(国内)",
+    description: "国内镍库存数据（东财），可用于关键金属供应链与地缘冲突扰动观测",
+    categories: ["military-alert", "economic-alert", "commodity", "inventory", "geopolitics"],
+    sourceFunction: "ak.futures_inventory_em",
+    endpoint: "/futures_inventory_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "ni" },
+    valueType: EconomicDataValueType.quantity,
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "库存", label: "库存", dataType: EconomicDataValueType.quantity },
+        { field: "增减", label: "增减", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["inventory", "metals", "supply-chain", "risk"]
+  },
+  {
+    id: "cn-futures-inventory-iron-ore",
+    slug: "cn_futures_inventory_iron_ore",
+    displayName: "铁矿石期货库存(国内)",
+    description: "国内铁矿石库存数据（东财），可用于大宗与供应链压力观测",
+    categories: ["military-alert", "economic-alert", "commodity", "inventory", "geopolitics"],
+    sourceFunction: "ak.futures_inventory_em",
+    endpoint: "/futures_inventory_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "i" },
+    valueType: EconomicDataValueType.quantity,
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "库存", label: "库存", dataType: EconomicDataValueType.quantity },
+        { field: "增减", label: "增减", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["inventory", "metals", "supply-chain", "risk"]
+  },
+  {
+    id: "cn-futures-inventory-rebar",
+    slug: "cn_futures_inventory_rebar",
+    displayName: "螺纹钢期货库存(国内)",
+    description: "国内螺纹钢库存数据（东财），可用于工业需求与供应链压力观测",
+    categories: ["military-alert", "economic-alert", "commodity", "inventory", "geopolitics"],
+    sourceFunction: "ak.futures_inventory_em",
+    endpoint: "/futures_inventory_em",
+    docUrl: "https://akshare.akfamily.xyz/data/futures/futures.html",
+    method: "GET",
+    defaultParams: { symbol: "rb" },
+    valueType: EconomicDataValueType.quantity,
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [
+        { field: "库存", label: "库存", dataType: EconomicDataValueType.quantity },
+        { field: "增减", label: "增减", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["inventory", "metals", "supply-chain", "risk"]
+  },
+  {
+    id: "cn-spot-corn",
+    slug: "cn_spot_corn_price",
+    displayName: "玉米现货价格(国内)",
+    description: "国内玉米现货价格（搜猪网），可用于粮食价格与冲突外溢风险观测",
+    categories: ["military-alert", "livelihood-prices", "commodity", "geopolitics"],
+    sourceFunction: "ak.spot_corn_price_soozhu",
+    endpoint: "/spot_corn_price_soozhu",
+    docUrl: "https://akshare.akfamily.xyz/data/spot/spot.html",
+    method: "GET",
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "CNY/kg",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [{ field: "价格", label: "价格", unit: "CNY/kg", dataType: EconomicDataValueType.price }]
+    },
+    tags: ["food", "risk"]
+  },
+  {
+    id: "cn-spot-soybean",
+    slug: "cn_spot_soybean_price",
+    displayName: "大豆现货价格(国内)",
+    description: "国内大豆现货价格（搜猪网），可用于粮食价格与冲突外溢风险观测",
+    categories: ["military-alert", "livelihood-prices", "commodity", "geopolitics"],
+    sourceFunction: "ak.spot_soybean_price_soozhu",
+    endpoint: "/spot_soybean_price_soozhu",
+    docUrl: "https://akshare.akfamily.xyz/data/spot/spot.html",
+    method: "GET",
+    valueType: EconomicDataValueType.price,
+    defaultUnit: "CNY/kg",
+    defaultFrequency: DAILY,
+    parser: {
+      type: "timeseries",
+      timestampField: "日期",
+      valueFields: [{ field: "价格", label: "价格", unit: "CNY/kg", dataType: EconomicDataValueType.price }]
+    },
+    tags: ["food", "risk"]
+  },
+  {
+    id: "china-fx-gold-reserves",
+    slug: "china_fx_gold_reserves",
+    displayName: "中国外汇储备与黄金储备",
+    description: "中国外汇储备与黄金储备（按月/按年混合），可用于制裁/资本流动与地缘风险的结构性观测",
+    categories: ["military-alert", "economic-alert", "macro-china", "geopolitics"],
+    sourceFunction: "ak.macro_china_foreign_exchange_gold",
+    endpoint: "/macro_china_foreign_exchange_gold",
+    docUrl: "https://akshare.akfamily.xyz/data/macro/macro.html",
+    method: "GET",
+    valueType: EconomicDataValueType.quantity,
+    defaultFrequency: MONTHLY,
+    parser: {
+      type: "timeseries",
+      timestampField: "统计时间",
+      valueFields: [
+        { field: "黄金储备", label: "黄金储备", unit: "万盎司", dataType: EconomicDataValueType.quantity },
+        { field: "国家外汇储备", label: "国家外汇储备", unit: "亿美元", dataType: EconomicDataValueType.quantity }
+      ]
+    },
+    tags: ["reserves", "geopolitics", "risk"]
   }
 ] satisfies AkshareDataItemDefinition[];

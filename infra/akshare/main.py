@@ -320,6 +320,50 @@ def _filter_frame_by_first_matching_column(
                 return _sanitize_for_json(filtered)
     return []
 
+def _split_symbol_list(symbol: Any) -> list[str]:
+    if symbol is None:
+        return []
+    raw = str(symbol).strip()
+    if not raw:
+        return []
+    tokens: list[str] = []
+    for chunk in raw.replace(";", ",").split(","):
+        item = chunk.strip()
+        if item:
+            tokens.append(item)
+    return tokens
+
+
+def _filter_frame_by_symbol_or_name(
+    frame: pd.DataFrame,
+    symbol: Any,
+    code_columns: tuple[str, ...],
+    name_columns: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    symbols = _split_symbol_list(symbol)
+    if not symbols:
+        return []
+
+    # Try exact match on code columns, with uppercase normalization.
+    normalized_codes = {s.upper() for s in symbols}
+    for column in code_columns:
+        if column in frame.columns:
+            series = frame[column].astype(str).str.strip().str.upper()
+            filtered = frame[series.isin(normalized_codes)]
+            if not filtered.empty:
+                return _sanitize_for_json(filtered)
+
+    # Fallback: exact match on name columns (case sensitive; supports CJK names)
+    normalized_names = {s.strip() for s in symbols}
+    for column in name_columns:
+        if column in frame.columns:
+            series = frame[column].astype(str).str.strip()
+            filtered = frame[series.isin(normalized_names)]
+            if not filtered.empty:
+                return _sanitize_for_json(filtered)
+
+    return []
+
 
 def _apply_compat_params(function_name: str, params: dict[str, Any]) -> dict[str, Any]:
     if function_name == "futures_zh_spot":
@@ -385,6 +429,16 @@ async def call_function(function_name: str, request: Request):
                     raise HTTPException(status_code=404, detail=f"symbol not found: {filter_value}")
                 if function_name == "crypto_js_spot":
                     filtered = _filter_frame_by_first_matching_column(result, str(filter_value), ("交易品种", "symbol"))
+                    if filtered:
+                        return filtered
+                    raise HTTPException(status_code=404, detail=f"symbol not found: {filter_value}")
+                if function_name in ("index_global_spot_em", "futures_global_spot_em"):
+                    filtered = _filter_frame_by_symbol_or_name(
+                        result,
+                        filter_value,
+                        code_columns=("代码", "code", "symbol"),
+                        name_columns=("名称", "name"),
+                    )
                     if filtered:
                         return filtered
                     raise HTTPException(status_code=404, detail=f"symbol not found: {filter_value}")
