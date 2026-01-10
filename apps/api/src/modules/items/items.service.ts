@@ -251,16 +251,19 @@ export class ItemsService {
     const baseWhere = this.buildBaseWhere(orgId);
     const where = scopedIds ? { ...baseWhere, id: { in: scopedIds } } : baseWhere;
 
-    const items = await this.prisma.itemMeta.findMany({
-      where,
-      skip,
-      take,
-      orderBy: orderByClause
-    });
+    const [items, total] = await Promise.all([
+      this.prisma.itemMeta.findMany({
+        where,
+        skip,
+        take,
+        orderBy: orderByClause
+      }),
+      this.prisma.itemMeta.count({ where })
+    ]);
 
     return {
       items,
-      total: scopedIds?.length ?? 0,
+      total,
       page: safePage,
       pageSize: take
     };

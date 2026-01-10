@@ -335,6 +335,9 @@ export function ItemsView({
   }, [urlSearch]);
 
   const filtersInput = useMemo(() => buildFiltersInput(filters), [filters]);
+  const hasActiveFilters = filtersInput !== null;
+  const isUnsearched =
+    emptyStateVariant === "search" && urlSearch.length === 0 && !hasActiveFilters;
   const orderBy = useMemo<ItemsOrderBy>(
     () => (sortMode === "publishedDesc" ? "PUBLISHED_DESC" : "CREATED_DESC"),
     [sortMode]
@@ -397,6 +400,7 @@ export function ItemsView({
     error,
     refetch
   } = useQuery<ItemsQuery, ItemsQueryVariables>(ITEMS_QUERY, {
+    skip: isUnsearched,
     variables: {
       first: pageSize,
       after: null,
@@ -425,9 +429,24 @@ export function ItemsView({
     return () => clearTimeout(timeout);
   }, [loading]);
 
-  const resolvedData = data ?? initialData ?? undefined;
+  const resolvedData = isUnsearched ? undefined : data ?? initialData ?? undefined;
   const edges = resolvedData?.items.edges ?? EMPTY_EDGES;
-  const totalCount = resolvedData?.items.totalCount ?? 0;
+  const resolvedTotalCount = resolvedData?.items.totalCount;
+  const totalCount =
+    typeof resolvedTotalCount === "number" ? Math.max(resolvedTotalCount, edges.length) : edges.length;
+
+  useEffect(() => {
+    if (isUnsearched || loading || error) {
+      return;
+    }
+    if (edges.length > 0 || totalCount === 0) {
+      return;
+    }
+    const lastPage = Math.max(1, Math.ceil(totalCount / pageSize));
+    if (current > lastPage) {
+      setQueryParams({ page: lastPage });
+    }
+  }, [current, edges.length, error, isUnsearched, loading, pageSize, setQueryParams, totalCount]);
 
   const pageData = useMemo<ParsedItem[]>(() => {
     return edges.map((edge) => {
@@ -579,6 +598,14 @@ export function ItemsView({
     }
 
     if (emptyStateVariant === "search") {
+      if (isUnsearched) {
+        return {
+          title: t("items.empty.searchIdleTitle", { defaultValue: "Start searching" }),
+          description: t("items.empty.searchIdleDescription", {
+            defaultValue: "Enter keywords or adjust filters to search processed items."
+          })
+        };
+      }
       return {
         title: t("items.empty.searchTitle", { defaultValue: "No results" }),
         description: t("items.empty.searchDescription", {
@@ -593,7 +620,7 @@ export function ItemsView({
         defaultValue: "Try adjusting filters or refresh."
       })
     };
-  }, [canManageCrawl, emptyStateVariant, t]);
+  }, [canManageCrawl, emptyStateVariant, isUnsearched, t]);
 
   const handleTableChange = (pager: TablePaginationConfig) => {
     const nextPageSize = pager.pageSize ?? pageSize;
@@ -755,6 +782,8 @@ export function ItemsView({
           {showDelayHint ? (
             <ChartEmptyState
               className="h-auto"
+              variant="delayed"
+              title={t("common.loadingDelayedTitle", { defaultValue: "Still loading…" })}
               description={t("common.loadingDelayed", {
                 defaultValue: "Data is taking longer than usual. Please hold on or refresh."
               })}
@@ -766,37 +795,32 @@ export function ItemsView({
 
     if (error && pageData.length === 0) {
       return (
-        <Space direction="vertical" align="center" size="middle" style={{ width: "100%" }}>
-          <ChartEmptyState
-            className="h-auto"
-            description={t("common.serviceUnavailable", {
-              defaultValue: "Service is unavailable. Please try again."
-            })}
-          />
-          <Button size="small" type="primary" onClick={() => refetch()}>
-            {t("common.retry")}
-          </Button>
-        </Space>
+        <ChartEmptyState
+          className="h-auto"
+          variant="error"
+          title={t("common.requestFailed", { defaultValue: "Request failed" })}
+          description={t("common.serviceUnavailable", {
+            defaultValue: "Service is unavailable. Please try again."
+          })}
+          actionLabel={t("common.retry")}
+          onAction={() => refetch()}
+        />
       );
     }
 
     if (!loading && pageData.length === 0) {
       return (
-        <Space direction="vertical" align="center" size="middle" style={{ width: "100%" }}>
-          <ChartEmptyState
-            className="h-auto"
-            description={
-              emptyStateConfig.description
-                ? `${emptyStateConfig.title} · ${emptyStateConfig.description}`
-                : emptyStateConfig.title
-            }
-          />
-          {emptyStateConfig.actionLabel && emptyStateConfig.actionHref ? (
-            <Button size="small" type="primary" onClick={() => router.push(emptyStateConfig.actionHref)}>
-              {emptyStateConfig.actionLabel}
-            </Button>
-          ) : null}
-        </Space>
+        <ChartEmptyState
+          className="h-auto"
+          title={emptyStateConfig.title}
+          description={emptyStateConfig.description}
+          actionLabel={emptyStateConfig.actionLabel}
+          onAction={
+            emptyStateConfig.actionLabel && emptyStateConfig.actionHref
+              ? () => router.push(emptyStateConfig.actionHref)
+              : undefined
+          }
+        />
       );
     }
 
@@ -938,7 +962,7 @@ export function ItemsView({
            <Col>
               <Space>
                 <ViewSwitcher view={view} onChange={setView} />
-                <Button onClick={() => refetch()} loading={loading}>
+                <Button onClick={() => refetch()} loading={loading} disabled={isUnsearched}>
                   {t("common.refresh")}
                 </Button>
               </Space>
