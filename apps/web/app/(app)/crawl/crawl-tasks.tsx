@@ -34,6 +34,7 @@ import {
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import { CreateCrawlTaskDrawer } from "./components/CreateCrawlTaskDrawer";
+import { Crawl4aiHealthCard } from "./components/Crawl4aiHealthCard";
 import { MetadataExtractionCard } from "./components/MetadataExtractionCard";
 import type { CreateCrawlTaskFormValues, MetadataFormValues } from "./types";
 
@@ -357,6 +358,9 @@ export function CrawlTasksView() {
           </Button>
         ) : null}
       </Space>
+
+      <Crawl4aiHealthCard onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")} />
+
       {!screens.md ? (
         <List
           itemLayout="vertical"

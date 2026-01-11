@@ -230,6 +230,7 @@
     "below": "below",
     "increase": "increase",
     "decrease": "decrease",
+    "confirm": "Confirm",
     "cancel": "Cancel",
     "previous": "Previous",
     "next": "Next"
@@ -1593,6 +1594,166 @@
       "missingUrl": {
         "title": "Dashboard URL not configured",
         "description": "Set CRAWL4AI_DASHBOARD_URL (recommended in Docker) or CRAWL4AI_BASE_URL, then reload this page."
+      },
+      "copyApi": "Copy API",
+      "copyWs": "Copy WS",
+      "apiCopied": "Copied API base URL.",
+      "wsCopied": "Copied WebSocket URL.",
+      "lastUpdate": "Last update:",
+      "payloadTimestamp": "server:",
+      "refresh": {
+        "success": "Refreshed.",
+        "failed": "Refresh failed."
+      },
+      "quickStatus": {
+        "title": "Crawl4AI status",
+        "healthy": "Healthy",
+        "unreachable": "Unreachable",
+        "updatedAt": "Updated {{time}}"
+      },
+      "transport": {
+        "ws": "WebSocket",
+        "polling": "Polling"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "requests": "Requests",
+        "browsers": "Browsers",
+        "endpoints": "Endpoints",
+        "timeline": "Timeline",
+        "logs": "Logs",
+        "builtin": "Built-in",
+        "raw": "Raw"
+      },
+      "ws": {
+        "missingUrl": "WebSocket URL not available.",
+        "error": "WebSocket error.",
+        "reconnecting": "Disconnected. Reconnecting...",
+        "warningTitle": "WebSocket connection issue",
+        "noAutoFallback": "No automatic fallback. Switch to Polling manually if needed.",
+        "reconnectNow": "Reconnect now",
+        "switchToPolling": "Switch to Polling",
+        "connected": "WS connected",
+        "connecting": "WS connecting",
+        "reconnectingShort": "WS reconnecting",
+        "errorShort": "WS error",
+        "idle": "WS idle"
+      },
+      "polling": {
+        "warningTitle": "Polling failed"
+      },
+      "overview": {
+        "container": "Container",
+        "pool": "Browser pool",
+        "requests": "Requests",
+        "totalBrowsers": "Total",
+        "reuseRate": "Reuse rate",
+        "active": "Active",
+        "completed": "Completed",
+        "errors": "Errors",
+        "totalRequests": "Total requests",
+        "avgLatency": "Avg latency",
+        "successRate": "Success rate",
+        "browserMemory": "Pool memory"
+      },
+      "dashboardHint": {
+        "title": "Built-in dashboard",
+        "description": "Use the Built-in tab to view Crawl4AI's original dashboard UI."
+      },
+      "actions": {
+        "title": "Actions",
+        "success": "Action sent.",
+        "targetSig": "Target signature: {{sig}}",
+        "cleanup": {
+          "title": "Run cleanup now?",
+          "description": "This will trigger Crawl4AI janitor cleanup immediately.",
+          "button": "Cleanup",
+          "success": "Cleanup triggered."
+        },
+        "reset": {
+          "title": "Reset monitoring stats?",
+          "description": "This will reset accumulated monitoring statistics.",
+          "button": "Reset stats",
+          "success": "Stats reset."
+        },
+        "restartPermanent": {
+          "button": "Restart permanent"
+        },
+        "kill": {
+          "title": "Kill browser?",
+          "button": "Kill"
+        },
+        "restart": {
+          "title": "Restart browser?",
+          "button": "Restart"
+        }
+      },
+      "requests": {
+        "activeTitle": "Active requests",
+        "completedTitle": "Completed requests",
+        "filters": {
+          "all": "All",
+          "success": "Success",
+          "error": "Error"
+        },
+        "columns": {
+          "endpoint": "Endpoint",
+          "url": "URL",
+          "status": "Status",
+          "latency": "Latency (ms)",
+          "http": "HTTP",
+          "poolHit": "Pool hit",
+          "memory": "Memory Δ (MB)",
+          "elapsed": "Elapsed"
+        }
+      },
+      "browsers": {
+        "hint": {
+          "title": "Browser pool visibility",
+          "description": "Shows permanent/hot/cold pools and lets admins restart/kill browsers."
+        },
+        "columns": {
+          "type": "Type",
+          "signature": "Signature",
+          "age": "Age",
+          "hits": "Hits",
+          "idle": "Idle (s)",
+          "memory": "Memory (MB)",
+          "lastUsed": "Last used",
+          "actions": "Actions"
+        }
+      },
+      "endpoints": {
+        "hint": {
+          "title": "Per-endpoint stats",
+          "description": "Counts, average latency, and success rate per Crawl4AI API endpoint."
+        },
+        "chartTitle": "Top endpoints (by count)",
+        "columns": {
+          "endpoint": "Endpoint",
+          "count": "Count",
+          "latency": "Avg latency (ms)",
+          "success": "Success %"
+        }
+      },
+      "timeline": {
+        "memory": "Memory",
+        "requests": "Requests rate",
+        "browsers": "Browser pool",
+        "missing": "Timeline data not available."
+      },
+      "logs": {
+        "errors": "Recent errors",
+        "janitor": "Janitor events"
+      },
+      "details": {
+        "request": "Request details",
+        "browser": "Browser details",
+        "copyJson": "Copy JSON",
+        "copied": "Copied."
+      },
+      "raw": {
+        "description": "Raw monitoring payload for debugging (best-effort normalization)."
       }
     },
     "detail": {
