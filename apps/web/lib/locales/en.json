@@ -395,6 +395,7 @@
         "gold": "Gold",
         "oil": "Oil",
         "copper": "Copper",
+        "govBond": "Gov Bond Futures",
         "shanghaiVsSp500": {
           "title": "Shanghai vs S&P 500",
           "description": "Shanghai vs S&P 500 description"
@@ -406,7 +407,46 @@
         "cnyFx": {
           "title": "CNY FX",
           "description": "CNY FX description"
+        },
+        "metalsRealtime": {
+          "title": "Metals (Realtime)",
+          "description": "Realtime gold & silver futures quotes"
+        },
+        "a50": {
+          "title": "A50 Futures (Continuous)",
+          "description": "A key Asia risk proxy (hourly)"
+        },
+        "refined": {
+          "title": "Refined Products",
+          "description": "Gasoline & heating oil spot (continuous)"
+        },
+        "globalFxTable": {
+          "title": "Global FX Quotes"
+        },
+        "globalMarkets": {
+          "title": "Global Markets (Spot)"
+        },
+        "chinaYield": {
+          "title": "China Yield Curve",
+          "description": "3M/1Y/5Y/10Y government bond yields"
+        },
+        "rmbCSwap": {
+          "title": "USD/CNY C-Swap Curve",
+          "description": "Swap points across tenors (Pips)"
+        },
+        "rmbFxTable": {
+          "title": "RMB FX Quotes"
         }
+      },
+      "fxTable": {
+        "pair": "Pair",
+        "bid": "Bid",
+        "ask": "Ask"
+      },
+      "globalMarketTable": {
+        "name": "Market",
+        "last": "Last",
+        "changePct": "Change %"
       },
       "series": {
         "shanghaiComposite": "Shanghai composite",
@@ -451,7 +491,43 @@
         "pmiCompare": "PMI compare",
         "yieldInversion": "Yield inversion",
         "usInflation": "Us inflation",
-        "usPmiCompare": "Us PMI compare"
+        "usPmiCompare": "Us PMI compare",
+        "volatility": {
+          "title": "Volatility (QVIX)",
+          "description": "QVIX daily close (fear proxy)"
+        },
+        "riskSentiment": {
+          "title": "Risk Sentiment (SSI)",
+          "description": "USDX / Gold / Oil sentiment snapshots"
+        },
+        "energySupply": {
+          "title": "Energy Supply",
+          "description": "OPEC output and US crude production"
+        },
+        "safeHaven": {
+          "title": "Safe Haven (Gold ETF)",
+          "description": "SPDR holdings as a safe-haven flow proxy"
+        },
+        "epu": {
+          "title": "Policy Uncertainty (EPU)",
+          "description": "Monthly EPU indices across major regions"
+        },
+        "usCorePce": {
+          "title": "US Core PCE",
+          "description": "Actual vs forecast vs previous (monthly)"
+        },
+        "usLabor": {
+          "title": "US Labor Market",
+          "description": "Unemployment rate and non-farm payrolls"
+        },
+        "chinaRrr": {
+          "title": "China RRR",
+          "description": "Reserve requirement ratio adjustments"
+        },
+        "supplyChain": {
+          "title": "Supply Chain Risk",
+          "description": "Shipping and semiconductor cycle proxies"
+        }
       },
       "emptyCpiPpi": "Empty CPI PPI",
       "emptyPmi": "Empty PMI",
@@ -511,6 +587,46 @@
       "radar": {
         "dailySwing": "Daily swing"
       },
+      "metals": {
+        "copper": "Copper",
+        "rebar": "Rebar",
+        "hotRolled": "Hot Rolled Coil",
+        "aluminum": "Aluminum",
+        "rubber": "Rubber",
+        "platinum": "Platinum",
+        "palladium": "Palladium"
+      },
+      "agri": {
+        "wheat": "Wheat",
+        "corn": "Corn",
+        "soybean": "Soybeans"
+      },
+      "volatility": {
+        "qvix50etf": "50ETF",
+        "qvix300etf": "300ETF",
+        "qvix500etf": "500ETF",
+        "qvix100etf": "100ETF",
+        "qvix50index": "SSE 50",
+        "qvix300index": "CSI 300",
+        "qvix1000index": "CSI 1000",
+        "qvixCyb": "ChiNext",
+        "qvixKcb": "STAR"
+      },
+      "inventory": {
+        "fu": "Fuel Oil",
+        "au": "Gold",
+        "ag": "Silver",
+        "cu": "Copper",
+        "al": "Aluminum",
+        "ni": "Nickel",
+        "ironOre": "Iron Ore",
+        "rebar": "Rebar",
+        "columns": {
+          "item": "Item",
+          "inventory": "Inventory",
+          "change": "Δ"
+        }
+      },
       "title": "Military alert",
       "loadFailed": "Failed to load",
       "cards": {
@@ -528,17 +644,66 @@
           "bdi": "BDI",
           "epuGlobal": "Global EPU",
           "epuChina": "China EPU"
+        },
+        "shippingIndices": {
+          "title": "Shipping Indices (Baltic)",
+          "description": "BCI/BPI/BCTI plus spot BDI as supply-chain disruption proxies"
+        },
+        "globalCommoditySpot": {
+          "title": "Global Commodity Spot (Continuous)",
+          "description": "WTI / NatGas / Gold / Silver / Copper hourly spot quotes"
+        },
+        "volatility": {
+          "title": "Volatility (QVIX)",
+          "description": "QVIX daily close (fear proxy)"
+        },
+        "volatilityIntraday": {
+          "title": "QVIX Intraday",
+          "description": "Intraday QVIX as a high-frequency fear proxy"
+        },
+        "fxSentiment": {
+          "title": "Risk Sentiment (SSI)",
+          "description": "USDX / Gold / Oil / BTC sentiment snapshots"
+        },
+        "safeHaven": {
+          "title": "Safe Haven (Gold ETF)",
+          "description": "SPDR Gold Trust holdings and daily change"
+        },
+        "chinaReserves": {
+          "title": "China FX & Gold Reserves",
+          "description": "FX reserves and official gold reserves (monthly)"
+        },
+        "lmeInventory": {
+          "title": "LME Inventory",
+          "description": "Daily LME inventory as a supply-chain stress proxy"
+        },
+        "energySupply": {
+          "title": "Energy Supply",
+          "description": "OPEC output vs US crude production"
+        },
+        "apiCrudeStock": {
+          "title": "US API Crude Stocks",
+          "description": "Weekly surprise/forecast/previous values"
+        },
+        "usRigCount": {
+          "title": "US Rig Count",
+          "description": "Baker Hughes rigs (total/oil/gas)"
+        },
+        "domesticInventory": {
+          "title": "China Futures Inventory (Eastmoney)",
+          "description": "Domestic inventory and daily change"
         }
       },
       "empty": {
         "metalRadar": "Metal radar",
-        "agri": "Agri"
+        "agri": "Agri",
+        "inventory": "No inventory data"
       },
       "badges": {
         "daily": "Daily",
         "threeDay": "Three day"
       },
-      "alertItemDescription": "Alert item description"
+      "alertItemDescription": "Daily {{daily}}%, 3D {{threeDay}}%"
     },
     "charts": {
       "noCandlestick": "No candlestick",
@@ -581,7 +746,12 @@
         "tooltip": "Tooltip"
       },
       "agri": {
-        "radarName": "Radar name"
+        "radarName": "Radar name",
+        "wheat": "Wheat",
+        "corn": "Corn",
+        "soybean": "Soybeans",
+        "rice": "Rice",
+        "cotton": "Cotton"
       },
       "tourism": {
         "fxIncome": "FX income",
@@ -592,7 +762,20 @@
       "cards": {
         "cpiTree": "CPI tree",
         "agriRadar": "Agri radar",
-        "tourism": "Tourism"
+        "tourism": "Tourism",
+        "globalGrains": {
+          "title": "Global Grain Spot",
+          "description": "Wheat/Corn/Soybeans continuous spot quotes"
+        },
+        "cnSpot": {
+          "title": "China Spot Prices",
+          "description": "Domestic spot prices (CNY/kg)"
+        }
+      },
+      "series": {
+        "wheat": "Wheat",
+        "corn": "Corn",
+        "soybeans": "Soybeans"
       },
       "empty": {
         "cpi": "CPI",
@@ -728,6 +911,10 @@
       "crawlTasks": {
         "title": "Crawl Tasks",
         "description": "Manage crawl jobs and task execution"
+      },
+      "crawlMonitor": {
+        "title": "Crawl4AI Monitor",
+        "description": "Real-time dashboard for system metrics and browser pool"
       },
       "newsSources": {
         "title": "News Sources",
@@ -1015,6 +1202,85 @@
       "estimatedTotalTokens": "Estimated total tokens: {{count}}",
       "placeholdersTitle": "Placeholders title"
     },
+    "llmGateway": {
+      "description": "Manage OpenAI-compatible LLM gateway profiles. The active profile overrides runtime requests made by the API.",
+      "active": "Active",
+      "keySet": "Key set",
+      "keyMissing": "No key",
+      "actions": {
+        "new": "New gateway",
+        "activate": "Activate",
+        "clearKey": "Clear key",
+        "keepKey": "Keep key"
+      },
+      "columns": {
+        "name": "Name",
+        "model": "Model",
+        "embeddingModel": "Embedding model",
+        "rpm": "RPM",
+        "status": "Status",
+        "apiKey": "API key"
+      },
+      "fields": {
+        "name": "Name",
+        "apiBase": "API base URL",
+        "apiKey": "API key",
+        "model": "Default model",
+        "embeddingModel": "Embedding model",
+        "timeoutMs": "Timeout (ms)",
+        "temperature": "Temperature",
+        "topP": "Top P",
+        "maxOutputTokens": "Max output tokens",
+        "maxRetries": "Max retries",
+        "requestsPerMinute": "Requests per minute",
+        "fallbackModels": "Fallback models",
+        "enabled": "Enabled"
+      },
+      "placeholders": {
+        "name": "e.g. LiteLLM (prod)",
+        "apiKey": "Optional",
+        "apiKeyEdit": "Leave empty to keep unchanged",
+        "fallbackModels": "comma-separated, e.g. openai/gpt-4o-mini,anthropic/claude-3-haiku"
+      },
+      "hints": {
+        "apiKey": "Encrypted in MySQL when SYSTEM_SETTINGS_ENCRYPTION_KEY is set; otherwise stored as plaintext.",
+        "apiKeyEdit": "Provide a new key to rotate it. Use the toggle below to clear.",
+        "fallbackModels": "Used when the primary model request fails."
+      },
+      "validation": {
+        "nameRequired": "Name is required",
+        "apiBaseRequired": "API base URL is required",
+        "apiBaseUrl": "Enter a valid URL (include http/https)",
+        "modelRequired": "Model is required",
+        "timeoutRequired": "Timeout is required",
+        "maxRetriesRequired": "Max retries is required",
+        "rpmRequired": "Requests per minute is required",
+        "temperatureRequired": "Temperature is required",
+        "topPRequired": "Top P is required",
+        "maxOutputTokensRequired": "Max output tokens is required"
+      },
+      "modal": {
+        "createTitle": "New LLM gateway",
+        "editTitle": "Edit LLM gateway",
+        "deleteTitle": "Delete LLM gateway",
+        "deleteContent": "Delete {{name}}? This cannot be undone."
+      },
+      "messages": {
+        "created": "Created",
+        "updated": "Updated",
+        "deleted": "Deleted",
+        "activated": "Activated"
+      },
+      "errors": {
+        "loadFailed": "Failed to load LLM gateway profiles",
+        "createFailed": "Failed to create LLM gateway profile",
+        "updateFailed": "Failed to update LLM gateway profile",
+        "deleteFailed": "Failed to delete LLM gateway profile",
+        "toggleFailed": "Failed to update profile status",
+        "activateFailed": "Failed to activate profile",
+        "badRequest": "Invalid input"
+      }
+    },
     "adminOnly": {
       "title": "Admin only",
       "description": "Admin only description"
@@ -1026,6 +1292,7 @@
       "authCache": "Auth cache",
       "crawlClient": "Crawl client",
       "newsPrompts": "News prompts",
+      "llmGateway": "LLM gateway",
       "roles": "Roles",
       "permissions": "Permissions",
       "members": "Members"
@@ -1313,6 +1580,21 @@
       "processing": "Processing"
     },
     "createTask": "Create task",
+    "monitor": {
+      "title": "Crawl4AI Monitor",
+      "subtitle": "Interactive dashboard with live system metrics and browser pool visibility.",
+      "open": "Monitor",
+      "dashboardTitle": "Monitoring Dashboard",
+      "openInNewTab": "Open in new tab",
+      "copyLink": "Copy link",
+      "currentUrl": "Current dashboard URL:",
+      "copied": "Copied dashboard URL.",
+      "copyFailed": "Copy failed.",
+      "missingUrl": {
+        "title": "Dashboard URL not configured",
+        "description": "Set CRAWL4AI_DASHBOARD_URL (recommended in Docker) or CRAWL4AI_BASE_URL, then reload this page."
+      }
+    },
     "detail": {
       "media": {
         "title": "Media",

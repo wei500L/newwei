@@ -113,6 +113,7 @@ describe("NewsPipelineService", () => {
   };
 
   const liteLlm = {
+    getEmbeddingModel: jest.fn(async () => "openai/text-embedding-3-small"),
     acompletion: jest.fn(async () => ({
       id: "cmpl",
       model: "openai/gpt-4o-mini",

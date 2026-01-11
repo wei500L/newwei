@@ -653,7 +653,7 @@ export class NewsPipelineService {
     summary: string,
     job: PipelineJobContext,
   ): Promise<{ embedding: number[]; model: string } | null> {
-    const model = this.configService.config.litellm.embeddingModel;
+    const model = await this.liteLlm.getEmbeddingModel();
     if (!model) {
       this.logger.warn(
         { jobId: job.jobId },

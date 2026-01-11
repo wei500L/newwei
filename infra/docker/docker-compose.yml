@@ -80,7 +80,7 @@ services:
       start_period: 20s
 
   crawl4ai:
-    image: ${CRAWL4AI_IMAGE:-ghcr.io/unclecode/crawl4ai:latest}
+    image: ${CRAWL4AI_IMAGE:-ghcr.io/unclecode/crawl4ai:0.7.8}
     restart: unless-stopped
     ports:
       - "8082:11235"

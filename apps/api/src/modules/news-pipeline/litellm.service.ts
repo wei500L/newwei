@@ -1,10 +1,16 @@
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
-import axios, { AxiosError, AxiosInstance } from "axios";
+import axios, {
+  AxiosError,
+  type AxiosRequestConfig,
+  type AxiosResponse,
+  AxiosInstance,
+} from "axios";
 import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { RateLimiterService } from "../cache/rate-limiter.service";
+import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
 
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
@@ -55,6 +61,7 @@ export interface LiteLlmCompletionResponse {
   usage?: LiteLlmCompletionResponseUsage;
   response_cost?: number;
   costUsd?: number;
+  keySpendUsd?: number;
   latencyMs?: number;
 }
 
@@ -72,6 +79,7 @@ export interface LiteLlmEmbeddingResponse {
   usage?: { prompt_tokens: number; total_tokens: number };
   response_cost?: number;
   costUsd?: number;
+  keySpendUsd?: number;
   latencyMs?: number;
 }
 
@@ -86,21 +94,28 @@ export interface LiteLlmStreamChunk {
 export class LiteLlmService {
   private client: AxiosInstance;
   private currentBaseUrl: string;
+  private currentApiKey?: string;
   private readonly logger = createLogger({ name: "litellm-service" });
 
   constructor(
     private readonly configService: NewsPipelineConfigService,
     private readonly rateLimiter: RateLimiterService,
+    private readonly llmGatewaySettings: LlmGatewaySettingsService,
   ) {
     this.currentBaseUrl = "";
-    this.client = this.buildClient();
+    this.currentApiKey = undefined;
+    this.client = this.buildClient(this.configService.config.litellm);
+  }
+
+  async getEmbeddingModel(): Promise<string | undefined> {
+    const cfg = await this.resolveConfig();
+    return cfg.embeddingModel;
   }
 
   async acompletion(
     params: LiteLlmCompletionParams,
   ): Promise<LiteLlmCompletionResponse> {
-    await this.enforceRateLimit();
-    const cfg = this.configService.config.litellm;
+    const cfg = await this.enforceRateLimit();
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
       new Set(
@@ -110,7 +125,7 @@ export class LiteLlmService {
     let lastError: unknown;
     for (const model of uniqueModels) {
       try {
-        return await this.executeWithRetry(model, params);
+        return await this.executeWithRetry(cfg, model, params);
       } catch (error) {
         lastError = error;
         this.logger.warn(
@@ -130,18 +145,16 @@ export class LiteLlmService {
   async embedding(
     params: LiteLlmEmbeddingParams,
   ): Promise<LiteLlmEmbeddingResponse> {
-    await this.enforceRateLimit();
-    const cfg = this.configService.config.litellm;
+    const cfg = await this.enforceRateLimit();
     const model = params.model ?? cfg.embeddingModel ?? cfg.model;
     if (!model) {
       throw new Error("LiteLLM embedding model is not configured");
     }
-    return this.executeEmbeddingWithRetry(model, params);
+    return this.executeEmbeddingWithRetry(cfg, model, params);
   }
 
   async *stream(params: LiteLlmCompletionParams): AsyncGenerator<LiteLlmStreamChunk> {
-    await this.enforceRateLimit();
-    const cfg = this.configService.config.litellm;
+    const cfg = await this.enforceRateLimit();
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
       new Set(models.filter((model) => typeof model === "string" && model.length > 0)),
@@ -151,7 +164,7 @@ export class LiteLlmService {
     for (const model of uniqueModels) {
       let started = false;
       try {
-        for await (const chunk of this.executeStream(model, params)) {
+        for await (const chunk of this.executeStream(cfg, model, params)) {
           started = true;
           yield chunk;
         }
@@ -175,10 +188,10 @@ export class LiteLlmService {
   }
 
   private async executeWithRetry(
+    cfg: { timeoutMs: number; temperature: number; topP: number; maxOutputTokens: number; maxRetries: number },
     model: string,
     params: LiteLlmCompletionParams,
   ) {
-    const cfg = this.configService.config.litellm;
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
     let delayMs = 1_000;
@@ -193,21 +206,24 @@ export class LiteLlmService {
           top_p: params.top_p ?? cfg.topP,
           max_tokens: params.max_tokens ?? cfg.maxOutputTokens,
           response_format: params.response_format ?? undefined,
-          stream: cfg.stream,
+          stream: false,
           metadata: params.metadata,
         };
         const start = Date.now();
-        const response = await this.client.post<LiteLlmCompletionResponse>(
+        const response = await this.postWithFallback<LiteLlmCompletionResponse>(
           "/v1/chat/completions",
+          "/chat/completions",
           payload,
-          {
-            timeout: params.timeoutMs ?? cfg.timeoutMs,
-          },
+          { timeout: params.timeoutMs ?? cfg.timeoutMs },
         );
         const latencyMs = Date.now() - start;
         const headerCost = this.extractHeaderCost(
-          response.headers?.["x-litellm-cost"] ??
+          response.headers?.["x-litellm-response-cost"] ??
+            response.headers?.["x-litellm-cost"] ??
             response.headers?.["litellm-cost"],
+        );
+        const keySpendUsd = this.extractHeaderCost(
+          response.headers?.["x-litellm-key-spend"],
         );
         const payloadCost = this.extractHeaderCost(
           (response.data as Record<string, unknown>).response_cost,
@@ -221,6 +237,7 @@ export class LiteLlmService {
         return {
           ...response.data,
           costUsd: costUsd ?? undefined,
+          keySpendUsd: keySpendUsd ?? undefined,
           latencyMs,
         } satisfies LiteLlmCompletionResponse;
       } catch (error) {
@@ -239,8 +256,11 @@ export class LiteLlmService {
       : new Error("LiteLLM completion exhausted retries");
   }
 
-  private async *executeStream(model: string, params: LiteLlmCompletionParams): AsyncGenerator<LiteLlmStreamChunk> {
-    const cfg = this.configService.config.litellm;
+  private async *executeStream(
+    cfg: { timeoutMs: number; temperature: number; topP: number; maxOutputTokens: number },
+    model: string,
+    params: LiteLlmCompletionParams,
+  ): AsyncGenerator<LiteLlmStreamChunk> {
     const payload = {
       model,
       messages: params.messages,
@@ -252,10 +272,15 @@ export class LiteLlmService {
       metadata: params.metadata,
     };
 
-    const response = await this.client.post("/v1/chat/completions", payload, {
-      responseType: "stream",
-      timeout: params.timeoutMs ?? cfg.timeoutMs,
-    });
+    const response = await this.postWithFallback(
+      "/v1/chat/completions",
+      "/chat/completions",
+      payload,
+      {
+        responseType: "stream",
+        timeout: params.timeoutMs ?? cfg.timeoutMs,
+      },
+    );
     const stream = response.data as Readable;
 
     for await (const data of this.iterateSseData(stream)) {
@@ -285,10 +310,10 @@ export class LiteLlmService {
   }
 
   private async executeEmbeddingWithRetry(
+    cfg: { timeoutMs: number; maxRetries: number },
     model: string,
     params: LiteLlmEmbeddingParams,
   ) {
-    const cfg = this.configService.config.litellm;
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
     let delayMs = 1_000;
@@ -302,17 +327,20 @@ export class LiteLlmService {
           metadata: params.metadata,
         };
         const start = Date.now();
-        const response = await this.client.post<LiteLlmEmbeddingResponse>(
+        const response = await this.postWithFallback<LiteLlmEmbeddingResponse>(
           "/v1/embeddings",
+          "/embeddings",
           payload,
-          {
-            timeout: params.timeoutMs ?? cfg.timeoutMs,
-          },
+          { timeout: params.timeoutMs ?? cfg.timeoutMs },
         );
         const latencyMs = Date.now() - start;
         const headerCost = this.extractHeaderCost(
-          response.headers?.["x-litellm-cost"] ??
+          response.headers?.["x-litellm-response-cost"] ??
+            response.headers?.["x-litellm-cost"] ??
             response.headers?.["litellm-cost"],
+        );
+        const keySpendUsd = this.extractHeaderCost(
+          response.headers?.["x-litellm-key-spend"],
         );
         const payloadCost = this.extractHeaderCost(
           (response.data as Record<string, unknown>).response_cost,
@@ -326,6 +354,7 @@ export class LiteLlmService {
         return {
           ...response.data,
           costUsd: costUsd ?? undefined,
+          keySpendUsd: keySpendUsd ?? undefined,
           latencyMs,
         } satisfies LiteLlmEmbeddingResponse;
       } catch (error) {
@@ -348,6 +377,22 @@ export class LiteLlmService {
     yield* iterateSseDataFromReadable(stream);
   }
 
+  private async postWithFallback<T = unknown>(
+    primaryPath: string,
+    fallbackPath: string,
+    payload: unknown,
+    config?: AxiosRequestConfig,
+  ): Promise<AxiosResponse<T>> {
+    try {
+      return await this.client.post<T>(primaryPath, payload, config);
+    } catch (error) {
+      if (error instanceof AxiosError && error.response?.status === 404) {
+        return this.client.post<T>(fallbackPath, payload, config);
+      }
+      throw error;
+    }
+  }
+
   private isRetryable(error: unknown) {
     if (!(error instanceof AxiosError)) {
       return false;
@@ -358,34 +403,46 @@ export class LiteLlmService {
     );
   }
 
-  private buildClient() {
-    const cfg = this.configService.config.litellm;
-    this.currentBaseUrl = cfg.apiBase.replace(/\/$/, "");
+  private buildClient(cfg: { apiBase: string; apiKey?: string; timeoutMs: number }) {
+    const baseUrl = normalizeApiBase(cfg.apiBase);
+    const apiKey = typeof cfg.apiKey === "string" && cfg.apiKey.trim() ? cfg.apiKey.trim() : undefined;
+    this.currentBaseUrl = baseUrl;
+    this.currentApiKey = apiKey;
     return axios.create({
-      baseURL: this.currentBaseUrl,
+      baseURL: baseUrl,
       timeout: cfg.timeoutMs,
       headers: {
         "Content-Type": "application/json",
-        ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}),
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
     });
   }
 
   private async enforceRateLimit() {
-    const cfg = this.configService.config;
+    const pipelineCfg = this.configService.config;
+    const cfg = await this.resolveConfig();
     const limitKey = `litellm:rpm`;
     const allowed = await this.rateLimiter.consume(
       limitKey,
-      cfg.litellm.requestsPerMinute,
-      cfg.pipeline.rateLimitWindowSeconds,
+      cfg.requestsPerMinute,
+      pipelineCfg.pipeline.rateLimitWindowSeconds,
     );
     if (!allowed) {
       throw new Error("LiteLLM request throttled by local rate limiter");
     }
-    const base = cfg.litellm.apiBase.replace(/\/$/, "");
-    if (base !== this.currentBaseUrl) {
-      this.client = this.buildClient();
+    const base = normalizeApiBase(cfg.apiBase);
+    const apiKey = typeof cfg.apiKey === "string" && cfg.apiKey.trim() ? cfg.apiKey.trim() : undefined;
+    const shouldRebuild = base !== this.currentBaseUrl || apiKey !== this.currentApiKey;
+    if (shouldRebuild) {
+      this.client = this.buildClient(cfg);
     }
+    return cfg;
+  }
+
+  private async resolveConfig() {
+    const pipelineCfg = this.configService.config;
+    const overrides = await this.llmGatewaySettings.getActiveConfig();
+    return overrides ? { ...pipelineCfg.litellm, ...overrides } : pipelineCfg.litellm;
   }
 
   private extractHeaderCost(value: unknown) {
@@ -398,4 +455,35 @@ export class LiteLlmService {
     }
     return undefined;
   }
+}
+
+function normalizeApiBase(raw: string) {
+  let base = raw.trim();
+  if (base.length === 0) {
+    return base;
+  }
+
+  base = base.replace(/\/+$/, "");
+
+  const lower = base.toLowerCase();
+  const stripSuffixes = [
+    "/v1/chat/completions",
+    "/chat/completions",
+    "/v1/embeddings",
+    "/embeddings",
+    "/v1/models",
+    "/models",
+  ];
+
+  const matchedSuffix = stripSuffixes.find((suffix) => lower.endsWith(suffix));
+  if (matchedSuffix) {
+    base = base.slice(0, -matchedSuffix.length);
+    base = base.replace(/\/+$/, "");
+  }
+
+  if (base.toLowerCase().endsWith("/v1")) {
+    base = base.slice(0, -"/v1".length);
+  }
+
+  return base.replace(/\/+$/, "");
 }

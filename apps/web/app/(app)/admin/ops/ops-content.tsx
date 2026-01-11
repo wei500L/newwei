@@ -30,6 +30,15 @@ export function OpsContent() {
       permission: "crawl.read"
     },
     {
+      key: "crawl-monitor",
+      title: t("ops.links.crawlMonitor.title", { defaultValue: "Crawl4AI Monitor" }),
+      description: t("ops.links.crawlMonitor.description", {
+        defaultValue: "Real-time dashboard for system metrics and browser pool"
+      }),
+      href: "/admin/ops/crawl-monitor",
+      permission: "crawl.read"
+    },
+    {
       key: "crawl-templates",
       title: t("ops.links.crawlTemplates.title", { defaultValue: "Crawl Templates" }),
       description: t("ops.links.crawlTemplates.description", {

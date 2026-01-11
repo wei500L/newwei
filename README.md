@@ -68,6 +68,7 @@ pnpm docker:down
 
 其中：
 - `crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它（建议随 `extras` 一起启动）。
+- `crawl4ai` 自带实时监控仪表盘（系统指标、请求与浏览器池）：`http://localhost:8082/dashboard/`，也可在控制台 `Operations → Crawl4AI Monitor` 里直接嵌入查看（需要配置 `CRAWL4AI_DASHBOARD_URL`，见下文）。
 - 经济数据抓取模块使用 `AKSHARE_HTTP_BASE_URL` 指向一个 Python 网关（默认暴露在 `8081` 端口，底层通过 `pip install akshare` 调用 Akshare 并以 HTTP 提供数据）。启用 `extras` 后，API 容器内默认使用 `AKSHARE_HTTP_BASE_URL=http://akshare:8081`。
 
 如果你调用某个 Akshare HTTP 端点出现 `400 ... got an unexpected keyword argument ...`，通常表示你传的 query 参数不符合当前安装的 Akshare 版本函数签名。建议先在 akshare 容器里确认签名：
@@ -131,8 +132,8 @@ docker run -it --rm registry.cn-shanghai.aliyuncs.com/akfamily/aktools:jupyter p
 
 如果启动时 `crawl4ai` 拉取出现 `error from registry: denied`（例如无法访问 GHCR），可以二选一：
 
-- 本地镜像重新打 tag：`docker tag unclecode/crawl4ai:latest ghcr.io/unclecode/crawl4ai:latest`
-- 或在 `infra/docker/.env` 设置：`CRAWL4AI_IMAGE=unclecode/crawl4ai:latest`
+- 本地镜像重新打 tag：`docker tag unclecode/crawl4ai:0.7.8 ghcr.io/unclecode/crawl4ai:0.7.8`
+- 或在 `infra/docker/.env` 设置：`CRAWL4AI_IMAGE=unclecode/crawl4ai:0.7.8`
 
 如果启动时构建 `api/web` 失败并提示无法从 Docker Hub 获取 `node:20`（例如 `failed to fetch anonymous token` / 网络被重置），可以在 `infra/docker/.env` 里改用镜像源（示例之一）：
 
@@ -187,11 +188,12 @@ infra/
 - 前端在 `/crawl` 下提供管理界面，包括任务列表、状态筛选、创建表单、重试按钮，以及 `/crawl/[taskId]` 的结果详情与 Markdown 预览。所有请求通过 Apollo Client 调用 GraphQL。
 - `.env` / `infra/docker/.env` 新增下列配置：
   - `CRAWL4AI_BASE_URL`：指向容器或远程 crawl4ai 服务的 HTTP 地址。
+  - `CRAWL4AI_DASHBOARD_URL`：可选，控制台嵌入 Crawl4AI `/dashboard/` 时使用（Docker 默认建议设为 `http://localhost:8082/dashboard/`；不填则从 `CRAWL4AI_BASE_URL` 推导）。
   - `CRAWL4AI_API_KEY`：可选 API Key，若服务启用鉴权可在 Header 传递。
   - `CRAWL4AI_TIMEOUT_MS` / `CRAWL4AI_MAX_CONCURRENCY` / `CRAWL4AI_MAX_RETRIES`：用于 BullMQ 任务的超时、并发与重试上限。
   - `CRAWL_MEDIA_FETCH_TIMEOUT_MS` / `CRAWL_MEDIA_MAX_BYTES` / `CRAWL_MEDIA_MAX_PER_RESULT`：控制在 `storeMedia` 打开时后端下载新闻图片/视频的网络超时、单文件最大字节与每条结果最多缓存的媒体数量。
 - `pnpm db:migrate && pnpm db:seed` 会创建 `CrawlTask` / `CrawlResult` 表并灌入一个示例任务；Mongo 中新增 `CrawlResultContent` 模型用来存储 Markdown。
-- Docker Compose 中新增 `crawl4ai` 服务（基于 `ghcr.io/unclecode/crawl4ai:latest`），默认对 API 暴露 8080 端口并有健康检查；若需要本地调试可以通过 `http://localhost:8082` 命中。
+- Docker Compose 中新增 `crawl4ai` 服务（基于 `ghcr.io/unclecode/crawl4ai:0.7.8`），默认对 API 暴露 8080 端口并有健康检查；若需要本地调试可以通过 `http://localhost:8082` 命中。
 - 参考 crawl4ai 官方文档关于 _Full-Page Scanning_（见 `docs/md_v2/blog/releases/0.4.1.md`）的实现，我们在任务配置中加入 “Full-page scanning” 开关与滚动延迟，API 会在调用 `/crawl` 时自动下发 `scan_full_page` 与 `scroll_delay`，可用于处理瀑布流/无限滚动的新闻站点。
 - 参考 crawl4ai 官方 _Link & Media Extraction_ 指南（`docs/md_v2/core/link-media.md`），当 `storeMedia` 打开时 API 会自动启用 `wait_for_images`、允许跨域图片并解析 `result.media`；后端会在 `CRAWL_MEDIA_*` 限制内抓取最多 6 个图片/视频并以内联 Base64 存进 `CrawlResultContent.mediaAssets`，前端详情页可直接预览或下载这些媒体。
 - 为了匹配 crawl4ai _Simple Crawling_ 指南中的新闻监控实践（`docs/md_v2/core/simple-crawling.md`），API 默认会下发 `word_count_threshold=80`、`exclude_external_links=true`、`remove_overlay_elements=true` 与 `process_iframes=true`，同时开放 REST/GraphQL 字段让你细调 `wordCountThreshold`、`textMode`、`captureScreenshot`、`cssSelector` 与 `excludedTags`。多 URL 策略也能逐条重写这些参数，以便首页/文章页套用不同的噪声过滤策略。

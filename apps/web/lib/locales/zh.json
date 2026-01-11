@@ -395,6 +395,7 @@
         "gold": "黄金",
         "oil": "原油",
         "copper": "铜",
+        "govBond": "国债期货",
         "shanghaiVsSp500": {
           "title": "上海 vs S&P 500",
           "description": "上海 vs S&P 500 说明"
@@ -406,7 +407,46 @@
         "cnyFx": {
           "title": "人民币汇率",
           "description": "人民币汇率说明"
+        },
+        "metalsRealtime": {
+          "title": "贵金属(实时)",
+          "description": "黄金/白银主力合约实时行情"
+        },
+        "a50": {
+          "title": "A50期指(连续)",
+          "description": "亚太风险偏好代理指标(小时级)"
+        },
+        "refined": {
+          "title": "成品油(连续)",
+          "description": "汽油/燃油：能源供给扰动代理"
+        },
+        "globalFxTable": {
+          "title": "全球外汇即期报价"
+        },
+        "globalMarkets": {
+          "title": "全球市场(现货)"
+        },
+        "chinaYield": {
+          "title": "中国国债收益率曲线",
+          "description": "3M/1Y/5Y/10Y 国债收益率"
+        },
+        "rmbCSwap": {
+          "title": "人民币外汇掉期 C-Swap(USD/CNY)",
+          "description": "各期限掉期点(Pips)"
+        },
+        "rmbFxTable": {
+          "title": "人民币外汇即期报价"
         }
+      },
+      "fxTable": {
+        "pair": "货币对",
+        "bid": "买价",
+        "ask": "卖价"
+      },
+      "globalMarketTable": {
+        "name": "品种",
+        "last": "最新",
+        "changePct": "涨跌幅"
       },
       "series": {
         "shanghaiComposite": "上海综合",
@@ -451,7 +491,43 @@
         "pmiCompare": "PMI 对比",
         "yieldInversion": "收益率倒挂",
         "usInflation": "美国通胀",
-        "usPmiCompare": "美国 PMI 对比"
+        "usPmiCompare": "美国 PMI 对比",
+        "volatility": {
+          "title": "波动率(QVIX)",
+          "description": "QVIX 日线收盘(恐慌代理)"
+        },
+        "riskSentiment": {
+          "title": "风险情绪(SSI)",
+          "description": "USDX/黄金/原油情绪快照"
+        },
+        "energySupply": {
+          "title": "能源供给",
+          "description": "OPEC 产量与美国原油产量"
+        },
+        "safeHaven": {
+          "title": "避险(黄金ETF)",
+          "description": "SPDR Gold Trust 持仓"
+        },
+        "epu": {
+          "title": "政策不确定性(EPU)",
+          "description": "主要地区月度 EPU 指数"
+        },
+        "usCorePce": {
+          "title": "美国核心PCE",
+          "description": "实际/预测/前值(月度)"
+        },
+        "usLabor": {
+          "title": "美国劳动市场",
+          "description": "失业率与新增非农"
+        },
+        "chinaRrr": {
+          "title": "中国存款准备金率",
+          "description": "存准率调整(大行/中小行)"
+        },
+        "supplyChain": {
+          "title": "供应链风险",
+          "description": "航运与半导体周期代理指标"
+        }
       },
       "emptyCpiPpi": "暂无 CPI/PPI",
       "emptyPmi": "暂无 PMI",
@@ -511,6 +587,46 @@
       "radar": {
         "dailySwing": "每日波动"
       },
+      "metals": {
+        "copper": "铜",
+        "rebar": "螺纹钢",
+        "hotRolled": "热轧卷板",
+        "aluminum": "铝",
+        "rubber": "橡胶",
+        "platinum": "铂",
+        "palladium": "钯"
+      },
+      "agri": {
+        "wheat": "小麦",
+        "corn": "玉米",
+        "soybean": "大豆"
+      },
+      "volatility": {
+        "qvix50etf": "50ETF",
+        "qvix300etf": "300ETF",
+        "qvix500etf": "500ETF",
+        "qvix100etf": "100ETF",
+        "qvix50index": "上证50",
+        "qvix300index": "沪深300",
+        "qvix1000index": "中证1000",
+        "qvixCyb": "创业板",
+        "qvixKcb": "科创板"
+      },
+      "inventory": {
+        "fu": "燃料油",
+        "au": "黄金",
+        "ag": "白银",
+        "cu": "铜",
+        "al": "铝",
+        "ni": "镍",
+        "ironOre": "铁矿石",
+        "rebar": "螺纹钢",
+        "columns": {
+          "item": "品种",
+          "inventory": "库存",
+          "change": "增减"
+        }
+      },
       "title": "军事告警",
       "loadFailed": "加载失败",
       "cards": {
@@ -528,17 +644,66 @@
           "bdi": "BDI 干散货",
           "epuGlobal": "全球 EPU",
           "epuChina": "中国 EPU"
+        },
+        "shippingIndices": {
+          "title": "航运指数(波罗的海)",
+          "description": "BCI/BPI/BCTI + BDI 现货，用于供应链与地缘冲击监测"
+        },
+        "globalCommoditySpot": {
+          "title": "全球大宗现货(连续)",
+          "description": "WTI/天然气/黄金/白银/铜：小时级风险代理"
+        },
+        "volatility": {
+          "title": "波动率(QVIX)",
+          "description": "QVIX 日线收盘(恐慌代理)"
+        },
+        "volatilityIntraday": {
+          "title": "波动率(QVIX) 盘中",
+          "description": "QVIX 分钟级(高频恐慌代理)"
+        },
+        "fxSentiment": {
+          "title": "风险情绪(SSI)",
+          "description": "USDX/黄金/原油/BTC 多空情绪快照"
+        },
+        "safeHaven": {
+          "title": "避险(黄金ETF)",
+          "description": "SPDR Gold Trust 持仓与增减"
+        },
+        "chinaReserves": {
+          "title": "中国外汇与黄金储备",
+          "description": "外汇储备与官方黄金储备(按月)"
+        },
+        "lmeInventory": {
+          "title": "LME 库存",
+          "description": "LME 金属库存：供应链压力代理"
+        },
+        "energySupply": {
+          "title": "能源供给",
+          "description": "OPEC 产量 vs 美国原油产量"
+        },
+        "apiCrudeStock": {
+          "title": "美国 API 原油库存",
+          "description": "周度今值/预测/前值"
+        },
+        "usRigCount": {
+          "title": "美国钻机数",
+          "description": "Baker Hughes：总数/石油/天然气"
+        },
+        "domesticInventory": {
+          "title": "国内期货库存(东财)",
+          "description": "国内关键品种库存与增减"
         }
       },
       "empty": {
         "metalRadar": "金属雷达",
-        "agri": "农业"
+        "agri": "农业",
+        "inventory": "暂无库存数据"
       },
       "badges": {
         "daily": "每日",
         "threeDay": "三日"
       },
-      "alertItemDescription": "告警条目说明"
+      "alertItemDescription": "日涨跌 {{daily}}%，三日 {{threeDay}}%"
     },
     "charts": {
       "noCandlestick": "无K线图",
@@ -581,7 +746,12 @@
         "tooltip": "提示"
       },
       "agri": {
-        "radarName": "雷达名称"
+        "radarName": "雷达名称",
+        "wheat": "小麦",
+        "corn": "玉米",
+        "soybean": "大豆",
+        "rice": "大米",
+        "cotton": "棉花"
       },
       "tourism": {
         "fxIncome": "外汇收入",
@@ -592,7 +762,20 @@
       "cards": {
         "cpiTree": "CPI 树状图",
         "agriRadar": "农业雷达",
-        "tourism": "旅游"
+        "tourism": "旅游",
+        "globalGrains": {
+          "title": "全球粮食现货(连续)",
+          "description": "小麦/玉米/大豆：连续现货报价"
+        },
+        "cnSpot": {
+          "title": "国内现货价格",
+          "description": "玉米/大豆：国内现货(CNY/kg)"
+        }
+      },
+      "series": {
+        "wheat": "小麦",
+        "corn": "玉米",
+        "soybeans": "大豆"
       },
       "empty": {
         "cpi": "CPI",
@@ -728,6 +911,10 @@
       "crawlTasks": {
         "title": "抓取任务",
         "description": "管理抓取任务与执行状态"
+      },
+      "crawlMonitor": {
+        "title": "Crawl4AI 监控",
+        "description": "实时查看系统指标与浏览器池状态"
       },
       "newsSources": {
         "title": "新闻数据源",
@@ -1014,6 +1201,85 @@
       "estimatedTotalTokens": "预计总 Token：{{count}}",
       "placeholdersTitle": "占位符标题"
     },
+    "llmGateway": {
+      "description": "管理 OpenAI 兼容的 LLM 网关配置。启用的配置会用于后端运行时调用。",
+      "active": "当前",
+      "keySet": "已配置",
+      "keyMissing": "未配置",
+      "actions": {
+        "new": "新增网关",
+        "activate": "启用",
+        "clearKey": "清空 Key",
+        "keepKey": "保留 Key"
+      },
+      "columns": {
+        "name": "名称",
+        "model": "模型",
+        "embeddingModel": "Embedding 模型",
+        "rpm": "RPM",
+        "status": "状态",
+        "apiKey": "API Key"
+      },
+      "fields": {
+        "name": "名称",
+        "apiBase": "API Base URL",
+        "apiKey": "API Key",
+        "model": "默认模型",
+        "embeddingModel": "Embedding 模型",
+        "timeoutMs": "超时 (ms)",
+        "temperature": "Temperature",
+        "topP": "Top P",
+        "maxOutputTokens": "最大输出 Token",
+        "maxRetries": "最大重试次数",
+        "requestsPerMinute": "每分钟请求数",
+        "fallbackModels": "Fallback 模型",
+        "enabled": "启用"
+      },
+      "placeholders": {
+        "name": "例如：LiteLLM（生产）",
+        "apiKey": "可选",
+        "apiKeyEdit": "留空表示不变",
+        "fallbackModels": "逗号分隔，例如 openai/gpt-4o-mini,anthropic/claude-3-haiku"
+      },
+      "hints": {
+        "apiKey": "写入系统设置；若配置 SYSTEM_SETTINGS_ENCRYPTION_KEY 则会加密存储，否则会明文存储。",
+        "apiKeyEdit": "输入新 Key 用于轮换；也可以用下方开关清空。",
+        "fallbackModels": "主模型失败时会按顺序尝试。"
+      },
+      "validation": {
+        "nameRequired": "请填写名称",
+        "apiBaseRequired": "请填写 API Base URL",
+        "apiBaseUrl": "请输入合法的 URL（包含 http/https）",
+        "modelRequired": "请填写模型",
+        "timeoutRequired": "请填写超时",
+        "maxRetriesRequired": "请填写最大重试次数",
+        "rpmRequired": "请填写每分钟请求数",
+        "temperatureRequired": "请填写 Temperature",
+        "topPRequired": "请填写 Top P",
+        "maxOutputTokensRequired": "请填写最大输出 Token"
+      },
+      "modal": {
+        "createTitle": "新增 LLM 网关",
+        "editTitle": "编辑 LLM 网关",
+        "deleteTitle": "删除 LLM 网关",
+        "deleteContent": "确认删除 {{name}}？此操作不可撤销。"
+      },
+      "messages": {
+        "created": "已创建",
+        "updated": "已更新",
+        "deleted": "已删除",
+        "activated": "已启用"
+      },
+      "errors": {
+        "loadFailed": "加载 LLM 网关失败",
+        "createFailed": "创建 LLM 网关失败",
+        "updateFailed": "更新 LLM 网关失败",
+        "deleteFailed": "删除 LLM 网关失败",
+        "toggleFailed": "更新启用状态失败",
+        "activateFailed": "启用失败",
+        "badRequest": "参数错误"
+      }
+    },
     "adminOnly": {
       "title": "管理员仅",
       "description": "管理员仅说明"
@@ -1025,6 +1291,7 @@
       "authCache": "认证缓存",
       "crawlClient": "抓取客户端",
       "newsPrompts": "新闻提示词",
+      "llmGateway": "LLM 网关",
       "roles": "角色",
       "permissions": "权限",
       "members": "成员"
@@ -1311,6 +1578,21 @@
       "processing": "处理中"
     },
     "createTask": "创建任务",
+    "monitor": {
+      "title": "Crawl4AI 监控",
+      "subtitle": "交互式仪表盘：实时系统指标与浏览器池可视化。",
+      "open": "监控",
+      "dashboardTitle": "监控仪表盘",
+      "openInNewTab": "新窗口打开",
+      "copyLink": "复制链接",
+      "currentUrl": "当前仪表盘地址：",
+      "copied": "已复制仪表盘链接。",
+      "copyFailed": "复制失败。",
+      "missingUrl": {
+        "title": "未配置仪表盘地址",
+        "description": "请设置 CRAWL4AI_DASHBOARD_URL（Docker 推荐）或 CRAWL4AI_BASE_URL，然后刷新页面。"
+      }
+    },
     "detail": {
       "media": {
         "title": "媒体",

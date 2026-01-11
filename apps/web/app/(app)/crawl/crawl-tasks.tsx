@@ -1,6 +1,6 @@
 "use client";
 
-import { SearchOutlined } from "@ant-design/icons";
+import { DashboardOutlined, SearchOutlined } from "@ant-design/icons";
 import { sanitizeCrawlOptions } from "@modular/utils";
 import {
   Alert,
@@ -21,7 +21,7 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import Link from "next/link";
 import { useMemo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
 import type { CrawlMetadataInput, CrawlTaskStatus } from "@/graphql/generated";
@@ -50,6 +50,7 @@ export function CrawlTasksView() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
@@ -347,6 +348,9 @@ export function CrawlTasksView() {
             setPagination((prev) => ({ ...prev, current: 1 }));
           }}
         />
+        <Button icon={<DashboardOutlined />} onClick={() => router.push("/admin/ops/crawl-monitor")}>
+          {t("crawl.monitor.open", { defaultValue: "Monitor" })}
+        </Button>
         {canManage ? (
           <Button type="primary" onClick={() => setDrawerOpen(true)}>
             {t("crawl.createTask")}

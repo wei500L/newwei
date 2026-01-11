@@ -1235,7 +1235,7 @@ export class ItemsService {
   }
 
   private async resolveVectorSearchIds(orgId: string, search: string): Promise<string[]> {
-    const embeddingModel = this.env.liteLlmConfig.embeddingModel;
+    const embeddingModel = await this.liteLlm.getEmbeddingModel();
     if (!embeddingModel) {
       return [];
     }
