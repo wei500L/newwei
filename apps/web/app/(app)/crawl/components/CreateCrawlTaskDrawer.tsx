@@ -119,9 +119,26 @@ export function CreateCrawlTaskDrawer({
         form.setFieldsValue({
           onlyMainContent: true,
           extractLinks: false,
-          scanFullPage: false,
+          scanFullPage: true,
+          adjustViewportToContent: true,
+          scrollDelayMs: 200,
           includeImages: true,
-          markdownFilter: { type: "pruning" },
+          excludeExternalImages: false,
+          waitForImages: true,
+          simulateUser: true,
+          overrideNavigator: true,
+          markdownOptions: {
+            contentSource: "cleaned_html",
+            escapeHtml: true,
+            bodyWidth: 80,
+          },
+          markdownFilter: { type: "pruning", thresholdType: "dynamic", minWordThreshold: 80 },
+          cleanMarkdown: {
+            cssSelector: "article,main,.article-body",
+            removeOverlayElements: true,
+            wordCountThreshold: 120,
+            excludedTags: ["nav", "footer", "script", "style"],
+          },
         });
         break;
       case "forum":

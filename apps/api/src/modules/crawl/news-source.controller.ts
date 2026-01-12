@@ -47,4 +47,10 @@ export class NewsSourceController {
   async run(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
     return this.newsSources.runNow(user.orgId, id);
   }
+
+  @Get(":id/preview")
+  @Permissions("crawl.read")
+  async preview(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.newsSources.preview(user.orgId, id);
+  }
 }

@@ -2,6 +2,7 @@ import { createLogger } from "@modular/utils";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { load } from "cheerio";
 import { XMLParser } from "fast-xml-parser";
+import { gunzipSync } from "node:zlib";
 
 import type {
   CrawlMetadataExtractionInput,
@@ -59,6 +60,37 @@ export class CrawlMetadataService {
       : results;
 
     return filtered.slice(0, config.maxUrls);
+  }
+
+  async discoverSitemapUrls(input: {
+    domain?: string;
+    pattern?: string;
+    maxUrls?: number;
+    requestTimeoutMs?: number;
+  }): Promise<string[]> {
+    const domain = this.normalizeDomain(input.domain);
+    if (!domain) {
+      return [];
+    }
+    const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
+    const patternMatcher = this.normalizePattern(input.pattern);
+    const requestTimeoutMs =
+      typeof input.requestTimeoutMs === "number" && Number.isFinite(input.requestTimeoutMs)
+        ? Math.max(1000, Math.round(input.requestTimeoutMs))
+        : 15_000;
+
+    return this.discoverFromSitemaps({
+      source: "sitemap",
+      domain,
+      patternMatcher,
+      maxUrls,
+      includeJsonLd: false,
+      includeOpenGraph: false,
+      includeMeta: false,
+      concurrency: 1,
+      scoreThreshold: 0,
+      requestTimeoutMs
+    });
   }
 
   private normalizeInput(input: CrawlMetadataExtractionInput): NormalizedMetadataConfig {
@@ -254,11 +286,11 @@ export class CrawlMetadataService {
       if (!xml) {
         continue;
       }
-    await this.extractFromSitemapPayload(xml, config, collected);
-  }
+      await this.extractFromSitemapPayload(xml, config, collected);
+    }
 
-  return Array.from(collected).slice(0, config.maxUrls);
-}
+    return Array.from(collected).slice(0, config.maxUrls);
+  }
 
   private async extractFromSitemapPayload(
     xml: string,
@@ -432,13 +464,29 @@ export class CrawlMetadataService {
         },
         signal: controller.signal
       });
-      const body = await response.text();
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const shouldGunzip =
+        url.toLowerCase().endsWith(".gz") ||
+        (response.headers.get("content-encoding")?.toLowerCase().includes("gzip") ?? false) ||
+        (response.headers.get("content-type")?.toLowerCase().includes("gzip") ?? false);
+
+      const body = shouldGunzip
+        ? this.decodePossiblyGzippedPayload(buffer)
+        : buffer.toString("utf8");
       if (!response.ok) {
         throw new Error(`Metadata request failed with status ${response.status}`);
       }
       return { status: response.status, body };
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  private decodePossiblyGzippedPayload(buffer: Buffer) {
+    try {
+      return gunzipSync(buffer).toString("utf8");
+    } catch {
+      return buffer.toString("utf8");
     }
   }
 

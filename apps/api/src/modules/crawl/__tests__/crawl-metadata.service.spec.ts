@@ -7,6 +7,7 @@ jest.mock("@modular/utils", () => {
 });
 
 import { CrawlMetadataService } from "../crawl-metadata.service";
+import { gzipSync } from "node:zlib";
 
 describe("CrawlMetadataService pattern matching", () => {
   const normalizePattern = (service: CrawlMetadataService, pattern?: string) =>
@@ -49,3 +50,80 @@ describe("CrawlMetadataService pattern matching", () => {
   });
 });
 
+describe("CrawlMetadataService sitemap discovery", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("discovers urls from nested gzipped sitemap indexes", async () => {
+    const sitemapIndexXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <sitemap>
+          <loc>https://example.com/sitemap-posts.xml.gz</loc>
+        </sitemap>
+      </sitemapindex>`;
+
+    const urlsetXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url><loc>https://example.com/a/1</loc></url>
+        <url><loc>https://example.com/b/2</loc></url>
+      </urlset>`;
+
+    const gzipped = gzipSync(Buffer.from(urlsetXml, "utf8"));
+
+    global.fetch = jest.fn(async (url: string) => {
+      const makeHeaders = (headers: Record<string, string>) => ({
+        get: (key: string) => headers[key.toLowerCase()] ?? null
+      });
+
+      if (url === "https://example.com/sitemap.xml") {
+        const buffer = Buffer.from(sitemapIndexXml, "utf8");
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => buffer,
+          text: async () => buffer.toString("utf8")
+        } as any;
+      }
+
+      if (url === "https://example.com/sitemap-posts.xml.gz") {
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/x-gzip" }),
+          arrayBuffer: async () => gzipped,
+          text: async () => gzipped.toString("utf8")
+        } as any;
+      }
+
+      return {
+        ok: false,
+        status: 404,
+        headers: makeHeaders({}),
+        arrayBuffer: async () => Buffer.from("", "utf8"),
+        text: async () => ""
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService();
+    const urls = await service.discoverSitemapUrls({
+      domain: "https://example.com",
+      pattern: "https://example.com/a/*",
+      maxUrls: 10,
+      requestTimeoutMs: 5000
+    });
+
+    expect(urls).toEqual(["https://example.com/a/1"]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://example.com/sitemap.xml",
+      expect.any(Object)
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://example.com/sitemap-posts.xml.gz",
+      expect.any(Object)
+    );
+  });
+});

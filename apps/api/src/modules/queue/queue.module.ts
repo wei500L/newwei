@@ -5,6 +5,7 @@ import { Queue, QueueEvents } from "bullmq";
 import { AuthModule } from "../auth/auth.module";
 import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
+import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
 import { QueueEventPublisher } from "./queue-event.publisher";
@@ -23,7 +24,7 @@ import { QueueService } from "./queue.service";
 import { NewsSourceSchedulerService } from "./news-source.scheduler.service";
 
 @Module({
-  imports: [CacheModule, NewsPipelineModule, AuthModule],
+  imports: [CacheModule, CrawlModule, NewsPipelineModule, AuthModule],
   providers: [
     {
       provide: PIPELINE_QUEUE,

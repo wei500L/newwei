@@ -14,6 +14,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message
 } from "antd";
@@ -37,6 +38,10 @@ type NewsSourceRecord = {
   priority: number;
   isActive: boolean;
   lastRunAt?: string | null;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  consecutiveFailures?: number | null;
+  circuitOpenUntil?: string | null;
   nextRunAt?: string | null;
   config?: Record<string, unknown> | null;
 };
@@ -45,6 +50,34 @@ type CrawlTemplateRecord = {
   id: string;
   name: string;
   isActive: boolean;
+};
+
+type NewsSourcePreviewCandidate = {
+  url: string;
+  status: "success" | "failed";
+  title?: string;
+  description?: string;
+  author?: string;
+  relevanceScore?: number;
+  alreadyCrawled: boolean;
+  lastCrawlAt?: string | null;
+  alreadyQueued?: boolean;
+  inFlightStatus?: string | null;
+  error?: string;
+};
+
+type NewsSourcePreviewResponse = {
+  mode: "single" | "sitemap";
+  sourceId: string;
+  url: string;
+  name: string;
+  seed?: Record<string, unknown> | null;
+  candidates: NewsSourcePreviewCandidate[];
+  availableToSchedule?: number;
+  inFlightCount?: number;
+  inFlightLimit?: number;
+  scheduleCount: number;
+  skippedCount: number;
 };
 
 type NewsSourceFormValues = {
@@ -62,6 +95,16 @@ type NewsSourceFormValues = {
   metadataJson?: string;
   crawlOptionsJson?: string;
   forceRefresh?: boolean;
+  seedEnabled?: boolean;
+  seedDomain?: string;
+  seedPattern?: string;
+  seedQuery?: string;
+  seedMaxUrls?: number;
+  seedMaxNewUrlsPerRun?: number;
+  seedScoreThreshold?: number;
+  seedDedupeWindowHours?: number;
+  seedCacheTtlSeconds?: number;
+  seedConcurrency?: number;
 };
 
 const parseStringList = (value?: string) =>
@@ -91,6 +134,21 @@ const parseJsonField = (value: string | undefined, label: string) => {
   }
 };
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const hasSeedConfig = (
+  config: unknown
+): config is Record<string, unknown> & { seed: Record<string, unknown> } => {
+  if (!isPlainObject(config)) {
+    return false;
+  }
+  return isPlainObject((config as Record<string, unknown>).seed);
+};
+
+const isSeedEnabled = (config: unknown) =>
+  hasSeedConfig(config) ? config.seed.enabled === true : false;
+
 export function NewsSourcesContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -108,6 +166,12 @@ export function NewsSourcesContent() {
   const [editingSource, setEditingSource] = useState<NewsSourceRecord | null>(null);
   const [form] = Form.useForm<NewsSourceFormValues>();
   const screens = Grid.useBreakpoint();
+  const seedEnabledValue = Form.useWatch("seedEnabled", form);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewRunNowLoading, setPreviewRunNowLoading] = useState(false);
+  const [previewSource, setPreviewSource] = useState<NewsSourceRecord | null>(null);
+  const [previewData, setPreviewData] = useState<NewsSourcePreviewResponse | null>(null);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -184,7 +248,14 @@ export function NewsSourcesContent() {
       siteType: "general",
       frequencySeconds: 3600,
       priority: 0,
-      isActive: true
+      isActive: true,
+      seedEnabled: false,
+      seedMaxUrls: 20,
+      seedMaxNewUrlsPerRun: 10,
+      seedScoreThreshold: 0,
+      seedDedupeWindowHours: 24,
+      seedCacheTtlSeconds: 600,
+      seedConcurrency: 5
     });
     setModalOpen(true);
   };
@@ -195,6 +266,34 @@ export function NewsSourcesContent() {
       source.config && typeof source.config === "object" && !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
         : null;
+    const seedConfig =
+      config?.seed && typeof config.seed === "object" && !Array.isArray(config.seed)
+        ? (config.seed as Record<string, unknown>)
+        : null;
+    const seedMaxUrls =
+      typeof seedConfig?.maxUrls === "number" && Number.isFinite(seedConfig.maxUrls)
+        ? seedConfig.maxUrls
+        : 20;
+    const seedMaxNewUrlsPerRun =
+      typeof seedConfig?.maxNewUrlsPerRun === "number" && Number.isFinite(seedConfig.maxNewUrlsPerRun)
+        ? seedConfig.maxNewUrlsPerRun
+        : 10;
+    const seedScoreThreshold =
+      typeof seedConfig?.scoreThreshold === "number" && Number.isFinite(seedConfig.scoreThreshold)
+        ? seedConfig.scoreThreshold
+        : 0;
+    const seedDedupeWindowHours =
+      typeof seedConfig?.dedupeWindowHours === "number" && Number.isFinite(seedConfig.dedupeWindowHours)
+        ? seedConfig.dedupeWindowHours
+        : 24;
+    const seedCacheTtlSeconds =
+      typeof seedConfig?.cacheTtlSeconds === "number" && Number.isFinite(seedConfig.cacheTtlSeconds)
+        ? seedConfig.cacheTtlSeconds
+        : 600;
+    const seedConcurrency =
+      typeof seedConfig?.concurrency === "number" && Number.isFinite(seedConfig.concurrency)
+        ? seedConfig.concurrency
+        : 5;
     form.setFieldsValue({
       name: source.name,
       url: source.url,
@@ -209,7 +308,17 @@ export function NewsSourcesContent() {
       summaryHints: formatStringList(config?.summaryHints),
       metadataJson: config?.metadata ? JSON.stringify(config.metadata, null, 2) : "",
       crawlOptionsJson: config?.crawlOptions ? JSON.stringify(config.crawlOptions, null, 2) : "",
-      forceRefresh: config?.forceRefresh === true
+      forceRefresh: config?.forceRefresh === true,
+      seedEnabled: seedConfig?.enabled === true,
+      seedDomain: typeof seedConfig?.domain === "string" ? seedConfig.domain : "",
+      seedPattern: typeof seedConfig?.pattern === "string" ? seedConfig.pattern : "",
+      seedQuery: typeof seedConfig?.query === "string" ? seedConfig.query : "",
+      seedMaxUrls,
+      seedMaxNewUrlsPerRun,
+      seedScoreThreshold,
+      seedDedupeWindowHours,
+      seedCacheTtlSeconds,
+      seedConcurrency
     });
     setModalOpen(true);
   };
@@ -240,6 +349,59 @@ export function NewsSourcesContent() {
     }
     if (values.forceRefresh) {
       config.forceRefresh = true;
+    }
+
+    const shouldIncludeSeed =
+      values.seedEnabled === true || (editingSource?.config && hasSeedConfig(editingSource.config));
+    if (shouldIncludeSeed) {
+      const seed: Record<string, unknown> = {
+        enabled: values.seedEnabled === true
+      };
+
+      const seedDomain = values.seedDomain?.trim();
+      if (seedDomain) {
+        seed.domain = seedDomain;
+      }
+
+      const seedPattern = values.seedPattern?.trim();
+      if (seedPattern) {
+        seed.pattern = seedPattern;
+      }
+
+      const seedQuery = values.seedQuery?.trim();
+      if (seedQuery) {
+        seed.query = seedQuery;
+      }
+
+      if (typeof values.seedMaxUrls === "number" && Number.isFinite(values.seedMaxUrls)) {
+        seed.maxUrls = values.seedMaxUrls;
+      }
+      if (
+        typeof values.seedMaxNewUrlsPerRun === "number" &&
+        Number.isFinite(values.seedMaxNewUrlsPerRun)
+      ) {
+        seed.maxNewUrlsPerRun = values.seedMaxNewUrlsPerRun;
+      }
+      if (typeof values.seedScoreThreshold === "number" && Number.isFinite(values.seedScoreThreshold)) {
+        seed.scoreThreshold = values.seedScoreThreshold;
+      }
+      if (
+        typeof values.seedDedupeWindowHours === "number" &&
+        Number.isFinite(values.seedDedupeWindowHours)
+      ) {
+        seed.dedupeWindowHours = values.seedDedupeWindowHours;
+      }
+      if (
+        typeof values.seedCacheTtlSeconds === "number" &&
+        Number.isFinite(values.seedCacheTtlSeconds)
+      ) {
+        seed.cacheTtlSeconds = values.seedCacheTtlSeconds;
+      }
+      if (typeof values.seedConcurrency === "number" && Number.isFinite(values.seedConcurrency)) {
+        seed.concurrency = values.seedConcurrency;
+      }
+
+      config.seed = seed;
     }
 
     return Object.keys(config).length ? config : null;
@@ -342,6 +504,49 @@ export function NewsSourcesContent() {
     });
   };
 
+  const handlePreview = async (source: NewsSourceRecord) => {
+    setPreviewSource(source);
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewData(null);
+    try {
+      const response = await apiClient.get<NewsSourcePreviewResponse>(
+        `admin/news-sources/${source.id}/preview`
+      );
+      setPreviewData(response.data ?? null);
+    } catch (error) {
+      captureClientError("Failed to preview news source", error);
+      messageApi.error(
+        t("newsSources.errors.previewFailed", {
+          defaultValue: "Failed to preview news source."
+        })
+      );
+      setPreviewOpen(false);
+      setPreviewSource(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const reloadPreview = async () => {
+    if (!previewSource) {
+      return;
+    }
+    await handlePreview(previewSource);
+  };
+
+  const handleRunNowFromPreview = async () => {
+    if (!previewSource) {
+      return;
+    }
+    setPreviewRunNowLoading(true);
+    try {
+      await handleRunNow(previewSource);
+    } finally {
+      setPreviewRunNowLoading(false);
+    }
+  };
+
   if (status === "loading") {
     return (
       <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
@@ -369,7 +574,14 @@ export function NewsSourcesContent() {
       key: "name",
       render: (_, record) => (
         <Space direction="vertical" size={2}>
-          <Typography.Text strong>{record.name}</Typography.Text>
+          <Space size={8} wrap>
+            <Typography.Text strong>{record.name}</Typography.Text>
+            {isSeedEnabled(record.config) ? (
+              <Tag color="purple">
+                {t("newsSources.seed.mode", { defaultValue: "Sitemap seed" })}
+              </Tag>
+            ) : null}
+          </Space>
           <Typography.Text type="secondary" ellipsis={{ tooltip: record.url }}>
             {record.url}
           </Typography.Text>
@@ -418,14 +630,66 @@ export function NewsSourcesContent() {
       title: t("newsSources.columns.status", { defaultValue: "Status" }),
       dataIndex: "isActive",
       key: "isActive",
-      render: (value: boolean, record) =>
-        canManage ? (
-          <Switch checked={value} onChange={(next) => void handleToggleActive(record, next)} />
-        ) : (
-          <Tag color={value ? "green" : "default"}>
-            {value ? t("common.enabled") : t("common.disabled")}
-          </Tag>
-        )
+      render: (value: boolean, record) => {
+        const failureCount = Number(record.consecutiveFailures ?? 0);
+        const circuitOpenUntil = record.circuitOpenUntil ? new Date(record.circuitOpenUntil) : null;
+        const circuitOpen = circuitOpenUntil ? circuitOpenUntil.getTime() > Date.now() : false;
+        const lastFailureAt = record.lastFailureAt ?? null;
+
+        const healthTag = circuitOpen ? (
+          <Tooltip
+            title={
+              circuitOpenUntil
+                ? t("newsSources.health.circuitOpenUntil", {
+                    defaultValue: "Circuit open until {{time}}",
+                    time: formatDateTime(circuitOpenUntil.toISOString(), locale, {
+                      dateStyle: "medium",
+                      timeStyle: "short"
+                    })
+                  })
+                : t("newsSources.health.circuitOpen", { defaultValue: "Circuit open" })
+            }
+          >
+            <Tag color="red">{t("newsSources.health.circuitOpen", { defaultValue: "Circuit open" })}</Tag>
+          </Tooltip>
+        ) : failureCount > 0 ? (
+          <Tooltip
+            title={
+              lastFailureAt
+                ? t("newsSources.health.lastFailureAt", {
+                    defaultValue: "Last failure {{time}}",
+                    time: formatDateTime(lastFailureAt, locale, {
+                      dateStyle: "medium",
+                      timeStyle: "short"
+                    })
+                  })
+                : t("newsSources.health.failing", { defaultValue: "Failing" })
+            }
+          >
+            <Tag color="orange">
+              {t("newsSources.health.failingCount", {
+                defaultValue: "Failing ({{count}})",
+                count: failureCount
+              })}
+            </Tag>
+          </Tooltip>
+        ) : value ? (
+          <Tag color="green">{t("newsSources.health.healthy", { defaultValue: "Healthy" })}</Tag>
+        ) : null;
+
+        return (
+          <Space direction="vertical" size={2}>
+            {canManage ? (
+              <Switch checked={value} onChange={(next) => void handleToggleActive(record, next)} />
+            ) : (
+              <Tag color={value ? "green" : "default"}>
+                {value ? t("common.enabled") : t("common.disabled")}
+              </Tag>
+            )}
+            {healthTag}
+          </Space>
+        );
+      }
     },
     {
       title: t("newsSources.columns.nextRun", { defaultValue: "Next run" }),
@@ -442,10 +706,21 @@ export function NewsSourcesContent() {
         value ? formatDateTime(value, locale, { dateStyle: "medium", timeStyle: "short" }) : t("common.never")
     },
     {
+      title: t("newsSources.columns.lastSuccess", { defaultValue: "Last success" }),
+      dataIndex: "lastSuccessAt",
+      key: "lastSuccessAt",
+      responsive: ["md"],
+      render: (value?: string | null) =>
+        value ? formatDateTime(value, locale, { dateStyle: "medium", timeStyle: "short" }) : t("common.never")
+    },
+    {
       title: t("common.actions"),
       key: "actions",
       render: (_, record) => (
         <Space>
+          <Button size="small" onClick={() => void handlePreview(record)}>
+            {t("newsSources.actions.preview", { defaultValue: "Preview" })}
+          </Button>
           {canManage ? (
             <Button size="small" onClick={() => openEdit(record)}>
               {t("common.edit")}
@@ -463,6 +738,91 @@ export function NewsSourcesContent() {
           ) : null}
         </Space>
       )
+    }
+  ];
+
+  const previewColumns: ColumnsType<NewsSourcePreviewCandidate> = [
+    {
+      title: t("newsSources.preview.columns.url", { defaultValue: "URL" }),
+      dataIndex: "url",
+      key: "url",
+      render: (value: string, record) => (
+        <Space direction="vertical" size={2}>
+          <Typography.Link href={value} target="_blank" rel="noreferrer" title={value} ellipsis>
+            {value}
+          </Typography.Link>
+          {record.title ? <Typography.Text type="secondary">{record.title}</Typography.Text> : null}
+        </Space>
+      )
+    },
+    {
+      title: t("newsSources.preview.columns.relevance", { defaultValue: "Relevance" }),
+      dataIndex: "relevanceScore",
+      key: "relevanceScore",
+      width: 110,
+      render: (value?: number) =>
+        typeof value === "number" && Number.isFinite(value) ? value.toFixed(3) : "-"
+    },
+    {
+      title: t("newsSources.preview.columns.status", { defaultValue: "Status" }),
+      dataIndex: "status",
+      key: "status",
+      width: 110,
+      render: (value: NewsSourcePreviewCandidate["status"]) =>
+        value === "success" ? (
+          <Tag color="green">{t("common.success", { defaultValue: "Success" })}</Tag>
+        ) : (
+          <Tag color="red">{t("common.failed", { defaultValue: "Failed" })}</Tag>
+        )
+    },
+    {
+      title: t("newsSources.preview.columns.dedupe", { defaultValue: "Dedupe" }),
+      dataIndex: "alreadyCrawled",
+      key: "alreadyCrawled",
+      width: 160,
+      render: (_: unknown, record) => (
+        <Space direction="vertical" size={2}>
+          {record.alreadyCrawled ? (
+            <Tag color="default">
+              {t("newsSources.preview.alreadyCrawled", { defaultValue: "Crawled" })}
+            </Tag>
+          ) : (
+            <Tag color="blue">{t("newsSources.preview.newUrl", { defaultValue: "New" })}</Tag>
+          )}
+          {record.alreadyQueued ? (
+            <Tooltip
+              title={
+                record.inFlightStatus
+                  ? t("newsSources.preview.inFlightStatus", {
+                      defaultValue: "In-flight: {{status}}",
+                      status: record.inFlightStatus
+                    })
+                  : t("newsSources.preview.inFlight", { defaultValue: "In-flight" })
+              }
+            >
+              <Tag color="orange">{t("newsSources.preview.inFlight", { defaultValue: "In-flight" })}</Tag>
+            </Tooltip>
+          ) : null}
+          {record.lastCrawlAt
+            ? formatDateTime(record.lastCrawlAt, locale, { dateStyle: "medium", timeStyle: "short" })
+            : null}
+        </Space>
+      )
+    },
+    {
+      title: t("newsSources.preview.columns.error", { defaultValue: "Error" }),
+      dataIndex: "error",
+      key: "error",
+      render: (value?: string) =>
+        value ? (
+          <Tooltip title={value}>
+            <Typography.Text type="danger" ellipsis={{ tooltip: value }}>
+              {value}
+            </Typography.Text>
+          </Tooltip>
+        ) : (
+          <Typography.Text type="secondary">-</Typography.Text>
+        )
     }
   ];
 
@@ -616,7 +976,197 @@ export function NewsSourcesContent() {
           >
             <Switch />
           </Form.Item>
+
+          <Typography.Title level={5} style={{ marginBottom: 0 }}>
+            {t("newsSources.sections.seed", { defaultValue: "Sitemap seed" })}
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            {t("newsSources.sections.seedHint", {
+              defaultValue:
+                "Enable sitemap seeding to discover article URLs from the site's sitemap and schedule up to N fresh URLs per run."
+            })}
+          </Typography.Text>
+
+          <Form.Item
+            name="seedEnabled"
+            label={t("newsSources.fields.seedEnabled", { defaultValue: "Enable sitemap seed" })}
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+
+          <div style={{ display: seedEnabledValue ? "block" : "none" }}>
+            <Form.Item
+              name="seedDomain"
+              label={t("newsSources.fields.seedDomain", { defaultValue: "Seed domain (optional)" })}
+              tooltip={t("newsSources.fields.seedDomainHint", {
+                defaultValue: "Defaults to the source URL origin if empty."
+              })}
+            >
+              <Input placeholder="https://example.com" />
+            </Form.Item>
+            <Form.Item
+              name="seedPattern"
+              label={t("newsSources.fields.seedPattern", { defaultValue: "URL pattern (optional)" })}
+              tooltip={t("newsSources.fields.seedPatternHint", {
+                defaultValue: "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'."
+              })}
+            >
+              <Input placeholder="*news*" />
+            </Form.Item>
+            <Form.Item
+              name="seedQuery"
+              label={t("newsSources.fields.seedQuery", { defaultValue: "Seed query (optional)" })}
+              tooltip={t("newsSources.fields.seedQueryHint", {
+                defaultValue: "If empty, keywords will be used to score URLs."
+              })}
+            >
+              <Input
+                placeholder={t("newsSources.fields.seedQueryPlaceholder", {
+                  defaultValue: "e.g. earnings regulation"
+                })}
+              />
+            </Form.Item>
+            <Form.Item
+              name="seedMaxUrls"
+              label={t("newsSources.fields.seedMaxUrls", { defaultValue: "Max sitemap URLs" })}
+            >
+              <InputNumber min={1} max={200} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              name="seedMaxNewUrlsPerRun"
+              label={t("newsSources.fields.seedMaxNewUrlsPerRun", { defaultValue: "Max new URLs per run" })}
+            >
+              <InputNumber min={1} max={50} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              name="seedScoreThreshold"
+              label={t("newsSources.fields.seedScoreThreshold", { defaultValue: "Score threshold" })}
+              tooltip={t("newsSources.fields.seedScoreThresholdHint", {
+                defaultValue: "0 disables the scoring filter; values range from 0..1."
+              })}
+            >
+              <InputNumber min={0} max={1} step={0.05} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              name="seedDedupeWindowHours"
+              label={t("newsSources.fields.seedDedupeWindowHours", { defaultValue: "Dedupe window (hours)" })}
+            >
+              <InputNumber min={0} max={720} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              name="seedCacheTtlSeconds"
+              label={t("newsSources.fields.seedCacheTtlSeconds", { defaultValue: "Sitemap cache TTL (seconds)" })}
+            >
+              <InputNumber min={10} max={3600} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              name="seedConcurrency"
+              label={t("newsSources.fields.seedConcurrency", { defaultValue: "Preview concurrency" })}
+              tooltip={t("newsSources.fields.seedConcurrencyHint", {
+                defaultValue: "Used by Preview to fetch metadata; scheduling uses lightweight URL scoring."
+              })}
+            >
+              <InputNumber min={1} max={10} style={{ width: "100%" }} />
+            </Form.Item>
+          </div>
         </Form>
+      </Modal>
+
+      <Modal
+        open={previewOpen}
+        title={t("newsSources.preview.title", { defaultValue: "News source preview" })}
+        width={screens.md ? 980 : "100%"}
+        onCancel={() => {
+          setPreviewOpen(false);
+          setPreviewSource(null);
+          setPreviewData(null);
+        }}
+        footer={
+          <Space>
+            {canManage ? (
+              <Button
+                type="primary"
+                onClick={() => void handleRunNowFromPreview()}
+                loading={previewRunNowLoading}
+                disabled={!previewSource}
+              >
+                {t("newsSources.actions.runNow", { defaultValue: "Run now" })}
+              </Button>
+            ) : null}
+            <Button onClick={() => void reloadPreview()} loading={previewLoading} disabled={!previewSource}>
+              {t("common.refresh", { defaultValue: "Refresh" })}
+            </Button>
+            <Button
+              type="primary"
+              onClick={() => {
+                setPreviewOpen(false);
+                setPreviewSource(null);
+                setPreviewData(null);
+              }}
+            >
+              {t("common.close", { defaultValue: "Close" })}
+            </Button>
+          </Space>
+        }
+        destroyOnClose
+      >
+        {previewData ? (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Space wrap>
+              <Tag color={previewData.mode === "sitemap" ? "purple" : "default"}>
+                {previewData.mode === "sitemap"
+                  ? t("newsSources.preview.modeSitemap", { defaultValue: "Sitemap" })
+                  : t("newsSources.preview.modeSingle", { defaultValue: "Single" })}
+              </Tag>
+              <Typography.Text>
+                {t("newsSources.preview.scheduleCount", {
+                  defaultValue: "Would schedule: {{count}}",
+                  count: previewData.scheduleCount
+                })}
+              </Typography.Text>
+              {typeof previewData.availableToSchedule === "number" ? (
+                <Typography.Text type="secondary">
+                  {t("newsSources.preview.availableToSchedule", {
+                    defaultValue: "Available: {{count}}",
+                    count: previewData.availableToSchedule
+                  })}
+                </Typography.Text>
+              ) : null}
+              <Typography.Text type="secondary">
+                {t("newsSources.preview.skippedCount", {
+                  defaultValue: "Skipped: {{count}}",
+                  count: previewData.skippedCount
+                })}
+              </Typography.Text>
+              {typeof previewData.inFlightCount === "number" &&
+              typeof previewData.inFlightLimit === "number" ? (
+                <Typography.Text type="secondary">
+                  {t("newsSources.preview.inFlightCount", {
+                    defaultValue: "In-flight: {{count}}/{{limit}}",
+                    count: previewData.inFlightCount,
+                    limit: previewData.inFlightLimit
+                  })}
+                </Typography.Text>
+              ) : null}
+            </Space>
+
+            <Table
+              rowKey="url"
+              size="small"
+              loading={previewLoading}
+              columns={previewColumns}
+              dataSource={previewData.candidates}
+              pagination={{ pageSize: screens.md ? 10 : 5 }}
+            />
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">
+            {previewLoading
+              ? t("newsSources.preview.loading", { defaultValue: "Loading preview..." })
+              : t("newsSources.preview.empty", { defaultValue: "No preview data." })}
+          </Typography.Text>
+        )}
       </Modal>
     </>
   );

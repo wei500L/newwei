@@ -1,6 +1,6 @@
 "use client";
 
-import { DashboardOutlined, SearchOutlined } from "@ant-design/icons";
+import { DashboardOutlined, GlobalOutlined, SearchOutlined } from "@ant-design/icons";
 import { sanitizeCrawlOptions } from "@modular/utils";
 import {
   Alert,
@@ -351,6 +351,9 @@ export function CrawlTasksView() {
         />
         <Button icon={<DashboardOutlined />} onClick={() => router.push("/admin/ops/crawl-monitor")}>
           {t("crawl.monitor.open", { defaultValue: "Monitor" })}
+        </Button>
+        <Button icon={<GlobalOutlined />} onClick={() => router.push("/admin/ops/news-sources")}>
+          {t("newsSources.title", { defaultValue: "News Sources" })}
         </Button>
         {canManage ? (
           <Button type="primary" onClick={() => setDrawerOpen(true)}>

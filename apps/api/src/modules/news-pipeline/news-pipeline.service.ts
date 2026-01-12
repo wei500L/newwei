@@ -357,6 +357,8 @@ export class NewsPipelineService {
       llm: options.llm,
       processedArticleId: options.processedArticleId,
       normalizedPayload: options.payload,
+      pipelineJobId: options.job.pipelineJobId,
+      sourceId: options.job.sourceId,
     });
 
     return {
@@ -433,6 +435,7 @@ export class NewsPipelineService {
     };
     const request = {
       url: payload.url,
+      keywords: payload.keywords.length > 0 ? payload.keywords : undefined,
       options,
     };
     const response = await this.retry(
@@ -939,9 +942,22 @@ export class NewsPipelineService {
     llm: LlmCallMetadata;
     processedArticleId?: string | null;
     normalizedPayload: NormalizedNewsPayload;
+    pipelineJobId?: string;
+    sourceId?: string;
   }) {
     try {
       const outboxEntry = await this.prisma.runInTransaction(async (tx) => {
+        const payloadSourceId = this.extractSourceId(options.normalizedPayload);
+        const resolvedSourceId =
+          options.sourceId ??
+          (payloadSourceId
+            ? await this.resolveSourceIdForOrg(tx, options.orgId, payloadSourceId)
+            : undefined);
+        const resolvedPipelineJobId =
+          typeof options.pipelineJobId === "string" && options.pipelineJobId.length > 0
+            ? options.pipelineJobId
+            : undefined;
+
         if (!options.processedArticleId) {
           await this.upsertArticleAndProcessed(tx, {
             orgId: options.orgId,
@@ -951,7 +967,34 @@ export class NewsPipelineService {
             llm: options.llm,
             processedItemId: options.processedItemId,
             payload: options.normalizedPayload,
+            pipelineJobId: resolvedPipelineJobId,
+            sourceId: resolvedSourceId,
           });
+        } else if (resolvedPipelineJobId || resolvedSourceId) {
+          const existing = await tx.processedArticle.findUnique({
+            where: { id: options.processedArticleId },
+            select: { articleId: true },
+          });
+
+          if (existing?.articleId) {
+            await Promise.all([
+              resolvedPipelineJobId
+                ? tx.pipelineJob.updateMany({
+                    where: { id: resolvedPipelineJobId },
+                    data: {
+                      articleId: existing.articleId,
+                      crawlRunId: options.article.runId ?? null,
+                    },
+                  })
+                : Promise.resolve(null),
+              resolvedSourceId
+                ? tx.article.updateMany({
+                    where: { id: existing.articleId, sourceId: null },
+                    data: { sourceId: resolvedSourceId },
+                  })
+                : Promise.resolve(null),
+            ]);
+          }
         }
 
         return tx.mongoOutbox.create({
@@ -1058,6 +1101,8 @@ export class NewsPipelineService {
       llm: LlmCallMetadata;
       processedItemId: string;
       payload: NormalizedNewsPayload;
+      pipelineJobId?: string;
+      sourceId?: string;
     },
   ) {
     try {
@@ -1078,6 +1123,7 @@ export class NewsPipelineService {
         },
         create: {
           orgId: options.orgId,
+          sourceId: options.sourceId,
           url: options.article.sourceUrl,
           sourceLabel: options.payload.sourceName ?? null,
           language: options.cleaned.language ?? options.payload.language ?? null,
@@ -1087,6 +1133,23 @@ export class NewsPipelineService {
           metadata: options.article.metadata ?? {},
         },
       });
+
+      if (options.sourceId) {
+        await tx.article.updateMany({
+          where: { id: articleRecord.id, sourceId: null },
+          data: { sourceId: options.sourceId },
+        });
+      }
+
+      if (options.pipelineJobId) {
+        await tx.pipelineJob.updateMany({
+          where: { id: options.pipelineJobId },
+          data: {
+            articleId: articleRecord.id,
+            crawlRunId: options.article.runId ?? null,
+          },
+        });
+      }
 
       await tx.processedArticle.upsert({
         where: { articleId: articleRecord.id },
@@ -1159,6 +1222,27 @@ export class NewsPipelineService {
       );
       throw error;
     }
+  }
+
+  private extractSourceId(payload: NormalizedNewsPayload) {
+    const raw = payload?.metadata ? (payload.metadata as Record<string, unknown>) : undefined;
+    const sourceId = raw && typeof raw.sourceId === "string" ? raw.sourceId.trim() : "";
+    return sourceId.length > 0 ? sourceId : undefined;
+  }
+
+  private async resolveSourceIdForOrg(tx: Prisma.TransactionClient, orgId: string, sourceId: string) {
+    const trimmed = sourceId.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const existing = await tx.newsSource.findUnique({
+      where: { id: trimmed },
+      select: { orgId: true },
+    });
+    if (!existing || existing.orgId !== orgId) {
+      return undefined;
+    }
+    return trimmed;
   }
 
   private buildProcessedItemOutboxPayload(options: {
