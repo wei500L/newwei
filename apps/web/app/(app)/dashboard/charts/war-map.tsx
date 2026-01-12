@@ -13,6 +13,7 @@ import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { safeHttpUrl } from "@/lib/url";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 enum WarEventSeverity {
@@ -73,15 +74,46 @@ interface WarMapEventsResponse {
   updatedAt?: string;
 }
 
+type WarMapNewsGeoSource = "geocoded" | "fallback-country";
+
+interface WarMapNewsMarker {
+  id: string;
+  title: string;
+  url?: string | null;
+  location: string;
+  lat: number;
+  lng: number;
+  publishedAt?: string;
+  ingestedAt?: string;
+  displayName?: string;
+  geoSource: WarMapNewsGeoSource;
+}
+
+interface WarMapNewsMarkersResponse {
+  markers: WarMapNewsMarker[];
+  updatedAt?: string;
+}
+
+type WarMapPointKind = "signal" | "news";
+
 interface WarMapScatterPoint {
+  kind: WarMapPointKind;
   name: string;
   value: [number, number, number];
-  severity: WarEventSeverity;
+  severity?: WarEventSeverity;
   alertScore?: number;
   alertCount?: number;
   newsCount?: number;
+  title?: string;
+  location?: string;
+  url?: string | null;
+  publishedAt?: string;
+  ingestedAt?: string;
+  geoSource?: WarMapNewsGeoSource;
+  displayName?: string;
   itemStyle?: {
     color: string;
+    opacity?: number;
   };
 }
 
@@ -212,6 +244,31 @@ export function WarMap() {
     placeholderData: (previous) => previous
   });
 
+  const newsMarkersQuery = useQuery({
+    queryKey: [
+      "dashboard",
+      "war-map",
+      "news-markers",
+      start.toISOString(),
+      end.toISOString()
+    ],
+    queryFn: async () => {
+      const response = await apiClient.get<WarMapNewsMarkersResponse>(
+        "dashboard/war-map/news-markers",
+        {
+          params: {
+            start: start.toISOString(),
+            end: end.toISOString()
+          }
+        }
+      );
+      return response.data;
+    },
+    staleTime: 30_000,
+    enabled,
+    placeholderData: (previous) => previous
+  });
+
   useEffect(() => {
     if (!enabled || !geoQuery.data) {
       return;
@@ -253,6 +310,7 @@ export function WarMap() {
   const option = useMemo<EChartsOption>(() => {
     if (!enabled || !geoQuery.data || !mapReady) return {};
     const events = eventsQuery.data?.events ?? [];
+    const newsMarkers = newsMarkersQuery.data?.markers ?? [];
     const resolveSeverityColor = (severity: WarEventSeverity) => {
       switch (severity) {
         case WarEventSeverity.High:
@@ -281,6 +339,7 @@ export function WarMap() {
         const alertScore = typeof event.alertScore === "number" ? event.alertScore : undefined;
         const newsCount = typeof event.newsCount === "number" ? event.newsCount : undefined;
         return {
+          kind: "signal",
           name: event.name,
           value: [event.lng, event.lat, score],
           severity: event.severity,
@@ -292,7 +351,40 @@ export function WarMap() {
           }
         };
       });
+
+    const newsScatterData: WarMapScatterPoint[] = newsMarkers
+      .filter((marker) => {
+        const lat = marker.lat;
+        const lng = marker.lng;
+        return (
+          isFiniteNumber(lat) &&
+          isFiniteNumber(lng) &&
+          Math.abs(lat) <= 90 &&
+          Math.abs(lng) <= 180
+        );
+      })
+      .map((marker) => {
+        const opacity = marker.geoSource === "fallback-country" ? 0.35 : 0.85;
+        return {
+          kind: "news",
+          name: marker.location,
+          title: marker.title,
+          location: marker.location,
+          url: marker.url ?? null,
+          publishedAt: marker.publishedAt,
+          ingestedAt: marker.ingestedAt,
+          geoSource: marker.geoSource,
+          displayName: marker.displayName,
+          value: [marker.lng, marker.lat, 1],
+          itemStyle: {
+            color: colors?.bullish ?? "#1b9e77",
+            opacity
+          }
+        };
+      });
+
     const useLargeMode = scatterData.length >= 500;
+    const useLargeNewsMode = newsScatterData.length >= 800;
 
     const areaColor = "rgba(148, 163, 184, 0.25)";
     const borderColor = colors?.border ?? "#e2e8f0";
@@ -312,6 +404,47 @@ export function WarMap() {
           if (!payload) return "";
           const data = payload.data;
           if (!data) return payload.name ?? "";
+          const kind: WarMapPointKind | undefined = typeof data.kind === "string" ? data.kind : undefined;
+
+          if (kind === "news") {
+            const publishedAt =
+              typeof data.publishedAt === "string"
+                ? formatDateTime(data.publishedAt, locale, { dateStyle: "medium", timeStyle: "short" })
+                : "N/A";
+            const ingestedAt =
+              typeof data.ingestedAt === "string"
+                ? formatDateTime(data.ingestedAt, locale, { dateStyle: "medium", timeStyle: "short" })
+                : "N/A";
+            const title = typeof data.title === "string" ? data.title : payload.name ?? "News";
+            const location = typeof data.location === "string" ? data.location : payload.name ?? "N/A";
+            const geoLabel = typeof data.geoSource === "string" ? data.geoSource : undefined;
+
+            return `
+              <div style="min-width: 220px;">
+                <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${colors?.bullish ?? '#1b9e77'};">${title}</div>
+                <div style="margin-bottom: 4px;">
+                  <span style="color: #94a3b8;">Location:</span>
+                  <span style="margin-left: 6px;">${location}</span>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="color: #94a3b8;">Published:</span>
+                  <span>${publishedAt}</span>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="color: #94a3b8;">Ingested:</span>
+                  <span>${ingestedAt}</span>
+                </div>
+                ${geoLabel ? `
+                <div style="margin-top: 6px; font-size: 0.85em; color: #64748b;">
+                  Geo: ${geoLabel}
+                </div>` : ""}
+                <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
+                  Click to open original link
+                </div>
+              </div>
+            `;
+          }
+
           const derivedScore = data.value?.[2] ?? 0;
           const severityColor = data.itemStyle?.color ?? "#fff";
           const alertCount = typeof data.alertCount === "number" ? data.alertCount : undefined;
@@ -403,14 +536,60 @@ export function WarMap() {
              shadowBlur: 6,
              shadowColor: "rgba(15, 23, 42, 0.2)"
           }
+        },
+        {
+          name: t("dashboard.charts.warMap.newsSeries", { defaultValue: "News" }),
+          type: "scatter",
+          coordinateSystem: "geo",
+          data: newsScatterData,
+          large: useLargeNewsMode,
+          largeThreshold: 800,
+          progressive: useLargeNewsMode ? 3000 : undefined,
+          progressiveThreshold: useLargeNewsMode ? 1200 : undefined,
+          animation: !useLargeNewsMode,
+          animationDurationUpdate: useLargeNewsMode ? 0 : 300,
+          emphasis: useLargeNewsMode ? { disabled: true } : { scale: true },
+          symbolSize: () => 6,
+          itemStyle: {
+            shadowBlur: 3,
+            shadowColor: "rgba(15, 23, 42, 0.12)"
+          },
+          z: 4
         }
       ]
     };
-  }, [colors, enabled, eventsQuery.data, fontFamily, geoQuery.data, locale, mapReady, t]);
+  }, [colors, enabled, eventsQuery.data, fontFamily, geoQuery.data, locale, mapReady, newsMarkersQuery.data, t]);
+
+  const chartEvents = useMemo(() => {
+    return [
+      {
+        type: "click",
+        handler: (params: unknown) => {
+          const payload = params as { data?: unknown } | null;
+          const data = payload?.data;
+          if (!data || typeof data !== "object") {
+            return;
+          }
+          const record = data as Record<string, unknown>;
+          if (record.kind !== "news") {
+            return;
+          }
+          const url = typeof record.url === "string" ? safeHttpUrl(record.url) : null;
+          if (!url) {
+            return;
+          }
+          window.open(url, "_blank", "noopener,noreferrer");
+        }
+      }
+    ];
+  }, []);
 
   const geoErrorMessage = getApiErrorMessage(geoQuery.error);
   const eventsErrorMessage = getApiErrorMessage(eventsQuery.error);
+  const newsMarkersErrorMessage = getApiErrorMessage(newsMarkersQuery.error);
   const hasEvents = (eventsQuery.data?.events?.length ?? 0) > 0;
+  const hasNewsMarkers = (newsMarkersQuery.data?.markers?.length ?? 0) > 0;
+  const hasSignals = hasEvents || hasNewsMarkers;
 
   if (!inView) {
     return (
@@ -473,29 +652,42 @@ export function WarMap() {
           end
         )}`}
         showExportImage
+        onEvents={chartEvents}
       />
-      {eventsQuery.isLoading ? (
+      {(eventsQuery.isLoading || newsMarkersQuery.isLoading) && !eventsQuery.data && !newsMarkersQuery.data ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <Skeleton active paragraph={{ rows: 4 }} />
         </div>
       ) : null}
-      {!eventsQuery.isLoading && eventsQuery.isError ? (
+      {!eventsQuery.isLoading &&
+      !newsMarkersQuery.isLoading &&
+      !hasSignals &&
+      (eventsQuery.isError || newsMarkersQuery.isError) ? (
         <div className="absolute inset-0">
           <ChartEmptyState
             variant="error"
             title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
             description={
               eventsErrorMessage ??
+              newsMarkersErrorMessage ??
               t("common.serviceUnavailable", {
                 defaultValue: "Service is unavailable. Please try again."
               })
             }
             actionLabel={t("common.retry")}
-            onAction={() => eventsQuery.refetch()}
+            onAction={() => {
+              void eventsQuery.refetch();
+              void newsMarkersQuery.refetch();
+            }}
           />
         </div>
       ) : null}
-      {!eventsQuery.isLoading && !eventsQuery.isError && eventsQuery.data && !hasEvents ? (
+      {!eventsQuery.isLoading &&
+      !newsMarkersQuery.isLoading &&
+      !eventsQuery.isError &&
+      !newsMarkersQuery.isError &&
+      (eventsQuery.data || newsMarkersQuery.data) &&
+      !hasSignals ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <ChartEmptyState description={emptyMessage} />
         </div>

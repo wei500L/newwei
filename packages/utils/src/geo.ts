@@ -4,6 +4,7 @@ const ALPHA2_TO_ALPHA3 = new Map<string, string>();
 const ALPHA3_SET = new Set<string>();
 const NAME_TO_ALPHA3 = new Map<string, string>();
 const ALPHA3_TO_NAME = new Map<string, string>();
+const ALPHA3_TO_ALPHA2 = new Map<string, string>();
 
 const normalizeKey = (value: string): string =>
   value
@@ -119,6 +120,7 @@ for (const entry of COUNTRY_DATA) {
   const alpha3 = entry.alpha3.toUpperCase();
   ALPHA2_TO_ALPHA3.set(alpha2, alpha3);
   ALPHA3_SET.add(alpha3);
+  ALPHA3_TO_ALPHA2.set(alpha3, alpha2);
   NAME_TO_ALPHA3.set(normalizeKey(entry.name), alpha3);
   ALPHA3_TO_NAME.set(alpha3, entry.name);
 }
@@ -132,6 +134,7 @@ for (const entry of EXTRA_COUNTRIES) {
   const alpha3 = entry.alpha3.toUpperCase();
   ALPHA2_TO_ALPHA3.set(alpha2, alpha3);
   ALPHA3_SET.add(alpha3);
+  ALPHA3_TO_ALPHA2.set(alpha3, alpha2);
   NAME_TO_ALPHA3.set(normalizeKey(entry.name), alpha3);
   ALPHA3_TO_NAME.set(alpha3, entry.name);
 }
@@ -283,4 +286,12 @@ export const getCountryName = (input?: string | null): string | null => {
   }
 
   return ALPHA3_TO_NAME.get(code) ?? null;
+};
+
+export const getCountryAlpha2 = (input?: string | null): string | null => {
+  const code = normalizeCountryCode(input);
+  if (!code) {
+    return null;
+  }
+  return ALPHA3_TO_ALPHA2.get(code) ?? null;
 };

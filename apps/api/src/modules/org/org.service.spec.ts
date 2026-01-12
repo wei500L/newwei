@@ -1,5 +1,5 @@
 import { CORE_PERMISSIONS, DEFAULT_ROLES } from "@modular/config";
-import { ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 
 import { OrgService } from "./org.service";
 
@@ -171,6 +171,60 @@ describe("OrgService", () => {
         })
       })
     );
+  });
+
+  it("accepts unicode organization slugs", async () => {
+    prismaMock.org.create = jest.fn().mockResolvedValue({
+      id: "org-unicode",
+      name: "示例组织",
+      slug: "示例组织",
+      description: null,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    prismaMock.permission.findMany = jest.fn().mockResolvedValue([]);
+
+    prismaMock.role.create = jest.fn().mockImplementation(async ({ data }: any) => ({
+      id: `role-${data.name}`,
+      ...data
+    }));
+
+    prismaMock.rolePermission.createMany = jest.fn().mockResolvedValue({ count: 0 });
+    prismaMock.role.findFirstOrThrow = jest.fn().mockResolvedValue({ id: "role-admin" });
+    prismaMock.membership.create = jest.fn().mockResolvedValue({ id: "membership-1" });
+    prismaMock.membershipRole.create = jest.fn().mockResolvedValue({ membershipId: "membership-1" });
+
+    await expect(
+      service.createOrg("user-1", {
+        name: "示例组织",
+        slug: "示例组织"
+      })
+    ).resolves.toMatchObject({
+      id: "org-unicode",
+      slug: "示例组织"
+    });
+  });
+
+  it("throws a friendly error when slug already exists on create", async () => {
+    prismaMock.org.create = jest.fn().mockRejectedValue({ code: "P2002" });
+
+    await expect(
+      service.createOrg("user-1", {
+        name: "New Org",
+        slug: "new-org"
+      })
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("throws a friendly error when slug already exists on update", async () => {
+    prismaMock.membership.findUnique = jest.fn().mockResolvedValue({ id: "membership-1" });
+    prismaMock.org.update = jest.fn().mockRejectedValue({ code: "P2002" });
+
+    await expect(
+      service.updateOrg("user-1", { id: "org-1", slug: "new-org" })
+    ).rejects.toThrow(BadRequestException);
   });
 
   it("rejects updates when actor is not a member", async () => {

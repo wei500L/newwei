@@ -4,6 +4,7 @@ type SessionOrganization = {
   id: string;
   name?: string;
   slug?: string;
+  isActive?: boolean;
 };
 
 declare module "next-auth" {

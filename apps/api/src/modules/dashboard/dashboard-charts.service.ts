@@ -1,8 +1,14 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { extractCountryCodeFromText, normalizeCountryCode } from "@modular/utils";
-import { AlertSeverity } from "@prisma/client";
+import {
+  extractCountryCodeFromText,
+  getCountryAlpha2,
+  getCountryName,
+  normalizeCountryCode
+} from "@modular/utils";
+import { AlertSeverity, ProcessedArticleStatus } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
+import { GeocodingService } from "../geo/geocoding.service";
 
 import worldGeoJson from "./assets/world.geo.json";
 import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
@@ -13,6 +19,8 @@ const DEFAULT_SECTOR_CATEGORY = "economic-short";
 const DEFAULT_CANDLESTICK_SLUG = "sp500_index";
 const HEATMAP_COLUMNS = 4;
 const MAX_SECTOR_CELLS = 8;
+const MAX_WAR_MAP_NEWS_MARKERS = 500;
+const MAX_WAR_MAP_NEWS_GEOCODE_NETWORK = 3;
 const PREFERRED_SOURCE_FIELDS = [
   "close",
   "收盘价",
@@ -82,6 +90,26 @@ interface WarMapEvent {
 
 interface WarMapEventsResponse {
   events: WarMapEvent[];
+  updatedAt?: string;
+}
+
+type WarMapNewsGeoSource = "geocoded" | "fallback-country";
+
+interface WarMapNewsMarker {
+  id: string;
+  title: string;
+  url?: string | null;
+  location: string;
+  lat: number;
+  lng: number;
+  publishedAt?: string;
+  ingestedAt?: string;
+  displayName?: string;
+  geoSource: WarMapNewsGeoSource;
+}
+
+interface WarMapNewsMarkersResponse {
+  markers: WarMapNewsMarker[];
   updatedAt?: string;
 }
 
@@ -161,7 +189,10 @@ const alertSeverityByRank: Record<number, AlertSeverity> = {
 export class DashboardChartsService {
   private geoIndex: Map<string, { name: string; lat: number; lng: number }> | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly geocoding: GeocodingService
+  ) {}
 
   resolveRange(query: DashboardTimeRangeQueryDto): DateRange {
     const end = query.end ? new Date(query.end) : new Date();
@@ -361,6 +392,237 @@ export class DashboardChartsService {
 
     return {
       events,
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+    };
+  }
+
+  async getWarMapNewsMarkers(
+    range: DateRange,
+    orgId: string
+  ): Promise<WarMapNewsMarkersResponse> {
+    const geoIndex = this.getGeoIndex();
+    const records = await this.prisma.processedArticle.findMany({
+      where: {
+        status: ProcessedArticleStatus.completed,
+        location: { not: null },
+        article: {
+          orgId,
+          crawlAt: {
+            gte: range.start,
+            lte: range.end
+          }
+        }
+      },
+      select: {
+        id: true,
+        title: true,
+        location: true,
+        publishedAt: true,
+        processedAt: true,
+        entities: true,
+        article: {
+          select: {
+            url: true,
+            crawlAt: true,
+            titleGuess: true
+          }
+        }
+      },
+      orderBy: { processedAt: "desc" },
+      take: MAX_WAR_MAP_NEWS_MARKERS
+    });
+
+    interface CleanedEntity {
+      name: string;
+      type: string;
+      confidence: number;
+    }
+
+    const normalizeEntities = (input: unknown): CleanedEntity[] => {
+      if (!Array.isArray(input)) {
+        return [];
+      }
+      const entities: CleanedEntity[] = [];
+      for (const entry of input) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          continue;
+        }
+        const record = entry as Record<string, unknown>;
+        const name = typeof record.name === "string" ? record.name.trim() : "";
+        const type = typeof record.type === "string" ? record.type.trim() : "";
+        const confidenceRaw = record.confidence;
+        const confidence =
+          typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)
+            ? confidenceRaw
+            : 0;
+        if (!name || !type) {
+          continue;
+        }
+        entities.push({ name, type, confidence });
+      }
+      return entities;
+    };
+
+    const isLocationEntityType = (value: string) => {
+      const normalized = value.trim().toLowerCase();
+      return (
+        normalized === "location" ||
+        normalized.includes("loc") ||
+        normalized.includes("place") ||
+        normalized.includes("geo") ||
+        normalized.includes("city") ||
+        normalized.includes("country") ||
+        normalized.includes("region") ||
+        normalized.includes("state") ||
+        normalized.includes("province") ||
+        normalized.includes("地点") ||
+        normalized.includes("地點") ||
+        normalized.includes("地区") ||
+        normalized.includes("地區") ||
+        normalized.includes("城市") ||
+        normalized.includes("国家") ||
+        normalized.includes("國家")
+      );
+    };
+
+    const resolveCountryAlpha3 = (location: string, entities: CleanedEntity[]): string | null => {
+      const fromLocation = extractCountryCodeFromText(location) ?? normalizeCountryCode(location);
+      if (fromLocation) {
+        return fromLocation;
+      }
+      for (const entity of entities) {
+        const code = normalizeCountryCode(entity.name) ?? extractCountryCodeFromText(entity.name);
+        if (code) {
+          return code;
+        }
+      }
+      return null;
+    };
+
+    const buildCandidates = (location: string, entities: CleanedEntity[], countryName?: string | null) => {
+      const candidates: string[] = [];
+      const pushCandidate = (value: string) => {
+        const normalized = value.trim();
+        if (!normalized) return;
+        candidates.push(normalized);
+      };
+
+      const locationEntities = entities
+        .filter((entity) => entity.confidence >= 0.5 && isLocationEntityType(entity.type))
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 3);
+
+      for (const entity of locationEntities) {
+        if (countryName && !entity.name.toLowerCase().includes(countryName.toLowerCase())) {
+          pushCandidate(`${entity.name}, ${countryName}`);
+        }
+        pushCandidate(entity.name);
+      }
+
+      const primaryLocationChunk = location.split(/[,，;；/|]/)[0]?.trim() ?? "";
+      if (primaryLocationChunk && primaryLocationChunk !== location) {
+        if (
+          countryName &&
+          !primaryLocationChunk.toLowerCase().includes(countryName.toLowerCase())
+        ) {
+          pushCandidate(`${primaryLocationChunk}, ${countryName}`);
+        }
+        pushCandidate(primaryLocationChunk);
+      }
+
+      if (countryName && !location.toLowerCase().includes(countryName.toLowerCase())) {
+        pushCandidate(`${location}, ${countryName}`);
+      }
+      pushCandidate(location);
+      if (countryName) {
+        pushCandidate(countryName);
+      }
+
+      return candidates;
+    };
+
+    let updatedAt: Date | undefined;
+    let networkBudget = MAX_WAR_MAP_NEWS_GEOCODE_NETWORK;
+    const markers: WarMapNewsMarker[] = [];
+
+    for (const record of records) {
+      const locationRaw = record.location;
+      const location = typeof locationRaw === "string" ? locationRaw.trim() : "";
+      if (!location) {
+        continue;
+      }
+
+      const entities = normalizeEntities(record.entities);
+      const countryAlpha3 = resolveCountryAlpha3(location, entities);
+      const directCountryAlpha3 = normalizeCountryCode(location);
+      const countryAlpha2 = countryAlpha3 ? getCountryAlpha2(countryAlpha3) ?? undefined : undefined;
+      const countryName = countryAlpha3 ? getCountryName(countryAlpha3) : null;
+
+      const candidates = buildCandidates(location, entities, countryName);
+
+      let geocode = await this.geocoding.resolveCandidates(candidates, {
+        countryCodeAlpha2: countryAlpha2,
+        allowNetwork: false
+      });
+      if (!geocode && networkBudget > 0) {
+        networkBudget -= 1;
+        geocode = await this.geocoding.resolveCandidates(candidates, {
+          countryCodeAlpha2: countryAlpha2,
+          allowNetwork: true
+        });
+      }
+
+      let lat = geocode?.lat;
+      let lng = geocode?.lng;
+      let displayName = geocode?.displayName;
+      let geoSource: WarMapNewsGeoSource = "geocoded";
+
+      if (!geocode && directCountryAlpha3) {
+        const fallback = geoIndex.get(directCountryAlpha3);
+        if (fallback) {
+          lat = fallback.lat;
+          lng = fallback.lng;
+          displayName = fallback.name;
+          geoSource = "fallback-country";
+        }
+      }
+
+      if (
+        typeof lat !== "number" ||
+        typeof lng !== "number" ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        Math.abs(lat) > 90 ||
+        Math.abs(lng) > 180
+      ) {
+        continue;
+      }
+
+      const title =
+        (record.title ?? record.article.titleGuess ?? record.article.url ?? "").trim() ||
+        location;
+      const latestAt = record.article.crawlAt ?? record.processedAt ?? record.publishedAt ?? undefined;
+
+      markers.push({
+        id: record.id,
+        title,
+        url: record.article.url ?? null,
+        location,
+        lat,
+        lng,
+        publishedAt: record.publishedAt ? record.publishedAt.toISOString() : undefined,
+        ingestedAt: record.article.crawlAt ? record.article.crawlAt.toISOString() : undefined,
+        displayName,
+        geoSource
+      });
+
+      if (latestAt && (!updatedAt || latestAt > updatedAt)) {
+        updatedAt = latestAt;
+      }
+    }
+
+    return {
+      markers,
       updatedAt: updatedAt ? updatedAt.toISOString() : undefined
     };
   }

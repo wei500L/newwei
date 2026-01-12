@@ -11,8 +11,8 @@ export class CreateOrgInput {
   @Field()
   @IsString()
   @MaxLength(64)
-  @Matches(/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/, {
-    message: "Slug must be lowercase and hyphenated (e.g. acme-corp)"
+  @Matches(/^[\p{L}\p{N}][\p{L}\p{N}-]{1,62}[\p{L}\p{N}]$/u, {
+    message: "Slug must contain letters, numbers, and hyphens (e.g. acme-corp)"
   })
   slug!: string;
 
@@ -39,8 +39,8 @@ export class UpdateOrgInput {
   @IsOptional()
   @IsString()
   @MaxLength(64)
-  @Matches(/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/, {
-    message: "Slug must be lowercase and hyphenated (e.g. acme-corp)"
+  @Matches(/^[\p{L}\p{N}][\p{L}\p{N}-]{1,62}[\p{L}\p{N}]$/u, {
+    message: "Slug must contain letters, numbers, and hyphens (e.g. acme-corp)"
   })
   slug?: string;
 

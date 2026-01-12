@@ -19,6 +19,7 @@ export interface OrganizationOption {
   id: string;
   name?: string;
   slug?: string;
+  isActive?: boolean;
 }
 
 export interface CreateOrgInput {
@@ -34,11 +35,18 @@ export interface UpdateOrgInput {
   description?: string | null;
 }
 
+function isPrismaUniqueConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  return (error as { code?: unknown }).code === "P2002";
+}
+
 @Injectable()
 export class OrgService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private static readonly SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+  private static readonly SLUG_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N}-]{1,62}[\p{L}\p{N}]$/u;
 
   async listOrganizationsForUser(userId: string): Promise<OrgListItem[]> {
     const memberships = await this.prisma.membership.findMany({
@@ -64,7 +72,12 @@ export class OrgService {
 
   async listOrganizationOptionsForUser(userId: string): Promise<OrganizationOption[]> {
     const orgs = await this.listOrganizationsForUser(userId);
-    return orgs.map((org) => ({ id: org.id, name: org.name, slug: org.slug }));
+    return orgs.map((org) => ({
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      isActive: org.isActive
+    }));
   }
 
   async createOrg(actorId: string, input: CreateOrgInput): Promise<OrgListItem> {
@@ -82,97 +95,114 @@ export class OrgService {
       throw new BadRequestException("Invalid organization slug");
     }
 
-    const org = await this.prisma.$transaction(async (tx) => {
-      const createdOrg = await tx.org.create({
-        data: {
-          name,
-          slug,
-          description,
-          isActive: true
-        }
-      });
+    let org: {
+      id: string;
+      name: string;
+      slug: string;
+      description: string | null;
+      isActive: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+    };
 
-      const permissionRows = await tx.permission.findMany();
-      const permissionByName = new Map(permissionRows.map((row) => [row.name, row.id]));
-      const allPermissionIds = permissionRows.map((row) => row.id);
-      const bootstrapWarnings: { role: string; missingPermissions: string[] }[] = [];
-
-      for (const roleDef of DEFAULT_ROLES) {
-        const role = await tx.role.create({
+    try {
+      org = await this.prisma.$transaction(async (tx) => {
+        const createdOrg = await tx.org.create({
           data: {
-            name: roleDef.name,
-            description: roleDef.description,
-            orgId: createdOrg.id,
-            isSystem: roleDef.isSystem ?? false
+            name,
+            slug,
+            description,
+            isActive: true
           }
         });
 
-        const desiredPermissionNames = roleDef.permissions;
-        const missingPermissions = desiredPermissionNames.filter(
-          (permissionName) => !permissionByName.has(permissionName)
-        );
-        if (missingPermissions.length > 0) {
-          bootstrapWarnings.push({ role: roleDef.name, missingPermissions });
-        }
+        const permissionRows = await tx.permission.findMany();
+        const permissionByName = new Map(permissionRows.map((row) => [row.name, row.id]));
+        const allPermissionIds = permissionRows.map((row) => row.id);
+        const bootstrapWarnings: { role: string; missingPermissions: string[] }[] = [];
 
-        const permissionIds =
-          roleDef.name === "admin"
-            ? allPermissionIds
-            : desiredPermissionNames
-                .map((permissionName) => permissionByName.get(permissionName))
-                .filter((permissionId): permissionId is string => typeof permissionId === "string");
-
-        if (permissionIds.length > 0) {
-          await tx.rolePermission.createMany({
-            data: permissionIds.map((permissionId) => ({
-              roleId: role.id,
-              permissionId
-            }))
+        for (const roleDef of DEFAULT_ROLES) {
+          const role = await tx.role.create({
+            data: {
+              name: roleDef.name,
+              description: roleDef.description,
+              orgId: createdOrg.id,
+              isSystem: roleDef.isSystem ?? false
+            }
           });
-        }
-      }
 
-      const adminRole = await tx.role.findFirstOrThrow({
-        where: { orgId: createdOrg.id, name: "admin" }
-      });
-
-      const membership = await tx.membership.create({
-        data: {
-          userId: actorId,
-          orgId: createdOrg.id,
-          roleId: adminRole.id
-        }
-      });
-
-      await tx.membershipRole.create({
-        data: {
-          membershipId: membership.id,
-          orgId: createdOrg.id,
-          roleId: adminRole.id
-        }
-      });
-
-      const metadata: Record<string, unknown> = { slug, name };
-      if (bootstrapWarnings.length > 0) {
-        metadata.bootstrapWarnings = bootstrapWarnings;
-      }
-
-      await writeAuditLogBestEffort(
-        tx,
-        {
-          data: {
-            orgId: createdOrg.id,
-            actorId,
-            resource: "org",
-            action: "create",
-            metadata
+          const desiredPermissionNames = roleDef.permissions;
+          const missingPermissions = desiredPermissionNames.filter(
+            (permissionName) => !permissionByName.has(permissionName)
+          );
+          if (missingPermissions.length > 0) {
+            bootstrapWarnings.push({ role: roleDef.name, missingPermissions });
           }
-        },
-        { orgId: createdOrg.id, actorId, resource: "org", action: "create" }
-      );
 
-      return createdOrg;
-    });
+          const permissionIds =
+            roleDef.name === "admin"
+              ? allPermissionIds
+              : desiredPermissionNames
+                  .map((permissionName) => permissionByName.get(permissionName))
+                  .filter((permissionId): permissionId is string => typeof permissionId === "string");
+
+          if (permissionIds.length > 0) {
+            await tx.rolePermission.createMany({
+              data: permissionIds.map((permissionId) => ({
+                roleId: role.id,
+                permissionId
+              }))
+            });
+          }
+        }
+
+        const adminRole = await tx.role.findFirstOrThrow({
+          where: { orgId: createdOrg.id, name: "admin" }
+        });
+
+        const membership = await tx.membership.create({
+          data: {
+            userId: actorId,
+            orgId: createdOrg.id,
+            roleId: adminRole.id
+          }
+        });
+
+        await tx.membershipRole.create({
+          data: {
+            membershipId: membership.id,
+            orgId: createdOrg.id,
+            roleId: adminRole.id
+          }
+        });
+
+        const metadata: Record<string, unknown> = { slug, name };
+        if (bootstrapWarnings.length > 0) {
+          metadata.bootstrapWarnings = bootstrapWarnings;
+        }
+
+        await writeAuditLogBestEffort(
+          tx,
+          {
+            data: {
+              orgId: createdOrg.id,
+              actorId,
+              resource: "org",
+              action: "create",
+              metadata
+            }
+          },
+          { orgId: createdOrg.id, actorId, resource: "org", action: "create" }
+        );
+
+        return createdOrg;
+      });
+    } catch (error) {
+      if (isPrismaUniqueConstraintError(error)) {
+        throw new BadRequestException("Organization slug already exists");
+      }
+      throw error;
+    }
 
     return {
       id: org.id,
@@ -216,10 +246,27 @@ export class OrgService {
       data.description = description;
     }
 
-    const updated = await this.prisma.org.update({
-      where: { id: orgId },
-      data
-    });
+    let updated: {
+      id: string;
+      name: string;
+      slug: string;
+      description: string | null;
+      isActive: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+    };
+
+    try {
+      updated = await this.prisma.org.update({
+        where: { id: orgId },
+        data
+      });
+    } catch (error) {
+      if (isPrismaUniqueConstraintError(error)) {
+        throw new BadRequestException("Organization slug already exists");
+      }
+      throw error;
+    }
 
     await writeAuditLogBestEffort(
       this.prisma,

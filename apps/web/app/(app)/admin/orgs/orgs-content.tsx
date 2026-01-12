@@ -8,6 +8,8 @@ import { useTranslation } from "react-i18next";
 
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import type { BackendLoginResponse } from "@/lib/auth";
+import { createTraceHeaders } from "@/lib/trace";
 
 interface OrgRow {
   id: string;
@@ -32,6 +34,27 @@ interface UpdateOrgInput {
 }
 
 const EMPTY_ROWS: OrgRow[] = [];
+
+function getGraphqlErrorMessage(error: unknown): string | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const graphQLErrors = (error as { graphQLErrors?: Array<{ message?: unknown }> }).graphQLErrors;
+  if (Array.isArray(graphQLErrors) && graphQLErrors.length > 0) {
+    const firstMessage = graphQLErrors[0]?.message;
+    if (typeof firstMessage === "string" && firstMessage.trim()) {
+      return firstMessage.trim();
+    }
+  }
+
+  const message = (error as { message?: unknown }).message;
+  if (typeof message === "string" && message.trim()) {
+    return message.trim();
+  }
+
+  return null;
+}
 
 const MY_ORGANIZATIONS_QUERY = gql`
   query MyOrganizations {
@@ -94,7 +117,7 @@ function slugifyOrgSlug(value: string): string | null {
     .trim()
     .toLowerCase()
     .replace(/['"]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/-+/g, "-")
     .replace(/^-+/, "")
     .replace(/-+$/, "");
@@ -104,14 +127,19 @@ function slugifyOrgSlug(value: string): string | null {
   }
 
   const truncated = normalized.slice(0, 64).replace(/-+$/, "");
-  const matches = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(truncated);
+  const matches = /^[\p{L}\p{N}][\p{L}\p{N}-]{1,62}[\p{L}\p{N}]$/u.test(truncated);
   return matches ? truncated : null;
 }
 
-function mergeOrganizations(existing: { id: string; name?: string; slug?: string }[], next: OrgRow[]) {
-  const map = new Map<string, { id: string; name?: string; slug?: string }>();
+function mergeOrganizations(
+  existing: { id: string; name?: string; slug?: string; isActive?: boolean }[],
+  next: OrgRow[]
+) {
+  const map = new Map<string, { id: string; name?: string; slug?: string; isActive?: boolean }>();
   existing.forEach((org) => map.set(org.id, org));
-  next.forEach((org) => map.set(org.id, { id: org.id, name: org.name, slug: org.slug }));
+  next.forEach((org) =>
+    map.set(org.id, { id: org.id, name: org.name, slug: org.slug, isActive: org.isActive })
+  );
   return Array.from(map.values());
 }
 
@@ -121,6 +149,7 @@ export function OrgAdminContent() {
   const { data: session, status, update } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const canManageOrganizations = session?.permissions?.includes("org.write") ?? false;
+  const currentOrgId = session?.orgId ?? null;
 
   const { data, loading, refetch } = useQuery<{ myOrganizations: OrgRow[] }>(MY_ORGANIZATIONS_QUERY, {
     skip: status !== "authenticated"
@@ -187,7 +216,7 @@ export function OrgAdminContent() {
       messageApi.success(t("orgAdmin.created"));
     } catch (error) {
       captureClientError("Create org failed", error);
-      messageApi.error(t("orgAdmin.errors.createFailed"));
+      messageApi.error(getGraphqlErrorMessage(error) ?? t("orgAdmin.errors.createFailed"));
     }
   };
 
@@ -212,12 +241,32 @@ export function OrgAdminContent() {
       messageApi.success(t("orgAdmin.updated"));
     } catch (error) {
       captureClientError("Update org failed", error);
-      messageApi.error(t("orgAdmin.errors.updateFailed"));
+      messageApi.error(getGraphqlErrorMessage(error) ?? t("orgAdmin.errors.updateFailed"));
     }
   };
 
   const handleToggleActive = async (org: OrgRow, nextActive: boolean) => {
     try {
+      if (!nextActive) {
+        const confirmed = await new Promise<boolean>((resolve) => {
+          Modal.confirm({
+            title: t("orgAdmin.confirmDisable.title", { defaultValue: "Disable organization?" }),
+            content: t("orgAdmin.confirmDisable.description", {
+              defaultValue:
+                "Disabling an organization will block logins and API access for that org until re-enabled."
+            }),
+            okText: t("common.confirm", { defaultValue: "Confirm" }),
+            cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+            okButtonProps: { danger: true },
+            onOk: () => resolve(true),
+            onCancel: () => resolve(false)
+          });
+        });
+        if (!confirmed) {
+          return;
+        }
+      }
+
       await setOrgActive({ variables: { input: { id: org.id, isActive: nextActive } } });
       await refetch();
       messageApi.success(
@@ -226,6 +275,43 @@ export function OrgAdminContent() {
     } catch (error) {
       captureClientError("Toggle org active failed", error);
       messageApi.error(t("orgAdmin.errors.toggleFailed"));
+    }
+  };
+
+  const handleSwitchOrg = async (org: OrgRow) => {
+    try {
+      if (!org.isActive) {
+        messageApi.error(
+          t("orgAdmin.errors.switchDisabled", { defaultValue: "Cannot switch to a disabled org" })
+        );
+        return;
+      }
+      const response = await fetch("/api/organizations/switch", {
+        method: "POST",
+        headers: createTraceHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ orgId: org.slug || org.id })
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string; details?: string };
+        messageApi.error(payload.details ?? payload.error ?? t("orgAdmin.errors.switchFailed", { defaultValue: "Switch failed" }));
+        return;
+      }
+      const data = (await response.json()) as BackendLoginResponse;
+      await update({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        accessTokenExpires: Date.now() + data.expiresIn * 1000,
+        user: data.user,
+        orgId: data.user.orgId,
+        permissions: data.user.permissions,
+        organizations: data.organizations ?? session?.organizations
+      });
+      messageApi.success(
+        t("orgSwitcher.success", { org: org.name ?? org.slug ?? org.id })
+      );
+    } catch (error) {
+      captureClientError("Switch org failed", error);
+      messageApi.error(t("orgAdmin.errors.switchFailed", { defaultValue: "Switch failed" }));
     }
   };
 
@@ -248,6 +334,15 @@ export function OrgAdminContent() {
             renderItem={(org) => (
               <List.Item
                 actions={[
+                  <Button
+                    key="switch"
+                    size="small"
+                    type="link"
+                    disabled={!org.isActive || org.id === currentOrgId}
+                    onClick={() => handleSwitchOrg(org)}
+                  >
+                    {org.id === currentOrgId ? t("orgAdmin.current", { defaultValue: "Current" }) : t("orgAdmin.switch", { defaultValue: "Switch" })}
+                  </Button>,
                   <Button
                     key="edit"
                     size="small"
@@ -275,6 +370,9 @@ export function OrgAdminContent() {
                   title={
                     <Space>
                       <Typography.Text strong>{org.name}</Typography.Text>
+                      {org.id === currentOrgId ? (
+                        <Tag color="blue">{t("orgAdmin.current", { defaultValue: "Current" })}</Tag>
+                      ) : null}
                       <Tag color={org.isActive ? "green" : "red"}>
                         {org.isActive
                           ? t("orgAdmin.active")
@@ -328,6 +426,16 @@ export function OrgAdminContent() {
                 ),
               },
               {
+                title: t("orgAdmin.columns.current", { defaultValue: "Current" }),
+                key: "current",
+                render: (_: unknown, org: OrgRow) =>
+                  org.id === currentOrgId ? (
+                    <Tag color="blue">{t("orgAdmin.current", { defaultValue: "Current" })}</Tag>
+                  ) : (
+                    <Typography.Text type="secondary">—</Typography.Text>
+                  )
+              },
+              {
                 title: t("orgAdmin.columns.updated"),
                 dataIndex: "updatedAt",
                 key: "updatedAt",
@@ -345,6 +453,14 @@ export function OrgAdminContent() {
                 key: "actions",
                 render: (_: unknown, org: OrgRow) => (
                   <Space>
+                    <Button
+                      size="small"
+                      type="link"
+                      disabled={!org.isActive || org.id === currentOrgId}
+                      onClick={() => handleSwitchOrg(org)}
+                    >
+                      {org.id === currentOrgId ? t("orgAdmin.current", { defaultValue: "Current" }) : t("orgAdmin.switch", { defaultValue: "Switch" })}
+                    </Button>
                     <Button
                       size="small"
                       onClick={() => {
@@ -406,10 +522,11 @@ export function OrgAdminContent() {
           <Form.Item
             name="slug"
             label={t("orgAdmin.fields.slug")}
+            normalize={(value) => (typeof value === "string" ? value.trim().toLowerCase() : value)}
             rules={[
               { required: true, message: t("orgAdmin.validation.slugRequired") },
               {
-                pattern: /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/,
+                pattern: /^[\p{L}\p{N}][\p{L}\p{N}-]{1,62}[\p{L}\p{N}]$/u,
                 message: t("orgAdmin.validation.slugPattern")
               }
             ]}
@@ -449,10 +566,11 @@ export function OrgAdminContent() {
           <Form.Item
             name="slug"
             label={t("orgAdmin.fields.slug")}
+            normalize={(value) => (typeof value === "string" ? value.trim().toLowerCase() : value)}
             rules={[
               { required: true, message: t("orgAdmin.validation.slugRequired") },
               {
-                pattern: /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/,
+                pattern: /^[\p{L}\p{N}][\p{L}\p{N}-]{1,62}[\p{L}\p{N}]$/u,
                 message: t("orgAdmin.validation.slugPattern")
               }
             ]}

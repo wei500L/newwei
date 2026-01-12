@@ -2,6 +2,13 @@ import { ItemStatus } from "../../common/pipeline-status";
 
 import { ItemsService } from "./items.service";
 
+jest.mock("@modular/mongo", () => ({
+  RawItemModel: {
+    create: jest.fn()
+  },
+  ProcessedItemModel: {}
+}));
+
 describe("ItemsService.list", () => {
   it("returns total consistent with filtered item rows", async () => {
     const prisma = {
@@ -169,5 +176,83 @@ describe("ItemsService.listWithCursor", () => {
         take: 2
       })
     );
+  });
+});
+
+describe("ItemsService.createFromCrawlResult", () => {
+  it("creates an item meta + raw item and enqueues the pipeline job", async () => {
+    const { RawItemModel } = jest.requireMock("@modular/mongo") as {
+      RawItemModel: { create: jest.Mock };
+    };
+
+    const prisma = {
+      crawlResult: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "crawl-result-1",
+          taskId: "crawl-task-1",
+          sourceUrl: "https://example.com/story",
+          fetchedAt: new Date("2024-01-01T00:00:00.000Z"),
+          contentHash: "hash-1",
+          metadata: { thumbnail: "https://example.com/thumb.jpg" },
+          task: { id: "crawl-task-1", displayName: "Example", targetUrl: "https://example.com" }
+        })
+      },
+      itemMeta: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({
+          id: "meta-1",
+          orgId: "org-1",
+          externalId: "crawlResult:crawl-result-1",
+          name: "Example: https://example.com/story",
+          status: ItemStatus.Pending,
+          mongoRef: "",
+          createdAt: new Date("2024-01-02T00:00:00.000Z"),
+          updatedAt: new Date("2024-01-02T00:00:00.000Z")
+        }),
+        update: jest.fn().mockResolvedValue(null)
+      },
+      $transaction: jest.fn(async (cb: any) => cb(prisma))
+    };
+
+    RawItemModel.create.mockResolvedValue({ id: "raw-1" });
+
+    const queueService = { enqueueItem: jest.fn().mockResolvedValue(null) };
+
+    const service = new ItemsService(
+      prisma as any,
+      queueService as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    const created = await service.createFromCrawlResult("org-1", "user-1", "crawl-result-1");
+
+    expect(prisma.crawlResult.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "crawl-result-1",
+          task: { orgId: "org-1" }
+        }
+      })
+    );
+    expect(prisma.itemMeta.create).toHaveBeenCalledTimes(1);
+    expect(RawItemModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemMetaId: "meta-1",
+        source: "crawl-task",
+        payload: expect.objectContaining({
+          url: "https://example.com/story",
+          sourceName: "Example",
+          metadata: expect.objectContaining({
+            crawlResultId: "crawl-result-1",
+            crawlTaskId: "crawl-task-1"
+          })
+        })
+      })
+    );
+    expect(queueService.enqueueItem).toHaveBeenCalledWith("org-1", "meta-1", "raw-1");
+    expect(created.id).toBe("meta-1");
   });
 });

@@ -22,6 +22,7 @@ export interface NewsCardProps {
     thumbnail?: string;
     sentiment?: string;
     source?: string;
+    location?: string;
     topics?: string[];
     tags?: string[];
     entities?: string[];
@@ -91,6 +92,7 @@ export function NewsCard({ item }: NewsCardProps) {
   const collapseLabel = t("common.collapse", { defaultValue: "Show less" });
   const thumbnailUrl = safeHttpUrl(item.thumbnail);
   const originalUrl = safeHttpUrl(item.url);
+  const locationText = item.location?.trim() ?? "";
 
   return (
     <Card
@@ -154,6 +156,11 @@ export function NewsCard({ item }: NewsCardProps) {
                 {duplicateLabel} {duplicateScore}
               </Tag>
             </Tooltip>
+          ) : null}
+          {locationText ? (
+            <Tag color="cyan" className="text-xs">
+              {locationText}
+            </Tag>
           ) : null}
           {displayTags.map((tag) => (
             <Tag key={`${tag.color}-${tag.label}`} color={tag.color} className="text-xs">

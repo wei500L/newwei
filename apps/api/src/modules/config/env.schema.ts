@@ -117,6 +117,28 @@ export const apiEnvSchema = baseEnvSchema.extend({
   ALERT_NOTIFY_WEBHOOK_PER_SECOND: z.coerce.number().int().nonnegative().default(10),
   ALERT_NOTIFY_PER_CHANNEL_PER_SECOND: z.coerce.number().int().nonnegative().default(2),
   ALERT_NOTIFY_LIMITER_TTL_MS: z.coerce.number().int().positive().default(60_000),
+  GEO_NOMINATIM_BASE_URL: z
+    .string()
+    .url()
+    .default("https://nominatim.openstreetmap.org"),
+  GEO_NOMINATIM_USER_AGENT: z.string().min(1).default("modular-api"),
+  GEO_NOMINATIM_EMAIL: z.string().email().optional(),
+  GEO_NOMINATIM_ACCEPT_LANGUAGE: z
+    .string()
+    .min(1)
+    .default("zh-CN,zh;q=0.9,en;q=0.7"),
+  GEO_GEOCODE_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
+  GEO_GEOCODE_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(2_592_000),
+  GEO_GEOCODE_NEGATIVE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(86_400),
+  GEO_GEOCODE_RATE_LIMIT_PER_SECOND: z.coerce.number().int().positive().default(1),
   ANALYSIS_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
   ANALYSIS_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   ANALYSIS_AUTOTRIGGER_ENABLED: z.coerce.boolean().default(false),

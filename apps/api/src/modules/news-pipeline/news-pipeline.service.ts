@@ -1,4 +1,5 @@
 import {
+  CrawlResultContentModel,
   ProcessedItemModel,
   RawItemModel,
   TaskLogModel,
@@ -368,6 +369,15 @@ export class NewsPipelineService {
   }
 
   private async fetchArticle(job: PipelineJobContext, payload: NormalizedNewsPayload) {
+    const crawlResultId = this.extractCrawlResultId(payload);
+    if (crawlResultId) {
+      const stored = await this.fetchStoredCrawlResult(job.orgId, crawlResultId);
+      return {
+        ...stored,
+        fromCache: true,
+      };
+    }
+
     const cacheKey = this.cacheKey(job.orgId, payload.url);
     if (payload.forceRefresh) {
       await this.cache.del(cacheKey);
@@ -420,6 +430,102 @@ export class NewsPipelineService {
     return {
       ...normalizedWithHash,
       fromCache: !executedCrawl,
+    };
+  }
+
+  private extractCrawlResultId(payload: NormalizedNewsPayload): string | null {
+    const metadata =
+      payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata)
+        ? (payload.metadata as Record<string, unknown>)
+        : null;
+    const raw = metadata && typeof metadata.crawlResultId === "string" ? metadata.crawlResultId : "";
+    const trimmed = raw.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private async fetchStoredCrawlResult(orgId: string, crawlResultId: string) {
+    const crawlResult = await this.prisma.crawlResult.findFirst({
+      where: {
+        id: crawlResultId,
+        task: { orgId },
+      },
+      select: {
+        id: true,
+        sourceUrl: true,
+        fetchedAt: true,
+        markdownRef: true,
+        contentHash: true,
+        metadata: true,
+      },
+    });
+
+    if (!crawlResult) {
+      throw new Error("crawl result not found");
+    }
+
+    const markdownRef =
+      typeof crawlResult.markdownRef === "string" ? crawlResult.markdownRef.trim() : "";
+    if (!markdownRef) {
+      throw new Error("crawl result content reference missing");
+    }
+
+    const doc = await CrawlResultContentModel.findById(markdownRef).lean();
+    if (!doc) {
+      throw new Error("crawl result content not found");
+    }
+
+    const markdown = typeof (doc as { markdown?: unknown }).markdown === "string" ? (doc as { markdown: string }).markdown : "";
+    if (!markdown) {
+      throw new Error("crawl result markdown missing");
+    }
+
+    const mysqlMetadata =
+      crawlResult.metadata && typeof crawlResult.metadata === "object" && !Array.isArray(crawlResult.metadata)
+        ? (crawlResult.metadata as Record<string, unknown>)
+        : {};
+    const mongoMetadata =
+      doc && typeof (doc as { metadata?: unknown }).metadata === "object" && !Array.isArray((doc as { metadata?: unknown }).metadata)
+        ? ((doc as { metadata: Record<string, unknown> }).metadata ?? {})
+        : {};
+
+    const metadata = {
+      ...mongoMetadata,
+      ...mysqlMetadata,
+      crawlResultId: crawlResult.id,
+    };
+
+    const contentHash =
+      typeof crawlResult.contentHash === "string" && crawlResult.contentHash.length > 0
+        ? crawlResult.contentHash
+        : this.hashContent(markdown);
+
+    const markdownWithCitations =
+      typeof (doc as { markdownWithCitations?: unknown }).markdownWithCitations === "string"
+        ? ((doc as { markdownWithCitations?: string }).markdownWithCitations ?? null)
+        : null;
+
+    const referencesMarkdown =
+      typeof (doc as { referencesMarkdown?: unknown }).referencesMarkdown === "string"
+        ? ((doc as { referencesMarkdown?: string }).referencesMarkdown ?? null)
+        : null;
+
+    const crawlRunId =
+      typeof (doc as { crawlRunId?: unknown }).crawlRunId === "string"
+        ? ((doc as { crawlRunId?: string }).crawlRunId ?? null)
+        : null;
+
+    const fetchedAt = crawlResult.fetchedAt ? crawlResult.fetchedAt.toISOString() : null;
+
+    return {
+      sourceUrl: crawlResult.sourceUrl,
+      markdown,
+      markdownWithCitations,
+      referencesMarkdown,
+      metadata,
+      publishedAt: fetchedAt,
+      runId: crawlRunId,
+      fetchedAt,
+      contentHash,
     };
   }
 
@@ -1296,7 +1402,7 @@ export class NewsPipelineService {
     try {
       const itemMeta = await this.prisma.itemMeta.findUnique({
         where: { id: payload.document.itemMetaId },
-        select: { id: true, orgId: true, createdAt: true, publishedAt: true }
+        select: { id: true, orgId: true, name: true, createdAt: true, publishedAt: true }
       });
       const ingestedAt = itemMeta?.createdAt ?? new Date();
       let publishedAt = this.parseDate(payload.document.result?.published_at ?? null);
@@ -1318,6 +1424,18 @@ export class NewsPipelineService {
         );
       }
 
+      const cleanedTitleRaw =
+        typeof payload.document.result?.title === "string" ? payload.document.result.title.trim() : "";
+      const cleanedTitle = cleanedTitleRaw ? this.toItemMetaName(cleanedTitleRaw) : null;
+      const shouldUpdateName =
+        Boolean(cleanedTitle) &&
+        Boolean(
+          !itemMeta?.name ||
+            itemMeta.name.includes("http://") ||
+            itemMeta.name.includes("https://") ||
+            itemMeta.name.includes("://"),
+        );
+
       const sortAt = publishedAt ?? ingestedAt;
       const created = await this.writeProcessedItemFromPayload(payload.document, { ingestedAt, sortAt });
       await this.prisma.itemMeta.updateMany({
@@ -1327,6 +1445,7 @@ export class NewsPipelineService {
         },
         data: {
           status: ItemStatus.Completed,
+          ...(shouldUpdateName && cleanedTitle ? { name: cleanedTitle } : {}),
           ...(publishedAt ? { publishedAt, sortAt: publishedAt } : {})
         },
       });
@@ -1609,6 +1728,14 @@ export class NewsPipelineService {
 
   private hashContent(content: string) {
     return createHash("sha256").update(content).digest("hex");
+  }
+
+  private toItemMetaName(value: string) {
+    const trimmed = value.trim();
+    if (trimmed.length <= 191) {
+      return trimmed;
+    }
+    return `${trimmed.slice(0, 190).trimEnd()}…`;
   }
 
   private getCrawlLockTtlMs() {

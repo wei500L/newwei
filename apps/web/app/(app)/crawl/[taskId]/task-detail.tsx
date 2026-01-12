@@ -1,6 +1,7 @@
 "use client";
 
 import { SearchOutlined } from "@ant-design/icons";
+import { gql, useMutation } from "@apollo/client";
 import {
   Alert,
   Button,
@@ -19,6 +20,7 @@ import {
   Grid
 } from "antd";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSession } from "next-auth/react";
@@ -111,6 +113,16 @@ const mediaDocsUrl =
 const tableDocsUrl =
   "https://github.com/unclecode/crawl4ai/blob/main/docs/blog/release-v0.7.3.md";
 const shortenScript = (value: string) => (value.length > 160 ? `${value.slice(0, 157)}…` : value);
+
+const CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION = gql`
+  mutation CreateItemFromCrawlResult($resultId: String!) {
+    createItemFromCrawlResult(resultId: $resultId) {
+      id
+      title
+      status
+    }
+  }
+`;
 
 function safeParseJson<T>(input?: string | null): T | null {
   if (!input) {
@@ -535,10 +547,12 @@ function renderSourceList(
 export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const router = useRouter();
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
+  const canCreateItem = canView && permissions.includes("items.write");
   const redactedLabel = t("common.redacted");
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
@@ -554,6 +568,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   });
 
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
+  const [ingestingResultId, setIngestingResultId] = useState<string | null>(null);
+  const [createItemFromCrawlResult, { loading: ingesting }] = useMutation<{
+    createItemFromCrawlResult: { id: string; title: string; status: string };
+  }>(CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION);
 
   const task = data?.crawlTask ?? null;
   const config = useMemo(() => {
@@ -1025,6 +1043,42 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       await refetch();
     } catch (error: unknown) {
       message.error((error as Error).message ?? t("crawl.detail.retryFailed"));
+    }
+  };
+
+  const handleCreateItem = async (resultId: string) => {
+    if (!canCreateItem) {
+      return;
+    }
+
+    const normalizedId = resultId.trim();
+    if (!normalizedId) {
+      message.error(t("common.invalidInput", { defaultValue: "Invalid input." }));
+      return;
+    }
+
+    setIngestingResultId(normalizedId);
+    try {
+      const response = await createItemFromCrawlResult({
+        variables: { resultId: normalizedId }
+      });
+      const createdId = response.data?.createItemFromCrawlResult?.id;
+      message.success(
+        t("crawl.detail.ingestQueued", {
+          defaultValue: "Queued for LLM processing and added to Items."
+        })
+      );
+      if (createdId) {
+        router.push(`/items/${createdId}`);
+      }
+    } catch (error) {
+      message.error(
+        error instanceof Error
+          ? error.message
+          : t("common.operationFailed", { defaultValue: "Operation failed." })
+      );
+    } finally {
+      setIngestingResultId(null);
     }
   };
 
@@ -1505,7 +1559,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                 <List.Item key={result.id}>
                   <List.Item.Meta
                     title={
-                      <Space>
+                      <Space wrap>
                         <Typography.Link href={result.sourceUrl} target="_blank">
                           {result.sourceUrl}
                         </Typography.Link>
@@ -1517,6 +1571,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                             minute: "2-digit"
                           })}
                         </Typography.Text>
+                        {canCreateItem ? (
+                          <Button
+                            size="small"
+                            loading={ingesting && ingestingResultId === result.id}
+                            onClick={() => handleCreateItem(result.id)}
+                          >
+                            {t("crawl.detail.ingestToItems", { defaultValue: "Send to Items" })}
+                          </Button>
+                        ) : null}
                       </Space>
                     }
                     description={

@@ -14,6 +14,11 @@ jest.mock("@modular/mongo", () => ({
   TaskLogModel: {
     create: jest.fn().mockResolvedValue(undefined)
   },
+  CrawlResultContentModel: {
+    findById: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null)
+    })
+  },
   RawItemModel: {
     findById: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue(null)
@@ -195,10 +200,14 @@ describe("NewsPipelineService", () => {
     article: {
       upsert: jest.fn().mockResolvedValue({ id: "article-1" })
     },
+    crawlResult: {
+      findFirst: jest.fn().mockResolvedValue(null)
+    },
     itemMeta: {
       findUnique: jest.fn().mockResolvedValue({
         id: "meta-1",
         orgId: "org-1",
+        name: "Example: https://example.com/story",
         createdAt: new Date("2024-01-01T00:00:00Z"),
         publishedAt: null
       }),
@@ -310,6 +319,47 @@ describe("NewsPipelineService", () => {
     expect(prisma.mongoOutbox.create).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.delete).toHaveBeenCalledTimes(1);
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses stored crawl results when crawlResultId is provided", async () => {
+    const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
+      CrawlResultContentModel: { findById: jest.Mock };
+    };
+
+    prisma.crawlResult.findFirst.mockResolvedValueOnce({
+      id: "crawl-result-1",
+      sourceUrl: "https://example.com/story",
+      fetchedAt: new Date("2024-01-01T00:00:00Z"),
+      markdownRef: "mongo-markdown-1",
+      contentHash: createHash("sha256").update("# Stored headline\nStored body").digest("hex"),
+      metadata: { title: "Stored headline" }
+    });
+
+    CrawlResultContentModel.findById.mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValue({
+        markdown: "# Stored headline\nStored body",
+        markdownWithCitations: null,
+        referencesMarkdown: null,
+        crawlRunId: "crawl-run-1",
+        metadata: { title: "Stored headline" }
+      })
+    });
+
+    await service.process(job, {
+      ...raw,
+      payload: {
+        ...raw.payload,
+        metadata: {
+          crawlResultId: "crawl-result-1"
+        }
+      }
+    });
+    await flushOutbox();
+
+    expect(crawlClient.crawl).not.toHaveBeenCalled();
+    expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
+    expect(prisma.crawlResult.findFirst).toHaveBeenCalledTimes(1);
+    expect(CrawlResultContentModel.findById).toHaveBeenCalledTimes(1);
   });
 
   it("reuses existing processed article when content hash matches", async () => {

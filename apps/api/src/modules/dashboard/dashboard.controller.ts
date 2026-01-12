@@ -61,6 +61,16 @@ export class DashboardController {
   }
 
   @Permissions("dashboards.read")
+  @Get("war-map/news-markers")
+  async warMapNewsMarkers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardTimeRangeQueryDto
+  ) {
+    const range = this.chartsService.resolveRange(query);
+    return this.chartsService.getWarMapNewsMarkers(range, user.orgId);
+  }
+
+  @Permissions("dashboards.read")
   @Get("sector-heatmap")
   async sectorHeatmap(@Query() query: DashboardTimeRangeQueryDto) {
     const range = this.chartsService.resolveRange(query);

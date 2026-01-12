@@ -20,11 +20,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as { orgId?: string };
-  const orgId = body.orgId?.trim();
+  const body = (await request.json().catch(() => ({}))) as { orgId?: string; org?: string };
+  const orgId = (body.orgId ?? body.org)?.trim();
 
   if (!orgId) {
-    return NextResponse.json({ error: 'Organization ID is required' }, { status: 400 });
+    return NextResponse.json({ error: 'Organization is required' }, { status: 400 });
   }
 
   let response: Response;

@@ -9,6 +9,7 @@ export interface OrganizationOption {
   id: string;
   name?: string;
   slug?: string;
+  isActive?: boolean;
 }
 
 export interface AuthenticatedUser {

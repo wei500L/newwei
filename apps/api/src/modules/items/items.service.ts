@@ -148,6 +148,16 @@ export class ItemsService {
   }
 
   async create(orgId: string, userId: string, dto: CreateItemDto) {
+    const existing = await this.prisma.itemMeta.findFirst({
+      where: { orgId, externalId: dto.externalId }
+    });
+    if (existing) {
+      return {
+        ...existing,
+        rawItemId: existing.mongoRef
+      };
+    }
+
     const payload = this.parsePayload(dto.payload);
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -195,6 +205,121 @@ export class ItemsService {
       ...created.itemMeta,
       rawItemId: created.rawItem.id
     };
+  }
+
+  async createFromCrawlResult(orgId: string, userId: string, crawlResultId: string) {
+    const normalizedId = typeof crawlResultId === "string" ? crawlResultId.trim() : "";
+    if (!normalizedId) {
+      throw new BadRequestException("crawlResultId is required");
+    }
+
+    const crawlResult = await this.prisma.crawlResult.findFirst({
+      where: {
+        id: normalizedId,
+        task: { orgId }
+      },
+      select: {
+        id: true,
+        taskId: true,
+        sourceUrl: true,
+        fetchedAt: true,
+        contentHash: true,
+        metadata: true,
+        task: {
+          select: {
+            id: true,
+            displayName: true,
+            targetUrl: true
+          }
+        }
+      }
+    });
+
+    if (!crawlResult) {
+      throw new NotFoundException("Crawl result not found");
+    }
+
+    const externalId = `crawlResult:${crawlResult.id}`;
+    const existing = await this.prisma.itemMeta.findFirst({
+      where: { orgId, externalId }
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    const sourceName = crawlResult.task.displayName ?? undefined;
+    const metadata =
+      crawlResult.metadata && typeof crawlResult.metadata === "object" && !Array.isArray(crawlResult.metadata)
+        ? (crawlResult.metadata as Record<string, unknown>)
+        : {};
+
+    const payload: Record<string, unknown> = {
+      url: crawlResult.sourceUrl,
+      ...(sourceName ? { sourceName } : {}),
+      keywords: [],
+      tags: [],
+      summaryHints: [],
+      metadata: {
+        ...metadata,
+        crawlTaskId: crawlResult.taskId,
+        crawlResultId: crawlResult.id,
+        crawlFetchedAt: crawlResult.fetchedAt.toISOString(),
+        crawlContentHash: crawlResult.contentHash
+      },
+      forceRefresh: false
+    };
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const baseName = crawlResult.task.displayName
+        ? `${crawlResult.task.displayName}: ${crawlResult.sourceUrl}`
+        : crawlResult.sourceUrl;
+
+      const itemMeta = await tx.itemMeta.create({
+        data: {
+          orgId,
+          externalId,
+          name: this.toItemMetaName(baseName),
+          status: ItemStatus.Pending,
+          mongoRef: ""
+        }
+      });
+
+      const rawItem = await RawItemModel.create({
+        itemMetaId: itemMeta.id,
+        payload: this.parsePayload(payload),
+        source: "crawl-task"
+      });
+
+      await tx.itemMeta.update({
+        where: { id: itemMeta.id },
+        data: { mongoRef: rawItem.id }
+      });
+
+      return { itemMeta, rawItem };
+    });
+
+    void writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId: userId,
+          resource: "item",
+          action: "createFromCrawlResult",
+          metadata: {
+            crawlTaskId: crawlResult.taskId,
+            crawlResultId: crawlResult.id,
+            sourceUrl: crawlResult.sourceUrl
+          }
+        }
+      },
+      { orgId, actorId: userId, resource: "item", action: "createFromCrawlResult" }
+    ).catch(() => undefined);
+
+    await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
+
+    return created.itemMeta;
   }
 
   async list(
@@ -1578,5 +1703,13 @@ export class ItemsService {
       throw new BadRequestException(`Invalid payload: ${message}`);
     }
     return parsed.data;
+  }
+
+  private toItemMetaName(value: string) {
+    const trimmed = value.trim();
+    if (trimmed.length <= 191) {
+      return trimmed;
+    }
+    return `${trimmed.slice(0, 190).trimEnd()}…`;
   }
 }

@@ -238,6 +238,7 @@
   "orgSwitcher": {
     "error": {
       "selectOrganization": "请选择组织",
+      "disabledOrganization": "组织已禁用",
       "switchFailed": "切换失败",
       "unexpected": "切换时发生未知错误"
     },
@@ -1446,10 +1447,18 @@
     "title": "组织管理员",
     "adminOnly": "管理员仅",
     "created": "已创建",
+    "switch": "切换",
+    "current": "当前",
+    "confirmDisable": {
+      "title": "禁用组织？",
+      "description": "禁用组织后，该组织将无法登录和访问 API，直到重新启用。"
+    },
     "errors": {
       "createFailed": "创建失败",
       "updateFailed": "更新失败",
-      "toggleFailed": "切换失败"
+      "toggleFailed": "切换失败",
+      "switchFailed": "切换失败",
+      "switchDisabled": "无法切换到已禁用的组织"
     },
     "updated": "已更新",
     "enabled": "已启用",
@@ -1459,7 +1468,8 @@
       "name": "名称",
       "slug": "标识",
       "status": "状态",
-      "updated": "已更新"
+      "updated": "已更新",
+      "current": "当前"
     },
     "active": "激活",
     "inactive": "已停用",
@@ -1472,7 +1482,7 @@
     "validation": {
       "nameRequired": "请填写名称",
       "slugRequired": "请填写标识",
-      "slugPattern": "标识只能包含小写字母、数字和连字符"
+      "slugPattern": "标识只能包含字母、数字和连字符"
     },
     "placeholders": {
       "name": "请输入名称",

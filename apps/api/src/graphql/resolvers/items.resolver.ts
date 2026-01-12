@@ -14,6 +14,7 @@ import { Loader } from "nestjs-dataloader";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
+import { PermissionsAll } from "../../common/decorators/permissions.decorator";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { ItemsService } from "../../modules/items/items.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
@@ -403,6 +404,31 @@ export class ItemsResolver {
     });
 
     return this.toItemModel(created);
+  }
+
+  @PermissionsAll("crawl.read", "items.write")
+  @Mutation(() => ItemModel)
+  async createItemFromCrawlResult(
+    @Context("req") req: GqlRequest,
+    @Args("resultId") resultId: string
+  ): Promise<ItemModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+
+    const normalized = typeof resultId === "string" ? resultId.trim() : "";
+    if (!normalized) {
+      throw new BadRequestException("resultId is required");
+    }
+
+    const itemMeta = await this.itemsService.createFromCrawlResult(
+      requester.orgId,
+      requester.id,
+      normalized
+    );
+
+    return this.toItemModel(itemMeta);
   }
 
   @HasPermission("items.write")

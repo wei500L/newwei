@@ -238,6 +238,7 @@
   "orgSwitcher": {
     "error": {
       "selectOrganization": "Please select an organization",
+      "disabledOrganization": "Organization is disabled",
       "switchFailed": "Switch failed",
       "unexpected": "Unexpected error while switching"
     },
@@ -1447,10 +1448,18 @@
     "title": "Org admin",
     "adminOnly": "Admin only",
     "created": "Created",
+    "switch": "Switch",
+    "current": "Current",
+    "confirmDisable": {
+      "title": "Disable organization?",
+      "description": "Disabling an organization will block logins and API access for that org until re-enabled."
+    },
     "errors": {
       "createFailed": "Failed to create",
       "updateFailed": "Failed to update",
-      "toggleFailed": "Failed to toggle"
+      "toggleFailed": "Failed to toggle",
+      "switchFailed": "Failed to switch",
+      "switchDisabled": "Cannot switch to a disabled org"
     },
     "updated": "Updated",
     "enabled": "Enabled",
@@ -1460,7 +1469,8 @@
       "name": "Name",
       "slug": "Slug",
       "status": "Status",
-      "updated": "Updated"
+      "updated": "Updated",
+      "current": "Current"
     },
     "active": "Active",
     "inactive": "Inactive",
@@ -1473,7 +1483,7 @@
     "validation": {
       "nameRequired": "Name is required",
       "slugRequired": "Slug is required",
-      "slugPattern": "Slug can only include lowercase letters, numbers, and hyphens"
+      "slugPattern": "Slug can only include letters, numbers, and hyphens"
     },
     "placeholders": {
       "name": "Enter Name",

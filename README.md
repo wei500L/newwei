@@ -186,6 +186,7 @@ infra/
 
 - API 新增 `crawl` 模块（REST `/api/crawl-tasks` 与 GraphQL `crawlTasks`/`crawlTask`/`createCrawlTask`/`retryCrawlTask`），负责任务编排、去重、Markdown 存档（Prisma + Mongo）、超时与重试。任务状态、日志与 Markdown 内容会写入 BullMQ 队列与 `CrawlResultContent` 集合，可在 E2E 中复用。
 - 前端在 `/crawl` 下提供管理界面，包括任务列表、状态筛选、创建表单、重试按钮，以及 `/crawl/[taskId]` 的结果详情与 Markdown 预览。所有请求通过 Apollo Client 调用 GraphQL。
+- Crawl 结果页支持一键 “Send to Items”：将某条 `CrawlResult` 作为 `Item` 输入，交给新闻管道执行 LLM 清洗/结构化与去重，随后在 `Items / Today / Topics` 等阅读页中展示。
 - `.env` / `infra/docker/.env` 新增下列配置：
   - `CRAWL4AI_BASE_URL`：指向容器或远程 crawl4ai 服务的 HTTP 地址。
   - `CRAWL4AI_DASHBOARD_URL`：可选，控制台嵌入 Crawl4AI `/dashboard/` 时使用（Docker 默认建议设为 `http://localhost:8082/dashboard/`；不填则从 `CRAWL4AI_BASE_URL` 推导）。

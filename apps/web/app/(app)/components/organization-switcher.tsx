@@ -24,10 +24,24 @@ export function OrganizationSwitcher() {
       options.set(org.id, org);
     });
     if (session?.orgId && !options.has(session.orgId)) {
-      options.set(session.orgId, { id: session.orgId });
+      options.set(session.orgId, { id: session.orgId, isActive: true });
     }
     return Array.from(options.values());
   }, [session?.orgId, session?.organizations, session?.user?.organizations]);
+
+  const selectedOrganization = useMemo(() => {
+    const input = orgIdOrSlug.trim().toLowerCase();
+    if (!input) {
+      return null;
+    }
+    return (
+      availableOrganizations.find((org) => org.id.toLowerCase() === input) ??
+      availableOrganizations.find((org) => (org.slug ?? "").toLowerCase() === input) ??
+      null
+    );
+  }, [availableOrganizations, orgIdOrSlug]);
+
+  const isSelectedDisabled = selectedOrganization?.isActive === false;
 
   useEffect(() => {
     const currentOrgId = session?.orgId ?? "";
@@ -38,6 +52,11 @@ export function OrganizationSwitcher() {
   const handleSwitch = async () => {
     if (!orgIdOrSlug) {
       setError(t("orgSwitcher.error.selectOrganization"));
+      return;
+    }
+
+    if (isSelectedDisabled) {
+      setError(t("orgSwitcher.error.disabledOrganization", { defaultValue: "Organization is disabled" }));
       return;
     }
 
@@ -94,8 +113,9 @@ export function OrganizationSwitcher() {
   const options = availableOrganizations.map((org) => ({
     value: org.slug ?? org.id,
     label: org.name
-      ? `${org.name} (${org.slug ?? org.id})`
-      : org.slug ?? org.id
+      ? `${org.name} (${org.slug ?? org.id})${org.isActive === false ? ` · ${t("common.disabled")}` : ""}`
+      : `${org.slug ?? org.id}${org.isActive === false ? ` · ${t("common.disabled")}` : ""}`,
+    disabled: org.isActive === false
   }));
 
   return (
@@ -120,7 +140,7 @@ export function OrganizationSwitcher() {
           type="default"
           icon={<SwapOutlined />}
           loading={loading}
-          disabled={!orgIdOrSlug}
+          disabled={!orgIdOrSlug || isSelectedDisabled}
           onClick={handleSwitch}
         >
           {t("orgSwitcher.switch")}
