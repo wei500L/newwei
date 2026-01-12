@@ -2,7 +2,7 @@
 
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { Card, Col, Collapse, Descriptions, List, Row, Skeleton, Space, Tag, Tooltip, Typography } from 'antd';
-import type { ReactNode } from 'react';
+import type { CollapseProps } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -10,15 +10,10 @@ import { ChartEmptyState } from '@/components/chart-empty-state';
 import { useItemQuery } from '@/graphql/generated';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 import { formatRatioAsPercent } from '@/lib/metrics-format';
+import { safeHttpUrl } from '@/lib/url';
 
 interface ItemDetailProps {
   itemId: string;
-}
-
-interface PayloadPanel {
-  key: string;
-  label: string;
-  children: ReactNode;
 }
 
 const parseJson = <T,>(value?: string | null): T | null => {
@@ -120,7 +115,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const category = toString(processedResult?.category);
   const qualityScore = typeof processedResult?.quality_score === 'number' ? processedResult.quality_score : undefined;
   const qualityScoreLabel = formatRatioAsPercent(qualityScore, locale);
-  const originalUrl = toString(rawPayload?.url);
+  const originalUrl = safeHttpUrl(rawPayload?.url);
   const cleanedMarkdown = toString(processedResult?.cleaned_markdown);
   const hasSummaryContent = Boolean(summary) || keyPoints.length > 0;
   const summaryText = summary?.trim();
@@ -225,41 +220,41 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     timeZoneName: 'short'
   });
 
-  const payloadPanels = [
-    processedResult
-      ? {
-          key: 'processed',
-          label: t('items.detail.payloadProcessed', { defaultValue: 'Processed JSON' }),
-          children: (
-            <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
-              {JSON.stringify(processedResult, null, 2)}
-            </pre>
-          )
-        }
-      : null,
-    cleanedMarkdown
-      ? {
-          key: 'markdown',
-          label: t('items.detail.payloadMarkdown', { defaultValue: 'Cleaned Markdown' }),
-          children: (
-            <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
-              {cleanedMarkdown}
-            </pre>
-          )
-        }
-      : null,
-    rawPayload
-      ? {
-          key: 'raw',
-          label: t('items.detail.payloadRaw', { defaultValue: 'Raw JSON' }),
-          children: (
-            <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
-              {JSON.stringify(rawPayload, null, 2)}
-            </pre>
-          )
-        }
-      : null
-  ].filter((panel): panel is PayloadPanel => Boolean(panel));
+  type CollapseItem = NonNullable<CollapseProps['items']>[number];
+  const payloadPanels: CollapseItem[] = [];
+  if (processedResult) {
+    payloadPanels.push({
+      key: 'processed',
+      label: t('items.detail.payloadProcessed', { defaultValue: 'Processed JSON' }),
+      children: (
+        <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
+          {JSON.stringify(processedResult, null, 2)}
+        </pre>
+      )
+    });
+  }
+  if (cleanedMarkdown) {
+    payloadPanels.push({
+      key: 'markdown',
+      label: t('items.detail.payloadMarkdown', { defaultValue: 'Cleaned Markdown' }),
+      children: (
+        <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
+          {cleanedMarkdown}
+        </pre>
+      )
+    });
+  }
+  if (rawPayload) {
+    payloadPanels.push({
+      key: 'raw',
+      label: t('items.detail.payloadRaw', { defaultValue: 'Raw JSON' }),
+      children: (
+        <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
+          {JSON.stringify(rawPayload, null, 2)}
+        </pre>
+      )
+    });
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -350,7 +345,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           ) : null}
         </Space>
         {originalUrl ? (
-          <Typography.Link href={originalUrl} target="_blank" rel="noreferrer">
+          <Typography.Link href={originalUrl} target="_blank" rel="noopener noreferrer">
             {t('items.detail.readOriginal', { defaultValue: 'Read original' })}
           </Typography.Link>
         ) : null}

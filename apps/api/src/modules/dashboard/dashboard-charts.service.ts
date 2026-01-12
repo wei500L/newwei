@@ -75,6 +75,9 @@ interface WarMapEvent {
    */
   derivedScore: number;
   value: number;
+  alertScore?: number;
+  alertCount?: number;
+  newsCount?: number;
 }
 
 interface WarMapEventsResponse {
@@ -200,29 +203,56 @@ export class DashboardChartsService {
         name: string;
         lat: number;
         lng: number;
+        alertCount: number;
         alertScore: number;
-        maxSeverityRank: number;
+        maxAlertSeverityRank: number;
+        newsCount: number;
         latestAt?: Date;
       }
     >();
 
-    const alertEvents = await this.prisma.alertEvent.findMany({
-      where: {
-        triggeredAt: {
-          gte: range.start,
-          lte: range.end
+    const [alertEvents, newsRecords] = await Promise.all([
+      this.prisma.alertEvent.findMany({
+        where: {
+          triggeredAt: {
+            gte: range.start,
+            lte: range.end
+          },
+          rule: {
+            orgId
+          }
         },
-        rule: {
-          orgId
-        }
-      },
-      select: {
-        triggeredAt: true,
-        severity: true,
-        context: true
-      },
-      orderBy: { triggeredAt: "desc" }
-    });
+        select: {
+          triggeredAt: true,
+          severity: true,
+          context: true
+        },
+        orderBy: { triggeredAt: "desc" }
+      }),
+      this.prisma.processedArticle.findMany({
+        where: {
+          location: { not: null },
+          article: {
+            orgId,
+            crawlAt: {
+              gte: range.start,
+              lte: range.end
+            }
+          }
+        },
+        select: {
+          location: true,
+          processedAt: true,
+          article: {
+            select: {
+              crawlAt: true
+            }
+          }
+        },
+        orderBy: { processedAt: "desc" },
+        take: 2500
+      })
+    ]);
 
     for (const event of alertEvents) {
       const context =
@@ -250,94 +280,21 @@ export class DashboardChartsService {
         name: geo.name,
         lat: geo.lat,
         lng: geo.lng,
+        alertCount: 0,
         alertScore: 0,
-        maxSeverityRank: 0
+        maxAlertSeverityRank: 0,
+        newsCount: 0
       };
       const severityValue = alertSeverityRank[event.severity] ?? 1;
       entry.alertScore += severityValue;
-      entry.maxSeverityRank = Math.max(entry.maxSeverityRank, severityValue);
+      entry.alertCount += 1;
+      entry.maxAlertSeverityRank = Math.max(entry.maxAlertSeverityRank, severityValue);
       entry.latestAt =
         !entry.latestAt || event.triggeredAt > entry.latestAt ? event.triggeredAt : entry.latestAt;
       signals.set(resolvedCode, entry);
     }
 
-    let latestTimestamp: Date | undefined;
-    const events: WarMapEvent[] = [];
-
-    for (const [code, entry] of signals.entries()) {
-      if (!entry.latestAt) {
-        continue;
-      }
-      const derivedScore = Math.max(1, Number(entry.alertScore.toFixed(2)));
-      const severity =
-        entry.maxSeverityRank > 0
-          ? (alertSeverityByRank[entry.maxSeverityRank] ?? AlertSeverity.low)
-          : AlertSeverity.low;
-      events.push({
-        id: code.toLowerCase(),
-        name: entry.name,
-        lat: entry.lat,
-        lng: entry.lng,
-        severity,
-        derivedScore,
-        value: derivedScore
-      });
-      if (!latestTimestamp || entry.latestAt > latestTimestamp) {
-        latestTimestamp = entry.latestAt;
-      }
-    }
-
-    if (events.length > 0) {
-      return {
-        events,
-        updatedAt: latestTimestamp ? latestTimestamp.toISOString() : undefined
-      };
-    }
-
-    return this.getWarMapNewsSignals(range, orgId, geoIndex);
-  }
-
-  private async getWarMapNewsSignals(
-    range: DateRange,
-    orgId: string,
-    geoIndex: Map<string, { name: string; lat: number; lng: number }>
-  ): Promise<WarMapEventsResponse> {
-    const records = await this.prisma.processedArticle.findMany({
-      where: {
-        location: { not: null },
-        article: {
-          orgId,
-          crawlAt: {
-            gte: range.start,
-            lte: range.end
-          }
-        }
-      },
-      select: {
-        location: true,
-        processedAt: true,
-        article: {
-          select: {
-            crawlAt: true
-          }
-        }
-      },
-      orderBy: { processedAt: "desc" },
-      take: 2500
-    });
-
-    const signals = new Map<
-      string,
-      {
-        name: string;
-        lat: number;
-        lng: number;
-        count: number;
-        latestAt?: Date;
-      }
-    >();
-
-    for (const record of records) {
+    for (const record of newsRecords) {
       const location = record.location;
       if (!location || typeof location !== "string") {
         continue;
@@ -355,29 +312,36 @@ export class DashboardChartsService {
         name: geo.name,
         lat: geo.lat,
         lng: geo.lng,
-        count: 0,
+        alertCount: 0,
+        alertScore: 0,
+        maxAlertSeverityRank: 0,
+        newsCount: 0,
         latestAt: undefined
       };
-      entry.count += 1;
+      entry.newsCount += 1;
       const latestAt = record.article.crawlAt ?? record.processedAt;
       entry.latestAt =
         !entry.latestAt || latestAt > entry.latestAt ? latestAt : entry.latestAt;
       signals.set(resolvedCode, entry);
     }
 
-    let updatedAt: Date | undefined;
     const events: WarMapEvent[] = [];
+    let updatedAt: Date | undefined;
+
     for (const [code, entry] of signals.entries()) {
       if (!entry.latestAt) {
         continue;
       }
-      const derivedScore = entry.count;
+      const alertScore = Number(entry.alertScore.toFixed(2));
+      const derivedScoreRaw = alertScore + entry.newsCount;
+      const derivedScore = Math.max(1, derivedScoreRaw);
+      const newsSeverityRank =
+        entry.newsCount >= 8 ? 3 : entry.newsCount >= 4 ? 2 : entry.newsCount > 0 ? 1 : 0;
+      const maxSeverityRank = Math.max(entry.maxAlertSeverityRank, newsSeverityRank);
       const severity =
-        derivedScore >= 8
-          ? AlertSeverity.high
-          : derivedScore >= 4
-            ? AlertSeverity.medium
-            : AlertSeverity.low;
+        maxSeverityRank > 0
+          ? (alertSeverityByRank[maxSeverityRank] ?? AlertSeverity.low)
+          : AlertSeverity.low;
       events.push({
         id: code.toLowerCase(),
         name: entry.name,
@@ -385,7 +349,10 @@ export class DashboardChartsService {
         lng: entry.lng,
         severity,
         derivedScore,
-        value: derivedScore
+        value: derivedScore,
+        alertScore,
+        alertCount: entry.alertCount,
+        newsCount: entry.newsCount
       });
       if (!updatedAt || entry.latestAt > updatedAt) {
         updatedAt = entry.latestAt;

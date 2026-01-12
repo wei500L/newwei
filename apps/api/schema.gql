@@ -736,10 +736,12 @@ type ItemModel {
   meta: ItemMetaModel!
   orgId: String!
   processed: ProcessedItemModelGraph
+  processedPreview: ProcessedItemPreviewModelGraph
 
   """Content published time (ISO8601)"""
   publishedAt: String
   raw: RawItemModelGraph
+  rawPreview: RawItemPreviewModelGraph
   status: String!
   title: String!
   updatedAt: DateTime!
@@ -880,6 +882,25 @@ type ProcessedItemModelGraph {
   tags: [String!]!
 }
 
+type ProcessedItemPreviewModelGraph {
+  createdAt: DateTime!
+  duplicateOf: String
+  duplicateSimilarity: Float
+  entities: [String!]!
+  id: ID!
+  itemMetaId: String!
+  llm: ProcessedItemLlmModel
+  location: String
+  publishedAt: String
+  qualityScore: Float
+  sentiment: String
+  source: String
+  status: String!
+  summary: String
+  tags: [String!]!
+  topics: [String!]!
+}
+
 type Query {
   alertChannels: [AlertChannelModel!]!
   alertEventReplay(eventId: String!, windowDays: Int): AlertEventReplayModel
@@ -961,6 +982,25 @@ type RawItemModelGraph {
   payload: String!
   source: String
   updatedAt: DateTime!
+}
+
+type SeriesPointModel {
+  timestamp: String!
+  value: Float!
+}
+
+type RawItemPreviewModelGraph {
+  changePercent: Float
+  history: [SeriesPointModel!]
+  location: String
+  price: Float
+  region: String
+  sentiment: String
+  sourceName: String
+  summary: String
+  thumbnail: String
+  ticker: String
+  url: String
 }
 
 type RoleModel {

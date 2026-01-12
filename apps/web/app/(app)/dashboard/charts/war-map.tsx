@@ -29,6 +29,9 @@ interface WarMapEvent {
   severity: WarEventSeverity;
   derivedScore?: number;
   value?: number;
+  alertScore?: number;
+  alertCount?: number;
+  newsCount?: number;
 }
 
 interface GeoJsonGeometry {
@@ -74,6 +77,9 @@ interface WarMapScatterPoint {
   name: string;
   value: [number, number, number];
   severity: WarEventSeverity;
+  alertScore?: number;
+  alertCount?: number;
+  newsCount?: number;
   itemStyle?: {
     color: string;
   };
@@ -271,10 +277,16 @@ export function WarMap() {
       })
       .map((event) => {
         const score = typeof event.derivedScore === "number" ? event.derivedScore : (event.value ?? 0);
+        const alertCount = typeof event.alertCount === "number" ? event.alertCount : undefined;
+        const alertScore = typeof event.alertScore === "number" ? event.alertScore : undefined;
+        const newsCount = typeof event.newsCount === "number" ? event.newsCount : undefined;
         return {
           name: event.name,
           value: [event.lng, event.lat, score],
           severity: event.severity,
+          alertCount,
+          alertScore,
+          newsCount,
           itemStyle: {
             color: resolveSeverityColor(event.severity)
           }
@@ -302,6 +314,14 @@ export function WarMap() {
           if (!data) return payload.name ?? "";
           const derivedScore = data.value?.[2] ?? 0;
           const severityColor = data.itemStyle?.color ?? "#fff";
+          const alertCount = typeof data.alertCount === "number" ? data.alertCount : undefined;
+          const alertScore = typeof data.alertScore === "number" ? data.alertScore : undefined;
+          const newsCount = typeof data.newsCount === "number" ? data.newsCount : undefined;
+          const hasBreakdown = Boolean(
+            typeof alertCount === "number" ||
+              typeof alertScore === "number" ||
+              typeof newsCount === "number"
+          );
           const updatedStr = eventsQuery.data?.updatedAt
             ? formatDateTime(eventsQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
             : "N/A";
@@ -313,6 +333,16 @@ export function WarMap() {
                 <span style="color: #94a3b8;">Severity:</span>
                 <span style="color: ${severityColor}; font-weight: 600;">${severityLabel(data.severity)}</span>
               </div>
+              ${hasBreakdown ? `
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: #94a3b8;">Alerts:</span>
+                <span>${alertCount ?? 0}${typeof alertScore === "number" ? ` (score ${alertScore})` : ""}</span>
+              </div>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: #94a3b8;">News:</span>
+                <span>${newsCount ?? 0}</span>
+              </div>
+              ` : ""}
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                 <span style="color: #94a3b8;">Derived score:</span>
                 <span>${derivedScore}</span>

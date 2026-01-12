@@ -241,7 +241,7 @@
       "switchFailed": "切换失败",
       "unexpected": "切换时发生未知错误"
     },
-    "success": "已切换至组织 {{orgId}}",
+    "success": "已切换至 {{org}}",
     "tooltip": "切换当前使用的组织",
     "placeholder": "选择组织",
     "notFound": "没有可用组织",

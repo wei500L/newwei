@@ -406,7 +406,7 @@ export class ItemsService {
         | {
             location?: string | null;
             region?: string | null;
-            topics?: string[] | null;
+            topics?: Array<{ name?: string | null } | string> | null;
             entities?: Array<{ name?: string | null } | string> | null;
             sentiment?: string | null;
             sentiment_label?: string | null;
@@ -421,8 +421,18 @@ export class ItemsService {
       const topicSet = new Set<string>();
       if (Array.isArray(result?.topics)) {
         result.topics.forEach((topic) => {
-          if (typeof topic === "string" && topic.trim()) {
-            topicSet.add(topic.trim());
+          if (typeof topic === "string") {
+            const normalized = topic.trim();
+            if (normalized) {
+              topicSet.add(normalized);
+            }
+            return;
+          }
+          if (topic && typeof topic.name === "string") {
+            const normalized = topic.name.trim();
+            if (normalized) {
+              topicSet.add(normalized);
+            }
           }
         });
       }

@@ -9,10 +9,10 @@ const config: Config = {
     "^.+\\.(t|j)s$": ["ts-jest", { tsconfig: "./tsconfig.spec.json" }]
   },
   moduleNameMapper: {
-    "^@modular/utils$": "<rootDir>/../../packages/utils/src",
-    "^@modular/config$": "<rootDir>/../../packages/config/src",
-    "^@modular/db$": "<rootDir>/../../packages/db/src",
-    "^@modular/mongo$": "<rootDir>/../../packages/mongo/src"
+    "^@modular/utils$": "<rootDir>/../../packages/utils/src/index.ts",
+    "^@modular/config$": "<rootDir>/../../packages/config/src/index.ts",
+    "^@modular/db$": "<rootDir>/../../packages/db/src/index.ts",
+    "^@modular/mongo$": "<rootDir>/../../packages/mongo/src/index.ts"
   },
   collectCoverageFrom: ["src/**/*.(t|j)s"],
   coverageDirectory: "../coverage",

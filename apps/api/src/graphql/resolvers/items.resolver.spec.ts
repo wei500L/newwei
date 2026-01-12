@@ -1,8 +1,9 @@
-import DataLoader from "dataloader";
 import { BadRequestException } from "@nestjs/common";
+import DataLoader from "dataloader";
+
+import { ItemsOrderBy } from "../dto/item.input";
 
 import { ItemsResolver } from "./items.resolver";
-import { ItemsOrderBy } from "../dto/item.input";
 
 describe("ItemsResolver.processed", () => {
   const resolver = new ItemsResolver({} as any);
@@ -103,6 +104,43 @@ describe("ItemsResolver time fields", () => {
     expect(publishedAt).toBe("2024-01-01T00:00:00.000Z");
   });
 
+  it("resolves publishedAt from processed.result.publishedAt", async () => {
+    const resolver = new ItemsResolver({} as any);
+    const processedLoader = new DataLoader(async (keys: readonly string[]) =>
+      keys.map(() => ({
+        id: "processed-1",
+        itemMetaId: "meta-1",
+        status: "completed",
+        tags: [],
+        result: { publishedAt: "2024-01-01T00:00:00Z" },
+        createdAt: new Date()
+      }))
+    );
+    const rawLoader = new DataLoader(async (keys: readonly string[]) => keys.map(() => null));
+
+    const publishedAt = await resolver.publishedAt(
+      { metaId: "meta-1" } as any,
+      processedLoader as any,
+      rawLoader as any
+    );
+
+    expect(publishedAt).toBe("2024-01-01T00:00:00.000Z");
+  });
+
+  it("returns publishedAt from item meta when available", async () => {
+    const resolver = new ItemsResolver({} as any);
+    const processedLoader = new DataLoader(async (keys: readonly string[]) => keys.map(() => null));
+    const rawLoader = new DataLoader(async (keys: readonly string[]) => keys.map(() => null));
+
+    const publishedAt = await resolver.publishedAt(
+      { metaId: "meta-1", publishedAt: "2024-02-01T12:34:56.000Z" } as any,
+      processedLoader as any,
+      rawLoader as any
+    );
+
+    expect(publishedAt).toBe("2024-02-01T12:34:56.000Z");
+  });
+
   it("falls back publishedAt to raw payload when processed result missing", async () => {
     const resolver = new ItemsResolver({} as any);
     const processedLoader = new DataLoader(async (keys: readonly string[]) => keys.map(() => null));
@@ -123,6 +161,180 @@ describe("ItemsResolver time fields", () => {
     );
 
     expect(publishedAt).toBe("2024-01-03T00:00:00.000Z");
+  });
+});
+
+describe("ItemsResolver preview fields", () => {
+  it("resolves processedPreview with normalized arrays", async () => {
+    const resolver = new ItemsResolver({} as any);
+    const processedLoader = new DataLoader(async (keys: readonly string[]) =>
+      keys.map(() => ({
+        id: "processed-1",
+        itemMetaId: "meta-1",
+        status: "completed",
+        tags: ["t1"],
+        result: {
+          source: "Example",
+          published_at: "2024-01-01T00:00:00Z",
+          summary: "Hello",
+          sentiment_label: "Positive",
+          topics: ["Topic A", "Topic A", "Topic B"],
+          entities: [{ name: "Entity A" }, { name: "Entity A" }, "Entity B"],
+          quality_score: 0.9,
+          location: "US"
+        },
+        duplicateOf: null,
+        duplicateSimilarity: 0.42,
+        llm: { model: "gpt-test" },
+        createdAt: new Date("2024-01-02T00:00:00Z"),
+        updatedAt: new Date("2024-01-02T00:00:00Z")
+      }))
+    );
+
+    const preview = await resolver.processedPreview({ metaId: "meta-1" } as any, processedLoader as any);
+    expect(preview?.summary).toBe("Hello");
+    expect(preview?.sentiment).toBe("Positive");
+    expect(preview?.source).toBe("Example");
+    expect(preview?.publishedAt).toBe("2024-01-01T00:00:00.000Z");
+    expect(preview?.topics).toEqual(["Topic A", "Topic B"]);
+    expect(preview?.entities).toEqual(["Entity A", "Entity B"]);
+    expect(preview?.qualityScore).toBe(0.9);
+    expect(preview?.location).toBe("US");
+    expect(preview?.duplicateSimilarity).toBe(0.42);
+  });
+
+  it("normalizes processedPreview when result uses mixed shapes", async () => {
+    const resolver = new ItemsResolver({} as any);
+    const processedLoader = new DataLoader(async (keys: readonly string[]) =>
+      keys.map(() => ({
+        id: "processed-1",
+        itemMetaId: "meta-1",
+        status: "completed",
+        tags: [],
+        result: {
+          source_name: "Example",
+          publishedAt: "2024-01-01T00:00:00Z",
+          abstract: "Hello",
+          sentimentLabel: "Positive",
+          topics: [{ name: "Topic A" }, { label: "Topic B" }, "Topic C"],
+          entities: ["Entity A", { name: "Entity B" }],
+          quality_score: "0.75",
+          region: "US"
+        },
+        duplicateOf: null,
+        duplicateSimilarity: 0.42,
+        llm: { model: "gpt-test" },
+        createdAt: new Date("2024-01-02T00:00:00Z"),
+        updatedAt: new Date("2024-01-02T00:00:00Z")
+      }))
+    );
+
+    const preview = await resolver.processedPreview(
+      { metaId: "meta-1" } as any,
+      processedLoader as any
+    );
+
+    expect(preview?.summary).toBe("Hello");
+    expect(preview?.sentiment).toBe("Positive");
+    expect(preview?.source).toBe("Example");
+    expect(preview?.publishedAt).toBe("2024-01-01T00:00:00.000Z");
+    expect(preview?.topics).toEqual(["Topic A", "Topic B", "Topic C"]);
+    expect(preview?.entities).toEqual(["Entity A", "Entity B"]);
+    expect(preview?.qualityScore).toBe(0.75);
+    expect(preview?.location).toBe("US");
+  });
+
+  it("resolves rawPreview from payload metadata", async () => {
+    const resolver = new ItemsResolver({} as any);
+    const rawLoader = new DataLoader(async (keys: readonly string[]) =>
+      keys.map(() => ({
+        id: "raw-1",
+        itemMetaId: "meta-1",
+        payload: {
+          url: "https://example.com",
+          sourceName: "Example Source",
+          metadata: {
+            thumbnailUrl: "https://example.com/thumb.png",
+            summary: "Raw summary",
+            sentiment: "neutral",
+            region: "US",
+            location: "New York",
+            ticker: "AAPL",
+            price: 123.45,
+            changePercent: -1.23,
+            history: [
+              { timestamp: "2024-01-01", value: 1 },
+              { time: "2024-01-02", value: "2.5" },
+              { date: "2024-01-03", value: 3 },
+              { timestamp: "", value: 4 }
+            ]
+          }
+        },
+        source: "api",
+        createdAt: new Date("2024-01-02T00:00:00Z"),
+        updatedAt: new Date("2024-01-02T00:00:00Z")
+      }))
+    );
+
+    const preview = await resolver.rawPreview({ metaId: "meta-1" } as any, rawLoader as any);
+    expect(preview).toMatchObject({
+      url: "https://example.com",
+      sourceName: "Example Source",
+      thumbnail: "https://example.com/thumb.png",
+      summary: "Raw summary",
+      sentiment: "neutral",
+      region: "US",
+      location: "New York",
+      ticker: "AAPL",
+      price: 123.45,
+      changePercent: -1.23
+    });
+    expect(preview?.history).toEqual([
+      { timestamp: "2024-01-01", value: 1 },
+      { timestamp: "2024-01-02", value: 2.5 },
+      { timestamp: "2024-01-03", value: 3 }
+    ]);
+  });
+
+  it("falls back rawPreview fields to payload root when metadata missing", async () => {
+    const resolver = new ItemsResolver({} as any);
+    const rawLoader = new DataLoader(async (keys: readonly string[]) =>
+      keys.map(() => ({
+        id: "raw-1",
+        itemMetaId: "meta-1",
+        payload: {
+          url: "https://example.com",
+          sourceName: "Example Source",
+          thumbnail: "https://example.com/thumb.png",
+          summary: "Raw summary",
+          sentiment: "neutral",
+          region: "US",
+          location: "New York",
+          ticker: "AAPL",
+          price: "123.45",
+          change_percent: "-1.23",
+          history: [{ timestamp: "2024-01-01", value: "2.5" }]
+        },
+        source: "api",
+        createdAt: new Date("2024-01-02T00:00:00Z"),
+        updatedAt: new Date("2024-01-02T00:00:00Z")
+      }))
+    );
+
+    const preview = await resolver.rawPreview({ metaId: "meta-1" } as any, rawLoader as any);
+    expect(preview).toMatchObject({
+      url: "https://example.com",
+      sourceName: "Example Source",
+      thumbnail: "https://example.com/thumb.png",
+      summary: "Raw summary",
+      sentiment: "neutral",
+      region: "US",
+      location: "New York",
+      ticker: "AAPL",
+      price: 123.45,
+      changePercent: -1.23
+    });
+    expect(preview?.history).toEqual([{ timestamp: "2024-01-01", value: 2.5 }]);
   });
 });
 

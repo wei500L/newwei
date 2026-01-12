@@ -3,11 +3,11 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { Button, Card, Space, Tag, Tooltip, Typography } from "antd";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
+import { safeHttpUrl } from "@/lib/url";
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -45,7 +45,6 @@ export function NewsCard({ item }: NewsCardProps) {
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const locale = resolveLocale(i18n.language);
-  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   const publishedLabel = t("items.time.published", { defaultValue: "Published" });
   const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
@@ -87,24 +86,24 @@ export function NewsCard({ item }: NewsCardProps) {
   }
   const llmSummary = llmBits.length > 0 ? llmBits.join(" | ") : null;
   const showFooter = Boolean(item.url || item.id || llmSummary);
-  const summaryText = item.summary?.trim();
-  const canExpandSummary = Boolean(summaryText && summaryText.length > 300);
-  const displaySummary =
-    summaryText && !summaryExpanded && canExpandSummary
-      ? `${summaryText.slice(0, 300).trimEnd()}…`
-      : summaryText;
+  const summaryText = item.summary?.trim() ?? "";
   const expandLabel = t("common.expand", { defaultValue: "Show more" });
   const collapseLabel = t("common.collapse", { defaultValue: "Show less" });
+  const thumbnailUrl = safeHttpUrl(item.thumbnail);
+  const originalUrl = safeHttpUrl(item.url);
 
   return (
     <Card
       hoverable
       className="glass-card"
       cover={
-        item.thumbnail ? (
+        thumbnailUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- External thumbnails are user-provided; keep client-side fetch (avoid next/image SSRF/config).
           <img
             alt={item.title}
-            src={item.thumbnail}
+            src={thumbnailUrl}
+            loading="lazy"
+            decoding="async"
             style={{ height: 160, objectFit: "cover" }}
           />
         ) : null
@@ -193,25 +192,19 @@ export function NewsCard({ item }: NewsCardProps) {
         <Title level={4} ellipsis={{ rows: 2 }} style={{ margin: 0 }}>
           {item.title}
         </Title>
-        {displaySummary && (
+        {summaryText && (
           <div>
             <Paragraph
-              ellipsis={summaryExpanded ? false : { rows: 3 }}
+              ellipsis={{
+                rows: 3,
+                expandable: "collapsible",
+                symbol: (expanded) => (expanded ? collapseLabel : expandLabel)
+              }}
               type="secondary"
               style={{ lineHeight: 1.75, marginBottom: 0 }}
             >
-              {displaySummary}
+              {summaryText}
             </Paragraph>
-            {canExpandSummary ? (
-              <Button
-                type="link"
-                size="small"
-                className="px-0"
-                onClick={() => setSummaryExpanded((expanded) => !expanded)}
-              >
-                {summaryExpanded ? collapseLabel : expandLabel}
-              </Button>
-            ) : null}
           </div>
         )}
       </Space>
@@ -246,8 +239,8 @@ export function NewsCard({ item }: NewsCardProps) {
                 </Space>
               </Tooltip>
             ) : null}
-            {item.url ? (
-              <Typography.Link href={item.url} target="_blank" rel="noreferrer">
+            {originalUrl ? (
+              <Typography.Link href={originalUrl} target="_blank" rel="noopener noreferrer">
                 {readOriginalLabel}
               </Typography.Link>
             ) : null}

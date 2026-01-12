@@ -1,3 +1,4 @@
+import { parseDateTime } from "@modular/utils";
 import { BadRequestException, UseGuards } from "@nestjs/common";
 import {
   Args,
@@ -10,7 +11,6 @@ import {
 } from "@nestjs/graphql";
 import type DataLoader from "dataloader";
 import { Loader } from "nestjs-dataloader";
-import { parseDateTime } from "@modular/utils";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
@@ -26,8 +26,12 @@ import {
 } from "../dto/item.input";
 import type { GqlRequest } from "../graphql.types";
 import { ItemMetaLoader } from "../loaders/item-meta.loader";
+import type { ProcessedItemPreviewDoc } from "../loaders/processed-item-preview.loader";
+import { ProcessedItemPreviewLoader } from "../loaders/processed-item-preview.loader";
 import type { ProcessedItemDoc } from "../loaders/processed-item.loader";
 import { ProcessedItemLoader } from "../loaders/processed-item.loader";
+import type { RawItemPreviewDoc } from "../loaders/raw-item-preview.loader";
+import { RawItemPreviewLoader } from "../loaders/raw-item-preview.loader";
 import type { RawItemDoc } from "../loaders/raw-item.loader";
 import { RawItemLoader } from "../loaders/raw-item.loader";
 import {
@@ -37,6 +41,8 @@ import {
   ItemMetaModel,
   RawItemModelGraph,
   ProcessedItemModelGraph,
+  RawItemPreviewModelGraph,
+  ProcessedItemPreviewModelGraph,
   ItemFacets
 } from "../models/item.model";
 import { PageInfo } from "../models/page-info.model";
@@ -122,7 +128,8 @@ function resolvePublishedAtFromProcessedResult(result: unknown): string | null {
   if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) {
     return null;
   }
-  const candidate = (normalized as { published_at?: unknown }).published_at;
+  const record = normalized as Record<string, unknown>;
+  const candidate = record.published_at ?? record.publishedAt;
   return normalizeIsoDateTimeString(candidate);
 }
 
@@ -134,6 +141,126 @@ function resolvePublishedAtFromRawPayload(payload?: Record<string, unknown>): st
     (payload as { publishedAt?: unknown }).publishedAt ??
     (payload as { published_at?: unknown }).published_at;
   return normalizeIsoDateTimeString(candidate);
+}
+
+function normalizeNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function pickFirstNonEmptyString(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const candidate = normalizeNonEmptyString(obj[key]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const normalized = value
+    .map((entry) => {
+      if (typeof entry === "string") {
+        return entry.trim();
+      }
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        const record = entry as Record<string, unknown>;
+        const candidate =
+          (typeof record.name === "string" && record.name.trim() ? record.name : null) ??
+          (typeof record.label === "string" && record.label.trim() ? record.label : null) ??
+          (typeof record.value === "string" && record.value.trim() ? record.value : null) ??
+          (typeof record.topic === "string" && record.topic.trim() ? record.topic : null) ??
+          null;
+        return candidate ? candidate.trim() : "";
+      }
+      return "";
+    })
+    .filter((entry) => entry.length > 0);
+  return Array.from(new Set(normalized));
+}
+
+function normalizeEntityNames(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const normalized = value
+    .map((entry) => {
+      if (typeof entry === "string") {
+        return entry.trim();
+      }
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        return typeof (entry as { name?: unknown }).name === "string"
+          ? ((entry as { name?: string }).name ?? "").trim()
+          : "";
+      }
+      return "";
+    })
+    .filter((entry) => entry.length > 0);
+  return Array.from(new Set(normalized));
+}
+
+function normalizeFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function pickFirstFiniteNumber(obj: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const candidate = normalizeFiniteNumber(obj[key]);
+    if (candidate !== null) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function normalizeSeriesPoints(
+  value: unknown,
+  options?: { limit?: number }
+): { timestamp: string; value: number }[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const limit = Math.min(Math.max(options?.limit ?? 60, 1), 500);
+
+  const points: { timestamp: string; value: number }[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    const timestamp =
+      normalizeNonEmptyString(record.timestamp) ??
+      normalizeNonEmptyString(record.time) ??
+      normalizeNonEmptyString(record.date);
+    const pointValue = normalizeFiniteNumber(record.value);
+    if (!timestamp || pointValue === null) {
+      continue;
+    }
+    points.push({ timestamp, value: pointValue });
+    if (points.length >= limit) {
+      break;
+    }
+  }
+
+  return points.length > 0 ? points : null;
 }
 
 @Resolver(() => ItemModel)
@@ -332,9 +459,15 @@ export class ItemsResolver {
   @ResolveField(() => String, { nullable: true })
   async publishedAt(
     @Parent() item: ItemModel,
-    @Loader(ProcessedItemLoader) processedLoader: DataLoader<string, ProcessedItemDoc | null>,
-    @Loader(RawItemLoader) rawLoader: DataLoader<string, RawItemDoc | null>
+    @Loader(ProcessedItemPreviewLoader)
+    processedLoader: DataLoader<string, ProcessedItemPreviewDoc | null>,
+    @Loader(RawItemPreviewLoader) rawLoader: DataLoader<string, RawItemPreviewDoc | null>
   ): Promise<string | null> {
+    const fromMeta = normalizeNonEmptyString(item.publishedAt);
+    if (fromMeta) {
+      return fromMeta;
+    }
+
     const processed = await processedLoader.load(item.metaId);
     const publishedFromProcessed = processed
       ? resolvePublishedAtFromProcessedResult(processed.result)
@@ -345,6 +478,108 @@ export class ItemsResolver {
 
     const raw = await rawLoader.load(item.metaId);
     return raw ? resolvePublishedAtFromRawPayload(raw.payload) : null;
+  }
+
+  @ResolveField(() => RawItemPreviewModelGraph, { nullable: true })
+  async rawPreview(
+    @Parent() item: ItemModel,
+    @Loader(RawItemPreviewLoader) rawLoader: DataLoader<string, RawItemPreviewDoc | null>
+  ): Promise<RawItemPreviewModelGraph | null> {
+    const raw = await rawLoader.load(item.metaId);
+    if (!raw) {
+      return null;
+    }
+
+    const payload =
+      raw.payload && typeof raw.payload === "object" && !Array.isArray(raw.payload)
+        ? raw.payload
+        : {};
+    const metadataValue = (payload as { metadata?: unknown }).metadata;
+    const metadata =
+      metadataValue && typeof metadataValue === "object" && !Array.isArray(metadataValue)
+        ? (metadataValue as Record<string, unknown>)
+        : {};
+
+    const merged = { ...payload, ...metadata };
+
+    return {
+      url: pickFirstNonEmptyString(merged, ["url", "link", "sourceUrl"]),
+      sourceName: pickFirstNonEmptyString(merged, [
+        "sourceName",
+        "source_name",
+        "source",
+        "publisher",
+        "siteName",
+        "site_name"
+      ]),
+      thumbnail: pickFirstNonEmptyString(merged, [
+        "thumbnail",
+        "thumbnailUrl",
+        "image",
+        "imageUrl",
+        "image_url"
+      ]),
+      summary: pickFirstNonEmptyString(merged, ["summary", "abstract", "description"]),
+      sentiment: pickFirstNonEmptyString(merged, ["sentiment_label", "sentimentLabel", "sentiment"]),
+      region: pickFirstNonEmptyString(merged, ["region", "country", "area"]),
+      location: pickFirstNonEmptyString(merged, ["location"]),
+      ticker: pickFirstNonEmptyString(merged, ["ticker", "symbol"]),
+      price: pickFirstFiniteNumber(merged, ["price"]),
+      changePercent: pickFirstFiniteNumber(merged, ["changePercent", "change_percent", "change"]),
+      history: normalizeSeriesPoints((merged as { history?: unknown }).history)
+    };
+  }
+
+  @ResolveField(() => ProcessedItemPreviewModelGraph, { nullable: true })
+  async processedPreview(
+    @Parent() item: ItemModel,
+    @Loader(ProcessedItemPreviewLoader)
+    processedLoader: DataLoader<string, ProcessedItemPreviewDoc | null>
+  ): Promise<ProcessedItemPreviewModelGraph | null> {
+    const processed = await processedLoader.load(item.metaId);
+    if (!processed) {
+      return null;
+    }
+
+    const normalizedResult = normalizeProcessedResult(processed.result);
+    const result =
+      normalizedResult && typeof normalizedResult === "object" && !Array.isArray(normalizedResult)
+        ? (normalizedResult as Record<string, unknown>)
+        : {};
+
+    const summary = pickFirstNonEmptyString(result, ["summary", "abstract"]);
+    const sentiment = pickFirstNonEmptyString(result, [
+      "sentiment_label",
+      "sentimentLabel",
+      "sentiment"
+    ]);
+    const source = pickFirstNonEmptyString(result, ["source", "sourceName", "source_name"]);
+    const publishedAt = normalizeIsoDateTimeString(result.published_at ?? result.publishedAt);
+    const location =
+      normalizeNonEmptyString(result.location) ?? normalizeNonEmptyString(result.region);
+    const qualityScore = pickFirstFiniteNumber(result, ["quality_score", "qualityScore"]);
+    const topics = normalizeStringList(result.topics);
+    const entities = normalizeEntityNames(result.entities);
+
+    return {
+      id: processed.id,
+      itemMetaId: processed.itemMetaId,
+      status: processed.status,
+      tags: processed.tags ?? [],
+      duplicateOf: processed.duplicateOf ?? null,
+      duplicateSimilarity:
+        typeof processed.duplicateSimilarity === "number" ? processed.duplicateSimilarity : null,
+      llm: processed.llm ?? null,
+      source,
+      publishedAt,
+      summary,
+      sentiment,
+      topics,
+      entities,
+      qualityScore,
+      location,
+      createdAt: processed.createdAt
+    };
   }
 
   @ResolveField(() => RawItemModelGraph, { nullable: true })
@@ -390,6 +625,7 @@ export class ItemsResolver {
     createdAt: Date;
     updatedAt: Date;
     orgId: string;
+    publishedAt?: Date | null;
   }): ItemModel {
     return {
       id: meta.id,
@@ -397,12 +633,15 @@ export class ItemsResolver {
       title: meta.name,
       status: meta.status,
       ingestedAt: meta.createdAt,
+      publishedAt: meta.publishedAt ? meta.publishedAt.toISOString() : null,
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
       orgId: meta.orgId,
       meta: undefined as unknown as ItemMetaModel,
       raw: undefined,
-      processed: undefined
+      processed: undefined,
+      rawPreview: undefined,
+      processedPreview: undefined
     };
   }
 }

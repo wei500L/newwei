@@ -241,7 +241,7 @@
       "switchFailed": "Switch failed",
       "unexpected": "Unexpected error while switching"
     },
-    "success": "Switched to organization {{orgId}}",
+    "success": "Switched to {{org}}",
     "tooltip": "Switch your active organization",
     "placeholder": "Select an organization",
     "notFound": "No organizations available",

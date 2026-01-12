@@ -13,7 +13,7 @@ import { createTraceHeaders } from "@/lib/trace";
 export function OrganizationSwitcher() {
   const { t } = useTranslation();
   const { data: session, status, update } = useSession();
-  const [orgId, setOrgId] = useState<string>("");
+  const [orgIdOrSlug, setOrgIdOrSlug] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
@@ -30,11 +30,13 @@ export function OrganizationSwitcher() {
   }, [session?.orgId, session?.organizations, session?.user?.organizations]);
 
   useEffect(() => {
-    setOrgId(session?.orgId ?? "");
-  }, [session?.orgId]);
+    const currentOrgId = session?.orgId ?? "";
+    const current = availableOrganizations.find((org) => org.id === currentOrgId);
+    setOrgIdOrSlug(current?.slug ?? currentOrgId);
+  }, [availableOrganizations, session?.orgId]);
 
   const handleSwitch = async () => {
-    if (!orgId) {
+    if (!orgIdOrSlug) {
       setError(t("orgSwitcher.error.selectOrganization"));
       return;
     }
@@ -48,7 +50,7 @@ export function OrganizationSwitcher() {
         headers: createTraceHeaders({
           "Content-Type": "application/json"
         }),
-        body: JSON.stringify({ orgId })
+        body: JSON.stringify({ orgId: orgIdOrSlug })
       });
 
       if (!response.ok) {
@@ -60,6 +62,12 @@ export function OrganizationSwitcher() {
       }
 
       const data = (await response.json()) as BackendLoginResponse;
+      const switchedOrg = (data.organizations ?? availableOrganizations).find(
+        (org) => org.id === data.user.orgId
+      );
+      const switchedLabel =
+        switchedOrg?.name ?? switchedOrg?.slug ?? data.user.orgId;
+
       await update({
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
@@ -69,7 +77,7 @@ export function OrganizationSwitcher() {
         permissions: data.user.permissions,
         organizations: data.organizations ?? availableOrganizations
       });
-      messageApi.success(t("orgSwitcher.success", { orgId: data.user.orgId }));
+      messageApi.success(t("orgSwitcher.success", { org: switchedLabel }));
     } catch (err) {
       captureClientError("Organization switch failed", err);
       setError(t("orgSwitcher.error.unexpected"));
@@ -84,8 +92,10 @@ export function OrganizationSwitcher() {
   }
 
   const options = availableOrganizations.map((org) => ({
-    value: org.id,
-    label: org.name ? `${org.name} (${org.id})` : org.id
+    value: org.slug ?? org.id,
+    label: org.name
+      ? `${org.name} (${org.slug ?? org.id})`
+      : org.slug ?? org.id
   }));
 
   return (
@@ -97,8 +107,8 @@ export function OrganizationSwitcher() {
             allowClear
             placeholder={t("orgSwitcher.placeholder")}
             style={{ minWidth: 220 }}
-            value={orgId}
-            onChange={(value) => setOrgId(value ?? "")}
+            value={orgIdOrSlug}
+            onChange={(value) => setOrgIdOrSlug(value ?? "")}
             options={options}
             filterOption={(inputValue, option) =>
               (option?.label as string)?.toLowerCase().includes(inputValue.toLowerCase()) ?? false
@@ -110,7 +120,7 @@ export function OrganizationSwitcher() {
           type="default"
           icon={<SwapOutlined />}
           loading={loading}
-          disabled={!orgId}
+          disabled={!orgIdOrSlug}
           onClick={handleSwitch}
         >
           {t("orgSwitcher.switch")}

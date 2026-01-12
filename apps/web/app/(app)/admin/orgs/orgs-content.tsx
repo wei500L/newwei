@@ -3,7 +3,7 @@
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Form, Input, Modal, Space, Switch, Table, Tag, Typography, message, List, Grid } from "antd";
 import { useSession } from "next-auth/react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { captureClientError } from "@/lib/client-telemetry";
@@ -89,6 +89,25 @@ const SET_ORG_ACTIVE_MUTATION = gql`
   }
 `;
 
+function slugifyOrgSlug(value: string): string | null {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
+
+  if (!normalized || normalized.length < 3) {
+    return null;
+  }
+
+  const truncated = normalized.slice(0, 64).replace(/-+$/, "");
+  const matches = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(truncated);
+  return matches ? truncated : null;
+}
+
 function mergeOrganizations(existing: { id: string; name?: string; slug?: string }[], next: OrgRow[]) {
   const map = new Map<string, { id: string; name?: string; slug?: string }>();
   existing.forEach((org) => map.set(org.id, org));
@@ -112,6 +131,7 @@ export function OrgAdminContent() {
 
   const [createForm] = Form.useForm<CreateOrgInput>();
   const [editForm] = Form.useForm<UpdateOrgInput>();
+  const createSlugModeRef = useRef<"auto" | "manual">("auto");
 
   const [createOrg, { loading: creating }] = useMutation<{ createOrg: OrgRow }, { input: CreateOrgInput }>(
     CREATE_ORG_MUTATION
@@ -154,6 +174,7 @@ export function OrgAdminContent() {
       const created = result.data?.createOrg;
       setCreateOpen(false);
       createForm.resetFields();
+      createSlugModeRef.current = "auto";
       await refetch();
 
       if (created) {
@@ -357,6 +378,7 @@ export function OrgAdminContent() {
         onCancel={() => {
           setCreateOpen(false);
           createForm.resetFields();
+          createSlugModeRef.current = "auto";
         }}
         onOk={() => createForm.submit()}
         okButtonProps={{ loading: creating }}
@@ -368,7 +390,18 @@ export function OrgAdminContent() {
             label={t("orgAdmin.fields.name")}
             rules={[{ required: true, message: t("orgAdmin.validation.nameRequired") }]}
           >
-            <Input placeholder={t("orgAdmin.placeholders.name")} />
+            <Input
+              placeholder={t("orgAdmin.placeholders.name")}
+              onChange={(event) => {
+                if (createSlugModeRef.current !== "auto") {
+                  return;
+                }
+                const suggested = slugifyOrgSlug(event.target.value);
+                if (suggested) {
+                  createForm.setFieldsValue({ slug: suggested });
+                }
+              }}
+            />
           </Form.Item>
           <Form.Item
             name="slug"
@@ -381,7 +414,12 @@ export function OrgAdminContent() {
               }
             ]}
           >
-            <Input placeholder={t("orgAdmin.placeholders.slug")} />
+            <Input
+              placeholder={t("orgAdmin.placeholders.slug")}
+              onChange={(event) => {
+                createSlugModeRef.current = event.target.value.trim() ? "manual" : "auto";
+              }}
+            />
           </Form.Item>
           <Form.Item name="description" label={t("orgAdmin.fields.description")} rules={[{ max: 500 }]}>
             <Input.TextArea rows={3} placeholder={t("orgAdmin.placeholders.description")} />

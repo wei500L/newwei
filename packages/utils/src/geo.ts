@@ -17,6 +17,13 @@ const normalizeKey = (value: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
+const normalizeLocaleKey = (value: string): string =>
+  value
+    .trim()
+    .normalize("NFKC")
+    .replace(/[\s'"·•，、,;:.()（）[\]{}<>《》“”‘’]/g, "")
+    .toLowerCase();
+
 const ALIAS_ENTRIES: Array<[string, string]> = [
   ["America", "USA"],
   ["Bolivia", "BOL"],
@@ -55,6 +62,7 @@ const ALIAS_ENTRIES: Array<[string, string]> = [
   ["US", "USA"],
   ["USA", "USA"],
   ["U.S.", "USA"],
+  ["East Timor", "TLS"],
   ["Viet Nam", "VNM"],
   ["Venezuela", "VEN"],
   ["Vietnam", "VNM"]
@@ -62,6 +70,48 @@ const ALIAS_ENTRIES: Array<[string, string]> = [
 
 const ALIAS_TO_ALPHA3 = new Map<string, string>(
   ALIAS_ENTRIES.map(([label, code]) => [normalizeKey(label), code])
+);
+
+const LOCALE_ALIAS_ENTRIES: Array<[string, string]> = [
+  ["中国", "CHN"],
+  ["中國", "CHN"],
+  ["中国台湾", "TWN"],
+  ["中国台灣", "TWN"],
+  ["中國台湾", "TWN"],
+  ["中國台灣", "TWN"],
+  ["中國臺灣", "TWN"],
+  ["中国台北", "TWN"],
+  ["中國台北", "TWN"],
+  ["中國臺北", "TWN"],
+  ["台湾", "TWN"],
+  ["台灣", "TWN"],
+  ["美国", "USA"],
+  ["美國", "USA"],
+  ["英国", "GBR"],
+  ["英國", "GBR"],
+  ["俄罗斯", "RUS"],
+  ["俄羅斯", "RUS"],
+  ["乌克兰", "UKR"],
+  ["烏克蘭", "UKR"],
+  ["日本", "JPN"],
+  ["韩国", "KOR"],
+  ["韓國", "KOR"],
+  ["朝鲜", "PRK"],
+  ["朝鮮", "PRK"],
+  ["以色列", "ISR"],
+  ["巴勒斯坦", "PSE"],
+  ["伊朗", "IRN"],
+  ["土耳其", "TUR"],
+  ["叙利亚", "SYR"],
+  ["敘利亞", "SYR"],
+  ["中华人民共和国", "CHN"],
+  ["中華人民共和國", "CHN"],
+  ["东帝汶", "TLS"],
+  ["東帝汶", "TLS"]
+];
+
+const LOCALE_NAME_TO_ALPHA3 = new Map<string, string>(
+  LOCALE_ALIAS_ENTRIES.map(([label, code]) => [normalizeLocaleKey(label), code])
 );
 
 for (const entry of COUNTRY_DATA) {
@@ -86,6 +136,53 @@ for (const entry of EXTRA_COUNTRIES) {
   ALPHA3_TO_NAME.set(alpha3, entry.name);
 }
 
+const LOCALE_SETS = [["zh-Hans"], ["zh-Hant"], ["zh"]] as const;
+
+const canUseDisplayNames = () =>
+  typeof Intl !== "undefined" &&
+  typeof (Intl as unknown as { DisplayNames?: unknown }).DisplayNames === "function";
+
+const addLocaleDisplayNames = (locales: readonly string[]) => {
+  if (!canUseDisplayNames()) {
+    return;
+  }
+  let displayNames: Intl.DisplayNames | null = null;
+  try {
+    displayNames = new Intl.DisplayNames(locales, { type: "region" });
+  } catch {
+    displayNames = null;
+  }
+  if (!displayNames) {
+    return;
+  }
+
+  const entries = [...COUNTRY_DATA, ...EXTRA_COUNTRIES];
+  for (const entry of entries) {
+    const alpha2 = entry.alpha2.toUpperCase();
+    const alpha3 = entry.alpha3.toUpperCase();
+    const displayName = displayNames.of(alpha2);
+    if (!displayName || typeof displayName !== "string") {
+      continue;
+    }
+    const key = normalizeLocaleKey(displayName);
+    if (!key) {
+      continue;
+    }
+    const existing = LOCALE_NAME_TO_ALPHA3.get(key);
+    if (!existing) {
+      LOCALE_NAME_TO_ALPHA3.set(key, alpha3);
+    }
+  }
+};
+
+for (const locales of LOCALE_SETS) {
+  addLocaleDisplayNames(locales);
+}
+
+const LOCALE_MATCHERS = Array.from(LOCALE_NAME_TO_ALPHA3.entries())
+  .map(([label, code]) => ({ label, code }))
+  .sort((a, b) => b.label.length - a.label.length);
+
 export const normalizeCountryCode = (input?: string | null): string | null => {
   if (!input || typeof input !== "string") {
     return null;
@@ -107,7 +204,13 @@ export const normalizeCountryCode = (input?: string | null): string | null => {
   }
 
   const normalized = normalizeKey(trimmed);
-  return ALIAS_TO_ALPHA3.get(normalized) ?? NAME_TO_ALPHA3.get(normalized) ?? null;
+  const localeKey = normalizeLocaleKey(trimmed);
+  return (
+    ALIAS_TO_ALPHA3.get(normalized) ??
+    NAME_TO_ALPHA3.get(normalized) ??
+    LOCALE_NAME_TO_ALPHA3.get(localeKey) ??
+    null
+  );
 };
 
 export const extractCountryCodeFromText = (text?: string | null): string | null => {
@@ -116,8 +219,13 @@ export const extractCountryCodeFromText = (text?: string | null): string | null 
   }
 
   const sanitized = text
-    .replace(/\bU\.S\.A?\b/gi, "USA")
-    .replace(/\bU\.K\.\b/gi, "UK");
+    .replace(/\bU\.S\.A?\.?/gi, "USA")
+    .replace(/\bU\.K\.?/gi, "UK");
+
+  const direct = normalizeCountryCode(sanitized);
+  if (direct) {
+    return direct;
+  }
 
   const tokens = sanitized
     .split(/[\s,;:.()/-]+/)
@@ -149,6 +257,19 @@ export const extractCountryCodeFromText = (text?: string | null): string | null 
   for (const [name, code] of NAME_TO_ALPHA3.entries()) {
     if (normalizedText.includes(` ${name} `)) {
       return code;
+    }
+  }
+
+  const localeText = normalizeLocaleKey(sanitized);
+  if (!localeText) {
+    return null;
+  }
+  for (const matcher of LOCALE_MATCHERS) {
+    if (matcher.label.length <= 1) {
+      continue;
+    }
+    if (localeText.includes(matcher.label)) {
+      return matcher.code;
     }
   }
 

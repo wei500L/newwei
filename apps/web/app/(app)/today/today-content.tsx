@@ -3,14 +3,10 @@
 import { Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import type { ItemsQuery } from "@/graphql/generated";
 import { ItemsView } from "@/app/(app)/items/items-view";
+import dayjs from "@/lib/dayjs";
 
-interface TodayContentProps {
-  initialData?: ItemsQuery | null;
-}
-
-export function TodayContent({ initialData = null }: TodayContentProps) {
+export function TodayContent() {
   const { t } = useTranslation();
 
   return (
@@ -29,7 +25,9 @@ export function TodayContent({ initialData = null }: TodayContentProps) {
         initialView="feed"
         emptyStateVariant="today"
         sortMode="publishedDesc"
-        initialData={initialData}
+        initialFilters={{
+          dateRange: [dayjs().startOf("day"), dayjs().endOf("day")]
+        }}
       />
     </div>
   );

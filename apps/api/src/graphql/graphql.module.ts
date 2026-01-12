@@ -46,7 +46,9 @@ import { RbacModule } from "../modules/rbac/rbac.module";
 
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
+import { ProcessedItemPreviewLoader } from "./loaders/processed-item-preview.loader";
 import { ProcessedItemLoader } from "./loaders/processed-item.loader";
+import { RawItemPreviewLoader } from "./loaders/raw-item-preview.loader";
 import { RawItemLoader } from "./loaders/raw-item.loader";
 import { RoleLoader } from "./loaders/role.loader";
 import { UserLoader } from "./loaders/user.loader";
@@ -230,7 +232,9 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     RoleLoader,
     ItemMetaLoader,
     RawItemLoader,
+    RawItemPreviewLoader,
     ProcessedItemLoader,
+    ProcessedItemPreviewLoader,
     GqlAuthGuard,
     GqlPermissionsGuard,
     {

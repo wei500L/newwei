@@ -108,9 +108,19 @@ export class AuthService {
         "Organization is required when a user belongs to multiple organizations"
       );
     }
-    const membership = memberships.find(
-      (candidate) => candidate.orgId === orgIdOrSlug || candidate.org?.slug === orgIdOrSlug
-    );
+    const normalized = orgIdOrSlug.trim();
+    const normalizedLower = normalized.toLowerCase();
+
+    const membership = memberships.find((candidate) => {
+      if (candidate.orgId === normalized || candidate.orgId.toLowerCase() === normalizedLower) {
+        return true;
+      }
+      const slug = candidate.org?.slug;
+      if (typeof slug === "string" && slug.toLowerCase() === normalizedLower) {
+        return true;
+      }
+      return false;
+    });
     if (!membership) {
       throw new UnauthorizedException("User is not assigned to the specified organization");
     }

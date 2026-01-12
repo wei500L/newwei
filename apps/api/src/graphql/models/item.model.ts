@@ -6,6 +6,15 @@ import { HasPermission } from "../decorators/has-permission.decorator";
 import { PageInfo } from "./page-info.model";
 
 @ObjectType()
+export class SeriesPointModel {
+  @Field()
+  timestamp!: string;
+
+  @Field(() => Float)
+  value!: number;
+}
+
+@ObjectType()
 export class ItemMetaModel {
   @Field(() => ID)
   id!: string;
@@ -51,6 +60,42 @@ export class RawItemModelGraph {
 }
 
 @ObjectType()
+export class RawItemPreviewModelGraph {
+  @Field(() => String, { nullable: true, description: "Original content URL" })
+  url?: string | null;
+
+  @Field(() => String, { nullable: true, description: "Publisher/source name from raw payload" })
+  sourceName?: string | null;
+
+  @Field(() => String, { nullable: true, description: "Preview thumbnail URL" })
+  thumbnail?: string | null;
+
+  @Field(() => String, { nullable: true })
+  summary?: string | null;
+
+  @Field(() => String, { nullable: true })
+  sentiment?: string | null;
+
+  @Field(() => String, { nullable: true })
+  region?: string | null;
+
+  @Field(() => String, { nullable: true })
+  location?: string | null;
+
+  @Field(() => String, { nullable: true })
+  ticker?: string | null;
+
+  @Field(() => Float, { nullable: true })
+  price?: number | null;
+
+  @Field(() => Float, { nullable: true })
+  changePercent?: number | null;
+
+  @Field(() => [SeriesPointModel], { nullable: true })
+  history?: SeriesPointModel[] | null;
+}
+
+@ObjectType()
 export class ProcessedItemModelGraph {
   @Field(() => ID)
   id!: string;
@@ -78,6 +123,57 @@ export class ProcessedItemModelGraph {
 
   @Field(() => ProcessedItemLlmModel, { nullable: true })
   llm?: ProcessedItemLlmModel | null;
+
+  @Field(() => GraphQLISODateTime)
+  createdAt!: Date;
+}
+
+@ObjectType()
+export class ProcessedItemPreviewModelGraph {
+  @Field(() => ID)
+  id!: string;
+
+  @Field()
+  itemMetaId!: string;
+
+  @Field()
+  status!: string;
+
+  @Field(() => [String])
+  tags!: string[];
+
+  @Field(() => String, { nullable: true })
+  duplicateOf?: string | null;
+
+  @Field(() => Float, { nullable: true })
+  duplicateSimilarity?: number | null;
+
+  @Field(() => ProcessedItemLlmModel, { nullable: true })
+  llm?: ProcessedItemLlmModel | null;
+
+  @Field(() => String, { nullable: true })
+  source?: string | null;
+
+  @Field(() => String, { nullable: true, description: "Content published time (ISO8601)" })
+  publishedAt?: string | null;
+
+  @Field(() => String, { nullable: true })
+  summary?: string | null;
+
+  @Field(() => String, { nullable: true })
+  sentiment?: string | null;
+
+  @Field(() => [String])
+  topics!: string[];
+
+  @Field(() => [String])
+  entities!: string[];
+
+  @Field(() => Float, { nullable: true })
+  qualityScore?: number | null;
+
+  @Field(() => String, { nullable: true })
+  location?: string | null;
 
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
@@ -147,6 +243,14 @@ export class ItemModel {
   @HasPermission("items.read")
   @Field(() => ProcessedItemModelGraph, { nullable: true })
   processed?: ProcessedItemModelGraph | null;
+
+  @HasPermission("items.read")
+  @Field(() => RawItemPreviewModelGraph, { nullable: true })
+  rawPreview?: RawItemPreviewModelGraph | null;
+
+  @HasPermission("items.read")
+  @Field(() => ProcessedItemPreviewModelGraph, { nullable: true })
+  processedPreview?: ProcessedItemPreviewModelGraph | null;
 }
 
 @ObjectType()

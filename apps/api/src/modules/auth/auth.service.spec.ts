@@ -233,6 +233,32 @@ describe("AuthService", () => {
     expect(user.roleIds).toEqual(["role-2"]);
   });
 
+  it("accepts organization slug case-insensitively when validating credentials", async () => {
+    const password = await bcrypt.hash("password", 10);
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      passwordHash: password,
+      firstName: "Test",
+      lastName: "User",
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          org: { isActive: true, slug: "acme" },
+          roleId: "role-1",
+          role: {
+            permissions: [{ permission: { name: "items.read" } }]
+          }
+        }
+      ]
+    });
+
+    const user = await service.validateUser("test@example.com", "password", "ACME");
+    expect(user.orgId).toBe("org-1");
+    expect(user.permissions).toContain("items.read");
+  });
+
   it("requires an organization when validating credentials for multi-org users", async () => {
     const password = await bcrypt.hash("password", 10);
     prismaMock.user.findUnique = jest.fn().mockResolvedValue({

@@ -15,12 +15,22 @@ query Items(
         createdAt
         ingestedAt
         publishedAt
-        processed {
-          result
-          resultJson
+        processedPreview {
+          id
+          itemMetaId
+          status
           tags
           duplicateOf
           duplicateSimilarity
+          source
+          publishedAt
+          summary
+          sentiment
+          topics
+          entities
+          qualityScore
+          location
+          createdAt
           llm {
             model
             promptVersion
@@ -31,9 +41,21 @@ query Items(
             latencyMs
           }
         }
-        raw {
-          payload
-          source
+        rawPreview {
+          url
+          sourceName
+          thumbnail
+          summary
+          sentiment
+          region
+          location
+          ticker
+          price
+          changePercent
+          history {
+            timestamp
+            value
+          }
         }
       }
       cursor

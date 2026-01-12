@@ -2,10 +2,9 @@
 
 import { gql, useQuery } from '@apollo/client';
 import { Button, Card, Col, Drawer, Empty, Grid, List, Row, Select, Skeleton, Space, Tag, Tooltip, Typography } from 'antd';
-import type { ReactNode } from 'react';
-import { useCallback, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { NewsCard } from '@/app/(app)/items/components/news-card';
 import dayjs from '@/lib/dayjs';
@@ -395,8 +394,8 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                 createdAt: item.createdAt,
                                 publishedAt: item.publishedAt ?? undefined,
                                 ingestedAt: item.createdAt,
-                                topics: topics,
-                                tags: entities
+                                topics,
+                                entities
                               }}
                             />
                           </Col>
@@ -546,6 +545,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
             </Typography.Title>
             <List
               dataSource={selectedEventItems}
+              rowKey="id"
               locale={{
                 emptyText: t('pages.topics.eventDetail.timelineEmpty', {
                   defaultValue: 'No related items.'
@@ -555,6 +555,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                 const timestamp = item.publishedAt ?? item.createdAt;
                 return (
                   <List.Item
+                    key={item.id}
                     actions={[
                       <Button
                         key="open"

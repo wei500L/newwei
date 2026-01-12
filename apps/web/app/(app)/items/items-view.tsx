@@ -13,9 +13,9 @@ import { useTranslation } from "react-i18next";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import type { ItemsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
-import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
+import { safeHttpUrl } from "@/lib/url";
 
 import { FacetedSearch, type FilterState } from "./components/faceted-search";
 import { NewsCard } from "./components/news-card";
@@ -75,54 +75,6 @@ function withMetricTooltip(label: string, tooltip: string) {
 
 const MAX_ITEMS_PAGE_SIZE = 50;
 
-const loggedProcessedResultParseErrors = new Set<string>();
-
-function parseProcessedResult(value: unknown, itemId: string): Record<string, unknown> {
-  if (value === null || value === undefined) {
-    return {};
-  }
-
-  if (typeof value === "object") {
-    return !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-  }
-
-  if (typeof value !== "string") {
-    return {};
-  }
-
-  const resultString = value;
-  if (!resultString.trim()) {
-    return {};
-  }
-
-  const reportOnce = (error: unknown) => {
-    if (loggedProcessedResultParseErrors.has(itemId)) {
-      return;
-    }
-    loggedProcessedResultParseErrors.add(itemId);
-    captureClientError("Failed to parse processed.result", error, {
-      tags: { area: "items", field: "processed.result" },
-      extras: { itemId, resultLength: resultString.length }
-    });
-  };
-
-  try {
-    let parsed: unknown = resultString;
-    for (let depth = 0; depth < 3; depth += 1) {
-      if (typeof parsed !== "string") {
-        break;
-      }
-      parsed = JSON.parse(parsed) as unknown;
-    }
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch (error) {
-    reportOnce(error);
-    return {};
-  }
-}
-
 interface ItemsDateRangeInput {
   start?: string;
   end?: string;
@@ -175,12 +127,22 @@ const ITEMS_QUERY = gql`
           createdAt
           ingestedAt
           publishedAt
-          processed {
-            result
-            resultJson
+          processedPreview {
+            id
+            itemMetaId
+            status
             tags
             duplicateOf
             duplicateSimilarity
+            source
+            publishedAt
+            summary
+            sentiment
+            topics
+            entities
+            qualityScore
+            location
+            createdAt
             llm {
               model
               promptVersion
@@ -191,9 +153,21 @@ const ITEMS_QUERY = gql`
               latencyMs
             }
           }
-          raw {
-            payload
-            source
+          rawPreview {
+            url
+            sourceName
+            thumbnail
+            summary
+            sentiment
+            region
+            location
+            ticker
+            price
+            changePercent
+            history {
+              timestamp
+              value
+            }
           }
         }
         cursor
@@ -264,6 +238,7 @@ interface ItemsViewProps {
   emptyStateVariant?: EmptyStateVariant;
   sortMode?: ItemsSortMode;
   initialData?: ItemsQuery | null;
+  initialFilters?: FilterState;
 }
 
 interface ParsedItem {
@@ -305,7 +280,8 @@ export function ItemsView({
   initialView = "feed",
   emptyStateVariant = "default",
   sortMode = "default",
-  initialData = null
+  initialData = null,
+  initialFilters = {}
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -326,7 +302,7 @@ export function ItemsView({
   // Local State
   const [searchInput, setSearchInput] = useState(urlSearch);
   const [view, setView] = useState<ItemViewType>(initialView);
-  const [filters, setFilters] = useState<FilterState>({});
+  const [filters, setFilters] = useState<FilterState>(() => initialFilters);
   const [showFilters, setShowFilters] = useState(false);
   const [showDelayHint, setShowDelayHint] = useState(false);
 
@@ -429,7 +405,11 @@ export function ItemsView({
     return () => clearTimeout(timeout);
   }, [loading]);
 
-  const resolvedData = isUnsearched ? undefined : data ?? initialData ?? undefined;
+  const resolvedData =
+    isUnsearched
+      ? undefined
+      : data ??
+        (filtersInput === null ? initialData ?? undefined : undefined);
   const edges = resolvedData?.items.edges ?? EMPTY_EDGES;
   const resolvedTotalCount = resolvedData?.items.totalCount;
   const totalCount =
@@ -450,80 +430,88 @@ export function ItemsView({
 
   const pageData = useMemo<ParsedItem[]>(() => {
     return edges.map((edge) => {
-      let parsedRaw = {};
-      try {
-        parsedRaw = JSON.parse(edge.node.raw?.payload || "{}");
-      } catch {
-        // console.warn("Failed to parse raw payload", e);
-      }
+      const processed = edge.node.processedPreview;
+      const raw = edge.node.rawPreview;
+      const summary =
+        toNonEmptyString(processed?.summary) ?? toNonEmptyString(raw?.summary) ?? undefined;
+      const sentiment =
+        toNonEmptyString(processed?.sentiment) ?? toNonEmptyString(raw?.sentiment) ?? undefined;
+      const region = toNonEmptyString(raw?.region) ?? undefined;
+      const location =
+        toNonEmptyString(processed?.location) ?? toNonEmptyString(raw?.location) ?? undefined;
+      const ticker = toNonEmptyString(raw?.ticker) ?? undefined;
+      const price =
+        typeof raw?.price === "number" && Number.isFinite(raw.price) ? raw.price : undefined;
+      const change =
+        typeof raw?.changePercent === "number" && Number.isFinite(raw.changePercent)
+          ? raw.changePercent
+          : undefined;
+      const history = Array.isArray(raw?.history)
+        ? raw.history
+            .map((point) => {
+              const timestamp = typeof point?.timestamp === "string" ? point.timestamp.trim() : "";
+              const value =
+                typeof point?.value === "number" && Number.isFinite(point.value)
+                  ? point.value
+                  : null;
+              if (!timestamp || value === null) {
+                return null;
+              }
+              return { timestamp, value };
+            })
+            .filter((point): point is { timestamp: string; value: number } => Boolean(point))
+        : undefined;
+      const url = safeHttpUrl(raw?.url) ?? undefined;
+      const thumbnail = safeHttpUrl(raw?.thumbnail) ?? undefined;
 
-      const processed = parseProcessedResult(
-        edge.node.processed?.resultJson ?? edge.node.processed?.result,
-        edge.node.id
-      ) as {
-        published_at?: string | null;
-        source?: string | null;
-        topics?: string[] | null;
-        entities?: ({ name?: string | null } | string)[] | null;
-        quality_score?: number | null;
-        location?: string | null;
-      };
-      const raw = parsedRaw as {
-        publishedAt?: string | null;
-        published_at?: string | null;
-        url?: string | null;
-        sourceName?: string | null;
-      };
-      const publishedAt = toNonEmptyString(edge.node.publishedAt) ?? undefined;
+      const publishedAt =
+        toNonEmptyString(edge.node.publishedAt) ??
+        toNonEmptyString(processed?.publishedAt) ??
+        undefined;
       const ingestedAt = dayjs(edge.node.ingestedAt ?? edge.node.createdAt).toISOString();
-      const topics = Array.isArray(processed.topics)
-        ? Array.from(
-            new Set(
-              processed.topics
-                .map((topic) => (typeof topic === "string" ? topic.trim() : ""))
-                .filter((topic) => topic.length > 0)
-            )
-          )
-        : [];
-      const entities = Array.isArray(processed.entities)
-        ? Array.from(
-            new Set(
-              processed.entities
-                .map((entity) => {
-                  if (typeof entity === "string") {
-                    return entity.trim();
-                  }
-                  if (entity && typeof entity.name === "string") {
-                    return entity.name.trim();
-                  }
-                  return "";
-                })
-                .filter((name) => name.length > 0)
-            )
-          )
-        : [];
+      const topics = Array.from(
+        new Set(
+          (processed?.topics ?? [])
+            .map((topic) => topic.trim())
+            .filter((topic) => topic.length > 0)
+        )
+      );
+      const entities = Array.from(
+        new Set(
+          (processed?.entities ?? [])
+            .map((entity) => entity.trim())
+            .filter((entity) => entity.length > 0)
+        )
+      );
 
       return {
-        ...edge.node,
-        ...parsedRaw,
-        ...processed,
+        id: edge.node.id,
+        title: edge.node.title,
+        status: edge.node.status,
         name: edge.node.title,
+        summary,
+        thumbnail: thumbnail ?? undefined,
+        sentiment,
+        ticker,
+        price,
+        change,
+        history,
         publishedAt,
         ingestedAt,
         createdAt: ingestedAt,
-        source: toNonEmptyString(processed.source) ?? toNonEmptyString(raw.sourceName) ?? undefined,
+        source: toNonEmptyString(processed?.source) ?? toNonEmptyString(raw?.sourceName) ?? undefined,
         topics,
         entities,
-        qualityScore:
-          typeof processed.quality_score === "number" ? processed.quality_score : undefined,
+        region,
+        qualityScore: typeof processed?.qualityScore === "number" ? processed.qualityScore : undefined,
         duplicateSimilarity:
-          typeof edge.node.processed?.duplicateSimilarity === "number"
-            ? edge.node.processed.duplicateSimilarity
+          typeof processed?.duplicateSimilarity === "number"
+            ? processed.duplicateSimilarity
             : undefined,
-        duplicateOf: edge.node.processed?.duplicateOf ?? null,
-        llm: edge.node.processed?.llm ?? undefined,
-        url: toNonEmptyString(raw.url) ?? undefined,
-        location: processed.location ?? undefined
+        duplicateOf: processed?.duplicateOf ?? null,
+        llm: processed?.llm ?? undefined,
+        url: url ?? undefined,
+        location
       } as ParsedItem;
     });
   }, [edges]);
@@ -849,6 +837,7 @@ export function ItemsView({
         <List
           grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
           dataSource={pageData}
+          rowKey="id"
           pagination={{
              current,
              pageSize,
@@ -859,7 +848,7 @@ export function ItemsView({
              align: 'center'
           }}
           renderItem={(item) => (
-            <List.Item>
+            <List.Item key={item.id}>
                {/* Naive heuristic to choose card type: if it has price/ticker, assume financial */}
                {(item.price !== undefined || item.ticker) ? (
                  <FinancialCard item={item} />
@@ -890,6 +879,7 @@ export function ItemsView({
             <List
               itemLayout="vertical"
               dataSource={pageData}
+              rowKey="id"
 	              pagination={{
 	                 current,
 	                 pageSize,
@@ -900,7 +890,7 @@ export function ItemsView({
 	                 align: 'center'
 	              }}
               renderItem={(item) => (
-                <List.Item>
+                <List.Item key={item.id}>
                    <NewsCard
                      item={{
                        ...item,
