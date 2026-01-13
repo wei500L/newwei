@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
@@ -23,6 +23,29 @@ export interface AvatarUploadResponse {
   uploadUrl: string;
   publicUrl: string;
   objectKey: string;
+}
+
+export interface StorageConnectionCheck {
+  ok: boolean;
+  error?: string;
+  httpStatusCode?: number;
+  requestId?: string;
+}
+
+export interface StorageConnectionTestResult {
+  ok: boolean;
+  error?: string;
+  bucket?: string;
+  region?: string;
+  endpoint?: string;
+  publicBaseUrl?: string;
+  forcePathStyle?: boolean;
+  presignedUrlTtlSeconds?: number;
+  checks?: {
+    headBucket: StorageConnectionCheck;
+    putObject: StorageConnectionCheck;
+    deleteObject: StorageConnectionCheck;
+  };
 }
 
 @Injectable()
@@ -74,6 +97,55 @@ export class StorageService {
     return value.startsWith(`${this.publicBaseUrl}/`);
   }
 
+  async testConnection(): Promise<StorageConnectionTestResult> {
+    try {
+      await this.refreshClient();
+    } catch (error) {
+      const formatted = this.formatAwsError(error);
+      return { ok: false, error: formatted.error };
+    }
+
+    const config = await this.storageSettings.getStorageConfig();
+    const s3 = this.s3 as S3Client;
+    const testKey = "__healthcheck__/storage-connection.txt";
+
+    const headBucket = await this.safeAwsCall(async () =>
+      s3.send(new HeadBucketCommand({ Bucket: this.bucket }))
+    );
+
+    const putObject = await this.safeAwsCall(async () =>
+      s3.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: testKey,
+          Body: `ok:${Date.now()}`,
+          ContentType: "text/plain",
+          CacheControl: "no-store"
+        })
+      )
+    );
+
+    const deleteObject = await this.safeAwsCall(async () =>
+      s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: testKey }))
+    );
+
+    const ok = putObject.ok;
+    return {
+      ok,
+      bucket: this.bucket,
+      region: config.region,
+      endpoint: config.endpoint,
+      publicBaseUrl: this.publicBaseUrl,
+      forcePathStyle: config.forcePathStyle,
+      presignedUrlTtlSeconds: config.presignedUrlTtlSeconds,
+      checks: {
+        headBucket,
+        putObject,
+        deleteObject
+      }
+    };
+  }
+
   private async refreshClient() {
     const config = await this.storageSettings.getStorageConfig();
     if (!config.accessKeyId || !config.secretAccessKey || !config.bucket || !config.publicBaseUrl) {
@@ -107,5 +179,34 @@ export class StorageService {
       forcePathStyle: config.forcePathStyle
     });
     this.configFingerprint = nextFingerprint;
+  }
+
+  private async safeAwsCall(operation: () => Promise<unknown>): Promise<StorageConnectionCheck> {
+    try {
+      await operation();
+      return { ok: true };
+    } catch (error) {
+      const formatted = this.formatAwsError(error);
+      return { ok: false, ...formatted };
+    }
+  }
+
+  private formatAwsError(error: unknown): Omit<StorageConnectionCheck, "ok"> {
+    if (!error || typeof error !== "object") {
+      return { error: String(error) };
+    }
+
+    const record = error as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name : "Error";
+    const message = typeof record.message === "string" ? record.message : "Unknown error";
+    const metadata = record.$metadata as Record<string, unknown> | undefined;
+    const httpStatusCode =
+      typeof metadata?.httpStatusCode === "number" ? metadata.httpStatusCode : undefined;
+    const requestId = typeof metadata?.requestId === "string" ? metadata.requestId : undefined;
+    return {
+      error: `${name}: ${message}`,
+      httpStatusCode,
+      requestId
+    };
   }
 }

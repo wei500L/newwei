@@ -81,8 +81,14 @@ export const baseEnvSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_REGION: z.string().optional(),
   S3_BUCKET: z.string().optional(),
-  S3_ENDPOINT: z.string().url().optional(),
-  S3_PUBLIC_BASE_URL: z.string().url().optional(),
+  S3_ENDPOINT: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().url().optional()
+  ),
+  S3_PUBLIC_BASE_URL: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().url().optional()
+  ),
   S3_FORCE_PATH_STYLE: z.coerce.boolean().optional(),
   S3_PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().optional(),
 });

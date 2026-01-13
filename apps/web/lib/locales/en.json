@@ -1330,6 +1330,9 @@
     "loadFailed": "Failed to load storage settings",
     "saved": "Saved",
     "saveFailed": "Failed to save storage settings",
+    "test": "Test connection",
+    "testSuccess": "Storage connection OK",
+    "testFailed": "Storage connection failed",
     "fields": {
       "endpoint": "S3 endpoint",
       "region": "S3 region",

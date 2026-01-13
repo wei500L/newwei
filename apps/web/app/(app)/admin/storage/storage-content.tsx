@@ -15,6 +15,11 @@ interface StorageSettingsResponse {
   publicBaseUrl: string;
 }
 
+interface StorageConnectionTestResponse {
+  ok: boolean;
+  error?: string;
+}
+
 interface StorageSettingsFormValues {
   region: string;
   bucket: string;
@@ -28,6 +33,7 @@ export function StorageSettingsContent() {
   const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form] = Form.useForm<StorageSettingsFormValues>();
   const canView = session?.permissions?.includes("settings.manage") ?? false;
@@ -82,6 +88,26 @@ export function StorageSettingsContent() {
     }
   };
 
+  const handleTestConnection = useCallback(async () => {
+    setTesting(true);
+    setError(null);
+    try {
+      const response = await apiClient.post<StorageConnectionTestResponse>(
+        "admin/settings/storage/test"
+      );
+      if (response.data.ok) {
+        messageApi.success(t("storageSettings.testSuccess"));
+        return;
+      }
+      messageApi.error(response.data.error ?? t("storageSettings.testFailed"));
+    } catch (err) {
+      captureClientError("Failed to test storage connection", err);
+      messageApi.error(t("storageSettings.testFailed"));
+    } finally {
+      setTesting(false);
+    }
+  }, [apiClient, messageApi, t]);
+
   if (status === "loading") {
     return (
       <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
@@ -107,9 +133,14 @@ export function StorageSettingsContent() {
       className="content-card"
       title={t("storageSettings.title")}
       extra={
-        <Button onClick={() => void loadSettings()} loading={loading}>
-          {t("common.refresh")}
-        </Button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button onClick={() => void handleTestConnection()} loading={testing}>
+            {t("storageSettings.test")}
+          </Button>
+          <Button onClick={() => void loadSettings()} loading={loading}>
+            {t("common.refresh")}
+          </Button>
+        </div>
       }
     >
       {contextHolder}

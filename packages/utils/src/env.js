@@ -74,8 +74,8 @@ exports.baseEnvSchema = zod_1.z.object({
     S3_SECRET_ACCESS_KEY: zod_1.z.string().optional(),
     S3_REGION: zod_1.z.string().optional(),
     S3_BUCKET: zod_1.z.string().optional(),
-    S3_ENDPOINT: zod_1.z.string().url().optional(),
-    S3_PUBLIC_BASE_URL: zod_1.z.string().url().optional(),
+    S3_ENDPOINT: zod_1.z.preprocess((value) => (typeof value === "string" && value.trim() === "" ? undefined : value), zod_1.z.string().url().optional()),
+    S3_PUBLIC_BASE_URL: zod_1.z.preprocess((value) => (typeof value === "string" && value.trim() === "" ? undefined : value), zod_1.z.string().url().optional()),
     S3_FORCE_PATH_STYLE: zod_1.z.coerce.boolean().optional(),
     S3_PRESIGNED_URL_TTL_SECONDS: zod_1.z.coerce.number().int().positive().optional(),
 });

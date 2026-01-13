@@ -1329,6 +1329,9 @@
     "loadFailed": "加载存储设置失败",
     "saved": "已保存",
     "saveFailed": "保存存储设置失败",
+    "test": "测试连接",
+    "testSuccess": "存储连接正常",
+    "testFailed": "存储连接失败",
     "fields": {
       "endpoint": "S3 端点",
       "region": "S3 区域",

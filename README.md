@@ -35,6 +35,8 @@ pnpm dev
 - Bull Board 队列仪表盘：http://localhost:4000/admin/queues
 - Swagger UI：http://localhost:4000/docs
 - GraphQL Playground（开发环境）：http://localhost:4000/graphql
+- MinIO S3 Endpoint：http://localhost:9000
+- MinIO Console：http://localhost:9001
 
 预置管理员账号：`admin@example.com` / `Change_me123!`
 
@@ -67,6 +69,7 @@ pnpm docker:down
 服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。`akshare` 与 `crawl4ai` 这类外部依赖（需要额外拉取镜像）被放进了 `extras` profile：当你网络环境无法稳定访问 Docker Hub/GHCR 时，仍可先启动 API/Web 做本地开发；需要相关能力时再启用 `pnpm docker:up:extras`。
 
 其中：
+- `minio` 提供本地 S3 兼容存储（头像上传使用）。默认会通过 `minio-init` 自动创建 `S3_BUCKET` 并写入 CORS 配置（允许浏览器 PUT/GET/HEAD），并将桶设置为匿名可读（便于头像用 `S3_PUBLIC_BASE_URL` 直接访问）。
 - `crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它（建议随 `extras` 一起启动）。
 - `crawl4ai` 自带实时监控仪表盘（系统指标、请求与浏览器池）：`http://localhost:8082/dashboard/`。控制台 `Operations → Crawl4AI Monitor` 提供自研监控面板（WebSocket 实时流 + REST 指标）并保留内置仪表盘标签页（需要配置 `CRAWL4AI_DASHBOARD_URL` / `CRAWL4AI_BASE_URL`，见下文）。
 - 经济数据抓取模块使用 `AKSHARE_HTTP_BASE_URL` 指向一个 Python 网关（默认暴露在 `8081` 端口，底层通过 `pip install akshare` 调用 Akshare 并以 HTTP 提供数据）。启用 `extras` 后，API 容器内默认使用 `AKSHARE_HTTP_BASE_URL=http://akshare:8081`。
