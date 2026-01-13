@@ -123,6 +123,10 @@ export class CrawlExecutionService {
         ? revealCrawlTaskConfigForExecution(configRecord, encryptionKey)
         : null;
       const options = this.extractOptions(decryptedConfig as Prisma.JsonValue | null);
+      const ingestToItems =
+        decryptedConfig && typeof decryptedConfig === "object" && !Array.isArray(decryptedConfig)
+          ? (decryptedConfig as Record<string, unknown>).ingestToItems === true
+          : false;
       const payload = this.buildRequestPayload(task, options);
       const response = await this.crawlClient.crawl(payload);
       const { successes, failures } = this.partitionCrawlerResults(response.results);
@@ -162,7 +166,13 @@ export class CrawlExecutionService {
         successes,
         options,
         response.runId ?? undefined,
-        this.extractMemoryStats(response)
+        this.extractMemoryStats(response),
+        ingestToItems
+          ? {
+              orgId,
+              userId: triggeredById ?? task.createdById
+            }
+          : undefined
       );
 
       if (failures.length > 0) {

@@ -2,31 +2,33 @@ import { CrawlResultContentModel, TaskLogModel } from "@modular/mongo";
 import type { MongoConnection } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
 import type { CrawlResult, CrawlTask } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { EnvService } from "../config/config.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
+import { ItemsService } from "../items/items.service";
 
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import type {
   CrawlExecutionSummary,
-	  CrawlLinkAnalysis,
-	  Crawl4aiTablePayload,
-	  CrawlMediaCollection,
-	  CrawlMediaItem,
-	  CrawlMediaSource,
+  CrawlLinkAnalysis,
+  Crawl4aiTablePayload,
+  CrawlMediaCollection,
+  CrawlMediaItem,
+  CrawlMediaSource,
   CrawlMemoryStats,
   CrawlResultTable,
   CrawlStoredMediaAsset,
   CrawlTableCell,
   CrawlTaskOptions,
   CrawlTaskResult
-	} from "./crawl.types";
-	import { hashMarkdown, coerceDate } from "./crawl.utils";
-	import type { Crawl4aiArticle } from "./crawl4ai.client";
-	import { buildLinkAnalysis } from "./link-analysis";
+} from "./crawl.types";
+import { coerceDate, hashMarkdown } from "./crawl.utils";
+import type { Crawl4aiArticle } from "./crawl4ai.client";
+import { buildLinkAnalysis } from "./link-analysis";
 
 
 const logger = createLogger({ name: "crawl-result-service" });
@@ -69,14 +71,29 @@ export class CrawlResultService {
     "responsiveImages"
   ]);
   private readonly mediaConfig: CrawlMediaConfig;
+  private itemsService?: ItemsService | null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
-    @Inject(MONGO_CONNECTION) private readonly mongo: MongoConnection
+    @Inject(MONGO_CONNECTION) private readonly mongo: MongoConnection,
+    private readonly moduleRef: ModuleRef
   ) {
     void this.mongo;
     this.mediaConfig = env.crawl4aiConfig.media;
+  }
+
+  private resolveItemsService(): ItemsService | null {
+    if (this.itemsService !== undefined) {
+      return this.itemsService;
+    }
+    try {
+      this.itemsService = this.moduleRef.get(ItemsService, { strict: false });
+    } catch (error) {
+      logger.warn({ err: error }, "ItemsService unavailable; skipping crawl ingestion");
+      this.itemsService = null;
+    }
+    return this.itemsService;
   }
 
   async persistResults(
@@ -84,7 +101,8 @@ export class CrawlResultService {
     items: Crawl4aiArticle[],
     options: CrawlTaskOptions,
     runId?: string,
-    memory?: CrawlMemoryStats
+    memory?: CrawlMemoryStats,
+    ingestToItems?: { orgId: string; userId: string }
   ): Promise<CrawlExecutionSummary> {
     if (!items || items.length === 0) {
       return {
@@ -97,6 +115,9 @@ export class CrawlResultService {
     let inserted = 0;
     let skipped = 0;
     let latestResultAt: Date | undefined;
+    let itemsQueued = 0;
+    let itemsQueueFailed = 0;
+    const itemsService = ingestToItems ? this.resolveItemsService() : null;
 
     const shouldStoreMedia = options.storeMedia ?? false;
 
@@ -168,11 +189,25 @@ export class CrawlResultService {
       if (!latestResultAt || fetchedAt > latestResultAt) {
         latestResultAt = fetchedAt;
       }
+
+      if (ingestToItems && itemsService) {
+        try {
+          await itemsService.createFromCrawlResult(ingestToItems.orgId, ingestToItems.userId, created.id);
+          itemsQueued += 1;
+        } catch (error) {
+          itemsQueueFailed += 1;
+          logger.warn(
+            { err: error, taskId: task.id, orgId: task.orgId, crawlResultId: created.id },
+            "Failed to ingest crawl result into Items"
+          );
+        }
+      }
     }
 
     return {
       inserted,
       skipped,
+      ...(ingestToItems ? { itemsQueued, itemsQueueFailed } : {}),
       lastFetchedAt: latestResultAt,
       runId,
       memory

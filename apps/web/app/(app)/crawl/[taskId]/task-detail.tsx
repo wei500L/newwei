@@ -1123,6 +1123,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const results = task.results ?? [];
   const includeImagesEnabled = Boolean(config?.includeImages);
   const storeMediaEnabled = Boolean(config?.storeMedia);
+  const ingestToItemsEnabled = Boolean(config?.ingestToItems);
   const adjustViewportEnabled = Boolean(config?.adjustViewportToContent);
   const managedBrowserEnabled = Boolean(config?.useManagedBrowser);
 
@@ -1166,13 +1167,18 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         <Descriptions.Item label={t("crawl.detail.fields.storeMedia")}>
           {storeMediaEnabled ? t("common.enabled") : t("common.disabled")}
         </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.ingestToItems", { defaultValue: "Auto send to Items" })}
+        >
+          {ingestToItemsEnabled ? t("common.enabled") : t("common.disabled")}
+        </Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.runCount")}>{task.runCount}</Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.scanFullPage")}>
-        {config?.scanFullPage
-          ? t("crawl.detail.scanFullPageEnabled", { delay: config?.scrollDelayMs ?? 200 })
-          : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.adjustViewport")}>
+        <Descriptions.Item label={t("crawl.detail.fields.scanFullPage")}>
+          {config?.scanFullPage
+            ? t("crawl.detail.scanFullPageEnabled", { delay: config?.scrollDelayMs ?? 200 })
+            : t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.adjustViewport")}>
         {adjustViewportEnabled ? t("common.enabled") : t("common.disabled")}
       </Descriptions.Item>
       <Descriptions.Item label={t("crawl.detail.fields.undetectedBrowser")}>

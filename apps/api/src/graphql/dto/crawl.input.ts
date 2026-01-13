@@ -493,6 +493,11 @@ export class CreateCrawlTaskInput {
   @IsString()
   displayName?: string;
 
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  ingestToItems?: boolean;
+
   @Field(() => CrawlTimeRangeInput, { nullable: true })
   @IsOptional()
   @IsObject()

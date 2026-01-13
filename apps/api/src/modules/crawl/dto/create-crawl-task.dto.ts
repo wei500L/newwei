@@ -700,6 +700,10 @@ export class CreateCrawlTaskDto {
   displayName?: string;
 
   @IsOptional()
+  @IsBoolean()
+  ingestToItems?: boolean;
+
+  @IsOptional()
   @IsISO8601()
   timeRangeFrom?: string;
 

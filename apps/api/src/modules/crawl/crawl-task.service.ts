@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
@@ -46,7 +46,16 @@ export class CrawlTaskService {
     private readonly actionRateLimit: ActionRateLimitService
   ) {}
 
-  async createTask(orgId: string, userId: string, dto: CreateCrawlTaskDto, ip?: string) {
+  async createTask(
+    orgId: string,
+    userId: string,
+    dto: CreateCrawlTaskDto,
+    ip?: string,
+    actorPermissions?: string[]
+  ) {
+    if (dto.ingestToItems === true && !actorPermissions?.includes("items.write")) {
+      throw new ForbiddenException("items.write permission is required to ingest crawl results into Items");
+    }
     await this.actionRateLimit.enforceCrawlTaskCreate(orgId, userId, ip);
 
     const rawOptions = dto.options ?? undefined;
@@ -88,18 +97,20 @@ export class CrawlTaskService {
       scoreLinks: normalizedRawOptions?.scoreLinks,
       linkPreview: normalizedRawOptions?.linkPreview
     });
-    const configSensitiveFields = collectCrawlTaskConfigSensitiveFields(
-      normalizedOptions as Record<string, unknown>
-    );
+    const configSensitiveFields = collectCrawlTaskConfigSensitiveFields(normalizedOptions as Record<string, unknown>);
 
     const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
     const concurrency = Math.min(dto.concurrency ?? defaultConcurrency, defaultConcurrency);
     const encryptionKeyRaw = this.env.crawlTaskConfigEncryptionKey;
     const encryptionKey = encryptionKeyRaw ? decodeCrawlTaskConfigKey(encryptionKeyRaw) : undefined;
-    let protectedConfig: Record<string, unknown> | null = normalizedOptions as Record<string, unknown>;
+    const baseConfig = normalizedOptions as Record<string, unknown>;
+    const configToStore =
+      dto.ingestToItems === true ? { ...baseConfig, ingestToItems: true } : baseConfig;
+
+    let protectedConfig: Record<string, unknown> | null = configToStore;
     try {
       protectedConfig = protectCrawlTaskConfigForStorage(
-        normalizedOptions as Record<string, unknown>,
+        configToStore,
         encryptionKey
       ).config;
     } catch (error) {
@@ -129,7 +140,8 @@ export class CrawlTaskService {
     const auditMetadata: Record<string, unknown> = {
       targetUrl: dto.url,
       keywords,
-      concurrency
+      concurrency,
+      ingestToItems: dto.ingestToItems === true
     };
     if (configSensitiveFields.length > 0) {
       auditMetadata.configSensitiveFields = configSensitiveFields;
@@ -274,7 +286,13 @@ export class CrawlTaskService {
     };
   }
 
-  async retryTask(orgId: string, userId: string, id: string, ip?: string) {
+  async retryTask(
+    orgId: string,
+    userId: string,
+    id: string,
+    ip?: string,
+    actorPermissions?: string[]
+  ) {
     await this.actionRateLimit.enforceCrawlTaskCreate(orgId, userId, ip);
     const task = await this.prisma.crawlTask.findFirst({
       where: { id, orgId },
@@ -282,6 +300,14 @@ export class CrawlTaskService {
     });
     if (!task) {
       throw new NotFoundException("crawl task not found");
+    }
+    const config =
+      task.config && typeof task.config === "object" && !Array.isArray(task.config)
+        ? (task.config as Record<string, unknown>)
+        : null;
+    const ingestToItems = config?.ingestToItems === true;
+    if (ingestToItems && !actorPermissions?.includes("items.write")) {
+      throw new ForbiddenException("items.write permission is required to ingest crawl results into Items");
     }
 
     await this.prisma.crawlTask.update({

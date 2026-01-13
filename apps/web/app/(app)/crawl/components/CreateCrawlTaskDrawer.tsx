@@ -36,6 +36,7 @@ interface CreateCrawlTaskDrawerProps {
   form: FormInstance<CreateCrawlTaskFormValues>;
   open: boolean;
   loading: boolean;
+  canWriteItems: boolean;
   onClose: () => void;
   onSubmit: (values: CreateCrawlTaskFormValues) => void | Promise<void>;
 }
@@ -71,6 +72,7 @@ export function CreateCrawlTaskDrawer({
   form,
   open,
   loading,
+  canWriteItems,
   onClose,
   onSubmit,
 }: CreateCrawlTaskDrawerProps) {
@@ -111,6 +113,7 @@ export function CreateCrawlTaskDrawer({
     switch (templateKey) {
       case "general":
         form.setFieldsValue({
+          ingestToItems: false,
           onlyMainContent: true,
           scanFullPage: false,
           extractLinks: false,
@@ -118,6 +121,7 @@ export function CreateCrawlTaskDrawer({
         break;
       case "news":
         form.setFieldsValue({
+          ingestToItems: canWriteItems ? true : false,
           onlyMainContent: true,
           extractLinks: false,
           scanFullPage: true,
@@ -144,6 +148,7 @@ export function CreateCrawlTaskDrawer({
         break;
       case "forum":
         form.setFieldsValue({
+          ingestToItems: false,
           onlyMainContent: false,
           scanFullPage: true,
           extractLinks: false,
@@ -152,6 +157,7 @@ export function CreateCrawlTaskDrawer({
         break;
       case "social":
         form.setFieldsValue({
+          ingestToItems: false,
           enableStealthMode: true,
           enableUndetectedBrowser: true,
           scanFullPage: true,
@@ -244,6 +250,7 @@ export function CreateCrawlTaskDrawer({
             scanFullPage={scanFullPage}
             markdownFilterType={markdownFilterType}
             linkPreviewDisabled={linkPreviewDisabled}
+            canWriteItems={canWriteItems}
           />
           <BrowserConfigForm
             userAgentModeValue={userAgentModeValue}
@@ -281,18 +288,33 @@ interface CrawlSettingsFormProps {
   scanFullPage?: boolean;
   markdownFilterType?: string;
   linkPreviewDisabled: boolean;
+  canWriteItems: boolean;
 }
 
 function CrawlSettingsForm({
   scanFullPage,
   markdownFilterType,
   linkPreviewDisabled,
+  canWriteItems,
 }: CrawlSettingsFormProps) {
   const { t } = useTranslation();
+  const ingestHint = canWriteItems
+    ? t("crawl.settings.ingestToItemsHint", {
+        defaultValue: "New crawl results will be converted into Items and queued for LLM processing."
+      })
+    : t("crawl.settings.ingestToItemsNoPermission", { defaultValue: "Requires items.write permission." });
   return (
     <>
       {/* Moved displayName and url to Step 1 */}
       
+      <Form.Item
+        label={t("crawl.settings.ingestToItems", { defaultValue: "Auto send to Items" })}
+        name="ingestToItems"
+        valuePropName="checked"
+        extra={ingestHint}
+      >
+        <Switch disabled={!canWriteItems} />
+      </Form.Item>
       <Form.Item label={t("crawl.settings.keywords")} name="keywords">
         <Select mode="tags" placeholder={t("crawl.settings.placeholders.keywords")} />
       </Form.Item>

@@ -1,7 +1,7 @@
 import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
 import type { MongoConnection } from "@modular/mongo";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { Types, type PipelineStage } from "mongoose";
 import { createHash } from "node:crypto";
 
@@ -150,63 +150,102 @@ export class ItemsService {
   }
 
   async create(orgId: string, userId: string, dto: CreateItemDto) {
+    const externalId = dto.externalId;
     const existing = await this.prisma.itemMeta.findFirst({
-      where: { orgId, externalId: dto.externalId }
+      where: { orgId, externalId }
     });
     if (existing) {
+      const mongoRef = existing.mongoRef?.trim();
+      if (mongoRef) {
+        return { ...existing, rawItemId: mongoRef };
+      }
+
+      const payload = this.parsePayload(dto.payload);
+      const rawItem = await RawItemModel.create({ itemMetaId: existing.id, payload, source: "api" });
+      const updated = await this.prisma.itemMeta.updateMany({
+        where: { id: existing.id, mongoRef: "" },
+        data: { mongoRef: rawItem.id }
+      });
+      const rawItemId = updated.count > 0 ? rawItem.id : null;
+      if (!rawItemId) {
+        await RawItemModel.deleteOne({ _id: rawItem.id }).catch(() => undefined);
+      } else {
+        try {
+          await this.queueService.enqueueItem(orgId, existing.id, rawItemId);
+        } catch (error) {
+          if (!(error instanceof Error && error.message.includes("already exists"))) {
+            throw error;
+          }
+        }
+      }
       return {
         ...existing,
-        rawItemId: existing.mongoRef
+        mongoRef: rawItemId ?? existing.mongoRef,
+        rawItemId: rawItemId ?? existing.mongoRef
       };
     }
 
     const payload = this.parsePayload(dto.payload);
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const itemMeta = await tx.itemMeta.create({
+          data: {
+            orgId,
+            externalId,
+            name: dto.name,
+            status: dto.status ?? ItemStatus.Pending,
+            mongoRef: ""
+          }
+        });
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const itemMeta = await tx.itemMeta.create({
-        data: {
-          orgId,
-          externalId: dto.externalId,
-          name: dto.name,
-          status: dto.status ?? ItemStatus.Pending,
-          mongoRef: ""
+        const rawItem = await RawItemModel.create({
+          itemMetaId: itemMeta.id,
+          payload,
+          source: "api"
+        });
+
+        await tx.itemMeta.update({
+          where: { id: itemMeta.id },
+          data: { mongoRef: rawItem.id }
+        });
+
+        return { itemMeta, rawItem };
+      });
+
+      void writeAuditLogBestEffort(
+        this.prisma,
+        {
+          data: {
+            orgId,
+            actorId: userId,
+            resource: "item",
+            action: "create",
+            metadata: toPrismaJsonValue({ ...dto, payload })
+          }
+        },
+        { orgId, actorId: userId, resource: "item", action: "create" }
+      ).catch(() => undefined);
+
+      await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
+
+      return {
+        ...created.itemMeta,
+        rawItemId: created.rawItem.id
+      };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const raced = await this.prisma.itemMeta.findFirst({
+          where: { orgId, externalId }
+        });
+        if (raced) {
+          return {
+            ...raced,
+            rawItemId: raced.mongoRef
+          };
         }
-      });
-
-      const rawItem = await RawItemModel.create({
-        itemMetaId: itemMeta.id,
-        payload,
-        source: "api"
-      });
-
-      await tx.itemMeta.update({
-        where: { id: itemMeta.id },
-        data: { mongoRef: rawItem.id }
-      });
-
-      return { itemMeta, rawItem };
-    });
-
-	    void writeAuditLogBestEffort(
-	      this.prisma,
-	      {
-	        data: {
-	          orgId,
-	          actorId: userId,
-	          resource: "item",
-	          action: "create",
-	          metadata: toPrismaJsonValue({ ...dto, payload })
-	        }
-	      },
-	      { orgId, actorId: userId, resource: "item", action: "create" }
-	    ).catch(() => undefined);
-
-    await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
-
-    return {
-      ...created.itemMeta,
-      rawItemId: created.rawItem.id
-    };
+      }
+      throw error;
+    }
   }
 
   async createFromCrawlResult(orgId: string, userId: string, crawlResultId: string) {
@@ -231,7 +270,8 @@ export class ItemsService {
           select: {
             id: true,
             displayName: true,
-            targetUrl: true
+            targetUrl: true,
+            keywords: true
           }
         }
       }
@@ -247,7 +287,10 @@ export class ItemsService {
     });
 
     if (existing) {
-      return existing;
+      const mongoRef = existing.mongoRef?.trim();
+      if (mongoRef) {
+        return existing;
+      }
     }
 
     const sourceName = crawlResult.task.displayName ?? undefined;
@@ -256,15 +299,18 @@ export class ItemsService {
         ? (crawlResult.metadata as Record<string, unknown>)
         : {};
 
+    const crawlKeywords = this.toStringArray(crawlResult.task.keywords);
     const payload: Record<string, unknown> = {
       url: crawlResult.sourceUrl,
       ...(sourceName ? { sourceName } : {}),
-      keywords: [],
+      keywords: crawlKeywords,
       tags: [],
       summaryHints: [],
       metadata: {
         ...metadata,
         crawlTaskId: crawlResult.taskId,
+        ...(crawlResult.task.displayName ? { crawlTaskDisplayName: crawlResult.task.displayName } : {}),
+        ...(crawlResult.task.targetUrl ? { crawlTaskTargetUrl: crawlResult.task.targetUrl } : {}),
         crawlResultId: crawlResult.id,
         crawlFetchedAt: crawlResult.fetchedAt.toISOString(),
         crawlContentHash: crawlResult.contentHash
@@ -272,56 +318,92 @@ export class ItemsService {
       forceRefresh: false
     };
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const baseName = crawlResult.task.displayName
-        ? `${crawlResult.task.displayName}: ${crawlResult.sourceUrl}`
-        : crawlResult.sourceUrl;
-
-      const itemMeta = await tx.itemMeta.create({
-        data: {
-          orgId,
-          externalId,
-          name: this.toItemMetaName(baseName),
-          status: ItemStatus.Pending,
-          mongoRef: ""
-        }
-      });
-
+    if (existing) {
       const rawItem = await RawItemModel.create({
-        itemMetaId: itemMeta.id,
+        itemMetaId: existing.id,
         payload: this.parsePayload(payload),
         source: "crawl-task"
       });
-
-      await tx.itemMeta.update({
-        where: { id: itemMeta.id },
+      const updated = await this.prisma.itemMeta.updateMany({
+        where: { id: existing.id, mongoRef: "" },
         data: { mongoRef: rawItem.id }
       });
-
-      return { itemMeta, rawItem };
-    });
-
-    void writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId,
-          actorId: userId,
-          resource: "item",
-          action: "createFromCrawlResult",
-          metadata: {
-            crawlTaskId: crawlResult.taskId,
-            crawlResultId: crawlResult.id,
-            sourceUrl: crawlResult.sourceUrl
-          }
+      if (updated.count === 0) {
+        await RawItemModel.deleteOne({ _id: rawItem.id }).catch(() => undefined);
+        return existing;
+      }
+      try {
+        await this.queueService.enqueueItem(orgId, existing.id, rawItem.id);
+      } catch (error) {
+        if (!(error instanceof Error && error.message.includes("already exists"))) {
+          throw error;
         }
-      },
-      { orgId, actorId: userId, resource: "item", action: "createFromCrawlResult" }
-    ).catch(() => undefined);
+      }
+      return existing;
+    }
 
-    await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const baseName = crawlResult.task.displayName
+          ? `${crawlResult.task.displayName}: ${crawlResult.sourceUrl}`
+          : crawlResult.sourceUrl;
 
-    return created.itemMeta;
+        const itemMeta = await tx.itemMeta.create({
+          data: {
+            orgId,
+            externalId,
+            name: this.toItemMetaName(baseName),
+            status: ItemStatus.Pending,
+            mongoRef: ""
+          }
+        });
+
+        const rawItem = await RawItemModel.create({
+          itemMetaId: itemMeta.id,
+          payload: this.parsePayload(payload),
+          source: "crawl-task"
+        });
+
+        await tx.itemMeta.update({
+          where: { id: itemMeta.id },
+          data: { mongoRef: rawItem.id }
+        });
+
+        return { itemMeta, rawItem };
+      });
+
+      void writeAuditLogBestEffort(
+        this.prisma,
+        {
+          data: {
+            orgId,
+            actorId: userId,
+            resource: "item",
+            action: "createFromCrawlResult",
+            metadata: toPrismaJsonValue({
+              crawlTaskId: crawlResult.taskId,
+              crawlResultId: crawlResult.id,
+              sourceUrl: crawlResult.sourceUrl
+            })
+          }
+        },
+        { orgId, actorId: userId, resource: "item", action: "createFromCrawlResult" }
+      ).catch(() => undefined);
+
+      await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
+
+      return created.itemMeta;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const raced = await this.prisma.itemMeta.findFirst({
+          where: { orgId, externalId }
+        });
+        if (raced) {
+          return raced;
+        }
+      }
+      throw error;
+    }
   }
 
   async list(
@@ -1695,6 +1777,24 @@ export class ItemsService {
         { externalId: { startsWith: term } }
       ]
     };
+  }
+
+  private toStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry.trim();
+        }
+        if (typeof entry === "number") {
+          return entry.toString();
+        }
+        return null;
+      })
+      .filter((entry): entry is string => Boolean(entry && entry.trim()))
+      .map((entry) => entry.trim());
   }
 
   private parsePayload(payload: Record<string, unknown>): NormalizedNewsPayload {

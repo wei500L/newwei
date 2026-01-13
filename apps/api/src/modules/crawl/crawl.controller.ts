@@ -45,7 +45,13 @@ export class CrawlController {
     @Body() body: CreateCrawlTaskDto,
     @Req() req: Request
   ) {
-    return this.crawlTaskService.createTask(user.orgId, user.id, body, resolveRequestIp(req));
+    return this.crawlTaskService.createTask(
+      user.orgId,
+      user.id,
+      body,
+      resolveRequestIp(req),
+      user.permissions
+    );
   }
 
   @Permissions("crawl.write")
@@ -58,7 +64,13 @@ export class CrawlController {
   @Permissions("crawl.write")
   @Post(":id/retry")
   async retry(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
-    return this.crawlTaskService.retryTask(user.orgId, user.id, id, resolveRequestIp(req));
+    return this.crawlTaskService.retryTask(
+      user.orgId,
+      user.id,
+      id,
+      resolveRequestIp(req),
+      user.permissions
+    );
   }
 
   @Permissions("crawl.read")

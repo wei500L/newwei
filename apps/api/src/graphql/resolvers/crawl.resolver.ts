@@ -1,4 +1,4 @@
-import { BadRequestException, UseGuards } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, UseGuards } from "@nestjs/common";
 import {
   Args,
   Context,
@@ -76,12 +76,12 @@ export class CrawlResolver {
     if (args.status) {
       where.status = args.status;
     }
-	    if (args.search) {
-	      where.OR = [
-	        { displayName: { contains: args.search } },
-	        { targetUrl: { contains: args.search } }
-	      ];
-	    }
+    if (args.search) {
+      where.OR = [
+        { displayName: { contains: args.search } },
+        { targetUrl: { contains: args.search } }
+      ];
+    }
 
     const tasks = await this.prisma.crawlTask.findMany({
       where,
@@ -108,15 +108,15 @@ export class CrawlResolver {
       };
     });
 
-	    return {
-	      edges,
-	      pageInfo: {
-	        hasNextPage,
-	        endCursor: edges.at(-1)?.cursor ?? null
-	      },
-	      totalCount
-	    };
-	  }
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.at(-1)?.cursor ?? null
+      },
+      totalCount
+    };
+  }
 
   @HasPermission("crawl.read")
   @Query(() => CrawlTaskModel, { nullable: true })
@@ -143,10 +143,14 @@ export class CrawlResolver {
     if (!requester) {
       throw new BadRequestException("Unauthenticated");
     }
+    if (input.ingestToItems && !requester.permissions.includes("items.write")) {
+      throw new ForbiddenException("items.write permission is required to ingest crawl results into Items");
+    }
 
     const dto: CreateCrawlTaskDto = {
       url: input.url,
       displayName: input.displayName,
+      ingestToItems: input.ingestToItems ?? undefined,
       timeRangeFrom: input.timeRange?.from,
       timeRangeTo: input.timeRange?.to,
       concurrency: input.concurrency ?? undefined,
@@ -158,7 +162,8 @@ export class CrawlResolver {
       requester.orgId,
       requester.id,
       dto,
-      resolveRequestIp(req)
+      resolveRequestIp(req),
+      requester.permissions
     );
     return this.toGraphTask(created);
   }
@@ -175,7 +180,8 @@ export class CrawlResolver {
       requester.orgId,
       requester.id,
       id,
-      resolveRequestIp(req)
+      resolveRequestIp(req),
+      requester.permissions
     );
     return this.toGraphTask(task);
   }

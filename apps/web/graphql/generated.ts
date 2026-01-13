@@ -569,6 +569,7 @@ export type CrawlUserAgentGeneratorInput = {
 export type CreateCrawlTaskInput = {
   concurrency?: InputMaybe<Scalars['Int']['input']>;
   displayName?: InputMaybe<Scalars['String']['input']>;
+  ingestToItems?: InputMaybe<Scalars['Boolean']['input']>;
   keywords?: InputMaybe<Array<Scalars['String']['input']>>;
   options?: InputMaybe<CrawlOptionsInput>;
   timeRange?: InputMaybe<CrawlTimeRangeInput>;

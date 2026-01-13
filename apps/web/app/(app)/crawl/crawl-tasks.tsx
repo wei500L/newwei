@@ -56,6 +56,7 @@ export function CrawlTasksView() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
+  const canWriteItems = permissions.includes("items.write");
   const screens = Grid.useBreakpoint();
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -246,6 +247,7 @@ export function CrawlTasksView() {
           input: {
             url: values.url,
             displayName: values.displayName || null,
+            ingestToItems: values.ingestToItems ?? null,
             keywords: values.keywords?.length ? values.keywords : null,
             concurrency: values.concurrency ?? null,
             timeRange:
@@ -453,6 +455,7 @@ export function CrawlTasksView() {
             form={form}
             open={drawerOpen}
             loading={creating}
+            canWriteItems={canWriteItems}
             onClose={() => setDrawerOpen(false)}
             onSubmit={handleCreate}
           />

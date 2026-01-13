@@ -8,6 +8,8 @@ export interface CrawlJobData {
 export interface CrawlExecutionSummary {
   inserted: number;
   skipped: number;
+  itemsQueued?: number;
+  itemsQueueFailed?: number;
   lastFetchedAt?: Date;
   runId?: string;
   memory?: CrawlMemoryStats;

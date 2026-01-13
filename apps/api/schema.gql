@@ -538,6 +538,7 @@ input CrawlUserAgentGeneratorInput {
 input CreateCrawlTaskInput {
   concurrency: Int
   displayName: String
+  ingestToItems: Boolean
   keywords: [String!]
   options: CrawlOptionsInput
   timeRange: CrawlTimeRangeInput
