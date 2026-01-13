@@ -5,7 +5,6 @@ import type { CrawlTask, Prisma } from "@prisma/client";
 import { NotificationType } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
-
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";

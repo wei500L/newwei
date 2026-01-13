@@ -3,7 +3,6 @@ import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
-
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 import { EnvService } from "../config/config.service";

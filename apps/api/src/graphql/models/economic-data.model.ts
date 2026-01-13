@@ -1,6 +1,6 @@
 import { Field, Float, GraphQLISODateTime, ObjectType, registerEnumType } from "@nestjs/graphql";
-import GraphQLJSONScalar from "graphql-type-json";
 import { EconomicDataFrequency, EconomicDataRunStatus, EconomicDataValueType } from "@prisma/client";
+import GraphQLJSONScalar from "graphql-type-json";
 
 export enum TimeGranularity {
   year = "year",

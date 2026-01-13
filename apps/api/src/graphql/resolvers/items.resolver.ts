@@ -12,9 +12,9 @@ import {
 import type DataLoader from "dataloader";
 import { Loader } from "nestjs-dataloader";
 
+import { PermissionsAll } from "../../common/decorators/permissions.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { PermissionsAll } from "../../common/decorators/permissions.decorator";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { ItemsService } from "../../modules/items/items.service";
 import { HasPermission } from "../decorators/has-permission.decorator";

@@ -1,5 +1,5 @@
-import { createLogger } from "@modular/utils";
 import type { ApolloServerPlugin } from "@apollo/server";
+import { createLogger } from "@modular/utils";
 import { ApolloDriver, ApolloDriverConfig } from "@nestjs/apollo";
 import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
@@ -71,11 +71,11 @@ const logger = createLogger({ name: "graphql" });
 const BASE_FIELD_COMPLEXITY = 1;
 const COMPOSITE_FIELD_COMPLEXITY = 2;
 
-type GraphqlContextFactoryArgs = {
+interface GraphqlContextFactoryArgs {
   req?: any;
   res?: any;
   extra?: any;
-};
+}
 
 const paginationComplexityEstimator: ComplexityEstimator = ({ args, childComplexity }) => {
   const pageSize =

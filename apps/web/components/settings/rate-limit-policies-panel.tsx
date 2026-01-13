@@ -139,7 +139,7 @@ export function RateLimitPoliciesPanel() {
     setSaving(true);
     try {
       const { feature, ...payload } = values;
-      await apiClient.put(`system-settings/rate-limit-policies/${editingPolicy.feature}`, payload);
+      await apiClient.put(`system-settings/rate-limit-policies/${feature}`, payload);
       await loadPolicies();
       setEditingPolicy(null);
       editForm.resetFields();

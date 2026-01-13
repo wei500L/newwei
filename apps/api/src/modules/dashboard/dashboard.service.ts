@@ -4,7 +4,6 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { DashboardWidgetType, Prisma } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
-
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
 import { QueueService } from "../queue/queue.service";

@@ -4,11 +4,11 @@ import { Tabs } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
-const financeRoutes: Array<{
+const financeRoutes: {
   key: string;
   labelKey: string;
   defaultLabel: string;
-}> = [
+}[] = [
   { key: "/finance", labelKey: "finance.nav.market", defaultLabel: "Market" },
   { key: "/finance/macro", labelKey: "finance.nav.macro", defaultLabel: "Macro" },
   { key: "/finance/livelihood", labelKey: "finance.nav.livelihood", defaultLabel: "Livelihood" }

@@ -1,9 +1,9 @@
-import "./globals.css";
-import type { ReactNode } from "react";
 import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Serif } from "next/font/google";
+import type { ReactNode } from "react";
 
 import { auth } from "@/lib/auth";
 
+import "./globals.css";
 import { AppProviders } from "./providers";
 import { SessionProviders } from "./session-provider";
 

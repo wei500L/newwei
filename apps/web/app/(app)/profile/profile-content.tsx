@@ -9,8 +9,8 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AvatarFallback } from "@/components/avatar-fallback";
-import type { AuthenticatedUser } from "@/lib/auth";
 import { createApiClient } from "@/lib/api-client";
+import type { AuthenticatedUser } from "@/lib/auth";
 import { captureClientError } from "@/lib/client-telemetry";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;

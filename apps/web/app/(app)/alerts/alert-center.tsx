@@ -3,23 +3,22 @@
 import { gql, useApolloClient, useMutation } from "@apollo/client";
 import { Alert, Badge, Button, Card, Col, Input, List, Modal, Row, Space, Spin, Tag, Typography } from "antd";
 import type { EChartsOption } from "echarts";
-import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DashboardChart } from "@/components/echart";
 import {
   AlertEventsStreamDocument,
   useAlertEventReplayLazyQuery,
   useAlertEventsQuery,
   useAlertRuleTuningSuggestionQuery,
 } from "@/graphql/generated";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { ChartEmptyState } from "@/components/chart-empty-state";
-import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -50,17 +49,17 @@ const UPDATE_ALERT_EVENT_STATUS = gql`
   }
 `;
 
-type UpdateAlertEventStatusData = {
+interface UpdateAlertEventStatusData {
   updateAlertEventStatus: { id: string; status: string };
-};
+}
 
-type UpdateAlertEventStatusVariables = {
+interface UpdateAlertEventStatusVariables {
   input: {
     eventId: string;
     status: string;
     note?: string | null;
   };
-};
+}
 
 const buildThresholdSummary = (
   operator: string | null | undefined,

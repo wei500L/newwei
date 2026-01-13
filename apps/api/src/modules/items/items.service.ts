@@ -12,11 +12,11 @@ import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
+import { LiteLlmService } from "../news-pipeline/litellm.service";
 import {
   NormalizedNewsPayload,
   NormalizedNewsPayloadSchema
 } from "../news-pipeline/news-pipeline.schema";
-import { LiteLlmService } from "../news-pipeline/litellm.service";
 import { QueueService } from "../queue/queue.service";
 
 import { CreateItemDto } from "./dto/create-item.dto";
@@ -97,7 +97,7 @@ interface CachedTopicGroup {
   topic: string;
   count: number;
   latestAt: string;
-  items: Array<Omit<TopicGroupItem, "createdAt"> & { createdAt: string }>;
+  items: (Omit<TopicGroupItem, "createdAt"> & { createdAt: string })[];
 }
 
 interface EventGroupItem {
@@ -133,7 +133,7 @@ interface CachedEventGroup {
   publishedAt?: string | null;
   topics: string[];
   entities: string[];
-  items: Array<Omit<EventGroupItem, "createdAt"> & { createdAt: string }>;
+  items: (Omit<EventGroupItem, "createdAt"> & { createdAt: string })[];
 }
 
 @Injectable()
@@ -533,8 +533,8 @@ export class ItemsService {
         | {
             location?: string | null;
             region?: string | null;
-            topics?: Array<{ name?: string | null } | string> | null;
-            entities?: Array<{ name?: string | null } | string> | null;
+            topics?: ({ name?: string | null } | string)[] | null;
+            entities?: ({ name?: string | null } | string)[] | null;
             sentiment?: string | null;
             sentiment_label?: string | null;
           }
@@ -835,7 +835,7 @@ export class ItemsService {
       _id: string;
       count: number;
       latestAt: Date;
-      items: Array<{
+      items: {
         processedId: { toString: () => string };
         itemMetaId: string;
         title?: string | null;
@@ -843,7 +843,7 @@ export class ItemsService {
         source?: string | null;
         publishedAt?: string | null;
         createdAt: Date;
-      }>;
+      }[];
     }>(pipeline);
 
     const mapped = groups.map((group) => ({
@@ -1095,8 +1095,8 @@ export class ItemsService {
       source?: string | null;
       publishedAt?: string | null;
       topics?: string[] | null;
-      entities?: Array<{ name?: string | null } | null> | null;
-      items: Array<{
+      entities?: ({ name?: string | null } | null)[] | null;
+      items: {
         processedId: { toString: () => string };
         itemMetaId: string;
         title?: string | null;
@@ -1104,7 +1104,7 @@ export class ItemsService {
         source?: string | null;
         publishedAt?: string | null;
         createdAt: Date;
-      }>;
+      }[];
     }>(pipeline);
 
     const mapped = groups.map((group) => {
@@ -1420,7 +1420,7 @@ export class ItemsService {
         .limit(VECTOR_SEARCH_MAX_CANDIDATES)
         .lean();
 
-      const scored: Array<{ itemMetaId: string; score: number }> = [];
+      const scored: { itemMetaId: string; score: number }[] = [];
       for (const candidate of candidates) {
         const itemMetaId = (candidate as { itemMetaId?: unknown }).itemMetaId;
         if (typeof itemMetaId !== "string" || itemMetaId.length === 0) {

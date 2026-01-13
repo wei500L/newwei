@@ -1,8 +1,8 @@
 import "server-only";
 
-import { createTraceHeaders } from "./trace";
 import { serverEnv } from "./env.server";
 import { logServerError } from "./server-logger";
+import { createTraceHeaders } from "./trace";
 
 interface GraphqlError {
   message?: string;

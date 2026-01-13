@@ -5,8 +5,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { MarketOverview } from "./market-overview";
 import KeyMonitorPage from "@/app/(app)/dashboard/key-monitor/page";
+
+import { MarketOverview } from "./market-overview";
 
 const DEFAULT_TAB = "overview";
 

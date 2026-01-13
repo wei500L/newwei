@@ -1,3 +1,4 @@
+import { NewsSourceType } from "@prisma/client";
 import { Type } from "class-transformer";
 import {
   IsBoolean,
@@ -12,7 +13,6 @@ import {
   MaxLength,
   Min
 } from "class-validator";
-import { NewsSourceType } from "@prisma/client";
 
 export class ListNewsSourceDto {
   @IsOptional()

@@ -38,6 +38,8 @@ export class GqlAuthGuard extends AuthGuard("jwt") {
     _context: ExecutionContext,
     _status?: any
   ): TUser {
+    void _context;
+    void _status;
     if (err) {
       if (err instanceof HttpException) {
         throw err;

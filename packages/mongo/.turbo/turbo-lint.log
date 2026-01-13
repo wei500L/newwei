@@ -1,4 +1,4 @@
 
-> @modular/mongo@0.1.0 lint D:\wei\packages\mongo
+> @modular/mongo@0.1.0 lint /mnt/d/wei/packages/mongo
 > eslint src --ext .ts
 

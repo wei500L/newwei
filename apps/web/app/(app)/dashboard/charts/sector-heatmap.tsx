@@ -8,11 +8,11 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { DashboardChart } from "@/components/echart";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DashboardChart } from "@/components/echart";
+import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import dayjs from "@/lib/dayjs";
-import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
 
@@ -49,7 +49,7 @@ const yieldToMain = () =>
     setTimeout(resolve, 0);
   });
 
-const buildCsv = async (rows: Array<Array<string | number | null | undefined>>) => {
+const buildCsv = async (rows: (string | number | null | undefined)[][]) => {
   const lines: string[] = [];
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
@@ -270,7 +270,7 @@ export function SectorHeatmap() {
       toast.success(
         t("dashboard.charts.downloadSuccess", { defaultValue: "Download completed" })
       );
-    } catch (error) {
+    } catch {
       toast.error(
         t("dashboard.charts.downloadFailed", { defaultValue: "Download failed" })
       );

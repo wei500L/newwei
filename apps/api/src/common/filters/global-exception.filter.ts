@@ -11,8 +11,8 @@ import { Prisma } from "@prisma/client";
 import type { Request, Response } from "express";
 import { GraphQLError } from "graphql";
 
-import { ExceptionEventsService } from "../../modules/observability/exception-events.service";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { ExceptionEventsService } from "../../modules/observability/exception-events.service";
 
 interface NormalizedHttpResponse {
   statusCode: number;

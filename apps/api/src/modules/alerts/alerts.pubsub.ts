@@ -1,5 +1,5 @@
+import type { AlertEventStatus, AlertMetricProvider, AlertSeverity } from "@prisma/client";
 import { PubSub } from "graphql-subscriptions";
-import { AlertEventStatus, AlertMetricProvider, AlertSeverity } from "@prisma/client";
 
 export const ALERTS_PUBSUB = Symbol("ALERTS_PUBSUB");
 

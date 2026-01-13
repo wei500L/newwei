@@ -1,4 +1,4 @@
 
-> @modular/utils@0.1.0 lint D:\wei\packages\utils
+> @modular/utils@0.1.0 lint /mnt/d/wei/packages/utils
 > eslint src --ext .ts
 

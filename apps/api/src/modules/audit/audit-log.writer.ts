@@ -2,7 +2,6 @@ import { createLogger } from "@modular/utils";
 import { AuditLogOutboxStatus, type Prisma } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
-
 import type { PrismaService } from "../config/prisma.service";
 
 const logger = createLogger({ name: "audit-log" });

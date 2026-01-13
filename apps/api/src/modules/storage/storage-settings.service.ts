@@ -1,6 +1,6 @@
+import { createLogger } from "@modular/utils";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import { createLogger } from "@modular/utils";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";

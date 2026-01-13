@@ -22,11 +22,11 @@ import { EventEmitter } from "node:events";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 
+import { ItemStatus } from "../../common/pipeline-status";
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { Crawl4aiClient } from "../crawl/crawl4ai.client";
-import { ItemStatus } from "../../common/pipeline-status";
-import { toPrismaJsonValue } from "../../common/prisma-json";
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
@@ -135,7 +135,7 @@ const ProcessedItemOutboxPayloadSchema: z.ZodType<
   }),
 });
 
-type CrawledArticle = {
+interface CrawledArticle {
   sourceUrl: string;
   markdown: string;
   markdownWithCitations?: string;
@@ -145,7 +145,7 @@ type CrawledArticle = {
   runId: string | null;
   fetchedAt: string;
   contentHash: string;
-};
+}
 
 type PersistedProcessedItem =
   | ProcessedItemDocument

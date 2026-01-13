@@ -6,8 +6,9 @@ jest.mock("@modular/utils", () => {
   };
 });
 
-import { CrawlMetadataService } from "../crawl-metadata.service";
 import { gzipSync } from "node:zlib";
+
+import { CrawlMetadataService } from "../crawl-metadata.service";
 
 describe("CrawlMetadataService pattern matching", () => {
   const normalizePattern = (service: CrawlMetadataService, pattern?: string) =>

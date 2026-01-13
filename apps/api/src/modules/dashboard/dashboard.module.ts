@@ -5,9 +5,9 @@ import { GeoModule } from "../geo/geo.module";
 import { ItemsModule } from "../items/items.module";
 import { QueueModule } from "../queue/queue.module";
 
-import { DashboardController } from "./dashboard.controller";
 import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardDemoMetricsService } from "./dashboard-demo-metrics.service";
+import { DashboardController } from "./dashboard.controller";
 import { DashboardService } from "./dashboard.service";
 
 @Module({

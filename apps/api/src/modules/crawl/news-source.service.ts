@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { NewsSourceType, PipelineJobStatus, Prisma } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
-
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 

@@ -1,22 +1,22 @@
 "use client";
 
-import { SearchOutlined, LoadingOutlined, FileTextOutlined } from "@ant-design/icons";
+import { FileTextOutlined, LoadingOutlined, SearchOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
-import { useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface SearchItemsQueryData {
   items: {
-    edges: Array<{
+    edges: {
       node: {
         id: string;
         title: string;
         status: string;
         meta?: { externalId?: string | null } | null;
       };
-    }>;
+    }[];
   };
 }
 

@@ -5,8 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import EconomicMediumPage from "@/app/(app)/dashboard/economic-medium/page";
 import EconomicLongPage from "@/app/(app)/dashboard/economic-long/page";
+import EconomicMediumPage from "@/app/(app)/dashboard/economic-medium/page";
 
 const DEFAULT_TAB = "overview";
 

@@ -1,5 +1,72 @@
 
-> @modular/web@0.1.0 lint D:\wei\apps\web
+> @modular/web@0.1.0 lint /mnt/d/wei/apps/web
 > next lint
 
-✔ No ESLint warnings or errors
+
+./app/(app)/admin/dashboards/dashboards-content.tsx
+28:9  Warning: The 'dashboards' logical expression could make the dependencies of useEffect Hook (at line 35) change on every render. To fix this, wrap the initialization of 'dashboards' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+28:9  Warning: The 'dashboards' logical expression could make the dependencies of useMemo Hook (at line 39) change on every render. To fix this, wrap the initialization of 'dashboards' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+./app/(app)/alerts/alert-center.tsx
+220:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 227) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+220:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 253) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+281:9  Warning: The 'replayPoints' logical expression could make the dependencies of useMemo Hook (at line 350) change on every render. To fix this, wrap the initialization of 'replayPoints' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+302:25  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+343:22  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+566:19  Warning: The attribute aria-selected is not supported by the role button.  jsx-a11y/role-supports-aria-props
+
+./app/(app)/components/avatar-fallback.tsx
+66:11  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./app/(app)/components/ticker-tape.tsx
+24:31  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+31:47  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/charts/financial-candlestick.tsx
+236:6  Warning: React Hook useMemo has unnecessary dependencies: 'locale' and 't'. Either exclude them or remove the dependency array.  react-hooks/exhaustive-deps
+
+./app/(app)/dashboard/charts/sector-heatmap.tsx
+162:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+217:33  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+340:31  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/charts/war-map.tsx
+296:67  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+402:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/components/economic-chart-card.tsx
+212:27  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+219:33  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/drilldown-chart.tsx
+57:9  Warning: The 'points' logical expression could make the dependencies of useMemo Hook (at line 115) change on every render. To fix this, wrap the initialization of 'points' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+./app/(app)/dashboard/metric-drilldown.tsx
+79:60  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/items/components/faceted-search.tsx
+32:36  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+36:46  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+40:45  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+44:49  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+126:43  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/subscriptions/page.tsx
+255:9  Warning: The 'rules' logical expression could make the dependencies of useMemo Hook (at line 300) change on every render. To fix this, wrap the initialization of 'rules' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+256:9  Warning: The 'channels' logical expression could make the dependencies of useMemo Hook (at line 298) change on every render. To fix this, wrap the initialization of 'channels' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+257:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 264) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+258:9  Warning: The 'notifications' logical expression could make the dependencies of useMemo Hook (at line 267) change on every render. To fix this, wrap the initialization of 'notifications' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+258:9  Warning: The 'notifications' logical expression could make the dependencies of useMemo Hook (at line 294) change on every render. To fix this, wrap the initialization of 'notifications' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+429:46  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+510:56  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/topics/topics-content.tsx
+188:9  Warning: The 'groups' logical expression could make the dependencies of useMemo Hook (at line 207) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'groups' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+189:9  Warning: The 'eventGroups' logical expression could make the dependencies of useMemo Hook (at line 198) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'eventGroups' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+./lib/dayjs.ts
+7:1  Warning: Caution: `dayjs` also has a named export `extend`. Check if you meant to write `import {extend} from 'dayjs'` instead.  import/no-named-as-default-member
+8:1  Warning: Caution: `dayjs` also has a named export `extend`. Check if you meant to write `import {extend} from 'dayjs'` instead.  import/no-named-as-default-member
+9:1  Warning: Caution: `dayjs` also has a named export `extend`. Check if you meant to write `import {extend} from 'dayjs'` instead.  import/no-named-as-default-member
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules

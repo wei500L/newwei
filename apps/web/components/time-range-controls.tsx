@@ -5,10 +5,7 @@ import type { SegmentedValue } from "antd/es/segmented";
 import type { Dayjs } from "dayjs";
 
 import dayjs from "@/lib/dayjs";
-
-import type { DashboardRangePreset } from "@/store/time-range";
-import { useDashboardRangeStore } from "@/store/time-range";
-
+import { useDashboardRangeStore, type DashboardRangePreset } from "@/store/time-range";
 
 const presets: { label: string; value: DashboardRangePreset }[] = [
   { label: "1D", value: "1D" },

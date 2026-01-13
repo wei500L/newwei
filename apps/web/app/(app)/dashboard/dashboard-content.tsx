@@ -1,6 +1,7 @@
 "use client";
 
 import { ReloadOutlined } from "@ant-design/icons";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
@@ -12,33 +13,25 @@ import {
   Statistic,
   Switch,
   Tag,
-  Typography,
   message,
 } from "antd";
-import dayjs from "@/lib/dayjs";
-import { useSession } from "next-auth/react";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import dynamic from "next/dynamic";
 
 import { useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
-import {
-  useDashboardRangeStore,
-} from "@/store/time-range";
-import {
-  QUEUE_STATUS_KEYS,
-  type QueueStatusKey,
-  useDashboardFiltersStore
-} from "@/store/dashboard-filters";
+import dayjs from "@/lib/dayjs";
+import { type QueueStatusKey, useDashboardFiltersStore } from "@/store/dashboard-filters";
+import { useDashboardRangeStore } from "@/store/time-range";
 
 import { LiveAlertsToasts } from "./live-alerts";
-import { useQueueEvents } from "./use-queue-events";
 import { useDashboardStream, type DashboardStreamStatus } from "./use-dashboard-stream";
+import { useQueueEvents } from "./use-queue-events";
 
 const AlertPanel = dynamic(() => import("./alert-panel").then((mod) => mod.AlertPanel), {
   loading: () => <Skeleton active paragraph={{ rows: 4 }} />
@@ -94,42 +87,6 @@ const QueueChart = dynamic(
   { loading: () => <Skeleton active paragraph={{ rows: 4 }} /> }
 );
 
-interface QueueLog {
-  event: string;
-  jobId: string;
-  data?: string | null;
-  timestamp: string;
-}
-
-const LIVE_LOGS_LIMIT = 50;
-const DISPLAY_LOG_LIMIT = 15;
-const QUEUE_STATUS_SET = new Set<QueueStatusKey>(QUEUE_STATUS_KEYS);
-
-const dedupeLogs = (logs: QueueLog[], limit: number): QueueLog[] => {
-  const seen = new Set<string>();
-  const result: QueueLog[] = [];
-  for (const log of logs) {
-    const key = `${log.event}:${log.jobId}:${log.timestamp}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(log);
-    if (result.length >= limit) {
-      break;
-    }
-  }
-  return result;
-};
-
-const extractQueueStatus = (event: string): QueueStatusKey | null => {
-  const normalized = event.trim().toLowerCase();
-  if (!normalized) return null;
-  const parts = normalized.split(":");
-  const candidate = (parts[parts.length - 1] ?? "").trim();
-  return QUEUE_STATUS_SET.has(candidate as QueueStatusKey)
-    ? (candidate as QueueStatusKey)
-    : null;
-};
-
 export function DashboardContent() {
   const { t } = useTranslation();
   const { data: session } = useSession();
@@ -163,7 +120,6 @@ export function DashboardContent() {
     enabled: Boolean(session?.accessToken)
   });
   const queueFilterMounted = useRef(false);
-  const [liveLogs, setLiveLogs] = useState<QueueLog[]>([]);
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
   const [refreshingDemoData, setRefreshingDemoData] = useState(false);
   const [showSystemStats, setShowSystemStats] = useState(false);
@@ -248,23 +204,6 @@ export function DashboardContent() {
 
   useEffect(() => {
     if (!lastEvent) return;
-    const serializedData = lastEvent.data
-      ? JSON.stringify(lastEvent.data)
-      : undefined;
-    setLiveLogs((prev) =>
-      dedupeLogs(
-        [
-          {
-            event: lastEvent.event,
-            jobId: lastEvent.jobId,
-            data: serializedData,
-            timestamp: lastEvent.timestamp,
-          },
-          ...prev,
-        ],
-        LIVE_LOGS_LIMIT,
-      ),
-    );
     void refetch();
     if (lastEvent.event === "FAILED") {
       message.error(t("dashboard.queue.jobFailed", { jobId: lastEvent.jobId }));
@@ -283,40 +222,6 @@ export function DashboardContent() {
     void refetch();
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   }, [queueStatus, queryClient, refetch]);
-
-  const recentLogs = data?.queueStats?.recentLogs;
-  const combinedLogs = useMemo(
-    () =>
-      dedupeLogs(
-        [...(liveLogs ?? []), ...(recentLogs ?? [])],
-        DISPLAY_LOG_LIMIT,
-      ),
-    [liveLogs, recentLogs],
-  );
-  const filteredLogs = useMemo(() => {
-    if (!queueStatus) return combinedLogs;
-    return combinedLogs.filter(
-      (log) => extractQueueStatus(log.event) === queueStatus,
-    );
-  }, [combinedLogs, queueStatus]);
-  const parsedLogs = useMemo(
-    () =>
-      filteredLogs.map((log) => {
-        let parsedPayload: Record<string, unknown> | undefined;
-        if (log.data) {
-          try {
-            parsedPayload = JSON.parse(log.data);
-          } catch {
-            parsedPayload = undefined;
-          }
-        }
-        return {
-          ...log,
-          payload: parsedPayload,
-        };
-      }),
-    [filteredLogs],
-  );
 
   if (loading) {
     return (

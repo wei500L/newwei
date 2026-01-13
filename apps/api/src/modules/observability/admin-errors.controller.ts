@@ -1,9 +1,9 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
-import type { AuthenticatedUser } from "../../modules/auth/auth.service";
-import { Permissions } from "../../common/decorators/permissions.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Permissions } from "../../common/decorators/permissions.decorator";
+import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 
 import { ExceptionEventsService, type ExceptionEventKind } from "./exception-events.service";
 

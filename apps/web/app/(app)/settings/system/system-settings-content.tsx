@@ -6,8 +6,8 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
+import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import {
   useAuditLogRetentionQuery,
   useAuthCacheSettingsQuery,

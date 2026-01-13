@@ -6,8 +6,8 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { TimeGranularity, useEconomicDataQuery } from "@/graphql/generated";
-import dayjs from "@/lib/dayjs";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import dayjs from "@/lib/dayjs";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 const GRANS = [

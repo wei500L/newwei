@@ -6,8 +6,8 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 interface DataPoint {
   timestamp: string;

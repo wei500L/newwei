@@ -1,5 +1,5 @@
 
-> @modular/config@0.1.0 lint D:\wei\packages\config
+> @modular/config@0.1.0 lint /mnt/d/wei/packages/config
 > echo "No lint tasks for config package"
 
-"No lint tasks for config package"
+No lint tasks for config package

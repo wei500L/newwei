@@ -1,4 +1,10 @@
 
-> @modular/db@0.1.0 lint D:\wei\packages\db
+> @modular/db@0.1.0 lint /mnt/d/wei/packages/db
 > eslint src --ext .ts
+
+
+/mnt/d/wei/packages/db/src/seeds.ts
+  79:32  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+
+✖ 1 problem (0 errors, 1 warning)
 

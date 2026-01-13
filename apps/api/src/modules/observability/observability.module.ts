@@ -6,10 +6,10 @@ import { AdminErrorsController } from "./admin-errors.controller";
 import { ExceptionEventsService } from "./exception-events.service";
 import { NewsSourceQualityController } from "./news-source-quality.controller";
 import { NewsSourceQualityService } from "./news-source-quality.service";
-import { PipelineRecoveryController } from "./pipeline-recovery.controller";
-import { PipelineRecoveryService } from "./pipeline-recovery.service";
 import { PipelineQualityController } from "./pipeline-quality.controller";
 import { PipelineQualityService } from "./pipeline-quality.service";
+import { PipelineRecoveryController } from "./pipeline-recovery.controller";
+import { PipelineRecoveryService } from "./pipeline-recovery.service";
 import { TaskLogsController } from "./task-logs.controller";
 
 @Module({

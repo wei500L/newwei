@@ -1,4 +1,41 @@
 
-> @modular/api@0.1.0 lint D:\wei\apps\api
+> @modular/api@0.1.0 lint /mnt/d/wei/apps/api
 > eslint src test --ext .ts
+
+
+/mnt/d/wei/apps/api/src/common/guards/gql-auth.guard.ts
+  34:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  35:10  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  36:11  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  37:11  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  39:15  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/mnt/d/wei/apps/api/src/graphql/graphql.module.ts
+   75:9   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   76:9   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   77:11  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  182:73  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/mnt/d/wei/apps/api/src/modules/auth/auth.service.spec.ts
+  124:28  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  156:28  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  194:28  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  237:28  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  263:28  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  297:28  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  353:24  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  393:24  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  428:24  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  472:29  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+  520:27  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead  import/no-named-as-default-member
+
+/mnt/d/wei/apps/api/src/modules/auth/auth.service.ts
+  211:33  warning  Caution: `bcrypt` also has a named export `compare`. Check if you meant to write `import {compare} from 'bcrypt'` instead  import/no-named-as-default-member
+  262:29  warning  Caution: `bcrypt` also has a named export `hash`. Check if you meant to write `import {hash} from 'bcrypt'` instead        import/no-named-as-default-member
+  399:31  warning  Caution: `bcrypt` also has a named export `compare`. Check if you meant to write `import {compare} from 'bcrypt'` instead  import/no-named-as-default-member
+
+/mnt/d/wei/apps/api/src/modules/email/email.service.ts
+  38:24  warning  Caution: `nodemailer` also has a named export `createTransport`. Check if you meant to write `import {createTransport} from 'nodemailer'` instead  import/no-named-as-default-member
+
+✖ 24 problems (0 errors, 24 warnings)
 

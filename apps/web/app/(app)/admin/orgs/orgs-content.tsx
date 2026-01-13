@@ -6,9 +6,9 @@ import { useSession } from "next-auth/react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { BackendLoginResponse } from "@/lib/auth";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import type { BackendLoginResponse } from "@/lib/auth";
 import { createTraceHeaders } from "@/lib/trace";
 
 interface OrgRow {
@@ -40,7 +40,7 @@ function getGraphqlErrorMessage(error: unknown): string | null {
     return null;
   }
 
-  const graphQLErrors = (error as { graphQLErrors?: Array<{ message?: unknown }> }).graphQLErrors;
+  const graphQLErrors = (error as { graphQLErrors?: { message?: unknown }[] }).graphQLErrors;
   if (Array.isArray(graphQLErrors) && graphQLErrors.length > 0) {
     const firstMessage = graphQLErrors[0]?.message;
     if (typeof firstMessage === "string" && firstMessage.trim()) {

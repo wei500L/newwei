@@ -8,10 +8,9 @@ import {
   InputNumber,
   List,
   Space,
-  Typography,
-  message,
+	Typography,
+	message,
 } from "antd";
-import dayjs from "@/lib/dayjs";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -24,8 +23,9 @@ import {
   useRequestCorrelationMutation,
   useAnalysisEventsSubscription,
   type AnalysisResultsQuery,
-  type AnalysisEventsSubscription,
-} from "@/graphql/generated";
+	  type AnalysisEventsSubscription,
+	} from "@/graphql/generated";
+import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 export function AnalysisPanel() {

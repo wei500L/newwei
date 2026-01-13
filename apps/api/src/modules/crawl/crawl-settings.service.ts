@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
-
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";

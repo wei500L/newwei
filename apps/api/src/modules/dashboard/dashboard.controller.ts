@@ -7,16 +7,16 @@ import {
   Query,
   Sse
 } from "@nestjs/common";
-import { Observable } from "rxjs";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { Observable } from "rxjs";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
+import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardDemoMetricsService } from "./dashboard-demo-metrics.service";
 import { DashboardService } from "./dashboard.service";
-import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
 
 @ApiTags("dashboard")

@@ -1,10 +1,10 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
 import {
   extractCountryCodeFromText,
   getCountryAlpha2,
   getCountryName,
   normalizeCountryCode
 } from "@modular/utils";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { AlertSeverity, ProcessedArticleStatus } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
@@ -651,7 +651,7 @@ export class DashboardChartsService {
   }
 
   private resolveCentroid(geometry: GeoJsonGeometry): { lat: number; lng: number } | null {
-    const positions: Array<[number, number]> = [];
+    const positions: [number, number][] = [];
     const collectPositions = (input: unknown) => {
       if (!input) {
         return;

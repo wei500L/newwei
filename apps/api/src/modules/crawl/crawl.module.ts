@@ -14,13 +14,13 @@ import { CrawlResultService } from "./crawl-result.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
 import { CrawlTaskJanitorService } from "./crawl-task-janitor.service";
 import { CrawlTaskService } from "./crawl-task.service";
+import { CrawlTemplateController } from "./crawl-template.controller";
+import { CrawlTemplateService } from "./crawl-template.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { CrawlController } from "./crawl.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
 import type { CrawlJobData } from "./crawl.types";
 import { Crawl4aiClient } from "./crawl4ai.client";
-import { CrawlTemplateController } from "./crawl-template.controller";
-import { CrawlTemplateService } from "./crawl-template.service";
 import { NewsSourceController } from "./news-source.controller";
 import { NewsSourceService } from "./news-source.service";
 

@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 export default async function CrawlTasksPage({
   searchParams
 }: {
-  searchParams?: { [key: string]: string | string[] | undefined };
+  searchParams?: Record<string, string | string[] | undefined>;
 }) {
   const session = await auth();
   if (!session) {

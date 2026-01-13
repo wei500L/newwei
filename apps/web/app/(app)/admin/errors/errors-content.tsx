@@ -39,8 +39,8 @@ interface ListExceptionEventsResponse {
 
 interface ExceptionEventStats {
   total: number;
-  byKind: Array<{ kind: ExceptionEventKind; count: number }>;
-  byDay: Array<{ date: string; count: number }>;
+  byKind: { kind: ExceptionEventKind; count: number }[];
+  byDay: { date: string; count: number }[];
 }
 
 function renderKind(

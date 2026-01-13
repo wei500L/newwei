@@ -2,7 +2,6 @@
 
 import { Card, Checkbox, Collapse, DatePicker, Space, Typography } from "antd";
 import type { Dayjs } from "dayjs";
-
 import { useTranslation } from "react-i18next";
 
 const { RangePicker } = DatePicker;
@@ -30,7 +29,7 @@ export function FacetedSearch({
 }: FacetedSearchProps) {
   const { t } = useTranslation();
 
-  const handleDateChange = (dates: any, dateStrings: [string, string]) => {
+  const handleDateChange = (dates: any) => {
     onFilterChange({ ...filters, dateRange: dates });
   };
 

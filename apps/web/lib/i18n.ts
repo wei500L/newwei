@@ -92,16 +92,16 @@ export function formatDateTime(
     return "";
   }
 
-  let formatterOptions: Intl.DateTimeFormatOptions = { ...options, timeZone };
+  const formatterOptions: Intl.DateTimeFormatOptions = { ...options, timeZone };
   if ((formatterOptions.dateStyle || formatterOptions.timeStyle) && formatterOptions.timeZoneName) {
-    const { timeZoneName, ...rest } = formatterOptions;
-    formatterOptions = rest;
+    delete formatterOptions.timeZoneName;
   }
 
   try {
     return new Intl.DateTimeFormat(locale, formatterOptions).format(zoned.toDate());
-  } catch (error) {
-    const { timeZoneName, ...withoutTimeZoneName } = formatterOptions;
+  } catch {
+    const withoutTimeZoneName: Intl.DateTimeFormatOptions = { ...formatterOptions };
+    delete withoutTimeZoneName.timeZoneName;
     try {
       return new Intl.DateTimeFormat(locale, withoutTimeZoneName).format(zoned.toDate());
     } catch {

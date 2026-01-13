@@ -1,13 +1,14 @@
 import { createLogger } from "@modular/utils";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 const logger = createLogger({ name: "prisma" });
 
-type PrismaQueryEvent = {
+interface PrismaQueryEvent {
   query: string;
   params: string;
   duration: number;
-};
+}
 
 const prisma = new PrismaClient({
   log: [

@@ -318,7 +318,7 @@ export class DashboardDemoMetricsService implements OnModuleInit {
       }
     } satisfies Prisma.InputJsonValue;
 
-    const ohlcSeries: Array<{
+    const ohlcSeries: {
       slug: string;
       displayName: string;
       categories: string[];
@@ -326,7 +326,7 @@ export class DashboardDemoMetricsService implements OnModuleInit {
       unit?: string | null;
       baseValue: number;
       volatility: number;
-    }> = [
+    }[] = [
       { slug: "sp500_index", displayName: "S&P 500 Index", categories: ["key-monitor"], dataType: EconomicDataValueType.index, unit: null, baseValue: 4700, volatility: 80 },
       { slug: "shanghai_composite_index", displayName: "Shanghai Composite Index", categories: ["economic-short", "key-monitor"], dataType: EconomicDataValueType.index, unit: null, baseValue: 3100, volatility: 50 },
       { slug: "csi300_index", displayName: "CSI 300 Index", categories: ["economic-short"], dataType: EconomicDataValueType.index, unit: null, baseValue: 3600, volatility: 55 },
@@ -362,7 +362,7 @@ export class DashboardDemoMetricsService implements OnModuleInit {
       });
     }
 
-    const latestPriceSeries: Array<{
+    const latestPriceSeries: {
       slug: string;
       displayName: string;
       categories: string[];
@@ -371,7 +371,7 @@ export class DashboardDemoMetricsService implements OnModuleInit {
       baseValue: number;
       volatility: number;
       metadata?: Prisma.InputJsonValue | null;
-    }> = [
+    }[] = [
       { slug: "usd_cny_spot", displayName: "USD/CNY Spot", categories: ["economic-short", "key-monitor"], dataType: EconomicDataValueType.fx, unit: "CNY", baseValue: 7.2, volatility: 0.05, metadata: fxMetadata },
       { slug: "eur_cny_spot", displayName: "EUR/CNY Spot", categories: ["economic-short", "key-monitor"], dataType: EconomicDataValueType.fx, unit: "CNY", baseValue: 7.9, volatility: 0.06, metadata: fxMetadata },
       { slug: "bitcoin_spot_price", displayName: "Bitcoin Spot Price", categories: ["economic-short"], dataType: EconomicDataValueType.price, unit: "USD", baseValue: 45_000, volatility: 1800 }

@@ -8,6 +8,7 @@ import { EnvService } from "../config/config.service";
 import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
+import { NewsSourceSchedulerService } from "./news-source.scheduler.service";
 import { QueueEventPublisher } from "./queue-event.publisher";
 import { QueueOrgStatsService } from "./queue-org-stats.service";
 import { QueueOrgStatsTracker } from "./queue-org-stats.tracker";
@@ -21,7 +22,6 @@ import {
 import { QueueGateway } from "./queue.gateway";
 import { QueueProcessor } from "./queue.processor";
 import { QueueService } from "./queue.service";
-import { NewsSourceSchedulerService } from "./news-source.scheduler.service";
 
 @Module({
   imports: [CacheModule, CrawlModule, NewsPipelineModule, AuthModule],

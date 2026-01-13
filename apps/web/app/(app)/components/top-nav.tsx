@@ -6,19 +6,19 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { Button, Dropdown, Skeleton } from "antd";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { useMemo, useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AvatarFallback } from "./avatar-fallback";
-import { NotificationCenter } from "./notification-center";
-import { OrganizationSwitcher } from "./organization-switcher";
-import { LanguageSwitcher } from "./language-switcher";
 import { captureClientError } from "@/lib/client-telemetry";
 import { createTraceHeaders } from "@/lib/trace";
+
+import { AvatarFallback } from "./avatar-fallback";
 import { CommandBar } from "./command-bar";
+import { LanguageSwitcher } from "./language-switcher";
+import { NotificationCenter } from "./notification-center";
+import { OrganizationSwitcher } from "./organization-switcher";
 import { SystemDefcon } from "./system-defcon";
 import { TickerTape } from "./ticker-tape";
 
@@ -31,7 +31,6 @@ const formatLabel = (value: string): string =>
 
 export function TopNav() {
   const { t } = useTranslation();
-  const pathname = usePathname();
   const router = useRouter();
   const { data: session, status } = useSession();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -74,7 +73,6 @@ export function TopNav() {
   const planLabel = planTier ? formatLabel(planTier) : "Free Plan";
   const statusLabel = subscriptionStatus ? formatLabel(subscriptionStatus) : null;
   const planBadgeLabel = statusLabel ? `${planLabel} · ${statusLabel}` : planLabel;
-  const isFreePlan = !planTier;
   const startNewCrawlLabel = t("nav.newCrawl", { defaultValue: "New Crawl" });
 
   return (

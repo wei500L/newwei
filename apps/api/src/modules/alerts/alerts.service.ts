@@ -17,16 +17,15 @@ import { PubSubEngine } from "graphql-subscriptions";
 import { firstValueFrom } from "rxjs";
 
 import { toPrismaJsonValue, toPrismaJsonValueOrUndefined } from "../../common/prisma-json";
-
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
+import { AlertRuleTuningSuggestion, AlertTuningAction, quantile, safeMean } from "./alerts-tuning";
 import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
 import { ALERTS_PUBSUB, AlertEventPayload } from "./alerts.pubsub";
-import { AlertRuleTuningSuggestion, AlertTuningAction, quantile, safeMean } from "./alerts-tuning";
 import { MetricProvider } from "./providers/metric-provider";
 
 export interface AlertChannelInput {

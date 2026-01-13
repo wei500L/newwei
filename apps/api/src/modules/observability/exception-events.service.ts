@@ -42,8 +42,8 @@ export interface ExceptionEventStatsOptions {
 
 export interface ExceptionEventStats {
   total: number;
-  byKind: Array<{ kind: ExceptionEventKind; count: number }>;
-  byDay: Array<{ date: string; count: number }>;
+  byKind: { kind: ExceptionEventKind; count: number }[];
+  byDay: { date: string; count: number }[];
 }
 
 type RecordExceptionEventInput = Omit<ExceptionEvent, "id" | "timestamp"> & {

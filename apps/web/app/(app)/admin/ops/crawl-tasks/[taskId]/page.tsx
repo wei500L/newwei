@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { auth } from "@/lib/auth";
-
 import { CrawlTaskDetail } from "@/app/(app)/crawl/[taskId]/task-detail";
+import { auth } from "@/lib/auth";
 
 interface CrawlTaskDetailPageParams {
   taskId: string;

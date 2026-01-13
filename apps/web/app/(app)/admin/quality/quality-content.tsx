@@ -28,7 +28,7 @@ interface PipelineQualitySummary {
     p99Ms: number | null;
     maxMs: number | null;
   };
-  failureTypes: Array<{ stage: string; errorName: string; count: number }>;
+  failureTypes: { stage: string; errorName: string; count: number }[];
   outbox?: {
     totals: {
       total: number;
@@ -49,7 +49,7 @@ interface NewsSourceQualitySummary {
     failing: number;
     circuitOpen: number;
   };
-  topFailingSources: Array<{
+  topFailingSources: {
     sourceId: string;
     name: string;
     url: string;
@@ -58,7 +58,7 @@ interface NewsSourceQualitySummary {
     lastFailureAt: string | null;
     circuitOpenUntil: string | null;
     nextRunAt: string | null;
-  }>;
+  }[];
 }
 
 const msToSeconds = (value: number | null | undefined) =>

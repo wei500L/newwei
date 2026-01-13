@@ -31,9 +31,9 @@ const MIN_WINDOW_SECONDS = 1;
 const MAX_WINDOW_SECONDS = 86_400;
 const FEATURE_PATTERN = /^[a-z][a-z0-9_.]*$/;
 
-type RateLimitPolicyCacheEntry = {
+interface RateLimitPolicyCacheEntry {
   policy: RateLimitPolicy | null;
-};
+}
 
 @Injectable()
 export class RateLimitPolicyService {

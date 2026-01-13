@@ -5,14 +5,13 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { DashboardEditor } from "@/app/(app)/dashboard/dashboard-editor";
 import {
   useDashboardsQuery,
   useDeleteDashboardMutation,
   useUpsertDashboardMutation,
   type UpsertDashboardInput
 } from "@/graphql/generated";
-
-import { DashboardEditor } from "@/app/(app)/dashboard/dashboard-editor";
 
 export function DashboardsContent() {
   const { t } = useTranslation();

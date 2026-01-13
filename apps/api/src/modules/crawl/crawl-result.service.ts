@@ -5,7 +5,6 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { CrawlResult, CrawlTask } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
-
 import { EnvService } from "../config/config.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";

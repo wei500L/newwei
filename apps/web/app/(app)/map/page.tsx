@@ -3,8 +3,8 @@
 import { Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { TimeRangeControls } from "@/components/time-range-controls";
 import { WarMap } from "@/app/(app)/dashboard/charts/war-map";
+import { TimeRangeControls } from "@/components/time-range-controls";
 
 export default function MapPage() {
   const { t } = useTranslation();

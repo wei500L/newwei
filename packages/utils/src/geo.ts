@@ -25,7 +25,7 @@ const normalizeLocaleKey = (value: string): string =>
     .replace(/[\s'"·•，、,;:.()（）[\]{}<>《》“”‘’]/g, "")
     .toLowerCase();
 
-const ALIAS_ENTRIES: Array<[string, string]> = [
+const ALIAS_ENTRIES: [string, string][] = [
   ["America", "USA"],
   ["Bolivia", "BOL"],
   ["Bosnia", "BIH"],
@@ -73,7 +73,7 @@ const ALIAS_TO_ALPHA3 = new Map<string, string>(
   ALIAS_ENTRIES.map(([label, code]) => [normalizeKey(label), code])
 );
 
-const LOCALE_ALIAS_ENTRIES: Array<[string, string]> = [
+const LOCALE_ALIAS_ENTRIES: [string, string][] = [
   ["中国", "CHN"],
   ["中國", "CHN"],
   ["中国台湾", "TWN"],

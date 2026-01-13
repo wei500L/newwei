@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
-import { EnvService } from "../config/config.service";
+import type { EnvService } from "../config/config.service";
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const KEY_BYTES = 32;

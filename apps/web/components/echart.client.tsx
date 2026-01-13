@@ -1,7 +1,7 @@
 "use client";
 
-import * as echarts from "echarts/core";
 import { Button } from "antd";
+import * as echarts from "echarts/core";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -706,7 +706,7 @@ export function DashboardChart({
       toast.success(
         t("dashboard.charts.exportSuccess", { defaultValue: "Export completed" }),
       );
-    } catch (error) {
+    } catch {
       toast.error(
         t("dashboard.charts.exportFailed", { defaultValue: "Export failed" }),
       );

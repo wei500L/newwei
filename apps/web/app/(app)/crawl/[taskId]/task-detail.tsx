@@ -21,15 +21,14 @@ import {
 } from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSession } from "next-auth/react";
 
-import type {
-  CrawlTaskStatus} from "@/graphql/generated";
 import {
   useCrawlTaskQuery,
-  useRetryCrawlTaskMutation
+  useRetryCrawlTaskMutation,
+  type CrawlTaskStatus
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 

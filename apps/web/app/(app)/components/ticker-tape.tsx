@@ -1,9 +1,10 @@
 "use client";
 
-import { useDashboardHeroMetricsQuery } from "@/graphql/generated";
+import { ArrowDownOutlined, ArrowUpOutlined } from "@ant-design/icons";
 import { useMemo } from "react";
+
+import { useDashboardHeroMetricsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
-import { ArrowUpOutlined, ArrowDownOutlined } from "@ant-design/icons";
 
 export function TickerTape() {
   const heroDateRange = useMemo(() => ({

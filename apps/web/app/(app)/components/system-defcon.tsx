@@ -1,7 +1,8 @@
 "use client";
 
-import { useQueueStatsQuery } from "@/graphql/generated";
 import { Tooltip } from "antd";
+
+import { useQueueStatsQuery } from "@/graphql/generated";
 
 export function SystemDefcon() {
   const { data } = useQueueStatsQuery({

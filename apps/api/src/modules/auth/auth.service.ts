@@ -10,8 +10,8 @@ import { RateLimiterService } from "../cache/rate-limiter.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { OrgService } from "../org/org.service";
-import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
 import { StorageService } from "../storage/storage.service";
+import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
 
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { AuthCacheSettingsService } from "./auth-cache-settings.service";

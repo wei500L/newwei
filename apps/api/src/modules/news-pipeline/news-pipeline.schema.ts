@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { parseDateTime } from "@modular/utils";
+import { z } from "zod";
 
 import type { CrawlTaskOptions } from "../crawl/crawl.types";
 

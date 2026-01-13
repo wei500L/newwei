@@ -5,11 +5,15 @@ import type {
 } from "@/hooks/useEconomicData";
 import dayjs from "@/lib/dayjs";
 
-type ParserFieldConfig = { field?: string; label?: string };
-type ParserConfig = {
+interface ParserFieldConfig {
+  field?: string;
+  label?: string;
+}
+
+interface ParserConfig {
   valueFields?: ParserFieldConfig[];
   seriesFields?: ParserFieldConfig[];
-};
+}
 
 const getParserFields = (group: EconomicSeriesGroup | undefined) => {
   const raw = group?.metadata;

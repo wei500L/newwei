@@ -23,15 +23,15 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 
-type CrawlTemplateRecord = {
+interface CrawlTemplateRecord {
   id: string;
   name: string;
   description?: string | null;
   isActive: boolean;
   crawlOptions?: Record<string, unknown> | null;
-};
+}
 
-type CrawlTemplateFormValues = {
+interface CrawlTemplateFormValues {
   name: string;
   description?: string;
   isActive: boolean;
@@ -41,7 +41,7 @@ type CrawlTemplateFormValues = {
   enableUndetectedBrowser: boolean;
   includeImages: boolean;
   crawlOptionsJson?: string;
-};
+}
 
 const parseJsonField = (value: string | undefined, label: string) => {
   const trimmed = value?.trim();

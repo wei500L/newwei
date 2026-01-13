@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { Prisma } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
-
 import { PrismaService } from "../config/prisma.service";
 
 import { CreateCrawlTemplateDto, ListCrawlTemplateDto, UpdateCrawlTemplateDto } from "./dto/crawl-template.dto";

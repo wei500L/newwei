@@ -1,13 +1,5 @@
 import { ArgsType, Field, ID, InputType, Int, Float, registerEnumType } from "@nestjs/graphql";
 import { CrawlTaskStatus } from "@prisma/client";
-import type {
-  CrawlCacheMode,
-  CrawlMarkdownContentSource,
-  CrawlMetadataSource,
-  CrawlUrlMatchMode,
-  CrawlUserAgentGeneratorConfig,
-  CrawlUserAgentMode
-} from "../../modules/crawl/crawl.types";
 import {
   IsArray,
   IsBoolean,
@@ -20,6 +12,15 @@ import {
   Min
 } from "class-validator";
 import GraphQLJSONScalar from "graphql-type-json";
+
+import type {
+  CrawlCacheMode,
+  CrawlMarkdownContentSource,
+  CrawlMetadataSource,
+  CrawlUrlMatchMode,
+  CrawlUserAgentGeneratorConfig,
+  CrawlUserAgentMode
+} from "../../modules/crawl/crawl.types";
 
 @InputType()
 export class CrawlTimeRangeInput {

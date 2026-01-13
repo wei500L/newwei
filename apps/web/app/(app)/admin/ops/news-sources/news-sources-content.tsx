@@ -27,7 +27,7 @@ import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
-type NewsSourceRecord = {
+interface NewsSourceRecord {
   id: string;
   name: string;
   url: string;
@@ -44,15 +44,15 @@ type NewsSourceRecord = {
   circuitOpenUntil?: string | null;
   nextRunAt?: string | null;
   config?: Record<string, unknown> | null;
-};
+}
 
-type CrawlTemplateRecord = {
+interface CrawlTemplateRecord {
   id: string;
   name: string;
   isActive: boolean;
-};
+}
 
-type NewsSourcePreviewCandidate = {
+interface NewsSourcePreviewCandidate {
   url: string;
   status: "success" | "failed";
   title?: string;
@@ -64,9 +64,9 @@ type NewsSourcePreviewCandidate = {
   alreadyQueued?: boolean;
   inFlightStatus?: string | null;
   error?: string;
-};
+}
 
-type NewsSourcePreviewResponse = {
+interface NewsSourcePreviewResponse {
   mode: "single" | "sitemap";
   sourceId: string;
   url: string;
@@ -78,9 +78,9 @@ type NewsSourcePreviewResponse = {
   inFlightLimit?: number;
   scheduleCount: number;
   skippedCount: number;
-};
+}
 
-type NewsSourceFormValues = {
+interface NewsSourceFormValues {
   name: string;
   url: string;
   siteType: string;
@@ -105,7 +105,7 @@ type NewsSourceFormValues = {
   seedDedupeWindowHours?: number;
   seedCacheTtlSeconds?: number;
   seedConcurrency?: number;
-};
+}
 
 const parseStringList = (value?: string) =>
   (value ?? "")

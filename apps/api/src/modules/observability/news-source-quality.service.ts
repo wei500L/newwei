@@ -11,7 +11,7 @@ export interface NewsSourceQualitySummary {
     failing: number;
     circuitOpen: number;
   };
-  topFailingSources: Array<{
+  topFailingSources: {
     sourceId: string;
     name: string;
     url: string;
@@ -20,7 +20,7 @@ export interface NewsSourceQualitySummary {
     lastFailureAt: string | null;
     circuitOpenUntil: string | null;
     nextRunAt: string | null;
-  }>;
+  }[];
 }
 
 @Injectable()

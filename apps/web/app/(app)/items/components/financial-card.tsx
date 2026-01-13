@@ -4,9 +4,10 @@ import { ArrowDownOutlined, ArrowUpOutlined } from "@ant-design/icons";
 import { Button, Card, Space, Statistic, Typography } from "antd";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
+
 import { DashboardChart } from "@/components/echart";
 
-const { Text, Title } = Typography;
+const { Title } = Typography;
 
 export interface FinancialCardProps {
   item: {
