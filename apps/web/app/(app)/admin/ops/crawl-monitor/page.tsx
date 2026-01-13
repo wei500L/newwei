@@ -8,12 +8,14 @@ const ensureDashboardPath = (rawUrl: string) => {
   try {
     const url = new URL(rawUrl);
     const pathname = url.pathname || "/";
-    if (pathname === "/" || pathname === "") {
+    if (pathname === "") {
+      url.pathname = "/";
+    }
+    if (pathname === "/dashboard") {
       url.pathname = "/dashboard/";
-    } else if (pathname === "/dashboard") {
-      url.pathname = "/dashboard/";
-    } else if (pathname.endsWith("/dashboard")) {
-      url.pathname = `${pathname}/`;
+    }
+    if (pathname === "/playground") {
+      url.pathname = "/playground/";
     }
     return url.toString();
   } catch {
@@ -33,7 +35,7 @@ const resolveCrawl4aiDashboardUrl = () => {
   }
 
   try {
-    return new URL("/dashboard/", base).toString();
+    return new URL("/", base).toString();
   } catch {
     return "";
   }
@@ -48,4 +50,3 @@ export default async function AdminCrawlMonitorPage() {
   const dashboardUrl = resolveCrawl4aiDashboardUrl();
   return <CrawlMonitorContent dashboardUrl={dashboardUrl} />;
 }
-

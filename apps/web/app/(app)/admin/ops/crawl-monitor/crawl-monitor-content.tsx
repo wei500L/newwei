@@ -21,6 +21,21 @@ type WsStatus = "idle" | "connecting" | "connected" | "reconnecting" | "error";
 
 type MonitorField = "health" | "requests" | "browsers" | "endpointsStats" | "timeline" | "janitor" | "errors";
 
+type MonitorErrorKind =
+  | "notFound"
+  | "baseUrlMissing"
+  | "timeout"
+  | "upstreamUnavailable"
+  | "forbidden"
+  | "unauthorized"
+  | "unknown";
+
+interface MonitorErrorInfo {
+  kind: MonitorErrorKind;
+  message: string;
+  raw: string;
+}
+
 interface MonitorState {
   receivedAt: number;
   source: TransportMode;
@@ -393,7 +408,7 @@ function normalizeTimestamp(input: unknown): string | undefined {
 function normalizeLogList(input: unknown): unknown[] {
   if (Array.isArray(input)) return input;
   if (isRecord(input)) {
-    const items = getRecordValue(input, ["items", "logs", "events", "data"]);
+    const items = getRecordValue(input, ["items", "logs", "events", "errors", "data"]);
     if (Array.isArray(items)) return items;
   }
   return [];
@@ -445,6 +460,51 @@ function safeJsonStringify(value: unknown): string {
   }
 }
 
+function tryParseJson(text: string): unknown | null {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeMonitorError(raw: string): MonitorErrorInfo {
+  const trimmed = raw.trim();
+  const parsed = tryParseJson(trimmed);
+
+  let message = trimmed || "Unknown error";
+  if (isRecord(parsed)) {
+    const errorMessage = asString(getRecordValue(parsed, ["message", "error", "detail"]));
+    if (errorMessage) {
+      message = errorMessage;
+    }
+  }
+
+  const lower = message.toLowerCase();
+  let kind: MonitorErrorKind = "unknown";
+
+  if (message === "Not Found" || trimmed.includes("\"detail\":\"Not Found\"")) {
+    kind = "notFound";
+  } else if (lower.includes("crawl4ai_base_url")) {
+    kind = "baseUrlMissing";
+  } else if (lower.includes("timed out")) {
+    kind = "timeout";
+  } else if (lower.includes("unauthorized") || lower.includes("http 401")) {
+    kind = "unauthorized";
+  } else if (lower.includes("forbidden") || lower.includes("http 403")) {
+    kind = "forbidden";
+  } else if (
+    lower.includes("monitor request failed") ||
+    lower.includes("bad gateway") ||
+    lower.includes("fetch failed") ||
+    lower.includes("http 502")
+  ) {
+    kind = "upstreamUnavailable";
+  }
+
+  return { kind, message, raw: trimmed };
+}
+
 export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) {
   const { t } = useTranslation();
   const { data: session, status } = useSession();
@@ -460,6 +520,7 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
   const [mode, setMode] = useState<TransportMode>(() => (wsUrl ? "ws" : "polling"));
   const [wsStatus, setWsStatus] = useState<WsStatus>("idle");
   const [wsError, setWsError] = useState<string | null>(null);
+  const [wsFallbackNotice, setWsFallbackNotice] = useState<string | null>(null);
   const [monitor, setMonitor] = useState<MonitorState | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
   const [completedFilter, setCompletedFilter] = useState<"all" | "success" | "error">("all");
@@ -467,13 +528,98 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
   const [detailModal, setDetailModal] = useState<{ title: string; payload: unknown } | null>(null);
 
   const modeRef = useRef<TransportMode>(mode);
+  const wsEverConnectedRef = useRef(false);
+  const wsFallbackAttemptedRef = useRef(false);
   const reconnectAttempts = useRef(0);
   const reconnectTimeoutId = useRef<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     modeRef.current = mode;
+    if (mode === "ws") {
+      wsEverConnectedRef.current = false;
+      wsFallbackAttemptedRef.current = false;
+      setWsFallbackNotice(null);
+    }
   }, [mode]);
+
+  const pollErrorInfo = useMemo(() => {
+    if (!pollError) return null;
+    return normalizeMonitorError(pollError);
+  }, [pollError]);
+
+  const pollErrorHelp = useMemo(() => {
+    if (!pollErrorInfo) return null;
+
+    if (pollErrorInfo.kind === "notFound") {
+      return (
+        <Space direction="vertical" size={2}>
+          <Typography.Text type="secondary">
+            {t("crawl.monitor.troubleshoot.notFound", {
+              defaultValue:
+                "Crawl4AI monitoring endpoints are missing. This usually means the crawl4ai image tag is wrong/too old (Docker Hub :latest is a common culprit). Prefer the floating Docker Hub tag :0 or a recent release tag."
+            })}
+          </Typography.Text>
+          <Typography.Text code>CRAWL4AI_IMAGE=unclecode/crawl4ai:0</Typography.Text>
+          <Typography.Text code>pnpm docker:up:extras -d --force-recreate crawl4ai</Typography.Text>
+        </Space>
+      );
+    }
+
+    if (pollErrorInfo.kind === "baseUrlMissing") {
+      return (
+        <Space direction="vertical" size={2}>
+          <Typography.Text type="secondary">
+            {t("crawl.monitor.troubleshoot.baseUrlMissing", {
+              defaultValue:
+                "CRAWL4AI_BASE_URL is not configured for the web runtime. Set it and restart the web server."
+            })}
+          </Typography.Text>
+          <Typography.Text code>CRAWL4AI_BASE_URL=http://crawl4ai:11235</Typography.Text>
+          <Typography.Text code>CRAWL4AI_BASE_URL=http://localhost:8082</Typography.Text>
+        </Space>
+      );
+    }
+
+    if (pollErrorInfo.kind === "upstreamUnavailable") {
+      return (
+        <Space direction="vertical" size={2}>
+          <Typography.Text type="secondary">
+            {t("crawl.monitor.troubleshoot.upstreamUnavailable", {
+              defaultValue:
+                "Crawl4AI is not reachable from the web server. Ensure the extras profile is running, then check the crawl4ai container logs."
+            })}
+          </Typography.Text>
+          <Typography.Text code>pnpm docker:up:extras</Typography.Text>
+          <Typography.Text code>pnpm docker:logs</Typography.Text>
+        </Space>
+      );
+    }
+
+    if (pollErrorInfo.kind === "timeout") {
+      return (
+        <Typography.Text type="secondary">
+          {t("crawl.monitor.troubleshoot.timeout", {
+            defaultValue:
+              "Monitor request timed out. Crawl4AI may be overloaded or starting up. Check container health and try again."
+          })}
+        </Typography.Text>
+      );
+    }
+
+    if (pollErrorInfo.kind === "unauthorized" || pollErrorInfo.kind === "forbidden") {
+      return (
+        <Typography.Text type="secondary">
+          {t("crawl.monitor.troubleshoot.auth", {
+            defaultValue:
+              "Access denied. Make sure you are logged in and have crawl.read/crawl.write permissions."
+          })}
+        </Typography.Text>
+      );
+    }
+
+    return null;
+  }, [pollErrorInfo, t]);
 
   const handleOpen = () => {
     if (!normalizedDashboardUrl) return;
@@ -635,6 +781,27 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
     if (errors.status === "fulfilled") updateMonitorField("errors", errors.value);
   }, [updateMonitorField]);
 
+  const maybeFallbackToPolling = useCallback(async () => {
+    if (modeRef.current !== "ws") return;
+    if (wsEverConnectedRef.current) return;
+    if (wsFallbackAttemptedRef.current) return;
+    wsFallbackAttemptedRef.current = true;
+
+    try {
+      await fetchMonitorJson("health");
+    } catch {
+      return;
+    }
+
+    setWsFallbackNotice(
+      t("crawl.monitor.ws.autoFallback", {
+        defaultValue:
+          "WebSocket failed. Switched to Polling automatically (authenticated server-side proxy)."
+      })
+    );
+    setMode("polling");
+  }, [t]);
+
   const connectWebSocket = useCallback(() => {
     if (!wsUrl) {
       setWsStatus("error");
@@ -660,6 +827,7 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
 
       ws.onopen = () => {
         if (wsRef.current !== ws) return;
+        wsEverConnectedRef.current = true;
         reconnectAttempts.current = 0;
         setWsStatus("connected");
         setWsError(null);
@@ -691,12 +859,14 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
         if (wsRef.current !== ws) return;
         setWsStatus("error");
         setWsError(t("crawl.monitor.ws.error", { defaultValue: "WebSocket error." }));
+        void maybeFallbackToPolling();
       };
 
       ws.onclose = () => {
         if (wsRef.current !== ws) return;
         wsRef.current = null;
         if (modeRef.current !== "ws") return;
+        void maybeFallbackToPolling();
         const attempt = reconnectAttempts.current + 1;
         reconnectAttempts.current = attempt;
         const delayMs = Math.min(30_000, 1_000 * Math.pow(2, Math.min(attempt, 5)));
@@ -707,8 +877,9 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
     } catch (error) {
       setWsStatus("error");
       setWsError(error instanceof Error ? error.message : t("crawl.monitor.ws.error", { defaultValue: "WebSocket error." }));
+      void maybeFallbackToPolling();
     }
-  }, [t, wsUrl]);
+  }, [maybeFallbackToPolling, t, wsUrl]);
 
   const openDetailModal = useCallback((title: string, payload: unknown) => {
     setDetailModal({ title, payload });
@@ -1401,11 +1572,12 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
             description={
               <Space direction="vertical" size={2}>
                 <div>{wsError}</div>
-                <div>
-                  {t("crawl.monitor.ws.noAutoFallback", {
-                    defaultValue: "No automatic fallback. Switch to Polling manually if needed."
+                <Typography.Text type="secondary">
+                  {t("crawl.monitor.ws.fallbackHint", {
+                    defaultValue:
+                      "Tip: Polling uses the authenticated server-side proxy and often works even when WebSocket is blocked by CORS/origin rules."
                   })}
-                </div>
+                </Typography.Text>
                 <Space>
                   <Button onClick={() => connectWebSocket()}>
                     {t("crawl.monitor.ws.reconnectNow", { defaultValue: "Reconnect now" })}
@@ -1419,12 +1591,29 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
           />
         ) : null}
 
+        {mode === "polling" && wsFallbackNotice ? (
+          <Alert
+            type="info"
+            showIcon
+            message={t("crawl.monitor.ws.autoFallbackTitle", { defaultValue: "Switched to Polling" })}
+            description={wsFallbackNotice}
+          />
+        ) : null}
+
         {mode === "polling" && pollError ? (
           <Alert
             type="warning"
             showIcon
             message={t("crawl.monitor.polling.warningTitle", { defaultValue: "Polling failed" })}
-            description={pollError}
+            description={
+              <Space direction="vertical" size={2}>
+                <div>{pollErrorInfo?.message ?? pollError}</div>
+                {pollErrorInfo?.raw && pollErrorInfo.raw !== pollErrorInfo.message ? (
+                  <Typography.Text code>{pollErrorInfo.raw}</Typography.Text>
+                ) : null}
+                {pollErrorHelp}
+              </Space>
+            }
           />
         ) : null}
 
