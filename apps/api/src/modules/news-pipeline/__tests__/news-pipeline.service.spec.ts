@@ -362,6 +362,21 @@ describe("NewsPipelineService", () => {
     expect(CrawlResultContentModel.findById).toHaveBeenCalledTimes(1);
   });
 
+  it("falls back to crawling when stored crawl result is missing", async () => {
+    await service.process(job, {
+      ...raw,
+      payload: {
+        ...raw.payload,
+        metadata: {
+          crawlResultId: "missing-crawl-result"
+        }
+      }
+    });
+    await flushOutbox();
+
+    expect(crawlClient.crawl).toHaveBeenCalledTimes(1);
+  });
+
   it("reuses existing processed article when content hash matches", async () => {
     const contentHash = createHash("sha256")
       .update("# Headline\nBody paragraph")

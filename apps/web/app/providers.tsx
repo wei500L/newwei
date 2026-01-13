@@ -120,50 +120,71 @@ export function AppProviders({ children }: PropsWithChildren) {
     [locale]
   );
 
+  const antdTheme = useMemo(() => {
+    const getVar = (name: string, fallback: string) => {
+      if (typeof window === "undefined") return fallback;
+      const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return value || fallback;
+    };
+
+    const colorPrimary = getVar("--primary", "#1f3b7b");
+    const colorBgBase = getVar("--background", "#f7f6f2");
+    const colorTextBase = getVar("--foreground", "#1f2933");
+    const colorTextSecondary = getVar("--secondary-foreground", "#475569");
+    const colorFillSecondary = getVar("--secondary", "#f1f5f9");
+    const colorBorder = getVar("--border", "#e2e8f0");
+
+    return {
+      algorithm: theme.defaultAlgorithm,
+      token: {
+        colorPrimary,
+        colorBgBase,
+        colorBgLayout: colorBgBase,
+        colorBgContainer: "#ffffff",
+        colorBgElevated: "rgba(255, 255, 255, 0.98)",
+        colorBgSpotlight: "rgba(15, 23, 42, 0.95)",
+        colorTextBase,
+        colorTextSecondary,
+        colorTextPlaceholder: "#64748b",
+        colorTextLightSolid: "#f8fafc",
+        colorFillSecondary,
+        borderRadius: 10,
+        fontFamily:
+          "var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        colorBorder,
+      },
+      components: {
+        Card: {
+          borderRadiusLG: 12,
+          colorBgContainer: "#ffffff",
+          boxShadow: "0 8px 20px rgba(15, 23, 42, 0.08)",
+        },
+        Button: {
+          borderRadius: 8,
+          controlHeight: 36,
+          primaryShadow: "none",
+        },
+        Table: {
+          colorBgContainer: "#ffffff",
+          borderColor: colorBorder,
+        },
+        Menu: {
+          colorBgContainer: "transparent",
+        },
+        Modal: {
+          borderRadiusLG: 12,
+          colorBgElevated: "#ffffff",
+          boxShadow: "0 16px 40px rgba(15, 23, 42, 0.18)",
+        }
+      }
+    };
+  }, []);
+
   return (
     <I18nextProvider i18n={i18nInstance}>
       <ConfigProvider
         locale={antdLocale}
-        theme={{
-          algorithm: theme.defaultAlgorithm,
-          token: {
-            colorPrimary: "var(--primary)",
-            colorBgBase: "var(--background)",
-            colorBgLayout: "var(--background)",
-            colorBgContainer: "#ffffff",
-            colorTextBase: "var(--foreground)",
-            colorTextSecondary: "var(--secondary-foreground)",
-            colorFillSecondary: "var(--secondary)",
-            borderRadius: 10,
-            fontFamily:
-              "var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-            colorBorder: "var(--border)",
-          },
-          components: {
-            Card: {
-              borderRadiusLG: 12,
-              colorBgContainer: "#ffffff",
-              boxShadow: "0 8px 20px rgba(15, 23, 42, 0.08)",
-            },
-            Button: {
-              borderRadius: 8,
-              controlHeight: 36,
-              primaryShadow: "none",
-            },
-            Table: {
-              colorBgContainer: "#ffffff",
-              borderColor: "var(--border)",
-            },
-            Menu: {
-              colorBgContainer: "transparent",
-            },
-            Modal: {
-              borderRadiusLG: 12,
-              colorBgElevated: "#ffffff",
-              boxShadow: "0 16px 40px rgba(15, 23, 42, 0.18)",
-            }
-          }
-        }}
+        theme={antdTheme}
       >
         <AntApp>
           <ApolloProvider client={apolloClient}>

@@ -19,6 +19,7 @@ query CrawlTasks($first: Int!, $after: String, $search: String, $status: CrawlTa
         lastSuccessAt
         lastError
         createdAt
+        config
         lastPeakMemoryMb
         lastMemoryEfficiency
       }
@@ -43,6 +44,15 @@ query CrawlTask($id: ID!, $resultLimit: Int, $resultSearch: String) {
     lastServerMemoryMb
     lastPeakMemoryMb
     lastMemoryEfficiency
+    lastRunSummary {
+      inserted
+      skipped
+      itemsQueued
+      itemsQueueFailed
+      lastFetchedAt
+      runId
+      retryableFailures
+    }
     results {
       id
       itemId
@@ -129,6 +139,31 @@ mutation RetryCrawlTask($id: String!) {
     lastRunAt
     lastError
     runCount
+  }
+}
+
+mutation UpdateCrawlTaskIngestToItems($id: String!, $enabled: Boolean!) {
+  updateCrawlTaskIngestToItems(id: $id, enabled: $enabled) {
+    id
+    config
+  }
+}
+
+mutation IngestCrawlTaskResultsToItems(
+  $taskId: String!
+  $after: String
+  $limit: Float
+  $onlyMissing: Boolean
+) {
+  ingestCrawlTaskResultsToItems(taskId: $taskId, after: $after, limit: $limit, onlyMissing: $onlyMissing) {
+    taskId
+    scanned
+    attempted
+    ingested
+    skippedExisting
+    failed
+    nextCursor
+    hasMore
   }
 }
 

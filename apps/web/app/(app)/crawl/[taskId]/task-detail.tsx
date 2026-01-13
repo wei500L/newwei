@@ -9,9 +9,11 @@ import {
   Descriptions,
   Input,
   List,
+  Modal,
   message,
   Select,
   Space,
+  Switch,
   Spin,
   Table,
   Tabs,
@@ -27,7 +29,9 @@ import { useTranslation } from "react-i18next";
 
 import {
   useCrawlTaskQuery,
+  useIngestCrawlTaskResultsToItemsMutation,
   useRetryCrawlTaskMutation,
+  useUpdateCrawlTaskIngestToItemsMutation,
   type CrawlTaskStatus
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -577,13 +581,16 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     },
     fetchPolicy: "network-only",
     skip: !canView
-  });
+	  });
 
-  const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
-  const [ingestingResultId, setIngestingResultId] = useState<string | null>(null);
-  const [createItemFromCrawlResult, { loading: ingesting }] = useMutation<{
-    createItemFromCrawlResult: { id: string; title: string; status: string };
-  }>(CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION);
+	  const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
+	  const [updateIngestToItems, { loading: updatingIngest }] = useUpdateCrawlTaskIngestToItemsMutation();
+	  const [ingestCrawlTaskResultsToItems, { loading: backfilling }] =
+	    useIngestCrawlTaskResultsToItemsMutation();
+	  const [ingestingResultId, setIngestingResultId] = useState<string | null>(null);
+	  const [createItemFromCrawlResult, { loading: ingesting }] = useMutation<{
+	    createItemFromCrawlResult: { id: string; title: string; status: string };
+	  }>(CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION);
 
   const task = data?.crawlTask ?? null;
   const config = useMemo(() => {
@@ -1058,6 +1065,129 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
   };
 
+  const handleToggleIngestToItems = async (enabled: boolean) => {
+    if (!task || !canManage) {
+      return;
+    }
+    if (enabled && !permissions.includes("items.write")) {
+      message.error(
+        t("crawl.settings.ingestToItemsNoPermission", {
+          defaultValue: "Requires items.write permission."
+        })
+      );
+      return;
+    }
+
+    try {
+      await updateIngestToItems({
+        variables: {
+          id: task.id,
+          enabled
+        }
+      });
+      message.success(t("common.updated", { defaultValue: "Updated." }));
+      await refetch();
+    } catch (error) {
+      message.error(
+        error instanceof Error
+          ? error.message
+          : t("common.operationFailed", { defaultValue: "Operation failed." })
+      );
+    }
+  };
+
+  const runBackfillToItems = async () => {
+    if (!task || !canCreateItem) {
+      return;
+    }
+
+    const messageKey = `crawl-backfill-${task.id}`;
+    const batchLimit = 50;
+    const maxBatches = 20;
+    let after: string | null = null;
+    let ingestedTotal = 0;
+    let skippedTotal = 0;
+    let failedTotal = 0;
+
+    message.loading({
+      key: messageKey,
+      duration: 0,
+      content: t("crawl.detail.backfill.running", { defaultValue: "Backfilling results..." })
+    });
+
+    try {
+      for (let batchIndex = 0; batchIndex < maxBatches; batchIndex += 1) {
+        const response = await ingestCrawlTaskResultsToItems({
+          variables: {
+            taskId: task.id,
+            after,
+            limit: batchLimit,
+            onlyMissing: true
+          }
+        });
+        const summary = response.data?.ingestCrawlTaskResultsToItems;
+        if (!summary) {
+          break;
+        }
+
+        ingestedTotal += summary.ingested;
+        skippedTotal += summary.skippedExisting;
+        failedTotal += summary.failed;
+
+        message.loading({
+          key: messageKey,
+          duration: 0,
+          content: t("crawl.detail.backfill.progress", {
+            defaultValue: "Backfilling... ({{ingested}} ingested, {{skipped}} skipped, {{failed}} failed)",
+            ingested: ingestedTotal,
+            skipped: skippedTotal,
+            failed: failedTotal
+          })
+        });
+
+        after = summary.nextCursor ?? null;
+        if (!summary.hasMore || !after) {
+          break;
+        }
+      }
+
+      message.success({
+        key: messageKey,
+        content: t("crawl.detail.backfill.done", {
+          defaultValue: "Queued for processing. Refreshing..."
+        })
+      });
+      await refetch();
+    } catch (error) {
+      message.error({
+        key: messageKey,
+        content:
+          error instanceof Error
+            ? error.message
+            : t("common.operationFailed", { defaultValue: "Operation failed." })
+      });
+    }
+  };
+
+  const handleBackfillToItems = () => {
+    if (!task || !canCreateItem) {
+      return;
+    }
+
+    Modal.confirm({
+      title: t("crawl.detail.backfill.confirmTitle", {
+        defaultValue: "Send missing results to Items?"
+      }),
+      content: t("crawl.detail.backfill.confirmDescription", {
+        defaultValue:
+          "This will convert crawl results into Items and enqueue LLM processing for results that are not in Items yet."
+      }),
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
+      onOk: runBackfillToItems
+    });
+  };
+
   const handleCreateItem = async (resultId: string) => {
     if (!canCreateItem) {
       return;
@@ -1149,6 +1279,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             {t("crawl.detail.retry")}
           </Button>
         ) : null}
+        {canCreateItem ? (
+          <Button onClick={handleBackfillToItems} loading={backfilling}>
+            {t("crawl.detail.backfill.button", { defaultValue: "Backfill to Items" })}
+          </Button>
+        ) : null}
         <Typography.Link href={task.targetUrl} target="_blank" rel="noreferrer">
           {t("crawl.detail.openSource")}
         </Typography.Link>
@@ -1180,7 +1315,51 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         <Descriptions.Item
           label={t("crawl.detail.fields.ingestToItems", { defaultValue: "Auto send to Items" })}
         >
-          {ingestToItemsEnabled ? t("common.enabled") : t("common.disabled")}
+          {canManage ? (
+            <Space direction="vertical" size={4}>
+              <Switch
+                checked={ingestToItemsEnabled}
+                loading={updatingIngest}
+                onChange={(checked) => void handleToggleIngestToItems(checked)}
+              />
+              <Typography.Text type="secondary">
+                {permissions.includes("items.write")
+                  ? t("crawl.settings.ingestToItemsHint", {
+                      defaultValue:
+                        "New crawl results will be converted into Items and queued for LLM processing."
+                    })
+                  : t("crawl.settings.ingestToItemsNoPermission", {
+                      defaultValue: "Requires items.write permission."
+                    })}
+              </Typography.Text>
+            </Space>
+          ) : ingestToItemsEnabled ? (
+            t("common.enabled")
+          ) : (
+            t("common.disabled")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.lastRunItems", { defaultValue: "Last run → Items" })}>
+          {task.lastRunSummary ? (
+            t("crawl.detail.lastRunItemsValue", {
+              defaultValue: "{{queued}} queued, {{failed}} failed",
+              queued: task.lastRunSummary.itemsQueued ?? 0,
+              failed: task.lastRunSummary.itemsQueueFailed ?? 0
+            })
+          ) : (
+            t("common.emptyValue")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.lastRunResults", { defaultValue: "Last run results" })}>
+          {task.lastRunSummary ? (
+            t("crawl.detail.lastRunResultsValue", {
+              defaultValue: "{{inserted}} inserted, {{skipped}} skipped",
+              inserted: task.lastRunSummary.inserted,
+              skipped: task.lastRunSummary.skipped
+            })
+          ) : (
+            t("common.emptyValue")
+          )}
         </Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.runCount")}>{task.runCount}</Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.scanFullPage")}>

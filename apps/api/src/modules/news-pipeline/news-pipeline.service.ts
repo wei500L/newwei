@@ -389,11 +389,18 @@ export class NewsPipelineService {
   ): Promise<CrawledArticle & { fromCache: boolean }> {
     const crawlResultId = this.extractCrawlResultId(payload);
     if (crawlResultId) {
-      const stored = await this.fetchStoredCrawlResult(job.orgId, crawlResultId);
-      return {
-        ...stored,
-        fromCache: true,
-      };
+      try {
+        const stored = await this.fetchStoredCrawlResult(job.orgId, crawlResultId);
+        return {
+          ...stored,
+          fromCache: true,
+        };
+      } catch (error) {
+        this.logger.warn(
+          { error, orgId: job.orgId, crawlResultId, url: payload.url },
+          "Failed to load stored crawl result; falling back to crawl4ai",
+        );
+      }
     }
 
     const cacheKey = this.cacheKey(job.orgId, payload.url);

@@ -10,6 +10,7 @@ import { Prisma } from "@prisma/client";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
+import { PermissionsAll } from "../../common/decorators/permissions.decorator";
 import { resolveRequestIp } from "../../common/request-ip";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { PrismaService } from "../../modules/config/prisma.service";
@@ -21,7 +22,9 @@ import type {
   CrawlMetadataResult,
   CrawlTaskResult,
   CrawlTaskView,
-  CrawlMemoryStats
+  CrawlMemoryStats,
+  CrawlExecutionSummary,
+  CrawlIngestBatchSummary
 } from "../../modules/crawl/crawl.types";
 import { CreateCrawlTaskDto } from "../../modules/crawl/dto/create-crawl-task.dto";
 import { HasPermission } from "../decorators/has-permission.decorator";
@@ -40,7 +43,9 @@ import {
   CrawlLinkAnalysisModel,
   CrawlLinkModel,
   CrawlLinkStatsModel,
-  CrawlMetadataResultModel
+  CrawlMetadataResultModel,
+  CrawlExecutionSummaryModel,
+  CrawlIngestBatchModel
 } from "../models/crawl.model";
 
 function encodeCursor(value: string) {
@@ -187,6 +192,51 @@ export class CrawlResolver {
   }
 
   @HasPermission("crawl.write")
+  @Mutation(() => CrawlTaskModel)
+  async updateCrawlTaskIngestToItems(
+    @Context("req") req: GqlRequest,
+    @Args("id") id: string,
+    @Args("enabled") enabled: boolean
+  ) {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+
+    const updated = await this.crawlTaskService.updateIngestToItems(
+      requester.orgId,
+      requester.id,
+      id,
+      enabled,
+      requester.permissions
+    );
+    return this.toGraphTask(updated);
+  }
+
+  @PermissionsAll("crawl.read", "items.write")
+  @Mutation(() => CrawlIngestBatchModel)
+  async ingestCrawlTaskResultsToItems(
+    @Context("req") req: GqlRequest,
+    @Args("taskId") taskId: string,
+    @Args("after", { nullable: true }) after?: string,
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("onlyMissing", { nullable: true }) onlyMissing?: boolean
+  ): Promise<CrawlIngestBatchModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+
+    const summary = await this.crawlTaskService.ingestResultsToItems(requester.orgId, requester.id, taskId, {
+      after: after ?? null,
+      limit: limit ?? null,
+      onlyMissing: onlyMissing ?? null
+    });
+
+    return this.toGraphIngestBatch(summary);
+  }
+
+  @HasPermission("crawl.write")
   @Mutation(() => Boolean)
   async deleteCrawlTask(@Context("req") req: GqlRequest, @Args("id") id: string): Promise<boolean> {
     const requester = req?.user as AuthenticatedUser | undefined;
@@ -214,7 +264,8 @@ export class CrawlResolver {
       ...task,
       config: task.config ? JSON.stringify(task.config) : null,
       results: task.results?.map((result) => this.toGraphResult(result)),
-      memoryStats: task.memoryStats ? this.toMemoryStats(task.memoryStats) : null
+      memoryStats: task.memoryStats ? this.toMemoryStats(task.memoryStats) : null,
+      lastRunSummary: task.lastRunSummary ? this.toExecutionSummary(task.lastRunSummary) : null
     };
   }
 
@@ -234,6 +285,31 @@ export class CrawlResolver {
       serverMemoryMb: stats.serverMemoryMb ?? null,
       peakMemoryMb: stats.peakMemoryMb ?? null,
       efficiencyPercent: stats.efficiencyPercent ?? null
+    };
+  }
+
+  private toExecutionSummary(summary: CrawlExecutionSummary): CrawlExecutionSummaryModel {
+    return {
+      inserted: summary.inserted,
+      skipped: summary.skipped,
+      itemsQueued: summary.itemsQueued ?? null,
+      itemsQueueFailed: summary.itemsQueueFailed ?? null,
+      lastFetchedAt: summary.lastFetchedAt ?? null,
+      runId: summary.runId ?? null,
+      retryableFailures: summary.retryableFailures ?? null
+    };
+  }
+
+  private toGraphIngestBatch(summary: CrawlIngestBatchSummary): CrawlIngestBatchModel {
+    return {
+      taskId: summary.taskId,
+      scanned: summary.scanned,
+      attempted: summary.attempted,
+      ingested: summary.ingested,
+      skippedExisting: summary.skippedExisting,
+      failed: summary.failed,
+      nextCursor: summary.nextCursor ?? null,
+      hasMore: summary.hasMore
     };
   }
 

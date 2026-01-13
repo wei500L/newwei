@@ -1947,6 +1947,16 @@
       "openSource": "打开来源",
       "openItem": "打开 Item",
       "ingestToItems": "发送到 Items",
+      "lastRunItemsValue": "{{queued}} 已入队，{{failed}} 失败",
+      "lastRunResultsValue": "{{inserted}} 新增，{{skipped}} 跳过",
+      "backfill": {
+        "button": "回填到 Items",
+        "confirmTitle": "将缺失结果发送到 Items？",
+        "confirmDescription": "这会把尚未进入 Items 的抓取结果转换为 Items，并加入 LLM 处理队列。",
+        "running": "正在回填结果…",
+        "progress": "回填中…（{{ingested}} 已入队，{{skipped}} 已跳过，{{failed}} 失败）",
+        "done": "已加入处理队列，正在刷新…"
+      },
       "fields": {
         "displayName": "展示名称",
         "keywords": "关键词",
@@ -1954,6 +1964,8 @@
         "includeImages": "包含图片",
         "storeMedia": "存储媒体",
         "ingestToItems": "自动发送到 Items",
+        "lastRunItems": "上次运行 → Items",
+        "lastRunResults": "上次运行结果",
         "runCount": "运行数量",
         "scanFullPage": "扫描完整页面",
         "adjustViewport": "调整视口",

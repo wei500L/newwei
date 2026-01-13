@@ -270,6 +270,56 @@ export class CrawlResultService {
     return stats ?? null;
   }
 
+  async getLatestExecutionSummary(orgId: string, taskId: string): Promise<CrawlExecutionSummary | null> {
+    const log = await TaskLogModel.findOne({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: taskId,
+      orgId,
+      stage: "complete"
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const data = log?.data && typeof log.data === "object" && !Array.isArray(log.data) ? (log.data as any) : null;
+    if (!data) {
+      return null;
+    }
+
+    const inserted = typeof data.inserted === "number" && Number.isFinite(data.inserted) ? data.inserted : null;
+    const skipped = typeof data.skipped === "number" && Number.isFinite(data.skipped) ? data.skipped : null;
+    if (inserted === null || skipped === null) {
+      return null;
+    }
+
+    const summary: CrawlExecutionSummary = {
+      inserted,
+      skipped
+    };
+
+    if (typeof data.itemsQueued === "number" && Number.isFinite(data.itemsQueued)) {
+      summary.itemsQueued = data.itemsQueued;
+    }
+    if (typeof data.itemsQueueFailed === "number" && Number.isFinite(data.itemsQueueFailed)) {
+      summary.itemsQueueFailed = data.itemsQueueFailed;
+    }
+    if (data.lastFetchedAt instanceof Date) {
+      summary.lastFetchedAt = data.lastFetchedAt;
+    } else if (typeof data.lastFetchedAt === "string") {
+      const parsed = new Date(data.lastFetchedAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        summary.lastFetchedAt = parsed;
+      }
+    }
+    if (typeof data.runId === "string") {
+      summary.runId = data.runId;
+    }
+    if (typeof data.retryableFailures === "number" && Number.isFinite(data.retryableFailures)) {
+      summary.retryableFailures = data.retryableFailures;
+    }
+
+    return summary;
+  }
+
   async deleteTaskResults(taskId: string, orgId: string) {
     await Promise.all([
       CrawlResultContentModel.deleteMany({ taskId }).exec(),

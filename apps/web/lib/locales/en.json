@@ -1949,6 +1949,16 @@
       "openSource": "Open source",
       "openItem": "Open Item",
       "ingestToItems": "Send to Items",
+      "lastRunItemsValue": "{{queued}} queued, {{failed}} failed",
+      "lastRunResultsValue": "{{inserted}} inserted, {{skipped}} skipped",
+      "backfill": {
+        "button": "Backfill to Items",
+        "confirmTitle": "Send missing results to Items?",
+        "confirmDescription": "This will convert crawl results into Items and enqueue LLM processing for results that are not in Items yet.",
+        "running": "Backfilling results...",
+        "progress": "Backfilling... ({{ingested}} ingested, {{skipped}} skipped, {{failed}} failed)",
+        "done": "Queued for processing. Refreshing..."
+      },
       "fields": {
         "displayName": "Display name",
         "keywords": "Keywords",
@@ -1956,6 +1966,8 @@
         "includeImages": "Include images",
         "storeMedia": "Store media",
         "ingestToItems": "Auto send to Items",
+        "lastRunItems": "Last run → Items",
+        "lastRunResults": "Last run results",
         "runCount": "Run count",
         "scanFullPage": "Scan full page",
         "adjustViewport": "Adjust viewport",

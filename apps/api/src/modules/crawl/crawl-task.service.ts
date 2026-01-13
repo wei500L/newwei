@@ -1,12 +1,14 @@
+import { createLogger } from "@modular/utils";
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from "@nestjs/common";
-import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
-import type { Prisma } from "@prisma/client";
+import { ModuleRef } from "@nestjs/core";
+import { MongoOutboxStatus, MongoOutboxType, Prisma } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import { ItemsService } from "../items/items.service";
 
 import {
   collectCrawlTaskConfigSensitiveFields,
@@ -18,7 +20,7 @@ import {
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
-import type { CrawlMarkdownFilter, CrawlTaskView } from "./crawl.types";
+import type { CrawlIngestBatchSummary, CrawlMarkdownFilter, CrawlTaskView } from "./crawl.types";
 import { clampResultLimit, coerceDate, normalizeKeywords } from "./crawl.utils";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -35,16 +37,34 @@ type CrawlTaskRecord = Prisma.CrawlTaskGetPayload<{
 
 type CrawlTaskOptionsInput = NonNullable<CreateCrawlTaskDto["options"]>;
 
+const logger = createLogger({ name: "crawl-task-service" });
+
 @Injectable()
 export class CrawlTaskService {
+  private itemsService?: ItemsService | null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
     private readonly executionService: CrawlExecutionService,
     private readonly queueService: CrawlQueueService,
     private readonly resultService: CrawlResultService,
-    private readonly actionRateLimit: ActionRateLimitService
+    private readonly actionRateLimit: ActionRateLimitService,
+    private readonly moduleRef: ModuleRef
   ) {}
+
+  private resolveItemsService(): ItemsService | null {
+    if (this.itemsService !== undefined) {
+      return this.itemsService;
+    }
+    try {
+      this.itemsService = this.moduleRef.get(ItemsService, { strict: false });
+    } catch (error) {
+      logger.warn({ err: error }, "ItemsService unavailable; cannot ingest crawl results into Items");
+      this.itemsService = null;
+    }
+    return this.itemsService;
+  }
 
   async createTask(
     orgId: string,
@@ -301,14 +321,194 @@ export class CrawlTaskService {
               };
             });
           })();
-    const memoryStats = await this.resultService.getLatestMemoryStats(orgId, id);
+    const [memoryStats, lastRunSummary] = await Promise.all([
+      this.resultService.getLatestMemoryStats(orgId, id),
+      this.resultService.getLatestExecutionSummary(orgId, id)
+    ]);
 
     return {
       task: {
         ...this.toView(task),
         results: hydratedWithItems,
-        memoryStats
+        memoryStats,
+        lastRunSummary
       }
+    };
+  }
+
+  async updateIngestToItems(
+    orgId: string,
+    userId: string,
+    taskId: string,
+    enabled: boolean,
+    actorPermissions?: string[]
+  ) {
+    const task = await this.prisma.crawlTask.findFirst({
+      where: { id: taskId, orgId },
+      include: { _count: { select: { results: true } } }
+    });
+    if (!task) {
+      throw new NotFoundException("crawl task not found");
+    }
+    if (enabled === true && !actorPermissions?.includes("items.write")) {
+      throw new ForbiddenException("items.write permission is required to enable ingestToItems");
+    }
+
+    const currentConfig =
+      task.config && typeof task.config === "object" && !Array.isArray(task.config)
+        ? (task.config as Record<string, unknown>)
+        : null;
+    const currentEnabled = currentConfig?.ingestToItems === true;
+    if (enabled === currentEnabled) {
+      return this.toView(task);
+    }
+
+    let nextConfig: Record<string, unknown> | null = currentConfig ? { ...currentConfig } : null;
+    if (enabled) {
+      nextConfig = {
+        ...(nextConfig ?? {}),
+        ingestToItems: true
+      };
+    } else if (nextConfig && "ingestToItems" in nextConfig) {
+      delete (nextConfig as { ingestToItems?: unknown }).ingestToItems;
+      if (Object.keys(nextConfig).length === 0) {
+        nextConfig = null;
+      }
+    }
+
+    const encryptionKeyRaw = this.env.crawlTaskConfigEncryptionKey;
+    const encryptionKey = encryptionKeyRaw ? decodeCrawlTaskConfigKey(encryptionKeyRaw) : undefined;
+    let protectedConfig: Record<string, unknown> | null = nextConfig;
+    try {
+      protectedConfig = protectCrawlTaskConfigForStorage(nextConfig, encryptionKey).config;
+    } catch (error) {
+      if (error instanceof CrawlTaskConfigEncryptionRequiredError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
+
+    const updated = await this.prisma.crawlTask.update({
+      where: { id: taskId },
+      data: {
+        config: protectedConfig ? toPrismaJsonValue(protectedConfig) : Prisma.DbNull
+      },
+      include: { _count: { select: { results: true } } }
+    });
+
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId: userId,
+          resource: "crawlTask",
+          action: "updateIngestToItems",
+          metadata: toPrismaJsonValue({
+            taskId,
+            enabled
+          })
+        }
+      },
+      { orgId, actorId: userId, resource: "crawlTask", action: "updateIngestToItems" }
+    );
+
+    return this.toView(updated);
+  }
+
+  async ingestResultsToItems(
+    orgId: string,
+    userId: string,
+    taskId: string,
+    options?: {
+      after?: string | null;
+      limit?: number | null;
+      onlyMissing?: boolean | null;
+    }
+  ): Promise<CrawlIngestBatchSummary> {
+    const task = await this.prisma.crawlTask.findFirst({
+      where: { id: taskId, orgId },
+      select: { id: true }
+    });
+    if (!task) {
+      throw new NotFoundException("crawl task not found");
+    }
+
+    const itemsService = this.resolveItemsService();
+    if (!itemsService) {
+      throw new BadRequestException("ItemsService unavailable");
+    }
+
+    const normalizedAfter = typeof options?.after === "string" ? options.after.trim() : "";
+    const take = (() => {
+      const raw =
+        typeof options?.limit === "number" && Number.isFinite(options.limit) ? Math.floor(options.limit) : 50;
+      return Math.min(Math.max(raw, 1), 200);
+    })();
+    const onlyMissing = options?.onlyMissing !== false;
+
+    const results = await this.prisma.crawlResult.findMany({
+      where: { taskId },
+      orderBy: [{ fetchedAt: "desc" }, { id: "desc" }],
+      take: take + 1,
+      ...(normalizedAfter
+        ? {
+            skip: 1,
+            cursor: { id: normalizedAfter }
+          }
+        : {})
+    });
+
+    const hasMore = results.length > take;
+    const page = results.slice(0, take);
+
+    const externalIds = page.map((result) => `crawlResult:${result.id}`);
+    const existing =
+      onlyMissing && externalIds.length > 0
+        ? await this.prisma.itemMeta.findMany({
+            where: {
+              orgId,
+              externalId: { in: externalIds }
+            },
+            select: { externalId: true }
+          })
+        : [];
+    const existingSet = new Set(existing.map((meta) => meta.externalId));
+
+    let attempted = 0;
+    let ingested = 0;
+    let skippedExisting = 0;
+    let failed = 0;
+
+    for (const result of page) {
+      const externalId = `crawlResult:${result.id}`;
+      if (onlyMissing && existingSet.has(externalId)) {
+        skippedExisting += 1;
+        continue;
+      }
+
+      attempted += 1;
+      try {
+        await itemsService.createFromCrawlResult(orgId, userId, result.id);
+        ingested += 1;
+      } catch (error) {
+        failed += 1;
+        logger.warn(
+          { err: error, orgId, taskId, crawlResultId: result.id },
+          "Failed to ingest crawl result into Items"
+        );
+      }
+    }
+
+    return {
+      taskId,
+      scanned: page.length,
+      attempted,
+      ingested,
+      skippedExisting,
+      failed,
+      nextCursor: hasMore ? page.at(-1)?.id ?? null : null,
+      hasMore
     };
   }
 
@@ -388,6 +588,7 @@ export class CrawlTaskService {
       resultCount: task._count.results,
       config: redactCrawlTaskConfigForView((task.config as Record<string, unknown> | null) ?? null),
       memoryStats: undefined,
+      lastRunSummary: undefined,
       lastServerMemoryMb: task.lastServerMemoryMb ?? null,
       lastPeakMemoryMb: task.lastPeakMemoryMb ?? null,
       lastMemoryEfficiency: task.lastMemoryEfficiency ?? null

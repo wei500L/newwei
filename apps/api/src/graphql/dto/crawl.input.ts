@@ -69,13 +69,13 @@ export class CrawlBrowserCookieInput {
 
 @InputType()
 export class CrawlUserAgentGeneratorInput {
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   platform?: CrawlUserAgentGeneratorConfig["platform"];
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   browser?: CrawlUserAgentGeneratorConfig["browser"];
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   deviceType?: CrawlUserAgentGeneratorConfig["deviceType"];
 
   @Field({ nullable: true })
@@ -396,7 +396,7 @@ export class CrawlOptionsInput {
   @Field({ nullable: true })
   userAgent?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   userAgentMode?: CrawlUserAgentMode;
 
   @Field(() => CrawlUserAgentGeneratorInput, { nullable: true })
@@ -423,7 +423,7 @@ export class CrawlOptionsInput {
 
 @InputType()
 export class CrawlMetadataInput {
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   @IsOptional()
   @IsString()
   source?: CrawlMetadataSource;

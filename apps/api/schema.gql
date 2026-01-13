@@ -255,10 +255,31 @@ type CrawlClientSettingsModel {
   retryBackoffMs: Int!
 }
 
+type CrawlExecutionSummaryModel {
+  inserted: Float!
+  itemsQueueFailed: Float
+  itemsQueued: Float
+  lastFetchedAt: DateTime
+  retryableFailures: Float
+  runId: String
+  skipped: Float!
+}
+
 input CrawlGeolocationInput {
   accuracy: Float
   latitude: Float!
   longitude: Float!
+}
+
+type CrawlIngestBatchModel {
+  attempted: Float!
+  failed: Float!
+  hasMore: Boolean!
+  ingested: Float!
+  nextCursor: String
+  scanned: Float!
+  skippedExisting: Float!
+  taskId: ID!
 }
 
 type CrawlLinkAnalysisModel {
@@ -498,6 +519,7 @@ type CrawlTaskModel {
   lastPeakMemoryMb: Float
   lastResultAt: DateTime
   lastRunAt: DateTime
+  lastRunSummary: CrawlExecutionSummaryModel
   lastServerMemoryMb: Float
   lastSuccessAt: DateTime
   memoryStats: CrawlMemoryStatsModel
@@ -791,6 +813,7 @@ type Mutation {
   deleteAlertRule(ruleId: String!): Boolean!
   deleteCrawlTask(id: String!): Boolean!
   deleteDashboard(id: String!): Boolean!
+  ingestCrawlTaskResultsToItems(after: String, limit: Float, onlyMissing: Boolean, taskId: String!): CrawlIngestBatchModel!
   markAllNotificationsRead: Boolean!
   markNotificationRead(id: String!): NotificationModel
   requestAnomalyExplanation(input: AnomalyAnalysisInput!): AnalysisResultModel!
@@ -804,6 +827,7 @@ type Mutation {
   updateAuditLogRetention(input: UpdateAuditLogRetentionInput!): AuditLogRetentionModel!
   updateAuthCacheSettings(input: UpdateAuthCacheSettingsInput!): AuthCacheSettingsModel!
   updateCrawlClientSettings(input: UpdateCrawlClientSettingsInput!): CrawlClientSettingsModel!
+  updateCrawlTaskIngestToItems(enabled: Boolean!, id: String!): CrawlTaskModel!
   updateEconomicDataFetchConfig(frequency: EconomicDataFrequency, isEnabled: Boolean, repeatCron: String, slug: String!): EconomicDataFetchConfigModel!
   updateItem(input: UpdateItemInput!): ItemModel!
   updateNewsPromptConfig(input: UpdateNewsPromptConfigInput!): NewsPromptConfigModel!
@@ -895,6 +919,8 @@ type ProcessedItemPreviewModelGraph {
   itemMetaId: String!
   llm: ProcessedItemLlmModel
   location: String
+
+  """Content published time (ISO8601)"""
   publishedAt: String
   qualityScore: Float
   sentiment: String
@@ -988,11 +1014,6 @@ type RawItemModelGraph {
   updatedAt: DateTime!
 }
 
-type SeriesPointModel {
-  timestamp: String!
-  value: Float!
-}
-
 type RawItemPreviewModelGraph {
   changePercent: Float
   history: [SeriesPointModel!]
@@ -1000,10 +1021,16 @@ type RawItemPreviewModelGraph {
   price: Float
   region: String
   sentiment: String
+
+  """Publisher/source name from raw payload"""
   sourceName: String
   summary: String
+
+  """Preview thumbnail URL"""
   thumbnail: String
   ticker: String
+
+  """Original content URL"""
   url: String
 }
 
@@ -1016,6 +1043,11 @@ type RoleModel {
 }
 
 input SeriesPointInput {
+  timestamp: String!
+  value: Float!
+}
+
+type SeriesPointModel {
   timestamp: String!
   value: Float!
 }

@@ -47,6 +47,17 @@ const statusColors: Record<CrawlTaskStatus, string> = {
   paused: "purple",
 };
 
+function safeParseJson<T>(input?: string | null): T | null {
+  if (!input) {
+    return null;
+  }
+  try {
+    return JSON.parse(input) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function CrawlTasksView() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -107,6 +118,14 @@ export function CrawlTasksView() {
         <div>
           <div style={{ fontWeight: 600 }}>
             {record.displayName ?? record.targetUrl}
+            {(() => {
+              const config = safeParseJson<{ ingestToItems?: boolean }>(record.config);
+              return config?.ingestToItems ? (
+                <Tag color="geekblue" style={{ marginLeft: 8 }}>
+                  {t("crawl.settings.ingestToItems", { defaultValue: "Auto send to Items" })}
+                </Tag>
+              ) : null;
+            })()}
           </div>
           <Typography.Link
             href={record.targetUrl}

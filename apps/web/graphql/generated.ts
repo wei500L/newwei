@@ -15,9 +15,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
-  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -275,10 +273,33 @@ export type CrawlClientSettingsModel = {
   retryBackoffMs: Scalars['Int']['output'];
 };
 
+export type CrawlExecutionSummaryModel = {
+  __typename?: 'CrawlExecutionSummaryModel';
+  inserted: Scalars['Float']['output'];
+  itemsQueueFailed?: Maybe<Scalars['Float']['output']>;
+  itemsQueued?: Maybe<Scalars['Float']['output']>;
+  lastFetchedAt?: Maybe<Scalars['DateTime']['output']>;
+  retryableFailures?: Maybe<Scalars['Float']['output']>;
+  runId?: Maybe<Scalars['String']['output']>;
+  skipped: Scalars['Float']['output'];
+};
+
 export type CrawlGeolocationInput = {
   accuracy?: InputMaybe<Scalars['Float']['input']>;
   latitude: Scalars['Float']['input'];
   longitude: Scalars['Float']['input'];
+};
+
+export type CrawlIngestBatchModel = {
+  __typename?: 'CrawlIngestBatchModel';
+  attempted: Scalars['Float']['output'];
+  failed: Scalars['Float']['output'];
+  hasMore: Scalars['Boolean']['output'];
+  ingested: Scalars['Float']['output'];
+  nextCursor?: Maybe<Scalars['String']['output']>;
+  scanned: Scalars['Float']['output'];
+  skippedExisting: Scalars['Float']['output'];
+  taskId: Scalars['ID']['output'];
 };
 
 export type CrawlLinkAnalysisModel = {
@@ -529,6 +550,7 @@ export type CrawlTaskModel = {
   lastPeakMemoryMb?: Maybe<Scalars['Float']['output']>;
   lastResultAt?: Maybe<Scalars['DateTime']['output']>;
   lastRunAt?: Maybe<Scalars['DateTime']['output']>;
+  lastRunSummary?: Maybe<CrawlExecutionSummaryModel>;
   lastServerMemoryMb?: Maybe<Scalars['Float']['output']>;
   lastSuccessAt?: Maybe<Scalars['DateTime']['output']>;
   memoryStats?: Maybe<CrawlMemoryStatsModel>;
@@ -819,11 +841,13 @@ export type Mutation = {
   createAlertChannel: AlertChannelModel;
   createCrawlTask: CrawlTaskModel;
   createItem: ItemModel;
+  createItemFromCrawlResult: ItemModel;
   createOrg: OrgModel;
   deleteAlertChannel: Scalars['Boolean']['output'];
   deleteAlertRule: Scalars['Boolean']['output'];
   deleteCrawlTask: Scalars['Boolean']['output'];
   deleteDashboard: Scalars['Boolean']['output'];
+  ingestCrawlTaskResultsToItems: CrawlIngestBatchModel;
   markAllNotificationsRead: Scalars['Boolean']['output'];
   markNotificationRead?: Maybe<NotificationModel>;
   requestAnomalyExplanation: AnalysisResultModel;
@@ -837,6 +861,7 @@ export type Mutation = {
   updateAuditLogRetention: AuditLogRetentionModel;
   updateAuthCacheSettings: AuthCacheSettingsModel;
   updateCrawlClientSettings: CrawlClientSettingsModel;
+  updateCrawlTaskIngestToItems: CrawlTaskModel;
   updateEconomicDataFetchConfig: EconomicDataFetchConfigModel;
   updateItem: ItemModel;
   updateNewsPromptConfig: NewsPromptConfigModel;
@@ -868,6 +893,11 @@ export type MutationCreateItemArgs = {
 };
 
 
+export type MutationCreateItemFromCrawlResultArgs = {
+  resultId: Scalars['String']['input'];
+};
+
+
 export type MutationCreateOrgArgs = {
   input: CreateOrgInput;
 };
@@ -890,6 +920,14 @@ export type MutationDeleteCrawlTaskArgs = {
 
 export type MutationDeleteDashboardArgs = {
   id: Scalars['String']['input'];
+};
+
+
+export type MutationIngestCrawlTaskResultsToItemsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Float']['input']>;
+  onlyMissing?: InputMaybe<Scalars['Boolean']['input']>;
+  taskId: Scalars['String']['input'];
 };
 
 
@@ -950,6 +988,12 @@ export type MutationUpdateAuthCacheSettingsArgs = {
 
 export type MutationUpdateCrawlClientSettingsArgs = {
   input: UpdateCrawlClientSettingsInput;
+};
+
+
+export type MutationUpdateCrawlTaskIngestToItemsArgs = {
+  enabled: Scalars['Boolean']['input'];
+  id: Scalars['String']['input'];
 };
 
 
@@ -1083,6 +1127,7 @@ export type ProcessedItemPreviewModelGraph = {
   itemMetaId: Scalars['String']['output'];
   llm?: Maybe<ProcessedItemLlmModel>;
   location?: Maybe<Scalars['String']['output']>;
+  /** Content published time (ISO8601) */
   publishedAt?: Maybe<Scalars['String']['output']>;
   qualityScore?: Maybe<Scalars['Float']['output']>;
   sentiment?: Maybe<Scalars['String']['output']>;
@@ -1293,10 +1338,13 @@ export type RawItemPreviewModelGraph = {
   price?: Maybe<Scalars['Float']['output']>;
   region?: Maybe<Scalars['String']['output']>;
   sentiment?: Maybe<Scalars['String']['output']>;
+  /** Publisher/source name from raw payload */
   sourceName?: Maybe<Scalars['String']['output']>;
   summary?: Maybe<Scalars['String']['output']>;
+  /** Preview thumbnail URL */
   thumbnail?: Maybe<Scalars['String']['output']>;
   ticker?: Maybe<Scalars['String']['output']>;
+  /** Original content URL */
   url?: Maybe<Scalars['String']['output']>;
 };
 
@@ -1585,7 +1633,7 @@ export type CrawlTasksQueryVariables = Exact<{
 }>;
 
 
-export type CrawlTasksQuery = { __typename?: 'Query', crawlTasks: { __typename?: 'CrawlTaskConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null }, edges: Array<{ __typename?: 'CrawlTaskEdge', cursor: string, node: { __typename?: 'CrawlTaskModel', id: string, displayName?: string | null, targetUrl: string, status: CrawlTaskStatus, concurrency: number, runCount: number, resultCount: number, lastRunAt?: any | null, lastSuccessAt?: any | null, lastError?: string | null, createdAt: any, lastPeakMemoryMb?: number | null, lastMemoryEfficiency?: number | null } }> } };
+export type CrawlTasksQuery = { __typename?: 'Query', crawlTasks: { __typename?: 'CrawlTaskConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null }, edges: Array<{ __typename?: 'CrawlTaskEdge', cursor: string, node: { __typename?: 'CrawlTaskModel', id: string, displayName?: string | null, targetUrl: string, status: CrawlTaskStatus, concurrency: number, runCount: number, resultCount: number, lastRunAt?: any | null, lastSuccessAt?: any | null, lastError?: string | null, createdAt: any, config?: string | null, lastPeakMemoryMb?: number | null, lastMemoryEfficiency?: number | null } }> } };
 
 export type CrawlTaskQueryVariables = Exact<{
   id: Scalars['ID']['input'];
@@ -1594,7 +1642,7 @@ export type CrawlTaskQueryVariables = Exact<{
 }>;
 
 
-export type CrawlTaskQuery = { __typename?: 'Query', crawlTask?: { __typename?: 'CrawlTaskModel', id: string, displayName?: string | null, targetUrl: string, status: CrawlTaskStatus, keywords: Array<string>, concurrency: number, runCount: number, lastRunAt?: any | null, lastSuccessAt?: any | null, lastResultAt?: any | null, lastError?: string | null, config?: string | null, lastServerMemoryMb?: number | null, lastPeakMemoryMb?: number | null, lastMemoryEfficiency?: number | null, results?: Array<{ __typename?: 'CrawlResultModel', id: string, itemId?: string | null, itemStatus?: string | null, sourceUrl: string, fetchedAt: any, markdown: string, markdownWithCitations?: string | null, referencesMarkdown?: string | null, fitMarkdown?: string | null, metadata?: string | null, media?: string | null, mediaAssets?: string | null, tables?: any | null, linkAnalysis?: { __typename?: 'CrawlLinkAnalysisModel', stats: { __typename?: 'CrawlLinkStatsModel', totalLinks: number, internalLinks: number, externalLinks: number, averageIntrinsicScore?: number | null, highQualityLinks?: number | null, lowQualityLinks?: number | null }, topLinks: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, baseDomain?: string | null, type?: string | null, intrinsicScore?: number | null, contextualScore?: number | null, totalScore?: number | null }>, lowQualityLinks: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, intrinsicScore?: number | null, baseDomain?: string | null }>, buckets: Array<{ __typename?: 'CrawlLinkBucketModel', kind: string, links: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, baseDomain?: string | null, type?: string | null, intrinsicScore?: number | null, contextualScore?: number | null, totalScore?: number | null }> }> } | null }> | null, memoryStats?: { __typename?: 'CrawlMemoryStatsModel', serverMemoryMb?: number | null, peakMemoryMb?: number | null, efficiencyPercent?: number | null } | null } | null };
+export type CrawlTaskQuery = { __typename?: 'Query', crawlTask?: { __typename?: 'CrawlTaskModel', id: string, displayName?: string | null, targetUrl: string, status: CrawlTaskStatus, keywords: Array<string>, concurrency: number, runCount: number, lastRunAt?: any | null, lastSuccessAt?: any | null, lastResultAt?: any | null, lastError?: string | null, config?: string | null, lastServerMemoryMb?: number | null, lastPeakMemoryMb?: number | null, lastMemoryEfficiency?: number | null, lastRunSummary?: { __typename?: 'CrawlExecutionSummaryModel', inserted: number, skipped: number, itemsQueued?: number | null, itemsQueueFailed?: number | null, lastFetchedAt?: any | null, runId?: string | null, retryableFailures?: number | null } | null, results?: Array<{ __typename?: 'CrawlResultModel', id: string, itemId?: string | null, itemStatus?: string | null, sourceUrl: string, fetchedAt: any, markdown: string, markdownWithCitations?: string | null, referencesMarkdown?: string | null, fitMarkdown?: string | null, metadata?: string | null, media?: string | null, mediaAssets?: string | null, tables?: any | null, linkAnalysis?: { __typename?: 'CrawlLinkAnalysisModel', stats: { __typename?: 'CrawlLinkStatsModel', totalLinks: number, internalLinks: number, externalLinks: number, averageIntrinsicScore?: number | null, highQualityLinks?: number | null, lowQualityLinks?: number | null }, topLinks: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, baseDomain?: string | null, type?: string | null, intrinsicScore?: number | null, contextualScore?: number | null, totalScore?: number | null }>, lowQualityLinks: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, intrinsicScore?: number | null, baseDomain?: string | null }>, buckets: Array<{ __typename?: 'CrawlLinkBucketModel', kind: string, links: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, baseDomain?: string | null, type?: string | null, intrinsicScore?: number | null, contextualScore?: number | null, totalScore?: number | null }> }> } | null }> | null, memoryStats?: { __typename?: 'CrawlMemoryStatsModel', serverMemoryMb?: number | null, peakMemoryMb?: number | null, efficiencyPercent?: number | null } | null } | null };
 
 export type CreateCrawlTaskMutationVariables = Exact<{
   input: CreateCrawlTaskInput;
@@ -1609,6 +1657,24 @@ export type RetryCrawlTaskMutationVariables = Exact<{
 
 
 export type RetryCrawlTaskMutation = { __typename?: 'Mutation', retryCrawlTask: { __typename?: 'CrawlTaskModel', id: string, status: CrawlTaskStatus, lastRunAt?: any | null, lastError?: string | null, runCount: number } };
+
+export type UpdateCrawlTaskIngestToItemsMutationVariables = Exact<{
+  id: Scalars['String']['input'];
+  enabled: Scalars['Boolean']['input'];
+}>;
+
+
+export type UpdateCrawlTaskIngestToItemsMutation = { __typename?: 'Mutation', updateCrawlTaskIngestToItems: { __typename?: 'CrawlTaskModel', id: string, config?: string | null } };
+
+export type IngestCrawlTaskResultsToItemsMutationVariables = Exact<{
+  taskId: Scalars['String']['input'];
+  after?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Float']['input']>;
+  onlyMissing?: InputMaybe<Scalars['Boolean']['input']>;
+}>;
+
+
+export type IngestCrawlTaskResultsToItemsMutation = { __typename?: 'Mutation', ingestCrawlTaskResultsToItems: { __typename?: 'CrawlIngestBatchModel', taskId: string, scanned: number, attempted: number, ingested: number, skippedExisting: number, failed: number, nextCursor?: string | null, hasMore: boolean } };
 
 export type CrawlMetadataQueryVariables = Exact<{
   input: CrawlMetadataInput;
@@ -2532,6 +2598,7 @@ export const CrawlTasksDocument = gql`
         lastSuccessAt
         lastError
         createdAt
+        config
         lastPeakMemoryMb
         lastMemoryEfficiency
       }
@@ -2593,6 +2660,15 @@ export const CrawlTaskDocument = gql`
     lastServerMemoryMb
     lastPeakMemoryMb
     lastMemoryEfficiency
+    lastRunSummary {
+      inserted
+      skipped
+      itemsQueued
+      itemsQueueFailed
+      lastFetchedAt
+      runId
+      retryableFailures
+    }
     results {
       id
       itemId
@@ -2771,6 +2847,89 @@ export function useRetryCrawlTaskMutation(baseOptions?: Apollo.MutationHookOptio
 export type RetryCrawlTaskMutationHookResult = ReturnType<typeof useRetryCrawlTaskMutation>;
 export type RetryCrawlTaskMutationResult = Apollo.MutationResult<RetryCrawlTaskMutation>;
 export type RetryCrawlTaskMutationOptions = Apollo.BaseMutationOptions<RetryCrawlTaskMutation, RetryCrawlTaskMutationVariables>;
+export const UpdateCrawlTaskIngestToItemsDocument = gql`
+    mutation UpdateCrawlTaskIngestToItems($id: String!, $enabled: Boolean!) {
+  updateCrawlTaskIngestToItems(id: $id, enabled: $enabled) {
+    id
+    config
+  }
+}
+    `;
+export type UpdateCrawlTaskIngestToItemsMutationFn = Apollo.MutationFunction<UpdateCrawlTaskIngestToItemsMutation, UpdateCrawlTaskIngestToItemsMutationVariables>;
+
+/**
+ * __useUpdateCrawlTaskIngestToItemsMutation__
+ *
+ * To run a mutation, you first call `useUpdateCrawlTaskIngestToItemsMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useUpdateCrawlTaskIngestToItemsMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [updateCrawlTaskIngestToItemsMutation, { data, loading, error }] = useUpdateCrawlTaskIngestToItemsMutation({
+ *   variables: {
+ *      id: // value for 'id'
+ *      enabled: // value for 'enabled'
+ *   },
+ * });
+ */
+export function useUpdateCrawlTaskIngestToItemsMutation(baseOptions?: Apollo.MutationHookOptions<UpdateCrawlTaskIngestToItemsMutation, UpdateCrawlTaskIngestToItemsMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<UpdateCrawlTaskIngestToItemsMutation, UpdateCrawlTaskIngestToItemsMutationVariables>(UpdateCrawlTaskIngestToItemsDocument, options);
+      }
+export type UpdateCrawlTaskIngestToItemsMutationHookResult = ReturnType<typeof useUpdateCrawlTaskIngestToItemsMutation>;
+export type UpdateCrawlTaskIngestToItemsMutationResult = Apollo.MutationResult<UpdateCrawlTaskIngestToItemsMutation>;
+export type UpdateCrawlTaskIngestToItemsMutationOptions = Apollo.BaseMutationOptions<UpdateCrawlTaskIngestToItemsMutation, UpdateCrawlTaskIngestToItemsMutationVariables>;
+export const IngestCrawlTaskResultsToItemsDocument = gql`
+    mutation IngestCrawlTaskResultsToItems($taskId: String!, $after: String, $limit: Float, $onlyMissing: Boolean) {
+  ingestCrawlTaskResultsToItems(
+    taskId: $taskId
+    after: $after
+    limit: $limit
+    onlyMissing: $onlyMissing
+  ) {
+    taskId
+    scanned
+    attempted
+    ingested
+    skippedExisting
+    failed
+    nextCursor
+    hasMore
+  }
+}
+    `;
+export type IngestCrawlTaskResultsToItemsMutationFn = Apollo.MutationFunction<IngestCrawlTaskResultsToItemsMutation, IngestCrawlTaskResultsToItemsMutationVariables>;
+
+/**
+ * __useIngestCrawlTaskResultsToItemsMutation__
+ *
+ * To run a mutation, you first call `useIngestCrawlTaskResultsToItemsMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useIngestCrawlTaskResultsToItemsMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [ingestCrawlTaskResultsToItemsMutation, { data, loading, error }] = useIngestCrawlTaskResultsToItemsMutation({
+ *   variables: {
+ *      taskId: // value for 'taskId'
+ *      after: // value for 'after'
+ *      limit: // value for 'limit'
+ *      onlyMissing: // value for 'onlyMissing'
+ *   },
+ * });
+ */
+export function useIngestCrawlTaskResultsToItemsMutation(baseOptions?: Apollo.MutationHookOptions<IngestCrawlTaskResultsToItemsMutation, IngestCrawlTaskResultsToItemsMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<IngestCrawlTaskResultsToItemsMutation, IngestCrawlTaskResultsToItemsMutationVariables>(IngestCrawlTaskResultsToItemsDocument, options);
+      }
+export type IngestCrawlTaskResultsToItemsMutationHookResult = ReturnType<typeof useIngestCrawlTaskResultsToItemsMutation>;
+export type IngestCrawlTaskResultsToItemsMutationResult = Apollo.MutationResult<IngestCrawlTaskResultsToItemsMutation>;
+export type IngestCrawlTaskResultsToItemsMutationOptions = Apollo.BaseMutationOptions<IngestCrawlTaskResultsToItemsMutation, IngestCrawlTaskResultsToItemsMutationVariables>;
 export const CrawlMetadataDocument = gql`
     query CrawlMetadata($input: CrawlMetadataInput!) {
   crawlMetadata(input: $input) {

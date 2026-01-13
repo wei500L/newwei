@@ -56,7 +56,7 @@ export class AlertDeliveryModel {
   @Field(() => AlertDeliveryStatus)
   status!: AlertDeliveryStatus;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   error?: string | null;
 
   @Field(() => GraphQLISODateTime, { nullable: true })
@@ -65,10 +65,10 @@ export class AlertDeliveryModel {
   @Field(() => AlertChannelType)
   channelType!: AlertChannelType;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   channelName?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   target?: string | null;
 }
 
@@ -119,19 +119,19 @@ export class AlertEventModel {
   @Field(() => AlertEventStatus)
   status!: AlertEventStatus;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   message?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   ruleId?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   ruleName?: string | null;
 
   @Field(() => AlertMetricProvider, { nullable: true })
   metricProvider?: AlertMetricProvider | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   metricSlug?: string | null;
 
   @Field(() => AlertOperator, { nullable: true })
@@ -164,7 +164,7 @@ export class AlertRuleModel {
   @Field()
   name!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   description?: string | null;
 
   @Field(() => AlertSeverity)

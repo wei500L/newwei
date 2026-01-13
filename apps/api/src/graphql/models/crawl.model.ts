@@ -17,6 +17,57 @@ export class CrawlMemoryStatsModel {
 }
 
 @ObjectType()
+export class CrawlExecutionSummaryModel {
+  @Field(() => Number)
+  inserted!: number;
+
+  @Field(() => Number)
+  skipped!: number;
+
+  @Field(() => Number, { nullable: true })
+  itemsQueued?: number | null;
+
+  @Field(() => Number, { nullable: true })
+  itemsQueueFailed?: number | null;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  lastFetchedAt?: Date | null;
+
+  @Field(() => String, { nullable: true })
+  runId?: string | null;
+
+  @Field(() => Number, { nullable: true })
+  retryableFailures?: number | null;
+}
+
+@ObjectType()
+export class CrawlIngestBatchModel {
+  @Field(() => ID)
+  taskId!: string;
+
+  @Field(() => Number)
+  scanned!: number;
+
+  @Field(() => Number)
+  attempted!: number;
+
+  @Field(() => Number)
+  ingested!: number;
+
+  @Field(() => Number)
+  skippedExisting!: number;
+
+  @Field(() => Number)
+  failed!: number;
+
+  @Field(() => String, { nullable: true })
+  nextCursor?: string | null;
+
+  @Field(() => Boolean)
+  hasMore!: boolean;
+}
+
+@ObjectType()
 export class CrawlResultModel {
   @Field(() => ID)
   id!: string;
@@ -36,13 +87,13 @@ export class CrawlResultModel {
   @Field()
   markdown!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   metadata?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   media?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   mediaAssets?: string | null;
 
   @Field(() => String, { nullable: true })
@@ -248,6 +299,9 @@ export class CrawlTaskModel {
 
   @Field(() => CrawlMemoryStatsModel, { nullable: true })
   memoryStats?: CrawlMemoryStatsModel | null;
+
+  @Field(() => CrawlExecutionSummaryModel, { nullable: true })
+  lastRunSummary?: CrawlExecutionSummaryModel | null;
 
   @Field(() => Number, { nullable: true })
   lastServerMemoryMb?: number | null;

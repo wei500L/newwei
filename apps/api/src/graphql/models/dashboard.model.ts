@@ -49,7 +49,7 @@ export class QueueEventModel {
   @Field()
   jobId!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   data?: string | null;
 
   @Field()
@@ -61,7 +61,7 @@ export class DashboardWidgetModel {
   @Field()
   id!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   title?: string | null;
 
   @Field(() => DashboardWidgetType)
@@ -106,10 +106,10 @@ export class DashboardModel {
   @Field()
   slug!: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   description?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   theme?: string | null;
 
   @Field(() => GraphQLJSONScalar, { nullable: true })

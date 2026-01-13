@@ -1,3 +1,5 @@
+import type { CrawlTaskStatus } from "@prisma/client";
+
 export interface CrawlJobData {
   taskId: string;
   orgId: string;
@@ -15,6 +17,17 @@ export interface CrawlExecutionSummary {
   memory?: CrawlMemoryStats;
   failures?: CrawlFailureDetail[];
   retryableFailures?: number;
+}
+
+export interface CrawlIngestBatchSummary {
+  taskId: string;
+  scanned: number;
+  attempted: number;
+  ingested: number;
+  skippedExisting: number;
+  failed: number;
+  nextCursor?: string | null;
+  hasMore: boolean;
 }
 
 export interface CrawlFailureDetail {
@@ -368,6 +381,7 @@ export interface CrawlTaskView {
   config?: Record<string, unknown> | null;
   results?: CrawlTaskResult[];
   memoryStats?: CrawlMemoryStats | null;
+  lastRunSummary?: CrawlExecutionSummary | null;
   lastServerMemoryMb?: number | null;
   lastPeakMemoryMb?: number | null;
   lastMemoryEfficiency?: number | null;
@@ -409,4 +423,3 @@ export interface CrawlMetadataResult {
   relevanceScore?: number;
   error?: string;
 }
-import type { CrawlTaskStatus } from "@prisma/client";
