@@ -1,4 +1,4 @@
-import { Schema, model, models } from "mongoose";
+import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
 
 const AkshareResponseSchema = new Schema(
   {
@@ -16,11 +16,10 @@ const AkshareResponseSchema = new Schema(
 
 AkshareResponseSchema.index({ dataItemId: 1, fetchedAt: -1 });
 
-export const AkshareResponseModel =
-  models.AkshareResponse || model("AkshareResponse", AkshareResponseSchema);
+export type AkshareResponse = InferSchemaType<typeof AkshareResponseSchema>;
 
-export type AkshareResponseDocument = typeof AkshareResponseModel extends infer T
-  ? T extends { prototype: infer P }
-    ? P
-    : never
-  : never;
+export const AkshareResponseModel =
+  (models.AkshareResponse as Model<AkshareResponse> | undefined) ||
+  model<AkshareResponse>("AkshareResponse", AkshareResponseSchema);
+
+export type AkshareResponseDocument = HydratedDocument<AkshareResponse>;

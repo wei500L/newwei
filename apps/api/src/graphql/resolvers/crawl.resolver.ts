@@ -76,12 +76,12 @@ export class CrawlResolver {
     if (args.status) {
       where.status = args.status;
     }
-    if (args.search) {
-      where.OR = [
-        { displayName: { contains: args.search, mode: "insensitive" } },
-        { targetUrl: { contains: args.search, mode: "insensitive" } }
-      ];
-    }
+	    if (args.search) {
+	      where.OR = [
+	        { displayName: { contains: args.search } },
+	        { targetUrl: { contains: args.search } }
+	      ];
+	    }
 
     const tasks = await this.prisma.crawlTask.findMany({
       where,
@@ -108,15 +108,15 @@ export class CrawlResolver {
       };
     });
 
-    return {
-      edges,
-      pageInfo: {
-        hasNextPage,
-        endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null
-      },
-      totalCount
-    };
-  }
+	    return {
+	      edges,
+	      pageInfo: {
+	        hasNextPage,
+	        endCursor: edges.at(-1)?.cursor ?? null
+	      },
+	      totalCount
+	    };
+	  }
 
   @HasPermission("crawl.read")
   @Query(() => CrawlTaskModel, { nullable: true })

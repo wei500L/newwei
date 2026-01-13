@@ -24,6 +24,7 @@ interface UserMembershipLink {
 }
 
 interface UserMembershipRecord {
+  orgId: string;
   roleId?: string | null;
   role?: UserMembershipRole | null;
   roles?: UserMembershipLink[] | null;
@@ -74,22 +75,22 @@ export class UsersResolver {
     const cursorId = decodeCursor(after);
 
     const users = await this.prisma.user.findMany({
-      where: {
-        memberships: {
-          some: {
-            orgId: requester.orgId
-          }
-        },
-        ...(search
-          ? {
-              OR: [
-                { firstName: { contains: search, mode: "insensitive" } },
-                { lastName: { contains: search, mode: "insensitive" } },
-                { email: { contains: search, mode: "insensitive" } }
-              ]
-            }
-          : {})
-      },
+	      where: {
+	        memberships: {
+	          some: {
+	            orgId: requester.orgId
+	          }
+	        },
+	        ...(search
+	          ? {
+	              OR: [
+	                { firstName: { contains: search } },
+	                { lastName: { contains: search } },
+	                { email: { contains: search } }
+	              ]
+	            }
+	          : {})
+	      },
       take: first,
       ...(cursorId
         ? {
@@ -162,17 +163,17 @@ export class UsersResolver {
       }
     }
 
-    return {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      avatarUrl: user.avatarUrl ?? null,
-      orgId: membership?.orgId ?? orgId,
-      roleIds: Array.from(roleIds),
-      permissions: Array.from(permissions)
-    };
-  }
+	    return {
+	      id: user.id,
+	      email: user.email,
+	      firstName: user.firstName ?? "",
+	      lastName: user.lastName ?? "",
+	      avatarUrl: user.avatarUrl ?? null,
+	      orgId: membership?.orgId ?? orgId,
+	      roleIds: Array.from(roleIds),
+	      permissions: Array.from(permissions)
+	    };
+	  }
 
   private toGraphQLUser(user: AuthenticatedUser): UserModel {
     return {

@@ -1,6 +1,8 @@
 import { createLogger } from "@modular/utils";
 import { AuditLogOutboxStatus, type Prisma } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+
 import type { PrismaService } from "../config/prisma.service";
 
 const logger = createLogger({ name: "audit-log" });
@@ -90,7 +92,7 @@ export async function writeAuditLogBestEffort(
       const outbox = await prisma.auditLogOutbox.create({
         data: {
           orgId: payload.orgId,
-          payload,
+          payload: toPrismaJsonValue(payload),
           status: AuditLogOutboxStatus.pending,
           availableAt: now
         },

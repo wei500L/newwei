@@ -99,7 +99,7 @@ export class GeocodingService {
     }
 
     // Network budget is enforced by the caller; within one record we only attempt the top candidate.
-    const bestCandidate = uniqueCandidates[0];
+    const bestCandidate = uniqueCandidates[0]!;
     return this.geocode(bestCandidate, options);
   }
 

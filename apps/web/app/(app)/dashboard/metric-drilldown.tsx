@@ -5,6 +5,7 @@ import { extractCountryCodeFromText, getCountryName, normalizeCountryCode } from
 import { Badge, Card, Col, Modal, Row, Spin, Tag, Timeline, Typography } from "antd";
 import dayjs from "@/lib/dayjs";
 import type { EChartsOption } from "echarts";
+import type { CallbackDataParams } from "echarts/types/dist/shared";
 import * as echarts from "echarts/core";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -162,9 +163,10 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     return {
       tooltip: {
         trigger: 'item',
-        formatter: (params: { name: string; value: number | unknown }) => {
-          const name = getCountryName(params?.name) ?? params?.name ?? "Unknown";
-          const value = typeof params?.value === "number" ? params.value : 0;
+        formatter: (params: CallbackDataParams | CallbackDataParams[]) => {
+          const payload = Array.isArray(params) ? params[0] : params;
+          const name = getCountryName(payload?.name) ?? payload?.name ?? "Unknown";
+          const value = typeof payload?.value === "number" ? payload.value : 0;
           return `${name}: ${value} Events`;
         }
       },

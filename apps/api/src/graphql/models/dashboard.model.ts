@@ -50,7 +50,7 @@ export class QueueEventModel {
   jobId!: string;
 
   @Field({ nullable: true })
-  data?: string;
+  data?: string | null;
 
   @Field()
   timestamp!: string;
@@ -62,7 +62,7 @@ export class DashboardWidgetModel {
   id!: string;
 
   @Field({ nullable: true })
-  title?: string;
+  title?: string | null;
 
   @Field(() => DashboardWidgetType)
   type!: DashboardWidgetType;
@@ -71,7 +71,7 @@ export class DashboardWidgetModel {
   dataSource!: string;
 
   @Field(() => GraphQLJSONScalar, { nullable: true })
-  dataConfig?: Record<string, unknown>;
+  dataConfig?: Record<string, unknown> | null;
 
   @Field()
   layoutX!: number;
@@ -89,7 +89,7 @@ export class DashboardWidgetModel {
   sortOrder!: number;
 
   @Field(() => GraphQLJSONScalar, { nullable: true })
-  options?: Record<string, unknown>;
+  options?: Record<string, unknown> | null;
 }
 
 @ObjectType()
@@ -107,13 +107,13 @@ export class DashboardModel {
   slug!: string;
 
   @Field({ nullable: true })
-  description?: string;
+  description?: string | null;
 
   @Field({ nullable: true })
-  theme?: string;
+  theme?: string | null;
 
   @Field(() => GraphQLJSONScalar, { nullable: true })
-  config?: Record<string, unknown>;
+  config?: Record<string, unknown> | null;
 
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;

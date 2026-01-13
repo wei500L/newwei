@@ -31,13 +31,13 @@ export class CrawlResultModel {
   markdown!: string;
 
   @Field({ nullable: true })
-  metadata?: string;
+  metadata?: string | null;
 
   @Field({ nullable: true })
-  media?: string;
+  media?: string | null;
 
   @Field({ nullable: true })
-  mediaAssets?: string;
+  mediaAssets?: string | null;
 
   @Field(() => String, { nullable: true })
   markdownWithCitations?: string | null;

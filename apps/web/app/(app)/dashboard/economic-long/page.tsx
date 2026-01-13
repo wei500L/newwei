@@ -8,7 +8,7 @@ import { ChartDataMeta } from "@/components/chart-data-meta";
 import { ChartStateBanner } from "@/components/chart-state-banner";
 import { DashboardChartCard } from "@/components/dashboard-chart-card";
 import { TimeRangeControls } from "@/components/time-range-controls";
-import type { EconomicSeriesMap } from "@/hooks/useEconomicData";
+import type { EconomicSeriesField, EconomicSeriesMap } from "@/hooks/useEconomicData";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import dayjs from "@/lib/dayjs";
 import { resolveLocale } from "@/lib/i18n";
@@ -177,9 +177,7 @@ function buildYieldTimeline(
       label: field.label,
       series: getSeriesField(seriesMap, slug, field.field),
     }))
-    .filter((entry): entry is { label: string; series: { values: { timestamp: string; value: number }[] } } =>
-      Boolean(entry.series),
-    );
+    .filter((entry): entry is { label: string; series: EconomicSeriesField } => Boolean(entry.series));
   if (seriesEntries.length === 0) {
     return null;
   }
@@ -212,7 +210,7 @@ function buildYieldTimeline(
   const timelineLabels = selectedDates.map((date) =>
     dayjs(date).year().toString(),
   );
-  const options = selectedDates.map((date, index) => {
+  const options: EChartsOption[] = selectedDates.map((date, index) => {
     const values = buckets.get(date);
     return {
       title: { text: t("dashboard.economicLong.yieldCurve.yearLabel", { year: timelineLabels[index] }) },

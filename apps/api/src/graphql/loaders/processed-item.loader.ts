@@ -24,7 +24,7 @@ export interface ProcessedItemDoc {
   updatedAt: Date;
 }
 
-type ProcessedItemRecord = ProcessedItemDoc & {
+type ProcessedItemRecord = Omit<ProcessedItemDoc, "id"> & {
   _id: { toString(): string };
   duplicateOf?: { toString(): string } | string | null;
 };
@@ -35,7 +35,7 @@ export class ProcessedItemLoader implements NestDataLoader<string, ProcessedItem
     return new DataLoader(async (keys) => {
       const docs = (await ProcessedItemModel.find({ itemMetaId: { $in: keys as string[] } })
         .sort({ createdAt: -1 })
-        .lean()) as ProcessedItemRecord[];
+        .lean()) as unknown as ProcessedItemRecord[];
       const map = new Map<string, ProcessedItemDoc>();
       docs.forEach((doc) => {
         if (!map.has(doc.itemMetaId)) {

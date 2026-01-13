@@ -226,11 +226,11 @@ export class LiteLlmService {
           response.headers?.["x-litellm-key-spend"],
         );
         const payloadCost = this.extractHeaderCost(
-          (response.data as Record<string, unknown>).response_cost,
+          (response.data as unknown as Record<string, unknown>).response_cost,
         );
         const usageCost = this.extractHeaderCost(
           response.data.usage
-            ? (response.data.usage as Record<string, unknown>).response_cost
+            ? (response.data.usage as unknown as Record<string, unknown>).response_cost
             : undefined,
         );
         const costUsd = headerCost ?? payloadCost ?? usageCost;
@@ -300,7 +300,7 @@ export class LiteLlmService {
 
       const choice = parsed?.choices?.[0];
       const delta = choice?.delta?.content;
-      const finishReason = choice?.finish_reason;
+      const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined;
       if (typeof delta === "string" && delta.length > 0) {
         yield { model, raw: parsed, delta, finishReason };
       } else if (typeof finishReason === "string" && finishReason.length > 0) {
@@ -343,11 +343,11 @@ export class LiteLlmService {
           response.headers?.["x-litellm-key-spend"],
         );
         const payloadCost = this.extractHeaderCost(
-          (response.data as Record<string, unknown>).response_cost,
+          (response.data as unknown as Record<string, unknown>).response_cost,
         );
         const usageCost = this.extractHeaderCost(
           response.data.usage
-            ? (response.data.usage as Record<string, unknown>).response_cost
+            ? (response.data.usage as unknown as Record<string, unknown>).response_cost
             : undefined,
         );
         const costUsd = headerCost ?? payloadCost ?? usageCost;

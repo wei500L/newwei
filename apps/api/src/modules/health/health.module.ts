@@ -21,7 +21,7 @@ import { RedisHealthIndicator } from "./redis.health";
       useFactory: (env: EnvService) => {
         const cfg = env.crawl4aiConfig;
         return {
-          baseURL: cfg.baseUrl.replace(/\/$/, ""),
+          baseURL: cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : undefined,
           timeout: Math.min(1500, cfg.timeoutMs),
           headers: cfg.apiKey
             ? {

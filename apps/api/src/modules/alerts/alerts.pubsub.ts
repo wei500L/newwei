@@ -21,4 +21,4 @@ export interface AlertEventPayload {
   };
 }
 
-export const createAlertsPubSub = () => new PubSub<AlertEventPayload>();
+export const createAlertsPubSub = () => new PubSub();

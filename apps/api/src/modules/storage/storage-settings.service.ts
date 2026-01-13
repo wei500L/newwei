@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import { createLogger } from "@modular/utils";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
@@ -275,11 +276,22 @@ export class StorageSettingsService {
     return updates;
   }
 
-  private buildAuditMetadata(input: StorageSettingsInput) {
-    const metadata: Record<string, unknown> = { ...input };
-    if (metadata.secretAccessKey) {
-      metadata.secretAccessKey = "***";
-    }
+  private buildAuditMetadata(input: StorageSettingsInput): Prisma.InputJsonObject {
+    const metadata: Record<string, Prisma.InputJsonValue> = {};
+
+    Object.entries(input).forEach(([key, value]) => {
+      if (value === undefined) {
+        return;
+      }
+
+      if (key === "secretAccessKey" && value) {
+        metadata[key] = "***";
+        return;
+      }
+
+      metadata[key] = value;
+    });
+
     return metadata;
   }
 

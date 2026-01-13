@@ -68,9 +68,9 @@ const processSeries = (data: DataPoint[] | undefined) => {
   if (!data || data.length === 0) {
     return { value: 0, trend: 0, history: [] };
   }
-  const history = data.map(d => d.value);
-  const current = history[history.length - 1];
-  const previous = history.length > 1 ? history[history.length - 2] : current;
+  const history = data.map((d) => d.value);
+  const current = history[history.length - 1] ?? 0;
+  const previous = history.length > 1 ? history[history.length - 2] ?? current : current;
   const trend = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
   return { value: current, trend, history };
 };
@@ -159,8 +159,7 @@ export function HeroSection({
               </Typography.Text>
               <div className="flex items-baseline gap-2 mb-4">
                 <span className="text-4xl font-semibold text-slate-900 tracking-tight">
-                  {/* @ts-expect-error - formatting numeric values */}
-                  {typeof metric.value === 'number' ? metric.value.toFixed(1) : metric.value}
+                  {metric.value.toFixed(1)}
                   {metric.suffix && <span className="text-xl ml-1 text-slate-400 font-medium">{metric.suffix}</span>}
                 </span>
                 <div className={`flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${

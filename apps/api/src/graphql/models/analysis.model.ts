@@ -34,10 +34,10 @@ export class AnalysisResultModel {
   error?: string | null;
 
   @Field(() => GraphQLJSONScalar, { nullable: true })
-  input?: Record<string, unknown>;
+  input?: Record<string, unknown> | null;
 
   @Field(() => GraphQLJSONScalar, { nullable: true })
-  output?: Record<string, unknown>;
+  output?: Record<string, unknown> | null;
 
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;

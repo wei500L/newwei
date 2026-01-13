@@ -117,7 +117,7 @@ export class NewsPromptBuilder {
       .map((line) => line.trimEnd())
       .filter((line, idx, arr) => {
         const currentEmpty = line.trim().length === 0;
-        const prevEmpty = idx > 0 && arr[idx - 1].trim().length === 0;
+        const prevEmpty = idx > 0 && arr[idx - 1]!.trim().length === 0;
         return !(currentEmpty && prevEmpty);
       })
       .join("\n")

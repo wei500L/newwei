@@ -24,7 +24,7 @@ export class SystemMetricProvider implements MetricProvider {
       };
     },
     "system.load.1m": () => {
-      const [load1] = os.loadavg();
+      const load1 = os.loadavg()[0] ?? 0;
       return { latest: load1, previous: null, changePercent: null, context: { load1 } };
     },
     "system.uptime.seconds": () => {
@@ -40,8 +40,12 @@ export class SystemMetricProvider implements MetricProvider {
   async fetch(
     rule: Pick<AlertRule, "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId">
   ): Promise<MetricEvaluation> {
+    const metadata =
+      rule.metadata && typeof rule.metadata === "object" && !Array.isArray(rule.metadata)
+        ? (rule.metadata as Record<string, unknown>)
+        : null;
     const directValue =
-      typeof rule.metadata?.currentValue === "number" ? rule.metadata.currentValue : undefined;
+      typeof metadata?.currentValue === "number" ? metadata.currentValue : undefined;
     if (directValue !== undefined) {
       return { latest: directValue, previous: null, changePercent: null, context: { source: "metadata" } };
     }

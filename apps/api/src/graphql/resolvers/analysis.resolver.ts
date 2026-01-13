@@ -10,7 +10,7 @@ import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { AnomalyAnalysisInput, CorrelationAnalysisInput } from "../dto/analysis.input";
 import type { GqlRequest } from "../graphql.types";
-import { AnalysisResultModel } from "../models/analysis.model";
+import { AnalysisResultModel, AnalysisStatus, AnalysisType } from "../models/analysis.model";
 
 
 @Resolver()
@@ -34,12 +34,12 @@ export class AnalysisResolver {
     const results = await this.analysisService.listResults(requester.orgId, limit ?? 50);
     return results.map((result) => ({
       id: result._id?.toString?.() ?? result.id,
-      type: result.type,
-      status: result.status,
+      type: AnalysisResolver.toAnalysisType(result.type),
+      status: AnalysisResolver.toAnalysisStatus(result.status),
       summary: result.summary ?? undefined,
       error: result.error ?? undefined,
-      input: result.input as Record<string, unknown> | null,
-      output: result.output as Record<string, unknown> | null,
+      input: (result.input as Record<string, unknown> | null | undefined) ?? null,
+      output: (result.output as Record<string, unknown> | null | undefined) ?? null,
       createdAt: result.createdAt ?? new Date()
     }));
   }
@@ -57,11 +57,11 @@ export class AnalysisResolver {
     const record = await this.analysisService.submitCorrelation(requester.orgId, input, requester.id);
     return {
       id: record.id,
-      type: "correlation",
-      status: "pending",
-      createdAt: record.createdAt,
+      type: AnalysisType.correlation,
+      status: AnalysisStatus.pending,
+      createdAt: record.createdAt ?? new Date(),
       summary: record.summary ?? undefined,
-      input: record.input as Record<string, unknown> | null
+      input: (record.input as Record<string, unknown> | null | undefined) ?? null
     };
   }
 
@@ -78,26 +78,35 @@ export class AnalysisResolver {
     const record = await this.analysisService.submitAnomaly(requester.orgId, input, requester.id);
     return {
       id: record.id,
-      type: "anomaly",
-      status: "pending",
-      createdAt: record.createdAt,
+      type: AnalysisType.anomaly,
+      status: AnalysisStatus.pending,
+      createdAt: record.createdAt ?? new Date(),
       summary: record.summary ?? undefined,
-      input: record.input as Record<string, unknown> | null
+      input: (record.input as Record<string, unknown> | null | undefined) ?? null
     };
   }
 
   @HasPermission("analysis.read")
   @Subscription(() => AnalysisResultModel, {
     name: "analysisEvents",
-    resolve: (payload: { event: AnalysisResultModel }) => ({
+    resolve: (payload: {
+      result: {
+        id: string;
+        type: string;
+        status: string;
+        summary?: string;
+        error?: string;
+        createdAt: string;
+      };
+    }) => ({
       id: payload.result.id,
-      type: payload.result.type,
-      status: payload.result.status,
-      summary: payload.result.summary ?? undefined,
-      createdAt: payload.result.createdAt,
+      type: AnalysisResolver.toAnalysisType(payload.result.type),
+      status: AnalysisResolver.toAnalysisStatus(payload.result.status),
+      summary: payload.result.summary ?? null,
+      createdAt: new Date(payload.result.createdAt),
       input: null,
       output: null,
-      error: payload.result.error ?? undefined
+      error: payload.result.error ?? null
     })
   })
   analysisEventsSubscription(@Context("req") req: GqlRequest) {
@@ -109,5 +118,31 @@ export class AnalysisResolver {
       () => this.pubsub.asyncIterator("analysisEvents"),
       (payload: { orgId: string }) => payload.orgId === requester.orgId
     )();
+  }
+
+  private static toAnalysisType(value: unknown): AnalysisType {
+    if (value === AnalysisType.anomaly || value === "anomaly") {
+      return AnalysisType.anomaly;
+    }
+    return AnalysisType.correlation;
+  }
+
+  private static toAnalysisStatus(value: unknown): AnalysisStatus {
+    switch (value) {
+      case AnalysisStatus.pending:
+      case "pending":
+        return AnalysisStatus.pending;
+      case AnalysisStatus.running:
+      case "running":
+        return AnalysisStatus.running;
+      case AnalysisStatus.completed:
+      case "completed":
+        return AnalysisStatus.completed;
+      case AnalysisStatus.failed:
+      case "failed":
+        return AnalysisStatus.failed;
+      default:
+        return AnalysisStatus.pending;
+    }
   }
 }

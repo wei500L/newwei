@@ -30,7 +30,13 @@ export class QueueEventPublisher implements OnModuleDestroy {
     jobId: string;
     returnvalue?: unknown;
   }) => {
-    await this.emit(jobId, "COMPLETED", returnvalue ?? undefined);
+    const completedData =
+      returnvalue && typeof returnvalue === "object" && !Array.isArray(returnvalue)
+        ? (returnvalue as Record<string, unknown>)
+        : returnvalue !== undefined
+          ? { returnvalue }
+          : undefined;
+    await this.emit(jobId, "COMPLETED", completedData);
   };
 
   private readonly handleActive = async ({
@@ -111,7 +117,7 @@ export class QueueEventPublisher implements OnModuleDestroy {
   }
 
   asyncIterator(orgId: string) {
-    return this.pubsub.asyncIterator<QueueEventPayload>(this.topic(orgId));
+    return this.pubsub.asyncIterator<{ queueEvents: QueueEventPayload }>(this.topic(orgId));
   }
 
   private async dispatchToListeners(orgId: string, payload: QueueEventPayload) {

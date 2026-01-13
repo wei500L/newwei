@@ -12,7 +12,7 @@ export interface RawItemPreviewDoc {
   updatedAt: Date;
 }
 
-type RawItemPreviewRecord = RawItemPreviewDoc & { _id: { toString(): string } };
+type RawItemPreviewRecord = Omit<RawItemPreviewDoc, "id"> & { _id: { toString(): string } };
 
 const RAW_ITEM_PREVIEW_PROJECTION: Record<string, 1> = {
   itemMetaId: 1,
@@ -53,7 +53,7 @@ export class RawItemPreviewLoader implements NestDataLoader<string, RawItemPrevi
         RAW_ITEM_PREVIEW_PROJECTION
       )
         .sort({ createdAt: -1 })
-        .lean()) as RawItemPreviewRecord[];
+        .lean()) as unknown as RawItemPreviewRecord[];
 
       const map = new Map<string, RawItemPreviewDoc>();
       docs.forEach((doc) => {

@@ -47,6 +47,9 @@ export default function LoginPage() {
     if (!parsed.success) {
       const fieldErrors = parsed.error.formErrors.fieldErrors;
       Object.entries(fieldErrors).forEach(([name, messages]) => {
+        if (name !== "email" && name !== "password" && name !== "orgId") {
+          return;
+        }
         form.setFields([
           {
             name,

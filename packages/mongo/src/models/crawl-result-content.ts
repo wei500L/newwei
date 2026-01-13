@@ -1,4 +1,4 @@
-import { Schema, model, models } from "mongoose";
+import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
 
 const CrawlResultContentSchema = new Schema(
   {
@@ -24,11 +24,10 @@ const CrawlResultContentSchema = new Schema(
 
 CrawlResultContentSchema.index({ taskId: 1, createdAt: -1 });
 
-export const CrawlResultContentModel =
-  models.CrawlResultContent || model("CrawlResultContent", CrawlResultContentSchema);
+export type CrawlResultContent = InferSchemaType<typeof CrawlResultContentSchema>;
 
-export type CrawlResultContentDocument = typeof CrawlResultContentModel extends infer T
-  ? T extends { prototype: infer P }
-    ? P
-    : never
-  : never;
+export const CrawlResultContentModel =
+  (models.CrawlResultContent as Model<CrawlResultContent> | undefined) ||
+  model<CrawlResultContent>("CrawlResultContent", CrawlResultContentSchema);
+
+export type CrawlResultContentDocument = HydratedDocument<CrawlResultContent>;

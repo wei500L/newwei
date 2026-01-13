@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
@@ -48,12 +50,12 @@ export class AuthCacheSettingsService {
     await this.prisma.systemSetting.upsert({
       where: { key: AUTH_CACHE_SETTINGS_KEY },
       update: {
-        value: normalized,
+        value: toPrismaJsonValue(normalized),
         updatedById: actorId
       },
       create: {
         key: AUTH_CACHE_SETTINGS_KEY,
-        value: normalized,
+        value: toPrismaJsonValue(normalized),
         updatedById: actorId,
         description: "Auth profile cache settings"
       }
@@ -67,7 +69,7 @@ export class AuthCacheSettingsService {
           actorId,
           resource: "system_settings",
           action: "auth_cache_settings_update",
-          metadata: normalized
+          metadata: toPrismaJsonValue(normalized)
         }
       },
       { orgId, actorId, resource: "system_settings", action: "auth_cache_settings_update" }

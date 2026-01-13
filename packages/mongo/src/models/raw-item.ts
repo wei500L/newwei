@@ -1,4 +1,4 @@
-import { Schema, model, models } from "mongoose";
+import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
 
 const toStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
@@ -99,9 +99,9 @@ const RawItemSchema = new Schema(
   }
 );
 
-export const RawItemModel = models.RawItem || model("RawItem", RawItemSchema);
-export type RawItemDocument = typeof RawItemModel extends infer T
-  ? T extends { prototype: infer P }
-    ? P
-    : never
-  : never;
+export type RawItem = InferSchemaType<typeof RawItemSchema>;
+
+export const RawItemModel =
+  (models.RawItem as Model<RawItem> | undefined) || model<RawItem>("RawItem", RawItemSchema);
+
+export type RawItemDocument = HydratedDocument<RawItem>;

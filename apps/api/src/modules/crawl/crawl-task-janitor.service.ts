@@ -175,8 +175,8 @@ export class CrawlTaskJanitorService {
 
   private async writeAuditLogs(tasks: StaleTaskRow[], kind: "running" | "queued", message: string) {
     const byOrg = tasks.reduce<Record<string, string[]>>((acc, task) => {
-      acc[task.orgId] ??= [];
-      acc[task.orgId].push(task.id);
+      const bucket = (acc[task.orgId] ??= []);
+      bucket.push(task.id);
       return acc;
     }, {});
 

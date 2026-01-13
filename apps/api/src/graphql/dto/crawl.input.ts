@@ -1,5 +1,13 @@
 import { ArgsType, Field, ID, InputType, Int, Float, registerEnumType } from "@nestjs/graphql";
 import { CrawlTaskStatus } from "@prisma/client";
+import type {
+  CrawlCacheMode,
+  CrawlMarkdownContentSource,
+  CrawlMetadataSource,
+  CrawlUrlMatchMode,
+  CrawlUserAgentGeneratorConfig,
+  CrawlUserAgentMode
+} from "../../modules/crawl/crawl.types";
 import {
   IsArray,
   IsBoolean,
@@ -61,13 +69,13 @@ export class CrawlBrowserCookieInput {
 @InputType()
 export class CrawlUserAgentGeneratorInput {
   @Field({ nullable: true })
-  platform?: string;
+  platform?: CrawlUserAgentGeneratorConfig["platform"];
 
   @Field({ nullable: true })
-  browser?: string;
+  browser?: CrawlUserAgentGeneratorConfig["browser"];
 
   @Field({ nullable: true })
-  deviceType?: string;
+  deviceType?: CrawlUserAgentGeneratorConfig["deviceType"];
 
   @Field({ nullable: true })
   locale?: string;
@@ -88,7 +96,7 @@ export class CrawlGeolocationInput {
 @InputType()
 export class CrawlUrlMatcherInput {
   @Field(() => String, { nullable: true })
-  matchMode?: string;
+  matchMode?: CrawlUrlMatchMode;
 
   @Field(() => [String], { nullable: true })
   patterns?: string[];
@@ -133,7 +141,7 @@ export class CrawlStrategyOverridesInput {
   waitForTimeoutMs?: number;
 
   @Field(() => String, { nullable: true })
-  cacheMode?: string;
+  cacheMode?: CrawlCacheMode;
 
   @Field(() => Int, { nullable: true })
   wordCountThreshold?: number;
@@ -184,7 +192,7 @@ export class CrawlMultiUrlStrategyInput {
 @InputType()
 export class CrawlMarkdownOptionsInput {
   @Field(() => String, { nullable: true })
-  contentSource?: string;
+  contentSource?: CrawlMarkdownContentSource;
 
   @Field(() => Boolean, { nullable: true })
   ignoreLinks?: boolean;
@@ -199,13 +207,13 @@ export class CrawlMarkdownOptionsInput {
 @InputType()
 export class CrawlMarkdownFilterInput {
   @Field(() => String, { nullable: true })
-  type?: string;
+  type?: "pruning";
 
   @Field(() => Float, { nullable: true })
   threshold?: number;
 
   @Field(() => String, { nullable: true })
-  thresholdType?: string;
+  thresholdType?: "fixed" | "dynamic";
 
   @Field(() => Int, { nullable: true })
   minWordThreshold?: number;
@@ -388,7 +396,7 @@ export class CrawlOptionsInput {
   userAgent?: string;
 
   @Field({ nullable: true })
-  userAgentMode?: string;
+  userAgentMode?: CrawlUserAgentMode;
 
   @Field(() => CrawlUserAgentGeneratorInput, { nullable: true })
   userAgentGenerator?: CrawlUserAgentGeneratorInput;
@@ -417,7 +425,7 @@ export class CrawlMetadataInput {
   @Field({ nullable: true })
   @IsOptional()
   @IsString()
-  source?: string;
+  source?: CrawlMetadataSource;
 
   @Field({ nullable: true })
   @IsOptional()

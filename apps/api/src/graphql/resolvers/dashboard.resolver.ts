@@ -147,7 +147,7 @@ export class DashboardResolver {
       timestamp: value.queueEvents.timestamp
     })
   })
-  queueEventsSubscription(@Context("req") req: GqlRequest): AsyncIterableIterator<{ queueEvents: QueueEventPayload }> {
+  queueEventsSubscription(@Context("req") req: GqlRequest): AsyncIterator<{ queueEvents: QueueEventPayload }> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");

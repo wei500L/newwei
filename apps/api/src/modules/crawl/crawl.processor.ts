@@ -14,7 +14,7 @@ import { Crawl4aiRequestException } from "./crawl4ai.exception";
 const logger = createLogger({ name: "crawl-queue" });
 const RETRYABLE_STATUS_CODES = new Set([408, 423, 425, 429, 500, 502, 503, 504]);
 
-function resolveBackoffDelayMs(backoff: BackoffOptions | undefined, attempt: number): number | null {
+function resolveBackoffDelayMs(backoff: number | BackoffOptions | undefined, attempt: number): number | null {
   if (!backoff) {
     return null;
   }

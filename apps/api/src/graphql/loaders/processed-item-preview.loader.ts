@@ -24,7 +24,7 @@ export interface ProcessedItemPreviewDoc {
   updatedAt: Date;
 }
 
-type ProcessedItemPreviewRecord = ProcessedItemPreviewDoc & {
+type ProcessedItemPreviewRecord = Omit<ProcessedItemPreviewDoc, "id"> & {
   _id: { toString(): string };
   duplicateOf?: { toString(): string } | string | null;
 };
@@ -59,7 +59,7 @@ export class ProcessedItemPreviewLoader implements NestDataLoader<string, Proces
         PROCESSED_ITEM_PREVIEW_PROJECTION
       )
         .sort({ createdAt: -1 })
-        .lean()) as ProcessedItemPreviewRecord[];
+        .lean()) as unknown as ProcessedItemPreviewRecord[];
 
       const map = new Map<string, ProcessedItemPreviewDoc>();
       docs.forEach((doc) => {
@@ -84,4 +84,3 @@ export class ProcessedItemPreviewLoader implements NestDataLoader<string, Proces
     });
   }
 }
-

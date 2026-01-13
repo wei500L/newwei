@@ -47,8 +47,12 @@ export const captureClientError = (
   const normalizedError = normalizeError(message, error);
 
   if (sentry?.captureException) {
+    const tags: Record<string, string> = {
+      ...(context.tags ?? {}),
+      ...(context.traceId ? { traceId: context.traceId } : {}),
+    };
     sentry.captureException(normalizedError, {
-      tags: { ...context.tags, traceId: context.traceId },
+      tags,
       extra: { ...context.extras, message },
     });
   }

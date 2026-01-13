@@ -31,6 +31,9 @@ export const quantile = (values: number[], q: number): number | null => {
   const rest = position - base;
   const next = sorted[base + 1];
   const current = sorted[base];
+  if (current === undefined) {
+    return null;
+  }
   if (next === undefined) {
     return current;
   }
@@ -44,4 +47,3 @@ export const safeMean = (values: number[]): number | null => {
   const sum = values.reduce((acc, value) => acc + value, 0);
   return sum / values.length;
 };
-

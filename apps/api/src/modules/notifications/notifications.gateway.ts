@@ -145,10 +145,34 @@ export class NotificationsGateway
 
   private verifyToken(token: string): JwtPayload {
     const jwtConfig = this.env.jwtConfig;
-    return verify(token, jwtConfig.secret, {
+    const decoded = verify(token, jwtConfig.secret, {
       audience: jwtConfig.audience,
       issuer: jwtConfig.issuer
-    }) as JwtPayload;
+    });
+
+    if (!decoded || typeof decoded === "string") {
+      throw new Error("Invalid token");
+    }
+
+    const payload = decoded as Partial<JwtPayload>;
+    if (!payload.sub || typeof payload.sub !== "string") {
+      throw new Error("Invalid token payload");
+    }
+    if (!payload.orgId || typeof payload.orgId !== "string") {
+      throw new Error("Invalid token payload");
+    }
+    const permissions = Array.isArray(payload.permissions)
+      ? payload.permissions.filter((entry): entry is string => typeof entry === "string")
+      : [];
+
+    return {
+      sub: payload.sub,
+      orgId: payload.orgId,
+      permissions,
+      jti: typeof payload.jti === "string" ? payload.jti : undefined,
+      exp: typeof payload.exp === "number" ? payload.exp : undefined,
+      iat: typeof payload.iat === "number" ? payload.iat : undefined
+    };
   }
 
   private async ensureNotRevoked(payload: JwtPayload) {
@@ -215,6 +239,9 @@ export class NotificationsGateway
       return undefined;
     }
     const headerValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+    if (typeof headerValue !== "string") {
+      return undefined;
+    }
     const trimmed = headerValue.trim();
     if (trimmed.toLowerCase().startsWith("bearer ")) {
       return trimmed.slice(7);

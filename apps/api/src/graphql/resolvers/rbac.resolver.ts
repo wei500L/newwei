@@ -141,16 +141,16 @@ export class RbacResolver {
     if (!user) {
       throw new ForbiddenException("User not found");
     }
-    return {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      orgId: membership.orgId,
-      roleIds: [],
-      permissions: []
-    };
-  }
+	    return {
+	      id: user.id,
+	      email: user.email,
+	      firstName: user.firstName ?? "",
+	      lastName: user.lastName ?? "",
+	      orgId: membership.orgId,
+	      roleIds: [],
+	      permissions: []
+	    };
+	  }
 
   private mapRole(role: RoleRecord): RoleModel {
     return {
@@ -192,15 +192,15 @@ export class RbacResolver {
       userId: membership.userId,
       role: this.mapRole(membership.role),
       roles: roles.map((role) => this.mapRole(role)),
-      user: {
-        id: membership.user.id,
-        email: membership.user.email,
-        firstName: membership.user.firstName,
-        lastName: membership.user.lastName,
-        orgId: membership.orgId,
-        roleIds,
-        permissions
-      }
-    };
-  }
+	      user: {
+	        id: membership.user.id,
+	        email: membership.user.email,
+	        firstName: membership.user.firstName ?? "",
+	        lastName: membership.user.lastName ?? "",
+	        orgId: membership.orgId,
+	        roleIds,
+	        permissions
+	      }
+	    };
+	  }
 }

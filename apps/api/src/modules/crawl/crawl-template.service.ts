@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+
 import { PrismaService } from "../config/prisma.service";
 
 import { CreateCrawlTemplateDto, ListCrawlTemplateDto, UpdateCrawlTemplateDto } from "./dto/crawl-template.dto";
@@ -13,7 +15,7 @@ export class CrawlTemplateService {
     const where: Prisma.CrawlTemplateWhereInput = { orgId };
     const search = query?.search?.trim();
     if (search) {
-      where.OR = [{ name: { contains: search, mode: "insensitive" } }];
+      where.OR = [{ name: { contains: search } }];
     }
 
     return this.prisma.crawlTemplate.findMany({
@@ -37,7 +39,7 @@ export class CrawlTemplateService {
         name,
         description,
         isActive,
-        crawlOptions
+        crawlOptions: crawlOptions ? toPrismaJsonValue(crawlOptions) : Prisma.DbNull
       }
     });
   }
@@ -63,7 +65,11 @@ export class CrawlTemplateService {
       data.isActive = input.isActive;
     }
     if (input.crawlOptions !== undefined) {
-      data.crawlOptions = input.crawlOptions ? this.normalizeOptionalObject(input.crawlOptions) : null;
+      if (input.crawlOptions === null) {
+        data.crawlOptions = Prisma.DbNull;
+      } else if (input.crawlOptions) {
+        data.crawlOptions = toPrismaJsonValue(this.normalizeOptionalObject(input.crawlOptions));
+      }
     }
 
     return this.prisma.crawlTemplate.update({ where: { id }, data });
@@ -99,4 +105,3 @@ export class CrawlTemplateService {
     return value;
   }
 }
-

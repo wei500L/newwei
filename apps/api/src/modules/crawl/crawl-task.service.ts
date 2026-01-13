@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, BadRequestException } from "@nestjs/comm
 import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 import { EnvService } from "../config/config.service";
@@ -17,7 +19,7 @@ import {
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
-import type { CrawlTaskView } from "./crawl.types";
+import type { CrawlMarkdownFilter, CrawlTaskView } from "./crawl.types";
 import { clampResultLimit, coerceDate, normalizeKeywords } from "./crawl.utils";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
@@ -81,7 +83,7 @@ export class CrawlTaskService {
       additionalUrls: normalizedRawOptions?.additionalUrls,
       multiUrlConfigs: normalizedRawOptions?.multiUrlConfigs,
       markdownOptions: normalizedRawOptions?.markdownOptions,
-      markdownFilter: normalizedRawOptions?.markdownFilter,
+      markdownFilter: this.normalizeMarkdownFilter(normalizedRawOptions?.markdownFilter),
       markdownStrategy: normalizedRawOptions?.markdownStrategy,
       cleanMarkdown: normalizedRawOptions?.cleanMarkdown,
       scoreLinks: normalizedRawOptions?.scoreLinks,
@@ -119,7 +121,7 @@ export class CrawlTaskService {
         keywords,
         timeRangeFrom,
         timeRangeTo,
-        config: protectedConfig,
+        ...(protectedConfig ? { config: toPrismaJsonValue(protectedConfig) } : {}),
         runCount: 0
       },
       include: { _count: { select: { results: true } } }
@@ -142,7 +144,7 @@ export class CrawlTaskService {
           actorId: userId,
           resource: "crawlTask",
           action: "create",
-          metadata: auditMetadata
+          metadata: toPrismaJsonValue(auditMetadata)
         }
       },
       { orgId, actorId: userId, resource: "crawlTask", action: "create" }
@@ -214,8 +216,8 @@ export class CrawlTaskService {
     }
     if (filters.search) {
       where.OR = [
-        { targetUrl: { contains: filters.search, mode: "insensitive" } },
-        { displayName: { contains: filters.search, mode: "insensitive" } }
+        { targetUrl: { contains: filters.search } },
+        { displayName: { contains: filters.search } }
       ];
     }
 
@@ -252,7 +254,7 @@ export class CrawlTaskService {
       taskId: id
     };
     if (query.resultSearch) {
-      resultWhere.OR = [{ sourceUrl: { contains: query.resultSearch, mode: "insensitive" } }];
+      resultWhere.OR = [{ sourceUrl: { contains: query.resultSearch } }];
     }
 
     const results = await this.prisma.crawlResult.findMany({
@@ -439,5 +441,17 @@ export class CrawlTaskService {
       return options;
     }
     return this.stripJsExecutionOptions(options);
+  }
+
+  private normalizeMarkdownFilter(value?: CrawlTaskOptionsInput["markdownFilter"]): CrawlMarkdownFilter | undefined {
+    if (!value) {
+      return undefined;
+    }
+    return {
+      type: "pruning",
+      threshold: value.threshold,
+      thresholdType: value.thresholdType,
+      minWordThreshold: value.minWordThreshold
+    };
   }
 }

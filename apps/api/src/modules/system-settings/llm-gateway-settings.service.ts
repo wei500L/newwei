@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { createLogger } from "@modular/utils";
+import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
@@ -27,10 +28,11 @@ export interface LlmGatewaySettingsPublic {
   profiles: LlmGatewayProfilePublic[];
 }
 
-export type LlmGatewayProfileInput = Partial<LiteLlmEnvConfig> & {
+export type LlmGatewayProfileInput = Partial<Omit<LiteLlmEnvConfig, "apiKey" | "embeddingModel">> & {
   name?: string;
   enabled?: boolean;
   apiKey?: string | null;
+  embeddingModel?: string | null;
 };
 
 interface StoredProfile extends Omit<LiteLlmEnvConfig, "apiKey"> {
@@ -118,6 +120,9 @@ export class LlmGatewaySettingsService {
       throw new NotFoundException("LLM gateway profile not found");
     }
     const existing = settings.profiles[index];
+    if (!existing) {
+      throw new NotFoundException("LLM gateway profile not found");
+    }
     const updated = this.buildProfileFromInput(
       { ...existing, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() },
       existing,
@@ -237,19 +242,22 @@ export class LlmGatewaySettingsService {
     actorId: string,
     settings: StoredSettings,
     action: string,
-    auditMetadata: Record<string, unknown>
+    auditMetadata: Prisma.InputJsonObject
   ) {
+    const settingsValue = this.toPrismaJson(settings);
+    const auditValue = this.toPrismaJson(auditMetadata);
+
     await this.prisma.systemSetting.upsert({
       where: { key: SETTINGS_KEY },
       update: {
-        value: settings,
+        value: settingsValue,
         updatedById: actorId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false
       },
       create: {
         key: SETTINGS_KEY,
-        value: settings,
+        value: settingsValue,
         updatedById: actorId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false
@@ -264,7 +272,7 @@ export class LlmGatewaySettingsService {
           actorId,
           resource: "system_settings",
           action,
-          metadata: auditMetadata
+          metadata: auditValue
         }
       },
       { orgId, actorId, resource: "system_settings", action }
@@ -475,9 +483,9 @@ export class LlmGatewaySettingsService {
     return trimmed ? trimmed : undefined;
   }
 
-  private normalizeOptionalString(value: unknown): string | null | undefined {
+  private normalizeOptionalString(value: unknown): string | undefined {
     if (value === null) {
-      return null;
+      return undefined;
     }
     return this.normalizeString(value);
   }
@@ -507,5 +515,9 @@ export class LlmGatewaySettingsService {
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
     return Array.from(new Set(trimmed));
+  }
+
+  private toPrismaJson(value: unknown): Prisma.InputJsonValue {
+    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }

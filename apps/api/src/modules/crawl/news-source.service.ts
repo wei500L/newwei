@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { NewsSourceType, PipelineJobStatus, Prisma } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
@@ -14,7 +16,7 @@ const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
   PipelineJobStatus.delayed,
 ];
 
-interface NewsSourceSeedConfig {
+export interface NewsSourceSeedConfig {
   enabled: boolean;
   domain?: string;
   pattern?: string;
@@ -26,7 +28,7 @@ interface NewsSourceSeedConfig {
   dedupeWindowHours: number;
 }
 
-interface NewsSourcePreviewCandidate {
+export interface NewsSourcePreviewCandidate {
   url: string;
   status: "success" | "failed";
   title?: string;
@@ -53,8 +55,8 @@ export class NewsSourceService {
     const search = query?.search?.trim();
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { url: { contains: search, mode: "insensitive" } }
+        { name: { contains: search } },
+        { url: { contains: search } }
       ];
     }
 
@@ -93,7 +95,7 @@ export class NewsSourceService {
         frequencySeconds: input.frequencySeconds,
         priority: input.priority,
         isActive,
-        config,
+        config: config ? toPrismaJsonValue(config) : Prisma.DbNull,
         nextRunAt
       }
     });
@@ -131,7 +133,7 @@ export class NewsSourceService {
       if (crawlTemplateId) {
         await this.assertTemplateInOrg(orgId, crawlTemplateId);
       }
-      data.crawlTemplateId = crawlTemplateId;
+      data.crawlTemplate = crawlTemplateId ? { connect: { id: crawlTemplateId } } : { disconnect: true };
     }
     if (input.frequencySeconds !== undefined) {
       data.frequencySeconds = input.frequencySeconds;
@@ -143,7 +145,11 @@ export class NewsSourceService {
       data.isActive = input.isActive;
     }
     if (input.config !== undefined) {
-      data.config = input.config ? this.normalizeConfig(input.config) : null;
+      if (input.config === null) {
+        data.config = Prisma.DbNull;
+      } else if (input.config) {
+        data.config = toPrismaJsonValue(this.normalizeConfig(input.config));
+      }
     }
 
     const isActivating = input.isActive === true && !existing.isActive;

@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -46,13 +48,13 @@ export class CrawlSettingsService {
       this.prisma.systemSetting.upsert({
         where: { key: CRAWL_CLIENT_SETTINGS_KEY },
         update: {
-          value: normalized,
+          value: toPrismaJsonValue(normalized),
           updatedById: actorId,
           description: "Crawl client runtime settings"
         },
         create: {
           key: CRAWL_CLIENT_SETTINGS_KEY,
-          value: normalized,
+          value: toPrismaJsonValue(normalized),
           updatedById: actorId,
           description: "Crawl client runtime settings"
         }
@@ -67,7 +69,7 @@ export class CrawlSettingsService {
           actorId,
           resource: "system_settings",
           action: "crawl_client_settings_update",
-          metadata: normalized
+          metadata: toPrismaJsonValue(normalized)
         }
       },
       { orgId, actorId, resource: "system_settings", action: "crawl_client_settings_update" }

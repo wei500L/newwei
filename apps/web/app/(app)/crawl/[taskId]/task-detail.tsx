@@ -92,6 +92,7 @@ interface CrawlStoredMediaAsset {
 }
 
 type CrawlResultTableRecord = Record<string, string | number | boolean | null>;
+type CrawlResultTablePreviewRow = CrawlResultTableRecord & { key: string };
 
 interface CrawlResultTable {
   id: string;
@@ -307,10 +308,12 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
             ellipsis: true
           }));
           const records = buildTableRecords(table);
-          const previewRows = records.slice(0, 5).map((record, index) => ({
-            key: `${table.id}-${index}`,
-            ...record
-          }));
+          const previewRows: CrawlResultTablePreviewRow[] = records
+            .slice(0, 5)
+            .map((record, index) => ({
+              key: `${table.id}-${index}`,
+              ...record
+            }));
           const remaining = Math.max(0, table.rowCount - previewRows.length);
           return (
             <div key={table.id}>

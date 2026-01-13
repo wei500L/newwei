@@ -73,23 +73,24 @@ export class AnalysisService {
       logger.warn({ job }, "Analysis record not found");
       return;
     }
+    const createdAt = record.createdAt ? new Date(record.createdAt) : new Date();
     record.status = "running";
     await record.save();
-    await this.publish(record.orgId, record.id, record.type, record.status, undefined, record.createdAt);
+    await this.publish(record.orgId, record.id, record.type, record.status, undefined, createdAt);
 
     try {
       if (job.type === "correlation") {
-        const output = await this.runCorrelation(record.orgId, record.id, record.createdAt, record.input as CorrelationInput);
+        const output = await this.runCorrelation(record.orgId, record.id, createdAt, record.input as CorrelationInput);
         record.output = output;
         record.summary = output.summary;
       } else {
-        const output = await this.runAnomaly(record.orgId, record.id, record.createdAt, record.input as AnomalyInput);
+        const output = await this.runAnomaly(record.orgId, record.id, createdAt, record.input as AnomalyInput);
         record.output = output;
         record.summary = output.summary;
       }
       record.status = "completed";
       await record.save();
-      await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, record.createdAt);
+      await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, createdAt);
       await this.notifyResult(record);
     } catch (error: unknown) {
       logger.error({ job, error }, "Analysis job failed");
@@ -104,7 +105,7 @@ export class AnalysisService {
         record.type,
         record.status,
         record.summary ?? undefined,
-        record.createdAt,
+        createdAt,
         record.error ?? undefined
       );
       await this.notifyResult(record);

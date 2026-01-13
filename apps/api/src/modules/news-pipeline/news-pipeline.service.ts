@@ -26,7 +26,7 @@ import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { Crawl4aiClient } from "../crawl/crawl4ai.client";
 import { ItemStatus } from "../../common/pipeline-status";
-
+import { toPrismaJsonValue } from "../../common/prisma-json";
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
@@ -68,7 +68,7 @@ interface SummaryDedupeResult {
 }
 
 interface ProcessedItemOutboxPayload {
-  type: MongoOutboxType.processed_item;
+  type: typeof MongoOutboxType.processed_item;
   document: {
     _id: string;
     rawItemId: string;
@@ -102,7 +102,7 @@ const OptionalNumberArraySchema = z.preprocess(
   z.array(z.number().finite()),
 ).optional();
 
-const LlmCallMetadataSchema: z.ZodType<LlmCallMetadata> = z.object({
+const LlmCallMetadataSchema: z.ZodType<LlmCallMetadata, z.ZodTypeDef, unknown> = z.object({
   model: NullableStringSchema,
   promptVersion: NullableStringSchema,
   promptTokens: NullableFiniteNumberSchema,
@@ -112,25 +112,40 @@ const LlmCallMetadataSchema: z.ZodType<LlmCallMetadata> = z.object({
   latencyMs: NullableFiniteNumberSchema,
 });
 
-const ProcessedItemOutboxPayloadSchema: z.ZodType<ProcessedItemOutboxPayload> =
-  z.object({
-    type: z.literal(MongoOutboxType.processed_item),
-    document: z.object({
-      _id: z.string(),
-      rawItemId: z.string(),
-      itemMetaId: z.string(),
-      orgId: z.string(),
-      status: z.literal("completed"),
-      tags: z.array(z.string()).default([]),
-      result: CleanedNewsSchema,
-      llm: LlmCallMetadataSchema,
-      summaryEmbedding: OptionalNumberArraySchema,
-      summaryEmbeddingModel: NullableStringSchema.optional(),
-      duplicateOf: NullableStringSchema.optional(),
-      duplicateSimilarity: NullableFiniteNumberSchema.optional(),
-      error: z.unknown().optional(),
-    }),
-  });
+const ProcessedItemOutboxPayloadSchema: z.ZodType<
+  ProcessedItemOutboxPayload,
+  z.ZodTypeDef,
+  unknown
+> = z.object({
+  type: z.literal(MongoOutboxType.processed_item),
+  document: z.object({
+    _id: z.string(),
+    rawItemId: z.string(),
+    itemMetaId: z.string(),
+    orgId: z.string(),
+    status: z.literal("completed"),
+    tags: z.array(z.string()).default([]),
+    result: CleanedNewsSchema,
+    llm: LlmCallMetadataSchema,
+    summaryEmbedding: OptionalNumberArraySchema,
+    summaryEmbeddingModel: NullableStringSchema.optional(),
+    duplicateOf: NullableStringSchema.optional(),
+    duplicateSimilarity: NullableFiniteNumberSchema.optional(),
+    error: z.unknown().optional(),
+  }),
+});
+
+type CrawledArticle = {
+  sourceUrl: string;
+  markdown: string;
+  markdownWithCitations?: string;
+  referencesMarkdown?: string;
+  metadata: Record<string, unknown>;
+  publishedAt: string | null;
+  runId: string | null;
+  fetchedAt: string;
+  contentHash: string;
+};
 
 type PersistedProcessedItem =
   | ProcessedItemDocument
@@ -315,7 +330,7 @@ export class NewsPipelineService {
     job: PipelineJobContext;
     raw: RawPipelineItem;
     payload: NormalizedNewsPayload;
-    article: ReturnType<typeof this.normalizeArticle> & { fromCache: boolean };
+    article: CrawledArticle & { fromCache: boolean };
     cleaned: CleanedNews;
     llm: LlmCallMetadata;
     contentHash: string;
@@ -368,7 +383,10 @@ export class NewsPipelineService {
     };
   }
 
-  private async fetchArticle(job: PipelineJobContext, payload: NormalizedNewsPayload) {
+  private async fetchArticle(
+    job: PipelineJobContext,
+    payload: NormalizedNewsPayload
+  ): Promise<CrawledArticle & { fromCache: boolean }> {
     const crawlResultId = this.extractCrawlResultId(payload);
     if (crawlResultId) {
       const stored = await this.fetchStoredCrawlResult(job.orgId, crawlResultId);
@@ -388,15 +406,21 @@ export class NewsPipelineService {
           ...cached,
           contentHash: cached.contentHash ?? this.hashContent(cached.markdown),
         };
+        const metadata =
+          cachedWithHash.metadata &&
+          typeof cachedWithHash.metadata === "object" &&
+          !Array.isArray(cachedWithHash.metadata)
+            ? (cachedWithHash.metadata as Record<string, unknown>)
+            : {};
         return {
           sourceUrl: payload.url,
           markdown: cachedWithHash.markdown,
-          markdownWithCitations: cachedWithHash.markdownWithCitations,
-          referencesMarkdown: cachedWithHash.referencesMarkdown,
-          metadata: cachedWithHash.metadata ?? {},
+          markdownWithCitations: cachedWithHash.markdownWithCitations ?? undefined,
+          referencesMarkdown: cachedWithHash.referencesMarkdown ?? undefined,
+          metadata,
           publishedAt: cachedWithHash.publishedAt ?? null,
           runId: cachedWithHash.runId ?? null,
-          fetchedAt: cachedWithHash.fetchedAt ?? null,
+          fetchedAt: cachedWithHash.fetchedAt ?? new Date().toISOString(),
           contentHash: cachedWithHash.contentHash,
           fromCache: true,
         };
@@ -443,7 +467,7 @@ export class NewsPipelineService {
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  private async fetchStoredCrawlResult(orgId: string, crawlResultId: string) {
+  private async fetchStoredCrawlResult(orgId: string, crawlResultId: string): Promise<CrawledArticle> {
     const crawlResult = await this.prisma.crawlResult.findFirst({
       where: {
         id: crawlResultId,
@@ -488,7 +512,7 @@ export class NewsPipelineService {
         ? ((doc as { metadata: Record<string, unknown> }).metadata ?? {})
         : {};
 
-    const metadata = {
+    const metadata: Record<string, unknown> = {
       ...mongoMetadata,
       ...mysqlMetadata,
       crawlResultId: crawlResult.id,
@@ -499,22 +523,20 @@ export class NewsPipelineService {
         ? crawlResult.contentHash
         : this.hashContent(markdown);
 
+    const markdownWithCitationsRaw = (doc as { markdownWithCitations?: unknown }).markdownWithCitations;
     const markdownWithCitations =
-      typeof (doc as { markdownWithCitations?: unknown }).markdownWithCitations === "string"
-        ? ((doc as { markdownWithCitations?: string }).markdownWithCitations ?? null)
-        : null;
+      typeof markdownWithCitationsRaw === "string" ? markdownWithCitationsRaw : undefined;
 
+    const referencesMarkdownRaw = (doc as { referencesMarkdown?: unknown }).referencesMarkdown;
     const referencesMarkdown =
-      typeof (doc as { referencesMarkdown?: unknown }).referencesMarkdown === "string"
-        ? ((doc as { referencesMarkdown?: string }).referencesMarkdown ?? null)
-        : null;
+      typeof referencesMarkdownRaw === "string" ? referencesMarkdownRaw : undefined;
 
     const crawlRunId =
       typeof (doc as { crawlRunId?: unknown }).crawlRunId === "string"
         ? ((doc as { crawlRunId?: string }).crawlRunId ?? null)
         : null;
 
-    const fetchedAt = crawlResult.fetchedAt ? crawlResult.fetchedAt.toISOString() : null;
+    const fetchedAt = crawlResult.fetchedAt ? crawlResult.fetchedAt.toISOString() : new Date().toISOString();
 
     return {
       sourceUrl: crawlResult.sourceUrl,
@@ -535,9 +557,8 @@ export class NewsPipelineService {
       ...cfg.crawlerDefaults,
       cleanMarkdown: cfg.cleanMarkdown ?? cfg.crawlerDefaults.cleanMarkdown,
       markdownOptions: cfg.markdown ?? cfg.crawlerDefaults.markdownOptions,
-      userAgent: cfg.crawlerDefaults.userAgent ?? cfg.userAgent,
       ...payload.crawlOptions,
-      userAgent: payload.crawlOptions?.userAgent ?? cfg.userAgent,
+      userAgent: payload.crawlOptions?.userAgent ?? cfg.crawlerDefaults.userAgent ?? cfg.userAgent,
     };
     const request = {
       url: payload.url,
@@ -564,7 +585,7 @@ export class NewsPipelineService {
     article: ParsedCrawl4aiArticle,
     url: string,
     runId?: string | null,
-  ) {
+  ): CrawledArticle {
     const markdown = this.extractMarkdown(article);
     if (!markdown) {
       throw new Error("Crawl result missing markdown");
@@ -572,16 +593,32 @@ export class NewsPipelineService {
     const contentHash = this.hashContent(markdown);
     const markdownRecord =
       typeof article.markdown === "string" || !article.markdown ? null : article.markdown;
+
+    const markdownWithCitations =
+      typeof markdownRecord?.markdown_with_citations === "string"
+        ? markdownRecord.markdown_with_citations
+        : typeof markdownRecord?.markdownWithCitations === "string"
+          ? markdownRecord.markdownWithCitations
+          : undefined;
+
+    const referencesMarkdown =
+      typeof markdownRecord?.references_markdown === "string"
+        ? markdownRecord.references_markdown
+        : typeof markdownRecord?.referencesMarkdown === "string"
+          ? markdownRecord.referencesMarkdown
+          : undefined;
+
+    const metadata =
+      article.metadata && typeof article.metadata === "object" && !Array.isArray(article.metadata)
+        ? (article.metadata as Record<string, unknown>)
+        : {};
+
     return {
       sourceUrl: article.url ?? url,
       markdown,
-      markdownWithCitations:
-        markdownRecord?.markdown_with_citations ??
-        markdownRecord?.markdownWithCitations,
-      referencesMarkdown:
-        markdownRecord?.references_markdown ??
-        markdownRecord?.referencesMarkdown,
-      metadata: article.metadata ?? {},
+      markdownWithCitations,
+      referencesMarkdown,
+      metadata,
       publishedAt: article.publishedAt ?? null,
       runId: article.success === false ? null : (runId ?? null),
       fetchedAt: new Date().toISOString(),
@@ -613,7 +650,7 @@ export class NewsPipelineService {
 
   private async cleanArticle(
     payload: NormalizedNewsPayload,
-    article: ReturnType<typeof this.normalizeArticle> & { fromCache: boolean },
+    article: CrawledArticle & { fromCache: boolean },
     job: PipelineJobContext,
   ): Promise<{
     cleaned: CleanedNews;
@@ -890,7 +927,7 @@ export class NewsPipelineService {
     for (let i = 0; i < a.length; i += 1) {
       const ai = a[i];
       const bi = b[i];
-      if (!Number.isFinite(ai) || !Number.isFinite(bi)) {
+      if (ai === undefined || bi === undefined || !Number.isFinite(ai) || !Number.isFinite(bi)) {
         return 0;
       }
       dot += ai * bi;
@@ -1043,7 +1080,7 @@ export class NewsPipelineService {
     payload: ProcessedItemOutboxPayload;
     processedItemId: string;
     contentHash: string;
-    article: ReturnType<typeof this.normalizeArticle>;
+    article: CrawledArticle;
     cleaned: CleanedNews;
     llm: LlmCallMetadata;
     processedArticleId?: string | null;
@@ -1103,16 +1140,16 @@ export class NewsPipelineService {
           }
         }
 
-        return tx.mongoOutbox.create({
-          data: {
-            orgId: options.orgId,
-            type: MongoOutboxType.processed_item,
-            payload: options.payload,
-            status: MongoOutboxStatus.pending,
-            availableAt: new Date(),
-          },
-        });
-      });
+	        return tx.mongoOutbox.create({
+	          data: {
+	            orgId: options.orgId,
+	            type: MongoOutboxType.processed_item,
+	            payload: toPrismaJsonValue(options.payload),
+	            status: MongoOutboxStatus.pending,
+	            availableAt: new Date(),
+	          },
+	        });
+	      });
 
       this.outboxEventEmitter.emit(OUTBOX_DELIVERY_REQUESTED_EVENT, {
         outboxId: outboxEntry.id,
@@ -1202,7 +1239,7 @@ export class NewsPipelineService {
     options: {
       orgId: string;
       contentHash: string;
-      article: ReturnType<typeof this.normalizeArticle>;
+      article: CrawledArticle;
       cleaned: CleanedNews;
       llm: LlmCallMetadata;
       processedItemId: string;
@@ -1224,7 +1261,7 @@ export class NewsPipelineService {
           sourceLabel: options.payload.sourceName ?? null,
           language: options.cleaned.language ?? options.payload.language ?? null,
           titleGuess: options.cleaned.title ?? undefined,
-          metadata: options.article.metadata ?? {},
+          metadata: toPrismaJsonValue(options.article.metadata ?? {}),
           crawlAt,
         },
         create: {
@@ -1236,7 +1273,7 @@ export class NewsPipelineService {
           titleGuess: options.cleaned.title ?? undefined,
           crawlAt,
           contentHash: options.contentHash,
-          metadata: options.article.metadata ?? {},
+          metadata: toPrismaJsonValue(options.article.metadata ?? {}),
         },
       });
 

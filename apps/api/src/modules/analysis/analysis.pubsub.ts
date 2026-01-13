@@ -14,4 +14,4 @@ export interface AnalysisEventPayload {
   };
 }
 
-export const createAnalysisPubSub = () => new PubSub<AnalysisEventPayload>();
+export const createAnalysisPubSub = () => new PubSub();

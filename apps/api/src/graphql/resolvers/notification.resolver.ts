@@ -13,7 +13,7 @@ import { NotificationModel } from "../models/notification.model";
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class NotificationResolver {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(private readonly notificationsService: NotificationsService) {}
 
   @AllowAuthenticated()
   @Query(() => [NotificationModel])
@@ -26,7 +26,7 @@ export class NotificationResolver {
       throw new ForbiddenException("Unauthenticated");
     }
     const take = Math.min(limit ?? 20, 50);
-    const results = await this.notifications.listForUser(requester.orgId, requester.id, take);
+    const results = await this.notificationsService.listForUser(requester.orgId, requester.id, take);
     return results.map((notification) => this.toModel(notification));
   }
 
@@ -37,7 +37,7 @@ export class NotificationResolver {
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
-    return this.notifications.countUnread(requester.orgId, requester.id);
+    return this.notificationsService.countUnread(requester.orgId, requester.id);
   }
 
   @AllowAuthenticated()
@@ -50,7 +50,7 @@ export class NotificationResolver {
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
-    const updated = await this.notifications.markRead(requester.orgId, requester.id, id);
+    const updated = await this.notificationsService.markRead(requester.orgId, requester.id, id);
     return updated ? this.toModel(updated) : null;
   }
 
@@ -61,7 +61,7 @@ export class NotificationResolver {
     if (!requester) {
       throw new ForbiddenException("Unauthenticated");
     }
-    const count = await this.notifications.markAllRead(requester.orgId, requester.id);
+    const count = await this.notificationsService.markAllRead(requester.orgId, requester.id);
     return count > 0;
   }
 

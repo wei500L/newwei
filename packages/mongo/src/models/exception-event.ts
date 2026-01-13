@@ -1,4 +1,4 @@
-import { Schema, model, models } from "mongoose";
+import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
 
 const ExceptionEventSchema = new Schema(
   {
@@ -25,11 +25,10 @@ const ExceptionEventSchema = new Schema(
 ExceptionEventSchema.index({ orgId: 1, timestamp: -1 });
 ExceptionEventSchema.index({ kind: 1, timestamp: -1 });
 
-export const ExceptionEventModel =
-  models.ExceptionEvent || model("ExceptionEvent", ExceptionEventSchema);
+export type ExceptionEvent = InferSchemaType<typeof ExceptionEventSchema>;
 
-export type ExceptionEventDocument = typeof ExceptionEventModel extends infer T
-  ? T extends { prototype: infer P }
-    ? P
-    : never
-  : never;
+export const ExceptionEventModel =
+  (models.ExceptionEvent as Model<ExceptionEvent> | undefined) ||
+  model<ExceptionEvent>("ExceptionEvent", ExceptionEventSchema);
+
+export type ExceptionEventDocument = HydratedDocument<ExceptionEvent>;

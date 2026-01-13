@@ -34,6 +34,7 @@ export interface Crawl4aiPipelineConfig {
 
 export interface PipelineRuntimeConfig
   extends Omit<NewsPipelineEnvConfig, "configPath"> {
+  configPath: string;
   summaryMaxTokens: number;
   rateLimitWindowSeconds: number;
   allowMediaEmbedding: boolean;
@@ -54,12 +55,15 @@ export interface NewsPipelineConfig {
 interface LiteLlmFileConfig {
   model?: string;
   embedding_model?: string;
+  api_url?: string;
   api_base?: string;
   api_key?: string;
   timeout_ms?: number;
   temperature?: number;
   top_p?: number;
+  max_tokens?: number;
   max_output_tokens?: number;
+  retry_attempts?: number;
   max_retries?: number;
   fallback_models?: string[];
   requests_per_minute?: number;
@@ -128,7 +132,7 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
     return this.currentConfig;
   }
 
-  private resolveConfigPath(rawValue: string) {
+  private resolveConfigPath(rawValue: string): string {
     if (path.isAbsolute(rawValue)) {
       return rawValue;
     }
@@ -142,7 +146,7 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
         return candidate;
       }
     }
-    return candidates[0];
+    return candidates[0]!;
   }
 
   private registerWatcherIfExists() {
@@ -333,6 +337,10 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
         raw?.max_input_characters,
         envConfig.maxInputChars,
       ),
+      crawlQueueConcurrency: envConfig.crawlQueueConcurrency,
+      processQueueConcurrency: envConfig.processQueueConcurrency,
+      crawlQueueRateLimit: envConfig.crawlQueueRateLimit,
+      processQueueRateLimit: envConfig.processQueueRateLimit,
       summaryMaxTokens: this.ensurePositiveInt(raw?.summary_max_tokens, 256),
       rateLimitWindowSeconds: this.ensurePositiveInt(
         raw?.rate_limit_window_seconds,

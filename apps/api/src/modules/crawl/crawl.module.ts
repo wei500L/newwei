@@ -33,7 +33,7 @@ import { NewsSourceService } from "./news-source.service";
       useFactory: (env: EnvService) => {
         const cfg = env.crawl4aiConfig;
         return {
-          baseURL: cfg.baseUrl.replace(/\/$/, ""),
+          baseURL: cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : undefined,
           timeout: cfg.timeoutMs,
           headers: cfg.apiKey
             ? {

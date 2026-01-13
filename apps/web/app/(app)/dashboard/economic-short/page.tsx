@@ -10,7 +10,7 @@ import {
   Tabs,
   Typography,
 } from "antd";
-import type { CallbackDataParams } from "echarts";
+import type { CallbackDataParams } from "echarts/types/dist/shared";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 

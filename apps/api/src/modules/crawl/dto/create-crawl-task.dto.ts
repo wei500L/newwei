@@ -307,10 +307,6 @@ export class CrawlOptionsDto {
 
   @IsOptional()
   @IsBoolean()
-  excludeExternalImages?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
   scanFullPage?: boolean;
 
   @IsOptional()

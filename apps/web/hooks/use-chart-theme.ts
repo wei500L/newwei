@@ -9,6 +9,7 @@ export interface ChartTheme {
     primary: string;
     bullish: string;
     bearish: string;
+    destructive: string;
     accent: string;
     background: string;
     foreground: string;
@@ -27,6 +28,7 @@ const DEFAULT_THEME: ChartTheme = {
     primary: "#1f3b7b",
     bullish: "#1b9e77",
     bearish: "#d95f02",
+    destructive: "#dc2626",
     accent: "#d97706",
     background: "transparent",
     foreground: "#475569",
@@ -57,6 +59,7 @@ export function useChartTheme(): ChartTheme {
         primary: getVar("--primary", "#1f3b7b"),
         bullish: getVar("--bullish", "#1b9e77"),
         bearish: getVar("--bearish", "#d95f02"),
+        destructive: getVar("--destructive", "#dc2626"),
         accent: getVar("--accent", "#d97706"),
         background: "transparent",
         foreground: getVar("--foreground", "#475569"),

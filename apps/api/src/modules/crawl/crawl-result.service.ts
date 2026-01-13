@@ -4,6 +4,8 @@ import { createLogger } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 import type { CrawlResult, CrawlTask } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+
 import { EnvService } from "../config/config.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
@@ -11,20 +13,21 @@ import { PrismaService } from "../config/prisma.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import type {
   CrawlExecutionSummary,
-  CrawlLinkAnalysis,
-  CrawlMediaCollection,
-  CrawlMediaItem,
-  CrawlMediaSource,
+	  CrawlLinkAnalysis,
+	  Crawl4aiTablePayload,
+	  CrawlMediaCollection,
+	  CrawlMediaItem,
+	  CrawlMediaSource,
   CrawlMemoryStats,
   CrawlResultTable,
   CrawlStoredMediaAsset,
   CrawlTableCell,
   CrawlTaskOptions,
   CrawlTaskResult
-} from "./crawl.types";
-import { hashMarkdown, coerceDate } from "./crawl.utils";
-import type { Crawl4aiArticle, Crawl4aiTablePayload } from "./crawl4ai.client";
-import { buildLinkAnalysis } from "./link-analysis";
+	} from "./crawl.types";
+	import { hashMarkdown, coerceDate } from "./crawl.utils";
+	import type { Crawl4aiArticle } from "./crawl4ai.client";
+	import { buildLinkAnalysis } from "./link-analysis";
 
 
 const logger = createLogger({ name: "crawl-result-service" });
@@ -127,7 +130,7 @@ export class CrawlResultService {
           fetchedAt,
           markdownRef: "",
           contentHash: hash,
-          metadata: item.metadata ?? {}
+          metadata: toPrismaJsonValue(item.metadata ?? {})
         }
       });
 
@@ -792,8 +795,8 @@ export class CrawlResultService {
   ): { rows: CrawlTableCell[][]; inferredHeaders?: string[] } {
     if (Array.isArray(table.rows)) {
       const normalized = table.rows
-        .map((row) => this.normalizeTableRow(row))
-        .filter((row): row is CrawlTableCell[] => row.length > 0);
+        .map((row: unknown) => this.normalizeTableRow(row))
+        .filter((row: CrawlTableCell[]): row is CrawlTableCell[] => row.length > 0);
       return { rows: normalized };
     }
     if (Array.isArray(table.data)) {
@@ -801,7 +804,7 @@ export class CrawlResultService {
       if (!columns.length) {
         return { rows: [] };
       }
-      const rows = table.data.map((record) =>
+      const rows = table.data.map((record: unknown) =>
         columns.map((column) => this.normalizeTableCell(record ? (record as Record<string, unknown>)[column] : undefined))
       );
       return { rows, inferredHeaders: columns };

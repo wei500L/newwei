@@ -1,4 +1,4 @@
-import { Schema, model, models } from "mongoose";
+import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
 
 const TaskLogSchema = new Schema(
   {
@@ -19,10 +19,9 @@ const TaskLogSchema = new Schema(
 TaskLogSchema.index({ queue: 1, jobId: 1, stage: 1 });
 TaskLogSchema.index({ orgId: 1, createdAt: -1 });
 
-export const TaskLogModel = models.TaskLog || model("TaskLog", TaskLogSchema);
+export type TaskLog = InferSchemaType<typeof TaskLogSchema>;
 
-export type TaskLogDocument = typeof TaskLogModel extends infer T
-  ? T extends { prototype: infer P }
-    ? P
-    : never
-  : never;
+export const TaskLogModel =
+  (models.TaskLog as Model<TaskLog> | undefined) || model<TaskLog>("TaskLog", TaskLogSchema);
+
+export type TaskLogDocument = HydratedDocument<TaskLog>;

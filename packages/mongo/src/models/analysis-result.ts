@@ -1,4 +1,4 @@
-import { Schema, model, models } from "mongoose";
+import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
 
 const AnalysisResultSchema = new Schema(
   {
@@ -20,10 +20,10 @@ const AnalysisResultSchema = new Schema(
 AnalysisResultSchema.index({ orgId: 1, createdAt: -1 });
 AnalysisResultSchema.index({ type: 1, orgId: 1 });
 
-export const AnalysisResultModel = models.AnalysisResult || model("AnalysisResult", AnalysisResultSchema);
+export type AnalysisResult = InferSchemaType<typeof AnalysisResultSchema>;
 
-export type AnalysisResultDocument = typeof AnalysisResultModel extends infer T
-  ? T extends { prototype: infer P }
-    ? P
-    : never
-  : never;
+export const AnalysisResultModel =
+  (models.AnalysisResult as Model<AnalysisResult> | undefined) ||
+  model<AnalysisResult>("AnalysisResult", AnalysisResultSchema);
+
+export type AnalysisResultDocument = HydratedDocument<AnalysisResult>;

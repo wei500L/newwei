@@ -32,17 +32,17 @@ import {
 export class SettingsResolver {
   constructor(
     private readonly rateLimitConfig: RateLimitConfigService,
-    private readonly newsPromptConfig: NewsPromptConfigService,
+    private readonly newsPromptConfigService: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
     private readonly crawlSettings: CrawlSettingsService,
-    private readonly authCacheSettings: AuthCacheSettingsService,
+    private readonly authCacheSettingsService: AuthCacheSettingsService,
     private readonly prisma: PrismaService
   ) {}
 
   @HasPermission("settings.manage")
   @Query(() => RateLimitSettingsModel)
   async rateLimitSettings(@Context("req") req: GqlRequest): Promise<RateLimitSettingsModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.rateLimitConfig.getRateLimitSettings();
   }
@@ -53,7 +53,7 @@ export class SettingsResolver {
     @Context("req") req: GqlRequest,
     @Args("input") input: UpdateRateLimitSettingsInput
   ): Promise<RateLimitSettingsModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.rateLimitConfig.updateRateLimitSettings(user.orgId, user.id, input);
   }
@@ -61,9 +61,9 @@ export class SettingsResolver {
   @HasPermission("settings.manage")
   @Query(() => AuthCacheSettingsModel)
   async authCacheSettings(@Context("req") req: GqlRequest): Promise<AuthCacheSettingsModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.authCacheSettings.getSettings();
+    return this.authCacheSettingsService.getSettings();
   }
 
   @HasPermission("settings.manage")
@@ -72,15 +72,15 @@ export class SettingsResolver {
     @Context("req") req: GqlRequest,
     @Args("input") input: UpdateAuthCacheSettingsInput
   ): Promise<AuthCacheSettingsModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.authCacheSettings.updateSettings(user.orgId, user.id, input);
+    return this.authCacheSettingsService.updateSettings(user.orgId, user.id, input);
   }
 
   @HasPermission("settings.manage")
   @Query(() => CrawlClientSettingsModel)
   async crawlClientSettings(@Context("req") req: GqlRequest): Promise<CrawlClientSettingsModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.crawlSettings.getSettings();
   }
@@ -91,7 +91,7 @@ export class SettingsResolver {
     @Context("req") req: GqlRequest,
     @Args("input") input: UpdateCrawlClientSettingsInput
   ): Promise<CrawlClientSettingsModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.crawlSettings.updateSettings(user.orgId, user.id, input);
   }
@@ -99,7 +99,7 @@ export class SettingsResolver {
   @HasPermission("settings.manage")
   @Query(() => AuditLogRetentionModel)
   async auditLogRetention(@Context("req") req: GqlRequest): Promise<AuditLogRetentionModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
     return { retentionDays: await this.auditLogSettings.getRetentionDays() };
   }
@@ -110,7 +110,7 @@ export class SettingsResolver {
     @Context("req") req: GqlRequest,
     @Args("input") input: UpdateAuditLogRetentionInput
   ): Promise<AuditLogRetentionModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
     return {
       retentionDays: await this.auditLogSettings.updateRetentionDays(
@@ -124,9 +124,9 @@ export class SettingsResolver {
   @HasPermission("settings.manage")
   @Query(() => NewsPromptConfigModel)
   async newsPromptConfig(@Context("req") req: GqlRequest): Promise<NewsPromptConfigModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.newsPromptConfig.getConfig();
+    return this.newsPromptConfigService.getConfig();
   }
 
   @HasPermission("settings.manage")
@@ -135,13 +135,21 @@ export class SettingsResolver {
     @Context("req") req: GqlRequest,
     @Args("input") input: UpdateNewsPromptConfigInput
   ): Promise<NewsPromptConfigModel> {
-    const user = req?.user as AuthenticatedUser | undefined;
+    const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.newsPromptConfig.updateConfig(user.orgId, user.id, input);
+    return this.newsPromptConfigService.updateConfig(user.orgId, user.id, input);
   }
 
-  private async assertAdmin(user?: AuthenticatedUser) {
-    if (!user || !Array.isArray(user.roleIds) || user.roleIds.length === 0) {
+  private requireUser(req: GqlRequest): AuthenticatedUser {
+    const user = req?.user as AuthenticatedUser | undefined;
+    if (!user) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    return user;
+  }
+
+  private async assertAdmin(user: AuthenticatedUser) {
+    if (!Array.isArray(user.roleIds) || user.roleIds.length === 0) {
       throw new ForbiddenException("Unauthenticated");
     }
     const adminRole = await this.prisma.role.findFirst({

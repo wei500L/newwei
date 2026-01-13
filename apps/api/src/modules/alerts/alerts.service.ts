@@ -16,6 +16,8 @@ import { DelayedError, Job, Queue } from "bullmq";
 import { PubSubEngine } from "graphql-subscriptions";
 import { firstValueFrom } from "rxjs";
 
+import { toPrismaJsonValue, toPrismaJsonValueOrUndefined } from "../../common/prisma-json";
+
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
@@ -121,7 +123,7 @@ export class AlertsService {
         name: input.name,
         type: input.type,
         target: input.target,
-        config: input.config ?? {},
+        config: toPrismaJsonValue(input.config ?? {}),
         isActive: input.isActive ?? true,
         createdById
       }
@@ -145,7 +147,7 @@ export class AlertsService {
       data.isActive = input.isActive;
     }
     if (input.config !== undefined) {
-      data.config = input.config ?? {};
+      data.config = toPrismaJsonValue(input.config ?? {});
     }
 
     return this.prisma.alertNotificationChannel.update({
@@ -288,7 +290,7 @@ export class AlertsService {
     const ignored: number[] = [];
 
     for (const event of events) {
-      if (![AlertEventStatus.confirmed, AlertEventStatus.ignored].includes(event.status)) {
+      if (!([AlertEventStatus.confirmed, AlertEventStatus.ignored] as AlertEventStatus[]).includes(event.status)) {
         continue;
       }
       let value: number | null = null;
@@ -374,7 +376,11 @@ export class AlertsService {
       return current;
     };
 
-    if ([AlertOperator.gt, AlertOperator.gte, AlertOperator.change_up_pct, AlertOperator.change_down_pct].includes(rule.operator)) {
+    if (
+      ([AlertOperator.gt, AlertOperator.gte, AlertOperator.change_up_pct, AlertOperator.change_down_pct] as AlertOperator[]).includes(
+        rule.operator
+      )
+    ) {
       const suggested = suggestHighThreshold(currentThresholdValue);
       if (suggested !== null && currentThresholdValue !== null && suggested > currentThresholdValue) {
         const ignoredAvg = safeMean(ignored);
@@ -389,7 +395,7 @@ export class AlertsService {
       return base;
     }
 
-    if ([AlertOperator.lt, AlertOperator.lte].includes(rule.operator)) {
+    if (([AlertOperator.lt, AlertOperator.lte] as AlertOperator[]).includes(rule.operator)) {
       const suggested = suggestLowThreshold(currentThresholdValue);
       if (suggested !== null && currentThresholdValue !== null && suggested < currentThresholdValue) {
         const ignoredAvg = safeMean(ignored);
@@ -411,7 +417,7 @@ export class AlertsService {
       const upperConfirmed: number[] = [];
 
       for (const event of events) {
-        if (![AlertEventStatus.confirmed, AlertEventStatus.ignored].includes(event.status)) {
+        if (!([AlertEventStatus.confirmed, AlertEventStatus.ignored] as AlertEventStatus[]).includes(event.status)) {
           continue;
         }
         const value = Number(event.metricValue);
@@ -473,7 +479,7 @@ export class AlertsService {
   }
 
   async updateEventStatus(orgId: string, eventId: string, status: AlertEventStatus, note?: string, updatedById?: string) {
-    if (![AlertEventStatus.confirmed, AlertEventStatus.ignored].includes(status)) {
+    if (!([AlertEventStatus.confirmed, AlertEventStatus.ignored] as AlertEventStatus[]).includes(status)) {
       throw new Error("Unsupported alert event status update");
     }
     const existing = await this.prisma.alertEvent.findUnique({
@@ -548,7 +554,7 @@ export class AlertsService {
       changeWindowMin: input.changeWindowMin ?? null,
       cooldownSeconds: input.cooldownSeconds ?? 3600,
       checkIntervalSec: input.checkIntervalSec ?? 300,
-      metadata: input.metadata ?? {},
+      metadata: toPrismaJsonValue(input.metadata ?? {}),
       createdById,
       dataItemId: metricProvider === AlertMetricProvider.economic_data ? dataItem?.id ?? null : null
     };
@@ -689,7 +695,7 @@ export class AlertsService {
         severity: rule.severity,
         status: AlertEventStatus.pending,
         message: triggered.message,
-        context
+        context: toPrismaJsonValueOrUndefined(context)
       }
     });
 
@@ -1006,11 +1012,11 @@ export class AlertsService {
           ? { message: `Value ${latest} is within ${lower}-${upper}`, context: { latest, lower, upper } }
           : false;
       case "change_up_pct":
-        return changePercent !== null && thresholdValue !== undefined && changePercent >= thresholdValue
+        return typeof changePercent === "number" && thresholdValue !== undefined && changePercent >= thresholdValue
           ? { message: `Change ${changePercent.toFixed(2)}% >= ${thresholdValue}%`, context: { changePercent } }
           : false;
       case "change_down_pct":
-        return changePercent !== null && thresholdValue !== undefined && changePercent <= -1 * thresholdValue
+        return typeof changePercent === "number" && thresholdValue !== undefined && changePercent <= -1 * thresholdValue
           ? { message: `Change ${changePercent.toFixed(2)}% <= -${thresholdValue}%`, context: { changePercent } }
           : false;
       default:
@@ -1234,9 +1240,9 @@ export class AlertsService {
     return Math.min(Math.max(normalized, 1), maxSeconds);
   }
 
-  getNotificationBackoffDelay(attemptsMade: number) {
+  getNotificationBackoffDelay(attemptsMade: number): number {
     const index = Math.min(Math.max(attemptsMade - 1, 0), NOTIFICATION_BACKOFF_DELAYS_MS.length - 1);
-    return NOTIFICATION_BACKOFF_DELAYS_MS[index];
+    return NOTIFICATION_BACKOFF_DELAYS_MS[index] ?? 60_000;
   }
 
   private async reconcileEventStatus(eventId: string) {
@@ -1285,7 +1291,7 @@ export class AlertsService {
       value: Number(event.metricValue),
       threshold,
       triggeredAt: event.triggeredAt.toISOString(),
-      message: event.message,
+      message: event.message ?? undefined,
       changePercent: event.changePercent ?? null
     });
     await this.email.send({

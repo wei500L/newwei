@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
 
@@ -74,13 +75,13 @@ export class NewsPromptConfigService {
     await this.prisma.systemSetting.upsert({
       where: { key: PROMPT_CONFIG_KEY },
       update: {
-        value: normalized,
+        value: toPrismaJsonValue(normalized),
         updatedById: actorId,
         description: PROMPT_CONFIG_DESCRIPTION
       },
       create: {
         key: PROMPT_CONFIG_KEY,
-        value: normalized,
+        value: toPrismaJsonValue(normalized),
         updatedById: actorId,
         description: PROMPT_CONFIG_DESCRIPTION
       }

@@ -24,8 +24,12 @@ export class SystemEventMetricProvider implements MetricProvider {
     const windowStart = new Date(now - windowMs);
     const previousWindowStart = new Date(now - 2 * windowMs);
 
-    const resource = typeof rule.metadata?.resource === "string" ? rule.metadata.resource : rule.metricSlug;
-    const action = typeof rule.metadata?.action === "string" ? rule.metadata.action : undefined;
+    const metadata =
+      rule.metadata && typeof rule.metadata === "object" && !Array.isArray(rule.metadata)
+        ? (rule.metadata as Record<string, unknown>)
+        : null;
+    const resource = typeof metadata?.resource === "string" ? metadata.resource : rule.metricSlug;
+    const action = typeof metadata?.action === "string" ? metadata.action : undefined;
 
     const baseWhere: Prisma.AuditLogWhereInput = {
       orgId: rule.orgId,

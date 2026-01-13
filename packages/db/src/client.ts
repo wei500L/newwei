@@ -1,7 +1,13 @@
 import { createLogger } from "@modular/utils";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 const logger = createLogger({ name: "prisma" });
+
+type PrismaQueryEvent = {
+  query: string;
+  params: string;
+  duration: number;
+};
 
 const prisma = new PrismaClient({
   log: [
@@ -12,7 +18,7 @@ const prisma = new PrismaClient({
 });
 
 if (process.env.NODE_ENV !== "production") {
-  prisma.$on("query", (event) => {
+  prisma.$on("query", (event: PrismaQueryEvent) => {
     logger.debug(
       {
         query: event.query,
@@ -29,4 +35,4 @@ process.on("beforeExit", async () => {
 });
 
 export { prisma, PrismaClient };
-export type PrismaTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+export type PrismaTransaction = Prisma.TransactionClient;

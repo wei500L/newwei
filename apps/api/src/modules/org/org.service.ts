@@ -2,6 +2,7 @@ import { DEFAULT_ROLES } from "@modular/config";
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
 
@@ -189,7 +190,7 @@ export class OrgService {
               actorId,
               resource: "org",
               action: "create",
-              metadata
+              metadata: toPrismaJsonValue(metadata)
             }
           },
           { orgId: createdOrg.id, actorId, resource: "org", action: "create" }

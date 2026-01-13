@@ -4,7 +4,7 @@ import { ValidationPipe , RequestMethod } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
-import { json, urlencoded } from "express";
+import { json, urlencoded, type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 import { WINSTON_MODULE_NEST_PROVIDER } from "nest-winston";
 import { createRequire } from "node:module";
@@ -45,7 +45,7 @@ async function bootstrap() {
   );
 
   const httpLogger = createLogger({ name: "http" });
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     const started = Date.now();
     res.on("finish", () => {
       const traceId =

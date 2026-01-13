@@ -12,7 +12,7 @@ export interface RawItemDoc {
   updatedAt: Date;
 }
 
-type RawItemRecord = RawItemDoc & { _id: { toString(): string } };
+type RawItemRecord = Omit<RawItemDoc, "id"> & { _id: { toString(): string } };
 
 @Injectable({ scope: Scope.REQUEST })
 export class RawItemLoader implements NestDataLoader<string, RawItemDoc | null> {
@@ -20,7 +20,7 @@ export class RawItemLoader implements NestDataLoader<string, RawItemDoc | null> 
     return new DataLoader(async (keys) => {
       const docs = (await RawItemModel.find({ itemMetaId: { $in: keys as string[] } })
         .sort({ createdAt: -1 })
-        .lean()) as RawItemRecord[];
+        .lean()) as unknown as RawItemRecord[];
       const map = new Map<string, RawItemDoc>();
       docs.forEach((doc) => {
         if (!map.has(doc.itemMetaId)) {

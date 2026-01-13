@@ -13,8 +13,15 @@ export class TooManyRequestsException extends HttpException {
     const { description, httpExceptionOptions } = HttpException.extractDescriptionAndOptionsFrom(
       descriptionOrOptions
     );
+    const descriptionText = description ?? "Too Many Requests";
+    const body =
+      objectOrError === undefined
+        ? HttpException.createBody(null, descriptionText, HttpStatus.TOO_MANY_REQUESTS)
+        : typeof objectOrError === "string"
+          ? HttpException.createBody(objectOrError, descriptionText, HttpStatus.TOO_MANY_REQUESTS)
+          : HttpException.createBody(objectOrError);
     super(
-      HttpException.createBody(objectOrError, description, HttpStatus.TOO_MANY_REQUESTS),
+      body,
       HttpStatus.TOO_MANY_REQUESTS,
       httpExceptionOptions
     );

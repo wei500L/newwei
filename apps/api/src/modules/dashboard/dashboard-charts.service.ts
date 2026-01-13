@@ -64,7 +64,7 @@ interface GeoJsonFeatureCollection {
   [key: string]: unknown;
 }
 
-interface WarMapGeoJsonResponse {
+export interface WarMapGeoJsonResponse {
   name: string;
   geoJson: typeof worldGeoJson;
   center?: [number, number];
@@ -88,7 +88,7 @@ interface WarMapEvent {
   newsCount?: number;
 }
 
-interface WarMapEventsResponse {
+export interface WarMapEventsResponse {
   events: WarMapEvent[];
   updatedAt?: string;
 }
@@ -108,7 +108,7 @@ interface WarMapNewsMarker {
   geoSource: WarMapNewsGeoSource;
 }
 
-interface WarMapNewsMarkersResponse {
+export interface WarMapNewsMarkersResponse {
   markers: WarMapNewsMarker[];
   updatedAt?: string;
 }
@@ -123,7 +123,7 @@ interface SectorHeatmapCell {
   sourceField?: string;
 }
 
-interface SectorHeatmapResponse {
+export interface SectorHeatmapResponse {
   xLabels: string[];
   yLabels: string[];
   cells: SectorHeatmapCell[];
@@ -139,7 +139,7 @@ interface FinancialCandlestickPoint {
   volume?: number;
 }
 
-interface FinancialCandlestickResponse {
+export interface FinancialCandlestickResponse {
   symbol: string;
   interval: string;
   points: FinancialCandlestickPoint[];

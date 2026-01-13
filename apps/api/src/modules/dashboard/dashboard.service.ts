@@ -3,6 +3,8 @@ import type { MongoConnection } from "@modular/mongo";
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DashboardWidgetType, Prisma } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
 import { QueueService } from "../queue/queue.service";
@@ -73,16 +75,16 @@ export class DashboardService {
         }
         const updateResult = await tx.dashboard.updateMany({
           where: { id: input.id, orgId, version: input.version },
-          data: {
-            name: input.name,
-            slug: input.slug,
-            description: input.description,
-            theme: input.theme,
-            config: input.config ?? {},
-            createdById,
-            version: { increment: 1 }
-          }
-        });
+	          data: {
+	            name: input.name,
+	            slug: input.slug,
+	            description: input.description,
+	            theme: input.theme,
+	            config: toPrismaJsonValue(input.config ?? {}),
+	            createdById,
+	            version: { increment: 1 }
+	          }
+	        });
         if (updateResult.count !== 1) {
           throw new ConflictException("Dashboard has been updated by another user. Please refresh and retry.");
         }
@@ -92,18 +94,18 @@ export class DashboardService {
         }
         existingWidgets = existing.widgets;
       } else {
-        current = await tx.dashboard.create({
-          data: {
-            orgId,
-            name: input.name,
-            slug: input.slug,
-            description: input.description,
-            theme: input.theme,
-            config: input.config ?? {},
-            createdById
-          }
-        });
-      }
+	        current = await tx.dashboard.create({
+	          data: {
+	            orgId,
+	            name: input.name,
+	            slug: input.slug,
+	            description: input.description,
+	            theme: input.theme,
+	            config: toPrismaJsonValue(input.config ?? {}),
+	            createdById
+	          }
+	        });
+	      }
 
       const widgets = input.widgets ?? [];
       const widgetsToCreate: Prisma.DashboardWidgetCreateManyInput[] = [];
@@ -118,40 +120,40 @@ export class DashboardService {
             throw new BadRequestException("Widget not found on dashboard");
           }
           incomingWidgetIds.add(widget.id);
-          widgetUpdatePromises.push(
-            tx.dashboardWidget.update({
-              where: { id: widget.id },
-              data: {
-                title: widget.title,
-                type: widget.type,
-                dataSource: widget.dataSource,
-                dataConfig: widget.dataConfig ?? {},
-                layoutX: widget.layoutX,
-                layoutY: widget.layoutY,
-                layoutW: widget.layoutW,
-                layoutH: widget.layoutH,
-                sortOrder,
-                options: widget.options ?? {}
-              }
-            })
-          );
-          return;
-        }
+	          widgetUpdatePromises.push(
+	            tx.dashboardWidget.update({
+	              where: { id: widget.id },
+	              data: {
+	                title: widget.title,
+	                type: widget.type,
+	                dataSource: widget.dataSource,
+	                dataConfig: toPrismaJsonValue(widget.dataConfig ?? {}),
+	                layoutX: widget.layoutX,
+	                layoutY: widget.layoutY,
+	                layoutW: widget.layoutW,
+	                layoutH: widget.layoutH,
+	                sortOrder,
+	                options: toPrismaJsonValue(widget.options ?? {})
+	              }
+	            })
+	          );
+	          return;
+	        }
 
-        widgetsToCreate.push({
-          dashboardId: current.id,
-          title: widget.title,
-          type: widget.type,
-          dataSource: widget.dataSource,
-          dataConfig: widget.dataConfig ?? {},
-          layoutX: widget.layoutX,
-          layoutY: widget.layoutY,
-          layoutW: widget.layoutW,
-          layoutH: widget.layoutH,
-          sortOrder,
-          options: widget.options ?? {}
-        });
-      });
+	        widgetsToCreate.push({
+	          dashboardId: current.id,
+	          title: widget.title,
+	          type: widget.type,
+	          dataSource: widget.dataSource,
+	          dataConfig: toPrismaJsonValue(widget.dataConfig ?? {}),
+	          layoutX: widget.layoutX,
+	          layoutY: widget.layoutY,
+	          layoutW: widget.layoutW,
+	          layoutH: widget.layoutH,
+	          sortOrder,
+	          options: toPrismaJsonValue(widget.options ?? {})
+	        });
+	      });
 
       const widgetsToDelete = existingWidgets
         .filter((existingWidget) => !incomingWidgetIds.has(existingWidget.id))

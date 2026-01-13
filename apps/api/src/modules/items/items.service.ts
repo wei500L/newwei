@@ -1,10 +1,12 @@
 import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
 import type { MongoConnection } from "@modular/mongo";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { Types } from "mongoose";
+import type { Prisma } from "@prisma/client";
+import { Types, type PipelineStage } from "mongoose";
 import { createHash } from "node:crypto";
 
 import { ItemStatus, PipelineStageStatus } from "../../common/pipeline-status";
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
@@ -185,19 +187,19 @@ export class ItemsService {
       return { itemMeta, rawItem };
     });
 
-    void writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId,
-          actorId: userId,
-          resource: "item",
-          action: "create",
-          metadata: { ...dto, payload }
-        }
-      },
-      { orgId, actorId: userId, resource: "item", action: "create" }
-    ).catch(() => undefined);
+	    void writeAuditLogBestEffort(
+	      this.prisma,
+	      {
+	        data: {
+	          orgId,
+	          actorId: userId,
+	          resource: "item",
+	          action: "create",
+	          metadata: toPrismaJsonValue({ ...dto, payload })
+	        }
+	      },
+	      { orgId, actorId: userId, resource: "item", action: "create" }
+	    ).catch(() => undefined);
 
     await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
 
@@ -348,7 +350,7 @@ export class ItemsService {
     }
 
     const orderField = orderBy === "PUBLISHED_DESC" ? "sortAt" : "createdAt";
-    const orderByClause =
+    const orderByClause: Prisma.ItemMetaOrderByWithRelationInput[] =
       orderField === "sortAt"
         ? [{ sortAt: "desc" }, { id: "desc" }]
         : [{ createdAt: "desc" }, { id: "desc" }];
@@ -475,7 +477,7 @@ export class ItemsService {
 
     const where = paginationWhere ? { AND: [whereBase, paginationWhere] } : whereBase;
 
-    const orderByClause =
+    const orderByClause: Prisma.ItemMetaOrderByWithRelationInput[] =
       orderField === "sortAt"
         ? [{ sortAt: "desc" }, { id: "desc" }]
         : [{ createdAt: "desc" }, { id: "desc" }];
@@ -574,7 +576,7 @@ export class ItemsService {
             topicSet.add(entity.trim());
             return;
           }
-          if (entity && typeof entity.name === "string" && entity.name.trim()) {
+          if (entity && typeof entity !== "string" && typeof entity.name === "string" && entity.name.trim()) {
             topicSet.add(entity.name.trim());
           }
         });
@@ -679,19 +681,19 @@ export class ItemsService {
       await this.queueService.enqueueItem(orgId, existing.id, enqueueRef);
     }
 
-    void writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId,
-          actorId: userId,
-          resource: "item",
-          action: "update",
-          metadata: normalizedPayload ? { ...dto, payload: normalizedPayload } : dto
-        }
-      },
-      { orgId, actorId: userId, resource: "item", action: "update" }
-    ).catch(() => undefined);
+	    void writeAuditLogBestEffort(
+	      this.prisma,
+	      {
+	        data: {
+	          orgId,
+	          actorId: userId,
+	          resource: "item",
+	          action: "update",
+	          metadata: toPrismaJsonValue(normalizedPayload ? { ...dto, payload: normalizedPayload } : dto)
+	        }
+	      },
+	      { orgId, actorId: userId, resource: "item", action: "update" }
+	    ).catch(() => undefined);
 
     return updated;
   }
@@ -742,7 +744,7 @@ export class ItemsService {
       }
     }
 
-    const pipeline = [
+    const pipeline: PipelineStage[] = [
       {
         $match: {
           orgId,
@@ -922,7 +924,7 @@ export class ItemsService {
       }
     }
 
-    const pipeline = [
+    const pipeline: PipelineStage[] = [
       {
         $match: {
           orgId,
@@ -1351,7 +1353,7 @@ export class ItemsService {
     for (let i = 0; i < a.length; i += 1) {
       const ai = a[i];
       const bi = b[i];
-      if (!Number.isFinite(ai) || !Number.isFinite(bi)) {
+      if (ai === undefined || bi === undefined || !Number.isFinite(ai) || !Number.isFinite(bi)) {
         return 0;
       }
       dot += ai * bi;
@@ -1528,7 +1530,7 @@ export class ItemsService {
       ...(matchFilters.length ? { $and: matchFilters } : {})
     };
 
-    const pipeline: Record<string, unknown>[] = [{ $match: match }];
+    const pipeline: PipelineStage[] = [{ $match: match }];
     if (filters.dateRange?.start || filters.dateRange?.end) {
       pipeline.push({
         $addFields: {

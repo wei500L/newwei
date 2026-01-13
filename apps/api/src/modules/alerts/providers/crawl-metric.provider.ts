@@ -25,17 +25,21 @@ export class CrawlMetricProvider implements MetricProvider {
     const previousWindowStart = new Date(now - 2 * windowMs);
 
     const allowedStatuses = Object.values(CrawlTaskStatus);
-    const requestedStatuses = Array.isArray(rule.metadata?.statuses)
-      ? rule.metadata.statuses
-      : rule.metadata?.status
-        ? [rule.metadata.status]
+    const metadata =
+      rule.metadata && typeof rule.metadata === "object" && !Array.isArray(rule.metadata)
+        ? (rule.metadata as Record<string, unknown>)
+        : null;
+    const requestedStatuses = Array.isArray(metadata?.statuses)
+      ? metadata.statuses.filter((status): status is string => typeof status === "string")
+      : typeof metadata?.status === "string"
+        ? [metadata.status]
         : undefined;
     const statuses =
       (requestedStatuses?.filter((status): status is CrawlTaskStatus =>
         allowedStatuses.includes(status as CrawlTaskStatus)
       ) ?? [CrawlTaskStatus.failed]);
 
-    const createdById = typeof rule.metadata?.createdById === "string" ? rule.metadata.createdById : undefined;
+    const createdById = typeof metadata?.createdById === "string" ? metadata.createdById : undefined;
 
     const baseWhere: Prisma.CrawlTaskWhereInput = {
       orgId: rule.orgId,

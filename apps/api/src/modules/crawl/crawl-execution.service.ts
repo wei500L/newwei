@@ -4,6 +4,8 @@ import { Injectable } from "@nestjs/common";
 import type { CrawlTask, Prisma } from "@prisma/client";
 import { NotificationType } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -110,10 +112,10 @@ export class CrawlExecutionService {
 
       if (configRecord) {
         const protectedResult = protectCrawlTaskConfigForStorage(configRecord, encryptionKey);
-        if (protectedResult.didEncrypt) {
+        if (protectedResult.didEncrypt && protectedResult.config) {
           await this.prisma.crawlTask.update({
             where: { id: task.id },
-            data: { config: protectedResult.config }
+            data: { config: toPrismaJsonValue(protectedResult.config) }
           });
         }
       }
@@ -1167,7 +1169,7 @@ export class CrawlExecutionService {
           path: path ? path.slice(0, 255) : undefined
         };
       })
-      .filter((entry): entry is CrawlBrowserCookie => Boolean(entry));
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
     if (normalized.length === 0) {
       return undefined;
     }
@@ -1316,7 +1318,9 @@ export class CrawlExecutionService {
       return undefined;
     }
     return this.normalizeMultiUrlConfigs(
-      value.map((entry) => (typeof entry === "object" ? (entry as CrawlMultiUrlConfig) : undefined)).filter(Boolean)
+      value
+        .map((entry) => (entry && typeof entry === "object" ? (entry as CrawlMultiUrlConfig) : undefined))
+        .filter((entry): entry is CrawlMultiUrlConfig => Boolean(entry))
     );
   }
 

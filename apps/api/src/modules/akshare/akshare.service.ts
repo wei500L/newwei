@@ -2,12 +2,13 @@ import { AkshareResponseModel } from "@modular/mongo";
 import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime, toISODateString } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
-import { EconomicDataRunStatus, Prisma } from "@prisma/client";
-import { Queue, type RepeatJob, type RepeatOptions } from "bullmq";
+import { EconomicDataFrequency, EconomicDataRunStatus, Prisma } from "@prisma/client";
+import { Queue, type RepeatableJob, type RepeatOptions } from "bullmq";
 import type Redis from "ioredis";
 import { randomUUID } from "node:crypto";
 import { lastValueFrom } from "rxjs";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -227,7 +228,7 @@ export class AkshareService implements OnModuleInit {
             valueType: definition.valueType,
             defaultUnit: definition.defaultUnit,
             defaultFrequency: definition.defaultFrequency,
-            metadata: this.normalizeMetadata(seedMetadata),
+            metadata: toPrismaJsonValue(this.normalizeMetadata(seedMetadata)),
             categories: {
               create: categories.map((category) => ({
                 category: { connect: { id: category.id } }
@@ -278,7 +279,7 @@ export class AkshareService implements OnModuleInit {
         updates.description = definition.description;
       }
       if (!this.metadataEquals(existingMetadata, mergedMetadataWithOverrides2)) {
-        updates.metadata = this.normalizeMetadata(mergedMetadataWithOverrides2);
+        updates.metadata = toPrismaJsonValue(this.normalizeMetadata(mergedMetadataWithOverrides2));
       }
 
       if (Object.keys(updates).length > 0) {
@@ -393,7 +394,7 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private buildRepeatOptions(frequency: Prisma.EconomicDataFrequency, cron?: string): RepeatOptions {
+  private buildRepeatOptions(frequency: EconomicDataFrequency, cron?: string | null): RepeatOptions {
     if (cron) {
       return { pattern: cron };
     }
@@ -417,9 +418,10 @@ export class AkshareService implements OnModuleInit {
     return `fetch:${itemId}`;
   }
 
-  private repeatMatches(job: RepeatJob, repeat: RepeatOptions) {
+  private repeatMatches(job: RepeatableJob, repeat: RepeatOptions) {
     if (repeat.every) {
-      return job.every === repeat.every;
+      const jobEvery = typeof job.every === "string" ? Number(job.every) : undefined;
+      return Number.isFinite(jobEvery) && jobEvery === repeat.every;
     }
     if (repeat.pattern) {
       return job.pattern === repeat.pattern;
@@ -788,25 +790,32 @@ export class AkshareService implements OnModuleInit {
       const record = rawRecord as Record<string, unknown>;
       const timestampValue = record[parser.timestampField];
       const recordedAt = this.parseDate(timestampValue);
-      return parser.valueFields
-        .map((field) => {
-          const category = parser.categoryField ? record[parser.categoryField] : undefined;
-          const sourceField = category ? `${category}:${field.field}` : field.field;
-          const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
-          if (seen.has(dedupeKey)) {
-            return undefined;
-          }
-          seen.add(dedupeKey);
-          return {
+      return parser.valueFields.flatMap((field) => {
+        const category = parser.categoryField ? record[parser.categoryField] : undefined;
+        const sourceField = category ? `${category}:${field.field}` : field.field;
+        const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
+        if (seen.has(dedupeKey)) {
+          return [];
+        }
+
+        const value = this.normalizeNumber(record[field.field]);
+        if (value === null) {
+          return [];
+        }
+
+        seen.add(dedupeKey);
+
+        return [
+          {
             recordedAt,
-            value: this.normalizeNumber(record[field.field]),
+            value,
             unit: field.unit,
             dataType: field.dataType ?? "price",
             sourceField,
             meta: record
-          };
-        })
-        .filter((point): point is ParsedDataPoint => Boolean(point) && point.value !== null);
+          }
+        ];
+      });
     });
   }
 
@@ -816,25 +825,32 @@ export class AkshareService implements OnModuleInit {
     return records.flatMap((rawRecord) => {
       const record = rawRecord as Record<string, unknown>;
       const recordedAt = this.parseDate(record[parser.periodField]);
-      return parser.valueFields
-        .map((field) => {
-          const category = parser.categoryField ? record[parser.categoryField] : undefined;
-          const sourceField = category ? `${category}:${field.field}` : field.field;
-          const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
-          if (seen.has(dedupeKey)) {
-            return undefined;
-          }
-          seen.add(dedupeKey);
-          return {
+      return parser.valueFields.flatMap((field) => {
+        const category = parser.categoryField ? record[parser.categoryField] : undefined;
+        const sourceField = category ? `${category}:${field.field}` : field.field;
+        const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
+        if (seen.has(dedupeKey)) {
+          return [];
+        }
+
+        const value = this.normalizeNumber(record[field.field]);
+        if (value === null) {
+          return [];
+        }
+
+        seen.add(dedupeKey);
+
+        return [
+          {
             recordedAt,
-            value: this.normalizeNumber(record[field.field]),
+            value,
             unit: field.unit,
             dataType: field.dataType ?? "index",
             sourceField,
             meta: record
-          };
-        })
-        .filter((point): point is ParsedDataPoint => Boolean(point) && point.value !== null);
+          }
+        ];
+      });
     });
   }
 
@@ -891,25 +907,32 @@ export class AkshareService implements OnModuleInit {
         month: record[parser.monthField],
         day: parser.dayField ? record[parser.dayField] : undefined
       });
-      return parser.valueFields
-        .map((field) => {
-          const category = parser.categoryField ? record[parser.categoryField] : undefined;
-          const sourceField = category ? `${category}:${field.field}` : field.field;
-          const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
-          if (seen.has(dedupeKey)) {
-            return undefined;
-          }
-          seen.add(dedupeKey);
-          return {
+      return parser.valueFields.flatMap((field) => {
+        const category = parser.categoryField ? record[parser.categoryField] : undefined;
+        const sourceField = category ? `${category}:${field.field}` : field.field;
+        const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
+        if (seen.has(dedupeKey)) {
+          return [];
+        }
+
+        const value = this.normalizeNumber(record[field.field]);
+        if (value === null) {
+          return [];
+        }
+
+        seen.add(dedupeKey);
+
+        return [
+          {
             recordedAt,
-            value: this.normalizeNumber(record[field.field]),
+            value,
             unit: field.unit,
             dataType: field.dataType ?? "index",
             sourceField,
             meta: record
-          };
-        })
-        .filter((point): point is ParsedDataPoint => Boolean(point) && point.value !== null);
+          }
+        ];
+      });
     });
   }
 
@@ -1106,7 +1129,10 @@ export class AkshareService implements OnModuleInit {
     });
   }
 
-  async updateFetchConfig(itemSlug: string, input: { frequency?: Prisma.EconomicDataFrequency; repeatCron?: string | null; isEnabled?: boolean }) {
+  async updateFetchConfig(
+    itemSlug: string,
+    input: { frequency?: EconomicDataFrequency; repeatCron?: string | null; isEnabled?: boolean }
+  ) {
     const item = await this.prisma.economicDataItem.findUnique({ where: { slug: itemSlug } });
     if (!item) {
       throw new InternalServerErrorException(`Data item ${itemSlug} not found`);

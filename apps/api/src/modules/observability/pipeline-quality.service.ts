@@ -62,7 +62,7 @@ export class PipelineQualityService {
     const clamped = Math.min(1, Math.max(0, pct));
     const index = Math.floor(clamped * (sorted.length - 1));
     const value = sorted[index];
-    return Number.isFinite(value) ? value : null;
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
   }
 
   private async computeIngestionLatency(orgId: string, since: Date) {
@@ -105,7 +105,7 @@ export class PipelineQualityService {
     latencies.sort((a, b) => a - b);
     const sum = latencies.reduce((acc, value) => acc + value, 0);
     const averageMs = Math.round(sum / latencies.length);
-    const maxMs = latencies[latencies.length - 1];
+    const maxMs = latencies[latencies.length - 1] ?? null;
 
     return {
       sampleSize: latencies.length,

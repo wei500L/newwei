@@ -91,13 +91,13 @@ export class AuthService {
     }
     if (!orgIdOrSlug) {
       if (memberships.length === 1) {
-        return memberships[0];
+        return memberships[0]!;
       }
 
       const activeMemberships = memberships.filter((membership) => membership.org?.isActive ?? true);
 
       if (activeMemberships.length === 1) {
-        return activeMemberships[0];
+        return activeMemberships[0]!;
       }
 
       if (activeMemberships.length === 0) {
@@ -242,8 +242,9 @@ export class AuthService {
       orgId: user.orgId,
       permissions: user.permissions
     };
+    const expiresInSeconds = Math.max(1, Math.floor(this.parseTimespan(jwtConfig.accessExpiresIn) / 1000));
     const token = sign(payload, jwtConfig.secret, {
-      expiresIn: jwtConfig.accessExpiresIn,
+      expiresIn: expiresInSeconds,
       audience: jwtConfig.audience,
       issuer: jwtConfig.issuer,
       jwtid: crypto.randomUUID()

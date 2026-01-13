@@ -1,4 +1,5 @@
 import { createLogger } from "@modular/utils";
+import type { ApolloServerPlugin } from "@apollo/server";
 import { ApolloDriver, ApolloDriverConfig } from "@nestjs/apollo";
 import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
@@ -70,6 +71,12 @@ const logger = createLogger({ name: "graphql" });
 const BASE_FIELD_COMPLEXITY = 1;
 const COMPOSITE_FIELD_COMPLEXITY = 2;
 
+type GraphqlContextFactoryArgs = {
+  req?: any;
+  res?: any;
+  extra?: any;
+};
+
 const paginationComplexityEstimator: ComplexityEstimator = ({ args, childComplexity }) => {
   const pageSize =
     typeof args.first === "number"
@@ -134,7 +141,9 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
         });
         const complexityDirective = createComplexityDirective();
 
-        const corsOrigin = cfg.corsOrigin ? cfg.corsOrigin.split(",") : true;
+        const corsOrigin = cfg.corsOrigin
+          ? cfg.corsOrigin.split(",").map((entry) => entry.trim()).filter(Boolean)
+          : true;
 
         const estimators: ComplexityEstimator[] = [
           fieldExtensionsEstimator(),
@@ -150,7 +159,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
           csrfPrevention: true,
           playground: cfg.playground,
           introspection: cfg.introspection,
-          context: ({ req, res, extra }) => {
+          context: ({ req, res, extra }: GraphqlContextFactoryArgs) => {
             const request =
               req ??
               extra?.request ?? {
@@ -170,7 +179,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
           },
           subscriptions: {
             "graphql-ws": {
-              onConnect: (context) => {
+              onConnect: (context: { connectionParams?: unknown; extra: any }) => {
                 const { connectionParams, extra } = context;
                 extra.request = {
                   headers: connectionParams ?? {},
@@ -189,7 +198,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
             {
               async requestDidStart() {
                 return {
-                  didResolveOperation(requestContext) {
+                  async didResolveOperation(requestContext) {
                     const complexity = getComplexity({
                       schema: requestContext.schema,
                       query: requestContext.document,
@@ -209,7 +218,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
                   }
                 };
               }
-            }
+            } satisfies ApolloServerPlugin
           ]
         };
       }

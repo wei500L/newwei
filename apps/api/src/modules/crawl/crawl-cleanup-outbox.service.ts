@@ -10,7 +10,7 @@ import { CrawlResultService } from "./crawl-result.service";
 const logger = createLogger({ name: "crawl-cleanup-outbox" });
 
 interface CleanupCrawlResultsOutboxPayload {
-  type: MongoOutboxType.cleanup_crawl_results;
+  type: typeof MongoOutboxType.cleanup_crawl_results;
   taskId: string;
   orgId?: string;
 }
@@ -156,4 +156,3 @@ export class CrawlCleanupOutboxService {
     return Math.round(exponentialDelay * jitterFactor);
   }
 }
-

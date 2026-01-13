@@ -35,7 +35,11 @@ export class EconomicDataMetricProvider implements MetricProvider {
     if (!points.length) {
       return { latest: null, previous: null, changePercent: null };
     }
-    const [latestPoint, previousPoint] = points;
+    const latestPoint = points[0];
+    if (!latestPoint) {
+      return { latest: null, previous: null, changePercent: null };
+    }
+    const previousPoint = points[1] ?? null;
     const latest = Number(latestPoint.value);
     const previous = previousPoint ? Number(previousPoint.value) : null;
     const changePercent = previous ? ((latest - previous) / previous) * 100 : null;

@@ -46,8 +46,11 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
         connection: this.queue.opts.connection,
         concurrency: this.env.alertingConfig.queueConcurrency,
         settings: {
-          backoffStrategies: {
-            alertNotifications: (attemptsMade) => this.alertsService.getNotificationBackoffDelay(attemptsMade)
+          backoffStrategy: (attemptsMade: number, type?: string) => {
+            if (type === "alertNotifications") {
+              return this.alertsService.getNotificationBackoffDelay(attemptsMade);
+            }
+            return 0;
           }
         }
       }

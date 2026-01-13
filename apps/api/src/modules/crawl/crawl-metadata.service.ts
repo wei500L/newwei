@@ -305,12 +305,15 @@ export class CrawlMetadataService {
       return;
     }
     if (parsed?.urlset) {
-      const urls = Array.isArray(parsed.urlset.url) ? parsed.urlset.url : [parsed.urlset.url];
+      const urlset = parsed.urlset as { url?: unknown } | undefined;
+      const urlEntries = urlset?.url;
+      const urls = Array.isArray(urlEntries) ? urlEntries : urlEntries ? [urlEntries] : [];
       for (const entry of urls) {
-        if (!entry) {
+        const record = entry && typeof entry === "object" ? (entry as { loc?: unknown }) : null;
+        if (!record) {
           continue;
         }
-        const loc = typeof entry.loc === "string" ? entry.loc.trim() : undefined;
+        const loc = typeof record.loc === "string" ? record.loc.trim() : undefined;
         if (!loc) {
           continue;
         }
@@ -319,12 +322,13 @@ export class CrawlMetadataService {
         }
       }
     }
-    if (parsed?.sitemapindex?.sitemap) {
-      const sites = Array.isArray(parsed.sitemapindex.sitemap)
-        ? parsed.sitemapindex.sitemap
-        : [parsed.sitemapindex.sitemap];
+    const sitemapindex = parsed.sitemapindex as { sitemap?: unknown } | undefined;
+    const sitemapEntries = sitemapindex?.sitemap;
+    if (sitemapEntries) {
+      const sites = Array.isArray(sitemapEntries) ? sitemapEntries : sitemapEntries ? [sitemapEntries] : [];
       for (const site of sites.slice(0, 5)) {
-        const loc = typeof site?.loc === "string" ? site.loc.trim() : undefined;
+        const record = site && typeof site === "object" ? (site as { loc?: unknown }) : null;
+        const loc = typeof record?.loc === "string" ? record.loc.trim() : undefined;
         if (!loc) {
           continue;
         }
@@ -429,7 +433,7 @@ export class CrawlMetadataService {
         }
         const raw = $(element).contents().text().trim();
         if (!raw) {
-          return;
+          return true;
         }
         try {
           const parsed = JSON.parse(raw);
@@ -437,6 +441,7 @@ export class CrawlMetadataService {
         } catch {
           jsonLd.push(raw);
         }
+        return true;
       });
     }
 
@@ -531,7 +536,7 @@ export class CrawlMetadataService {
     const runner = async (): Promise<void> => {
       while (cursor < items.length) {
         const index = cursor++;
-        results[index] = await worker(items[index], index);
+        results[index] = await worker(items[index]!, index);
       }
     };
 

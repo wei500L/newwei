@@ -57,19 +57,19 @@ export class AlertDeliveryModel {
   status!: AlertDeliveryStatus;
 
   @Field({ nullable: true })
-  error?: string;
+  error?: string | null;
 
   @Field(() => GraphQLISODateTime, { nullable: true })
-  sentAt?: Date;
+  sentAt?: Date | null;
 
   @Field(() => AlertChannelType)
   channelType!: AlertChannelType;
 
   @Field({ nullable: true })
-  channelName?: string;
+  channelName?: string | null;
 
   @Field({ nullable: true })
-  target?: string;
+  target?: string | null;
 }
 
 @ObjectType()
@@ -120,22 +120,22 @@ export class AlertEventModel {
   status!: AlertEventStatus;
 
   @Field({ nullable: true })
-  message?: string;
+  message?: string | null;
 
   @Field({ nullable: true })
-  ruleId?: string;
+  ruleId?: string | null;
 
   @Field({ nullable: true })
-  ruleName?: string;
+  ruleName?: string | null;
 
   @Field(() => AlertMetricProvider, { nullable: true })
-  metricProvider?: AlertMetricProvider;
+  metricProvider?: AlertMetricProvider | null;
 
   @Field({ nullable: true })
-  metricSlug?: string;
+  metricSlug?: string | null;
 
   @Field(() => AlertOperator, { nullable: true })
-  operator?: AlertOperator;
+  operator?: AlertOperator | null;
 
   @Field(() => Number, { nullable: true })
   thresholdValue?: number | null;
@@ -150,7 +150,7 @@ export class AlertEventModel {
   changeWindowMin?: number | null;
 
   @Field(() => GraphQLJSONScalar, { nullable: true })
-  context?: Record<string, unknown>;
+  context?: Record<string, unknown> | null;
 
   @Field(() => [AlertDeliveryModel])
   deliveries!: AlertDeliveryModel[];
@@ -165,7 +165,7 @@ export class AlertRuleModel {
   name!: string;
 
   @Field({ nullable: true })
-  description?: string;
+  description?: string | null;
 
   @Field(() => AlertSeverity)
   severity!: AlertSeverity;
@@ -204,7 +204,7 @@ export class AlertRuleModel {
   lastTriggeredAt?: Date | null;
 
   @Field(() => GraphQLJSONScalar, { nullable: true })
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 
   @Field(() => [AlertChannelModel])
   channels!: AlertChannelModel[];

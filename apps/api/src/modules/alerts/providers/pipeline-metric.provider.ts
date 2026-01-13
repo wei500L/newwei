@@ -30,18 +30,22 @@ export class PipelineMetricProvider implements MetricProvider {
     const previousWindowStart = new Date(now - 2 * windowMs);
 
     const allowedStatuses = Object.values(PipelineJobStatus);
-    const requestedStatuses = Array.isArray(rule.metadata?.statuses)
-      ? rule.metadata.statuses
-      : rule.metadata?.status
-        ? [rule.metadata.status]
+    const metadata =
+      rule.metadata && typeof rule.metadata === "object" && !Array.isArray(rule.metadata)
+        ? (rule.metadata as Record<string, unknown>)
+        : null;
+    const requestedStatuses = Array.isArray(metadata?.statuses)
+      ? metadata.statuses.filter((status): status is string => typeof status === "string")
+      : typeof metadata?.status === "string"
+        ? [metadata.status]
         : undefined;
     const statuses =
       (requestedStatuses?.filter((status): status is PipelineJobStatus =>
         allowedStatuses.includes(status as PipelineJobStatus)
       ) ?? [PipelineJobStatus.failed]);
 
-    const queueName = typeof rule.metadata?.queueName === "string" ? rule.metadata.queueName : undefined;
-    const sourceId = typeof rule.metadata?.sourceId === "string" ? rule.metadata.sourceId : undefined;
+    const queueName = typeof metadata?.queueName === "string" ? metadata.queueName : undefined;
+    const sourceId = typeof metadata?.sourceId === "string" ? metadata.sourceId : undefined;
 
     const baseWhere: Prisma.PipelineJobWhereInput = {
       orgId: rule.orgId,
@@ -81,10 +85,14 @@ export class PipelineMetricProvider implements MetricProvider {
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
     const allowedStatuses = Object.values(MongoOutboxStatus);
-    const requestedStatuses = Array.isArray(rule.metadata?.statuses)
-      ? rule.metadata.statuses
-      : rule.metadata?.status
-        ? [rule.metadata.status]
+    const metadata =
+      rule.metadata && typeof rule.metadata === "object" && !Array.isArray(rule.metadata)
+        ? (rule.metadata as Record<string, unknown>)
+        : null;
+    const requestedStatuses = Array.isArray(metadata?.statuses)
+      ? metadata.statuses.filter((status): status is string => typeof status === "string")
+      : typeof metadata?.status === "string"
+        ? [metadata.status]
         : undefined;
 
     const baseWhere: Prisma.MongoOutboxWhereInput = {

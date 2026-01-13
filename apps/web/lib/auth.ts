@@ -1,4 +1,5 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
 
 import { serverEnv } from "./env.server";
@@ -34,7 +35,7 @@ export interface BackendLoginResponse {
   organizations?: OrganizationOption[];
 }
 
-export interface TokenPayload {
+export interface TokenPayload extends JWT {
   accessToken: string;
   refreshToken: string;
   accessTokenExpires: number;
@@ -196,7 +197,7 @@ const config: NextAuthConfig = {
       const session = auth as { error?: TokenPayload["error"] } | null;
       return !!session && session.error !== "RefreshAccessTokenError";
     },
-    async jwt({ token, user, trigger, session }) {
+    async jwt({ token, user, trigger, session }): Promise<JWT | null> {
       if (user) {
         const typedUser = user as unknown as BackendLoginResponse & {
           id: string;

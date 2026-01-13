@@ -47,8 +47,8 @@ export class NewsSourceQualityService {
           sourceId: { not: null },
           createdAt: { gte: since },
         },
-        _count: { _all: true },
-        orderBy: { _count: { _all: "desc" } },
+        _count: { id: true },
+        orderBy: { _count: { id: "desc" } },
         take: 10,
       }),
     ]);
@@ -89,7 +89,7 @@ export class NewsSourceQualityService {
           sourceId,
           name: source.name,
           url: source.url,
-          failedJobs: entry._count._all,
+          failedJobs: entry._count?.id ?? 0,
           consecutiveFailures: source.consecutiveFailures,
           lastFailureAt: source.lastFailureAt ? source.lastFailureAt.toISOString() : null,
           circuitOpenUntil: source.circuitOpenUntil ? source.circuitOpenUntil.toISOString() : null,
@@ -112,4 +112,3 @@ export class NewsSourceQualityService {
     };
   }
 }
-

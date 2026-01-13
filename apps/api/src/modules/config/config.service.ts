@@ -111,17 +111,32 @@ export class EnvService extends ConfigService<ApiEnv> {
   }
 
   get jwtConfig() {
-    return {
-      secret: this.get<string>("JWT_SECRET", { infer: true }),
-      issuer: this.get<string>("JWT_ISSUER", { infer: true }),
-      audience: this.get<string>("JWT_AUDIENCE", { infer: true }),
-      accessExpiresIn: this.get<string>("JWT_ACCESS_EXPIRES_IN", {
-        infer: true,
-      }),
-      refreshExpiresIn: this.get<string>("JWT_REFRESH_EXPIRES_IN", {
-        infer: true,
-      }),
-    };
+    const secret = this.get<string>("JWT_SECRET", { infer: true });
+    if (!secret) {
+      throw new Error("JWT_SECRET is required");
+    }
+
+    const issuer = this.get<string>("JWT_ISSUER", { infer: true });
+    if (!issuer) {
+      throw new Error("JWT_ISSUER is required");
+    }
+
+    const audience = this.get<string>("JWT_AUDIENCE", { infer: true });
+    if (!audience) {
+      throw new Error("JWT_AUDIENCE is required");
+    }
+
+    const accessExpiresIn = this.get<string>("JWT_ACCESS_EXPIRES_IN", { infer: true });
+    if (!accessExpiresIn) {
+      throw new Error("JWT_ACCESS_EXPIRES_IN is required");
+    }
+
+    const refreshExpiresIn = this.get<string>("JWT_REFRESH_EXPIRES_IN", { infer: true });
+    if (!refreshExpiresIn) {
+      throw new Error("JWT_REFRESH_EXPIRES_IN is required");
+    }
+
+    return { secret, issuer, audience, accessExpiresIn, refreshExpiresIn };
   }
 
   get bullmqConfig() {
@@ -190,7 +205,7 @@ export class EnvService extends ConfigService<ApiEnv> {
       depthLimit: this.get<number>("GRAPHQL_DEPTH_LIMIT", { infer: true }) ?? 8,
       complexityLimit:
         this.get<number>("GRAPHQL_COMPLEXITY_LIMIT", { infer: true }) ?? 2000,
-      corsOrigin: this.get<string | undefined>("CORS_ORIGIN", { infer: true }),
+      corsOrigin: this.get("CORS_ORIGIN", { infer: true }),
     };
   }
 

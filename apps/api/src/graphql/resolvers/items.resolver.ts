@@ -307,7 +307,7 @@ export class ItemsResolver {
 
       const pageInfo: PageInfo = {
         hasNextPage: page * pageSize < total,
-        endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null
+        endCursor: edges.at(-1)?.cursor ?? null
       };
 
       return {
@@ -338,7 +338,7 @@ export class ItemsResolver {
 
     const pageInfo: PageInfo = {
       hasNextPage,
-      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null
+      endCursor: edges.at(-1)?.cursor ?? null
     };
 
     return {

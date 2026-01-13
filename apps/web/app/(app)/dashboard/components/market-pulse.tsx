@@ -123,8 +123,8 @@ const processSeries = (data: DataPoint[] | undefined) => {
   }
 
   const history = normalized.map((point) => point.value);
-  const current = history[history.length - 1];
-  const previous = history.length > 1 ? history[history.length - 2] : current;
+  const current = history[history.length - 1] ?? 0;
+  const previous = history.length > 1 ? history[history.length - 2] ?? current : current;
   const trend = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
   const unit = (() => {
     for (let i = normalized.length - 1; i >= 0; i -= 1) {
@@ -136,7 +136,7 @@ const processSeries = (data: DataPoint[] | undefined) => {
     return undefined;
   })();
 
-  return { value: current ?? 0, trend, history, unit };
+  return { value: current, trend, history, unit };
 };
 
 export function MarketPulse({ 

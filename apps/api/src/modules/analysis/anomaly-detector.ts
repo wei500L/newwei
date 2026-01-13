@@ -33,6 +33,7 @@ export function detectRollingSpike(series: SeriesPoint[], window = 20, multiplie
     const std = Math.sqrt(variance);
     if (std === 0) continue;
     const point = series[i];
+    if (!point) continue;
     if (Math.abs(point.value - mean) >= multiplier * std) {
       results.push({
         point,
@@ -49,13 +50,16 @@ export function detectTrend(series: SeriesPoint[], days = 3, thresholdPct = 10):
   if (series.length < days) return results;
   for (let i = days - 1; i < series.length; i++) {
     const windowSlice = series.slice(i - (days - 1), i + 1);
-    const start = windowSlice[0].value;
-    const end = windowSlice[windowSlice.length - 1].value;
+    const startPoint = windowSlice[0];
+    const endPoint = windowSlice[windowSlice.length - 1];
+    if (!startPoint || !endPoint) continue;
+    const start = startPoint.value;
+    const end = endPoint.value;
     if (start === 0) continue;
     const changePct = ((end - start) / Math.abs(start)) * 100;
     if (Math.abs(changePct) >= thresholdPct) {
       results.push({
-        point: windowSlice[windowSlice.length - 1],
+        point: endPoint,
         reason: `Trend ${days}d change ${changePct.toFixed(2)}%`,
         score: Math.abs(changePct) / thresholdPct
       });
@@ -74,6 +78,7 @@ export function detectVolumeSpike(
     const windowSlice = series.slice(i - window, i);
     const mean = windowSlice.reduce((a, b) => a + b.value, 0) / windowSlice.length;
     const point = series[i];
+    if (!point) continue;
     if (mean > 0 && point.value >= mean * volumeToValueRatio) {
       results.push({
         point,

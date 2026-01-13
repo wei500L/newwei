@@ -1,7 +1,7 @@
 "use client";
 
 import { Col, Row, Skeleton, Typography } from "antd";
-import type { CallbackDataParams } from "echarts";
+import type { CallbackDataParams } from "echarts/types/dist/shared";
 import { useTranslation } from "react-i18next";
 
 import { ChartDataMeta } from "@/components/chart-data-meta";

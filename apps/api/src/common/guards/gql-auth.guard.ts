@@ -31,7 +31,13 @@ export class GqlAuthGuard extends AuthGuard("jwt") {
     };
   }
 
-  handleRequest(err: unknown, user: unknown, info: unknown) {
+  handleRequest<TUser = any>(
+    err: any,
+    user: any,
+    info: any,
+    _context: ExecutionContext,
+    _status?: any
+  ): TUser {
     if (err) {
       if (err instanceof HttpException) {
         throw err;
@@ -50,6 +56,6 @@ export class GqlAuthGuard extends AuthGuard("jwt") {
       throw new UnauthorizedException(message);
     }
 
-    return user;
+    return user as TUser;
   }
 }

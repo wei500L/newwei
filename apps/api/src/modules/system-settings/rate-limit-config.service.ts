@@ -1,5 +1,6 @@
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
@@ -96,17 +97,18 @@ export class RateLimitConfigService {
     input: RateLimitSettingsInput
   ): Promise<RateLimitSettings> {
     const normalized = this.normalizeSettings(input);
+    const auditMetadata = this.toPrismaJson(normalized);
     await this.prisma.$transaction(
       (Object.keys(RATE_LIMIT_SETTING_KEYS) as RateLimitBucket[]).map((bucket) =>
         this.prisma.systemSetting.upsert({
           where: { key: RATE_LIMIT_SETTING_KEYS[bucket] },
           update: {
-            value: normalized[bucket],
+            value: this.toPrismaJson(normalized[bucket]),
             updatedById: actorId
           },
           create: {
             key: RATE_LIMIT_SETTING_KEYS[bucket],
-            value: normalized[bucket],
+            value: this.toPrismaJson(normalized[bucket]),
             updatedById: actorId,
             description: `${bucket} rate limit`
           }
@@ -121,7 +123,7 @@ export class RateLimitConfigService {
           actorId,
           resource: "system_settings",
           action: "rate_limit_update",
-          metadata: normalized
+          metadata: auditMetadata
         }
       },
       { orgId, actorId, resource: "system_settings", action: "rate_limit_update" }
@@ -165,16 +167,20 @@ export class RateLimitConfigService {
   }
 
   private normalizeBucket(
-    value: RateLimitBucketConfig | undefined,
+    value: unknown,
     fallback: RateLimitBucketConfig
   ): RateLimitBucketConfig {
-    if (!value) {
+    if (!value || typeof value !== "object") {
       return fallback;
     }
+    const record = value as Partial<Record<keyof RateLimitBucketConfig, unknown>>;
+    const limitValue = typeof record.limit === "number" ? record.limit : Number(record.limit);
+    const windowSecondsValue =
+      typeof record.windowSeconds === "number" ? record.windowSeconds : Number(record.windowSeconds);
     return {
-      limit: this.clamp(Math.floor(value.limit), MIN_LIMIT, MAX_LIMIT),
+      limit: this.clamp(Math.floor(limitValue), MIN_LIMIT, MAX_LIMIT),
       windowSeconds: this.clamp(
-        Math.floor(value.windowSeconds),
+        Math.floor(windowSecondsValue),
         MIN_WINDOW_SECONDS,
         MAX_WINDOW_SECONDS
       )
@@ -207,5 +213,9 @@ export class RateLimitConfigService {
         windowSeconds: rateLimit.rbacWriteWindowSeconds
       }
     };
+  }
+
+  private toPrismaJson(value: unknown): Prisma.InputJsonValue {
+    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }
