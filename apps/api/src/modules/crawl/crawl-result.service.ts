@@ -139,6 +139,18 @@ export class CrawlResultService {
 
       if (existing) {
         skipped += 1;
+        if (ingestToItems && itemsService) {
+          try {
+            await itemsService.createFromCrawlResult(ingestToItems.orgId, ingestToItems.userId, existing.id);
+            itemsQueued += 1;
+          } catch (error) {
+            itemsQueueFailed += 1;
+            logger.warn(
+              { err: error, taskId: task.id, orgId: task.orgId, crawlResultId: existing.id },
+              "Failed to ingest existing crawl result into Items"
+            );
+          }
+        }
         continue;
       }
 

@@ -41,6 +41,15 @@ const statusColors: Record<CrawlTaskStatus, string> = {
   paused: "purple"
 };
 
+const itemStatusColors: Record<string, string> = {
+  draft: "default",
+  pending: "gold",
+  processing: "blue",
+  completed: "green",
+  failed: "red",
+  duplicate: "purple"
+};
+
 const limitOptions = [
   { value: 10, labelKey: "crawl.detail.results.latest10" },
   { value: 20, labelKey: "crawl.detail.results.latest20" },
@@ -555,6 +564,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
   const canCreateItem = canView && permissions.includes("items.write");
+  const canViewItems = permissions.includes("items.read") || permissions.includes("items.write");
   const redactedLabel = t("common.redacted");
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
@@ -1526,6 +1536,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               const mediaPayload = safeParseJson<CrawlMediaCollection>(result.media);
               const storedAssets = safeParseJson<CrawlStoredMediaAsset[]>(result.mediaAssets);
               const tablesPayload = (result.tables ?? null) as CrawlResultTable[] | null;
+              const itemStatus = result.itemStatus?.toLowerCase?.() ?? result.itemStatus ?? null;
+              const itemTagColor =
+                itemStatus && typeof itemStatus === "string"
+                  ? itemStatusColors[itemStatus] ?? "default"
+                  : "default";
               const variantEntries = [
                 { key: "raw", label: t("crawl.detail.results.variants.raw"), content: result.markdown },
                 {
@@ -1579,7 +1594,20 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                             minute: "2-digit"
                           })}
                         </Typography.Text>
-                        {canCreateItem ? (
+                        {result.itemId ? (
+                          <>
+                            {itemStatus ? (
+                              <Tag color={itemTagColor}>
+                                {t(`items.status.${itemStatus}`, { defaultValue: itemStatus })}
+                              </Tag>
+                            ) : null}
+                            {canViewItems ? (
+                              <Button size="small" onClick={() => router.push(`/items/${result.itemId}`)}>
+                                {t("crawl.detail.openItem", { defaultValue: "Open Item" })}
+                              </Button>
+                            ) : null}
+                          </>
+                        ) : canCreateItem ? (
                           <Button
                             size="small"
                             loading={ingesting && ingestingResultId === result.id}

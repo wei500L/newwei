@@ -254,6 +254,29 @@ export class ItemsService {
       throw new BadRequestException("crawlResultId is required");
     }
 
+    const externalId = `crawlResult:${normalizedId}`;
+    const existing = await this.prisma.itemMeta.findFirst({
+      where: { orgId, externalId }
+    });
+
+    const existingMongoRef = existing?.mongoRef ? existing.mongoRef.trim() : "";
+    if (existing && existingMongoRef) {
+      const shouldEnqueue =
+        existing.status === ItemStatus.Pending ||
+        existing.status === ItemStatus.Processing ||
+        existing.status === ItemStatus.Failed;
+      if (shouldEnqueue) {
+        try {
+          await this.queueService.enqueueItem(orgId, existing.id, existingMongoRef);
+        } catch (error) {
+          if (!(error instanceof Error && error.message.includes("already exists"))) {
+            throw error;
+          }
+        }
+      }
+      return existing;
+    }
+
     const crawlResult = await this.prisma.crawlResult.findFirst({
       where: {
         id: normalizedId,
@@ -281,16 +304,9 @@ export class ItemsService {
       throw new NotFoundException("Crawl result not found");
     }
 
-    const externalId = `crawlResult:${crawlResult.id}`;
-    const existing = await this.prisma.itemMeta.findFirst({
-      where: { orgId, externalId }
-    });
-
-    if (existing) {
-      const mongoRef = existing.mongoRef?.trim();
-      if (mongoRef) {
-        return existing;
-      }
+    const resolvedExternalId = `crawlResult:${crawlResult.id}`;
+    if (!existing && resolvedExternalId !== externalId) {
+      throw new BadRequestException("crawlResultId mismatch");
     }
 
     const sourceName = crawlResult.task.displayName ?? undefined;
@@ -390,7 +406,13 @@ export class ItemsService {
         { orgId, actorId: userId, resource: "item", action: "createFromCrawlResult" }
       ).catch(() => undefined);
 
-      await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
+      try {
+        await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
+      } catch (error) {
+        if (!(error instanceof Error && error.message.includes("already exists"))) {
+          throw error;
+        }
+      }
 
       return created.itemMeta;
     } catch (error) {

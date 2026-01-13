@@ -458,6 +458,8 @@ export type CrawlResultModel = {
   fetchedAt: Scalars['DateTime']['output'];
   fitMarkdown?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
+  itemId?: Maybe<Scalars['ID']['output']>;
+  itemStatus?: Maybe<Scalars['String']['output']>;
   linkAnalysis?: Maybe<CrawlLinkAnalysisModel>;
   markdown: Scalars['String']['output'];
   markdownWithCitations?: Maybe<Scalars['String']['output']>;
@@ -1592,7 +1594,7 @@ export type CrawlTaskQueryVariables = Exact<{
 }>;
 
 
-export type CrawlTaskQuery = { __typename?: 'Query', crawlTask?: { __typename?: 'CrawlTaskModel', id: string, displayName?: string | null, targetUrl: string, status: CrawlTaskStatus, keywords: Array<string>, concurrency: number, runCount: number, lastRunAt?: any | null, lastSuccessAt?: any | null, lastResultAt?: any | null, lastError?: string | null, config?: string | null, lastServerMemoryMb?: number | null, lastPeakMemoryMb?: number | null, lastMemoryEfficiency?: number | null, results?: Array<{ __typename?: 'CrawlResultModel', id: string, sourceUrl: string, fetchedAt: any, markdown: string, markdownWithCitations?: string | null, referencesMarkdown?: string | null, fitMarkdown?: string | null, metadata?: string | null, media?: string | null, mediaAssets?: string | null, tables?: any | null, linkAnalysis?: { __typename?: 'CrawlLinkAnalysisModel', stats: { __typename?: 'CrawlLinkStatsModel', totalLinks: number, internalLinks: number, externalLinks: number, averageIntrinsicScore?: number | null, highQualityLinks?: number | null, lowQualityLinks?: number | null }, topLinks: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, baseDomain?: string | null, type?: string | null, intrinsicScore?: number | null, contextualScore?: number | null, totalScore?: number | null }>, lowQualityLinks: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, intrinsicScore?: number | null, baseDomain?: string | null }>, buckets: Array<{ __typename?: 'CrawlLinkBucketModel', kind: string, links: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, baseDomain?: string | null, type?: string | null, intrinsicScore?: number | null, contextualScore?: number | null, totalScore?: number | null }> }> } | null }> | null, memoryStats?: { __typename?: 'CrawlMemoryStatsModel', serverMemoryMb?: number | null, peakMemoryMb?: number | null, efficiencyPercent?: number | null } | null } | null };
+export type CrawlTaskQuery = { __typename?: 'Query', crawlTask?: { __typename?: 'CrawlTaskModel', id: string, displayName?: string | null, targetUrl: string, status: CrawlTaskStatus, keywords: Array<string>, concurrency: number, runCount: number, lastRunAt?: any | null, lastSuccessAt?: any | null, lastResultAt?: any | null, lastError?: string | null, config?: string | null, lastServerMemoryMb?: number | null, lastPeakMemoryMb?: number | null, lastMemoryEfficiency?: number | null, results?: Array<{ __typename?: 'CrawlResultModel', id: string, itemId?: string | null, itemStatus?: string | null, sourceUrl: string, fetchedAt: any, markdown: string, markdownWithCitations?: string | null, referencesMarkdown?: string | null, fitMarkdown?: string | null, metadata?: string | null, media?: string | null, mediaAssets?: string | null, tables?: any | null, linkAnalysis?: { __typename?: 'CrawlLinkAnalysisModel', stats: { __typename?: 'CrawlLinkStatsModel', totalLinks: number, internalLinks: number, externalLinks: number, averageIntrinsicScore?: number | null, highQualityLinks?: number | null, lowQualityLinks?: number | null }, topLinks: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, baseDomain?: string | null, type?: string | null, intrinsicScore?: number | null, contextualScore?: number | null, totalScore?: number | null }>, lowQualityLinks: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, intrinsicScore?: number | null, baseDomain?: string | null }>, buckets: Array<{ __typename?: 'CrawlLinkBucketModel', kind: string, links: Array<{ __typename?: 'CrawlLinkModel', href: string, text?: string | null, title?: string | null, baseDomain?: string | null, type?: string | null, intrinsicScore?: number | null, contextualScore?: number | null, totalScore?: number | null }> }> } | null }> | null, memoryStats?: { __typename?: 'CrawlMemoryStatsModel', serverMemoryMb?: number | null, peakMemoryMb?: number | null, efficiencyPercent?: number | null } | null } | null };
 
 export type CreateCrawlTaskMutationVariables = Exact<{
   input: CreateCrawlTaskInput;
@@ -2593,6 +2595,8 @@ export const CrawlTaskDocument = gql`
     lastMemoryEfficiency
     results {
       id
+      itemId
+      itemStatus
       sourceUrl
       fetchedAt
       markdown

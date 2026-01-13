@@ -45,6 +45,8 @@ query CrawlTask($id: ID!, $resultLimit: Int, $resultSearch: String) {
     lastMemoryEfficiency
     results {
       id
+      itemId
+      itemStatus
       sourceUrl
       fetchedAt
       markdown

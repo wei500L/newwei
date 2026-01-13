@@ -430,6 +430,8 @@ type CrawlResultModel {
   fetchedAt: DateTime!
   fitMarkdown: String
   id: ID!
+  itemId: ID
+  itemStatus: String
   linkAnalysis: CrawlLinkAnalysisModel
   markdown: String!
   markdownWithCitations: String
@@ -783,6 +785,7 @@ type Mutation {
   createAlertChannel(input: AlertChannelInput!): AlertChannelModel!
   createCrawlTask(input: CreateCrawlTaskInput!): CrawlTaskModel!
   createItem(input: CreateItemInput!): ItemModel!
+  createItemFromCrawlResult(resultId: String!): ItemModel!
   createOrg(input: CreateOrgInput!): OrgModel!
   deleteAlertChannel(channelId: String!): Boolean!
   deleteAlertRule(ruleId: String!): Boolean!

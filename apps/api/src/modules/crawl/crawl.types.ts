@@ -335,6 +335,8 @@ export interface CrawlTaskResult {
   sourceUrl: string;
   fetchedAt: Date;
   markdown: string;
+  itemId?: string | null;
+  itemStatus?: string | null;
   metadata?: Record<string, unknown> | null;
   markdownWithCitations?: string | null;
   referencesMarkdown?: string | null;

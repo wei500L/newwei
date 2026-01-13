@@ -275,12 +275,38 @@ export class CrawlTaskService {
     });
 
     const hydrated = await this.resultService.attachResultContent(results);
+    const hydratedWithItems =
+      hydrated.length === 0
+        ? hydrated
+        : await (async () => {
+            const externalIds = hydrated.map((result) => `crawlResult:${result.id}`);
+            const itemMetas = await this.prisma.itemMeta.findMany({
+              where: {
+                orgId,
+                externalId: { in: externalIds }
+              },
+              select: {
+                id: true,
+                externalId: true,
+                status: true
+              }
+            });
+            const byExternalId = new Map(itemMetas.map((meta) => [meta.externalId, meta]));
+            return hydrated.map((result) => {
+              const meta = byExternalId.get(`crawlResult:${result.id}`);
+              return {
+                ...result,
+                itemId: meta?.id ?? null,
+                itemStatus: meta?.status ?? null
+              };
+            });
+          })();
     const memoryStats = await this.resultService.getLatestMemoryStats(orgId, id);
 
     return {
       task: {
         ...this.toView(task),
-        results: hydrated,
+        results: hydratedWithItems,
         memoryStats
       }
     };

@@ -27,6 +27,12 @@ export class CrawlResultModel {
   @Field(() => GraphQLISODateTime)
   fetchedAt!: Date;
 
+  @Field(() => ID, { nullable: true })
+  itemId?: string | null;
+
+  @Field(() => String, { nullable: true })
+  itemStatus?: string | null;
+
   @Field()
   markdown!: string;
 
