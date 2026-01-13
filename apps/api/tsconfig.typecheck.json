@@ -1,6 +1,12 @@
 {
   "extends": "./tsconfig.build.json",
   "compilerOptions": {
-    "rootDir": "../.."
+    "rootDir": "../..",
+    "paths": {
+      "@modular/utils": ["../../packages/utils/src/index.ts"],
+      "@modular/config": ["../../packages/config/src/index.ts"],
+      "@modular/db": ["../../packages/db/src/index.ts"],
+      "@modular/mongo": ["../../packages/mongo/src/index.ts"]
+    }
   }
 }

@@ -17,5 +17,6 @@ const AnalysisResultSchema = new mongoose_1.Schema({
 });
 AnalysisResultSchema.index({ orgId: 1, createdAt: -1 });
 AnalysisResultSchema.index({ type: 1, orgId: 1 });
-exports.AnalysisResultModel = mongoose_1.models.AnalysisResult || (0, mongoose_1.model)("AnalysisResult", AnalysisResultSchema);
+exports.AnalysisResultModel = mongoose_1.models.AnalysisResult ||
+    (0, mongoose_1.model)("AnalysisResult", AnalysisResultSchema);
 //# sourceMappingURL=analysis-result.js.map

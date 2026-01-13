@@ -1367,6 +1367,112 @@
     }
   },
   "systemSettings": {
+    "geoNominatim": {
+      "description": "配置 API 地理编码服务（用于新闻地图定位）的 Nominatim 标识信息。",
+      "notice": {
+        "title": "Nominatim 使用要求",
+        "body": "建议填写清晰的 User-Agent 与可联系的邮箱，以降低被限流或封禁风险。"
+      },
+      "test": {
+        "title": "地理编码测试",
+        "description": "使用当前生效的标识信息发起一次示例查询，用于验证配置是否正常。",
+        "actions": {
+          "run": "测试"
+        },
+        "placeholders": {
+          "query": "例如：纽约，美国",
+          "countryCode": "US"
+        },
+        "validation": {
+          "query": "请输入查询内容",
+          "countryCode": "请输入 2 位国家代码（例如 US）"
+        },
+        "noResult": "没有返回结果（可能被限流或未找到）。",
+        "errors": {
+          "failed": "地理编码测试失败"
+        }
+      },
+      "fields": {
+        "userAgent": "User-Agent",
+        "email": "邮箱"
+      },
+      "placeholders": {
+        "userAgent": "例如：modular-console (admin@example.com)",
+        "email": "例如：admin@example.com"
+      },
+      "hints": {
+        "userAgent": "设置后会覆盖 GEO_NOMINATIM_USER_AGENT（留空则使用环境默认值）。",
+        "email": "设置后会覆盖 GEO_NOMINATIM_EMAIL（留空则使用环境默认值）。"
+      },
+      "validation": {
+        "email": "请输入有效的邮箱地址"
+      },
+      "status": {
+        "label": "状态",
+        "env": "使用环境默认值",
+        "overridden": "已覆盖",
+        "effectiveUserAgent": "生效 User-Agent：",
+        "effectiveEmail": "生效邮箱："
+      },
+      "messages": {
+        "saved": "已保存"
+      },
+      "errors": {
+        "loadFailed": "加载 Nominatim 设置失败",
+        "saveFailed": "保存 Nominatim 设置失败",
+        "badRequest": "输入无效"
+      }
+    },
+    "email": {
+      "description": "查看 SMTP 配置并发送测试邮件。",
+      "status": {
+        "label": "SMTP 状态",
+        "verified": "已验证",
+        "failed": "失败",
+        "unchecked": "未检查",
+        "checkedAt": "检查时间：",
+        "error": "错误"
+      },
+      "config": {
+        "title": "SMTP 配置",
+        "fields": {
+          "host": "主机",
+          "port": "端口",
+          "secure": "安全连接",
+          "user": "用户",
+          "from": "发件人",
+          "pool": "连接池",
+          "maxConnections": "最大连接数",
+          "rateLimit": "速率限制",
+          "timeouts": "超时（毫秒）",
+          "tlsRejectUnauthorized": "TLS 校验"
+        }
+      },
+      "test": {
+        "title": "发送测试邮件",
+        "fields": {
+          "to": "收件人",
+          "subject": "主题"
+        },
+        "placeholders": {
+          "to": "默认：{{defaultEmail}}",
+          "subject": "测试邮件"
+        },
+        "validation": {
+          "to": "请输入有效的邮箱地址"
+        },
+        "actions": {
+          "send": "发送"
+        }
+      },
+      "messages": {
+        "sent": "测试邮件已发送：{{to}}"
+      },
+      "errors": {
+        "loadFailed": "加载 SMTP 状态失败",
+        "sendFailed": "发送测试邮件失败"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "加载版本",
@@ -1394,6 +1500,8 @@
     "title": "系统设置",
     "adminOnly": "管理员仅",
     "tabs": {
+      "geoNominatim": "地理编码（Nominatim）",
+      "email": "邮件（SMTP）",
       "akshare": "AKShare"
     },
     "description": "系统设置说明"

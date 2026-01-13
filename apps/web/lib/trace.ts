@@ -1,8 +1,28 @@
-import { ensureTraceId } from "@modular/utils";
-
 type HeadersRecord = Record<string, string>;
 
 let cachedTraceId: string | undefined;
+
+const randomHex = (bytes: number): string => {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+    const array = new Uint8Array(bytes);
+    globalThis.crypto.getRandomValues(array);
+    return Array.from(array, (value) => value.toString(16).padStart(2, '0')).join('');
+  }
+
+  return Array.from({ length: bytes }, () =>
+    Math.floor(Math.random() * 256)
+      .toString(16)
+      .padStart(2, '0'),
+  ).join('');
+};
+
+const ensureTraceId = (incoming?: string | null): string => {
+  const normalized = incoming?.trim().replace(/[^a-fA-F0-9]/g, '');
+  if (normalized && normalized.length >= 16) {
+    return normalized.slice(0, 32);
+  }
+  return randomHex(16);
+};
 
 const normalizeHeaders = (headers?: HeadersInit): HeadersRecord => {
   if (!headers) {
@@ -31,7 +51,7 @@ const normalizeHeaders = (headers?: HeadersInit): HeadersRecord => {
 };
 
 export const getClientTraceId = (): string => {
-  if (typeof window === "undefined") {
+  if (typeof window === 'undefined') {
     return ensureTraceId();
   }
   if (!cachedTraceId) {
@@ -43,11 +63,11 @@ export const getClientTraceId = (): string => {
 
 export const createTraceHeaders = (headers?: HeadersInit): HeadersRecord => {
   const normalized = normalizeHeaders(headers);
-  const traceId = ensureTraceId(normalized["x-trace-id"] ?? getClientTraceId());
+  const traceId = ensureTraceId(normalized['x-trace-id'] ?? getClientTraceId());
 
   return {
     ...normalized,
-    "x-trace-id": traceId,
+    'x-trace-id': traceId,
     traceparent: normalized.traceparent ?? `00-${traceId}-0000000000000000-01`,
   };
 };

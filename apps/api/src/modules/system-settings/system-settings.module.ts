@@ -1,10 +1,15 @@
 import { Global, Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module";
+import { GeoModule } from "../geo/geo.module";
 
 import { AuditLogSettingsController } from "./audit-log-settings.controller";
 import { AuditLogSettingsService } from "./audit-log-settings.service";
 import { AuthCacheSettingsController } from "./auth-cache-settings.controller";
+import { EmailSettingsController } from "./email-settings.controller";
+import { GeoNominatimSettingsController } from "./geo-nominatim-settings.controller";
+import { GeoNominatimSettingsService } from "./geo-nominatim-settings.service";
+import { GeoNominatimTestController } from "./geo-nominatim-test.controller";
 import { LlmGatewaySettingsController } from "./llm-gateway-settings.controller";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 import { RateLimitConfigService } from "./rate-limit-config.service";
@@ -14,24 +19,29 @@ import { RateLimitSettingsController } from "./rate-limit-settings.controller";
 
 @Global()
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, GeoModule],
   controllers: [
     RateLimitSettingsController,
     RateLimitPolicyController,
     AuditLogSettingsController,
     AuthCacheSettingsController,
+    EmailSettingsController,
+    GeoNominatimSettingsController,
+    GeoNominatimTestController,
     LlmGatewaySettingsController
   ],
   providers: [
     RateLimitConfigService,
     RateLimitPolicyService,
     AuditLogSettingsService,
+    GeoNominatimSettingsService,
     LlmGatewaySettingsService
   ],
   exports: [
     RateLimitConfigService,
     RateLimitPolicyService,
     AuditLogSettingsService,
+    GeoNominatimSettingsService,
     LlmGatewaySettingsService
   ]
 })

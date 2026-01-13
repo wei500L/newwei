@@ -1,0 +1,8 @@
+告警触发：{{ruleName}}
+指标：{{metric}}
+当前值：{{value}}{{#if changePercentLabel}}（变化：{{changePercentLabel}}%）{{/if}}
+阈值：{{thresholdLabel}}
+时间：{{triggeredAt}}
+{{#if message}}
+详情：{{message}}
+{{/if}}

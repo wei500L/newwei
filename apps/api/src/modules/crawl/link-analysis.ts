@@ -83,27 +83,33 @@ function buildStats(
 
 function pickTopLinks(links: CrawlLinkAnalysisLink[]) {
   return [...links]
-    .sort((a, b) => scoreOf(b) - scoreOf(a))
+    .sort((a, b) => {
+      const scoreA = a.intrinsicScore ?? Number.NEGATIVE_INFINITY;
+      const scoreB = b.intrinsicScore ?? Number.NEGATIVE_INFINITY;
+      if (scoreB !== scoreA) {
+        return scoreB - scoreA;
+      }
+      const secondaryA = a.totalScore ?? a.contextualScore ?? Number.NEGATIVE_INFINITY;
+      const secondaryB = b.totalScore ?? b.contextualScore ?? Number.NEGATIVE_INFINITY;
+      if (secondaryB !== secondaryA) {
+        return secondaryB - secondaryA;
+      }
+      return a.href.localeCompare(b.href);
+    })
     .slice(0, 5);
 }
 
 function pickLowQualityLinks(links: CrawlLinkAnalysisLink[]) {
   return [...links]
-    .sort((a, b) => (a.intrinsicScore ?? Number.POSITIVE_INFINITY) - (b.intrinsicScore ?? Number.POSITIVE_INFINITY))
+    .sort((a, b) => {
+      const scoreA = a.intrinsicScore ?? Number.POSITIVE_INFINITY;
+      const scoreB = b.intrinsicScore ?? Number.POSITIVE_INFINITY;
+      if (scoreA !== scoreB) {
+        return scoreA - scoreB;
+      }
+      return a.href.localeCompare(b.href);
+    })
     .slice(0, 5);
-}
-
-function scoreOf(link: CrawlLinkAnalysisLink) {
-  if (typeof link.totalScore === "number") {
-    return link.totalScore;
-  }
-  if (typeof link.contextualScore === "number") {
-    return link.contextualScore;
-  }
-  if (typeof link.intrinsicScore === "number") {
-    return link.intrinsicScore;
-  }
-  return 0;
 }
 
 function normalizeLink(entry: unknown, kind: string): CrawlLinkAnalysisLink | undefined {

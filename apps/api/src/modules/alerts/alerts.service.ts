@@ -116,12 +116,14 @@ export class AlertsService {
   }
 
   async createChannel(orgId: string, input: AlertChannelInput, createdById?: string) {
+    const target =
+      input.type === AlertChannelType.email ? this.email.normalizeEmailTarget(input.target) : input.target;
     return this.prisma.alertNotificationChannel.create({
       data: {
         orgId,
         name: input.name,
         type: input.type,
-        target: input.target,
+        target,
         config: toPrismaJsonValue(input.config ?? {}),
         isActive: input.isActive ?? true,
         createdById
@@ -140,7 +142,8 @@ export class AlertsService {
       data.name = input.name;
     }
     if (input.target !== undefined) {
-      data.target = input.target;
+      data.target =
+        existing.type === AlertChannelType.email ? this.email.normalizeEmailTarget(input.target) : input.target;
     }
     if (input.isActive !== undefined) {
       data.isActive = input.isActive;
@@ -1293,10 +1296,20 @@ export class AlertsService {
       message: event.message ?? undefined,
       changePercent: event.changePercent ?? null
     });
+    const text = this.email.buildAlertTextTemplate({
+      ruleName: rule.name,
+      metric: rule.metricSlug,
+      value: Number(event.metricValue),
+      threshold,
+      triggeredAt: event.triggeredAt.toISOString(),
+      message: event.message ?? undefined,
+      changePercent: event.changePercent ?? null
+    });
     await this.email.send({
       to: target,
       subject: `[Alert] ${rule.name} triggered`,
-      html
+      html,
+      text
     });
   }
 

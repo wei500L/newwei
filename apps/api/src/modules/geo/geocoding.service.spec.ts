@@ -24,7 +24,8 @@ describe("GeocodingService", () => {
     };
     const rateLimiter = { consume: jest.fn() };
     const env = { get: jest.fn() };
-    const service = new GeocodingService(cache as any, rateLimiter as any, env as any);
+    const nominatimSettings = { getEffectiveIdentity: jest.fn().mockResolvedValue({ userAgent: "ua" }) };
+    const service = new GeocodingService(cache as any, rateLimiter as any, env as any, nominatimSettings as any);
 
     const result = await service.geocode("New York");
     expect(result).toEqual(
@@ -49,8 +50,6 @@ describe("GeocodingService", () => {
         switch (key) {
           case "GEO_NOMINATIM_BASE_URL":
             return "https://nominatim.test";
-          case "GEO_NOMINATIM_USER_AGENT":
-            return "modular-api-test";
           case "GEO_GEOCODE_TIMEOUT_MS":
             return 2_000;
           case "GEO_GEOCODE_CACHE_TTL_SECONDS":
@@ -58,6 +57,12 @@ describe("GeocodingService", () => {
           default:
             return undefined;
         }
+      })
+    };
+    const nominatimSettings = {
+      getEffectiveIdentity: jest.fn().mockResolvedValue({
+        userAgent: "modular-api-test",
+        email: "admin@example.com"
       })
     };
 
@@ -74,11 +79,16 @@ describe("GeocodingService", () => {
       ]
     });
 
-    const service = new GeocodingService(cache as any, rateLimiter as any, env as any);
+    const service = new GeocodingService(cache as any, rateLimiter as any, env as any, nominatimSettings as any);
     const result = await service.geocode("New York", { countryCodeAlpha2: "US" });
 
     expect(rateLimiter.consume).toHaveBeenCalledWith("geocode:nominatim", expect.any(Number), 1);
     expect(fetchMock).toHaveBeenCalled();
+    const [calledUrl, calledOptions] = fetchMock.mock.calls[0] ?? [];
+    expect(String(calledUrl)).toContain("email=admin%40example.com");
+    expect((calledOptions as { headers?: Record<string, string> } | undefined)?.headers?.["User-Agent"]).toBe(
+      "modular-api-test"
+    );
     expect(cache.set).toHaveBeenCalled();
     expect(result).toEqual(
       expect.objectContaining({
@@ -98,7 +108,8 @@ describe("GeocodingService", () => {
     };
     const rateLimiter = { consume: jest.fn().mockResolvedValue(false) };
     const env = { get: jest.fn() };
-    const service = new GeocodingService(cache as any, rateLimiter as any, env as any);
+    const nominatimSettings = { getEffectiveIdentity: jest.fn().mockResolvedValue({ userAgent: "ua" }) };
+    const service = new GeocodingService(cache as any, rateLimiter as any, env as any, nominatimSettings as any);
 
     const result = await service.geocode("New York", { countryCodeAlpha2: "US" });
     expect(result).toBeNull();
@@ -116,13 +127,14 @@ describe("GeocodingService", () => {
     };
     const rateLimiter = { consume: jest.fn().mockResolvedValue(true) };
     const env = { get: jest.fn() };
+    const nominatimSettings = { getEffectiveIdentity: jest.fn().mockResolvedValue({ userAgent: "ua" }) };
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => []
     });
 
-    const service = new GeocodingService(cache as any, rateLimiter as any, env as any);
+    const service = new GeocodingService(cache as any, rateLimiter as any, env as any, nominatimSettings as any);
 
     const first = await service.geocode("Unknown place");
     expect(first).toBeNull();
@@ -135,4 +147,3 @@ describe("GeocodingService", () => {
     expect(rateLimiter.consume).toHaveBeenCalledTimes(1);
   });
 });
-

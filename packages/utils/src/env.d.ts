@@ -44,6 +44,15 @@ export declare const baseEnvSchema: z.ZodObject<{
     NEWS_PIPELINE_CACHE_TTL_SECONDS: z.ZodDefault<z.ZodNumber>;
     NEWS_PIPELINE_MAX_INPUT_CHARS: z.ZodDefault<z.ZodNumber>;
     NEWS_PIPELINE_CONFIG_PATH: z.ZodDefault<z.ZodString>;
+    SYSTEM_SETTINGS_ENCRYPTION_KEY: z.ZodOptional<z.ZodString>;
+    S3_ACCESS_KEY_ID: z.ZodOptional<z.ZodString>;
+    S3_SECRET_ACCESS_KEY: z.ZodOptional<z.ZodString>;
+    S3_REGION: z.ZodOptional<z.ZodString>;
+    S3_BUCKET: z.ZodOptional<z.ZodString>;
+    S3_ENDPOINT: z.ZodOptional<z.ZodString>;
+    S3_PUBLIC_BASE_URL: z.ZodOptional<z.ZodString>;
+    S3_FORCE_PATH_STYLE: z.ZodOptional<z.ZodBoolean>;
+    S3_PRESIGNED_URL_TTL_SECONDS: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     NODE_ENV: "production" | "development" | "test";
     MYSQL_HOST: string;
@@ -89,6 +98,15 @@ export declare const baseEnvSchema: z.ZodObject<{
     CRAWL4AI_API_KEY?: string | undefined;
     LITELLM_API_KEY?: string | undefined;
     LITELLM_FALLBACK_MODELS?: string | undefined;
+    SYSTEM_SETTINGS_ENCRYPTION_KEY?: string | undefined;
+    S3_ACCESS_KEY_ID?: string | undefined;
+    S3_SECRET_ACCESS_KEY?: string | undefined;
+    S3_REGION?: string | undefined;
+    S3_BUCKET?: string | undefined;
+    S3_ENDPOINT?: string | undefined;
+    S3_PUBLIC_BASE_URL?: string | undefined;
+    S3_FORCE_PATH_STYLE?: boolean | undefined;
+    S3_PRESIGNED_URL_TTL_SECONDS?: number | undefined;
 }, {
     MYSQL_HOST: string;
     MYSQL_PORT: number;
@@ -134,6 +152,15 @@ export declare const baseEnvSchema: z.ZodObject<{
     NEWS_PIPELINE_CACHE_TTL_SECONDS?: number | undefined;
     NEWS_PIPELINE_MAX_INPUT_CHARS?: number | undefined;
     NEWS_PIPELINE_CONFIG_PATH?: string | undefined;
+    SYSTEM_SETTINGS_ENCRYPTION_KEY?: string | undefined;
+    S3_ACCESS_KEY_ID?: string | undefined;
+    S3_SECRET_ACCESS_KEY?: string | undefined;
+    S3_REGION?: string | undefined;
+    S3_BUCKET?: string | undefined;
+    S3_ENDPOINT?: string | undefined;
+    S3_PUBLIC_BASE_URL?: string | undefined;
+    S3_FORCE_PATH_STYLE?: boolean | undefined;
+    S3_PRESIGNED_URL_TTL_SECONDS?: number | undefined;
 }>;
 export type BaseEnvSchema = typeof baseEnvSchema;
 export type BaseEnv = z.infer<typeof baseEnvSchema>;

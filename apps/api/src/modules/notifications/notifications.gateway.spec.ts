@@ -195,7 +195,7 @@ describe("NotificationsGateway", () => {
 
     const socket1 = { id: "s1", disconnect: jest.fn() };
     const socket2 = { id: "s2", disconnect: jest.fn() };
-    (gateway as any).server = { sockets: new Map([["s1", socket1], ["s2", socket2]]) };
+    (gateway as any).server = { sockets: { sockets: new Map([["s1", socket1], ["s2", socket2]]) } };
     const unsubscribe = jest.fn();
     (gateway as any).unsubscribe = unsubscribe;
 

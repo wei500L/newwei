@@ -6,6 +6,8 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { EmailSettingsPanel } from "@/components/settings/email-settings-panel";
+import { GeoNominatimSettingsPanel } from "@/components/settings/geo-nominatim-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import {
@@ -743,6 +745,8 @@ export function SystemSettingsContent() {
       children: <RateLimitPoliciesPanel />
     },
     { key: "llmGateway", label: t("settings.tabs.llmGateway"), children: <LlmGatewaySettingsPanel /> },
+    { key: "geoNominatim", label: t("systemSettings.tabs.geoNominatim"), children: <GeoNominatimSettingsPanel /> },
+    { key: "email", label: t("systemSettings.tabs.email"), children: <EmailSettingsPanel /> },
     { key: "auditLog", label: t("settings.tabs.auditLog"), children: <AuditLogRetentionPanel /> },
     { key: "authCache", label: t("settings.tabs.authCache"), children: <AuthCacheSettingsPanel /> },
     { key: "crawlClient", label: t("settings.tabs.crawlClient"), children: <CrawlClientSettingsPanel /> },

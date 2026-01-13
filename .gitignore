@@ -1,11 +1,13 @@
 node_modules
 .pnpm-store
+.turbo
 .env
 .env.local
 .env.*
 !.env.example
 !infra/docker/.env.sample
 .next
+.next.bak-*
 out
 dist
 build
@@ -18,3 +20,4 @@ logs
 .husky/_
 __pycache__/
 *.pyc
+*.tsbuildinfo

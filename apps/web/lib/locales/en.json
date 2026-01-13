@@ -1368,6 +1368,112 @@
     }
   },
   "systemSettings": {
+    "geoNominatim": {
+      "description": "Configure Nominatim identification used by the API geocoding service for map news locations.",
+      "notice": {
+        "title": "Nominatim usage policy",
+        "body": "Provide a descriptive User-Agent and a valid contact email to reduce the risk of rate limiting or blocking."
+      },
+      "test": {
+        "title": "Test geocoding",
+        "description": "Run a sample geocode request using the current effective identity.",
+        "actions": {
+          "run": "Test"
+        },
+        "placeholders": {
+          "query": "e.g. New York, US",
+          "countryCode": "US"
+        },
+        "validation": {
+          "query": "Query is required",
+          "countryCode": "Use 2-letter country code (e.g. US)"
+        },
+        "noResult": "No result (may be rate-limited or not found).",
+        "errors": {
+          "failed": "Failed to run geocode test"
+        }
+      },
+      "fields": {
+        "userAgent": "User-Agent",
+        "email": "Email"
+      },
+      "placeholders": {
+        "userAgent": "e.g. modular-console (admin@example.com)",
+        "email": "e.g. admin@example.com"
+      },
+      "hints": {
+        "userAgent": "Overrides GEO_NOMINATIM_USER_AGENT when set (leave empty to use env default).",
+        "email": "Overrides GEO_NOMINATIM_EMAIL when set (leave empty to use env default)."
+      },
+      "validation": {
+        "email": "Enter a valid email"
+      },
+      "status": {
+        "label": "Status",
+        "env": "Using env defaults",
+        "overridden": "Overridden",
+        "effectiveUserAgent": "Effective User-Agent:",
+        "effectiveEmail": "Effective email:"
+      },
+      "messages": {
+        "saved": "Saved"
+      },
+      "errors": {
+        "loadFailed": "Failed to load Nominatim settings",
+        "saveFailed": "Failed to save Nominatim settings",
+        "badRequest": "Invalid input"
+      }
+    },
+    "email": {
+      "description": "Review SMTP configuration and send a test email.",
+      "status": {
+        "label": "SMTP status",
+        "verified": "Verified",
+        "failed": "Failed",
+        "unchecked": "Not checked",
+        "checkedAt": "Checked at:",
+        "error": "Error"
+      },
+      "config": {
+        "title": "SMTP config",
+        "fields": {
+          "host": "Host",
+          "port": "Port",
+          "secure": "Secure",
+          "user": "User",
+          "from": "From",
+          "pool": "Pool",
+          "maxConnections": "Max connections",
+          "rateLimit": "Rate limit",
+          "timeouts": "Timeouts (ms)",
+          "tlsRejectUnauthorized": "TLS reject unauthorized"
+        }
+      },
+      "test": {
+        "title": "Send test email",
+        "fields": {
+          "to": "Recipient",
+          "subject": "Subject"
+        },
+        "placeholders": {
+          "to": "Defaults to {{defaultEmail}}",
+          "subject": "Test email"
+        },
+        "validation": {
+          "to": "Enter a valid email"
+        },
+        "actions": {
+          "send": "Send"
+        }
+      },
+      "messages": {
+        "sent": "Test email sent: {{to}}"
+      },
+      "errors": {
+        "loadFailed": "Failed to load SMTP status",
+        "sendFailed": "Failed to send test email"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "Load version",
@@ -1395,6 +1501,8 @@
     "title": "System settings",
     "adminOnly": "Admin only",
     "tabs": {
+      "geoNominatim": "Geocoding (Nominatim)",
+      "email": "Email (SMTP)",
       "akshare": "AKShare"
     },
     "description": "System settings description"

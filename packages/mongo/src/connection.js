@@ -4,8 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.disconnectMongo = exports.connectMongo = void 0;
-const mongoose_1 = __importDefault(require("mongoose"));
 const utils_1 = require("@modular/utils");
+const mongoose_1 = __importDefault(require("mongoose"));
 let connectionPromise = null;
 const connectMongo = async (uri) => {
     if (!connectionPromise) {

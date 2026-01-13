@@ -189,6 +189,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   ): NormalizedHttpResponse {
     if (exception instanceof HttpException) {
       const response = exception.getResponse();
+      const error = this.getErrorFromResponse(response, statusCode);
+      if (statusCode >= 500) {
+        return {
+          statusCode,
+          message: "Internal server error",
+          error
+        };
+      }
+
       const message =
         typeof response === "string"
           ? response
@@ -197,7 +206,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return {
         statusCode,
         message,
-        error: typeof response === "object" ? response : undefined,
+        error
       };
     }
 
@@ -217,6 +226,25 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode,
       message: "Internal server error",
     };
+  }
+
+  private getErrorFromResponse(response: unknown, statusCode: number): string {
+    if (typeof response === "object" && response !== null) {
+      const maybeError = (response as { error?: unknown }).error;
+      if (typeof maybeError === "string" && maybeError.trim().length > 0) {
+        return maybeError;
+      }
+    }
+
+    const statusName = HttpStatus[statusCode];
+    if (typeof statusName === "string") {
+      return statusName
+        .split("_")
+        .map((segment) => segment.charAt(0) + segment.slice(1).toLowerCase())
+        .join(" ");
+    }
+
+    return statusCode >= 500 ? "Internal Server Error" : "Error";
   }
 
   private resolveGraphqlCode(statusCode: number): string {

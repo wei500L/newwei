@@ -13,5 +13,6 @@ const AkshareResponseSchema = new mongoose_1.Schema({
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" }
 });
 AkshareResponseSchema.index({ dataItemId: 1, fetchedAt: -1 });
-exports.AkshareResponseModel = mongoose_1.models.AkshareResponse || (0, mongoose_1.model)("AkshareResponse", AkshareResponseSchema);
+exports.AkshareResponseModel = mongoose_1.models.AkshareResponse ||
+    (0, mongoose_1.model)("AkshareResponse", AkshareResponseSchema);
 //# sourceMappingURL=akshare-response.js.map

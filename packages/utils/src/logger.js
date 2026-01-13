@@ -15,6 +15,7 @@ const createLogger = ({ name = "app", level, enabled = true } = {}) => {
         const log = (method) => (...args) => {
             if (!enabled)
                 return;
+            // eslint-disable-next-line no-console
             console[method](prefix, ...args);
         };
         const consoleLogger = {

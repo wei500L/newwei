@@ -20,4 +20,5 @@ __exportStar(require("./date"), exports);
 __exportStar(require("./number"), exports);
 __exportStar(require("./crawl"), exports);
 __exportStar(require("./tracing"), exports);
+__exportStar(require("./geo"), exports);
 //# sourceMappingURL=index.js.map

@@ -9,7 +9,7 @@
     "prisma"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rimraf dist && tsc -p tsconfig.build.json",
     "migrate": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed.ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
@@ -17,6 +17,7 @@
     "prisma:generate": "tsx src/scripts/generate.ts"
   },
   "dependencies": {
+    "@modular/config": "workspace:*",
     "@modular/utils": "workspace:*",
     "bcrypt": "^5.1.1",
     "dayjs": "^1.11.13"

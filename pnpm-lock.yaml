@@ -71,6 +71,9 @@ importers:
       '@bull-board/ui':
         specifier: ^6.15.0
         version: 6.15.0
+      '@modular/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@modular/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -453,6 +456,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@modular/config':
+        specifier: workspace:*
+        version: link:../config
       '@modular/utils':
         specifier: workspace:*
         version: link:../utils

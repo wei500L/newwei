@@ -1,9 +1,9 @@
 
-> @modular/web@0.1.0 prebuild D:\wei\apps\web
+> @modular/web@0.1.0 prebuild /mnt/d/wei/apps/web
 > pnpm run generate
 
 
-> @modular/web@0.1.0 generate D:\wei\apps\web
+> @modular/web@0.1.0 generate /mnt/d/wei/apps/web
 > graphql-codegen --config codegen.cjs
 
 [STARTED] Parse Configuration
@@ -19,27 +19,151 @@
 [SUCCESS] Generate to graphql/generated.ts
 [SUCCESS] Generate outputs
 
-> @modular/web@0.1.0 build D:\wei\apps\web
+> @modular/web@0.1.0 build /mnt/d/wei/apps/web
 > next build
 
   ▲ Next.js 15.0.0-canary.45
   - Environments: .env
 
    Creating an optimized production build ...
-<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (128kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
-Failed to compile.
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
 
-./..\..\packages\utils\src\tracing.js
-Dynamic Code Evaluation (e. g. 'eval', 'new Function', 'WebAssembly.compile') not allowed in Edge Runtime 
-Learn More: https://nextjs.org/docs/messages/edge-dynamic-code-evaluation
+./app/(app)/admin/dashboards/dashboards-content.tsx
+28:9  Warning: The 'dashboards' logical expression could make the dependencies of useEffect Hook (at line 35) change on every render. To fix this, wrap the initialization of 'dashboards' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+28:9  Warning: The 'dashboards' logical expression could make the dependencies of useMemo Hook (at line 39) change on every render. To fix this, wrap the initialization of 'dashboards' in its own useMemo() Hook.  react-hooks/exhaustive-deps
 
-Import trace for requested module:
-  ./..\..\packages\utils\src\tracing.js
-  ./..\..\packages\utils\src\index.js
-  ./lib\server-logger.ts
-  ./lib\auth.ts
-  ./middleware.ts
+./app/(app)/alerts/alert-center.tsx
+220:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 227) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+220:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 253) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+281:9  Warning: The 'replayPoints' logical expression could make the dependencies of useMemo Hook (at line 350) change on every render. To fix this, wrap the initialization of 'replayPoints' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+302:25  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+343:22  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+566:19  Warning: The attribute aria-selected is not supported by the role button.  jsx-a11y/role-supports-aria-props
+
+./app/(app)/components/avatar-fallback.tsx
+66:11  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./app/(app)/components/ticker-tape.tsx
+24:31  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+31:47  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/charts/financial-candlestick.tsx
+236:6  Warning: React Hook useMemo has unnecessary dependencies: 'locale' and 't'. Either exclude them or remove the dependency array.  react-hooks/exhaustive-deps
+
+./app/(app)/dashboard/charts/sector-heatmap.tsx
+162:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+217:33  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+340:31  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/charts/war-map.tsx
+296:67  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+402:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/components/economic-chart-card.tsx
+212:27  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+219:33  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/drilldown-chart.tsx
+57:9  Warning: The 'points' logical expression could make the dependencies of useMemo Hook (at line 115) change on every render. To fix this, wrap the initialization of 'points' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+./app/(app)/dashboard/metric-drilldown.tsx
+79:60  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/items/components/faceted-search.tsx
+32:36  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+36:46  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+40:45  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+44:49  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+126:43  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/subscriptions/page.tsx
+255:9  Warning: The 'rules' logical expression could make the dependencies of useMemo Hook (at line 300) change on every render. To fix this, wrap the initialization of 'rules' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+256:9  Warning: The 'channels' logical expression could make the dependencies of useMemo Hook (at line 298) change on every render. To fix this, wrap the initialization of 'channels' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+257:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 264) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+258:9  Warning: The 'notifications' logical expression could make the dependencies of useMemo Hook (at line 267) change on every render. To fix this, wrap the initialization of 'notifications' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+258:9  Warning: The 'notifications' logical expression could make the dependencies of useMemo Hook (at line 294) change on every render. To fix this, wrap the initialization of 'notifications' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+429:46  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+510:56  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/topics/topics-content.tsx
+188:9  Warning: The 'groups' logical expression could make the dependencies of useMemo Hook (at line 207) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'groups' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+189:9  Warning: The 'eventGroups' logical expression could make the dependencies of useMemo Hook (at line 198) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'eventGroups' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+./lib/dayjs.ts
+7:1  Warning: Caution: `dayjs` also has a named export `extend`. Check if you meant to write `import {extend} from 'dayjs'` instead.  import/no-named-as-default-member
+8:1  Warning: Caution: `dayjs` also has a named export `extend`. Check if you meant to write `import {extend} from 'dayjs'` instead.  import/no-named-as-default-member
+9:1  Warning: Caution: `dayjs` also has a named export `extend`. Check if you meant to write `import {extend} from 'dayjs'` instead.  import/no-named-as-default-member
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules
+   Collecting page data ...
+   Generating static pages (0/47) ...
+   Generating static pages (11/47) 
+   Generating static pages (23/47) 
+   Generating static pages (35/47) 
+ ✓ Generating static pages (47/47)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size     First Load JS
+┌ ƒ /                                       165 B          91.2 kB
+├ ƒ /_not-found                             905 B            92 kB
+├ ƒ /admin                                  7.23 kB         287 kB
+├ ƒ /admin/alerts                           16 kB           405 kB
+├ ƒ /admin/audit-logs                       15.7 kB         446 kB
+├ ƒ /admin/dashboards                       17.4 kB         369 kB
+├ ƒ /admin/errors                           8.45 kB         489 kB
+├ ƒ /admin/ops                              6.93 kB         286 kB
+├ ƒ /admin/ops/crawl-monitor                16.2 kB         391 kB
+├ ƒ /admin/ops/crawl-tasks                  38.3 kB         716 kB
+├ ƒ /admin/ops/crawl-tasks/[taskId]         13.1 kB         479 kB
+├ ƒ /admin/ops/crawl-templates              9.78 kB         422 kB
+├ ƒ /admin/ops/news-sources                 18.1 kB         488 kB
+├ ƒ /admin/orgs                             15.4 kB         477 kB
+├ ƒ /admin/quality                          8.01 kB         397 kB
+├ ƒ /admin/settings                         5.06 kB         486 kB
+├ ƒ /admin/storage                          11.5 kB         304 kB
+├ ƒ /admin/system                           7.61 kB         489 kB
+├ ƒ /alerts                                 25.9 kB         419 kB
+├ ƒ /api/auth/[...nextauth]                 0 B                0 B
+├ ƒ /api/crawl4ai/monitor/[...monitorPath]  0 B                0 B
+├ ƒ /api/logout                             0 B                0 B
+├ ƒ /api/organizations/switch               0 B                0 B
+├ ƒ /crawl                                  165 B          91.2 kB
+├ ƒ /crawl/[taskId]                         165 B          91.2 kB
+├ ƒ /dashboard                              14.3 kB         331 kB
+├ ƒ /dashboard/economic-alert               7.25 kB         387 kB
+├ ƒ /dashboard/economic-long                6.91 kB         386 kB
+├ ƒ /dashboard/economic-medium              7.06 kB         386 kB
+├ ƒ /dashboard/economic-short               10.2 kB         386 kB
+├ ƒ /dashboard/key-monitor                  6.74 kB         390 kB
+├ ƒ /dashboard/livelihood-prices            6.84 kB         386 kB
+├ ƒ /dashboard/military-alert               18.6 kB         433 kB
+├ ƒ /finance                                143 kB          753 kB
+├ ƒ /finance/key-monitor                    165 B          91.2 kB
+├ ƒ /finance/livelihood                     6.84 kB         386 kB
+├ ƒ /finance/macro                          8.2 kB          388 kB
+├ ƒ /finance/trends                         165 B          91.2 kB
+├ ○ /icon.svg                               0 B                0 B
+├ ƒ /items                                  262 B           499 kB
+├ ƒ /items/[id]                             10.6 kB         391 kB
+├ ƒ /login                                  10.6 kB         236 kB
+├ ƒ /map                                    15.4 kB         363 kB
+├ ƒ /profile                                28.8 kB         305 kB
+├ ƒ /search                                 707 B           500 kB
+├ ƒ /settings                               165 B          91.2 kB
+├ ƒ /settings/system                        165 B          91.2 kB
+├ ƒ /subscriptions                          19.8 kB         461 kB
+├ ƒ /today                                  698 B           500 kB
+└ ƒ /topics                                 15.4 kB         377 kB
++ First Load JS shared by all               91 kB
+  ├ chunks/1353-6283db19bb0c6a22.js         36.1 kB
+  ├ chunks/2cdcef58-b48cf403aaed1880.js     51.7 kB
+  └ other shared chunks (total)             3.27 kB
 
 
-> Build failed because of webpack errors
- ELIFECYCLE  Command failed with exit code 1.
+ƒ Middleware                                95.9 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

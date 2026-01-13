@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { CacheService } from "../cache/cache.service";
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import { EnvService } from "../config/config.service";
+import { GeoNominatimSettingsService } from "../system-settings/geo-nominatim-settings.service";
 
 export enum GeocodeProvider {
   Nominatim = "nominatim",
@@ -47,7 +48,8 @@ export class GeocodingService {
   constructor(
     private readonly cache: CacheService,
     private readonly rateLimiter: RateLimiterService,
-    private readonly env: EnvService
+    private readonly env: EnvService,
+    private readonly nominatimSettings: GeoNominatimSettingsService
   ) {}
 
   async getCached(query: string, options: ResolveCandidatesOptions = {}): Promise<GeocodeResult | null> {
@@ -185,8 +187,9 @@ export class GeocodingService {
       this.env.get<string>("GEO_NOMINATIM_BASE_URL", { infer: true }) ??
       "https://nominatim.openstreetmap.org";
     const timeoutMs = this.env.get<number>("GEO_GEOCODE_TIMEOUT_MS", { infer: true }) ?? 3_000;
-    const userAgent = this.env.get<string>("GEO_NOMINATIM_USER_AGENT", { infer: true }) ?? "modular-api";
-    const email = this.env.get<string | undefined>("GEO_NOMINATIM_EMAIL", { infer: true });
+    const identity = await this.nominatimSettings.getEffectiveIdentity();
+    const userAgent = identity.userAgent;
+    const email = identity.email;
     const acceptLanguage =
       this.env.get<string>("GEO_NOMINATIM_ACCEPT_LANGUAGE", { infer: true }) ??
       "zh-CN,zh;q=0.9,en;q=0.7";

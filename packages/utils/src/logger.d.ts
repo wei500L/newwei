@@ -1,9 +1,9 @@
-import pino from "pino";
+import { type LevelWithSilent, type Logger as PinoLogger } from "pino";
 export interface CreateLoggerOptions {
     name?: string;
-    level?: pino.LevelWithSilent;
+    level?: LevelWithSilent;
     enabled?: boolean;
 }
-export declare const createLogger: ({ name, level, enabled }?: CreateLoggerOptions) => import("pino").Logger<never>;
+export declare const createLogger: ({ name, level, enabled }?: CreateLoggerOptions) => PinoLogger;
 export type Logger = ReturnType<typeof createLogger>;
 //# sourceMappingURL=logger.d.ts.map

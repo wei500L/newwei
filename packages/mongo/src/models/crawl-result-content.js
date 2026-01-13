@@ -21,5 +21,6 @@ const CrawlResultContentSchema = new mongoose_1.Schema({
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" }
 });
 CrawlResultContentSchema.index({ taskId: 1, createdAt: -1 });
-exports.CrawlResultContentModel = mongoose_1.models.CrawlResultContent || (0, mongoose_1.model)("CrawlResultContent", CrawlResultContentSchema);
+exports.CrawlResultContentModel = mongoose_1.models.CrawlResultContent ||
+    (0, mongoose_1.model)("CrawlResultContent", CrawlResultContentSchema);
 //# sourceMappingURL=crawl-result-content.js.map

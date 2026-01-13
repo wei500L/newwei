@@ -18,7 +18,7 @@ export function normalizeKeywords(input?: string[] | null) {
 }
 
 export function clampResultLimit(limit?: number | null, fallback = 20) {
-  if (!limit || Number.isNaN(limit)) {
+  if (limit == null || Number.isNaN(limit)) {
     return fallback;
   }
   return Math.max(1, Math.min(100, limit));

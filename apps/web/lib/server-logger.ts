@@ -1,23 +1,27 @@
-import { createLogger } from "@modular/utils";
-
 export interface ServerLogContext {
   traceId?: string;
   meta?: Record<string, unknown>;
 }
 
-const logger = createLogger({ name: "web" });
+const serializeError = (error: unknown): unknown => {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  return error;
+};
 
 export const logServerError = (
   message: string,
   error: unknown,
   context: ServerLogContext = {},
 ) => {
-  logger.error(
-    {
-      err: error,
-      traceId: context.traceId,
-      meta: context.meta,
-    },
-    message,
-  );
+  console.error(message, {
+    err: serializeError(error),
+    traceId: context.traceId,
+    meta: context.meta,
+  });
 };

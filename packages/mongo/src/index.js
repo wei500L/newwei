@@ -21,4 +21,5 @@ __exportStar(require("./models/task-log"), exports);
 __exportStar(require("./models/crawl-result-content"), exports);
 __exportStar(require("./models/akshare-response"), exports);
 __exportStar(require("./models/analysis-result"), exports);
+__exportStar(require("./models/exception-event"), exports);
 //# sourceMappingURL=index.js.map

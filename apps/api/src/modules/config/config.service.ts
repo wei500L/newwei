@@ -33,7 +33,16 @@ export interface SmtpConfig {
   secure: boolean;
   user: string;
   pass: string;
-  from?: string;
+  from: string;
+  pool: boolean;
+  maxConnections: number;
+  maxMessages: number;
+  rateDeltaMs: number;
+  rateLimit: number;
+  connectionTimeoutMs: number;
+  greetingTimeoutMs: number;
+  socketTimeoutMs: number;
+  tlsRejectUnauthorized: boolean;
 }
 
 export interface BullBoardConfig {
@@ -469,6 +478,16 @@ export class EnvService extends ConfigService<ApiEnv> {
     const user = this.getOrThrow<string>("SMTP_USER", { infer: true });
     const pass = this.getOrThrow<string>("SMTP_PASS", { infer: true });
     const from = this.get<string | undefined>("SMTP_FROM", { infer: true });
+    const pool = this.get<boolean>("SMTP_POOL", { infer: true }) ?? false;
+    const maxConnections = this.get<number>("SMTP_MAX_CONNECTIONS", { infer: true }) ?? 5;
+    const maxMessages = this.get<number>("SMTP_MAX_MESSAGES", { infer: true }) ?? 100;
+    const rateDeltaMs = this.get<number>("SMTP_RATE_DELTA_MS", { infer: true }) ?? 1_000;
+    const rateLimit = this.get<number>("SMTP_RATE_LIMIT", { infer: true }) ?? 10;
+    const connectionTimeoutMs = this.get<number>("SMTP_CONNECTION_TIMEOUT_MS", { infer: true }) ?? 10_000;
+    const greetingTimeoutMs = this.get<number>("SMTP_GREETING_TIMEOUT_MS", { infer: true }) ?? 10_000;
+    const socketTimeoutMs = this.get<number>("SMTP_SOCKET_TIMEOUT_MS", { infer: true }) ?? 30_000;
+    const tlsRejectUnauthorized =
+      this.get<boolean>("SMTP_TLS_REJECT_UNAUTHORIZED", { infer: true }) ?? true;
     return {
       host,
       port,
@@ -476,6 +495,15 @@ export class EnvService extends ConfigService<ApiEnv> {
       user,
       pass,
       from: from ?? user,
+      pool,
+      maxConnections,
+      maxMessages,
+      rateDeltaMs,
+      rateLimit,
+      connectionTimeoutMs,
+      greetingTimeoutMs,
+      socketTimeoutMs,
+      tlsRejectUnauthorized,
     };
   }
 }
