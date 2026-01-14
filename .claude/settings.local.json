@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(workflow:session:start)",
+      "Skill(workflow:tools:task-generate-agent)",
+      "Bash(xargs:*)",
+      "Bash(ccw cli:*)",
+      "Bash(test:*)",
+      "Bash(ls:*)",
+      "Bash(pnpm tsc:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node:*)",
+      "Bash(pnpm turbo run build:*)"
+    ]
+  }
+}

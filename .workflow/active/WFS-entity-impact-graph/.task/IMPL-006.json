@@ -1,0 +1,209 @@
+{
+  "id": "IMPL-006",
+  "title": "Create EntityImpactGraph React component",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-entity-impact-graph/.process/context-package.json",
+  "cli_execution_id": "WFS-entity-impact-graph-IMPL-006",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "WFS-entity-impact-graph-IMPL-005"
+  },
+  "meta": {
+    "type": "feature",
+    "agent": "@code-developer",
+    "execution_group": null,
+    "module": "frontend",
+    "execution_config": {
+      "method": "agent",
+      "cli_tool": null,
+      "enable_resume": true,
+      "previous_cli_id": "WFS-entity-impact-graph-IMPL-005"
+    }
+  },
+  "context": {
+    "requirements": [
+      "Create 1 new component file: [entity-impact-graph.tsx] with 1 exported component: [EntityImpactGraph]",
+      "Implement 1 ECharts graph series configuration with 5 properties: [type: 'graph', layout: 'force', data: nodes, links: links, force: forceConfig]",
+      "Support 4 node categories with distinct styling: [person, organization, stock, commodity]",
+      "Implement 2 link types with visual differentiation: [co-occurrence (solid), correlation (dashed)]",
+      "Follow 1 existing component pattern: [SectorHeatmap with DashboardChart, useChartTheme, loading/error states]"
+    ],
+    "focus_paths": [
+      "apps/web/app/(app)/dashboard/charts/"
+    ],
+    "acceptance": [
+      "1 component file created: verify by ls apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx",
+      "1 component exported: verify by grep 'export function EntityImpactGraph' apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx",
+      "ECharts graph series configured: verify by grep \"type: 'graph'\" apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx",
+      "TypeScript compilation passes: verify by cd apps/web && pnpm tsc --noEmit"
+    ],
+    "depends_on": [
+      "IMPL-001",
+      "IMPL-005"
+    ],
+    "inherited": {
+      "from": "IMPL-005",
+      "context": [
+        "useEntityImpactGraph hook created",
+        "GraphQL query integrated",
+        "Data transformation available"
+      ]
+    },
+    "shared_context": {
+      "tech_stack": [
+        "TypeScript",
+        "React",
+        "ECharts 5.5.0",
+        "Ant Design"
+      ],
+      "pattern": "Follow SectorHeatmap component pattern with DashboardChart wrapper",
+      "conventions": "Use 'use client' directive, dynamic imports for SSR safety"
+    },
+    "artifacts": [
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/web/app/(app)/dashboard/charts/sector-heatmap.tsx",
+        "priority": "highest",
+        "usage": "Reference pattern for chart component implementation",
+        "contains": "SectorHeatmap with DashboardChart, useChartTheme, click events, CSV export"
+      },
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/web/components/echart.client.tsx",
+        "priority": "high",
+        "usage": "DashboardChart component API reference",
+        "contains": "EchartProps interface with option, height, theme, onEvents"
+      },
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/web/hooks/use-chart-theme.ts",
+        "priority": "high",
+        "usage": "Chart theming hook for consistent styling",
+        "contains": "useChartTheme with echartsTheme, colors, fontFamily"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_context_package",
+        "action": "Load context package for artifact paths",
+        "commands": [
+          "Read(.workflow/active/WFS-entity-impact-graph/.process/context-package.json)"
+        ],
+        "output_to": "context_package",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_sector_heatmap",
+        "action": "Analyze SectorHeatmap component pattern",
+        "commands": [
+          "Read(apps/web/app/(app)/dashboard/charts/sector-heatmap.tsx)"
+        ],
+        "output_to": "component_pattern",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_echart_props",
+        "action": "Analyze DashboardChart component API",
+        "commands": [
+          "Read(apps/web/components/echart.client.tsx)"
+        ],
+        "output_to": "echart_api",
+        "on_error": "fail"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Create entity-impact-graph.tsx component file",
+        "description": "Create new chart component following SectorHeatmap pattern",
+        "modification_points": [
+          "Create 1 new file: apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx",
+          "Add 'use client' directive at top",
+          "Import 5 dependencies: [DashboardChart, useChartTheme, useEntityImpactGraph, Button, Skeleton]",
+          "Define 1 component: EntityImpactGraph with loading/error/empty states"
+        ],
+        "logic_flow": [
+          "Add 'use client' directive",
+          "Import React hooks (useMemo, useState, useCallback)",
+          "Import DashboardChart from @/components/echart",
+          "Import useChartTheme from @/hooks/use-chart-theme",
+          "Import useEntityImpactGraph from @/hooks/useEntityImpactGraph",
+          "Import UI components (Button, Skeleton) from antd",
+          "Import ChartEmptyState from @/components/chart-empty-state",
+          "Create EntityImpactGraph function component",
+          "Call useEntityImpactGraph hook for data",
+          "Call useChartTheme for styling",
+          "Build ECharts option with graph series configuration",
+          "Handle loading, error, and empty states",
+          "Return DashboardChart with option and event handlers"
+        ],
+        "depends_on": [],
+        "output": "component_created"
+      },
+      {
+        "step": 2,
+        "title": "Configure ECharts graph series with force layout",
+        "description": "Build ECharts option object with graph series, force layout, and node/link styling",
+        "modification_points": [
+          "Define 1 useMemo for ECharts option generation",
+          "Configure 4 node categories with distinct colors: [person: blue, organization: green, stock: orange, commodity: purple]",
+          "Configure 2 link types with visual styles: [co-occurrence: solid, correlation: dashed]",
+          "Set force layout parameters: [repulsion: 500, gravity: 0.1, edgeLength: [50, 200]]"
+        ],
+        "logic_flow": [
+          "Create useMemo hook for option generation",
+          "Map nodes to ECharts node format with category, symbolSize, itemStyle",
+          "Map links to ECharts link format with lineStyle based on type",
+          "Define categories array for legend",
+          "Configure tooltip formatter for node/link details",
+          "Configure force layout parameters",
+          "Return complete ECharts option object"
+        ],
+        "depends_on": [
+          1
+        ],
+        "output": "graph_option_configured"
+      },
+      {
+        "step": 3,
+        "title": "Add interaction handlers",
+        "description": "Implement click events, tooltips, and filtering interactions",
+        "modification_points": [
+          "Add 1 onEvents handler for node click: [navigate to entity details or filter]",
+          "Add 1 tooltip formatter: [show entity name, type, confidence, connections]",
+          "Add 1 optional filter control: [confidence threshold slider]"
+        ],
+        "logic_flow": [
+          "Create click handler for node selection",
+          "Create tooltip formatter showing entity details",
+          "Optionally add confidence filter control",
+          "Pass onEvents to DashboardChart component"
+        ],
+        "depends_on": [
+          2
+        ],
+        "output": "interactions_added"
+      }
+    ],
+    "target_files": [
+      "apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx"
+    ]
+  },
+  "status_history": [
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:16.522Z"
+    },
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:23.835Z"
+    }
+  ]
+}

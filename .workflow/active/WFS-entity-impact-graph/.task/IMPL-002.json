@@ -1,0 +1,139 @@
+{
+  "id": "IMPL-002",
+  "title": "Create GraphQL types for entity objects with type/confidence",
+  "status": "completed",
+  "context_package_path": ".workflow/active/WFS-entity-impact-graph/.process/context-package.json",
+  "cli_execution_id": "WFS-entity-impact-graph-IMPL-002",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "meta": {
+    "type": "feature",
+    "agent": "@code-developer",
+    "execution_group": "parallel-backend-types",
+    "module": "backend",
+    "execution_config": {
+      "method": "agent",
+      "cli_tool": null,
+      "enable_resume": true,
+      "previous_cli_id": null
+    }
+  },
+  "context": {
+    "requirements": [
+      "Create 1 new GraphQL ObjectType: [EntityModel] with 3 fields: [name: String, type: String, confidence: Float]",
+      "Create 1 new GraphQL ObjectType: [EntityImpactGraphModel] with 3 fields: [nodes: [EntityImpactNodeModel], links: [EntityImpactLinkModel], metadata: EntityImpactMetadataModel]",
+      "Create 1 new GraphQL ObjectType: [EntityImpactNodeModel] with 5 fields: [id: String, name: String, category: String, type: String, value: Float]",
+      "Create 1 new GraphQL ObjectType: [EntityImpactLinkModel] with 4 fields: [source: String, target: String, value: Float, type: String]",
+      "Create 1 new GraphQL ObjectType: [EntityImpactMetadataModel] with 3 fields: [totalNodes: Int, totalLinks: Int, generatedAt: DateTime]",
+      "Create 1 new GraphQL InputType: [EntityImpactGraphInput] with 4 fields: [startDate: DateTime, endDate: DateTime, minConfidence: Float, maxNodes: Int]"
+    ],
+    "focus_paths": [
+      "apps/api/src/graphql/models/",
+      "apps/api/src/graphql/dto/"
+    ],
+    "acceptance": [
+      "6 GraphQL types created: verify by grep -r '@ObjectType\\|@InputType' apps/api/src/graphql/models/entity-impact-graph.model.ts | wc -l >= 5",
+      "All fields have proper decorators: verify by grep '@Field' apps/api/src/graphql/models/entity-impact-graph.model.ts | wc -l >= 20",
+      "TypeScript compilation passes: verify by cd apps/api && pnpm tsc --noEmit"
+    ],
+    "depends_on": [],
+    "inherited": null,
+    "shared_context": {
+      "tech_stack": [
+        "TypeScript",
+        "NestJS",
+        "@nestjs/graphql"
+      ],
+      "pattern": "Follow existing GraphQL model patterns in item.model.ts",
+      "conventions": "Use @ObjectType(), @Field() decorators with proper type annotations"
+    },
+    "artifacts": [
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/api/src/graphql/models/item.model.ts",
+        "priority": "highest",
+        "usage": "Reference for GraphQL model patterns and decorators",
+        "contains": "ProcessedItemPreviewModelGraph with entities as string[]"
+      },
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "packages/mongo/src/models/processed-item.ts",
+        "priority": "high",
+        "usage": "Source schema for entity structure",
+        "contains": "ProcessedItemEntitySchema with name/type/confidence"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_context_package",
+        "action": "Load context package for artifact paths",
+        "commands": [
+          "Read(.workflow/active/WFS-entity-impact-graph/.process/context-package.json)"
+        ],
+        "output_to": "context_package",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_existing_models",
+        "action": "Analyze existing GraphQL model patterns",
+        "commands": [
+          "Read(apps/api/src/graphql/models/item.model.ts)"
+        ],
+        "output_to": "model_patterns",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_entity_schema",
+        "action": "Analyze MongoDB entity schema for field mapping",
+        "commands": [
+          "Read(packages/mongo/src/models/processed-item.ts)"
+        ],
+        "output_to": "entity_schema",
+        "on_error": "fail"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Create entity-impact-graph.model.ts with all GraphQL types",
+        "description": "Create new file with 6 GraphQL types following existing patterns",
+        "modification_points": [
+          "Create 1 new file: apps/api/src/graphql/models/entity-impact-graph.model.ts",
+          "Define 5 ObjectTypes: [EntityModel, EntityImpactNodeModel, EntityImpactLinkModel, EntityImpactMetadataModel, EntityImpactGraphModel]",
+          "Define 1 InputType: [EntityImpactGraphInput]"
+        ],
+        "logic_flow": [
+          "Import decorators from @nestjs/graphql",
+          "Create EntityModel with name, type, confidence fields",
+          "Create EntityImpactNodeModel for graph nodes",
+          "Create EntityImpactLinkModel for graph edges",
+          "Create EntityImpactMetadataModel for graph metadata",
+          "Create EntityImpactGraphModel as container type",
+          "Create EntityImpactGraphInput for query parameters"
+        ],
+        "depends_on": [],
+        "output": "graphql_types_created"
+      }
+    ],
+    "target_files": [
+      "apps/api/src/graphql/models/entity-impact-graph.model.ts"
+    ]
+  },
+  "status_history": [
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:16.517Z"
+    },
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:23.831Z"
+    }
+  ]
+}

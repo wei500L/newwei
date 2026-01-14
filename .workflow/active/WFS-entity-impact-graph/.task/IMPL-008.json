@@ -1,0 +1,188 @@
+{
+  "id": "IMPL-008",
+  "title": "Add interaction features (tooltips, click events, filtering)",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-entity-impact-graph/.process/context-package.json",
+  "cli_execution_id": "WFS-entity-impact-graph-IMPL-008",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "WFS-entity-impact-graph-IMPL-007"
+  },
+  "meta": {
+    "type": "feature",
+    "agent": "@code-developer",
+    "execution_group": null,
+    "module": "frontend",
+    "execution_config": {
+      "method": "agent",
+      "cli_tool": null,
+      "enable_resume": true,
+      "previous_cli_id": "WFS-entity-impact-graph-IMPL-007"
+    }
+  },
+  "context": {
+    "requirements": [
+      "Implement 3 interaction features: [tooltip formatter, node click handler, confidence filter]",
+      "Create 1 tooltip formatter showing 5 data points: [entity name, entity type, confidence score, connection count, related entities]",
+      "Add 1 click handler for node selection with 2 actions: [highlight connected nodes, show entity details panel]",
+      "Add 1 optional filter control: [confidence threshold slider with range 0-1]",
+      "Follow 1 existing interaction pattern: [SectorHeatmap click events and message feedback]"
+    ],
+    "focus_paths": [
+      "apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx"
+    ],
+    "acceptance": [
+      "3 interaction features implemented: verify by grep -c 'onEvents\\|tooltip\\|filter' apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx >= 3",
+      "Tooltip shows entity details: verify by visual inspection in browser",
+      "Click handler triggers selection: verify by visual inspection in browser",
+      "TypeScript compilation passes: verify by cd apps/web && pnpm tsc --noEmit"
+    ],
+    "depends_on": [
+      "IMPL-007"
+    ],
+    "inherited": {
+      "from": "IMPL-007",
+      "context": [
+        "EntityImpactGraph integrated into dashboard",
+        "Component renders in dashboard layout"
+      ]
+    },
+    "shared_context": {
+      "tech_stack": [
+        "TypeScript",
+        "React",
+        "ECharts 5.5.0",
+        "Ant Design"
+      ],
+      "pattern": "Follow SectorHeatmap interaction patterns",
+      "conventions": "Use message.info for user feedback, onEvents for chart interactions"
+    },
+    "artifacts": [
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/web/app/(app)/dashboard/charts/sector-heatmap.tsx",
+        "priority": "highest",
+        "usage": "Reference for interaction patterns (click events, tooltips, message feedback)",
+        "contains": "SectorHeatmap with onEvents click handler and message.info feedback"
+      },
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx",
+        "priority": "highest",
+        "usage": "Primary file to enhance with interaction features",
+        "contains": "EntityImpactGraph component from IMPL-006"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_context_package",
+        "action": "Load context package for artifact paths",
+        "commands": [
+          "Read(.workflow/active/WFS-entity-impact-graph/.process/context-package.json)"
+        ],
+        "output_to": "context_package",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_interaction_patterns",
+        "action": "Analyze SectorHeatmap interaction patterns",
+        "commands": [
+          "Read(apps/web/app/(app)/dashboard/charts/sector-heatmap.tsx)"
+        ],
+        "output_to": "interaction_patterns",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_current_component",
+        "action": "Analyze current EntityImpactGraph component",
+        "commands": [
+          "Read(apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx)"
+        ],
+        "output_to": "current_component",
+        "on_error": "fail"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Enhance tooltip formatter",
+        "description": "Create rich tooltip showing entity details and connections",
+        "modification_points": [
+          "Add 1 tooltip formatter function in ECharts option",
+          "Display 5 data points: [name, type, confidence, connectionCount, relatedEntities]",
+          "Style tooltip with theme colors from useChartTheme"
+        ],
+        "logic_flow": [
+          "Create tooltip formatter function",
+          "Extract node/link data from params",
+          "Format entity details with HTML",
+          "Include connection count and related entities",
+          "Apply theme styling"
+        ],
+        "depends_on": [],
+        "output": "tooltip_enhanced"
+      },
+      {
+        "step": 2,
+        "title": "Add node click handler",
+        "description": "Implement click handler for node selection and highlighting",
+        "modification_points": [
+          "Add 1 onEvents handler for 'click' event type",
+          "Implement 2 click actions: [highlight connected nodes, show details]",
+          "Add message.info feedback for user interaction"
+        ],
+        "logic_flow": [
+          "Create click handler function",
+          "Detect if clicked element is node or link",
+          "For node click: highlight connected nodes and links",
+          "Show message.info with entity name",
+          "Optionally trigger detail panel or filter"
+        ],
+        "depends_on": [
+          1
+        ],
+        "output": "click_handler_added"
+      },
+      {
+        "step": 3,
+        "title": "Add confidence filter control",
+        "description": "Add optional slider for filtering nodes by confidence threshold",
+        "modification_points": [
+          "Add 1 useState for confidence threshold: [minConfidence, setMinConfidence]",
+          "Add 1 Slider component from antd with range 0-1",
+          "Filter nodes in useMemo based on confidence threshold"
+        ],
+        "logic_flow": [
+          "Add useState for minConfidence (default: 0.5)",
+          "Add Slider component in actions area",
+          "Filter nodes where confidence >= minConfidence",
+          "Update graph when threshold changes",
+          "Show filtered node count in UI"
+        ],
+        "depends_on": [
+          2
+        ],
+        "output": "filter_added"
+      }
+    ],
+    "target_files": [
+      "apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx"
+    ]
+  },
+  "status_history": [
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:16.525Z"
+    },
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:23.837Z"
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+{
+  "id": "IMPL-005",
+  "title": "Create useEntityImpactGraph data hook",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-entity-impact-graph/.process/context-package.json",
+  "cli_execution_id": "WFS-entity-impact-graph-IMPL-005",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "meta": {
+    "type": "feature",
+    "agent": "@code-developer",
+    "execution_group": "parallel-frontend",
+    "module": "frontend",
+    "execution_config": {
+      "method": "agent",
+      "cli_tool": null,
+      "enable_resume": true,
+      "previous_cli_id": null
+    }
+  },
+  "context": {
+    "requirements": [
+      "Create 1 new hook file: [useEntityImpactGraph.ts] with 1 exported hook: [useEntityImpactGraph]",
+      "Define 1 GraphQL query: [GetEntityImpactGraphDocument] with 4 input parameters: [startDate, endDate, minConfidence, maxNodes]",
+      "Return 1 data structure: [EntityImpactGraphData] with 5 fields: [nodes, links, metadata, loading, error]",
+      "Integrate with 2 stores: [useDashboardRangeStore for date range, useDashboardFiltersStore for filters]",
+      "Follow 1 existing pattern: [useEconomicData hook pattern]"
+    ],
+    "focus_paths": [
+      "apps/web/hooks/",
+      "apps/web/graphql/"
+    ],
+    "acceptance": [
+      "1 hook file created: verify by ls apps/web/hooks/useEntityImpactGraph.ts",
+      "1 hook exported: verify by grep 'export function useEntityImpactGraph' apps/web/hooks/useEntityImpactGraph.ts",
+      "GraphQL query integrated: verify by grep 'useEntityImpactGraphQuery' apps/web/hooks/useEntityImpactGraph.ts",
+      "TypeScript compilation passes: verify by cd apps/web && pnpm tsc --noEmit"
+    ],
+    "depends_on": [
+      "IMPL-001",
+      "IMPL-004"
+    ],
+    "inherited": {
+      "from": "IMPL-004",
+      "context": [
+        "GraphQL resolver created and registered",
+        "getEntityImpactGraph query available"
+      ]
+    },
+    "shared_context": {
+      "tech_stack": [
+        "TypeScript",
+        "React",
+        "@apollo/client",
+        "zustand"
+      ],
+      "pattern": "Follow useEconomicData hook pattern with useQuery, store integration, and data transformation",
+      "conventions": "Use generated GraphQL hooks from @/graphql/generated"
+    },
+    "artifacts": [
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/web/hooks/useEconomicData.ts",
+        "priority": "highest",
+        "usage": "Reference pattern for data hook implementation",
+        "contains": "useEconomicData with useQuery, store integration, data transformation"
+      },
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/web/store/time-range.ts",
+        "priority": "high",
+        "usage": "Dashboard range store for date filtering",
+        "contains": "useDashboardRangeStore with start/end dates"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_context_package",
+        "action": "Load context package for artifact paths",
+        "commands": [
+          "Read(.workflow/active/WFS-entity-impact-graph/.process/context-package.json)"
+        ],
+        "output_to": "context_package",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_hook_pattern",
+        "action": "Analyze existing useEconomicData hook pattern",
+        "commands": [
+          "Read(apps/web/hooks/useEconomicData.ts)"
+        ],
+        "output_to": "hook_pattern",
+        "on_error": "fail"
+      },
+      {
+        "step": "check_graphql_generated",
+        "action": "Check if GraphQL types are generated",
+        "commands": [
+          "bash(ls apps/web/graphql/generated.ts 2>/dev/null || echo 'not found')"
+        ],
+        "output_to": "graphql_status",
+        "on_error": "skip_optional"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Create useEntityImpactGraph.ts hook file",
+        "description": "Create new hook following useEconomicData pattern",
+        "modification_points": [
+          "Create 1 new file: apps/web/hooks/useEntityImpactGraph.ts",
+          "Define 1 interface: EntityImpactGraphOptions with 2 optional fields: [minConfidence, maxNodes]",
+          "Define 1 interface: EntityImpactGraphResult with 5 fields: [nodes, links, metadata, loading, error]",
+          "Export 1 hook function: useEntityImpactGraph"
+        ],
+        "logic_flow": [
+          "Import useEntityImpactGraphQuery from @/graphql/generated",
+          "Import useDashboardRangeStore from @/store/time-range",
+          "Import useDashboardFiltersStore from @/store/dashboard-filters",
+          "Define EntityImpactGraphOptions interface",
+          "Define EntityImpactGraphResult interface",
+          "Create useEntityImpactGraph hook function",
+          "Get start/end from useDashboardRangeStore",
+          "Call useEntityImpactGraphQuery with variables",
+          "Transform and return data with loading/error states"
+        ],
+        "depends_on": [],
+        "output": "hook_created"
+      },
+      {
+        "step": 2,
+        "title": "Add GraphQL query definition",
+        "description": "Add GraphQL query to operations file for codegen",
+        "modification_points": [
+          "Modify 1 file: apps/web/graphql/operations.graphql (or equivalent)",
+          "Add 1 query definition: GetEntityImpactGraph with input parameters"
+        ],
+        "logic_flow": [
+          "Locate GraphQL operations file",
+          "Add GetEntityImpactGraph query definition",
+          "Run GraphQL codegen to generate types"
+        ],
+        "depends_on": [
+          1
+        ],
+        "output": "graphql_query_added"
+      }
+    ],
+    "target_files": [
+      "apps/web/hooks/useEntityImpactGraph.ts",
+      "apps/web/graphql/operations.graphql"
+    ]
+  },
+  "status_history": [
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:16.521Z"
+    },
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:23.834Z"
+    }
+  ]
+}

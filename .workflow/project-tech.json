@@ -1,0 +1,333 @@
+{
+  "project_metadata": {
+    "name": "wei",
+    "root_path": "D:/wei",
+    "initialized_at": "2026-01-14T00:00:00.000Z",
+    "updated_at": "2026-01-14T00:00:00.000Z"
+  },
+  "technology_analysis": {
+    "description": "A modular monolith news aggregation and economic data monitoring platform with multi-tenant architecture. Features web crawling pipeline (Crawl4AI), news processing with LLM analysis, economic data tracking via AKShare, real-time dashboards with customizable widgets, and multi-channel alerting system. Built as a monorepo using Turborepo with NestJS backend API and Next.js frontend.",
+    "languages": [
+      {
+        "name": "TypeScript",
+        "percentage": 92,
+        "is_primary": true,
+        "file_count": 751
+      },
+      {
+        "name": "JavaScript",
+        "percentage": 3,
+        "is_primary": false,
+        "file_count": 25
+      },
+      {
+        "name": "Python",
+        "percentage": 2,
+        "is_primary": false,
+        "file_count": 3
+      },
+      {
+        "name": "SQL",
+        "percentage": 2,
+        "is_primary": false,
+        "file_count": 7
+      },
+      {
+        "name": "GraphQL",
+        "percentage": 1,
+        "is_primary": false,
+        "file_count": 14
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "NestJS",
+        "version": "^11.0.0",
+        "category": "backend",
+        "description": "Enterprise Node.js framework with modular architecture, dependency injection, and decorator-based configuration"
+      },
+      {
+        "name": "Next.js",
+        "version": "15.0.0-canary.45",
+        "category": "frontend",
+        "description": "React framework with App Router, server components, and Turbopack support"
+      },
+      {
+        "name": "React",
+        "version": "^19.0.0",
+        "category": "frontend",
+        "description": "UI library with React 19 features"
+      },
+      {
+        "name": "Apollo GraphQL",
+        "version": "^4.11.1 (server) / ^3.11.0 (client)",
+        "category": "api",
+        "description": "GraphQL implementation with Apollo Server and Apollo Client"
+      },
+      {
+        "name": "Prisma",
+        "version": "^5.16.0",
+        "category": "orm",
+        "description": "Type-safe ORM for MySQL with schema-first approach"
+      },
+      {
+        "name": "Mongoose",
+        "version": "^8.3.2",
+        "category": "odm",
+        "description": "MongoDB ODM for document storage (raw items, crawl results)"
+      },
+      {
+        "name": "Ant Design",
+        "version": "^5.19.0",
+        "category": "ui",
+        "description": "React UI component library"
+      },
+      {
+        "name": "Tailwind CSS",
+        "version": "^3.4.17",
+        "category": "styling",
+        "description": "Utility-first CSS framework"
+      },
+      {
+        "name": "BullMQ",
+        "version": "^5.8.1",
+        "category": "queue",
+        "description": "Redis-based job queue for background processing"
+      },
+      {
+        "name": "Socket.IO",
+        "version": "^4.8.1",
+        "category": "realtime",
+        "description": "Real-time bidirectional event-based communication"
+      }
+    ],
+    "build_tools": [
+      {
+        "name": "Turborepo",
+        "version": "^2.1.1",
+        "description": "Monorepo build system with caching and parallel execution"
+      },
+      {
+        "name": "pnpm",
+        "version": "9.0.0",
+        "description": "Fast, disk space efficient package manager with workspace support"
+      },
+      {
+        "name": "TypeScript",
+        "version": "^5.4.5",
+        "description": "TypeScript compiler for type checking and transpilation"
+      },
+      {
+        "name": "ESLint",
+        "version": "^8.57.0",
+        "description": "Linting and code quality"
+      },
+      {
+        "name": "Prettier",
+        "version": "^3.3.2",
+        "description": "Code formatting"
+      },
+      {
+        "name": "Docker Compose",
+        "version": "N/A",
+        "description": "Container orchestration for development and deployment"
+      }
+    ],
+    "test_frameworks": [
+      {
+        "name": "Jest",
+        "version": "^29.7.0",
+        "description": "JavaScript testing framework for unit and integration tests"
+      },
+      {
+        "name": "Supertest",
+        "version": "^6.3.4",
+        "description": "HTTP assertions for API endpoint testing"
+      },
+      {
+        "name": "@nestjs/testing",
+        "version": "^11.0.0",
+        "description": "NestJS testing utilities for module and service testing"
+      }
+    ],
+    "architecture": {
+      "style": "modular-monolith",
+      "patterns": [
+        "Monorepo with workspace packages",
+        "Multi-tenant architecture (orgId-based sharding)",
+        "CQRS-lite with GraphQL queries and REST mutations",
+        "Event-driven processing with BullMQ job queues",
+        "Outbox pattern for cross-database consistency",
+        "Repository pattern via Prisma and Mongoose",
+        "Decorator-based dependency injection (NestJS)",
+        "Circuit breaker for external service resilience"
+      ],
+      "layers": [
+        {
+          "name": "presentation",
+          "path": "apps/web",
+          "description": "Next.js frontend with React components, pages, and API routes"
+        },
+        {
+          "name": "api-gateway",
+          "path": "apps/api/src/graphql",
+          "description": "GraphQL resolvers, loaders, and DTOs"
+        },
+        {
+          "name": "business-logic",
+          "path": "apps/api/src/modules",
+          "description": "Domain modules with services, controllers, and processors"
+        },
+        {
+          "name": "data-access",
+          "path": "packages/db, packages/mongo",
+          "description": "Prisma client for MySQL, Mongoose models for MongoDB"
+        },
+        {
+          "name": "shared",
+          "path": "packages/config, packages/utils",
+          "description": "Cross-cutting configuration and utility functions"
+        }
+      ]
+    },
+    "key_components": [
+      {
+        "name": "crawl",
+        "path": "apps/api/src/modules/crawl",
+        "description": "Web crawling orchestration with Crawl4AI integration, task management, result storage, and template-based configurations",
+        "importance": "critical"
+      },
+      {
+        "name": "news-pipeline",
+        "path": "apps/api/src/modules/news-pipeline",
+        "description": "News article processing pipeline with LLM-powered extraction, cleaning, and entity recognition",
+        "importance": "critical"
+      },
+      {
+        "name": "alerts",
+        "path": "apps/api/src/modules/alerts",
+        "description": "Multi-channel alerting system with rule engine, threshold monitoring, and delivery tracking (email, webhook, in-app)",
+        "importance": "high"
+      },
+      {
+        "name": "dashboard",
+        "path": "apps/api/src/modules/dashboard",
+        "description": "Customizable dashboard system with widget-based layouts and multiple chart types",
+        "importance": "high"
+      },
+      {
+        "name": "akshare",
+        "path": "apps/api/src/modules/akshare",
+        "description": "Economic data integration via AKShare Python service for financial indicators and market data",
+        "importance": "high"
+      },
+      {
+        "name": "auth",
+        "path": "apps/api/src/modules/auth",
+        "description": "JWT-based authentication with Passport.js strategies and refresh token rotation",
+        "importance": "critical"
+      },
+      {
+        "name": "rbac",
+        "path": "apps/api/src/modules/rbac",
+        "description": "Role-based access control with permission management per organization",
+        "importance": "high"
+      },
+      {
+        "name": "queue",
+        "path": "apps/api/src/modules/queue",
+        "description": "BullMQ job processing with multiple queues for crawling, pipeline, and background tasks",
+        "importance": "high"
+      },
+      {
+        "name": "graphql",
+        "path": "apps/api/src/graphql",
+        "description": "Apollo Server GraphQL layer with resolvers, data loaders, and type-safe models",
+        "importance": "high"
+      },
+      {
+        "name": "storage",
+        "path": "apps/api/src/modules/storage",
+        "description": "S3-compatible object storage via MinIO for avatars, markdown content, and attachments",
+        "importance": "medium"
+      }
+    ],
+    "dependencies": {
+      "databases": [
+        {
+          "name": "MySQL",
+          "version": "8.4",
+          "purpose": "Primary relational storage with Prisma ORM"
+        },
+        {
+          "name": "MongoDB",
+          "version": "7.0",
+          "purpose": "Document storage for raw items and crawl content"
+        },
+        {
+          "name": "Redis",
+          "version": "7.2",
+          "purpose": "Caching, BullMQ job queues, and Socket.IO adapter"
+        }
+      ],
+      "external_services": [
+        {
+          "name": "Crawl4AI",
+          "purpose": "AI-powered web crawling service"
+        },
+        {
+          "name": "AKShare",
+          "purpose": "Chinese financial data API (Python)"
+        },
+        {
+          "name": "MinIO",
+          "purpose": "S3-compatible object storage"
+        }
+      ],
+      "internal_packages": [
+        {
+          "name": "@modular/config",
+          "path": "packages/config",
+          "description": "Shared configuration, prompts, and TypeScript configs"
+        },
+        {
+          "name": "@modular/db",
+          "path": "packages/db",
+          "description": "Prisma schema, migrations, and database client"
+        },
+        {
+          "name": "@modular/mongo",
+          "path": "packages/mongo",
+          "description": "Mongoose models and MongoDB connection utilities"
+        },
+        {
+          "name": "@modular/utils",
+          "path": "packages/utils",
+          "description": "Shared utility functions and helpers"
+        }
+      ]
+    }
+  },
+  "development_status": {
+    "completed_features": [],
+    "development_index": {
+      "feature": [],
+      "enhancement": [],
+      "bugfix": [],
+      "refactor": [],
+      "docs": []
+    },
+    "statistics": {
+      "total_features": 0,
+      "total_sessions": 0,
+      "last_updated": "2026-01-14T00:00:00.000Z"
+    }
+  },
+  "_metadata": {
+    "initialized_by": "cli-explore-agent",
+    "analysis_timestamp": "2026-01-14T00:00:00.000Z",
+    "analysis_mode": "deep-scan",
+    "total_modules": 153,
+    "max_depth": 8
+  }
+}

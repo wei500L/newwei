@@ -1,0 +1,161 @@
+{
+  "id": "IMPL-007",
+  "title": "Integrate EntityImpactGraph component into dashboard layout",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-entity-impact-graph/.process/context-package.json",
+  "cli_execution_id": "WFS-entity-impact-graph-IMPL-007",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "meta": {
+    "type": "feature",
+    "agent": "@code-developer",
+    "execution_group": null,
+    "module": "frontend",
+    "execution_config": {
+      "method": "agent",
+      "cli_tool": null,
+      "enable_resume": true,
+      "previous_cli_id": null
+    }
+  },
+  "context": {
+    "requirements": [
+      "Add 1 dynamic import for EntityImpactGraph component in dashboard-content.tsx",
+      "Add 1 new grid row below existing charts section (after line 337)",
+      "Wrap component in 1 Card with title from i18n: [dashboard.charts.entityImpactGraph]",
+      "Follow 1 existing layout pattern: [xl:col-span-3 full-width row]"
+    ],
+    "focus_paths": [
+      "apps/web/app/(app)/dashboard/dashboard-content.tsx"
+    ],
+    "acceptance": [
+      "1 dynamic import added: verify by grep 'EntityImpactGraph' apps/web/app/(app)/dashboard/dashboard-content.tsx",
+      "1 grid row added: verify by grep 'EntityImpactGraph' apps/web/app/(app)/dashboard/dashboard-content.tsx",
+      "Component renders in dashboard: verify by npm run dev and visual inspection",
+      "TypeScript compilation passes: verify by cd apps/web && pnpm tsc --noEmit"
+    ],
+    "depends_on": [
+      "IMPL-006"
+    ],
+    "inherited": {
+      "from": "IMPL-006",
+      "context": [
+        "EntityImpactGraph component created",
+        "Component exports available for import"
+      ]
+    },
+    "shared_context": {
+      "tech_stack": [
+        "TypeScript",
+        "React",
+        "Next.js 15",
+        "Ant Design"
+      ],
+      "pattern": "Follow existing dynamic import pattern for chart components",
+      "conventions": "Use next/dynamic for SSR-safe imports, wrap in Card component"
+    },
+    "artifacts": [
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/web/app/(app)/dashboard/dashboard-content.tsx",
+        "priority": "highest",
+        "usage": "Primary file to modify - add EntityImpactGraph integration",
+        "contains": "DashboardContent with dynamic imports and grid layout"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_context_package",
+        "action": "Load context package for artifact paths",
+        "commands": [
+          "Read(.workflow/active/WFS-entity-impact-graph/.process/context-package.json)"
+        ],
+        "output_to": "context_package",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_dashboard_layout",
+        "action": "Analyze current dashboard layout structure",
+        "commands": [
+          "Read(apps/web/app/(app)/dashboard/dashboard-content.tsx)"
+        ],
+        "output_to": "dashboard_layout",
+        "on_error": "fail"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Add dynamic import for EntityImpactGraph",
+        "description": "Add dynamic import following existing chart component pattern",
+        "modification_points": [
+          "Add 1 dynamic import after FinancialCandlestick import (around line 74): const EntityImpactGraph = dynamic(...)"
+        ],
+        "logic_flow": [
+          "Locate dynamic imports section (lines 36-88)",
+          "Add EntityImpactGraph dynamic import after FinancialCandlestick",
+          "Use same pattern: dynamic(() => import('./charts/entity-impact-graph').then((mod) => mod.EntityImpactGraph), { loading: ... })"
+        ],
+        "depends_on": [],
+        "output": "import_added"
+      },
+      {
+        "step": 2,
+        "title": "Add EntityImpactGraph grid row to dashboard",
+        "description": "Add new grid row below Financial Candlestick & Sentiment section",
+        "modification_points": [
+          "Add 1 grid row after line 337 (after Financial Candlestick section)",
+          "Use full-width layout: xl:col-span-3",
+          "Wrap in Card component with i18n title"
+        ],
+        "logic_flow": [
+          "Locate Financial Candlestick section end (line 337)",
+          "Add new grid section with full-width layout",
+          "Add Card wrapper with title from i18n",
+          "Render EntityImpactGraph component inside Card"
+        ],
+        "depends_on": [
+          1
+        ],
+        "output": "grid_row_added"
+      },
+      {
+        "step": 3,
+        "title": "Add i18n translation key",
+        "description": "Add translation key for EntityImpactGraph title",
+        "modification_points": [
+          "Add 1 translation key: dashboard.charts.entityImpactGraph in relevant locale files"
+        ],
+        "logic_flow": [
+          "Locate i18n locale files",
+          "Add entityImpactGraph key to dashboard.charts namespace",
+          "Provide English and Chinese translations"
+        ],
+        "depends_on": [
+          2
+        ],
+        "output": "i18n_added"
+      }
+    ],
+    "target_files": [
+      "apps/web/app/(app)/dashboard/dashboard-content.tsx:imports:36-88",
+      "apps/web/app/(app)/dashboard/dashboard-content.tsx:grid:307-337"
+    ]
+  },
+  "status_history": [
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:16.524Z"
+    },
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:23.836Z"
+    }
+  ]
+}

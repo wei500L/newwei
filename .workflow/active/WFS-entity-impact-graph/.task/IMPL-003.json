@@ -1,0 +1,186 @@
+{
+  "id": "IMPL-003",
+  "title": "Create correlation service for entity-financial relationships",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-entity-impact-graph/.process/context-package.json",
+  "cli_execution_id": "WFS-entity-impact-graph-IMPL-003",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "meta": {
+    "type": "feature",
+    "agent": "@code-developer",
+    "execution_group": "parallel-backend-types",
+    "module": "backend",
+    "execution_config": {
+      "method": "agent",
+      "cli_tool": null,
+      "enable_resume": true,
+      "previous_cli_id": null
+    }
+  },
+  "context": {
+    "requirements": [
+      "Create 1 new service file: [entity-impact-graph.service.ts] with 4 methods: [getEntityImpactGraph(), calculateCoOccurrence(), calculateCorrelation(), buildGraphData()]",
+      "Implement hybrid correlation approach combining 2 methods: [co-occurrence frequency, correlation strength]",
+      "Query 2 data sources: [ProcessedItem.result.entities from MongoDB, AkshareService.getDataByCategory from Prisma]",
+      "Support 4 node categories: [person, organization, stock, commodity]",
+      "Generate 2 link types: [co-occurrence, correlation]"
+    ],
+    "focus_paths": [
+      "apps/api/src/modules/dashboard/",
+      "packages/mongo/src/models/processed-item.ts",
+      "apps/api/src/modules/akshare/akshare.service.ts"
+    ],
+    "acceptance": [
+      "1 service file created: verify by ls apps/api/src/modules/dashboard/entity-impact-graph.service.ts",
+      "4 methods implemented: verify by grep -c 'async.*(' apps/api/src/modules/dashboard/entity-impact-graph.service.ts >= 4",
+      "Service is injectable: verify by grep '@Injectable' apps/api/src/modules/dashboard/entity-impact-graph.service.ts",
+      "TypeScript compilation passes: verify by cd apps/api && pnpm tsc --noEmit"
+    ],
+    "depends_on": [
+      "IMPL-002"
+    ],
+    "inherited": {
+      "from": "IMPL-002",
+      "context": [
+        "GraphQL types for entity impact graph defined",
+        "EntityImpactGraphModel, EntityImpactNodeModel, EntityImpactLinkModel available"
+      ]
+    },
+    "shared_context": {
+      "tech_stack": [
+        "TypeScript",
+        "NestJS",
+        "Mongoose",
+        "Prisma"
+      ],
+      "pattern": "Follow existing service patterns in akshare.service.ts and analysis.service.ts",
+      "conventions": "Use @Injectable() decorator, inject dependencies via constructor"
+    },
+    "artifacts": [
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/api/src/modules/akshare/akshare.service.ts",
+        "priority": "highest",
+        "usage": "Reference for service pattern and financial data access",
+        "contains": "AkshareService with getDataByCategory method"
+      },
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "packages/mongo/src/models/processed-item.ts",
+        "priority": "highest",
+        "usage": "Entity data schema reference",
+        "contains": "ProcessedItemEntitySchema with name/type/confidence"
+      },
+      {
+        "type": "source_code",
+        "source": "context_package",
+        "path": "apps/api/src/modules/analysis/analysis.service.ts",
+        "priority": "high",
+        "usage": "Reference for correlation analysis patterns",
+        "contains": "AnalysisService with submitCorrelation method"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_context_package",
+        "action": "Load context package for artifact paths",
+        "commands": [
+          "Read(.workflow/active/WFS-entity-impact-graph/.process/context-package.json)"
+        ],
+        "output_to": "context_package",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_akshare_service",
+        "action": "Analyze AkshareService for data access patterns",
+        "commands": [
+          "Read(apps/api/src/modules/akshare/akshare.service.ts)"
+        ],
+        "output_to": "akshare_patterns",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_entity_schema",
+        "action": "Analyze ProcessedItem entity schema",
+        "commands": [
+          "Read(packages/mongo/src/models/processed-item.ts)"
+        ],
+        "output_to": "entity_schema",
+        "on_error": "fail"
+      },
+      {
+        "step": "analyze_dashboard_module",
+        "action": "Analyze existing dashboard module structure",
+        "commands": [
+          "bash(ls -la apps/api/src/modules/dashboard/)"
+        ],
+        "output_to": "dashboard_structure",
+        "on_error": "skip_optional"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Create entity-impact-graph.service.ts with core structure",
+        "description": "Create new service file with NestJS injectable pattern and dependency injection",
+        "modification_points": [
+          "Create 1 new file: apps/api/src/modules/dashboard/entity-impact-graph.service.ts",
+          "Inject 2 dependencies: [ProcessedItemModel, AkshareService]",
+          "Define 4 public methods: [getEntityImpactGraph, calculateCoOccurrence, calculateCorrelation, buildGraphData]"
+        ],
+        "logic_flow": [
+          "Import required dependencies (NestJS, Mongoose, Prisma)",
+          "Create @Injectable() class EntityImpactGraphService",
+          "Inject ProcessedItemModel and AkshareService via constructor",
+          "Implement getEntityImpactGraph as main entry point",
+          "Implement calculateCoOccurrence for frequency-based relationships",
+          "Implement calculateCorrelation for time-series correlation",
+          "Implement buildGraphData to combine results into graph structure"
+        ],
+        "depends_on": [],
+        "output": "service_created"
+      },
+      {
+        "step": 2,
+        "title": "Register service in dashboard module",
+        "description": "Add EntityImpactGraphService to dashboard module providers",
+        "modification_points": [
+          "Modify 1 file: apps/api/src/modules/dashboard/dashboard.module.ts",
+          "Add 1 import statement for EntityImpactGraphService",
+          "Add 1 provider entry in @Module providers array"
+        ],
+        "logic_flow": [
+          "Import EntityImpactGraphService",
+          "Add to providers array in @Module decorator",
+          "Export service if needed by other modules"
+        ],
+        "depends_on": [
+          1
+        ],
+        "output": "service_registered"
+      }
+    ],
+    "target_files": [
+      "apps/api/src/modules/dashboard/entity-impact-graph.service.ts",
+      "apps/api/src/modules/dashboard/dashboard.module.ts"
+    ]
+  },
+  "status_history": [
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:16.519Z"
+    },
+    {
+      "from": "pending",
+      "to": "pending",
+      "changed_at": "2026-01-14T17:51:23.832Z"
+    }
+  ]
+}
