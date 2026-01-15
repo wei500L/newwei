@@ -104,6 +104,8 @@ export class CrawlResultService {
     memory?: CrawlMemoryStats,
     ingestToItems?: { orgId: string; userId: string }
   ): Promise<CrawlExecutionSummary> {
+    const startTime = Date.now();
+
     if (!items || items.length === 0) {
       return {
         inserted: 0,
@@ -118,8 +120,15 @@ export class CrawlResultService {
     let itemsQueued = 0;
     let itemsQueueFailed = 0;
     const itemsService = ingestToItems ? this.resolveItemsService() : null;
-
     const shouldStoreMedia = options.storeMedia ?? false;
+
+    // Phase 1: Pre-compute all content hashes and extract markdown
+    const itemsWithHash: Array<{
+      item: Crawl4aiArticle;
+      markdown: string;
+      markdownResult: ReturnType<typeof this.extractMarkdownResult>;
+      hash: string;
+    }> = [];
 
     for (const item of items) {
       const markdownResult = this.extractMarkdownResult(item.markdown);
@@ -128,93 +137,234 @@ export class CrawlResultService {
         skipped += 1;
         continue;
       }
-
       const hash = hashMarkdown(markdown);
-      const existing = await this.prisma.crawlResult.findFirst({
-        where: {
-          taskId: task.id,
-          contentHash: hash
-        }
-      });
+      itemsWithHash.push({ item, markdown, markdownResult, hash });
+    }
 
+    if (itemsWithHash.length === 0) {
+      logger.debug({ duration: Date.now() - startTime, skipped }, "persistResults completed (all items skipped)");
+      return {
+        inserted: 0,
+        skipped,
+        runId
+      };
+    }
+
+    // Phase 2: Batch query existing records with findMany
+    const allHashes = itemsWithHash.map((i) => i.hash);
+    const existingRecords = await this.prisma.crawlResult.findMany({
+      where: {
+        taskId: task.id,
+        contentHash: { in: allHashes }
+      }
+    });
+    const existingMap = new Map(existingRecords.map((r) => [r.contentHash, r]));
+
+    logger.debug(
+      { hashCount: allHashes.length, existingCount: existingRecords.length },
+      "persistResults batch hash lookup complete"
+    );
+
+    // Phase 3: Separate new items from existing ones
+    const newItems: typeof itemsWithHash = [];
+    const existingItems: Array<{ item: Crawl4aiArticle; existing: CrawlResult }> = [];
+
+    for (const entry of itemsWithHash) {
+      const existing = existingMap.get(entry.hash);
       if (existing) {
         skipped += 1;
-        if (ingestToItems && itemsService) {
-          try {
-            await itemsService.createFromCrawlResult(ingestToItems.orgId, ingestToItems.userId, existing.id);
-            itemsQueued += 1;
-          } catch (error) {
-            itemsQueueFailed += 1;
-            logger.warn(
-              { err: error, taskId: task.id, orgId: task.orgId, crawlResultId: existing.id },
-              "Failed to ingest existing crawl result into Items"
-            );
-          }
-        }
-        continue;
+        existingItems.push({ item: entry.item, existing });
+      } else {
+        newItems.push(entry);
       }
+    }
 
-      const fetchedAt = coerceDate(item.publishedAt) ?? new Date();
-      const created = await this.prisma.crawlResult.create({
-        data: {
-          taskId: task.id,
-          sourceUrl: item.url ?? task.targetUrl,
-          fetchedAt,
-          markdownRef: "",
-          contentHash: hash,
-          metadata: toPrismaJsonValue(item.metadata ?? {})
-        }
-      });
+    // Phase 4: Batch create new CrawlResult records
+    interface NewRecordData {
+      taskId: string;
+      sourceUrl: string;
+      fetchedAt: Date;
+      markdownRef: string;
+      contentHash: string;
+      metadata: ReturnType<typeof toPrismaJsonValue>;
+      entry: (typeof itemsWithHash)[0];
+    }
 
-      const linkAnalysis = this.extractLinkAnalysisFromResult(item);
-      const media = shouldStoreMedia ? this.normalizeMediaCollection(item.media) : undefined;
-      const mediaAssets = shouldStoreMedia ? await this.collectMediaAssets(media) : undefined;
-      const tables = this.normalizeTablesFromResult(item);
-
-      const contentDoc = await CrawlResultContentModel.create({
-        taskId: task.id,
-        resultId: created.id,
-        markdown,
-        rawMarkdown: markdownResult.raw ?? markdown,
-        markdownWithCitations: markdownResult.citations,
-        referencesMarkdown: markdownResult.references,
-        fitMarkdown: markdownResult.fit,
-        metadata: item.metadata ?? {},
-        sourceUrl: item.url ?? task.targetUrl,
-        crawlRunId: runId,
-        linkAnalysis,
-        tables: tables ?? null,
-        ...(shouldStoreMedia
-          ? {
-              media: media ?? null,
-              mediaAssets: mediaAssets ?? null
-            }
-          : {})
-      });
-
-      await this.prisma.crawlResult.update({
-        where: { id: created.id },
-        data: { markdownRef: contentDoc.id }
-      });
-
-      inserted += 1;
+    const newRecordsData: NewRecordData[] = newItems.map((entry) => {
+      const fetchedAt = coerceDate(entry.item.publishedAt) ?? new Date();
       if (!latestResultAt || fetchedAt > latestResultAt) {
         latestResultAt = fetchedAt;
       }
+      return {
+        taskId: task.id,
+        sourceUrl: entry.item.url ?? task.targetUrl,
+        fetchedAt,
+        markdownRef: "",
+        contentHash: entry.hash,
+        metadata: toPrismaJsonValue(entry.item.metadata ?? {}),
+        entry
+      };
+    });
 
-      if (ingestToItems && itemsService) {
-        try {
-          await itemsService.createFromCrawlResult(ingestToItems.orgId, ingestToItems.userId, created.id);
-          itemsQueued += 1;
-        } catch (error) {
-          itemsQueueFailed += 1;
-          logger.warn(
-            { err: error, taskId: task.id, orgId: task.orgId, crawlResultId: created.id },
-            "Failed to ingest crawl result into Items"
-          );
+    if (newRecordsData.length > 0) {
+      // Batch create Prisma records
+      await this.prisma.crawlResult.createMany({
+        data: newRecordsData.map((r) => ({
+          taskId: r.taskId,
+          sourceUrl: r.sourceUrl,
+          fetchedAt: r.fetchedAt,
+          markdownRef: r.markdownRef,
+          contentHash: r.contentHash,
+          metadata: r.metadata
+        })),
+        skipDuplicates: true
+      });
+
+      // Query back created records for IDs
+      const createdRecords = await this.prisma.crawlResult.findMany({
+        where: {
+          taskId: task.id,
+          contentHash: { in: newRecordsData.map((r) => r.contentHash) }
+        }
+      });
+      const createdMap = new Map(createdRecords.map((r) => [r.contentHash, r]));
+
+      logger.debug({ newCount: newRecordsData.length, createdCount: createdRecords.length }, "persistResults batch create complete");
+
+      // Phase 5: Batch create MongoDB content documents
+      const contentDocsData: Array<{
+        taskId: string;
+        resultId: string;
+        markdown: string;
+        rawMarkdown: string;
+        markdownWithCitations?: string;
+        referencesMarkdown?: string;
+        fitMarkdown?: string;
+        metadata: Record<string, unknown>;
+        sourceUrl: string;
+        crawlRunId?: string;
+        linkAnalysis?: CrawlLinkAnalysis;
+        tables: CrawlResultTable[] | null;
+        media?: CrawlMediaCollection | null;
+        mediaAssets?: CrawlStoredMediaAsset[] | null;
+      }> = [];
+
+      for (const recordData of newRecordsData) {
+        const created = createdMap.get(recordData.contentHash);
+        if (!created) {
+          continue;
+        }
+
+        const { entry } = recordData;
+        const linkAnalysis = this.extractLinkAnalysisFromResult(entry.item);
+        const media = shouldStoreMedia ? this.normalizeMediaCollection(entry.item.media) : undefined;
+        const mediaAssets = shouldStoreMedia ? await this.collectMediaAssets(media) : undefined;
+        const tables = this.normalizeTablesFromResult(entry.item);
+
+        contentDocsData.push({
+          taskId: task.id,
+          resultId: created.id,
+          markdown: entry.markdown,
+          rawMarkdown: entry.markdownResult.raw ?? entry.markdown,
+          markdownWithCitations: entry.markdownResult.citations,
+          referencesMarkdown: entry.markdownResult.references,
+          fitMarkdown: entry.markdownResult.fit,
+          metadata: entry.item.metadata ?? {},
+          sourceUrl: entry.item.url ?? task.targetUrl,
+          crawlRunId: runId,
+          linkAnalysis,
+          tables: tables ?? null,
+          ...(shouldStoreMedia
+            ? {
+                media: media ?? null,
+                mediaAssets: mediaAssets ?? null
+              }
+            : {})
+        });
+      }
+
+      // Batch insert MongoDB documents
+      const insertedDocs = await CrawlResultContentModel.insertMany(contentDocsData);
+
+      logger.debug({ docCount: insertedDocs.length }, "persistResults batch MongoDB insert complete");
+
+      // Phase 6: Batch update markdownRef references
+      const markdownRefUpdates = contentDocsData.map((doc, index) => ({
+        resultId: doc.resultId,
+        markdownRef: insertedDocs[index]?._id?.toString() ?? ""
+      }));
+
+      if (markdownRefUpdates.length > 0) {
+        await this.prisma.$transaction(
+          markdownRefUpdates.map((u) =>
+            this.prisma.crawlResult.update({
+              where: { id: u.resultId },
+              data: { markdownRef: u.markdownRef }
+            })
+          )
+        );
+      }
+
+      inserted = createdRecords.length;
+    }
+
+    // Phase 7: Batch items ingestion with concurrency limiting
+    if (ingestToItems && itemsService) {
+      const allResultIds: string[] = [
+        ...existingItems.map((e) => e.existing.id),
+        ...newRecordsData
+          .map((r) => {
+            const created = existingMap.get(r.contentHash) ??
+              (newRecordsData.length > 0 ? undefined : undefined);
+            return created?.id;
+          })
+          .filter((id): id is string => Boolean(id))
+      ];
+
+      // Get IDs for newly created records
+      if (newRecordsData.length > 0) {
+        const createdRecords = await this.prisma.crawlResult.findMany({
+          where: {
+            taskId: task.id,
+            contentHash: { in: newRecordsData.map((r) => r.contentHash) }
+          },
+          select: { id: true }
+        });
+        allResultIds.push(...createdRecords.map((r) => r.id));
+      }
+
+      // Deduplicate IDs
+      const uniqueResultIds = [...new Set(allResultIds)];
+
+      // Process ingestion with concurrency limit of 10
+      const CONCURRENCY_LIMIT = 10;
+      for (let i = 0; i < uniqueResultIds.length; i += CONCURRENCY_LIMIT) {
+        const batch = uniqueResultIds.slice(i, i + CONCURRENCY_LIMIT);
+        const results = await Promise.allSettled(
+          batch.map((id) =>
+            itemsService.createFromCrawlResult(ingestToItems.orgId, ingestToItems.userId, id)
+          )
+        );
+
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            itemsQueued += 1;
+          } else {
+            itemsQueueFailed += 1;
+            logger.warn(
+              { err: result.reason, taskId: task.id, orgId: task.orgId },
+              "Failed to ingest crawl result into Items"
+            );
+          }
         }
       }
     }
+
+    const duration = Date.now() - startTime;
+    logger.info(
+      { duration, inserted, skipped, itemsQueued, itemsQueueFailed },
+      "persistResults completed"
+    );
 
     return {
       inserted,
