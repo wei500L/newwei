@@ -8,6 +8,7 @@ import { AccessTokenBlacklistService } from "../auth/access-token-blacklist.serv
 import { AuthService, AuthenticatedUser, JwtPayload } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
+import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
 import { QueueEventPayload, QueueEventPublisher } from "./queue-event.publisher";
 
@@ -31,6 +32,7 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
     private readonly queueEvents: QueueEventPublisher,
     private readonly sessions: UserSessionManager,
+    private readonly connectionRateLimiter: WsConnectionRateLimiterService,
   ) {}
 
   onModuleInit() {
@@ -49,6 +51,24 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   async handleConnection(client: Socket) {
     const ip = this.extractClientIp(client);
     try {
+      // Check rate limit before any authentication
+      const rateLimitResult = await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
+      if (!rateLimitResult.allowed) {
+        this.logger.warn({ socketId: client.id, ip }, "WebSocket connection rate limited");
+        client.emit("queue:error", { message: "Rate limit exceeded", retryAfterMs: rateLimitResult.retryAfterMs });
+        client.disconnect(true);
+        return;
+      }
+
+      // Check backoff delay from previous failed auth attempts
+      const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(ip ?? "");
+      if (backoffDelay > 0) {
+        this.logger.warn({ socketId: client.id, ip, backoffDelay }, "WebSocket connection in backoff period");
+        client.emit("queue:error", { message: "Too many failed attempts", retryAfterMs: backoffDelay });
+        client.disconnect(true);
+        return;
+      }
+
       if (!this.isOriginAllowed(this.extractOrigin(client))) {
         throw new Error("Origin not allowed");
       }
@@ -60,6 +80,9 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       if (!profile.permissions.includes("queue.manage")) {
         throw new Error("Insufficient permissions");
       }
+
+      // Clear backoff on successful authentication
+      await this.connectionRateLimiter.clearBackoff(ip ?? "");
 
       client.data.user = profile;
       client.data.clientIp = ip;
@@ -75,6 +98,9 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
         "Queue socket connected"
       );
     } catch (error) {
+      // Record failed auth attempt for backoff
+      await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+
       this.sessions.unregister(client);
       this.logger.warn(
         { socketId: client.id, ip, error: error instanceof Error ? error.message : String(error) },
