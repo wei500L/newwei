@@ -85,4 +85,44 @@ describe("ActionRateLimitService", () => {
       TooManyRequestsException
     );
   });
+
+  describe("enforceAkshareUpgrade", () => {
+    it("allows first upgrade request", async () => {
+      rateLimiterMock.consume = jest.fn().mockResolvedValue(true);
+      await service.enforceAkshareUpgrade("org-1");
+      expect(rateLimiterMock.consume).toHaveBeenCalledWith(
+        "akshare:upgrade:org-1",
+        1,
+        3600
+      );
+    });
+
+    it("rejects second upgrade request within window", async () => {
+      rateLimiterMock.consume = jest.fn().mockResolvedValue(false);
+      await expect(service.enforceAkshareUpgrade("org-1")).rejects.toThrow(
+        TooManyRequestsException
+      );
+      await expect(service.enforceAkshareUpgrade("org-1")).rejects.toThrow(
+        "Akshare upgrade can only be triggered once per hour"
+      );
+    });
+
+    it("tracks limits per organization independently", async () => {
+      rateLimiterMock.consume = jest.fn().mockResolvedValue(true);
+      await service.enforceAkshareUpgrade("org-1");
+      await service.enforceAkshareUpgrade("org-2");
+      expect(rateLimiterMock.consume).toHaveBeenNthCalledWith(
+        1,
+        "akshare:upgrade:org-1",
+        1,
+        3600
+      );
+      expect(rateLimiterMock.consume).toHaveBeenNthCalledWith(
+        2,
+        "akshare:upgrade:org-2",
+        1,
+        3600
+      );
+    });
+  });
 });

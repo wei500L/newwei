@@ -1,0 +1,192 @@
+{
+  "perspective": "test",
+  "findings": [
+    {
+      "id": "TEST-001",
+      "title": "Missing unit tests for EconomicDataResolver",
+      "priority": "high",
+      "category": "missing-test",
+      "description": "The EconomicDataResolver (economic-data.resolver.ts) has no corresponding spec file. This resolver handles critical GraphQL queries (getEconomicData, economicDataFetchConfigs) and mutations (updateEconomicDataFetchConfig, triggerDataFetch) but lacks any unit test coverage for input validation, authorization checks, and response mapping.",
+      "file": "D:\\wei\\apps\\api\\src\\graphql\\resolvers\\economic-data.resolver.ts",
+      "line": 15,
+      "snippet": "@Resolver()\n@UseGuards(GqlAuthGuard, GqlPermissionsGuard)\nexport class EconomicDataResolver {\n  constructor(private readonly akshareService: AkshareService) {}",
+      "suggested_issue": "Create economic-data.resolver.spec.ts with tests for: (1) getEconomicData query with valid/invalid category, date range edge cases, granularity options; (2) economicDataFetchConfigs query authorization; (3) updateEconomicDataFetchConfig mutation input validation; (4) triggerDataFetch mutation with empty/invalid slugs array",
+      "confidence": 0.95
+    },
+    {
+      "id": "TEST-002",
+      "title": "Missing unit tests for AdminAkshareController",
+      "priority": "high",
+      "category": "missing-test",
+      "description": "The AdminAkshareController handles sensitive gateway operations (version check, status, upgrade) but has no test coverage. The upgrade endpoint triggers external gateway operations and writes audit logs, making it critical to test error handling paths and authorization.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\admin-akshare.controller.ts",
+      "line": 46,
+      "snippet": "@ApiTags(\"akshare\")\n@ApiBearerAuth()\n@Controller(\"admin/akshare\")\nexport class AdminAkshareController {",
+      "suggested_issue": "Create admin-akshare.controller.spec.ts with tests for: (1) version() endpoint 404 fallback behavior; (2) status() when AKSHARE_ADMIN_TOKEN is not configured; (3) upgrade() authorization and error handling; (4) handleGatewayError() for various HTTP status codes; (5) watchUpgradeCompletion() timeout and state transitions",
+      "confidence": 0.95
+    },
+    {
+      "id": "TEST-003",
+      "title": "Missing unit tests for AkshareQueueProcessor",
+      "priority": "medium",
+      "category": "missing-test",
+      "description": "The AkshareQueueProcessor handles BullMQ job processing but has no test coverage. The worker's error handling, job failure recording, and module lifecycle methods (onModuleInit, onModuleDestroy) are untested.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.processor.ts",
+      "line": 14,
+      "snippet": "@Injectable()\nexport class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {\n  private worker?: Worker<AkshareJobPayload>;",
+      "suggested_issue": "Create akshare.processor.spec.ts with tests for: (1) onModuleInit worker creation with correct concurrency; (2) job processing success path with traceId propagation; (3) worker 'failed' event handler calling recordFetchFailure; (4) onModuleDestroy cleanup of worker, queue, and events",
+      "confidence": 0.9
+    },
+    {
+      "id": "TEST-004",
+      "title": "No tests for parseLatestPayload parser",
+      "priority": "medium",
+      "category": "coverage-hole",
+      "description": "The akshare.service.spec.ts tests parseYearMonthPayload and parseTimeseriesPayload but does not test parseLatestPayload. This parser handles real-time data with optional timestampField and categoryField, which have different code paths.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 757,
+      "snippet": "private parseLatestPayload(parser: Extract<AkshareParserConfig, { type: \"latest\" }>, payload: unknown) {\n  const records = Array.isArray(payload) ? payload : [payload];\n  const now = new Date();",
+      "suggested_issue": "Add tests for parseLatestPayload covering: (1) single record vs array payload; (2) with/without timestampField; (3) with/without categoryField generating composite sourceField; (4) deduplication logic for same timestamp+sourceField",
+      "confidence": 0.9
+    },
+    {
+      "id": "TEST-005",
+      "title": "No tests for parseMacroPayload parser",
+      "priority": "medium",
+      "category": "coverage-hole",
+      "description": "The parseMacroPayload parser is not covered by existing tests. It handles macro economic data with periodField and categoryField, similar to but distinct from timeseries parsing.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 822,
+      "snippet": "private parseMacroPayload(parser: Extract<AkshareParserConfig, { type: \"macro\" }>, payload: unknown) {\n  const records = Array.isArray(payload) ? payload : [];\n  const seen = new Set<string>();",
+      "suggested_issue": "Add tests for parseMacroPayload covering: (1) periodField date parsing; (2) categoryField composite sourceField generation; (3) null value filtering; (4) deduplication with seen Set",
+      "confidence": 0.9
+    },
+    {
+      "id": "TEST-006",
+      "title": "No tests for parseYieldCurvePayload parser",
+      "priority": "medium",
+      "category": "coverage-hole",
+      "description": "The parseYieldCurvePayload parser handles yield curve data with multiple seriesFields but has no test coverage. This parser has unique logic for mapping multiple fields per record.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 939,
+      "snippet": "private parseYieldCurvePayload(parser: Extract<AkshareParserConfig, { type: \"yieldCurve\" }>, payload: unknown) {\n  const records = Array.isArray(payload) ? payload : [];\n  return records.flatMap((rawRecord) => {",
+      "suggested_issue": "Add tests for parseYieldCurvePayload covering: (1) dateField parsing; (2) multiple seriesFields extraction per record; (3) null value filtering; (4) default unit '%' and dataType 'yield'",
+      "confidence": 0.9
+    },
+    {
+      "id": "TEST-007",
+      "title": "No tests for getDataByCategory with granularity bucketing",
+      "priority": "medium",
+      "category": "coverage-hole",
+      "description": "The getDataByCategory method has complex bucketing logic for different granularities (year, quarter, month, week, day) but no tests verify the aggregation and timestamp alignment behavior.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 1063,
+      "snippet": "async getDataByCategory(categoryKey: string, start: Date, end: Date, granularity?: string) {\n  const range = granularity ? this.alignRangeToUtc(start, end) : { start, end };",
+      "suggested_issue": "Add integration tests for getDataByCategory covering: (1) no granularity returns raw points; (2) each granularity type (year/quarter/month/week/day) correctly buckets timestamps; (3) value averaging within buckets; (4) alignRangeToUtc boundary handling",
+      "confidence": 0.85
+    },
+    {
+      "id": "TEST-008",
+      "title": "No tests for ensureCatalog database seeding logic",
+      "priority": "medium",
+      "category": "integration-gap",
+      "description": "The ensureCatalog method handles complex database seeding with category creation, item creation/update, metadata merging, and fetchConfig creation. This critical initialization logic has no test coverage.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 169,
+      "snippet": "async ensureCatalog() {\n  const categoryKeys = new Set<string>();\n  for (const def of this.definitions) {\n    def.categories.forEach((category) => categoryKeys.add(category));",
+      "suggested_issue": "Add integration tests for ensureCatalog covering: (1) new category creation with label formatting; (2) new item creation with all fields; (3) existing item update with metadata merging; (4) forceParserSyncSlugs override behavior; (5) forceDefaultParamsSyncSlugs override behavior; (6) fetchConfig creation for items without one",
+      "confidence": 0.85
+    },
+    {
+      "id": "TEST-009",
+      "title": "No tests for ensureRepeatableJobs distributed locking",
+      "priority": "medium",
+      "category": "integration-gap",
+      "description": "The ensureRepeatableJobs method uses Redis distributed locking to prevent race conditions across multiple instances. The lock acquisition, retry logic, and release script are untested.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 317,
+      "snippet": "async ensureRepeatableJobs() {\n  const lockKey = \"akshare:repeatable-jobs:lock\";\n  const lockTtlMs = 60_000;\n  const lockId = `${process.pid}:${Date.now()}`;",
+      "suggested_issue": "Add tests for ensureRepeatableJobs covering: (1) successful lock acquisition and release; (2) lock contention with retry and timeout; (3) syncRepeatableJobs job creation/removal logic; (4) buildRepeatOptions for each frequency type",
+      "confidence": 0.85
+    },
+    {
+      "id": "TEST-010",
+      "title": "Edge case: normalizeNumber with special string values not fully tested",
+      "priority": "low",
+      "category": "edge-case-test",
+      "description": "The normalizeNumber method handles various edge cases ('--', '-', 'NaN', 'null', comma-separated numbers, percentages) but these are not explicitly tested. The method is critical for data integrity.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 1002,
+      "snippet": "private normalizeNumber(value: unknown): number | null {\n  if (value === null || value === undefined) {\n    return null;\n  }\n  if (typeof value === \"number\") {\n    return Number.isFinite(value) ? value : null;",
+      "suggested_issue": "Add explicit unit tests for normalizeNumber covering: (1) null/undefined returns null; (2) NaN/Infinity returns null; (3) '--', '-', 'NaN', 'null' strings return null; (4) comma-separated numbers like '1,234.56'; (5) percentage strings like '12.5%'; (6) whitespace handling",
+      "confidence": 0.8
+    },
+    {
+      "id": "TEST-011",
+      "title": "Edge case: parseDate with various time formats not fully tested",
+      "priority": "low",
+      "category": "edge-case-test",
+      "description": "The parseDate method handles multiple time formats (HH:MM:SS, HHMMSS, HHMM, H:MM:SS) with Asia/Shanghai timezone conversion. Only some formats are tested in akshare.service.spec.ts.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 957,
+      "snippet": "private parseDate(value: unknown) {\n  if (typeof value === \"string\") {\n    const trimmed = value.trim();\n    const compactHhmmssMatch = trimmed.match(/^(\\d{2})(\\d{2})(\\d{2})$/);",
+      "suggested_issue": "Expand parseDate tests to cover: (1) all compact formats (HHMMSS, HHMM); (2) colon formats with optional seconds (H:MM, HH:MM:SS); (3) invalid time values (25:00, 12:60); (4) year range validation (1000-9999); (5) fallback to current date for unparseable values",
+      "confidence": 0.8
+    },
+    {
+      "id": "TEST-012",
+      "title": "No assertion on data item display fields in resolver response mapping",
+      "priority": "medium",
+      "category": "assertion-quality",
+      "description": "The EconomicDataResolver maps item fields (slug, displayName, groupLabel, defaultUnit, metadata) but there are no tests verifying these display-related fields are correctly passed through. Missing or null groupLabel handling uses ?? undefined which could cause GraphQL issues.",
+      "file": "D:\\wei\\apps\\api\\src\\graphql\\resolvers\\economic-data.resolver.ts",
+      "line": 34,
+      "snippet": "item: {\n  slug: point.item.slug,\n  displayName: point.item.displayName,\n  groupLabel: point.item.groupLabel ?? undefined,\n  defaultUnit: point.item.defaultUnit ?? null,\n  metadata: (point.item.metadata as Record<string, unknown> | null) ?? null\n}",
+      "suggested_issue": "Add tests for EconomicDataResolver response mapping verifying: (1) item.slug and displayName are correctly passed; (2) groupLabel null-to-undefined conversion; (3) defaultUnit null handling; (4) metadata type casting and null fallback",
+      "confidence": 0.85
+    },
+    {
+      "id": "TEST-013",
+      "title": "Missing test isolation - shared service instance in spec",
+      "priority": "low",
+      "category": "test-isolation",
+      "description": "The akshare.service.spec.ts creates service instances with minimal mocks (prismaMock only) but doesn't mock HttpService, EnvService, Queue, or Redis. This could cause issues if tests accidentally trigger real behavior or if test order matters.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.spec.ts",
+      "line": 6,
+      "snippet": "const createService = () => {\n  const prismaMock = {\n    $executeRaw: jest.fn()\n  };\n\n  const service = new AkshareService(prismaMock as any, {} as any, {} as any, {} as any, {} as any);",
+      "suggested_issue": "Improve test isolation by: (1) creating proper mocks for all dependencies (HttpService, EnvService, Queue, Redis); (2) using beforeEach to reset mocks between tests; (3) avoiding 'as any' casts by defining proper mock interfaces",
+      "confidence": 0.75
+    },
+    {
+      "id": "TEST-014",
+      "title": "No tests for fetchAndPersist error handling paths",
+      "priority": "high",
+      "category": "coverage-hole",
+      "description": "The fetchAndPersist method has complex error handling with different paths for when itemId is available vs not, and nested try-catch for persist errors. None of these error paths are tested.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 444,
+      "snippet": "async fetchAndPersist(slug: string) {\n  let itemId: string | undefined;\n  try {\n    const definition = await this.loadDefinitionFromDatabase(slug);",
+      "suggested_issue": "Add tests for fetchAndPersist error handling: (1) loadDefinitionFromDatabase throws - should call recordFetchFailure; (2) executeRequest throws - should update status with itemId; (3) parsePayload throws - should update status; (4) bulkUpsertDataPoints throws - should update status; (5) nested persistError logging",
+      "confidence": 0.9
+    },
+    {
+      "id": "TEST-015",
+      "title": "akshare.definitions.spec.ts only tests one definition",
+      "priority": "medium",
+      "category": "coverage-hole",
+      "description": "The definitions spec file only tests macro_fx_sentiment fields. With 40+ definitions in AKSHARE_DATA_DEFINITIONS, there's no validation that other definitions have correct parser configurations, required fields, or valid category references.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.definitions.spec.ts",
+      "line": 3,
+      "snippet": "describe('Akshare definitions', () => {\n  it('includes all known macro_fx_sentiment fields', () => {\n    const definition = AKSHARE_DATA_DEFINITIONS.find((item) => item.slug === 'macro_fx_sentiment');",
+      "suggested_issue": "Expand akshare.definitions.spec.ts to validate all definitions: (1) each definition has required fields (id, slug, displayName, categories, parser); (2) parser type matches one of the valid types; (3) parser has required fields for its type; (4) no duplicate slugs or ids; (5) categories are non-empty arrays",
+      "confidence": 0.85
+    }
+  ],
+  "summary": {
+    "total": 15,
+    "critical": 0,
+    "high": 3,
+    "medium": 9,
+    "low": 3
+  }
+}

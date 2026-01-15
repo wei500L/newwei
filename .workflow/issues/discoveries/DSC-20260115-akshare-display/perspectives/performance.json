@@ -1,0 +1,144 @@
+{
+  "perspective": "performance",
+  "findings": [
+    {
+      "id": "PERF-001",
+      "title": "N+1 query pattern in ensureCatalog",
+      "priority": "high",
+      "category": "n-plus-one",
+      "description": "The ensureCatalog method iterates through definitions and performs individual database queries for each item (findUnique, create, update). With 40+ definitions, this causes 40+ database round trips on every module initialization.",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "line": 195,
+      "snippet": "for (const definition of this.definitions) {\n  const existingItem = await this.prisma.economicDataItem.findUnique({",
+      "suggested_issue": "Batch load all existing items with findMany, then use createMany/updateMany for bulk operations",
+      "confidence": 0.95
+    },
+    {
+      "id": "PERF-002",
+      "title": "N+1 query pattern in category association",
+      "priority": "medium",
+      "category": "n-plus-one",
+      "description": "Category associations are created one at a time in a loop for each data item, causing multiple database round trips.",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "line": 293,
+      "snippet": "for (const category of categories) {\n  if (!existingCategoryKeys.has(category.key)) {\n    await this.prisma.economicDataItemCategory.create({",
+      "suggested_issue": "Use createMany to batch insert category associations",
+      "confidence": 0.9
+    },
+    {
+      "id": "PERF-003",
+      "title": "Inefficient Map usage in React hook causing re-renders",
+      "priority": "high",
+      "category": "memory-usage",
+      "description": "useEconomicData returns a Map object which React cannot shallow compare. Every query response creates a new Map instance, causing unnecessary re-renders of all consuming components.",
+      "file": "apps/web/hooks/useEconomicData.ts",
+      "line": 43,
+      "snippet": "const grouped: EconomicSeriesMap = useMemo(() => {\n  const map: EconomicSeriesMap = new Map();",
+      "suggested_issue": "Convert Map to a plain object for React state, or use a stable reference pattern with useMemo dependencies",
+      "confidence": 0.85
+    },
+    {
+      "id": "PERF-004",
+      "title": "Repeated sorting in chart components",
+      "priority": "medium",
+      "category": "algorithm",
+      "description": "Multiple chart components call getSortedValues which sorts the same data repeatedly. The sorting is O(n log n) and happens on every render.",
+      "file": "apps/web/app/(app)/dashboard/utils/series.ts",
+      "line": 74,
+      "snippet": "export function getSortedValues(series?: EconomicSeriesField) {\n  return [...series.values].sort(",
+      "suggested_issue": "Sort data once at the source (useEconomicData hook) and store pre-sorted values",
+      "confidence": 0.85
+    },
+    {
+      "id": "PERF-005",
+      "title": "Missing database index hint for time-range queries",
+      "priority": "medium",
+      "category": "algorithm",
+      "description": "getDataByCategory queries EconomicDataPoint by recordedAt range and category. Without proper indexing, this could cause full table scans on large datasets.",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "line": 1065,
+      "snippet": "where: {\n  recordedAt: {\n    gte: range.start,\n    lte: range.end\n  },",
+      "suggested_issue": "Ensure composite index exists on (itemId, recordedAt) and consider adding query hints",
+      "confidence": 0.75
+    },
+    {
+      "id": "PERF-006",
+      "title": "Unbounded data fetch without pagination",
+      "priority": "high",
+      "category": "memory-usage",
+      "description": "getDataByCategory fetches all data points in a time range without pagination. For long time ranges with high-frequency data, this could return millions of rows causing memory issues.",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "line": 1063,
+      "snippet": "const points = await this.prisma.economicDataPoint.findMany({",
+      "suggested_issue": "Add pagination with cursor-based navigation, or implement server-side aggregation for large ranges",
+      "confidence": 0.9
+    },
+    {
+      "id": "PERF-007",
+      "title": "Inline object creation in JSX causing re-renders",
+      "priority": "low",
+      "category": "memory-usage",
+      "description": "Multiple components create inline style objects in JSX (e.g., style={{ marginBottom: 16 }}), creating new object references on every render.",
+      "file": "apps/web/app/(app)/dashboard/components/economic-chart-card.tsx",
+      "line": 105,
+      "snippet": "style={{ marginBottom: 16 }}",
+      "suggested_issue": "Extract static styles to constants outside component or use CSS classes",
+      "confidence": 0.7
+    },
+    {
+      "id": "PERF-008",
+      "title": "Synchronous JSON.stringify in hot path",
+      "priority": "medium",
+      "category": "blocking-operation",
+      "description": "metadataEquals uses JSON.stringify for deep comparison on every catalog sync iteration. This is a blocking operation that could slow down module initialization.",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "line": 128,
+      "snippet": "return JSON.stringify(this.normalizeMetadata(a)) === JSON.stringify(this.normalizeMetadata(b));",
+      "suggested_issue": "Use a dedicated deep-equal library or implement shallow comparison for known structure",
+      "confidence": 0.75
+    },
+    {
+      "id": "PERF-009",
+      "title": "No caching for repeated category lookups",
+      "priority": "medium",
+      "category": "caching",
+      "description": "getDataByCategory performs database queries without caching. Repeated requests for the same category and time range hit the database every time.",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "line": 1063,
+      "snippet": "async getDataByCategory(categoryKey: string, start: Date, end: Date, granularity?: string)",
+      "suggested_issue": "Implement Redis caching with TTL based on data frequency, invalidate on new data ingestion",
+      "confidence": 0.85
+    },
+    {
+      "id": "PERF-010",
+      "title": "Redundant Array.from conversions",
+      "priority": "low",
+      "category": "algorithm",
+      "description": "getCandlestickSeries uses Array.from(buckets.keys()) followed by sort, creating intermediate arrays unnecessarily.",
+      "file": "apps/web/app/(app)/dashboard/utils/series.ts",
+      "line": 202,
+      "snippet": "const sortedTimestamps = Array.from(buckets.keys()).sort(",
+      "suggested_issue": "Use spread operator [...buckets.keys()] or maintain sorted order during insertion",
+      "confidence": 0.6
+    },
+    {
+      "id": "PERF-011",
+      "title": "GraphQL resolver loads full item for each point",
+      "priority": "medium",
+      "category": "n-plus-one",
+      "description": "The getDataByCategory query includes item relation for every data point. With thousands of points, this creates significant overhead even with Prisma's query optimization.",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "line": 1080,
+      "snippet": "include: {\n  item: true\n},",
+      "suggested_issue": "Use DataLoader pattern to batch item lookups, or denormalize frequently accessed item fields",
+      "confidence": 0.8
+    }
+  ],
+  "summary": {
+    "total": 11,
+    "critical": 0,
+    "high": 3,
+    "medium": 6,
+    "low": 2
+  }
+}

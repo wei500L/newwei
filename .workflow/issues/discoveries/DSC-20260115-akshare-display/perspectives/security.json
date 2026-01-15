@@ -1,0 +1,108 @@
+{
+  "perspective": "security",
+  "findings": [
+    {
+      "id": "SEC-001",
+      "title": "Missing input validation for category parameter",
+      "priority": "medium",
+      "category": "input-validation",
+      "description": "The getEconomicData GraphQL resolver accepts a category string without validation. While Prisma prevents SQL injection, arbitrary category values could be used for enumeration attacks or cause unexpected behavior.",
+      "file": "apps/api/src/graphql/resolvers/economic-data.resolver.ts",
+      "line": 21,
+      "snippet": "@Args(\"category\") category: string,",
+      "suggested_issue": "Add validation to ensure category is from a predefined list of allowed categories, or validate against existing categories in database",
+      "confidence": 0.8
+    },
+    {
+      "id": "SEC-002",
+      "title": "Unsafe type assertion for metadata",
+      "priority": "medium",
+      "category": "input-validation",
+      "description": "Metadata from database is cast to Record<string, unknown> without runtime validation. Malformed metadata could cause runtime errors or unexpected behavior when accessed.",
+      "file": "apps/api/src/graphql/resolvers/economic-data.resolver.ts",
+      "line": 39,
+      "snippet": "metadata: (point.item.metadata as Record<string, unknown> | null) ?? null",
+      "suggested_issue": "Use a schema validation library (zod, io-ts) to validate metadata structure at runtime before casting",
+      "confidence": 0.85
+    },
+    {
+      "id": "SEC-003",
+      "title": "Admin token transmitted in header without encryption check",
+      "priority": "medium",
+      "category": "auth",
+      "description": "The admin token is sent via x-akshare-admin-token header. While HTTPS should protect it in transit, there's no verification that the connection is secure before sending sensitive credentials.",
+      "file": "apps/api/src/modules/akshare/admin-akshare.controller.ts",
+      "line": 128,
+      "snippet": "headers: { \"x-akshare-admin-token\": this.adminToken },",
+      "suggested_issue": "Add a check to ensure baseUrl uses HTTPS before sending admin token, or use a more secure authentication mechanism",
+      "confidence": 0.75
+    },
+    {
+      "id": "SEC-004",
+      "title": "No rate limiting on upgrade endpoint",
+      "priority": "high",
+      "category": "access-control",
+      "description": "The POST /admin/akshare/upgrade endpoint triggers a potentially destructive operation (pip upgrade + restart) without rate limiting. An authenticated attacker could repeatedly trigger upgrades causing DoS.",
+      "file": "apps/api/src/modules/akshare/admin-akshare.controller.ts",
+      "line": 275,
+      "snippet": "@Post(\"upgrade\")\n@Permissions(\"settings.manage\")\nasync upgrade(@CurrentUser() user: AuthenticatedUser)",
+      "suggested_issue": "Add rate limiting (e.g., max 1 upgrade per hour) and implement a cooldown period after each upgrade attempt",
+      "confidence": 0.9
+    },
+    {
+      "id": "SEC-005",
+      "title": "Error details exposed in API responses",
+      "priority": "low",
+      "category": "data-exposure",
+      "description": "The handleGatewayError method passes raw error data to HttpException, potentially exposing internal system details to clients.",
+      "file": "apps/api/src/modules/akshare/admin-akshare.controller.ts",
+      "line": 68,
+      "snippet": "throw new HttpException(data ?? \"Akshare gateway request failed\", status);",
+      "suggested_issue": "Sanitize error responses to remove internal details, log full errors server-side only",
+      "confidence": 0.8
+    },
+    {
+      "id": "SEC-006",
+      "title": "Potential ReDoS in date parsing regex",
+      "priority": "low",
+      "category": "input-validation",
+      "description": "The parseDate method uses multiple regex patterns to match time formats. While the current patterns are simple, complex input strings could cause performance issues.",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "line": 960,
+      "snippet": "const compactHhmmssMatch = trimmed.match(/^(\\d{2})(\\d{2})(\\d{2})$/);",
+      "suggested_issue": "Add input length validation before regex matching to prevent potential ReDoS attacks",
+      "confidence": 0.6
+    },
+    {
+      "id": "SEC-007",
+      "title": "No validation on slug parameter for triggerDataFetch",
+      "priority": "medium",
+      "category": "input-validation",
+      "description": "The triggerDataFetch mutation accepts an array of slugs without validation. Invalid slugs will fail silently, but this could be used to probe for valid data item names.",
+      "file": "apps/api/src/graphql/resolvers/economic-data.resolver.ts",
+      "line": 99,
+      "snippet": "async triggerDataFetch(@Args(\"input\") input: TriggerDataFetchInput)",
+      "suggested_issue": "Validate slugs against existing data items before queuing jobs, return specific errors for invalid slugs",
+      "confidence": 0.75
+    },
+    {
+      "id": "SEC-008",
+      "title": "Raw external API response stored without sanitization",
+      "priority": "medium",
+      "category": "input-validation",
+      "description": "The fetchAndPersist method stores raw payload from external akshare API directly to MongoDB without sanitization. Malicious data from compromised upstream could be persisted.",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "line": 450,
+      "snippet": "payload: response.payload,",
+      "suggested_issue": "Implement payload schema validation before storage, sanitize or reject unexpected data structures",
+      "confidence": 0.8
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "critical": 0,
+    "high": 1,
+    "medium": 5,
+    "low": 2
+  }
+}

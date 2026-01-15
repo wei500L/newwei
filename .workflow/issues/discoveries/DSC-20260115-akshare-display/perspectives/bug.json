@@ -1,0 +1,156 @@
+{
+  "perspective": "bug",
+  "findings": [
+    {
+      "id": "BUG-001",
+      "title": "Division by zero in percent change calculation",
+      "priority": "high",
+      "category": "boundary",
+      "description": "In economic-chart-card.tsx, the percentChange calculation divides by prev.value without checking if it's zero. If the previous data point has a value of 0, this will result in Infinity or NaN being displayed in the UI.",
+      "file": "D:\\wei\\apps\\web\\app\\(app)\\dashboard\\components\\economic-chart-card.tsx",
+      "line": 67,
+      "snippet": "const percentChange = (change / prev.value) * 100;",
+      "suggested_issue": "Add a guard clause to check if prev.value is zero before calculating percentChange. Return null or 0 when prev.value is 0 to prevent division by zero.",
+      "confidence": 0.95
+    },
+    {
+      "id": "BUG-002",
+      "title": "Division by zero in diffFromAvg calculation",
+      "priority": "high",
+      "category": "boundary",
+      "description": "In economic-chart-card.tsx, the diffFromAvg calculation divides by avg without checking if it's zero. If all values in the series are 0, the average will be 0, causing division by zero.",
+      "file": "D:\\wei\\apps\\web\\app\\(app)\\dashboard\\components\\economic-chart-card.tsx",
+      "line": 71,
+      "snippet": "const diffFromAvg = ((current.value - avg) / avg) * 100;",
+      "suggested_issue": "Add a guard clause to check if avg is zero before calculating diffFromAvg. Return 0 or skip the insight generation when avg is 0.",
+      "confidence": 0.95
+    },
+    {
+      "id": "BUG-003",
+      "title": "Missing null check for series[0] before accessing config",
+      "priority": "medium",
+      "category": "null-check",
+      "description": "In economic-chart-card.tsx stats calculation, series[0] is accessed after checking seriesList.length but the series array itself could have undefined elements if the array is sparse.",
+      "file": "D:\\wei\\apps\\web\\app\\(app)\\dashboard\\components\\economic-chart-card.tsx",
+      "line": 47,
+      "snippet": "if (!seriesList.length || !series[0]) return null;\nconst config = series[0];",
+      "suggested_issue": "The check is present but could be more defensive. Consider using optional chaining when accessing config properties downstream.",
+      "confidence": 0.7
+    },
+    {
+      "id": "BUG-004",
+      "title": "Potential race condition in unit override logic",
+      "priority": "medium",
+      "category": "race-condition",
+      "description": "In useEconomicData.ts, the unit assignment logic has multiple conditional branches that can lead to inconsistent unit values when points arrive in different orders. The group.unit can be overwritten mid-iteration.",
+      "file": "D:\\wei\\apps\\web\\hooks\\useEconomicData.ts",
+      "line": 61,
+      "snippet": "if (pointUnit && group.unit !== pointUnit) {\n  group.unit = pointUnit;\n} else if (!group.unit && defaultUnit) {\n  group.unit = defaultUnit;\n}",
+      "suggested_issue": "Establish a clear priority for unit sources (pointUnit > defaultUnit > existing) and apply it consistently. Consider using the first non-null unit encountered rather than overwriting.",
+      "confidence": 0.75
+    },
+    {
+      "id": "BUG-005",
+      "title": "parseDate falls back to current date silently",
+      "priority": "high",
+      "category": "edge-case",
+      "description": "In akshare.service.ts, parseDate returns new Date() when parsing fails. This silently inserts current timestamps for invalid data, corrupting time series data without any warning or error.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 999,
+      "snippet": "return new Date();",
+      "suggested_issue": "Instead of silently returning current date, either throw an error, return null and filter out invalid points, or log a warning. Silent fallback to current date corrupts historical data.",
+      "confidence": 0.9
+    },
+    {
+      "id": "BUG-006",
+      "title": "parseYearMonthDate falls back to current date silently",
+      "priority": "high",
+      "category": "edge-case",
+      "description": "In akshare.service.ts, parseYearMonthDate returns new Date() when year/month parsing fails. This can silently corrupt time series data by inserting current timestamps for invalid records.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 897,
+      "snippet": "return new Date();",
+      "suggested_issue": "Return null instead of current date and filter out points with null dates in the calling parser methods. Log a warning when date parsing fails.",
+      "confidence": 0.9
+    },
+    {
+      "id": "BUG-007",
+      "title": "Aggregation loses data type and unit information",
+      "priority": "medium",
+      "category": "edge-case",
+      "description": "In akshare.service.ts getDataByCategory, when granularity bucketing is applied, the aggregation uses the first sample's metadata for all aggregated points. If different sourceFields have different units or dataTypes, this information is lost.",
+      "file": "D:\\wei\\apps\\api\\src\\modules\\akshare\\akshare.service.ts",
+      "line": 1089,
+      "snippet": "const bucketed = new Map<string, { timestamp: Date; valueSum: number; count: number; sample: typeof points[number] }>();",
+      "suggested_issue": "Bucket by both timestamp AND sourceField to preserve per-field aggregation. Alternatively, validate that all points in a bucket have the same unit/dataType before aggregating.",
+      "confidence": 0.8
+    },
+    {
+      "id": "BUG-008",
+      "title": "Empty chart option returned without proper structure",
+      "priority": "medium",
+      "category": "edge-case",
+      "description": "In global-sentiment-trend.tsx, when data is empty or undefined, an empty object {} is returned as the chart option. This may cause ECharts to render incorrectly or throw errors depending on the chart component implementation.",
+      "file": "D:\\wei\\apps\\web\\app\\(app)\\dashboard\\components\\global-sentiment-trend.tsx",
+      "line": 28,
+      "snippet": "if (!data || data.length === 0) return {};",
+      "suggested_issue": "Return a properly structured empty chart option with at least xAxis, yAxis, and empty series array to prevent potential rendering issues.",
+      "confidence": 0.7
+    },
+    {
+      "id": "BUG-009",
+      "title": "GraphQL resolver returns undefined for optional fields without explicit null",
+      "priority": "low",
+      "category": "null-check",
+      "description": "In economic-data.resolver.ts, optional fields like groupLabel, lastRunAt, lastStatus use ?? undefined which may cause GraphQL serialization issues. GraphQL expects explicit null for nullable fields, not undefined.",
+      "file": "D:\\wei\\apps\\api\\src\\graphql\\resolvers\\economic-data.resolver.ts",
+      "line": 37,
+      "snippet": "groupLabel: point.item.groupLabel ?? undefined,",
+      "suggested_issue": "Use ?? null instead of ?? undefined for GraphQL nullable fields to ensure proper serialization and client-side handling.",
+      "confidence": 0.75
+    },
+    {
+      "id": "BUG-010",
+      "title": "calculatePercentChange returns null when base.value is 0",
+      "priority": "medium",
+      "category": "boundary",
+      "description": "In series.ts, calculatePercentChange correctly checks for base.value === 0 and returns null, but this edge case is not communicated to the UI. Components using this function may not handle null returns gracefully.",
+      "file": "D:\\wei\\apps\\web\\app\\(app)\\dashboard\\utils\\series.ts",
+      "line": 135,
+      "snippet": "if (base.value === 0) {\n  return null;\n}",
+      "suggested_issue": "Document this behavior and ensure all UI components that call calculatePercentChange handle null returns with appropriate fallback display (e.g., 'N/A' or '--').",
+      "confidence": 0.7
+    },
+    {
+      "id": "BUG-011",
+      "title": "Tooltip formatter may crash on malformed params",
+      "priority": "medium",
+      "category": "exception-handling",
+      "description": "In economic-chart-card.tsx buildOption, the tooltip formatter accesses params properties without defensive checks. If ECharts passes malformed params (e.g., during rapid updates or edge cases), this could throw.",
+      "file": "D:\\wei\\apps\\web\\app\\(app)\\dashboard\\components\\economic-chart-card.tsx",
+      "line": 212,
+      "snippet": "formatter: (params: any) => {\n  const entries = Array.isArray(params) ? params : [params];\n  if (entries.length === 0) {\n    return \"\";\n  }",
+      "suggested_issue": "Wrap the formatter logic in a try-catch block and return an empty string or fallback message on error to prevent chart crashes.",
+      "confidence": 0.65
+    },
+    {
+      "id": "BUG-012",
+      "title": "Number conversion without validation in resolver",
+      "priority": "medium",
+      "category": "edge-case",
+      "description": "In economic-data.resolver.ts, point.value is converted to Number without checking if the result is valid. Prisma Decimal values that are too large or malformed could result in NaN or Infinity.",
+      "file": "D:\\wei\\apps\\api\\src\\graphql\\resolvers\\economic-data.resolver.ts",
+      "line": 30,
+      "snippet": "value: Number(point.value),",
+      "suggested_issue": "Add validation after Number conversion: const numValue = Number(point.value); if (!Number.isFinite(numValue)) { /* handle error or skip */ }",
+      "confidence": 0.8
+    }
+  ],
+  "summary": {
+    "total": 12,
+    "critical": 0,
+    "high": 3,
+    "medium": 7,
+    "low": 2
+  }
+}

@@ -1,5 +1,5 @@
 import { AkshareResponseModel } from "@modular/mongo";
-import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime, toISODateString } from "@modular/utils";
+import { ensureTraceId, getCurrentTraceId, toISODateString } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
 import { EconomicDataFrequency, EconomicDataRunStatus, Prisma } from "@prisma/client";
@@ -15,26 +15,25 @@ import { PrismaService } from "../config/prisma.service";
 
 import { AKSHARE_QUEUE } from "./akshare.constants";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
+import { AkshareParserService } from "./akshare-parser.service";
 import {
   AkshareDataItemConfig,
   AkshareDataItemDefinition,
   AkshareDataItemMetadata,
   AkshareJobPayload,
-  AkshareParserConfig
+  AkshareParserConfig,
+  DEFAULT_PAGE_LIMIT,
+  MAX_PAGE_LIMIT,
+  PaginatedResult,
+  PaginationInput,
+  PaginationMeta
 } from "./akshare.types";
+
+import type { ParsedDataPoint } from "./parsers";
 
 interface FetchResult {
   definition: AkshareDataItemConfig;
   payload: unknown;
-}
-
-interface ParsedDataPoint {
-  recordedAt: Date;
-  value: number | null;
-  unit?: string;
-  dataType: string;
-  sourceField: string;
-  meta?: unknown;
 }
 
 interface UpsertDataPointRow {
@@ -59,6 +58,7 @@ export class AkshareService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly http: HttpService,
     private readonly env: EnvService,
+    private readonly parserService: AkshareParserService,
     @Inject(AKSHARE_QUEUE) private readonly queue: Queue<AkshareJobPayload>,
     @Inject(REDIS_CLIENT) private readonly redis: Redis
   ) {}
@@ -167,42 +167,81 @@ export class AkshareService implements OnModuleInit {
   }
 
   async ensureCatalog() {
+    const startTime = Date.now();
+    this.logger.log("ensureCatalog: Starting catalog synchronization");
+
+    // Phase 1: Collect all category keys from definitions
     const categoryKeys = new Set<string>();
     for (const def of this.definitions) {
       def.categories.forEach((category) => categoryKeys.add(category));
     }
 
+    // Phase 2: Batch load existing categories
     const existingCategories = await this.prisma.economicCategory.findMany({
       where: { key: { in: Array.from(categoryKeys) } }
     });
     const existingCategoryMap = new Map(existingCategories.map((cat) => [cat.key, cat]));
 
-    for (const categoryKey of categoryKeys) {
-      if (!existingCategoryMap.has(categoryKey)) {
-        const created = await this.prisma.economicCategory.create({
-          data: {
-            key: categoryKey,
-            label: categoryKey
-              .split("-")
-              .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-              .join(" ")
-          }
-        });
-        existingCategoryMap.set(categoryKey, created);
+    // Phase 3: Batch create missing categories
+    const missingCategoryKeys = Array.from(categoryKeys).filter((key) => !existingCategoryMap.has(key));
+    if (missingCategoryKeys.length > 0) {
+      await this.prisma.economicCategory.createMany({
+        data: missingCategoryKeys.map((key) => ({
+          key,
+          label: key
+            .split("-")
+            .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+            .join(" ")
+        })),
+        skipDuplicates: true
+      });
+      // Reload categories to get IDs for newly created ones
+      const allCategories = await this.prisma.economicCategory.findMany({
+        where: { key: { in: Array.from(categoryKeys) } }
+      });
+      for (const cat of allCategories) {
+        existingCategoryMap.set(cat.key, cat);
       }
     }
+    this.logger.log(`ensureCatalog: Categories synced in ${Date.now() - startTime}ms`);
 
+    // Phase 4: Batch load all existing data items (T1 - replaces N+1 findUnique calls)
+    const slugs = this.definitions.map((d) => d.slug);
+    const existingItems = await this.prisma.economicDataItem.findMany({
+      where: { slug: { in: slugs } },
+      include: {
+        categories: {
+          include: { category: true }
+        },
+        fetchConfig: true
+      }
+    });
+    const existingItemMap = new Map(existingItems.map((item) => [item.slug, item]));
+    this.logger.log(`ensureCatalog: Loaded ${existingItems.length} existing items in ${Date.now() - startTime}ms`);
+
+    // Phase 5: Collect items for batch operations
+    const newItemsData: Array<{
+      definition: AkshareDataItemDefinition;
+      seedMetadata: AkshareDataItemMetadata;
+      categories: Array<{ id: string; key: string }>;
+    }> = [];
+    const itemUpdates: Array<{
+      id: string;
+      data: Prisma.EconomicDataItemUpdateInput;
+    }> = [];
+    const newCategoryRelations: Array<{
+      itemId: string;
+      categoryId: string;
+    }> = [];
+    const newFetchConfigs: Array<{
+      itemId: string;
+      frequency: EconomicDataFrequency;
+    }> = [];
+
+    // Phase 6: Process definitions and collect batch operations
     for (const definition of this.definitions) {
       const seedMetadata = this.buildSeedMetadata(definition);
-      const existingItem = await this.prisma.economicDataItem.findUnique({
-        where: { slug: definition.slug },
-        include: {
-          categories: {
-            include: { category: true }
-          },
-          fetchConfig: true
-        }
-      });
+      const existingItem = existingItemMap.get(definition.slug);
 
       const categories = definition.categories
         .map((categoryKey) => {
@@ -216,36 +255,12 @@ export class AkshareService implements OnModuleInit {
         .filter((category): category is NonNullable<typeof category> => Boolean(category));
 
       if (!existingItem) {
-        await this.prisma.economicDataItem.create({
-          data: {
-            slug: definition.slug,
-            displayName: definition.displayName,
-            groupLabel: definition.categories[0],
-            description: definition.description,
-            sourceFunction: definition.sourceFunction,
-            sourceEndpoint: definition.endpoint,
-            sourceDocUrl: definition.docUrl,
-            valueType: definition.valueType,
-            defaultUnit: definition.defaultUnit,
-            defaultFrequency: definition.defaultFrequency,
-            metadata: toPrismaJsonValue(this.normalizeMetadata(seedMetadata)),
-            categories: {
-              create: categories.map((category) => ({
-                category: { connect: { id: category.id } }
-              }))
-            },
-            fetchConfig: {
-              create: {
-                frequency: definition.defaultFrequency,
-                repeatCron: null,
-                isEnabled: true
-              }
-            }
-          }
-        });
+        // Collect for batch create (T2)
+        newItemsData.push({ definition, seedMetadata, categories });
         continue;
       }
 
+      // Collect updates (T3)
       const existingMetadata = this.parseMetadata(existingItem.metadata);
       const mergedMetadata = this.mergeMetadata(existingMetadata, seedMetadata);
       const mergedMetadataWithOverrides = this.forceParserSyncSlugs.has(definition.slug)
@@ -283,35 +298,122 @@ export class AkshareService implements OnModuleInit {
       }
 
       if (Object.keys(updates).length > 0) {
-        await this.prisma.economicDataItem.update({
-          where: { id: existingItem.id },
-          data: updates
-        });
+        itemUpdates.push({ id: existingItem.id, data: updates });
       }
 
+      // Collect missing category relations (T4)
       const existingCategoryKeys = new Set(existingItem.categories.map((entry) => entry.category.key));
       for (const category of categories) {
         if (!existingCategoryKeys.has(category.key)) {
-          await this.prisma.economicDataItemCategory.create({
-            data: {
-              itemId: existingItem.id,
-              categoryId: category.id
-            }
+          newCategoryRelations.push({
+            itemId: existingItem.id,
+            categoryId: category.id
           });
         }
       }
 
+      // Collect missing fetch configs (T5)
       if (!existingItem.fetchConfig) {
-        await this.prisma.economicDataFetchConfig.create({
-          data: {
-            itemId: existingItem.id,
-            frequency: existingItem.defaultFrequency ?? definition.defaultFrequency,
-            repeatCron: null,
-            isEnabled: true
-          }
+        newFetchConfigs.push({
+          itemId: existingItem.id,
+          frequency: existingItem.defaultFrequency ?? definition.defaultFrequency
         });
       }
     }
+
+    // Phase 7: Execute batch create for new items (T2)
+    if (newItemsData.length > 0) {
+      // createMany doesn't support nested creates, so we need to create items first
+      // then create relations separately
+      await this.prisma.economicDataItem.createMany({
+        data: newItemsData.map(({ definition, seedMetadata }) => ({
+          slug: definition.slug,
+          displayName: definition.displayName,
+          groupLabel: definition.categories[0],
+          description: definition.description,
+          sourceFunction: definition.sourceFunction,
+          sourceEndpoint: definition.endpoint,
+          sourceDocUrl: definition.docUrl,
+          valueType: definition.valueType,
+          defaultUnit: definition.defaultUnit,
+          defaultFrequency: definition.defaultFrequency,
+          metadata: toPrismaJsonValue(this.normalizeMetadata(seedMetadata))
+        })),
+        skipDuplicates: true
+      });
+
+      // Fetch newly created items to get their IDs
+      const newSlugs = newItemsData.map((d) => d.definition.slug);
+      const createdItems = await this.prisma.economicDataItem.findMany({
+        where: { slug: { in: newSlugs } }
+      });
+      const createdItemMap = new Map(createdItems.map((item) => [item.slug, item]));
+
+      // Collect category relations and fetch configs for new items
+      for (const { definition, categories } of newItemsData) {
+        const createdItem = createdItemMap.get(definition.slug);
+        if (!createdItem) continue;
+
+        for (const category of categories) {
+          newCategoryRelations.push({
+            itemId: createdItem.id,
+            categoryId: category.id
+          });
+        }
+
+        newFetchConfigs.push({
+          itemId: createdItem.id,
+          frequency: definition.defaultFrequency
+        });
+      }
+      this.logger.log(`ensureCatalog: Created ${newItemsData.length} new items in ${Date.now() - startTime}ms`);
+    }
+
+    // Phase 8: Execute batch updates (T3)
+    if (itemUpdates.length > 0) {
+      await this.prisma.$transaction(
+        itemUpdates.map(({ id, data }) =>
+          this.prisma.economicDataItem.update({
+            where: { id },
+            data
+          })
+        )
+      );
+      this.logger.log(`ensureCatalog: Updated ${itemUpdates.length} items in ${Date.now() - startTime}ms`);
+    }
+
+    // Phase 9: Batch create category relations (T4)
+    if (newCategoryRelations.length > 0) {
+      await this.prisma.economicDataItemCategory.createMany({
+        data: newCategoryRelations,
+        skipDuplicates: true
+      });
+      this.logger.log(`ensureCatalog: Created ${newCategoryRelations.length} category relations in ${Date.now() - startTime}ms`);
+    }
+
+    // Phase 10: Batch create fetch configs (T5)
+    if (newFetchConfigs.length > 0) {
+      await this.prisma.economicDataFetchConfig.createMany({
+        data: newFetchConfigs.map(({ itemId, frequency }) => ({
+          itemId,
+          frequency,
+          repeatCron: null,
+          isEnabled: true
+        })),
+        skipDuplicates: true
+      });
+      this.logger.log(`ensureCatalog: Created ${newFetchConfigs.length} fetch configs in ${Date.now() - startTime}ms`);
+    }
+
+    // Phase 11: Performance summary (T6)
+    const totalTime = Date.now() - startTime;
+    this.logger.log(
+      `ensureCatalog: Completed in ${totalTime}ms - ` +
+      `${this.definitions.length} definitions, ` +
+      `${existingItems.length} existing, ` +
+      `${newItemsData.length} created, ` +
+      `${itemUpdates.length} updated`
+    );
   }
 
   async ensureRepeatableJobs() {
@@ -456,7 +558,7 @@ export class AkshareService implements OnModuleInit {
         fetchedAt: new Date()
       });
 
-      const parsedPoints = this.parsePayload(definition.parser, response.payload, { slug: definition.slug });
+      const parsedPoints = this.parserService.parsePayload(definition.parser, response.payload, { slug: definition.slug });
       const storedCount = await this.bulkUpsertDataPoints(definition.itemId, parsedPoints);
 
       await this.updateFetchStatusByItemId(definition.itemId, EconomicDataRunStatus.success);
@@ -726,301 +828,6 @@ export class AkshareService implements OnModuleInit {
     throw lastError;
   }
 
-  private parsePayload(parser: AkshareParserConfig, payload: unknown, context?: { slug?: string }): ParsedDataPoint[] {
-    const parserType = (parser as { type?: unknown } | null | undefined)?.type;
-    switch (parserType) {
-      case "latest":
-        return this.parseLatestPayload(parser as Extract<AkshareParserConfig, { type: "latest" }>, payload);
-      case "timeseries":
-        return this.parseTimeseriesPayload(parser as Extract<AkshareParserConfig, { type: "timeseries" }>, payload);
-      case "macro":
-        return this.parseMacroPayload(parser as Extract<AkshareParserConfig, { type: "macro" }>, payload);
-      case "yearMonth":
-        return this.parseYearMonthPayload(parser as Extract<AkshareParserConfig, { type: "yearMonth" }>, payload);
-      case "yieldCurve":
-        return this.parseYieldCurvePayload(parser as Extract<AkshareParserConfig, { type: "yieldCurve" }>, payload);
-      default: {
-        this.logger.error(
-          {
-            slug: context?.slug,
-            parserType,
-            parser
-          },
-          "Unsupported Akshare parser type"
-        );
-        const suffix = context?.slug ? ` for ${context.slug}` : "";
-        throw new InternalServerErrorException(`Unsupported Akshare parser type: ${String(parserType)}${suffix}`);
-      }
-    }
-  }
-
-  private parseLatestPayload(parser: Extract<AkshareParserConfig, { type: "latest" }>, payload: unknown) {
-    const records = Array.isArray(payload) ? payload : [payload];
-    const now = new Date();
-    const dedupe = new Set<string>();
-    return records.flatMap((rawRecord) => {
-      const record = rawRecord as Record<string, unknown>;
-      return parser.valueFields.flatMap((field) => {
-        const timestamp = parser.timestampField && record[parser.timestampField]
-          ? this.parseDate(record[parser.timestampField])
-          : now;
-        const category = parser.categoryField ? record[parser.categoryField] : undefined;
-        const sourceField = category ? `${category}:${field.field}` : field.field;
-        const key = `${timestamp.getTime()}|${sourceField}`;
-        if (dedupe.has(key)) {
-          return [];
-        }
-        dedupe.add(key);
-        return {
-          recordedAt: timestamp,
-          value: this.normalizeNumber(record[field.field]),
-          unit: field.unit,
-          dataType: field.dataType ?? "price",
-          sourceField,
-          meta: record
-        };
-      });
-    });
-  }
-
-  private parseTimeseriesPayload(parser: Extract<AkshareParserConfig, { type: "timeseries" }>, payload: unknown) {
-    const records = Array.isArray(payload) ? payload : [];
-    const seen = new Set<string>();
-    return records.flatMap((rawRecord) => {
-      const record = rawRecord as Record<string, unknown>;
-      const timestampValue = record[parser.timestampField];
-      const recordedAt = this.parseDate(timestampValue);
-      return parser.valueFields.flatMap((field) => {
-        const category = parser.categoryField ? record[parser.categoryField] : undefined;
-        const sourceField = category ? `${category}:${field.field}` : field.field;
-        const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
-        if (seen.has(dedupeKey)) {
-          return [];
-        }
-
-        const value = this.normalizeNumber(record[field.field]);
-        if (value === null) {
-          return [];
-        }
-
-        seen.add(dedupeKey);
-
-        return [
-          {
-            recordedAt,
-            value,
-            unit: field.unit,
-            dataType: field.dataType ?? "price",
-            sourceField,
-            meta: record
-          }
-        ];
-      });
-    });
-  }
-
-  private parseMacroPayload(parser: Extract<AkshareParserConfig, { type: "macro" }>, payload: unknown) {
-    const records = Array.isArray(payload) ? payload : [];
-    const seen = new Set<string>();
-    return records.flatMap((rawRecord) => {
-      const record = rawRecord as Record<string, unknown>;
-      const recordedAt = this.parseDate(record[parser.periodField]);
-      return parser.valueFields.flatMap((field) => {
-        const category = parser.categoryField ? record[parser.categoryField] : undefined;
-        const sourceField = category ? `${category}:${field.field}` : field.field;
-        const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
-        if (seen.has(dedupeKey)) {
-          return [];
-        }
-
-        const value = this.normalizeNumber(record[field.field]);
-        if (value === null) {
-          return [];
-        }
-
-        seen.add(dedupeKey);
-
-        return [
-          {
-            recordedAt,
-            value,
-            unit: field.unit,
-            dataType: field.dataType ?? "index",
-            sourceField,
-            meta: record
-          }
-        ];
-      });
-    });
-  }
-
-  private parseYearMonthDate(input: { year: unknown; month: unknown; day?: unknown }) {
-    const year =
-      typeof input.year === "number"
-        ? input.year
-        : typeof input.year === "string"
-          ? Number(input.year.trim())
-          : Number.NaN;
-    const month =
-      typeof input.month === "number"
-        ? input.month
-        : typeof input.month === "string"
-          ? Number(input.month.trim())
-          : Number.NaN;
-    const day =
-      input.day === undefined
-        ? 1
-        : typeof input.day === "number"
-          ? input.day
-          : typeof input.day === "string"
-            ? Number(input.day.trim())
-            : Number.NaN;
-
-    if (
-      Number.isInteger(year) &&
-      Number.isInteger(month) &&
-      Number.isInteger(day) &&
-      year >= 1000 &&
-      year <= 9999 &&
-      month >= 1 &&
-      month <= 12 &&
-      day >= 1 &&
-      day <= 31
-    ) {
-      return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-    }
-
-    if (Number.isFinite(year) && Number.isFinite(month)) {
-      return this.parseDate(`${String(year)}-${String(month).padStart(2, "0")}-01`);
-    }
-
-    return new Date();
-  }
-
-  private parseYearMonthPayload(parser: Extract<AkshareParserConfig, { type: "yearMonth" }>, payload: unknown) {
-    const records = Array.isArray(payload) ? payload : [];
-    const seen = new Set<string>();
-    return records.flatMap((rawRecord) => {
-      const record = rawRecord as Record<string, unknown>;
-      const recordedAt = this.parseYearMonthDate({
-        year: record[parser.yearField],
-        month: record[parser.monthField],
-        day: parser.dayField ? record[parser.dayField] : undefined
-      });
-      return parser.valueFields.flatMap((field) => {
-        const category = parser.categoryField ? record[parser.categoryField] : undefined;
-        const sourceField = category ? `${category}:${field.field}` : field.field;
-        const dedupeKey = `${recordedAt.getTime()}|${sourceField}`;
-        if (seen.has(dedupeKey)) {
-          return [];
-        }
-
-        const value = this.normalizeNumber(record[field.field]);
-        if (value === null) {
-          return [];
-        }
-
-        seen.add(dedupeKey);
-
-        return [
-          {
-            recordedAt,
-            value,
-            unit: field.unit,
-            dataType: field.dataType ?? "index",
-            sourceField,
-            meta: record
-          }
-        ];
-      });
-    });
-  }
-
-  private parseYieldCurvePayload(parser: Extract<AkshareParserConfig, { type: "yieldCurve" }>, payload: unknown) {
-    const records = Array.isArray(payload) ? payload : [];
-    return records.flatMap((rawRecord) => {
-      const record = rawRecord as Record<string, unknown>;
-      const recordedAt = this.parseDate(record[parser.dateField]);
-      return parser.seriesFields
-        .map((field) => ({
-          recordedAt,
-          value: this.normalizeNumber(record[field.field]),
-          unit: field.unit ?? "%",
-          dataType: field.dataType ?? "yield",
-          sourceField: field.field,
-          meta: record
-        }))
-        .filter((point) => point.value !== null);
-    });
-  }
-
-  private parseDate(value: unknown) {
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      const compactHhmmssMatch = trimmed.match(/^(\d{2})(\d{2})(\d{2})$/);
-      const compactHhmmMatch = trimmed.match(/^(\d{2})(\d{2})$/);
-      const colonMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-      const match = compactHhmmssMatch ?? compactHhmmMatch ?? colonMatch;
-      if (match) {
-        const hours = Number(match[1]);
-        const minutes = Number(match[2]);
-        const seconds = match.length > 3 && typeof match[3] === "string" ? Number(match[3]) : 0;
-        if (
-          Number.isInteger(hours) &&
-          Number.isInteger(minutes) &&
-          Number.isInteger(seconds) &&
-          hours >= 0 &&
-          hours <= 23 &&
-          minutes >= 0 &&
-          minutes <= 59 &&
-          seconds >= 0 &&
-          seconds <= 59
-        ) {
-          const todayShanghai = toISODateString(new Date(), CommonTimeZone.AsiaShanghai);
-          const timestamp = `${todayShanghai} ${String(hours).padStart(2, "0")}:${String(minutes).padStart(
-            2,
-            "0"
-          )}:${String(seconds).padStart(2, "0")}`;
-          const parsedIntraday = parseDateTime(timestamp, { timeZone: CommonTimeZone.AsiaShanghai });
-          if (parsedIntraday) {
-            return parsedIntraday;
-          }
-        }
-      }
-    }
-
-    const parsed = parseDateTime(value, { timeZone: CommonTimeZone.UTC });
-    if (parsed) {
-      const year = parsed.getUTCFullYear();
-      if (year >= 1000 && year <= 9999) {
-        return parsed;
-      }
-    }
-    return new Date();
-  }
-
-  private normalizeNumber(value: unknown): number | null {
-    if (value === null || value === undefined) {
-      return null;
-    }
-    if (typeof value === "number") {
-      return Number.isFinite(value) ? value : null;
-    }
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      if (!trimmed || trimmed === "--" || trimmed === "-" || trimmed === "NaN" || trimmed === "null") {
-        return null;
-      }
-      const sanitized = trimmed.replace(/,/g, "").replace(/%/g, "");
-      if (!sanitized) {
-        return null;
-      }
-      const parsed = Number(sanitized);
-      return Number.isNaN(parsed) ? null : parsed;
-    }
-    return null;
-  }
-
   private bucketTimestamp(date: Date, granularity: string) {
     const d = new Date(date);
     switch (granularity) {
@@ -1052,6 +859,30 @@ export class AkshareService implements OnModuleInit {
     return d.toISOString();
   }
 
+  private encodeCursor(recordedAt: Date, id: string): string {
+    const payload = `${recordedAt.toISOString()}|${id}`;
+    return Buffer.from(payload, "utf8").toString("base64url");
+  }
+
+  private decodeCursor(cursor: string): { recordedAt: Date; id: string } | null {
+    try {
+      const payload = Buffer.from(cursor, "base64url").toString("utf8");
+      const separatorIndex = payload.indexOf("|");
+      if (separatorIndex === -1) {
+        return null;
+      }
+      const recordedAtStr = payload.slice(0, separatorIndex);
+      const id = payload.slice(separatorIndex + 1);
+      const recordedAt = new Date(recordedAtStr);
+      if (Number.isNaN(recordedAt.getTime()) || !id) {
+        return null;
+      }
+      return { recordedAt, id };
+    } catch {
+      return null;
+    }
+  }
+
   private alignRangeToUtc(start: Date, end: Date) {
     const normalizedStart = new Date(start);
     normalizedStart.setUTCHours(0, 0, 0, 0);
@@ -1060,34 +891,80 @@ export class AkshareService implements OnModuleInit {
     return { start: normalizedStart, end: normalizedEnd };
   }
 
-  async getDataByCategory(categoryKey: string, start: Date, end: Date, granularity?: string) {
+  async getDataByCategory(categoryKey: string, start: Date, end: Date, granularity?: string, pagination?: PaginationInput) {
     const range = granularity ? this.alignRangeToUtc(start, end) : { start, end };
-    const points = await this.prisma.economicDataPoint.findMany({
-      where: {
-        recordedAt: {
-          gte: range.start,
-          lte: range.end
-        },
-        item: {
-          categories: {
-            some: {
-              category: {
-                key: categoryKey
-              }
+    const limit = Math.min(pagination?.limit ?? DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT);
+
+    // Build where clause with optional cursor
+    const whereClause: Prisma.EconomicDataPointWhereInput = {
+      recordedAt: {
+        gte: range.start,
+        lte: range.end
+      },
+      item: {
+        categories: {
+          some: {
+            category: {
+              key: categoryKey
             }
           }
         }
-      },
+      }
+    };
+
+    // Apply cursor-based pagination if cursor provided
+    if (pagination?.cursor) {
+      const decoded = this.decodeCursor(pagination.cursor);
+      if (decoded) {
+        whereClause.AND = [
+          {
+            OR: [
+              { recordedAt: { gt: decoded.recordedAt } },
+              {
+                recordedAt: { equals: decoded.recordedAt },
+                id: { gt: decoded.id }
+              }
+            ]
+          }
+        ];
+      }
+    }
+
+    const points = await this.prisma.economicDataPoint.findMany({
+      where: whereClause,
       include: {
         item: true
       },
-      orderBy: { recordedAt: "asc" }
+      orderBy: [
+        { recordedAt: "asc" },
+        { id: "asc" }
+      ],
+      take: limit + 1 // Fetch one extra to determine hasMore
     });
+
+    // Determine if there are more results
+    const hasMore = points.length > limit;
+    const resultPoints = hasMore ? points.slice(0, limit) : points;
+
+    // Build pagination meta
+    const paginationMeta: PaginationMeta = {
+      hasMore,
+      nextCursor: hasMore && resultPoints.length > 0
+        ? this.encodeCursor(resultPoints[resultPoints.length - 1].recordedAt, resultPoints[resultPoints.length - 1].id)
+        : undefined
+    };
+
     if (!granularity) {
-      return points;
+      // Return paginated result if pagination was requested, otherwise return legacy format
+      if (pagination) {
+        return { data: resultPoints, pagination: paginationMeta } as PaginatedResult<typeof resultPoints[number]>;
+      }
+      return resultPoints;
     }
+
+    // Apply bucketing for granularity (pagination not supported with granularity)
     const bucketed = new Map<string, { timestamp: Date; valueSum: number; count: number; sample: typeof points[number] }>();
-    for (const point of points) {
+    for (const point of resultPoints) {
       const bucketKey = this.bucketTimestamp(point.recordedAt, granularity);
       const existing = bucketed.get(bucketKey);
       if (existing) {
@@ -1102,7 +979,7 @@ export class AkshareService implements OnModuleInit {
         });
       }
     }
-    return Array.from(bucketed.values())
+    const bucketedResults = Array.from(bucketed.values())
       .map((entry) => {
         const aggregated = entry.sample;
         return {
@@ -1112,6 +989,11 @@ export class AkshareService implements OnModuleInit {
         };
       })
       .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
+
+    if (pagination) {
+      return { data: bucketedResults, pagination: paginationMeta } as PaginatedResult<typeof bucketedResults[number]>;
+    }
+    return bucketedResults;
   }
 
   async listFetchConfigs() {

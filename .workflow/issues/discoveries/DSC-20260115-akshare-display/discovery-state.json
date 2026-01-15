@@ -1,0 +1,40 @@
+{
+  "discovery_id": "DSC-20260115-akshare-display",
+  "target_pattern": "apps/api/src/modules/akshare/**,apps/web/hooks/useEconomicData.ts,apps/web/app/(app)/dashboard/components/**",
+  "phase": "complete",
+  "created_at": "2026-01-15T02:45:00.000Z",
+  "updated_at": "2026-01-15T02:58:00.000Z",
+  "target": {
+    "files_count": {
+      "total": 25
+    },
+    "project": {
+      "name": "wei",
+      "type": "monorepo"
+    }
+  },
+  "perspectives": [
+    {"name": "maintainability", "status": "completed", "findings": 12},
+    {"name": "best-practices", "status": "completed", "findings": 14},
+    {"name": "ux", "status": "completed", "findings": 12},
+    {"name": "bug", "status": "completed", "findings": 12},
+    {"name": "test", "status": "completed", "findings": 15},
+    {"name": "quality", "status": "completed", "findings": 15},
+    {"name": "performance", "status": "completed", "findings": 11},
+    {"name": "security", "status": "completed", "findings": 8}
+  ],
+  "external_research": {
+    "enabled": false,
+    "completed": false
+  },
+  "results": {
+    "total_findings": 99,
+    "issues_generated": 0,
+    "priority_distribution": {
+      "critical": 0,
+      "high": 16,
+      "medium": 55,
+      "low": 28
+    }
+  }
+}

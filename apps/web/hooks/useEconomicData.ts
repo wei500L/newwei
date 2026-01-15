@@ -21,10 +21,36 @@ export interface EconomicSeriesGroup {
   unit?: string | null;
   metadata?: Record<string, unknown> | null;
   dataType: string;
-  fields: Map<string, EconomicSeriesField>;
+  fields: Record<string, EconomicSeriesField>;
 }
 
-export type EconomicSeriesMap = Map<string, EconomicSeriesGroup>;
+export type EconomicSeriesMap = Record<string, EconomicSeriesGroup>;
+
+/**
+ * Resolves the unit to use based on precedence rules.
+ * Precedence (highest to lowest):
+ * 1. pointUnit - if exists and differs from currentUnit
+ * 2. currentUnit - if exists
+ * 3. defaultUnit - fallback
+ *
+ * @param pointUnit - Unit from the current data point
+ * @param currentUnit - Currently assigned unit (group or field level)
+ * @param defaultUnit - Default unit from item configuration
+ * @returns The resolved unit or null if none available
+ */
+function resolveUnit(
+  pointUnit: string | null,
+  currentUnit: string | null | undefined,
+  defaultUnit: string | null
+): string | null {
+  if (pointUnit && pointUnit !== currentUnit) {
+    return pointUnit;
+  }
+  if (currentUnit) {
+    return currentUnit;
+  }
+  return defaultUnit;
+}
 
 export function useEconomicData({ category, pollInterval }: EconomicSeriesOptions) {
   const { start, end } = useDashboardRangeStore();
@@ -41,47 +67,39 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
   const points = data?.getEconomicData ?? [];
 
   const grouped: EconomicSeriesMap = useMemo(() => {
-    const map: EconomicSeriesMap = new Map();
+    const map: EconomicSeriesMap = {};
     for (const point of points) {
       const slug = point.item.slug;
       const fieldKey = point.sourceField ?? `${slug}-default`;
-      const existing = map.get(point.item.slug);
+      const existing = map[point.item.slug];
       const pointUnit = point.unit ?? null;
       const defaultUnit = point.item.defaultUnit ?? null;
       const group: EconomicSeriesGroup =
         existing ??
         {
           name: point.item.displayName,
-          unit: pointUnit ?? defaultUnit,
+          unit: resolveUnit(pointUnit, null, defaultUnit),
           metadata: point.item.metadata ?? null,
           dataType: point.dataType,
-          fields: new Map()
+          fields: {}
         };
 
-      if (pointUnit && group.unit !== pointUnit) {
-        group.unit = pointUnit;
-      } else if (!group.unit && defaultUnit) {
-        group.unit = defaultUnit;
-      }
+      group.unit = resolveUnit(pointUnit, group.unit, defaultUnit);
 
-      const fieldSeries = group.fields.get(fieldKey) ?? {
+      const fieldSeries = group.fields[fieldKey] ?? {
         key: fieldKey,
         label: point.sourceField ?? point.item.displayName,
-        unit: pointUnit ?? group.unit ?? defaultUnit,
+        unit: resolveUnit(pointUnit, group.unit, defaultUnit),
         values: []
       };
-      if (pointUnit && fieldSeries.unit !== pointUnit) {
-        fieldSeries.unit = pointUnit;
-      } else if (!fieldSeries.unit && group.unit) {
-        fieldSeries.unit = group.unit;
-      }
+      fieldSeries.unit = resolveUnit(pointUnit, fieldSeries.unit, group.unit);
       fieldSeries.values.push({
         timestamp: point.timestamp,
         value: point.value
       });
-      group.fields.set(fieldKey, fieldSeries);
+      group.fields[fieldKey] = fieldSeries;
       if (!existing) {
-        map.set(slug, group);
+        map[slug] = group;
       }
     }
     return map;

@@ -5,15 +5,39 @@ import { EconomicDataFrequency } from "@prisma/client";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { AkshareService } from "../../modules/akshare/akshare.service";
+import { PaginatedResult } from "../../modules/akshare/akshare.types";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { DateRangeInput, TriggerDataFetchInput } from "../dto/economic-data.input";
-import { EconomicDataFetchConfigModel, EconomicDataPointModel, TimeGranularity } from "../models/economic-data.model";
+import { DateRangeInput, PaginationInput, TriggerDataFetchInput } from "../dto/economic-data.input";
+import { EconomicDataFetchConfigModel, EconomicDataPointModel, PaginatedEconomicDataPointsModel, TimeGranularity } from "../models/economic-data.model";
+import { parseMetadata } from "../schemas/economic-data.schema";
 
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class EconomicDataResolver {
   constructor(private readonly akshareService: AkshareService) {}
+
+  private mapItemToModel(item: {
+    slug: string;
+    displayName?: string | null;
+    groupLabel?: string | null;
+    defaultUnit?: string | null;
+    metadata?: unknown;
+  }): {
+    slug: string;
+    displayName: string;
+    groupLabel?: string;
+    defaultUnit: string | null;
+    metadata: Record<string, unknown> | null;
+  } {
+    return {
+      slug: item.slug,
+      displayName: item.displayName ?? item.slug,
+      groupLabel: item.groupLabel ?? undefined,
+      defaultUnit: item.defaultUnit ?? null,
+      metadata: parseMetadata(item.metadata)
+    };
+  }
 
   @HasPermission("economicdata.read")
   @Query(() => [EconomicDataPointModel])
@@ -25,20 +49,53 @@ export class EconomicDataResolver {
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
     const points = await this.akshareService.getDataByCategory(category, start, end, granularity);
-    return points.map((point) => ({
+    // Handle both legacy array return and paginated result
+    const dataPoints = Array.isArray(points) ? points : points.data;
+    return dataPoints.map((point) => ({
       timestamp: point.recordedAt,
       value: Number(point.value),
       unit: point.unit,
       sourceField: point.sourceField,
       dataType: point.dataType,
-      item: {
-        slug: point.item.slug,
-        displayName: point.item.displayName,
-        groupLabel: point.item.groupLabel ?? undefined,
-        defaultUnit: point.item.defaultUnit ?? null,
-        metadata: (point.item.metadata as Record<string, unknown> | null) ?? null
-      }
+      item: this.mapItemToModel(point.item)
     }));
+  }
+
+  @HasPermission("economicdata.read")
+  @Query(() => PaginatedEconomicDataPointsModel)
+  async getEconomicDataPaginated(
+    @Args("category") category: string,
+    @Args("timeRange") timeRange: DateRangeInput,
+    @Args("granularity", { type: () => TimeGranularity, nullable: true }) granularity?: TimeGranularity,
+    @Args("pagination", { type: () => PaginationInput, nullable: true }) pagination?: PaginationInput
+  ): Promise<PaginatedEconomicDataPointsModel> {
+    const start = new Date(timeRange.start);
+    const end = new Date(timeRange.end);
+    const result = await this.akshareService.getDataByCategory(
+      category,
+      start,
+      end,
+      granularity,
+      pagination ?? { limit: 100 }
+    ) as PaginatedResult<{ recordedAt: Date; value: { toNumber(): number } | number; unit: string | null; sourceField: string; dataType: string; item: { slug: string; displayName: string; groupLabel: string | null; defaultUnit: string | null; metadata: unknown } }>;
+
+    const dataPoints = result.data.map((point) => ({
+      timestamp: point.recordedAt,
+      value: typeof point.value === "number" ? point.value : Number(point.value),
+      unit: point.unit,
+      sourceField: point.sourceField,
+      dataType: point.dataType,
+      item: this.mapItemToModel(point.item)
+    }));
+
+    return {
+      data: dataPoints,
+      pagination: {
+        hasMore: result.pagination.hasMore,
+        nextCursor: result.pagination.nextCursor,
+        totalCount: result.pagination.totalCount
+      }
+    };
   }
 
   @HasPermission("economicdata.manage")
@@ -53,13 +110,7 @@ export class EconomicDataResolver {
       lastRunAt: config.lastRunAt ?? undefined,
       lastStatus: config.lastStatus ?? undefined,
       lastError: config.lastError ?? undefined,
-      item: {
-        slug: config.item.slug,
-        displayName: config.item.displayName,
-        groupLabel: config.item.groupLabel ?? undefined,
-        defaultUnit: config.item.defaultUnit ?? null,
-        metadata: (config.item.metadata as Record<string, unknown> | null) ?? null
-      }
+      item: this.mapItemToModel(config.item)
     }));
   }
 
@@ -84,13 +135,7 @@ export class EconomicDataResolver {
       lastRunAt: updated.lastRunAt ?? undefined,
       lastStatus: updated.lastStatus ?? undefined,
       lastError: updated.lastError ?? undefined,
-      item: {
-        slug,
-        displayName: updated.item?.displayName ?? slug,
-        groupLabel: updated.item?.groupLabel ?? undefined,
-        defaultUnit: updated.item?.defaultUnit ?? null,
-        metadata: (updated.item?.metadata as Record<string, unknown> | null) ?? null
-      }
+      item: this.mapItemToModel(updated.item ?? { slug })
     };
   }
 

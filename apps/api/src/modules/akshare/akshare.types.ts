@@ -102,3 +102,23 @@ export interface AkshareJobPayload {
   triggeredById?: string;
   traceId?: string;
 }
+
+// Pagination types for cursor-based pagination
+export const DEFAULT_PAGE_LIMIT = 100;
+export const MAX_PAGE_LIMIT = 1000;
+
+export interface PaginationInput {
+  cursor?: string;
+  limit?: number;
+}
+
+export interface PaginationMeta {
+  hasMore: boolean;
+  nextCursor?: string;
+  totalCount?: number;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  pagination: PaginationMeta;
+}

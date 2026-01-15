@@ -3,6 +3,8 @@
 import { Col, Row, Skeleton, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { FX_FIELD_NAMES } from "./constants";
+
 import { ChartDataMeta } from "@/components/chart-data-meta";
 import { ChartStateBanner } from "@/components/chart-state-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
@@ -99,9 +101,9 @@ export default function KeyMonitorPage() {
                 seriesMap={seriesMap}
                 meta={chartMeta}
                 series={[
-                  { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.usd"), field: "美元" },
-                  { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.eur"), field: "欧元" },
-                  { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.jpy"), field: "日元" },
+                  { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.usd"), field: FX_FIELD_NAMES.USD },
+                  { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.eur"), field: FX_FIELD_NAMES.EUR },
+                  { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.jpy"), field: FX_FIELD_NAMES.JPY },
                 ]}
               />
             </Col>

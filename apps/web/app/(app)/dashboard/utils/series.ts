@@ -28,24 +28,24 @@ const getParserFields = (group: EconomicSeriesGroup | undefined) => {
 
 const resolveFieldKey = (group: EconomicSeriesGroup, field?: string) => {
   if (!field) return undefined;
-  if (group.fields.has(field)) {
+  if (field in group.fields) {
     return field;
   }
   const parserFields = getParserFields(group);
   const candidate = parserFields.find((entry) => entry.label === field || entry.field === field);
   const candidateField = candidate?.field;
-  if (candidateField && group.fields.has(candidateField)) {
+  if (candidateField && candidateField in group.fields) {
     return candidateField;
   }
   if (candidateField) {
-    const suffixMatches = Array.from(group.fields.keys()).filter((key) =>
+    const suffixMatches = Object.keys(group.fields).filter((key) =>
       key.endsWith(`:${candidateField}`)
     );
     if (suffixMatches.length === 1) {
       return suffixMatches[0];
     }
   }
-  const suffixMatches = Array.from(group.fields.keys()).filter((key) =>
+  const suffixMatches = Object.keys(group.fields).filter((key) =>
     key.endsWith(`:${field}`)
   );
   if (suffixMatches.length === 1) {
@@ -59,15 +59,15 @@ export function getSeriesField(
   slug: string,
   field?: string,
 ) {
-  const group = seriesMap.get(slug);
-  if (!group || group.fields.size === 0) {
+  const group = seriesMap[slug];
+  if (!group || Object.keys(group.fields).length === 0) {
     return undefined;
   }
   const resolvedKey = resolveFieldKey(group, field);
   if (resolvedKey) {
-    return group.fields.get(resolvedKey);
+    return group.fields[resolvedKey];
   }
-  const [first] = group.fields.values();
+  const [first] = Object.values(group.fields);
   return first;
 }
 
@@ -173,10 +173,10 @@ export function getCandlestickSeries(group?: EconomicSeriesGroup) {
   const closeKey = resolveFieldKey(group, "close") ?? resolveFieldKey(group, "收盘价");
   const lowKey = resolveFieldKey(group, "low") ?? resolveFieldKey(group, "最低价");
   const highKey = resolveFieldKey(group, "high") ?? resolveFieldKey(group, "最高价");
-  const openSeries = openKey ? group.fields.get(openKey) : undefined;
-  const closeSeries = closeKey ? group.fields.get(closeKey) : undefined;
-  const lowSeries = lowKey ? group.fields.get(lowKey) : undefined;
-  const highSeries = highKey ? group.fields.get(highKey) : undefined;
+  const openSeries = openKey ? group.fields[openKey] : undefined;
+  const closeSeries = closeKey ? group.fields[closeKey] : undefined;
+  const lowSeries = lowKey ? group.fields[lowKey] : undefined;
+  const highSeries = highKey ? group.fields[highKey] : undefined;
   if (!openSeries || !closeSeries || !lowSeries || !highSeries) {
     return [];
   }

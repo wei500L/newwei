@@ -1,4 +1,4 @@
-import { Field, Float, GraphQLISODateTime, ObjectType, registerEnumType } from "@nestjs/graphql";
+import { Field, Float, GraphQLISODateTime, Int, ObjectType, registerEnumType } from "@nestjs/graphql";
 import { EconomicDataFrequency, EconomicDataRunStatus, EconomicDataValueType } from "@prisma/client";
 import GraphQLJSONScalar from "graphql-type-json";
 
@@ -61,6 +61,27 @@ export class EconomicDataPointModel {
 
   @Field(() => EconomicDataItemModel)
   item!: EconomicDataItemModel;
+}
+
+@ObjectType({ description: "Pagination metadata for cursor-based pagination" })
+export class PaginationMetaModel {
+  @Field(() => Boolean, { description: "Whether there are more results available" })
+  hasMore!: boolean;
+
+  @Field(() => String, { nullable: true, description: "Cursor for fetching the next page" })
+  nextCursor?: string;
+
+  @Field(() => Int, { nullable: true, description: "Total count of items (optional)" })
+  totalCount?: number;
+}
+
+@ObjectType({ description: "Paginated economic data points result" })
+export class PaginatedEconomicDataPointsModel {
+  @Field(() => [EconomicDataPointModel], { description: "Array of economic data points" })
+  data!: EconomicDataPointModel[];
+
+  @Field(() => PaginationMetaModel, { description: "Pagination metadata" })
+  pagination!: PaginationMetaModel;
 }
 
 @ObjectType()

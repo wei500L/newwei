@@ -46,8 +46,8 @@ export function EconomicChartCard({
   const stats = useMemo(() => {
     if (!seriesList.length || !series[0]) return null;
     const config = series[0];
-    const record = seriesMap.get(config.slug);
-    if (!record || record.fields.size === 0) return null;
+    const record = seriesMap[config.slug];
+    if (!record || Object.keys(record.fields).length === 0) return null;
 
     const fieldSeries = getSeriesField(seriesMap, config.slug, config.field);
     
@@ -64,30 +64,36 @@ export function EconomicChartCard({
     }
     
     const change = current.value - prev.value;
-    const percentChange = (change / prev.value) * 100;
+    const percentChange = prev.value !== 0 ? (change / prev.value) * 100 : null;
     
     // Generate insight
     const avg = sorted.reduce((acc, curr) => acc + curr.value, 0) / sorted.length;
-    const diffFromAvg = ((current.value - avg) / avg) * 100;
-    
+    const diffFromAvg = avg !== 0 ? ((current.value - avg) / avg) * 100 : null;
+
     let insight = "";
-    if (Math.abs(diffFromAvg) > 20) {
-      insight = `${t("dashboard.insight.volatility", { 
+    if (diffFromAvg !== null && Math.abs(diffFromAvg) > 20) {
+      insight = `${t("dashboard.insight.volatility", {
         percent: Math.abs(diffFromAvg).toFixed(1),
         direction: diffFromAvg > 0 ? t("common.above") : t("common.below")
       })}`;
-    } else if (Math.abs(percentChange) > 5) {
+    } else if (percentChange !== null && Math.abs(percentChange) > 5) {
       insight = `${t("dashboard.insight.trend", {
         percent: Math.abs(percentChange).toFixed(1),
         direction: percentChange > 0 ? t("common.increase") : t("common.decrease")
       })}`;
+    } else if (diffFromAvg === null) {
+      insight = t("dashboard.insight.noAverage", { defaultValue: "Insufficient data for average comparison." });
     } else {
       insight = t("dashboard.insight.stable");
     }
 
     // Default Fallback if translation keys are missing (for safety)
     if (insight.startsWith("dashboard.insight")) {
-       insight = `Current value is ${Math.abs(diffFromAvg).toFixed(1)}% ${diffFromAvg > 0 ? "above" : "below"} historical average.`;
+       if (diffFromAvg !== null) {
+         insight = `Current value is ${Math.abs(diffFromAvg).toFixed(1)}% ${diffFromAvg > 0 ? "above" : "below"} historical average.`;
+       } else {
+         insight = "Insufficient data for average comparison.";
+       }
     }
 
     return {
@@ -125,14 +131,20 @@ export function EconomicChartCard({
                     valueStyle={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2 }}
                   />
                   <Flex gap={4} align="center">
-                    <Typography.Text 
-                      type={stats.percentChange > 0 ? "success" : stats.percentChange < 0 ? "danger" : "secondary"}
-                      style={{ fontSize: 12, fontWeight: 500 }}
-                    >
-                      {stats.percentChange > 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                      {Math.abs(stats.percentChange).toFixed(2)}%
-                    </Typography.Text>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>vs prev</Typography.Text>
+                    {stats.percentChange !== null ? (
+                      <>
+                        <Typography.Text
+                          type={stats.percentChange > 0 ? "success" : stats.percentChange < 0 ? "danger" : "secondary"}
+                          style={{ fontSize: 12, fontWeight: 500 }}
+                        >
+                          {stats.percentChange > 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+                          {Math.abs(stats.percentChange).toFixed(2)}%
+                        </Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>vs prev</Typography.Text>
+                      </>
+                    ) : (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>--</Typography.Text>
+                    )}
                   </Flex>
                 </>
               ) : null}
@@ -177,8 +189,8 @@ function buildOption(
   const unitBySeriesName = new Map<string, string>();
   const dataset = configs
     .map((config) => {
-    const record = seriesMap.get(config.slug);
-    if (!record || record.fields.size === 0) {
+    const record = seriesMap[config.slug];
+    if (!record || Object.keys(record.fields).length === 0) {
       return undefined;
     }
     const fieldSeries = getSeriesField(seriesMap, config.slug, config.field);

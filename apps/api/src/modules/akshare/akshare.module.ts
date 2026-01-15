@@ -8,6 +8,7 @@ import { DatabaseModule } from "../config/database.module";
 
 import { AdminAkshareController } from "./admin-akshare.controller";
 import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./akshare.constants";
+import { AkshareParserService } from "./akshare-parser.service";
 import { AkshareQueueProcessor } from "./akshare.processor";
 import { AkshareService } from "./akshare.service";
 
@@ -26,6 +27,7 @@ import { AkshareService } from "./akshare.service";
   ],
   controllers: [AdminAkshareController],
   providers: [
+    AkshareParserService,
     AkshareService,
     AkshareQueueProcessor,
     {
@@ -53,6 +55,6 @@ import { AkshareService } from "./akshare.service";
       useExisting: AKSHARE_QUEUE
     }
   ],
-  exports: [AkshareService, AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, getQueueToken(AKSHARE_QUEUE_NAME)]
+  exports: [AkshareService, AkshareParserService, AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, getQueueToken(AKSHARE_QUEUE_NAME)]
 })
 export class AkshareModule {}

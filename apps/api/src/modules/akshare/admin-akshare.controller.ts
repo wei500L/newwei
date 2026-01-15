@@ -8,6 +8,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import type { AuthenticatedUser } from "../auth/auth.service";
+import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
@@ -49,7 +50,8 @@ export class AdminAkshareController {
   constructor(
     private readonly http: HttpService,
     private readonly env: EnvService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly actionRateLimit: ActionRateLimitService
   ) {}
 
   private get gatewayBaseUrl() {
@@ -275,6 +277,8 @@ export class AdminAkshareController {
   @Post("upgrade")
   @Permissions("settings.manage")
   async upgrade(@CurrentUser() user: AuthenticatedUser): Promise<AkshareGatewayUpgradeAcceptedResponse> {
+    await this.actionRateLimit.enforceAkshareUpgrade(user.orgId);
+
     if (!this.adminToken) {
       throw new ServiceUnavailableException(
         "AKSHARE_ADMIN_TOKEN is not configured; akshare gateway upgrade is disabled"

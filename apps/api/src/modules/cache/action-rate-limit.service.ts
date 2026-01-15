@@ -45,6 +45,15 @@ export class ActionRateLimitService {
     });
   }
 
+  async enforceAkshareUpgrade(orgId: string) {
+    await this.consumeOrThrow({
+      key: `akshare:upgrade:${orgId}`,
+      limit: 1,
+      windowSeconds: 3600,
+      message: "Akshare upgrade can only be triggered once per hour. Please wait before trying again."
+    });
+  }
+
   private async consumeOrThrow(options: {
     key: string;
     limit: number;

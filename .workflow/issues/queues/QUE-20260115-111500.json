@@ -1,0 +1,340 @@
+{
+  "queue_id": "QUE-20260115-111500",
+  "created_at": "2026-01-15T03:15:00Z",
+  "updated_at": "2026-01-15T03:15:00Z",
+  "status": "active",
+  "total_solutions": 18,
+  "total_tasks": 71,
+  "execution_groups": [
+    {
+      "id": "P1",
+      "type": "parallel",
+      "solutions": ["S-1", "S-2", "S-3", "S-4"],
+      "solution_count": 4,
+      "description": "Independent solutions with no file conflicts"
+    },
+    {
+      "id": "S1",
+      "type": "sequential",
+      "solutions": ["S-5", "S-6"],
+      "solution_count": 2,
+      "description": "economic-chart-card.tsx conflicts"
+    },
+    {
+      "id": "S2",
+      "type": "sequential",
+      "solutions": ["S-7", "S-8", "S-9", "S-10", "S-11", "S-12", "S-13"],
+      "solution_count": 7,
+      "description": "akshare.service.ts conflicts (includes resolver chain)"
+    },
+    {
+      "id": "S3",
+      "type": "sequential",
+      "solutions": ["S-14", "S-15", "S-16"],
+      "solution_count": 3,
+      "description": "useEconomicData.ts conflicts"
+    },
+    {
+      "id": "S4",
+      "type": "sequential",
+      "solutions": ["S-17", "S-18"],
+      "solution_count": 2,
+      "description": "economic-data.resolver.ts remaining conflicts"
+    }
+  ],
+  "solutions": [
+    {
+      "item_id": "S-1",
+      "issue_id": "DSC-TEST-001",
+      "solution_id": "SOL-DSC-TEST-001-r8k3",
+      "status": "pending",
+      "execution_order": 1,
+      "execution_group": "P1",
+      "depends_on": [],
+      "semantic_priority": 0.80,
+      "files_touched": ["apps/api/src/graphql/resolvers/economic-data.resolver.spec.ts"],
+      "task_count": 5
+    },
+    {
+      "item_id": "S-2",
+      "issue_id": "DSC-TEST-002",
+      "solution_id": "SOL-DSC-TEST-002-m4p7",
+      "status": "pending",
+      "execution_order": 2,
+      "execution_group": "P1",
+      "depends_on": [],
+      "semantic_priority": 0.80,
+      "files_touched": ["apps/api/src/modules/akshare/admin-akshare.controller.spec.ts"],
+      "task_count": 5
+    },
+    {
+      "item_id": "S-3",
+      "issue_id": "DSC-UX-001",
+      "solution_id": "SOL-DSC-UX-001-f7k2",
+      "status": "pending",
+      "execution_order": 3,
+      "execution_group": "P1",
+      "depends_on": [],
+      "semantic_priority": 0.75,
+      "files_touched": ["apps/web/app/(app)/dashboard/key-monitor/page.tsx", "apps/web/lib/locales/en.json", "apps/web/lib/locales/zh.json"],
+      "task_count": 2
+    },
+    {
+      "item_id": "S-4",
+      "issue_id": "DSC-SEC-004",
+      "solution_id": "SOL-DSC-SEC-004-m3p8",
+      "status": "pending",
+      "execution_order": 4,
+      "execution_group": "P1",
+      "depends_on": [],
+      "semantic_priority": 0.75,
+      "files_touched": ["apps/api/src/modules/akshare/admin-akshare.controller.ts"],
+      "task_count": 4
+    },
+    {
+      "item_id": "S-5",
+      "issue_id": "DSC-BUG-001",
+      "solution_id": "SOL-DSC-BUG-001-k7m2",
+      "status": "pending",
+      "execution_order": 5,
+      "execution_group": "S1",
+      "depends_on": [],
+      "semantic_priority": 0.75,
+      "files_touched": ["apps/web/app/(app)/dashboard/components/economic-chart-card.tsx"],
+      "task_count": 1
+    },
+    {
+      "item_id": "S-6",
+      "issue_id": "DSC-BUG-002",
+      "solution_id": "SOL-DSC-BUG-002-p3x8",
+      "status": "pending",
+      "execution_order": 6,
+      "execution_group": "S1",
+      "depends_on": ["S-5"],
+      "semantic_priority": 0.75,
+      "files_touched": ["apps/web/app/(app)/dashboard/components/economic-chart-card.tsx"],
+      "task_count": 1
+    },
+    {
+      "item_id": "S-7",
+      "issue_id": "DSC-MAINT-001",
+      "solution_id": "SOL-DSC-MAINT-001-r7k2",
+      "status": "pending",
+      "execution_order": 7,
+      "execution_group": "S2",
+      "depends_on": [],
+      "semantic_priority": 0.85,
+      "files_touched": ["apps/api/src/modules/akshare/akshare.service.ts", "apps/api/src/modules/akshare/*.ts"],
+      "task_count": 8,
+      "notes": "Foundation: refactoring creates base for other changes"
+    },
+    {
+      "item_id": "S-8",
+      "issue_id": "DSC-QUAL-009",
+      "solution_id": "SOL-DSC-QUAL-009-ref1",
+      "status": "pending",
+      "execution_order": 8,
+      "execution_group": "S2",
+      "depends_on": ["S-7"],
+      "semantic_priority": 0.75,
+      "files_touched": ["apps/api/src/modules/akshare/akshare.service.ts"],
+      "task_count": 1,
+      "notes": "References DSC-MAINT-001"
+    },
+    {
+      "item_id": "S-9",
+      "issue_id": "DSC-BUG-005",
+      "solution_id": "SOL-DSC-BUG-005-x8k2",
+      "status": "pending",
+      "execution_order": 9,
+      "execution_group": "S2",
+      "depends_on": ["S-8"],
+      "semantic_priority": 0.80,
+      "files_touched": ["apps/api/src/modules/akshare/akshare.service.ts"],
+      "task_count": 3
+    },
+    {
+      "item_id": "S-10",
+      "issue_id": "DSC-QUAL-003",
+      "solution_id": "SOL-DSC-QUAL-003-h5n2",
+      "status": "pending",
+      "execution_order": 10,
+      "execution_group": "S2",
+      "depends_on": ["S-9"],
+      "semantic_priority": 0.75,
+      "files_touched": ["apps/api/src/modules/akshare/akshare.service.ts"],
+      "task_count": 4
+    },
+    {
+      "item_id": "S-11",
+      "issue_id": "DSC-MAINT-002",
+      "solution_id": "SOL-DSC-MAINT-002-p3m8",
+      "status": "pending",
+      "execution_order": 11,
+      "execution_group": "S2",
+      "depends_on": ["S-10"],
+      "semantic_priority": 0.80,
+      "files_touched": ["apps/api/src/modules/akshare/akshare.service.ts"],
+      "task_count": 6
+    },
+    {
+      "item_id": "S-12",
+      "issue_id": "DSC-PERF-001",
+      "solution_id": "SOL-DSC-PERF-001-b7k2",
+      "status": "pending",
+      "execution_order": 12,
+      "execution_group": "S2",
+      "depends_on": ["S-11"],
+      "semantic_priority": 0.80,
+      "files_touched": ["apps/api/src/modules/akshare/akshare.service.ts"],
+      "task_count": 6
+    },
+    {
+      "item_id": "S-13",
+      "issue_id": "DSC-PERF-006",
+      "solution_id": "SOL-DSC-PERF-006-m4x8",
+      "status": "pending",
+      "execution_order": 13,
+      "execution_group": "S2",
+      "depends_on": ["S-12"],
+      "semantic_priority": 0.80,
+      "files_touched": ["apps/api/src/modules/akshare/akshare.service.ts", "apps/api/src/graphql/resolvers/economic-data.resolver.ts"],
+      "task_count": 6,
+      "notes": "Bridges akshare.service.ts and economic-data.resolver.ts"
+    },
+    {
+      "item_id": "S-14",
+      "issue_id": "DSC-PERF-003",
+      "solution_id": "SOL-DSC-PERF-003-m4k7",
+      "status": "pending",
+      "execution_order": 14,
+      "execution_group": "S3",
+      "depends_on": [],
+      "semantic_priority": 0.80,
+      "files_touched": ["apps/web/hooks/useEconomicData.ts"],
+      "task_count": 6
+    },
+    {
+      "item_id": "S-15",
+      "issue_id": "DSC-BP-004",
+      "solution_id": "SOL-DSC-BP-004-ref1",
+      "status": "pending",
+      "execution_order": 15,
+      "execution_group": "S3",
+      "depends_on": ["S-14"],
+      "semantic_priority": 0.75,
+      "files_touched": ["apps/web/hooks/useEconomicData.ts"],
+      "task_count": 1,
+      "notes": "References DSC-PERF-003"
+    },
+    {
+      "item_id": "S-16",
+      "issue_id": "DSC-QUAL-001",
+      "solution_id": "SOL-DSC-QUAL-001-u7r3",
+      "status": "pending",
+      "execution_order": 16,
+      "execution_group": "S3",
+      "depends_on": ["S-15"],
+      "semantic_priority": 0.80,
+      "files_touched": ["apps/web/hooks/useEconomicData.ts"],
+      "task_count": 3
+    },
+    {
+      "item_id": "S-17",
+      "issue_id": "DSC-BP-003",
+      "solution_id": "SOL-DSC-BP-003-m4n7",
+      "status": "pending",
+      "execution_order": 17,
+      "execution_group": "S4",
+      "depends_on": ["S-13"],
+      "semantic_priority": 0.80,
+      "files_touched": ["apps/api/src/graphql/resolvers/economic-data.resolver.ts"],
+      "task_count": 5,
+      "notes": "Must wait for S-13 (DSC-PERF-006) which also touches resolver"
+    },
+    {
+      "item_id": "S-18",
+      "issue_id": "DSC-QUAL-002",
+      "solution_id": "SOL-DSC-QUAL-002-k4m8",
+      "status": "pending",
+      "execution_order": 18,
+      "execution_group": "S4",
+      "depends_on": ["S-17"],
+      "semantic_priority": 0.75,
+      "files_touched": ["apps/api/src/graphql/resolvers/economic-data.resolver.ts"],
+      "task_count": 4
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "CFT-1",
+      "type": "file_conflict",
+      "file": "apps/web/app/(app)/dashboard/components/economic-chart-card.tsx",
+      "solutions": ["S-5", "S-6"],
+      "severity": "medium",
+      "resolution": "sequential",
+      "resolution_order": ["S-5", "S-6"],
+      "rationale": "Both bug fixes on same component; S-5 (DSC-BUG-001) first as simpler fix"
+    },
+    {
+      "id": "CFT-2",
+      "type": "file_conflict",
+      "file": "apps/api/src/modules/akshare/akshare.service.ts",
+      "solutions": ["S-7", "S-8", "S-9", "S-10", "S-11", "S-12", "S-13"],
+      "severity": "high",
+      "resolution": "sequential",
+      "resolution_order": ["S-7", "S-8", "S-9", "S-10", "S-11", "S-12", "S-13"],
+      "rationale": "S-7 (MAINT-001) is foundation refactoring; S-8 references S-7; bugs before quality; quality before perf; S-13 bridges to resolver"
+    },
+    {
+      "id": "CFT-3",
+      "type": "file_conflict",
+      "file": "apps/web/hooks/useEconomicData.ts",
+      "solutions": ["S-14", "S-15", "S-16"],
+      "severity": "medium",
+      "resolution": "sequential",
+      "resolution_order": ["S-14", "S-15", "S-16"],
+      "rationale": "S-14 (PERF-003) first as S-15 references it; S-16 quality improvements last"
+    },
+    {
+      "id": "CFT-4",
+      "type": "file_conflict",
+      "file": "apps/api/src/graphql/resolvers/economic-data.resolver.ts",
+      "solutions": ["S-13", "S-17", "S-18"],
+      "severity": "medium",
+      "resolution": "sequential",
+      "resolution_order": ["S-13", "S-17", "S-18"],
+      "rationale": "S-13 (PERF-006) touches both service and resolver; S-17 (BP-003) best practices; S-18 (QUAL-002) quality last"
+    },
+    {
+      "id": "CFT-5",
+      "type": "dependency_conflict",
+      "solutions": ["S-7", "S-8"],
+      "severity": "high",
+      "resolution": "sequential",
+      "resolution_order": ["S-7", "S-8"],
+      "rationale": "DSC-QUAL-009 explicitly references DSC-MAINT-001; must execute after"
+    },
+    {
+      "id": "CFT-6",
+      "type": "dependency_conflict",
+      "solutions": ["S-14", "S-15"],
+      "severity": "high",
+      "resolution": "sequential",
+      "resolution_order": ["S-14", "S-15"],
+      "rationale": "DSC-BP-004 explicitly references DSC-PERF-003; must execute after"
+    }
+  ],
+  "metadata": {
+    "conflict_count": 6,
+    "parallel_solutions": 4,
+    "sequential_chains": 4,
+    "files_with_conflicts": [
+      "apps/web/app/(app)/dashboard/components/economic-chart-card.tsx",
+      "apps/api/src/modules/akshare/akshare.service.ts",
+      "apps/web/hooks/useEconomicData.ts",
+      "apps/api/src/graphql/resolvers/economic-data.resolver.ts"
+    ],
+    "ordering_rationale": "Foundation refactoring (MAINT) before bugs, bugs before quality, quality before performance. Reference dependencies honored. Independent test/UX/security solutions parallelized."
+  }
+}
