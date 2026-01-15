@@ -44,6 +44,8 @@ export interface PipelineRuntimeConfig
   summaryDedupLookbackHours: number;
   summaryDedupMaxCandidates: number;
   summaryDedupMinChars: number;
+  /** NP-PERF-002: Concurrency limit for parallel outbox delivery (default: 10) */
+  outboxDeliveryConcurrency: number;
 }
 
 export interface NewsPipelineConfig {
@@ -97,6 +99,8 @@ interface PipelineFileConfig {
   summary_dedup_lookback_hours?: number;
   summary_dedup_max_candidates?: number;
   summary_dedup_min_chars?: number;
+  /** NP-PERF-002: Concurrency limit for parallel outbox delivery (default: 10) */
+  outbox_delivery_concurrency?: number;
 }
 
 interface PipelineConfigFile {
@@ -361,6 +365,10 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
       summaryDedupMinChars: this.ensurePositiveInt(
         raw?.summary_dedup_min_chars,
         40,
+      ),
+      outboxDeliveryConcurrency: this.ensurePositiveInt(
+        raw?.outbox_delivery_concurrency,
+        10,
       ),
       configPath: envConfig.configPath,
     };

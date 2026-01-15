@@ -6,7 +6,7 @@ import {
   type ProcessedItemDocument,
 } from "@modular/mongo";
 import { createLogger, parseDateTime } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
+import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import {
   MongoOutboxStatus,
@@ -165,14 +165,14 @@ const OUTBOX_DELIVERY_REQUESTED_EVENT = "newsPipeline.outbox.deliveryRequested";
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
 @Injectable()
-export class NewsPipelineService {
+export class NewsPipelineService implements OnModuleDestroy {
   private readonly logger = createLogger({ name: "news-pipeline" });
   private readonly crawlCachePrefix = "news:crawl:";
   private readonly outboxRetryBaseDelayMs = 30_000;
   private readonly outboxStaleLockMs = 5 * 60_000;
   private readonly outboxBatchSize = 10;
   private readonly outboxEventEmitter = new EventEmitter();
-  private readonly outboxDeliveryQueue = new Map<string, ProcessedItemOutboxPayload | null>();
+  private outboxDeliveryQueue = new Map<string, ProcessedItemOutboxPayload | null>();
   private outboxDeliveryScheduled = false;
   private outboxDeliveryInFlight = false;
   private readonly outboxRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -191,6 +191,28 @@ export class NewsPipelineService {
       (event: OutboxDeliveryRequestedEvent) => {
         this.enqueueOutboxDelivery(event);
       },
+    );
+  }
+
+  /**
+   * Cleanup timers and event listeners on module destroy to prevent memory leaks.
+   * NP-BUG-002: Fix memory leak by clearing outbox retry timers and event listeners.
+   */
+  onModuleDestroy() {
+    // Clear all pending retry timers
+    let timerCount = 0;
+    for (const timer of this.outboxRetryTimers.values()) {
+      clearTimeout(timer);
+      timerCount++;
+    }
+    this.outboxRetryTimers.clear();
+
+    // Remove event listeners
+    this.outboxEventEmitter.removeAllListeners(OUTBOX_DELIVERY_REQUESTED_EVENT);
+
+    this.logger.debug(
+      { timerCount },
+      "NewsPipelineService destroyed, cleared retry timers and event listeners",
     );
   }
 
@@ -848,6 +870,7 @@ export class NewsPipelineService {
     const cfg = this.configService.config.pipeline;
     const lookbackMs = cfg.summaryDedupLookbackHours * 60 * 60 * 1000;
     const cutoff = new Date(Date.now() - lookbackMs);
+    const startTime = Date.now();
 
     const candidates = await ProcessedItemModel.find({
       orgId,
@@ -862,14 +885,23 @@ export class NewsPipelineService {
       .limit(cfg.summaryDedupMaxCandidates)
       .lean();
 
+    // NP-PERF-003: Pre-normalize the query embedding for faster dot product comparison
+    const normalizedEmbedding = this.normalizeVector(embedding);
+    const HIGH_CONFIDENCE_THRESHOLD = 0.98;
+
     let best: { id: string; similarity: number } | null = null;
+    let candidatesChecked = 0;
+
     for (const candidate of candidates) {
       const vector = (candidate as { summaryEmbedding?: number[] })
         .summaryEmbedding;
       if (!Array.isArray(vector) || vector.length !== embedding.length) {
         continue;
       }
-      const similarity = this.cosineSimilarity(embedding, vector);
+      candidatesChecked++;
+
+      // NP-PERF-003: Use optimized cosine similarity with pre-normalized vectors
+      const similarity = this.cosineSimilarity(normalizedEmbedding, vector);
       if (!Number.isFinite(similarity)) {
         continue;
       }
@@ -883,8 +915,27 @@ export class NewsPipelineService {
           continue;
         }
         best = { id, similarity };
+
+        // NP-PERF-003: Early termination for high-confidence matches
+        if (similarity > HIGH_CONFIDENCE_THRESHOLD) {
+          this.logger.debug(
+            { similarity, candidatesChecked, totalCandidates: candidates.length },
+            "Early termination on high-confidence match",
+          );
+          break;
+        }
       }
     }
+
+    this.logger.debug(
+      {
+        duration: Date.now() - startTime,
+        candidatesChecked,
+        totalCandidates: candidates.length,
+        foundMatch: !!best,
+      },
+      "Similarity search completed",
+    );
 
     return best;
   }
@@ -922,6 +973,18 @@ export class NewsPipelineService {
         "Failed to mark item meta as duplicate",
       );
     }
+  }
+
+  /**
+   * NP-PERF-003: Normalize vector to unit length for faster dot product comparison.
+   * Dot product of normalized vectors equals cosine similarity.
+   */
+  private normalizeVector(v: number[]): number[] {
+    const norm = Math.sqrt(v.reduce((sum, x) => sum + x * x, 0));
+    if (norm === 0) {
+      return v;
+    }
+    return v.map((x) => x / norm);
   }
 
   private cosineSimilarity(a: number[], b: number[]) {
@@ -1198,20 +1261,80 @@ export class NewsPipelineService {
     }
 
     this.outboxDeliveryInFlight = true;
+    const startTime = Date.now();
+    let totalProcessed = 0;
+    let succeeded = 0;
+    let failed = 0;
+
     try {
       while (this.outboxDeliveryQueue.size > 0) {
-        const batch = Array.from(this.outboxDeliveryQueue.entries());
-        this.outboxDeliveryQueue.clear();
+        // NP-BUG-003: Use atomic swap pattern to prevent race condition
+        // between Array.from() and clear() operations.
+        // New items added during processing go to the new Map while
+        // old items are safely processed from the captured reference.
+        const currentQueue = this.outboxDeliveryQueue;
+        this.outboxDeliveryQueue = new Map();
+        const batch = Array.from(currentQueue.entries());
+        totalProcessed += batch.length;
 
-        for (const [outboxId, payload] of batch) {
-          await this.deliverOutboxFromQueue(outboxId, payload);
-        }
+        // NP-PERF-002: Parallelize outbox delivery with concurrency limit
+        const concurrency = this.configService.config.pipeline.outboxDeliveryConcurrency ?? 10;
+        const results = await this.executeWithConcurrencyLimit(
+          batch,
+          async ([outboxId, payload]) => {
+            try {
+              await this.deliverOutboxFromQueue(outboxId, payload);
+              return true;
+            } catch (err) {
+              this.logger.warn({ err, outboxId }, "Outbox delivery failed");
+              return false;
+            }
+          },
+          concurrency,
+        );
+
+        succeeded += results.filter(Boolean).length;
+        failed += results.filter((r) => !r).length;
       }
     } catch (error) {
       this.logger.warn({ error }, "Failed to flush outbox delivery queue");
     } finally {
       this.outboxDeliveryInFlight = false;
+      if (totalProcessed > 0) {
+        this.logger.info(
+          { duration: Date.now() - startTime, total: totalProcessed, succeeded, failed },
+          "Outbox delivery flush completed",
+        );
+      }
     }
+  }
+
+  /**
+   * Execute async tasks with concurrency limit.
+   * NP-PERF-002: Simple concurrency limiter without external dependencies.
+   */
+  private async executeWithConcurrencyLimit<T, R>(
+    items: T[],
+    fn: (item: T) => Promise<R>,
+    concurrency: number,
+  ): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let index = 0;
+
+    const worker = async () => {
+      while (index < items.length) {
+        const currentIndex = index++;
+        results[currentIndex] = await fn(items[currentIndex]);
+      }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(concurrency, items.length) },
+      () => worker(),
+    );
+    await Promise.all(workers);
+
+    return results;
   }
 
   private async deliverOutboxFromQueue(
