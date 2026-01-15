@@ -114,7 +114,7 @@ export class EnvService extends ConfigService<ApiEnv> {
       host: this.get<string>("REDIS_HOST", { infer: true }),
       port: this.get<number>("REDIS_PORT", { infer: true }),
       username: this.get<string | undefined>("REDIS_USERNAME", { infer: true }),
-      password: undefined,
+      password: this.get<string | undefined>("REDIS_PASSWORD", { infer: true }),
       db: this.get<number>("REDIS_DB", { infer: true }) ?? 0,
     };
   }

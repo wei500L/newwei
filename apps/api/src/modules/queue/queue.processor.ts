@@ -190,6 +190,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           host: config.connection.host,
           port: config.connection.port,
           username: config.connection.username,
+          password: config.connection.password,
           db: config.connection.db,
         },
         concurrency,

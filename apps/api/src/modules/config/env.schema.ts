@@ -11,6 +11,7 @@ export const apiEnvSchema = baseEnvSchema.extend({
   JWT_AUDIENCE: z.string().default("modular-monolith-clients"),
   REDIS_DB: z.coerce.number().int().nonnegative().default(0),
   REDIS_USERNAME: z.string().optional(),
+  REDIS_PASSWORD: z.string().optional(),
   BULLMQ_NAMESPACE: z.string().default("modular"),
   RATE_LIMIT_LOGIN: z.coerce.number().int().positive().default(5),
   RATE_LIMIT_LOGIN_WINDOW: z.coerce.number().int().positive().default(60),
