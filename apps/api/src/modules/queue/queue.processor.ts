@@ -1,5 +1,5 @@
 import { ProcessedItemModel, RawItemModel, TaskLogModel } from "@modular/mongo";
-import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
+import { createLogger, ensureTraceId, runWithTraceId, sanitizeError } from "@modular/utils";
 import {
   Inject,
   Injectable,
@@ -317,16 +317,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private normalizeError(error: unknown) {
-    if (error instanceof Error) {
-      return {
-        message: error.message,
-        name: error.name,
-        stack: error.stack,
-      };
-    }
-    return {
-      message: String(error),
-    };
+    return sanitizeError(error);
   }
 
   private async updateItemMetaStatus(

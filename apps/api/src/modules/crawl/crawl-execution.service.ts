@@ -1,5 +1,5 @@
 import { TaskLogModel } from "@modular/mongo";
-import { createLogger } from "@modular/utils";
+import { createLogger, sanitizeError } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import type { CrawlTask, Prisma } from "@prisma/client";
 import { NotificationType } from "@prisma/client";
@@ -253,12 +253,9 @@ export class CrawlExecutionService {
         orgId,
         stage: "error",
         status: "failed",
-        error: {
-          message,
-          name: error instanceof Error ? error.name : undefined,
-          stack: error instanceof Error ? error.stack : undefined,
-          status: error instanceof Crawl4aiRequestException ? error.status : undefined
-        },
+        error: sanitizeError(error, {
+          redactSensitive: true
+        }),
         data: {
           attempt: attempt ?? null,
           maxAttempts: maxAttempts ?? null,
