@@ -268,6 +268,16 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("CRAWL4AI_HEALTH_CHECK_TTL_MS", { infer: true }) ?? 60_000,
       retryBackoffMs:
         this.get<number>("CRAWL4AI_RETRY_BACKOFF_MS", { infer: true }) ?? 5_000,
+      jsCodeEnabled:
+        this.get<boolean>("CRAWL4AI_JSCODE_ENABLED", { infer: true }) ?? true,
+      jsCodeAuditEnabled:
+        this.get<boolean>("CRAWL4AI_JSCODE_AUDIT_ENABLED", { infer: true }) ?? true,
+      jsCodeAuditRetentionDays:
+        this.get<number>("CRAWL4AI_JSCODE_AUDIT_RETENTION_DAYS", { infer: true }) ?? 90,
+      jsCodeMaxLength:
+        this.get<number>("CRAWL4AI_JSCODE_MAX_LENGTH", { infer: true }) ?? 2000,
+      jsCodeMaxScripts:
+        this.get<number>("CRAWL4AI_JSCODE_MAX_SCRIPTS", { infer: true }) ?? 5,
       media: {
         fetchTimeoutMs:
           this.get<number>("CRAWL_MEDIA_FETCH_TIMEOUT_MS", { infer: true }) ??

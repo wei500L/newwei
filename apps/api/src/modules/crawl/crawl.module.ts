@@ -23,6 +23,7 @@ import type { CrawlJobData } from "./crawl.types";
 import { Crawl4aiClient } from "./crawl4ai.client";
 import { NewsSourceController } from "./news-source.controller";
 import { NewsSourceService } from "./news-source.service";
+import { JsCodeAuditService } from "./services/js-code-audit.service";
 
 
 @Module({
@@ -56,6 +57,7 @@ import { NewsSourceService } from "./news-source.service";
     CrawlTemplateService,
     CrawlCleanupOutboxService,
     CrawlMetadataService,
+    JsCodeAuditService,
     Crawl4aiClient,
     CrawlQueueProcessor,
     {
