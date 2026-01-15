@@ -18,7 +18,9 @@ import {
   IsObject
 } from "class-validator";
 
+import { IsSafeUrl } from "../../../common/validators/is-safe-url.decorator";
 import { CrawlUrlMatchMode } from "../crawl.types";
+import { IsAllowedJsCode } from "../validators/is-allowed-js-code.decorator";
 
 export class CrawlProxyConfigDto {
   @IsString()
@@ -347,8 +349,10 @@ export class CrawlOptionsDto {
 
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(10)
+  @ArrayMaxSize(5)
   @IsString({ each: true })
+  @MaxLength(2000, { each: true })
+  @IsAllowedJsCode({ each: true })
   jsCode?: string[];
 
   @IsOptional()
@@ -385,6 +389,7 @@ export class CrawlOptionsDto {
   @IsOptional()
   @IsArray()
   @IsUrl(undefined, { each: true })
+  @IsSafeUrl({ each: true })
   @ArrayMaxSize(25)
   additionalUrls?: string[];
 
@@ -581,8 +586,10 @@ export class CrawlStrategyOverridesDto {
 
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(10)
+  @ArrayMaxSize(5)
   @IsString({ each: true })
+  @MaxLength(2000, { each: true })
+  @IsAllowedJsCode({ each: true })
   jsCode?: string[];
 
   @IsOptional()
@@ -677,6 +684,7 @@ export class CrawlMultiUrlConfigDto {
   @IsOptional()
   @IsArray()
   @IsUrl(undefined, { each: true })
+  @IsSafeUrl({ each: true })
   @ArrayMaxSize(25)
   urls?: string[];
 
@@ -693,6 +701,7 @@ export class CrawlMultiUrlConfigDto {
 
 export class CreateCrawlTaskDto {
   @IsUrl()
+  @IsSafeUrl()
   url!: string;
 
   @IsOptional()

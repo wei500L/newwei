@@ -1,8 +1,10 @@
 import { HttpService } from "@nestjs/axios";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import type { AxiosError } from "axios";
 import { lastValueFrom } from "rxjs";
 
+import { validateSsrfUrl } from "../../common/validators/ssrf-url.validator";
+import { EnvService } from "../config/config.service";
 import { CrawlSettingsService, type CrawlClientSettings } from "./crawl-settings.service";
 import type {
   CrawlTaskOptions,
@@ -22,6 +24,7 @@ import type {
   CrawlVirtualScrollConfig
 } from "./crawl.types";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
+import { validateJsCodeArray } from "./validators/js-code.validator";
 
 export interface Crawl4aiRequest {
   url: string;
@@ -89,11 +92,13 @@ interface Crawl4aiHttpPayload {
 
 @Injectable()
 export class Crawl4aiClient {
+  private readonly logger = new Logger(Crawl4aiClient.name);
   private lastHealthCheck = 0;
 
   constructor(
     private readonly http: HttpService,
-    private readonly crawlSettings: CrawlSettingsService
+    private readonly crawlSettings: CrawlSettingsService,
+    private readonly env: EnvService
   ) {}
 
   async crawl(request: Crawl4aiRequest): Promise<Crawl4aiResponse> {
@@ -151,6 +156,16 @@ export class Crawl4aiClient {
     const urls = (request.urls && request.urls.length > 0 ? request.urls : [request.url]).map((entry) =>
       entry.trim()
     );
+
+    // Defense-in-depth: Runtime SSRF validation
+    for (const url of urls) {
+      const result = validateSsrfUrl(url);
+      if (!result.valid) {
+        this.logger.warn(`SSRF blocked: ${url} - ${result.reason}`);
+        throw new Crawl4aiRequestException(`URL blocked by SSRF protection: ${result.reason}`, 400);
+      }
+    }
+
     const scrollDelay = typeof options.scrollDelayMs === "number" ? options.scrollDelayMs / 1000 : undefined;
     const useManagedBrowser = options.useManagedBrowser ?? false;
     const headless = useManagedBrowser || options.enableUndetectedBrowser || options.enableStealthMode ? false : true;
@@ -403,12 +418,36 @@ export class Crawl4aiClient {
     if (!jsCode || jsCode.length === 0) {
       return undefined;
     }
+
+    // Check if jsCode feature is enabled
+    if (!this.env.crawl4aiConfig.jsCodeEnabled) {
+      this.logger.warn("jsCode feature is disabled, ignoring jsCode parameter");
+      return undefined;
+    }
+
     const normalized = jsCode
       .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
       .filter((entry) => entry.length > 0);
     if (normalized.length === 0) {
       return undefined;
     }
+
+    // Defense-in-depth: Runtime jsCode validation
+    const validationResult = validateJsCodeArray(normalized);
+    if (!validationResult.valid) {
+      const blockedPatterns = validationResult.blockedPatterns.slice(0, 5).join("; ");
+      this.logger.warn(`jsCode blocked: ${blockedPatterns}`);
+      throw new Crawl4aiRequestException(
+        `jsCode contains blocked patterns: ${blockedPatterns}. Only safe DOM operations are allowed.`,
+        400
+      );
+    }
+
+    // Log warnings if any
+    if (validationResult.warnings.length > 0) {
+      this.logger.warn(`jsCode warnings: ${validationResult.warnings.join("; ")}`);
+    }
+
     return normalized.length === 1 ? normalized[0] : normalized;
   }
 
