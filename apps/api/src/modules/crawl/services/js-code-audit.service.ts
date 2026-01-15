@@ -8,11 +8,11 @@
  * Solution ID: SOL-NP-SEC-002-p5n9
  */
 
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectConnection } from "@nestjs/mongoose";
-import { Connection } from "mongoose";
+import type { MongoConnection } from "@modular/mongo";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 
 import { EnvService } from "../../config/config.service";
+import { MONGO_CONNECTION } from "../../config/mongo.provider";
 import type { JsCodeValidationResult } from "../validators/js-code.validator";
 
 export interface JsCodeAuditContext {
@@ -68,7 +68,7 @@ export class JsCodeAuditService {
   private indexesEnsured = false;
 
   constructor(
-    @InjectConnection() private readonly connection: Connection,
+    @Inject(MONGO_CONNECTION) private readonly mongo: MongoConnection,
     private readonly env: EnvService
   ) {
     this.retentionDays = this.env.crawl4aiConfig.jsCodeAuditRetentionDays ?? DEFAULT_RETENTION_DAYS;
@@ -274,7 +274,7 @@ export class JsCodeAuditService {
   }
 
   private getCollection() {
-    return this.connection.db.collection(AUDIT_COLLECTION_NAME);
+    return this.mongo.connection.db.collection(AUDIT_COLLECTION_NAME);
   }
 
   private async ensureIndexes(): Promise<void> {

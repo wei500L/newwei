@@ -1,5 +1,5 @@
 import { AkshareResponseModel } from "@modular/mongo";
-import { ensureTraceId, getCurrentTraceId, toISODateString } from "@modular/utils";
+import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime, toISODateString } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
 import { EconomicDataFrequency, EconomicDataRunStatus, Prisma } from "@prisma/client";
@@ -51,8 +51,17 @@ export class AkshareService implements OnModuleInit {
   private readonly logger = new Logger(AkshareService.name);
   private readonly dataPointBatchSize = 1000;
   private readonly dataPointBatchMaxBytes = 2_000_000;
-  private readonly forceParserSyncSlugs = new Set<string>(["global_epu_index", "china_fx_gold_reserves", "macro_fx_sentiment"]);
-  private readonly forceDefaultParamsSyncSlugs = new Set<string>(["macro_fx_sentiment", "market_sentiment_usdx"]);
+  private readonly forceParserSyncSlugs = new Set<string>([
+    "global_epu_index",
+    "china_fx_gold_reserves",
+    "macro_fx_sentiment",
+    "bitcoin_spot_price"
+  ]);
+  private readonly forceDefaultParamsSyncSlugs = new Set<string>([
+    "macro_fx_sentiment",
+    "market_sentiment_usdx",
+    "bitcoin_spot_price"
+  ]);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -64,6 +73,12 @@ export class AkshareService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    if (!this.env.akshareConfig.enabled) {
+      this.logger.log("Akshare disabled via AKSHARE_ENABLED=false; skipping catalog sync and repeatable jobs");
+      await this.disableAkshareJobs();
+      return;
+    }
+
     await this.ensureCatalog();
     await this.ensureRepeatableJobs();
   }
@@ -102,6 +117,22 @@ export class AkshareService implements OnModuleInit {
       parser,
       tags
     };
+  }
+
+  private hasValidParser(parser: AkshareParserConfig | undefined): boolean {
+    return Boolean(
+      parser &&
+      typeof (parser as { type?: unknown }).type === "string" &&
+      (parser as { type?: string }).type
+    );
+  }
+
+  private sanitizeExistingMetadata(metadata: AkshareDataItemMetadata): AkshareDataItemMetadata {
+    if (!this.hasValidParser(metadata.parser)) {
+      // Treat partial/invalid parser configs (e.g. missing `type`) as absent so we can fall back to the seed parser.
+      return { ...metadata, parser: undefined };
+    }
+    return metadata;
   }
 
   private mergeMetadata(existing: AkshareDataItemMetadata, seed: AkshareDataItemMetadata): AkshareDataItemMetadata {
@@ -261,33 +292,40 @@ export class AkshareService implements OnModuleInit {
       }
 
       // Collect updates (T3)
-      const existingMetadata = this.parseMetadata(existingItem.metadata);
+      const isMockSeed = existingItem.sourceFunction === "mock" && existingItem.sourceEndpoint === "mock";
+      const existingMetadata = this.sanitizeExistingMetadata(this.parseMetadata(existingItem.metadata));
       const mergedMetadata = this.mergeMetadata(existingMetadata, seedMetadata);
-      const mergedMetadataWithOverrides = this.forceParserSyncSlugs.has(definition.slug)
-        ? { ...mergedMetadata, parser: seedMetadata.parser }
-        : mergedMetadata;
-      const mergedMetadataWithOverrides2 = this.forceDefaultParamsSyncSlugs.has(definition.slug)
-        ? { ...mergedMetadataWithOverrides, defaultParams: seedMetadata.defaultParams ?? null }
-        : mergedMetadataWithOverrides;
+      const mergedMetadataWithOverrides =
+        this.forceParserSyncSlugs.has(definition.slug) || isMockSeed
+          ? { ...mergedMetadata, parser: seedMetadata.parser }
+          : mergedMetadata;
+      const mergedMetadataWithOverrides2 =
+        this.forceDefaultParamsSyncSlugs.has(definition.slug) || isMockSeed
+          ? { ...mergedMetadataWithOverrides, defaultParams: seedMetadata.defaultParams ?? null }
+          : mergedMetadataWithOverrides;
 
       const updates: Prisma.EconomicDataItemUpdateInput = {};
       const matchesSeedFunction = existingItem.sourceFunction === definition.sourceFunction;
+      const shouldSyncSource = matchesSeedFunction || isMockSeed;
       if (!existingItem.groupLabel && definition.categories[0]) {
         updates.groupLabel = definition.categories[0];
       }
-      if (matchesSeedFunction && existingItem.sourceEndpoint !== definition.endpoint) {
+      if (shouldSyncSource && existingItem.sourceFunction !== definition.sourceFunction) {
+        updates.sourceFunction = definition.sourceFunction;
+      }
+      if (shouldSyncSource && existingItem.sourceEndpoint !== definition.endpoint) {
         updates.sourceEndpoint = definition.endpoint;
       }
-      if (matchesSeedFunction && existingItem.sourceDocUrl !== definition.docUrl) {
+      if (shouldSyncSource && existingItem.sourceDocUrl !== definition.docUrl) {
         updates.sourceDocUrl = definition.docUrl;
       }
-      if (matchesSeedFunction && existingItem.valueType !== definition.valueType) {
+      if (shouldSyncSource && existingItem.valueType !== definition.valueType) {
         updates.valueType = definition.valueType;
       }
-      if (matchesSeedFunction && existingItem.defaultUnit !== definition.defaultUnit) {
+      if (shouldSyncSource && existingItem.defaultUnit !== definition.defaultUnit) {
         updates.defaultUnit = definition.defaultUnit;
       }
-      if (matchesSeedFunction && existingItem.defaultFrequency !== definition.defaultFrequency) {
+      if (shouldSyncSource && existingItem.defaultFrequency !== definition.defaultFrequency) {
         updates.defaultFrequency = definition.defaultFrequency;
       }
       if (!existingItem.description && definition.description) {
@@ -453,6 +491,15 @@ export class AkshareService implements OnModuleInit {
         this.logger.warn({ error }, "Failed to release Akshare repeatable jobs lock");
       }
     }
+  }
+
+  private async disableAkshareJobs(): Promise<void> {
+    const repeatableJobs = await this.queue.getRepeatableJobs();
+    for (const job of repeatableJobs) {
+      await this.queue.removeRepeatableByKey(job.key);
+    }
+
+    await this.queue.drain(true);
   }
 
   private async syncRepeatableJobs() {

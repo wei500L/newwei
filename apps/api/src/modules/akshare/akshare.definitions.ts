@@ -623,7 +623,9 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     endpoint: "/crypto_js_spot",
     docUrl: "https://akshare.akfamily.xyz/data/dc/dc.html",
     method: "GET",
-    defaultParams: {},
+    defaultParams: {
+      symbol: "BTCUSD"
+    },
     valueType: EconomicDataValueType.price,
     defaultUnit: "USD",
     defaultFrequency: REALTIME,
@@ -631,8 +633,8 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
       type: "latest",
       valueFields: [
         {
-          field: "latest_price",
-          label: "最新价",
+          field: "最近报价",
+          label: "latest_price",
           unit: "USD",
           dataType: EconomicDataValueType.price
         }
@@ -770,12 +772,12 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     slug: "usd_cny_spot",
     displayName: "美元兑人民币即期汇率",
     categories: ["key-monitor", "economic-short"],
-    sourceFunction: "ak.fx_quote_baidu",
-    endpoint: "/fx_quote_baidu",
+    sourceFunction: "ak.fx_spot_quote",
+    endpoint: "/fx_spot_quote",
     docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
     method: "GET",
     defaultParams: {
-      symbol: "美元"
+      symbol: "USD/CNY"
     },
     valueType: EconomicDataValueType.fx,
     defaultUnit: "CNY",
@@ -784,7 +786,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
       type: "latest",
       valueFields: [
         {
-          field: "最新价",
+          field: "卖报价",
           label: "最新价",
           unit: "CNY",
           dataType: EconomicDataValueType.fx
@@ -797,12 +799,12 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     slug: "eur_cny_spot",
     displayName: "欧元兑人民币即期汇率",
     categories: ["key-monitor", "economic-short"],
-    sourceFunction: "ak.fx_quote_baidu",
-    endpoint: "/fx_quote_baidu",
+    sourceFunction: "ak.fx_spot_quote",
+    endpoint: "/fx_spot_quote",
     docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
     method: "GET",
     defaultParams: {
-      symbol: "欧元"
+      symbol: "EUR/CNY"
     },
     valueType: EconomicDataValueType.fx,
     defaultUnit: "CNY",
@@ -811,7 +813,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
       type: "latest",
       valueFields: [
         {
-          field: "最新价",
+          field: "卖报价",
           label: "最新价",
           unit: "CNY",
           dataType: EconomicDataValueType.fx

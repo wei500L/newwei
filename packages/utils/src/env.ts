@@ -3,6 +3,24 @@ import { z } from "zod";
 
 import { createLogger } from "./logger";
 
+const envBoolean = z.preprocess((value) => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "") return undefined;
+    if (["true", "1", "yes", "y", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
+  }
+  return value;
+}, z.boolean());
+
 export const baseEnvSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -20,11 +38,11 @@ export const baseEnvSchema = z.object({
   REDIS_PORT: z.coerce.number().int().positive(),
   SMTP_HOST: z.string().min(1).default("smtp.163.com"),
   SMTP_PORT: z.coerce.number().int().positive().default(465),
-  SMTP_SECURE: z.coerce.boolean().default(true),
+  SMTP_SECURE: envBoolean.default(true),
   SMTP_USER: z.string().email(),
   SMTP_PASS: z.string().min(1),
   SMTP_FROM: z.string().min(1).optional(),
-  SMTP_POOL: z.coerce.boolean().default(false),
+  SMTP_POOL: envBoolean.default(false),
   SMTP_MAX_CONNECTIONS: z.coerce.number().int().positive().default(5),
   SMTP_MAX_MESSAGES: z.coerce.number().int().positive().default(100),
   SMTP_RATE_DELTA_MS: z.coerce.number().int().positive().default(1_000),
@@ -32,7 +50,7 @@ export const baseEnvSchema = z.object({
   SMTP_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   SMTP_GREETING_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   SMTP_SOCKET_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
-  SMTP_TLS_REJECT_UNAUTHORIZED: z.coerce.boolean().default(true),
+  SMTP_TLS_REJECT_UNAUTHORIZED: envBoolean.default(true),
   JWT_SECRET: z.string().min(16),
   NEXTAUTH_SECRET: z.string().min(16),
   NEXTAUTH_URL: z.string().url(),
@@ -89,7 +107,7 @@ export const baseEnvSchema = z.object({
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z.string().url().optional()
   ),
-  S3_FORCE_PATH_STYLE: z.coerce.boolean().optional(),
+  S3_FORCE_PATH_STYLE: envBoolean.optional(),
   S3_PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().optional(),
 });
 

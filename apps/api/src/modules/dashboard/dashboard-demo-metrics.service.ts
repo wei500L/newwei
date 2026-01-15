@@ -55,18 +55,35 @@ export class DashboardDemoMetricsService implements OnModuleInit {
     defaultUnit?: string | null;
     metadata?: Prisma.InputJsonValue | null;
   }) {
-    return this.prisma.economicDataItem.upsert({
-      where: { slug: options.slug },
-      update: {
-        displayName: options.displayName,
-        sourceFunction: "mock",
-        sourceEndpoint: "mock",
-        valueType: options.valueType,
-        defaultUnit: options.defaultUnit ?? undefined,
-        defaultFrequency: EconomicDataFrequency.daily,
-        metadata: options.metadata ?? undefined
-      },
-      create: {
+    const existing = await this.prisma.economicDataItem.findUnique({
+      where: { slug: options.slug }
+    });
+
+    // Demo seeding must not overwrite Akshare-managed items (sourceFunction/sourceEndpoint/metadata),
+    // otherwise repeatable jobs will start calling `/mock` and fail.
+    if (existing) {
+      const isMockSeed = existing.sourceFunction === "mock" && existing.sourceEndpoint === "mock";
+      const update: Prisma.EconomicDataItemUpdateInput = {
+        displayName: options.displayName
+      };
+
+      if (isMockSeed) {
+        update.sourceFunction = "mock";
+        update.sourceEndpoint = "mock";
+        update.valueType = options.valueType;
+        update.defaultUnit = options.defaultUnit ?? undefined;
+        update.defaultFrequency = EconomicDataFrequency.daily;
+        update.metadata = options.metadata ?? undefined;
+      }
+
+      return this.prisma.economicDataItem.update({
+        where: { slug: options.slug },
+        data: update
+      });
+    }
+
+    return this.prisma.economicDataItem.create({
+      data: {
         slug: options.slug,
         displayName: options.displayName,
         sourceFunction: "mock",
@@ -314,7 +331,13 @@ export class DashboardDemoMetricsService implements OnModuleInit {
 
     const fxMetadata = {
       parser: {
-        valueFields: [{ field: "latest_price", label: "最新价" }]
+        valueFields: [{ field: "卖报价", label: "最新价" }]
+      }
+    } satisfies Prisma.InputJsonValue;
+
+    const cryptoMetadata = {
+      parser: {
+        valueFields: [{ field: "最近报价", label: "latest_price" }]
       }
     } satisfies Prisma.InputJsonValue;
 
@@ -367,14 +390,15 @@ export class DashboardDemoMetricsService implements OnModuleInit {
       displayName: string;
       categories: string[];
       dataType: EconomicDataValueType;
+      sourceField: string;
       unit?: string | null;
       baseValue: number;
       volatility: number;
       metadata?: Prisma.InputJsonValue | null;
     }[] = [
-      { slug: "usd_cny_spot", displayName: "USD/CNY Spot", categories: ["economic-short", "key-monitor"], dataType: EconomicDataValueType.fx, unit: "CNY", baseValue: 7.2, volatility: 0.05, metadata: fxMetadata },
-      { slug: "eur_cny_spot", displayName: "EUR/CNY Spot", categories: ["economic-short", "key-monitor"], dataType: EconomicDataValueType.fx, unit: "CNY", baseValue: 7.9, volatility: 0.06, metadata: fxMetadata },
-      { slug: "bitcoin_spot_price", displayName: "Bitcoin Spot Price", categories: ["economic-short"], dataType: EconomicDataValueType.price, unit: "USD", baseValue: 45_000, volatility: 1800 }
+      { slug: "usd_cny_spot", displayName: "USD/CNY Spot", categories: ["economic-short", "key-monitor"], dataType: EconomicDataValueType.fx, sourceField: "卖报价", unit: "CNY", baseValue: 7.2, volatility: 0.05, metadata: fxMetadata },
+      { slug: "eur_cny_spot", displayName: "EUR/CNY Spot", categories: ["economic-short", "key-monitor"], dataType: EconomicDataValueType.fx, sourceField: "卖报价", unit: "CNY", baseValue: 7.9, volatility: 0.06, metadata: fxMetadata },
+      { slug: "bitcoin_spot_price", displayName: "Bitcoin Spot Price", categories: ["economic-short"], dataType: EconomicDataValueType.price, sourceField: "最近报价", unit: "USD", baseValue: 45_000, volatility: 1800, metadata: cryptoMetadata }
     ];
 
     for (const series of latestPriceSeries) {
@@ -397,7 +421,7 @@ export class DashboardDemoMetricsService implements OnModuleInit {
         itemId: item.id,
         dataType: series.dataType,
         unit: series.unit ?? undefined,
-        sourceField: "latest_price",
+        sourceField: series.sourceField,
         baseValue: series.baseValue,
         volatility: series.volatility,
         min: 0.0001

@@ -417,6 +417,9 @@ export class EnvService extends ConfigService<ApiEnv> {
 
   get akshareConfig() {
     return {
+      enabled:
+        this.get<boolean>("AKSHARE_ENABLED", { infer: true }) ??
+        true,
       baseUrl:
         this.get<string>("AKSHARE_HTTP_BASE_URL", { infer: true }) ??
         "http://localhost:8081",

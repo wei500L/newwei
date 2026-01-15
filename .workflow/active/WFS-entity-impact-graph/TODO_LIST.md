@@ -20,12 +20,22 @@
 ### Phase 5: Polish
 - [x] **IMPL-008**: Add interaction features (tooltips, click events, filtering) → [📋](./.task/IMPL-008.json) [✅](./.summaries/IMPL-008-summary.md)
 
+### Phase 6: Real Implementation + Admin Configuration (Next Iteration)
+- [ ] **IMPL-009**: Backend - Use authenticated org context + fix input semantics (confidence vs correlation) → [📋](./.task/IMPL-009.json)
+- [ ] **IMPL-010**: Backend - Persist EntityImpactGraph settings (per-org) + GraphQL query/mutation → [📋](./.task/IMPL-010.json)
+- [ ] **IMPL-011**: Frontend - Admin panel (System Settings tab) to edit EntityImpactGraph settings → [📋](./.task/IMPL-011.json)
+- [ ] **IMPL-012**: Frontend - Apply server-configured defaults to dashboard graph query + UI → [📋](./.task/IMPL-012.json)
+- [ ] **IMPL-013**: Backend - Performance & caching for graph generation (Mongo aggregation + cache keys) → [📋](./.task/IMPL-013.json)
+
 ## Dependency Graph
 
 ```
 IMPL-001 (ECharts) ─────────────────────┐
                                         ├──> IMPL-005 (Hook) ──> IMPL-006 (Component) ──> IMPL-007 (Integration) ──> IMPL-008 (Interactions)
 IMPL-002 (Types) ──> IMPL-003 (Service) ──> IMPL-004 (Resolver) ─┘
+
+IMPL-004 (Resolver) ──> IMPL-009 (Real org + inputs) ──> IMPL-010 (Settings API) ──> IMPL-011 (Admin UI) ──> IMPL-012 (Apply defaults)
+                                     └───────────────────────────────────────────────> IMPL-013 (Perf + cache)
 ```
 
 ## Execution Summary
@@ -37,6 +47,7 @@ IMPL-002 (Types) ──> IMPL-003 (Service) ──> IMPL-004 (Resolver) ─┘
 | 3 | IMPL-005 | No | IMPL-001, IMPL-004 |
 | 4 | IMPL-006, IMPL-007 | No | IMPL-005, IMPL-006 |
 | 5 | IMPL-008 | No | IMPL-007 |
+| 6 | IMPL-009 to IMPL-013 | Mixed | IMPL-004 |
 
 ## Status Legend
 

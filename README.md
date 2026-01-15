@@ -60,21 +60,23 @@ SMTP_FROM="Wei <wei500l@163.com>"
 ```bash
 cp infra/docker/.env.sample infra/docker/.env
 pnpm docker:up   # 启动 MySQL、Mongo、Redis、API、Web（会先检查镜像，缺失才拉取/构建）
+pnpm docker:u    # docker:up 的别名
 pnpm docker:up:extras # 额外启动 akshare/crawl4ai 等可选服务
 pnpm docker:up:build  # 需要重建镜像时使用（会触发拉取基础镜像）
 pnpm docker:logs # 追踪整个栈的日志
 pnpm docker:down
 ```
 
-服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。`akshare` 与 `crawl4ai` 这类外部依赖（需要额外拉取镜像）被放进了 `extras` profile：当你网络环境无法稳定访问 Docker Hub/GHCR 时，仍可先启动 API/Web 做本地开发；需要相关能力时再启用 `pnpm docker:up:extras`。
+服务定义位于 `infra/docker/docker-compose.yml`，包含健康检查与挂载卷以支持热重载。容器在启动时会执行 `pnpm install`，因此首次启动可能需要一些时间。`crawl4ai` 这类外部依赖（需要额外拉取镜像）被放进了 `extras` profile：当你网络环境无法稳定访问 Docker Hub/GHCR 时，仍可先启动 API/Web 做本地开发；需要相关能力时再启用 `pnpm docker:up:extras`。
 
 其中：
 - `minio` 提供本地 S3 兼容存储（头像上传使用）。默认会通过 `minio-init` 自动创建 `S3_BUCKET` 并写入 CORS 配置（允许浏览器 PUT/GET/HEAD），并将桶设置为匿名可读（便于头像用 `S3_PUBLIC_BASE_URL` 直接访问）。
+- `akshare` 提供经济数据抓取的 Python 网关（默认暴露在 `8081` 端口），API 通过 `AKSHARE_HTTP_BASE_URL` 访问它。
 - `crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它（建议随 `extras` 一起启动）。
 - `crawl4ai` 自带实时监控仪表盘（系统指标、请求与浏览器池）：`http://localhost:8082/dashboard/`。控制台 `Operations → Crawl4AI Monitor` 提供自研监控面板（WebSocket 实时流 + REST 指标）并保留内置仪表盘标签页（需要配置 `CRAWL4AI_DASHBOARD_URL` / `CRAWL4AI_BASE_URL`，见下文）。
 - 如果你打开 `http://localhost:8082/dashboard/` 看到 `{\"detail\":\"Not Found\"}`，通常是 crawl4ai 镜像版本太旧/用错 tag（Docker Hub 的 `unclecode/crawl4ai:latest` 比较常见），缺少内置面板与监控接口；请将 `infra/docker/.env` 的 `CRAWL4AI_IMAGE` 改为 `unclecode/crawl4ai:0`（推荐，跟随最新 release 且不锁死具体 minor/patch），并执行 `pnpm docker:up:extras -d --force-recreate crawl4ai` 重新创建容器。
 - 不同版本的内置面板路径可能不同（例如 `/dashboard/` 或 `/playground/`）；如遇到 404，可将 `CRAWL4AI_DASHBOARD_URL` 先设为 `http://localhost:8082/` 再尝试。
-- 经济数据抓取模块使用 `AKSHARE_HTTP_BASE_URL` 指向一个 Python 网关（默认暴露在 `8081` 端口，底层通过 `pip install akshare` 调用 Akshare 并以 HTTP 提供数据）。启用 `extras` 后，API 容器内默认使用 `AKSHARE_HTTP_BASE_URL=http://akshare:8081`。
+- 经济数据抓取模块使用 `AKSHARE_HTTP_BASE_URL` 指向一个 Python 网关（默认暴露在 `8081` 端口，底层通过 `pip install akshare` 调用 Akshare 并以 HTTP 提供数据）。如果你不需要该能力，可设置 `AKSHARE_ENABLED=false`（禁用所有 Akshare jobs）。
 
 如果你调用某个 Akshare HTTP 端点出现 `400 ... got an unexpected keyword argument ...`，通常表示你传的 query 参数不符合当前安装的 Akshare 版本函数签名。建议先在 akshare 容器里确认签名：
 

@@ -1,0 +1,45 @@
+{
+  "id": "IMPL-012",
+  "title": "Frontend - Apply server-configured defaults to dashboard graph query + UI",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-entity-impact-graph/.process/context-package.json",
+  "cli_execution_id": "WFS-entity-impact-graph-IMPL-012",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "meta": {
+    "type": "feature",
+    "agent": "@code-developer",
+    "execution_group": null,
+    "module": "frontend",
+    "execution_config": {
+      "method": "agent",
+      "cli_tool": null,
+      "enable_resume": true,
+      "previous_cli_id": "WFS-entity-impact-graph-IMPL-011"
+    }
+  },
+  "context": {
+    "requirements": [
+      "Load EntityImpactGraph settings on dashboard and use them as defaults (minEntityConfidence, maxNodes, thresholds, categories)",
+      "If settings disable the chart, hide the card or show an admin-configured disabled message",
+      "Keep per-user interactive overrides (e.g., slider) but seed initial state from settings",
+      "Update tooltips/labels to reflect correct semantics (confidence vs co-occurrence vs correlation)"
+    ],
+    "focus_paths": [
+      "apps/web/hooks/useEntityImpactGraph.ts",
+      "apps/web/app/(app)/dashboard/charts/entity-impact-graph.tsx",
+      "apps/web/app/(app)/dashboard/dashboard-content.tsx"
+    ],
+    "acceptance": [
+      "Dashboard renders with admin-defined defaults without code changes",
+      "User overrides apply only to current session/view, not persisted",
+      "pnpm --filter @modular/web typecheck passes"
+    ],
+    "depends_on": [
+      "IMPL-009",
+      "IMPL-011"
+    ]
+  }
+}
+

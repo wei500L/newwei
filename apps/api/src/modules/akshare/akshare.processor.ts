@@ -23,6 +23,11 @@ export class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const config = this.env.akshareConfig;
+    if (!config.enabled) {
+      logger.info("Akshare disabled; skipping BullMQ worker initialization");
+      return;
+    }
+
     this.worker = new Worker<AkshareJobPayload>(
       AKSHARE_QUEUE_NAME,
       async (job) => {

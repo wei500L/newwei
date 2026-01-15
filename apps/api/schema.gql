@@ -697,6 +697,73 @@ enum EconomicDataValueType {
   yield
 }
 
+input EntityImpactGraphInput {
+  """End date for data range"""
+  endDate: DateTime
+
+  """Maximum number of nodes to return"""
+  maxNodes: Int
+
+  """Minimum confidence threshold for entities (0-1)"""
+  minConfidence: Float
+
+  """Start date for data range"""
+  startDate: DateTime
+}
+
+type EntityImpactGraphModel {
+  """Graph links/edges representing relationships"""
+  links: [EntityImpactLinkModel!]!
+
+  """Graph metadata"""
+  metadata: EntityImpactMetadataModel!
+
+  """Graph nodes (entities and financial instruments)"""
+  nodes: [EntityImpactNodeModel!]!
+}
+
+type EntityImpactLinkModel {
+  """Source node ID"""
+  source: String!
+
+  """Target node ID"""
+  target: String!
+
+  """Relationship type (e.g., co-occurrence, correlation)"""
+  type: String!
+
+  """Link strength/weight"""
+  value: Float!
+}
+
+type EntityImpactMetadataModel {
+  """Timestamp when the graph was generated"""
+  generatedAt: DateTime!
+
+  """Total number of links in the graph"""
+  totalLinks: Int!
+
+  """Total number of nodes in the graph"""
+  totalNodes: Int!
+}
+
+type EntityImpactNodeModel {
+  """Node category (e.g., entity, financial)"""
+  category: String!
+
+  """Unique node identifier"""
+  id: String!
+
+  """Display name of the node"""
+  name: String!
+
+  """Node type (e.g., PERSON, ORG, STOCK, COMMODITY)"""
+  type: String!
+
+  """Node value/weight for visualization sizing"""
+  value: Float!
+}
+
 type EventGroupItemModel {
   createdAt: DateTime!
   id: ID!
@@ -879,6 +946,35 @@ type PageInfo {
   hasNextPage: Boolean!
 }
 
+"""Paginated economic data points result"""
+type PaginatedEconomicDataPointsModel {
+  """Array of economic data points"""
+  data: [EconomicDataPointModel!]!
+
+  """Pagination metadata"""
+  pagination: PaginationMetaModel!
+}
+
+input PaginationInput {
+  """Cursor for pagination"""
+  cursor: String
+
+  """Number of items to return (default: 100, max: 1000)"""
+  limit: Int
+}
+
+"""Pagination metadata for cursor-based pagination"""
+type PaginationMetaModel {
+  """Whether there are more results available"""
+  hasMore: Boolean!
+
+  """Cursor for fetching the next page"""
+  nextCursor: String
+
+  """Total count of items (optional)"""
+  totalCount: Int
+}
+
 type PermissionModel {
   description: String
   id: String!
@@ -948,6 +1044,10 @@ type Query {
   economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
   eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!
   getEconomicData(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicDataPointModel!]!
+  getEconomicDataPaginated(category: String!, granularity: TimeGranularity, pagination: PaginationInput, timeRange: DateRangeInput!): PaginatedEconomicDataPointsModel!
+
+  """Get entity impact graph data for visualization"""
+  getEntityImpactGraph(input: EntityImpactGraphInput): EntityImpactGraphModel!
   item(id: String!): ItemModel
   itemFacets(filters: ItemsFiltersInput, search: String): ItemFacets!
   items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, search: String): ItemConnection!

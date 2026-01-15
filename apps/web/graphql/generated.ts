@@ -728,6 +728,63 @@ export enum EconomicDataValueType {
   Yield = 'yield'
 }
 
+export type EntityImpactGraphInput = {
+  /** End date for data range */
+  endDate?: InputMaybe<Scalars['DateTime']['input']>;
+  /** Maximum number of nodes to return */
+  maxNodes?: InputMaybe<Scalars['Int']['input']>;
+  /** Minimum confidence threshold for entities (0-1) */
+  minConfidence?: InputMaybe<Scalars['Float']['input']>;
+  /** Start date for data range */
+  startDate?: InputMaybe<Scalars['DateTime']['input']>;
+};
+
+export type EntityImpactGraphModel = {
+  __typename?: 'EntityImpactGraphModel';
+  /** Graph links/edges representing relationships */
+  links: Array<EntityImpactLinkModel>;
+  /** Graph metadata */
+  metadata: EntityImpactMetadataModel;
+  /** Graph nodes (entities and financial instruments) */
+  nodes: Array<EntityImpactNodeModel>;
+};
+
+export type EntityImpactLinkModel = {
+  __typename?: 'EntityImpactLinkModel';
+  /** Source node ID */
+  source: Scalars['String']['output'];
+  /** Target node ID */
+  target: Scalars['String']['output'];
+  /** Relationship type (e.g., co-occurrence, correlation) */
+  type: Scalars['String']['output'];
+  /** Link strength/weight */
+  value: Scalars['Float']['output'];
+};
+
+export type EntityImpactMetadataModel = {
+  __typename?: 'EntityImpactMetadataModel';
+  /** Timestamp when the graph was generated */
+  generatedAt: Scalars['DateTime']['output'];
+  /** Total number of links in the graph */
+  totalLinks: Scalars['Int']['output'];
+  /** Total number of nodes in the graph */
+  totalNodes: Scalars['Int']['output'];
+};
+
+export type EntityImpactNodeModel = {
+  __typename?: 'EntityImpactNodeModel';
+  /** Node category (e.g., entity, financial) */
+  category: Scalars['String']['output'];
+  /** Unique node identifier */
+  id: Scalars['String']['output'];
+  /** Display name of the node */
+  name: Scalars['String']['output'];
+  /** Node type (e.g., PERSON, ORG, STOCK, COMMODITY) */
+  type: Scalars['String']['output'];
+  /** Node value/weight for visualization sizing */
+  value: Scalars['Float']['output'];
+};
+
 export type EventGroupItemModel = {
   __typename?: 'EventGroupItemModel';
   createdAt: Scalars['DateTime']['output'];
@@ -1084,6 +1141,33 @@ export type PageInfo = {
   hasNextPage: Scalars['Boolean']['output'];
 };
 
+/** Paginated economic data points result */
+export type PaginatedEconomicDataPointsModel = {
+  __typename?: 'PaginatedEconomicDataPointsModel';
+  /** Array of economic data points */
+  data: Array<EconomicDataPointModel>;
+  /** Pagination metadata */
+  pagination: PaginationMetaModel;
+};
+
+export type PaginationInput = {
+  /** Cursor for pagination */
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  /** Number of items to return (default: 100, max: 1000) */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Pagination metadata for cursor-based pagination */
+export type PaginationMetaModel = {
+  __typename?: 'PaginationMetaModel';
+  /** Whether there are more results available */
+  hasMore: Scalars['Boolean']['output'];
+  /** Cursor for fetching the next page */
+  nextCursor?: Maybe<Scalars['String']['output']>;
+  /** Total count of items (optional) */
+  totalCount?: Maybe<Scalars['Int']['output']>;
+};
+
 export type PermissionModel = {
   __typename?: 'PermissionModel';
   description?: Maybe<Scalars['String']['output']>;
@@ -1156,6 +1240,9 @@ export type Query = {
   economicDataFetchConfigs: Array<EconomicDataFetchConfigModel>;
   eventGroups: Array<EventGroupModel>;
   getEconomicData: Array<EconomicDataPointModel>;
+  getEconomicDataPaginated: PaginatedEconomicDataPointsModel;
+  /** Get entity impact graph data for visualization */
+  getEntityImpactGraph: EntityImpactGraphModel;
   item?: Maybe<ItemModel>;
   itemFacets: ItemFacets;
   items: ItemConnection;
@@ -1229,6 +1316,19 @@ export type QueryGetEconomicDataArgs = {
   category: Scalars['String']['input'];
   granularity?: InputMaybe<TimeGranularity>;
   timeRange: DateRangeInput;
+};
+
+
+export type QueryGetEconomicDataPaginatedArgs = {
+  category: Scalars['String']['input'];
+  granularity?: InputMaybe<TimeGranularity>;
+  pagination?: InputMaybe<PaginationInput>;
+  timeRange: DateRangeInput;
+};
+
+
+export type QueryGetEntityImpactGraphArgs = {
+  input?: InputMaybe<EntityImpactGraphInput>;
 };
 
 
@@ -1749,6 +1849,13 @@ export type TriggerEconomicDataFetchMutationVariables = Exact<{
 
 
 export type TriggerEconomicDataFetchMutation = { __typename?: 'Mutation', triggerDataFetch: boolean };
+
+export type GetEntityImpactGraphQueryVariables = Exact<{
+  input?: InputMaybe<EntityImpactGraphInput>;
+}>;
+
+
+export type GetEntityImpactGraphQuery = { __typename?: 'Query', getEntityImpactGraph: { __typename?: 'EntityImpactGraphModel', nodes: Array<{ __typename?: 'EntityImpactNodeModel', id: string, name: string, category: string, type: string, value: number }>, links: Array<{ __typename?: 'EntityImpactLinkModel', source: string, target: string, value: number, type: string }>, metadata: { __typename?: 'EntityImpactMetadataModel', totalNodes: number, totalLinks: number, generatedAt: any } } };
 
 export type ItemsQueryVariables = Exact<{
   first: Scalars['Int']['input'];
@@ -3452,6 +3559,63 @@ export function useTriggerEconomicDataFetchMutation(baseOptions?: Apollo.Mutatio
 export type TriggerEconomicDataFetchMutationHookResult = ReturnType<typeof useTriggerEconomicDataFetchMutation>;
 export type TriggerEconomicDataFetchMutationResult = Apollo.MutationResult<TriggerEconomicDataFetchMutation>;
 export type TriggerEconomicDataFetchMutationOptions = Apollo.BaseMutationOptions<TriggerEconomicDataFetchMutation, TriggerEconomicDataFetchMutationVariables>;
+export const GetEntityImpactGraphDocument = gql`
+    query GetEntityImpactGraph($input: EntityImpactGraphInput) {
+  getEntityImpactGraph(input: $input) {
+    nodes {
+      id
+      name
+      category
+      type
+      value
+    }
+    links {
+      source
+      target
+      value
+      type
+    }
+    metadata {
+      totalNodes
+      totalLinks
+      generatedAt
+    }
+  }
+}
+    `;
+
+/**
+ * __useGetEntityImpactGraphQuery__
+ *
+ * To run a query within a React component, call `useGetEntityImpactGraphQuery` and pass it any options that fit your needs.
+ * When your component renders, `useGetEntityImpactGraphQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useGetEntityImpactGraphQuery({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useGetEntityImpactGraphQuery(baseOptions?: Apollo.QueryHookOptions<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>(GetEntityImpactGraphDocument, options);
+      }
+export function useGetEntityImpactGraphLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>(GetEntityImpactGraphDocument, options);
+        }
+export function useGetEntityImpactGraphSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>(GetEntityImpactGraphDocument, options);
+        }
+export type GetEntityImpactGraphQueryHookResult = ReturnType<typeof useGetEntityImpactGraphQuery>;
+export type GetEntityImpactGraphLazyQueryHookResult = ReturnType<typeof useGetEntityImpactGraphLazyQuery>;
+export type GetEntityImpactGraphSuspenseQueryHookResult = ReturnType<typeof useGetEntityImpactGraphSuspenseQuery>;
+export type GetEntityImpactGraphQueryResult = Apollo.QueryResult<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>;
 export const ItemsDocument = gql`
     query Items($first: Int!, $after: String, $page: Int, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy = CREATED_DESC) {
   items(
@@ -4650,105 +4814,3 @@ export function useUpdateCrawlClientSettingsMutation(baseOptions?: Apollo.Mutati
 export type UpdateCrawlClientSettingsMutationHookResult = ReturnType<typeof useUpdateCrawlClientSettingsMutation>;
 export type UpdateCrawlClientSettingsMutationResult = Apollo.MutationResult<UpdateCrawlClientSettingsMutation>;
 export type UpdateCrawlClientSettingsMutationOptions = Apollo.BaseMutationOptions<UpdateCrawlClientSettingsMutation, UpdateCrawlClientSettingsMutationVariables>;
-export type EntityImpactGraphInput = {
-  endDate?: InputMaybe<Scalars['DateTime']['input']>;
-  maxNodes?: InputMaybe<Scalars['Int']['input']>;
-  minConfidence?: InputMaybe<Scalars['Float']['input']>;
-  startDate?: InputMaybe<Scalars['DateTime']['input']>;
-};
-
-export type EntityImpactGraphModel = {
-  __typename?: 'EntityImpactGraphModel';
-  links: Array<EntityImpactLinkModel>;
-  metadata: EntityImpactMetadataModel;
-  nodes: Array<EntityImpactNodeModel>;
-};
-
-export type EntityImpactLinkModel = {
-  __typename?: 'EntityImpactLinkModel';
-  source: Scalars['String']['output'];
-  target: Scalars['String']['output'];
-  type: Scalars['String']['output'];
-  value: Scalars['Float']['output'];
-};
-
-export type EntityImpactMetadataModel = {
-  __typename?: 'EntityImpactMetadataModel';
-  generatedAt: Scalars['DateTime']['output'];
-  totalLinks: Scalars['Int']['output'];
-  totalNodes: Scalars['Int']['output'];
-};
-
-export type EntityImpactNodeModel = {
-  __typename?: 'EntityImpactNodeModel';
-  category: Scalars['String']['output'];
-  id: Scalars['String']['output'];
-  name: Scalars['String']['output'];
-  type: Scalars['String']['output'];
-  value: Scalars['Float']['output'];
-};
-
-export type GetEntityImpactGraphQueryVariables = Exact<{
-  input?: InputMaybe<EntityImpactGraphInput>;
-}>;
-
-
-export type GetEntityImpactGraphQuery = { __typename?: 'Query', getEntityImpactGraph: { __typename?: 'EntityImpactGraphModel', nodes: Array<{ __typename?: 'EntityImpactNodeModel', id: string, name: string, category: string, type: string, value: number }>, links: Array<{ __typename?: 'EntityImpactLinkModel', source: string, target: string, value: number, type: string }>, metadata: { __typename?: 'EntityImpactMetadataModel', totalNodes: number, totalLinks: number, generatedAt: any } } };
-
-export const GetEntityImpactGraphDocument = gql`
-    query GetEntityImpactGraph($input: EntityImpactGraphInput) {
-  getEntityImpactGraph(input: $input) {
-    nodes {
-      id
-      name
-      category
-      type
-      value
-    }
-    links {
-      source
-      target
-      value
-      type
-    }
-    metadata {
-      totalNodes
-      totalLinks
-      generatedAt
-    }
-  }
-}
-    `;
-
-/**
- * __useGetEntityImpactGraphQuery__
- *
- * To run a query within a React component, call `useGetEntityImpactGraphQuery` and pass it any options that fit your needs.
- * When your component renders, `useGetEntityImpactGraphQuery` returns an object from Apollo Client that contains loading, error, and data properties
- * you can use to render your UI.
- *
- * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
- *
- * @example
- * const { data, loading, error } = useGetEntityImpactGraphQuery({
- *   variables: {
- *      input: // value for 'input'
- *   },
- * });
- */
-export function useGetEntityImpactGraphQuery(baseOptions?: Apollo.QueryHookOptions<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>) {
-        const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useQuery<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>(GetEntityImpactGraphDocument, options);
-      }
-export function useGetEntityImpactGraphLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>) {
-          const options = {...defaultOptions, ...baseOptions}
-          return Apollo.useLazyQuery<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>(GetEntityImpactGraphDocument, options);
-        }
-export function useGetEntityImpactGraphSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>) {
-          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
-          return Apollo.useSuspenseQuery<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>(GetEntityImpactGraphDocument, options);
-        }
-export type GetEntityImpactGraphQueryHookResult = ReturnType<typeof useGetEntityImpactGraphQuery>;
-export type GetEntityImpactGraphLazyQueryHookResult = ReturnType<typeof useGetEntityImpactGraphLazyQuery>;
-export type GetEntityImpactGraphSuspenseQueryHookResult = ReturnType<typeof useGetEntityImpactGraphSuspenseQuery>;
-export type GetEntityImpactGraphQueryResult = Apollo.QueryResult<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>;

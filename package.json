@@ -16,6 +16,7 @@
     "codegen": "graphql-codegen --config apps/web/codegen.yml",
     "db:migrate": "pnpm --filter db run migrate",
     "db:seed": "pnpm --filter db run seed",
+    "docker:u": "pnpm docker:up",
     "docker:up": "node infra/scripts/src/docker-up.js",
     "docker:up:extras": "node infra/scripts/src/docker-up.js --profile extras",
     "docker:up:build": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up --build",

@@ -1,0 +1,45 @@
+{
+  "id": "IMPL-013",
+  "title": "Backend - Performance & caching for graph generation (Mongo aggregation + cache keys)",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-entity-impact-graph/.process/context-package.json",
+  "cli_execution_id": "WFS-entity-impact-graph-IMPL-013",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "meta": {
+    "type": "feature",
+    "agent": "@code-developer",
+    "execution_group": null,
+    "module": "backend",
+    "execution_config": {
+      "method": "agent",
+      "cli_tool": null,
+      "enable_resume": true,
+      "previous_cli_id": "WFS-entity-impact-graph-IMPL-012"
+    }
+  },
+  "context": {
+    "requirements": [
+      "Add caching for computed graph results keyed by orgId + date range + effective settings",
+      "Replace per-item nested loops with Mongo aggregation for co-occurrence counts (reduce memory/time)",
+      "Cap correlation workload (top entities/instruments, min data points, concurrency limit)",
+      "Add structured timing logs for each phase (co-occurrence, correlation, buildGraph)"
+    ],
+    "focus_paths": [
+      "apps/api/src/modules/dashboard/entity-impact-graph.service.ts",
+      "apps/api/src/modules/cache",
+      "apps/api/src/modules/dashboard/__tests__"
+    ],
+    "acceptance": [
+      "Graph generation uses cache on repeated calls for same inputs",
+      "Co-occurrence computation no longer loads all matching documents into JS memory",
+      "pnpm --filter @modular/api test passes"
+    ],
+    "depends_on": [
+      "IMPL-009",
+      "IMPL-010"
+    ]
+  }
+}
+
