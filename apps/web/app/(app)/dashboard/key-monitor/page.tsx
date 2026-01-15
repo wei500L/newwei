@@ -32,9 +32,9 @@ export default function KeyMonitorPage() {
     pollInterval: 30_000,
   });
   const isInitialLoading = loading && !hasData;
-  const goldSeries = seriesMap.get("gold_futures_main");
-  const oilSeries = seriesMap.get("crude_oil_futures_main");
-  const copperSeries = seriesMap.get("copper_futures_main");
+  const goldSeries = seriesMap["gold_futures_main"];
+  const oilSeries = seriesMap["crude_oil_futures_main"];
+  const copperSeries = seriesMap["copper_futures_main"];
   const chartMeta = (
     <ChartDataMeta
       state={chartState}

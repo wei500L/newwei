@@ -204,7 +204,7 @@ export default function EconomicShortPage() {
                     children: (
                       <CandlestickCard
                         title={t(tab.labelKey)}
-                        group={seriesMap.get(tab.key)}
+                        group={seriesMap[tab.key]}
                       />
                     ),
                   }))}

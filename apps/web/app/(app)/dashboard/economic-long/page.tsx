@@ -163,7 +163,7 @@ function buildYieldTimeline(
   slug: string,
   t: (key: string, options?: Record<string, unknown>) => string
 ): EChartsOption | null {
-  if (!seriesMap.get(slug)) {
+  if (!seriesMap[slug]) {
     return null;
   }
   const fieldMap = [
