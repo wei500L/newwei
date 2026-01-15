@@ -35,26 +35,24 @@
       "status": "active",
       "issue_ids": [
         "NP-BUG-001",
-        "NP-BUG-002",
-        "NP-BUG-003",
         "NP-SEC-001",
         "NP-SEC-002",
-        "NP-SEC-003",
-        "NP-SEC-004",
         "NP-PERF-001",
-        "NP-PERF-002",
-        "NP-PERF-003",
+        "NP-SEC-004",
         "NP-TEST-001",
         "NP-TEST-002",
         "NP-TEST-003",
-        "NP-MAINT-001",
-        "NP-MAINT-002"
+        "NP-SEC-003",
+        "NP-MAINT-002",
+        "NP-BUG-002",
+        "NP-BUG-003",
+        "NP-PERF-002",
+        "NP-PERF-003",
+        "NP-MAINT-001"
       ],
+      "created_at": "20260115-034700",
       "total_solutions": 15,
-      "total_tasks": 77,
-      "completed_solutions": 0,
-      "created_at": "2026-01-15T03:47:00Z",
-      "updated_at": "2026-01-15T03:47:00Z"
+      "completed_solutions": 13
     }
   ],
   "metadata": {

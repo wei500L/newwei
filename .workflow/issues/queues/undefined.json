@@ -1,5 +1,4 @@
 {
-  "id": "QUE-20260115-034700",
   "queue_id": "QUE-20260115-034700",
   "created_at": "2026-01-15T03:47:00Z",
   "updated_at": "2026-01-15T03:47:00Z",
@@ -52,7 +51,7 @@
       "item_id": "S-1",
       "issue_id": "NP-BUG-001",
       "solution_id": "SOL-NP-BUG-001-r4k7",
-      "status": "completed",
+      "status": "executing",
       "execution_order": 1,
       "execution_group": "P1",
       "depends_on": [],
@@ -60,53 +59,39 @@
       "files_touched": [],
       "task_count": 2,
       "notes": "Critical bug fix, no file dependencies",
-      "completed_at": "2026-01-15T11:42:49.892Z",
-      "result": {
-        "summary": "Redis password fix completed",
-        "commit": "377a36d"
-      }
+      "started_at": "2026-01-15T10:54:41.543Z"
     },
     {
       "item_id": "S-2",
       "issue_id": "NP-SEC-001",
       "solution_id": "SOL-NP-SEC-001-x8m3",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 2,
       "execution_group": "P1",
       "depends_on": [],
       "semantic_priority": 0.95,
       "files_touched": [],
       "task_count": 5,
-      "notes": "Critical security fix, no file dependencies",
-      "completed_at": "2026-01-15T11:43:11.093Z",
-      "result": {
-        "summary": "SSRF URL validation completed",
-        "commit": "593d529"
-      }
+      "notes": "Critical security fix, no file dependencies"
     },
     {
       "item_id": "S-3",
       "issue_id": "NP-SEC-002",
       "solution_id": "SOL-NP-SEC-002-p5n9",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 3,
       "execution_group": "P1",
       "depends_on": [],
       "semantic_priority": 0.95,
       "files_touched": [],
       "task_count": 7,
-      "notes": "Critical security fix, no file dependencies",
-      "completed_at": "2026-01-15T11:43:13.290Z",
-      "result": {
-        "summary": "jsCode whitelist validation completed",
-        "commit": "4d99c62"
-      }
+      "notes": "Critical security fix, no file dependencies"
     },
     {
       "item_id": "S-4",
       "issue_id": "NP-PERF-001",
       "solution_id": "SOL-NP-PERF-001-e6nz",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 4,
       "execution_group": "P1",
       "depends_on": [],
@@ -115,18 +100,13 @@
         "apps/api/src/modules/crawl/crawl-result.service.ts"
       ],
       "task_count": 6,
-      "notes": "Critical performance fix, unique file (crawl-result.service.ts)",
-      "completed_at": "2026-01-15T11:43:15.656Z",
-      "result": {
-        "summary": "Batch database operations completed",
-        "commit": "8ad71a1"
-      }
+      "notes": "Critical performance fix, unique file (crawl-result.service.ts)"
     },
     {
       "item_id": "S-5",
       "issue_id": "NP-SEC-004",
       "solution_id": "SOL-NP-SEC-004-mih3",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 5,
       "execution_group": "P1",
       "depends_on": [],
@@ -139,18 +119,13 @@
         "apps/api/src/modules/queue/__tests__/queue-gateway-rate-limit.spec.ts"
       ],
       "task_count": 5,
-      "notes": "High priority security, unique websocket/queue gateway files",
-      "completed_at": "2026-01-15T11:43:18.314Z",
-      "result": {
-        "summary": "WebSocket rate limiting completed",
-        "commit": "ceb6cff"
-      }
+      "notes": "High priority security, unique websocket/queue gateway files"
     },
     {
       "item_id": "S-6",
       "issue_id": "NP-TEST-001",
       "solution_id": "SOL-NP-TEST-001-q7m2",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 6,
       "execution_group": "P1",
       "depends_on": [],
@@ -159,18 +134,13 @@
         "apps/api/src/modules/queue/queue.processor.spec.ts"
       ],
       "task_count": 7,
-      "notes": "High priority test, unique spec file",
-      "completed_at": "2026-01-15T11:43:42.406Z",
-      "result": {
-        "summary": "QueueProcessor tests completed",
-        "commit": "6ab2a42"
-      }
+      "notes": "High priority test, unique spec file"
     },
     {
       "item_id": "S-7",
       "issue_id": "NP-TEST-002",
       "solution_id": "SOL-NP-TEST-002-k4p8",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 7,
       "execution_group": "P1",
       "depends_on": [],
@@ -179,18 +149,13 @@
         "apps/api/src/modules/news-pipeline/litellm.service.spec.ts"
       ],
       "task_count": 9,
-      "notes": "High priority test, unique spec file",
-      "completed_at": "2026-01-15T11:43:44.523Z",
-      "result": {
-        "summary": "LiteLlmService tests completed",
-        "commit": "c126c69"
-      }
+      "notes": "High priority test, unique spec file"
     },
     {
       "item_id": "S-8",
       "issue_id": "NP-TEST-003",
       "solution_id": "SOL-NP-TEST-003-r9f5",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 8,
       "execution_group": "P1",
       "depends_on": [],
@@ -199,18 +164,13 @@
         "apps/api/src/modules/crawl/__tests__/crawl-execution.service.spec.ts"
       ],
       "task_count": 8,
-      "notes": "High priority test, unique spec file (different from crawl-execution.service.ts)",
-      "completed_at": "2026-01-15T11:43:46.656Z",
-      "result": {
-        "summary": "CrawlExecutionService tests completed",
-        "commit": "7f6080b"
-      }
+      "notes": "High priority test, unique spec file (different from crawl-execution.service.ts)"
     },
     {
       "item_id": "S-9",
       "issue_id": "NP-SEC-003",
       "solution_id": "SOL-NP-SEC-003-imvp",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 9,
       "execution_group": "S1",
       "depends_on": [],
@@ -222,12 +182,7 @@
         "apps/api/src/modules/queue/__tests__/error-sanitization.spec.ts"
       ],
       "task_count": 4,
-      "notes": "Security before maintenance; touches crawl-execution.service.ts",
-      "completed_at": "2026-01-15T11:43:48.752Z",
-      "result": {
-        "summary": "Error sanitizer completed",
-        "commit": "97e1d16"
-      }
+      "notes": "Security before maintenance; touches crawl-execution.service.ts"
     },
     {
       "item_id": "S-10",
@@ -256,7 +211,7 @@
       "item_id": "S-11",
       "issue_id": "NP-BUG-002",
       "solution_id": "SOL-NP-BUG-002-k7m3",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 11,
       "execution_group": "S2",
       "depends_on": [],
@@ -265,18 +220,13 @@
         "apps/api/src/modules/news-pipeline/news-pipeline.service.ts"
       ],
       "task_count": 2,
-      "notes": "Bug fix first in news-pipeline chain",
-      "completed_at": "2026-01-15T11:44:07.665Z",
-      "result": {
-        "summary": "Memory leak fix completed",
-        "commit": "9412f98"
-      }
+      "notes": "Bug fix first in news-pipeline chain"
     },
     {
       "item_id": "S-12",
       "issue_id": "NP-BUG-003",
       "solution_id": "SOL-NP-BUG-003-p4x8",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 12,
       "execution_group": "S2",
       "depends_on": [
@@ -287,18 +237,13 @@
         "apps/api/src/modules/news-pipeline/news-pipeline.service.ts"
       ],
       "task_count": 1,
-      "notes": "Second bug fix in news-pipeline chain",
-      "completed_at": "2026-01-15T11:44:09.760Z",
-      "result": {
-        "summary": "Race condition fix completed",
-        "commit": "9412f98"
-      }
+      "notes": "Second bug fix in news-pipeline chain"
     },
     {
       "item_id": "S-13",
       "issue_id": "NP-PERF-002",
       "solution_id": "SOL-NP-PERF-002-h3d3",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 13,
       "execution_group": "S2",
       "depends_on": [
@@ -312,18 +257,13 @@
         "apps/api/src/modules/config/config.service.ts"
       ],
       "task_count": 4,
-      "notes": "Performance after bugs; touches news-pipeline.service.ts and package.json",
-      "completed_at": "2026-01-15T11:44:11.861Z",
-      "result": {
-        "summary": "Parallel outbox delivery completed",
-        "commit": "9412f98"
-      }
+      "notes": "Performance after bugs; touches news-pipeline.service.ts and package.json"
     },
     {
       "item_id": "S-14",
       "issue_id": "NP-PERF-003",
       "solution_id": "SOL-NP-PERF-003-k9m2",
-      "status": "completed",
+      "status": "pending",
       "execution_order": 14,
       "execution_group": "S2",
       "depends_on": [
@@ -335,12 +275,7 @@
         "apps/api/src/modules/news-pipeline/news-pipeline.service.ts"
       ],
       "task_count": 5,
-      "notes": "Second performance fix; shares package.json and news-pipeline.service.ts with S-13",
-      "completed_at": "2026-01-15T11:44:13.945Z",
-      "result": {
-        "summary": "Cosine similarity optimization completed",
-        "commit": "9412f98"
-      }
+      "notes": "Second performance fix; shares package.json and news-pipeline.service.ts with S-13"
     },
     {
       "item_id": "S-15",
@@ -436,10 +371,10 @@
   "_metadata": {
     "version": "2.0",
     "total_tasks": 15,
-    "pending_count": 2,
-    "executing_count": 0,
-    "completed_count": 13,
+    "pending_count": 14,
+    "executing_count": 1,
+    "completed_count": 0,
     "failed_count": 0,
-    "updated_at": "2026-01-15T11:44:14.701Z"
+    "updated_at": "2026-01-15T10:54:41.645Z"
   }
 }
