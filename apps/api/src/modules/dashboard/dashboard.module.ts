@@ -9,11 +9,12 @@ import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardDemoMetricsService } from "./dashboard-demo-metrics.service";
 import { DashboardController } from "./dashboard.controller";
 import { DashboardService } from "./dashboard.service";
+import { EntityImpactGraphService } from "./entity-impact-graph.service";
 
 @Module({
   imports: [ItemsModule, QueueModule, DatabaseModule, GeoModule],
   controllers: [DashboardController],
-  providers: [DashboardDemoMetricsService, DashboardService, DashboardChartsService],
-  exports: [DashboardService]
+  providers: [DashboardDemoMetricsService, DashboardService, DashboardChartsService, EntityImpactGraphService],
+  exports: [DashboardService, EntityImpactGraphService]
 })
 export class DashboardModule {}

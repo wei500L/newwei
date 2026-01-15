@@ -271,6 +271,14 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
           }),
         );
         break;
+      case "graph":
+        promises.push(
+          installOnce("chart:graph", async () => {
+            const m = await import("echarts/lib/chart/graph/install.js");
+            return m.install;
+          }),
+        );
+        break;
       default:
         break;
     }

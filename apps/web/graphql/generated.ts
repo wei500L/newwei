@@ -4650,3 +4650,105 @@ export function useUpdateCrawlClientSettingsMutation(baseOptions?: Apollo.Mutati
 export type UpdateCrawlClientSettingsMutationHookResult = ReturnType<typeof useUpdateCrawlClientSettingsMutation>;
 export type UpdateCrawlClientSettingsMutationResult = Apollo.MutationResult<UpdateCrawlClientSettingsMutation>;
 export type UpdateCrawlClientSettingsMutationOptions = Apollo.BaseMutationOptions<UpdateCrawlClientSettingsMutation, UpdateCrawlClientSettingsMutationVariables>;
+export type EntityImpactGraphInput = {
+  endDate?: InputMaybe<Scalars['DateTime']['input']>;
+  maxNodes?: InputMaybe<Scalars['Int']['input']>;
+  minConfidence?: InputMaybe<Scalars['Float']['input']>;
+  startDate?: InputMaybe<Scalars['DateTime']['input']>;
+};
+
+export type EntityImpactGraphModel = {
+  __typename?: 'EntityImpactGraphModel';
+  links: Array<EntityImpactLinkModel>;
+  metadata: EntityImpactMetadataModel;
+  nodes: Array<EntityImpactNodeModel>;
+};
+
+export type EntityImpactLinkModel = {
+  __typename?: 'EntityImpactLinkModel';
+  source: Scalars['String']['output'];
+  target: Scalars['String']['output'];
+  type: Scalars['String']['output'];
+  value: Scalars['Float']['output'];
+};
+
+export type EntityImpactMetadataModel = {
+  __typename?: 'EntityImpactMetadataModel';
+  generatedAt: Scalars['DateTime']['output'];
+  totalLinks: Scalars['Int']['output'];
+  totalNodes: Scalars['Int']['output'];
+};
+
+export type EntityImpactNodeModel = {
+  __typename?: 'EntityImpactNodeModel';
+  category: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  type: Scalars['String']['output'];
+  value: Scalars['Float']['output'];
+};
+
+export type GetEntityImpactGraphQueryVariables = Exact<{
+  input?: InputMaybe<EntityImpactGraphInput>;
+}>;
+
+
+export type GetEntityImpactGraphQuery = { __typename?: 'Query', getEntityImpactGraph: { __typename?: 'EntityImpactGraphModel', nodes: Array<{ __typename?: 'EntityImpactNodeModel', id: string, name: string, category: string, type: string, value: number }>, links: Array<{ __typename?: 'EntityImpactLinkModel', source: string, target: string, value: number, type: string }>, metadata: { __typename?: 'EntityImpactMetadataModel', totalNodes: number, totalLinks: number, generatedAt: any } } };
+
+export const GetEntityImpactGraphDocument = gql`
+    query GetEntityImpactGraph($input: EntityImpactGraphInput) {
+  getEntityImpactGraph(input: $input) {
+    nodes {
+      id
+      name
+      category
+      type
+      value
+    }
+    links {
+      source
+      target
+      value
+      type
+    }
+    metadata {
+      totalNodes
+      totalLinks
+      generatedAt
+    }
+  }
+}
+    `;
+
+/**
+ * __useGetEntityImpactGraphQuery__
+ *
+ * To run a query within a React component, call `useGetEntityImpactGraphQuery` and pass it any options that fit your needs.
+ * When your component renders, `useGetEntityImpactGraphQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useGetEntityImpactGraphQuery({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useGetEntityImpactGraphQuery(baseOptions?: Apollo.QueryHookOptions<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>(GetEntityImpactGraphDocument, options);
+      }
+export function useGetEntityImpactGraphLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>(GetEntityImpactGraphDocument, options);
+        }
+export function useGetEntityImpactGraphSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>(GetEntityImpactGraphDocument, options);
+        }
+export type GetEntityImpactGraphQueryHookResult = ReturnType<typeof useGetEntityImpactGraphQuery>;
+export type GetEntityImpactGraphLazyQueryHookResult = ReturnType<typeof useGetEntityImpactGraphLazyQuery>;
+export type GetEntityImpactGraphSuspenseQueryHookResult = ReturnType<typeof useGetEntityImpactGraphSuspenseQuery>;
+export type GetEntityImpactGraphQueryResult = Apollo.QueryResult<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>;

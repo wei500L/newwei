@@ -73,6 +73,13 @@ const FinancialCandlestick = dynamic(
   }
 );
 
+const EntityImpactGraph = dynamic(
+  () => import("./charts/entity-impact-graph").then((mod) => mod.EntityImpactGraph),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+  }
+);
+
 const MarketPulse = dynamic(
   () => import("./components/market-pulse").then((mod) => mod.MarketPulse),
   { loading: () => <Skeleton active paragraph={{ rows: 2 }} /> }
@@ -324,14 +331,23 @@ export function DashboardContent() {
         {/* Financial Candlestick & Sentiment */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
            <div className="xl:col-span-2">
-             <GlobalSentimentTrend 
-               loading={heroLoading} 
-               data={heroData?.market ?? []} 
+             <GlobalSentimentTrend
+               loading={heroLoading}
+               data={heroData?.market ?? []}
              />
            </div>
            <div className="xl:col-span-1">
              <Card className="glass-card h-full" bordered={false}>
                <FinancialCandlestick />
+             </Card>
+           </div>
+        </div>
+
+        {/* Entity Impact Graph */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+           <div className="xl:col-span-3">
+             <Card title={t("dashboard.charts.entityImpactGraph", { defaultValue: "Entity Impact Graph" })} className="glass-card" bordered={false}>
+               <EntityImpactGraph />
              </Card>
            </div>
         </div>

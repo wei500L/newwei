@@ -720,6 +720,7 @@
       "sectorHeatmap": "Sector Performance",
       "sectorHeatmapValueLabel": "Value",
       "sectorHeatmapChangeLabel": "Change",
+      "entityImpactGraph": "Entity Impact Graph",
       "financialCandlestick": {
         "title": "Market Index"
       },

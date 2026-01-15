@@ -720,6 +720,7 @@
       "sectorHeatmap": "行业表现",
       "sectorHeatmapValueLabel": "数值",
       "sectorHeatmapChangeLabel": "涨跌幅",
+      "entityImpactGraph": "实体影响图谱",
       "financialCandlestick": {
         "title": "市场指数"
       },

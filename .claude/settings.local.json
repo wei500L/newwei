@@ -10,7 +10,19 @@
       "Bash(pnpm tsc:*)",
       "Bash(npx tsc:*)",
       "Bash(node:*)",
-      "Bash(pnpm turbo run build:*)"
+      "Bash(pnpm turbo run build:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(pnpm graphql-codegen:*)",
+      "Bash(pnpm run codegen)",
+      "Bash(pnpm run generate)",
+      "Bash(pnpm -w run codegen:*)",
+      "Bash(npx graphql-codegen:*)",
+      "Bash(pnpm exec graphql-codegen:*)",
+      "Bash(dir:*)",
+      "Bash(pnpm turbo run typecheck:*)",
+      "Bash(pnpm --filter web exec tsc:*)",
+      "Bash(pnpm -F web exec tsc:*)",
+      "Skill(workflow:review)"
     ]
   }
 }

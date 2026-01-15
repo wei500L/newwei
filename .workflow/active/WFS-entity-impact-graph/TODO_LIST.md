@@ -7,18 +7,18 @@
 - [x] **IMPL-002**: Create GraphQL types for entity objects with type/confidence → [📋](./.task/IMPL-002.json) [✅](./.summaries/IMPL-002-summary.md)
 
 ### Phase 2: Backend API (Sequential)
-- [ ] **IMPL-003**: Create correlation service for entity-financial relationships → [📋](./.task/IMPL-003.json)
-- [ ] **IMPL-004**: Create GraphQL resolver for entity impact graph data → [📋](./.task/IMPL-004.json)
+- [x] **IMPL-003**: Create correlation service for entity-financial relationships → [📋](./.task/IMPL-003.json) [✅](./.summaries/IMPL-003-summary.md)
+- [x] **IMPL-004**: Create GraphQL resolver for entity impact graph data → [📋](./.task/IMPL-004.json) [✅](./.summaries/IMPL-004-summary.md)
 
 ### Phase 3: Frontend Data Layer
-- [ ] **IMPL-005**: Create useEntityImpactGraph data hook → [📋](./.task/IMPL-005.json)
+- [x] **IMPL-005**: Create useEntityImpactGraph data hook → [📋](./.task/IMPL-005.json) [✅](./.summaries/IMPL-005-summary.md)
 
 ### Phase 4: UI Component (Sequential)
-- [ ] **IMPL-006**: Create EntityImpactGraph React component → [📋](./.task/IMPL-006.json)
-- [ ] **IMPL-007**: Integrate EntityImpactGraph component into dashboard layout → [📋](./.task/IMPL-007.json)
+- [x] **IMPL-006**: Create EntityImpactGraph React component → [📋](./.task/IMPL-006.json) [✅](./.summaries/IMPL-006-summary.md)
+- [x] **IMPL-007**: Integrate EntityImpactGraph component into dashboard layout → [📋](./.task/IMPL-007.json) [✅](./.summaries/IMPL-007-summary.md)
 
 ### Phase 5: Polish
-- [ ] **IMPL-008**: Add interaction features (tooltips, click events, filtering) → [📋](./.task/IMPL-008.json)
+- [x] **IMPL-008**: Add interaction features (tooltips, click events, filtering) → [📋](./.task/IMPL-008.json) [✅](./.summaries/IMPL-008-summary.md)
 
 ## Dependency Graph
 

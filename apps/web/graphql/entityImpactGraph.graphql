@@ -1,0 +1,22 @@
+query GetEntityImpactGraph($input: EntityImpactGraphInput) {
+  getEntityImpactGraph(input: $input) {
+    nodes {
+      id
+      name
+      category
+      type
+      value
+    }
+    links {
+      source
+      target
+      value
+      type
+    }
+    metadata {
+      totalNodes
+      totalLinks
+      generatedAt
+    }
+  }
+}
