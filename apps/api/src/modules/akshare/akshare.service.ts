@@ -22,6 +22,7 @@ import {
   AkshareDataItemMetadata,
   AkshareJobPayload,
   AkshareParserConfig,
+  AksharePayloadFilterConfig,
   DEFAULT_PAGE_LIMIT,
   MAX_PAGE_LIMIT,
   PaginatedResult,
@@ -60,7 +61,14 @@ export class AkshareService implements OnModuleInit {
   private readonly forceDefaultParamsSyncSlugs = new Set<string>([
     "macro_fx_sentiment",
     "market_sentiment_usdx",
-    "bitcoin_spot_price"
+    "bitcoin_spot_price",
+    "usd_cny_spot",
+    "eur_cny_spot"
+  ]);
+  private readonly forceFilterSyncSlugs = new Set<string>([
+    "bitcoin_spot_price",
+    "usd_cny_spot",
+    "eur_cny_spot"
   ]);
 
   constructor(
@@ -92,7 +100,42 @@ export class AkshareService implements OnModuleInit {
       method: definition.method ?? "GET",
       defaultParams: definition.defaultParams ?? null,
       parser: definition.parser,
-      tags: definition.tags ?? []
+      tags: definition.tags ?? [],
+      filter: definition.filter ?? null
+    };
+  }
+
+  private parseFilter(filter: unknown): AksharePayloadFilterConfig | null | undefined {
+    if (filter === null) {
+      return null;
+    }
+    if (!filter || typeof filter !== "object" || Array.isArray(filter)) {
+      return undefined;
+    }
+
+    const raw = filter as Record<string, unknown>;
+    const field = raw.field;
+    const equals = raw.equals;
+    if (typeof field !== "string" || !field.trim()) {
+      return undefined;
+    }
+    if (typeof equals !== "string" || !equals.trim()) {
+      return undefined;
+    }
+
+    const mode = raw.mode;
+    const parsedMode = mode === "all" || mode === "best" || mode === "first" ? mode : undefined;
+    const preferNonZeroField = typeof raw.preferNonZeroField === "string" ? raw.preferNonZeroField : undefined;
+    const rankBy = typeof raw.rankBy === "string" ? raw.rankBy : undefined;
+    const rankOrder = raw.rankOrder === "asc" || raw.rankOrder === "desc" ? raw.rankOrder : undefined;
+
+    return {
+      field,
+      equals,
+      mode: parsedMode,
+      preferNonZeroField,
+      rankBy,
+      rankOrder
     };
   }
 
@@ -109,13 +152,15 @@ export class AkshareService implements OnModuleInit {
           ? null
           : undefined;
     const parser = parsed.parser as AkshareParserConfig | undefined;
+    const filter = this.parseFilter(parsed.filter);
     const tags = Array.isArray(parsed.tags) ? parsed.tags.map((tag) => String(tag)) : undefined;
 
     return {
       method,
       defaultParams,
       parser,
-      tags
+      tags,
+      filter
     };
   }
 
@@ -143,7 +188,8 @@ export class AkshareService implements OnModuleInit {
           ? null
           : existing.defaultParams ?? (seed.defaultParams === null ? null : seed.defaultParams),
       parser: existing.parser ?? seed.parser,
-      tags: existing.tags ?? seed.tags
+      tags: existing.tags ?? seed.tags,
+      filter: existing.filter === null ? null : existing.filter ?? seed.filter
     };
   }
 
@@ -152,7 +198,8 @@ export class AkshareService implements OnModuleInit {
       method: metadata.method ?? "GET",
       defaultParams: metadata.defaultParams ?? null,
       parser: metadata.parser ?? null,
-      tags: metadata.tags ?? []
+      tags: metadata.tags ?? [],
+      filter: metadata.filter ?? null
     };
   }
 
@@ -189,6 +236,7 @@ export class AkshareService implements OnModuleInit {
       docUrl: item.sourceDocUrl,
       method: metadata.method ?? "GET",
       defaultParams: metadata.defaultParams ?? null,
+      filter: metadata.filter ?? null,
       valueType: item.valueType,
       defaultUnit: item.defaultUnit,
       defaultFrequency: item.defaultFrequency,
@@ -299,10 +347,14 @@ export class AkshareService implements OnModuleInit {
         this.forceParserSyncSlugs.has(definition.slug) || isMockSeed
           ? { ...mergedMetadata, parser: seedMetadata.parser }
           : mergedMetadata;
+      const mergedMetadataWithOverridesFilter =
+        this.forceFilterSyncSlugs.has(definition.slug) || isMockSeed
+          ? { ...mergedMetadataWithOverrides, filter: seedMetadata.filter ?? null }
+          : mergedMetadataWithOverrides;
       const mergedMetadataWithOverrides2 =
         this.forceDefaultParamsSyncSlugs.has(definition.slug) || isMockSeed
-          ? { ...mergedMetadataWithOverrides, defaultParams: seedMetadata.defaultParams ?? null }
-          : mergedMetadataWithOverrides;
+          ? { ...mergedMetadataWithOverridesFilter, defaultParams: seedMetadata.defaultParams ?? null }
+          : mergedMetadataWithOverridesFilter;
 
       const updates: Prisma.EconomicDataItemUpdateInput = {};
       const matchesSeedFunction = existingItem.sourceFunction === definition.sourceFunction;
@@ -605,7 +657,8 @@ export class AkshareService implements OnModuleInit {
         fetchedAt: new Date()
       });
 
-      const parsedPoints = this.parserService.parsePayload(definition.parser, response.payload, { slug: definition.slug });
+      const filteredPayload = this.applyPayloadFilter(response.payload, definition.filter);
+      const parsedPoints = this.parserService.parsePayload(definition.parser, filteredPayload, { slug: definition.slug });
       const storedCount = await this.bulkUpsertDataPoints(definition.itemId, parsedPoints);
 
       await this.updateFetchStatusByItemId(definition.itemId, EconomicDataRunStatus.success);
@@ -627,6 +680,89 @@ export class AkshareService implements OnModuleInit {
       }
       throw error;
     }
+  }
+
+  private toRecordArray(payload: unknown): Array<Record<string, unknown>> {
+    if (Array.isArray(payload)) {
+      return payload.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === "object" && !Array.isArray(item)
+      );
+    }
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      return [payload as Record<string, unknown>];
+    }
+    return [];
+  }
+
+  private normalizeNumeric(value: unknown): number | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed || trimmed === "--" || trimmed === "-" || trimmed.toLowerCase() === "nan" || trimmed.toLowerCase() === "null") {
+        return null;
+      }
+      const sanitized = trimmed.replace(/,/g, "");
+      const parsed = Number(sanitized);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  }
+
+  private selectBestRecord(records: Array<Record<string, unknown>>, filter: AksharePayloadFilterConfig) {
+    const preferField = filter.preferNonZeroField;
+    const rankBy = filter.rankBy;
+    const rankOrder = filter.rankOrder ?? "desc";
+
+    let best = records[0];
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (const row of records) {
+      const preferredValue = preferField ? this.normalizeNumeric(row[preferField]) : null;
+      const hasPreferred = preferField ? Boolean(preferredValue && preferredValue > 0) : true;
+
+      const rankValue = rankBy ? this.normalizeNumeric(row[rankBy]) ?? 0 : 0;
+      const normalizedRank = rankOrder === "asc" ? -rankValue : rankValue;
+
+      const score = (hasPreferred ? 1 : 0) * 1_000_000_000_000 + normalizedRank;
+      if (score > bestScore) {
+        best = row;
+        bestScore = score;
+      }
+    }
+
+    return best;
+  }
+
+  private applyPayloadFilter(payload: unknown, filter: AksharePayloadFilterConfig | null | undefined): unknown {
+    if (!filter) {
+      return payload;
+    }
+
+    const records = this.toRecordArray(payload);
+    if (records.length === 0) {
+      throw new InternalServerErrorException(`Payload filter expects record array (field=${filter.field})`);
+    }
+
+    const expected = filter.equals;
+    const matches = records.filter((row) => String(row[filter.field] ?? "").trim() === expected);
+    if (matches.length === 0) {
+      throw new InternalServerErrorException(`Expected record not found: ${filter.field}=${expected}`);
+    }
+
+    const mode = filter.mode ?? "first";
+    if (mode === "all") {
+      return matches;
+    }
+    if (mode === "best") {
+      return this.selectBestRecord(matches, filter);
+    }
+    return matches[0];
   }
 
   private async bulkUpsertDataPoints(itemId: string, points: ParsedDataPoint[]) {

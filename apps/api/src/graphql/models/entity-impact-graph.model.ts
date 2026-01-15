@@ -96,9 +96,21 @@ export class EntityImpactGraphInput {
   @Field(() => GraphQLISODateTime, { nullable: true, description: "End date for data range" })
   endDate?: Date;
 
-  @Field(() => Float, { nullable: true, description: "Minimum confidence threshold for entities (0-1)" })
+  @Field(() => Float, { nullable: true, description: "Minimum entity confidence threshold (0-1)" })
   minConfidence?: number;
+
+  @Field(() => Float, { nullable: true, description: "Minimum absolute correlation threshold (0-1)" })
+  minCorrelation?: number;
+
+  @Field(() => Int, { nullable: true, description: "Minimum co-occurrence count between entities" })
+  minCoOccurrence?: number;
 
   @Field(() => Int, { nullable: true, description: "Maximum number of nodes to return" })
   maxNodes?: number;
+
+  @Field(() => [String], {
+    nullable: true,
+    description: "Restrict graph to categories (person, organization, stock, commodity)"
+  })
+  categories?: string[];
 }

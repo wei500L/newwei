@@ -1,4 +1,4 @@
-import { Field, Int, ObjectType } from "@nestjs/graphql";
+import { Field, Float, Int, ObjectType } from "@nestjs/graphql";
 
 @ObjectType()
 export class RateLimitBucketModel {
@@ -67,4 +67,28 @@ export class NewsPromptConfigModel {
 
   @Field()
   userPromptTemplate!: string;
+}
+
+@ObjectType()
+export class EntityImpactGraphSettingsModel {
+  @Field(() => Boolean)
+  enabled!: boolean;
+
+  @Field(() => Float)
+  minEntityConfidence!: number;
+
+  @Field(() => Float)
+  minCorrelation!: number;
+
+  @Field(() => Int)
+  minCoOccurrence!: number;
+
+  @Field(() => Int)
+  maxNodes!: number;
+
+  @Field(() => [String])
+  categories!: string[];
+
+  @Field(() => Int)
+  cacheTtlSeconds!: number;
 }

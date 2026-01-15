@@ -1,5 +1,5 @@
-import { Field, InputType, Int } from "@nestjs/graphql";
-import { Max, MaxLength, Min } from "class-validator";
+import { Field, Float, InputType, Int } from "@nestjs/graphql";
+import { ArrayMaxSize, ArrayMinSize, IsBoolean, IsIn, Max, MaxLength, Min } from "class-validator";
 
 @InputType()
 export class RateLimitBucketInput {
@@ -93,4 +93,42 @@ export class UpdateNewsPromptConfigInput {
   @Field()
   @MaxLength(12000)
   userPromptTemplate!: string;
+}
+
+@InputType()
+export class UpdateEntityImpactGraphSettingsInput {
+  @Field(() => Boolean)
+  @IsBoolean()
+  enabled!: boolean;
+
+  @Field(() => Float)
+  @Min(0)
+  @Max(1)
+  minEntityConfidence!: number;
+
+  @Field(() => Float)
+  @Min(0)
+  @Max(1)
+  minCorrelation!: number;
+
+  @Field(() => Int)
+  @Min(1)
+  @Max(100)
+  minCoOccurrence!: number;
+
+  @Field(() => Int)
+  @Min(10)
+  @Max(500)
+  maxNodes!: number;
+
+  @Field(() => [String])
+  @ArrayMinSize(1)
+  @ArrayMaxSize(4)
+  @IsIn(["person", "organization", "stock", "commodity"], { each: true })
+  categories!: string[];
+
+  @Field(() => Int)
+  @Min(0)
+  @Max(3600)
+  cacheTtlSeconds!: number;
 }

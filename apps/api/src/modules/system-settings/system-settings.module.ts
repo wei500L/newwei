@@ -12,6 +12,7 @@ import { GeoNominatimSettingsService } from "./geo-nominatim-settings.service";
 import { GeoNominatimTestController } from "./geo-nominatim-test.controller";
 import { LlmGatewaySettingsController } from "./llm-gateway-settings.controller";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
+import { EntityImpactGraphSettingsService } from "./entity-impact-graph-settings.service";
 import { RateLimitConfigService } from "./rate-limit-config.service";
 import { RateLimitPolicyController } from "./rate-limit-policy.controller";
 import { RateLimitPolicyService } from "./rate-limit-policy.service";
@@ -35,14 +36,16 @@ import { RateLimitSettingsController } from "./rate-limit-settings.controller";
     RateLimitPolicyService,
     AuditLogSettingsService,
     GeoNominatimSettingsService,
-    LlmGatewaySettingsService
+    LlmGatewaySettingsService,
+    EntityImpactGraphSettingsService
   ],
   exports: [
     RateLimitConfigService,
     RateLimitPolicyService,
     AuditLogSettingsService,
     GeoNominatimSettingsService,
-    LlmGatewaySettingsService
+    LlmGatewaySettingsService,
+    EntityImpactGraphSettingsService
   ]
 })
 export class SystemSettingsModule {}

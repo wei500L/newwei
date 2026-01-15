@@ -9,6 +9,7 @@ import { PrismaService } from "../../modules/config/prisma.service";
 import { CrawlSettingsService } from "../../modules/crawl/crawl-settings.service";
 import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt-config.service";
 import { AuditLogSettingsService } from "../../modules/system-settings/audit-log-settings.service";
+import { EntityImpactGraphSettingsService } from "../../modules/system-settings/entity-impact-graph-settings.service";
 import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import {
@@ -16,12 +17,14 @@ import {
   UpdateCrawlClientSettingsInput,
   UpdateAuthCacheSettingsInput,
   UpdateNewsPromptConfigInput,
+  UpdateEntityImpactGraphSettingsInput,
   UpdateRateLimitSettingsInput
 } from "../dto/settings.input";
 import type { GqlRequest } from "../graphql.types";
 import {
   AuditLogRetentionModel,
   CrawlClientSettingsModel,
+  EntityImpactGraphSettingsModel,
   NewsPromptConfigModel,
   AuthCacheSettingsModel,
   RateLimitSettingsModel
@@ -32,6 +35,7 @@ import {
 export class SettingsResolver {
   constructor(
     private readonly rateLimitConfig: RateLimitConfigService,
+    private readonly entityImpactGraphSettings: EntityImpactGraphSettingsService,
     private readonly newsPromptConfigService: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
     private readonly crawlSettings: CrawlSettingsService,
@@ -56,6 +60,26 @@ export class SettingsResolver {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.rateLimitConfig.updateRateLimitSettings(user.orgId, user.id, input);
+  }
+
+  @HasPermission("dashboard.read")
+  @Query(() => EntityImpactGraphSettingsModel)
+  async entityImpactGraphSettings(
+    @Context("req") req: GqlRequest
+  ): Promise<EntityImpactGraphSettingsModel> {
+    const user = this.requireUser(req);
+    return this.entityImpactGraphSettings.getSettings(user.orgId);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => EntityImpactGraphSettingsModel)
+  async updateEntityImpactGraphSettings(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateEntityImpactGraphSettingsInput
+  ): Promise<EntityImpactGraphSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    return this.entityImpactGraphSettings.updateSettings(user.orgId, user.id, input);
   }
 
   @HasPermission("settings.manage")

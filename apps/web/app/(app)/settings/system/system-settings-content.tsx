@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { EmailSettingsPanel } from "@/components/settings/email-settings-panel";
+import { EntityImpactGraphSettingsPanel } from "@/components/settings/entity-impact-graph-settings-panel";
 import { GeoNominatimSettingsPanel } from "@/components/settings/geo-nominatim-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
@@ -750,6 +751,11 @@ export function SystemSettingsContent() {
     { key: "auditLog", label: t("settings.tabs.auditLog"), children: <AuditLogRetentionPanel /> },
     { key: "authCache", label: t("settings.tabs.authCache"), children: <AuthCacheSettingsPanel /> },
     { key: "crawlClient", label: t("settings.tabs.crawlClient"), children: <CrawlClientSettingsPanel /> },
+    {
+      key: "entityImpactGraph",
+      label: t("settings.tabs.entityImpactGraph"),
+      children: <EntityImpactGraphSettingsPanel />
+    },
     { key: "newsPrompts", label: t("settings.tabs.newsPrompts"), children: <NewsPromptSettingsPanel /> },
     { key: "akshare", label: t("systemSettings.tabs.akshare"), children: <AkshareGatewaySettingsPanel /> }
   ];

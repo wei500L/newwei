@@ -2,12 +2,13 @@
 
 import { Skeleton, Slider, Space, Typography } from "antd";
 import type { EChartsOption } from "echarts";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { message } from "antd";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { useEntityImpactGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import {
   useEntityImpactGraph,
@@ -119,7 +120,7 @@ function transformNodes(
         show: symbolSize > 30 || isSelected,
         position: "right" as const,
         formatter: "{b}",
-        fontWeight: isSelected ? "bold" : "normal"
+        fontWeight: isSelected ? ("bold" as const) : ("normal" as const)
       },
       // Store original data for tooltip
       originalData: {
@@ -187,14 +188,68 @@ export function EntityImpactGraph() {
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [minConfidence, setMinConfidence] = useState<number>(0.5);
+  const [minCorrelation, setMinCorrelation] = useState<number>(0.3);
+  const [minCoOccurrence, setMinCoOccurrence] = useState<number>(2);
+  const [maxNodes, setMaxNodes] = useState<number>(100);
+  const [categories, setCategories] = useState<string[]>(["person", "organization", "stock", "commodity"]);
+  const [settingsApplied, setSettingsApplied] = useState(false);
+
+  const { data: settingsData, loading: settingsLoading } = useEntityImpactGraphSettingsQuery({
+    fetchPolicy: "cache-and-network"
+  });
+
+  const settings = settingsData?.entityImpactGraphSettings;
+  const enabled = settings?.enabled ?? true;
+
+  useEffect(() => {
+    if (settingsApplied) {
+      return;
+    }
+    if (settings) {
+      setMinConfidence(settings.minEntityConfidence);
+      setMinCorrelation(settings.minCorrelation);
+      setMinCoOccurrence(settings.minCoOccurrence);
+      setMaxNodes(settings.maxNodes);
+      setCategories(settings.categories);
+      setSettingsApplied(true);
+      return;
+    }
+    if (!settingsLoading) {
+      setSettingsApplied(true);
+    }
+  }, [settings, settingsApplied, settingsLoading]);
 
   const { nodes, links, metadata, loading, error, refetch, hasData } =
     useEntityImpactGraph({
       minConfidence,
-      maxNodes: 100
+      minCorrelation,
+      minCoOccurrence,
+      maxNodes,
+      categories,
+      skip: enabled === false || !settingsApplied
     });
 
   const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
+
+  if (enabled === false) {
+    return (
+      <div className="h-[400px]">
+        <ChartEmptyState
+          variant="offline"
+          title={t("dashboard.charts.entityGraph.disabledTitle", { defaultValue: "Disabled" })}
+          description={t("dashboard.charts.entityGraph.disabledDescription", { defaultValue: "Disabled by admin" })}
+        />
+      </div>
+    );
+  }
+
+  if (!settingsApplied) {
+    return (
+      <div className="h-[400px] flex items-center">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </div>
+    );
+  }
 
   /**
    * Build ECharts option with graph series configuration
@@ -236,7 +291,7 @@ export function EntityImpactGraph() {
               `<b>${data.name}</b>`,
               `${t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: ${originalData.type ?? "-"}`,
               `${t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: ${categoryName}`,
-              `${t("dashboard.charts.entityGraph.confidence", { defaultValue: "Confidence" })}: ${((data.value / 20) * 100).toFixed(0)}%`,
+              `${t("dashboard.charts.entityGraph.weight", { defaultValue: "Weight" })}: ${Number(data.value ?? 0).toFixed(1)}`,
               `${t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}: ${connectionCount}`
             ];
 
@@ -253,14 +308,21 @@ export function EntityImpactGraph() {
           if (params.dataType === "edge") {
             const data = params.data;
             const originalData = data.originalData ?? {};
+            const isCorrelation = originalData.type === "correlation";
             const linkType =
-              originalData.type === "correlation"
+              isCorrelation
                 ? t("dashboard.charts.entityGraph.correlation", { defaultValue: "Correlation" })
                 : t("dashboard.charts.entityGraph.coOccurrence", { defaultValue: "Co-occurrence" });
+            const strengthLabel = isCorrelation
+              ? t("dashboard.charts.entityGraph.correlationValue", { defaultValue: "Correlation" })
+              : t("dashboard.charts.entityGraph.coOccurrenceCount", { defaultValue: "Count" });
+            const strengthValue = isCorrelation
+              ? Number(data.value ?? 0).toFixed(2)
+              : `${Math.round(Number(data.value ?? 0))}`;
             return [
               `<b>${params.name}</b>`,
               `${t("dashboard.charts.entityGraph.linkType", { defaultValue: "Link Type" })}: ${linkType}`,
-              `${t("dashboard.charts.entityGraph.strength", { defaultValue: "Strength" })}: ${(data.value * 100).toFixed(1)}%`
+              `${strengthLabel}: ${strengthValue}`
             ].join("<br/>");
           }
           return "";
@@ -402,7 +464,7 @@ export function EntityImpactGraph() {
         actions={
           <Space size="middle" align="center">
             <Text type="secondary" className="text-xs whitespace-nowrap">
-              {t("dashboard.charts.entityGraph.confidenceFilter", { defaultValue: "Confidence" })}:
+              {t("dashboard.charts.entityGraph.confidenceFilter", { defaultValue: "Entity confidence" })}:
             </Text>
             <Slider
               min={0}

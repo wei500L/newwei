@@ -1181,6 +1181,40 @@
       },
       "save": "保存"
     },
+    "entityImpactGraph": {
+      "saved": "已保存",
+      "saveFailed": "保存失败",
+      "description": "配置仪表盘「实体影响图谱」的默认阈值与性能参数。",
+      "fields": {
+        "enabled": "启用",
+        "minEntityConfidence": "实体置信度下限",
+        "minCorrelation": "相关系数下限",
+        "minCoOccurrence": "最小共现次数",
+        "maxNodes": "最大节点数",
+        "categories": "类别",
+        "cacheTtlSeconds": "缓存 TTL（秒）"
+      },
+      "hints": {
+        "note": "这些设置对组织内所有用户生效；用户侧交互过滤仍只影响当前会话。",
+        "minEntityConfidence": "过滤掉从内容中抽取但置信度较低的实体。",
+        "minCorrelation": "实体与金融品种之间的绝对相关系数（0-1）下限。",
+        "minCoOccurrence": "实体对在新闻中共同出现的最小次数。",
+        "maxNodes": "返回节点的上限（影响图谱密度与性能）。",
+        "categories": "仅显示选定类别的节点。",
+        "cacheTtlSeconds": "填 0 表示不缓存；否则缓存 N 秒。",
+        "select": "选择类别",
+        "allowedCategories": "允许值：{{values}}"
+      },
+      "categories": {
+        "person": "人物",
+        "organization": "机构",
+        "stock": "股票",
+        "commodity": "商品"
+      },
+      "validation": {
+        "required": "必填"
+      }
+    },
     "newsPrompts": {
       "saved": "已保存",
       "saveFailed": "保存失败",
@@ -1293,6 +1327,7 @@
       "auditLog": "审计日志",
       "authCache": "认证缓存",
       "crawlClient": "抓取客户端",
+      "entityImpactGraph": "实体影响图谱",
       "newsPrompts": "新闻提示词",
       "llmGateway": "LLM 网关",
       "roles": "角色",

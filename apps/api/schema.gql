@@ -698,14 +698,23 @@ enum EconomicDataValueType {
 }
 
 input EntityImpactGraphInput {
+  """Restrict graph to categories (person, organization, stock, commodity)"""
+  categories: [String!]
+
   """End date for data range"""
   endDate: DateTime
 
   """Maximum number of nodes to return"""
   maxNodes: Int
 
-  """Minimum confidence threshold for entities (0-1)"""
+  """Minimum entity confidence threshold (0-1)"""
   minConfidence: Float
+
+  """Minimum absolute correlation threshold (0-1)"""
+  minCorrelation: Float
+
+  """Minimum co-occurrence count between entities"""
+  minCoOccurrence: Int
 
   """Start date for data range"""
   startDate: DateTime
@@ -720,6 +729,16 @@ type EntityImpactGraphModel {
 
   """Graph nodes (entities and financial instruments)"""
   nodes: [EntityImpactNodeModel!]!
+}
+
+type EntityImpactGraphSettingsModel {
+  categories: [String!]!
+  cacheTtlSeconds: Int!
+  enabled: Boolean!
+  maxNodes: Int!
+  minCoOccurrence: Int!
+  minCorrelation: Float!
+  minEntityConfidence: Float!
 }
 
 type EntityImpactLinkModel {
@@ -896,6 +915,7 @@ type Mutation {
   updateCrawlClientSettings(input: UpdateCrawlClientSettingsInput!): CrawlClientSettingsModel!
   updateCrawlTaskIngestToItems(enabled: Boolean!, id: String!): CrawlTaskModel!
   updateEconomicDataFetchConfig(frequency: EconomicDataFrequency, isEnabled: Boolean, repeatCron: String, slug: String!): EconomicDataFetchConfigModel!
+  updateEntityImpactGraphSettings(input: UpdateEntityImpactGraphSettingsInput!): EntityImpactGraphSettingsModel!
   updateItem(input: UpdateItemInput!): ItemModel!
   updateNewsPromptConfig(input: UpdateNewsPromptConfigInput!): NewsPromptConfigModel!
   updateOrg(input: UpdateOrgInput!): OrgModel!
@@ -1042,6 +1062,7 @@ type Query {
   crawlTasks(after: String, first: Int! = 20, search: String, status: CrawlTaskStatus): CrawlTaskConnection!
   dashboards: [DashboardModel!]!
   economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
+  entityImpactGraphSettings: EntityImpactGraphSettingsModel!
   eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!
   getEconomicData(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicDataPointModel!]!
   getEconomicDataPaginated(category: String!, granularity: TimeGranularity, pagination: PaginationInput, timeRange: DateRangeInput!): PaginatedEconomicDataPointsModel!
@@ -1222,6 +1243,16 @@ input UpdateCrawlClientSettingsInput {
   maxRetries: Int!
   requestTimeoutMs: Int!
   retryBackoffMs: Int!
+}
+
+input UpdateEntityImpactGraphSettingsInput {
+  categories: [String!]!
+  cacheTtlSeconds: Int!
+  enabled: Boolean!
+  maxNodes: Int!
+  minCoOccurrence: Int!
+  minCorrelation: Float!
+  minEntityConfidence: Float!
 }
 
 input UpdateItemInput {

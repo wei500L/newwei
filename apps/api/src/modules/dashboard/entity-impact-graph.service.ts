@@ -1,7 +1,14 @@
 import { ProcessedItemModel } from "@modular/mongo";
 import { Injectable, Logger } from "@nestjs/common";
 
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+import { EntityImpactGraphSettingsService } from "../system-settings/entity-impact-graph-settings.service";
+
+const DEFAULT_ENTITY_IMPACT_GRAPH_CATEGORIES = ["person", "organization", "stock", "commodity"] as const;
+const MAX_CORRELATION_ENTITIES = 50;
+const MAX_CORRELATION_INSTRUMENTS = 50;
+const MIN_CORRELATION_DATA_POINTS = 5;
 
 /**
  * Entity node in the impact graph
@@ -64,6 +71,7 @@ interface GetEntityImpactGraphInput {
   orgId: string;
   startDate: Date;
   endDate: Date;
+  minEntityConfidence?: number;
   minCoOccurrence?: number;
   minCorrelation?: number;
   maxNodes?: number;
@@ -74,37 +82,106 @@ interface GetEntityImpactGraphInput {
 export class EntityImpactGraphService {
   private readonly logger = new Logger(EntityImpactGraphService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+    private readonly entityImpactGraphSettings: EntityImpactGraphSettingsService
+  ) {}
 
   /**
    * Main entry point: Generate entity impact graph data
    * Combines co-occurrence and correlation analysis
    */
   async getEntityImpactGraph(input: GetEntityImpactGraphInput): Promise<EntityImpactGraphData> {
-    const {
+    const { orgId, startDate, endDate } = input;
+
+    let settings: Awaited<ReturnType<EntityImpactGraphSettingsService["getSettings"]>> | null = null;
+    try {
+      settings = await this.entityImpactGraphSettings.getSettings(orgId);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load entity impact graph settings for org ${orgId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+
+    const minEntityConfidence = input.minEntityConfidence ?? settings?.minEntityConfidence ?? 0.5;
+    const minCoOccurrence = input.minCoOccurrence ?? settings?.minCoOccurrence ?? 2;
+    const minCorrelation = input.minCorrelation ?? settings?.minCorrelation ?? 0.3;
+    const maxNodes = input.maxNodes ?? settings?.maxNodes ?? 100;
+    const categories = this.normalizeCategories(
+      input.categories ?? settings?.categories ?? [...DEFAULT_ENTITY_IMPACT_GRAPH_CATEGORIES]
+    );
+    const cacheTtlSeconds = settings?.cacheTtlSeconds ?? 0;
+
+    const loader = async () => {
+      const totalStart = Date.now();
+
+      const coStart = Date.now();
+      const coOccurrences = await this.calculateCoOccurrence(
+        orgId,
+        startDate,
+        endDate,
+        minCoOccurrence,
+        minEntityConfidence
+      );
+      const coMs = Date.now() - coStart;
+
+      const correlationStart = Date.now();
+      const correlations = await this.calculateCorrelation(
+        orgId,
+        startDate,
+        endDate,
+        minCorrelation,
+        minEntityConfidence
+      );
+      const correlationMs = Date.now() - correlationStart;
+
+      const buildStart = Date.now();
+      const graphData = this.buildGraphData(coOccurrences, correlations, categories, maxNodes);
+      const buildMs = Date.now() - buildStart;
+
+      const totalMs = Date.now() - totalStart;
+
+      this.logger.log(
+        `EntityImpactGraph timings org=${orgId} coOccurrenceMs=${coMs} correlationMs=${correlationMs} buildGraphMs=${buildMs} totalMs=${totalMs} nodes=${graphData.nodes.length} links=${graphData.links.length}`
+      );
+
+      return graphData;
+    };
+
+    if (cacheTtlSeconds <= 0) {
+      return loader();
+    }
+
+    const cacheKey = this.buildCacheKey({
       orgId,
       startDate,
       endDate,
-      minCoOccurrence = 2,
-      minCorrelation = 0.3,
-      maxNodes = 100,
-      categories = ["person", "organization", "stock", "commodity"]
-    } = input;
+      minEntityConfidence,
+      minCorrelation,
+      minCoOccurrence,
+      maxNodes,
+      categories
+    });
 
-    this.logger.log(`Generating entity impact graph for org ${orgId} from ${startDate} to ${endDate}`);
+    const lockTtlMs = Math.min(300_000, Math.max(30_000, cacheTtlSeconds * 1000));
 
-    // Step 1: Calculate co-occurrence relationships from news entities
-    const coOccurrences = await this.calculateCoOccurrence(orgId, startDate, endDate, minCoOccurrence);
-
-    // Step 2: Calculate correlation with financial instruments
-    const correlations = await this.calculateCorrelation(orgId, startDate, endDate, minCorrelation);
-
-    // Step 3: Build graph data structure
-    const graphData = this.buildGraphData(coOccurrences, correlations, categories, maxNodes);
-
-    this.logger.log(`Generated graph with ${graphData.nodes.length} nodes and ${graphData.links.length} links`);
-
-    return graphData;
+    try {
+      return await this.cache.wrap(cacheKey, cacheTtlSeconds, loader, {
+        lockTtlMs,
+        maxWaitMs: lockTtlMs,
+        retryDelayMs: 200
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load or store entity impact graph cache for org ${orgId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return loader();
+    }
   }
 
   /**
@@ -115,63 +192,92 @@ export class EntityImpactGraphService {
     orgId: string,
     startDate: Date,
     endDate: Date,
-    minCount: number
+    minCount: number,
+    minEntityConfidence: number
   ): Promise<CoOccurrenceRecord[]> {
-    // Query processed items with entities in the date range
-    const items = await ProcessedItemModel.find({
-      orgId,
-      status: "completed",
-      createdAt: { $gte: startDate, $lte: endDate },
-      "result.entities": { $exists: true, $ne: [] }
-    })
-      .select("_id result.entities")
-      .lean();
-
-    // Build co-occurrence map
-    const coOccurrenceMap = new Map<string, CoOccurrenceRecord>();
-
-    for (const item of items) {
-      const entities = item.result?.entities ?? [];
-      if (entities.length < 2) continue;
-
-      // Generate all pairs of entities within the same article
-      for (let i = 0; i < entities.length; i++) {
-        for (let j = i + 1; j < entities.length; j++) {
-          const entityA = entities[i];
-          const entityB = entities[j];
-
-          // Skip if either entity has low confidence
-          if ((entityA.confidence ?? 0) < 0.5 || (entityB.confidence ?? 0) < 0.5) continue;
-
-          // Create consistent key (alphabetically sorted)
-          const [first, second] =
-            entityA.name < entityB.name ? [entityA, entityB] : [entityB, entityA];
-          const key = `${first.name}::${second.name}`;
-
-          const existing = coOccurrenceMap.get(key);
-          const itemId = item._id?.toString() ?? "";
-
-          if (existing) {
-            existing.count++;
-            if (!existing.articleIds.includes(itemId)) {
-              existing.articleIds.push(itemId);
+    const pipeline = [
+      {
+        $match: {
+          orgId,
+          status: "completed",
+          createdAt: { $gte: startDate, $lte: endDate },
+          "result.entities": { $exists: true, $ne: [] }
+        }
+      },
+      {
+        $project: {
+          itemId: { $toString: "$_id" },
+          entities: {
+            $filter: {
+              input: "$result.entities",
+              as: "e",
+              cond: {
+                $and: [
+                  { $ne: ["$$e.name", null] },
+                  { $ne: ["$$e.name", ""] },
+                  {
+                    $gte: [
+                      {
+                        $ifNull: ["$$e.confidence", 0]
+                      },
+                      minEntityConfidence
+                    ]
+                  }
+                ]
+              }
             }
-          } else {
-            coOccurrenceMap.set(key, {
-              entityA: first.name,
-              entityB: second.name,
-              typeA: first.type,
-              typeB: second.type,
-              count: 1,
-              articleIds: [itemId]
-            });
           }
         }
-      }
-    }
+      },
+      {
+        $match: {
+          $expr: { $gte: [{ $size: "$entities" }, 2] }
+        }
+      },
+      {
+        $project: {
+          itemId: 1,
+          entities: 1,
+          entities2: "$entities"
+        }
+      },
+      { $unwind: { path: "$entities", includeArrayIndex: "i" } },
+      { $unwind: { path: "$entities2", includeArrayIndex: "j" } },
+      { $match: { $expr: { $lt: ["$i", "$j"] } } },
+      { $project: { itemId: 1, a: "$entities", b: "$entities2" } },
+      {
+        $project: {
+          itemId: 1,
+          first: { $cond: [{ $lt: ["$a.name", "$b.name"] }, "$a", "$b"] },
+          second: { $cond: [{ $lt: ["$a.name", "$b.name"] }, "$b", "$a"] }
+        }
+      },
+      {
+        $group: {
+          _id: { entityA: "$first.name", entityB: "$second.name" },
+          typeA: { $first: "$first.type" },
+          typeB: { $first: "$second.type" },
+          count: { $sum: 1 },
+          articleIds: { $addToSet: "$itemId" }
+        }
+      },
+      { $match: { count: { $gte: minCount } } },
+      {
+        $project: {
+          _id: 0,
+          entityA: "$_id.entityA",
+          entityB: "$_id.entityB",
+          typeA: 1,
+          typeB: 1,
+          count: 1,
+          articleIds: 1
+        }
+      },
+      { $sort: { count: -1 } }
+    ];
 
-    // Filter by minimum count and return
-    return Array.from(coOccurrenceMap.values()).filter((record) => record.count >= minCount);
+    const results = await ProcessedItemModel.aggregate(pipeline).allowDiskUse(true);
+    return results as CoOccurrenceRecord[];
   }
 
   /**
@@ -182,12 +288,18 @@ export class EntityImpactGraphService {
     orgId: string,
     startDate: Date,
     endDate: Date,
-    minCorrelation: number
+    minCorrelation: number,
+    minEntityConfidence: number
   ): Promise<CorrelationResult[]> {
     const results: CorrelationResult[] = [];
 
     // Step 1: Get entity mention frequency by date
-    const entityTimeSeries = await this.getEntityMentionTimeSeries(orgId, startDate, endDate);
+    const entityTimeSeries = await this.getEntityMentionTimeSeries(
+      orgId,
+      startDate,
+      endDate,
+      minEntityConfidence
+    );
 
     if (entityTimeSeries.size === 0) {
       this.logger.debug("No entity time series data found");
@@ -202,17 +314,39 @@ export class EntityImpactGraphService {
       return results;
     }
 
+    const entityEntries = Array.from(entityTimeSeries.entries())
+      .map(([entityKey, entityData]) => ({
+        entityKey,
+        entityData,
+        totalMentions: Array.from(entityData.values()).reduce((acc, value) => acc + value, 0)
+      }))
+      .sort((a, b) => b.totalMentions - a.totalMentions)
+      .slice(0, MAX_CORRELATION_ENTITIES);
+
+    const instrumentEntries = Array.from(financialTimeSeries.entries())
+      .map(([instrumentKey, instrumentData]) => ({
+        instrumentKey,
+        instrumentData,
+        points: instrumentData.size
+      }))
+      .sort((a, b) => b.points - a.points)
+      .slice(0, MAX_CORRELATION_INSTRUMENTS);
+
+    this.logger.debug(
+      `Correlation workload: entities=${entityEntries.length}/${entityTimeSeries.size}, instruments=${instrumentEntries.length}/${financialTimeSeries.size}`
+    );
+
     // Step 3: Calculate Pearson correlation for each entity-instrument pair
-    for (const [entityKey, entityData] of entityTimeSeries) {
+    for (const { entityKey, entityData } of entityEntries) {
       const [entityName, entityType] = entityKey.split("::");
 
-      for (const [instrumentKey, instrumentData] of financialTimeSeries) {
+      for (const { instrumentKey, instrumentData } of instrumentEntries) {
         const [instrumentName, instrumentType] = instrumentKey.split("::");
 
         // Align time series by date
         const { alignedX, alignedY } = this.alignTimeSeries(entityData, instrumentData);
 
-        if (alignedX.length < 5) continue; // Need minimum data points
+        if (alignedX.length < MIN_CORRELATION_DATA_POINTS) continue; // Need minimum data points
 
         // Calculate Pearson correlation
         const { correlation, pValue } = this.pearsonCorrelation(alignedX, alignedY);
@@ -336,38 +470,81 @@ export class EntityImpactGraphService {
   private async getEntityMentionTimeSeries(
     orgId: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    minEntityConfidence: number
   ): Promise<Map<string, Map<string, number>>> {
     const timeSeries = new Map<string, Map<string, number>>();
 
-    const items = await ProcessedItemModel.find({
-      orgId,
-      status: "completed",
-      createdAt: { $gte: startDate, $lte: endDate },
-      "result.entities": { $exists: true, $ne: [] }
-    })
-      .select("createdAt result.entities")
-      .lean();
-
-    for (const item of items) {
-      const dateKey = item.createdAt
-        ? new Date(item.createdAt).toISOString().split("T")[0]
-        : new Date().toISOString().split("T")[0];
-      const entities = item.result?.entities ?? [];
-
-      for (const entity of entities) {
-        if ((entity.confidence ?? 0) < 0.5) continue;
-
-        const entityKey = `${entity.name}::${entity.type}`;
-        let entitySeries = timeSeries.get(entityKey);
-
-        if (!entitySeries) {
-          entitySeries = new Map<string, number>();
-          timeSeries.set(entityKey, entitySeries);
+    const pipeline = [
+      {
+        $match: {
+          orgId,
+          status: "completed",
+          createdAt: { $gte: startDate, $lte: endDate },
+          "result.entities": { $exists: true, $ne: [] }
         }
-
-        entitySeries.set(dateKey, (entitySeries.get(dateKey) ?? 0) + 1);
+      },
+      { $unwind: "$result.entities" },
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $ne: ["$result.entities.name", null] },
+              { $ne: ["$result.entities.name", ""] },
+              {
+                $gte: [
+                  {
+                    $ifNull: ["$result.entities.confidence", 0]
+                  },
+                  minEntityConfidence
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        $project: {
+          dateKey: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          name: "$result.entities.name",
+          type: "$result.entities.type"
+        }
+      },
+      {
+        $group: {
+          _id: { name: "$name", type: "$type", dateKey: "$dateKey" },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: { name: "$_id.name", type: "$_id.type" },
+          totalMentions: { $sum: "$count" },
+          series: { $push: { dateKey: "$_id.dateKey", count: "$count" } }
+        }
+      },
+      { $sort: { totalMentions: -1 } },
+      { $limit: MAX_CORRELATION_ENTITIES },
+      {
+        $project: {
+          _id: 0,
+          name: "$_id.name",
+          type: "$_id.type",
+          series: 1
+        }
       }
+    ];
+
+    const aggregated = await ProcessedItemModel.aggregate(pipeline).allowDiskUse(true);
+    for (const row of aggregated as Array<{ name: string; type: string; series: Array<{ dateKey: string; count: number }> }>) {
+      const entityKey = `${row.name}::${row.type}`;
+      const entitySeries = new Map<string, number>();
+      for (const point of row.series ?? []) {
+        entitySeries.set(point.dateKey, point.count);
+      }
+      timeSeries.set(entityKey, entitySeries);
     }
 
     return timeSeries;
@@ -520,5 +697,37 @@ export class EntityImpactGraphService {
     const y = 1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
 
     return 0.5 * (1.0 + sign * y);
+  }
+
+  private normalizeCategories(input: string[]): string[] {
+    const allowed = new Set<string>(DEFAULT_ENTITY_IMPACT_GRAPH_CATEGORIES);
+    const normalized = (input ?? [])
+      .map((entry) => (typeof entry === "string" ? entry.trim().toLowerCase() : ""))
+      .filter((entry) => allowed.has(entry));
+
+    const categories = normalized.length > 0 ? Array.from(new Set(normalized)) : [...DEFAULT_ENTITY_IMPACT_GRAPH_CATEGORIES];
+    categories.sort();
+    return categories;
+  }
+
+  private buildCacheKey(input: {
+    orgId: string;
+    startDate: Date;
+    endDate: Date;
+    minEntityConfidence: number;
+    minCorrelation: number;
+    minCoOccurrence: number;
+    maxNodes: number;
+    categories: string[];
+  }) {
+    const startIso = input.startDate.toISOString();
+    const endIso = input.endDate.toISOString();
+    const confidence = input.minEntityConfidence.toFixed(3);
+    const correlation = input.minCorrelation.toFixed(3);
+    const coOccurrence = Math.round(input.minCoOccurrence);
+    const maxNodes = Math.round(input.maxNodes);
+    const categories = this.normalizeCategories(input.categories).join(",");
+
+    return `entityImpactGraph:data:${input.orgId}:${startIso}:${endIso}:conf=${confidence}:corr=${correlation}:co=${coOccurrence}:max=${maxNodes}:cats=${categories}`;
   }
 }

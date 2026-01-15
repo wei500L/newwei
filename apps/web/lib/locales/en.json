@@ -1182,6 +1182,40 @@
       },
       "save": "Save"
     },
+    "entityImpactGraph": {
+      "saved": "Saved",
+      "saveFailed": "Failed to save",
+      "description": "Configure defaults and performance settings for the dashboard entity impact graph.",
+      "fields": {
+        "enabled": "Enabled",
+        "minEntityConfidence": "Min entity confidence",
+        "minCorrelation": "Min correlation",
+        "minCoOccurrence": "Min co-occurrence",
+        "maxNodes": "Max nodes",
+        "categories": "Categories",
+        "cacheTtlSeconds": "Cache TTL (seconds)"
+      },
+      "hints": {
+        "note": "These settings apply to all users in the org. User-side filters still work per session.",
+        "minEntityConfidence": "Filters out low-confidence entities extracted from content.",
+        "minCorrelation": "Minimum absolute correlation (0-1) between an entity and a financial instrument.",
+        "minCoOccurrence": "Minimum co-occurrence count between entity pairs.",
+        "maxNodes": "Upper bound for returned nodes (affects chart density and performance).",
+        "categories": "Restrict the graph to selected categories.",
+        "cacheTtlSeconds": "0 disables caching; otherwise cache results for N seconds.",
+        "select": "Select categories",
+        "allowedCategories": "Allowed values: {{values}}"
+      },
+      "categories": {
+        "person": "Person",
+        "organization": "Organization",
+        "stock": "Stock",
+        "commodity": "Commodity"
+      },
+      "validation": {
+        "required": "Required"
+      }
+    },
     "newsPrompts": {
       "saved": "Saved",
       "saveFailed": "Failed to save",
@@ -1294,6 +1328,7 @@
       "auditLog": "Audit log",
       "authCache": "Auth cache",
       "crawlClient": "Crawl client",
+      "entityImpactGraph": "Entity impact graph",
       "newsPrompts": "News prompts",
       "llmGateway": "LLM gateway",
       "roles": "Roles",

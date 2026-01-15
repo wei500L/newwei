@@ -623,14 +623,20 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     endpoint: "/crypto_js_spot",
     docUrl: "https://akshare.akfamily.xyz/data/dc/dc.html",
     method: "GET",
-    defaultParams: {
-      symbol: "BTCUSD"
+    filter: {
+      field: "交易品种",
+      equals: "BTCUSD",
+      mode: "best",
+      preferNonZeroField: "最近报价",
+      rankBy: "24小时成交量",
+      rankOrder: "desc"
     },
     valueType: EconomicDataValueType.price,
     defaultUnit: "USD",
     defaultFrequency: REALTIME,
     parser: {
       type: "latest",
+      timestampField: "更新时间",
       valueFields: [
         {
           field: "最近报价",
@@ -776,8 +782,9 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     endpoint: "/fx_spot_quote",
     docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
     method: "GET",
-    defaultParams: {
-      symbol: "USD/CNY"
+    filter: {
+      field: "货币对",
+      equals: "USD/CNY"
     },
     valueType: EconomicDataValueType.fx,
     defaultUnit: "CNY",
@@ -803,8 +810,9 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     endpoint: "/fx_spot_quote",
     docUrl: "https://akshare.akfamily.xyz/data/fx/fx.html",
     method: "GET",
-    defaultParams: {
-      symbol: "EUR/CNY"
+    filter: {
+      field: "货币对",
+      equals: "EUR/CNY"
     },
     valueType: EconomicDataValueType.fx,
     defaultUnit: "CNY",

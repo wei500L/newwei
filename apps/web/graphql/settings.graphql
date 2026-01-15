@@ -95,3 +95,27 @@ mutation UpdateCrawlClientSettings($input: UpdateCrawlClientSettingsInput!) {
     retryBackoffMs
   }
 }
+
+query EntityImpactGraphSettings {
+  entityImpactGraphSettings {
+    enabled
+    minEntityConfidence
+    minCorrelation
+    minCoOccurrence
+    maxNodes
+    categories
+    cacheTtlSeconds
+  }
+}
+
+mutation UpdateEntityImpactGraphSettings($input: UpdateEntityImpactGraphSettingsInput!) {
+  updateEntityImpactGraphSettings(input: $input) {
+    enabled
+    minEntityConfidence
+    minCorrelation
+    minCoOccurrence
+    maxNodes
+    categories
+    cacheTtlSeconds
+  }
+}

@@ -14,6 +14,12 @@ import { useDashboardRangeStore } from "@/store/time-range";
 export interface EntityImpactGraphOptions {
   /** Minimum confidence threshold for entities (0-1), defaults to 0.5 */
   minConfidence?: number;
+  /** Minimum absolute correlation threshold (0-1), defaults to 0.3 */
+  minCorrelation?: number;
+  /** Minimum co-occurrence count between entities, defaults to 2 */
+  minCoOccurrence?: number;
+  /** Restrict graph to categories (person, organization, stock, commodity) */
+  categories?: string[];
   /** Maximum number of nodes to return, defaults to 100 */
   maxNodes?: number;
   /** Poll interval in milliseconds for auto-refresh */
@@ -125,7 +131,7 @@ function transformMetadata(metadata: EntityImpactMetadataModel): EntityImpactMet
  * ```
  */
 export function useEntityImpactGraph(options: EntityImpactGraphOptions = {}): EntityImpactGraphResult {
-  const { minConfidence, maxNodes, pollInterval, skip } = options;
+  const { minConfidence, minCorrelation, minCoOccurrence, maxNodes, categories, pollInterval, skip } = options;
   const { start, end } = useDashboardRangeStore();
 
   const { data, loading, error, refetch } = useGetEntityImpactGraphQuery({
@@ -134,7 +140,10 @@ export function useEntityImpactGraph(options: EntityImpactGraphOptions = {}): En
         startDate: start.toISOString(),
         endDate: end.toISOString(),
         minConfidence,
-        maxNodes
+        minCorrelation,
+        minCoOccurrence,
+        maxNodes,
+        categories
       }
     },
     pollInterval,

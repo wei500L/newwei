@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -729,12 +731,18 @@ export enum EconomicDataValueType {
 }
 
 export type EntityImpactGraphInput = {
+  /** Restrict graph to categories (person, organization, stock, commodity) */
+  categories?: InputMaybe<Array<Scalars['String']['input']>>;
   /** End date for data range */
   endDate?: InputMaybe<Scalars['DateTime']['input']>;
   /** Maximum number of nodes to return */
   maxNodes?: InputMaybe<Scalars['Int']['input']>;
-  /** Minimum confidence threshold for entities (0-1) */
+  /** Minimum co-occurrence count between entities */
+  minCoOccurrence?: InputMaybe<Scalars['Int']['input']>;
+  /** Minimum entity confidence threshold (0-1) */
   minConfidence?: InputMaybe<Scalars['Float']['input']>;
+  /** Minimum absolute correlation threshold (0-1) */
+  minCorrelation?: InputMaybe<Scalars['Float']['input']>;
   /** Start date for data range */
   startDate?: InputMaybe<Scalars['DateTime']['input']>;
 };
@@ -747,6 +755,17 @@ export type EntityImpactGraphModel = {
   metadata: EntityImpactMetadataModel;
   /** Graph nodes (entities and financial instruments) */
   nodes: Array<EntityImpactNodeModel>;
+};
+
+export type EntityImpactGraphSettingsModel = {
+  __typename?: 'EntityImpactGraphSettingsModel';
+  cacheTtlSeconds: Scalars['Int']['output'];
+  categories: Array<Scalars['String']['output']>;
+  enabled: Scalars['Boolean']['output'];
+  maxNodes: Scalars['Int']['output'];
+  minCoOccurrence: Scalars['Int']['output'];
+  minCorrelation: Scalars['Float']['output'];
+  minEntityConfidence: Scalars['Float']['output'];
 };
 
 export type EntityImpactLinkModel = {
@@ -920,6 +939,7 @@ export type Mutation = {
   updateCrawlClientSettings: CrawlClientSettingsModel;
   updateCrawlTaskIngestToItems: CrawlTaskModel;
   updateEconomicDataFetchConfig: EconomicDataFetchConfigModel;
+  updateEntityImpactGraphSettings: EntityImpactGraphSettingsModel;
   updateItem: ItemModel;
   updateNewsPromptConfig: NewsPromptConfigModel;
   updateOrg: OrgModel;
@@ -1059,6 +1079,11 @@ export type MutationUpdateEconomicDataFetchConfigArgs = {
   isEnabled?: InputMaybe<Scalars['Boolean']['input']>;
   repeatCron?: InputMaybe<Scalars['String']['input']>;
   slug: Scalars['String']['input'];
+};
+
+
+export type MutationUpdateEntityImpactGraphSettingsArgs = {
+  input: UpdateEntityImpactGraphSettingsInput;
 };
 
 
@@ -1238,6 +1263,7 @@ export type Query = {
   crawlTasks: CrawlTaskConnection;
   dashboards: Array<DashboardModel>;
   economicDataFetchConfigs: Array<EconomicDataFetchConfigModel>;
+  entityImpactGraphSettings: EntityImpactGraphSettingsModel;
   eventGroups: Array<EventGroupModel>;
   getEconomicData: Array<EconomicDataPointModel>;
   getEconomicDataPaginated: PaginatedEconomicDataPointsModel;
@@ -1541,6 +1567,16 @@ export type UpdateCrawlClientSettingsInput = {
   maxRetries: Scalars['Int']['input'];
   requestTimeoutMs: Scalars['Int']['input'];
   retryBackoffMs: Scalars['Int']['input'];
+};
+
+export type UpdateEntityImpactGraphSettingsInput = {
+  cacheTtlSeconds: Scalars['Int']['input'];
+  categories: Array<Scalars['String']['input']>;
+  enabled: Scalars['Boolean']['input'];
+  maxNodes: Scalars['Int']['input'];
+  minCoOccurrence: Scalars['Int']['input'];
+  minCorrelation: Scalars['Float']['input'];
+  minEntityConfidence: Scalars['Float']['input'];
 };
 
 export type UpdateItemInput = {
@@ -2022,6 +2058,18 @@ export type UpdateCrawlClientSettingsMutationVariables = Exact<{
 
 
 export type UpdateCrawlClientSettingsMutation = { __typename?: 'Mutation', updateCrawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, maxRetries: number, retryBackoffMs: number } };
+
+export type EntityImpactGraphSettingsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type EntityImpactGraphSettingsQuery = { __typename?: 'Query', entityImpactGraphSettings: { __typename?: 'EntityImpactGraphSettingsModel', enabled: boolean, minEntityConfidence: number, minCorrelation: number, minCoOccurrence: number, maxNodes: number, categories: Array<string>, cacheTtlSeconds: number } };
+
+export type UpdateEntityImpactGraphSettingsMutationVariables = Exact<{
+  input: UpdateEntityImpactGraphSettingsInput;
+}>;
+
+
+export type UpdateEntityImpactGraphSettingsMutation = { __typename?: 'Mutation', updateEntityImpactGraphSettings: { __typename?: 'EntityImpactGraphSettingsModel', enabled: boolean, minEntityConfidence: number, minCorrelation: number, minCoOccurrence: number, maxNodes: number, categories: Array<string>, cacheTtlSeconds: number } };
 
 
 export const AlertRulesDocument = gql`
@@ -4814,3 +4862,87 @@ export function useUpdateCrawlClientSettingsMutation(baseOptions?: Apollo.Mutati
 export type UpdateCrawlClientSettingsMutationHookResult = ReturnType<typeof useUpdateCrawlClientSettingsMutation>;
 export type UpdateCrawlClientSettingsMutationResult = Apollo.MutationResult<UpdateCrawlClientSettingsMutation>;
 export type UpdateCrawlClientSettingsMutationOptions = Apollo.BaseMutationOptions<UpdateCrawlClientSettingsMutation, UpdateCrawlClientSettingsMutationVariables>;
+export const EntityImpactGraphSettingsDocument = gql`
+    query EntityImpactGraphSettings {
+  entityImpactGraphSettings {
+    enabled
+    minEntityConfidence
+    minCorrelation
+    minCoOccurrence
+    maxNodes
+    categories
+    cacheTtlSeconds
+  }
+}
+    `;
+
+/**
+ * __useEntityImpactGraphSettingsQuery__
+ *
+ * To run a query within a React component, call `useEntityImpactGraphSettingsQuery` and pass it any options that fit your needs.
+ * When your component renders, `useEntityImpactGraphSettingsQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useEntityImpactGraphSettingsQuery({
+ *   variables: {
+ *   },
+ * });
+ */
+export function useEntityImpactGraphSettingsQuery(baseOptions?: Apollo.QueryHookOptions<EntityImpactGraphSettingsQuery, EntityImpactGraphSettingsQueryVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<EntityImpactGraphSettingsQuery, EntityImpactGraphSettingsQueryVariables>(EntityImpactGraphSettingsDocument, options);
+      }
+export function useEntityImpactGraphSettingsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<EntityImpactGraphSettingsQuery, EntityImpactGraphSettingsQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<EntityImpactGraphSettingsQuery, EntityImpactGraphSettingsQueryVariables>(EntityImpactGraphSettingsDocument, options);
+        }
+export function useEntityImpactGraphSettingsSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<EntityImpactGraphSettingsQuery, EntityImpactGraphSettingsQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<EntityImpactGraphSettingsQuery, EntityImpactGraphSettingsQueryVariables>(EntityImpactGraphSettingsDocument, options);
+        }
+export type EntityImpactGraphSettingsQueryHookResult = ReturnType<typeof useEntityImpactGraphSettingsQuery>;
+export type EntityImpactGraphSettingsLazyQueryHookResult = ReturnType<typeof useEntityImpactGraphSettingsLazyQuery>;
+export type EntityImpactGraphSettingsSuspenseQueryHookResult = ReturnType<typeof useEntityImpactGraphSettingsSuspenseQuery>;
+export type EntityImpactGraphSettingsQueryResult = Apollo.QueryResult<EntityImpactGraphSettingsQuery, EntityImpactGraphSettingsQueryVariables>;
+export const UpdateEntityImpactGraphSettingsDocument = gql`
+    mutation UpdateEntityImpactGraphSettings($input: UpdateEntityImpactGraphSettingsInput!) {
+  updateEntityImpactGraphSettings(input: $input) {
+    enabled
+    minEntityConfidence
+    minCorrelation
+    minCoOccurrence
+    maxNodes
+    categories
+    cacheTtlSeconds
+  }
+}
+    `;
+export type UpdateEntityImpactGraphSettingsMutationFn = Apollo.MutationFunction<UpdateEntityImpactGraphSettingsMutation, UpdateEntityImpactGraphSettingsMutationVariables>;
+
+/**
+ * __useUpdateEntityImpactGraphSettingsMutation__
+ *
+ * To run a mutation, you first call `useUpdateEntityImpactGraphSettingsMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useUpdateEntityImpactGraphSettingsMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [updateEntityImpactGraphSettingsMutation, { data, loading, error }] = useUpdateEntityImpactGraphSettingsMutation({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useUpdateEntityImpactGraphSettingsMutation(baseOptions?: Apollo.MutationHookOptions<UpdateEntityImpactGraphSettingsMutation, UpdateEntityImpactGraphSettingsMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<UpdateEntityImpactGraphSettingsMutation, UpdateEntityImpactGraphSettingsMutationVariables>(UpdateEntityImpactGraphSettingsDocument, options);
+      }
+export type UpdateEntityImpactGraphSettingsMutationHookResult = ReturnType<typeof useUpdateEntityImpactGraphSettingsMutation>;
+export type UpdateEntityImpactGraphSettingsMutationResult = Apollo.MutationResult<UpdateEntityImpactGraphSettingsMutation>;
+export type UpdateEntityImpactGraphSettingsMutationOptions = Apollo.BaseMutationOptions<UpdateEntityImpactGraphSettingsMutation, UpdateEntityImpactGraphSettingsMutationVariables>;

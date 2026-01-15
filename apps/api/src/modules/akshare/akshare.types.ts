@@ -2,6 +2,18 @@ import type { EconomicDataFrequency, EconomicDataValueType } from "@prisma/clien
 
 export type AkshareRequestMethod = "GET" | "POST";
 
+export type AksharePayloadFilterMode = "first" | "best" | "all";
+export type AksharePayloadFilterOrder = "asc" | "desc";
+
+export interface AksharePayloadFilterConfig {
+  field: string;
+  equals: string;
+  mode?: AksharePayloadFilterMode;
+  preferNonZeroField?: string;
+  rankBy?: string;
+  rankOrder?: AksharePayloadFilterOrder;
+}
+
 export interface AkshareDataFieldConfig {
   field: string;
   label?: string;
@@ -65,6 +77,7 @@ export interface AkshareDataItemDefinition {
   docUrl: string;
   method?: AkshareRequestMethod;
   defaultParams?: Record<string, string | number>;
+  filter?: AksharePayloadFilterConfig;
   valueType: EconomicDataValueType;
   defaultUnit?: string;
   defaultFrequency: EconomicDataFrequency;
@@ -77,6 +90,7 @@ export interface AkshareDataItemMetadata {
   defaultParams?: Record<string, string | number> | null;
   parser?: AkshareParserConfig;
   tags?: string[];
+  filter?: AksharePayloadFilterConfig | null;
 }
 
 export interface AkshareDataItemConfig {
@@ -90,6 +104,7 @@ export interface AkshareDataItemConfig {
   docUrl?: string | null;
   method: AkshareRequestMethod;
   defaultParams?: Record<string, string | number> | null;
+  filter?: AksharePayloadFilterConfig | null;
   valueType: EconomicDataValueType;
   defaultUnit?: string | null;
   defaultFrequency: EconomicDataFrequency;
