@@ -1,7 +1,24 @@
 "use client";
 
 import { gql, useApolloClient, useMutation } from "@apollo/client";
-import { Alert, Badge, Button, Card, Col, Input, List, Modal, Row, Space, Spin, Tag, Typography } from "antd";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Col,
+  Descriptions,
+  Divider,
+  Input,
+  List,
+  Modal,
+  Row,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+  message
+} from "antd";
 import type { EChartsOption } from "echarts";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -13,6 +30,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import {
   AlertEventsStreamDocument,
+  AlertMetricProvider,
   useAlertEventReplayLazyQuery,
   useAlertEventsQuery,
   useAlertRuleTuningSuggestionQuery,
@@ -60,6 +78,9 @@ interface UpdateAlertEventStatusVariables {
     note?: string | null;
   };
 }
+
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+type LocaleCode = ReturnType<typeof resolveLocale>;
 
 const buildThresholdSummary = (
   operator: string | null | undefined,
@@ -160,12 +181,404 @@ const toStringValue = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const safeJsonStringify = (value: unknown): string => {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
+const formatFixed = (value: unknown, digits = 4): string => {
+  const numberValue = toNumber(value);
+  return typeof numberValue === "number" ? numberValue.toFixed(digits) : "";
+};
+
+const formatPercent = (value: unknown, digits = 1): string => {
+  const numberValue = toNumber(value);
+  return typeof numberValue === "number" ? `${(numberValue * 100).toFixed(digits)}%` : "";
+};
+
 const DetailRow = ({ label, children }: { label: string; children: ReactNode }) => (
   <div>
     <Typography.Text type="secondary">{label}</Typography.Text>
     <div>{children}</div>
   </div>
 );
+
+const EconomicAnomalyEvidence = ({
+  context,
+  locale,
+  t
+}: {
+  context: Record<string, unknown> | null;
+  locale: LocaleCode;
+  t: TranslateFn;
+}) => {
+  if (!context) {
+    return (
+      <Typography.Text type="secondary">
+        {t("alerts.center.evidence.empty", { defaultValue: "No evidence available." })}
+      </Typography.Text>
+    );
+  }
+
+  const itemName = toStringValue(context.itemName);
+  const recordedAt =
+    typeof context.recordedAt === "string" || typeof context.recordedAt === "number"
+      ? context.recordedAt
+      : undefined;
+  const recordedAtLabel = recordedAt
+    ? formatDateTime(recordedAt, locale, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZoneName: "short"
+      })
+    : "";
+
+  const model = isRecord(context.model) ? context.model : null;
+  const modelKind = toStringValue(model?.kind);
+  const observed = toNumber(context.observed);
+  const expected = toNumber(context.expected);
+  const lower = toNumber(context.lower);
+  const upper = toNumber(context.upper);
+  const sigma = toNumber(context.sigma);
+  const residual = toNumber(context.residual);
+  const score = toNumber(context.score);
+  const fallback = isRecord(context.fallback) ? context.fallback : null;
+
+  const scoreColor = typeof score === "number" ? (score >= 3 ? "red" : score >= 2 ? "orange" : "green") : "default";
+
+  return (
+    <Space direction="vertical" size={8} style={{ width: "100%" }}>
+      <Space size={[6, 6]} wrap>
+        {itemName ? <Tag>{itemName}</Tag> : null}
+        {modelKind ? <Tag color="blue">{modelKind}</Tag> : null}
+        {typeof score === "number" ? <Tag color={scoreColor}>{`score ${score.toFixed(3)}`}</Tag> : null}
+        {recordedAtLabel ? <Tag>{recordedAtLabel}</Tag> : null}
+      </Space>
+
+      {typeof expected === "number" && typeof sigma === "number" ? (
+        <Descriptions size="small" bordered column={2}>
+          <Descriptions.Item label={t("alerts.center.evidence.observed", { defaultValue: "Observed" })}>
+            {typeof observed === "number" ? observed : t("common.notAvailable")}
+          </Descriptions.Item>
+          <Descriptions.Item label={t("alerts.center.evidence.expected", { defaultValue: "Expected" })}>
+            {expected}
+          </Descriptions.Item>
+          <Descriptions.Item label={t("alerts.center.evidence.residual", { defaultValue: "Residual" })}>
+            {typeof residual === "number" ? residual : t("common.notAvailable")}
+          </Descriptions.Item>
+          <Descriptions.Item label={t("alerts.center.evidence.sigma", { defaultValue: "Sigma" })}>
+            {sigma}
+          </Descriptions.Item>
+          <Descriptions.Item label={t("alerts.center.evidence.ci", { defaultValue: "CI" })} span={2}>
+            {typeof lower === "number" && typeof upper === "number"
+              ? `[${lower}, ${upper}]`
+              : t("common.notAvailable")}
+          </Descriptions.Item>
+        </Descriptions>
+      ) : fallback ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("alerts.center.evidence.fallback", { defaultValue: "Model service unavailable. Using fallback detector." })}
+          description={safeJsonStringify(fallback)}
+        />
+      ) : (
+        <Typography.Text type="secondary">
+          {t("alerts.center.evidence.empty", { defaultValue: "No evidence available." })}
+        </Typography.Text>
+      )}
+    </Space>
+  );
+};
+
+const EntitySentimentEvidence = ({
+  context,
+  locale,
+  t
+}: {
+  context: Record<string, unknown> | null;
+  locale: LocaleCode;
+  t: TranslateFn;
+}) => {
+  if (!context) {
+    return (
+      <Typography.Text type="secondary">
+        {t("alerts.center.evidence.empty", { defaultValue: "No evidence available." })}
+      </Typography.Text>
+    );
+  }
+
+  const entityName = toStringValue(context.entityName);
+  const entityType = toStringValue(context.entityType);
+  const minEntityConfidence = toNumber(context.minEntityConfidence);
+  const z = toNumber(context.z);
+
+  const window = isRecord(context.window) ? context.window : null;
+  const baseline = isRecord(context.baseline) ? context.baseline : null;
+
+  const windowStart = toStringValue(window?.start);
+  const windowEnd = toStringValue(window?.end);
+  const baselineStart = toStringValue(baseline?.start);
+  const baselineEnd = toStringValue(baseline?.end);
+
+  const windowMinutes = toNumber(window?.minutes);
+  const baselineMinutes = toNumber(baseline?.minutes);
+
+  const windowTotal = toNumber(window?.total);
+  const windowNegative = toNumber(window?.negative);
+  const windowNegativeRatio = toNumber(window?.negativeRatio);
+  const baselineTotal = toNumber(baseline?.total);
+  const baselineNegative = toNumber(baseline?.negative);
+  const baselineNegativeRatio = toNumber(baseline?.negativeRatio);
+
+  const evidenceItems = Array.isArray(context.evidence) ? context.evidence : [];
+
+  const formatWindowLabel = (start: string | undefined, end: string | undefined): string => {
+    if (!start || !end) return "";
+    return `${formatDateTime(start, locale, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "short"
+    })} → ${formatDateTime(end, locale, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "short"
+    })}`;
+  };
+
+  return (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Space size={[6, 6]} wrap>
+        {entityName ? <Tag>{entityName}</Tag> : null}
+        {entityType ? <Tag color="blue">{entityType}</Tag> : null}
+        {typeof z === "number" ? <Tag color={z >= 3 ? "red" : z >= 2 ? "orange" : "green"}>{`z ${z.toFixed(3)}`}</Tag> : null}
+        {typeof minEntityConfidence === "number" ? <Tag>{`minConf ${minEntityConfidence.toFixed(2)}`}</Tag> : null}
+      </Space>
+
+      <Descriptions size="small" bordered column={1}>
+        <Descriptions.Item label={t("alerts.center.evidence.window", { defaultValue: "Window" })}>
+          <Space direction="vertical" size={0}>
+            {windowMinutes ? (
+              <Typography.Text type="secondary">{`${windowMinutes} min`}</Typography.Text>
+            ) : null}
+            {windowStart && windowEnd ? (
+              <Typography.Text type="secondary">{formatWindowLabel(windowStart, windowEnd)}</Typography.Text>
+            ) : null}
+            <Typography.Text>
+              {t("alerts.center.evidence.negRatio", {
+                defaultValue: "Negative ratio {{ratio}} ({{neg}} / {{total}})",
+                ratio: formatPercent(windowNegativeRatio, 1) || t("common.notAvailable"),
+                neg: typeof windowNegative === "number" ? windowNegative : t("common.notAvailable"),
+                total: typeof windowTotal === "number" ? windowTotal : t("common.notAvailable")
+              })}
+            </Typography.Text>
+          </Space>
+        </Descriptions.Item>
+        <Descriptions.Item label={t("alerts.center.evidence.baseline", { defaultValue: "Baseline" })}>
+          <Space direction="vertical" size={0}>
+            {baselineMinutes ? (
+              <Typography.Text type="secondary">{`${baselineMinutes} min`}</Typography.Text>
+            ) : null}
+            {baselineStart && baselineEnd ? (
+              <Typography.Text type="secondary">{formatWindowLabel(baselineStart, baselineEnd)}</Typography.Text>
+            ) : null}
+            <Typography.Text>
+              {t("alerts.center.evidence.negRatio", {
+                defaultValue: "Negative ratio {{ratio}} ({{neg}} / {{total}})",
+                ratio: formatPercent(baselineNegativeRatio, 1) || t("common.notAvailable"),
+                neg: typeof baselineNegative === "number" ? baselineNegative : t("common.notAvailable"),
+                total: typeof baselineTotal === "number" ? baselineTotal : t("common.notAvailable")
+              })}
+            </Typography.Text>
+          </Space>
+        </Descriptions.Item>
+      </Descriptions>
+
+      {evidenceItems.length > 0 ? (
+        <>
+          <Divider style={{ margin: "8px 0" }} />
+          <Typography.Text type="secondary">
+            {t("alerts.center.evidence.evidenceItems", { defaultValue: "Evidence items" })}
+          </Typography.Text>
+          <List
+            size="small"
+            dataSource={evidenceItems}
+            renderItem={(item, index) => {
+              const record = isRecord(item) ? item : null;
+              const itemMetaId = toStringValue(record?.itemMetaId);
+              const title = toStringValue(record?.title) ?? t("common.notAvailable");
+              const source = toStringValue(record?.source);
+              const summary = toStringValue(record?.summary);
+              const createdAt = toStringValue(record?.createdAt);
+              const publishedAt = toStringValue(record?.publishedAt);
+              const timeLabel = publishedAt || createdAt;
+              const timeText = timeLabel
+                ? formatDateTime(timeLabel, locale, {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    timeZoneName: "short"
+                  })
+                : "";
+
+              return (
+                <List.Item key={`${itemMetaId ?? "item"}-${index}`}>
+                  <Space direction="vertical" size={0} style={{ width: "100%" }}>
+                    <Typography.Text>
+                      {itemMetaId ? <Link href={`/items/${itemMetaId}`}>{title}</Link> : title}
+                    </Typography.Text>
+                    <Space size="small" wrap>
+                      {source ? <Tag>{source}</Tag> : null}
+                      {timeText ? <Typography.Text type="secondary">{timeText}</Typography.Text> : null}
+                    </Space>
+                    {summary ? <Typography.Text type="secondary">{summary}</Typography.Text> : null}
+                  </Space>
+                </List.Item>
+              );
+            }}
+          />
+        </>
+      ) : (
+        <Typography.Text type="secondary">
+          {t("alerts.center.evidence.noEvidenceItems", { defaultValue: "No evidence items." })}
+        </Typography.Text>
+      )}
+    </Space>
+  );
+};
+
+const EntityAssociationEvidence = ({
+  context,
+  locale,
+  t,
+  onOpenEvent
+}: {
+  context: Record<string, unknown> | null;
+  locale: LocaleCode;
+  t: TranslateFn;
+  onOpenEvent: (eventId: string) => void;
+}) => {
+  if (!context) {
+    return (
+      <Typography.Text type="secondary">
+        {t("alerts.center.evidence.empty", { defaultValue: "No evidence available." })}
+      </Typography.Text>
+    );
+  }
+
+  const seed = isRecord(context.seed) ? context.seed : null;
+  const seedName = toStringValue(seed?.name);
+  const seedType = toStringValue(seed?.type);
+
+  const sourceEvent = isRecord(context.sourceEvent) ? context.sourceEvent : null;
+  const sourceEventId = toStringValue(sourceEvent?.id);
+  const sourceEventTriggeredAt = toStringValue(sourceEvent?.triggeredAt);
+  const sourceEventMetricValue = toNumber(sourceEvent?.metricValue);
+  const sourceEventStatus = toStringValue(sourceEvent?.status);
+  const sourceTriggeredLabel = sourceEventTriggeredAt
+    ? formatDateTime(sourceEventTriggeredAt, locale, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZoneName: "short"
+      })
+    : "";
+
+  const targets = Array.isArray(context.targets) ? context.targets : [];
+
+  return (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Space size={[6, 6]} wrap>
+        {seedName ? <Tag>{seedName}</Tag> : null}
+        {seedType ? <Tag color="blue">{seedType}</Tag> : null}
+      </Space>
+
+      {sourceEventId ? (
+        <Descriptions size="small" bordered column={1}>
+          <Descriptions.Item label={t("alerts.center.evidence.sourceEvent", { defaultValue: "Source event" })}>
+            <Space direction="vertical" size={2}>
+              <Space size="small" wrap>
+                <Tag>{sourceEventId}</Tag>
+                {sourceEventStatus ? <Tag>{sourceEventStatus}</Tag> : null}
+                {typeof sourceEventMetricValue === "number" ? (
+                  <Tag>{`metric ${sourceEventMetricValue}`}</Tag>
+                ) : null}
+              </Space>
+              {sourceTriggeredLabel ? (
+                <Typography.Text type="secondary">{sourceTriggeredLabel}</Typography.Text>
+              ) : null}
+              <Button size="small" onClick={() => onOpenEvent(sourceEventId)}>
+                {t("alerts.center.evidence.openSourceEvent", { defaultValue: "Open source event" })}
+              </Button>
+            </Space>
+          </Descriptions.Item>
+        </Descriptions>
+      ) : (
+        <Typography.Text type="secondary">
+          {t("alerts.center.evidence.sourceEventMissing", { defaultValue: "No source event." })}
+        </Typography.Text>
+      )}
+
+      <Divider style={{ margin: "8px 0" }} />
+      <Typography.Text type="secondary">
+        {t("alerts.center.evidence.targets", { defaultValue: "Associated targets" })}
+      </Typography.Text>
+      <List
+        size="small"
+        dataSource={targets}
+        locale={{
+          emptyText: t("alerts.center.evidence.targetsEmpty", { defaultValue: "No targets." })
+        }}
+        renderItem={(item, index) => {
+          const record = isRecord(item) ? item : null;
+          const name = toStringValue(record?.name) ?? t("common.notAvailable");
+          const type = toStringValue(record?.type);
+          const relationType = toStringValue(record?.relationType);
+          const score = toNumber(record?.score);
+          const weight = toNumber(record?.weight);
+          const confidence = toNumber(record?.confidence);
+          return (
+            <List.Item key={`${toStringValue(record?.entityId) ?? "entity"}-${index}`}>
+              <Space direction="vertical" size={0} style={{ width: "100%" }}>
+                <Space size="small" wrap>
+                  <Typography.Text>{name}</Typography.Text>
+                  {type ? <Tag color="blue">{type}</Tag> : null}
+                  {relationType ? <Tag>{relationType}</Tag> : null}
+                  {typeof score === "number" ? <Tag color="orange">{`score ${score.toFixed(3)}`}</Tag> : null}
+                </Space>
+                <Typography.Text type="secondary">
+                  {t("alerts.center.evidence.targetMeta", {
+                    defaultValue: "weight {{weight}} · conf {{conf}}",
+                    weight: formatFixed(weight, 3) || t("common.notAvailable"),
+                    conf: formatFixed(confidence, 3) || t("common.notAvailable")
+                  })}
+                </Typography.Text>
+              </Space>
+            </List.Item>
+          );
+        }}
+      />
+    </Space>
+  );
+};
 
 export function AlertCenterContent() {
   const { t, i18n } = useTranslation();
@@ -174,6 +587,8 @@ export function AlertCenterContent() {
   const { data: session } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageAlerts = permissions.includes("alerts.manage");
+  const [messageApi, messageContext] = message.useMessage();
+  const [eventsLimit, setEventsLimit] = useState(20);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [feedbackNote, setFeedbackNote] = useState<string>("");
   const pathname = usePathname();
@@ -181,12 +596,13 @@ export function AlertCenterContent() {
   const searchParams = useSearchParams();
   const eventParam = searchParams.get("eventId");
   const [replayOpen, setReplayOpen] = useState(false);
+  const [rawContextOpen, setRawContextOpen] = useState(false);
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const [loadReplay, { data: replayData, loading: replayLoading, error: replayError }] =
     useAlertEventReplayLazyQuery();
 
   const { data: eventsData, loading: eventsLoading, refetch: refetchEvents } = useAlertEventsQuery({
-    variables: { limit: 20 }
+    variables: { limit: eventsLimit }
   });
   const selectedRuleId = selectedEventId
     ? eventsData?.alertEvents?.find((event) => event.id === selectedEventId)?.ruleId ?? null
@@ -217,9 +633,9 @@ export function AlertCenterContent() {
       });
     return () => sub.unsubscribe();
   }, [client, refetchEvents]);
-  const events = eventsData?.alertEvents ?? [];
+  const events = eventsData?.alertEvents;
   const sortedEvents = useMemo(() => {
-    return [...events].sort((a, b) => {
+    return [...(events ?? [])].sort((a, b) => {
       const aTime = new Date(a.triggeredAt).getTime();
       const bTime = new Date(b.triggeredAt).getTime();
       return bTime - aTime;
@@ -248,8 +664,27 @@ export function AlertCenterContent() {
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
   };
 
+  const handleOpenEvent = async (eventId: string) => {
+    if (!eventId) {
+      return;
+    }
+    const exists = sortedEvents.some((event) => event.id === eventId);
+    if (!exists) {
+      const nextLimit = Math.max(eventsLimit, 100);
+      setEventsLimit(nextLimit);
+      try {
+        await refetchEvents({ limit: nextLimit });
+      } catch (error) {
+        messageApi.error(
+          error instanceof Error ? error.message : t("common.error.unexpected", { defaultValue: "Unexpected error" })
+        );
+      }
+    }
+    handleSelectEvent(eventId);
+  };
+
   const selectedEvent = useMemo(
-    () => events.find((event) => event.id === selectedEventId) ?? null,
+    () => (events ?? []).find((event) => event.id === selectedEventId) ?? null,
     [events, selectedEventId]
   );
 
@@ -278,10 +713,10 @@ export function AlertCenterContent() {
     replayData?.alertEventReplay && replayData.alertEventReplay.eventId === selectedEvent?.id
       ? replayData.alertEventReplay
       : null;
-  const replayPoints = replay?.points ?? [];
-  const replayUnit = replay?.unit ?? null;
+  const replayPoints = replay?.points;
+  const replayUnit = replay?.unit;
   const replayOption = useMemo(() => {
-    if (!replay || replayPoints.length === 0) {
+    if (!replay || !replayPoints || replayPoints.length === 0) {
       return {};
     }
 
@@ -299,7 +734,12 @@ export function AlertCenterContent() {
         ? selectedEvent.thresholdUpper
         : null;
 
-    const markLineData: any[] = [];
+    interface MarkLineDataItem {
+      yAxis: number;
+      lineStyle?: { type?: string; color?: string };
+      label?: { formatter?: string };
+    }
+    const markLineData: MarkLineDataItem[] = [];
     if (operator && ["gt", "gte", "lt", "lte", "eq"].includes(operator) && thresholdValue !== null) {
       markLineData.push({
         yAxis: thresholdValue,
@@ -340,7 +780,7 @@ export function AlertCenterContent() {
                 markLine: {
                   symbol: "none",
                   data: markLineData
-                } as any
+                }
               }
             : {})
         }
@@ -381,18 +821,27 @@ export function AlertCenterContent() {
     if (!selectedEvent || !canManageAlerts) {
       return;
     }
-    await updateEventStatus({
-      variables: {
-        input: {
-          eventId: selectedEvent.id,
-          status,
-          note: feedbackNote?.trim() ? feedbackNote.trim() : null
+    try {
+      await updateEventStatus({
+        variables: {
+          input: {
+            eventId: selectedEvent.id,
+            status,
+            note: feedbackNote?.trim() ? feedbackNote.trim() : null
+          }
         }
+      });
+      messageApi.success(
+        t("alerts.center.detail.feedbackUpdated", { defaultValue: "Feedback updated." })
+      );
+      await refetchEvents();
+      if (canManageAlerts && selectedEvent.ruleId) {
+        await refetchTuning({ ruleId: selectedEvent.ruleId, windowDays: 30 });
       }
-    });
-    await refetchEvents();
-    if (canManageAlerts && selectedEvent.ruleId) {
-      await refetchTuning({ ruleId: selectedEvent.ruleId, windowDays: 30 });
+    } catch (error) {
+      messageApi.error(
+        error instanceof Error ? error.message : t("common.error.unexpected", { defaultValue: "Unexpected error" })
+      );
     }
   };
 
@@ -420,8 +869,10 @@ export function AlertCenterContent() {
     .filter((entry) => entry.value !== null && entry.value !== undefined && entry.value !== "");
   const excludedContextKeys = new Set([
     ...objectKeys.map((entry) => entry.key),
+    "feedback",
     "latest",
     "previous",
+    "metricSlug",
     "threshold",
     "lower",
     "upper",
@@ -436,6 +887,21 @@ export function AlertCenterContent() {
     "recordedAt",
     "itemName"
   ]);
+  if (selectedEvent?.metricProvider === AlertMetricProvider.EconomicAnomaly) {
+    ["observed", "expected", "sigma", "residual", "score", "model", "diagnostics", "fallback"].forEach((key) =>
+      excludedContextKeys.add(key)
+    );
+  }
+  if (selectedEvent?.metricProvider === AlertMetricProvider.EntitySentiment) {
+    ["entityName", "entityType", "window", "baseline", "z", "minEntityConfidence", "evidence"].forEach((key) =>
+      excludedContextKeys.add(key)
+    );
+  }
+  if (selectedEvent?.metricProvider === AlertMetricProvider.EntityAssociation) {
+    ["seed", "sourceEvent", "targets", "minAssociationWeight", "maxTargets"].forEach((key) =>
+      excludedContextKeys.add(key)
+    );
+  }
   const additionalContext = contextEntries.filter(([key]) => !excludedContextKeys.has(key));
 
   const buildContextSummary = (input: Record<string, unknown> | null) => {
@@ -478,6 +944,35 @@ export function AlertCenterContent() {
     toStringValue(context?.sourceField);
   const evidenceSourceDoc = toStringValue(context?.sourceDocUrl);
 
+  const feedback =
+    context?.feedback && typeof context.feedback === "object" && !Array.isArray(context.feedback)
+      ? (context.feedback as Record<string, unknown>)
+      : null;
+  const feedbackStatus = toStringValue(feedback?.status);
+  const feedbackUpdatedAt =
+    typeof feedback?.updatedAt === "string" || typeof feedback?.updatedAt === "number"
+      ? feedback.updatedAt
+      : undefined;
+  const feedbackUpdatedAtLabel = feedbackUpdatedAt
+    ? formatDateTime(feedbackUpdatedAt, locale, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZoneName: "short"
+      })
+    : "";
+  const feedbackUpdatedById = toStringValue(feedback?.updatedById);
+  const feedbackStoredNote = typeof feedback?.note === "string" ? feedback.note : null;
+  const reviewStatus =
+    feedbackStatus === "confirmed" || feedbackStatus === "ignored"
+      ? feedbackStatus
+      : selectedEvent?.status === "confirmed" || selectedEvent?.status === "ignored"
+        ? selectedEvent.status
+        : null;
+
   const thresholdSummary = selectedEvent
     ? buildThresholdSummary(
         selectedEvent.operator,
@@ -488,8 +983,23 @@ export function AlertCenterContent() {
       )
     : t("common.notAvailable");
 
+  const handleCopyRawContext = async () => {
+    if (!context) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(safeJsonStringify(context));
+      messageApi.success(t("alerts.center.contextCopied", { defaultValue: "Copied." }));
+    } catch (error) {
+      messageApi.error(
+        error instanceof Error ? error.message : t("alerts.center.contextCopyFailed", { defaultValue: "Copy failed." })
+      );
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
+      {messageContext}
       <Space align="center" size="middle">
         <Typography.Title level={4} style={{ margin: 0 }}>
           {t("alerts.center.title", { defaultValue: "Alert Center" })}
@@ -557,11 +1067,23 @@ export function AlertCenterContent() {
                   event.thresholdUpper ?? toNumber(eventContext?.upper),
                   t
                 );
+                const seed = isRecord(eventContext?.seed) ? (eventContext?.seed as Record<string, unknown>) : null;
                 const eventEvidenceSource =
                   toStringValue(eventContext?.sourceName) ??
                   toStringValue(eventContext?.sourceEndpoint) ??
                   toStringValue(eventContext?.sourceField) ??
-                  toStringValue(eventContext?.sourceFunction);
+                  toStringValue(eventContext?.sourceFunction) ??
+                  (event.metricProvider === AlertMetricProvider.EconomicAnomaly
+                    ? toStringValue(eventContext?.itemName) ?? toStringValue(event.metricSlug)
+                    : null) ??
+                  (event.metricProvider === AlertMetricProvider.EntitySentiment
+                    ? toStringValue(eventContext?.entityName) ?? toStringValue(event.metricSlug)
+                    : null) ??
+                  (event.metricProvider === AlertMetricProvider.EntityAssociation
+                    ? toStringValue(seed?.name) ?? toStringValue(event.metricSlug)
+                    : null);
+                const changeLabel =
+                  typeof event.changePercent === "number" ? `${event.changePercent.toFixed(2)}%` : t("common.notAvailable");
                 return (
                   <List.Item
                     onClick={() => handleSelectEvent(event.id)}
@@ -569,7 +1091,7 @@ export function AlertCenterContent() {
                     style={{ cursor: "pointer" }}
                     role="button"
                     tabIndex={0}
-                    aria-selected={isSelected}
+                    aria-pressed={isSelected}
                     onKeyDown={(eventKey) => {
                       if (eventKey.key === "Enter" || eventKey.key === " ") {
                         eventKey.preventDefault();
@@ -599,7 +1121,7 @@ export function AlertCenterContent() {
                           <Typography.Text type="secondary">
                             {t("alerts.events.metrics", {
                               value: event.metricValue,
-                              change: event.changePercent ?? t("common.notAvailable")
+                              change: changeLabel
                             })}
                           </Typography.Text>
                           <Typography.Text type="secondary">
@@ -730,6 +1252,19 @@ export function AlertCenterContent() {
                     ) : null}
                   </Space>
                 </DetailRow>
+                <DetailRow label={t("alerts.center.detail.evidence", { defaultValue: "Evidence" })}>
+                  {selectedEvent.metricProvider === AlertMetricProvider.EconomicAnomaly ? (
+                    <EconomicAnomalyEvidence context={context} locale={locale} t={t} />
+                  ) : selectedEvent.metricProvider === AlertMetricProvider.EntitySentiment ? (
+                    <EntitySentimentEvidence context={context} locale={locale} t={t} />
+                  ) : selectedEvent.metricProvider === AlertMetricProvider.EntityAssociation ? (
+                    <EntityAssociationEvidence context={context} locale={locale} t={t} onOpenEvent={(eventId) => void handleOpenEvent(eventId)} />
+                  ) : (
+                    <Typography.Text type="secondary">
+                      {t("alerts.center.evidence.unsupported", { defaultValue: "No structured evidence for this provider." })}
+                    </Typography.Text>
+                  )}
+                </DetailRow>
                 <DetailRow label={t("alerts.center.detail.replay", { defaultValue: "Replay" })}>
                   <>
                     <Space size="small">
@@ -765,7 +1300,7 @@ export function AlertCenterContent() {
                           description={replayError.message}
                         />
                       ) : replay ? (
-                        replayPoints.length > 0 ? (
+                        replayPoints && replayPoints.length > 0 ? (
                           <DashboardChart option={replayOption} theme={echartsTheme} height={320} />
                         ) : (
                           <ChartEmptyState
@@ -827,43 +1362,80 @@ export function AlertCenterContent() {
                   </Space>
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.feedback", { defaultValue: "Feedback" })}>
-                  {canManageAlerts ? (
-                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                      <Input.TextArea
-                        value={feedbackNote}
-                        onChange={(event) => setFeedbackNote(event.target.value)}
-                        rows={2}
-                        placeholder={t("alerts.center.detail.feedbackNotePlaceholder", {
-                          defaultValue: "Optional note (why confirmed/ignored)"
-                        })}
-                      />
-                      <Space>
-                        <Button
-                          type="primary"
-                          size="small"
-                          loading={updatingStatus}
-                          disabled={selectedEvent.status === "confirmed"}
-                          onClick={() => void handleEventStatusUpdate("confirmed")}
-                        >
-                          {t("alerts.center.detail.confirm", { defaultValue: "Confirm" })}
-                        </Button>
-                        <Button
-                          size="small"
-                          loading={updatingStatus}
-                          disabled={selectedEvent.status === "ignored"}
-                          onClick={() => void handleEventStatusUpdate("ignored")}
-                        >
-                          {t("alerts.center.detail.ignore", { defaultValue: "Ignore" })}
-                        </Button>
-                      </Space>
+                  <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                    <Space size="small" wrap>
+                      {reviewStatus ? (
+                        <Tag color={reviewStatus === "confirmed" ? "green" : "default"}>{reviewStatus}</Tag>
+                      ) : (
+                        <Tag>
+                          {t("alerts.center.detail.unreviewed", { defaultValue: "unreviewed" })}
+                        </Tag>
+                      )}
+                      {feedbackUpdatedAtLabel ? (
+                        <Typography.Text type="secondary">
+                          {t("alerts.center.detail.feedbackUpdatedAt", {
+                            defaultValue: "Updated {{time}}",
+                            time: feedbackUpdatedAtLabel
+                          })}
+                        </Typography.Text>
+                      ) : null}
+                      {feedbackUpdatedById ? (
+                        <Typography.Text type="secondary">
+                          {t("alerts.center.detail.feedbackUpdatedBy", {
+                            defaultValue: "By {{user}}",
+                            user: feedbackUpdatedById
+                          })}
+                        </Typography.Text>
+                      ) : null}
                     </Space>
-                  ) : (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.feedbackAdminOnly", {
-                        defaultValue: "Feedback actions are available to administrators only."
-                      })}
-                    </Typography.Text>
-                  )}
+                    {feedbackStoredNote ? (
+                      <Typography.Text>{feedbackStoredNote}</Typography.Text>
+                    ) : reviewStatus ? (
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.feedbackEmpty", { defaultValue: "No feedback note." })}
+                      </Typography.Text>
+                    ) : (
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.feedbackNotReviewed", { defaultValue: "Not reviewed yet." })}
+                      </Typography.Text>
+                    )}
+
+                    {canManageAlerts ? (
+                      <>
+                        <Input.TextArea
+                          value={feedbackNote}
+                          onChange={(event) => setFeedbackNote(event.target.value)}
+                          rows={2}
+                          placeholder={t("alerts.center.detail.feedbackNotePlaceholder", {
+                            defaultValue: "Optional note (why confirmed/ignored)"
+                          })}
+                        />
+                        <Space>
+                          <Button
+                            type="primary"
+                            size="small"
+                            loading={updatingStatus}
+                            onClick={() => void handleEventStatusUpdate("confirmed")}
+                          >
+                            {t("alerts.center.detail.confirm", { defaultValue: "Confirm" })}
+                          </Button>
+                          <Button
+                            size="small"
+                            loading={updatingStatus}
+                            onClick={() => void handleEventStatusUpdate("ignored")}
+                          >
+                            {t("alerts.center.detail.ignore", { defaultValue: "Ignore" })}
+                          </Button>
+                        </Space>
+                      </>
+                    ) : (
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.feedbackAdminOnly", {
+                          defaultValue: "Feedback actions are available to administrators only."
+                        })}
+                      </Typography.Text>
+                    )}
+                  </Space>
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.tuning", { defaultValue: "Tuning suggestion" })}>
                   {canManageAlerts ? (
@@ -939,20 +1511,45 @@ export function AlertCenterContent() {
                   </Typography.Text>
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.context", { defaultValue: "Context" })}>
-                  {additionalContext.length > 0 ? (
-                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                      {additionalContext.map(([key, value]) => (
+                  <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                    <Space size="small">
+                      <Button size="small" onClick={() => setRawContextOpen(true)} disabled={!context}>
+                        {t("alerts.center.detail.viewRawContext", { defaultValue: "View raw" })}
+                      </Button>
+                      <Button size="small" onClick={() => void handleCopyRawContext()} disabled={!context}>
+                        {t("alerts.center.detail.copyRawContext", { defaultValue: "Copy raw" })}
+                      </Button>
+                    </Space>
+                    {additionalContext.length > 0 ? (
+                      additionalContext.map(([key, value]) => (
                         <div key={key} className="flex justify-between gap-4">
                           <Typography.Text type="secondary">{key}</Typography.Text>
                           <Typography.Text>{formatContextValue(value)}</Typography.Text>
                         </div>
-                      ))}
-                    </Space>
-                  ) : (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.contextEmpty", { defaultValue: "No additional context." })}
-                    </Typography.Text>
-                  )}
+                      ))
+                    ) : (
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.contextEmpty", { defaultValue: "No additional context." })}
+                      </Typography.Text>
+                    )}
+                  </Space>
+                  <Modal
+                    open={rawContextOpen}
+                    onCancel={() => setRawContextOpen(false)}
+                    title={t("alerts.center.detail.rawContextTitle", { defaultValue: "Raw context" })}
+                    footer={
+                      <Space>
+                        <Button onClick={() => setRawContextOpen(false)}>
+                          {t("common.close", { defaultValue: "Close" })}
+                        </Button>
+                        <Button type="primary" onClick={() => void handleCopyRawContext()} disabled={!context}>
+                          {t("alerts.center.detail.copyRawContext", { defaultValue: "Copy raw" })}
+                        </Button>
+                      </Space>
+                    }
+                  >
+                    <Input.TextArea value={context ? safeJsonStringify(context) : ""} readOnly rows={12} />
+                  </Modal>
                 </DetailRow>
                 <DetailRow label={t("alerts.center.detail.deliveries", { defaultValue: "Deliveries" })}>
                   <List

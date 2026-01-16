@@ -108,6 +108,17 @@ export const apiEnvSchema = baseEnvSchema.extend({
   ),
   VECTOR_SERVICE_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   VECTOR_SERVICE_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
+  MODEL_SERVICE_ENABLED: envBoolean.default(false),
+  MODEL_SERVICE_BASE_URL: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().url().optional()
+  ),
+  MODEL_SERVICE_INTERNAL_TOKEN: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).optional()
+  ),
+  MODEL_SERVICE_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  MODEL_SERVICE_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
   AKSHARE_ENABLED: envBoolean.default(true),
   AKSHARE_HTTP_BASE_URL: z.string().url().default("http://localhost:8081"),
   AKSHARE_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),

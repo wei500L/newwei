@@ -1,0 +1,7 @@
+fastapi==0.124.4
+uvicorn[standard]==0.33.0
+numpy==2.2.1
+pandas==2.2.3
+scipy==1.15.1
+statsmodels==0.14.4
+

@@ -98,6 +98,9 @@ enum AlertEventStatus {
 enum AlertMetricProvider {
   crawl_task
   economic_data
+  economic_anomaly
+  entity_association
+  entity_sentiment
   pipeline_job
   system_event
   system_metric

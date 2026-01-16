@@ -105,6 +105,14 @@ export interface VectorServiceConfig {
   maxRetries: number;
 }
 
+export interface ModelServiceConfig {
+  enabled: boolean;
+  baseUrl?: string;
+  internalToken?: string;
+  timeoutMs: number;
+  maxRetries: number;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -271,6 +279,16 @@ export class EnvService extends ConfigService<ApiEnv> {
       token: this.get<string | undefined>("VECTOR_INTERNAL_TOKEN", { infer: true }),
       timeoutMs: this.get<number>("VECTOR_SERVICE_TIMEOUT_MS", { infer: true }) ?? 5_000,
       maxRetries: this.get<number>("VECTOR_SERVICE_MAX_RETRIES", { infer: true }) ?? 2
+    };
+  }
+
+  get modelServiceConfig(): ModelServiceConfig {
+    return {
+      enabled: this.get<boolean>("MODEL_SERVICE_ENABLED", { infer: true }) ?? false,
+      baseUrl: this.get<string | undefined>("MODEL_SERVICE_BASE_URL", { infer: true }),
+      internalToken: this.get<string | undefined>("MODEL_SERVICE_INTERNAL_TOKEN", { infer: true }),
+      timeoutMs: this.get<number>("MODEL_SERVICE_TIMEOUT_MS", { infer: true }) ?? 15_000,
+      maxRetries: this.get<number>("MODEL_SERVICE_MAX_RETRIES", { infer: true }) ?? 2
     };
   }
 

@@ -103,7 +103,7 @@ export function AlertPanel() {
                         value: event.metricValue,
                         change:
                           typeof event.changePercent === "number"
-                            ? event.changePercent.toFixed(2)
+                            ? `${event.changePercent.toFixed(2)}%`
                             : t("common.notAvailable")
                       })}
                     </Typography.Text>

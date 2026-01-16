@@ -222,7 +222,10 @@ export class AlertsService {
     if (!event || !event.rule || event.rule.orgId !== orgId) {
       return null;
     }
-    if (event.rule.metricProvider !== AlertMetricProvider.economic_data) {
+    if (
+      event.rule.metricProvider !== AlertMetricProvider.economic_data &&
+      event.rule.metricProvider !== AlertMetricProvider.economic_anomaly
+    ) {
       return null;
     }
     const metricSlug = event.rule.metricSlug;

@@ -611,6 +611,9 @@ enum AlertMetricProvider {
   pipeline_job
   crawl_task
   system_metric
+  economic_anomaly
+  entity_sentiment
+  entity_association
 }
 
 enum AlertOperator {

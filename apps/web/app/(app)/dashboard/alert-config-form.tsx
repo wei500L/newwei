@@ -36,6 +36,25 @@ const parseDateValue = (value: unknown) => {
   return parsed.isValid() ? parsed : null;
 };
 
+const safeParseJsonObject = (value: unknown): { value: Record<string, unknown> } | { error: string } => {
+  if (typeof value !== "string") {
+    return { value: {} };
+  }
+  const raw = value.trim();
+  if (!raw) {
+    return { value: {} };
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { error: "Metadata must be a JSON object" };
+    }
+    return { value: parsed as Record<string, unknown> };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
 const operatorOptions = Object.values(AlertOperator).map((op) => ({
   labelKey: `alerts.operators.${op}`,
   value: op,
@@ -124,6 +143,9 @@ export function AlertConfigForm() {
             systemCurrentValue: existingRule?.metadata?.currentValue,
             muteUntil: parseDateValue(existingRule?.metadata?.muteUntil),
             notifyAllMembers: existingRule?.metadata?.notifyAllMembers ?? false,
+            metadataJson: existingRule?.metadata
+              ? JSON.stringify(existingRule.metadata, null, 2)
+              : "",
             operator: existingRule?.operator ?? AlertOperator.Gt,
             thresholdValue: existingRule?.thresholdValue ?? 100,
             thresholdLower: existingRule?.thresholdLower ?? undefined,
@@ -135,6 +157,11 @@ export function AlertConfigForm() {
             channelIds: existingRule?.channels?.map((c) => c.id) ?? [],
           }}
           onFinish={async (values) => {
+            const parsedMetadata = safeParseJsonObject(values.metadataJson);
+            if ("error" in parsedMetadata) {
+              message.error(parsedMetadata.error);
+              return;
+            }
             if (
               values.metricProvider === AlertMetricProvider.PipelineJob &&
               (!values.pipelineStatuses || !values.pipelineStatuses.length)
@@ -180,10 +207,12 @@ export function AlertConfigForm() {
                         currentValue: values.systemCurrentValue,
                       }
                     : {};
-            const metadata =
-              Object.keys(baseMetadata).length || Object.keys(providerMetadata).length
-                ? { ...providerMetadata, ...baseMetadata }
-                : undefined;
+            const mergedMetadata = {
+              ...parsedMetadata.value,
+              ...providerMetadata,
+              ...baseMetadata
+            };
+            const metadata = Object.keys(mergedMetadata).length ? mergedMetadata : undefined;
             await upsertRule({
               variables: {
                 input: {
@@ -225,6 +254,8 @@ export function AlertConfigForm() {
                 label: t(option.labelKey, { defaultValue: option.value })
               }))}
               onChange={(provider) => {
+                const currentMetadataJson = form.getFieldValue("metadataJson") as string | undefined;
+                const metadataUnset = typeof currentMetadataJson !== "string" || currentMetadataJson.trim().length === 0;
                 if (provider === AlertMetricProvider.EconomicData) {
                   form.setFieldsValue({ metricSlug: "usd_index_history" });
                 } else if (provider === AlertMetricProvider.PipelineJob) {
@@ -244,6 +275,56 @@ export function AlertConfigForm() {
                     metricSlug: "system.memory.usage_pct",
                     systemCurrentValue: undefined,
                   });
+                } else if (provider === AlertMetricProvider.EconomicAnomaly) {
+                  form.setFieldsValue({
+                    metricSlug: "usd_index_history",
+                    operator: AlertOperator.Gte,
+                    thresholdValue: 3
+                  });
+                  if (metadataUnset) {
+                    form.setFieldsValue({
+                      metadataJson: JSON.stringify(
+                        { modelKind: "arima", lookbackDays: 365, confidenceLevel: 0.95, cacheTtlSeconds: 300 },
+                        null,
+                        2
+                      )
+                    });
+                  }
+                } else if (provider === AlertMetricProvider.EntitySentiment) {
+                  form.setFieldsValue({
+                    metricSlug: "",
+                    operator: AlertOperator.Gte,
+                    thresholdValue: 2
+                  });
+                  if (metadataUnset) {
+                    form.setFieldsValue({
+                      metadataJson: JSON.stringify(
+                        {
+                          windowMinutes: 60,
+                          baselineWindowMin: 7 * 24 * 60,
+                          minDocsInWindow: 5,
+                          minEntityConfidence: 0.5
+                        },
+                        null,
+                        2
+                      )
+                    });
+                  }
+                } else if (provider === AlertMetricProvider.EntityAssociation) {
+                  form.setFieldsValue({
+                    metricSlug: "",
+                    operator: AlertOperator.Gte,
+                    thresholdValue: 1.5
+                  });
+                  if (metadataUnset) {
+                    form.setFieldsValue({
+                      metadataJson: JSON.stringify(
+                        { sourceWindowMinutes: 180, minAssociationWeight: 0.3, maxTargets: 10 },
+                        null,
+                        2
+                      )
+                    });
+                  }
                 }
               }}
             />
@@ -415,6 +496,13 @@ export function AlertConfigForm() {
               <Switch />
             </Form.Item>
           </Space>
+          <Form.Item
+            label={t("alerts.config.fields.metadataJson", { defaultValue: "Metadata (JSON)" })}
+            name="metadataJson"
+            tooltip={t("alerts.config.fields.metadataJsonHint", { defaultValue: "Optional JSON object merged into rule metadata." })}
+          >
+            <Input.TextArea autoSize={{ minRows: 6, maxRows: 16 }} placeholder='{"key":"value"}' />
+          </Form.Item>
           <Form.Item label={t("alerts.config.fields.channels")} name="channelIds">
             <Select
               mode="multiple"

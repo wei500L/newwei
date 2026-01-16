@@ -1,0 +1,191 @@
+import { createLogger } from "@modular/utils";
+import { Injectable } from "@nestjs/common";
+import type { HttpService } from "@nestjs/axios";
+import { firstValueFrom } from "rxjs";
+import type { AxiosError } from "axios";
+
+import { EnvService } from "../config/config.service";
+
+const logger = createLogger({ name: "model-service-client" });
+
+export type ModelServiceModelKind = "arima" | "ets";
+
+export interface ModelServiceSeriesPoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface ModelServiceForecastHoldoutLastRequest {
+  series: ModelServiceSeriesPoint[];
+  confidence_level?: number;
+  model?: {
+    kind: ModelServiceModelKind;
+    order?: [number, number, number];
+    seasonal_order?: [number, number, number, number];
+    seasonal_period?: number;
+    trend?: string;
+  };
+  request_id?: string;
+}
+
+export interface ModelServiceForecastHoldoutLastResponse {
+  model: {
+    kind: ModelServiceModelKind;
+    order?: [number, number, number] | null;
+    seasonal_order?: [number, number, number, number] | null;
+    seasonal_period?: number | null;
+    trend?: string | null;
+  };
+  forecast: {
+    timestamp: string;
+    expected: number;
+    lower: number;
+    upper: number;
+    sigma: number;
+  };
+  diagnostics: Record<string, unknown>;
+}
+
+@Injectable()
+export class ModelServiceClient {
+  private consecutiveFailures = 0;
+  private unavailableUntilMs = 0;
+  private lastIncompleteWarnAtMs = 0;
+
+  constructor(private readonly http: HttpService, private readonly env: EnvService) {}
+
+  async forecastHoldoutLastBestEffort(input: {
+    series: ModelServiceSeriesPoint[];
+    model: { kind: ModelServiceModelKind; seasonalPeriod?: number; confidenceLevel?: number };
+    requestId?: string;
+  }): Promise<ModelServiceForecastHoldoutLastResponse | null> {
+    const cfg = this.env.modelServiceConfig;
+    if (!cfg.enabled) {
+      return null;
+    }
+    if (!cfg.baseUrl) {
+      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl });
+      return null;
+    }
+    if (this.isTemporarilyUnavailable()) {
+      return null;
+    }
+
+    const url = `${this.normalizeBaseUrl(cfg.baseUrl)}/v1/forecast/holdout_last`;
+    const payload: ModelServiceForecastHoldoutLastRequest = {
+      series: input.series,
+      confidence_level: input.model.confidenceLevel ?? 0.95,
+      model: {
+        kind: input.model.kind,
+        ...(typeof input.model.seasonalPeriod === "number" && Number.isFinite(input.model.seasonalPeriod)
+          ? { seasonal_period: Math.max(0, Math.trunc(input.model.seasonalPeriod)) }
+          : {})
+      },
+      ...(input.requestId ? { request_id: input.requestId } : {})
+    };
+
+    const maxRetries = Math.min(Math.max(Math.trunc(cfg.maxRetries), 0), 5);
+    const attempts = maxRetries + 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const response = await firstValueFrom(
+          this.http.post<ModelServiceForecastHoldoutLastResponse>(url, payload, {
+            headers: cfg.internalToken ? { "x-internal-token": cfg.internalToken } : undefined,
+            timeout: cfg.timeoutMs
+          })
+        );
+        this.markAvailable();
+        return response.data;
+      } catch (error) {
+        const decision = this.classifyError(error);
+        if (decision === "unauthorized") {
+          this.markUnavailable(error);
+          return null;
+        }
+        if (decision === "non_retryable") {
+          return null;
+        }
+        if (attempt >= attempts - 1) {
+          this.markUnavailable(error);
+          return null;
+        }
+        const delayMs = this.computeRetryDelayMs(attempt);
+        await this.delay(delayMs);
+      }
+    }
+    return null;
+  }
+
+  private normalizeBaseUrl(baseUrl: string) {
+    return baseUrl.trim().replace(/\/+$/, "");
+  }
+
+  private warnIncompleteOnce(context: { baseUrl?: string | null }) {
+    const now = Date.now();
+    if (now - this.lastIncompleteWarnAtMs < 60_000) {
+      return;
+    }
+    this.lastIncompleteWarnAtMs = now;
+    logger.warn(context, "Model service enabled but configuration is incomplete");
+  }
+
+  private isTemporarilyUnavailable(): boolean {
+    return Date.now() < this.unavailableUntilMs;
+  }
+
+  private markAvailable() {
+    this.consecutiveFailures = 0;
+    this.unavailableUntilMs = 0;
+  }
+
+  private markUnavailable(error: unknown) {
+    const now = Date.now();
+    const wasAvailable = now >= this.unavailableUntilMs;
+
+    this.consecutiveFailures = Math.min(this.consecutiveFailures + 1, 10);
+    const backoffMs = Math.min(60_000, 1_000 * 2 ** Math.max(0, this.consecutiveFailures - 1));
+    this.unavailableUntilMs = now + backoffMs;
+
+    if (!wasAvailable) {
+      return;
+    }
+
+    logger.warn({ error, backoffMs, consecutiveFailures: this.consecutiveFailures }, "Model service request failed; temporarily disabling");
+  }
+
+  private classifyError(error: unknown): "retryable" | "non_retryable" | "unauthorized" {
+    const axiosError = error as AxiosError | undefined;
+    const status = typeof axiosError?.response?.status === "number" ? axiosError.response.status : null;
+    if (status === 401) {
+      return "unauthorized";
+    }
+    if (status !== null) {
+      if (status === 408 || status === 429) {
+        return "retryable";
+      }
+      if (status >= 400 && status < 500) {
+        return "non_retryable";
+      }
+      if (status >= 500 && status <= 599) {
+        return "retryable";
+      }
+      return "non_retryable";
+    }
+
+    const code = typeof (axiosError as any)?.code === "string" ? (axiosError as any).code : null;
+    if (code) {
+      return "retryable";
+    }
+    return "retryable";
+  }
+
+  private computeRetryDelayMs(attempt: number): number {
+    const base = Math.min(5_000, 200 * 2 ** Math.max(0, attempt));
+    const jitter = Math.floor(Math.random() * 150);
+    return base + jitter;
+  }
+
+  private delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+}

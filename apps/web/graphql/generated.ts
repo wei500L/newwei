@@ -111,7 +111,10 @@ export enum AlertEventStatus {
 
 export enum AlertMetricProvider {
   CrawlTask = 'crawl_task',
+  EconomicAnomaly = 'economic_anomaly',
   EconomicData = 'economic_data',
+  EntityAssociation = 'entity_association',
+  EntitySentiment = 'entity_sentiment',
   PipelineJob = 'pipeline_job',
   SystemEvent = 'system_event',
   SystemMetric = 'system_metric'
