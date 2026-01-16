@@ -1128,12 +1128,13 @@ export class AkshareService implements OnModuleInit {
     // Determine if there are more results
     const hasMore = points.length > limit;
     const resultPoints = hasMore ? points.slice(0, limit) : points;
+    const lastPoint = resultPoints.at(-1);
 
     // Build pagination meta
     const paginationMeta: PaginationMeta = {
       hasMore,
-      nextCursor: hasMore && resultPoints.length > 0
-        ? this.encodeCursor(resultPoints[resultPoints.length - 1].recordedAt, resultPoints[resultPoints.length - 1].id)
+      nextCursor: hasMore && lastPoint
+        ? this.encodeCursor(lastPoint.recordedAt, lastPoint.id)
         : undefined
     };
 

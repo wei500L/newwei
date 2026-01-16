@@ -73,6 +73,7 @@ pnpm docker:down
 - `minio` 提供本地 S3 兼容存储（头像上传使用）。默认会通过 `minio-init` 自动创建 `S3_BUCKET` 并写入 CORS 配置（允许浏览器 PUT/GET/HEAD），并将桶设置为匿名可读（便于头像用 `S3_PUBLIC_BASE_URL` 直接访问）。
 - `akshare` 提供经济数据抓取的 Python 网关（默认暴露在 `8081` 端口），API 通过 `AKSHARE_HTTP_BASE_URL` 访问它。
 - `crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它（建议随 `extras` 一起启动）。
+- `qdrant` + `vector` 组成语义向量检索栈（均在 `extras` profile 中）。当 `VECTOR_SERVICE_ENABLED=true` 时，API 会优先走向量服务做语义去重/搜索；需要将历史向量回填到 Qdrant 可运行 `pnpm --filter @modular/api run vector:backfill`。
 - `crawl4ai` 自带实时监控仪表盘（系统指标、请求与浏览器池）：`http://localhost:8082/dashboard/`。控制台 `Operations → Crawl4AI Monitor` 提供自研监控面板（WebSocket 实时流 + REST 指标）并保留内置仪表盘标签页（需要配置 `CRAWL4AI_DASHBOARD_URL` / `CRAWL4AI_BASE_URL`，见下文）。
 - 如果你打开 `http://localhost:8082/dashboard/` 看到 `{\"detail\":\"Not Found\"}`，通常是 crawl4ai 镜像版本太旧/用错 tag（Docker Hub 的 `unclecode/crawl4ai:latest` 比较常见），缺少内置面板与监控接口；请将 `infra/docker/.env` 的 `CRAWL4AI_IMAGE` 改为 `unclecode/crawl4ai:0`（推荐，跟随最新 release 且不锁死具体 minor/patch），并执行 `pnpm docker:up:extras -d --force-recreate crawl4ai` 重新创建容器。
 - 不同版本的内置面板路径可能不同（例如 `/dashboard/` 或 `/playground/`）；如遇到 404，可将 `CRAWL4AI_DASHBOARD_URL` 先设为 `http://localhost:8082/` 再尝试。

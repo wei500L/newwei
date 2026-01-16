@@ -23,12 +23,14 @@ import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { EmailModule } from "./modules/email/email.module";
 import { HealthModule } from "./modules/health/health.module";
 import { ItemsModule } from "./modules/items/items.module";
+import { KnowledgeGraphModule } from "./modules/knowledge-graph/knowledge-graph.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { ObservabilityModule } from "./modules/observability/observability.module";
 import { QueueAdminModule } from "./modules/queue/queue-admin.module";
 import { QueueModule } from "./modules/queue/queue.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
+import { VectorModule } from "./modules/vector/vector.module";
 import { WebSocketModule } from "./modules/websocket/websocket.module";
 
 @Module({
@@ -49,6 +51,7 @@ import { WebSocketModule } from "./modules/websocket/websocket.module";
     ConfigModule,
     DatabaseModule,
     CacheModule,
+    VectorModule,
     QueueModule,
     QueueAdminModule,
     AuthModule,
@@ -64,6 +67,7 @@ import { WebSocketModule } from "./modules/websocket/websocket.module";
     SystemSettingsModule,
     NotificationsModule,
     ObservabilityModule,
+    KnowledgeGraphModule,
     WebSocketModule,
     ApiGraphqlModule,
     HealthModule

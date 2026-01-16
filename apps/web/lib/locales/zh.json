@@ -721,6 +721,17 @@
       "sectorHeatmapValueLabel": "数值",
       "sectorHeatmapChangeLabel": "涨跌幅",
       "entityImpactGraph": "实体影响图谱",
+      "knowledgeGraph": "知识图谱",
+      "knowledgeGraphSeedRequired": "请输入种子实体",
+      "knowledgeGraphDisabledTitle": "已禁用",
+      "knowledgeGraphDisabledDescription": "已被管理员禁用",
+      "knowledgeGraphSeedPlaceholder": "种子实体名称",
+      "knowledgeGraphDepth": "深度",
+      "knowledgeGraphMaxNodes": "最大节点数",
+      "knowledgeGraphEmptyTitle": "未选择种子",
+      "knowledgeGraphEmptyDescription": "请输入一个种子实体以探索图谱",
+      "knowledgeGraphNotFoundTitle": "未找到",
+      "knowledgeGraphNotFoundDescription": "该种子实体暂无图谱数据",
       "financialCandlestick": {
         "title": "市场指数"
       },
@@ -1215,6 +1226,32 @@
         "required": "必填"
       }
     },
+    "knowledgeGraph": {
+      "saved": "已保存",
+      "saveFailed": "保存失败",
+      "description": "配置金融知识图谱的抽取入库与查询缓存参数。",
+      "fields": {
+        "enabled": "启用",
+        "ingestionEnabled": "入库任务启用",
+        "seedIngestionEnabled": "结构化种子入库启用",
+        "seedSwIndustriesPerRun": "申万行业每次处理上限",
+        "maxBatchSize": "单批处理上限",
+        "maxRelationsPerArticle": "单篇关系上限",
+        "cacheTtlSeconds": "缓存 TTL（秒）"
+      },
+      "hints": {
+        "note": "启用入库任务后，系统会从已处理文章中增量抽取关系并写入知识图谱。",
+        "ingestionEnabled": "关闭后定时任务不会把新文章写入知识图谱。",
+        "seedIngestionEnabled": "关闭后定时任务不会从结构化种子源补充知识图谱。",
+        "seedSwIndustriesPerRun": "每次任务最多处理的申万三级行业数量。",
+        "maxBatchSize": "每次任务最多处理的文章数。",
+        "maxRelationsPerArticle": "每篇文章最多入库的关系条数。",
+        "cacheTtlSeconds": "填 0 表示不缓存；否则缓存 N 秒。"
+      },
+      "validation": {
+        "required": "必填"
+      }
+    },
     "newsPrompts": {
       "saved": "已保存",
       "saveFailed": "保存失败",
@@ -1328,6 +1365,7 @@
       "authCache": "认证缓存",
       "crawlClient": "抓取客户端",
       "entityImpactGraph": "实体影响图谱",
+      "knowledgeGraph": "知识图谱",
       "newsPrompts": "新闻提示词",
       "llmGateway": "LLM 网关",
       "roles": "角色",
@@ -1512,6 +1550,68 @@
         "sendFailed": "发送测试邮件失败"
       }
     },
+    "vectorService": {
+      "description": "配置 API 与向量服务的集成（语义去重/搜索）。",
+      "notice": {
+        "title": "作用范围",
+        "body": "这些配置仅影响 API 的向量客户端；向量服务本身仍通过其环境变量进行配置。"
+      },
+      "status": {
+        "label": "状态",
+        "env": "使用环境变量默认值",
+        "saved": "已保存覆盖配置",
+        "enabled": "已启用",
+        "disabled": "未启用",
+        "tokenSource": "Token 来源",
+        "tokenSources": {
+          "stored": "已保存",
+          "env": "环境变量",
+          "none": "无"
+        }
+      },
+      "fields": {
+        "enabled": "启用向量服务",
+        "fallbackToMongo": "回退到 MongoDB",
+        "baseUrl": "Base URL",
+        "token": "Internal token",
+        "timeoutMs": "超时（ms）",
+        "maxRetries": "最大重试次数"
+      },
+      "placeholders": {
+        "baseUrl": "例如 http://localhost:4010",
+        "token": "留空表示保留当前 token"
+      },
+      "hints": {
+        "fallbackToMongo": "关闭后，当向量检索不可用时 API 不会扫描 MongoDB embedding。",
+        "baseUrl": "API 访问向量服务的地址（留空表示使用环境变量默认值）。",
+        "token": "用于 API 调用向量服务的内部鉴权；保存后不会回传。"
+      },
+      "actions": {
+        "reset": "重置为环境变量",
+        "clearToken": "清空 token",
+        "keepToken": "保留 token"
+      },
+      "validation": {
+        "timeoutRequired": "超时必填",
+        "maxRetriesRequired": "最大重试次数必填"
+      },
+      "messages": {
+        "saved": "已保存",
+        "reset": "已重置为环境变量默认值"
+      },
+      "errors": {
+        "loadFailed": "加载向量服务配置失败",
+        "saveFailed": "保存向量服务配置失败",
+        "badRequest": "输入无效",
+        "resetFailed": "重置向量服务配置失败"
+      },
+      "modal": {
+        "resetTitle": "重置向量服务配置",
+        "resetContent": "将删除已保存的覆盖配置并回退到环境变量默认值，是否继续？",
+        "confirm": "确认",
+        "cancel": "取消"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "加载版本",
@@ -1541,6 +1641,7 @@
     "tabs": {
       "geoNominatim": "地理编码（Nominatim）",
       "email": "邮件（SMTP）",
+      "vectorService": "向量服务",
       "akshare": "AKShare"
     },
     "description": "系统设置说明"

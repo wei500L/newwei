@@ -39,6 +39,7 @@ import { EnvService } from "../modules/config/config.service";
 import { CrawlModule } from "../modules/crawl/crawl.module";
 import { DashboardModule } from "../modules/dashboard/dashboard.module";
 import { ItemsModule } from "../modules/items/items.module";
+import { KnowledgeGraphModule } from "../modules/knowledge-graph/knowledge-graph.module";
 import { NewsPipelineModule } from "../modules/news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../modules/notifications/notifications.module";
 import { OrgModule } from "../modules/org/org.module";
@@ -60,6 +61,8 @@ import { DashboardResolver } from "./resolvers/dashboard.resolver";
 import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
 import { EntityImpactGraphResolver } from "./resolvers/entity-impact-graph.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
+import { KnowledgeGraphImpactResolver } from "./resolvers/knowledge-graph-impact.resolver";
+import { KnowledgeGraphResolver } from "./resolvers/knowledge-graph.resolver";
 import { NotificationResolver } from "./resolvers/notification.resolver";
 import { OrgResolver } from "./resolvers/org.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
@@ -118,10 +121,11 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     AuthModule,
     ItemsModule,
     RbacModule,
-    DashboardModule,
-    QueueModule,
-    CacheModule,
-    CrawlModule,
+	    DashboardModule,
+	    KnowledgeGraphModule,
+	    QueueModule,
+	    CacheModule,
+	    CrawlModule,
     AlertsModule,
     AnalysisModule,
     AkshareModule,
@@ -234,6 +238,8 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     CrawlResolver,
     EconomicDataResolver,
     EntityImpactGraphResolver,
+    KnowledgeGraphResolver,
+    KnowledgeGraphImpactResolver,
     AlertsResolver,
     AnalysisResolver,
     NotificationResolver,

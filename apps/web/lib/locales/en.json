@@ -721,6 +721,17 @@
       "sectorHeatmapValueLabel": "Value",
       "sectorHeatmapChangeLabel": "Change",
       "entityImpactGraph": "Entity Impact Graph",
+      "knowledgeGraph": "Knowledge Graph",
+      "knowledgeGraphSeedRequired": "Enter a seed entity",
+      "knowledgeGraphDisabledTitle": "Disabled",
+      "knowledgeGraphDisabledDescription": "Disabled by admin",
+      "knowledgeGraphSeedPlaceholder": "Seed entity name",
+      "knowledgeGraphDepth": "Depth",
+      "knowledgeGraphMaxNodes": "Max nodes",
+      "knowledgeGraphEmptyTitle": "No seed",
+      "knowledgeGraphEmptyDescription": "Enter a seed entity to explore",
+      "knowledgeGraphNotFoundTitle": "Not found",
+      "knowledgeGraphNotFoundDescription": "No graph data found for this seed",
       "financialCandlestick": {
         "title": "Market Index"
       },
@@ -1216,6 +1227,32 @@
         "required": "Required"
       }
     },
+    "knowledgeGraph": {
+      "saved": "Saved",
+      "saveFailed": "Failed to save",
+      "description": "Configure finance knowledge graph ingestion and query caching settings.",
+      "fields": {
+        "enabled": "Enabled",
+        "ingestionEnabled": "Ingestion enabled",
+        "seedIngestionEnabled": "Seed ingestion enabled",
+        "seedSwIndustriesPerRun": "SW industries per run",
+        "maxBatchSize": "Max batch size",
+        "maxRelationsPerArticle": "Max relations per article",
+        "cacheTtlSeconds": "Cache TTL (seconds)"
+      },
+      "hints": {
+        "note": "Enable ingestion to incrementally build the knowledge graph from processed articles.",
+        "ingestionEnabled": "When disabled, the cron job will not ingest new articles into the graph.",
+        "seedIngestionEnabled": "When disabled, structured seed sources will not be ingested into the graph.",
+        "seedSwIndustriesPerRun": "Max Shenwan third-level industries ingested per run.",
+        "maxBatchSize": "Max processed articles to ingest per run.",
+        "maxRelationsPerArticle": "Upper bound on relations ingested from a single article.",
+        "cacheTtlSeconds": "0 disables caching; otherwise cache graph queries for N seconds."
+      },
+      "validation": {
+        "required": "Required"
+      }
+    },
     "newsPrompts": {
       "saved": "Saved",
       "saveFailed": "Failed to save",
@@ -1329,6 +1366,7 @@
       "authCache": "Auth cache",
       "crawlClient": "Crawl client",
       "entityImpactGraph": "Entity impact graph",
+      "knowledgeGraph": "Knowledge graph",
       "newsPrompts": "News prompts",
       "llmGateway": "LLM gateway",
       "roles": "Roles",
@@ -1513,6 +1551,68 @@
         "sendFailed": "Failed to send test email"
       }
     },
+    "vectorService": {
+      "description": "Manage the API integration with the vector service (semantic dedupe/search).",
+      "notice": {
+        "title": "Scope",
+        "body": "These settings affect the API's vector client. The vector service itself is configured via its own environment variables."
+      },
+      "status": {
+        "label": "Status",
+        "env": "Using env defaults",
+        "saved": "Saved override",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "tokenSource": "Token source",
+        "tokenSources": {
+          "stored": "Stored",
+          "env": "Env",
+          "none": "None"
+        }
+      },
+      "fields": {
+        "enabled": "Enable vector service",
+        "fallbackToMongo": "Fallback to MongoDB",
+        "baseUrl": "Base URL",
+        "token": "Internal token",
+        "timeoutMs": "Timeout (ms)",
+        "maxRetries": "Max retries"
+      },
+      "placeholders": {
+        "baseUrl": "e.g. http://localhost:4010",
+        "token": "Leave empty to keep current token"
+      },
+      "hints": {
+        "fallbackToMongo": "When disabled, the API will not scan MongoDB embeddings if vector search is unavailable.",
+        "baseUrl": "Where the API calls the vector service (leave empty to use env default).",
+        "token": "Used for internal authentication against the vector service. Not returned after saving."
+      },
+      "actions": {
+        "reset": "Reset to env",
+        "clearToken": "Clear token",
+        "keepToken": "Keep token"
+      },
+      "validation": {
+        "timeoutRequired": "Timeout is required",
+        "maxRetriesRequired": "Max retries is required"
+      },
+      "messages": {
+        "saved": "Saved",
+        "reset": "Reset to env defaults"
+      },
+      "errors": {
+        "loadFailed": "Failed to load vector service settings",
+        "saveFailed": "Failed to save vector service settings",
+        "badRequest": "Invalid input",
+        "resetFailed": "Failed to reset vector service settings"
+      },
+      "modal": {
+        "resetTitle": "Reset vector settings",
+        "resetContent": "Remove stored overrides and revert to env values?",
+        "confirm": "Confirm",
+        "cancel": "Cancel"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "Load version",
@@ -1542,6 +1642,7 @@
     "tabs": {
       "geoNominatim": "Geocoding (Nominatim)",
       "email": "Email (SMTP)",
+      "vectorService": "Vector service",
       "akshare": "AKShare"
     },
     "description": "System settings description"

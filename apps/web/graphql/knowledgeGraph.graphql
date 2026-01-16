@@ -1,0 +1,31 @@
+query GetKnowledgeGraphSubgraph($input: KnowledgeGraphSubgraphInput!) {
+  getKnowledgeGraphSubgraph(input: $input) {
+    seed {
+      id
+      name
+      type
+      properties
+    }
+    nodes {
+      id
+      name
+      type
+      properties
+    }
+    edges {
+      id
+      from
+      to
+      type
+      weight
+      confidence
+      properties
+    }
+    metadata {
+      totalNodes
+      totalEdges
+      generatedAt
+    }
+  }
+}
+

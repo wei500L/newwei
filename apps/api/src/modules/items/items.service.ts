@@ -1,6 +1,6 @@
 import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
 import type { MongoConnection } from "@modular/mongo";
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { Types, type PipelineStage } from "mongoose";
 import { createHash } from "node:crypto";
@@ -18,6 +18,7 @@ import {
   NormalizedNewsPayloadSchema
 } from "../news-pipeline/news-pipeline.schema";
 import { QueueService } from "../queue/queue.service";
+import { VectorClientService } from "../vector/vector-client.service";
 
 import { CreateItemDto } from "./dto/create-item.dto";
 import { UpdateItemDto } from "./dto/update-item.dto";
@@ -144,7 +145,8 @@ export class ItemsService {
     private readonly cache: CacheService,
     private readonly env: EnvService,
     private readonly liteLlm: LiteLlmService,
-    @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection
+    @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection,
+    @Optional() private readonly vectorClient?: VectorClientService
   ) {
     void this._mongo; // Ensure Mongo connection provider is instantiated.
   }
@@ -1507,7 +1509,43 @@ export class ItemsService {
         return [];
       }
       const model = response.model ?? embeddingModel;
-      const cutoff = new Date(Date.now() - VECTOR_SEARCH_LOOKBACK_DAYS * DAY_MS);
+      const lookbackMs = VECTOR_SEARCH_LOOKBACK_DAYS * DAY_MS;
+
+      const vectorClient = this.vectorClient;
+      if (vectorClient) {
+        const matches = await vectorClient.searchBestEffort({
+          orgId,
+          embeddingModel: model,
+          vector: embedding,
+          limit: VECTOR_SEARCH_MAX_RESULTS,
+          minScore: VECTOR_SEARCH_MIN_SIMILARITY,
+          lookbackMs,
+        });
+        if (matches) {
+          if (matches.length === 0 && !(await vectorClient.fallbackToMongoEnabled())) {
+            return [];
+          }
+          if (matches.length > 0) {
+            const ids: string[] = [];
+            const seen = new Set<string>();
+            for (const match of matches) {
+              if (seen.has(match.itemMetaId)) {
+                continue;
+              }
+              ids.push(match.itemMetaId);
+              seen.add(match.itemMetaId);
+              if (ids.length >= VECTOR_SEARCH_MAX_RESULTS) {
+                break;
+              }
+            }
+            return ids;
+          }
+        } else if (!(await vectorClient.fallbackToMongoEnabled())) {
+          return [];
+        }
+      }
+
+      const cutoff = new Date(Date.now() - lookbackMs);
 
       const candidates = await ProcessedItemModel.find(
         {

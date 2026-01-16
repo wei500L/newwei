@@ -38,6 +38,11 @@ model Org {
   alertChannels AlertNotificationChannel[]
   mongoOutbox MongoOutbox[]
   notifications Notification[]
+  knowledgeEntities KnowledgeEntity[]
+  knowledgeEntityAliases KnowledgeEntityAlias[]
+  knowledgeEdges KnowledgeEdge[]
+  knowledgeEdgeEvidences KnowledgeEdgeEvidence[]
+  knowledgeGraphIngestionState KnowledgeGraphIngestionState?
 }
 
 model User {
@@ -352,6 +357,7 @@ model Article {
 
   jobs      PipelineJob[]
   processed ProcessedArticle?
+  knowledgeEdgeEvidences KnowledgeEdgeEvidence[]
 
   @@unique([url, contentHash])
   @@index([orgId, sourceId, crawlAt])
@@ -372,6 +378,7 @@ model ProcessedArticle {
   summary            String?
   keyPoints          Json?
   entities           Json?
+  kgRelations        Json?
   cleanedMarkdownRef String?
   removedNoiseTypes  Json?
   qualityScore       Float?
@@ -787,4 +794,122 @@ model EconomicDataFetchConfig {
   lastError    String?
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
+}
+
+enum KnowledgeEntityType {
+  company
+  industry
+  person
+  policy
+  commodity
+  instrument
+  organization
+}
+
+enum KnowledgeRelationType {
+  belongs_to_industry
+  supplies
+  customer_of
+  competes_with
+  holds_position
+  affects_industry
+  affects_company
+  upstream_of
+  downstream_of
+  has_ticker
+}
+
+enum KnowledgeRecordSource {
+  seed
+  llm
+  derived
+  user
+}
+
+model KnowledgeEntity {
+  id            String            @id @default(cuid())
+  org           Org               @relation(fields: [orgId], references: [id])
+  orgId         String
+  type          KnowledgeEntityType
+  canonicalName String
+  normalizedKey String
+  properties    Json?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  aliases  KnowledgeEntityAlias[]
+  outgoing KnowledgeEdge[]        @relation("KnowledgeEdgeFrom")
+  incoming KnowledgeEdge[]        @relation("KnowledgeEdgeTo")
+
+  @@unique([orgId, type, normalizedKey])
+  @@index([orgId, type])
+  @@index([orgId, canonicalName])
+}
+
+model KnowledgeEntityAlias {
+  id              String               @id @default(cuid())
+  org             Org                  @relation(fields: [orgId], references: [id])
+  orgId           String
+  entity          KnowledgeEntity      @relation(fields: [entityId], references: [id])
+  entityId        String
+  alias           String
+  normalizedAlias String
+  source          KnowledgeRecordSource @default(llm)
+  createdAt       DateTime             @default(now())
+
+  @@unique([entityId, normalizedAlias])
+  @@index([orgId, normalizedAlias])
+  @@index([orgId, entityId])
+}
+
+model KnowledgeEdge {
+  id           String               @id @default(cuid())
+  org          Org                  @relation(fields: [orgId], references: [id])
+  orgId        String
+  type         KnowledgeRelationType
+  fromEntity   KnowledgeEntity      @relation("KnowledgeEdgeFrom", fields: [fromEntityId], references: [id])
+  fromEntityId String
+  toEntity     KnowledgeEntity      @relation("KnowledgeEdgeTo", fields: [toEntityId], references: [id])
+  toEntityId   String
+  weight       Float                @default(1)
+  confidence   Float                @default(0.5)
+  properties   Json?
+  firstSeenAt  DateTime             @default(now())
+  lastSeenAt   DateTime             @default(now())
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  evidences KnowledgeEdgeEvidence[]
+
+  @@unique([orgId, type, fromEntityId, toEntityId])
+  @@index([orgId, type])
+  @@index([orgId, fromEntityId])
+  @@index([orgId, toEntityId])
+}
+
+model KnowledgeEdgeEvidence {
+  id              String          @id @default(cuid())
+  org             Org             @relation(fields: [orgId], references: [id])
+  orgId           String
+  edge            KnowledgeEdge   @relation(fields: [edgeId], references: [id])
+  edgeId          String
+  article         Article         @relation(fields: [articleId], references: [id])
+  articleId       String
+  extractorVersion String?
+  confidence      Float?
+  evidence        Json?
+  createdAt       DateTime        @default(now())
+
+  @@unique([edgeId, articleId])
+  @@index([orgId, articleId])
+}
+
+model KnowledgeGraphIngestionState {
+  id                   String   @id @default(cuid())
+  org                  Org      @relation(fields: [orgId], references: [id])
+  orgId                String   @unique
+  lastProcessedAt       DateTime?
+  lastProcessedArticleId String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

@@ -96,6 +96,18 @@ export const apiEnvSchema = baseEnvSchema.extend({
   LITELLM_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   LITELLM_FALLBACK_MODELS: z.string().optional(),
   LITELLM_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
+  VECTOR_SERVICE_ENABLED: envBoolean.default(false),
+  VECTOR_SERVICE_FALLBACK_TO_MONGO: envBoolean.default(true),
+  VECTOR_SERVICE_BASE_URL: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().url().optional()
+  ),
+  VECTOR_INTERNAL_TOKEN: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).optional()
+  ),
+  VECTOR_SERVICE_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+  VECTOR_SERVICE_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
   AKSHARE_ENABLED: envBoolean.default(true),
   AKSHARE_HTTP_BASE_URL: z.string().url().default("http://localhost:8081"),
   AKSHARE_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),

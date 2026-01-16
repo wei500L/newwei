@@ -104,6 +104,25 @@ const crawlOptionsSchema: z.ZodType<Partial<CrawlTaskOptions>> = z
   .object({})
   .catchall(z.unknown());
 
+const optionalJsonObject = z.preprocess(
+  (value) => (value && typeof value === "object" && !Array.isArray(value) ? value : undefined),
+  z.record(z.unknown()).optional()
+);
+
+const KgEntityRefSchema = z.object({
+  name: z.string().min(1),
+  type: z.string().min(1)
+});
+
+const KgRelationSchema = z.object({
+  subject: KgEntityRefSchema,
+  predicate: z.string().min(1),
+  object: KgEntityRefSchema,
+  confidence: z.number().min(0).max(1),
+  properties: optionalJsonObject,
+  evidence: z.string().nullable().optional()
+});
+
 export const NormalizedNewsPayloadSchema = z
   .object({
     url: z.string().trim().min(1, "url is required"),
@@ -152,6 +171,7 @@ export const CleanedNewsSchema = z.object({
       }),
     )
     .default([]),
+  kg_relations: z.array(KgRelationSchema).default([]),
   cleaned_markdown: z.string().min(1),
   removed_noise_types: z.array(z.string().min(1)).default([]),
   quality_score: z.number().min(0).max(1).nullable().optional(),

@@ -1,5 +1,6 @@
 import { ProcessedItemModel } from "@modular/mongo";
 import { Injectable, Logger } from "@nestjs/common";
+import type { PipelineStage } from "mongoose";
 
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
@@ -274,7 +275,7 @@ export class EntityImpactGraphService {
         }
       },
       { $sort: { count: -1 } }
-    ];
+    ] as PipelineStage[];
 
     const results = await ProcessedItemModel.aggregate(pipeline).allowDiskUse(true);
     return results as CoOccurrenceRecord[];
@@ -339,9 +340,15 @@ export class EntityImpactGraphService {
     // Step 3: Calculate Pearson correlation for each entity-instrument pair
     for (const { entityKey, entityData } of entityEntries) {
       const [entityName, entityType] = entityKey.split("::");
+      if (!entityName || !entityType) {
+        continue;
+      }
 
       for (const { instrumentKey, instrumentData } of instrumentEntries) {
         const [instrumentName, instrumentType] = instrumentKey.split("::");
+        if (!instrumentName || !instrumentType) {
+          continue;
+        }
 
         // Align time series by date
         const { alignedX, alignedY } = this.alignTimeSeries(entityData, instrumentData);
@@ -535,7 +542,7 @@ export class EntityImpactGraphService {
           series: 1
         }
       }
-    ];
+    ] as PipelineStage[];
 
     const aggregated = await ProcessedItemModel.aggregate(pipeline).allowDiskUse(true);
     for (const row of aggregated as Array<{ name: string; type: string; series: Array<{ dateKey: string; count: number }> }>) {
@@ -586,7 +593,7 @@ export class EntityImpactGraphService {
     });
 
     for (const point of dataPoints) {
-      const dateKey = point.recordedAt.toISOString().split("T")[0];
+      const dateKey = point.recordedAt.toISOString().split("T")[0] ?? point.recordedAt.toISOString();
       const categoryKey = point.item.categories[0]?.category?.key ?? "unknown";
       const instrumentType = categoryKey.includes("stock") ? "stock" : "commodity";
       const instrumentKey = `${point.item.displayName}::${instrumentType}`;
@@ -641,8 +648,8 @@ export class EntityImpactGraphService {
     let sumY2 = 0;
 
     for (let i = 0; i < n; i++) {
-      const dx = x[i] - meanX;
-      const dy = y[i] - meanY;
+      const dx = x[i]! - meanX;
+      const dy = y[i]! - meanY;
       sumXY += dx * dy;
       sumX2 += dx * dx;
       sumY2 += dy * dy;

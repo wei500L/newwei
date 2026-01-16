@@ -170,12 +170,14 @@ export class JsCodeAuditService {
     const skip = options.skip ?? 0;
     const sortOrder = options.sortOrder === "asc" ? 1 : -1;
 
-    return this.getCollection()
+    const docs = await this.getCollection()
       .find(query)
       .sort({ timestamp: sortOrder })
       .skip(skip)
       .limit(limit)
-      .toArray() as Promise<JsCodeAuditLogDocument[]>;
+      .toArray();
+
+    return docs.map(({ _id: _ignored, ...doc }) => doc);
   }
 
   /**
@@ -274,7 +276,11 @@ export class JsCodeAuditService {
   }
 
   private getCollection() {
-    return this.mongo.connection.db.collection(AUDIT_COLLECTION_NAME);
+    const db = this.mongo.connection.db;
+    if (!db) {
+      throw new Error("Mongo DB connection is not available");
+    }
+    return db.collection<JsCodeAuditLogDocument>(AUDIT_COLLECTION_NAME);
   }
 
   private async ensureIndexes(): Promise<void> {
@@ -318,7 +324,7 @@ export class JsCodeAuditService {
       return undefined;
     }
     // Remove port if present
-    const ipOnly = ip.split(":")[0];
+    const ipOnly = ip.split(":")[0] ?? ip;
     // Basic validation
     if (ipOnly.length > 45) {
       return ipOnly.slice(0, 45);

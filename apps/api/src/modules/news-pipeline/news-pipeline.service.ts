@@ -6,7 +6,7 @@ import {
   type ProcessedItemDocument,
 } from "@modular/mongo";
 import { createLogger, parseDateTime } from "@modular/utils";
-import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import { Injectable, OnModuleDestroy, Optional } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import {
   MongoOutboxStatus,
@@ -27,6 +27,7 @@ import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { Crawl4aiClient } from "../crawl/crawl4ai.client";
+import { VectorClientService } from "../vector/vector-client.service";
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
@@ -185,6 +186,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     private readonly promptConfig: NewsPromptConfigService,
     private readonly cache: CacheService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly vectorClient?: VectorClientService,
   ) {
     this.outboxEventEmitter.on(
       OUTBOX_DELIVERY_REQUESTED_EVENT,
@@ -872,6 +874,56 @@ export class NewsPipelineService implements OnModuleDestroy {
     const cutoff = new Date(Date.now() - lookbackMs);
     const startTime = Date.now();
 
+    const vectorClient = this.vectorClient;
+    if (vectorClient) {
+      const matches = await vectorClient.searchBestEffort({
+        orgId,
+        embeddingModel: model,
+        vector: embedding,
+        limit: Math.min(Math.max(cfg.summaryDedupMaxCandidates, 1), 200),
+        minScore: threshold,
+        lookbackMs,
+      });
+      if (matches) {
+        if (matches.length === 0 && !(await vectorClient.fallbackToMongoEnabled())) {
+          return null;
+        }
+        if (matches.length > 0) {
+          const ordered = matches
+            .map((match) => match.processedItemId)
+            .filter((id) => Types.ObjectId.isValid(id));
+          const objectIds = ordered.map((id) => new Types.ObjectId(id));
+          if (objectIds.length > 0) {
+            const allowed = await ProcessedItemModel.find(
+              {
+                _id: { $in: objectIds },
+                orgId,
+                status: "completed",
+                summaryEmbeddingModel: model,
+                duplicateOf: null,
+                createdAt: { $gte: cutoff },
+              },
+              { _id: 1 },
+            ).lean();
+            const allowedSet = new Set(
+              allowed
+                .map((doc) => (doc as { _id?: unknown })._id)
+                .map((id) => (typeof id === "string" ? id : id?.toString?.() ?? ""))
+                .filter(Boolean),
+            );
+
+            for (const match of matches) {
+              if (allowedSet.has(match.processedItemId)) {
+                return { id: match.processedItemId, similarity: match.score };
+              }
+            }
+          }
+        }
+      } else if (!(await vectorClient.fallbackToMongoEnabled())) {
+        return null;
+      }
+    }
+
     const candidates = await ProcessedItemModel.find({
       orgId,
       status: "completed",
@@ -1324,7 +1376,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     const worker = async () => {
       while (index < items.length) {
         const currentIndex = index++;
-        results[currentIndex] = await fn(items[currentIndex]);
+        results[currentIndex] = await fn(items[currentIndex]!);
       }
     };
 
@@ -1440,6 +1492,7 @@ export class NewsPipelineService implements OnModuleDestroy {
           summary: options.cleaned.summary ?? null,
           keyPoints: options.cleaned.key_points ?? [],
           entities: options.cleaned.entities ?? [],
+          kgRelations: toPrismaJsonValue(options.cleaned.kg_relations ?? []),
           cleanedMarkdownRef: options.processedItemId,
           removedNoiseTypes: options.cleaned.removed_noise_types ?? [],
           qualityScore: options.cleaned.quality_score ?? null,
@@ -1471,6 +1524,7 @@ export class NewsPipelineService implements OnModuleDestroy {
           summary: options.cleaned.summary ?? null,
           keyPoints: options.cleaned.key_points ?? [],
           entities: options.cleaned.entities ?? [],
+          kgRelations: toPrismaJsonValue(options.cleaned.kg_relations ?? []),
           cleanedMarkdownRef: options.processedItemId,
           removedNoiseTypes: options.cleaned.removed_noise_types ?? [],
           qualityScore: options.cleaned.quality_score ?? null,
@@ -1605,6 +1659,38 @@ export class NewsPipelineService implements OnModuleDestroy {
 
       const sortAt = publishedAt ?? ingestedAt;
       const created = await this.writeProcessedItemFromPayload(payload.document, { ingestedAt, sortAt });
+
+      const vectorClient = this.vectorClient;
+      const embedding = payload.document.summaryEmbedding;
+      const embeddingModel =
+        typeof payload.document.summaryEmbeddingModel === "string"
+          ? payload.document.summaryEmbeddingModel.trim()
+          : "";
+      if (
+        vectorClient &&
+        !payload.document.duplicateOf &&
+        Array.isArray(embedding) &&
+        embedding.length > 0 &&
+        embeddingModel
+      ) {
+        const createdAtMs =
+          created?.createdAt instanceof Date && Number.isFinite(created.createdAt.getTime())
+            ? created.createdAt.getTime()
+            : Date.now();
+        void vectorClient.upsertBestEffort({
+          orgId: payload.document.orgId,
+          embeddingModel,
+          points: [
+            {
+              processedItemId: payload.document._id,
+              itemMetaId: payload.document.itemMetaId,
+              createdAtMs,
+              vector: embedding,
+            },
+          ],
+        });
+      }
+
       await this.prisma.itemMeta.updateMany({
         where: {
           id: payload.document.itemMetaId,

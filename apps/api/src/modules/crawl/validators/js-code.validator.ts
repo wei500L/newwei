@@ -359,7 +359,11 @@ export function validateJsCodeArray(scripts: string[]): JsCodeValidationResult {
 
   // Validate each script
   for (let i = 0; i < scripts.length; i++) {
-    const scriptResult = validateJsCode(scripts[i]);
+    const script = scripts[i];
+    if (script === undefined) {
+      continue;
+    }
+    const scriptResult = validateJsCode(script);
     if (!scriptResult.valid) {
       result.valid = false;
       result.blockedPatterns.push(
@@ -402,7 +406,11 @@ function validateSetTimeout(code: string): string | undefined {
   let match: RegExpExecArray | null;
 
   while ((match = setTimeoutRegex.exec(code)) !== null) {
-    const timeout = parseInt(match[1], 10);
+    const timeoutValue = match[1];
+    if (timeoutValue === undefined) {
+      continue;
+    }
+    const timeout = parseInt(timeoutValue, 10);
     if (timeout > MAX_TIMEOUT_MS) {
       return `setTimeout value ${timeout}ms exceeds maximum allowed ${MAX_TIMEOUT_MS}ms`;
     }

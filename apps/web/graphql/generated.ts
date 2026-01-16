@@ -238,6 +238,11 @@ export type AuthCacheSettingsModel = {
   retryDelayMs: Scalars['Int']['output'];
 };
 
+export type CommodityMoveImpactInput = {
+  commodityName: Scalars['String']['input'];
+  maxCandidates?: InputMaybe<Scalars['Int']['input']>;
+};
+
 export type CorrelationAnalysisInput = {
   changePercent: Scalars['Float']['input'];
   endDate: Scalars['String']['input'];
@@ -829,6 +834,11 @@ export type EventGroupModel = {
   topics: Array<Scalars['String']['output']>;
 };
 
+export type ExecutiveChangeImpactInput = {
+  companyName: Scalars['String']['input'];
+  maxCandidates?: InputMaybe<Scalars['Int']['input']>;
+};
+
 export type ItemConnection = {
   __typename?: 'ItemConnection';
   edges: Array<ItemEdge>;
@@ -902,6 +912,88 @@ export enum ItemsOrderBy {
   PublishedDesc = 'PUBLISHED_DESC'
 }
 
+export type KnowledgeGraphEdgeModel = {
+  __typename?: 'KnowledgeGraphEdgeModel';
+  confidence: Scalars['Float']['output'];
+  from: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  properties?: Maybe<Scalars['JSON']['output']>;
+  to: Scalars['String']['output'];
+  type: Scalars['String']['output'];
+  weight: Scalars['Float']['output'];
+};
+
+export type KnowledgeGraphExplainChainModel = {
+  __typename?: 'KnowledgeGraphExplainChainModel';
+  edges: Array<KnowledgeGraphEdgeModel>;
+  nodes: Array<KnowledgeGraphNodeModel>;
+  reason: Scalars['String']['output'];
+};
+
+export type KnowledgeGraphImpactAnalysisModel = {
+  __typename?: 'KnowledgeGraphImpactAnalysisModel';
+  candidates: Array<KnowledgeGraphImpactCandidateModel>;
+  generatedAt: Scalars['DateTime']['output'];
+  metadata?: Maybe<Scalars['JSON']['output']>;
+  scenario: Scalars['String']['output'];
+  seed: KnowledgeGraphNodeModel;
+};
+
+export type KnowledgeGraphImpactCandidateModel = {
+  __typename?: 'KnowledgeGraphImpactCandidateModel';
+  chains: Array<KnowledgeGraphExplainChainModel>;
+  entity: KnowledgeGraphNodeModel;
+  kind: Scalars['String']['output'];
+  score: Scalars['Float']['output'];
+};
+
+export type KnowledgeGraphMetadataModel = {
+  __typename?: 'KnowledgeGraphMetadataModel';
+  generatedAt: Scalars['DateTime']['output'];
+  totalEdges: Scalars['Int']['output'];
+  totalNodes: Scalars['Int']['output'];
+};
+
+export type KnowledgeGraphModel = {
+  __typename?: 'KnowledgeGraphModel';
+  edges: Array<KnowledgeGraphEdgeModel>;
+  metadata: KnowledgeGraphMetadataModel;
+  nodes: Array<KnowledgeGraphNodeModel>;
+  seed: KnowledgeGraphNodeModel;
+};
+
+export type KnowledgeGraphNodeModel = {
+  __typename?: 'KnowledgeGraphNodeModel';
+  id: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  properties?: Maybe<Scalars['JSON']['output']>;
+  type: Scalars['String']['output'];
+};
+
+export type KnowledgeGraphSettingsModel = {
+  __typename?: 'KnowledgeGraphSettingsModel';
+  cacheTtlSeconds: Scalars['Int']['output'];
+  enabled: Scalars['Boolean']['output'];
+  ingestionEnabled: Scalars['Boolean']['output'];
+  maxBatchSize: Scalars['Int']['output'];
+  maxRelationsPerArticle: Scalars['Int']['output'];
+  seedIngestionEnabled: Scalars['Boolean']['output'];
+  seedSwIndustriesPerRun: Scalars['Int']['output'];
+};
+
+export type KnowledgeGraphSubgraphInput = {
+  /** Max BFS depth */
+  maxDepth?: InputMaybe<Scalars['Int']['input']>;
+  /** Max nodes returned */
+  maxNodes?: InputMaybe<Scalars['Int']['input']>;
+  /** Restrict edge types */
+  relationTypes?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Seed entity name */
+  seedName: Scalars['String']['input'];
+  /** Optional seed entity type override */
+  seedType?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type MembershipModel = {
   __typename?: 'MembershipModel';
   id: Scalars['String']['output'];
@@ -941,6 +1033,7 @@ export type Mutation = {
   updateEconomicDataFetchConfig: EconomicDataFetchConfigModel;
   updateEntityImpactGraphSettings: EntityImpactGraphSettingsModel;
   updateItem: ItemModel;
+  updateKnowledgeGraphSettings: KnowledgeGraphSettingsModel;
   updateNewsPromptConfig: NewsPromptConfigModel;
   updateOrg: OrgModel;
   updateRateLimitSettings: RateLimitSettingsModel;
@@ -1092,6 +1185,11 @@ export type MutationUpdateItemArgs = {
 };
 
 
+export type MutationUpdateKnowledgeGraphSettingsArgs = {
+  input: UpdateKnowledgeGraphSettingsInput;
+};
+
+
 export type MutationUpdateNewsPromptConfigArgs = {
   input: UpdateNewsPromptConfigInput;
 };
@@ -1200,6 +1298,12 @@ export type PermissionModel = {
   name: Scalars['String']['output'];
 };
 
+export type PolicyEventImpactInput = {
+  includeLprSnapshot?: InputMaybe<Scalars['Boolean']['input']>;
+  maxCandidates?: InputMaybe<Scalars['Int']['input']>;
+  policyName: Scalars['String']['input'];
+};
+
 export type ProcessedItemLlmModel = {
   __typename?: 'ProcessedItemLlmModel';
   completionTokens?: Maybe<Scalars['Float']['output']>;
@@ -1265,13 +1369,19 @@ export type Query = {
   economicDataFetchConfigs: Array<EconomicDataFetchConfigModel>;
   entityImpactGraphSettings: EntityImpactGraphSettingsModel;
   eventGroups: Array<EventGroupModel>;
+  getCommodityMoveImpact?: Maybe<KnowledgeGraphImpactAnalysisModel>;
   getEconomicData: Array<EconomicDataPointModel>;
   getEconomicDataPaginated: PaginatedEconomicDataPointsModel;
   /** Get entity impact graph data for visualization */
   getEntityImpactGraph: EntityImpactGraphModel;
+  getExecutiveChangeImpact?: Maybe<KnowledgeGraphImpactAnalysisModel>;
+  /** Get a knowledge graph subgraph for a seed entity */
+  getKnowledgeGraphSubgraph?: Maybe<KnowledgeGraphModel>;
+  getPolicyEventImpact?: Maybe<KnowledgeGraphImpactAnalysisModel>;
   item?: Maybe<ItemModel>;
   itemFacets: ItemFacets;
   items: ItemConnection;
+  knowledgeGraphSettings: KnowledgeGraphSettingsModel;
   me: UserModel;
   memberships: Array<MembershipModel>;
   myOrganizations: Array<OrgModel>;
@@ -1338,6 +1448,11 @@ export type QueryEventGroupsArgs = {
 };
 
 
+export type QueryGetCommodityMoveImpactArgs = {
+  input: CommodityMoveImpactInput;
+};
+
+
 export type QueryGetEconomicDataArgs = {
   category: Scalars['String']['input'];
   granularity?: InputMaybe<TimeGranularity>;
@@ -1355,6 +1470,21 @@ export type QueryGetEconomicDataPaginatedArgs = {
 
 export type QueryGetEntityImpactGraphArgs = {
   input?: InputMaybe<EntityImpactGraphInput>;
+};
+
+
+export type QueryGetExecutiveChangeImpactArgs = {
+  input: ExecutiveChangeImpactInput;
+};
+
+
+export type QueryGetKnowledgeGraphSubgraphArgs = {
+  input: KnowledgeGraphSubgraphInput;
+};
+
+
+export type QueryGetPolicyEventImpactArgs = {
+  input: PolicyEventImpactInput;
 };
 
 
@@ -1584,6 +1714,16 @@ export type UpdateItemInput = {
   payload?: InputMaybe<Scalars['String']['input']>;
   status?: InputMaybe<Scalars['String']['input']>;
   title?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateKnowledgeGraphSettingsInput = {
+  cacheTtlSeconds: Scalars['Int']['input'];
+  enabled: Scalars['Boolean']['input'];
+  ingestionEnabled: Scalars['Boolean']['input'];
+  maxBatchSize: Scalars['Int']['input'];
+  maxRelationsPerArticle: Scalars['Int']['input'];
+  seedIngestionEnabled: Scalars['Boolean']['input'];
+  seedSwIndustriesPerRun: Scalars['Int']['input'];
 };
 
 export type UpdateNewsPromptConfigInput = {
@@ -1920,6 +2060,13 @@ export type ItemQueryVariables = Exact<{
 
 export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, ingestedAt: any, publishedAt?: string | null, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, result?: string | null, resultJson?: any | null, createdAt: any, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null } | null };
 
+export type GetKnowledgeGraphSubgraphQueryVariables = Exact<{
+  input: KnowledgeGraphSubgraphInput;
+}>;
+
+
+export type GetKnowledgeGraphSubgraphQuery = { __typename?: 'Query', getKnowledgeGraphSubgraph?: { __typename?: 'KnowledgeGraphModel', seed: { __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string, properties?: any | null }, nodes: Array<{ __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string, properties?: any | null }>, edges: Array<{ __typename?: 'KnowledgeGraphEdgeModel', id: string, from: string, to: string, type: string, weight: number, confidence: number, properties?: any | null }>, metadata: { __typename?: 'KnowledgeGraphMetadataModel', totalNodes: number, totalEdges: number, generatedAt: any } } | null };
+
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -2070,6 +2217,18 @@ export type UpdateEntityImpactGraphSettingsMutationVariables = Exact<{
 
 
 export type UpdateEntityImpactGraphSettingsMutation = { __typename?: 'Mutation', updateEntityImpactGraphSettings: { __typename?: 'EntityImpactGraphSettingsModel', enabled: boolean, minEntityConfidence: number, minCorrelation: number, minCoOccurrence: number, maxNodes: number, categories: Array<string>, cacheTtlSeconds: number } };
+
+export type KnowledgeGraphSettingsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type KnowledgeGraphSettingsQuery = { __typename?: 'Query', knowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, seedIngestionEnabled: boolean, seedSwIndustriesPerRun: number, maxBatchSize: number, maxRelationsPerArticle: number, cacheTtlSeconds: number } };
+
+export type UpdateKnowledgeGraphSettingsMutationVariables = Exact<{
+  input: UpdateKnowledgeGraphSettingsInput;
+}>;
+
+
+export type UpdateKnowledgeGraphSettingsMutation = { __typename?: 'Mutation', updateKnowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, seedIngestionEnabled: boolean, seedSwIndustriesPerRun: number, maxBatchSize: number, maxRelationsPerArticle: number, cacheTtlSeconds: number } };
 
 
 export const AlertRulesDocument = gql`
@@ -3905,6 +4064,71 @@ export type ItemQueryHookResult = ReturnType<typeof useItemQuery>;
 export type ItemLazyQueryHookResult = ReturnType<typeof useItemLazyQuery>;
 export type ItemSuspenseQueryHookResult = ReturnType<typeof useItemSuspenseQuery>;
 export type ItemQueryResult = Apollo.QueryResult<ItemQuery, ItemQueryVariables>;
+export const GetKnowledgeGraphSubgraphDocument = gql`
+    query GetKnowledgeGraphSubgraph($input: KnowledgeGraphSubgraphInput!) {
+  getKnowledgeGraphSubgraph(input: $input) {
+    seed {
+      id
+      name
+      type
+      properties
+    }
+    nodes {
+      id
+      name
+      type
+      properties
+    }
+    edges {
+      id
+      from
+      to
+      type
+      weight
+      confidence
+      properties
+    }
+    metadata {
+      totalNodes
+      totalEdges
+      generatedAt
+    }
+  }
+}
+    `;
+
+/**
+ * __useGetKnowledgeGraphSubgraphQuery__
+ *
+ * To run a query within a React component, call `useGetKnowledgeGraphSubgraphQuery` and pass it any options that fit your needs.
+ * When your component renders, `useGetKnowledgeGraphSubgraphQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useGetKnowledgeGraphSubgraphQuery({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useGetKnowledgeGraphSubgraphQuery(baseOptions: Apollo.QueryHookOptions<GetKnowledgeGraphSubgraphQuery, GetKnowledgeGraphSubgraphQueryVariables> & ({ variables: GetKnowledgeGraphSubgraphQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<GetKnowledgeGraphSubgraphQuery, GetKnowledgeGraphSubgraphQueryVariables>(GetKnowledgeGraphSubgraphDocument, options);
+      }
+export function useGetKnowledgeGraphSubgraphLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<GetKnowledgeGraphSubgraphQuery, GetKnowledgeGraphSubgraphQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<GetKnowledgeGraphSubgraphQuery, GetKnowledgeGraphSubgraphQueryVariables>(GetKnowledgeGraphSubgraphDocument, options);
+        }
+export function useGetKnowledgeGraphSubgraphSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<GetKnowledgeGraphSubgraphQuery, GetKnowledgeGraphSubgraphQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<GetKnowledgeGraphSubgraphQuery, GetKnowledgeGraphSubgraphQueryVariables>(GetKnowledgeGraphSubgraphDocument, options);
+        }
+export type GetKnowledgeGraphSubgraphQueryHookResult = ReturnType<typeof useGetKnowledgeGraphSubgraphQuery>;
+export type GetKnowledgeGraphSubgraphLazyQueryHookResult = ReturnType<typeof useGetKnowledgeGraphSubgraphLazyQuery>;
+export type GetKnowledgeGraphSubgraphSuspenseQueryHookResult = ReturnType<typeof useGetKnowledgeGraphSubgraphSuspenseQuery>;
+export type GetKnowledgeGraphSubgraphQueryResult = Apollo.QueryResult<GetKnowledgeGraphSubgraphQuery, GetKnowledgeGraphSubgraphQueryVariables>;
 export const MeDocument = gql`
     query Me {
   me {
@@ -4946,3 +5170,87 @@ export function useUpdateEntityImpactGraphSettingsMutation(baseOptions?: Apollo.
 export type UpdateEntityImpactGraphSettingsMutationHookResult = ReturnType<typeof useUpdateEntityImpactGraphSettingsMutation>;
 export type UpdateEntityImpactGraphSettingsMutationResult = Apollo.MutationResult<UpdateEntityImpactGraphSettingsMutation>;
 export type UpdateEntityImpactGraphSettingsMutationOptions = Apollo.BaseMutationOptions<UpdateEntityImpactGraphSettingsMutation, UpdateEntityImpactGraphSettingsMutationVariables>;
+export const KnowledgeGraphSettingsDocument = gql`
+    query KnowledgeGraphSettings {
+  knowledgeGraphSettings {
+    enabled
+    ingestionEnabled
+    seedIngestionEnabled
+    seedSwIndustriesPerRun
+    maxBatchSize
+    maxRelationsPerArticle
+    cacheTtlSeconds
+  }
+}
+    `;
+
+/**
+ * __useKnowledgeGraphSettingsQuery__
+ *
+ * To run a query within a React component, call `useKnowledgeGraphSettingsQuery` and pass it any options that fit your needs.
+ * When your component renders, `useKnowledgeGraphSettingsQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useKnowledgeGraphSettingsQuery({
+ *   variables: {
+ *   },
+ * });
+ */
+export function useKnowledgeGraphSettingsQuery(baseOptions?: Apollo.QueryHookOptions<KnowledgeGraphSettingsQuery, KnowledgeGraphSettingsQueryVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<KnowledgeGraphSettingsQuery, KnowledgeGraphSettingsQueryVariables>(KnowledgeGraphSettingsDocument, options);
+      }
+export function useKnowledgeGraphSettingsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<KnowledgeGraphSettingsQuery, KnowledgeGraphSettingsQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<KnowledgeGraphSettingsQuery, KnowledgeGraphSettingsQueryVariables>(KnowledgeGraphSettingsDocument, options);
+        }
+export function useKnowledgeGraphSettingsSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<KnowledgeGraphSettingsQuery, KnowledgeGraphSettingsQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<KnowledgeGraphSettingsQuery, KnowledgeGraphSettingsQueryVariables>(KnowledgeGraphSettingsDocument, options);
+        }
+export type KnowledgeGraphSettingsQueryHookResult = ReturnType<typeof useKnowledgeGraphSettingsQuery>;
+export type KnowledgeGraphSettingsLazyQueryHookResult = ReturnType<typeof useKnowledgeGraphSettingsLazyQuery>;
+export type KnowledgeGraphSettingsSuspenseQueryHookResult = ReturnType<typeof useKnowledgeGraphSettingsSuspenseQuery>;
+export type KnowledgeGraphSettingsQueryResult = Apollo.QueryResult<KnowledgeGraphSettingsQuery, KnowledgeGraphSettingsQueryVariables>;
+export const UpdateKnowledgeGraphSettingsDocument = gql`
+    mutation UpdateKnowledgeGraphSettings($input: UpdateKnowledgeGraphSettingsInput!) {
+  updateKnowledgeGraphSettings(input: $input) {
+    enabled
+    ingestionEnabled
+    seedIngestionEnabled
+    seedSwIndustriesPerRun
+    maxBatchSize
+    maxRelationsPerArticle
+    cacheTtlSeconds
+  }
+}
+    `;
+export type UpdateKnowledgeGraphSettingsMutationFn = Apollo.MutationFunction<UpdateKnowledgeGraphSettingsMutation, UpdateKnowledgeGraphSettingsMutationVariables>;
+
+/**
+ * __useUpdateKnowledgeGraphSettingsMutation__
+ *
+ * To run a mutation, you first call `useUpdateKnowledgeGraphSettingsMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useUpdateKnowledgeGraphSettingsMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [updateKnowledgeGraphSettingsMutation, { data, loading, error }] = useUpdateKnowledgeGraphSettingsMutation({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useUpdateKnowledgeGraphSettingsMutation(baseOptions?: Apollo.MutationHookOptions<UpdateKnowledgeGraphSettingsMutation, UpdateKnowledgeGraphSettingsMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<UpdateKnowledgeGraphSettingsMutation, UpdateKnowledgeGraphSettingsMutationVariables>(UpdateKnowledgeGraphSettingsDocument, options);
+      }
+export type UpdateKnowledgeGraphSettingsMutationHookResult = ReturnType<typeof useUpdateKnowledgeGraphSettingsMutation>;
+export type UpdateKnowledgeGraphSettingsMutationResult = Apollo.MutationResult<UpdateKnowledgeGraphSettingsMutation>;
+export type UpdateKnowledgeGraphSettingsMutationOptions = Apollo.BaseMutationOptions<UpdateKnowledgeGraphSettingsMutation, UpdateKnowledgeGraphSettingsMutationVariables>;

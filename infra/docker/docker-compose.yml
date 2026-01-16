@@ -54,6 +54,15 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    profiles: ["extras"]
+    image: qdrant/qdrant:v1.10.1
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
   minio:
     image: ${MINIO_IMAGE:-minio/minio:latest}
     restart: unless-stopped
@@ -178,10 +187,12 @@ services:
       - api-node-modules:/workspace/node_modules
       - api-app-api-node-modules:/workspace/apps/api/node_modules
       - api-app-web-node-modules:/workspace/apps/web/node_modules
+      - api-app-vector-node-modules:/workspace/apps/vector/node_modules
       - api-package-config-node-modules:/workspace/packages/config/node_modules
       - api-package-db-node-modules:/workspace/packages/db/node_modules
       - api-package-mongo-node-modules:/workspace/packages/mongo/node_modules
       - api-package-utils-node-modules:/workspace/packages/utils/node_modules
+      - api-package-vector-client-node-modules:/workspace/packages/vector-client/node_modules
       - api-infra-scripts-node-modules:/workspace/infra/scripts/node_modules
       - api-pnpm-store:/root/.local/share/pnpm/store
     depends_on:
@@ -199,6 +210,55 @@ services:
       timeout: 5s
       retries: 20
       start_period: 300s
+
+  vector:
+    profiles: ["extras"]
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:20}
+    working_dir: /workspace
+    command: >
+      sh -ec "
+      echo '[vector] pnpm install...';
+      pnpm install --unsafe-perm;
+      echo '[vector] starting dev server...';
+      pnpm --filter @modular/vector run dev
+      "
+    env_file:
+      - ./.env
+    environment:
+      PORT: 4010
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      VECTOR_INTERNAL_TOKEN: ${VECTOR_INTERNAL_TOKEN:-dev-token}
+    dns:
+      - ${DOCKER_DNS_1:-223.5.5.5}
+      - ${DOCKER_DNS_2:-114.114.114.114}
+    ports:
+      - "4010:4010"
+    volumes:
+      - ../..:/workspace
+      - vector-node-modules:/workspace/node_modules
+      - vector-app-api-node-modules:/workspace/apps/api/node_modules
+      - vector-app-web-node-modules:/workspace/apps/web/node_modules
+      - vector-app-vector-node-modules:/workspace/apps/vector/node_modules
+      - vector-package-config-node-modules:/workspace/packages/config/node_modules
+      - vector-package-db-node-modules:/workspace/packages/db/node_modules
+      - vector-package-mongo-node-modules:/workspace/packages/mongo/node_modules
+      - vector-package-utils-node-modules:/workspace/packages/utils/node_modules
+      - vector-package-vector-client-node-modules:/workspace/packages/vector-client/node_modules
+      - vector-infra-scripts-node-modules:/workspace/infra/scripts/node_modules
+      - vector-pnpm-store:/root/.local/share/pnpm/store
+    depends_on:
+      qdrant:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4010/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
 
   web:
     build:
@@ -251,10 +311,12 @@ services:
       - web-node-modules:/workspace/node_modules
       - web-app-api-node-modules:/workspace/apps/api/node_modules
       - web-app-web-node-modules:/workspace/apps/web/node_modules
+      - web-app-vector-node-modules:/workspace/apps/vector/node_modules
       - web-package-config-node-modules:/workspace/packages/config/node_modules
       - web-package-db-node-modules:/workspace/packages/db/node_modules
       - web-package-mongo-node-modules:/workspace/packages/mongo/node_modules
       - web-package-utils-node-modules:/workspace/packages/utils/node_modules
+      - web-package-vector-client-node-modules:/workspace/packages/vector-client/node_modules
       - web-infra-scripts-node-modules:/workspace/infra/scripts/node_modules
       - web-pnpm-store:/root/.local/share/pnpm/store
     depends_on:
@@ -272,21 +334,37 @@ volumes:
   mongo-data:
   redis-data:
   minio-data:
+  qdrant-data:
   api-node-modules:
   api-pnpm-store:
   api-app-api-node-modules:
   api-app-web-node-modules:
+  api-app-vector-node-modules:
   api-package-config-node-modules:
   api-package-db-node-modules:
   api-package-mongo-node-modules:
   api-package-utils-node-modules:
+  api-package-vector-client-node-modules:
   api-infra-scripts-node-modules:
+  vector-node-modules:
+  vector-pnpm-store:
+  vector-app-api-node-modules:
+  vector-app-web-node-modules:
+  vector-app-vector-node-modules:
+  vector-package-config-node-modules:
+  vector-package-db-node-modules:
+  vector-package-mongo-node-modules:
+  vector-package-utils-node-modules:
+  vector-package-vector-client-node-modules:
+  vector-infra-scripts-node-modules:
   web-node-modules:
   web-pnpm-store:
   web-app-api-node-modules:
   web-app-web-node-modules:
+  web-app-vector-node-modules:
   web-package-config-node-modules:
   web-package-db-node-modules:
   web-package-mongo-node-modules:
   web-package-utils-node-modules:
+  web-package-vector-client-node-modules:
   web-infra-scripts-node-modules:

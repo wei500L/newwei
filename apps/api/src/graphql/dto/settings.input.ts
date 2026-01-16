@@ -132,3 +132,38 @@ export class UpdateEntityImpactGraphSettingsInput {
   @Max(3600)
   cacheTtlSeconds!: number;
 }
+
+@InputType()
+export class UpdateKnowledgeGraphSettingsInput {
+  @Field(() => Boolean)
+  @IsBoolean()
+  enabled!: boolean;
+
+  @Field(() => Boolean)
+  @IsBoolean()
+  ingestionEnabled!: boolean;
+
+  @Field(() => Boolean)
+  @IsBoolean()
+  seedIngestionEnabled!: boolean;
+
+  @Field(() => Int)
+  @Min(1)
+  @Max(50)
+  seedSwIndustriesPerRun!: number;
+
+  @Field(() => Int)
+  @Min(1)
+  @Max(500)
+  maxBatchSize!: number;
+
+  @Field(() => Int)
+  @Min(0)
+  @Max(100)
+  maxRelationsPerArticle!: number;
+
+  @Field(() => Int)
+  @Min(0)
+  @Max(3600)
+  cacheTtlSeconds!: number;
+}

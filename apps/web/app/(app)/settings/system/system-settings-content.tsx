@@ -9,8 +9,10 @@ import { useTranslation } from "react-i18next";
 import { EmailSettingsPanel } from "@/components/settings/email-settings-panel";
 import { EntityImpactGraphSettingsPanel } from "@/components/settings/entity-impact-graph-settings-panel";
 import { GeoNominatimSettingsPanel } from "@/components/settings/geo-nominatim-settings-panel";
+import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-graph-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
+import { VectorServiceSettingsPanel } from "@/components/settings/vector-service-settings-panel";
 import {
   useAuditLogRetentionQuery,
   useAuthCacheSettingsQuery,
@@ -746,6 +748,7 @@ export function SystemSettingsContent() {
       children: <RateLimitPoliciesPanel />
     },
     { key: "llmGateway", label: t("settings.tabs.llmGateway"), children: <LlmGatewaySettingsPanel /> },
+    { key: "vectorService", label: t("systemSettings.tabs.vectorService"), children: <VectorServiceSettingsPanel /> },
     { key: "geoNominatim", label: t("systemSettings.tabs.geoNominatim"), children: <GeoNominatimSettingsPanel /> },
     { key: "email", label: t("systemSettings.tabs.email"), children: <EmailSettingsPanel /> },
     { key: "auditLog", label: t("settings.tabs.auditLog"), children: <AuditLogRetentionPanel /> },
@@ -756,6 +759,7 @@ export function SystemSettingsContent() {
       label: t("settings.tabs.entityImpactGraph"),
       children: <EntityImpactGraphSettingsPanel />
     },
+    { key: "knowledgeGraph", label: t("settings.tabs.knowledgeGraph"), children: <KnowledgeGraphSettingsPanel /> },
     { key: "newsPrompts", label: t("settings.tabs.newsPrompts"), children: <NewsPromptSettingsPanel /> },
     { key: "akshare", label: t("systemSettings.tabs.akshare"), children: <AkshareGatewaySettingsPanel /> }
   ];

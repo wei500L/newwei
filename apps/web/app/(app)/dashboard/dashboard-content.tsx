@@ -80,6 +80,13 @@ const EntityImpactGraph = dynamic(
   }
 );
 
+const KnowledgeGraph = dynamic(
+  () => import("./charts/knowledge-graph").then((mod) => mod.KnowledgeGraph),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+  }
+);
+
 const MarketPulse = dynamic(
   () => import("./components/market-pulse").then((mod) => mod.MarketPulse),
   { loading: () => <Skeleton active paragraph={{ rows: 2 }} /> }
@@ -348,6 +355,15 @@ export function DashboardContent() {
            <div className="xl:col-span-3">
              <Card title={t("dashboard.charts.entityImpactGraph", { defaultValue: "Entity Impact Graph" })} className="glass-card" bordered={false}>
                <EntityImpactGraph />
+             </Card>
+           </div>
+        </div>
+
+        {/* Knowledge Graph */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+           <div className="xl:col-span-3">
+             <Card title={t("dashboard.charts.knowledgeGraph", { defaultValue: "Knowledge Graph" })} className="glass-card" bordered={false}>
+               <KnowledgeGraph />
              </Card>
            </div>
         </div>

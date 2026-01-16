@@ -126,7 +126,7 @@ export class CrawlResultService {
     const itemsWithHash: Array<{
       item: Crawl4aiArticle;
       markdown: string;
-      markdownResult: ReturnType<typeof this.extractMarkdownResult>;
+      markdownResult: ReturnType<CrawlResultService["extractMarkdownResult"]>;
       hash: string;
     }> = [];
 

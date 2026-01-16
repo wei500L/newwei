@@ -1,6 +1,6 @@
 import { UseGuards } from "@nestjs/common";
 import { Args, Mutation, Query, Resolver } from "@nestjs/graphql";
-import { EconomicDataFrequency } from "@prisma/client";
+import { EconomicDataFrequency, EconomicDataValueType } from "@prisma/client";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
@@ -77,7 +77,20 @@ export class EconomicDataResolver {
       end,
       granularity,
       pagination ?? { limit: 100 }
-    ) as PaginatedResult<{ recordedAt: Date; value: { toNumber(): number } | number; unit: string | null; sourceField: string; dataType: string; item: { slug: string; displayName: string; groupLabel: string | null; defaultUnit: string | null; metadata: unknown } }>;
+    ) as PaginatedResult<{
+      recordedAt: Date;
+      value: { toNumber(): number } | number;
+      unit: string | null;
+      sourceField: string;
+      dataType: EconomicDataValueType;
+      item: {
+        slug: string;
+        displayName: string;
+        groupLabel: string | null;
+        defaultUnit: string | null;
+        metadata: unknown;
+      };
+    }>;
 
     const dataPoints = result.data.map((point) => ({
       timestamp: point.recordedAt,

@@ -17,6 +17,8 @@ import { RateLimitConfigService } from "./rate-limit-config.service";
 import { RateLimitPolicyController } from "./rate-limit-policy.controller";
 import { RateLimitPolicyService } from "./rate-limit-policy.service";
 import { RateLimitSettingsController } from "./rate-limit-settings.controller";
+import { VectorServiceSettingsController } from "./vector-service-settings.controller";
+import { VectorServiceSettingsService } from "./vector-service-settings.service";
 
 @Global()
 @Module({
@@ -29,7 +31,8 @@ import { RateLimitSettingsController } from "./rate-limit-settings.controller";
     EmailSettingsController,
     GeoNominatimSettingsController,
     GeoNominatimTestController,
-    LlmGatewaySettingsController
+    LlmGatewaySettingsController,
+    VectorServiceSettingsController
   ],
   providers: [
     RateLimitConfigService,
@@ -37,7 +40,8 @@ import { RateLimitSettingsController } from "./rate-limit-settings.controller";
     AuditLogSettingsService,
     GeoNominatimSettingsService,
     LlmGatewaySettingsService,
-    EntityImpactGraphSettingsService
+    EntityImpactGraphSettingsService,
+    VectorServiceSettingsService
   ],
   exports: [
     RateLimitConfigService,
@@ -45,7 +49,8 @@ import { RateLimitSettingsController } from "./rate-limit-settings.controller";
     AuditLogSettingsService,
     GeoNominatimSettingsService,
     LlmGatewaySettingsService,
-    EntityImpactGraphSettingsService
+    EntityImpactGraphSettingsService,
+    VectorServiceSettingsService
   ]
 })
 export class SystemSettingsModule {}

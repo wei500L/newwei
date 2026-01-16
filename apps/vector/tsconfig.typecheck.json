@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "paths": {
+      "@modular/utils": ["../../packages/utils/src/index.ts"]
+    }
+  }
+}
+

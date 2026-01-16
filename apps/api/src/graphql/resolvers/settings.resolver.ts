@@ -7,9 +7,16 @@ import { AuthCacheSettingsService } from "../../modules/auth/auth-cache-settings
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { PrismaService } from "../../modules/config/prisma.service";
 import { CrawlSettingsService } from "../../modules/crawl/crawl-settings.service";
+import {
+  KnowledgeGraphSettingsService,
+  type KnowledgeGraphSettingsInput
+} from "../../modules/knowledge-graph/knowledge-graph-settings.service";
 import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt-config.service";
 import { AuditLogSettingsService } from "../../modules/system-settings/audit-log-settings.service";
-import { EntityImpactGraphSettingsService } from "../../modules/system-settings/entity-impact-graph-settings.service";
+import {
+  EntityImpactGraphSettingsService,
+  type EntityImpactGraphSettingsInput
+} from "../../modules/system-settings/entity-impact-graph-settings.service";
 import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import {
@@ -18,6 +25,7 @@ import {
   UpdateAuthCacheSettingsInput,
   UpdateNewsPromptConfigInput,
   UpdateEntityImpactGraphSettingsInput,
+  UpdateKnowledgeGraphSettingsInput,
   UpdateRateLimitSettingsInput
 } from "../dto/settings.input";
 import type { GqlRequest } from "../graphql.types";
@@ -25,6 +33,7 @@ import {
   AuditLogRetentionModel,
   CrawlClientSettingsModel,
   EntityImpactGraphSettingsModel,
+  KnowledgeGraphSettingsModel,
   NewsPromptConfigModel,
   AuthCacheSettingsModel,
   RateLimitSettingsModel
@@ -35,7 +44,8 @@ import {
 export class SettingsResolver {
   constructor(
     private readonly rateLimitConfig: RateLimitConfigService,
-    private readonly entityImpactGraphSettings: EntityImpactGraphSettingsService,
+    private readonly entityImpactGraphSettingsService: EntityImpactGraphSettingsService,
+    private readonly knowledgeGraphSettingsService: KnowledgeGraphSettingsService,
     private readonly newsPromptConfigService: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
     private readonly crawlSettings: CrawlSettingsService,
@@ -68,7 +78,7 @@ export class SettingsResolver {
     @Context("req") req: GqlRequest
   ): Promise<EntityImpactGraphSettingsModel> {
     const user = this.requireUser(req);
-    return this.entityImpactGraphSettings.getSettings(user.orgId);
+    return this.entityImpactGraphSettingsService.getSettings(user.orgId);
   }
 
   @HasPermission("settings.manage")
@@ -79,7 +89,43 @@ export class SettingsResolver {
   ): Promise<EntityImpactGraphSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.entityImpactGraphSettings.updateSettings(user.orgId, user.id, input);
+    const settingsInput: EntityImpactGraphSettingsInput = {
+      enabled: input.enabled,
+      minEntityConfidence: input.minEntityConfidence,
+      minCorrelation: input.minCorrelation,
+      minCoOccurrence: input.minCoOccurrence,
+      maxNodes: input.maxNodes,
+      categories: input.categories as EntityImpactGraphSettingsInput["categories"],
+      cacheTtlSeconds: input.cacheTtlSeconds
+    };
+    return this.entityImpactGraphSettingsService.updateSettings(user.orgId, user.id, settingsInput);
+  }
+
+  @HasPermission("dashboard.read")
+  @Query(() => KnowledgeGraphSettingsModel)
+  async knowledgeGraphSettings(@Context("req") req: GqlRequest): Promise<KnowledgeGraphSettingsModel> {
+    const user = this.requireUser(req);
+    return this.knowledgeGraphSettingsService.getSettings(user.orgId);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => KnowledgeGraphSettingsModel)
+  async updateKnowledgeGraphSettings(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateKnowledgeGraphSettingsInput
+  ): Promise<KnowledgeGraphSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const settingsInput: KnowledgeGraphSettingsInput = {
+      enabled: input.enabled,
+      ingestionEnabled: input.ingestionEnabled,
+      seedIngestionEnabled: input.seedIngestionEnabled,
+      seedSwIndustriesPerRun: input.seedSwIndustriesPerRun,
+      maxBatchSize: input.maxBatchSize,
+      maxRelationsPerArticle: input.maxRelationsPerArticle,
+      cacheTtlSeconds: input.cacheTtlSeconds
+    };
+    return this.knowledgeGraphSettingsService.updateSettings(user.orgId, user.id, settingsInput);
   }
 
   @HasPermission("settings.manage")

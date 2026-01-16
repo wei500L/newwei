@@ -119,3 +119,27 @@ mutation UpdateEntityImpactGraphSettings($input: UpdateEntityImpactGraphSettings
     cacheTtlSeconds
   }
 }
+
+query KnowledgeGraphSettings {
+  knowledgeGraphSettings {
+    enabled
+    ingestionEnabled
+    seedIngestionEnabled
+    seedSwIndustriesPerRun
+    maxBatchSize
+    maxRelationsPerArticle
+    cacheTtlSeconds
+  }
+}
+
+mutation UpdateKnowledgeGraphSettings($input: UpdateKnowledgeGraphSettingsInput!) {
+  updateKnowledgeGraphSettings(input: $input) {
+    enabled
+    ingestionEnabled
+    seedIngestionEnabled
+    seedSwIndustriesPerRun
+    maxBatchSize
+    maxRelationsPerArticle
+    cacheTtlSeconds
+  }
+}

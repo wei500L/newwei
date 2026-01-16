@@ -96,6 +96,15 @@ export interface StorageConfig {
   presignedUrlTtlSeconds: number;
 }
 
+export interface VectorServiceConfig {
+  enabled: boolean;
+  fallbackToMongo: boolean;
+  baseUrl?: string;
+  token?: string;
+  timeoutMs: number;
+  maxRetries: number;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -251,6 +260,17 @@ export class EnvService extends ConfigService<ApiEnv> {
       forcePathStyle: this.get<boolean>("S3_FORCE_PATH_STYLE", { infer: true }) ?? false,
       presignedUrlTtlSeconds:
         this.get<number>("S3_PRESIGNED_URL_TTL_SECONDS", { infer: true }) ?? 300
+    };
+  }
+
+  get vectorServiceConfig(): VectorServiceConfig {
+    return {
+      enabled: this.get<boolean>("VECTOR_SERVICE_ENABLED", { infer: true }) ?? false,
+      fallbackToMongo: this.get<boolean>("VECTOR_SERVICE_FALLBACK_TO_MONGO", { infer: true }) ?? true,
+      baseUrl: this.get<string | undefined>("VECTOR_SERVICE_BASE_URL", { infer: true }),
+      token: this.get<string | undefined>("VECTOR_INTERNAL_TOKEN", { infer: true }),
+      timeoutMs: this.get<number>("VECTOR_SERVICE_TIMEOUT_MS", { infer: true }) ?? 5_000,
+      maxRetries: this.get<number>("VECTOR_SERVICE_MAX_RETRIES", { infer: true }) ?? 2
     };
   }
 

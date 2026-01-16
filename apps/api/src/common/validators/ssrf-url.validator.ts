@@ -55,7 +55,7 @@ export function isPrivateIP(ip: string): boolean {
     return true; // Invalid IP, treat as private for safety
   }
 
-  const [a, b, c, d] = parts;
+  const [a, b, c, d] = parts as [number, number, number, number];
 
   // 0.0.0.0/8 - Current network
   if (a === 0) return true;

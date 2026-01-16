@@ -741,6 +741,100 @@ type EntityImpactGraphSettingsModel {
   minEntityConfidence: Float!
 }
 
+type KnowledgeGraphSettingsModel {
+  cacheTtlSeconds: Int!
+  enabled: Boolean!
+  ingestionEnabled: Boolean!
+  seedIngestionEnabled: Boolean!
+  seedSwIndustriesPerRun: Int!
+  maxBatchSize: Int!
+  maxRelationsPerArticle: Int!
+}
+
+type KnowledgeGraphExplainChainModel {
+  edges: [KnowledgeGraphEdgeModel!]!
+  nodes: [KnowledgeGraphNodeModel!]!
+  reason: String!
+}
+
+type KnowledgeGraphImpactCandidateModel {
+  chains: [KnowledgeGraphExplainChainModel!]!
+  entity: KnowledgeGraphNodeModel!
+  kind: String!
+  score: Float!
+}
+
+type KnowledgeGraphImpactAnalysisModel {
+  candidates: [KnowledgeGraphImpactCandidateModel!]!
+  generatedAt: DateTime!
+  metadata: JSON
+  scenario: String!
+  seed: KnowledgeGraphNodeModel!
+}
+
+input ExecutiveChangeImpactInput {
+  companyName: String!
+  maxCandidates: Int
+}
+
+input CommodityMoveImpactInput {
+  commodityName: String!
+  maxCandidates: Int
+}
+
+input PolicyEventImpactInput {
+  includeLprSnapshot: Boolean
+  maxCandidates: Int
+  policyName: String!
+}
+
+input KnowledgeGraphSubgraphInput {
+  """Max BFS depth"""
+  maxDepth: Int
+
+  """Max nodes returned"""
+  maxNodes: Int
+
+  """Restrict edge types"""
+  relationTypes: [String!]
+
+  """Seed entity name"""
+  seedName: String!
+
+  """Optional seed entity type override"""
+  seedType: String
+}
+
+type KnowledgeGraphEdgeModel {
+  confidence: Float!
+  from: String!
+  id: String!
+  properties: JSON
+  to: String!
+  type: String!
+  weight: Float!
+}
+
+type KnowledgeGraphMetadataModel {
+  generatedAt: DateTime!
+  totalEdges: Int!
+  totalNodes: Int!
+}
+
+type KnowledgeGraphModel {
+  edges: [KnowledgeGraphEdgeModel!]!
+  metadata: KnowledgeGraphMetadataModel!
+  nodes: [KnowledgeGraphNodeModel!]!
+  seed: KnowledgeGraphNodeModel!
+}
+
+type KnowledgeGraphNodeModel {
+  id: String!
+  name: String!
+  properties: JSON
+  type: String!
+}
+
 type EntityImpactLinkModel {
   """Source node ID"""
   source: String!
@@ -916,6 +1010,7 @@ type Mutation {
   updateCrawlTaskIngestToItems(enabled: Boolean!, id: String!): CrawlTaskModel!
   updateEconomicDataFetchConfig(frequency: EconomicDataFrequency, isEnabled: Boolean, repeatCron: String, slug: String!): EconomicDataFetchConfigModel!
   updateEntityImpactGraphSettings(input: UpdateEntityImpactGraphSettingsInput!): EntityImpactGraphSettingsModel!
+  updateKnowledgeGraphSettings(input: UpdateKnowledgeGraphSettingsInput!): KnowledgeGraphSettingsModel!
   updateItem(input: UpdateItemInput!): ItemModel!
   updateNewsPromptConfig(input: UpdateNewsPromptConfigInput!): NewsPromptConfigModel!
   updateOrg(input: UpdateOrgInput!): OrgModel!
@@ -1063,12 +1158,19 @@ type Query {
   dashboards: [DashboardModel!]!
   economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
   entityImpactGraphSettings: EntityImpactGraphSettingsModel!
+  knowledgeGraphSettings: KnowledgeGraphSettingsModel!
   eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!
   getEconomicData(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicDataPointModel!]!
   getEconomicDataPaginated(category: String!, granularity: TimeGranularity, pagination: PaginationInput, timeRange: DateRangeInput!): PaginatedEconomicDataPointsModel!
 
   """Get entity impact graph data for visualization"""
   getEntityImpactGraph(input: EntityImpactGraphInput): EntityImpactGraphModel!
+
+  """Get a knowledge graph subgraph for a seed entity"""
+  getKnowledgeGraphSubgraph(input: KnowledgeGraphSubgraphInput!): KnowledgeGraphModel
+  getExecutiveChangeImpact(input: ExecutiveChangeImpactInput!): KnowledgeGraphImpactAnalysisModel
+  getCommodityMoveImpact(input: CommodityMoveImpactInput!): KnowledgeGraphImpactAnalysisModel
+  getPolicyEventImpact(input: PolicyEventImpactInput!): KnowledgeGraphImpactAnalysisModel
   item(id: String!): ItemModel
   itemFacets(filters: ItemsFiltersInput, search: String): ItemFacets!
   items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, search: String): ItemConnection!
@@ -1253,6 +1355,16 @@ input UpdateEntityImpactGraphSettingsInput {
   minCoOccurrence: Int!
   minCorrelation: Float!
   minEntityConfidence: Float!
+}
+
+input UpdateKnowledgeGraphSettingsInput {
+  cacheTtlSeconds: Int!
+  enabled: Boolean!
+  ingestionEnabled: Boolean!
+  seedIngestionEnabled: Boolean!
+  seedSwIndustriesPerRun: Int!
+  maxBatchSize: Int!
+  maxRelationsPerArticle: Int!
 }
 
 input UpdateItemInput {

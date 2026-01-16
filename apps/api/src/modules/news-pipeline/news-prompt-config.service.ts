@@ -16,7 +16,10 @@ export const DEFAULT_SYSTEM_PROMPT_TEMPLATE = [
   "Strip navigation, footers, legal boilerplate, promos, and unrelated recommendations while keeping facts, quotes, figures, and emphasis.",
   "Summaries must be 200-300 Chinese characters describing who/what/when/where/why.",
   "Return 5-8 key_points as single-sentence bullets emphasizing chronology, numbers, and impact.",
-  "Entities must include type (person/org/location/product/index/policy/other) and confidence 0-1.",
+  "Entities must include type (person/company/industry/organization/location/product/index/policy/commodity/other) and confidence 0-1.",
+  "Additionally extract kg_relations (max 20) for a finance knowledge graph when applicable.",
+  "Each kg_relations item must include subject{name,type}, predicate, object{name,type}, confidence 0-1, optional properties object, and optional evidence quote.",
+  "Allowed predicate values: belongs_to_industry, supplies, customer_of, competes_with, holds_position, affects_industry, affects_company, upstream_of, downstream_of, has_ticker.",
   "Always populate removed_noise_types with every noise category you remove, including garbled_text for encoding noise.",
   "quality_score is a decimal 0-1 reflecting completeness, readability, and de-noising success.",
   "sentiment_label must be one of positive/neutral/negative reflecting the overall tone; use neutral when uncertain.",
@@ -44,7 +47,7 @@ export const DEFAULT_USER_PROMPT_TEMPLATE = [
 ].join("\n");
 
 export const DEFAULT_NEWS_PROMPT_CONFIG: NewsPromptConfig = {
-  version: "news-clean-v3",
+  version: "news-clean-v4",
   systemPromptTemplate: DEFAULT_SYSTEM_PROMPT_TEMPLATE,
   denoisePromptTemplate: DEFAULT_DENOISE_PROMPT_TEMPLATE,
   userPromptTemplate: DEFAULT_USER_PROMPT_TEMPLATE

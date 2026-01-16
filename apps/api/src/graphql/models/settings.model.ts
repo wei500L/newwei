@@ -92,3 +92,27 @@ export class EntityImpactGraphSettingsModel {
   @Field(() => Int)
   cacheTtlSeconds!: number;
 }
+
+@ObjectType()
+export class KnowledgeGraphSettingsModel {
+  @Field(() => Boolean)
+  enabled!: boolean;
+
+  @Field(() => Boolean)
+  ingestionEnabled!: boolean;
+
+  @Field(() => Boolean)
+  seedIngestionEnabled!: boolean;
+
+  @Field(() => Int)
+  seedSwIndustriesPerRun!: number;
+
+  @Field(() => Int)
+  maxBatchSize!: number;
+
+  @Field(() => Int)
+  maxRelationsPerArticle!: number;
+
+  @Field(() => Int)
+  cacheTtlSeconds!: number;
+}

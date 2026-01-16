@@ -13,7 +13,8 @@
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "copy:email-templates": "node ./scripts/copy-email-templates.js",
-    "crawl:encrypt-configs": "tsx ./scripts/encrypt-crawl-task-configs.ts"
+    "crawl:encrypt-configs": "tsx ./scripts/encrypt-crawl-task-configs.ts",
+    "vector:backfill": "tsx ./scripts/backfill-vector-index.ts"
   },
   "dependencies": {
     "@apollo/server": "^4.11.1",
@@ -27,6 +28,7 @@
     "@modular/db": "workspace:*",
     "@modular/mongo": "workspace:*",
     "@modular/utils": "workspace:*",
+    "@modular/vector-client": "workspace:*",
     "@nestjs/apollo": "^12.0.0",
     "@nestjs/axios": "^4.0.0",
     "@nestjs/bull-shared": "^11.0.4",
