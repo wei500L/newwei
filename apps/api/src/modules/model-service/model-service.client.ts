@@ -54,6 +54,69 @@ export class ModelServiceClient {
 
   constructor(private readonly http: HttpService, private readonly env: EnvService) {}
 
+  async forecastHoldoutLastOrThrow(input: {
+    series: ModelServiceSeriesPoint[];
+    model: { kind: ModelServiceModelKind; seasonalPeriod?: number; confidenceLevel?: number };
+    requestId?: string;
+  }): Promise<ModelServiceForecastHoldoutLastResponse> {
+    const cfg = this.env.modelServiceConfig;
+    if (!cfg.enabled) {
+      throw new Error("Model service is disabled");
+    }
+    if (!cfg.baseUrl) {
+      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl });
+      throw new Error("Model service baseUrl is not configured");
+    }
+    if (this.isTemporarilyUnavailable()) {
+      throw new Error("Model service is temporarily unavailable");
+    }
+
+    const url = `${this.normalizeBaseUrl(cfg.baseUrl)}/v1/forecast/holdout_last`;
+    const payload: ModelServiceForecastHoldoutLastRequest = {
+      series: input.series,
+      confidence_level: input.model.confidenceLevel ?? 0.95,
+      model: {
+        kind: input.model.kind,
+        ...(typeof input.model.seasonalPeriod === "number" && Number.isFinite(input.model.seasonalPeriod)
+          ? { seasonal_period: Math.max(0, Math.trunc(input.model.seasonalPeriod)) }
+          : {})
+      },
+      ...(input.requestId ? { request_id: input.requestId } : {})
+    };
+
+    const maxRetries = Math.min(Math.max(Math.trunc(cfg.maxRetries), 0), 5);
+    const attempts = maxRetries + 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const response = await firstValueFrom(
+          this.http.post<ModelServiceForecastHoldoutLastResponse>(url, payload, {
+            headers: cfg.internalToken ? { "x-internal-token": cfg.internalToken } : undefined,
+            timeout: cfg.timeoutMs
+          })
+        );
+        this.markAvailable();
+        return response.data;
+      } catch (error) {
+        const decision = this.classifyError(error);
+        if (decision === "unauthorized") {
+          this.markUnavailable(error);
+          throw new Error("Model service request unauthorized");
+        }
+        if (decision === "non_retryable") {
+          throw new Error(this.formatError("Model service request failed", error));
+        }
+        if (attempt >= attempts - 1) {
+          this.markUnavailable(error);
+          throw new Error(this.formatError("Model service request failed", error));
+        }
+        const delayMs = this.computeRetryDelayMs(attempt);
+        await this.delay(delayMs);
+      }
+    }
+
+    throw new Error("Model service request failed");
+  }
+
   async forecastHoldoutLastBestEffort(input: {
     series: ModelServiceSeriesPoint[];
     model: { kind: ModelServiceModelKind; seasonalPeriod?: number; confidenceLevel?: number };
@@ -177,6 +240,35 @@ export class ModelServiceClient {
       return "retryable";
     }
     return "retryable";
+  }
+
+  private formatError(prefix: string, error: unknown): string {
+    const axiosError = error as AxiosError | undefined;
+    const status = typeof axiosError?.response?.status === "number" ? axiosError.response.status : null;
+
+    const responseData = axiosError?.response?.data;
+    let detail: string | null = null;
+    if (typeof responseData === "string" && responseData.trim()) {
+      detail = responseData.trim();
+    } else if (responseData && typeof responseData === "object") {
+      const rawDetail = (responseData as any)?.detail;
+      if (typeof rawDetail === "string" && rawDetail.trim()) {
+        detail = rawDetail.trim();
+      } else {
+        try {
+          detail = JSON.stringify(responseData);
+        } catch {
+          detail = null;
+        }
+      }
+    }
+
+    const base = status !== null ? `${prefix} (status=${status})` : prefix;
+    if (detail) {
+      return `${base}: ${detail}`;
+    }
+    const message = axiosError instanceof Error ? axiosError.message : String(error);
+    return `${base}: ${message}`;
   }
 
   private computeRetryDelayMs(attempt: number): number {

@@ -496,6 +496,21 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get assistantConfig() {
+    return {
+      queueConcurrency:
+        this.get<number>("ASSISTANT_QUEUE_CONCURRENCY", { infer: true }) ?? 2,
+      maxRetries:
+        this.get<number>("ASSISTANT_MAX_RETRIES", { infer: true }) ?? 3,
+      llmTimeoutMs:
+        this.get<number>("ASSISTANT_LLM_TIMEOUT_MS", { infer: true }) ?? 300_000,
+      streamFlushChars:
+        this.get<number>("ASSISTANT_STREAM_FLUSH_CHARS", { infer: true }) ?? 80,
+      streamFlushMs:
+        this.get<number>("ASSISTANT_STREAM_FLUSH_MS", { infer: true }) ?? 250
+    };
+  }
+
   get analysisConfig() {
     return {
       queueConcurrency:

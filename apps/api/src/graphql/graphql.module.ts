@@ -32,6 +32,7 @@ import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
 import { AkshareModule } from "../modules/akshare/akshare.module";
 import { AlertsModule } from "../modules/alerts/alerts.module";
 import { AnalysisModule } from "../modules/analysis/analysis.module";
+import { AssistantModule } from "../modules/assistant/assistant.module";
 import { AuthModule } from "../modules/auth/auth.module";
 import { CacheModule } from "../modules/cache/cache.module";
 import { ConfigModule } from "../modules/config/config.module";
@@ -56,6 +57,7 @@ import { RoleLoader } from "./loaders/role.loader";
 import { UserLoader } from "./loaders/user.loader";
 import { AlertsResolver } from "./resolvers/alerts.resolver";
 import { AnalysisResolver } from "./resolvers/analysis.resolver";
+import { AssistantResolver } from "./resolvers/assistant.resolver";
 import { CrawlResolver } from "./resolvers/crawl.resolver";
 import { DashboardResolver } from "./resolvers/dashboard.resolver";
 import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
@@ -128,6 +130,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
 	    CrawlModule,
     AlertsModule,
     AnalysisModule,
+    AssistantModule,
     AkshareModule,
     NotificationsModule,
     NewsPipelineModule,
@@ -242,6 +245,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     KnowledgeGraphImpactResolver,
     AlertsResolver,
     AnalysisResolver,
+    AssistantResolver,
     NotificationResolver,
     SettingsResolver,
     OrgResolver,

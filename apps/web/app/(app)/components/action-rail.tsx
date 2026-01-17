@@ -8,6 +8,7 @@ import {
   FundOutlined,
   GlobalOutlined,
   ReadOutlined,
+  RobotOutlined,
   SearchOutlined,
   SettingOutlined,
   RadarChartOutlined,
@@ -33,6 +34,7 @@ export function ActionRail() {
   const { data: session } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const canUseAssistant = permissions.includes("assistant.read") || permissions.includes("assistant.run");
   const canManageAdmin =
     permissions.includes("settings.manage") ||
     permissions.includes("org.write") ||
@@ -80,6 +82,16 @@ export function ActionRail() {
       label: t("nav.main.search", { defaultValue: "Search" }),
       path: "/search"
     },
+    ...(canUseAssistant
+      ? [
+          {
+            key: "/assistant",
+            icon: <RobotOutlined />,
+            label: t("nav.main.assistant", { defaultValue: "Assistant" }),
+            path: "/assistant"
+          } satisfies ActionItem
+        ]
+      : []),
     {
       key: "/subscriptions",
       icon: <BellOutlined />,

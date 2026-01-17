@@ -13,6 +13,7 @@ import { ApiGraphqlModule } from "./graphql/graphql.module";
 import { AkshareModule } from "./modules/akshare/akshare.module";
 import { AlertsModule } from "./modules/alerts/alerts.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
+import { AssistantModule } from "./modules/assistant/assistant.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { CacheModule } from "./modules/cache/cache.module";
@@ -64,6 +65,7 @@ import { WebSocketModule } from "./modules/websocket/websocket.module";
     AkshareModule,
     AlertsModule,
     AnalysisModule,
+    AssistantModule,
     SystemSettingsModule,
     NotificationsModule,
     ObservabilityModule,

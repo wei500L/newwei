@@ -10,6 +10,8 @@ import { ALERTS_QUEUE_NAME } from "../alerts/alerts.constants";
 import { AlertsModule } from "../alerts/alerts.module";
 import { ANALYSIS_QUEUE_NAME } from "../analysis/analysis.constants";
 import { AnalysisModule } from "../analysis/analysis.module";
+import { ASSISTANT_QUEUE_NAME } from "../assistant/assistant.constants";
+import { AssistantModule } from "../assistant/assistant.module";
 import { EnvService } from "../config/config.service";
 import { CRAWL_QUEUE_NAME } from "../crawl/crawl.constants";
 import { CrawlModule } from "../crawl/crawl.module";
@@ -48,6 +50,7 @@ const createBullBoardBasicAuthMiddleware = (
     CrawlModule,
     AkshareModule,
     AnalysisModule,
+    AssistantModule,
     AlertsModule,
     BullBoardModule.forRootAsync({
       inject: [EnvService],
@@ -71,6 +74,7 @@ const createBullBoardBasicAuthMiddleware = (
       { name: CRAWL_QUEUE_NAME, adapter: BullMQAdapter },
       { name: AKSHARE_QUEUE_NAME, adapter: BullMQAdapter },
       { name: ANALYSIS_QUEUE_NAME, adapter: BullMQAdapter },
+      { name: ASSISTANT_QUEUE_NAME, adapter: BullMQAdapter },
       { name: ALERTS_QUEUE_NAME, adapter: BullMQAdapter }
     )
   ]

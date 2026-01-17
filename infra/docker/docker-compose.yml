@@ -198,7 +198,7 @@ services:
       CI: "true"
       AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
       AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
-      MODEL_SERVICE_ENABLED: ${MODEL_SERVICE_ENABLED:-false}
+      MODEL_SERVICE_ENABLED: ${MODEL_SERVICE_ENABLED:-true}
       MODEL_SERVICE_BASE_URL: ${MODEL_SERVICE_BASE_URL:-http://model-service:8090}
       MODEL_SERVICE_INTERNAL_TOKEN: ${MODEL_SERVICE_INTERNAL_TOKEN:-dev-model-token}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -230,6 +230,8 @@ services:
       redis:
         condition: service_healthy
       akshare:
+        condition: service_healthy
+      model-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:4000/api/healthz/live"]
