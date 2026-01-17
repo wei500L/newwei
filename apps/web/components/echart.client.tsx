@@ -223,6 +223,14 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
           }),
         );
         break;
+      case "effectScatter":
+        promises.push(
+          installOnce("chart:effectScatter", async () => {
+            const m = await import("echarts/lib/chart/effectScatter/install.js");
+            return m.install;
+          }),
+        );
+        break;
       case "radar":
         promises.push(
           installOnce("chart:radar", async () => {
@@ -259,6 +267,14 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
         promises.push(
           installOnce("chart:map", async () => {
             const m = await import("echarts/lib/chart/map/install.js");
+            return m.install;
+          }),
+        );
+        break;
+      case "custom":
+        promises.push(
+          installOnce("chart:custom", async () => {
+            const m = await import("echarts/lib/chart/custom/install.js");
             return m.install;
           }),
         );

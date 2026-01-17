@@ -12,6 +12,10 @@ import { GeocodingService } from "../geo/geocoding.service";
 
 import worldGeoJson from "./assets/world.geo.json";
 import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
+import {
+  buildWarMapLayersResponse,
+  type WarMapLayersResponse
+} from "./war-map-layers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RANGE_DAYS = 30;
@@ -112,6 +116,8 @@ export interface WarMapNewsMarkersResponse {
   markers: WarMapNewsMarker[];
   updatedAt?: string;
 }
+
+export { type WarMapLayersResponse };
 
 interface SectorHeatmapCell {
   x: number;
@@ -224,6 +230,10 @@ export class DashboardChartsService {
       center: [0, 20],
       zoom: 1.1
     };
+  }
+
+  getWarMapLayers(): WarMapLayersResponse {
+    return buildWarMapLayersResponse();
   }
 
   async getWarMapEvents(range: DateRange, orgId: string): Promise<WarMapEventsResponse> {

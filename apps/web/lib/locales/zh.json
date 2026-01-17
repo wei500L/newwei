@@ -872,6 +872,7 @@
     "main": {
       "today": "今日要闻",
       "topics": "专题/事件",
+      "events": "新闻事件",
       "map": "地图态势",
       "finance": "金融面板",
       "alerts": "预警中心",
@@ -919,6 +920,147 @@
         "openItem": "打开条目",
         "timelineTitle": "时间线",
         "timelineEmpty": "暂无相关内容。"
+      }
+    },
+    "events": {
+      "title": "新闻事件",
+      "subtitle": "基于已处理新闻聚类出的事件与时间线。",
+      "loadFailed": "加载事件失败。",
+      "empty": "暂无事件。请在系统设置中启用入库并等待定时任务。",
+      "emptyCta": "打开系统设置",
+      "filters": {
+        "window": "时间窗口",
+        "windowHelp": "用于展示事件列表的时间窗口。",
+        "windowOption": "近{{days}}天",
+        "limit": "数量",
+        "limitOption": "{{value}} 个事件",
+        "status": {
+          "label": "状态",
+          "active": "进行中",
+          "archived": "已归档",
+          "all": "全部"
+        }
+      },
+      "fields": {
+        "startAt": "开始",
+        "lastAt": "最新",
+        "items": "条目"
+      },
+      "status": {
+        "active": "进行中",
+        "archived": "已归档"
+      },
+      "actions": {
+        "details": "详情"
+      },
+      "drawer": {
+        "title": "事件详情",
+        "loadFailed": "加载事件失败。",
+        "notFound": "事件不存在。",
+        "items": "条目",
+        "references": "引用",
+        "openOriginal": "打开",
+        "tabs": {
+          "timeline": "时间线",
+          "articles": "文章"
+        },
+        "timelineEmpty": "暂无时间线条目。请启用时间线生成并等待定时任务。",
+        "itemsEmpty": "该事件暂无文章。"
+      }
+    },
+    "digest": {
+      "title": "个性化摘要",
+      "customize": "定制",
+      "window": "窗口",
+      "maxEvents": "最大事件数",
+      "items": "条目",
+      "openSource": "打开",
+      "generatedAt": "生成时间",
+      "indicatorsOn": "包含指标",
+      "indicatorsOff": "不含指标",
+      "focusTopics": "专题",
+      "focusEntities": "实体",
+      "topicSentiment": "专题情绪",
+      "entitySentiment": "实体情绪",
+      "empty": "暂无摘要事件。请启用新闻事件入库并等待回填。",
+      "emptyCta": "查看事件",
+      "loadFailed": "生成摘要失败。",
+      "preferenceLoadFailed": "加载摘要偏好失败。",
+      "saved": "已保存。",
+      "saveFailed": "保存失败。",
+      "preferences": {
+        "title": "摘要偏好",
+        "required": "必填",
+        "windowDays": "窗口天数",
+        "maxEvents": "最大事件数",
+        "focusTopics": "关注专题",
+        "focusTopicsHint": "可选；留空表示全局。",
+        "focusTopicsPlaceholder": "输入专题",
+        "focusEntities": "关注实体",
+        "focusEntitiesHint": "可选；留空表示全局。",
+        "focusEntitiesPlaceholder": "输入实体",
+        "includeIndicators": "包含指标关联",
+        "maxIndicatorsPerEvent": "每事件最大指标数"
+      }
+    },
+    "newsIndicator": {
+      "title": "新闻-指标",
+      "subtitle": "新闻信号与经济指标的领先-滞后关联与回测。",
+      "settingsLoadFailed": "加载设置失败。",
+      "disabledTitle": "已关闭",
+      "disabledDescription": "管理员已关闭该功能。",
+      "disabledCta": "打开系统设置",
+      "ingestionOffTitle": "刷新任务未启用",
+      "ingestionOffDescription": "定时刷新未启用，结果可能过期。",
+      "loadFailed": "加载关联失败。",
+      "empty": "暂无关联。请配置指标 Slug 并等待定时刷新。",
+      "emptyCta": "打开系统设置",
+      "refreshDone": "已触发刷新。",
+      "refreshFailed": "刷新失败。",
+      "actions": {
+        "details": "详情",
+        "refresh": "重新计算"
+      },
+      "filters": {
+        "indicator": "指标",
+        "indicatorPlaceholder": "全部",
+        "scopeKeyPlaceholder": "按范围关键字过滤",
+        "scopeType": {
+          "label": "范围",
+          "all": "全部",
+          "entity": "实体",
+          "topic": "专题"
+        },
+        "featureMetric": {
+          "label": "特征",
+          "all": "全部",
+          "volume": "热度",
+          "avgScore": "平均分",
+          "negativeRatio": "负面占比"
+        }
+      },
+      "columns": {
+        "scope": "范围",
+        "feature": "特征",
+        "indicator": "指标",
+        "lag": "滞后",
+        "correlation": "相关",
+        "pValue": "p-value",
+        "samples": "样本数",
+        "backtest": "回测",
+        "updated": "更新时间"
+      },
+      "drawer": {
+        "title": "关联详情",
+        "loadFailed": "加载关联失败。",
+        "correlation": "相关系数",
+        "pValue": "p-value",
+        "lag": "滞后",
+        "window": "窗口",
+        "samples": "样本数",
+        "analyzed": "评估区间",
+        "backtests": "回测记录",
+        "backtestsEmpty": "暂无回测记录。"
       }
     }
   },
@@ -1070,7 +1212,8 @@
     },
     "market": {
       "overview": "市场概览",
-      "monitor": "重点监测"
+      "monitor": "重点监测",
+      "associations": "新闻-指标"
     },
     "macro": {
       "overview": "宏观概览",
@@ -1298,6 +1441,81 @@
         "required": "必填"
       }
     },
+    "newsEvents": {
+      "description": "将已处理新闻聚类为事件并生成时间线。",
+      "notice": {
+        "title": "说明",
+        "body": "入库与时间线生成走定时任务；只需要聚类可关闭时间线。"
+      },
+      "fields": {
+        "enabled": "启用",
+        "ingestionEnabled": "入库任务启用",
+        "timelineEnabled": "时间线启用",
+        "maxBatchSize": "单批处理上限",
+        "backfillDays": "回填天数",
+        "lookbackDays": "回看天数",
+        "timelineMaxEventsPerRun": "每次时间线最大事件数",
+        "vectorMinScore": "向量最小相似度",
+        "crossLanguagePenalty": "跨语种惩罚",
+        "cacheTtlSeconds": "缓存 TTL（秒）"
+      },
+      "hints": {
+        "ingestionEnabled": "控制定时入库任务。",
+        "timelineEnabled": "为事件生成按时间分桶的时间线条目。",
+        "vectorMinScore": "越高越严格。",
+        "crossLanguagePenalty": "当语种不一致时对相似度打折（0–1）。"
+      },
+      "messages": {
+        "saved": "已保存",
+        "saveFailed": "保存失败",
+        "loadFailed": "加载设置失败"
+      },
+      "validation": {
+        "required": "必填"
+      }
+    },
+    "newsIndicator": {
+      "description": "发现新闻信号与经济指标的领先-滞后关系，并提供回测护栏。",
+      "notice": {
+        "title": "护栏",
+        "body": "请确保经济数据与情感快照已就绪后再启用。"
+      },
+      "sections": {
+        "backtest": "回测"
+      },
+      "fields": {
+        "enabled": "启用",
+        "ingestionEnabled": "刷新任务启用",
+        "indicatorSlugs": "指标 Slug",
+        "windowDays": "窗口天数",
+        "maxLagDays": "最大滞后天数",
+        "minSampleSize": "最小样本数",
+        "minAbsCorrelation": "最小绝对相关系数",
+        "maxPValue": "最大 p-value",
+        "topEntities": "Top 实体数",
+        "topTopics": "Top 主题数",
+        "maxAssociationsPerIndicator": "每指标最大关联数",
+        "backtestTriggerZScore": "触发 z-score",
+        "backtestBaselineDays": "基线天数",
+        "backtestHoldoutDays": "留出天数",
+        "cacheTtlSeconds": "缓存 TTL（秒）"
+      },
+      "hints": {
+        "ingestionEnabled": "控制定时刷新任务。",
+        "indicatorSlugs": "示例：CPIAUCSL, DGS10, FEDFUNDS"
+      },
+      "placeholders": {
+        "indicatorSlugs": "输入指标 Slug"
+      },
+      "messages": {
+        "saved": "已保存",
+        "saveFailed": "保存失败",
+        "loadFailed": "加载设置失败"
+      },
+      "validation": {
+        "required": "必填"
+      }
+    },
     "newsPrompts": {
       "saved": "已保存",
       "saveFailed": "保存失败",
@@ -1412,6 +1630,8 @@
       "crawlClient": "抓取客户端",
       "entityImpactGraph": "实体影响图谱",
       "knowledgeGraph": "知识图谱",
+      "newsEvents": "新闻事件",
+      "newsIndicator": "新闻-指标",
       "newsPrompts": "新闻提示词",
       "llmGateway": "LLM 网关",
       "roles": "角色",

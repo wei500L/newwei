@@ -33,6 +33,10 @@ model Org {
   newsSources NewsSource[]
   pipelineJobs PipelineJob[]
   articles    Article[]
+  newsEvents  NewsEvent[]
+  newsEventItems NewsEventItem[]
+  newsEventTimelineEntries NewsEventTimelineEntry[]
+  newsEventIngestionState NewsEventIngestionState?
   dashboards  Dashboard[]
   alertRules  AlertRule[]
   alertChannels AlertNotificationChannel[]
@@ -43,6 +47,12 @@ model Org {
   knowledgeEdges KnowledgeEdge[]
   knowledgeEdgeEvidences KnowledgeEdgeEvidence[]
   knowledgeGraphIngestionState KnowledgeGraphIngestionState?
+  articleEntityLinks ArticleEntityLink[]
+  entitySentimentSnapshots EntitySentimentSnapshot[]
+  topicSentimentSnapshots TopicSentimentSnapshot[]
+  newsIndicatorAssociations NewsIndicatorAssociation[]
+  newsIndicatorAssociationBacktestRuns NewsIndicatorAssociationBacktestRun[]
+  userSettings UserSetting[]
 }
 
 model User {
@@ -67,6 +77,7 @@ model User {
   systemSettingsUpdated SystemSetting[] @relation("SystemSettingUpdatedBy")
   rateLimitPoliciesUpdated RateLimitPolicy[] @relation("RateLimitPolicyUpdatedBy")
   notifications Notification[]
+  userSettings UserSetting[]
 }
 
 model Role {
@@ -241,6 +252,22 @@ model SystemSetting {
   updatedById String?
 }
 
+model UserSetting {
+  id        String   @id @default(cuid())
+  org       Org      @relation(fields: [orgId], references: [id])
+  orgId     String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  key       String
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, userId, key])
+  @@index([orgId, userId])
+  @@index([orgId, key])
+}
+
 model RateLimitPolicy {
   feature       String   @id
   userLimit     Int
@@ -358,6 +385,7 @@ model Article {
   jobs      PipelineJob[]
   processed ProcessedArticle?
   knowledgeEdgeEvidences KnowledgeEdgeEvidence[]
+  entityLinks ArticleEntityLink[]
 
   @@unique([url, contentHash])
   @@index([orgId, sourceId, crawlAt])
@@ -395,7 +423,103 @@ model ProcessedArticle {
   processedAt        DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  newsEventItems     NewsEventItem[]
+  representativeOfNewsEvents NewsEvent[] @relation("NewsEventRepresentative")
+
   @@fulltext([title, summary])
+}
+
+model ArticleEntityLink {
+  id         String               @id @default(cuid())
+  org        Org                  @relation(fields: [orgId], references: [id])
+  orgId      String
+  article    Article              @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId  String
+  entity     KnowledgeEntity      @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  entityId   String
+  mention    String?
+  confidence Float?
+  source     KnowledgeRecordSource @default(llm)
+  createdAt  DateTime             @default(now())
+
+  @@unique([orgId, articleId, entityId])
+  @@index([orgId, entityId, createdAt])
+  @@index([orgId, articleId, createdAt])
+}
+
+model NewsEvent {
+  id          String         @id @default(cuid())
+  org         Org            @relation(fields: [orgId], references: [id])
+  orgId       String
+  status      NewsEventStatus @default(active)
+  language    String?
+  primaryTopic String?
+  primaryEntity String?
+  title       String?
+  summary     String?
+  startAt     DateTime
+  lastAt      DateTime
+  representativeProcessedArticle ProcessedArticle? @relation("NewsEventRepresentative", fields: [representativeProcessedArticleId], references: [id])
+  representativeProcessedArticleId String?
+  representativeProcessedItemId String?
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  items       NewsEventItem[]
+  timeline    NewsEventTimelineEntry[]
+
+  @@index([orgId, lastAt])
+  @@index([orgId, status, lastAt])
+  @@index([orgId, primaryTopic, lastAt])
+  @@index([orgId, primaryEntity, lastAt])
+}
+
+model NewsEventItem {
+  id               String                 @id @default(cuid())
+  org              Org                    @relation(fields: [orgId], references: [id])
+  orgId            String
+  event            NewsEvent              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId          String
+  processedArticle ProcessedArticle       @relation(fields: [processedArticleId], references: [id], onDelete: Cascade)
+  processedArticleId String
+  processedItemId  String?
+  similarity       Float?
+  assignedBy       NewsEventAssignmentMethod @default(overlap)
+  createdAt        DateTime               @default(now())
+
+  @@unique([orgId, processedArticleId])
+  @@index([orgId, eventId, createdAt])
+  @@index([orgId, processedItemId])
+  @@index([eventId, createdAt])
+}
+
+model NewsEventTimelineEntry {
+  id                 String      @id @default(cuid())
+  org                Org         @relation(fields: [orgId], references: [id])
+  orgId              String
+  event              NewsEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId            String
+  bucketStart        DateTime
+  title              String?
+  summary            String?
+  keyPoints          Json?
+  referencedArticleIds Json?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@unique([eventId, bucketStart])
+  @@index([orgId, bucketStart])
+}
+
+model NewsEventIngestionState {
+  id                   String   @id @default(cuid())
+  org                  Org      @relation(fields: [orgId], references: [id])
+  orgId                String   @unique
+  lastProcessedAt      DateTime?
+  lastProcessedArticleId String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 model MongoOutbox {
@@ -685,6 +809,17 @@ enum ProcessedArticleStatus {
   failed
 }
 
+enum NewsEventStatus {
+  active
+  archived
+}
+
+enum NewsEventAssignmentMethod {
+  vector
+  overlap
+  manual
+}
+
 model RefreshToken {
   id          String   @id @default(cuid())
   user        User     @relation(fields: [userId], references: [id])
@@ -756,6 +891,7 @@ model EconomicDataItem {
   fetchConfig      EconomicDataFetchConfig?
   categories       EconomicDataItemCategory[]
   alertRules       AlertRule[]
+  newsIndicatorAssociations NewsIndicatorAssociation[]
 }
 
 model EconomicDataItemCategory {
@@ -797,6 +933,117 @@ model EconomicDataFetchConfig {
   lastError    String?
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
+}
+
+model EntitySentimentSnapshot {
+  id            String   @id @default(cuid())
+  org           Org      @relation(fields: [orgId], references: [id])
+  orgId         String
+  entityName    String
+  entityType    String   @default("")
+  bucketStart   DateTime
+  totalDocs     Int
+  negativeDocs  Int
+  positiveDocs  Int
+  neutralDocs   Int
+  scoreSum      Int
+  avgScore      Float
+  negativeRatio Float
+  evidenceProcessedItemIds Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([orgId, entityName, entityType, bucketStart])
+  @@index([orgId, bucketStart])
+  @@index([orgId, entityName, bucketStart])
+}
+
+model TopicSentimentSnapshot {
+  id            String   @id @default(cuid())
+  org           Org      @relation(fields: [orgId], references: [id])
+  orgId         String
+  topic         String
+  bucketStart   DateTime
+  totalDocs     Int
+  negativeDocs  Int
+  positiveDocs  Int
+  neutralDocs   Int
+  scoreSum      Int
+  avgScore      Float
+  negativeRatio Float
+  evidenceProcessedItemIds Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([orgId, topic, bucketStart])
+  @@index([orgId, bucketStart])
+  @@index([orgId, topic, bucketStart])
+}
+
+enum NewsIndicatorScopeType {
+  entity
+  topic
+}
+
+enum NewsIndicatorFeatureMetric {
+  volume
+  avg_score
+  negative_ratio
+}
+
+enum NewsIndicatorBacktestStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+model NewsIndicatorAssociation {
+  id              String                   @id @default(cuid())
+  org             Org                      @relation(fields: [orgId], references: [id])
+  orgId           String
+  scopeType       NewsIndicatorScopeType
+  scopeKey        String
+  scopeKeyType    String                   @default("")
+  featureMetric   NewsIndicatorFeatureMetric
+  indicatorItem   EconomicDataItem         @relation(fields: [indicatorItemId], references: [id], onDelete: Cascade)
+  indicatorItemId String
+  windowDays      Int
+  lagDays         Int
+  correlation     Float
+  pValue          Float?
+  sampleSize      Int
+  analyzedStartAt DateTime
+  analyzedEndAt   DateTime
+  metadata        Json?
+  lastEvaluatedAt DateTime
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  backtests       NewsIndicatorAssociationBacktestRun[]
+
+  @@unique([orgId, scopeType, scopeKey, scopeKeyType, featureMetric, indicatorItemId])
+  @@index([orgId, indicatorItemId, lastEvaluatedAt])
+  @@index([orgId, scopeType, scopeKey, lastEvaluatedAt])
+}
+
+model NewsIndicatorAssociationBacktestRun {
+  id             String                    @id @default(cuid())
+  org            Org                       @relation(fields: [orgId], references: [id])
+  orgId          String
+  association    NewsIndicatorAssociation  @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  associationId  String
+  status         NewsIndicatorBacktestStatus @default(pending)
+  windowStart    DateTime
+  windowEnd      DateTime
+  config         Json?
+  metrics        Json?
+  error          String?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  @@index([associationId, createdAt])
+  @@index([orgId, createdAt])
 }
 
 enum KnowledgeEntityType {
@@ -843,6 +1090,7 @@ model KnowledgeEntity {
   aliases  KnowledgeEntityAlias[]
   outgoing KnowledgeEdge[]        @relation("KnowledgeEdgeFrom")
   incoming KnowledgeEdge[]        @relation("KnowledgeEdgeTo")
+  articleLinks ArticleEntityLink[]
 
   @@unique([orgId, type, normalizedKey])
   @@index([orgId, type])

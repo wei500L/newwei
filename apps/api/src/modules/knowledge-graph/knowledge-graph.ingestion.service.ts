@@ -10,6 +10,8 @@ import { KnowledgeGraphService } from "./knowledge-graph.service";
 
 const logger = createLogger({ name: "knowledge-graph-ingestion" });
 const DEFAULT_BACKFILL_DAYS = 30;
+const DEFAULT_MAX_ENTITIES_PER_ARTICLE = 20;
+const DEFAULT_MIN_ENTITY_CONFIDENCE = 0.5;
 
 @Injectable()
 export class KnowledgeGraphIngestionService {
@@ -72,6 +74,7 @@ export class KnowledgeGraphIngestionService {
       select: {
         articleId: true,
         processedAt: true,
+        entities: true,
         kgRelations: true,
         llmPromptVersion: true
       },
@@ -94,6 +97,23 @@ export class KnowledgeGraphIngestionService {
         kgRelations: entry.kgRelations,
         maxRelationsPerArticle: settings.maxRelationsPerArticle
       });
+
+      try {
+        await this.graph.linkArticleEntities({
+          orgId,
+          articleId: entry.articleId,
+          extractorVersion: entry.llmPromptVersion,
+          entities: entry.entities,
+          maxEntitiesPerArticle: DEFAULT_MAX_ENTITIES_PER_ARTICLE,
+          minConfidence: DEFAULT_MIN_ENTITY_CONFIDENCE,
+          createMissingEntities: true
+        });
+      } catch (error) {
+        logger.warn(
+          { err: error, orgId, articleId: entry.articleId },
+          "Knowledge graph entity linking failed"
+        );
+      }
 
       processedArticles += 1;
       upsertedEdges += result.edgesUpserted;

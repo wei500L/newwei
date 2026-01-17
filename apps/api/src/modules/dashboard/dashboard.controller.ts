@@ -51,6 +51,12 @@ export class DashboardController {
   }
 
   @Permissions("dashboards.read")
+  @Get("war-map/layers")
+  async warMapLayers() {
+    return this.chartsService.getWarMapLayers();
+  }
+
+  @Permissions("dashboards.read")
   @Get("war-map/events")
   async warMapEvents(
     @CurrentUser() user: AuthenticatedUser,

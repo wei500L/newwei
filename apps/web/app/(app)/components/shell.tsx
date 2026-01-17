@@ -5,6 +5,7 @@ import type { PropsWithChildren } from "react";
 
 import { ActionRail } from "./action-rail";
 import { TopNav } from "./top-nav";
+import { UserUiSettingsSync } from "./user-ui-settings-sync";
 
 export function ShellLayout({ children }: PropsWithChildren) {
   const [, contextHolder] = message.useMessage();
@@ -12,6 +13,8 @@ export function ShellLayout({ children }: PropsWithChildren) {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {contextHolder}
+
+      <UserUiSettingsSync />
 
       <TopNav />
 

@@ -93,6 +93,13 @@ export function NewsCard({ item }: NewsCardProps) {
   const thumbnailUrl = safeHttpUrl(item.thumbnail);
   const originalUrl = safeHttpUrl(item.url);
   const locationText = item.location?.trim() ?? "";
+  const handleSearch = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+  };
 
   return (
     <Card
@@ -158,12 +165,37 @@ export function NewsCard({ item }: NewsCardProps) {
             </Tooltip>
           ) : null}
           {locationText ? (
-            <Tag color="cyan" className="text-xs">
+            <Tag
+              color="cyan"
+              className="text-xs cursor-pointer"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleSearch(locationText)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleSearch(locationText);
+                }
+              }}
+            >
               {locationText}
             </Tag>
           ) : null}
           {displayTags.map((tag) => (
-            <Tag key={`${tag.color}-${tag.label}`} color={tag.color} className="text-xs">
+            <Tag
+              key={`${tag.color}-${tag.label}`}
+              color={tag.color}
+              className="text-xs cursor-pointer"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleSearch(tag.label)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleSearch(tag.label);
+                }
+              }}
+            >
               {tag.label}
             </Tag>
           ))}

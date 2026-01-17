@@ -1,11 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Skeleton } from "antd";
+import { Button, Checkbox, Popover, Skeleton, Space } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { SettingOutlined } from "@ant-design/icons";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
@@ -15,6 +16,8 @@ import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 import { useDashboardRangeStore } from "@/store/time-range";
+import { type WarMapLayerId, useWarMapSettingsStore } from "@/store/war-map-settings";
+import { useSituationMonitorMonitorsStore } from "@/store/situation-monitor-monitors";
 
 enum WarEventSeverity {
   Low = "low",
@@ -94,7 +97,44 @@ interface WarMapNewsMarkersResponse {
   updatedAt?: string;
 }
 
-type WarMapPointKind = "signal" | "news";
+type WarMapPointKind = "signal" | "news" | "layer" | "monitor";
+
+type WarMapThreatLevel = "critical" | "high" | "elevated" | "low";
+
+interface WarMapHotspot {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  level: WarMapThreatLevel;
+  description: string;
+}
+
+interface WarMapStrategicPoint {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  description: string;
+}
+
+interface WarMapConflictZone {
+  id: string;
+  name: string;
+  coords: Array<[number, number]>;
+  color: string;
+}
+
+interface WarMapLayersResponse {
+  updatedAt: string;
+  threatColors: Record<WarMapThreatLevel, string>;
+  hotspots: WarMapHotspot[];
+  conflictZones: WarMapConflictZone[];
+  chokepoints: WarMapStrategicPoint[];
+  cableLandings: WarMapStrategicPoint[];
+  nuclearSites: WarMapStrategicPoint[];
+  militaryBases: WarMapStrategicPoint[];
+}
 
 interface WarMapScatterPoint {
   kind: WarMapPointKind;
@@ -111,6 +151,10 @@ interface WarMapScatterPoint {
   ingestedAt?: string;
   geoSource?: WarMapNewsGeoSource;
   displayName?: string;
+  monitorId?: string;
+  keywords?: string[];
+  description?: string;
+  layer?: string;
   itemStyle?: {
     color: string;
     opacity?: number;
@@ -172,6 +216,10 @@ export function WarMap() {
   const [inView, setInView] = useState(false);
   const registeredMapsRef = useRef(new Set<string>());
   const [mapReady, setMapReady] = useState(false);
+  const layerVisibility = useWarMapSettingsStore((state) => state.layerVisibility);
+  const setLayerVisible = useWarMapSettingsStore((state) => state.setLayerVisible);
+  const resetLayers = useWarMapSettingsStore((state) => state.resetLayers);
+  const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
   const emptyMessage = t("pages.map.empty", {
     defaultValue: "No alerts or geo-tagged news signals in the selected range."
   });
@@ -269,6 +317,16 @@ export function WarMap() {
     placeholderData: (previous) => previous
   });
 
+  const layersQuery = useQuery({
+    queryKey: ["dashboard", "war-map", "layers"],
+    queryFn: async () => {
+      const response = await apiClient.get<WarMapLayersResponse>("dashboard/war-map/layers");
+      return response.data;
+    },
+    staleTime: 24 * 60 * 60 * 1000,
+    enabled
+  });
+
   useEffect(() => {
     if (!enabled || !geoQuery.data) {
       return;
@@ -311,6 +369,26 @@ export function WarMap() {
     if (!enabled || !geoQuery.data || !mapReady) return {};
     const events = eventsQuery.data?.events ?? [];
     const newsMarkers = newsMarkersQuery.data?.markers ?? [];
+    const layers = layersQuery.data;
+    const monitorsWithLocation = monitors
+      .filter((monitor) => monitor.enabled && monitor.location)
+      .map((monitor) => ({
+        id: monitor.id,
+        name: monitor.name,
+        color: monitor.color,
+        keywords: monitor.keywords,
+        location: monitor.location!
+      }))
+      .filter((monitor) => {
+        const lat = monitor.location.lat;
+        const lng = monitor.location.lng;
+        return (
+          Number.isFinite(lat) &&
+          Number.isFinite(lng) &&
+          Math.abs(lat) <= 90 &&
+          Math.abs(lng) <= 180
+        );
+      });
     const resolveSeverityColor = (severity: WarEventSeverity) => {
       switch (severity) {
         case WarEventSeverity.High:
@@ -389,6 +467,220 @@ export function WarMap() {
     const areaColor = "rgba(148, 163, 184, 0.25)";
     const borderColor = colors?.border ?? "#e2e8f0";
 
+    const series: any[] = [];
+
+    if (layers && layerVisibility.conflictZones && layers.conflictZones.length > 0) {
+      series.push({
+        name: t("dashboard.charts.warMap.conflictZones", { defaultValue: "Conflict zones" }),
+        type: "custom",
+        coordinateSystem: "geo",
+        silent: true,
+        z: 1,
+        data: layers.conflictZones.map((zone) => ({
+          name: zone.name,
+          coords: zone.coords,
+          color: zone.color
+        })),
+        renderItem: (params: any, api: any) => {
+          const data = params.data as { coords?: Array<[number, number]>; color?: string } | undefined;
+          const coords = Array.isArray(data?.coords) ? data.coords : [];
+          if (coords.length < 3) return null;
+          const points = coords.map((coord) => api.coord(coord));
+          const color = typeof data?.color === "string" ? data.color : "rgba(239, 68, 68, 0.6)";
+          return {
+            type: "polygon",
+            shape: { points },
+            style: {
+              fill: color,
+              opacity: 0.12,
+              stroke: color,
+              lineWidth: 1
+            }
+          };
+        }
+      });
+    }
+
+    if (layers && layerVisibility.hotspots && layers.hotspots.length > 0) {
+      series.push({
+        name: t("dashboard.charts.warMap.hotspots", { defaultValue: "Hotspots" }),
+        type: "effectScatter",
+        coordinateSystem: "geo",
+        z: 3,
+        data: layers.hotspots.map((hotspot) => {
+          const color = layers.threatColors?.[hotspot.level] ?? colors?.accent ?? "#faad14";
+          return {
+            kind: "layer",
+            layer: "hotspot",
+            name: hotspot.name,
+            description: hotspot.description,
+            level: hotspot.level,
+            value: [hotspot.lng, hotspot.lat, 1],
+            itemStyle: {
+              color,
+              opacity: 0.85
+            }
+          };
+        }),
+        symbolSize: (value: unknown, params: any) => {
+          const level = params?.data?.level as WarMapThreatLevel | undefined;
+          switch (level) {
+            case "critical":
+              return 16;
+            case "high":
+              return 14;
+            case "elevated":
+              return 12;
+            case "low":
+            default:
+              return 10;
+          }
+        },
+        rippleEffect: {
+          brushType: "stroke",
+          scale: 3
+        },
+        label: {
+          show: true,
+          position: "right",
+          formatter: (params: any) => params?.data?.name ?? "",
+          color: colors?.foreground ?? "#475569",
+          fontFamily,
+          fontSize: 10
+        }
+      });
+    }
+
+    if (layerVisibility.monitors && monitorsWithLocation.length > 0) {
+      series.push({
+        name: t("dashboard.charts.warMap.monitors", { defaultValue: "Monitors" }),
+        type: "scatter",
+        coordinateSystem: "geo",
+        z: 12,
+        data: monitorsWithLocation.map((monitor) => ({
+          kind: "monitor",
+          monitorId: monitor.id,
+          name: monitor.name,
+          description: monitor.location.name,
+          keywords: monitor.keywords,
+          value: [monitor.location.lng, monitor.location.lat, 1],
+          itemStyle: {
+            color: monitor.color ?? colors?.primary ?? "#1f3b7b",
+            opacity: 0.9
+          }
+        })),
+        symbol: "circle",
+        symbolSize: 10,
+        emphasis: { scale: true },
+        label: {
+          show: false
+        }
+      });
+    }
+
+    const buildStrategicSeries = (
+      id: WarMapLayerId,
+      name: string,
+      points: WarMapStrategicPoint[] | undefined,
+      style: { color: string; symbol: string; size: number; opacity?: number }
+    ) => {
+      if (!layers || !layerVisibility[id] || !points || points.length === 0) return;
+      series.push({
+        name,
+        type: "scatter",
+        coordinateSystem: "geo",
+        z: 2,
+        symbol: style.symbol,
+        symbolSize: style.size,
+        itemStyle: {
+          color: style.color,
+          opacity: style.opacity ?? 0.8
+        },
+        data: points.map((point) => ({
+          kind: "layer",
+          layer: id,
+          name: point.name,
+          description: point.description,
+          value: [point.lng, point.lat, 1],
+          itemStyle: {
+            color: style.color,
+            opacity: style.opacity ?? 0.8
+          }
+        }))
+      });
+    };
+
+    if (layers) {
+      buildStrategicSeries(
+        "chokepoints",
+        t("dashboard.charts.warMap.chokepoints", { defaultValue: "Chokepoints" }),
+        layers.chokepoints,
+        { color: colors?.primary ?? "#1f3b7b", symbol: "diamond", size: 9 }
+      );
+      buildStrategicSeries(
+        "cableLandings",
+        t("dashboard.charts.warMap.cableLandings", { defaultValue: "Cable landings" }),
+        layers.cableLandings,
+        { color: "#a855f7", symbol: "circle", size: 6, opacity: 0.65 }
+      );
+      buildStrategicSeries(
+        "nuclearSites",
+        t("dashboard.charts.warMap.nuclearSites", { defaultValue: "Nuclear sites" }),
+        layers.nuclearSites,
+        { color: "#eab308", symbol: "triangle", size: 7, opacity: 0.75 }
+      );
+      buildStrategicSeries(
+        "militaryBases",
+        t("dashboard.charts.warMap.militaryBases", { defaultValue: "Military bases" }),
+        layers.militaryBases,
+        { color: "#ec4899", symbol: "pin", size: 9, opacity: 0.75 }
+      );
+    }
+
+    series.push({
+      name: t("dashboard.charts.warMap.series", { defaultValue: "Signals" }),
+      type: "scatter",
+      coordinateSystem: "geo",
+      data: scatterData,
+      large: useLargeMode,
+      largeThreshold: 500,
+      progressive: useLargeMode ? 2000 : undefined,
+      progressiveThreshold: useLargeMode ? 800 : undefined,
+      animation: !useLargeMode,
+      animationDurationUpdate: useLargeMode ? 0 : 300,
+      emphasis: useLargeMode ? { disabled: true } : { scale: true },
+      symbolSize: (value: unknown) => {
+        if (!Array.isArray(value)) return 8;
+        const intensity = typeof value[2] === "number" ? value[2] : 0;
+        return Math.max(6, Math.min(26, Math.sqrt(intensity) * 2));
+      },
+      itemStyle: {
+        shadowBlur: 6,
+        shadowColor: "rgba(15, 23, 42, 0.2)"
+      },
+      z: 10
+    });
+
+    series.push({
+      name: t("dashboard.charts.warMap.newsSeries", { defaultValue: "News" }),
+      type: "scatter",
+      coordinateSystem: "geo",
+      data: newsScatterData,
+      large: useLargeNewsMode,
+      largeThreshold: 800,
+      progressive: useLargeNewsMode ? 3000 : undefined,
+      progressiveThreshold: useLargeNewsMode ? 1200 : undefined,
+      animation: !useLargeNewsMode,
+      animationDurationUpdate: useLargeNewsMode ? 0 : 300,
+      emphasis: useLargeNewsMode ? { disabled: true } : { scale: true },
+      symbolSize: () => 6,
+      itemStyle: {
+        shadowBlur: 3,
+        shadowColor: "rgba(15, 23, 42, 0.12)"
+      },
+      z: 11
+    });
+
     return {
       // Title handled externally by container
       tooltip: {
@@ -441,6 +733,29 @@ export function WarMap() {
                 <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
                   Click to open original link
                 </div>
+              </div>
+            `;
+          }
+
+          if (kind === "layer") {
+            const color = data.itemStyle?.color ?? colors?.accent ?? "#faad14";
+            const description = typeof data.description === "string" ? data.description : data.name;
+            return `
+              <div style="min-width: 200px;">
+                <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${color};">${description}</div>
+              </div>
+            `;
+          }
+
+          if (kind === "monitor") {
+            const color = data.itemStyle?.color ?? colors?.primary ?? "#1f3b7b";
+            const keywords = Array.isArray(data.keywords) ? data.keywords.slice(0, 6).join(", ") : "";
+            const location = typeof data.description === "string" ? data.description : "";
+            return `
+              <div style="min-width: 220px;">
+                <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${color};">${data.name}</div>
+                ${location ? `<div style="color: #94a3b8; margin-bottom: 4px;">${location}</div>` : ""}
+                ${keywords ? `<div style="color: #94a3b8;">${keywords}</div>` : ""}
               </div>
             `;
           }
@@ -514,51 +829,22 @@ export function WarMap() {
         }
       },
       backgroundColor: 'transparent',
-      series: [
-        {
-          name: t("dashboard.charts.warMap.series", { defaultValue: "Signals" }),
-          type: "scatter",
-          coordinateSystem: "geo",
-          data: scatterData,
-          large: useLargeMode,
-          largeThreshold: 500,
-          progressive: useLargeMode ? 2000 : undefined,
-          progressiveThreshold: useLargeMode ? 800 : undefined,
-          animation: !useLargeMode,
-          animationDurationUpdate: useLargeMode ? 0 : 300,
-          emphasis: useLargeMode ? { disabled: true } : { scale: true },
-          symbolSize: (value: unknown) => {
-            if (!Array.isArray(value)) return 8;
-            const intensity = typeof value[2] === "number" ? value[2] : 0;
-            return Math.max(6, Math.min(26, Math.sqrt(intensity) * 2));
-          },
-          itemStyle: {
-             shadowBlur: 6,
-             shadowColor: "rgba(15, 23, 42, 0.2)"
-          }
-        },
-        {
-          name: t("dashboard.charts.warMap.newsSeries", { defaultValue: "News" }),
-          type: "scatter",
-          coordinateSystem: "geo",
-          data: newsScatterData,
-          large: useLargeNewsMode,
-          largeThreshold: 800,
-          progressive: useLargeNewsMode ? 3000 : undefined,
-          progressiveThreshold: useLargeNewsMode ? 1200 : undefined,
-          animation: !useLargeNewsMode,
-          animationDurationUpdate: useLargeNewsMode ? 0 : 300,
-          emphasis: useLargeNewsMode ? { disabled: true } : { scale: true },
-          symbolSize: () => 6,
-          itemStyle: {
-            shadowBlur: 3,
-            shadowColor: "rgba(15, 23, 42, 0.12)"
-          },
-          z: 4
-        }
-      ]
+      series
     };
-  }, [colors, enabled, eventsQuery.data, fontFamily, geoQuery.data, locale, mapReady, newsMarkersQuery.data, t]);
+  }, [
+    colors,
+    enabled,
+    eventsQuery.data,
+    fontFamily,
+    geoQuery.data,
+    layerVisibility,
+    layersQuery.data,
+    locale,
+    mapReady,
+    monitors,
+    newsMarkersQuery.data,
+    t
+  ]);
 
   const chartEvents = useMemo(() => {
     return [
@@ -571,14 +857,26 @@ export function WarMap() {
             return;
           }
           const record = data as Record<string, unknown>;
-          if (record.kind !== "news") {
+          if (record.kind === "news") {
+            const url = typeof record.url === "string" ? safeHttpUrl(record.url) : null;
+            if (!url) {
+              return;
+            }
+            window.open(url, "_blank", "noopener,noreferrer");
             return;
           }
-          const url = typeof record.url === "string" ? safeHttpUrl(record.url) : null;
-          if (!url) {
-            return;
+
+          if (record.kind === "monitor") {
+            const keywords = Array.isArray(record.keywords)
+              ? record.keywords.filter((kw): kw is string => typeof kw === "string" && kw.trim().length > 0)
+              : [];
+            const fallback = typeof record.name === "string" ? record.name : "";
+            const query = (keywords[0] ?? fallback).trim();
+            if (!query) {
+              return;
+            }
+            window.open(`/search?q=${encodeURIComponent(query)}`, "_blank", "noopener,noreferrer");
           }
-          window.open(url, "_blank", "noopener,noreferrer");
         }
       }
     ];
@@ -590,6 +888,19 @@ export function WarMap() {
   const hasEvents = (eventsQuery.data?.events?.length ?? 0) > 0;
   const hasNewsMarkers = (newsMarkersQuery.data?.markers?.length ?? 0) > 0;
   const hasSignals = hasEvents || hasNewsMarkers;
+  const layers = layersQuery.data;
+  const hasMonitorLocations = monitors.some((monitor) => monitor.enabled && Boolean(monitor.location));
+  const hasStaticLayers = Boolean(
+    layers &&
+      ((layerVisibility.hotspots && layers.hotspots.length > 0) ||
+        (layerVisibility.conflictZones && layers.conflictZones.length > 0) ||
+        (layerVisibility.chokepoints && layers.chokepoints.length > 0) ||
+        (layerVisibility.cableLandings && layers.cableLandings.length > 0) ||
+        (layerVisibility.nuclearSites && layers.nuclearSites.length > 0) ||
+        (layerVisibility.militaryBases && layers.militaryBases.length > 0))
+  );
+  const hasRenderableData =
+    hasSignals || hasStaticLayers || (layerVisibility.monitors && hasMonitorLocations);
 
   if (!inView) {
     return (
@@ -642,6 +953,82 @@ export function WarMap() {
     );
   }
 
+  const layerSelector = (
+    <div style={{ minWidth: 220 }}>
+      <Space direction="vertical" size={6} style={{ width: "100%" }}>
+        <Checkbox
+          checked={layerVisibility.hotspots}
+          onChange={(event) =>
+            setLayerVisible("hotspots", event.target.checked)
+          }
+          disabled={!layersQuery.data}
+        >
+          {t("dashboard.charts.warMap.hotspots", { defaultValue: "Hotspots" })}
+        </Checkbox>
+        <Checkbox
+          checked={layerVisibility.conflictZones}
+          onChange={(event) =>
+            setLayerVisible("conflictZones", event.target.checked)
+          }
+          disabled={!layersQuery.data}
+        >
+          {t("dashboard.charts.warMap.conflictZones", { defaultValue: "Conflict zones" })}
+        </Checkbox>
+        <Checkbox
+          checked={layerVisibility.chokepoints}
+          onChange={(event) =>
+            setLayerVisible("chokepoints", event.target.checked)
+          }
+          disabled={!layersQuery.data}
+        >
+          {t("dashboard.charts.warMap.chokepoints", { defaultValue: "Chokepoints" })}
+        </Checkbox>
+        <Checkbox
+          checked={layerVisibility.cableLandings}
+          onChange={(event) =>
+            setLayerVisible("cableLandings", event.target.checked)
+          }
+          disabled={!layersQuery.data}
+        >
+          {t("dashboard.charts.warMap.cableLandings", { defaultValue: "Cable landings" })}
+        </Checkbox>
+        <Checkbox
+          checked={layerVisibility.nuclearSites}
+          onChange={(event) =>
+            setLayerVisible("nuclearSites", event.target.checked)
+          }
+          disabled={!layersQuery.data}
+        >
+          {t("dashboard.charts.warMap.nuclearSites", { defaultValue: "Nuclear sites" })}
+        </Checkbox>
+        <Checkbox
+          checked={layerVisibility.militaryBases}
+          onChange={(event) =>
+            setLayerVisible("militaryBases", event.target.checked)
+          }
+          disabled={!layersQuery.data}
+        >
+          {t("dashboard.charts.warMap.militaryBases", { defaultValue: "Military bases" })}
+        </Checkbox>
+        <Checkbox
+          checked={layerVisibility.monitors}
+          onChange={(event) => setLayerVisible("monitors", event.target.checked)}
+          disabled={!hasMonitorLocations}
+        >
+          {t("dashboard.charts.warMap.monitors", { defaultValue: "Monitors" })}
+        </Checkbox>
+        <Button
+          type="link"
+          size="small"
+          style={{ padding: 0, height: "auto" }}
+          onClick={() => resetLayers()}
+        >
+          {t("common.reset", { defaultValue: "Reset" })}
+        </Button>
+      </Space>
+    </div>
+  );
+
   return (
     <div ref={containerRef} className="relative h-[400px]">
       <DashboardChart
@@ -652,6 +1039,16 @@ export function WarMap() {
           end
         )}`}
         showExportImage
+        actions={
+          <Popover
+            content={layerSelector}
+            title={t("dashboard.charts.warMap.layers", { defaultValue: "Layers" })}
+            trigger="click"
+            placement="bottomRight"
+          >
+            <Button size="small" type="default" icon={<SettingOutlined />} />
+          </Popover>
+        }
         onEvents={chartEvents}
       />
       {(eventsQuery.isLoading || newsMarkersQuery.isLoading) && !eventsQuery.data && !newsMarkersQuery.data ? (
@@ -661,7 +1058,7 @@ export function WarMap() {
       ) : null}
       {!eventsQuery.isLoading &&
       !newsMarkersQuery.isLoading &&
-      !hasSignals &&
+      !hasRenderableData &&
       (eventsQuery.isError || newsMarkersQuery.isError) ? (
         <div className="absolute inset-0">
           <ChartEmptyState
@@ -687,7 +1084,7 @@ export function WarMap() {
       !eventsQuery.isError &&
       !newsMarkersQuery.isError &&
       (eventsQuery.data || newsMarkersQuery.data) &&
-      !hasSignals ? (
+      !hasRenderableData ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <ChartEmptyState description={emptyMessage} />
         </div>

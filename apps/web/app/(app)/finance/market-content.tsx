@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import KeyMonitorPage from "@/app/(app)/dashboard/key-monitor/page";
 
 import { MarketOverview } from "./market-overview";
+import { NewsIndicatorAssociations } from "./news-indicator-associations";
 
 const DEFAULT_TAB = "overview";
 
@@ -28,6 +29,11 @@ export function MarketContent() {
         key: "monitor",
         label: t("finance.market.monitor", { defaultValue: "Key Monitor" }),
         content: <KeyMonitorPage />
+      },
+      {
+        key: "associations",
+        label: t("finance.market.associations", { defaultValue: "News ↔ Indicators" }),
+        content: <NewsIndicatorAssociations />
       }
     ],
     [t]

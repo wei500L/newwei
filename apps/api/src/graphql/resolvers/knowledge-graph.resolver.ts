@@ -1,5 +1,5 @@
 import { ForbiddenException, UseGuards } from "@nestjs/common";
-import { Args, Context, Query, Resolver } from "@nestjs/graphql";
+import { Args, Context, Int, Query, Resolver } from "@nestjs/graphql";
 import { KnowledgeEntityType, KnowledgeRelationType } from "@prisma/client";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
@@ -10,6 +10,7 @@ import { KnowledgeGraphSettingsService } from "../../modules/knowledge-graph/kno
 import { KnowledgeGraphService } from "../../modules/knowledge-graph/knowledge-graph.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import type { GqlRequest } from "../graphql.types";
+import { ArticleEntityLinkModel } from "../models/article-entity-link.model";
 import { KnowledgeGraphModel, KnowledgeGraphSubgraphInput } from "../models/knowledge-graph.model";
 
 function normalizeEnumValue<T extends Record<string, string>>(value: string, enumObject: T): T[keyof T] | undefined {
@@ -141,6 +142,43 @@ export class KnowledgeGraphResolver {
         generatedAt: new Date(cached.metadata.generatedAt)
       }
     };
+  }
+
+  @HasPermission("items.read")
+  @Query(() => [ArticleEntityLinkModel])
+  async articleEntityLinks(
+    @Context("req") req: GqlRequest,
+    @Args("articleId") articleId: string,
+    @Args("limit", { type: () => Int, nullable: true }) limit?: number
+  ): Promise<ArticleEntityLinkModel[]> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+
+    const settings = await this.settings.getSettings(requester.orgId);
+    if (!settings.enabled) {
+      return [];
+    }
+
+    const rows = await this.graph.listArticleEntityLinks(
+      requester.orgId,
+      articleId,
+      typeof limit === "number" ? limit : 50
+    );
+
+    return rows.map((row) => ({
+      articleId: row.articleId,
+      mention: row.mention,
+      confidence: row.confidence,
+      createdAt: row.createdAt,
+      entity: {
+        id: row.entity.id,
+        name: row.entity.canonicalName,
+        type: row.entity.type,
+        properties: (row.entity.properties as Record<string, unknown> | null) ?? null
+      }
+    }));
   }
 
   private buildCacheKey(input: {

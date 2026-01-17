@@ -3,6 +3,7 @@
 import {
   AppstoreOutlined,
   BellOutlined,
+  ClusterOutlined,
   DashboardOutlined,
   ExclamationCircleOutlined,
   FundOutlined,
@@ -57,6 +58,12 @@ export function ActionRail() {
       icon: <AppstoreOutlined />,
       label: t("nav.main.topics", { defaultValue: "Topics" }),
       path: "/topics"
+    },
+    {
+      key: "/events",
+      icon: <ClusterOutlined />,
+      label: t("nav.main.events", { defaultValue: "News Events" }),
+      path: "/events"
     },
     {
       key: "/situation-monitor",

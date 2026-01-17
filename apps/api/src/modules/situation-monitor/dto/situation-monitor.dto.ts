@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsInt, IsOptional, Max, Min } from "class-validator";
+import { IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 
 export class SituationMonitorInsightsQueryDto {
   @IsOptional()
@@ -15,5 +15,20 @@ export class SituationMonitorInsightsQueryDto {
   @Min(50)
   @Max(1000)
   maxItems?: number;
-}
 
+  @IsOptional()
+  @IsString()
+  sections?: string;
+
+  @IsOptional()
+  @IsString()
+  gdelt?: string;
+
+  @IsOptional()
+  @IsString()
+  scope?: string;
+
+  @IsOptional()
+  @IsString()
+  debug?: string;
+}

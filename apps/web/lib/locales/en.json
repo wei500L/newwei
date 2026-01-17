@@ -872,6 +872,7 @@
     "main": {
       "today": "Today",
       "topics": "Topics & Events",
+      "events": "News Events",
       "map": "Situation Map",
       "finance": "Finance Panel",
       "alerts": "Alert Center",
@@ -919,6 +920,147 @@
         "openItem": "Open item",
         "timelineTitle": "Timeline",
         "timelineEmpty": "No related items."
+      }
+    },
+    "events": {
+      "title": "News Events",
+      "subtitle": "Clustered storylines built from processed news articles.",
+      "loadFailed": "Failed to load events.",
+      "empty": "No events yet. Enable ingestion in System Settings and wait for the scheduled job.",
+      "emptyCta": "Open system settings",
+      "filters": {
+        "window": "Window",
+        "windowHelp": "Time window for listing events.",
+        "windowOption": "{{days}} days",
+        "limit": "Limit",
+        "limitOption": "{{value}} events",
+        "status": {
+          "label": "Status",
+          "active": "Active",
+          "archived": "Archived",
+          "all": "All"
+        }
+      },
+      "fields": {
+        "startAt": "Start",
+        "lastAt": "Last",
+        "items": "Items"
+      },
+      "status": {
+        "active": "Active",
+        "archived": "Archived"
+      },
+      "actions": {
+        "details": "Details"
+      },
+      "drawer": {
+        "title": "Event details",
+        "loadFailed": "Failed to load event.",
+        "notFound": "Event not found.",
+        "items": "Items",
+        "references": "Refs",
+        "openOriginal": "Open",
+        "tabs": {
+          "timeline": "Timeline",
+          "articles": "Articles"
+        },
+        "timelineEmpty": "No timeline entries yet. Enable timeline generation and wait for the scheduled job.",
+        "itemsEmpty": "No articles in this event yet."
+      }
+    },
+    "digest": {
+      "title": "Personalized Digest",
+      "customize": "Customize",
+      "window": "Window",
+      "maxEvents": "Max events",
+      "items": "Items",
+      "openSource": "Open",
+      "generatedAt": "Generated",
+      "indicatorsOn": "Indicators on",
+      "indicatorsOff": "Indicators off",
+      "focusTopics": "Topics",
+      "focusEntities": "Entities",
+      "topicSentiment": "Topic sentiment",
+      "entitySentiment": "Entity sentiment",
+      "empty": "No digest events yet. Enable News Events ingestion and wait for it to backfill.",
+      "emptyCta": "View events",
+      "loadFailed": "Failed to generate digest.",
+      "preferenceLoadFailed": "Failed to load digest preference.",
+      "saved": "Saved.",
+      "saveFailed": "Failed to save.",
+      "preferences": {
+        "title": "Digest Preferences",
+        "required": "Required",
+        "windowDays": "Window days",
+        "maxEvents": "Max events",
+        "focusTopics": "Focus topics",
+        "focusTopicsHint": "Optional; leave empty for global feed.",
+        "focusTopicsPlaceholder": "Enter topics",
+        "focusEntities": "Focus entities",
+        "focusEntitiesHint": "Optional; leave empty for global feed.",
+        "focusEntitiesPlaceholder": "Enter entities",
+        "includeIndicators": "Include indicators",
+        "maxIndicatorsPerEvent": "Max indicators per event"
+      }
+    },
+    "newsIndicator": {
+      "title": "News ↔ Indicators",
+      "subtitle": "Lead-lag correlations and backtests linking news signals to economic indicators.",
+      "settingsLoadFailed": "Failed to load settings.",
+      "disabledTitle": "Disabled",
+      "disabledDescription": "Disabled by admin.",
+      "disabledCta": "Open system settings",
+      "ingestionOffTitle": "Ingestion disabled",
+      "ingestionOffDescription": "Scheduled refresh is disabled. Results may be stale.",
+      "loadFailed": "Failed to load associations.",
+      "empty": "No associations yet. Configure indicator slugs and wait for scheduled refresh.",
+      "emptyCta": "Open system settings",
+      "refreshDone": "Refresh triggered.",
+      "refreshFailed": "Refresh failed.",
+      "actions": {
+        "details": "Details",
+        "refresh": "Recompute"
+      },
+      "filters": {
+        "indicator": "Indicator",
+        "indicatorPlaceholder": "All",
+        "scopeKeyPlaceholder": "Filter by scope key",
+        "scopeType": {
+          "label": "Scope",
+          "all": "All",
+          "entity": "Entity",
+          "topic": "Topic"
+        },
+        "featureMetric": {
+          "label": "Feature",
+          "all": "All",
+          "volume": "Volume",
+          "avgScore": "Avg score",
+          "negativeRatio": "Negative ratio"
+        }
+      },
+      "columns": {
+        "scope": "Scope",
+        "feature": "Feature",
+        "indicator": "Indicator",
+        "lag": "Lag",
+        "correlation": "Corr",
+        "pValue": "p-value",
+        "samples": "N",
+        "backtest": "Backtest",
+        "updated": "Updated"
+      },
+      "drawer": {
+        "title": "Association details",
+        "loadFailed": "Failed to load association.",
+        "correlation": "Correlation",
+        "pValue": "p-value",
+        "lag": "Lag",
+        "window": "Window",
+        "samples": "Samples",
+        "analyzed": "Analyzed",
+        "backtests": "Backtests",
+        "backtestsEmpty": "No backtests yet."
       }
     }
   },
@@ -1070,7 +1212,8 @@
     },
     "market": {
       "overview": "Market Overview",
-      "monitor": "Key Monitor"
+      "monitor": "Key Monitor",
+      "associations": "News ↔ Indicators"
     },
     "macro": {
       "overview": "Macro Overview",
@@ -1299,6 +1442,81 @@
         "required": "Required"
       }
     },
+    "newsEvents": {
+      "description": "Cluster processed news articles into events and generate timelines.",
+      "notice": {
+        "title": "Notes",
+        "body": "Ingestion runs on a schedule. Disable timeline if you only need clustering."
+      },
+      "fields": {
+        "enabled": "Enabled",
+        "ingestionEnabled": "Ingestion enabled",
+        "timelineEnabled": "Timeline enabled",
+        "maxBatchSize": "Max batch size",
+        "backfillDays": "Backfill days",
+        "lookbackDays": "Lookback days",
+        "timelineMaxEventsPerRun": "Timeline max events per run",
+        "vectorMinScore": "Vector min score",
+        "crossLanguagePenalty": "Cross-language penalty",
+        "cacheTtlSeconds": "Cache TTL (seconds)"
+      },
+      "hints": {
+        "ingestionEnabled": "Controls scheduled ingestion jobs.",
+        "timelineEnabled": "Builds bucketed timeline entries for each event.",
+        "vectorMinScore": "Higher = stricter vector assignment.",
+        "crossLanguagePenalty": "Penalty applied when languages differ (0–1)."
+      },
+      "messages": {
+        "saved": "Saved",
+        "saveFailed": "Failed to save",
+        "loadFailed": "Failed to load settings"
+      },
+      "validation": {
+        "required": "Required"
+      }
+    },
+    "newsIndicator": {
+      "description": "Discover lead-lag relationships between news signals and economic indicators with backtests.",
+      "notice": {
+        "title": "Guardrails",
+        "body": "Only enable after economic data and sentiment snapshots are available."
+      },
+      "sections": {
+        "backtest": "Backtest"
+      },
+      "fields": {
+        "enabled": "Enabled",
+        "ingestionEnabled": "Ingestion enabled",
+        "indicatorSlugs": "Indicator slugs",
+        "windowDays": "Window days",
+        "maxLagDays": "Max lag days",
+        "minSampleSize": "Min sample size",
+        "minAbsCorrelation": "Min abs correlation",
+        "maxPValue": "Max p-value",
+        "topEntities": "Top entities",
+        "topTopics": "Top topics",
+        "maxAssociationsPerIndicator": "Max associations per indicator",
+        "backtestTriggerZScore": "Trigger z-score",
+        "backtestBaselineDays": "Baseline days",
+        "backtestHoldoutDays": "Holdout days",
+        "cacheTtlSeconds": "Cache TTL (seconds)"
+      },
+      "hints": {
+        "ingestionEnabled": "Controls scheduled refresh jobs.",
+        "indicatorSlugs": "Example: CPIAUCSL, DGS10, FEDFUNDS"
+      },
+      "placeholders": {
+        "indicatorSlugs": "Enter indicator slugs"
+      },
+      "messages": {
+        "saved": "Saved",
+        "saveFailed": "Failed to save",
+        "loadFailed": "Failed to load settings"
+      },
+      "validation": {
+        "required": "Required"
+      }
+    },
     "newsPrompts": {
       "saved": "Saved",
       "saveFailed": "Failed to save",
@@ -1413,6 +1631,8 @@
       "crawlClient": "Crawl client",
       "entityImpactGraph": "Entity impact graph",
       "knowledgeGraph": "Knowledge graph",
+      "newsEvents": "News events",
+      "newsIndicator": "News ↔ indicators",
       "newsPrompts": "News prompts",
       "llmGateway": "LLM gateway",
       "roles": "Roles",

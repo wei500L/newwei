@@ -167,3 +167,130 @@ export class UpdateKnowledgeGraphSettingsInput {
   @Max(3600)
   cacheTtlSeconds!: number;
 }
+
+@InputType()
+export class UpdateNewsEventSettingsInput {
+  @Field(() => Boolean)
+  @IsBoolean()
+  enabled!: boolean;
+
+  @Field(() => Boolean)
+  @IsBoolean()
+  ingestionEnabled!: boolean;
+
+  @Field(() => Boolean)
+  @IsBoolean()
+  timelineEnabled!: boolean;
+
+  @Field(() => Int)
+  @Min(1)
+  @Max(500)
+  maxBatchSize!: number;
+
+  @Field(() => Int)
+  @Min(1)
+  @Max(365)
+  backfillDays!: number;
+
+  @Field(() => Int)
+  @Min(1)
+  @Max(180)
+  lookbackDays!: number;
+
+  @Field(() => Int)
+  @Min(1)
+  @Max(200)
+  timelineMaxEventsPerRun!: number;
+
+  @Field(() => Float)
+  @Min(0)
+  @Max(1)
+  vectorMinScore!: number;
+
+  @Field(() => Float)
+  @Min(0)
+  @Max(1)
+  crossLanguagePenalty!: number;
+
+  @Field(() => Int)
+  @Min(0)
+  @Max(3600)
+  cacheTtlSeconds!: number;
+}
+
+@InputType()
+export class UpdateNewsIndicatorSettingsInput {
+  @Field(() => Boolean)
+  @IsBoolean()
+  enabled!: boolean;
+
+  @Field(() => Boolean)
+  @IsBoolean()
+  ingestionEnabled!: boolean;
+
+  @Field(() => Int)
+  @Min(7)
+  @Max(3650)
+  windowDays!: number;
+
+  @Field(() => Int)
+  @Min(0)
+  @Max(30)
+  maxLagDays!: number;
+
+  @Field(() => Int)
+  @Min(10)
+  @Max(2000)
+  minSampleSize!: number;
+
+  @Field(() => Float)
+  @Min(0)
+  @Max(1)
+  minAbsCorrelation!: number;
+
+  @Field(() => Float)
+  @Min(0)
+  @Max(1)
+  maxPValue!: number;
+
+  @Field(() => Int)
+  @Min(0)
+  @Max(500)
+  topEntities!: number;
+
+  @Field(() => Int)
+  @Min(0)
+  @Max(500)
+  topTopics!: number;
+
+  @Field(() => Int)
+  @Min(1)
+  @Max(1000)
+  maxAssociationsPerIndicator!: number;
+
+  @Field(() => [String])
+  @ArrayMaxSize(50)
+  @ArrayMinSize(0)
+  @MaxLength(128, { each: true })
+  indicatorSlugs!: string[];
+
+  @Field(() => Float)
+  @Min(0)
+  @Max(10)
+  backtestTriggerZScore!: number;
+
+  @Field(() => Int)
+  @Min(5)
+  @Max(365)
+  backtestBaselineDays!: number;
+
+  @Field(() => Int)
+  @Min(0)
+  @Max(365)
+  backtestHoldoutDays!: number;
+
+  @Field(() => Int)
+  @Min(0)
+  @Max(3600)
+  cacheTtlSeconds!: number;
+}

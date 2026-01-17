@@ -22,6 +22,10 @@ export interface SeedEntityRef extends KgEntityRef {
   properties?: Record<string, unknown>;
 }
 
+interface EntityMention extends SeedEntityRef {
+  confidence: number;
+}
+
 interface KgRelationInput {
   subject: KgEntityRef;
   predicate: string;
@@ -45,6 +49,16 @@ export interface IngestProcessedArticleInput {
   extractorVersion?: string | null;
   kgRelations: unknown;
   maxRelationsPerArticle: number;
+}
+
+export interface LinkArticleEntitiesInput {
+  orgId: string;
+  articleId: string;
+  extractorVersion?: string | null;
+  entities: unknown;
+  maxEntitiesPerArticle: number;
+  minConfidence: number;
+  createMissingEntities?: boolean;
 }
 
 export interface IngestSeedRelationsInput {
@@ -76,6 +90,16 @@ export class KnowledgeGraphService {
 
   async resolveEntity(orgId: string, name: string, type?: KnowledgeEntityType): Promise<KnowledgeEntity | null> {
     return this.resolveEntityByName(orgId, name, type);
+  }
+
+  async listArticleEntityLinks(orgId: string, articleId: string, limit: number) {
+    const take = Math.min(Math.max(limit, 1), 200);
+    return this.prisma.articleEntityLink.findMany({
+      where: { orgId, articleId },
+      orderBy: { createdAt: "desc" },
+      take,
+      include: { entity: true }
+    });
   }
 
   async ingestProcessedArticle(input: IngestProcessedArticleInput): Promise<{ edgesUpserted: number }> {
@@ -123,6 +147,70 @@ export class KnowledgeGraphService {
     });
 
     return { edgesUpserted };
+  }
+
+  async linkArticleEntities(input: LinkArticleEntitiesInput): Promise<{ linksUpserted: number }> {
+    const entities = this.parseEntities(input.entities)
+      .filter((entity) => entity.confidence >= input.minConfidence)
+      .slice(0, input.maxEntitiesPerArticle);
+    if (entities.length === 0) {
+      return { linksUpserted: 0 };
+    }
+
+    const now = new Date();
+    const createThreshold = Math.max(input.minConfidence, 0.85);
+
+    const linksUpserted = await this.prisma.runInTransaction(async (tx) => {
+      const linkRows: Array<{
+        orgId: string;
+        articleId: string;
+        entityId: string;
+        mention: string;
+        confidence: number;
+        source: KnowledgeRecordSource;
+        createdAt: Date;
+      }> = [];
+
+      for (const mention of entities) {
+        const resolvedType = this.normalizeEntityType(mention.type);
+        const resolved = await this.resolveEntityByName(input.orgId, mention.name, resolvedType);
+        let entity = resolved;
+        if (!entity && input.createMissingEntities) {
+          const shouldCreate =
+            mention.confidence >= createThreshold &&
+            mention.name.trim().length >= 2 &&
+            mention.name.trim().length <= 100;
+          if (shouldCreate) {
+            entity = await this.upsertEntity(tx, input.orgId, mention, { source: KnowledgeRecordSource.llm });
+          }
+        }
+        if (!entity) {
+          continue;
+        }
+
+        linkRows.push({
+          orgId: input.orgId,
+          articleId: input.articleId,
+          entityId: entity.id,
+          mention: mention.name,
+          confidence: mention.confidence,
+          source: KnowledgeRecordSource.llm,
+          createdAt: now
+        });
+      }
+
+      if (linkRows.length === 0) {
+        return 0;
+      }
+
+      const result = await tx.articleEntityLink.createMany({
+        data: linkRows,
+        skipDuplicates: true
+      });
+      return result.count ?? 0;
+    });
+
+    return { linksUpserted };
   }
 
   async ingestSeedRelations(input: IngestSeedRelationsInput): Promise<{ edgesUpserted: number }> {
@@ -316,6 +404,38 @@ export class KnowledgeGraphService {
     });
 
     return entities[0]?.entity ?? null;
+  }
+
+  private parseEntities(raw: unknown): EntityMention[] {
+    if (raw === null || raw === undefined) {
+      return [];
+    }
+    if (typeof raw === "string") {
+      try {
+        return this.parseEntities(JSON.parse(raw));
+      } catch {
+        return [];
+      }
+    }
+    const list = Array.isArray(raw) ? raw : [];
+    const results: EntityMention[] = [];
+    for (const entry of list) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        continue;
+      }
+      const record = entry as Record<string, unknown>;
+      const name = typeof record.name === "string" ? record.name.trim() : "";
+      const type = typeof record.type === "string" ? record.type.trim() : "";
+      const confidence = typeof record.confidence === "number" ? record.confidence : null;
+      if (!name || !type) {
+        continue;
+      }
+      if (confidence === null || !Number.isFinite(confidence)) {
+        continue;
+      }
+      results.push({ name, type, confidence });
+    }
+    return results;
   }
 
   private parseRelations(value: unknown): KgRelationInput[] {

@@ -2,6 +2,7 @@
 
 import { Alert, Button, Card, Form, Input, InputNumber, Modal, Spin, Tabs, Tag, Typography, message } from "antd";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,6 +12,8 @@ import { EntityImpactGraphSettingsPanel } from "@/components/settings/entity-imp
 import { GeoNominatimSettingsPanel } from "@/components/settings/geo-nominatim-settings-panel";
 import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-graph-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
+import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
+import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
 import { ModelServiceSettingsPanel } from "@/components/settings/model-service-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import { VectorServiceSettingsPanel } from "@/components/settings/vector-service-settings-panel";
@@ -718,6 +721,9 @@ function AkshareGatewaySettingsPanel() {
 
 export function SystemSettingsContent() {
   const { t } = useTranslation();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { data: session, status } = useSession();
   const canManageSettings = session?.permissions?.includes("settings.manage") ?? false;
 
@@ -762,16 +768,38 @@ export function SystemSettingsContent() {
       children: <EntityImpactGraphSettingsPanel />
     },
     { key: "knowledgeGraph", label: t("settings.tabs.knowledgeGraph"), children: <KnowledgeGraphSettingsPanel /> },
+    { key: "newsEvents", label: t("settings.tabs.newsEvents"), children: <NewsEventsSettingsPanel /> },
+    { key: "newsIndicator", label: t("settings.tabs.newsIndicator"), children: <NewsIndicatorSettingsPanel /> },
     { key: "newsPrompts", label: t("settings.tabs.newsPrompts"), children: <NewsPromptSettingsPanel /> },
     { key: "akshare", label: t("systemSettings.tabs.akshare"), children: <AkshareGatewaySettingsPanel /> }
   ];
+
+  const activeKey = useMemo(() => {
+    const candidate = searchParams.get("tab");
+    if (!candidate) {
+      return "rateLimits";
+    }
+    const valid = new Set(items.map((item) => item.key));
+    return valid.has(candidate) ? candidate : "rateLimits";
+  }, [items, searchParams]);
+
+  const handleTabChange = (key: string) => {
+    const next = new URLSearchParams(searchParams.toString());
+    if (key === "rateLimits") {
+      next.delete("tab");
+    } else {
+      next.set("tab", key);
+    }
+    const nextQuery = next.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+  };
 
   return (
     <Card className="content-card" title={t("systemSettings.title")}>
       <Typography.Paragraph type="secondary">
         {t("systemSettings.description")}
       </Typography.Paragraph>
-      <Tabs defaultActiveKey="rateLimits" items={items} />
+      <Tabs activeKey={activeKey} onChange={handleTabChange} items={items} />
     </Card>
   );
 }

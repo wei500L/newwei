@@ -1,0 +1,103 @@
+import { UserSettingsService } from "../user-settings.service";
+
+const prismaMock = {
+  userSetting: {
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+    upsert: jest.fn(),
+  },
+} as any;
+
+describe("UserSettingsService", () => {
+  let service: UserSettingsService;
+  let persisted: Map<string, { value: any; updatedAt: Date }>;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    persisted = new Map();
+
+    prismaMock.userSetting.upsert = jest.fn(async (args: any) => {
+      const key = args.where?.orgId_userId_key?.key ?? args.create?.key;
+      const value = args.create?.value ?? args.update?.value;
+      const updatedAt = new Date();
+      persisted.set(key, { value, updatedAt });
+      return { key, value, updatedAt };
+    });
+
+    prismaMock.userSetting.findMany = jest.fn(async (args: any) => {
+      const keys: string[] = args.where?.key?.in ?? [];
+      return keys.flatMap((key) => {
+        const record = persisted.get(key);
+        if (!record) {
+          return [];
+        }
+        return [{ key, value: record.value, updatedAt: record.updatedAt }];
+      });
+    });
+
+    prismaMock.userSetting.findUnique = jest.fn(async (args: any) => {
+      const key: string = args.where?.orgId_userId_key?.key;
+      const record = persisted.get(key);
+      if (!record) {
+        return null;
+      }
+      return { key, value: record.value, updatedAt: record.updatedAt };
+    });
+
+    service = new UserSettingsService(prismaMock);
+  });
+
+  it("returns null payload when no situation monitor records exist", async () => {
+    const response = await service.getSituationMonitorUiSettings("org-1", "user-1");
+    expect(response.monitors).toBeNull();
+    expect(response.layout).toBeNull();
+    expect(response.settings).toBeNull();
+    expect(response.updatedAt).toEqual({});
+  });
+
+  it("normalizes and stores situation monitor monitors", async () => {
+    const response = await service.updateSituationMonitorUiSettings("org-1", "user-1", {
+      monitors: [
+        {
+          name: " Supply chain disruption ",
+          keywords: ["tariff", "Tariff", "logistics, port"],
+          enabled: true,
+          color: "#FFF",
+          createdAt: 123,
+        },
+        { name: "", keywords: ["ignored"] },
+        { name: "Missing keywords", keywords: [] },
+      ],
+    });
+
+    expect(response.monitors?.length).toBe(1);
+    expect(response.monitors?.[0]?.name).toBe("Supply chain disruption");
+    expect(response.monitors?.[0]?.keywords).toEqual(["tariff", "Tariff", "logistics", "port"]);
+    expect(response.monitors?.[0]?.enabled).toBe(true);
+    expect(response.monitors?.[0]?.color).toBe("#fff");
+  });
+
+  it("returns null payload when no war map settings exist", async () => {
+    const response = await service.getWarMapUiSettings("org-1", "user-1");
+    expect(response.settings).toBeNull();
+    expect(response.updatedAt).toEqual({});
+  });
+
+  it("normalizes war map settings and merges defaults", async () => {
+    const response = await service.updateWarMapUiSettings("org-1", "user-1", {
+      settings: {
+        layerVisibility: {
+          hotspots: false,
+          monitors: false,
+          nonsense: true,
+        },
+      },
+    });
+
+    expect(response.settings?.layerVisibility.hotspots).toBe(false);
+    expect(response.settings?.layerVisibility.conflictZones).toBe(true);
+    expect(response.settings?.layerVisibility.chokepoints).toBe(false);
+    expect(response.settings?.layerVisibility.monitors).toBe(false);
+  });
+});
+

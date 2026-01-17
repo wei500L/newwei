@@ -3,6 +3,7 @@
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { Card, Col, Collapse, Descriptions, List, Row, Skeleton, Space, Tag, Tooltip, Typography } from 'antd';
 import type { CollapseProps } from 'antd';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -69,6 +70,7 @@ const toString = (value: unknown): string | undefined => {
 export function ItemDetail({ itemId }: ItemDetailProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const router = useRouter();
   const { data, loading, error } = useItemQuery({
     variables: { id: itemId }
   });
@@ -163,6 +165,11 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   }, [llm?.costUsd, llm?.latencyMs, llm?.model]);
   const publishedLabel = t('items.time.published', { defaultValue: 'Published' });
   const ingestedLabel = t('items.time.ingested', { defaultValue: 'Ingested' });
+  const handleSearch = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+  };
 
   const formattedPublishedAt = publishedAt
     ? formatDateTime(publishedAt, locale, {
@@ -519,7 +526,20 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 {topicsDisplay.length > 0 ? (
                   <Space wrap size={[6, 6]}>
                     {topicsDisplay.map((topic) => (
-                      <Tag key={`topic-${topic}`} color="blue">
+                      <Tag
+                        key={`topic-${topic}`}
+                        color="blue"
+                        className="cursor-pointer"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleSearch(topic)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            handleSearch(topic);
+                          }
+                        }}
+                      >
                         {topic}
                       </Tag>
                     ))}
@@ -529,7 +549,20 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 {entitiesDisplay.length > 0 ? (
                   <Space wrap size={[6, 6]}>
                     {entitiesDisplay.map((entity) => (
-                      <Tag key={`entity-${entity}`} color="purple">
+                      <Tag
+                        key={`entity-${entity}`}
+                        color="purple"
+                        className="cursor-pointer"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleSearch(entity)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            handleSearch(entity);
+                          }
+                        }}
+                      >
                         {entity}
                       </Tag>
                     ))}

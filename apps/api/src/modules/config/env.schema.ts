@@ -125,6 +125,15 @@ export const apiEnvSchema = baseEnvSchema.extend({
   AKSHARE_HTTP_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   AKSHARE_ADMIN_TOKEN: z.string().optional(),
   AKSHARE_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  SITUATION_MONITOR_GDELT_ENABLED: envBoolean.default(true),
+  SITUATION_MONITOR_FINNHUB_API_KEY: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).optional()
+  ),
+  SITUATION_MONITOR_FRED_API_KEY: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).optional()
+  ),
   NEWS_PIPELINE_CACHE_TTL_SECONDS: z.coerce
     .number()
     .int()

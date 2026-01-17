@@ -21,6 +21,7 @@ import { NotificationCenter } from "./notification-center";
 import { OrganizationSwitcher } from "./organization-switcher";
 import { SystemDefcon } from "./system-defcon";
 import { TickerTape } from "./ticker-tape";
+import { UserUiSettingsSyncIndicator } from "./user-ui-settings-sync-indicator";
 
 const formatLabel = (value: string): string =>
   value
@@ -117,6 +118,7 @@ export function TopNav() {
               <NotificationCenter />
               <LanguageSwitcher />
               <OrganizationSwitcher />
+              <UserUiSettingsSyncIndicator />
           </div>
 
           <div className="h-6 w-px bg-[var(--border)] mx-2" />

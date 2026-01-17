@@ -25,13 +25,18 @@ import { EmailModule } from "./modules/email/email.module";
 import { HealthModule } from "./modules/health/health.module";
 import { ItemsModule } from "./modules/items/items.module";
 import { KnowledgeGraphModule } from "./modules/knowledge-graph/knowledge-graph.module";
+import { NewsEventsModule } from "./modules/news-events/news-events.module";
+import { NewsIndicatorModule } from "./modules/news-indicator/news-indicator.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { ObservabilityModule } from "./modules/observability/observability.module";
 import { QueueAdminModule } from "./modules/queue/queue-admin.module";
 import { QueueModule } from "./modules/queue/queue.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
+import { SentimentModule } from "./modules/sentiment/sentiment.module";
 import { SituationMonitorModule } from "./modules/situation-monitor/situation-monitor.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
+import { UserSettingsModule } from "./modules/user-settings/user-settings.module";
+import { UserDigestModule } from "./modules/user-digest/user-digest.module";
 import { VectorModule } from "./modules/vector/vector.module";
 import { WebSocketModule } from "./modules/websocket/websocket.module";
 
@@ -68,10 +73,15 @@ import { WebSocketModule } from "./modules/websocket/websocket.module";
     AnalysisModule,
     AssistantModule,
     SituationMonitorModule,
+    SentimentModule,
     SystemSettingsModule,
+    UserSettingsModule,
+    UserDigestModule,
     NotificationsModule,
     ObservabilityModule,
     KnowledgeGraphModule,
+    NewsEventsModule,
+    NewsIndicatorModule,
     WebSocketModule,
     ApiGraphqlModule,
     HealthModule

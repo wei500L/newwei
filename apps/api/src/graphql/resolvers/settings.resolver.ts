@@ -11,6 +11,14 @@ import {
   KnowledgeGraphSettingsService,
   type KnowledgeGraphSettingsInput
 } from "../../modules/knowledge-graph/knowledge-graph-settings.service";
+import {
+  NewsEventsSettingsService,
+  type NewsEventSettingsInput
+} from "../../modules/news-events/news-events-settings.service";
+import {
+  NewsIndicatorSettingsService,
+  type NewsIndicatorAssociationSettingsInput
+} from "../../modules/news-indicator/news-indicator-settings.service";
 import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt-config.service";
 import { AuditLogSettingsService } from "../../modules/system-settings/audit-log-settings.service";
 import {
@@ -26,7 +34,9 @@ import {
   UpdateNewsPromptConfigInput,
   UpdateEntityImpactGraphSettingsInput,
   UpdateKnowledgeGraphSettingsInput,
-  UpdateRateLimitSettingsInput
+  UpdateRateLimitSettingsInput,
+  UpdateNewsEventSettingsInput,
+  UpdateNewsIndicatorSettingsInput
 } from "../dto/settings.input";
 import type { GqlRequest } from "../graphql.types";
 import {
@@ -34,6 +44,8 @@ import {
   CrawlClientSettingsModel,
   EntityImpactGraphSettingsModel,
   KnowledgeGraphSettingsModel,
+  NewsEventSettingsModel,
+  NewsIndicatorSettingsModel,
   NewsPromptConfigModel,
   AuthCacheSettingsModel,
   RateLimitSettingsModel
@@ -46,6 +58,8 @@ export class SettingsResolver {
     private readonly rateLimitConfig: RateLimitConfigService,
     private readonly entityImpactGraphSettingsService: EntityImpactGraphSettingsService,
     private readonly knowledgeGraphSettingsService: KnowledgeGraphSettingsService,
+    private readonly newsEventSettingsService: NewsEventsSettingsService,
+    private readonly newsIndicatorSettingsService: NewsIndicatorSettingsService,
     private readonly newsPromptConfigService: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
     private readonly crawlSettings: CrawlSettingsService,
@@ -126,6 +140,73 @@ export class SettingsResolver {
       cacheTtlSeconds: input.cacheTtlSeconds
     };
     return this.knowledgeGraphSettingsService.updateSettings(user.orgId, user.id, settingsInput);
+  }
+
+  @HasPermission("dashboard.read")
+  @Query(() => NewsEventSettingsModel)
+  async newsEventSettings(@Context("req") req: GqlRequest): Promise<NewsEventSettingsModel> {
+    const user = this.requireUser(req);
+    return this.newsEventSettingsService.getSettings(user.orgId);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsEventSettingsModel)
+  async updateNewsEventSettings(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateNewsEventSettingsInput
+  ): Promise<NewsEventSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const settingsInput: NewsEventSettingsInput = {
+      enabled: input.enabled,
+      ingestionEnabled: input.ingestionEnabled,
+      timelineEnabled: input.timelineEnabled,
+      maxBatchSize: input.maxBatchSize,
+      backfillDays: input.backfillDays,
+      lookbackDays: input.lookbackDays,
+      timelineMaxEventsPerRun: input.timelineMaxEventsPerRun,
+      vectorMinScore: input.vectorMinScore,
+      crossLanguagePenalty: input.crossLanguagePenalty,
+      cacheTtlSeconds: input.cacheTtlSeconds
+    };
+    return this.newsEventSettingsService.updateSettings(user.orgId, user.id, settingsInput);
+  }
+
+  @HasPermission("dashboard.read")
+  @Query(() => NewsIndicatorSettingsModel)
+  async newsIndicatorSettings(@Context("req") req: GqlRequest): Promise<NewsIndicatorSettingsModel> {
+    const user = this.requireUser(req);
+    return this.newsIndicatorSettingsService.getSettings(user.orgId);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsIndicatorSettingsModel)
+  async updateNewsIndicatorSettings(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateNewsIndicatorSettingsInput
+  ): Promise<NewsIndicatorSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+
+    const settingsInput: NewsIndicatorAssociationSettingsInput = {
+      enabled: input.enabled,
+      ingestionEnabled: input.ingestionEnabled,
+      windowDays: input.windowDays,
+      maxLagDays: input.maxLagDays,
+      minSampleSize: input.minSampleSize,
+      minAbsCorrelation: input.minAbsCorrelation,
+      maxPValue: input.maxPValue,
+      topEntities: input.topEntities,
+      topTopics: input.topTopics,
+      maxAssociationsPerIndicator: input.maxAssociationsPerIndicator,
+      indicatorSlugs: input.indicatorSlugs,
+      backtestTriggerZScore: input.backtestTriggerZScore,
+      backtestBaselineDays: input.backtestBaselineDays,
+      backtestHoldoutDays: input.backtestHoldoutDays,
+      cacheTtlSeconds: input.cacheTtlSeconds
+    };
+
+    return this.newsIndicatorSettingsService.updateSettings(user.orgId, user.id, settingsInput);
   }
 
   @HasPermission("settings.manage")

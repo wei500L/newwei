@@ -41,11 +41,14 @@ import { CrawlModule } from "../modules/crawl/crawl.module";
 import { DashboardModule } from "../modules/dashboard/dashboard.module";
 import { ItemsModule } from "../modules/items/items.module";
 import { KnowledgeGraphModule } from "../modules/knowledge-graph/knowledge-graph.module";
+import { NewsEventsModule } from "../modules/news-events/news-events.module";
+import { NewsIndicatorModule } from "../modules/news-indicator/news-indicator.module";
 import { NewsPipelineModule } from "../modules/news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../modules/notifications/notifications.module";
 import { OrgModule } from "../modules/org/org.module";
 import { QueueModule } from "../modules/queue/queue.module";
 import { RbacModule } from "../modules/rbac/rbac.module";
+import { SentimentModule } from "../modules/sentiment/sentiment.module";
 
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
@@ -65,10 +68,13 @@ import { EntityImpactGraphResolver } from "./resolvers/entity-impact-graph.resol
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { KnowledgeGraphImpactResolver } from "./resolvers/knowledge-graph-impact.resolver";
 import { KnowledgeGraphResolver } from "./resolvers/knowledge-graph.resolver";
+import { NewsEventsResolver } from "./resolvers/news-events.resolver";
+import { NewsIndicatorResolver } from "./resolvers/news-indicator.resolver";
 import { NotificationResolver } from "./resolvers/notification.resolver";
 import { OrgResolver } from "./resolvers/org.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
 import { SettingsResolver } from "./resolvers/settings.resolver";
+import { SentimentResolver } from "./resolvers/sentiment.resolver";
 import { TopicsResolver } from "./resolvers/topics.resolver";
 import { UsersResolver } from "./resolvers/user.resolver";
 
@@ -123,8 +129,10 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     AuthModule,
     ItemsModule,
     RbacModule,
-	    DashboardModule,
+    DashboardModule,
 	    KnowledgeGraphModule,
+      NewsEventsModule,
+      NewsIndicatorModule,
 	    QueueModule,
 	    CacheModule,
 	    CrawlModule,
@@ -134,6 +142,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     AkshareModule,
     NotificationsModule,
     NewsPipelineModule,
+    SentimentModule,
     OrgModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
@@ -236,6 +245,8 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     UsersResolver,
     ItemsResolver,
     TopicsResolver,
+    NewsEventsResolver,
+    NewsIndicatorResolver,
     RbacResolver,
     DashboardResolver,
     CrawlResolver,
@@ -248,6 +259,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     AssistantResolver,
     NotificationResolver,
     SettingsResolver,
+    SentimentResolver,
     OrgResolver,
     UserLoader,
     RoleLoader,

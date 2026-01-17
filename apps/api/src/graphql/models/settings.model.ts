@@ -116,3 +116,84 @@ export class KnowledgeGraphSettingsModel {
   @Field(() => Int)
   cacheTtlSeconds!: number;
 }
+
+@ObjectType()
+export class NewsEventSettingsModel {
+  @Field(() => Boolean)
+  enabled!: boolean;
+
+  @Field(() => Boolean)
+  ingestionEnabled!: boolean;
+
+  @Field(() => Boolean)
+  timelineEnabled!: boolean;
+
+  @Field(() => Int)
+  maxBatchSize!: number;
+
+  @Field(() => Int)
+  backfillDays!: number;
+
+  @Field(() => Int)
+  lookbackDays!: number;
+
+  @Field(() => Int)
+  timelineMaxEventsPerRun!: number;
+
+  @Field(() => Float)
+  vectorMinScore!: number;
+
+  @Field(() => Float)
+  crossLanguagePenalty!: number;
+
+  @Field(() => Int)
+  cacheTtlSeconds!: number;
+}
+
+@ObjectType()
+export class NewsIndicatorSettingsModel {
+  @Field(() => Boolean)
+  enabled!: boolean;
+
+  @Field(() => Boolean)
+  ingestionEnabled!: boolean;
+
+  @Field(() => Int)
+  windowDays!: number;
+
+  @Field(() => Int)
+  maxLagDays!: number;
+
+  @Field(() => Int)
+  minSampleSize!: number;
+
+  @Field(() => Float)
+  minAbsCorrelation!: number;
+
+  @Field(() => Float)
+  maxPValue!: number;
+
+  @Field(() => Int)
+  topEntities!: number;
+
+  @Field(() => Int)
+  topTopics!: number;
+
+  @Field(() => Int)
+  maxAssociationsPerIndicator!: number;
+
+  @Field(() => [String])
+  indicatorSlugs!: string[];
+
+  @Field(() => Float)
+  backtestTriggerZScore!: number;
+
+  @Field(() => Int)
+  backtestBaselineDays!: number;
+
+  @Field(() => Int)
+  backtestHoldoutDays!: number;
+
+  @Field(() => Int)
+  cacheTtlSeconds!: number;
+}

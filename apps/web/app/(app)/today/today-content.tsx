@@ -6,6 +6,8 @@ import { useTranslation } from "react-i18next";
 import { ItemsView } from "@/app/(app)/items/items-view";
 import dayjs from "@/lib/dayjs";
 
+import { UserDigestPanel } from "./user-digest-panel";
+
 export function TodayContent() {
   const { t } = useTranslation();
 
@@ -21,6 +23,9 @@ export function TodayContent() {
           })}
         </Typography.Text>
       </Space>
+
+      <UserDigestPanel />
+
       <ItemsView
         initialView="feed"
         emptyStateVariant="today"
