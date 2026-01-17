@@ -59,6 +59,12 @@ export function ActionRail() {
       path: "/topics"
     },
     {
+      key: "/situation-monitor",
+      icon: <RadarChartOutlined />,
+      label: t("nav.main.situationMonitor", { defaultValue: "Situation Monitor" }),
+      path: "/situation-monitor"
+    },
+    {
       key: "/map",
       icon: <GlobalOutlined />,
       label: t("nav.main.map", { defaultValue: "Map" }),

@@ -401,9 +401,56 @@ export function AssistantContent() {
     }
 
     if (run.type === "query") {
+      const plan = asRecord(output.plan);
+      const kind = typeof plan?.kind === "string" ? plan.kind : null;
+      const transform = typeof plan?.transform === "string" ? plan.transform : null;
+      const lookbackDays = typeof plan?.lookbackDays === "number" ? plan.lookbackDays : null;
+
       const stats = asRecord(output.stats);
       const n = typeof stats?.n === "number" ? stats.n : null;
       const pearson = typeof stats?.pearson === "number" ? stats.pearson : null;
+
+      if (kind === "correlation_two_series") {
+        const seriesA = asRecord(plan?.seriesA);
+        const seriesB = asRecord(plan?.seriesB);
+
+        const seriesAInput = typeof seriesA?.input === "string" ? seriesA.input : null;
+        const seriesASlug = typeof seriesA?.slug === "string" ? seriesA.slug : null;
+        const seriesAField = typeof seriesA?.field === "string" ? seriesA.field : null;
+
+        const seriesBInput = typeof seriesB?.input === "string" ? seriesB.input : null;
+        const seriesBSlug = typeof seriesB?.slug === "string" ? seriesB.slug : null;
+        const seriesBField = typeof seriesB?.field === "string" ? seriesB.field : null;
+
+        return (
+          <Descriptions size="small" bordered column={1}>
+            <Descriptions.Item label={t("assistant.preview.seriesA", { defaultValue: "Series A" })}>
+              <Space direction="vertical" size={0}>
+                <Typography.Text strong>{seriesASlug ?? seriesAInput ?? "-"}</Typography.Text>
+                {seriesAField ? <Typography.Text type="secondary">field: {seriesAField}</Typography.Text> : null}
+              </Space>
+            </Descriptions.Item>
+            <Descriptions.Item label={t("assistant.preview.seriesB", { defaultValue: "Series B" })}>
+              <Space direction="vertical" size={0}>
+                <Typography.Text strong>{seriesBSlug ?? seriesBInput ?? "-"}</Typography.Text>
+                {seriesBField ? <Typography.Text type="secondary">field: {seriesBField}</Typography.Text> : null}
+              </Space>
+            </Descriptions.Item>
+            <Descriptions.Item label={t("assistant.preview.transform", { defaultValue: "Transform" })}>
+              {transform ?? "-"}
+            </Descriptions.Item>
+            <Descriptions.Item label={t("assistant.preview.lookbackDays", { defaultValue: "Lookback days" })}>
+              {lookbackDays === null ? "-" : formatNumber(lookbackDays, 0)}
+            </Descriptions.Item>
+            <Descriptions.Item label={t("assistant.preview.n", { defaultValue: "Data points" })}>
+              {n === null ? "-" : formatNumber(n, 0)}
+            </Descriptions.Item>
+            <Descriptions.Item label={t("assistant.preview.pearson", { defaultValue: "Pearson" })}>
+              {pearson === null ? "-" : formatNumber(pearson, 4)}
+            </Descriptions.Item>
+          </Descriptions>
+        );
+      }
 
       if (n !== null || pearson !== null) {
         return (

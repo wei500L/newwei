@@ -1659,6 +1659,66 @@
         "cancel": "Cancel"
       }
     },
+    "modelService": {
+      "description": "Manage the API integration with the model service (time-series forecasting/anomaly).",
+      "notice": {
+        "title": "Scope",
+        "body": "These settings affect the API's model client. The model service itself is configured via its own environment variables."
+      },
+      "status": {
+        "label": "Status",
+        "env": "Using env defaults",
+        "saved": "Saved override",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "tokenSource": "Token source",
+        "tokenSources": {
+          "stored": "Stored",
+          "env": "Env",
+          "none": "None"
+        }
+      },
+      "fields": {
+        "enabled": "Enable model service",
+        "baseUrl": "Base URL",
+        "internalToken": "Internal token",
+        "timeoutMs": "Timeout (ms)",
+        "maxRetries": "Max retries"
+      },
+      "placeholders": {
+        "baseUrl": "e.g. http://localhost:8090",
+        "internalToken": "Leave empty to keep current token"
+      },
+      "hints": {
+        "baseUrl": "Where the API calls the model service (leave empty to use env default).",
+        "internalToken": "Used for internal authentication against the model service. Not returned after saving."
+      },
+      "actions": {
+        "reset": "Reset to env",
+        "clearToken": "Clear token",
+        "keepToken": "Keep token"
+      },
+      "validation": {
+        "timeoutRequired": "Timeout is required",
+        "maxRetriesRequired": "Max retries is required"
+      },
+      "messages": {
+        "saved": "Saved",
+        "reset": "Reset to env defaults"
+      },
+      "errors": {
+        "loadFailed": "Failed to load model service settings",
+        "saveFailed": "Failed to save model service settings",
+        "badRequest": "Invalid input",
+        "resetFailed": "Failed to reset model service settings"
+      },
+      "modal": {
+        "resetTitle": "Reset model service settings",
+        "resetContent": "Remove stored overrides and revert to env values?",
+        "confirm": "Confirm",
+        "cancel": "Cancel"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "Load version",
@@ -1689,6 +1749,7 @@
       "geoNominatim": "Geocoding (Nominatim)",
       "email": "Email (SMTP)",
       "vectorService": "Vector service",
+      "modelService": "Model service",
       "akshare": "AKShare"
     },
     "description": "System settings description"

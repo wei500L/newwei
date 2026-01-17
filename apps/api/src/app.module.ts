@@ -30,6 +30,7 @@ import { ObservabilityModule } from "./modules/observability/observability.modul
 import { QueueAdminModule } from "./modules/queue/queue-admin.module";
 import { QueueModule } from "./modules/queue/queue.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
+import { SituationMonitorModule } from "./modules/situation-monitor/situation-monitor.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
 import { VectorModule } from "./modules/vector/vector.module";
 import { WebSocketModule } from "./modules/websocket/websocket.module";
@@ -66,6 +67,7 @@ import { WebSocketModule } from "./modules/websocket/websocket.module";
     AlertsModule,
     AnalysisModule,
     AssistantModule,
+    SituationMonitorModule,
     SystemSettingsModule,
     NotificationsModule,
     ObservabilityModule,

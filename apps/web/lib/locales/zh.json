@@ -1658,6 +1658,66 @@
         "cancel": "取消"
       }
     },
+    "modelService": {
+      "description": "配置 API 与模型服务的集成（时间序列预测/异常检测）。",
+      "notice": {
+        "title": "作用范围",
+        "body": "这些配置仅影响 API 的模型客户端；模型服务本身仍通过其环境变量进行配置。"
+      },
+      "status": {
+        "label": "状态",
+        "env": "使用环境变量默认值",
+        "saved": "已保存覆盖配置",
+        "enabled": "已启用",
+        "disabled": "未启用",
+        "tokenSource": "Token 来源",
+        "tokenSources": {
+          "stored": "已保存",
+          "env": "环境变量",
+          "none": "无"
+        }
+      },
+      "fields": {
+        "enabled": "启用模型服务",
+        "baseUrl": "Base URL",
+        "internalToken": "Internal token",
+        "timeoutMs": "超时（ms）",
+        "maxRetries": "最大重试次数"
+      },
+      "placeholders": {
+        "baseUrl": "例如 http://localhost:8090",
+        "internalToken": "留空表示保留当前 token"
+      },
+      "hints": {
+        "baseUrl": "API 访问模型服务的地址（留空表示使用环境变量默认值）。",
+        "internalToken": "用于 API 调用模型服务的内部鉴权；保存后不会回传。"
+      },
+      "actions": {
+        "reset": "重置为环境变量",
+        "clearToken": "清空 token",
+        "keepToken": "保留 token"
+      },
+      "validation": {
+        "timeoutRequired": "超时必填",
+        "maxRetriesRequired": "最大重试次数必填"
+      },
+      "messages": {
+        "saved": "已保存",
+        "reset": "已重置为环境变量默认值"
+      },
+      "errors": {
+        "loadFailed": "加载模型服务配置失败",
+        "saveFailed": "保存模型服务配置失败",
+        "badRequest": "输入无效",
+        "resetFailed": "重置模型服务配置失败"
+      },
+      "modal": {
+        "resetTitle": "重置模型服务配置",
+        "resetContent": "将删除已保存的覆盖配置并回退到环境变量默认值，是否继续？",
+        "confirm": "确认",
+        "cancel": "取消"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "加载版本",
@@ -1688,6 +1748,7 @@
       "geoNominatim": "地理编码（Nominatim）",
       "email": "邮件（SMTP）",
       "vectorService": "向量服务",
+      "modelService": "模型服务",
       "akshare": "AKShare"
     },
     "description": "系统设置说明"

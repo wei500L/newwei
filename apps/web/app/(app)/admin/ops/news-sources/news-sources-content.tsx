@@ -67,7 +67,7 @@ interface NewsSourcePreviewCandidate {
 }
 
 interface NewsSourcePreviewResponse {
-  mode: "single" | "sitemap";
+  mode: "single" | "sitemap" | "rss";
   sourceId: string;
   url: string;
   name: string;
@@ -96,8 +96,10 @@ interface NewsSourceFormValues {
   crawlOptionsJson?: string;
   forceRefresh?: boolean;
   seedEnabled?: boolean;
+  seedMode?: "sitemap" | "rss";
   seedDomain?: string;
   seedPattern?: string;
+  seedFeedUrl?: string;
   seedQuery?: string;
   seedMaxUrls?: number;
   seedMaxNewUrlsPerRun?: number;
@@ -167,6 +169,7 @@ export function NewsSourcesContent() {
   const [form] = Form.useForm<NewsSourceFormValues>();
   const screens = Grid.useBreakpoint();
   const seedEnabledValue = Form.useWatch("seedEnabled", form);
+  const seedModeValue = Form.useWatch("seedMode", form);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewRunNowLoading, setPreviewRunNowLoading] = useState(false);
@@ -250,6 +253,7 @@ export function NewsSourcesContent() {
       priority: 0,
       isActive: true,
       seedEnabled: false,
+      seedMode: "sitemap",
       seedMaxUrls: 20,
       seedMaxNewUrlsPerRun: 10,
       seedScoreThreshold: 0,
@@ -294,6 +298,7 @@ export function NewsSourcesContent() {
       typeof seedConfig?.concurrency === "number" && Number.isFinite(seedConfig.concurrency)
         ? seedConfig.concurrency
         : 5;
+    const seedMode = seedConfig?.mode === "rss" ? "rss" : "sitemap";
     form.setFieldsValue({
       name: source.name,
       url: source.url,
@@ -310,8 +315,10 @@ export function NewsSourcesContent() {
       crawlOptionsJson: config?.crawlOptions ? JSON.stringify(config.crawlOptions, null, 2) : "",
       forceRefresh: config?.forceRefresh === true,
       seedEnabled: seedConfig?.enabled === true,
+      seedMode,
       seedDomain: typeof seedConfig?.domain === "string" ? seedConfig.domain : "",
       seedPattern: typeof seedConfig?.pattern === "string" ? seedConfig.pattern : "",
+      seedFeedUrl: typeof seedConfig?.feedUrl === "string" ? seedConfig.feedUrl : "",
       seedQuery: typeof seedConfig?.query === "string" ? seedConfig.query : "",
       seedMaxUrls,
       seedMaxNewUrlsPerRun,
@@ -354,18 +361,27 @@ export function NewsSourcesContent() {
     const shouldIncludeSeed =
       values.seedEnabled === true || (editingSource?.config && hasSeedConfig(editingSource.config));
     if (shouldIncludeSeed) {
+      const seedMode = values.seedMode === "rss" ? "rss" : "sitemap";
       const seed: Record<string, unknown> = {
-        enabled: values.seedEnabled === true
+        enabled: values.seedEnabled === true,
+        mode: seedMode
       };
 
-      const seedDomain = values.seedDomain?.trim();
-      if (seedDomain) {
-        seed.domain = seedDomain;
-      }
+      if (seedMode === "rss") {
+        const feedUrl = values.seedFeedUrl?.trim();
+        if (feedUrl) {
+          seed.feedUrl = feedUrl;
+        }
+      } else {
+        const seedDomain = values.seedDomain?.trim();
+        if (seedDomain) {
+          seed.domain = seedDomain;
+        }
 
-      const seedPattern = values.seedPattern?.trim();
-      if (seedPattern) {
-        seed.pattern = seedPattern;
+        const seedPattern = values.seedPattern?.trim();
+        if (seedPattern) {
+          seed.pattern = seedPattern;
+        }
       }
 
       const seedQuery = values.seedQuery?.trim();
@@ -978,18 +994,18 @@ export function NewsSourcesContent() {
           </Form.Item>
 
           <Typography.Title level={5} style={{ marginBottom: 0 }}>
-            {t("newsSources.sections.seed", { defaultValue: "Sitemap seed" })}
+            {t("newsSources.sections.seed", { defaultValue: "Seed discovery" })}
           </Typography.Title>
           <Typography.Text type="secondary">
             {t("newsSources.sections.seedHint", {
               defaultValue:
-                "Enable sitemap seeding to discover article URLs from the site's sitemap and schedule up to N fresh URLs per run."
+                "Discover article URLs from either a sitemap or an RSS/Atom feed, then schedule up to N fresh URLs per run."
             })}
           </Typography.Text>
 
           <Form.Item
             name="seedEnabled"
-            label={t("newsSources.fields.seedEnabled", { defaultValue: "Enable sitemap seed" })}
+            label={t("newsSources.fields.seedEnabled", { defaultValue: "Enable seed discovery" })}
             valuePropName="checked"
           >
             <Switch />
@@ -997,23 +1013,52 @@ export function NewsSourcesContent() {
 
           <div style={{ display: seedEnabledValue ? "block" : "none" }}>
             <Form.Item
-              name="seedDomain"
-              label={t("newsSources.fields.seedDomain", { defaultValue: "Seed domain (optional)" })}
-              tooltip={t("newsSources.fields.seedDomainHint", {
-                defaultValue: "Defaults to the source URL origin if empty."
+              name="seedMode"
+              label={t("newsSources.fields.seedMode", { defaultValue: "Seed mode" })}
+              tooltip={t("newsSources.fields.seedModeHint", {
+                defaultValue: "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from the feed URL."
               })}
             >
-              <Input placeholder="https://example.com" />
+              <Select
+                options={[
+                  { label: t("newsSources.seedMode.sitemap", { defaultValue: "Sitemap" }), value: "sitemap" },
+                  { label: t("newsSources.seedMode.rss", { defaultValue: "RSS / Atom" }), value: "rss" }
+                ]}
+              />
             </Form.Item>
-            <Form.Item
-              name="seedPattern"
-              label={t("newsSources.fields.seedPattern", { defaultValue: "URL pattern (optional)" })}
-              tooltip={t("newsSources.fields.seedPatternHint", {
-                defaultValue: "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'."
-              })}
-            >
-              <Input placeholder="*news*" />
-            </Form.Item>
+
+            {seedModeValue === "rss" ? (
+              <Form.Item
+                name="seedFeedUrl"
+                label={t("newsSources.fields.seedFeedUrl", { defaultValue: "Feed URL (optional)" })}
+                tooltip={t("newsSources.fields.seedFeedUrlHint", {
+                  defaultValue: "If empty, the source URL will be used as the feed URL."
+                })}
+              >
+                <Input placeholder="https://example.com/rss.xml" />
+              </Form.Item>
+            ) : (
+              <>
+                <Form.Item
+                  name="seedDomain"
+                  label={t("newsSources.fields.seedDomain", { defaultValue: "Seed domain (optional)" })}
+                  tooltip={t("newsSources.fields.seedDomainHint", {
+                    defaultValue: "Defaults to the source URL origin if empty."
+                  })}
+                >
+                  <Input placeholder="https://example.com" />
+                </Form.Item>
+                <Form.Item
+                  name="seedPattern"
+                  label={t("newsSources.fields.seedPattern", { defaultValue: "URL pattern (optional)" })}
+                  tooltip={t("newsSources.fields.seedPatternHint", {
+                    defaultValue: "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'."
+                  })}
+                >
+                  <Input placeholder="*news*" />
+                </Form.Item>
+              </>
+            )}
             <Form.Item
               name="seedQuery"
               label={t("newsSources.fields.seedQuery", { defaultValue: "Seed query (optional)" })}
@@ -1029,7 +1074,7 @@ export function NewsSourcesContent() {
             </Form.Item>
             <Form.Item
               name="seedMaxUrls"
-              label={t("newsSources.fields.seedMaxUrls", { defaultValue: "Max sitemap URLs" })}
+              label={t("newsSources.fields.seedMaxUrls", { defaultValue: "Max discovered URLs" })}
             >
               <InputNumber min={1} max={200} style={{ width: "100%" }} />
             </Form.Item>
@@ -1056,7 +1101,7 @@ export function NewsSourcesContent() {
             </Form.Item>
             <Form.Item
               name="seedCacheTtlSeconds"
-              label={t("newsSources.fields.seedCacheTtlSeconds", { defaultValue: "Sitemap cache TTL (seconds)" })}
+              label={t("newsSources.fields.seedCacheTtlSeconds", { defaultValue: "Seed cache TTL (seconds)" })}
             >
               <InputNumber min={10} max={3600} style={{ width: "100%" }} />
             </Form.Item>
@@ -1114,10 +1159,20 @@ export function NewsSourcesContent() {
         {previewData ? (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <Space wrap>
-              <Tag color={previewData.mode === "sitemap" ? "purple" : "default"}>
+              <Tag
+                color={
+                  previewData.mode === "sitemap"
+                    ? "purple"
+                    : previewData.mode === "rss"
+                      ? "blue"
+                      : "default"
+                }
+              >
                 {previewData.mode === "sitemap"
                   ? t("newsSources.preview.modeSitemap", { defaultValue: "Sitemap" })
-                  : t("newsSources.preview.modeSingle", { defaultValue: "Single" })}
+                  : previewData.mode === "rss"
+                    ? t("newsSources.preview.modeRss", { defaultValue: "RSS" })
+                    : t("newsSources.preview.modeSingle", { defaultValue: "Single" })}
               </Tag>
               <Typography.Text>
                 {t("newsSources.preview.scheduleCount", {

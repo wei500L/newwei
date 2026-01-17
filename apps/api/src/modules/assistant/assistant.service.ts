@@ -409,14 +409,6 @@ export class AssistantService {
         ? Math.min(0.999, Math.max(0.5, input.confidenceLevel))
         : 0.95;
 
-    const modelConfig = this.env.modelServiceConfig;
-    if (!modelConfig.enabled) {
-      throw new Error("Model service is disabled (MODEL_SERVICE_ENABLED=false)");
-    }
-    if (!modelConfig.baseUrl) {
-      throw new Error("Model service base URL is not configured (MODEL_SERVICE_BASE_URL)");
-    }
-
     const modelResponse = await this.modelService.forecastHoldoutLastOrThrow({
       series: points,
       model: { kind: modelKind, seasonalPeriod, confidenceLevel },

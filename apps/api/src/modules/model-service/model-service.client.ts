@@ -1,10 +1,11 @@
 import { createLogger } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
 import type { HttpService } from "@nestjs/axios";
+import { Injectable } from "@nestjs/common";
 import { firstValueFrom } from "rxjs";
 import type { AxiosError } from "axios";
+import { createHash } from "node:crypto";
 
-import { EnvService } from "../config/config.service";
+import { ModelServiceSettingsService } from "../system-settings/model-service-settings.service";
 
 const logger = createLogger({ name: "model-service-client" });
 
@@ -51,21 +52,30 @@ export class ModelServiceClient {
   private consecutiveFailures = 0;
   private unavailableUntilMs = 0;
   private lastIncompleteWarnAtMs = 0;
+  private configFingerprint: string | null = null;
 
-  constructor(private readonly http: HttpService, private readonly env: EnvService) {}
+  constructor(
+    private readonly http: HttpService,
+    private readonly settings: ModelServiceSettingsService
+  ) {}
 
   async forecastHoldoutLastOrThrow(input: {
     series: ModelServiceSeriesPoint[];
     model: { kind: ModelServiceModelKind; seasonalPeriod?: number; confidenceLevel?: number };
     requestId?: string;
   }): Promise<ModelServiceForecastHoldoutLastResponse> {
-    const cfg = this.env.modelServiceConfig;
+    const cfg = await this.settings.getEffectiveConfig();
+    this.refreshFingerprint(cfg);
     if (!cfg.enabled) {
       throw new Error("Model service is disabled");
     }
     if (!cfg.baseUrl) {
-      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl });
+      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl, tokenConfigured: Boolean(cfg.internalToken) });
       throw new Error("Model service baseUrl is not configured");
+    }
+    if (!cfg.internalToken) {
+      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl, tokenConfigured: false });
+      throw new Error("Model service internal token is not configured");
     }
     if (this.isTemporarilyUnavailable()) {
       throw new Error("Model service is temporarily unavailable");
@@ -90,7 +100,7 @@ export class ModelServiceClient {
       try {
         const response = await firstValueFrom(
           this.http.post<ModelServiceForecastHoldoutLastResponse>(url, payload, {
-            headers: cfg.internalToken ? { "x-internal-token": cfg.internalToken } : undefined,
+            headers: { "x-internal-token": cfg.internalToken },
             timeout: cfg.timeoutMs
           })
         );
@@ -122,12 +132,17 @@ export class ModelServiceClient {
     model: { kind: ModelServiceModelKind; seasonalPeriod?: number; confidenceLevel?: number };
     requestId?: string;
   }): Promise<ModelServiceForecastHoldoutLastResponse | null> {
-    const cfg = this.env.modelServiceConfig;
+    const cfg = await this.settings.getEffectiveConfig();
+    this.refreshFingerprint(cfg);
     if (!cfg.enabled) {
       return null;
     }
     if (!cfg.baseUrl) {
-      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl });
+      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl, tokenConfigured: Boolean(cfg.internalToken) });
+      return null;
+    }
+    if (!cfg.internalToken) {
+      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl, tokenConfigured: false });
       return null;
     }
     if (this.isTemporarilyUnavailable()) {
@@ -153,7 +168,7 @@ export class ModelServiceClient {
       try {
         const response = await firstValueFrom(
           this.http.post<ModelServiceForecastHoldoutLastResponse>(url, payload, {
-            headers: cfg.internalToken ? { "x-internal-token": cfg.internalToken } : undefined,
+            headers: { "x-internal-token": cfg.internalToken },
             timeout: cfg.timeoutMs
           })
         );
@@ -183,13 +198,25 @@ export class ModelServiceClient {
     return baseUrl.trim().replace(/\/+$/, "");
   }
 
-  private warnIncompleteOnce(context: { baseUrl?: string | null }) {
+  private warnIncompleteOnce(context: { baseUrl?: string | null; tokenConfigured?: boolean }) {
     const now = Date.now();
     if (now - this.lastIncompleteWarnAtMs < 60_000) {
       return;
     }
     this.lastIncompleteWarnAtMs = now;
     logger.warn(context, "Model service enabled but configuration is incomplete");
+  }
+
+  private refreshFingerprint(cfg: { enabled: boolean; baseUrl?: string; internalToken?: string; timeoutMs: number; maxRetries: number }) {
+    const tokenHash = cfg.internalToken
+      ? createHash("sha256").update(cfg.internalToken).digest("hex").slice(0, 16)
+      : "none";
+    const fingerprint = `${cfg.enabled ? 1 : 0}|${cfg.baseUrl ?? ""}|${cfg.timeoutMs}|${cfg.maxRetries}|${tokenHash}`;
+    if (this.configFingerprint === fingerprint) {
+      return;
+    }
+    this.configFingerprint = fingerprint;
+    this.markAvailable();
   }
 
   private isTemporarilyUnavailable(): boolean {

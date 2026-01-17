@@ -13,6 +13,8 @@ import { GeoNominatimTestController } from "./geo-nominatim-test.controller";
 import { LlmGatewaySettingsController } from "./llm-gateway-settings.controller";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 import { EntityImpactGraphSettingsService } from "./entity-impact-graph-settings.service";
+import { ModelServiceSettingsController } from "./model-service-settings.controller";
+import { ModelServiceSettingsService } from "./model-service-settings.service";
 import { RateLimitConfigService } from "./rate-limit-config.service";
 import { RateLimitPolicyController } from "./rate-limit-policy.controller";
 import { RateLimitPolicyService } from "./rate-limit-policy.service";
@@ -32,6 +34,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     GeoNominatimSettingsController,
     GeoNominatimTestController,
     LlmGatewaySettingsController,
+    ModelServiceSettingsController,
     VectorServiceSettingsController
   ],
   providers: [
@@ -41,6 +44,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     GeoNominatimSettingsService,
     LlmGatewaySettingsService,
     EntityImpactGraphSettingsService,
+    ModelServiceSettingsService,
     VectorServiceSettingsService
   ],
   exports: [
@@ -50,6 +54,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     GeoNominatimSettingsService,
     LlmGatewaySettingsService,
     EntityImpactGraphSettingsService,
+    ModelServiceSettingsService,
     VectorServiceSettingsService
   ]
 })

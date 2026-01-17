@@ -17,8 +17,10 @@ const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
 
 export interface NewsSourceSeedConfig {
   enabled: boolean;
+  mode: "sitemap" | "rss";
   domain?: string;
   pattern?: string;
+  feedUrl?: string;
   maxUrls: number;
   maxNewUrlsPerRun: number;
   query?: string;
@@ -236,11 +238,17 @@ export class NewsSourceService {
       };
     }
 
-    const discovery = await this.metadataService.discoverSitemapUrls({
-      domain: seedConfig.domain,
-      pattern: seedConfig.pattern,
-      maxUrls: seedConfig.maxUrls
-    });
+    const discovery =
+      seedConfig.mode === "rss"
+        ? await this.metadataService.discoverRssUrls({
+            feedUrl: seedConfig.feedUrl ?? source.url,
+            maxUrls: seedConfig.maxUrls
+          })
+        : await this.metadataService.discoverSitemapUrls({
+            domain: seedConfig.domain,
+            pattern: seedConfig.pattern,
+            maxUrls: seedConfig.maxUrls
+          });
 
     const metadataResults =
       discovery.length > 0
@@ -287,7 +295,7 @@ export class NewsSourceService {
     const skippedCount = candidates.length - scheduleCount;
 
     return {
-      mode: "sitemap",
+      mode: seedConfig.mode,
       sourceId: source.id,
       url: source.url,
       name: source.name,
@@ -350,8 +358,12 @@ export class NewsSourceService {
       return null;
     }
 
-    const domain = this.normalizeSeedDomain(rawSeed?.domain, sourceUrl);
+    const modeRaw = typeof rawSeed?.mode === "string" ? rawSeed.mode.trim().toLowerCase() : "";
+    const mode: NewsSourceSeedConfig["mode"] = modeRaw === "rss" ? "rss" : "sitemap";
+
+    const domain = mode === "sitemap" ? this.normalizeSeedDomain(rawSeed?.domain, sourceUrl) : undefined;
     const pattern = typeof rawSeed?.pattern === "string" ? rawSeed.pattern.trim() : "";
+    const feedUrl = mode === "rss" ? this.normalizeSeedFeedUrl(rawSeed?.feedUrl, sourceUrl) : undefined;
     const query = typeof rawSeed?.query === "string" ? rawSeed.query.trim() : "";
 
     const keywords = this.normalizeStringList(config?.keywords);
@@ -359,8 +371,10 @@ export class NewsSourceService {
 
     return {
       enabled: true,
+      mode,
       domain,
-      pattern: pattern.length > 0 ? pattern : undefined,
+      pattern: mode === "sitemap" && pattern.length > 0 ? pattern : undefined,
+      feedUrl,
       maxUrls: this.clampInt(rawSeed?.maxUrls, 1, 200, 20),
       maxNewUrlsPerRun: this.clampInt(rawSeed?.maxNewUrlsPerRun, 1, 50, 10),
       query: effectiveQuery,
@@ -379,6 +393,21 @@ export class NewsSourceService {
     } catch {
       try {
         return new URL(sourceUrl).origin.replace(/\/+$/, "");
+      } catch {
+        return undefined;
+      }
+    }
+  }
+
+  private normalizeSeedFeedUrl(feedUrlOverride: unknown, sourceUrl: string) {
+    const raw = typeof feedUrlOverride === "string" ? feedUrlOverride.trim() : "";
+    const candidate = raw.length > 0 ? raw : sourceUrl;
+    const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+    try {
+      return new URL(withProtocol).toString();
+    } catch {
+      try {
+        return new URL(sourceUrl).toString();
       } catch {
         return undefined;
       }

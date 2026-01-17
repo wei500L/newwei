@@ -27,8 +27,10 @@ type NewsSourceWithTemplate = Prisma.NewsSourceGetPayload<{
 
 interface SeedConfig {
   enabled: boolean;
+  mode: "sitemap" | "rss";
   domain?: string;
   pattern?: string;
+  feedUrl?: string;
   maxUrls: number;
   maxNewUrlsPerRun: number;
   queryTokens?: string[];
@@ -105,7 +107,7 @@ export class NewsSourceSchedulerService {
   private buildPayload(
     source: NewsSourceWithTemplate,
     url: string,
-    seed?: { mode: "single" | "sitemap"; parentUrl: string; relevanceScore?: number }
+    seed?: { mode: "single" | "sitemap" | "rss"; parentUrl: string; relevanceScore?: number }
   ) {
     const config =
       source.config && typeof source.config === "object" && !Array.isArray(source.config)
@@ -160,6 +162,9 @@ export class NewsSourceSchedulerService {
       return null;
     }
 
+    const modeRaw = typeof seed.mode === "string" ? seed.mode.trim().toLowerCase() : "";
+    const mode: SeedConfig["mode"] = modeRaw === "rss" ? "rss" : "sitemap";
+
     const keywords = this.normalizeStringList(config?.keywords);
     const query =
       typeof seed.query === "string" && seed.query.trim().length > 0
@@ -171,8 +176,13 @@ export class NewsSourceSchedulerService {
 
     return {
       enabled: true,
-      domain: this.normalizeSeedDomain(seed.domain, source.url),
-      pattern: typeof seed.pattern === "string" && seed.pattern.trim().length > 0 ? seed.pattern.trim() : undefined,
+      mode,
+      domain: mode === "sitemap" ? this.normalizeSeedDomain(seed.domain, source.url) : undefined,
+      pattern:
+        mode === "sitemap" && typeof seed.pattern === "string" && seed.pattern.trim().length > 0
+          ? seed.pattern.trim()
+          : undefined,
+      feedUrl: mode === "rss" ? this.normalizeSeedFeedUrl(seed.feedUrl, source.url) : undefined,
       maxUrls: this.clampInt(seed.maxUrls, 1, 200, 20),
       maxNewUrlsPerRun: this.clampInt(seed.maxNewUrlsPerRun, 1, 50, 10),
       queryTokens,
@@ -191,6 +201,21 @@ export class NewsSourceSchedulerService {
     } catch {
       try {
         return new URL(fallbackUrl).origin.replace(/\/+$/, "");
+      } catch {
+        return undefined;
+      }
+    }
+  }
+
+  private normalizeSeedFeedUrl(rawFeedUrl: unknown, fallbackUrl: string) {
+    const raw = typeof rawFeedUrl === "string" ? rawFeedUrl.trim() : "";
+    const candidate = raw.length > 0 ? raw : fallbackUrl;
+    const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+    try {
+      return new URL(withProtocol).toString();
+    } catch {
+      try {
+        return new URL(fallbackUrl).toString();
       } catch {
         return undefined;
       }
@@ -230,20 +255,27 @@ export class NewsSourceSchedulerService {
   }
 
   private async resolveSeedCandidates(source: NewsSourceWithTemplate, seed: SeedConfig) {
-    if (!seed.domain) {
+    if (seed.mode === "sitemap" && !seed.domain) {
       return [];
     }
 
-    const cacheKey = `news-source:sitemap:${source.id}`;
+    const cacheKey = `news-source:${seed.mode}:${source.id}`;
     const discovered = await this.cache.wrap<string[]>(
       cacheKey,
       seed.cacheTtlSeconds,
-      async () =>
-        this.metadataService.discoverSitemapUrls({
+      async () => {
+        if (seed.mode === "rss") {
+          return this.metadataService.discoverRssUrls({
+            feedUrl: seed.feedUrl ?? source.url,
+            maxUrls: seed.maxUrls
+          });
+        }
+        return this.metadataService.discoverSitemapUrls({
           domain: seed.domain,
           pattern: seed.pattern,
           maxUrls: seed.maxUrls
-        }),
+        });
+      },
       { lockTtlMs: 15_000, maxWaitMs: 15_000, retryDelayMs: 100 }
     );
 
@@ -419,12 +451,18 @@ export class NewsSourceSchedulerService {
         }
 
         const bullPriority = this.toBullmqPriority(source.priority);
+        const seedParentUrl = seedConfig
+          ? seedConfig.mode === "rss"
+            ? (seedConfig.feedUrl ?? source.url)
+            : source.url
+          : undefined;
+
         for (const job of newJobs) {
           const payload = this.buildPayload(
             source,
             job.url,
             seedConfig
-              ? { mode: "sitemap", parentUrl: source.url, relevanceScore: job.relevanceScore }
+              ? { mode: seedConfig.mode, parentUrl: seedParentUrl ?? source.url, relevanceScore: job.relevanceScore }
               : undefined
           );
 
@@ -441,8 +479,8 @@ export class NewsSourceSchedulerService {
                 metadata: {
                   sourceName: source.name,
                   sourceType: source.siteType,
-                  seedMode: seedConfig ? "sitemap" : "single",
-                  seedParentUrl: seedConfig ? source.url : undefined,
+                  seedMode: seedConfig ? seedConfig.mode : "single",
+                  seedParentUrl: seedConfig ? seedParentUrl : undefined,
                   relevanceScore: seedConfig ? job.relevanceScore : undefined
                 }
               }

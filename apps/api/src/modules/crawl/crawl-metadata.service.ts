@@ -93,6 +93,30 @@ export class CrawlMetadataService {
     });
   }
 
+  async discoverRssUrls(input: {
+    feedUrl?: string;
+    maxUrls?: number;
+    requestTimeoutMs?: number;
+  }): Promise<string[]> {
+    const feedUrl = this.normalizeUrl(input.feedUrl);
+    if (!feedUrl) {
+      return [];
+    }
+
+    const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
+    const requestTimeoutMs =
+      typeof input.requestTimeoutMs === "number" && Number.isFinite(input.requestTimeoutMs)
+        ? Math.max(1000, Math.round(input.requestTimeoutMs))
+        : 15_000;
+
+    const xml = await this.fetchMaybe(feedUrl, requestTimeoutMs);
+    if (!xml) {
+      return [];
+    }
+
+    return this.extractFromRssPayload(xml, feedUrl).slice(0, maxUrls);
+  }
+
   private normalizeInput(input: CrawlMetadataExtractionInput): NormalizedMetadataConfig {
     const source: CrawlMetadataSource = input.source === "urls" ? "urls" : "sitemap";
     const domain = this.normalizeDomain(input.domain);
@@ -148,6 +172,27 @@ export class CrawlMetadataService {
     } catch (error) {
       logger.warn({ domain: value, error }, "Failed to normalize metadata domain");
       return undefined;
+    }
+  }
+
+  private normalizeUrl(value?: string) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    try {
+      return new URL(trimmed).toString();
+    } catch {
+      const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+      try {
+        return new URL(withProtocol).toString();
+      } catch (error) {
+        logger.warn({ url: value, error }, "Failed to normalize metadata URL");
+        return undefined;
+      }
     }
   }
 
@@ -343,6 +388,136 @@ export class CrawlMetadataService {
     }
   }
 
+  private extractFromRssPayload(xml: string, feedUrl: string): string[] {
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = this.parser.parse(xml) as Record<string, unknown>;
+    } catch (error) {
+      logger.warn({ error }, "Failed to parse RSS xml");
+      return [];
+    }
+
+    const collected: string[] = [];
+    const seen = new Set<string>();
+
+    const toArray = <T>(value: T | T[] | undefined): T[] => {
+      if (!value) {
+        return [];
+      }
+      return Array.isArray(value) ? value : [value];
+    };
+
+    const extractText = (value: unknown): string | undefined => {
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      }
+      if (value && typeof value === "object") {
+        const record = value as Record<string, unknown>;
+        const textCandidate =
+          typeof record["#text"] === "string"
+            ? record["#text"]
+            : typeof record.text === "string"
+              ? record.text
+              : undefined;
+        if (textCandidate) {
+          const trimmed = textCandidate.trim();
+          return trimmed.length > 0 ? trimmed : undefined;
+        }
+        const hrefCandidate =
+          typeof record.href === "string"
+            ? record.href
+            : typeof record.url === "string"
+              ? record.url
+              : undefined;
+        if (hrefCandidate) {
+          const trimmed = hrefCandidate.trim();
+          return trimmed.length > 0 ? trimmed : undefined;
+        }
+      }
+      return undefined;
+    };
+
+    const pushCandidate = (candidate: string | undefined) => {
+      if (!candidate) {
+        return;
+      }
+      let resolved: string;
+      try {
+        resolved = new URL(candidate, feedUrl).toString();
+      } catch {
+        return;
+      }
+      if (!/^https?:\/\//i.test(resolved)) {
+        return;
+      }
+      if (seen.has(resolved)) {
+        return;
+      }
+      seen.add(resolved);
+      collected.push(resolved);
+    };
+
+    // RSS 2.0: rss.channel.item[]
+    const rss = parsed.rss as Record<string, unknown> | undefined;
+    const channel = (rss?.channel as Record<string, unknown> | undefined) ?? undefined;
+    const rssItems = toArray(
+      (channel?.item as Record<string, unknown>[] | Record<string, unknown> | undefined) ??
+        (rss?.item as Record<string, unknown>[] | Record<string, unknown> | undefined)
+    );
+
+    for (const item of rssItems) {
+      const record = item as Record<string, unknown>;
+      const link = extractText(record.link);
+      if (link) {
+        pushCandidate(link);
+        continue;
+      }
+      const guid = extractText(record.guid);
+      if (guid && /^https?:\/\//i.test(guid)) {
+        pushCandidate(guid);
+      }
+    }
+
+    // Atom: feed.entry[].link[@href]
+    const feed = parsed.feed as Record<string, unknown> | undefined;
+    const entries = toArray(
+      (feed?.entry as Record<string, unknown>[] | Record<string, unknown> | undefined) ?? undefined
+    );
+
+    for (const entry of entries) {
+      const record = entry as Record<string, unknown>;
+      const links = toArray(
+        record.link as Record<string, unknown>[] | Record<string, unknown> | string[] | string | undefined
+      );
+
+      let picked: string | undefined;
+      for (const link of links) {
+        if (typeof link === "string") {
+          picked = link;
+          break;
+        }
+        if (!link || typeof link !== "object") {
+          continue;
+        }
+        const linkRecord = link as Record<string, unknown>;
+        const rel = typeof linkRecord.rel === "string" ? linkRecord.rel.trim() : "";
+        const href = extractText(linkRecord);
+        if (!href) {
+          continue;
+        }
+        if (!rel || rel === "alternate") {
+          picked = href;
+          break;
+        }
+      }
+
+      pushCandidate(picked);
+    }
+
+    return collected;
+  }
+
   private shouldIncludeUrl(url: string, patternMatcher?: (url: string) => boolean) {
     if (!patternMatcher) {
       return true;
@@ -413,15 +588,15 @@ export class CrawlMetadataService {
       }
       const lowered = name.toLowerCase();
       if (lowered === "description" && !description) {
-          description = content;
+        description = content;
       } else if (lowered === "keywords" && !keywords) {
-          keywords = content
-            .split(",")
-            .map((keyword) => keyword.trim())
-            .filter((keyword) => keyword.length > 0)
-            .slice(0, 15);
+        keywords = content
+          .split(",")
+          .map((keyword) => keyword.trim())
+          .filter((keyword) => keyword.length > 0)
+          .slice(0, 15);
       } else if (lowered === "author" && !author) {
-          author = content;
+        author = content;
       }
     });
 
