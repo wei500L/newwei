@@ -19,9 +19,9 @@ CREATE TABLE `NewsIndicatorAssociation` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
-    UNIQUE INDEX `NewsIndicatorAssociation_orgId_scopeType_scopeKey_scopeKeyType_featureMetric_indicatorItemId_key`(`orgId`, `scopeType`, `scopeKey`, `scopeKeyType`, `featureMetric`, `indicatorItemId`),
-    INDEX `NewsIndicatorAssociation_orgId_indicatorItemId_lastEvaluatedAt_idx`(`orgId`, `indicatorItemId`, `lastEvaluatedAt`),
-    INDEX `NewsIndicatorAssociation_orgId_scopeType_scopeKey_lastEvaluatedAt_idx`(`orgId`, `scopeType`, `scopeKey`, `lastEvaluatedAt`),
+    UNIQUE INDEX `NewsIndicatorAssociation_org_scope_feature_item_uq`(`orgId`, `scopeType`, `scopeKey`, `scopeKeyType`, `featureMetric`, `indicatorItemId`),
+    INDEX `NewsIndicatorAssociation_org_item_eval_idx`(`orgId`, `indicatorItemId`, `lastEvaluatedAt`),
+    INDEX `NewsIndicatorAssociation_org_scope_eval_idx`(`orgId`, `scopeType`, `scopeKey`, `lastEvaluatedAt`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -51,4 +51,3 @@ ALTER TABLE `NewsIndicatorAssociation` ADD CONSTRAINT `NewsIndicatorAssociation_
 -- AddForeignKey
 ALTER TABLE `NewsIndicatorAssociationBacktestRun` ADD CONSTRAINT `NewsIndicatorAssociationBacktestRun_orgId_fkey` FOREIGN KEY (`orgId`) REFERENCES `Org`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE `NewsIndicatorAssociationBacktestRun` ADD CONSTRAINT `NewsIndicatorAssociationBacktestRun_associationId_fkey` FOREIGN KEY (`associationId`) REFERENCES `NewsIndicatorAssociation`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-

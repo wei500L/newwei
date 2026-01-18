@@ -16,7 +16,7 @@ CREATE TABLE `EntitySentimentSnapshot` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
-    UNIQUE INDEX `EntitySentimentSnapshot_orgId_entityName_entityType_bucketStart_key`(`orgId`, `entityName`, `entityType`, `bucketStart`),
+    UNIQUE INDEX `EntitySentimentSnapshot_org_entity_type_bucket_uq`(`orgId`, `entityName`, `entityType`, `bucketStart`),
     INDEX `EntitySentimentSnapshot_orgId_bucketStart_idx`(`orgId`, `bucketStart`),
     INDEX `EntitySentimentSnapshot_orgId_entityName_bucketStart_idx`(`orgId`, `entityName`, `bucketStart`),
     PRIMARY KEY (`id`)
@@ -48,4 +48,3 @@ CREATE TABLE `TopicSentimentSnapshot` (
 -- AddForeignKey
 ALTER TABLE `EntitySentimentSnapshot` ADD CONSTRAINT `EntitySentimentSnapshot_orgId_fkey` FOREIGN KEY (`orgId`) REFERENCES `Org`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE `TopicSentimentSnapshot` ADD CONSTRAINT `TopicSentimentSnapshot_orgId_fkey` FOREIGN KEY (`orgId`) REFERENCES `Org`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-

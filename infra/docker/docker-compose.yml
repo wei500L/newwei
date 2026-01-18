@@ -196,6 +196,8 @@ services:
     environment:
       PORT: 4000
       CI: "true"
+      HUSKY: "0"
+      PRISMA_AUTO_RESOLVE_FAILED_MIGRATIONS: "true"
       AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
       AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
       MODEL_SERVICE_ENABLED: ${MODEL_SERVICE_ENABLED:-true}
@@ -261,6 +263,7 @@ services:
       PORT: 4010
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       VECTOR_INTERNAL_TOKEN: ${VECTOR_INTERNAL_TOKEN:-dev-token}
+      HUSKY: "0"
     dns:
       - ${DOCKER_DNS_1:-223.5.5.5}
       - ${DOCKER_DNS_2:-114.114.114.114}
@@ -322,6 +325,7 @@ services:
     environment:
       PORT: 3000
       CI: "false"
+      HUSKY: "0"
       WATCHPACK_POLLING: "true"
       WATCHPACK_POLLING_INTERVAL: "1000"
       CHOKIDAR_USEPOLLING: "true"

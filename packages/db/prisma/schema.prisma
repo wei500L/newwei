@@ -953,7 +953,7 @@ model EntitySentimentSnapshot {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@unique([orgId, entityName, entityType, bucketStart])
+  @@unique([orgId, entityName, entityType, bucketStart], map: "EntitySentimentSnapshot_org_entity_type_bucket_uq")
   @@index([orgId, bucketStart])
   @@index([orgId, entityName, bucketStart])
 }
@@ -1022,9 +1022,9 @@ model NewsIndicatorAssociation {
 
   backtests       NewsIndicatorAssociationBacktestRun[]
 
-  @@unique([orgId, scopeType, scopeKey, scopeKeyType, featureMetric, indicatorItemId])
-  @@index([orgId, indicatorItemId, lastEvaluatedAt])
-  @@index([orgId, scopeType, scopeKey, lastEvaluatedAt])
+  @@unique([orgId, scopeType, scopeKey, scopeKeyType, featureMetric, indicatorItemId], map: "NewsIndicatorAssociation_org_scope_feature_item_uq")
+  @@index([orgId, indicatorItemId, lastEvaluatedAt], map: "NewsIndicatorAssociation_org_item_eval_idx")
+  @@index([orgId, scopeType, scopeKey, lastEvaluatedAt], map: "NewsIndicatorAssociation_org_scope_eval_idx")
 }
 
 model NewsIndicatorAssociationBacktestRun {

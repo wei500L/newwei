@@ -97,8 +97,8 @@ enum AlertEventStatus {
 
 enum AlertMetricProvider {
   crawl_task
-  economic_data
   economic_anomaly
+  economic_data
   entity_association
   entity_sentiment
   pipeline_job
@@ -206,9 +206,70 @@ input AnomalyAnalysisInput {
   value: Float!
 }
 
+type ArticleEntityLinkModel {
+  articleId: String!
+  confidence: Float
+  createdAt: DateTime!
+  entity: KnowledgeGraphNodeModel!
+  mention: String
+}
+
 input AssignRoleInput {
   roleId: String!
   userId: String!
+}
+
+input AssistantForecastInput {
+  confidenceLevel: Float
+  lookbackDays: Int
+  modelKind: AssistantForecastModelKind
+  seasonalPeriod: Int
+  series: String!
+  sourceField: String
+}
+
+enum AssistantForecastModelKind {
+  arima
+  ets
+}
+
+input AssistantQueryInput {
+  message: String!
+}
+
+input AssistantReportInput {
+  limit: Int
+  period: AssistantReportPeriod!
+  topic: String
+}
+
+enum AssistantReportPeriod {
+  daily
+  weekly
+}
+
+type AssistantRunModel {
+  createdAt: DateTime!
+  error: String
+  id: String!
+  input: JSON
+  output: JSON
+  status: AssistantRunStatus!
+  summary: String
+  type: AssistantRunType!
+}
+
+enum AssistantRunStatus {
+  completed
+  failed
+  pending
+  running
+}
+
+enum AssistantRunType {
+  forecast
+  query
+  report
 }
 
 type AuditLogRetentionModel {
@@ -220,6 +281,11 @@ type AuthCacheSettingsModel {
   maxWaitMs: Int!
   profileTtlSeconds: Int!
   retryDelayMs: Int!
+}
+
+input CommodityMoveImpactInput {
+  commodityName: String!
+  maxCandidates: Int
 }
 
 input CorrelationAnalysisInput {
@@ -710,14 +776,14 @@ input EntityImpactGraphInput {
   """Maximum number of nodes to return"""
   maxNodes: Int
 
+  """Minimum co-occurrence count between entities"""
+  minCoOccurrence: Int
+
   """Minimum entity confidence threshold (0-1)"""
   minConfidence: Float
 
   """Minimum absolute correlation threshold (0-1)"""
   minCorrelation: Float
-
-  """Minimum co-occurrence count between entities"""
-  minCoOccurrence: Int
 
   """Start date for data range"""
   startDate: DateTime
@@ -735,107 +801,13 @@ type EntityImpactGraphModel {
 }
 
 type EntityImpactGraphSettingsModel {
-  categories: [String!]!
   cacheTtlSeconds: Int!
+  categories: [String!]!
   enabled: Boolean!
   maxNodes: Int!
   minCoOccurrence: Int!
   minCorrelation: Float!
   minEntityConfidence: Float!
-}
-
-type KnowledgeGraphSettingsModel {
-  cacheTtlSeconds: Int!
-  enabled: Boolean!
-  ingestionEnabled: Boolean!
-  seedIngestionEnabled: Boolean!
-  seedSwIndustriesPerRun: Int!
-  maxBatchSize: Int!
-  maxRelationsPerArticle: Int!
-}
-
-type KnowledgeGraphExplainChainModel {
-  edges: [KnowledgeGraphEdgeModel!]!
-  nodes: [KnowledgeGraphNodeModel!]!
-  reason: String!
-}
-
-type KnowledgeGraphImpactCandidateModel {
-  chains: [KnowledgeGraphExplainChainModel!]!
-  entity: KnowledgeGraphNodeModel!
-  kind: String!
-  score: Float!
-}
-
-type KnowledgeGraphImpactAnalysisModel {
-  candidates: [KnowledgeGraphImpactCandidateModel!]!
-  generatedAt: DateTime!
-  metadata: JSON
-  scenario: String!
-  seed: KnowledgeGraphNodeModel!
-}
-
-input ExecutiveChangeImpactInput {
-  companyName: String!
-  maxCandidates: Int
-}
-
-input CommodityMoveImpactInput {
-  commodityName: String!
-  maxCandidates: Int
-}
-
-input PolicyEventImpactInput {
-  includeLprSnapshot: Boolean
-  maxCandidates: Int
-  policyName: String!
-}
-
-input KnowledgeGraphSubgraphInput {
-  """Max BFS depth"""
-  maxDepth: Int
-
-  """Max nodes returned"""
-  maxNodes: Int
-
-  """Restrict edge types"""
-  relationTypes: [String!]
-
-  """Seed entity name"""
-  seedName: String!
-
-  """Optional seed entity type override"""
-  seedType: String
-}
-
-type KnowledgeGraphEdgeModel {
-  confidence: Float!
-  from: String!
-  id: String!
-  properties: JSON
-  to: String!
-  type: String!
-  weight: Float!
-}
-
-type KnowledgeGraphMetadataModel {
-  generatedAt: DateTime!
-  totalEdges: Int!
-  totalNodes: Int!
-}
-
-type KnowledgeGraphModel {
-  edges: [KnowledgeGraphEdgeModel!]!
-  metadata: KnowledgeGraphMetadataModel!
-  nodes: [KnowledgeGraphNodeModel!]!
-  seed: KnowledgeGraphNodeModel!
-}
-
-type KnowledgeGraphNodeModel {
-  id: String!
-  name: String!
-  properties: JSON
-  type: String!
 }
 
 type EntityImpactLinkModel {
@@ -880,6 +852,20 @@ type EntityImpactNodeModel {
   value: Float!
 }
 
+type EntitySentimentSnapshotModel {
+  avgScore: Float!
+  bucketStart: DateTime!
+  entityName: String!
+  entityType: String!
+  evidenceProcessedItemIds: JSON
+  negativeDocs: Int!
+  negativeRatio: Float!
+  neutralDocs: Int!
+  positiveDocs: Int!
+  scoreSum: Int!
+  totalDocs: Int!
+}
+
 type EventGroupItemModel {
   createdAt: DateTime!
   id: ID!
@@ -901,6 +887,11 @@ type EventGroupModel {
   summary: String
   title: String
   topics: [String!]!
+}
+
+input ExecutiveChangeImpactInput {
+  companyName: String!
+  maxCandidates: Int
 }
 
 type ItemConnection {
@@ -977,6 +968,84 @@ The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://
 """
 scalar JSON
 
+type KnowledgeGraphEdgeModel {
+  confidence: Float!
+  from: String!
+  id: String!
+  properties: JSON
+  to: String!
+  type: String!
+  weight: Float!
+}
+
+type KnowledgeGraphExplainChainModel {
+  edges: [KnowledgeGraphEdgeModel!]!
+  nodes: [KnowledgeGraphNodeModel!]!
+  reason: String!
+}
+
+type KnowledgeGraphImpactAnalysisModel {
+  candidates: [KnowledgeGraphImpactCandidateModel!]!
+  generatedAt: DateTime!
+  metadata: JSON
+  scenario: String!
+  seed: KnowledgeGraphNodeModel!
+}
+
+type KnowledgeGraphImpactCandidateModel {
+  chains: [KnowledgeGraphExplainChainModel!]!
+  entity: KnowledgeGraphNodeModel!
+  kind: String!
+  score: Float!
+}
+
+type KnowledgeGraphMetadataModel {
+  generatedAt: DateTime!
+  totalEdges: Int!
+  totalNodes: Int!
+}
+
+type KnowledgeGraphModel {
+  edges: [KnowledgeGraphEdgeModel!]!
+  metadata: KnowledgeGraphMetadataModel!
+  nodes: [KnowledgeGraphNodeModel!]!
+  seed: KnowledgeGraphNodeModel!
+}
+
+type KnowledgeGraphNodeModel {
+  id: String!
+  name: String!
+  properties: JSON
+  type: String!
+}
+
+type KnowledgeGraphSettingsModel {
+  cacheTtlSeconds: Int!
+  enabled: Boolean!
+  ingestionEnabled: Boolean!
+  maxBatchSize: Int!
+  maxRelationsPerArticle: Int!
+  seedIngestionEnabled: Boolean!
+  seedSwIndustriesPerRun: Int!
+}
+
+input KnowledgeGraphSubgraphInput {
+  """Max BFS depth"""
+  maxDepth: Int
+
+  """Max nodes returned"""
+  maxNodes: Int
+
+  """Restrict edge types"""
+  relationTypes: [String!]
+
+  """Seed entity name"""
+  seedName: String!
+
+  """Optional seed entity type override"""
+  seedType: String
+}
+
 type MembershipModel {
   id: String!
   orgId: String!
@@ -999,7 +1068,11 @@ type Mutation {
   ingestCrawlTaskResultsToItems(after: String, limit: Float, onlyMissing: Boolean, taskId: String!): CrawlIngestBatchModel!
   markAllNotificationsRead: Boolean!
   markNotificationRead(id: String!): NotificationModel
+  refreshNewsIndicatorAssociations: Boolean!
   requestAnomalyExplanation(input: AnomalyAnalysisInput!): AnalysisResultModel!
+  requestAssistantForecast(input: AssistantForecastInput!): AssistantRunModel!
+  requestAssistantQuery(input: AssistantQueryInput!): AssistantRunModel!
+  requestAssistantReport(input: AssistantReportInput!): AssistantRunModel!
   requestCorrelationAnalysis(input: CorrelationAnalysisInput!): AnalysisResultModel!
   retryCrawlTask(id: String!): CrawlTaskModel!
   setOrgActive(input: SetOrgActiveInput!): OrgModel!
@@ -1013,14 +1086,169 @@ type Mutation {
   updateCrawlTaskIngestToItems(enabled: Boolean!, id: String!): CrawlTaskModel!
   updateEconomicDataFetchConfig(frequency: EconomicDataFrequency, isEnabled: Boolean, repeatCron: String, slug: String!): EconomicDataFetchConfigModel!
   updateEntityImpactGraphSettings(input: UpdateEntityImpactGraphSettingsInput!): EntityImpactGraphSettingsModel!
-  updateKnowledgeGraphSettings(input: UpdateKnowledgeGraphSettingsInput!): KnowledgeGraphSettingsModel!
   updateItem(input: UpdateItemInput!): ItemModel!
+  updateKnowledgeGraphSettings(input: UpdateKnowledgeGraphSettingsInput!): KnowledgeGraphSettingsModel!
+  updateNewsEventSettings(input: UpdateNewsEventSettingsInput!): NewsEventSettingsModel!
+  updateNewsIndicatorSettings(input: UpdateNewsIndicatorSettingsInput!): NewsIndicatorSettingsModel!
   updateNewsPromptConfig(input: UpdateNewsPromptConfigInput!): NewsPromptConfigModel!
   updateOrg(input: UpdateOrgInput!): OrgModel!
   updateRateLimitSettings(input: UpdateRateLimitSettingsInput!): RateLimitSettingsModel!
   updateRole(input: UpdateRoleInput!): RoleModel!
   upsertAlertRule(input: UpsertAlertRuleInput!): AlertRuleModel!
   upsertDashboard(input: UpsertDashboardInput!): DashboardModel!
+}
+
+type NewsEventArticleModel {
+  crawlAt: DateTime!
+  id: String!
+  sourceLabel: String
+  url: String!
+}
+
+enum NewsEventAssignmentMethod {
+  manual
+  overlap
+  vector
+}
+
+type NewsEventItemModel {
+  assignedBy: NewsEventAssignmentMethod!
+  createdAt: DateTime!
+  eventId: String!
+  id: String!
+  processedArticle: NewsEventProcessedArticleModel!
+  processedArticleId: String!
+  processedItemId: String
+  similarity: Float
+}
+
+type NewsEventModel {
+  createdAt: DateTime!
+  id: String!
+  itemCount: Int!
+  items: [NewsEventItemModel!]
+  language: String
+  lastAt: DateTime!
+  metadata: JSON
+  primaryEntity: String
+  primaryTopic: String
+  representativeProcessedArticleId: String
+  representativeProcessedItemId: String
+  startAt: DateTime!
+  status: NewsEventStatus!
+  summary: String
+  timeline: [NewsEventTimelineEntryModel!]
+  title: String
+  updatedAt: DateTime!
+}
+
+type NewsEventProcessedArticleModel {
+  article: NewsEventArticleModel!
+  articleId: String!
+  id: String!
+  language: String
+  processedAt: DateTime!
+  publishedAt: DateTime
+  summary: String
+  title: String
+}
+
+type NewsEventSettingsModel {
+  backfillDays: Int!
+  cacheTtlSeconds: Int!
+  crossLanguagePenalty: Float!
+  enabled: Boolean!
+  ingestionEnabled: Boolean!
+  lookbackDays: Int!
+  maxBatchSize: Int!
+  timelineEnabled: Boolean!
+  timelineMaxEventsPerRun: Int!
+  vectorMinScore: Float!
+}
+
+enum NewsEventStatus {
+  active
+  archived
+}
+
+type NewsEventTimelineEntryModel {
+  bucketStart: DateTime!
+  createdAt: DateTime!
+  eventId: String!
+  id: String!
+  keyPoints: JSON
+  referencedArticleIds: JSON
+  summary: String
+  title: String
+  updatedAt: DateTime!
+}
+
+type NewsIndicatorAssociationBacktestRunModel {
+  config: JSON
+  createdAt: DateTime!
+  error: String
+  id: String!
+  metrics: JSON
+  status: NewsIndicatorBacktestStatus!
+  updatedAt: DateTime!
+  windowEnd: DateTime!
+  windowStart: DateTime!
+}
+
+type NewsIndicatorAssociationModel {
+  analyzedEndAt: DateTime!
+  analyzedStartAt: DateTime!
+  backtests: [NewsIndicatorAssociationBacktestRunModel!]
+  correlation: Float!
+  featureMetric: NewsIndicatorFeatureMetric!
+  id: String!
+  indicator: EconomicDataItemModel!
+  lagDays: Int!
+  lastEvaluatedAt: DateTime!
+  latestBacktest: NewsIndicatorAssociationBacktestRunModel
+  metadata: JSON
+  pValue: Float
+  sampleSize: Int!
+  scopeKey: String!
+  scopeKeyType: String!
+  scopeType: NewsIndicatorScopeType!
+  windowDays: Int!
+}
+
+enum NewsIndicatorBacktestStatus {
+  completed
+  failed
+  pending
+  running
+}
+
+enum NewsIndicatorFeatureMetric {
+  avg_score
+  negative_ratio
+  volume
+}
+
+enum NewsIndicatorScopeType {
+  entity
+  topic
+}
+
+type NewsIndicatorSettingsModel {
+  backtestBaselineDays: Int!
+  backtestHoldoutDays: Int!
+  backtestTriggerZScore: Float!
+  cacheTtlSeconds: Int!
+  enabled: Boolean!
+  indicatorSlugs: [String!]!
+  ingestionEnabled: Boolean!
+  maxAssociationsPerIndicator: Int!
+  maxLagDays: Int!
+  maxPValue: Float!
+  minAbsCorrelation: Float!
+  minSampleSize: Int!
+  topEntities: Int!
+  topTopics: Int!
+  windowDays: Int!
 }
 
 type NewsPromptConfigModel {
@@ -1099,6 +1327,12 @@ type PermissionModel {
   name: String!
 }
 
+input PolicyEventImpactInput {
+  includeLprSnapshot: Boolean
+  maxCandidates: Int
+  policyName: String!
+}
+
 type ProcessedItemLlmModel {
   completionTokens: Float
   costUsd: Float
@@ -1152,6 +1386,8 @@ type Query {
   alertRuleTuningSuggestion(ruleId: String!, windowDays: Int): AlertRuleTuningSuggestionModel
   alertRules: [AlertRuleModel!]!
   analysisResults(limit: Int): [AnalysisResultModel!]!
+  articleEntityLinks(articleId: String!, limit: Int): [ArticleEntityLinkModel!]!
+  assistantRuns(limit: Int): [AssistantRunModel!]!
   auditLogRetention: AuditLogRetentionModel!
   authCacheSettings: AuthCacheSettingsModel!
   crawlClientSettings: CrawlClientSettingsModel!
@@ -1161,25 +1397,32 @@ type Query {
   dashboards: [DashboardModel!]!
   economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
   entityImpactGraphSettings: EntityImpactGraphSettingsModel!
-  knowledgeGraphSettings: KnowledgeGraphSettingsModel!
+  entitySentimentSeries(days: Int, entityName: String!, entityType: String): [EntitySentimentSnapshotModel!]!
   eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!
+  getCommodityMoveImpact(input: CommodityMoveImpactInput!): KnowledgeGraphImpactAnalysisModel
   getEconomicData(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicDataPointModel!]!
   getEconomicDataPaginated(category: String!, granularity: TimeGranularity, pagination: PaginationInput, timeRange: DateRangeInput!): PaginatedEconomicDataPointsModel!
 
   """Get entity impact graph data for visualization"""
   getEntityImpactGraph(input: EntityImpactGraphInput): EntityImpactGraphModel!
+  getExecutiveChangeImpact(input: ExecutiveChangeImpactInput!): KnowledgeGraphImpactAnalysisModel
 
   """Get a knowledge graph subgraph for a seed entity"""
   getKnowledgeGraphSubgraph(input: KnowledgeGraphSubgraphInput!): KnowledgeGraphModel
-  getExecutiveChangeImpact(input: ExecutiveChangeImpactInput!): KnowledgeGraphImpactAnalysisModel
-  getCommodityMoveImpact(input: CommodityMoveImpactInput!): KnowledgeGraphImpactAnalysisModel
   getPolicyEventImpact(input: PolicyEventImpactInput!): KnowledgeGraphImpactAnalysisModel
   item(id: String!): ItemModel
   itemFacets(filters: ItemsFiltersInput, search: String): ItemFacets!
   items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, search: String): ItemConnection!
+  knowledgeGraphSettings: KnowledgeGraphSettingsModel!
   me: UserModel!
   memberships: [MembershipModel!]!
   myOrganizations: [OrgModel!]!
+  newsEvent(id: String!, itemsLimit: Int, timelineLimit: Int): NewsEventModel
+  newsEventSettings: NewsEventSettingsModel!
+  newsEvents(limit: Int, status: NewsEventStatus, windowDays: Int): [NewsEventModel!]!
+  newsIndicatorAssociation(backtestsLimit: Int, id: String!): NewsIndicatorAssociationModel
+  newsIndicatorAssociations(featureMetric: NewsIndicatorFeatureMetric, indicatorSlug: String, limit: Int, scopeKey: String, scopeType: NewsIndicatorScopeType): [NewsIndicatorAssociationModel!]!
+  newsIndicatorSettings: NewsIndicatorSettingsModel!
   newsPromptConfig: NewsPromptConfigModel!
   notifications(limit: Int): [NotificationModel!]!
   permissions: [PermissionModel!]!
@@ -1187,6 +1430,7 @@ type Query {
   rateLimitSettings: RateLimitSettingsModel!
   roles(includeSystem: Boolean): [RoleModel!]!
   topicGroups(itemsPerGroup: Int, limit: Int, windowDays: Int): [TopicGroupModel!]!
+  topicSentimentSeries(days: Int, topic: String!): [TopicSentimentSnapshotModel!]!
   unreadNotificationCount: Int!
   users(after: String, first: Int, search: String): [UserModel!]!
 }
@@ -1286,6 +1530,7 @@ input SetOrgActiveInput {
 type Subscription {
   alertEvents: AlertEventModel!
   analysisEvents: AnalysisResultModel!
+  assistantEvents: AssistantRunModel!
   queueEvents: QueueEventModel!
 }
 
@@ -1312,6 +1557,19 @@ type TopicItemModel {
   source: String
   summary: String
   title: String
+}
+
+type TopicSentimentSnapshotModel {
+  avgScore: Float!
+  bucketStart: DateTime!
+  evidenceProcessedItemIds: JSON
+  negativeDocs: Int!
+  negativeRatio: Float!
+  neutralDocs: Int!
+  positiveDocs: Int!
+  scoreSum: Int!
+  topic: String!
+  totalDocs: Int!
 }
 
 input TriggerDataFetchInput {
@@ -1351,8 +1609,8 @@ input UpdateCrawlClientSettingsInput {
 }
 
 input UpdateEntityImpactGraphSettingsInput {
-  categories: [String!]!
   cacheTtlSeconds: Int!
+  categories: [String!]!
   enabled: Boolean!
   maxNodes: Int!
   minCoOccurrence: Int!
@@ -1360,21 +1618,52 @@ input UpdateEntityImpactGraphSettingsInput {
   minEntityConfidence: Float!
 }
 
-input UpdateKnowledgeGraphSettingsInput {
-  cacheTtlSeconds: Int!
-  enabled: Boolean!
-  ingestionEnabled: Boolean!
-  seedIngestionEnabled: Boolean!
-  seedSwIndustriesPerRun: Int!
-  maxBatchSize: Int!
-  maxRelationsPerArticle: Int!
-}
-
 input UpdateItemInput {
   id: String!
   payload: String
   status: String
   title: String
+}
+
+input UpdateKnowledgeGraphSettingsInput {
+  cacheTtlSeconds: Int!
+  enabled: Boolean!
+  ingestionEnabled: Boolean!
+  maxBatchSize: Int!
+  maxRelationsPerArticle: Int!
+  seedIngestionEnabled: Boolean!
+  seedSwIndustriesPerRun: Int!
+}
+
+input UpdateNewsEventSettingsInput {
+  backfillDays: Int!
+  cacheTtlSeconds: Int!
+  crossLanguagePenalty: Float!
+  enabled: Boolean!
+  ingestionEnabled: Boolean!
+  lookbackDays: Int!
+  maxBatchSize: Int!
+  timelineEnabled: Boolean!
+  timelineMaxEventsPerRun: Int!
+  vectorMinScore: Float!
+}
+
+input UpdateNewsIndicatorSettingsInput {
+  backtestBaselineDays: Int!
+  backtestHoldoutDays: Int!
+  backtestTriggerZScore: Float!
+  cacheTtlSeconds: Int!
+  enabled: Boolean!
+  indicatorSlugs: [String!]!
+  ingestionEnabled: Boolean!
+  maxAssociationsPerIndicator: Int!
+  maxLagDays: Int!
+  maxPValue: Float!
+  minAbsCorrelation: Float!
+  minSampleSize: Int!
+  topEntities: Int!
+  topTopics: Int!
+  windowDays: Int!
 }
 
 input UpdateNewsPromptConfigInput {

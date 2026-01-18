@@ -1,5 +1,5 @@
 import { createLogger } from "@modular/utils";
-import type { HttpService } from "@nestjs/axios";
+import { HttpService } from "@nestjs/axios";
 import { Injectable } from "@nestjs/common";
 import { firstValueFrom } from "rxjs";
 import type { AxiosError } from "axios";

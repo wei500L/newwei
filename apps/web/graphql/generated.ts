@@ -223,10 +223,73 @@ export type AnomalyAnalysisInput = {
   value: Scalars['Float']['input'];
 };
 
+export type ArticleEntityLinkModel = {
+  __typename?: 'ArticleEntityLinkModel';
+  articleId: Scalars['String']['output'];
+  confidence?: Maybe<Scalars['Float']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  entity: KnowledgeGraphNodeModel;
+  mention?: Maybe<Scalars['String']['output']>;
+};
+
 export type AssignRoleInput = {
   roleId: Scalars['String']['input'];
   userId: Scalars['String']['input'];
 };
+
+export type AssistantForecastInput = {
+  confidenceLevel?: InputMaybe<Scalars['Float']['input']>;
+  lookbackDays?: InputMaybe<Scalars['Int']['input']>;
+  modelKind?: InputMaybe<AssistantForecastModelKind>;
+  seasonalPeriod?: InputMaybe<Scalars['Int']['input']>;
+  series: Scalars['String']['input'];
+  sourceField?: InputMaybe<Scalars['String']['input']>;
+};
+
+export enum AssistantForecastModelKind {
+  Arima = 'arima',
+  Ets = 'ets'
+}
+
+export type AssistantQueryInput = {
+  message: Scalars['String']['input'];
+};
+
+export type AssistantReportInput = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  period: AssistantReportPeriod;
+  topic?: InputMaybe<Scalars['String']['input']>;
+};
+
+export enum AssistantReportPeriod {
+  Daily = 'daily',
+  Weekly = 'weekly'
+}
+
+export type AssistantRunModel = {
+  __typename?: 'AssistantRunModel';
+  createdAt: Scalars['DateTime']['output'];
+  error?: Maybe<Scalars['String']['output']>;
+  id: Scalars['String']['output'];
+  input?: Maybe<Scalars['JSON']['output']>;
+  output?: Maybe<Scalars['JSON']['output']>;
+  status: AssistantRunStatus;
+  summary?: Maybe<Scalars['String']['output']>;
+  type: AssistantRunType;
+};
+
+export enum AssistantRunStatus {
+  Completed = 'completed',
+  Failed = 'failed',
+  Pending = 'pending',
+  Running = 'running'
+}
+
+export enum AssistantRunType {
+  Forecast = 'forecast',
+  Query = 'query',
+  Report = 'report'
+}
 
 export type AuditLogRetentionModel = {
   __typename?: 'AuditLogRetentionModel';
@@ -812,6 +875,21 @@ export type EntityImpactNodeModel = {
   value: Scalars['Float']['output'];
 };
 
+export type EntitySentimentSnapshotModel = {
+  __typename?: 'EntitySentimentSnapshotModel';
+  avgScore: Scalars['Float']['output'];
+  bucketStart: Scalars['DateTime']['output'];
+  entityName: Scalars['String']['output'];
+  entityType: Scalars['String']['output'];
+  evidenceProcessedItemIds?: Maybe<Scalars['JSON']['output']>;
+  negativeDocs: Scalars['Int']['output'];
+  negativeRatio: Scalars['Float']['output'];
+  neutralDocs: Scalars['Int']['output'];
+  positiveDocs: Scalars['Int']['output'];
+  scoreSum: Scalars['Int']['output'];
+  totalDocs: Scalars['Int']['output'];
+};
+
 export type EventGroupItemModel = {
   __typename?: 'EventGroupItemModel';
   createdAt: Scalars['DateTime']['output'];
@@ -1021,7 +1099,11 @@ export type Mutation = {
   ingestCrawlTaskResultsToItems: CrawlIngestBatchModel;
   markAllNotificationsRead: Scalars['Boolean']['output'];
   markNotificationRead?: Maybe<NotificationModel>;
+  refreshNewsIndicatorAssociations: Scalars['Boolean']['output'];
   requestAnomalyExplanation: AnalysisResultModel;
+  requestAssistantForecast: AssistantRunModel;
+  requestAssistantQuery: AssistantRunModel;
+  requestAssistantReport: AssistantRunModel;
   requestCorrelationAnalysis: AnalysisResultModel;
   retryCrawlTask: CrawlTaskModel;
   setOrgActive: OrgModel;
@@ -1037,6 +1119,8 @@ export type Mutation = {
   updateEntityImpactGraphSettings: EntityImpactGraphSettingsModel;
   updateItem: ItemModel;
   updateKnowledgeGraphSettings: KnowledgeGraphSettingsModel;
+  updateNewsEventSettings: NewsEventSettingsModel;
+  updateNewsIndicatorSettings: NewsIndicatorSettingsModel;
   updateNewsPromptConfig: NewsPromptConfigModel;
   updateOrg: OrgModel;
   updateRateLimitSettings: RateLimitSettingsModel;
@@ -1111,6 +1195,21 @@ export type MutationMarkNotificationReadArgs = {
 
 export type MutationRequestAnomalyExplanationArgs = {
   input: AnomalyAnalysisInput;
+};
+
+
+export type MutationRequestAssistantForecastArgs = {
+  input: AssistantForecastInput;
+};
+
+
+export type MutationRequestAssistantQueryArgs = {
+  input: AssistantQueryInput;
+};
+
+
+export type MutationRequestAssistantReportArgs = {
+  input: AssistantReportInput;
 };
 
 
@@ -1193,6 +1292,16 @@ export type MutationUpdateKnowledgeGraphSettingsArgs = {
 };
 
 
+export type MutationUpdateNewsEventSettingsArgs = {
+  input: UpdateNewsEventSettingsInput;
+};
+
+
+export type MutationUpdateNewsIndicatorSettingsArgs = {
+  input: UpdateNewsIndicatorSettingsInput;
+};
+
+
 export type MutationUpdateNewsPromptConfigArgs = {
   input: UpdateNewsPromptConfigInput;
 };
@@ -1220,6 +1329,168 @@ export type MutationUpsertAlertRuleArgs = {
 
 export type MutationUpsertDashboardArgs = {
   input: UpsertDashboardInput;
+};
+
+export type NewsEventArticleModel = {
+  __typename?: 'NewsEventArticleModel';
+  crawlAt: Scalars['DateTime']['output'];
+  id: Scalars['String']['output'];
+  sourceLabel?: Maybe<Scalars['String']['output']>;
+  url: Scalars['String']['output'];
+};
+
+export enum NewsEventAssignmentMethod {
+  Manual = 'manual',
+  Overlap = 'overlap',
+  Vector = 'vector'
+}
+
+export type NewsEventItemModel = {
+  __typename?: 'NewsEventItemModel';
+  assignedBy: NewsEventAssignmentMethod;
+  createdAt: Scalars['DateTime']['output'];
+  eventId: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  processedArticle: NewsEventProcessedArticleModel;
+  processedArticleId: Scalars['String']['output'];
+  processedItemId?: Maybe<Scalars['String']['output']>;
+  similarity?: Maybe<Scalars['Float']['output']>;
+};
+
+export type NewsEventModel = {
+  __typename?: 'NewsEventModel';
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['String']['output'];
+  itemCount: Scalars['Int']['output'];
+  items?: Maybe<Array<NewsEventItemModel>>;
+  language?: Maybe<Scalars['String']['output']>;
+  lastAt: Scalars['DateTime']['output'];
+  metadata?: Maybe<Scalars['JSON']['output']>;
+  primaryEntity?: Maybe<Scalars['String']['output']>;
+  primaryTopic?: Maybe<Scalars['String']['output']>;
+  representativeProcessedArticleId?: Maybe<Scalars['String']['output']>;
+  representativeProcessedItemId?: Maybe<Scalars['String']['output']>;
+  startAt: Scalars['DateTime']['output'];
+  status: NewsEventStatus;
+  summary?: Maybe<Scalars['String']['output']>;
+  timeline?: Maybe<Array<NewsEventTimelineEntryModel>>;
+  title?: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+export type NewsEventProcessedArticleModel = {
+  __typename?: 'NewsEventProcessedArticleModel';
+  article: NewsEventArticleModel;
+  articleId: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  language?: Maybe<Scalars['String']['output']>;
+  processedAt: Scalars['DateTime']['output'];
+  publishedAt?: Maybe<Scalars['DateTime']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+};
+
+export type NewsEventSettingsModel = {
+  __typename?: 'NewsEventSettingsModel';
+  backfillDays: Scalars['Int']['output'];
+  cacheTtlSeconds: Scalars['Int']['output'];
+  crossLanguagePenalty: Scalars['Float']['output'];
+  enabled: Scalars['Boolean']['output'];
+  ingestionEnabled: Scalars['Boolean']['output'];
+  lookbackDays: Scalars['Int']['output'];
+  maxBatchSize: Scalars['Int']['output'];
+  timelineEnabled: Scalars['Boolean']['output'];
+  timelineMaxEventsPerRun: Scalars['Int']['output'];
+  vectorMinScore: Scalars['Float']['output'];
+};
+
+export enum NewsEventStatus {
+  Active = 'active',
+  Archived = 'archived'
+}
+
+export type NewsEventTimelineEntryModel = {
+  __typename?: 'NewsEventTimelineEntryModel';
+  bucketStart: Scalars['DateTime']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  eventId: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  keyPoints?: Maybe<Scalars['JSON']['output']>;
+  referencedArticleIds?: Maybe<Scalars['JSON']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+export type NewsIndicatorAssociationBacktestRunModel = {
+  __typename?: 'NewsIndicatorAssociationBacktestRunModel';
+  config?: Maybe<Scalars['JSON']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  error?: Maybe<Scalars['String']['output']>;
+  id: Scalars['String']['output'];
+  metrics?: Maybe<Scalars['JSON']['output']>;
+  status: NewsIndicatorBacktestStatus;
+  updatedAt: Scalars['DateTime']['output'];
+  windowEnd: Scalars['DateTime']['output'];
+  windowStart: Scalars['DateTime']['output'];
+};
+
+export type NewsIndicatorAssociationModel = {
+  __typename?: 'NewsIndicatorAssociationModel';
+  analyzedEndAt: Scalars['DateTime']['output'];
+  analyzedStartAt: Scalars['DateTime']['output'];
+  backtests?: Maybe<Array<NewsIndicatorAssociationBacktestRunModel>>;
+  correlation: Scalars['Float']['output'];
+  featureMetric: NewsIndicatorFeatureMetric;
+  id: Scalars['String']['output'];
+  indicator: EconomicDataItemModel;
+  lagDays: Scalars['Int']['output'];
+  lastEvaluatedAt: Scalars['DateTime']['output'];
+  latestBacktest?: Maybe<NewsIndicatorAssociationBacktestRunModel>;
+  metadata?: Maybe<Scalars['JSON']['output']>;
+  pValue?: Maybe<Scalars['Float']['output']>;
+  sampleSize: Scalars['Int']['output'];
+  scopeKey: Scalars['String']['output'];
+  scopeKeyType: Scalars['String']['output'];
+  scopeType: NewsIndicatorScopeType;
+  windowDays: Scalars['Int']['output'];
+};
+
+export enum NewsIndicatorBacktestStatus {
+  Completed = 'completed',
+  Failed = 'failed',
+  Pending = 'pending',
+  Running = 'running'
+}
+
+export enum NewsIndicatorFeatureMetric {
+  AvgScore = 'avg_score',
+  NegativeRatio = 'negative_ratio',
+  Volume = 'volume'
+}
+
+export enum NewsIndicatorScopeType {
+  Entity = 'entity',
+  Topic = 'topic'
+}
+
+export type NewsIndicatorSettingsModel = {
+  __typename?: 'NewsIndicatorSettingsModel';
+  backtestBaselineDays: Scalars['Int']['output'];
+  backtestHoldoutDays: Scalars['Int']['output'];
+  backtestTriggerZScore: Scalars['Float']['output'];
+  cacheTtlSeconds: Scalars['Int']['output'];
+  enabled: Scalars['Boolean']['output'];
+  indicatorSlugs: Array<Scalars['String']['output']>;
+  ingestionEnabled: Scalars['Boolean']['output'];
+  maxAssociationsPerIndicator: Scalars['Int']['output'];
+  maxLagDays: Scalars['Int']['output'];
+  maxPValue: Scalars['Float']['output'];
+  minAbsCorrelation: Scalars['Float']['output'];
+  minSampleSize: Scalars['Int']['output'];
+  topEntities: Scalars['Int']['output'];
+  topTopics: Scalars['Int']['output'];
+  windowDays: Scalars['Int']['output'];
 };
 
 export type NewsPromptConfigModel = {
@@ -1362,6 +1633,8 @@ export type Query = {
   alertRuleTuningSuggestion?: Maybe<AlertRuleTuningSuggestionModel>;
   alertRules: Array<AlertRuleModel>;
   analysisResults: Array<AnalysisResultModel>;
+  articleEntityLinks: Array<ArticleEntityLinkModel>;
+  assistantRuns: Array<AssistantRunModel>;
   auditLogRetention: AuditLogRetentionModel;
   authCacheSettings: AuthCacheSettingsModel;
   crawlClientSettings: CrawlClientSettingsModel;
@@ -1371,6 +1644,7 @@ export type Query = {
   dashboards: Array<DashboardModel>;
   economicDataFetchConfigs: Array<EconomicDataFetchConfigModel>;
   entityImpactGraphSettings: EntityImpactGraphSettingsModel;
+  entitySentimentSeries: Array<EntitySentimentSnapshotModel>;
   eventGroups: Array<EventGroupModel>;
   getCommodityMoveImpact?: Maybe<KnowledgeGraphImpactAnalysisModel>;
   getEconomicData: Array<EconomicDataPointModel>;
@@ -1388,6 +1662,12 @@ export type Query = {
   me: UserModel;
   memberships: Array<MembershipModel>;
   myOrganizations: Array<OrgModel>;
+  newsEvent?: Maybe<NewsEventModel>;
+  newsEventSettings: NewsEventSettingsModel;
+  newsEvents: Array<NewsEventModel>;
+  newsIndicatorAssociation?: Maybe<NewsIndicatorAssociationModel>;
+  newsIndicatorAssociations: Array<NewsIndicatorAssociationModel>;
+  newsIndicatorSettings: NewsIndicatorSettingsModel;
   newsPromptConfig: NewsPromptConfigModel;
   notifications: Array<NotificationModel>;
   permissions: Array<PermissionModel>;
@@ -1395,6 +1675,7 @@ export type Query = {
   rateLimitSettings: RateLimitSettingsModel;
   roles: Array<RoleModel>;
   topicGroups: Array<TopicGroupModel>;
+  topicSentimentSeries: Array<TopicSentimentSnapshotModel>;
   unreadNotificationCount: Scalars['Int']['output'];
   users: Array<UserModel>;
 };
@@ -1423,6 +1704,17 @@ export type QueryAnalysisResultsArgs = {
 };
 
 
+export type QueryArticleEntityLinksArgs = {
+  articleId: Scalars['String']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryAssistantRunsArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QueryCrawlMetadataArgs = {
   input: CrawlMetadataInput;
 };
@@ -1440,6 +1732,13 @@ export type QueryCrawlTasksArgs = {
   first?: Scalars['Int']['input'];
   search?: InputMaybe<Scalars['String']['input']>;
   status?: InputMaybe<CrawlTaskStatus>;
+};
+
+
+export type QueryEntitySentimentSeriesArgs = {
+  days?: InputMaybe<Scalars['Int']['input']>;
+  entityName: Scalars['String']['input'];
+  entityType?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -1512,6 +1811,35 @@ export type QueryItemsArgs = {
 };
 
 
+export type QueryNewsEventArgs = {
+  id: Scalars['String']['input'];
+  itemsLimit?: InputMaybe<Scalars['Int']['input']>;
+  timelineLimit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryNewsEventsArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  status?: InputMaybe<NewsEventStatus>;
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryNewsIndicatorAssociationArgs = {
+  backtestsLimit?: InputMaybe<Scalars['Int']['input']>;
+  id: Scalars['String']['input'];
+};
+
+
+export type QueryNewsIndicatorAssociationsArgs = {
+  featureMetric?: InputMaybe<NewsIndicatorFeatureMetric>;
+  indicatorSlug?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  scopeKey?: InputMaybe<Scalars['String']['input']>;
+  scopeType?: InputMaybe<NewsIndicatorScopeType>;
+};
+
+
 export type QueryNotificationsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
@@ -1526,6 +1854,12 @@ export type QueryTopicGroupsArgs = {
   itemsPerGroup?: InputMaybe<Scalars['Int']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
   windowDays?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryTopicSentimentSeriesArgs = {
+  days?: InputMaybe<Scalars['Int']['input']>;
+  topic: Scalars['String']['input'];
 };
 
 
@@ -1636,6 +1970,7 @@ export type Subscription = {
   __typename?: 'Subscription';
   alertEvents: AlertEventModel;
   analysisEvents: AnalysisResultModel;
+  assistantEvents: AssistantRunModel;
   queueEvents: QueueEventModel;
 };
 
@@ -1664,6 +1999,20 @@ export type TopicItemModel = {
   source?: Maybe<Scalars['String']['output']>;
   summary?: Maybe<Scalars['String']['output']>;
   title?: Maybe<Scalars['String']['output']>;
+};
+
+export type TopicSentimentSnapshotModel = {
+  __typename?: 'TopicSentimentSnapshotModel';
+  avgScore: Scalars['Float']['output'];
+  bucketStart: Scalars['DateTime']['output'];
+  evidenceProcessedItemIds?: Maybe<Scalars['JSON']['output']>;
+  negativeDocs: Scalars['Int']['output'];
+  negativeRatio: Scalars['Float']['output'];
+  neutralDocs: Scalars['Int']['output'];
+  positiveDocs: Scalars['Int']['output'];
+  scoreSum: Scalars['Int']['output'];
+  topic: Scalars['String']['output'];
+  totalDocs: Scalars['Int']['output'];
 };
 
 export type TriggerDataFetchInput = {
@@ -1727,6 +2076,37 @@ export type UpdateKnowledgeGraphSettingsInput = {
   maxRelationsPerArticle: Scalars['Int']['input'];
   seedIngestionEnabled: Scalars['Boolean']['input'];
   seedSwIndustriesPerRun: Scalars['Int']['input'];
+};
+
+export type UpdateNewsEventSettingsInput = {
+  backfillDays: Scalars['Int']['input'];
+  cacheTtlSeconds: Scalars['Int']['input'];
+  crossLanguagePenalty: Scalars['Float']['input'];
+  enabled: Scalars['Boolean']['input'];
+  ingestionEnabled: Scalars['Boolean']['input'];
+  lookbackDays: Scalars['Int']['input'];
+  maxBatchSize: Scalars['Int']['input'];
+  timelineEnabled: Scalars['Boolean']['input'];
+  timelineMaxEventsPerRun: Scalars['Int']['input'];
+  vectorMinScore: Scalars['Float']['input'];
+};
+
+export type UpdateNewsIndicatorSettingsInput = {
+  backtestBaselineDays: Scalars['Int']['input'];
+  backtestHoldoutDays: Scalars['Int']['input'];
+  backtestTriggerZScore: Scalars['Float']['input'];
+  cacheTtlSeconds: Scalars['Int']['input'];
+  enabled: Scalars['Boolean']['input'];
+  indicatorSlugs: Array<Scalars['String']['input']>;
+  ingestionEnabled: Scalars['Boolean']['input'];
+  maxAssociationsPerIndicator: Scalars['Int']['input'];
+  maxLagDays: Scalars['Int']['input'];
+  maxPValue: Scalars['Float']['input'];
+  minAbsCorrelation: Scalars['Float']['input'];
+  minSampleSize: Scalars['Int']['input'];
+  topEntities: Scalars['Int']['input'];
+  topTopics: Scalars['Int']['input'];
+  windowDays: Scalars['Int']['input'];
 };
 
 export type UpdateNewsPromptConfigInput = {
