@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { SituationMonitorInsightsQueryDto } from "./dto/situation-monitor.dto";
 import { SituationMonitorService } from "./situation-monitor.service";
+import { SituationMonitorTranslationService } from "./situation-monitor-translation.service";
 
 function parseBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") {
@@ -61,11 +62,33 @@ function parseScope(value: unknown): "tagged" | "all" | undefined {
   return undefined;
 }
 
+function parseTranslateTarget(value: unknown): "zh-CN" | undefined {
+  const bool = parseBoolean(value);
+  if (bool === true) {
+    return "zh-CN";
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  const zh = new Set(["zh", "zh-cn", "zh-hans", "zh-hans-cn", "cn", "chs"]);
+  if (zh.has(normalized)) {
+    return "zh-CN";
+  }
+  return undefined;
+}
+
 @ApiTags("situation-monitor")
 @ApiBearerAuth()
 @Controller("situation-monitor")
 export class SituationMonitorController {
-  constructor(private readonly monitor: SituationMonitorService) {}
+  constructor(
+    private readonly monitor: SituationMonitorService,
+    private readonly translator: SituationMonitorTranslationService,
+  ) {}
 
   @Get("insights")
   @Permissions("items.read")
@@ -73,7 +96,7 @@ export class SituationMonitorController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: SituationMonitorInsightsQueryDto
   ) {
-    return this.monitor.getInsights(user.orgId, {
+    const response = await this.monitor.getInsights(user.orgId, {
       windowHours: query.windowHours,
       maxItems: query.maxItems,
       sections: parseSections(query.sections),
@@ -81,5 +104,13 @@ export class SituationMonitorController {
       scope: parseScope(query.scope),
       debug: parseBoolean(query.debug),
     });
+
+    const translateTarget = parseTranslateTarget(query.translate);
+    if (translateTarget === "zh-CN") {
+      const result = await this.translator.applyZhTranslationsBestEffort(response);
+      response.translation = { target: translateTarget, ...result };
+    }
+
+    return response;
   }
 }

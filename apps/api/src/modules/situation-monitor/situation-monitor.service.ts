@@ -46,6 +46,7 @@ export interface SituationMonitorInsightsResponse {
   windowHours: number;
   maxItems: number;
   analyzedItems: number;
+  translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
   alerts?: SituationMonitorAlertHeadline[];
   leaders?: SituationMonitorWorldLeader[];

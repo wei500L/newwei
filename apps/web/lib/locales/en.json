@@ -2200,6 +2200,13 @@
         "ws": "WebSocket",
         "polling": "Polling"
       },
+      "troubleshoot": {
+        "notFound": "Crawl4AI monitoring endpoints are missing. This usually means the crawl4ai image tag is wrong/too old (Docker Hub :latest is a common culprit). Prefer the floating Docker Hub tag :0 or a recent release tag.",
+        "baseUrlMissing": "CRAWL4AI_BASE_URL is not configured for the web runtime. Set it and restart the web server.",
+        "upstreamUnavailable": "Crawl4AI is not reachable from the web server. Ensure the extras profile is running, then check the crawl4ai container logs.",
+        "timeout": "Monitor request timed out. Crawl4AI may be overloaded or starting up. Check container health and try again.",
+        "auth": "Access denied. Make sure you are logged in and have crawl.read/crawl.write permissions."
+      },
       "tabs": {
         "overview": "Overview",
         "requests": "Requests",

@@ -71,6 +71,23 @@
     @apply bg-white/[0.92] border border-[var(--border)];
   }
 
+  .sm-panel-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .sm-panel-card > .ant-card-head {
+    flex: 0 0 auto;
+  }
+
+  .sm-panel-card > .ant-card-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
   .content-card {
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);

@@ -9,10 +9,12 @@ export interface SituationMonitorSettingsState {
   scope: SituationMonitorScope;
   autoRefresh: boolean;
   resetLayoutOnPreset: boolean;
+  translateToZh: boolean;
   setWindowHours: (hours: number) => void;
   setScope: (scope: SituationMonitorScope) => void;
   setAutoRefresh: (enabled: boolean) => void;
   setResetLayoutOnPreset: (enabled: boolean) => void;
+  setTranslateToZh: (enabled: boolean) => void;
   hydrateFromRemote: (payload: unknown) => void;
   reset: () => void;
 }
@@ -39,10 +41,12 @@ export const useSituationMonitorSettingsStore = create<SituationMonitorSettingsS
   scope: "tagged",
   autoRefresh: true,
   resetLayoutOnPreset: false,
+  translateToZh: false,
   setWindowHours: (hours) => set({ windowHours: normalizeWindowHours(hours) }),
   setScope: (scope) => set({ scope: normalizeScope(scope) }),
   setAutoRefresh: (enabled) => set({ autoRefresh: Boolean(enabled) }),
   setResetLayoutOnPreset: (enabled) => set({ resetLayoutOnPreset: Boolean(enabled) }),
+  setTranslateToZh: (enabled) => set({ translateToZh: Boolean(enabled) }),
   hydrateFromRemote: (payload) => {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       return;
@@ -53,6 +57,7 @@ export const useSituationMonitorSettingsStore = create<SituationMonitorSettingsS
       scope: normalizeScope(record.scope),
       autoRefresh: normalizeBoolean(record.autoRefresh, true),
       resetLayoutOnPreset: normalizeBoolean(record.resetLayoutOnPreset, false),
+      translateToZh: normalizeBoolean(record.translateToZh, false),
     });
   },
   reset: () =>
@@ -61,5 +66,6 @@ export const useSituationMonitorSettingsStore = create<SituationMonitorSettingsS
       scope: "tagged",
       autoRefresh: true,
       resetLayoutOnPreset: false,
+      translateToZh: false,
     }),
 }));

@@ -206,7 +206,11 @@ const getApiErrorMessage = (error: unknown): string | undefined => {
   return undefined;
 };
 
-export function WarMap() {
+export interface WarMapProps {
+  className?: string;
+}
+
+export function WarMap({ className }: WarMapProps = {}) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
@@ -1029,8 +1033,10 @@ export function WarMap() {
     </div>
   );
 
+  const containerClassName = ["relative", className ?? "h-[400px]"].filter(Boolean).join(" ");
+
   return (
-    <div ref={containerRef} className="relative h-[400px]">
+    <div ref={containerRef} className={containerClassName}>
       <DashboardChart
         option={option}
         theme={echartsTheme}

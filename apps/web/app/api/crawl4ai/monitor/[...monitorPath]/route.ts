@@ -35,6 +35,31 @@ function hasAnyPermission(permissions: string[], required: string[]): boolean {
   return required.some((perm) => permissions.includes(perm));
 }
 
+function describeUpstreamFetchError(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined;
+
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+  if (cause && typeof cause === 'object') {
+    const message = (cause as { message?: unknown }).message;
+    const code = (cause as { code?: unknown }).code;
+    if (typeof code === 'string' && typeof message === 'string') {
+      return `${code}: ${message}`;
+    }
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+
+  if (error.message && error.message !== 'fetch failed') {
+    return error.message;
+  }
+
+  return undefined;
+}
+
 async function proxyMonitorRequest(request: Request, monitorPath: string) {
   const baseUrl = process.env.CRAWL4AI_BASE_URL?.trim();
   if (!baseUrl) {
@@ -91,8 +116,12 @@ async function proxyMonitorRequest(request: Request, monitorPath: string) {
     });
   } catch (error) {
     const isAbortError = error instanceof Error && error.name === 'AbortError';
+    const details = isAbortError ? undefined : describeUpstreamFetchError(error);
     return NextResponse.json(
-      { error: isAbortError ? 'Crawl4AI monitor request timed out' : 'Crawl4AI monitor request failed' },
+      {
+        error: isAbortError ? 'Crawl4AI monitor request timed out' : 'Crawl4AI monitor request failed',
+        details,
+      },
       { status: 502 },
     );
   } finally {

@@ -326,7 +326,7 @@ export function DashboardContent() {
                  {t("dashboard.charts.warMap.title", { defaultValue: "Indicator Situation Map" })}
                </h3>
              </div>
-             <WarMap />
+             <WarMap className="h-full" />
            </div>
 
            {/* Sector Heatmap - Side Panel */}

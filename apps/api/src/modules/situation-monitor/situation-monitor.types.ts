@@ -5,6 +5,7 @@ export interface SituationMonitorHeadline {
   id: string;
   itemMetaId?: string;
   title: string;
+  titleZh?: string;
   link: string;
   source: string;
   timestamp: number;
@@ -13,7 +14,9 @@ export interface SituationMonitorHeadline {
   isAlert: boolean;
   alertKeyword?: string;
   summary?: string;
+  summaryZh?: string;
   keyPoints?: string[];
+  keyPointsZh?: string[];
   topics?: string[];
   classificationSource?: SituationMonitorCategoryClassificationSource;
 }
@@ -32,16 +35,18 @@ export interface SituationMonitorWorldLeader {
   party?: string;
   focus?: string[];
   matchCount: number;
-  headlines: Pick<SituationMonitorHeadline, "title" | "link" | "source" | "timestamp">[];
+  headlines: Pick<SituationMonitorHeadline, "title" | "titleZh" | "link" | "source" | "timestamp">[];
 }
 
 export interface SituationMonitorSituationPanel {
   id: "venezuela" | "greenland" | "iran";
   title: string;
+  titleZh?: string;
   subtitle: string;
+  subtitleZh?: string;
   level: "monitoring" | "elevated" | "critical";
   status: "MONITORING" | "ELEVATED" | "CRITICAL";
-  headlines: Pick<SituationMonitorHeadline, "title" | "link" | "source" | "timestamp">[];
+  headlines: Pick<SituationMonitorHeadline, "title" | "titleZh" | "link" | "source" | "timestamp">[];
 }
 
 export interface SituationMonitorMarketItem {
@@ -88,8 +93,10 @@ export type SituationMonitorFedNewsType =
 export interface SituationMonitorFedNewsItem {
   id: string;
   title: string;
+  titleZh?: string;
   link: string;
   description: string;
+  descriptionZh?: string;
   pubDate: string;
   timestamp: number;
   type: SituationMonitorFedNewsType;

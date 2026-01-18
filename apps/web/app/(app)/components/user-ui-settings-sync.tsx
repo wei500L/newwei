@@ -59,6 +59,7 @@ const defaultSituationMonitorSettings = {
   scope: "tagged",
   autoRefresh: true,
   resetLayoutOnPreset: false,
+  translateToZh: false,
 };
 
 const defaultLayoutFingerprint = fingerprintLayout(defaultSituationMonitorLayout);
@@ -141,6 +142,7 @@ function fingerprintSettings(payload: unknown): string {
     scope: record.scope ?? null,
     autoRefresh: record.autoRefresh ?? null,
     resetLayoutOnPreset: record.resetLayoutOnPreset ?? null,
+    translateToZh: record.translateToZh ?? null,
   });
 }
 
@@ -251,6 +253,7 @@ function writeSituationMonitorCache(orgId: string, userId: string) {
     scope: useSituationMonitorSettingsStore.getState().scope,
     autoRefresh: useSituationMonitorSettingsStore.getState().autoRefresh,
     resetLayoutOnPreset: useSituationMonitorSettingsStore.getState().resetLayoutOnPreset,
+    translateToZh: useSituationMonitorSettingsStore.getState().translateToZh,
   };
   writeJsonToStorage(key, {
     version: 1,
@@ -306,6 +309,7 @@ export function UserUiSettingsSync() {
     scope: state.scope,
     autoRefresh: state.autoRefresh,
     resetLayoutOnPreset: state.resetLayoutOnPreset,
+    translateToZh: state.translateToZh,
   }));
   const warMapLayerVisibility = useWarMapSettingsStore((state) => state.layerVisibility);
 
@@ -495,6 +499,7 @@ export function UserUiSettingsSync() {
               scope: useSituationMonitorSettingsStore.getState().scope,
               autoRefresh: useSituationMonitorSettingsStore.getState().autoRefresh,
               resetLayoutOnPreset: useSituationMonitorSettingsStore.getState().resetLayoutOnPreset,
+              translateToZh: useSituationMonitorSettingsStore.getState().translateToZh,
             };
 
             const currentMonitorsFingerprint = fingerprintMonitors(currentMonitors);

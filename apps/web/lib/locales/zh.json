@@ -2198,6 +2198,13 @@
         "ws": "WebSocket",
         "polling": "轮询"
       },
+      "troubleshoot": {
+        "notFound": "Crawl4AI 监控接口缺失。通常是 crawl4ai 镜像 tag 太旧/用错（Docker Hub 的 :latest 很常见）。建议使用 Docker Hub 浮动 tag :0 或较新的 release tag。",
+        "baseUrlMissing": "Web 运行时未配置 CRAWL4AI_BASE_URL。请设置后重启 Web 服务。",
+        "upstreamUnavailable": "Web 服务无法访问 Crawl4AI。确认已启动 extras profile，然后检查 crawl4ai 容器日志。",
+        "timeout": "监控请求超时。Crawl4AI 可能正在启动或负载较高；检查容器健康状态后重试。",
+        "auth": "访问被拒绝。请确认已登录且拥有 crawl.read/crawl.write 权限。"
+      },
       "tabs": {
         "overview": "概览",
         "requests": "请求",

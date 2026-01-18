@@ -31,4 +31,8 @@ export class SituationMonitorInsightsQueryDto {
   @IsOptional()
   @IsString()
   debug?: string;
+
+  @IsOptional()
+  @IsString()
+  translate?: string;
 }

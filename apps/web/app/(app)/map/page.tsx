@@ -28,7 +28,7 @@ export default function MapPage() {
             {t("pages.map.overlay", { defaultValue: "Alert & News Signals Overview" })}
           </Typography.Text>
         </div>
-        <WarMap />
+        <WarMap className="h-full" />
       </div>
     </div>
   );

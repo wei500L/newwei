@@ -478,6 +478,10 @@ function normalizeMonitorError(raw: string): MonitorErrorInfo {
     if (errorMessage) {
       message = errorMessage;
     }
+    const details = asString(getRecordValue(parsed, ["details"]));
+    if (details) {
+      message = `${message}\n${details}`;
+    }
   }
 
   const lower = message.toLowerCase();
@@ -497,7 +501,9 @@ function normalizeMonitorError(raw: string): MonitorErrorInfo {
     lower.includes("monitor request failed") ||
     lower.includes("bad gateway") ||
     lower.includes("fetch failed") ||
-    lower.includes("http 502")
+    lower.includes("http 502") ||
+    lower.includes("enotfound") ||
+    lower.includes("econnrefused")
   ) {
     kind = "upstreamUnavailable";
   }
@@ -590,7 +596,7 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
                 "Crawl4AI is not reachable from the web server. Ensure the extras profile is running, then check the crawl4ai container logs."
             })}
           </Typography.Text>
-          <Typography.Text code>pnpm docker:up:extras</Typography.Text>
+          <Typography.Text code>pnpm docker:up:extras -d crawl4ai</Typography.Text>
           <Typography.Text code>pnpm docker:logs</Typography.Text>
         </Space>
       );

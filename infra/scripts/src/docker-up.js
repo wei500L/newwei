@@ -27,6 +27,29 @@ const runCapture = (command, args, cwd) => {
 
 const isFlagWithValue = (flag, arg) => arg === flag || arg.startsWith(`${flag}=`);
 
+const hasProfile = (globalArgs, profileName) => {
+  for (let i = 0; i < globalArgs.length; i += 1) {
+    const arg = globalArgs[i] ?? "";
+    if (arg === "--profile") {
+      const value = globalArgs[i + 1];
+      if (value === profileName) return true;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--profile=")) {
+      const value = arg.slice("--profile=".length);
+      if (value === profileName) return true;
+    }
+  }
+  return false;
+};
+
+const knownExtrasServices = new Map([
+  ['crawl4ai', 'pnpm docker:up:extras -d crawl4ai'],
+  ['vector', 'pnpm docker:up:extras -d vector'],
+  ['qdrant', 'pnpm docker:up:extras -d qdrant']
+]);
+
 const splitComposeArgs = (args) => {
   const globalArgs = [];
   const upArgs = [];
@@ -73,6 +96,36 @@ const dockerImageExists = (imageRef, cwd) => {
   return result.status === 0;
 };
 
+const resolveUpServices = (upArgs, services) => {
+  const serviceNames = new Set(Object.keys(services));
+  const explicit = upArgs.filter((arg) => arg && !arg.startsWith('-') && serviceNames.has(arg));
+
+  if (explicit.length === 0) {
+    return new Set(serviceNames);
+  }
+
+  const resolved = new Set();
+  const visit = (serviceName) => {
+    if (!serviceName || resolved.has(serviceName)) return;
+    if (!serviceNames.has(serviceName)) return;
+    resolved.add(serviceName);
+
+    const service = services[serviceName];
+    const dependsOn = service && service.depends_on;
+    const deps = Array.isArray(dependsOn)
+      ? dependsOn
+      : dependsOn && typeof dependsOn === 'object'
+        ? Object.keys(dependsOn)
+        : [];
+    for (const dep of deps) {
+      visit(dep);
+    }
+  };
+
+  explicit.forEach(visit);
+  return resolved;
+};
+
 const main = () => {
   const scriptsDir = path.resolve(__dirname, "..");
   const dockerDir = path.resolve(scriptsDir, '../docker');
@@ -80,7 +133,13 @@ const main = () => {
   const composeFile = path.resolve(dockerDir, 'docker-compose.yml');
 
   const userArgs = process.argv.slice(2);
-  const { globalArgs, upArgs } = splitComposeArgs(userArgs);
+  let { globalArgs, upArgs } = splitComposeArgs(userArgs);
+  const requestedServices = upArgs.filter((arg) => arg && !arg.startsWith('-'));
+
+  const wantsExtrasProfile = requestedServices.some((name) => knownExtrasServices.has(name));
+  if (wantsExtrasProfile && !hasProfile(globalArgs, 'extras')) {
+    globalArgs = [...globalArgs, '--profile', 'extras'];
+  }
 
   const composeBaseArgs = [
     'compose',
@@ -100,8 +159,26 @@ const main = () => {
   const projectName = config.name ?? 'docker';
   const services = config.services ?? {};
 
+  const serviceNames = new Set(Object.keys(services));
+  const unknownServices = requestedServices.filter((name) => !serviceNames.has(name));
+  if (unknownServices.length > 0) {
+    process.stderr.write(
+      `[docker-up] Unknown service(s): ${unknownServices.join(', ')}\n` +
+        `           Available: ${Array.from(serviceNames).sort().join(', ')}\n`
+    );
+    const hints = unknownServices
+      .map((name) => knownExtrasServices.get(name))
+      .filter(Boolean);
+    if (hints.length > 0) {
+      process.stderr.write(`           Hint: ${hints.join(' | ')}\n`);
+    }
+    process.exit(1);
+  }
+
+  const upServices = resolveUpServices(upArgs, services);
+
   const buildServices = Object.entries(services)
-    .filter(([, service]) => Boolean(service && service.build))
+    .filter(([name, service]) => upServices.has(name) && Boolean(service && service.build))
     .map(([name]) => name);
 
   const missingBuildImages = buildServices.filter((serviceName) => {
@@ -110,7 +187,7 @@ const main = () => {
   });
 
   const pullServices = Object.entries(services)
-    .filter(([, service]) => typeof (service && service.image) === 'string')
+    .filter(([name, service]) => upServices.has(name) && typeof (service && service.image) === 'string')
     .map(([name]) => name);
 
   const missingPullImages = pullServices.filter((serviceName) => {

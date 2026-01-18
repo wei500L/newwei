@@ -23,13 +23,16 @@ export interface SituationMonitorMonitorMatch {
   matchedKeywords: string[];
   item: {
     title: string;
+    titleZh?: string;
     itemMetaId?: string;
     link: string;
     source: string;
     timestamp: number;
     category?: string;
     summary?: string;
+    summaryZh?: string;
     keyPoints?: string[];
+    keyPointsZh?: string[];
     topics?: string[];
   };
 }

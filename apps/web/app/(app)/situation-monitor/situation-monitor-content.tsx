@@ -118,6 +118,7 @@ interface SituationMonitorHeadline {
   id: string;
   itemMetaId?: string;
   title: string;
+  titleZh?: string;
   link: string;
   source: string;
   timestamp: number;
@@ -126,7 +127,9 @@ interface SituationMonitorHeadline {
   isAlert: boolean;
   alertKeyword?: string;
   summary?: string;
+  summaryZh?: string;
   keyPoints?: string[];
+  keyPointsZh?: string[];
   topics?: string[];
 }
 
@@ -144,16 +147,18 @@ interface SituationMonitorWorldLeader {
   party?: string;
   focus?: string[];
   matchCount: number;
-  headlines: { title: string; link: string; source: string; timestamp: number }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string; timestamp: number }[];
 }
 
 interface SituationMonitorSituationPanel {
   id: "venezuela" | "greenland" | "iran";
   title: string;
+  titleZh?: string;
   subtitle: string;
+  subtitleZh?: string;
   level: "monitoring" | "elevated" | "critical";
   status: "MONITORING" | "ELEVATED" | "CRITICAL";
-  headlines: { title: string; link: string; source: string; timestamp: number }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string; timestamp: number }[];
 }
 
 interface SituationMonitorMarketItem {
@@ -200,8 +205,10 @@ interface SituationMonitorMoneyPrinter {
 interface SituationMonitorFedNewsItem {
   id: string;
   title: string;
+  titleZh?: string;
   link: string;
   description: string;
+  descriptionZh?: string;
   pubDate: string;
   timestamp: number;
   type: "monetary" | "powell" | "speech" | "testimony" | "announcement";
@@ -258,6 +265,7 @@ interface SituationMonitorInsightsResponse {
   windowHours: number;
   maxItems: number;
   analyzedItems: number;
+  translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
   alerts?: SituationMonitorAlertHeadline[];
   leaders?: SituationMonitorWorldLeader[];
@@ -358,6 +366,8 @@ export function SituationMonitorContent() {
   const setScope = useSituationMonitorSettingsStore((state) => state.setScope);
   const autoRefresh = useSituationMonitorSettingsStore((state) => state.autoRefresh);
   const setAutoRefresh = useSituationMonitorSettingsStore((state) => state.setAutoRefresh);
+  const translateToZh = useSituationMonitorSettingsStore((state) => state.translateToZh);
+  const setTranslateToZh = useSituationMonitorSettingsStore((state) => state.setTranslateToZh);
   const [refreshStage, setRefreshStage] = useState<"idle" | "core" | "external">("idle");
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SituationMonitorInsightsResponse | null>(null);
@@ -382,7 +392,7 @@ export function SituationMonitorContent() {
     setError(null);
     try {
       const coreResponse = await apiClient.get<SituationMonitorInsightsResponse>("situation-monitor/insights", {
-        params: { windowHours, maxItems: 400, sections: "core", scope },
+        params: { windowHours, maxItems: 400, sections: "core", scope, translate: translateToZh ? "zh-CN" : undefined },
       });
 
       if (refreshIdRef.current !== refreshId) {
@@ -402,7 +412,7 @@ export function SituationMonitorContent() {
       }
 
       const externalResponse = await apiClient.get<SituationMonitorInsightsResponse>("situation-monitor/insights", {
-        params: { windowHours, maxItems: 400, sections: "external", scope },
+        params: { windowHours, maxItems: 400, sections: "external", scope, translate: translateToZh ? "zh-CN" : undefined },
       });
 
       if (refreshIdRef.current !== refreshId) {
@@ -423,7 +433,7 @@ export function SituationMonitorContent() {
         setRefreshStage("idle");
       }
     }
-  }, [apiClient, scope, session?.accessToken, windowHours]);
+  }, [apiClient, scope, session?.accessToken, translateToZh, windowHours]);
 
   useEffect(() => {
     void load();
@@ -455,47 +465,54 @@ export function SituationMonitorContent() {
       for (const [category, entries] of Object.entries(headlines) as Array<
         [SituationMonitorCategory, SituationMonitorHeadline[]]
       >) {
-        for (const entry of entries) {
-          add({
-            title: entry.title,
-            itemMetaId: entry.itemMetaId,
-            link: entry.link,
-            source: entry.source,
-            timestamp: entry.timestamp,
-            category,
-            summary: entry.summary,
-            keyPoints: entry.keyPoints,
-            topics: entry.topics,
-          });
-        }
-      }
-    }
+	        for (const entry of entries) {
+	          add({
+	            title: entry.title,
+	            titleZh: entry.titleZh,
+	            itemMetaId: entry.itemMetaId,
+	            link: entry.link,
+	            source: entry.source,
+	            timestamp: entry.timestamp,
+	            category,
+	            summary: entry.summary,
+	            summaryZh: entry.summaryZh,
+	            keyPoints: entry.keyPoints,
+	            keyPointsZh: entry.keyPointsZh,
+	            topics: entry.topics,
+	          });
+	        }
+	      }
+	    }
 
-    for (const alert of data?.alerts ?? []) {
-      add({
-        title: alert.title,
-        itemMetaId: alert.itemMetaId,
-        link: alert.link,
-        source: alert.source,
-        timestamp: alert.timestamp,
-        category: `alert:${alert.category}`,
-        summary: alert.summary,
-        keyPoints: alert.keyPoints,
-        topics: alert.topics,
-      });
-    }
+	    for (const alert of data?.alerts ?? []) {
+	      add({
+	        title: alert.title,
+	        titleZh: alert.titleZh,
+	        itemMetaId: alert.itemMetaId,
+	        link: alert.link,
+	        source: alert.source,
+	        timestamp: alert.timestamp,
+	        category: `alert:${alert.category}`,
+	        summary: alert.summary,
+	        summaryZh: alert.summaryZh,
+	        keyPoints: alert.keyPoints,
+	        keyPointsZh: alert.keyPointsZh,
+	        topics: alert.topics,
+	      });
+	    }
 
-    for (const panel of data?.situations ?? []) {
-      for (const entry of panel.headlines ?? []) {
-        add({
-          title: entry.title,
-          link: entry.link,
-          source: entry.source,
-          timestamp: entry.timestamp,
-          category: `situation:${panel.id}`,
-        });
-      }
-    }
+	    for (const panel of data?.situations ?? []) {
+	      for (const entry of panel.headlines ?? []) {
+	        add({
+	          title: entry.title,
+	          titleZh: entry.titleZh,
+	          link: entry.link,
+	          source: entry.source,
+	          timestamp: entry.timestamp,
+	          category: `situation:${panel.id}`,
+	        });
+	      }
+	    }
 
     return items;
   }, [data?.alerts, data?.headlines, data?.situations]);
@@ -567,14 +584,14 @@ export function SituationMonitorContent() {
         const first = Array.isArray(value) ? value[0] : undefined;
         const href = first?.link ? safeHttpUrl(first.link) : null;
         if (!first) return null;
-        return href ? (
-          <Typography.Link href={href} target="_blank" rel="noreferrer">
-            {first.title}
-          </Typography.Link>
-        ) : (
-          <Typography.Text>{first.title}</Typography.Text>
-        );
-      },
+                return href ? (
+                  <Typography.Link href={href} target="_blank" rel="noreferrer">
+                    {first.title}
+                  </Typography.Link>
+                ) : (
+                  <Typography.Text>{first.title}</Typography.Text>
+                );
+		            },
     },
   ];
 
@@ -750,7 +767,8 @@ export function SituationMonitorContent() {
   const initialLoading = loading && !data;
 
   const renderHeadlineSummary = (entry: SituationMonitorHeadline) => {
-    const summary = typeof entry.summary === "string" ? entry.summary.trim() : "";
+    const rawSummary = translateToZh ? entry.summaryZh ?? entry.summary : entry.summary;
+    const summary = typeof rawSummary === "string" ? rawSummary.trim() : "";
     if (!summary) return null;
     return (
       <Typography.Paragraph
@@ -785,9 +803,12 @@ export function SituationMonitorContent() {
   };
 
   const renderHeadlineDetails = (entry: SituationMonitorHeadline) => {
-    const summary = typeof entry.summary === "string" ? entry.summary.trim() : "";
-    const keyPoints = Array.isArray(entry.keyPoints)
-      ? entry.keyPoints
+    const summarySource = translateToZh ? entry.summaryZh ?? entry.summary : entry.summary;
+    const summary = typeof summarySource === "string" ? summarySource.trim() : "";
+
+    const keyPointsSource = translateToZh ? entry.keyPointsZh ?? entry.keyPoints : entry.keyPoints;
+    const keyPoints = Array.isArray(keyPointsSource)
+      ? keyPointsSource
           .filter((point) => typeof point === "string" && point.trim().length > 0)
           .slice(0, 5)
       : [];
@@ -932,7 +953,7 @@ export function SituationMonitorContent() {
             <Tag color="geekblue">{entries.length}</Tag>
           </Space>
         }
-        className="glass-panel border border-[var(--border)] h-full"
+        className="sm-panel-card glass-panel border border-[var(--border)] h-full"
         size="small"
         loading={initialLoading}
       >
@@ -956,13 +977,15 @@ export function SituationMonitorContent() {
                       ) : null}
                       {entry.origin === "gdelt" ? <Tag color="purple">GDELT</Tag> : null}
                       {renderHeadlineMonitorMatches(entry)}
-                      {href ? (
-                        <Typography.Link href={href} target="_blank" rel="noreferrer">
-                          {entry.title}
-                        </Typography.Link>
-                      ) : (
-                        <Typography.Text>{entry.title}</Typography.Text>
-                      )}
+	                      {href ? (
+	                        <Typography.Link href={href} target="_blank" rel="noreferrer">
+	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
+	                        </Typography.Link>
+	                      ) : (
+	                        <Typography.Text>
+	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
+	                        </Typography.Text>
+	                      )}
                       {renderHeadlineItemLink(entry)}
                       {renderHeadlineDetails(entry)}
                     </Space>
@@ -1002,7 +1025,7 @@ export function SituationMonitorContent() {
           <Tag color="geekblue">{data?.alerts?.length ?? 0}</Tag>
         </Space>
       }
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={initialLoading}
     >
       {data?.alerts?.length ? (
@@ -1019,13 +1042,15 @@ export function SituationMonitorContent() {
                       <Tag color={entry.severity === "critical" ? "red" : "orange"}>{entry.severity.toUpperCase()}</Tag>
                       <Tag color="blue">{categoryLabels[entry.category]}</Tag>
                       {renderHeadlineMonitorMatches(entry)}
-                      {href ? (
-                        <Typography.Link href={href} target="_blank" rel="noreferrer">
-                          {entry.title}
-                        </Typography.Link>
-                      ) : (
-                      <Typography.Text>{entry.title}</Typography.Text>
-                    )}
+	                      {href ? (
+	                        <Typography.Link href={href} target="_blank" rel="noreferrer">
+	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
+	                        </Typography.Link>
+	                      ) : (
+	                      <Typography.Text>
+	                        {translateToZh ? entry.titleZh ?? entry.title : entry.title}
+	                      </Typography.Text>
+	                    )}
                     {renderHeadlineItemLink(entry)}
                     {renderHeadlineDetails(entry)}
                   </Space>
@@ -1070,7 +1095,7 @@ export function SituationMonitorContent() {
           ) : null}
         </Space>
       }
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={initialLoading || (refreshStage === "external" && marketsSnapshot === undefined)}
     >
       {marketsSnapshot?.error ? <Alert type="warning" showIcon message={marketsSnapshot.error} /> : null}
@@ -1158,7 +1183,7 @@ export function SituationMonitorContent() {
           <Tag color="geekblue">{cryptoSnapshot?.length ?? 0}</Tag>
         </Space>
       }
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={initialLoading || (refreshStage === "external" && cryptoSnapshot === undefined)}
     >
       {!cryptoSnapshot ? (
@@ -1211,7 +1236,7 @@ export function SituationMonitorContent() {
           {fedSnapshot && !fedSnapshot.hasFredApiKey ? <Tag color="default">FRED API</Tag> : null}
         </Space>
       }
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={initialLoading || (refreshStage === "external" && fedSnapshot === undefined)}
     >
       {!fedSnapshot ? (
@@ -1293,29 +1318,41 @@ export function SituationMonitorContent() {
               <Divider style={{ margin: "12px 0" }} />
               <List
                 size="small"
-                dataSource={fedSnapshot.news.slice(0, fedNewsPerPanel)}
-                renderItem={(item) => {
-                  const href = item.link ? safeHttpUrl(item.link) : null;
-                  const date = Number.isFinite(item.timestamp) ? new Date(item.timestamp) : null;
-                  return (
-                    <List.Item key={item.id}>
-                      <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                        <Space size={8} wrap>
-                          <Tag color={item.type === "powell" ? "orange" : "blue"}>{item.typeLabel}</Tag>
-                          {item.hasVideo ? <Tag color="purple">VIDEO</Tag> : null}
-                          {href ? (
-                            <Typography.Link href={href} target="_blank" rel="noreferrer">
-                              {item.title}
-                            </Typography.Link>
-                          ) : (
-                            <Typography.Text>{item.title}</Typography.Text>
-                          )}
-                        </Space>
-                        <Space size={8} wrap>
-                          {date ? (
-                            <Typography.Text type="secondary">
-                              {formatDateTime(date, locale, {
-                                month: "2-digit",
+	                dataSource={fedSnapshot.news.slice(0, fedNewsPerPanel)}
+	                renderItem={(item) => {
+	                  const href = item.link ? safeHttpUrl(item.link) : null;
+	                  const date = Number.isFinite(item.timestamp) ? new Date(item.timestamp) : null;
+	                  const title = translateToZh ? item.titleZh ?? item.title : item.title;
+	                  const description = translateToZh ? item.descriptionZh ?? item.description : item.description;
+	                  const descriptionText = typeof description === "string" ? description.trim() : "";
+	                  return (
+	                    <List.Item key={item.id}>
+	                      <Space direction="vertical" size={2} style={{ width: "100%" }}>
+	                        <Space size={8} wrap>
+	                          <Tag color={item.type === "powell" ? "orange" : "blue"}>{item.typeLabel}</Tag>
+	                          {item.hasVideo ? <Tag color="purple">VIDEO</Tag> : null}
+	                          {href ? (
+	                            <Typography.Link href={href} target="_blank" rel="noreferrer">
+	                              {title}
+	                            </Typography.Link>
+	                          ) : (
+	                            <Typography.Text>{title}</Typography.Text>
+	                          )}
+	                        </Space>
+	                        {descriptionText ? (
+	                          <Typography.Paragraph
+	                            type="secondary"
+	                            ellipsis={{ rows: 2 }}
+	                            style={{ marginBottom: 0 }}
+	                          >
+	                            {descriptionText}
+	                          </Typography.Paragraph>
+	                        ) : null}
+	                        <Space size={8} wrap>
+	                          {date ? (
+	                            <Typography.Text type="secondary">
+	                              {formatDateTime(date, locale, {
+	                                month: "2-digit",
                                 day: "2-digit",
                                 hour: "2-digit",
                                 minute: "2-digit",
@@ -1344,7 +1381,7 @@ export function SituationMonitorContent() {
           <Tag color="geekblue">{data?.leaders?.length ?? 0}</Tag>
         </Space>
       }
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={initialLoading}
     >
       <Table
@@ -1405,18 +1442,26 @@ export function SituationMonitorContent() {
 
     return (
       <Card
-        title={
-          <Space size={10}>
-            <span>{panel?.title ?? fallbackTitle}</span>
-            {statusTag}
-          </Space>
-        }
-        className="glass-panel border border-[var(--border)] h-full"
+	        title={
+	          <Space size={10}>
+	            <span>
+	              {panel
+	                ? translateToZh
+	                  ? panel.titleZh ?? panel.title
+	                  : panel.title
+	                : fallbackTitle}
+	            </span>
+	            {statusTag}
+	          </Space>
+	        }
+        className="sm-panel-card glass-panel border border-[var(--border)] h-full"
         loading={initialLoading}
       >
-        {panel?.subtitle ? (
-          <Typography.Text type="secondary">{panel.subtitle}</Typography.Text>
-        ) : (
+	        {panel?.subtitle ? (
+	          <Typography.Text type="secondary">
+	            {translateToZh ? panel.subtitleZh ?? panel.subtitle : panel.subtitle}
+	          </Typography.Text>
+	        ) : (
           <Typography.Text type="secondary">
             {refreshStage === "core"
               ? t("common.loading", { defaultValue: "Loading" })
@@ -1434,14 +1479,16 @@ export function SituationMonitorContent() {
                 const date = Number.isFinite(entry.timestamp) ? new Date(entry.timestamp) : null;
                 return (
                   <List.Item key={key}>
-                    <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                      {href ? (
-                        <Typography.Link href={href} target="_blank" rel="noreferrer">
-                          {entry.title}
-                        </Typography.Link>
-                      ) : (
-                        <Typography.Text>{entry.title}</Typography.Text>
-                      )}
+	                    <Space direction="vertical" size={2} style={{ width: "100%" }}>
+	                      {href ? (
+	                        <Typography.Link href={href} target="_blank" rel="noreferrer">
+	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
+	                        </Typography.Link>
+	                      ) : (
+	                        <Typography.Text>
+	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
+	                        </Typography.Text>
+	                      )}
                       <Space size={8} wrap>
                         <Typography.Text type="secondary">{entry.source}</Typography.Text>
                         {date ? (
@@ -1473,9 +1520,10 @@ export function SituationMonitorContent() {
   const renderMapPanel = () => (
     <Card
       title={t("situationMonitor.map.title", { defaultValue: "Global Map" })}
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      styles={{ body: { padding: 0 } }}
     >
-      <WarMap />
+      <WarMap className="h-full" />
     </Card>
   );
 
@@ -1489,7 +1537,7 @@ export function SituationMonitorContent() {
           </Tag>
         </Space>
       }
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={initialLoading}
     >
       <Row gutter={[12, 12]}>
@@ -1557,7 +1605,7 @@ export function SituationMonitorContent() {
           <Tag color="geekblue">{data?.narrativeSummary?.status ?? t("common.loading", { defaultValue: "Loading" })}</Tag>
         </Space>
       }
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={initialLoading}
     >
       <Typography.Text type="secondary">
@@ -1624,7 +1672,7 @@ export function SituationMonitorContent() {
           <Tag color="geekblue">{data?.mainCharacterSummary?.status ?? "NO DATA"}</Tag>
         </Space>
       }
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={initialLoading}
     >
       <Table
@@ -1752,6 +1800,21 @@ export function SituationMonitorContent() {
 	              {t("situationMonitor.autoRefresh", { defaultValue: "Auto refresh" })}
             </Typography.Text>
           </Space>
+          <Space size={8}>
+            <Switch checked={translateToZh} onChange={(checked) => setTranslateToZh(checked)} />
+            <Typography.Text type="secondary">
+              {t("situationMonitor.translateToZh", { defaultValue: "Translate to 简体中文" })}
+            </Typography.Text>
+          </Space>
+          {translateToZh && data?.translation && !data.translation.applied ? (
+            data.translation.error ? (
+              <Popover content={data.translation.error}>
+                <Tag color="red">{t("situationMonitor.translateError", { defaultValue: "TRANSLATION ERROR" })}</Tag>
+              </Popover>
+            ) : (
+              <Tag color="red">{t("situationMonitor.translateError", { defaultValue: "TRANSLATION ERROR" })}</Tag>
+            )
+          ) : null}
           {updatedAt ? (
             <Typography.Text type="secondary">
               {t("situationMonitor.updatedAt", {

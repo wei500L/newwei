@@ -13,6 +13,7 @@ import {
   useSituationMonitorMonitorsStore,
   type SituationMonitorCustomMonitor,
 } from "@/store/situation-monitor-monitors";
+import { useSituationMonitorSettingsStore } from "@/store/situation-monitor-settings";
 
 interface MonitorFormValues {
   name: string;
@@ -42,6 +43,7 @@ export function SituationMonitorMonitorsPanel() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
+  const translateToZh = useSituationMonitorSettingsStore((state) => state.translateToZh);
 
   const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
   const matches = useSituationMonitorMonitorsStore((state) => state.matches);
@@ -187,7 +189,7 @@ export function SituationMonitorMonitorsPanel() {
   return (
     <Card
       title={t("situationMonitor.monitors.title", { defaultValue: "My Monitors" })}
-      className="glass-panel border border-[var(--border)] h-full"
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       extra={
         <Space size="small">
           <Button size="small" icon={<PlusOutlined />} onClick={openCreate}>
@@ -323,13 +325,15 @@ export function SituationMonitorMonitorsPanel() {
                       size="small"
                       pagination={{ pageSize: 12, hideOnSinglePage: true }}
                       dataSource={sortedMatches}
-                      renderItem={(match, idx) => {
-                        const href = match.item.link ? safeHttpUrl(match.item.link) : null;
-                        const date = Number.isFinite(match.item.timestamp) ? new Date(match.item.timestamp) : null;
-                        const itemHref = match.item.itemMetaId ? `/items/${encodeURIComponent(match.item.itemMetaId)}` : null;
-                        return (
-                          <List.Item key={`${match.monitorId}-${idx}`}>
-                            <Space direction="vertical" size={4} style={{ width: "100%" }}>
+	                      renderItem={(match, idx) => {
+	                        const href = match.item.link ? safeHttpUrl(match.item.link) : null;
+	                        const date = Number.isFinite(match.item.timestamp) ? new Date(match.item.timestamp) : null;
+	                        const itemHref = match.item.itemMetaId ? `/items/${encodeURIComponent(match.item.itemMetaId)}` : null;
+	                        const title = translateToZh ? match.item.titleZh ?? match.item.title : match.item.title;
+	                        const summary = translateToZh ? match.item.summaryZh ?? match.item.summary : match.item.summary;
+	                        return (
+	                          <List.Item key={`${match.monitorId}-${idx}`}>
+	                            <Space direction="vertical" size={4} style={{ width: "100%" }}>
                               <Space size={8} wrap>
                                 <Tag color="geekblue">{match.monitorName}</Tag>
                                 {match.item.category ? <Tag>{match.item.category}</Tag> : null}
@@ -355,22 +359,22 @@ export function SituationMonitorMonitorsPanel() {
                                   />
                                 ) : null}
                               </Space>
-                              {href ? (
-                                <Typography.Link href={href} target="_blank" rel="noreferrer">
-                                  {match.item.title}
-                                </Typography.Link>
-                              ) : (
-                                <Typography.Text>{match.item.title}</Typography.Text>
-                              )}
-                              {match.item.summary ? (
-                                <Typography.Paragraph
-                                  type="secondary"
-                                  ellipsis={{ rows: 2 }}
-                                  style={{ marginBottom: 0 }}
-                                >
-                                  {match.item.summary}
-                                </Typography.Paragraph>
-                              ) : null}
+	                              {href ? (
+	                                <Typography.Link href={href} target="_blank" rel="noreferrer">
+	                                  {title}
+	                                </Typography.Link>
+	                              ) : (
+	                                <Typography.Text>{title}</Typography.Text>
+	                              )}
+	                              {summary ? (
+	                                <Typography.Paragraph
+	                                  type="secondary"
+	                                  ellipsis={{ rows: 2 }}
+	                                  style={{ marginBottom: 0 }}
+	                                >
+	                                  {summary}
+	                                </Typography.Paragraph>
+	                              ) : null}
                               <Space size={10} wrap>
                                 <Typography.Text type="secondary">{match.item.source}</Typography.Text>
                                 {date ? (
