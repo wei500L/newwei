@@ -8,12 +8,14 @@ import {
   InputNumber,
   List,
   Space,
-	Typography,
-	message,
+  Skeleton,
+  Typography,
+  message,
 } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   type AnomalyAnalysisInput,
   type CorrelationAnalysisInput,
@@ -23,16 +25,17 @@ import {
   useRequestCorrelationMutation,
   useAnalysisEventsSubscription,
   type AnalysisResultsQuery,
-	  type AnalysisEventsSubscription,
-	} from "@/graphql/generated";
+  type AnalysisEventsSubscription,
+} from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 export function AnalysisPanel() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { data, refetch } = useAnalysisResultsQuery({
+  const { data, loading, error, refetch } = useAnalysisResultsQuery({
     variables: { limit: 10 },
+    notifyOnNetworkStatusChange: true,
   });
   const [liveUpdates, setLiveUpdates] = useState<
     Record<string, AnalysisEventsSubscription["analysisEvents"] & { summaryText: string }>
@@ -99,9 +102,19 @@ export function AnalysisPanel() {
         <CorrelationForm
           loading={savingCorr}
           onSubmit={async (values) => {
-            await requestCorrelation({ variables: { input: values } });
-            message.success(t("analysis.correlation.submitted"));
-            await refetch();
+            try {
+              await requestCorrelation({ variables: { input: values } });
+              message.success(t("analysis.correlation.submitted"));
+              await refetch();
+            } catch (err) {
+              const errorMessage = err instanceof Error ? err.message : String(err);
+              message.error(
+                t("analysis.correlation.submitFailed", {
+                  defaultValue: "Failed to submit correlation analysis: {{error}}",
+                  error: errorMessage,
+                }),
+              );
+            }
           }}
         />
       </Card>
@@ -109,47 +122,81 @@ export function AnalysisPanel() {
         <AnomalyForm
           loading={savingAnomaly}
           onSubmit={async (values) => {
-            await requestAnomaly({ variables: { input: values } });
-            message.success(t("analysis.anomaly.submitted"));
-            await refetch();
+            try {
+              await requestAnomaly({ variables: { input: values } });
+              message.success(t("analysis.anomaly.submitted"));
+              await refetch();
+            } catch (err) {
+              const errorMessage = err instanceof Error ? err.message : String(err);
+              message.error(
+                t("analysis.anomaly.submitFailed", {
+                  defaultValue: "Failed to submit anomaly analysis: {{error}}",
+                  error: errorMessage,
+                }),
+              );
+            }
           }}
         />
       </Card>
       <Card title={t("analysis.results.title")}>
-        <List<AnalysisResultsQuery["analysisResults"][number]>
-          dataSource={results}
-          renderItem={(result) => (
-            <List.Item>
-              <List.Item.Meta
-                title={
-                  <Space>
-                    <Typography.Text strong>{result.type}</Typography.Text>
-                    <Typography.Text type="secondary">
-                      {formatDateTime(result.createdAt, locale, {
-                        year: "numeric",
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit"
-                      })}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      {result.status}
-                    </Typography.Text>
-                  </Space>
-                }
-                description={
-                  <Typography.Paragraph ellipsis={{ rows: 3 }}>
-                    {result.summary ??
-                      (result.status === "running"
-                        ? t("analysis.results.generating")
-                        : t("analysis.results.pending"))}
-                  </Typography.Paragraph>
-                }
-              />
-            </List.Item>
-          )}
-        />
+        {error ? (
+          <ChartEmptyState
+            presentation="banner"
+            variant="error"
+            className="mb-3"
+            title={t("analysis.results.loadFailedTitle", { defaultValue: "Failed to load analysis results" })}
+            description={error instanceof Error ? error.message : String(error)}
+            actionLabel={t("common.retry", { defaultValue: "Retry" })}
+            onAction={() => refetch()}
+          />
+        ) : null}
+
+        {loading && results.length === 0 ? (
+          <Skeleton active paragraph={{ rows: 4 }} />
+        ) : results.length === 0 ? (
+          <ChartEmptyState
+            className="h-auto py-6"
+            title={t("analysis.results.emptyTitle", { defaultValue: "No analysis yet" })}
+            description={t("analysis.results.emptyDescription", {
+              defaultValue: "Run a correlation or anomaly analysis to generate results.",
+            })}
+          />
+        ) : (
+          <List<AnalysisResultsQuery["analysisResults"][number]>
+            rowKey="id"
+            loading={loading}
+            dataSource={results}
+            renderItem={(result) => (
+              <List.Item>
+                <List.Item.Meta
+                  title={
+                    <Space>
+                      <Typography.Text strong>{result.type}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {formatDateTime(result.createdAt, locale, {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">{result.status}</Typography.Text>
+                    </Space>
+                  }
+                  description={
+                    <Typography.Paragraph ellipsis={{ rows: 3 }}>
+                      {result.summary ??
+                        (result.status === "running"
+                          ? t("analysis.results.generating")
+                          : t("analysis.results.pending"))}
+                    </Typography.Paragraph>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        )}
       </Card>
     </Space>
   );

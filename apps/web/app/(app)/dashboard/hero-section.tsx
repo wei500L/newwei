@@ -6,8 +6,10 @@ import type { EChartsOption } from "echarts";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import dayjs from "@/lib/dayjs";
 
 const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
   const option: EChartsOption = {
@@ -43,11 +45,12 @@ const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
 interface HeroMetric {
   key: string;
   title: string;
-  value: number;
-  trend: number;
+  value: number | null;
+  trend: number | null;
   data: number[];
   color: string;
   suffix?: string;
+  hasData: boolean;
 }
 
 interface DataPoint {
@@ -66,13 +69,33 @@ interface HeroSectionProps {
 
 const processSeries = (data: DataPoint[] | undefined) => {
   if (!data || data.length === 0) {
-    return { value: 0, trend: 0, history: [] };
+    return { hasData: false, value: null, trend: null, history: [] as number[] };
   }
-  const history = data.map((d) => d.value);
-  const current = history[history.length - 1] ?? 0;
-  const previous = history.length > 1 ? history[history.length - 2] ?? current : current;
-  const trend = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
-  return { value: current, trend, history };
+
+  const normalized = data
+    .map((point) => {
+      const ts = dayjs(point.timestamp).valueOf();
+      return {
+        ts,
+        value: point.value,
+      };
+    })
+    .filter((point) => Number.isFinite(point.ts) && Number.isFinite(point.value))
+    .sort((a, b) => a.ts - b.ts);
+
+  if (normalized.length === 0) {
+    return { hasData: false, value: null, trend: null, history: [] as number[] };
+  }
+
+  const history = normalized.map((point) => point.value);
+  const current = history.length ? history[history.length - 1]! : null;
+  const previous = history.length > 1 ? history[history.length - 2]! : null;
+  const trend =
+    current === null || previous === null || previous === 0
+      ? null
+      : ((current - previous) / previous) * 100;
+
+  return { hasData: true, value: current, trend, history };
 };
 
 export function HeroSection({ 
@@ -85,6 +108,11 @@ export function HeroSection({
 }: HeroSectionProps) {
   const { t } = useTranslation();
   const theme = useChartTheme();
+  const notAvailableLabel = t("common.notAvailable", { defaultValue: "Not available" });
+  const emptyTitle = t("dashboard.charts.noDataRange", { defaultValue: "No Data Found for Selected Range" });
+  const emptyDescription = t("dashboard.hero.emptyDescription", {
+    defaultValue: "Hero metrics are unavailable for the selected time range."
+  });
 
   const metrics = useMemo<HeroMetric[]>(() => {
     const conflict = processSeries(conflictData);
@@ -100,6 +128,7 @@ export function HeroSection({
         trend: conflict.trend,
         data: conflict.history,
         color: theme.colors.bearish,
+        hasData: conflict.hasData,
       },
       {
         key: "market-sentiment",
@@ -108,6 +137,7 @@ export function HeroSection({
         trend: market.trend,
         data: market.history,
         color: theme.colors.accent,
+        hasData: market.hasData,
       },
       {
         key: "resource-scarcity",
@@ -116,6 +146,7 @@ export function HeroSection({
         trend: resource.trend,
         data: resource.history,
         color: theme.colors.primary,
+        hasData: resource.hasData,
       },
       {
         key: "supply-chain-stability",
@@ -125,9 +156,12 @@ export function HeroSection({
         data: supply.history,
         color: theme.colors.bullish,
         suffix: "%",
+        hasData: supply.hasData,
       },
     ];
   }, [t, conflictData, marketData, resourceData, supplyData, theme.colors]);
+
+  const allMissing = metrics.every((metric) => !metric.hasData);
 
   if (loading) {
     return (
@@ -141,6 +175,14 @@ export function HeroSection({
             </Col>
           ))}
         </Row>
+      </div>
+    );
+  }
+
+  if (allMissing) {
+    return (
+      <div className="mb-10 glass-panel border border-[var(--border)] rounded-3xl p-8 shadow-sm">
+        <ChartEmptyState title={emptyTitle} description={emptyDescription} />
       </div>
     );
   }
@@ -159,22 +201,40 @@ export function HeroSection({
               </Typography.Text>
               <div className="flex items-baseline gap-2 mb-4">
                 <span className="text-4xl font-semibold text-slate-900 tracking-tight">
-                  {metric.value.toFixed(1)}
-                  {metric.suffix && <span className="text-xl ml-1 text-slate-400 font-medium">{metric.suffix}</span>}
+                  {metric.hasData && metric.value !== null ? metric.value.toFixed(1) : notAvailableLabel}
+                  {metric.hasData && metric.suffix ? (
+                    <span className="text-xl ml-1 text-slate-400 font-medium">{metric.suffix}</span>
+                  ) : null}
                 </span>
                 <div className={`flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${
-                  metric.trend > 0 
+                  metric.trend !== null && metric.trend > 0 
                     ? "bg-emerald-50 text-[var(--bullish)]" 
-                    : metric.trend < 0 
+                    : metric.trend !== null && metric.trend < 0 
                       ? "bg-amber-50 text-[var(--bearish)]" 
                       : "bg-slate-100 text-slate-400"
                 }`}>
-                  {metric.trend > 0 ? <ArrowUpOutlined className="text-[10px]" /> : metric.trend < 0 ? <ArrowDownOutlined className="text-[10px]" /> : <MinusOutlined className="text-[10px]" />}
-                  <span className="ml-1">{Math.abs(metric.trend).toFixed(1)}%</span>
+                  {metric.trend !== null && metric.trend > 0 ? (
+                    <ArrowUpOutlined className="text-[10px]" />
+                  ) : metric.trend !== null && metric.trend < 0 ? (
+                    <ArrowDownOutlined className="text-[10px]" />
+                  ) : (
+                    <MinusOutlined className="text-[10px]" />
+                  )}
+                  <span className="ml-1">
+                    {metric.trend === null ? notAvailableLabel : `${Math.abs(metric.trend).toFixed(1)}%`}
+                  </span>
                 </div>
               </div>
               <div className="mt-auto h-[50px] w-full opacity-60 group-hover:opacity-100 transition-all duration-500">
-                <Sparkline data={metric.data} color={metric.color} />
+                {metric.data.length > 1 ? (
+                  <Sparkline data={metric.data} color={metric.color} />
+                ) : (
+                  <Typography.Text type="secondary" className="text-xs">
+                    {metric.hasData
+                      ? t("dashboard.hero.insufficientData", { defaultValue: "Not enough data points" })
+                      : notAvailableLabel}
+                  </Typography.Text>
+                )}
               </div>
             </div>
           </Col>

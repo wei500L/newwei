@@ -3,7 +3,6 @@ import {
   Get,
   InternalServerErrorException,
   MessageEvent,
-  Post,
   Query,
   Sse
 } from "@nestjs/common";
@@ -15,7 +14,6 @@ import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { DashboardChartsService } from "./dashboard-charts.service";
-import { DashboardDemoMetricsService } from "./dashboard-demo-metrics.service";
 import { DashboardService } from "./dashboard.service";
 import { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
 
@@ -25,7 +23,6 @@ import { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
 export class DashboardController {
   constructor(
     private readonly service: DashboardService,
-    private readonly demoMetricsService: DashboardDemoMetricsService,
     private readonly chartsService: DashboardChartsService
   ) {}
 
@@ -157,10 +154,4 @@ export class DashboardController {
     });
   }
 
-  @Permissions("economicdata.manage")
-  @Post("demo-metrics/refresh")
-  async refreshDemoMetrics() {
-    await this.demoMetricsService.refreshDemoMetrics();
-    return { ok: true };
-  }
 }

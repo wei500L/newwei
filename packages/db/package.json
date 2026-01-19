@@ -13,6 +13,7 @@
     "migrate": "tsx src/scripts/migrate.ts",
     "import:situation-monitor-feeds": "tsx src/scripts/import-situation-monitor-feeds.ts",
     "seed": "tsx src/scripts/seed.ts",
+    "cleanup:mock-dashboard": "tsx src/scripts/cleanup-mock-dashboard-data.ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "lint": "eslint src --ext .ts",
     "prisma:generate": "tsx src/scripts/generate.ts"

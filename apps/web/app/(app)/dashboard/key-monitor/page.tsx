@@ -3,8 +3,6 @@
 import { Col, Row, Skeleton, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { FX_FIELD_NAMES } from "./constants";
-
 import { ChartDataMeta } from "@/components/chart-data-meta";
 import { ChartStateBanner } from "@/components/chart-state-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
@@ -13,6 +11,8 @@ import { resolveLocale } from "@/lib/i18n";
 
 import { CandlestickCard } from "../components/candlestick-card";
 import { EconomicChartCard } from "../components/economic-chart-card";
+
+import { FX_FIELD_NAMES } from "./constants";
 
 export default function KeyMonitorPage() {
   const { t, i18n } = useTranslation();

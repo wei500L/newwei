@@ -1,10 +1,9 @@
 "use client";
 
-import { Skeleton, Slider, Space, Typography } from "antd";
+import { message, Skeleton, Slider, Space, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { message } from "antd";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
@@ -231,26 +230,6 @@ export function EntityImpactGraph() {
 
   const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
 
-  if (enabled === false) {
-    return (
-      <div className="h-[400px]">
-        <ChartEmptyState
-          variant="offline"
-          title={t("dashboard.charts.entityGraph.disabledTitle", { defaultValue: "Disabled" })}
-          description={t("dashboard.charts.entityGraph.disabledDescription", { defaultValue: "Disabled by admin" })}
-        />
-      </div>
-    );
-  }
-
-  if (!settingsApplied) {
-    return (
-      <div className="h-[400px] flex items-center">
-        <Skeleton active paragraph={{ rows: 8 }} />
-      </div>
-    );
-  }
-
   /**
    * Build ECharts option with graph series configuration
    */
@@ -415,6 +394,26 @@ export function EntityImpactGraph() {
     // Clear selection when filter changes
     setSelectedNode(null);
   }, []);
+
+  if (enabled === false) {
+    return (
+      <div className="h-[400px]">
+        <ChartEmptyState
+          variant="offline"
+          title={t("dashboard.charts.entityGraph.disabledTitle", { defaultValue: "Disabled" })}
+          description={t("dashboard.charts.entityGraph.disabledDescription", { defaultValue: "Disabled by admin" })}
+        />
+      </div>
+    );
+  }
+
+  if (!settingsApplied) {
+    return (
+      <div className="h-[400px] flex items-center">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </div>
+    );
+  }
 
   // Loading state
   if (loading && !hasData) {

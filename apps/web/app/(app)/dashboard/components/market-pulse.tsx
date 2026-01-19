@@ -6,6 +6,7 @@ import type { EChartsOption } from "echarts";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import dayjs from "@/lib/dayjs";
@@ -79,11 +80,12 @@ const MetricValue = ({ value, suffix }: { value: number | string, suffix?: strin
 interface HeroMetric {
   key: string;
   title: string;
-  value: number;
-  trend: number;
+  value: number | null;
+  trend: number | null;
   data: number[];
   color: string;
   suffix?: string;
+  hasData: boolean;
 }
 
 interface DataPoint {
@@ -103,7 +105,7 @@ interface MarketPulseProps {
 
 const processSeries = (data: DataPoint[] | undefined) => {
   if (!data || data.length === 0) {
-    return { value: 0, trend: 0, history: [], unit: undefined as string | undefined };
+    return { hasData: false, value: null, trend: null, history: [], unit: undefined as string | undefined };
   }
 
   const normalized = data
@@ -119,13 +121,16 @@ const processSeries = (data: DataPoint[] | undefined) => {
     .sort((a, b) => a.ts - b.ts);
 
   if (normalized.length === 0) {
-    return { value: 0, trend: 0, history: [], unit: undefined as string | undefined };
+    return { hasData: false, value: null, trend: null, history: [], unit: undefined as string | undefined };
   }
 
   const history = normalized.map((point) => point.value);
-  const current = history[history.length - 1] ?? 0;
-  const previous = history.length > 1 ? history[history.length - 2] ?? current : current;
-  const trend = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
+  const current = history.length ? history[history.length - 1]! : null;
+  const previous = history.length > 1 ? history[history.length - 2]! : null;
+  const trend =
+    current === null || previous === null || previous === 0
+      ? null
+      : ((current - previous) / previous) * 100;
   const unit = (() => {
     for (let i = normalized.length - 1; i >= 0; i -= 1) {
       const candidate = normalized[i]?.unit;
@@ -136,7 +141,7 @@ const processSeries = (data: DataPoint[] | undefined) => {
     return undefined;
   })();
 
-  return { value: current, trend, history, unit };
+  return { hasData: true, value: current, trend, history, unit };
 };
 
 export function MarketPulse({ 
@@ -149,6 +154,11 @@ export function MarketPulse({
 }: MarketPulseProps) {
   const { t } = useTranslation();
   const theme = useChartTheme();
+  const notAvailableLabel = t("common.notAvailable", { defaultValue: "Not available" });
+  const emptyTitle = t("dashboard.charts.noDataRange", { defaultValue: "No Data Found for Selected Range" });
+  const emptyDescription = t("dashboard.hero.emptyDescription", {
+    defaultValue: "Hero metrics are unavailable for the selected time range."
+  });
 
   const metrics = useMemo<HeroMetric[]>(() => {
     const conflict = processSeries(conflictData);
@@ -164,7 +174,8 @@ export function MarketPulse({
         trend: conflict.trend,
         data: conflict.history,
         color: theme.colors.bearish, // High conflict is bad/red (or bullish color if it means 'high' value? Usually red for danger)
-        suffix: conflict.unit,
+        suffix: conflict.hasData ? conflict.unit : undefined,
+        hasData: conflict.hasData,
       },
       {
         key: "market-sentiment",
@@ -173,7 +184,8 @@ export function MarketPulse({
         trend: market.trend,
         data: market.history,
         color: theme.colors.accent, // Neutral/Warning
-        suffix: market.unit,
+        suffix: market.hasData ? market.unit : undefined,
+        hasData: market.hasData,
       },
       {
         key: "resource-scarcity",
@@ -182,7 +194,8 @@ export function MarketPulse({
         trend: resource.trend,
         data: resource.history,
         color: "#13c2c2", // Cyan
-        suffix: resource.unit,
+        suffix: resource.hasData ? resource.unit : undefined,
+        hasData: resource.hasData,
       },
       {
         key: "supply-chain-stability",
@@ -191,10 +204,13 @@ export function MarketPulse({
         trend: supply.trend,
         data: supply.history,
         color: theme.colors.bullish, // Stability is good
-        suffix: supply.unit,
+        suffix: supply.hasData ? supply.unit : undefined,
+        hasData: supply.hasData,
       },
     ];
   }, [t, conflictData, marketData, resourceData, supplyData, theme.colors]);
+
+  const allMissing = metrics.every((metric) => !metric.hasData);
 
   if (loading) {
     // ... skeleton ...
@@ -213,6 +229,14 @@ export function MarketPulse({
       );
   }
 
+  if (allMissing) {
+    return (
+      <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+        <ChartEmptyState title={emptyTitle} description={emptyDescription} />
+      </div>
+    );
+  }
+
   return (
     <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
       <Row gutter={[24, 24]} align="middle">
@@ -226,21 +250,42 @@ export function MarketPulse({
                 {metric.title}
               </Typography.Text>
               <div className="flex items-baseline gap-3 mb-2">
-                <MetricValue value={metric.value} suffix={metric.suffix} />
+                <MetricValue
+                  value={metric.hasData && metric.value !== null ? metric.value : notAvailableLabel}
+                  suffix={metric.hasData ? metric.suffix : undefined}
+                />
                 
-                <div className={`flex items-center text-xs font-bold px-1.5 py-0.5 ${
-                  metric.trend > 0
-                    ? "text-[var(--bullish)]"
-                    : metric.trend < 0
-                      ? "text-[var(--bearish)]"
-                      : "text-slate-400"
-                }`}>
-                  {metric.trend > 0 ? <ArrowUpOutlined className="text-[10px]" /> : metric.trend < 0 ? <ArrowDownOutlined className="text-[10px]" /> : <MinusOutlined className="text-[10px]" />}
-                  <span className="ml-1">{Math.abs(metric.trend).toFixed(1)}%</span>
-                </div>
+                {(() => {
+                  const trend = metric.trend;
+                  const hasTrend = trend !== null && Number.isFinite(trend);
+                  const trendLabel = hasTrend ? `${Math.abs(trend).toFixed(1)}%` : notAvailableLabel;
+                  const trendClass =
+                    !hasTrend
+                      ? "text-slate-400"
+                      : trend > 0
+                        ? "text-[var(--bullish)]"
+                        : trend < 0
+                          ? "text-[var(--bearish)]"
+                          : "text-slate-400";
+                  const Icon = !hasTrend ? MinusOutlined : trend > 0 ? ArrowUpOutlined : trend < 0 ? ArrowDownOutlined : MinusOutlined;
+                  return (
+                    <div className={`flex items-center text-xs font-bold px-1.5 py-0.5 ${trendClass}`}>
+                      <Icon className="text-[10px]" />
+                      <span className="ml-1">{trendLabel}</span>
+                    </div>
+                  );
+                })()}
               </div>
               <div className="mt-auto h-[40px] w-full opacity-50 group-hover:opacity-100 transition-all duration-500">
-                <Sparkline data={metric.data} color={metric.color} />
+                {metric.data.length > 1 ? (
+                  <Sparkline data={metric.data} color={metric.color} />
+                ) : (
+                  <Typography.Text type="secondary" className="text-xs">
+                    {metric.hasData
+                      ? t("dashboard.hero.insufficientData", { defaultValue: "Not enough data points" })
+                      : notAvailableLabel}
+                  </Typography.Text>
+                )}
               </div>
             </div>
           </Col>

@@ -5,37 +5,68 @@ import { Tooltip } from "antd";
 import { useQueueStatsQuery } from "@/graphql/generated";
 
 export function SystemDefcon() {
-  const { data } = useQueueStatsQuery({
+  const { data, loading, error } = useQueueStatsQuery({
     pollInterval: 10000
   });
 
-  const stats = data?.queueStats;
-  const activeJobs = stats?.counts?.active ?? 0;
-  const failedJobs = stats?.counts?.failed ?? 0;
+  const stats = data?.queueStats ?? null;
+  const activeJobs = stats?.counts?.active ?? null;
+  const failedJobs = stats?.counts?.failed ?? null;
   
   // Calculate health based on failed vs active ratio
-  const healthLevel = failedJobs > 5 ? 'critical' : activeJobs > 50 ? 'warning' : 'healthy';
+  const healthLevel = (() => {
+    if (!stats) {
+      if (loading) return "loading";
+      if (error) return "unavailable";
+      return "unknown";
+    }
+    const resolvedActive = activeJobs ?? 0;
+    const resolvedFailed = failedJobs ?? 0;
+    if (resolvedFailed > 5) return "critical";
+    if (resolvedActive > 50) return "warning";
+    return "healthy";
+  })();
 
   const getStatusColor = (level: string) => {
     switch (level) {
       case 'critical': return 'bg-red-500';
       case 'warning': return 'bg-amber-500';
-      default: return 'bg-emerald-500';
+      case 'healthy': return 'bg-emerald-500';
+      default: return 'bg-slate-400';
     }
   };
 
+  const activeDots =
+    healthLevel === "critical" ? 3 : healthLevel === "warning" ? 2 : healthLevel === "healthy" ? 1 : 0;
+
+  const tooltip = (() => {
+    if (!stats) {
+      if (healthLevel === "loading") {
+        return "System status: LOADING · Waiting for queue stats...";
+      }
+      if (healthLevel === "unavailable") {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return `System status: UNAVAILABLE · ${errorMessage}`;
+      }
+      return "System status: UNKNOWN · No queue stats available.";
+    }
+    return `System status: ${healthLevel.toUpperCase()} · Active ${activeJobs ?? 0} · Failed ${failedJobs ?? 0}`;
+  })();
+
   return (
     <div className="flex items-center gap-3 px-4 border-l border-[var(--border)] h-8">
-      <Tooltip title={`System status: ${healthLevel.toUpperCase()} · Active ${activeJobs} · Failed ${failedJobs}`}>
+      <Tooltip title={tooltip}>
         <div className="flex items-center gap-2 cursor-help">
           <span className="text-[11px] text-slate-500 tracking-wide">System Status</span>
           <div className="flex gap-1">
-             {[1, 2, 3].map(i => (
-                <div 
-                  key={i} 
-                  className={`w-1.5 h-1.5 rounded-full ${i === 1 || (healthLevel !== 'healthy' && i <= 2) || (healthLevel === 'critical') ? getStatusColor(healthLevel) : 'bg-slate-200'}`} 
-                />
-             ))}
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className={`w-1.5 h-1.5 rounded-full ${
+                  i <= activeDots ? getStatusColor(healthLevel) : "bg-slate-200"
+                }`}
+              />
+            ))}
           </div>
         </div>
       </Tooltip>

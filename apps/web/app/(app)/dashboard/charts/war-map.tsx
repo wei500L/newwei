@@ -1,12 +1,12 @@
 "use client";
 
+import { SettingOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Checkbox, Popover, Skeleton, Space } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { SettingOutlined } from "@ant-design/icons";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
@@ -15,9 +15,9 @@ import { createApiClient } from "@/lib/api-client";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
+import { useSituationMonitorMonitorsStore } from "@/store/situation-monitor-monitors";
 import { useDashboardRangeStore } from "@/store/time-range";
 import { type WarMapLayerId, useWarMapSettingsStore } from "@/store/war-map-settings";
-import { useSituationMonitorMonitorsStore } from "@/store/situation-monitor-monitors";
 
 enum WarEventSeverity {
   Low = "low",
@@ -121,7 +121,7 @@ interface WarMapStrategicPoint {
 interface WarMapConflictZone {
   id: string;
   name: string;
-  coords: Array<[number, number]>;
+  coords: [number, number][];
   color: string;
 }
 
@@ -486,7 +486,7 @@ export function WarMap({ className }: WarMapProps = {}) {
           color: zone.color
         })),
         renderItem: (params: any, api: any) => {
-          const data = params.data as { coords?: Array<[number, number]>; color?: string } | undefined;
+          const data = params.data as { coords?: [number, number][]; color?: string } | undefined;
           const coords = Array.isArray(data?.coords) ? data.coords : [];
           if (coords.length < 3) return null;
           const points = coords.map((coord) => api.coord(coord));

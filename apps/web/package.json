@@ -13,6 +13,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "i18n:check": "node scripts/i18n-check.js",
+    "i18n:sync": "node scripts/i18n-sync.js",
     "test": "echo \"No tests yet\""
   },
   "dependencies": {

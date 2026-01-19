@@ -51,16 +51,23 @@
     "events": {
       "triggered": "Alert triggered",
       "title": "Alert events",
+      "loadFailedTitle": "Failed to load alert events",
+      "emptyTitle": "No alerts yet",
+      "emptyDescription": "Alerts will appear here once a rule triggers.",
       "metrics": "Value {{value}} · Change {{change}}",
-      "evidence": "Evidence {{source}} · Threshold {{threshold}}"
+      "evidence": "Evidence {{source}} · Threshold {{threshold}}",
+      "triggerReason": "Trigger {{reason}}",
+      "evidenceEmpty": "No evidence fields.",
+      "window": "Window {{window}}"
     },
     "rules": {
-      "title": "Rules",
+      "title": "Alert rules",
       "triggerNow": "Trigger now",
       "triggered": "Alert rule queued.",
       "triggerFailed": "Failed to trigger rule.",
-      "summary": "Provider {{provider}} · Metric {{metric}} · Cooldown {{cooldown}}s · Interval {{interval}}s",
-      "channels": "Channels: {{channels}}"
+      "summary": "Provider {{provider}} / metric {{metric}} · check every {{interval}}s · cooldown {{cooldown}}s",
+      "channels": "Channels: {{channels}}",
+      "threshold": "Threshold {{threshold}}"
     },
     "center": {
       "title": "Alert Center",
@@ -156,7 +163,13 @@
           "source": "Source",
           "actor": "Actor",
           "statuses": "Statuses"
-        }
+        },
+        "tuning": "Tuning suggestion",
+        "tuningError": "Failed to load tuning suggestion.",
+        "tuningStats": "Reviewed {{reviewed}} · Confirmed {{confirmed}} · Ignored {{ignored}} · FP rate {{rate}}",
+        "tuningEmpty": "No tuning suggestion.",
+        "tuningThreshold": "Suggested threshold {{value}}",
+        "tuningRange": "Suggested range {{lower}} - {{upper}}"
       }
     },
     "streamError": "Alert stream error: {{error}}",
@@ -189,7 +202,9 @@
         "channels": "Channels",
         "channelsPlaceholder": "Enter Channels",
         "muteUntil": "Mute until",
-        "notifyAllMembers": "Notify all members"
+        "notifyAllMembers": "Notify all members",
+        "metadataJson": "Metadata (JSON)",
+        "metadataJsonHint": "Optional JSON object merged into rule metadata."
       },
       "pipeline": {
         "title": "Pipeline",
@@ -231,12 +246,6 @@
         "email": "Email"
       },
       "add": "Add"
-    },
-    "rules": {
-      "title": "Alert rules",
-      "triggerNow": "Trigger now",
-      "summary": "Provider {{provider}} / metric {{metric}} · check every {{interval}}s · cooldown {{cooldown}}s",
-      "channels": "Channels: {{channels}}"
     }
   },
   "common": {
@@ -279,7 +288,29 @@
     "cancel": "Cancel",
     "close": "Close",
     "previous": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "success": "Success",
+    "failed": "Failed",
+    "none": "None",
+    "unexpectedError": "Unexpected error",
+    "syncStatus": "Sync status",
+    "syncHint": "Changes sync automatically across devices.",
+    "row": "Row",
+    "updated": "Updated.",
+    "operationFailed": "Operation failed.",
+    "invalidInput": "Invalid input.",
+    "serviceUnavailable": "Service is unavailable. Please try again.",
+    "loadingDelayed": "Data is taking longer than usual. Please hold on or refresh.",
+    "loadingDelayedTitle": "Still loading…",
+    "requestFailed": "Request failed",
+    "name": "Name",
+    "syncError": "ERROR",
+    "syncing": "SYNCING",
+    "synced": "SYNCED",
+    "apply": "Apply",
+    "unauthorized": "You are not signed in.",
+    "clear": "Clear",
+    "create": "Create"
   },
   "orgSwitcher": {
     "error": {
@@ -373,6 +404,11 @@
         "stalled": "Stalled"
       }
     },
+    "ticker": {
+      "loading": "Loading metrics...",
+      "unavailable": "Metrics unavailable",
+      "empty": "No metrics yet"
+    },
     "errors": {
       "metricsUnavailable": "Metrics unavailable"
     },
@@ -380,10 +416,13 @@
       "totalItems": "Total items",
       "processedItems": "Processed items"
     },
-    "demoData": {
-      "refresh": "Refresh demo data",
-      "refreshed": "Demo data updated",
-      "refreshFailed": "Failed to refresh demo data"
+    "hero": {
+      "globalConflictIndex": "Global Conflict Index",
+      "marketSentiment": "Market Sentiment",
+      "resourceScarcity": "Resource Scarcity",
+      "supplyChain": "Supply Chain Stability",
+      "emptyDescription": "Hero metrics are unavailable for the selected time range.",
+      "insufficientData": "Not enough data points"
     },
     "nextActions": {
       "title": "Next actions",
@@ -430,7 +469,14 @@
     },
     "drilldown": {
       "title": "Drilldown",
-      "loadFailed": "Failed to load"
+      "loadFailed": "Failed to load",
+      "liveAnalysis": "Live Analysis",
+      "description": "Detailed analysis and historical trend for {{metric}}",
+      "historicalTrend": "Historical Trend Analysis",
+      "geoImpact": "Geographic Impact",
+      "noGeoData": "No geographic data detected in recent alerts.",
+      "relatedIntelligence": "Related Intelligence",
+      "noEvents": "No related intelligence events found in the recent period."
     },
     "alertConfig": {
       "title": "Alert config"
@@ -783,8 +829,41 @@
       },
       "warMap": {
         "title": "Regional Signals Map",
-        "series": "Signals"
-      }
+        "series": "Signals",
+        "conflictZones": "Conflict zones",
+        "hotspots": "Hotspots",
+        "monitors": "Monitors",
+        "chokepoints": "Chokepoints",
+        "cableLandings": "Cable landings",
+        "nuclearSites": "Nuclear sites",
+        "militaryBases": "Military bases",
+        "newsSeries": "News",
+        "layers": "Layers"
+      },
+      "entityGraph": {
+        "disabledTitle": "Disabled",
+        "disabledDescription": "Disabled by admin",
+        "person": "Person",
+        "organization": "Organization",
+        "stock": "Stock",
+        "commodity": "Commodity",
+        "other": "Other",
+        "type": "Type",
+        "category": "Category",
+        "weight": "Weight",
+        "connections": "Connections",
+        "relatedEntities": "Related",
+        "correlation": "Correlation",
+        "coOccurrence": "Co-occurrence",
+        "correlationValue": "Correlation",
+        "coOccurrenceCount": "Count",
+        "linkType": "Link Type",
+        "title": "Entity Impact Graph",
+        "nodeSelected": "Selected: {{node}}",
+        "confidenceFilter": "Entity confidence",
+        "stats": "{{nodes}} nodes, {{links}} links"
+      },
+      "sectorSelected": "Selected: {{sector}}"
     },
     "stream": {
       "status": {
@@ -846,7 +925,30 @@
     "insight": {
       "volatility": "Current value is {{percent}}% {{direction}} historical average, indicating high volatility.",
       "trend": "Strong {{direction}} trend observed ({{percent}}% change from previous period).",
-      "stable": "Data remains stable within historical range."
+      "stable": "Data remains stable within historical range.",
+      "label": "Insight"
+    },
+    "analysisStream": {
+      "title": "Analysis Stream",
+      "updates": "{{count}} updates",
+      "loading": "Preparing analysis stream...",
+      "empty": "No analysis updates yet.",
+      "summaryUnavailable": "Summary unavailable",
+      "subscriptionError": "Live updates disconnected",
+      "mode": {
+        "live": "Live",
+        "polling": "Polling ({{seconds}}s)"
+      },
+      "pollFallback": "Switched to polling every {{seconds}}s due to live update errors.",
+      "pollFallbackToast": "Live updates disconnected — switched to polling ({{seconds}}s).",
+      "liveRecoveredToast": "Live updates reconnected."
+    },
+    "sentiment": {
+      "label": "Sentiment",
+      "title": "Global Sentiment Trend"
+    },
+    "dataLatest": {
+      "label": "Latest"
     }
   },
   "language": {
@@ -878,8 +980,11 @@
       "alerts": "Alert Center",
       "search": "Search",
       "subscriptions": "Subscriptions & Notifications",
-      "profile": "Profile"
-    }
+      "profile": "Profile",
+      "situationMonitor": "Situation Monitor",
+      "assistant": "Assistant"
+    },
+    "adminGroup": "Admin"
   },
   "pages": {
     "today": {
@@ -891,7 +996,8 @@
       "subtitle": "Alerts and geo-tagged news signals by region.",
       "overlay": "Alert & News Signals Overview",
       "demoBadge": "Demo",
-      "demoNote": "Demo indicators until alert geo context is connected."
+      "demoNote": "Demo indicators until alert geo context is connected.",
+      "empty": "No alerts or geo-tagged news signals in the selected range."
     },
     "search": {
       "title": "Search",
@@ -920,7 +1026,9 @@
         "openItem": "Open item",
         "timelineTitle": "Timeline",
         "timelineEmpty": "No related items."
-      }
+      },
+      "latestAtLabel": "Latest",
+      "latestAtHelp": "Sorted by Published time when available; falls back to Ingested time."
     },
     "events": {
       "title": "News Events",
@@ -1062,6 +1170,15 @@
         "backtests": "Backtests",
         "backtestsEmpty": "No backtests yet."
       }
+    },
+    "assistant": {
+      "title": "AI Assistant",
+      "subtitle": "Natural language analysis powered by your data pipeline.",
+      "placeholder": "Ask a question like: Recent negative news about new energy; or correlation between gold and USD index."
+    },
+    "situationMonitor": {
+      "title": "Situation Monitor",
+      "subtitle": "Correlation, narratives, and key figures across your recent items."
     }
   },
   "adminConsole": {
@@ -1103,6 +1220,10 @@
       "system": {
         "title": "System Settings",
         "description": "Tune cache, rate limits, and crawl defaults"
+      },
+      "quality": {
+        "title": "Data Quality",
+        "description": "Monitor pipeline success, latency, and source reliability"
       }
     }
   },
@@ -1121,6 +1242,10 @@
       "newsSources": {
         "title": "News Sources",
         "description": "Manage source scheduling and crawl configs"
+      },
+      "crawlTemplates": {
+        "title": "Crawl Templates",
+        "description": "Manage reusable Crawl4ai configuration templates"
       }
     }
   },
@@ -1151,7 +1276,9 @@
       "priority": "Priority",
       "status": "Status",
       "nextRun": "Next run",
-      "lastRun": "Last run"
+      "lastRun": "Last run",
+      "template": "Template",
+      "lastSuccess": "Last success"
     },
     "types": {
       "general": "General",
@@ -1164,7 +1291,8 @@
     "actions": {
       "new": "New source",
       "edit": "Edit source",
-      "runNow": "Run now"
+      "runNow": "Run now",
+      "preview": "Preview"
     },
     "fields": {
       "name": "Name",
@@ -1183,7 +1311,28 @@
       "summaryHintsHint": "One hint per line",
       "metadata": "Metadata (JSON)",
       "crawlOptions": "Crawl options (JSON)",
-      "forceRefresh": "Force refresh"
+      "forceRefresh": "Force refresh",
+      "template": "Crawl template",
+      "seedEnabled": "Enable seed discovery",
+      "seedMode": "Seed mode",
+      "seedModeHint": "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from the feed URL.",
+      "seedFeedUrl": "Feed URL (optional)",
+      "seedFeedUrlHint": "If empty, the source URL will be used as the feed URL.",
+      "seedDomain": "Seed domain (optional)",
+      "seedDomainHint": "Defaults to the source URL origin if empty.",
+      "seedPattern": "URL pattern (optional)",
+      "seedPatternHint": "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'.",
+      "seedQuery": "Seed query (optional)",
+      "seedQueryHint": "If empty, keywords will be used to score URLs.",
+      "seedQueryPlaceholder": "e.g. earnings regulation",
+      "seedMaxUrls": "Max discovered URLs",
+      "seedMaxNewUrlsPerRun": "Max new URLs per run",
+      "seedScoreThreshold": "Score threshold",
+      "seedScoreThresholdHint": "0 disables the scoring filter; values range from 0..1.",
+      "seedDedupeWindowHours": "Dedupe window (hours)",
+      "seedCacheTtlSeconds": "Seed cache TTL (seconds)",
+      "seedConcurrency": "Preview concurrency",
+      "seedConcurrencyHint": "Used by Preview to fetch metadata; scheduling uses lightweight URL scoring."
     },
     "messages": {
       "created": "News source created.",
@@ -1197,11 +1346,54 @@
       "loadFailed": "Failed to load news sources.",
       "saveFailed": "Failed to save news source.",
       "runFailed": "Failed to schedule source.",
-      "deleteFailed": "Failed to delete news source."
+      "deleteFailed": "Failed to delete news source.",
+      "previewFailed": "Failed to preview news source."
     },
     "delete": {
       "title": "Delete source?",
       "description": "This removes the source and stops scheduled crawls."
+    },
+    "seed": {
+      "mode": "Sitemap seed"
+    },
+    "health": {
+      "circuitOpenUntil": "Circuit open until {{time}}",
+      "circuitOpen": "Circuit open",
+      "lastFailureAt": "Last failure {{time}}",
+      "failing": "Failing",
+      "failingCount": "Failing ({{count}})",
+      "healthy": "Healthy"
+    },
+    "preview": {
+      "columns": {
+        "url": "URL",
+        "relevance": "Relevance",
+        "status": "Status",
+        "dedupe": "Dedupe",
+        "error": "Error"
+      },
+      "alreadyCrawled": "Crawled",
+      "newUrl": "New",
+      "inFlightStatus": "In-flight: {{status}}",
+      "inFlight": "In-flight",
+      "title": "News source preview",
+      "modeSitemap": "Sitemap",
+      "modeRss": "RSS",
+      "modeSingle": "Single",
+      "scheduleCount": "Would schedule: {{count}}",
+      "availableToSchedule": "Available: {{count}}",
+      "skippedCount": "Skipped: {{count}}",
+      "inFlightCount": "In-flight: {{count}}/{{limit}}",
+      "loading": "Loading preview...",
+      "empty": "No preview data."
+    },
+    "sections": {
+      "seed": "Seed discovery",
+      "seedHint": "Discover article URLs from either a sitemap or an RSS/Atom feed, then schedule up to N fresh URLs per run."
+    },
+    "seedMode": {
+      "sitemap": "Sitemap",
+      "rss": "RSS / Atom"
     }
   },
   "finance": {
@@ -1213,7 +1405,11 @@
     "market": {
       "overview": "Market Overview",
       "monitor": "Key Monitor",
-      "associations": "News ↔ Indicators"
+      "associations": "News ↔ Indicators",
+      "overviewTitle": "Market Overview",
+      "overviewSubtitle": "Track macro and market signals across the selected time range.",
+      "sectorHeatmap": "Sector Heatmap",
+      "candlestick": "Candlestick"
     },
     "macro": {
       "overview": "Macro Overview",
@@ -1225,7 +1421,26 @@
     "subtitle": "Review channels, rules, and notification history in one place.",
     "channelsTitle": "Alert Channels",
     "channelsEmpty": "No alert channels configured.",
-    "notificationsTitle": "Notifications"
+    "notificationsTitle": "Notifications",
+    "channelCreated": "Channel created",
+    "channelUpdated": "Channel updated",
+    "channelDeleted": "Channel deleted",
+    "ruleUpdated": "Rule subscriptions updated",
+    "rulesTitle": "Rule Subscriptions",
+    "rulesEmpty": "No alert rules configured.",
+    "mutedUntil": "Muted until {{time}}",
+    "ruleCooldown": "Cooldown {{seconds}}s",
+    "ruleNotifications": "Notifications {{count}} · Latest {{time}}",
+    "manageRule": "Manage rule",
+    "addChannel": "Add channel",
+    "deleteChannelConfirm": "Delete this channel?",
+    "notifyEvery": "Every {{minutes}} min",
+    "notifyImmediate": "Immediate",
+    "channelFrequency": "Frequency: {{frequency}}",
+    "editChannel": "Edit channel",
+    "channelActive": "Enabled",
+    "channelMuteUntil": "Mute until",
+    "channelNotifyInterval": "Notification frequency"
   },
   "brand": {
     "short": "M",
@@ -1979,6 +2194,7 @@
     "correlation": {
       "title": "Correlation analysis",
       "submitted": "Correlation analysis submitted",
+      "submitFailed": "Failed to submit correlation analysis: {{error}}",
       "defaults": {
         "indicator": "Indicator"
       },
@@ -1994,6 +2210,7 @@
     "anomaly": {
       "title": "Anomaly analysis",
       "submitted": "Anomaly analysis submitted",
+      "submitFailed": "Failed to submit anomaly analysis: {{error}}",
       "errors": {
         "seriesArray": "Series must be an array",
         "seriesEmpty": "Series is empty",
@@ -2014,6 +2231,9 @@
     },
     "results": {
       "title": "Analysis results",
+      "loadFailedTitle": "Failed to load analysis results",
+      "emptyTitle": "No analysis yet",
+      "emptyDescription": "Run a correlation or anomaly analysis to generate results.",
       "generating": "Generating",
       "pending": "Pending"
     }
@@ -2229,7 +2449,10 @@
         "connecting": "WS connecting",
         "reconnectingShort": "WS reconnecting",
         "errorShort": "WS error",
-        "idle": "WS idle"
+        "idle": "WS idle",
+        "autoFallback": "WebSocket failed. Switched to Polling automatically (authenticated server-side proxy).",
+        "fallbackHint": "Tip: Polling uses the authenticated server-side proxy and often works even when WebSocket is blocked by CORS/origin rules.",
+        "autoFallbackTitle": "Switched to Polling"
       },
       "polling": {
         "warningTitle": "Polling failed"
@@ -2498,7 +2721,9 @@
           "references": "References",
           "cleanFit": "Cleaned"
         }
-      }
+      },
+      "ingestQueued": "Queued for LLM processing and added to Items.",
+      "title": "Crawl Task"
     },
     "multiUrl": {
       "title": "Multi URL",
@@ -2847,7 +3072,8 @@
       "serverHint": "Server hint",
       "username": "Username",
       "password": "Password"
-    }
+    },
+    "title": "Crawl Tasks"
   },
   "errors": {
     "kinds": {
@@ -2915,8 +3141,15 @@
         "language": "Language",
         "location": "Location",
         "category": "Category",
-        "quality": "Quality"
-      }
+        "quality": "Quality",
+        "duplicateSimilarity": "Duplicate similarity",
+        "duplicateOf": "Duplicate of",
+        "llmModel": "LLM model",
+        "llmLatency": "LLM latency",
+        "llmCost": "LLM cost",
+        "llmTokens": "LLM total tokens"
+      },
+      "keyPointsMore": "+{{count}} more"
     },
     "columns": {
       "name": "Title",
@@ -2926,14 +3159,20 @@
       "quality": "Quality",
       "open": "Open",
       "status": "Status",
-      "created": "Created"
+      "created": "Created",
+      "duplicate": "Duplicate"
     },
     "search": {
       "placeholder": "Search titles, summaries, topics, entities, locations"
     },
     "filters": {
       "button": "Filters",
-      "title": "Filters"
+      "title": "Filters",
+      "region": "Region",
+      "topic": "Topic",
+      "sentiment": "Sentiment",
+      "date": "Date Range",
+      "empty": "No filter options for current results."
     },
     "time": {
       "published": "Published",
@@ -2947,7 +3186,9 @@
       "todayActionAdmin": "Manage crawl tasks",
       "todayActionSubscriber": "Manage subscriptions",
       "searchTitle": "No results",
-      "searchDescription": "Try adjusting your keywords or filters."
+      "searchDescription": "Try adjusting your keywords or filters.",
+      "searchIdleTitle": "Start searching",
+      "searchIdleDescription": "Enter keywords or adjust filters to search processed items."
     },
     "status": {
       "active": "Active",
@@ -2956,6 +3197,337 @@
       "completed": "Completed",
       "failed": "Failed",
       "inactive": "Inactive"
+    },
+    "metrics": {
+      "quality": {
+        "tooltip": "Quality score from LLM cleaning stage (0–1, shown as %)."
+      },
+      "duplicate": {
+        "tooltip": "Duplicate similarity from dedup stage (0–1, shown as %)."
+      }
+    },
+    "duplicate": {
+      "duplicate": "Duplicate",
+      "similarity": "Similarity"
+    },
+    "sentiment": {
+      "positive": "Positive",
+      "neutral": "Neutral",
+      "negative": "Negative"
+    },
+    "view": {
+      "label": "View mode",
+      "feed": "Feed",
+      "grid": "Grid",
+      "list": "List"
+    }
+  },
+  "crawlTemplates": {
+    "errors": {
+      "loadFailed": "Failed to load crawl templates.",
+      "saveFailed": "Failed to save crawl template.",
+      "deleteFailed": "Failed to delete template."
+    },
+    "messages": {
+      "updated": "Template updated.",
+      "created": "Template created.",
+      "deleted": "Template deleted."
+    },
+    "delete": {
+      "title": "Delete template?",
+      "description": "News sources using this template will stop applying it."
+    },
+    "title": "Crawl Templates",
+    "columns": {
+      "name": "Name",
+      "status": "Status"
+    },
+    "actions": {
+      "new": "New template",
+      "edit": "Edit template"
+    },
+    "searchPlaceholder": "Search templates",
+    "fields": {
+      "name": "Name",
+      "description": "Description",
+      "active": "Active",
+      "proxyUrl": "Proxy URL",
+      "userAgent": "User Agent",
+      "stealth": "Stealth mode",
+      "undetected": "Undetected browser",
+      "images": "Include images",
+      "advancedJson": "Advanced crawl options (JSON)"
+    },
+    "sections": {
+      "commonOptions": "Common Options"
+    }
+  },
+  "quality": {
+    "errors": {
+      "loadFailed": "Failed to load quality dashboard."
+    },
+    "columns": {
+      "stage": "Stage",
+      "error": "Error",
+      "count": "Count"
+    },
+    "sources": {
+      "columns": {
+        "name": "Source",
+        "failedJobs": "Failed jobs",
+        "streak": "Failure streak",
+        "circuit": "Circuit"
+      },
+      "circuitOpen": "Circuit open",
+      "title": "Source Reliability",
+      "total": "Total sources",
+      "active": "Active",
+      "failing": "Failing"
+    },
+    "title": "Data Quality",
+    "subtitle": "Pipeline success, latency, and source reliability.",
+    "windows": {
+      "60m": "Last 60m",
+      "4h": "Last 4h",
+      "24h": "Last 24h"
+    },
+    "pipeline": {
+      "title": "Pipeline",
+      "total": "Total",
+      "completed": "Completed",
+      "failed": "Failed",
+      "successRate": "Success rate",
+      "llmLatency": "Avg LLM latency",
+      "ingestP50": "Ingest p50",
+      "ingestP90": "Ingest p90",
+      "outboxOldest": "Outbox oldest",
+      "failures": "Top Failures"
+    }
+  },
+  "assistant": {
+    "streamError": "Assistant stream error: {{error}}",
+    "preview": {
+      "series": "Series",
+      "model": "Model",
+      "modelService": "Model service",
+      "actual": "Actual",
+      "forecast": "Forecast",
+      "error": "Error",
+      "docUrl": "Source doc",
+      "period": "Period",
+      "window": "Time window",
+      "stats": "Stats",
+      "seriesA": "Series A",
+      "seriesB": "Series B",
+      "transform": "Transform",
+      "lookbackDays": "Lookback days",
+      "n": "Data points",
+      "pearson": "Pearson"
+    },
+    "tabs": {
+      "query": "Query",
+      "report": "Report",
+      "forecast": "Forecast"
+    },
+    "messageRequired": "Please enter a question.",
+    "requestFailed": "Request failed: {{error}}",
+    "askLabel": "Ask",
+    "submit": "Run",
+    "report": {
+      "period": "Period",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "topic": "Topic filter (optional)",
+      "topicPlaceholder": "e.g. new energy",
+      "limit": "Max items"
+    },
+    "forecast": {
+      "seriesRequired": "Please enter a series.",
+      "series": "Economic series (slug or name)",
+      "seriesPlaceholder": "e.g. usd_index_history or economic:usd_index_history:latest",
+      "lookbackDays": "Lookback days",
+      "modelKind": "Model",
+      "model": {
+        "ets": "ETS",
+        "arima": "ARIMA"
+      },
+      "seasonalPeriod": "Seasonal period",
+      "confidenceLevel": "Confidence level",
+      "sourceField": "Source field (optional)",
+      "sourceFieldPlaceholder": "e.g. close or last"
+    },
+    "historyTitle": "History",
+    "empty": "No assistant runs yet.",
+    "generating": "Generating...",
+    "pending": "Pending...",
+    "detailTitle": "Run Detail",
+    "detail": {
+      "summary": "Summary",
+      "input": "Input",
+      "output": "Output",
+      "empty": "Select a run from the list."
+    }
+  },
+  "situationMonitor": {
+    "correlation": {
+      "topic": "Topic",
+      "count": "Count",
+      "sources": "Sources",
+      "sample": "Sample",
+      "current": "Current",
+      "delta": "Δ",
+      "momentum": "Momentum",
+      "score": "Score",
+      "confidence": "Confidence",
+      "prediction": "Prediction",
+      "sourcesList": "Source list",
+      "title": "Correlation Engine",
+      "hint": "Pattern-based correlation across titles (momentum uses a short Redis history window).",
+      "crossSourceTitle": "Cross-source",
+      "momentumTitle": "Momentum",
+      "predictiveTitle": "Predictive"
+    },
+    "narrative": {
+      "name": "Narrative",
+      "count": "Count",
+      "fringe": "Fringe",
+      "mainstream": "Mainstream",
+      "title": "Narrative Tracker",
+      "hint": "Keyword-based narratives and fringe-to-mainstream crossover signals.",
+      "crossing": "Crossing",
+      "emerging": "Emerging",
+      "watch": "Watchlist",
+      "disinfo": "Disinfo"
+    },
+    "mainCharacter": {
+      "name": "Name",
+      "count": "Mentions",
+      "title": "Main Character"
+    },
+    "categories": {
+      "politics": "Politics",
+      "tech": "Tech",
+      "finance": "Finance",
+      "gov": "Government",
+      "ai": "AI",
+      "intel": "Intel"
+    },
+    "headlines": {
+      "summary": "Summary",
+      "openItem": "Open item"
+    },
+    "monitors": {
+      "matchTitle": "Monitor matches",
+      "locationResolveMissing": "Enter a location name first.",
+      "locationResolveFailed": "Could not resolve that location.",
+      "locationResolved": "Location resolved.",
+      "locationResolveError": "Failed to resolve location.",
+      "updateFailed": "Failed to update monitor.",
+      "updated": "Monitor updated.",
+      "addFailed": "Could not add monitor (check name/keywords or max monitors reached).",
+      "created": "Monitor created.",
+      "title": "My Monitors",
+      "add": "Add monitor",
+      "hint": "Track keywords across Situation Monitor headlines (case-insensitive).",
+      "tab": "Monitors",
+      "resetConfirm": "Reset all monitors?",
+      "empty": "No monitors yet.",
+      "deleteConfirm": "Delete this monitor?",
+      "matchesTab": "Matches",
+      "clearConfirm": "Clear matches?",
+      "noMatches": "No matches yet.",
+      "editTitle": "Edit monitor",
+      "createTitle": "Create monitor",
+      "fields": {
+        "name": "Name",
+        "keywords": "Keywords",
+        "color": "Color (optional)",
+        "locationName": "Location name (optional)",
+        "lat": "Lat",
+        "lng": "Lng"
+      },
+      "validation": {
+        "name": "Enter a name.",
+        "keywords": "Add at least one keyword."
+      },
+      "namePlaceholder": "e.g. Supply chain disruption",
+      "keywordsPlaceholder": "Type keywords and press Enter",
+      "colorHint": "Hex color like #1f3b7b. Leave empty for default.",
+      "resolveLocation": "Resolve",
+      "resolveHint": "Uses cached geocoding to fill Lat/Lng.",
+      "locationNamePlaceholder": "e.g. Taipei"
+    },
+    "feeds": {
+      "empty": "No headlines yet.",
+      "alert": "ALERT"
+    },
+    "alerts": {
+      "title": "Alerts",
+      "empty": "No alerts in the current window."
+    },
+    "markets": {
+      "title": "Markets",
+      "missingKey": "API key needed",
+      "hint": "Set SITUATION_MONITOR_FINNHUB_API_KEY to enable indices/sectors/commodities.",
+      "price": "Price",
+      "changePct": "Change",
+      "empty": "No markets data yet."
+    },
+    "crypto": {
+      "title": "Crypto",
+      "empty": "No crypto data.",
+      "price": "Price",
+      "change24h": "24h"
+    },
+    "fed": {
+      "title": "Federal Reserve",
+      "empty": "No Federal Reserve data yet.",
+      "hint": "Set SITUATION_MONITOR_FRED_API_KEY to enable indicators and money printer.",
+      "value": "Value",
+      "delta": "Δ",
+      "balanceSheet": "Balance sheet"
+    },
+    "leaders": {
+      "title": "World Leaders",
+      "leader": "Leader",
+      "mentions": "Mentions",
+      "sample": "Sample"
+    },
+    "situations": {
+      "empty": "No recent headlines."
+    },
+    "map": {
+      "title": "Global Map"
+    },
+    "window": {
+      "6h": "Last 6h",
+      "24h": "Last 24h",
+      "72h": "Last 72h"
+    },
+    "scope": {
+      "tagged": "Tagged sources",
+      "all": "All items"
+    },
+    "panels": {
+      "title": "Panels",
+      "hint": "Drag cards by their headers to rearrange the dashboard.",
+      "reset": "Reset panels",
+      "fixed": "Fixed",
+      "none": "No panels enabled. Open Panels to re-enable."
+    },
+    "autoRefresh": "Auto refresh",
+    "translateToZh": "Translate to Simplified Chinese",
+    "translateError": "TRANSLATION ERROR",
+    "updatedAt": "Updated: {{time}}",
+    "refresh": {
+      "core": "Refreshing core",
+      "external": "Loading external"
+    },
+    "sampleSize": "Analyzed: {{count}}",
+    "presets": {
+      "title": "Presets",
+      "custom": "Custom",
+      "resetLayout": "Reset layout when applying"
     }
   }
 }

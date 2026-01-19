@@ -1,9 +1,7 @@
 "use client";
 
-import { ReloadOutlined } from "@ant-design/icons";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Button,
   Card,
   Col,
   Empty,
@@ -18,13 +16,11 @@ import {
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/generated";
-import { createApiClient } from "@/lib/api-client";
-import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import { type QueueStatusKey, useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -107,7 +103,7 @@ export function DashboardContent() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const isAnalysisFocused = searchParams.get("panel") === "analysis";
-  const [messageApi, messageContext] = message.useMessage();
+  const [, messageContext] = message.useMessage();
   const { data, loading, error, refetch } = useQueueStatsQuery();
 
   // Hero Metrics Query
@@ -116,7 +112,7 @@ export function DashboardContent() {
     end: dayjs.utc().endOf("day").toISOString()
   }), []);
 
-  const { data: heroData, loading: heroLoading, refetch: refetchHero } = useDashboardHeroMetricsQuery({
+  const { data: heroData, loading: heroLoading } = useDashboardHeroMetricsQuery({
     variables: heroDateRange,
     fetchPolicy: "cache-and-network"
   });
@@ -135,7 +131,6 @@ export function DashboardContent() {
   });
   const queueFilterMounted = useRef(false);
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
-  const [refreshingDemoData, setRefreshingDemoData] = useState(false);
   const [showSystemStats, setShowSystemStats] = useState(false);
   const lastStreamStatusRef = useRef<DashboardStreamStatus | null>(null);
   const analysisPanelRef = useRef<HTMLDivElement | null>(null);
@@ -160,13 +155,8 @@ export function DashboardContent() {
       label: t("dashboard.stream.status.offline", { defaultValue: "Offline" }),
       dotClass: "bg-red-500",
       pulse: false
-    };
+      };
   }, [streamState.status, t]);
-
-  const apiClient = useMemo(
-    () => createApiClient({ accessToken: session?.accessToken }),
-    [session?.accessToken]
-  );
 
   useEffect(() => {
     if (connectionError) {
@@ -200,21 +190,6 @@ export function DashboardContent() {
       analysisPanelRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [searchParams]);
-
-  const handleRefreshDemoData = useCallback(async () => {
-    if (refreshingDemoData) return;
-    setRefreshingDemoData(true);
-    try {
-      await apiClient.post("dashboard/demo-metrics/refresh", {}, { timeout: 10_000 });
-      messageApi.success(t("dashboard.demoData.refreshed"));
-      await refetchHero();
-    } catch (error) {
-      captureClientError("Failed to refresh demo dashboard metrics", error);
-      messageApi.error(t("dashboard.demoData.refreshFailed"));
-    } finally {
-      setRefreshingDemoData(false);
-    }
-  }, [apiClient, messageApi, refetchHero, refreshingDemoData, t]);
 
   useEffect(() => {
     if (!lastEvent) return;
@@ -281,17 +256,6 @@ export function DashboardContent() {
              <span>Last Update: {dayjs().format('HH:mm:ss')}</span>
            </div>
            <Space>
-             {process.env.NODE_ENV !== "production" && (
-                <Button
-                  icon={<ReloadOutlined />}
-                  size="small"
-                  type="text"
-                  loading={refreshingDemoData}
-                  onClick={handleRefreshDemoData}
-                  className="text-slate-500 hover:text-[var(--primary)]"
-                >
-                </Button>
-             )}
              <span className="text-xs text-slate-500">System Status</span>
              <Switch size="small" checked={showSystemStats} onChange={setShowSystemStats} />
            </Space>

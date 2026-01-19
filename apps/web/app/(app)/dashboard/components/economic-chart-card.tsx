@@ -1,11 +1,12 @@
 "use client";
 
 import { ArrowDownOutlined, ArrowUpOutlined, BulbOutlined } from "@ant-design/icons";
-import { Card, Empty, Flex, Statistic, Typography, theme } from "antd";
+import { Card, Flex, Statistic, Typography, theme } from "antd";
 import type { EChartsOption, SeriesOption } from "echarts";
 import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import type { EconomicSeriesInsightsMap, EconomicSeriesMap } from "@/hooks/useEconomicData";
 import dayjs from "@/lib/dayjs";
@@ -174,7 +175,13 @@ export function EconomicChartCard({
           )}
         </>
       ) : (
-        <Empty description={t("dashboard.dataEmpty", { defaultValue: "No data" })} />
+        <ChartEmptyState
+          className="h-[360px]"
+          title={t("dashboard.charts.noDataRange", { defaultValue: "No Data Found for Selected Range" })}
+          description={t("dashboard.dataEmptyHint", {
+            defaultValue: "No data for the selected range. Try expanding the range."
+          })}
+        />
       )}
     </Card>
   );
@@ -216,20 +223,40 @@ function buildOption(
   const uniqueUnits = Array.from(new Set(Array.from(unitBySeriesName.values()))).filter(Boolean);
   const yAxisUnitSuffix = uniqueUnits.length === 1 ? ` ${uniqueUnits[0]}` : "";
 
+  type TooltipSeriesValue = unknown[] | number | string | null | undefined;
+
+  interface TooltipParam {
+    axisValueLabel?: string;
+    axisValue?: string | number;
+    seriesName?: string;
+    marker?: string;
+    value?: TooltipSeriesValue;
+  }
+
   return {
     tooltip: {
       trigger: "axis",
-      formatter: (params: any) => {
+      formatter: (params: unknown) => {
         const entries = Array.isArray(params) ? params : [params];
-        if (entries.length === 0) {
+        const normalized = entries.filter(
+          (entry): entry is TooltipParam => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)
+        );
+
+        if (normalized.length === 0) {
           return "";
         }
-        const axisValue = entries[0]?.axisValueLabel ?? entries[0]?.axisValue ?? "";
+        const axisValue = normalized[0]?.axisValueLabel ?? normalized[0]?.axisValue ?? "";
         const lines = [`<div>${axisValue}</div>`];
-        entries.forEach((entry: any) => {
-          const seriesName = entry?.seriesName ?? "";
-          const marker = entry?.marker ?? "";
-          const rawValue = Array.isArray(entry?.value) ? entry.value[1] : entry?.value;
+        normalized.forEach((entry) => {
+          const seriesName = entry.seriesName ?? "";
+          const marker = entry.marker ?? "";
+          const rawValue = (() => {
+            const value = entry.value;
+            if (Array.isArray(value)) {
+              return value[1];
+            }
+            return value;
+          })();
           const unit = unitBySeriesName.get(seriesName);
           lines.push(`${marker}${seriesName}: ${rawValue}${unit ? ` ${unit}` : ""}`);
         });

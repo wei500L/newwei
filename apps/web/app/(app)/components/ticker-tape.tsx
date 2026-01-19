@@ -1,38 +1,48 @@
 "use client";
 
-import { ArrowDownOutlined, ArrowUpOutlined } from "@ant-design/icons";
+import { ArrowDownOutlined, ArrowUpOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useDashboardHeroMetricsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 
+interface MetricPoint {
+  value: number;
+}
+
+type MetricSeries = readonly MetricPoint[];
+
 export function TickerTape() {
+  const { t } = useTranslation();
   const heroDateRange = useMemo(() => ({
     start: dayjs.utc().subtract(30, "day").startOf("day").toISOString(),
     end: dayjs.utc().endOf("day").toISOString()
   }), []);
 
-  const { data } = useDashboardHeroMetricsQuery({
+  const { data, loading, error } = useDashboardHeroMetricsQuery({
     variables: heroDateRange,
     pollInterval: 60000,
     fetchPolicy: "cache-and-network"
   });
 
   const items = useMemo(() => {
-    if (!data?.market && !data?.conflict && !data?.resource && !data?.supply) return [];
+    if (!data) return [];
 
-    const getTrend = (series: any[]) => {
-      if (!series || series.length < 2) return 0;
-      const curr = series[series.length - 1].value;
-      const prev = series[series.length - 2].value;
+    const getTrend = (series: MetricSeries) => {
+      const curr = series.at(-1)?.value;
+      const prev = series.at(-2)?.value;
+      if (curr == null || prev == null) return 0;
       return prev !== 0 ? ((curr - prev) / prev) * 100 : 0;
     };
 
-    const buildItem = (label: string, series: any[] | null | undefined) => {
+    const buildItem = (label: string, series: MetricSeries | null | undefined) => {
       if (!series || series.length === 0) return null;
+      const last = series.at(-1);
+      if (!last) return null;
       return {
         label,
-        value: series[series.length - 1]?.value,
+        value: last.value,
         trend: getTrend(series)
       };
     };
@@ -41,7 +51,7 @@ export function TickerTape() {
       buildItem("Market Sentiment", data.market),
       buildItem("Conflict Index", data.conflict),
       buildItem("Resource Scarcity", data.resource),
-      buildItem("Supply Stability", data.supply),
+      buildItem("Supply Stability", data.supply)
     ];
     return resolved.filter(
       (item): item is { label: string; value: number; trend: number } => Boolean(item)
@@ -49,7 +59,28 @@ export function TickerTape() {
   }, [data]);
 
   if (items.length === 0) {
-    return null;
+    const message = loading
+      ? t("dashboard.ticker.loading", { defaultValue: "Loading metrics..." })
+      : error
+        ? t("dashboard.ticker.unavailable", { defaultValue: "Metrics unavailable" })
+        : t("dashboard.ticker.empty", { defaultValue: "No metrics yet" });
+    const errorMessage = error ? (error instanceof Error ? error.message : String(error)) : null;
+
+    return (
+      <div className="w-full bg-white/85 border-b border-[var(--border)] h-8 flex items-center overflow-hidden relative select-none">
+        <div className="absolute left-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-r from-white to-transparent" />
+        <div className="absolute right-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-l from-white to-transparent" />
+        <div className="flex items-center gap-2 px-8 text-xs">
+          {loading ? <LoadingOutlined className="text-slate-400" aria-hidden /> : null}
+          <span
+            className={error ? "text-red-600" : "text-slate-500"}
+            title={errorMessage ?? undefined}
+          >
+            {message}
+          </span>
+        </div>
+      </div>
+    );
   }
 
   return (

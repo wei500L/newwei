@@ -448,8 +448,8 @@ export function SituationMonitorContent() {
     return () => clearInterval(timer);
   }, [autoRefresh, load]);
 
-  const monitorScanItems: Array<SituationMonitorMonitorMatch["item"]> = useMemo(() => {
-    const items: Array<SituationMonitorMonitorMatch["item"]> = [];
+  const monitorScanItems: SituationMonitorMonitorMatch["item"][] = useMemo(() => {
+    const items: SituationMonitorMonitorMatch["item"][] = [];
     const seen = new Set<string>();
 
     const add = (entry: SituationMonitorMonitorMatch["item"]) => {
@@ -463,9 +463,10 @@ export function SituationMonitorContent() {
 
     const headlines = data?.headlines;
     if (headlines) {
-      for (const [category, entries] of Object.entries(headlines) as Array<
-        [SituationMonitorCategory, SituationMonitorHeadline[]]
-      >) {
+      for (const [category, entries] of Object.entries(headlines) as [
+        SituationMonitorCategory,
+        SituationMonitorHeadline[]
+      ][]) {
 	        for (const entry of entries) {
 	          add({
 	            title: entry.title,
@@ -1771,7 +1772,7 @@ export function SituationMonitorContent() {
             {t("common.refresh", { defaultValue: "Refresh" })}
           </Button>
 	          <Button icon={<SettingOutlined />} onClick={() => setPanelsOpen(true)}>
-	            {t("situationMonitor.panels", { defaultValue: "Panels" })}
+	            {t("situationMonitor.panels.title", { defaultValue: "Panels" })}
 	          </Button>
 	          {session?.accessToken ? (
 	            <Space size={6} align="center">
