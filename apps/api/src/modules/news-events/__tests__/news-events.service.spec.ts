@@ -15,7 +15,7 @@ jest.mock("@modular/mongo", () => ({
   }
 }));
 
-import { NewsEventAssignmentMethod, NewsEventStatus, Prisma } from "@prisma/client";
+import { NewsEventAssignmentMethod, NewsEventStatus } from "@prisma/client";
 
 import { NewsEventsService } from "../news-events.service";
 
@@ -48,20 +48,20 @@ describe("NewsEventsService", () => {
     const vectorClient = { searchBestEffort: jest.fn() };
     const service = new NewsEventsService(prisma as any, vectorClient as any);
 
-    const result = await service.assignProcessedArticleToEvent(
+    const result = await service.assignNewsSignalToEvent(
       "org-1",
       {
-        id: "pa-1",
         articleId: "a-1",
-        processedAt: new Date("2026-01-03T00:00:00.000Z"),
-        publishedAt: null,
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
         language: "en",
         title: "t",
         summary: "s",
-        topics: null,
-        entities: null,
-        cleanedMarkdownRef: "pi-1",
-        crawlAt: null
+        topics: [],
+        entities: [],
+        sentiment: null,
+        qualityScore: null
       },
       makeSettings()
     );
@@ -117,20 +117,20 @@ describe("NewsEventsService", () => {
     };
     const service = new NewsEventsService(prisma as any, vectorClient as any);
 
-    const result = await service.assignProcessedArticleToEvent(
+    const result = await service.assignNewsSignalToEvent(
       "org-1",
       {
-        id: "pa-1",
         articleId: "a-1",
-        processedAt: new Date("2026-01-03T00:00:00.000Z"),
-        publishedAt: new Date("2026-01-03T00:00:00.000Z"),
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
         language: "en",
         title: "t",
         summary: "s",
-        topics: ["topic-1"] as unknown as Prisma.JsonValue,
-        entities: [{ name: "entity-1", confidence: 0.9 }] as unknown as Prisma.JsonValue,
-        cleanedMarkdownRef: "pi-1",
-        crawlAt: null
+        topics: ["topic-1"],
+        entities: [{ name: "entity-1", type: null, confidence: 0.9 }],
+        sentiment: null,
+        qualityScore: null
       },
       makeSettings()
     );
@@ -199,20 +199,20 @@ describe("NewsEventsService", () => {
     };
     const service = new NewsEventsService(prisma as any, vectorClient as any);
 
-    const result = await service.assignProcessedArticleToEvent(
+    const result = await service.assignNewsSignalToEvent(
       "org-1",
       {
-        id: "pa-1",
         articleId: "a-1",
-        processedAt: new Date("2026-01-03T00:00:00.000Z"),
-        publishedAt: new Date("2026-01-03T00:00:00.000Z"),
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
         language: "en",
         title: "t",
         summary: "s",
-        topics: ["topic-1"] as unknown as Prisma.JsonValue,
-        entities: [{ name: "entity-1", confidence: 0.9 }] as unknown as Prisma.JsonValue,
-        cleanedMarkdownRef: "pi-1",
-        crawlAt: null
+        topics: ["topic-1"],
+        entities: [{ name: "entity-1", type: null, confidence: 0.9 }],
+        sentiment: null,
+        qualityScore: null
       },
       makeSettings()
     );
@@ -223,4 +223,3 @@ describe("NewsEventsService", () => {
     expect(tx.newsEvent.update).not.toHaveBeenCalled();
   });
 });
-

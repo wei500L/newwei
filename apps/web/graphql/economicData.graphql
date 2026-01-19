@@ -15,6 +15,42 @@ query EconomicData($category: String!, $timeRange: DateRangeInput!, $granularity
   }
 }
 
+query EconomicDataWithInsights($category: String!, $timeRange: DateRangeInput!) {
+  getEconomicDataWithInsights(category: $category, timeRange: $timeRange) {
+    points {
+      timestamp
+      value
+      unit
+      sourceField
+      dataType
+      item {
+        slug
+        displayName
+        groupLabel
+        defaultUnit
+        metadata
+      }
+    }
+    insights {
+      itemSlug
+      seriesKey
+      sourceField
+      unit
+      sampleCount
+      currentValue
+      previousValue
+      change
+      percentChange
+      mean
+      stdDev
+      zScore
+      direction
+      classification
+      message
+    }
+  }
+}
+
 query EconomicFetchConfigs {
   economicDataFetchConfigs {
     id

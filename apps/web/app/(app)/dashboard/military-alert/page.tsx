@@ -49,7 +49,8 @@ export default function MilitaryAlertPage() {
     latestTimestamp,
     delayMs,
     expectedIntervalMs,
-    chartState
+    chartState,
+    insightsMap
   } = useEconomicData({
     category: "military-alert",
     pollInterval: 60_000,
@@ -240,6 +241,7 @@ export default function MilitaryAlertPage() {
                 title={t("dashboard.militaryAlert.cards.energy.title")}
                 description={t("dashboard.militaryAlert.cards.energy.description")}
                 seriesMap={seriesMap}
+                insights={insightsMap}
                 meta={chartMeta}
                 series={[
                   {
@@ -264,6 +266,7 @@ export default function MilitaryAlertPage() {
                 title={t("dashboard.militaryAlert.cards.risk.title")}
                 description={t("dashboard.militaryAlert.cards.risk.description")}
                 seriesMap={seriesMap}
+                insights={insightsMap}
                 meta={chartMeta}
                 series={[
                   {

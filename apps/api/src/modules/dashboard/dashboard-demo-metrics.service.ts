@@ -2,6 +2,7 @@ import { DEMO_ECONOMIC_METRICS } from "@modular/config";
 import { BadRequestException, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { EconomicDataFrequency, EconomicDataValueType, Prisma } from "@prisma/client";
 
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -12,10 +13,16 @@ const SOURCE_FIELD = "value";
 export class DashboardDemoMetricsService implements OnModuleInit {
   private readonly logger = new Logger(DashboardDemoMetricsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly env: EnvService
+  ) {}
 
   async onModuleInit() {
     if (process.env.NODE_ENV === "production") {
+      return;
+    }
+    if (this.env.akshareConfig.enabled) {
       return;
     }
 
@@ -226,6 +233,9 @@ export class DashboardDemoMetricsService implements OnModuleInit {
   async refreshDemoMetrics() {
     if (process.env.NODE_ENV === "production") {
       throw new BadRequestException("Demo metrics refresh is disabled in production.");
+    }
+    if (this.env.akshareConfig.enabled) {
+      throw new BadRequestException("Demo metrics refresh is disabled when Akshare is enabled.");
     }
 
     await this.refreshDemoMetricsInternal();

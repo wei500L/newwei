@@ -8,7 +8,7 @@ export interface EmergingPattern {
   count: number;
   level: "high" | "elevated" | "emerging";
   sources: string[];
-  headlines: { title: string; link: string; source: string }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string }[];
 }
 
 export interface MomentumSignal {
@@ -18,7 +18,7 @@ export interface MomentumSignal {
   current: number;
   delta: number;
   momentum: "surging" | "rising" | "stable";
-  headlines: { title: string; link: string; source: string }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string }[];
 }
 
 export interface CrossSourceCorrelation {
@@ -28,7 +28,7 @@ export interface CrossSourceCorrelation {
   sourceCount: number;
   sources: string[];
   level: "high" | "elevated" | "emerging";
-  headlines: { title: string; link: string; source: string }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string }[];
 }
 
 export interface PredictiveSignal {
@@ -39,7 +39,7 @@ export interface PredictiveSignal {
   confidence: number;
   prediction: string;
   level: "high" | "medium" | "low";
-  headlines: { title: string; link: string; source: string }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string }[];
 }
 
 export interface CorrelationResults {

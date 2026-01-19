@@ -93,10 +93,13 @@ function normalizeLocation(value: unknown): SituationMonitorCustomMonitor["locat
 }
 
 function buildSearchText(item: SituationMonitorMonitorMatch["item"]) {
+  const titleZh = typeof item.titleZh === "string" ? item.titleZh : "";
   const summary = typeof item.summary === "string" ? item.summary : "";
+  const summaryZh = typeof item.summaryZh === "string" ? item.summaryZh : "";
   const keyPoints = Array.isArray(item.keyPoints) ? item.keyPoints.join(" ") : "";
+  const keyPointsZh = Array.isArray(item.keyPointsZh) ? item.keyPointsZh.join(" ") : "";
   const topics = Array.isArray(item.topics) ? item.topics.join(" ") : "";
-  return `${item.title} ${item.source} ${summary} ${keyPoints} ${topics}`.toLowerCase();
+  return `${item.title} ${titleZh} ${item.source} ${summary} ${summaryZh} ${keyPoints} ${keyPointsZh} ${topics}`.toLowerCase();
 }
 
 export interface SituationMonitorMonitorsState {

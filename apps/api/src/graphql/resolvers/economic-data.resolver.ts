@@ -1,5 +1,6 @@
 import { UseGuards } from "@nestjs/common";
 import { Args, Mutation, Query, Resolver } from "@nestjs/graphql";
+import { computeEconomicSeriesInsights } from "@modular/utils";
 import { EconomicDataFrequency, EconomicDataValueType } from "@prisma/client";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
@@ -8,7 +9,13 @@ import { AkshareService } from "../../modules/akshare/akshare.service";
 import { PaginatedResult } from "../../modules/akshare/akshare.types";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { DateRangeInput, PaginationInput, TriggerDataFetchInput } from "../dto/economic-data.input";
+import { EconomicDataWithInsightsModel } from "../models/economic-data-with-insights.model";
 import { EconomicDataFetchConfigModel, EconomicDataPointModel, PaginatedEconomicDataPointsModel, TimeGranularity } from "../models/economic-data.model";
+import {
+  EconomicInsightClassification,
+  EconomicInsightDirection,
+  EconomicSeriesInsightModel
+} from "../models/economic-insights.model";
 import { parseMetadata } from "../schemas/economic-data.schema";
 
 
@@ -58,6 +65,106 @@ export class EconomicDataResolver {
       sourceField: point.sourceField,
       dataType: point.dataType,
       item: this.mapItemToModel(point.item)
+    }));
+  }
+
+  @HasPermission("economicdata.read")
+  @Query(() => EconomicDataWithInsightsModel)
+  async getEconomicDataWithInsights(
+    @Args("category") category: string,
+    @Args("timeRange") timeRange: DateRangeInput,
+    @Args("granularity", { type: () => TimeGranularity, nullable: true }) granularity?: TimeGranularity
+  ): Promise<EconomicDataWithInsightsModel> {
+    const start = new Date(timeRange.start);
+    const end = new Date(timeRange.end);
+    const points = await this.akshareService.getDataByCategory(category, start, end, granularity);
+    const dataPoints = Array.isArray(points) ? points : points.data;
+
+    const mappedPoints = dataPoints.map((point) => ({
+      timestamp: point.recordedAt,
+      value: Number(point.value),
+      unit: point.unit,
+      sourceField: point.sourceField,
+      dataType: point.dataType,
+      item: this.mapItemToModel(point.item)
+    }));
+
+    const insights = computeEconomicSeriesInsights(
+      dataPoints.map((point) => ({
+        recordedAt: point.recordedAt,
+        value: typeof point.value === "number" ? point.value : Number(point.value),
+        unit: point.unit,
+        sourceField: point.sourceField,
+        item: {
+          slug: point.item.slug,
+          defaultUnit: point.item.defaultUnit
+        }
+      }))
+    ).map((insight) => ({
+      itemSlug: insight.itemSlug,
+      seriesKey: insight.seriesKey,
+      sourceField: insight.sourceField,
+      unit: insight.unit,
+      sampleCount: insight.sampleCount,
+      currentValue: insight.currentValue,
+      previousValue: insight.previousValue,
+      change: insight.change,
+      percentChange: insight.percentChange,
+      mean: insight.mean,
+      stdDev: insight.stdDev,
+      zScore: insight.zScore,
+      direction: insight.direction as EconomicInsightDirection,
+      classification: insight.classification as EconomicInsightClassification,
+      message: insight.message
+    }));
+
+    return {
+      points: mappedPoints,
+      insights
+    };
+  }
+
+  @HasPermission("economicdata.read")
+  @Query(() => [EconomicSeriesInsightModel])
+  async getEconomicDataInsights(
+    @Args("category") category: string,
+    @Args("timeRange") timeRange: DateRangeInput,
+    @Args("granularity", { type: () => TimeGranularity, nullable: true }) granularity?: TimeGranularity
+  ): Promise<EconomicSeriesInsightModel[]> {
+    const start = new Date(timeRange.start);
+    const end = new Date(timeRange.end);
+    const points = await this.akshareService.getDataByCategory(category, start, end, granularity);
+    const dataPoints = Array.isArray(points) ? points : points.data;
+
+    const insights = computeEconomicSeriesInsights(
+      dataPoints.map((point) => ({
+        recordedAt: point.recordedAt,
+        value: typeof point.value === "number" ? point.value : Number(point.value),
+        unit: point.unit,
+        sourceField: point.sourceField,
+        item: {
+          slug: point.item.slug,
+          defaultUnit: point.item.defaultUnit
+        }
+      }))
+    );
+
+    return insights.map((insight) => ({
+      itemSlug: insight.itemSlug,
+      seriesKey: insight.seriesKey,
+      sourceField: insight.sourceField,
+      unit: insight.unit,
+      sampleCount: insight.sampleCount,
+      currentValue: insight.currentValue,
+      previousValue: insight.previousValue,
+      change: insight.change,
+      percentChange: insight.percentChange,
+      mean: insight.mean,
+      stdDev: insight.stdDev,
+      zScore: insight.zScore,
+      direction: insight.direction as EconomicInsightDirection,
+      classification: insight.classification as EconomicInsightClassification,
+      message: insight.message
     }));
   }
 
@@ -140,6 +247,9 @@ export class EconomicDataResolver {
       repeatCron: repeatCron ?? null,
       isEnabled
     });
+    const rawItem = updated.item ?? { slug };
+    const itemSlug =
+      typeof rawItem?.slug === "string" && rawItem.slug.trim() ? rawItem.slug : slug;
     return {
       id: updated.id,
       frequency: updated.frequency,
@@ -148,7 +258,7 @@ export class EconomicDataResolver {
       lastRunAt: updated.lastRunAt ?? undefined,
       lastStatus: updated.lastStatus ?? undefined,
       lastError: updated.lastError ?? undefined,
-      item: this.mapItemToModel(updated.item ?? { slug })
+      item: this.mapItemToModel({ ...rawItem, slug: itemSlug })
     };
   }
 

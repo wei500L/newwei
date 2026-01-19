@@ -766,6 +766,43 @@ enum EconomicDataValueType {
   yield
 }
 
+type EconomicDataWithInsightsModel {
+  insights: [EconomicSeriesInsightModel!]!
+  points: [EconomicDataPointModel!]!
+}
+
+enum EconomicInsightClassification {
+  anomaly
+  insufficient_data
+  stable
+  trend
+  volatility
+}
+
+enum EconomicInsightDirection {
+  down
+  flat
+  up
+}
+
+type EconomicSeriesInsightModel {
+  change: Float
+  classification: EconomicInsightClassification!
+  currentValue: Float
+  direction: EconomicInsightDirection!
+  itemSlug: String!
+  mean: Float
+  message: String!
+  percentChange: Float
+  previousValue: Float
+  sampleCount: Int!
+  seriesKey: String!
+  sourceField: String
+  stdDev: Float
+  unit: String
+  zScore: Float
+}
+
 input EntityImpactGraphInput {
   """Restrict graph to categories (person, organization, stock, commodity)"""
   categories: [String!]
@@ -1401,7 +1438,9 @@ type Query {
   eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!
   getCommodityMoveImpact(input: CommodityMoveImpactInput!): KnowledgeGraphImpactAnalysisModel
   getEconomicData(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicDataPointModel!]!
+  getEconomicDataInsights(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): [EconomicSeriesInsightModel!]!
   getEconomicDataPaginated(category: String!, granularity: TimeGranularity, pagination: PaginationInput, timeRange: DateRangeInput!): PaginatedEconomicDataPointsModel!
+  getEconomicDataWithInsights(category: String!, granularity: TimeGranularity, timeRange: DateRangeInput!): EconomicDataWithInsightsModel!
 
   """Get entity impact graph data for visualization"""
   getEntityImpactGraph(input: EntityImpactGraphInput): EntityImpactGraphModel!

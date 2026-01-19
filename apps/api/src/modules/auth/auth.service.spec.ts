@@ -63,6 +63,11 @@ const accessTokenBlacklistMock = {
   has: jest.fn()
 } as any;
 
+const refreshTokenBlacklistMock = {
+  add: jest.fn(),
+  has: jest.fn()
+} as any;
+
 const authCacheSettingsMock = {
   getSettings: jest.fn().mockResolvedValue({
     profileTtlSeconds: 600,
@@ -74,6 +79,10 @@ const authCacheSettingsMock = {
 
 const orgServiceMock = {
   listOrganizationOptionsForUser: jest.fn().mockResolvedValue([{ id: "org-1" }])
+} as any;
+
+const storageServiceMock = {
+  isPublicUrl: jest.fn()
 } as any;
 
 describe("AuthService", () => {
@@ -94,6 +103,7 @@ describe("AuthService", () => {
     rateLimitConfigMock.getBucketConfig = jest
       .fn()
       .mockResolvedValue({ limit: 5, windowSeconds: 60 });
+    refreshTokenBlacklistMock.has = jest.fn().mockResolvedValue(false);
     authCacheSettingsMock.getSettings = jest.fn().mockResolvedValue({
       profileTtlSeconds: 600,
       lockTtlMs: 5_000,
@@ -107,8 +117,10 @@ describe("AuthService", () => {
       rateLimitConfigMock,
       cacheMock,
       accessTokenBlacklistMock,
+      refreshTokenBlacklistMock,
       authCacheSettingsMock,
-      orgServiceMock
+      orgServiceMock,
+      storageServiceMock
     );
   });
 
@@ -458,6 +470,55 @@ describe("AuthService", () => {
     const result = await service.refresh(`token-1.org-1.${secret}`, "org-2");
     expect(result.user.orgId).toBe("org-2");
     expect(result.user.permissions).toContain("items.write");
+  });
+
+  it("rejects blacklisted refresh tokens without querying the database", async () => {
+    const secret = "a".repeat(64);
+    refreshTokenBlacklistMock.has = jest.fn().mockResolvedValue(true);
+
+    await expect(service.refresh(`token-1.org-1.${secret}`)).rejects.toThrow(UnauthorizedException);
+    expect(prismaMock.refreshToken.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("does not issue multiple refresh tokens when org differs across calls", async () => {
+    const secret = "a".repeat(64);
+    prismaMock.refreshToken.findUnique = jest.fn().mockResolvedValue({
+      id: "token-1",
+      userId: "user-1",
+      tokenHash: await bcrypt.hash(secret, 10),
+      expiresAt: new Date(Date.now() + 10000),
+      revokedAt: null
+    });
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+      isActive: true
+    });
+    prismaMock.membership.findMany = jest.fn().mockResolvedValue([
+      {
+        orgId: "org-1",
+        org: { isActive: true },
+        roleId: "role-1",
+        role: { permissions: [{ permission: { name: "items.read" } }] }
+      },
+      {
+        orgId: "org-2",
+        org: { isActive: true },
+        roleId: "role-2",
+        role: { permissions: [{ permission: { name: "items.write" } }] }
+      }
+    ]);
+
+    const token = `token-1.org-1.${secret}`;
+    const first = await service.refresh(token, "org-2");
+    const second = await service.refresh(token);
+
+    expect(second.user.orgId).toBe("org-2");
+    expect(second.refreshToken).toBe(first.refreshToken);
+    expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
+    expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it("rejects refresh tokens that do not match the expected structure", async () => {

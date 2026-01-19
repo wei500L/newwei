@@ -27,12 +27,12 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; name: string; reason: string }>
     reason: "Arbitrary code execution"
   },
   {
-    pattern: /\bnew\s+Function\s*\(/gi,
+    pattern: /\bnew\s+Function\s*\(/g,
     name: "new Function()",
     reason: "Arbitrary code execution"
   },
   {
-    pattern: /\bFunction\s*\(/gi,
+    pattern: /\bFunction\s*\(/g,
     name: "Function()",
     reason: "Arbitrary code execution"
   },

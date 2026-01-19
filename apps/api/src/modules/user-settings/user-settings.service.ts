@@ -85,6 +85,7 @@ export interface SituationMonitorSettings {
   scope: SituationMonitorScope;
   autoRefresh: boolean;
   resetLayoutOnPreset: boolean;
+  translateToZh: boolean;
 }
 
 function normalizeName(value: unknown): string {
@@ -272,7 +273,13 @@ function normalizeBoolean(value: unknown, fallback: boolean): boolean {
 
 function normalizeSettings(value: unknown): SituationMonitorSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { windowHours: 24, scope: "tagged", autoRefresh: true, resetLayoutOnPreset: false };
+    return {
+      windowHours: 24,
+      scope: "tagged",
+      autoRefresh: true,
+      resetLayoutOnPreset: false,
+      translateToZh: false,
+    };
   }
 
   const record = value as Record<string, unknown>;
@@ -281,6 +288,7 @@ function normalizeSettings(value: unknown): SituationMonitorSettings {
     scope: normalizeScope(record.scope),
     autoRefresh: normalizeBoolean(record.autoRefresh, true),
     resetLayoutOnPreset: normalizeBoolean(record.resetLayoutOnPreset, false),
+    translateToZh: normalizeBoolean(record.translateToZh, false),
   };
 }
 

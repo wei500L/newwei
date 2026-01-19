@@ -15,10 +15,10 @@
 
 > 目的：让后续 5 类能力共享同一套输入，不在每个模块里重复“再清洗一遍”。
 
-- [ ] 定义 `NewsSignal`（逻辑结构，不一定落库）：`articleId`, `processedArticleId`, `processedItemId`, `timestamp`, `language`, `topics[]`, `entities[]`, `sentiment`, `summary`, `qualityScore`
-- [ ] 明确 `timestamp` 优先级：`publishedAt` > `crawlAt` > `processedAt`
-- [ ] 明确 `language` 策略：默认同语种优先聚类，但允许高相似度跨语种合并（可配置 penalty）
-- [ ] 输出：一份简短的内部设计文档 + `NewsSignal` 构造函数（后续模块复用）
+- [x] 定义 `NewsSignal`（逻辑结构，不一定落库）：`articleId`, `processedArticleId`, `processedItemId`, `timestamp`, `language`, `topics[]`, `entities[]`, `sentiment`, `summary`, `qualityScore`
+- [x] 明确 `timestamp` 优先级：`publishedAt` > `crawlAt` > `processedAt`
+- [x] 明确 `language` 策略：默认同语种优先聚类，但允许高相似度跨语种合并（可配置 penalty）
+- [x] 输出：`NewsSignal` 构造函数（`apps/api/src/modules/news-signals/news-signal.ts`）+ 回归测试（`apps/api/src/modules/news-signals/news-signal.spec.ts`）
 
 验收：
 - 任意 `ProcessedArticle` 均可稳定映射为 `NewsSignal`（缺字段时有合理 fallback）。

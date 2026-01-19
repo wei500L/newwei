@@ -209,6 +209,16 @@ describe("LiteLlmService", () => {
       messages: [{ role: "user", content: "Hello" }],
     };
 
+    beforeEach(() => {
+      configService.config = {
+        ...mockConfig,
+        litellm: {
+          ...mockConfig.litellm,
+          fallbackModels: [],
+        },
+      };
+    });
+
     it("should retry on 429 (rate limit) status code", async () => {
       const error429 = new AxiosError("Rate limited", "ERR_BAD_REQUEST", undefined, undefined, {
         status: 429,

@@ -176,6 +176,47 @@ export class SituationMonitorTranslationService {
       }
     }
 
+    if (insights.correlation) {
+      const correlation = insights.correlation;
+      for (const entry of correlation.emergingPatterns ?? []) {
+        for (const headline of entry.headlines ?? []) {
+          collect(headline.title);
+        }
+      }
+      for (const entry of correlation.momentumSignals ?? []) {
+        for (const headline of entry.headlines ?? []) {
+          collect(headline.title);
+        }
+      }
+      for (const entry of correlation.crossSourceCorrelations ?? []) {
+        for (const headline of entry.headlines ?? []) {
+          collect(headline.title);
+        }
+      }
+      for (const entry of correlation.predictiveSignals ?? []) {
+        for (const headline of entry.headlines ?? []) {
+          collect(headline.title);
+        }
+      }
+    }
+
+    if (insights.narrative) {
+      const narrative = insights.narrative;
+      const buckets = [
+        narrative.emergingFringe,
+        narrative.fringeToMainstream,
+        narrative.narrativeWatch,
+        narrative.disinfoSignals,
+      ];
+      for (const list of buckets) {
+        for (const entry of list ?? []) {
+          for (const headline of entry.headlines ?? []) {
+            collect(headline.title);
+          }
+        }
+      }
+    }
+
     return targets;
   }
 
@@ -354,6 +395,59 @@ export class SituationMonitorTranslationService {
     if (insights.fed?.news) {
       for (const entry of insights.fed.news) {
         applyFedNews(entry);
+      }
+    }
+
+    if (insights.correlation) {
+      const correlation = insights.correlation;
+      const applyHeadlineRef = (ref: { title: string; titleZh?: string }) => {
+        const titleZh = translateText(ref.title);
+        if (titleZh) {
+          ref.titleZh = titleZh;
+        }
+      };
+      for (const entry of correlation.emergingPatterns ?? []) {
+        for (const ref of entry.headlines ?? []) {
+          applyHeadlineRef(ref);
+        }
+      }
+      for (const entry of correlation.momentumSignals ?? []) {
+        for (const ref of entry.headlines ?? []) {
+          applyHeadlineRef(ref);
+        }
+      }
+      for (const entry of correlation.crossSourceCorrelations ?? []) {
+        for (const ref of entry.headlines ?? []) {
+          applyHeadlineRef(ref);
+        }
+      }
+      for (const entry of correlation.predictiveSignals ?? []) {
+        for (const ref of entry.headlines ?? []) {
+          applyHeadlineRef(ref);
+        }
+      }
+    }
+
+    if (insights.narrative) {
+      const narrative = insights.narrative;
+      const applyNarrativeHeadline = (ref: { title: string; titleZh?: string }) => {
+        const titleZh = translateText(ref.title);
+        if (titleZh) {
+          ref.titleZh = titleZh;
+        }
+      };
+      const buckets = [
+        narrative.emergingFringe,
+        narrative.fringeToMainstream,
+        narrative.narrativeWatch,
+        narrative.disinfoSignals,
+      ];
+      for (const list of buckets) {
+        for (const entry of list ?? []) {
+          for (const headline of entry.headlines ?? []) {
+            applyNarrativeHeadline(headline);
+          }
+        }
       }
     }
   }

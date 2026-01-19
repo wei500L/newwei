@@ -4,6 +4,7 @@ import { Injectable } from "@nestjs/common";
 import { NewsEventAssignmentMethod, NewsEventStatus, Prisma } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
+import type { NewsSignal, NewsSignalEntity } from "../news-signals/news-signal";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import type { NewsEventSettings } from "./news-events-settings.service";
@@ -13,20 +14,6 @@ const logger = createLogger({ name: "news-events" });
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_VECTOR_SEARCH_LIMIT = 50;
 const DEFAULT_CANDIDATE_EVENTS_LIMIT = 30;
-
-type ProcessedArticleSignal = {
-  id: string;
-  articleId: string;
-  processedAt: Date;
-  publishedAt: Date | null;
-  language: string | null;
-  title: string | null;
-  summary: string | null;
-  topics: Prisma.JsonValue | null;
-  entities: Prisma.JsonValue | null;
-  cleanedMarkdownRef: string | null;
-  crawlAt?: Date | null;
-};
 
 @Injectable()
 export class NewsEventsService {
@@ -95,12 +82,12 @@ export class NewsEventsService {
     });
   }
 
-  async assignProcessedArticleToEvent(orgId: string, signal: ProcessedArticleSignal, settings: NewsEventSettings) {
+  async assignNewsSignalToEvent(orgId: string, signal: NewsSignal, settings: NewsEventSettings) {
     const existing = await this.prisma.newsEventItem.findUnique({
       where: {
         orgId_processedArticleId: {
           orgId,
-          processedArticleId: signal.id
+          processedArticleId: signal.processedArticleId
         }
       },
       select: { id: true, eventId: true }
@@ -109,7 +96,7 @@ export class NewsEventsService {
       return { eventId: existing.eventId, created: false };
     }
 
-    const timestamp = this.resolveSignalTimestamp(signal);
+    const timestamp = signal.timestamp;
     const language = this.normalizeOptionalString(signal.language);
     const primaryTopic = this.pickPrimaryTopic(signal.topics);
     const primaryEntity = this.pickPrimaryEntity(signal.entities);
@@ -138,8 +125,8 @@ export class NewsEventsService {
           data: {
             orgId,
             eventId,
-            processedArticleId: signal.id,
-            processedItemId: this.normalizeOptionalString(signal.cleanedMarkdownRef),
+            processedArticleId: signal.processedArticleId,
+            processedItemId: this.normalizeOptionalString(signal.processedItemId),
             similarity: assignment.similarity ?? null,
             assignedBy: assignment.method
           }
@@ -172,7 +159,7 @@ export class NewsEventsService {
 
   private async pickEventForSignal(
     orgId: string,
-    signal: ProcessedArticleSignal,
+    signal: NewsSignal,
     settings: NewsEventSettings,
     derived: { timestamp: Date; language: string | null; primaryTopic: string | null; primaryEntity: string | null },
   ): Promise<{
@@ -180,7 +167,7 @@ export class NewsEventsService {
     similarity?: number | null;
     method: NewsEventAssignmentMethod;
   }> {
-    const vector = await this.tryResolveSummaryEmbedding(signal.cleanedMarkdownRef);
+    const vector = await this.tryResolveSummaryEmbedding(signal.processedItemId);
     if (vector) {
       const matches = await this.vectorClient.searchBestEffort({
         orgId,
@@ -193,7 +180,7 @@ export class NewsEventsService {
 
       const matchIds = (matches ?? [])
         .map((match) => (typeof match.processedItemId === "string" ? match.processedItemId : ""))
-        .filter((id) => id.length > 0 && id !== signal.cleanedMarkdownRef);
+        .filter((id) => id.length > 0 && id !== signal.processedItemId);
 
       if (matchIds.length > 0) {
         const memberships = await this.prisma.newsEventItem.findMany({
@@ -334,7 +321,7 @@ export class NewsEventsService {
   private async createEvent(
     tx: Prisma.TransactionClient,
     orgId: string,
-    signal: ProcessedArticleSignal,
+    signal: NewsSignal,
     _settings: NewsEventSettings,
     derived: { timestamp: Date; language: string | null; primaryTopic: string | null; primaryEntity: string | null },
   ) {
@@ -349,47 +336,47 @@ export class NewsEventsService {
         summary: signal.summary,
         startAt: derived.timestamp,
         lastAt: derived.timestamp,
-        representativeProcessedArticleId: signal.id,
-        representativeProcessedItemId: this.normalizeOptionalString(signal.cleanedMarkdownRef)
+        representativeProcessedArticleId: signal.processedArticleId,
+        representativeProcessedItemId: this.normalizeOptionalString(signal.processedItemId)
       }
     });
   }
 
-  private resolveSignalTimestamp(signal: ProcessedArticleSignal): Date {
-    return signal.publishedAt ?? signal.crawlAt ?? signal.processedAt ?? new Date();
-  }
-
-  private pickPrimaryTopic(raw: Prisma.JsonValue | null): string | null {
-    const topics = Array.isArray(raw) ? raw : [];
+  private pickPrimaryTopic(topics: string[]): string | null {
     for (const topic of topics) {
-      if (typeof topic === "string") {
-        const normalized = this.normalizeOptionalString(topic);
-        if (normalized) {
-          return normalized;
-        }
+      const normalized = this.normalizeOptionalString(topic);
+      if (normalized) {
+        return normalized;
       }
     }
     return null;
   }
 
-  private pickPrimaryEntity(raw: Prisma.JsonValue | null): string | null {
-    const entities = Array.isArray(raw) ? raw : [];
+  private pickPrimaryEntity(entities: NewsSignalEntity[]): string | null {
+    let fallback: string | null = null;
     let best: { name: string; confidence: number } | null = null;
+
     for (const entity of entities) {
-      if (!entity || typeof entity !== "object" || Array.isArray(entity)) {
+      const normalizedName = this.normalizeOptionalString(entity.name);
+      if (!normalizedName) {
         continue;
       }
-      const record = entity as Record<string, unknown>;
-      const name = typeof record.name === "string" ? this.normalizeOptionalString(record.name) : null;
-      const confidence = typeof record.confidence === "number" ? record.confidence : null;
-      if (!name || confidence === null || !Number.isFinite(confidence)) {
+
+      if (!fallback) {
+        fallback = normalizedName;
+      }
+
+      const confidence = entity.confidence;
+      if (confidence === null || !Number.isFinite(confidence)) {
         continue;
       }
+
       if (!best || confidence > best.confidence) {
-        best = { name, confidence };
+        best = { name: normalizedName, confidence };
       }
     }
-    return best?.name ?? null;
+
+    return best?.name ?? fallback;
   }
 
   private normalizeOptionalString(value: unknown): string | null {

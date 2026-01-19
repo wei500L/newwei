@@ -119,6 +119,151 @@ describe("EconomicDataResolver", () => {
     });
   });
 
+  describe("getEconomicDataInsights", () => {
+    it("groups points by item slug and source field", async () => {
+      (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
+        {
+          recordedAt: new Date("2024-01-01T00:00:00Z"),
+          value: 100,
+          unit: "USD",
+          sourceField: "close",
+          dataType: "index",
+          item: {
+            slug: "sp500_index",
+            displayName: "S&P 500 Index",
+            groupLabel: null,
+            defaultUnit: null,
+            metadata: null
+          }
+        },
+        {
+          recordedAt: new Date("2024-01-02T00:00:00Z"),
+          value: 110,
+          unit: "USD",
+          sourceField: "close",
+          dataType: "index",
+          item: {
+            slug: "sp500_index",
+            displayName: "S&P 500 Index",
+            groupLabel: null,
+            defaultUnit: null,
+            metadata: null
+          }
+        },
+        {
+          recordedAt: new Date("2024-01-02T00:00:00Z"),
+          value: 42,
+          unit: null,
+          sourceField: null,
+          dataType: "index",
+          item: {
+            slug: "demo_metric",
+            displayName: "Demo Metric",
+            groupLabel: null,
+            defaultUnit: "%",
+            metadata: null
+          }
+        }
+      ]);
+
+      const result = await resolver.getEconomicDataInsights("economic-indicators", {
+        start: "2024-01-01",
+        end: "2024-01-31"
+      });
+
+      expect(mockAkshareService.getDataByCategory).toHaveBeenCalledWith(
+        "economic-indicators",
+        new Date("2024-01-01"),
+        new Date("2024-01-31"),
+        undefined
+      );
+
+      const sp500 = result.find((entry) => entry.itemSlug === "sp500_index" && entry.seriesKey === "close");
+      expect(sp500).toBeDefined();
+      expect(sp500).toMatchObject({
+        itemSlug: "sp500_index",
+        seriesKey: "close",
+        sourceField: "close",
+        unit: "USD",
+        sampleCount: 2,
+        currentValue: 110,
+        previousValue: 100,
+        percentChange: 10,
+        direction: "up",
+        classification: "trend"
+      });
+      expect(typeof sp500?.message).toBe("string");
+      expect(sp500?.message.length).toBeGreaterThan(0);
+
+      const demo = result.find((entry) => entry.itemSlug === "demo_metric");
+      expect(demo).toBeDefined();
+      expect(demo).toMatchObject({
+        itemSlug: "demo_metric",
+        seriesKey: "demo_metric-default",
+        sourceField: null,
+        unit: "%"
+      });
+    });
+  });
+
+  describe("getEconomicDataWithInsights", () => {
+    it("returns both points and insights from a single fetch", async () => {
+      (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
+        {
+          recordedAt: new Date("2024-01-01T00:00:00Z"),
+          value: 100,
+          unit: "USD",
+          sourceField: "close",
+          dataType: "index",
+          item: {
+            slug: "sp500_index",
+            displayName: "S&P 500 Index",
+            groupLabel: null,
+            defaultUnit: null,
+            metadata: null
+          }
+        },
+        {
+          recordedAt: new Date("2024-01-02T00:00:00Z"),
+          value: 110,
+          unit: "USD",
+          sourceField: "close",
+          dataType: "index",
+          item: {
+            slug: "sp500_index",
+            displayName: "S&P 500 Index",
+            groupLabel: null,
+            defaultUnit: null,
+            metadata: null
+          }
+        }
+      ]);
+
+      const result = await resolver.getEconomicDataWithInsights("economic-indicators", {
+        start: "2024-01-01",
+        end: "2024-01-31"
+      });
+
+      expect(mockAkshareService.getDataByCategory).toHaveBeenCalledTimes(1);
+      expect(result.points).toHaveLength(2);
+      expect(result.points[0]).toMatchObject({
+        value: 100,
+        unit: "USD",
+        sourceField: "close",
+        item: {
+          slug: "sp500_index",
+          displayName: "S&P 500 Index"
+        }
+      });
+      expect(result.insights).toHaveLength(1);
+      expect(result.insights[0]).toMatchObject({
+        itemSlug: "sp500_index",
+        seriesKey: "close",
+        classification: "trend"
+      });
+    });
+  });
+
   describe("economicDataFetchConfigs", () => {
     const sampleConfigs = [
       {

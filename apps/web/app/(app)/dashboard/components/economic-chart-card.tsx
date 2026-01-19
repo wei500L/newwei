@@ -7,7 +7,7 @@ import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
-import type { EconomicSeriesMap } from "@/hooks/useEconomicData";
+import type { EconomicSeriesInsightsMap, EconomicSeriesMap } from "@/hooks/useEconomicData";
 import dayjs from "@/lib/dayjs";
 
 import { getSeriesField } from "../utils/series";
@@ -24,6 +24,7 @@ export interface EconomicChartCardProps {
   description?: string;
   seriesMap: EconomicSeriesMap;
   series: SeriesConfig[];
+  insights?: EconomicSeriesInsightsMap;
   meta?: ReactNode;
 }
 
@@ -32,26 +33,30 @@ export function EconomicChartCard({
   description,
   seriesMap,
   series,
+  insights,
   meta,
 }: EconomicChartCardProps) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
   
   const option = useMemo(() => buildOption(seriesMap, series), [seriesMap, series]);
-  const seriesList = useMemo(() => {
+  const hasSeries = useMemo(() => {
     const s = option.series;
-    return Array.isArray(s) ? s : s ? [s] : [];
+    if (!s) return false;
+    return Array.isArray(s) ? s.length > 0 : true;
   }, [option.series]);
 
   const stats = useMemo(() => {
-    if (!seriesList.length || !series[0]) return null;
+    if (!series[0]) return null;
     const config = series[0];
     const record = seriesMap[config.slug];
     if (!record || Object.keys(record.fields).length === 0) return null;
 
     const fieldSeries = getSeriesField(seriesMap, config.slug, config.field);
     
-    if (!fieldSeries || fieldSeries.values.length < 2) return null;
+    if (!fieldSeries || fieldSeries.values.length === 0) return null;
+
+    const insight = insights?.[config.slug]?.[fieldSeries.key];
 
     const sorted = [...fieldSeries.values].sort(
       (a, b) => dayjs(a.timestamp).valueOf() - dayjs(b.timestamp).valueOf()
@@ -59,51 +64,44 @@ export function EconomicChartCard({
     
     const current = sorted.at(-1);
     const prev = sorted.at(-2);
-    if (!current || !prev) {
+    if (!current) {
       return null;
     }
     
-    const change = current.value - prev.value;
-    const percentChange = prev.value !== 0 ? (change / prev.value) * 100 : null;
+    const fallbackChange = prev ? current.value - prev.value : null;
+    const fallbackPercentChange =
+      prev && prev.value !== 0 ? (fallbackChange! / prev.value) * 100 : null;
     
-    // Generate insight
     const avg = sorted.reduce((acc, curr) => acc + curr.value, 0) / sorted.length;
     const diffFromAvg = avg !== 0 ? ((current.value - avg) / avg) * 100 : null;
 
-    let insight = "";
-    if (diffFromAvg !== null && Math.abs(diffFromAvg) > 20) {
-      insight = `${t("dashboard.insight.volatility", {
-        percent: Math.abs(diffFromAvg).toFixed(1),
-        direction: diffFromAvg > 0 ? t("common.above") : t("common.below")
-      })}`;
-    } else if (percentChange !== null && Math.abs(percentChange) > 5) {
-      insight = `${t("dashboard.insight.trend", {
-        percent: Math.abs(percentChange).toFixed(1),
-        direction: percentChange > 0 ? t("common.increase") : t("common.decrease")
-      })}`;
-    } else if (diffFromAvg === null) {
-      insight = t("dashboard.insight.noAverage", { defaultValue: "Insufficient data for average comparison." });
-    } else {
-      insight = t("dashboard.insight.stable");
-    }
+    const percentChange = insight?.percentChange ?? fallbackPercentChange;
+    const change = insight?.change ?? fallbackChange;
+    const unit = insight?.unit ?? fieldSeries.unit ?? record.unit;
 
-    // Default Fallback if translation keys are missing (for safety)
-    if (insight.startsWith("dashboard.insight")) {
-       if (diffFromAvg !== null) {
-         insight = `Current value is ${Math.abs(diffFromAvg).toFixed(1)}% ${diffFromAvg > 0 ? "above" : "below"} historical average.`;
-       } else {
-         insight = "Insufficient data for average comparison.";
-       }
-    }
+    const message =
+      insight?.message ??
+      (() => {
+        if (diffFromAvg !== null && Math.abs(diffFromAvg) > 20) {
+          return `Current value is ${Math.abs(diffFromAvg).toFixed(1)}% ${diffFromAvg > 0 ? "above" : "below"} historical average.`;
+        }
+        if (percentChange !== null && Math.abs(percentChange) > 5) {
+          return `Latest value changed ${Math.abs(percentChange).toFixed(1)}% ${percentChange > 0 ? "up" : "down"} vs previous point.`;
+        }
+        if (sorted.length < 2) {
+          return "Not enough data to infer a trend.";
+        }
+        return "Series is stable around its recent mean.";
+      })();
 
     return {
-      currentValue: current.value,
+      currentValue: insight?.currentValue ?? current.value,
       change,
       percentChange,
-      unit: fieldSeries.unit ?? record.unit,
-      insight
+      unit,
+      insight: message
     };
-  }, [seriesMap, series, seriesList, t]);
+  }, [insights, seriesMap, series]);
 
   return (
     <Card 
@@ -153,7 +151,7 @@ export function EconomicChartCard({
         </Flex>
       }
     >
-      {seriesList.length > 0 ? (
+      {hasSeries ? (
         <>
           <DashboardChart option={option} height={360} />
           {stats?.insight && (
@@ -170,7 +168,7 @@ export function EconomicChartCard({
             >
                <BulbOutlined style={{ color: token.colorPrimary }} />
                <Typography.Text style={{ fontSize: 13, color: token.colorTextSecondary }}>
-                 AI Insight: {stats.insight}
+                 {t("dashboard.insight.label", { defaultValue: "Insight" })}: {stats.insight}
                </Typography.Text>
             </Flex>
           )}

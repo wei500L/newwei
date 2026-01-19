@@ -209,6 +209,14 @@ export function validateSsrfUrl(urlString: string): SsrfValidationResult {
       };
     }
 
+    // Check for localhost variations
+    if (isLocalhostVariation(hostname)) {
+      return {
+        valid: false,
+        reason: `Localhost is not allowed: ${hostname}`,
+      };
+    }
+
     // Check if hostname is an IP address
     if (isIPAddress(hostname)) {
       // Remove brackets from IPv6
@@ -226,14 +234,6 @@ export function validateSsrfUrl(urlString: string): SsrfValidationResult {
       return {
         valid: false,
         reason: `Cloud metadata endpoint is not allowed: ${hostname}`,
-      };
-    }
-
-    // Check for localhost variations
-    if (isLocalhostVariation(hostname)) {
-      return {
-        valid: false,
-        reason: `Localhost is not allowed: ${hostname}`,
       };
     }
 

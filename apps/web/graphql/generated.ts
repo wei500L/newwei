@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -798,6 +800,45 @@ export enum EconomicDataValueType {
   Volume = 'volume',
   Yield = 'yield'
 }
+
+export type EconomicDataWithInsightsModel = {
+  __typename?: 'EconomicDataWithInsightsModel';
+  insights: Array<EconomicSeriesInsightModel>;
+  points: Array<EconomicDataPointModel>;
+};
+
+export enum EconomicInsightClassification {
+  Anomaly = 'anomaly',
+  InsufficientData = 'insufficient_data',
+  Stable = 'stable',
+  Trend = 'trend',
+  Volatility = 'volatility'
+}
+
+export enum EconomicInsightDirection {
+  Down = 'down',
+  Flat = 'flat',
+  Up = 'up'
+}
+
+export type EconomicSeriesInsightModel = {
+  __typename?: 'EconomicSeriesInsightModel';
+  change?: Maybe<Scalars['Float']['output']>;
+  classification: EconomicInsightClassification;
+  currentValue?: Maybe<Scalars['Float']['output']>;
+  direction: EconomicInsightDirection;
+  itemSlug: Scalars['String']['output'];
+  mean?: Maybe<Scalars['Float']['output']>;
+  message: Scalars['String']['output'];
+  percentChange?: Maybe<Scalars['Float']['output']>;
+  previousValue?: Maybe<Scalars['Float']['output']>;
+  sampleCount: Scalars['Int']['output'];
+  seriesKey: Scalars['String']['output'];
+  sourceField?: Maybe<Scalars['String']['output']>;
+  stdDev?: Maybe<Scalars['Float']['output']>;
+  unit?: Maybe<Scalars['String']['output']>;
+  zScore?: Maybe<Scalars['Float']['output']>;
+};
 
 export type EntityImpactGraphInput = {
   /** Restrict graph to categories (person, organization, stock, commodity) */
@@ -1646,7 +1687,9 @@ export type Query = {
   eventGroups: Array<EventGroupModel>;
   getCommodityMoveImpact?: Maybe<KnowledgeGraphImpactAnalysisModel>;
   getEconomicData: Array<EconomicDataPointModel>;
+  getEconomicDataInsights: Array<EconomicSeriesInsightModel>;
   getEconomicDataPaginated: PaginatedEconomicDataPointsModel;
+  getEconomicDataWithInsights: EconomicDataWithInsightsModel;
   /** Get entity impact graph data for visualization */
   getEntityImpactGraph: EntityImpactGraphModel;
   getExecutiveChangeImpact?: Maybe<KnowledgeGraphImpactAnalysisModel>;
@@ -1760,10 +1803,24 @@ export type QueryGetEconomicDataArgs = {
 };
 
 
+export type QueryGetEconomicDataInsightsArgs = {
+  category: Scalars['String']['input'];
+  granularity?: InputMaybe<TimeGranularity>;
+  timeRange: DateRangeInput;
+};
+
+
 export type QueryGetEconomicDataPaginatedArgs = {
   category: Scalars['String']['input'];
   granularity?: InputMaybe<TimeGranularity>;
   pagination?: InputMaybe<PaginationInput>;
+  timeRange: DateRangeInput;
+};
+
+
+export type QueryGetEconomicDataWithInsightsArgs = {
+  category: Scalars['String']['input'];
+  granularity?: InputMaybe<TimeGranularity>;
   timeRange: DateRangeInput;
 };
 
@@ -2384,6 +2441,14 @@ export type EconomicDataQueryVariables = Exact<{
 
 
 export type EconomicDataQuery = { __typename?: 'Query', getEconomicData: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, sourceField?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } }> };
+
+export type EconomicDataWithInsightsQueryVariables = Exact<{
+  category: Scalars['String']['input'];
+  timeRange: DateRangeInput;
+}>;
+
+
+export type EconomicDataWithInsightsQuery = { __typename?: 'Query', getEconomicDataWithInsights: { __typename?: 'EconomicDataWithInsightsModel', points: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, sourceField?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } }>, insights: Array<{ __typename?: 'EconomicSeriesInsightModel', itemSlug: string, seriesKey: string, sourceField?: string | null, unit?: string | null, sampleCount: number, currentValue?: number | null, previousValue?: number | null, change?: number | null, percentChange?: number | null, mean?: number | null, stdDev?: number | null, zScore?: number | null, direction: EconomicInsightDirection, classification: EconomicInsightClassification, message: string }> } };
 
 export type EconomicFetchConfigsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -4010,6 +4075,77 @@ export type EconomicDataQueryHookResult = ReturnType<typeof useEconomicDataQuery
 export type EconomicDataLazyQueryHookResult = ReturnType<typeof useEconomicDataLazyQuery>;
 export type EconomicDataSuspenseQueryHookResult = ReturnType<typeof useEconomicDataSuspenseQuery>;
 export type EconomicDataQueryResult = Apollo.QueryResult<EconomicDataQuery, EconomicDataQueryVariables>;
+export const EconomicDataWithInsightsDocument = gql`
+    query EconomicDataWithInsights($category: String!, $timeRange: DateRangeInput!) {
+  getEconomicDataWithInsights(category: $category, timeRange: $timeRange) {
+    points {
+      timestamp
+      value
+      unit
+      sourceField
+      dataType
+      item {
+        slug
+        displayName
+        groupLabel
+        defaultUnit
+        metadata
+      }
+    }
+    insights {
+      itemSlug
+      seriesKey
+      sourceField
+      unit
+      sampleCount
+      currentValue
+      previousValue
+      change
+      percentChange
+      mean
+      stdDev
+      zScore
+      direction
+      classification
+      message
+    }
+  }
+}
+    `;
+
+/**
+ * __useEconomicDataWithInsightsQuery__
+ *
+ * To run a query within a React component, call `useEconomicDataWithInsightsQuery` and pass it any options that fit your needs.
+ * When your component renders, `useEconomicDataWithInsightsQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useEconomicDataWithInsightsQuery({
+ *   variables: {
+ *      category: // value for 'category'
+ *      timeRange: // value for 'timeRange'
+ *   },
+ * });
+ */
+export function useEconomicDataWithInsightsQuery(baseOptions: Apollo.QueryHookOptions<EconomicDataWithInsightsQuery, EconomicDataWithInsightsQueryVariables> & ({ variables: EconomicDataWithInsightsQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<EconomicDataWithInsightsQuery, EconomicDataWithInsightsQueryVariables>(EconomicDataWithInsightsDocument, options);
+      }
+export function useEconomicDataWithInsightsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<EconomicDataWithInsightsQuery, EconomicDataWithInsightsQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<EconomicDataWithInsightsQuery, EconomicDataWithInsightsQueryVariables>(EconomicDataWithInsightsDocument, options);
+        }
+export function useEconomicDataWithInsightsSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<EconomicDataWithInsightsQuery, EconomicDataWithInsightsQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<EconomicDataWithInsightsQuery, EconomicDataWithInsightsQueryVariables>(EconomicDataWithInsightsDocument, options);
+        }
+export type EconomicDataWithInsightsQueryHookResult = ReturnType<typeof useEconomicDataWithInsightsQuery>;
+export type EconomicDataWithInsightsLazyQueryHookResult = ReturnType<typeof useEconomicDataWithInsightsLazyQuery>;
+export type EconomicDataWithInsightsSuspenseQueryHookResult = ReturnType<typeof useEconomicDataWithInsightsSuspenseQuery>;
+export type EconomicDataWithInsightsQueryResult = Apollo.QueryResult<EconomicDataWithInsightsQuery, EconomicDataWithInsightsQueryVariables>;
 export const EconomicFetchConfigsDocument = gql`
     query EconomicFetchConfigs {
   economicDataFetchConfigs {

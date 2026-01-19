@@ -4,6 +4,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { ProcessedArticleStatus, Prisma } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
+import { buildNewsSignalFromProcessedArticle } from "../news-signals/news-signal";
 
 import { NewsEventsSettingsService } from "./news-events-settings.service";
 import { NewsEventsService } from "./news-events.service";
@@ -78,6 +79,7 @@ export class NewsEventsIngestionService {
         summary: true,
         topics: true,
         entities: true,
+        qualityScore: true,
         cleanedMarkdownRef: true,
         article: { select: { crawlAt: true } }
       },
@@ -93,19 +95,26 @@ export class NewsEventsIngestionService {
     let assigned = 0;
 
     for (const entry of batch) {
-      const result = await this.events.assignProcessedArticleToEvent(orgId, {
-        id: entry.id,
-        articleId: entry.articleId,
-        processedAt: entry.processedAt,
-        publishedAt: entry.publishedAt,
-        language: entry.language,
-        title: entry.title,
-        summary: entry.summary,
-        topics: entry.topics,
-        entities: entry.entities,
-        cleanedMarkdownRef: entry.cleanedMarkdownRef,
-        crawlAt: entry.article?.crawlAt ?? null
-      }, settings);
+      const signal = buildNewsSignalFromProcessedArticle({
+        processedArticle: {
+          id: entry.id,
+          articleId: entry.articleId,
+          processedAt: entry.processedAt ?? null,
+          publishedAt: entry.publishedAt ?? null,
+          language: entry.language ?? null,
+          title: entry.title ?? null,
+          summary: entry.summary ?? null,
+          topics: entry.topics,
+          entities: entry.entities,
+          qualityScore: entry.qualityScore ?? null,
+          cleanedMarkdownRef: entry.cleanedMarkdownRef ?? null
+        },
+        article: {
+          crawlAt: entry.article?.crawlAt ?? null
+        }
+      });
+
+      const result = await this.events.assignNewsSignalToEvent(orgId, signal, settings);
 
       processedArticles += 1;
       if (result.created) {
@@ -124,4 +133,3 @@ export class NewsEventsIngestionService {
     logger.info({ orgId, processedArticles, assigned }, "News event ingestion completed");
   }
 }
-

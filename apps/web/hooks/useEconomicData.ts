@@ -1,13 +1,20 @@
 import { useMemo } from "react";
 
-import { useEconomicDataQuery } from "@/graphql/generated";
 import { useDashboardRangeStore } from "@/store/time-range";
 import type { ChartDataState } from "@/lib/chart-data-state";
+import {
+  type EconomicSeriesInsightModel,
+  type EconomicDataPointModel,
+  EconomicDataValueType,
+  useEconomicDataWithInsightsQuery
+} from "@/graphql/generated";
 
 export interface EconomicSeriesOptions {
   category: string;
   pollInterval?: number;
 }
+
+export type EconomicSeriesInsight = EconomicSeriesInsightModel;
 
 export interface EconomicSeriesField {
   key: string;
@@ -20,11 +27,13 @@ export interface EconomicSeriesGroup {
   name: string;
   unit?: string | null;
   metadata?: Record<string, unknown> | null;
-  dataType: string;
+  dataType: EconomicDataValueType;
   fields: Record<string, EconomicSeriesField>;
 }
 
 export type EconomicSeriesMap = Record<string, EconomicSeriesGroup>;
+
+export type EconomicSeriesInsightsMap = Record<string, Record<string, EconomicSeriesInsight>>;
 
 /**
  * Resolves the unit to use based on precedence rules.
@@ -52,9 +61,20 @@ function resolveUnit(
   return defaultUnit;
 }
 
+function normalizePointTimestamp(point: Pick<EconomicDataPointModel, "timestamp">): string {
+  const raw = (point as { timestamp: unknown }).timestamp;
+  if (typeof raw === "string") {
+    return raw;
+  }
+  if (raw instanceof Date) {
+    return raw.toISOString();
+  }
+  return String(raw);
+}
+
 export function useEconomicData({ category, pollInterval }: EconomicSeriesOptions) {
   const { start, end } = useDashboardRangeStore();
-  const { data, loading, error, refetch } = useEconomicDataQuery({
+  const { data, loading, error, refetch } = useEconomicDataWithInsightsQuery({
     variables: {
       category,
       timeRange: {
@@ -64,7 +84,8 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     },
     pollInterval
   });
-  const points = data?.getEconomicData ?? [];
+  const points = data?.getEconomicDataWithInsights?.points ?? [];
+  const insights = data?.getEconomicDataWithInsights?.insights ?? [];
 
   const grouped: EconomicSeriesMap = useMemo(() => {
     const map: EconomicSeriesMap = {};
@@ -76,17 +97,17 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
       const defaultUnit = point.item.defaultUnit ?? null;
       const group: EconomicSeriesGroup =
         existing ??
-        {
+        ({
           name: point.item.displayName,
           unit: resolveUnit(pointUnit, null, defaultUnit),
           metadata: point.item.metadata ?? null,
           dataType: point.dataType,
           fields: {}
-        };
+        } satisfies EconomicSeriesGroup);
 
       group.unit = resolveUnit(pointUnit, group.unit, defaultUnit);
 
-      const fieldSeries = group.fields[fieldKey] ?? {
+      const fieldSeries: EconomicSeriesField = group.fields[fieldKey] ?? {
         key: fieldKey,
         label: point.sourceField ?? point.item.displayName,
         unit: resolveUnit(pointUnit, group.unit, defaultUnit),
@@ -94,7 +115,7 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
       };
       fieldSeries.unit = resolveUnit(pointUnit, fieldSeries.unit, group.unit);
       fieldSeries.values.push({
-        timestamp: point.timestamp,
+        timestamp: normalizePointTimestamp(point),
         value: point.value
       });
       group.fields[fieldKey] = fieldSeries;
@@ -104,6 +125,19 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     }
     return map;
   }, [points]);
+
+  const insightsMap: EconomicSeriesInsightsMap = useMemo(() => {
+    const map: EconomicSeriesInsightsMap = {};
+    for (const insight of insights) {
+      const slug = insight.itemSlug;
+      const seriesKey = insight.seriesKey;
+      if (!map[slug]) {
+        map[slug] = {};
+      }
+      map[slug]![seriesKey] = insight;
+    }
+    return map;
+  }, [insights]);
 
   const latestTimestamp = useMemo(() => {
     let latest = 0;
@@ -193,6 +227,7 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     isDelayed,
     delayMs,
     expectedIntervalMs,
-    chartState
+    chartState,
+    insightsMap
   };
 }

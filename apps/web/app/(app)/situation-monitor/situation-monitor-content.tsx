@@ -60,6 +60,7 @@ const ResponsiveGridLayout = dynamic(
 
 interface HeadlineRef {
   title: string;
+  titleZh?: string;
   link: string;
   source: string;
 }
@@ -576,21 +577,22 @@ export function SituationMonitorContent() {
       key: "sources",
       render: (value: string[]) => (Array.isArray(value) ? value.slice(0, 4).join(", ") : ""),
     },
-    {
-      title: t("situationMonitor.correlation.sample", { defaultValue: "Sample" }),
-      dataIndex: "headlines",
-      key: "headlines",
-      render: (value: HeadlineRef[]) => {
-        const first = Array.isArray(value) ? value[0] : undefined;
-        const href = first?.link ? safeHttpUrl(first.link) : null;
-        if (!first) return null;
-                return href ? (
-                  <Typography.Link href={href} target="_blank" rel="noreferrer">
-                    {first.title}
-                  </Typography.Link>
-                ) : (
-                  <Typography.Text>{first.title}</Typography.Text>
-                );
+	    {
+	      title: t("situationMonitor.correlation.sample", { defaultValue: "Sample" }),
+	      dataIndex: "headlines",
+	      key: "headlines",
+	      render: (value: HeadlineRef[]) => {
+	        const first = Array.isArray(value) ? value[0] : undefined;
+	        const href = first?.link ? safeHttpUrl(first.link) : null;
+	        if (!first) return null;
+	        const title = translateToZh ? first.titleZh ?? first.title : first.title;
+	        return href ? (
+	          <Typography.Link href={href} target="_blank" rel="noreferrer">
+	            {title}
+	          </Typography.Link>
+	        ) : (
+	          <Typography.Text>{title}</Typography.Text>
+	        );
 		            },
     },
   ];
@@ -660,24 +662,25 @@ export function SituationMonitorContent() {
       key: "sources",
       render: (value: string[]) => (Array.isArray(value) ? value.slice(0, 4).join(", ") : ""),
     },
-    {
-      title: t("situationMonitor.correlation.sample", { defaultValue: "Sample" }),
-      dataIndex: "headlines",
-      key: "headlines",
-      render: (value: HeadlineRef[]) => {
-        const first = Array.isArray(value) ? value[0] : undefined;
-        const href = first?.link ? safeHttpUrl(first.link) : null;
-        if (!first) return null;
-        return href ? (
-          <Typography.Link href={href} target="_blank" rel="noreferrer">
-            {first.title}
-          </Typography.Link>
-        ) : (
-          <Typography.Text>{first.title}</Typography.Text>
-        );
-      },
-    },
-  ];
+	    {
+	      title: t("situationMonitor.correlation.sample", { defaultValue: "Sample" }),
+	      dataIndex: "headlines",
+	      key: "headlines",
+	      render: (value: HeadlineRef[]) => {
+	        const first = Array.isArray(value) ? value[0] : undefined;
+	        const href = first?.link ? safeHttpUrl(first.link) : null;
+	        if (!first) return null;
+	        const title = translateToZh ? first.titleZh ?? first.title : first.title;
+	        return href ? (
+	          <Typography.Link href={href} target="_blank" rel="noreferrer">
+	            {title}
+	          </Typography.Link>
+	        ) : (
+	          <Typography.Text>{title}</Typography.Text>
+	        );
+	      },
+	    },
+	  ];
 
   const narrativeColumns: ColumnsType<NarrativeData> = [
     {
@@ -1803,7 +1806,7 @@ export function SituationMonitorContent() {
           <Space size={8}>
             <Switch checked={translateToZh} onChange={(checked) => setTranslateToZh(checked)} />
             <Typography.Text type="secondary">
-              {t("situationMonitor.translateToZh", { defaultValue: "Translate to 简体中文" })}
+              {t("situationMonitor.translateToZh", { defaultValue: "Translate to Simplified Chinese" })}
             </Typography.Text>
           </Space>
           {translateToZh && data?.translation && !data.translation.applied ? (

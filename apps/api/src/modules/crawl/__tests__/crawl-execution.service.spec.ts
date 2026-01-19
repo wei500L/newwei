@@ -4,6 +4,9 @@ jest.mock("@modular/utils", () => ({
     error: jest.fn(),
     info: jest.fn(),
     debug: jest.fn()
+  }),
+  sanitizeError: (error: unknown) => ({
+    message: error instanceof Error ? error.message : String(error)
   })
 }));
 
@@ -392,9 +395,9 @@ describe("CrawlExecutionService", () => {
       mockCrawlClient.crawl.mockRejectedValue(new Crawl4aiRequestException("Bad request", 400));
       mockNotifications.notify.mockResolvedValue(undefined);
 
-      const promise = service.runTask("task-1", "org-1", "user-1", { attempt: 1, maxAttempts: 3 });
-      await jest.runAllTimersAsync();
-      await expect(promise).rejects.toThrow(Crawl4aiRequestException);
+      await expect(
+        service.runTask("task-1", "org-1", "user-1", { attempt: 1, maxAttempts: 3 })
+      ).rejects.toThrow(Crawl4aiRequestException);
 
       expect(mockNotifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -687,7 +690,7 @@ describe("CrawlExecutionService", () => {
         expect.anything(),
         expect.anything(),
         expect.anything(),
-        expect.anything()
+        undefined
       );
     });
 

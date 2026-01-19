@@ -288,7 +288,7 @@ News Pipeline 默认将 LiteLLM 代理暴露在 `http://localhost:4001`，因此
 
 ## TODO 与扩展点
 
-- [ ] 在简单的撤销机制之外，实现刷新令牌黑名单
+- [x] 在简单的撤销机制之外，实现刷新令牌黑名单
 - [ ] 添加前端组件测试（Playwright 或 Vitest）
 - [ ] 在指标栈接入后，用真实分析替换仪表盘占位叙事卡片
 - [x] 将 BullMQ 任务事件接入 WebSockets，实现 UI 实时更新

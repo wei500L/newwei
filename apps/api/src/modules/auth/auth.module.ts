@@ -11,6 +11,7 @@ import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { AuthCacheSettingsService } from "./auth-cache-settings.service";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
+import { RefreshTokenBlacklistService } from "./refresh-token-blacklist.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 
 
@@ -24,7 +25,18 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     StorageModule
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, AccessTokenBlacklistService, AuthCacheSettingsService],
-  exports: [AuthService, AccessTokenBlacklistService, AuthCacheSettingsService]
+  providers: [
+    AuthService,
+    JwtStrategy,
+    AccessTokenBlacklistService,
+    RefreshTokenBlacklistService,
+    AuthCacheSettingsService
+  ],
+  exports: [
+    AuthService,
+    AccessTokenBlacklistService,
+    RefreshTokenBlacklistService,
+    AuthCacheSettingsService
+  ]
 })
 export class AuthModule {}

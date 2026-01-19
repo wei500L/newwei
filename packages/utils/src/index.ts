@@ -6,3 +6,4 @@ export * from "./crawl";
 export * from "./tracing";
 export * from "./geo";
 export * from "./error-sanitizer";
+export * from "./economic-insights";

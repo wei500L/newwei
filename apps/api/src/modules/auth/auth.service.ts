@@ -16,6 +16,7 @@ import { RateLimitConfigService } from "../system-settings/rate-limit-config.ser
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { AuthCacheSettingsService } from "./auth-cache-settings.service";
 import { UpdateProfileDto } from "./dto/profile.dto";
+import { RefreshTokenBlacklistService } from "./refresh-token-blacklist.service";
 
 export interface JwtPayload {
   sub: string;
@@ -70,6 +71,7 @@ export class AuthService {
     private readonly rateLimitConfig: RateLimitConfigService,
     private readonly cache: CacheService,
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
+    private readonly refreshTokenBlacklist: RefreshTokenBlacklistService,
     private readonly authCacheSettings: AuthCacheSettingsService,
     private readonly orgService: OrgService,
     private readonly storageService: StorageService
@@ -300,6 +302,14 @@ export class AuthService {
     }
   }
 
+  private ttlSecondsUntil(expiresAt: Date, now: Date) {
+    const remainingMs = expiresAt.getTime() - now.getTime();
+    if (!Number.isFinite(remainingMs)) {
+      return 0;
+    }
+    return Math.max(0, Math.ceil(remainingMs / 1000));
+  }
+
   // Refresh tokens follow tokenId[.orgId].secret so we can unambiguously recover each segment.
   private parseRefreshToken(refreshToken: string) {
     const tokenPattern =
@@ -369,9 +379,7 @@ export class AuthService {
 
     const effectiveOrgId = orgId ?? tokenOrgId;
     const secretHash = crypto.createHash("sha256").update(secret).digest("hex");
-    const cacheKey = effectiveOrgId
-      ? `auth:refresh:${tokenId}:${effectiveOrgId}:${secretHash}`
-      : `auth:refresh:${tokenId}:${secretHash}`;
+    const cacheKey = `auth:refresh:${tokenId}:${secretHash}`;
     const graceSeconds = this.env.authRefreshGraceSeconds;
     const lockTtlMs = Math.max(graceSeconds * 1000, 10_000);
 
@@ -380,7 +388,10 @@ export class AuthService {
       graceSeconds,
       async () => {
         const now = new Date();
-        const graceMs = graceSeconds * 1000;
+        const isBlacklisted = await this.refreshTokenBlacklist.has(tokenId);
+        if (isBlacklisted) {
+          throw new UnauthorizedException("Refresh token expired");
+        }
         const record = await this.prisma.refreshToken.findUnique({
           where: { id: tokenId }
         });
@@ -390,10 +401,7 @@ export class AuthService {
         }
 
         if (record.revokedAt) {
-          const revokedAgeMs = now.getTime() - record.revokedAt.getTime();
-          if (revokedAgeMs > graceMs) {
-            throw new UnauthorizedException("Refresh token expired");
-          }
+          throw new UnauthorizedException("Refresh token expired");
         }
 
         const matches = await bcrypt.compare(secret, record.tokenHash);
@@ -465,6 +473,11 @@ export class AuthService {
           }
         });
 
+        const blacklistTtlSeconds = this.ttlSecondsUntil(record.expiresAt, now);
+        if (blacklistTtlSeconds > 0) {
+          await this.refreshTokenBlacklist.add(tokenId, blacklistTtlSeconds);
+        }
+
         const organizations = await this.orgService.listOrganizationOptionsForUser(user.id);
         return {
           user: authUser,
@@ -504,6 +517,14 @@ export class AuthService {
           where: { id: tokenId, userId },
           data: { revokedAt: now }
         });
+
+        const record = await this.prisma.refreshToken.findUnique({ where: { id: tokenId } });
+        if (record && record.userId === userId) {
+          const blacklistTtlSeconds = this.ttlSecondsUntil(record.expiresAt, now);
+          if (blacklistTtlSeconds > 0) {
+            await this.refreshTokenBlacklist.add(tokenId, blacklistTtlSeconds);
+          }
+        }
       }
     }
 

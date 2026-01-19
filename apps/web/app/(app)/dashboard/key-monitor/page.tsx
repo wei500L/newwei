@@ -26,7 +26,8 @@ export default function KeyMonitorPage() {
     latestTimestamp,
     delayMs,
     expectedIntervalMs,
-    chartState
+    chartState,
+    insightsMap
   } = useEconomicData({
     category: "key-monitor",
     pollInterval: 30_000,
@@ -81,6 +82,7 @@ export default function KeyMonitorPage() {
                 title={t("dashboard.keyMonitor.cards.shanghaiVsSp500.title")}
                 description={t("dashboard.keyMonitor.cards.shanghaiVsSp500.description")}
                 seriesMap={seriesMap}
+                insights={insightsMap}
                 meta={chartMeta}
                 series={[
                   {
@@ -99,6 +101,7 @@ export default function KeyMonitorPage() {
                 title={t("dashboard.keyMonitor.cards.fxMid.title")}
                 description={t("dashboard.keyMonitor.cards.fxMid.description")}
                 seriesMap={seriesMap}
+                insights={insightsMap}
                 meta={chartMeta}
                 series={[
                   { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.usd"), field: FX_FIELD_NAMES.USD },
@@ -114,6 +117,7 @@ export default function KeyMonitorPage() {
                 title={t("dashboard.keyMonitor.cards.cnyFx.title")}
                 description={t("dashboard.keyMonitor.cards.cnyFx.description")}
                 seriesMap={seriesMap}
+                insights={insightsMap}
                 meta={chartMeta}
                 series={[
                   { slug: "usd_cny_spot", label: t("dashboard.keyMonitor.series.usdCny") },
