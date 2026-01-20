@@ -284,7 +284,10 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   const url = safeHttpUrl(processed.article.url);
                   const similarity = formatSimilarity(item.similarity);
                   const sourceLabel = processed.article.sourceLabel?.trim() ?? "";
-                  const publishedAt = processed.publishedAt ?? processed.article.crawlAt ?? processed.processedAt;
+                  const publishedLabel = t("items.time.published", { defaultValue: "Published" });
+                  const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
+                  const publishedAt = processed.publishedAt ?? null;
+                  const ingestedAt = processed.article.crawlAt ?? processed.processedAt ?? null;
                   return (
                     <List.Item
                       key={item.id}
@@ -304,7 +307,16 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                             {similarity ? <Tag color="blue">{similarity}</Tag> : null}
                             {sourceLabel ? <Tag color="geekblue">{sourceLabel}</Tag> : null}
                             <Tag>
-                              {formatDateTime(publishedAt, locale, { dateStyle: "medium" })}
+                              {publishedLabel}:{" "}
+                              {publishedAt
+                                ? formatDateTime(publishedAt, locale, { dateStyle: "medium" })
+                                : t("common.notAvailable")}
+                            </Tag>
+                            <Tag>
+                              {ingestedLabel}:{" "}
+                              {ingestedAt
+                                ? formatDateTime(ingestedAt, locale, { dateStyle: "medium" })
+                                : t("common.notAvailable")}
                             </Tag>
                           </Space>
                         }

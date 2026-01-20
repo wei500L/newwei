@@ -552,7 +552,17 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                 })
               }}
               renderItem={(item) => {
-                const timestamp = item.publishedAt ?? item.createdAt;
+                const publishedLabel = t('items.time.published', { defaultValue: 'Published' });
+                const ingestedLabel = t('items.time.ingested', { defaultValue: 'Ingested' });
+                const publishedAt = item.publishedAt ?? null;
+                const ingestedAt = item.createdAt;
+                const formatOptions = {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                } as const;
                 return (
                   <List.Item
                     key={item.id}
@@ -578,13 +588,13 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                       description={
                         <Space direction="vertical" size={0}>
                           <Typography.Text type="secondary">
-                            {formatDateTime(timestamp, locale, {
-                              year: 'numeric',
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
+                            {publishedLabel}:{' '}
+                            {publishedAt
+                              ? formatDateTime(publishedAt, locale, formatOptions)
+                              : t('common.notAvailable')}
+                          </Typography.Text>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {ingestedLabel}: {formatDateTime(ingestedAt, locale, formatOptions)}
                           </Typography.Text>
                           {item.summary ? (
                             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }} ellipsis={{ rows: 2 }}>

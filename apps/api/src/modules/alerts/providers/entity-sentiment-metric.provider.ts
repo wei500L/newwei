@@ -26,6 +26,18 @@ function toMetadata(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function buildSortAtWindowOr(start: Date, end: Date): Record<string, unknown>[] {
+  const range = { $gte: start, $lt: end };
+  return [
+    { sortAt: range },
+    { sortAt: { $exists: false }, ingestedAt: range },
+    { sortAt: null, ingestedAt: range },
+    { sortAt: { $exists: false }, ingestedAt: { $exists: false }, createdAt: range },
+    { sortAt: null, ingestedAt: { $exists: false }, createdAt: range }
+  ];
+}
+
+
 type SentimentWindowStats = {
   total: number;
   negative: number;
@@ -176,7 +188,7 @@ export class EntitySentimentMetricProvider implements MetricProvider {
         $match: {
           orgId,
           status: "completed",
-          createdAt: { $gte: start, $lt: end },
+          $or: buildSortAtWindowOr(start, end),
           "result.sentiment_label": { $exists: true, $ne: null },
           "result.entities": { $elemMatch: matchEntities }
         }
@@ -250,6 +262,7 @@ export class EntitySentimentMetricProvider implements MetricProvider {
       processedId: string;
       itemMetaId: string;
       createdAt: string;
+      ingestedAt: string | null;
       publishedAt: string | null;
       title: string | null;
       source: string | null;
@@ -269,13 +282,14 @@ export class EntitySentimentMetricProvider implements MetricProvider {
       {
         orgId: input.orgId,
         status: "completed",
-        createdAt: { $gte: input.start, $lt: input.end },
+        $or: buildSortAtWindowOr(input.start, input.end),
         "result.sentiment_label": { $regex: /^negative$/i },
         "result.entities": { $elemMatch: entityMatch }
       },
       {
         itemMetaId: 1,
         createdAt: 1,
+        ingestedAt: 1,
         "result.title": 1,
         "result.summary": 1,
         "result.published_at": 1,
@@ -283,19 +297,26 @@ export class EntitySentimentMetricProvider implements MetricProvider {
         "result.sentiment_label": 1
       }
     )
-      .sort({ createdAt: -1 })
+      .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
       .limit(Math.max(0, input.limit))
       .lean();
 
-    return (records ?? []).map((doc: any) => ({
-      processedId: typeof doc?._id?.toString === "function" ? doc._id.toString() : String(doc?._id ?? ""),
-      itemMetaId: typeof doc?.itemMetaId === "string" ? doc.itemMetaId : "",
-      createdAt: doc?.createdAt instanceof Date ? doc.createdAt.toISOString() : String(doc?.createdAt ?? ""),
-      publishedAt: typeof doc?.result?.published_at === "string" ? doc.result.published_at : null,
-      title: typeof doc?.result?.title === "string" ? doc.result.title : null,
-      source: typeof doc?.result?.source === "string" ? doc.result.source : null,
-      sentimentLabel: typeof doc?.result?.sentiment_label === "string" ? doc.result.sentiment_label : null,
-      summary: typeof doc?.result?.summary === "string" ? doc.result.summary : null
-    }));
+    return (records ?? []).map((doc: any) => {
+      const ingestedAt = doc?.ingestedAt instanceof Date ? doc.ingestedAt.toISOString() : null;
+      const processedAt = doc?.createdAt instanceof Date ? doc.createdAt.toISOString() : null;
+      const createdAt = ingestedAt ?? processedAt ?? String(doc?.createdAt ?? "");
+
+      return {
+        processedId: typeof doc?._id?.toString === "function" ? doc._id.toString() : String(doc?._id ?? ""),
+        itemMetaId: typeof doc?.itemMetaId === "string" ? doc.itemMetaId : "",
+        createdAt,
+        ingestedAt,
+        publishedAt: typeof doc?.result?.published_at === "string" ? doc.result.published_at : null,
+        title: typeof doc?.result?.title === "string" ? doc.result.title : null,
+        source: typeof doc?.result?.source === "string" ? doc.result.source : null,
+        sentimentLabel: typeof doc?.result?.sentiment_label === "string" ? doc.result.sentiment_label : null,
+        summary: typeof doc?.result?.summary === "string" ? doc.result.summary : null
+      };
+    });
   }
 }

@@ -269,12 +269,18 @@ export class SituationMonitorService {
       orgId: options.orgId,
       status: "completed",
       duplicateOf: null,
-      createdAt: { $gte: options.since },
+      $or: [
+        { sortAt: { $gte: options.since } },
+        { sortAt: { $exists: false }, ingestedAt: { $gte: options.since } },
+        { sortAt: null, ingestedAt: { $gte: options.since } },
+        { sortAt: { $exists: false }, ingestedAt: { $exists: false }, createdAt: { $gte: options.since } },
+        { sortAt: null, ingestedAt: { $exists: false }, createdAt: { $gte: options.since } }
+      ],
       ...(options.scope === "tagged" ? { tags: SOURCE_TAG } : {}),
     };
 
     const processed = await ProcessedItemModel.find(processedMatch)
-      .sort({ sortAt: -1, createdAt: -1 })
+      .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
       .limit(maxCandidates)
       .select({
         _id: 1,
@@ -282,6 +288,7 @@ export class SituationMonitorService {
         itemMetaId: 1,
         tags: 1,
         sortAt: 1,
+        ingestedAt: 1,
         createdAt: 1,
         "result.title": 1,
         "result.subtitle": 1,
@@ -384,8 +391,9 @@ export class SituationMonitorService {
       }
 
       const sortAt = this.toDate(item.sortAt);
+      const ingestedAt = this.toDate((item as { ingestedAt?: unknown }).ingestedAt);
       const createdAt = this.toDate(item.createdAt);
-      const timestamp = (sortAt ?? createdAt ?? new Date()).getTime();
+      const timestamp = (sortAt ?? ingestedAt ?? createdAt ?? new Date()).getTime();
 
       const alertKeyword = this.findAlertKeyword(`${trimmedTitle} ${summary ?? ""}`.trim());
 

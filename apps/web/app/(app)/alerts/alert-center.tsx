@@ -423,19 +423,24 @@ const EntitySentimentEvidence = ({
               const title = toStringValue(record?.title) ?? t("common.notAvailable");
               const source = toStringValue(record?.source);
               const summary = toStringValue(record?.summary);
-              const createdAt = toStringValue(record?.createdAt);
               const publishedAt = toStringValue(record?.publishedAt);
-              const timeLabel = publishedAt || createdAt;
-              const timeText = timeLabel
-                ? formatDateTime(timeLabel, locale, {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    timeZoneName: "short"
-                  })
-                : "";
+              const ingestedAt = toStringValue(record?.ingestedAt) ?? toStringValue(record?.createdAt);
+              const publishedLabel = t("items.time.published", { defaultValue: "Published" });
+              const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
+              const formatOptions = {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                timeZoneName: "short"
+              } as const;
+              const publishedText = publishedAt
+                ? formatDateTime(publishedAt, locale, formatOptions)
+                : t("common.notAvailable");
+              const ingestedText = ingestedAt
+                ? formatDateTime(ingestedAt, locale, formatOptions)
+                : t("common.notAvailable");
 
               return (
                 <List.Item key={`${itemMetaId ?? "item"}-${index}`}>
@@ -445,7 +450,14 @@ const EntitySentimentEvidence = ({
                     </Typography.Text>
                     <Space size="small" wrap>
                       {source ? <Tag>{source}</Tag> : null}
-                      {timeText ? <Typography.Text type="secondary">{timeText}</Typography.Text> : null}
+                      <Space direction="vertical" size={0}>
+                        <Typography.Text type="secondary">
+                          {publishedLabel}: {publishedText}
+                        </Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {ingestedLabel}: {ingestedText}
+                        </Typography.Text>
+                      </Space>
                     </Space>
                     {summary ? <Typography.Text type="secondary">{summary}</Typography.Text> : null}
                   </Space>

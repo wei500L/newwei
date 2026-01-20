@@ -17,7 +17,7 @@ describe("EntitySentimentMetricProvider.fetch", () => {
     jest.clearAllMocks();
   });
 
-  it("includes evidence items when negative sentiment increases", async () => {
+  it("uses sortAt (publishedAt-priority) windowing and includes evidence items with both publishedAt and ingestedAt", async () => {
     aggregateMock
       .mockReturnValueOnce({
         allowDiskUse: jest.fn().mockResolvedValue([
@@ -46,6 +46,7 @@ describe("EntitySentimentMetricProvider.fetch", () => {
       {
         _id: { toString: () => "p1" },
         itemMetaId: "item-1",
+        ingestedAt: new Date("2026-01-16T11:00:00.000Z"),
         createdAt: new Date("2026-01-16T12:00:00.000Z"),
         result: {
           title: "Bad news",
@@ -73,11 +74,26 @@ describe("EntitySentimentMetricProvider.fetch", () => {
       metadata: { includeEvidenceItems: 2, baselineWindowMin: 60, minDocsInWindow: 5 }
     });
 
+    expect(aggregateMock).toHaveBeenCalledTimes(2);
+    const pipeline = aggregateMock.mock.calls[0]?.[0] as any[];
+    expect(pipeline?.[0]?.$match?.createdAt).toBeUndefined();
+    expect(pipeline?.[0]?.$match?.$or).toEqual(
+      expect.arrayContaining([expect.objectContaining({ sortAt: expect.any(Object) })])
+    );
+
     expect(result.latest).not.toBeNull();
     const context = result.context as any;
     expect(Array.isArray(context.evidence)).toBe(true);
     expect(context.evidence[0].processedId).toBe("p1");
+    expect(context.evidence[0].publishedAt).toBe("2026-01-16");
+    expect(context.evidence[0].ingestedAt).toBe("2026-01-16T11:00:00.000Z");
+    expect(context.evidence[0].createdAt).toBe("2026-01-16T11:00:00.000Z");
+
     expect(findMock).toHaveBeenCalledTimes(1);
+    const findQuery = findMock.mock.calls[0]?.[0] as any;
+    expect(findQuery?.createdAt).toBeUndefined();
+    expect(findQuery?.$or).toEqual(
+      expect.arrayContaining([expect.objectContaining({ sortAt: expect.any(Object) })])
+    );
   });
 });
-

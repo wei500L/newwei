@@ -272,18 +272,32 @@ export class DashboardChartsService {
       }),
       this.prisma.processedArticle.findMany({
         where: {
+          status: ProcessedArticleStatus.completed,
           location: { not: null },
-          article: {
-            orgId,
-            crawlAt: {
-              gte: range.start,
-              lte: range.end
+          OR: [
+            {
+              publishedAt: {
+                gte: range.start,
+                lte: range.end
+              },
+              article: { orgId }
+            },
+            {
+              publishedAt: null,
+              article: {
+                orgId,
+                crawlAt: {
+                  gte: range.start,
+                  lte: range.end
+                }
+              }
             }
-          }
+          ]
         },
         select: {
           location: true,
           processedAt: true,
+          publishedAt: true,
           article: {
             select: {
               crawlAt: true
@@ -360,7 +374,7 @@ export class DashboardChartsService {
         latestAt: undefined
       };
       entry.newsCount += 1;
-      const latestAt = record.article.crawlAt ?? record.processedAt;
+      const latestAt = record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
       entry.latestAt =
         !entry.latestAt || latestAt > entry.latestAt ? latestAt : entry.latestAt;
       signals.set(resolvedCode, entry);
@@ -415,13 +429,25 @@ export class DashboardChartsService {
       where: {
         status: ProcessedArticleStatus.completed,
         location: { not: null },
-        article: {
-          orgId,
-          crawlAt: {
-            gte: range.start,
-            lte: range.end
+        OR: [
+          {
+            publishedAt: {
+              gte: range.start,
+              lte: range.end
+            },
+            article: { orgId }
+          },
+          {
+            publishedAt: null,
+            article: {
+              orgId,
+              crawlAt: {
+                gte: range.start,
+                lte: range.end
+              }
+            }
           }
-        }
+        ]
       },
       select: {
         id: true,
@@ -611,7 +637,7 @@ export class DashboardChartsService {
       const title =
         (record.title ?? record.article.titleGuess ?? record.article.url ?? "").trim() ||
         location;
-      const latestAt = record.article.crawlAt ?? record.processedAt ?? record.publishedAt ?? undefined;
+      const latestAt = record.publishedAt ?? record.article.crawlAt ?? record.processedAt ?? undefined;
 
       markers.push({
         id: record.id,
