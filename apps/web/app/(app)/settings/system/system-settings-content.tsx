@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { EmailSettingsPanel } from "@/components/settings/email-settings-panel";
 import { EntityImpactGraphSettingsPanel } from "@/components/settings/entity-impact-graph-settings-panel";
 import { GeoNominatimSettingsPanel } from "@/components/settings/geo-nominatim-settings-panel";
+import { KnowledgeGraphReviewPanel } from "@/components/settings/knowledge-graph-review-panel";
 import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-graph-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { ModelServiceSettingsPanel } from "@/components/settings/model-service-settings-panel";
@@ -725,46 +726,68 @@ export function SystemSettingsContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
-  const canManageSettings = session?.permissions?.includes("settings.manage") ?? false;
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canManageSettings = permissions.includes("settings.manage");
+  const canReviewKnowledgeGraph = permissions.includes("knowledgegraph.review");
+  const canViewSystemSettings = canManageSettings || canReviewKnowledgeGraph;
 
   const items = useMemo(
-    () => [
-      { key: "rateLimits", label: t("settings.tabs.rateLimits"), children: <RateLimitSettingsPanel /> },
-      {
-        key: "rateLimitPolicies",
-        label: t("settings.tabs.rateLimitPolicies"),
-        children: <RateLimitPoliciesPanel />
-      },
-      { key: "llmGateway", label: t("settings.tabs.llmGateway"), children: <LlmGatewaySettingsPanel /> },
-      { key: "vectorService", label: t("systemSettings.tabs.vectorService"), children: <VectorServiceSettingsPanel /> },
-      { key: "modelService", label: t("systemSettings.tabs.modelService"), children: <ModelServiceSettingsPanel /> },
-      { key: "geoNominatim", label: t("systemSettings.tabs.geoNominatim"), children: <GeoNominatimSettingsPanel /> },
-      { key: "email", label: t("systemSettings.tabs.email"), children: <EmailSettingsPanel /> },
-      { key: "auditLog", label: t("settings.tabs.auditLog"), children: <AuditLogRetentionPanel /> },
-      { key: "authCache", label: t("settings.tabs.authCache"), children: <AuthCacheSettingsPanel /> },
-      { key: "crawlClient", label: t("settings.tabs.crawlClient"), children: <CrawlClientSettingsPanel /> },
-      {
-        key: "entityImpactGraph",
-        label: t("settings.tabs.entityImpactGraph"),
-        children: <EntityImpactGraphSettingsPanel />
-      },
-      { key: "knowledgeGraph", label: t("settings.tabs.knowledgeGraph"), children: <KnowledgeGraphSettingsPanel /> },
-      { key: "newsEvents", label: t("settings.tabs.newsEvents"), children: <NewsEventsSettingsPanel /> },
-      { key: "newsIndicator", label: t("settings.tabs.newsIndicator"), children: <NewsIndicatorSettingsPanel /> },
-      { key: "newsPrompts", label: t("settings.tabs.newsPrompts"), children: <NewsPromptSettingsPanel /> },
-      { key: "akshare", label: t("systemSettings.tabs.akshare"), children: <AkshareGatewaySettingsPanel /> }
-    ],
-    [t],
+    () => {
+      const allItems = [
+        { key: "rateLimits", label: t("settings.tabs.rateLimits"), children: <RateLimitSettingsPanel /> },
+        {
+          key: "rateLimitPolicies",
+          label: t("settings.tabs.rateLimitPolicies"),
+          children: <RateLimitPoliciesPanel />
+        },
+        { key: "llmGateway", label: t("settings.tabs.llmGateway"), children: <LlmGatewaySettingsPanel /> },
+        { key: "vectorService", label: t("systemSettings.tabs.vectorService"), children: <VectorServiceSettingsPanel /> },
+        { key: "modelService", label: t("systemSettings.tabs.modelService"), children: <ModelServiceSettingsPanel /> },
+        { key: "geoNominatim", label: t("systemSettings.tabs.geoNominatim"), children: <GeoNominatimSettingsPanel /> },
+        { key: "email", label: t("systemSettings.tabs.email"), children: <EmailSettingsPanel /> },
+        { key: "auditLog", label: t("settings.tabs.auditLog"), children: <AuditLogRetentionPanel /> },
+        { key: "authCache", label: t("settings.tabs.authCache"), children: <AuthCacheSettingsPanel /> },
+        { key: "crawlClient", label: t("settings.tabs.crawlClient"), children: <CrawlClientSettingsPanel /> },
+        {
+          key: "entityImpactGraph",
+          label: t("settings.tabs.entityImpactGraph"),
+          children: <EntityImpactGraphSettingsPanel />
+        },
+        { key: "knowledgeGraph", label: t("settings.tabs.knowledgeGraph"), children: <KnowledgeGraphSettingsPanel /> },
+        {
+          key: "knowledgeGraphReview",
+          label: t("settings.tabs.knowledgeGraphReview"),
+          children: <KnowledgeGraphReviewPanel />
+        },
+        { key: "newsEvents", label: t("settings.tabs.newsEvents"), children: <NewsEventsSettingsPanel /> },
+        { key: "newsIndicator", label: t("settings.tabs.newsIndicator"), children: <NewsIndicatorSettingsPanel /> },
+        { key: "newsPrompts", label: t("settings.tabs.newsPrompts"), children: <NewsPromptSettingsPanel /> },
+        { key: "akshare", label: t("systemSettings.tabs.akshare"), children: <AkshareGatewaySettingsPanel /> }
+      ];
+
+      if (canManageSettings) {
+        return allItems;
+      }
+
+      if (canReviewKnowledgeGraph) {
+        return allItems.filter((item) => item.key === "knowledgeGraphReview");
+      }
+
+      return [];
+    },
+    [canManageSettings, canReviewKnowledgeGraph, t]
   );
+
+  const defaultTabKey = items[0]?.key ?? "rateLimits";
 
   const activeKey = useMemo(() => {
     const candidate = searchParams.get("tab");
     if (!candidate) {
-      return "rateLimits";
+      return defaultTabKey;
     }
     const valid = new Set(items.map((item) => item.key));
-    return valid.has(candidate) ? candidate : "rateLimits";
-  }, [items, searchParams]);
+    return valid.has(candidate) ? candidate : defaultTabKey;
+  }, [defaultTabKey, items, searchParams]);
 
   if (status === "loading") {
     return (
@@ -774,7 +797,7 @@ export function SystemSettingsContent() {
     );
   }
 
-  if (!canManageSettings) {
+  if (!canViewSystemSettings) {
     return (
       <Card className="content-card" title={t("systemSettings.title")}>
         <Alert
@@ -788,7 +811,7 @@ export function SystemSettingsContent() {
 
   const handleTabChange = (key: string) => {
     const next = new URLSearchParams(searchParams.toString());
-    if (key === "rateLimits") {
+    if (key === defaultTabKey) {
       next.delete("tab");
     } else {
       next.set("tab", key);
@@ -798,9 +821,12 @@ export function SystemSettingsContent() {
   };
 
   return (
-    <Card className="content-card" title={t("systemSettings.title")}>
+    <Card
+      className="content-card"
+      title={canManageSettings ? t("systemSettings.title") : t("settings.tabs.knowledgeGraphReview")}
+    >
       <Typography.Paragraph type="secondary">
-        {t("systemSettings.description")}
+        {canManageSettings ? t("systemSettings.description") : t("settings.knowledgeGraphReview.description")}
       </Typography.Paragraph>
       <Tabs activeKey={activeKey} onChange={handleTabChange} items={items} />
     </Card>

@@ -12,6 +12,7 @@ export const CORE_PERMISSIONS = [
   "items.write",
   "dashboards.read",
   "dashboards.write",
+  "knowledgegraph.review",
   "alerts.read",
   "alerts.manage",
   "analysis.read",

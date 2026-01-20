@@ -1,5 +1,5 @@
 import { createLogger } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import {
   KnowledgeEntityType,
   KnowledgeRelationType,
@@ -11,6 +11,8 @@ import {
 
 import { toPrismaJsonValueOrUndefined } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
+
+import { KnowledgeGraphEntityDisambiguationService } from "./knowledge-graph-entity-disambiguation.service";
 
 interface KgEntityRef {
   name: string;
@@ -33,6 +35,7 @@ interface KgRelationInput {
   confidence: number;
   properties?: Record<string, unknown>;
   evidence?: string | null;
+  validation?: Record<string, unknown>;
 }
 
 export interface SeedRelationInput {
@@ -59,6 +62,9 @@ export interface LinkArticleEntitiesInput {
   maxEntitiesPerArticle: number;
   minConfidence: number;
   createMissingEntities?: boolean;
+  disambiguationEnabled?: boolean;
+  disambiguationContextText?: string;
+  disambiguationMaxCandidates?: number;
 }
 
 export interface IngestSeedRelationsInput {
@@ -86,7 +92,10 @@ export interface KnowledgeGraphSubgraphResult {
 export class KnowledgeGraphService {
   private readonly logger = createLogger({ name: "knowledge-graph" });
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly disambiguation?: KnowledgeGraphEntityDisambiguationService
+  ) {}
 
   async resolveEntity(orgId: string, name: string, type?: KnowledgeEntityType): Promise<KnowledgeEntity | null> {
     return this.resolveEntityByName(orgId, name, type);
@@ -138,7 +147,8 @@ export class KnowledgeGraphService {
           articleId: input.articleId,
           extractorVersion: input.extractorVersion ?? null,
           confidence: relation.confidence,
-          evidence: relation.evidence ?? null
+          evidence: relation.evidence ?? null,
+          validation: relation.validation
         });
 
         processed += 1;
@@ -159,6 +169,15 @@ export class KnowledgeGraphService {
 
     const now = new Date();
     const createThreshold = Math.max(input.minConfidence, 0.85);
+    const disambiguationThreshold = createThreshold;
+    const disambiguationContext =
+      typeof input.disambiguationContextText === "string" ? input.disambiguationContextText.trim() : "";
+    const shouldDisambiguate =
+      Boolean(input.disambiguationEnabled) && Boolean(this.disambiguation) && disambiguationContext.length > 0;
+    const maxCandidates = Math.min(
+      20,
+      Math.max(2, Math.round(typeof input.disambiguationMaxCandidates === "number" ? input.disambiguationMaxCandidates : 5))
+    );
 
     const linksUpserted = await this.prisma.runInTransaction(async (tx) => {
       const linkRows: Array<{
@@ -173,8 +192,33 @@ export class KnowledgeGraphService {
 
       for (const mention of entities) {
         const resolvedType = this.normalizeEntityType(mention.type);
-        const resolved = await this.resolveEntityByName(input.orgId, mention.name, resolvedType);
-        let entity = resolved;
+        const candidates = await this.listEntityCandidatesByName(input.orgId, mention.name, resolvedType);
+        let entity = candidates[0] ?? null;
+
+        if (
+          entity &&
+          shouldDisambiguate &&
+          mention.confidence >= disambiguationThreshold &&
+          candidates.length > 1
+        ) {
+          const picked = await this.disambiguation?.chooseEntityId({
+            orgId: input.orgId,
+            mention: { name: mention.name, type: resolvedType },
+            contextText: disambiguationContext.slice(0, 4_000),
+            candidates: candidates.slice(0, maxCandidates).map((candidate) => ({
+              id: candidate.id,
+              name: candidate.canonicalName,
+              type: candidate.type
+            }))
+          });
+          if (picked?.entityId) {
+            const match = candidates.find((candidate) => candidate.id === picked.entityId);
+            if (match) {
+              entity = match;
+            }
+          }
+        }
+
         if (!entity && input.createMissingEntities) {
           const shouldCreate =
             mention.confidence >= createThreshold &&
@@ -330,9 +374,14 @@ export class KnowledgeGraphService {
   }
 
   private async resolveEntityByName(orgId: string, name: string, type?: KnowledgeEntityType) {
+    const candidates = await this.listEntityCandidatesByName(orgId, name, type);
+    return candidates[0] ?? null;
+  }
+
+  private async listEntityCandidatesByName(orgId: string, name: string, type?: KnowledgeEntityType) {
     const normalizedAliases = this.normalizeSearchKeys(name);
     if (normalizedAliases.length === 0) {
-      return null;
+      return [];
     }
 
     const candidates = await this.prisma.knowledgeEntityAlias.findMany({
@@ -354,7 +403,7 @@ export class KnowledgeGraphService {
       .filter((candidate) => (type ? candidate.entity.type === type : true));
 
     if (entities.length === 0) {
-      return null;
+      return [];
     }
 
     const preference: KnowledgeEntityType[] = [
@@ -403,7 +452,7 @@ export class KnowledgeGraphService {
       return (leftRank === -1 ? preference.length : leftRank) - (rightRank === -1 ? preference.length : rightRank);
     });
 
-    return entities[0]?.entity ?? null;
+    return entities.map((candidate) => candidate.entity);
   }
 
   private parseEntities(raw: unknown): EntityMention[] {
@@ -439,6 +488,16 @@ export class KnowledgeGraphService {
   }
 
   private parseRelations(value: unknown): KgRelationInput[] {
+    if (value === null || value === undefined) {
+      return [];
+    }
+    if (typeof value === "string") {
+      try {
+        return this.parseRelations(JSON.parse(value));
+      } catch {
+        return [];
+      }
+    }
     if (!Array.isArray(value)) {
       return [];
     }
@@ -456,6 +515,7 @@ export class KnowledgeGraphService {
       const confidence = this.toConfidence(record.confidence);
       const properties = this.toOptionalObject(record.properties);
       const evidence = typeof record.evidence === "string" ? record.evidence.trim() : null;
+      const validation = this.toOptionalObject(record.validation);
 
       if (!subject || !object || !predicate || confidence === null) {
         continue;
@@ -467,7 +527,8 @@ export class KnowledgeGraphService {
         predicate,
         confidence,
         properties,
-        evidence: evidence && evidence.length > 0 ? evidence : null
+        evidence: evidence && evidence.length > 0 ? evidence : null,
+        validation
       });
     }
 
@@ -853,32 +914,61 @@ export class KnowledgeGraphService {
       extractorVersion: string | null;
       confidence: number;
       evidence: string | null;
+      validation?: Record<string, unknown>;
     }
   ) {
     const evidencePayload: Record<string, unknown> = {};
     if (input.evidence) {
       evidencePayload.quote = input.evidence;
     }
+    if (input.validation && Object.keys(input.validation).length > 0) {
+      evidencePayload.validation = input.validation;
+    }
 
-    await tx.knowledgeEdgeEvidence.upsert({
-      where: {
-        edgeId_articleId: {
-          edgeId: input.edgeId,
-          articleId: input.articleId
-        }
-      },
-      update: {
-        extractorVersion: input.extractorVersion,
-        confidence: input.confidence,
-        evidence: toPrismaJsonValueOrUndefined(Object.keys(evidencePayload).length ? evidencePayload : undefined)
-      },
-      create: {
-        orgId: input.orgId,
+    const where = {
+      edgeId_articleId: {
         edgeId: input.edgeId,
-        articleId: input.articleId,
+        articleId: input.articleId
+      }
+    };
+
+    const existing = await tx.knowledgeEdgeEvidence.findUnique({
+      where,
+      select: { id: true, evidence: true }
+    });
+
+    const existingEvidence =
+      existing?.evidence && typeof existing.evidence === "object" && !Array.isArray(existing.evidence)
+        ? (existing.evidence as Record<string, unknown>)
+        : undefined;
+
+    const mergedEvidence =
+      existingEvidence || Object.keys(evidencePayload).length > 0
+        ? { ...(existingEvidence ?? {}), ...evidencePayload }
+        : undefined;
+
+    const evidenceValue = toPrismaJsonValueOrUndefined(mergedEvidence);
+
+    if (!existing) {
+      await tx.knowledgeEdgeEvidence.create({
+        data: {
+          orgId: input.orgId,
+          edgeId: input.edgeId,
+          articleId: input.articleId,
+          extractorVersion: input.extractorVersion,
+          confidence: input.confidence,
+          evidence: evidenceValue
+        }
+      });
+      return;
+    }
+
+    await tx.knowledgeEdgeEvidence.update({
+      where: { id: existing.id },
+      data: {
         extractorVersion: input.extractorVersion,
         confidence: input.confidence,
-        evidence: toPrismaJsonValueOrUndefined(Object.keys(evidencePayload).length ? evidencePayload : undefined)
+        evidence: evidenceValue
       }
     });
   }

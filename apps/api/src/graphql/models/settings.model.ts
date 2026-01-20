@@ -113,6 +113,33 @@ export class KnowledgeGraphSettingsModel {
   @Field(() => Int)
   maxRelationsPerArticle!: number;
 
+  @Field(() => Float)
+  minEdgeConfidence!: number;
+
+  @Field(() => Boolean)
+  dynamicEdgeConfidenceEnabled!: boolean;
+
+  @Field(() => Float)
+  dynamicEdgeConfidenceQuantile!: number;
+
+  @Field(() => Boolean)
+  multiModelValidationEnabled!: boolean;
+
+  @Field(() => [String])
+  multiModelValidationModels!: string[];
+
+  @Field(() => Int)
+  multiModelValidationModelCount!: number;
+
+  @Field(() => Int)
+  multiModelValidationMaxRelationsPerArticle!: number;
+
+  @Field(() => Boolean)
+  entityDisambiguationEnabled!: boolean;
+
+  @Field(() => Int)
+  entityDisambiguationMaxCandidates!: number;
+
   @Field(() => Int)
   cacheTtlSeconds!: number;
 }

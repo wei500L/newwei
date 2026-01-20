@@ -112,6 +112,14 @@ export class LiteLlmService {
     return cfg.embeddingModel;
   }
 
+  async getCompletionModels(): Promise<string[]> {
+    const cfg = await this.resolveConfig();
+    const models = [cfg.model, ...cfg.fallbackModels].filter(
+      (model): model is string => typeof model === "string" && model.trim().length > 0,
+    );
+    return Array.from(new Set(models.map((model) => model.trim())));
+  }
+
   async acompletion(
     params: LiteLlmCompletionParams,
   ): Promise<LiteLlmCompletionResponse> {

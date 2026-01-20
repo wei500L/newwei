@@ -24,6 +24,7 @@ import { EntityImpactGraphResolver } from "../src/graphql/resolvers/entity-impac
 import { ItemsResolver } from "../src/graphql/resolvers/items.resolver";
 import { KnowledgeGraphImpactResolver } from "../src/graphql/resolvers/knowledge-graph-impact.resolver";
 import { KnowledgeGraphResolver } from "../src/graphql/resolvers/knowledge-graph.resolver";
+import { KnowledgeGraphReviewResolver } from "../src/graphql/resolvers/knowledge-graph-review.resolver";
 import { NewsEventsResolver } from "../src/graphql/resolvers/news-events.resolver";
 import { NewsIndicatorResolver } from "../src/graphql/resolvers/news-indicator.resolver";
 import { NotificationResolver } from "../src/graphql/resolvers/notification.resolver";
@@ -47,6 +48,7 @@ const resolvers = [
   EntityImpactGraphResolver,
   KnowledgeGraphResolver,
   KnowledgeGraphImpactResolver,
+  KnowledgeGraphReviewResolver,
   AlertsResolver,
   AnalysisResolver,
   AssistantResolver,
@@ -92,4 +94,3 @@ async function main() {
 }
 
 void main();
-

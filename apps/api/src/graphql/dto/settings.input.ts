@@ -1,5 +1,5 @@
 import { Field, Float, InputType, Int } from "@nestjs/graphql";
-import { ArrayMaxSize, ArrayMinSize, IsBoolean, IsIn, Max, MaxLength, Min } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsBoolean, IsIn, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 @InputType()
 export class RateLimitBucketInput {
@@ -161,6 +161,57 @@ export class UpdateKnowledgeGraphSettingsInput {
   @Min(0)
   @Max(100)
   maxRelationsPerArticle!: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  minEdgeConfidence?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  dynamicEdgeConfidenceEnabled?: boolean;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  dynamicEdgeConfidenceQuantile?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  multiModelValidationEnabled?: boolean;
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  multiModelValidationModels?: string[];
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(2)
+  @Max(3)
+  multiModelValidationModelCount?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(20)
+  multiModelValidationMaxRelationsPerArticle?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  entityDisambiguationEnabled?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(2)
+  @Max(20)
+  entityDisambiguationMaxCandidates?: number;
 
   @Field(() => Int)
   @Min(0)

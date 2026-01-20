@@ -1043,6 +1043,17 @@ export type KnowledgeGraphEdgeModel = {
   weight: Scalars['Float']['output'];
 };
 
+export type KnowledgeGraphEvidenceReviewItemModel = {
+  __typename?: 'KnowledgeGraphEvidenceReviewItemModel';
+  article: KnowledgeGraphReviewArticleModel;
+  confidence?: Maybe<Scalars['Float']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  edge: KnowledgeGraphReviewEdgeModel;
+  evidence?: Maybe<Scalars['JSON']['output']>;
+  extractorVersion?: Maybe<Scalars['String']['output']>;
+  id: Scalars['String']['output'];
+};
+
 export type KnowledgeGraphExplainChainModel = {
   __typename?: 'KnowledgeGraphExplainChainModel';
   edges: Array<KnowledgeGraphEdgeModel>;
@@ -1090,13 +1101,43 @@ export type KnowledgeGraphNodeModel = {
   type: Scalars['String']['output'];
 };
 
+export type KnowledgeGraphReviewArticleModel = {
+  __typename?: 'KnowledgeGraphReviewArticleModel';
+  crawlAt: Scalars['DateTime']['output'];
+  id: Scalars['String']['output'];
+  language?: Maybe<Scalars['String']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+  url: Scalars['String']['output'];
+};
+
+export type KnowledgeGraphReviewEdgeModel = {
+  __typename?: 'KnowledgeGraphReviewEdgeModel';
+  confidence: Scalars['Float']['output'];
+  fromEntity: KnowledgeGraphNodeModel;
+  id: Scalars['String']['output'];
+  properties?: Maybe<Scalars['JSON']['output']>;
+  toEntity: KnowledgeGraphNodeModel;
+  type: Scalars['String']['output'];
+  weight: Scalars['Float']['output'];
+};
+
 export type KnowledgeGraphSettingsModel = {
   __typename?: 'KnowledgeGraphSettingsModel';
   cacheTtlSeconds: Scalars['Int']['output'];
+  dynamicEdgeConfidenceEnabled: Scalars['Boolean']['output'];
+  dynamicEdgeConfidenceQuantile: Scalars['Float']['output'];
   enabled: Scalars['Boolean']['output'];
+  entityDisambiguationEnabled: Scalars['Boolean']['output'];
+  entityDisambiguationMaxCandidates: Scalars['Int']['output'];
   ingestionEnabled: Scalars['Boolean']['output'];
   maxBatchSize: Scalars['Int']['output'];
   maxRelationsPerArticle: Scalars['Int']['output'];
+  minEdgeConfidence: Scalars['Float']['output'];
+  multiModelValidationEnabled: Scalars['Boolean']['output'];
+  multiModelValidationMaxRelationsPerArticle: Scalars['Int']['output'];
+  multiModelValidationModelCount: Scalars['Int']['output'];
+  multiModelValidationModels: Array<Scalars['String']['output']>;
   seedIngestionEnabled: Scalars['Boolean']['output'];
   seedSwIndustriesPerRun: Scalars['Int']['output'];
 };
@@ -1145,6 +1186,7 @@ export type Mutation = {
   requestAssistantReport: AssistantRunModel;
   requestCorrelationAnalysis: AnalysisResultModel;
   retryCrawlTask: CrawlTaskModel;
+  reviewKnowledgeGraphEvidence?: Maybe<KnowledgeGraphEvidenceReviewItemModel>;
   setOrgActive: OrgModel;
   triggerAlertRule: Scalars['Boolean']['output'];
   triggerDataFetch: Scalars['Boolean']['output'];
@@ -1259,6 +1301,11 @@ export type MutationRequestCorrelationAnalysisArgs = {
 
 export type MutationRetryCrawlTaskArgs = {
   id: Scalars['String']['input'];
+};
+
+
+export type MutationReviewKnowledgeGraphEvidenceArgs = {
+  input: ReviewKnowledgeGraphEvidenceInput;
 };
 
 
@@ -1699,6 +1746,7 @@ export type Query = {
   item?: Maybe<ItemModel>;
   itemFacets: ItemFacets;
   items: ItemConnection;
+  knowledgeGraphEvidenceReviewQueue: Array<KnowledgeGraphEvidenceReviewItemModel>;
   knowledgeGraphSettings: KnowledgeGraphSettingsModel;
   me: UserModel;
   memberships: Array<MembershipModel>;
@@ -1866,6 +1914,13 @@ export type QueryItemsArgs = {
 };
 
 
+export type QueryKnowledgeGraphEvidenceReviewQueueArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  maxConfidence?: InputMaybe<Scalars['Float']['input']>;
+  onlyUnreviewed?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
 export type QueryNewsEventArgs = {
   id: Scalars['String']['input'];
   itemsLimit?: InputMaybe<Scalars['Int']['input']>;
@@ -1994,6 +2049,13 @@ export type RawItemPreviewModelGraph = {
   ticker?: Maybe<Scalars['String']['output']>;
   /** Original content URL */
   url?: Maybe<Scalars['String']['output']>;
+};
+
+export type ReviewKnowledgeGraphEvidenceInput = {
+  correctedRelation?: InputMaybe<Scalars['JSON']['input']>;
+  evidenceId: Scalars['String']['input'];
+  note?: InputMaybe<Scalars['String']['input']>;
+  status: Scalars['String']['input'];
 };
 
 export type RoleModel = {
@@ -2125,10 +2187,19 @@ export type UpdateItemInput = {
 
 export type UpdateKnowledgeGraphSettingsInput = {
   cacheTtlSeconds: Scalars['Int']['input'];
+  dynamicEdgeConfidenceEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  dynamicEdgeConfidenceQuantile?: InputMaybe<Scalars['Float']['input']>;
   enabled: Scalars['Boolean']['input'];
+  entityDisambiguationEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  entityDisambiguationMaxCandidates?: InputMaybe<Scalars['Int']['input']>;
   ingestionEnabled: Scalars['Boolean']['input'];
   maxBatchSize: Scalars['Int']['input'];
   maxRelationsPerArticle: Scalars['Int']['input'];
+  minEdgeConfidence?: InputMaybe<Scalars['Float']['input']>;
+  multiModelValidationEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  multiModelValidationMaxRelationsPerArticle?: InputMaybe<Scalars['Int']['input']>;
+  multiModelValidationModelCount?: InputMaybe<Scalars['Int']['input']>;
+  multiModelValidationModels?: InputMaybe<Array<Scalars['String']['input']>>;
   seedIngestionEnabled: Scalars['Boolean']['input'];
   seedSwIndustriesPerRun: Scalars['Int']['input'];
 };
@@ -2506,6 +2577,22 @@ export type ItemQueryVariables = Exact<{
 
 export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, ingestedAt: any, publishedAt?: string | null, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, result?: string | null, resultJson?: any | null, createdAt: any, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null } | null };
 
+export type KnowledgeGraphEvidenceReviewQueueQueryVariables = Exact<{
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  maxConfidence?: InputMaybe<Scalars['Float']['input']>;
+  onlyUnreviewed?: InputMaybe<Scalars['Boolean']['input']>;
+}>;
+
+
+export type KnowledgeGraphEvidenceReviewQueueQuery = { __typename?: 'Query', knowledgeGraphEvidenceReviewQueue: Array<{ __typename?: 'KnowledgeGraphEvidenceReviewItemModel', id: string, confidence?: number | null, extractorVersion?: string | null, createdAt: any, evidence?: any | null, edge: { __typename?: 'KnowledgeGraphReviewEdgeModel', id: string, type: string, confidence: number, weight: number, properties?: any | null, fromEntity: { __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string }, toEntity: { __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string } }, article: { __typename?: 'KnowledgeGraphReviewArticleModel', id: string, url: string, title?: string | null, summary?: string | null, language?: string | null, crawlAt: any } }> };
+
+export type ReviewKnowledgeGraphEvidenceMutationVariables = Exact<{
+  input: ReviewKnowledgeGraphEvidenceInput;
+}>;
+
+
+export type ReviewKnowledgeGraphEvidenceMutation = { __typename?: 'Mutation', reviewKnowledgeGraphEvidence?: { __typename?: 'KnowledgeGraphEvidenceReviewItemModel', id: string, confidence?: number | null, extractorVersion?: string | null, createdAt: any, evidence?: any | null } | null };
+
 export type GetKnowledgeGraphSubgraphQueryVariables = Exact<{
   input: KnowledgeGraphSubgraphInput;
 }>;
@@ -2667,14 +2754,14 @@ export type UpdateEntityImpactGraphSettingsMutation = { __typename?: 'Mutation',
 export type KnowledgeGraphSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type KnowledgeGraphSettingsQuery = { __typename?: 'Query', knowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, seedIngestionEnabled: boolean, seedSwIndustriesPerRun: number, maxBatchSize: number, maxRelationsPerArticle: number, cacheTtlSeconds: number } };
+export type KnowledgeGraphSettingsQuery = { __typename?: 'Query', knowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, seedIngestionEnabled: boolean, seedSwIndustriesPerRun: number, maxBatchSize: number, maxRelationsPerArticle: number, minEdgeConfidence: number, dynamicEdgeConfidenceEnabled: boolean, dynamicEdgeConfidenceQuantile: number, multiModelValidationEnabled: boolean, multiModelValidationModels: Array<string>, multiModelValidationModelCount: number, multiModelValidationMaxRelationsPerArticle: number, entityDisambiguationEnabled: boolean, entityDisambiguationMaxCandidates: number, cacheTtlSeconds: number } };
 
 export type UpdateKnowledgeGraphSettingsMutationVariables = Exact<{
   input: UpdateKnowledgeGraphSettingsInput;
 }>;
 
 
-export type UpdateKnowledgeGraphSettingsMutation = { __typename?: 'Mutation', updateKnowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, seedIngestionEnabled: boolean, seedSwIndustriesPerRun: number, maxBatchSize: number, maxRelationsPerArticle: number, cacheTtlSeconds: number } };
+export type UpdateKnowledgeGraphSettingsMutation = { __typename?: 'Mutation', updateKnowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, seedIngestionEnabled: boolean, seedSwIndustriesPerRun: number, maxBatchSize: number, maxRelationsPerArticle: number, minEdgeConfidence: number, dynamicEdgeConfidenceEnabled: boolean, dynamicEdgeConfidenceQuantile: number, multiModelValidationEnabled: boolean, multiModelValidationModels: Array<string>, multiModelValidationModelCount: number, multiModelValidationMaxRelationsPerArticle: number, entityDisambiguationEnabled: boolean, entityDisambiguationMaxCandidates: number, cacheTtlSeconds: number } };
 
 
 export const AlertRulesDocument = gql`
@@ -4581,6 +4668,118 @@ export type ItemQueryHookResult = ReturnType<typeof useItemQuery>;
 export type ItemLazyQueryHookResult = ReturnType<typeof useItemLazyQuery>;
 export type ItemSuspenseQueryHookResult = ReturnType<typeof useItemSuspenseQuery>;
 export type ItemQueryResult = Apollo.QueryResult<ItemQuery, ItemQueryVariables>;
+export const KnowledgeGraphEvidenceReviewQueueDocument = gql`
+    query KnowledgeGraphEvidenceReviewQueue($limit: Int, $maxConfidence: Float, $onlyUnreviewed: Boolean) {
+  knowledgeGraphEvidenceReviewQueue(
+    limit: $limit
+    maxConfidence: $maxConfidence
+    onlyUnreviewed: $onlyUnreviewed
+  ) {
+    id
+    confidence
+    extractorVersion
+    createdAt
+    evidence
+    edge {
+      id
+      type
+      confidence
+      weight
+      properties
+      fromEntity {
+        id
+        name
+        type
+      }
+      toEntity {
+        id
+        name
+        type
+      }
+    }
+    article {
+      id
+      url
+      title
+      summary
+      language
+      crawlAt
+    }
+  }
+}
+    `;
+
+/**
+ * __useKnowledgeGraphEvidenceReviewQueueQuery__
+ *
+ * To run a query within a React component, call `useKnowledgeGraphEvidenceReviewQueueQuery` and pass it any options that fit your needs.
+ * When your component renders, `useKnowledgeGraphEvidenceReviewQueueQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useKnowledgeGraphEvidenceReviewQueueQuery({
+ *   variables: {
+ *      limit: // value for 'limit'
+ *      maxConfidence: // value for 'maxConfidence'
+ *      onlyUnreviewed: // value for 'onlyUnreviewed'
+ *   },
+ * });
+ */
+export function useKnowledgeGraphEvidenceReviewQueueQuery(baseOptions?: Apollo.QueryHookOptions<KnowledgeGraphEvidenceReviewQueueQuery, KnowledgeGraphEvidenceReviewQueueQueryVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<KnowledgeGraphEvidenceReviewQueueQuery, KnowledgeGraphEvidenceReviewQueueQueryVariables>(KnowledgeGraphEvidenceReviewQueueDocument, options);
+      }
+export function useKnowledgeGraphEvidenceReviewQueueLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<KnowledgeGraphEvidenceReviewQueueQuery, KnowledgeGraphEvidenceReviewQueueQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<KnowledgeGraphEvidenceReviewQueueQuery, KnowledgeGraphEvidenceReviewQueueQueryVariables>(KnowledgeGraphEvidenceReviewQueueDocument, options);
+        }
+export function useKnowledgeGraphEvidenceReviewQueueSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<KnowledgeGraphEvidenceReviewQueueQuery, KnowledgeGraphEvidenceReviewQueueQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<KnowledgeGraphEvidenceReviewQueueQuery, KnowledgeGraphEvidenceReviewQueueQueryVariables>(KnowledgeGraphEvidenceReviewQueueDocument, options);
+        }
+export type KnowledgeGraphEvidenceReviewQueueQueryHookResult = ReturnType<typeof useKnowledgeGraphEvidenceReviewQueueQuery>;
+export type KnowledgeGraphEvidenceReviewQueueLazyQueryHookResult = ReturnType<typeof useKnowledgeGraphEvidenceReviewQueueLazyQuery>;
+export type KnowledgeGraphEvidenceReviewQueueSuspenseQueryHookResult = ReturnType<typeof useKnowledgeGraphEvidenceReviewQueueSuspenseQuery>;
+export type KnowledgeGraphEvidenceReviewQueueQueryResult = Apollo.QueryResult<KnowledgeGraphEvidenceReviewQueueQuery, KnowledgeGraphEvidenceReviewQueueQueryVariables>;
+export const ReviewKnowledgeGraphEvidenceDocument = gql`
+    mutation ReviewKnowledgeGraphEvidence($input: ReviewKnowledgeGraphEvidenceInput!) {
+  reviewKnowledgeGraphEvidence(input: $input) {
+    id
+    confidence
+    extractorVersion
+    createdAt
+    evidence
+  }
+}
+    `;
+export type ReviewKnowledgeGraphEvidenceMutationFn = Apollo.MutationFunction<ReviewKnowledgeGraphEvidenceMutation, ReviewKnowledgeGraphEvidenceMutationVariables>;
+
+/**
+ * __useReviewKnowledgeGraphEvidenceMutation__
+ *
+ * To run a mutation, you first call `useReviewKnowledgeGraphEvidenceMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useReviewKnowledgeGraphEvidenceMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [reviewKnowledgeGraphEvidenceMutation, { data, loading, error }] = useReviewKnowledgeGraphEvidenceMutation({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useReviewKnowledgeGraphEvidenceMutation(baseOptions?: Apollo.MutationHookOptions<ReviewKnowledgeGraphEvidenceMutation, ReviewKnowledgeGraphEvidenceMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<ReviewKnowledgeGraphEvidenceMutation, ReviewKnowledgeGraphEvidenceMutationVariables>(ReviewKnowledgeGraphEvidenceDocument, options);
+      }
+export type ReviewKnowledgeGraphEvidenceMutationHookResult = ReturnType<typeof useReviewKnowledgeGraphEvidenceMutation>;
+export type ReviewKnowledgeGraphEvidenceMutationResult = Apollo.MutationResult<ReviewKnowledgeGraphEvidenceMutation>;
+export type ReviewKnowledgeGraphEvidenceMutationOptions = Apollo.BaseMutationOptions<ReviewKnowledgeGraphEvidenceMutation, ReviewKnowledgeGraphEvidenceMutationVariables>;
 export const GetKnowledgeGraphSubgraphDocument = gql`
     query GetKnowledgeGraphSubgraph($input: KnowledgeGraphSubgraphInput!) {
   getKnowledgeGraphSubgraph(input: $input) {
@@ -5696,6 +5895,15 @@ export const KnowledgeGraphSettingsDocument = gql`
     seedSwIndustriesPerRun
     maxBatchSize
     maxRelationsPerArticle
+    minEdgeConfidence
+    dynamicEdgeConfidenceEnabled
+    dynamicEdgeConfidenceQuantile
+    multiModelValidationEnabled
+    multiModelValidationModels
+    multiModelValidationModelCount
+    multiModelValidationMaxRelationsPerArticle
+    entityDisambiguationEnabled
+    entityDisambiguationMaxCandidates
     cacheTtlSeconds
   }
 }
@@ -5741,6 +5949,15 @@ export const UpdateKnowledgeGraphSettingsDocument = gql`
     seedSwIndustriesPerRun
     maxBatchSize
     maxRelationsPerArticle
+    minEdgeConfidence
+    dynamicEdgeConfidenceEnabled
+    dynamicEdgeConfidenceQuantile
+    multiModelValidationEnabled
+    multiModelValidationModels
+    multiModelValidationModelCount
+    multiModelValidationMaxRelationsPerArticle
+    entityDisambiguationEnabled
+    entityDisambiguationMaxCandidates
     cacheTtlSeconds
   }
 }

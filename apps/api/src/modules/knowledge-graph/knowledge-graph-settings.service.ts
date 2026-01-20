@@ -13,6 +13,15 @@ export interface KnowledgeGraphSettings {
   seedSwIndustriesPerRun: number;
   maxBatchSize: number;
   maxRelationsPerArticle: number;
+  minEdgeConfidence: number;
+  dynamicEdgeConfidenceEnabled: boolean;
+  dynamicEdgeConfidenceQuantile: number;
+  multiModelValidationEnabled: boolean;
+  multiModelValidationModels: string[];
+  multiModelValidationModelCount: number;
+  multiModelValidationMaxRelationsPerArticle: number;
+  entityDisambiguationEnabled: boolean;
+  entityDisambiguationMaxCandidates: number;
   cacheTtlSeconds: number;
 }
 
@@ -23,6 +32,15 @@ export interface KnowledgeGraphSettingsInput {
   seedSwIndustriesPerRun: number;
   maxBatchSize: number;
   maxRelationsPerArticle: number;
+  minEdgeConfidence: number;
+  dynamicEdgeConfidenceEnabled: boolean;
+  dynamicEdgeConfidenceQuantile: number;
+  multiModelValidationEnabled: boolean;
+  multiModelValidationModels: string[];
+  multiModelValidationModelCount: number;
+  multiModelValidationMaxRelationsPerArticle: number;
+  entityDisambiguationEnabled: boolean;
+  entityDisambiguationMaxCandidates: number;
   cacheTtlSeconds: number;
 }
 
@@ -34,6 +52,16 @@ const MIN_MAX_BATCH_SIZE = 1;
 const MAX_MAX_BATCH_SIZE = 500;
 const MIN_MAX_RELATIONS_PER_ARTICLE = 0;
 const MAX_MAX_RELATIONS_PER_ARTICLE = 100;
+const MIN_MIN_EDGE_CONFIDENCE = 0;
+const MAX_MIN_EDGE_CONFIDENCE = 1;
+const MIN_DYNAMIC_EDGE_CONFIDENCE_QUANTILE = 0;
+const MAX_DYNAMIC_EDGE_CONFIDENCE_QUANTILE = 1;
+const MIN_MULTI_MODEL_VALIDATION_MODEL_COUNT = 2;
+const MAX_MULTI_MODEL_VALIDATION_MODEL_COUNT = 3;
+const MIN_MULTI_MODEL_VALIDATION_MAX_RELATIONS_PER_ARTICLE = 0;
+const MAX_MULTI_MODEL_VALIDATION_MAX_RELATIONS_PER_ARTICLE = 20;
+const MIN_ENTITY_DISAMBIGUATION_MAX_CANDIDATES = 2;
+const MAX_ENTITY_DISAMBIGUATION_MAX_CANDIDATES = 20;
 const MIN_SW_INDUSTRIES_PER_RUN = 1;
 const MAX_SW_INDUSTRIES_PER_RUN = 50;
 const MIN_CACHE_TTL_SECONDS = 0;
@@ -148,6 +176,15 @@ export class KnowledgeGraphSettingsService {
       seedSwIndustriesPerRun: 5,
       maxBatchSize: 100,
       maxRelationsPerArticle: 20,
+      minEdgeConfidence: 0.55,
+      dynamicEdgeConfidenceEnabled: true,
+      dynamicEdgeConfidenceQuantile: 0.25,
+      multiModelValidationEnabled: false,
+      multiModelValidationModels: [],
+      multiModelValidationModelCount: 3,
+      multiModelValidationMaxRelationsPerArticle: 5,
+      entityDisambiguationEnabled: false,
+      entityDisambiguationMaxCandidates: 5,
       cacheTtlSeconds: 60
     };
   }
@@ -176,6 +213,52 @@ export class KnowledgeGraphSettingsService {
         MIN_MAX_RELATIONS_PER_ARTICLE,
         MAX_MAX_RELATIONS_PER_ARTICLE,
         defaults.maxRelationsPerArticle
+      ),
+      minEdgeConfidence: this.clampFloat(
+        value.minEdgeConfidence,
+        MIN_MIN_EDGE_CONFIDENCE,
+        MAX_MIN_EDGE_CONFIDENCE,
+        defaults.minEdgeConfidence
+      ),
+      dynamicEdgeConfidenceEnabled:
+        typeof value.dynamicEdgeConfidenceEnabled === "boolean"
+          ? value.dynamicEdgeConfidenceEnabled
+          : defaults.dynamicEdgeConfidenceEnabled,
+      dynamicEdgeConfidenceQuantile: this.clampFloat(
+        value.dynamicEdgeConfidenceQuantile,
+        MIN_DYNAMIC_EDGE_CONFIDENCE_QUANTILE,
+        MAX_DYNAMIC_EDGE_CONFIDENCE_QUANTILE,
+        defaults.dynamicEdgeConfidenceQuantile
+      ),
+      multiModelValidationEnabled:
+        typeof value.multiModelValidationEnabled === "boolean"
+          ? value.multiModelValidationEnabled
+          : defaults.multiModelValidationEnabled,
+      multiModelValidationModels: this.normalizeStringList(
+        value.multiModelValidationModels,
+        defaults.multiModelValidationModels
+      ),
+      multiModelValidationModelCount: this.clampInt(
+        value.multiModelValidationModelCount,
+        MIN_MULTI_MODEL_VALIDATION_MODEL_COUNT,
+        MAX_MULTI_MODEL_VALIDATION_MODEL_COUNT,
+        defaults.multiModelValidationModelCount
+      ),
+      multiModelValidationMaxRelationsPerArticle: this.clampInt(
+        value.multiModelValidationMaxRelationsPerArticle,
+        MIN_MULTI_MODEL_VALIDATION_MAX_RELATIONS_PER_ARTICLE,
+        MAX_MULTI_MODEL_VALIDATION_MAX_RELATIONS_PER_ARTICLE,
+        defaults.multiModelValidationMaxRelationsPerArticle
+      ),
+      entityDisambiguationEnabled:
+        typeof value.entityDisambiguationEnabled === "boolean"
+          ? value.entityDisambiguationEnabled
+          : defaults.entityDisambiguationEnabled,
+      entityDisambiguationMaxCandidates: this.clampInt(
+        value.entityDisambiguationMaxCandidates,
+        MIN_ENTITY_DISAMBIGUATION_MAX_CANDIDATES,
+        MAX_ENTITY_DISAMBIGUATION_MAX_CANDIDATES,
+        defaults.entityDisambiguationMaxCandidates
       ),
       cacheTtlSeconds: this.clampInt(
         value.cacheTtlSeconds,
@@ -209,6 +292,20 @@ export class KnowledgeGraphSettingsService {
     return null;
   }
 
+  private clampFloat(value: unknown, min: number, max: number, fallback: number) {
+    const numeric = this.toNumber(value);
+    if (numeric === null || Number.isNaN(numeric)) {
+      return fallback;
+    }
+    if (numeric < min) {
+      return min;
+    }
+    if (numeric > max) {
+      return max;
+    }
+    return numeric;
+  }
+
   private clampInt(value: unknown, min: number, max: number, fallback: number) {
     const numeric = this.toNumber(value);
     if (numeric === null || Number.isNaN(numeric)) {
@@ -222,5 +319,20 @@ export class KnowledgeGraphSettingsService {
       return max;
     }
     return rounded;
+  }
+
+  private normalizeStringList(value: unknown, fallback: string[]) {
+    const list = Array.isArray(value) ? value : [];
+    const normalized = new Set<string>();
+    for (const entry of list) {
+      if (typeof entry === "string") {
+        const trimmed = entry.trim();
+        if (trimmed.length > 0) {
+          normalized.add(trimmed);
+        }
+      }
+    }
+    const result = Array.from(normalized).slice(0, 10);
+    return result.length > 0 ? result : fallback;
   }
 }

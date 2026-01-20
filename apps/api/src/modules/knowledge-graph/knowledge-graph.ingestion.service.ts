@@ -6,6 +6,7 @@ import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../config/prisma.service";
 
 import { KnowledgeGraphSettingsService } from "./knowledge-graph-settings.service";
+import { KnowledgeGraphQualityService } from "./knowledge-graph-quality.service";
 import { KnowledgeGraphService } from "./knowledge-graph.service";
 
 const logger = createLogger({ name: "knowledge-graph-ingestion" });
@@ -18,6 +19,7 @@ export class KnowledgeGraphIngestionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: KnowledgeGraphSettingsService,
+    private readonly quality: KnowledgeGraphQualityService,
     private readonly graph: KnowledgeGraphService
   ) {}
 
@@ -74,6 +76,9 @@ export class KnowledgeGraphIngestionService {
       select: {
         articleId: true,
         processedAt: true,
+        title: true,
+        summary: true,
+        language: true,
         entities: true,
         kgRelations: true,
         llmPromptVersion: true
@@ -88,17 +93,31 @@ export class KnowledgeGraphIngestionService {
 
     let processedArticles = 0;
     let upsertedEdges = 0;
+    let validatedRelations = 0;
+    let filteredRelations = 0;
 
     for (const entry of batch) {
+      const prepared = await this.quality.prepareRelationsForIngestion({
+        orgId,
+        articleId: entry.articleId,
+        title: entry.title,
+        summary: entry.summary,
+        language: entry.language,
+        kgRelations: entry.kgRelations,
+        settings,
+        maxRelationsPerArticle: settings.maxRelationsPerArticle
+      });
+
       const result = await this.graph.ingestProcessedArticle({
         orgId,
         articleId: entry.articleId,
         extractorVersion: entry.llmPromptVersion,
-        kgRelations: entry.kgRelations,
+        kgRelations: prepared.relations,
         maxRelationsPerArticle: settings.maxRelationsPerArticle
       });
 
       try {
+        const contextText = [entry.title, entry.summary].filter(Boolean).join("\n\n").trim();
         await this.graph.linkArticleEntities({
           orgId,
           articleId: entry.articleId,
@@ -106,7 +125,10 @@ export class KnowledgeGraphIngestionService {
           entities: entry.entities,
           maxEntitiesPerArticle: DEFAULT_MAX_ENTITIES_PER_ARTICLE,
           minConfidence: DEFAULT_MIN_ENTITY_CONFIDENCE,
-          createMissingEntities: true
+          createMissingEntities: true,
+          disambiguationEnabled: settings.entityDisambiguationEnabled,
+          disambiguationContextText: contextText.length > 0 ? contextText.slice(0, 4_000) : undefined,
+          disambiguationMaxCandidates: settings.entityDisambiguationMaxCandidates
         });
       } catch (error) {
         logger.warn(
@@ -117,6 +139,8 @@ export class KnowledgeGraphIngestionService {
 
       processedArticles += 1;
       upsertedEdges += result.edgesUpserted;
+      validatedRelations += prepared.validatedRelations;
+      filteredRelations += prepared.filteredRelations;
 
       await this.prisma.knowledgeGraphIngestionState.update({
         where: { orgId },
@@ -128,7 +152,7 @@ export class KnowledgeGraphIngestionService {
     }
 
     logger.info(
-      { orgId, processedArticles, upsertedEdges },
+      { orgId, processedArticles, upsertedEdges, validatedRelations, filteredRelations },
       "Knowledge graph ingestion completed"
     );
   }

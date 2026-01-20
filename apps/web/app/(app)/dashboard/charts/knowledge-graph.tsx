@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Input, Skeleton, Slider, Space, Typography, message } from "antd";
+import { Alert, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
 import type { EChartsOption } from "echarts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -36,6 +36,15 @@ function buildDegreeMap(edges: { from: string; to: string }[]) {
     map.set(edge.to, (map.get(edge.to) ?? 0) + 1);
   }
   return map;
+}
+
+function getConfidenceColor(confidence: number) {
+  if (!Number.isFinite(confidence)) {
+    return "#94a3b8";
+  }
+  if (confidence >= 0.85) return "#16a34a";
+  if (confidence >= 0.7) return "#f59e0b";
+  return "#ef4444";
 }
 
 export function KnowledgeGraph() {
@@ -137,8 +146,8 @@ export function KnowledgeGraph() {
       value: edge.weight,
       lineStyle: {
         width: Math.max(1, Math.min(5, edge.weight)),
-        opacity: 0.55,
-        color: colors?.border ?? "#94a3b8",
+        opacity: Math.max(0.25, Math.min(0.9, 0.2 + edge.confidence * 0.7)),
+        color: getConfidenceColor(edge.confidence),
         curveness: 0.15
       },
       originalData: {
@@ -253,6 +262,27 @@ export function KnowledgeGraph() {
           </div>
         </Space>
       </div>
+
+      {settings ? (
+        <Space size="small" wrap style={{ marginBottom: "0.75rem" }}>
+          <Tag color="blue">
+            {t("settings.knowledgeGraph.fields.minEdgeConfidence")}:{" "}
+            {Number(settings.minEdgeConfidence ?? 0).toFixed(2)}
+          </Tag>
+          {settings.dynamicEdgeConfidenceEnabled ? (
+            <Tag>
+              {t("settings.knowledgeGraph.fields.dynamicEdgeConfidenceEnabled")}{" "}
+              Q{Number(settings.dynamicEdgeConfidenceQuantile ?? 0.25).toFixed(2)}
+            </Tag>
+          ) : null}
+          {settings.multiModelValidationEnabled ? (
+            <Tag color="green">{t("settings.knowledgeGraph.fields.multiModelValidationEnabled")}</Tag>
+          ) : null}
+          {settings.entityDisambiguationEnabled ? (
+            <Tag color="geekblue">{t("settings.knowledgeGraph.fields.entityDisambiguationEnabled")}</Tag>
+          ) : null}
+        </Space>
+      ) : null}
 
       {error ? (
         <Alert

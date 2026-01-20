@@ -1224,6 +1224,10 @@
       "quality": {
         "title": "Data Quality",
         "description": "Monitor pipeline success, latency, and source reliability"
+      },
+      "knowledgeGraphReview": {
+        "title": "Knowledge Graph Review",
+        "description": "Review low-confidence knowledge graph relations and record human feedback"
       }
     }
   },
@@ -1635,6 +1639,13 @@
       "saved": "Saved",
       "saveFailed": "Failed to save",
       "description": "Configure finance knowledge graph ingestion and query caching settings.",
+      "sections": {
+        "ingestion": "Ingestion",
+        "quality": "Quality filters",
+        "validation": "Multi-model validation",
+        "disambiguation": "Entity disambiguation",
+        "cache": "Cache"
+      },
       "fields": {
         "enabled": "Enabled",
         "ingestionEnabled": "Ingestion enabled",
@@ -1642,6 +1653,15 @@
         "seedSwIndustriesPerRun": "SW industries per run",
         "maxBatchSize": "Max batch size",
         "maxRelationsPerArticle": "Max relations per article",
+        "minEdgeConfidence": "Min edge confidence",
+        "dynamicEdgeConfidenceEnabled": "Dynamic edge threshold",
+        "dynamicEdgeConfidenceQuantile": "Dynamic threshold quantile",
+        "multiModelValidationEnabled": "Multi-model validation",
+        "multiModelValidationModels": "Validation models",
+        "multiModelValidationModelCount": "Validators per relation",
+        "multiModelValidationMaxRelationsPerArticle": "Max relations validated per article",
+        "entityDisambiguationEnabled": "Entity disambiguation",
+        "entityDisambiguationMaxCandidates": "Max disambiguation candidates",
         "cacheTtlSeconds": "Cache TTL (seconds)"
       },
       "hints": {
@@ -1651,10 +1671,81 @@
         "seedSwIndustriesPerRun": "Max Shenwan third-level industries ingested per run.",
         "maxBatchSize": "Max processed articles to ingest per run.",
         "maxRelationsPerArticle": "Upper bound on relations ingested from a single article.",
+        "minEdgeConfidence": "Filter out relations below this confidence.",
+        "dynamicEdgeConfidenceEnabled": "When enabled, the effective threshold is max(minEdgeConfidence, quantile(confidence)).",
+        "dynamicEdgeConfidenceQuantile": "Quantile (0-1) used when computing the dynamic threshold.",
+        "effectiveThresholdStatic": "Effective threshold: {{value}}",
+        "effectiveThresholdDynamic": "Effective threshold: max({{min}}, Q{{quantile}}(confidence))",
+        "multiModelValidationEnabled": "Validate a subset of relations with 2-3 LLM models and adjust confidence by voting.",
+        "multiModelValidationModels": "Optional override; leave empty to use the LLM gateway default + fallbacks.",
+        "multiModelValidationModelCount": "Number of models to vote (2-3).",
+        "multiModelValidationMaxRelationsPerArticle": "Max relations per article to validate (higher = more LLM calls).",
+        "validationCost": "Max LLM calls/article ≈ {{calls}} ({{models}} models × {{relations}} relations).",
+        "multiModelValidationDisabled": "Enable multi-model validation to cross-check extracted relations and reduce false positives.",
+        "entityDisambiguationEnabled": "Use LLM to disambiguate entity linking when multiple candidates match.",
+        "entityDisambiguationMaxCandidates": "Number of candidates sent to the disambiguation prompt.",
         "cacheTtlSeconds": "0 disables caching; otherwise cache graph queries for N seconds."
       },
       "validation": {
         "required": "Required"
+      }
+    },
+    "knowledgeGraphReview": {
+      "description": "Review low-confidence knowledge graph relations and record human feedback.",
+      "empty": "No relations to review. Try raising the max confidence threshold or disabling \"Only unreviewed\".",
+      "filters": {
+        "maxConfidence": "Max evidence confidence",
+        "onlyUnreviewed": "Only unreviewed"
+      },
+      "columns": {
+        "article": "Article",
+        "relation": "Relation",
+        "confidence": "Confidence",
+        "validation": "Validation",
+        "evidence": "Evidence",
+        "actions": "Actions"
+      },
+      "actions": {
+        "approve": "Approve",
+        "reject": "Reject",
+        "correct": "Correct",
+        "refresh": "Refresh"
+      },
+      "labels": {
+        "edge": "edge",
+        "adjusted": "adjusted",
+        "votes": "votes: {{yes}} / {{no}} / {{uncertain}}"
+      },
+      "messages": {
+        "saved": "Saved",
+        "saveFailed": "Failed to save",
+        "loadFailed": "Failed to load review queue",
+        "invalidJson": "Invalid JSON"
+      },
+      "details": {
+        "title": "Relation details",
+        "quote": "Evidence quote",
+        "validation": "Validation",
+        "supportScore": "support {{value}}",
+        "originalConfidence": "original {{value}}",
+        "adjustedConfidence": "adjusted {{value}}",
+        "modelResults": "Model votes",
+        "columns": {
+          "model": "Model",
+          "verdict": "Verdict",
+          "confidence": "Confidence",
+          "error": "Error"
+        }
+      },
+      "review": {
+        "title": "Review relation",
+        "fields": {
+          "note": "Note",
+          "correctedRelation": "Corrected relation (JSON)"
+        },
+        "placeholders": {
+          "note": "Optional note for audit trail / fine-tuning"
+        }
       }
     },
     "newsEvents": {
@@ -1846,6 +1937,7 @@
       "crawlClient": "Crawl client",
       "entityImpactGraph": "Entity impact graph",
       "knowledgeGraph": "Knowledge graph",
+      "knowledgeGraphReview": "Knowledge graph review",
       "newsEvents": "News events",
       "newsIndicator": "News ↔ indicators",
       "newsPrompts": "News prompts",

@@ -1015,6 +1015,16 @@ type KnowledgeGraphEdgeModel {
   weight: Float!
 }
 
+type KnowledgeGraphEvidenceReviewItemModel {
+  article: KnowledgeGraphReviewArticleModel!
+  confidence: Float
+  createdAt: DateTime!
+  edge: KnowledgeGraphReviewEdgeModel!
+  evidence: JSON
+  extractorVersion: String
+  id: String!
+}
+
 type KnowledgeGraphExplainChainModel {
   edges: [KnowledgeGraphEdgeModel!]!
   nodes: [KnowledgeGraphNodeModel!]!
@@ -1056,12 +1066,40 @@ type KnowledgeGraphNodeModel {
   type: String!
 }
 
+type KnowledgeGraphReviewArticleModel {
+  crawlAt: DateTime!
+  id: String!
+  language: String
+  summary: String
+  title: String
+  url: String!
+}
+
+type KnowledgeGraphReviewEdgeModel {
+  confidence: Float!
+  fromEntity: KnowledgeGraphNodeModel!
+  id: String!
+  properties: JSON
+  toEntity: KnowledgeGraphNodeModel!
+  type: String!
+  weight: Float!
+}
+
 type KnowledgeGraphSettingsModel {
   cacheTtlSeconds: Int!
+  dynamicEdgeConfidenceEnabled: Boolean!
+  dynamicEdgeConfidenceQuantile: Float!
   enabled: Boolean!
+  entityDisambiguationEnabled: Boolean!
+  entityDisambiguationMaxCandidates: Int!
   ingestionEnabled: Boolean!
   maxBatchSize: Int!
   maxRelationsPerArticle: Int!
+  minEdgeConfidence: Float!
+  multiModelValidationEnabled: Boolean!
+  multiModelValidationMaxRelationsPerArticle: Int!
+  multiModelValidationModelCount: Int!
+  multiModelValidationModels: [String!]!
   seedIngestionEnabled: Boolean!
   seedSwIndustriesPerRun: Int!
 }
@@ -1112,6 +1150,7 @@ type Mutation {
   requestAssistantReport(input: AssistantReportInput!): AssistantRunModel!
   requestCorrelationAnalysis(input: CorrelationAnalysisInput!): AnalysisResultModel!
   retryCrawlTask(id: String!): CrawlTaskModel!
+  reviewKnowledgeGraphEvidence(input: ReviewKnowledgeGraphEvidenceInput!): KnowledgeGraphEvidenceReviewItemModel
   setOrgActive(input: SetOrgActiveInput!): OrgModel!
   triggerAlertRule(ruleId: String!): Boolean!
   triggerDataFetch(input: TriggerDataFetchInput!): Boolean!
@@ -1452,6 +1491,7 @@ type Query {
   item(id: String!): ItemModel
   itemFacets(filters: ItemsFiltersInput, search: String): ItemFacets!
   items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, search: String): ItemConnection!
+  knowledgeGraphEvidenceReviewQueue(limit: Int, maxConfidence: Float, onlyUnreviewed: Boolean): [KnowledgeGraphEvidenceReviewItemModel!]!
   knowledgeGraphSettings: KnowledgeGraphSettingsModel!
   me: UserModel!
   memberships: [MembershipModel!]!
@@ -1541,6 +1581,13 @@ type RawItemPreviewModelGraph {
 
   """Original content URL"""
   url: String
+}
+
+input ReviewKnowledgeGraphEvidenceInput {
+  correctedRelation: JSON
+  evidenceId: String!
+  note: String
+  status: String!
 }
 
 type RoleModel {
@@ -1666,10 +1713,19 @@ input UpdateItemInput {
 
 input UpdateKnowledgeGraphSettingsInput {
   cacheTtlSeconds: Int!
+  dynamicEdgeConfidenceEnabled: Boolean
+  dynamicEdgeConfidenceQuantile: Float
   enabled: Boolean!
+  entityDisambiguationEnabled: Boolean
+  entityDisambiguationMaxCandidates: Int
   ingestionEnabled: Boolean!
   maxBatchSize: Int!
   maxRelationsPerArticle: Int!
+  minEdgeConfidence: Float
+  multiModelValidationEnabled: Boolean
+  multiModelValidationMaxRelationsPerArticle: Int
+  multiModelValidationModelCount: Int
+  multiModelValidationModels: [String!]
   seedIngestionEnabled: Boolean!
   seedSwIndustriesPerRun: Int!
 }

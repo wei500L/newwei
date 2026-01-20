@@ -11,6 +11,7 @@ export function AdminContent() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canViewAdmin =
     permissions.includes("settings.manage") ||
+    permissions.includes("knowledgegraph.review") ||
     permissions.includes("org.write") ||
     permissions.includes("users.write") ||
     permissions.includes("crawl.read") ||
@@ -74,6 +75,15 @@ export function AdminContent() {
       permission: "settings.manage"
     },
     {
+      key: "knowledgeGraphReview",
+      title: t("adminConsole.links.knowledgeGraphReview.title", { defaultValue: "Knowledge Graph Review" }),
+      description: t("adminConsole.links.knowledgeGraphReview.description", {
+        defaultValue: "Review low-confidence knowledge graph relations and record human feedback"
+      }),
+      href: "/admin/system?tab=knowledgeGraphReview",
+      permission: "knowledgegraph.review"
+    },
+    {
       key: "storage",
       title: t("adminConsole.links.storage.title", { defaultValue: "Storage Settings" }),
       description: t("adminConsole.links.storage.description", {
@@ -116,6 +126,9 @@ export function AdminContent() {
       return true;
     }
     if (permissions.includes(link.permission)) {
+      return true;
+    }
+    if (link.permission === "knowledgegraph.review" && permissions.includes("settings.manage")) {
       return true;
     }
     return link.permission === "crawl.read" && permissions.includes("crawl.write");

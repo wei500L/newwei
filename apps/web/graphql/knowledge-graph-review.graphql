@@ -1,0 +1,49 @@
+query KnowledgeGraphEvidenceReviewQueue($limit: Int, $maxConfidence: Float, $onlyUnreviewed: Boolean) {
+  knowledgeGraphEvidenceReviewQueue(
+    limit: $limit
+    maxConfidence: $maxConfidence
+    onlyUnreviewed: $onlyUnreviewed
+  ) {
+    id
+    confidence
+    extractorVersion
+    createdAt
+    evidence
+    edge {
+      id
+      type
+      confidence
+      weight
+      properties
+      fromEntity {
+        id
+        name
+        type
+      }
+      toEntity {
+        id
+        name
+        type
+      }
+    }
+    article {
+      id
+      url
+      title
+      summary
+      language
+      crawlAt
+    }
+  }
+}
+
+mutation ReviewKnowledgeGraphEvidence($input: ReviewKnowledgeGraphEvidenceInput!) {
+  reviewKnowledgeGraphEvidence(input: $input) {
+    id
+    confidence
+    extractorVersion
+    createdAt
+    evidence
+  }
+}
+

@@ -1224,6 +1224,10 @@
       "quality": {
         "title": "Data Quality",
         "description": "Monitor pipeline success, latency, and source reliability"
+      },
+      "knowledgeGraphReview": {
+        "title": "知识图谱审核",
+        "description": "审核低置信度知识图谱关系并记录人工反馈"
       }
     }
   },
@@ -1635,6 +1639,13 @@
       "saved": "已保存",
       "saveFailed": "保存失败",
       "description": "配置金融知识图谱的抽取入库与查询缓存参数。",
+      "sections": {
+        "ingestion": "入库",
+        "quality": "质量过滤",
+        "validation": "多模型验证",
+        "disambiguation": "实体消歧",
+        "cache": "缓存"
+      },
       "fields": {
         "enabled": "启用",
         "ingestionEnabled": "入库任务启用",
@@ -1642,6 +1653,15 @@
         "seedSwIndustriesPerRun": "申万行业每次处理上限",
         "maxBatchSize": "单批处理上限",
         "maxRelationsPerArticle": "单篇关系上限",
+        "minEdgeConfidence": "最小边置信度",
+        "dynamicEdgeConfidenceEnabled": "动态阈值",
+        "dynamicEdgeConfidenceQuantile": "动态阈值分位数",
+        "multiModelValidationEnabled": "多模型验证",
+        "multiModelValidationModels": "验证模型列表",
+        "multiModelValidationModelCount": "投票模型数",
+        "multiModelValidationMaxRelationsPerArticle": "每篇最大验证关系数",
+        "entityDisambiguationEnabled": "实体消歧",
+        "entityDisambiguationMaxCandidates": "最大候选实体数",
         "cacheTtlSeconds": "缓存 TTL（秒）"
       },
       "hints": {
@@ -1651,10 +1671,81 @@
         "seedSwIndustriesPerRun": "每次任务最多处理的申万三级行业数量。",
         "maxBatchSize": "每次任务最多处理的文章数。",
         "maxRelationsPerArticle": "每篇文章最多入库的关系条数。",
+        "minEdgeConfidence": "过滤掉置信度低于该值的关系。",
+        "dynamicEdgeConfidenceEnabled": "启用后，实际阈值为 max(minEdgeConfidence, quantile(confidence))。",
+        "dynamicEdgeConfidenceQuantile": "动态阈值分位数（0-1）。",
+        "effectiveThresholdStatic": "实际阈值: {{value}}",
+        "effectiveThresholdDynamic": "实际阈值: max({{min}}, Q{{quantile}}(confidence))",
+        "multiModelValidationEnabled": "使用2-3个LLM对部分关系交叉验证，并通过投票调整置信度。",
+        "multiModelValidationModels": "可选覆盖；留空则使用LLM网关默认模型 + fallback。",
+        "multiModelValidationModelCount": "参与投票的模型数量（2-3）。",
+        "multiModelValidationMaxRelationsPerArticle": "每篇文章最多验证的关系数量（越大调用越多）。",
+        "validationCost": "单篇文章最大 LLM 调用数 ≈ {{calls}}（{{models}} 个模型 × {{relations}} 条关系）。",
+        "multiModelValidationDisabled": "启用多模型验证以交叉校验抽取关系，降低误报。",
+        "entityDisambiguationEnabled": "当同名命中多个候选实体时，使用LLM进行消歧。",
+        "entityDisambiguationMaxCandidates": "发送给消歧提示的候选实体数量。",
         "cacheTtlSeconds": "填 0 表示不缓存；否则缓存 N 秒。"
       },
       "validation": {
         "required": "必填"
+      }
+    },
+    "knowledgeGraphReview": {
+      "description": "审核低置信度的知识图谱关系并记录人工反馈。",
+      "empty": "暂无需要审核的关系。可以提高最大证据置信度，或关闭“仅未审核”。",
+      "filters": {
+        "maxConfidence": "最大证据置信度",
+        "onlyUnreviewed": "仅未审核"
+      },
+      "columns": {
+        "article": "文章",
+        "relation": "关系",
+        "confidence": "置信度",
+        "validation": "验证",
+        "evidence": "证据",
+        "actions": "操作"
+      },
+      "actions": {
+        "approve": "通过",
+        "reject": "驳回",
+        "correct": "纠正",
+        "refresh": "刷新"
+      },
+      "labels": {
+        "edge": "边",
+        "adjusted": "调整后",
+        "votes": "投票: {{yes}} / {{no}} / {{uncertain}}"
+      },
+      "messages": {
+        "saved": "已保存",
+        "saveFailed": "保存失败",
+        "loadFailed": "加载审核队列失败",
+        "invalidJson": "JSON 格式错误"
+      },
+      "details": {
+        "title": "关系详情",
+        "quote": "证据引用",
+        "validation": "验证",
+        "supportScore": "支持度 {{value}}",
+        "originalConfidence": "原始 {{value}}",
+        "adjustedConfidence": "调整后 {{value}}",
+        "modelResults": "模型投票",
+        "columns": {
+          "model": "模型",
+          "verdict": "结论",
+          "confidence": "置信度",
+          "error": "错误"
+        }
+      },
+      "review": {
+        "title": "审核关系",
+        "fields": {
+          "note": "备注",
+          "correctedRelation": "纠正后的关系（JSON）"
+        },
+        "placeholders": {
+          "note": "可选备注，用于审计/微调"
+        }
       }
     },
     "newsEvents": {
@@ -1846,6 +1937,7 @@
       "crawlClient": "抓取客户端",
       "entityImpactGraph": "实体影响图谱",
       "knowledgeGraph": "知识图谱",
+      "knowledgeGraphReview": "知识图谱审核",
       "newsEvents": "新闻事件",
       "newsIndicator": "新闻-指标",
       "newsPrompts": "新闻提示词",

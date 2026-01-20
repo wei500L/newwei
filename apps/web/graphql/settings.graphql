@@ -128,6 +128,15 @@ query KnowledgeGraphSettings {
     seedSwIndustriesPerRun
     maxBatchSize
     maxRelationsPerArticle
+    minEdgeConfidence
+    dynamicEdgeConfidenceEnabled
+    dynamicEdgeConfidenceQuantile
+    multiModelValidationEnabled
+    multiModelValidationModels
+    multiModelValidationModelCount
+    multiModelValidationMaxRelationsPerArticle
+    entityDisambiguationEnabled
+    entityDisambiguationMaxCandidates
     cacheTtlSeconds
   }
 }
@@ -140,6 +149,15 @@ mutation UpdateKnowledgeGraphSettings($input: UpdateKnowledgeGraphSettingsInput!
     seedSwIndustriesPerRun
     maxBatchSize
     maxRelationsPerArticle
+    minEdgeConfidence
+    dynamicEdgeConfidenceEnabled
+    dynamicEdgeConfidenceQuantile
+    multiModelValidationEnabled
+    multiModelValidationModels
+    multiModelValidationModelCount
+    multiModelValidationMaxRelationsPerArticle
+    entityDisambiguationEnabled
+    entityDisambiguationMaxCandidates
     cacheTtlSeconds
   }
 }

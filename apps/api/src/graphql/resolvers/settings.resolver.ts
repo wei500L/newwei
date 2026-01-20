@@ -130,6 +130,7 @@ export class SettingsResolver {
   ): Promise<KnowledgeGraphSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
+    const current = await this.knowledgeGraphSettingsService.getSettings(user.orgId);
     const settingsInput: KnowledgeGraphSettingsInput = {
       enabled: input.enabled,
       ingestionEnabled: input.ingestionEnabled,
@@ -137,6 +138,24 @@ export class SettingsResolver {
       seedSwIndustriesPerRun: input.seedSwIndustriesPerRun,
       maxBatchSize: input.maxBatchSize,
       maxRelationsPerArticle: input.maxRelationsPerArticle,
+      minEdgeConfidence: input.minEdgeConfidence ?? current.minEdgeConfidence,
+      dynamicEdgeConfidenceEnabled:
+        input.dynamicEdgeConfidenceEnabled ?? current.dynamicEdgeConfidenceEnabled,
+      dynamicEdgeConfidenceQuantile:
+        input.dynamicEdgeConfidenceQuantile ?? current.dynamicEdgeConfidenceQuantile,
+      multiModelValidationEnabled:
+        input.multiModelValidationEnabled ?? current.multiModelValidationEnabled,
+      multiModelValidationModels:
+        input.multiModelValidationModels ?? current.multiModelValidationModels,
+      multiModelValidationModelCount:
+        input.multiModelValidationModelCount ?? current.multiModelValidationModelCount,
+      multiModelValidationMaxRelationsPerArticle:
+        input.multiModelValidationMaxRelationsPerArticle ??
+        current.multiModelValidationMaxRelationsPerArticle,
+      entityDisambiguationEnabled:
+        input.entityDisambiguationEnabled ?? current.entityDisambiguationEnabled,
+      entityDisambiguationMaxCandidates:
+        input.entityDisambiguationMaxCandidates ?? current.entityDisambiguationMaxCandidates,
       cacheTtlSeconds: input.cacheTtlSeconds
     };
     return this.knowledgeGraphSettingsService.updateSettings(user.orgId, user.id, settingsInput);
