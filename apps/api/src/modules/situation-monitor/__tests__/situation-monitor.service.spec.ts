@@ -25,7 +25,8 @@ describe("SituationMonitorService", () => {
 
     const cache = {} as any;
     const external = {} as any;
-    const service = new SituationMonitorService(cache, external, {} as any);
+    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
+    const service = new SituationMonitorService(cache, external, feedback, {} as any);
 
     const since = new Date("2026-01-01T00:00:00.000Z");
     const result = await (service as any).buildHeadlinesByCategory({
@@ -51,4 +52,3 @@ describe("SituationMonitorService", () => {
     expect(chain.select).toHaveBeenCalledWith(expect.objectContaining({ ingestedAt: 1 }));
   });
 });
-

@@ -1,6 +1,25 @@
 import { CORRELATION_TOPICS, type CorrelationTopic } from "./patterns";
 import type { SituationNewsItem } from "./types";
 
+export interface CorrelationLearningOverride {
+  boostedTokens?: string[];
+  blockedTokens?: string[];
+  suppressedItemMetaIds?: string[];
+  falsePositiveCount?: number;
+  falseNegativeCount?: number;
+}
+
+export interface CorrelationFeedbackStats {
+  falsePositive: number;
+  falseNegative: number;
+}
+
+export interface CorrelationLearningSnapshot {
+  boostedTokens: string[];
+  blockedTokens: string[];
+  suppressedCount: number;
+}
+
 export interface EmergingPattern {
   id: string;
   name: string;
@@ -8,7 +27,9 @@ export interface EmergingPattern {
   count: number;
   level: "high" | "elevated" | "emerging";
   sources: string[];
-  headlines: { title: string; titleZh?: string; link: string; source: string }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string; itemMetaId?: string }[];
+  feedback?: CorrelationFeedbackStats;
+  learning?: CorrelationLearningSnapshot;
 }
 
 export interface MomentumSignal {
@@ -18,7 +39,9 @@ export interface MomentumSignal {
   current: number;
   delta: number;
   momentum: "surging" | "rising" | "stable";
-  headlines: { title: string; titleZh?: string; link: string; source: string }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string; itemMetaId?: string }[];
+  feedback?: CorrelationFeedbackStats;
+  learning?: CorrelationLearningSnapshot;
 }
 
 export interface CrossSourceCorrelation {
@@ -28,7 +51,9 @@ export interface CrossSourceCorrelation {
   sourceCount: number;
   sources: string[];
   level: "high" | "elevated" | "emerging";
-  headlines: { title: string; titleZh?: string; link: string; source: string }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string; itemMetaId?: string }[];
+  feedback?: CorrelationFeedbackStats;
+  learning?: CorrelationLearningSnapshot;
 }
 
 export interface PredictiveSignal {
@@ -39,7 +64,9 @@ export interface PredictiveSignal {
   confidence: number;
   prediction: string;
   level: "high" | "medium" | "low";
-  headlines: { title: string; titleZh?: string; link: string; source: string }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string; itemMetaId?: string }[];
+  feedback?: CorrelationFeedbackStats;
+  learning?: CorrelationLearningSnapshot;
 }
 
 export interface CorrelationResults {
@@ -51,6 +78,39 @@ export interface CorrelationResults {
 
 function formatTopicName(id: string): string {
   return id.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
+function normalizeForMatch(item: SituationNewsItem): string {
+  const parts: string[] = [];
+  if (item.title) parts.push(item.title);
+  if (item.summary) parts.push(item.summary);
+  if (Array.isArray(item.keyPoints) && item.keyPoints.length > 0) {
+    parts.push(item.keyPoints.join(" "));
+  }
+  return parts.join(" ").trim();
+}
+
+function normalizeTokens(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => (typeof entry === "string" ? entry.trim().toLowerCase() : ""))
+    .filter((entry) => entry.length > 0)
+    .slice(0, 12);
+}
+
+function normalizeSuppressed(value: unknown): Set<string> {
+  if (!Array.isArray(value)) {
+    return new Set();
+  }
+  const set = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry === "string" && entry.trim()) {
+      set.add(entry.trim());
+    }
+  }
+  return set;
 }
 
 function getPrediction(topic: CorrelationTopic, count: number): string {
@@ -74,7 +134,7 @@ function getPrediction(topic: CorrelationTopic, count: number): string {
 
 export function analyzeCorrelations(
   allNews: SituationNewsItem[],
-  options?: { previousCounts?: Record<string, number> | null }
+  options?: { previousCounts?: Record<string, number> | null; learning?: Map<string, CorrelationLearningOverride> }
 ): { results: CorrelationResults | null; topicCounts: Record<string, number> } {
   if (!allNews || allNews.length === 0) {
     return { results: null, topicCounts: {} };
@@ -87,17 +147,73 @@ export function analyzeCorrelations(
     predictiveSignals: [],
   };
 
+  const overridesByTopicId: Record<
+    string,
+    {
+      boostedTokens: string[];
+      blockedTokens: string[];
+      suppressedItemMetaIds: Set<string>;
+      feedback: CorrelationFeedbackStats;
+      learning: CorrelationLearningSnapshot;
+    }
+  > = {};
+
+  for (const topic of CORRELATION_TOPICS) {
+    const override = options?.learning?.get(topic.id);
+    const boostedTokens = normalizeTokens(override?.boostedTokens);
+    const blockedTokens = normalizeTokens(override?.blockedTokens);
+    const suppressedItemMetaIds = normalizeSuppressed(override?.suppressedItemMetaIds);
+    const falsePositive =
+      typeof override?.falsePositiveCount === "number" && Number.isFinite(override.falsePositiveCount)
+        ? Math.max(0, Math.trunc(override.falsePositiveCount))
+        : 0;
+    const falseNegative =
+      typeof override?.falseNegativeCount === "number" && Number.isFinite(override.falseNegativeCount)
+        ? Math.max(0, Math.trunc(override.falseNegativeCount))
+        : 0;
+    overridesByTopicId[topic.id] = {
+      boostedTokens,
+      blockedTokens,
+      suppressedItemMetaIds,
+      feedback: { falsePositive, falseNegative },
+      learning: { boostedTokens, blockedTokens, suppressedCount: suppressedItemMetaIds.size },
+    };
+  }
+
   const topicCounts: Record<string, number> = {};
   const topicSources: Record<string, Set<string>> = {};
-  const topicHeadlines: Record<string, { title: string; link: string; source: string }[]> = {};
+  const topicHeadlines: Record<
+    string,
+    { title: string; titleZh?: string; link: string; source: string; itemMetaId?: string }[]
+  > = {};
 
   for (const item of allNews) {
-    const title = item.title || "";
     const source = item.source || "Unknown";
+    const itemMetaId = item.itemMetaId;
+    const haystack = normalizeForMatch(item);
+    const lowerHaystack = haystack.toLowerCase();
 
     for (const topic of CORRELATION_TOPICS) {
-      const matches = topic.patterns.some((pattern) => pattern.test(title));
-      if (!matches) {
+      const override = overridesByTopicId[topic.id];
+      if (override?.suppressedItemMetaIds && itemMetaId && override.suppressedItemMetaIds.has(itemMetaId)) {
+        continue;
+      }
+
+      const matches = topic.patterns.some((pattern) => {
+        pattern.lastIndex = 0;
+        return pattern.test(haystack);
+      });
+      const boostedMatch =
+        override?.boostedTokens?.length && override.boostedTokens.some((token) => lowerHaystack.includes(token));
+      const combinedMatch = Boolean(matches || boostedMatch);
+      if (
+        combinedMatch &&
+        override?.blockedTokens?.length &&
+        override.blockedTokens.some((token) => lowerHaystack.includes(token))
+      ) {
+        continue;
+      }
+      if (!combinedMatch) {
         continue;
       }
 
@@ -108,10 +224,11 @@ export function analyzeCorrelations(
       sourcesForTopic.add(source);
 
       const headlinesForTopic =
-        topicHeadlines[topic.id] ?? ([] as { title: string; link: string; source: string }[]);
+        topicHeadlines[topic.id] ??
+        ([] as { title: string; titleZh?: string; link: string; source: string; itemMetaId?: string }[]);
       topicHeadlines[topic.id] = headlinesForTopic;
       if (headlinesForTopic.length < 5) {
-        headlinesForTopic.push({ title, link: item.link, source });
+        headlinesForTopic.push({ title: item.title, titleZh: item.titleZh, link: item.link, source, itemMetaId });
       }
     }
   }
@@ -119,6 +236,7 @@ export function analyzeCorrelations(
   const previousCounts = options?.previousCounts ?? {};
 
   for (const topic of CORRELATION_TOPICS) {
+    const override = overridesByTopicId[topic.id];
     const count = topicCounts[topic.id] || 0;
     const sourcesSet = topicSources[topic.id];
     const sources = sourcesSet ? Array.from(sourcesSet) : [];
@@ -138,6 +256,8 @@ export function analyzeCorrelations(
         level,
         sources,
         headlines,
+        feedback: override?.feedback,
+        learning: override?.learning,
       });
     }
 
@@ -153,6 +273,8 @@ export function analyzeCorrelations(
         delta,
         momentum,
         headlines,
+        feedback: override?.feedback,
+        learning: override?.learning,
       });
     }
 
@@ -168,6 +290,8 @@ export function analyzeCorrelations(
         sources,
         level,
         headlines,
+        feedback: override?.feedback,
+        learning: override?.learning,
       });
     }
 
@@ -187,6 +311,8 @@ export function analyzeCorrelations(
         prediction,
         level,
         headlines,
+        feedback: override?.feedback,
+        learning: override?.learning,
       });
     }
   }

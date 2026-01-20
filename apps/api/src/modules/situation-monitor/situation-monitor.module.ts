@@ -4,13 +4,19 @@ import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
 import { SituationMonitorController } from "./situation-monitor.controller";
 import { SituationMonitorExternalService } from "./external/situation-monitor-external.service";
+import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import { SituationMonitorService } from "./situation-monitor.service";
 import { SituationMonitorTranslationService } from "./situation-monitor-translation.service";
 
 @Module({
   imports: [NewsPipelineModule],
   controllers: [SituationMonitorController],
-  providers: [SituationMonitorService, SituationMonitorExternalService, SituationMonitorTranslationService],
+  providers: [
+    SituationMonitorService,
+    SituationMonitorExternalService,
+    SituationMonitorTranslationService,
+    SituationMonitorFeedbackService,
+  ],
   exports: [SituationMonitorService],
 })
 export class SituationMonitorModule {}

@@ -5,9 +5,14 @@ import { Inject, Injectable } from "@nestjs/common";
 import { CacheService } from "../cache/cache.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 
-import { analyzeCorrelations, getCorrelationSummary } from "./analysis/correlation";
+import {
+  analyzeCorrelations,
+  getCorrelationSummary,
+  type CorrelationLearningOverride,
+} from "./analysis/correlation";
 import { calculateMainCharacter, getMainCharacterSummary } from "./analysis/main-character";
-import { analyzeNarratives, getNarrativeSummary } from "./analysis/narrative";
+import { analyzeNarratives, getNarrativeSummary, type NarrativeLearningOverride } from "./analysis/narrative";
+import { CORRELATION_TOPICS, NARRATIVE_PATTERNS } from "./analysis/patterns";
 import type { SituationNewsItem } from "./analysis/types";
 import {
   classifySituationMonitorCategory,
@@ -31,13 +36,15 @@ import type {
   SituationMonitorSituationPanel,
   SituationMonitorWorldLeader,
 } from "./situation-monitor.types";
+import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 
 const HISTORY_RETENTION_MINUTES = 30;
 const MOMENTUM_WINDOW_MINUTES = 10;
 const CORRELATION_COUNTS_KEY_PREFIX = "situation-monitor:correlation:counts";
-const INSIGHTS_CACHE_KEY_PREFIX = "situation-monitor:insights:v1";
+const INSIGHTS_CACHE_KEY_PREFIX = "situation-monitor:insights:v2";
 const INSIGHTS_CACHE_TTL_SECONDS_CORE = 45;
 const INSIGHTS_CACHE_TTL_SECONDS_EXTERNAL = 300;
+const INSIGHTS_LEARNING_REV_KEY_PREFIX = "situation-monitor:insights:learning-rev:v1";
 
 type SituationMonitorCategory = (typeof SITUATION_MONITOR_CATEGORIES)[number];
 
@@ -67,6 +74,7 @@ export class SituationMonitorService {
   constructor(
     private readonly cache: CacheService,
     private readonly external: SituationMonitorExternalService,
+    private readonly feedback: SituationMonitorFeedbackService,
     @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection,
   ) {
     void this._mongo;
@@ -107,6 +115,8 @@ export class SituationMonitorService {
     const allowGdeltFallback = options?.gdelt ?? this.external.isGdeltEnabled();
     const scope = options?.scope === "all" ? ("all" as const) : ("tagged" as const);
     const debug = Boolean(options?.debug);
+    const learningRevRaw = await this.cache.get<number>(`${INSIGHTS_LEARNING_REV_KEY_PREFIX}:${orgId}`);
+    const learningRevision = typeof learningRevRaw === "number" && Number.isFinite(learningRevRaw) ? learningRevRaw : 0;
 
     if (includeCore) {
       const cacheKey = this.insightsCacheKey({
@@ -117,6 +127,7 @@ export class SituationMonitorService {
         scope,
         allowGdeltFallback,
         debug,
+        learningRevision,
       });
 
       const core = await this.cache.wrap(cacheKey, INSIGHTS_CACHE_TTL_SECONDS_CORE, async () => {
@@ -142,12 +153,49 @@ export class SituationMonitorService {
         const currentCountsKey = `${CORRELATION_COUNTS_KEY_PREFIX}:${orgId}:${nowMinute}`;
 
         const previousCounts = await this.cache.get<Record<string, number>>(previousCountsKey);
+
+        const [correlationLearning, narrativeLearning] = await Promise.all([
+          this.feedback.getLearningState(
+            orgId,
+            "correlation",
+            CORRELATION_TOPICS.map((entry) => entry.id),
+          ),
+          this.feedback.getLearningState(
+            orgId,
+            "narrative",
+            NARRATIVE_PATTERNS.map((entry) => entry.id),
+          ),
+        ]);
+
+        const correlationOverrides = new Map<string, CorrelationLearningOverride>();
+        for (const [signalId, snapshot] of correlationLearning.entries()) {
+          correlationOverrides.set(signalId, {
+            boostedTokens: snapshot.boostedTokens,
+            blockedTokens: snapshot.blockedTokens,
+            suppressedItemMetaIds: snapshot.suppressedItemMetaIds,
+            falsePositiveCount: snapshot.falsePositiveCount,
+            falseNegativeCount: snapshot.falseNegativeCount,
+          });
+        }
+
+        const narrativeOverrides = new Map<string, NarrativeLearningOverride>();
+        for (const [signalId, snapshot] of narrativeLearning.entries()) {
+          narrativeOverrides.set(signalId, {
+            boostedTokens: snapshot.boostedTokens,
+            blockedTokens: snapshot.blockedTokens,
+            suppressedItemMetaIds: snapshot.suppressedItemMetaIds,
+            falsePositiveCount: snapshot.falsePositiveCount,
+            falseNegativeCount: snapshot.falseNegativeCount,
+          });
+        }
+
         const { results: correlation, topicCounts } = analyzeCorrelations(analysisNews, {
           previousCounts: previousCounts ?? undefined,
+          learning: correlationOverrides,
         });
         await this.cache.set(currentCountsKey, topicCounts, ttlSeconds);
 
-        const narrative = analyzeNarratives(analysisNews);
+        const narrative = analyzeNarratives(analysisNews, { learning: narrativeOverrides });
         const mainCharacter = calculateMainCharacter(analysisNews);
 
         return {
@@ -215,6 +263,7 @@ export class SituationMonitorService {
     scope: "tagged" | "all";
     allowGdeltFallback: boolean;
     debug: boolean;
+    learningRevision?: number;
   }) {
     if (options.section === "external") {
       return `${INSIGHTS_CACHE_KEY_PREFIX}:external:${options.orgId}`;
@@ -227,6 +276,7 @@ export class SituationMonitorService {
       `sc${options.scope}`,
       `gd${options.allowGdeltFallback ? 1 : 0}`,
       `dbg${options.debug ? 1 : 0}`,
+      `lr${Math.max(0, Math.trunc(options.learningRevision ?? 0))}`,
     ].join(":");
 
     return `${INSIGHTS_CACHE_KEY_PREFIX}:core:${flags}`;
@@ -509,9 +559,14 @@ export class SituationMonitorService {
     return SITUATION_MONITOR_CATEGORIES.flatMap((category) =>
       headlines[category].map((headline) => ({
         title: headline.title,
+        titleZh: headline.titleZh,
         link: headline.link,
         source: headline.source,
         timestamp: headline.timestamp,
+        itemMetaId: headline.itemMetaId,
+        summary: headline.summary,
+        keyPoints: headline.keyPoints,
+        topics: headline.topics,
       })),
     );
   }

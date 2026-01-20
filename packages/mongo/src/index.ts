@@ -7,3 +7,6 @@ export * from "./models/akshare-response";
 export * from "./models/analysis-result";
 export * from "./models/assistant-run";
 export * from "./models/exception-event";
+export * from "./models/situation-signal-feedback";
+export * from "./models/situation-signal-learning-state";
+export * from "./models/situation-signal.types";

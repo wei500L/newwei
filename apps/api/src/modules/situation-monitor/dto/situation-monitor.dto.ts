@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 
 export class SituationMonitorInsightsQueryDto {
   @IsOptional()
@@ -35,4 +35,37 @@ export class SituationMonitorInsightsQueryDto {
   @IsOptional()
   @IsString()
   translate?: string;
+}
+
+export class SituationMonitorSignalFeedbackDto {
+  @IsString()
+  @IsIn(["narrative", "correlation"])
+  signalType!: "narrative" | "correlation";
+
+  @IsString()
+  signalId!: string;
+
+  @IsString()
+  @IsIn(["false_positive", "false_negative"])
+  label!: "false_positive" | "false_negative";
+
+  @IsOptional()
+  @IsString()
+  itemMetaId?: string;
+
+  @IsOptional()
+  @IsString()
+  itemLink?: string;
+
+  @IsOptional()
+  @IsString()
+  itemTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  itemSource?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

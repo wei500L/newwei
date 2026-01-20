@@ -1,12 +1,14 @@
-import { Controller, Get, Query } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
-import { SituationMonitorInsightsQueryDto } from "./dto/situation-monitor.dto";
+import { SituationMonitorInsightsQueryDto, SituationMonitorSignalFeedbackDto } from "./dto/situation-monitor.dto";
+import { CORRELATION_TOPICS, NARRATIVE_PATTERNS } from "./analysis/patterns";
 import { SituationMonitorService } from "./situation-monitor.service";
+import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import { SituationMonitorTranslationService } from "./situation-monitor-translation.service";
 
 function parseBoolean(value: unknown): boolean | undefined {
@@ -81,12 +83,17 @@ function parseTranslateTarget(value: unknown): "zh-CN" | undefined {
   return undefined;
 }
 
+function formatIdTitle(id: string): string {
+  return id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 @ApiTags("situation-monitor")
 @ApiBearerAuth()
 @Controller("situation-monitor")
 export class SituationMonitorController {
   constructor(
     private readonly monitor: SituationMonitorService,
+    private readonly feedback: SituationMonitorFeedbackService,
     private readonly translator: SituationMonitorTranslationService,
   ) {}
 
@@ -112,5 +119,41 @@ export class SituationMonitorController {
     }
 
     return response;
+  }
+
+  @Get("catalog")
+  @Permissions("items.read")
+  async catalog(@CurrentUser() user: AuthenticatedUser) {
+    void user;
+    return {
+      narratives: NARRATIVE_PATTERNS.map((entry) => ({
+        id: entry.id,
+        name: formatIdTitle(entry.id),
+        category: entry.category,
+        severity: entry.severity,
+      })),
+      correlations: CORRELATION_TOPICS.map((entry) => ({
+        id: entry.id,
+        name: formatIdTitle(entry.id),
+        category: entry.category,
+      })),
+    };
+  }
+
+  @Post("feedback")
+  @Permissions("items.write")
+  async recordFeedback(@CurrentUser() user: AuthenticatedUser, @Body() body: SituationMonitorSignalFeedbackDto) {
+    return await this.feedback.recordFeedback({
+      orgId: user.orgId,
+      userId: user.id,
+      signalType: body.signalType,
+      signalId: body.signalId,
+      label: body.label,
+      itemMetaId: body.itemMetaId,
+      itemLink: body.itemLink,
+      itemTitle: body.itemTitle,
+      itemSource: body.itemSource,
+      note: body.note,
+    });
   }
 }

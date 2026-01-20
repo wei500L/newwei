@@ -63,6 +63,18 @@ interface HeadlineRef {
   titleZh?: string;
   link: string;
   source: string;
+  itemMetaId?: string;
+}
+
+interface SignalFeedback {
+  falsePositive: number;
+  falseNegative: number;
+}
+
+interface SignalLearning {
+  boostedTokens: string[];
+  blockedTokens: string[];
+  suppressedCount: number;
 }
 
 interface EmergingPattern {
@@ -73,6 +85,8 @@ interface EmergingPattern {
   level: "high" | "elevated" | "emerging";
   sources: string[];
   headlines: HeadlineRef[];
+  feedback?: SignalFeedback;
+  learning?: SignalLearning;
 }
 
 interface MomentumSignal {
@@ -83,6 +97,8 @@ interface MomentumSignal {
   delta: number;
   momentum: "surging" | "rising" | "stable";
   headlines: HeadlineRef[];
+  feedback?: SignalFeedback;
+  learning?: SignalLearning;
 }
 
 interface PredictiveSignal {
@@ -94,6 +110,8 @@ interface PredictiveSignal {
   prediction: string;
   level: "high" | "medium" | "low";
   headlines: HeadlineRef[];
+  feedback?: SignalFeedback;
+  learning?: SignalLearning;
 }
 
 interface CrossSourceCorrelation {
@@ -104,6 +122,8 @@ interface CrossSourceCorrelation {
   sources: string[];
   level: "high" | "elevated" | "emerging";
   headlines: HeadlineRef[];
+  feedback?: SignalFeedback;
+  learning?: SignalLearning;
 }
 
 interface CorrelationResults {
@@ -226,6 +246,67 @@ interface SituationMonitorFedSnapshot {
   error?: string;
 }
 
+interface CrossSourceRadarCluster {
+  id: string;
+  itemCount: number;
+  sources: string[];
+  samples: { title: string; titleZh?: string; link: string; source: string; timestamp: number; itemMetaId?: string }[];
+}
+
+interface CrossSourceRadar {
+  consistency: number;
+  divergence: number;
+  clusterCount: number;
+  clusters: CrossSourceRadarCluster[];
+  outlierSources: string[];
+}
+
+interface FringeMainstreamPathStep {
+  tier: "fringe" | "alternative" | "mainstream" | "unknown";
+  firstSeenAt: number;
+  lastSeenAt: number;
+  count: number;
+  sources: string[];
+}
+
+interface FringeMainstreamPath {
+  steps: FringeMainstreamPathStep[];
+  lagToMainstreamMs?: number;
+}
+
+interface CitationLink {
+  from: string;
+  to: string;
+  weight: number;
+}
+
+interface CitationChain {
+  nodes: string[];
+  links: CitationLink[];
+  topCited: Array<{ source: string; weight: number }>;
+  citedByCount: number;
+}
+
+interface CredibilityAssessment {
+  score: number;
+  level: "high" | "medium" | "low";
+  reasons: string[];
+  components: {
+    sourceReliability: number;
+    corroboration: number;
+    citationSupport: number;
+    divergence: number;
+    feedbackPenalty: number;
+  };
+}
+
+interface NarrativePropagationModel {
+  crossSourceRadar: CrossSourceRadar;
+  fringeToMainstreamPath: FringeMainstreamPath;
+  credibility: CredibilityAssessment;
+  citationChain: CitationChain;
+}
+
 interface NarrativeData {
   id: string;
   name: string;
@@ -233,10 +314,14 @@ interface NarrativeData {
   severity: "watch" | "emerging" | "spreading" | "disinfo";
   count: number;
   fringeCount: number;
+  alternativeCount: number;
   mainstreamCount: number;
   sources: string[];
-  headlines: { title: string; link: string; source: string; timestamp: number }[];
+  headlines: { title: string; titleZh?: string; link: string; source: string; timestamp: number; itemMetaId?: string }[];
   keywords: string[];
+  feedback?: { falsePositive: number; falseNegative: number };
+  model?: NarrativePropagationModel;
+  learning?: { boostedTokens: string[]; blockedTokens: string[]; suppressedCount: number };
 }
 
 interface FringeToMainstream extends NarrativeData {
@@ -295,6 +380,19 @@ function toTagColor(level: string) {
   }
 }
 
+function toCredibilityColor(level: string) {
+  switch (level) {
+    case "high":
+      return "green";
+    case "medium":
+      return "orange";
+    case "low":
+      return "red";
+    default:
+      return "default";
+  }
+}
+
 function formatUsd(value: number, locale: string) {
   if (!Number.isFinite(value)) {
     return "—";
@@ -314,6 +412,22 @@ function formatPercent(value: number) {
   }
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
+}
+
+function formatDurationMs(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "—";
+  }
+  const minutes = Math.round(value / 60_000);
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) {
+    return `${hours}h`;
+  }
+  const days = Math.round(hours / 24);
+  return `${days}d`;
 }
 
 function mergePanelLayouts(existing: Layout[], updates: Layout[]): Layout[] {
@@ -371,7 +485,17 @@ export function SituationMonitorContent() {
   const setTranslateToZh = useSituationMonitorSettingsStore((state) => state.setTranslateToZh);
   const [refreshStage, setRefreshStage] = useState<"idle" | "core" | "external">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [feedbackNotice, setFeedbackNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [data, setData] = useState<SituationMonitorInsightsResponse | null>(null);
+  const [feedbackDrawerOpen, setFeedbackDrawerOpen] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [signalCatalog, setSignalCatalog] = useState<null | {
+    narratives: { id: string; name: string; category: string; severity: string }[];
+    correlations: { id: string; name: string; category: string }[];
+  }>(null);
+  const [missedSignalType, setMissedSignalType] = useState<"narrative" | "correlation">("narrative");
+  const [missedSignalId, setMissedSignalId] = useState<string>("");
+  const [missedHeadlineId, setMissedHeadlineId] = useState<string>("");
   const refreshIdRef = useRef(0);
   const loading = refreshStage !== "idle";
 
@@ -384,10 +508,26 @@ export function SituationMonitorContent() {
     [session?.accessToken]
   );
 
-  const load = useCallback(async () => {
+  const loadSignalCatalog = useCallback(async () => {
+    if (!session?.accessToken || signalCatalog || catalogLoading) {
+      return;
+    }
+    setCatalogLoading(true);
+    try {
+      const response = await apiClient.get("situation-monitor/catalog");
+      setSignalCatalog(response.data ?? null);
+    } catch (err) {
+      captureClientError("Failed to load situation monitor catalog", err);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, [apiClient, catalogLoading, session?.accessToken, signalCatalog]);
+
+  const load = useCallback(async (options?: { includeExternal?: boolean }) => {
     if (!session?.accessToken) {
       return;
     }
+    const includeExternal = options?.includeExternal ?? true;
     const refreshId = (refreshIdRef.current += 1);
     setRefreshStage("core");
     setError(null);
@@ -403,6 +543,10 @@ export function SituationMonitorContent() {
       const coreData = coreResponse.data ?? null;
       if (coreData) {
         setData((prev) => (prev ? { ...prev, ...coreData } : coreData));
+      }
+
+      if (!includeExternal) {
+        return;
       }
 
       setRefreshStage("external");
@@ -435,6 +579,48 @@ export function SituationMonitorContent() {
       }
     }
   }, [apiClient, scope, session?.accessToken, translateToZh, windowHours]);
+
+  const submitSignalFeedback = useCallback(
+    async (payload: {
+      signalType: "narrative" | "correlation";
+      signalId: string;
+      label: "false_positive" | "false_negative";
+      item?: { itemMetaId?: string; title?: string; source?: string; link?: string } | null;
+    }) => {
+      if (!session?.accessToken) {
+        return;
+      }
+      try {
+        setFeedbackNotice(null);
+        await apiClient.post("situation-monitor/feedback", {
+          signalType: payload.signalType,
+          signalId: payload.signalId,
+          label: payload.label,
+          itemMetaId: payload.item?.itemMetaId,
+          itemTitle: payload.item?.title,
+          itemSource: payload.item?.source,
+          itemLink: payload.item?.link,
+        });
+        setFeedbackNotice({
+          type: "success",
+          message:
+            payload.label === "false_positive"
+              ? t("common.feedbackSaved", { defaultValue: "Marked as false positive." })
+              : t("common.feedbackSaved", { defaultValue: "Marked as missed detection." }),
+        });
+        void load({ includeExternal: false });
+        setTimeout(() => setFeedbackNotice(null), 3500);
+      } catch (err) {
+        captureClientError("Failed to submit situation monitor feedback", err);
+        setFeedbackNotice({
+          type: "error",
+          message: t("common.feedbackFailed", { defaultValue: "Failed to submit feedback." }),
+        });
+        setTimeout(() => setFeedbackNotice(null), 4000);
+      }
+    },
+    [apiClient, load, session?.accessToken, t],
+  );
 
   useEffect(() => {
     void load();
@@ -519,6 +705,33 @@ export function SituationMonitorContent() {
     return items;
   }, [data?.alerts, data?.headlines, data?.situations]);
 
+  const feedbackCandidateHeadlines = useMemo(() => {
+    const headlinesByCategory = data?.headlines;
+    if (!headlinesByCategory) {
+      return [] as SituationMonitorHeadline[];
+    }
+
+    const entries = Object.values(headlinesByCategory).flatMap((list) => (Array.isArray(list) ? list : []));
+    const results: SituationMonitorHeadline[] = [];
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      const key = entry.itemMetaId ?? entry.link;
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      results.push(entry);
+      if (results.length >= 80) {
+        break;
+      }
+    }
+    return results;
+  }, [data?.headlines]);
+
+  const feedbackHeadlineById = useMemo(() => {
+    return new Map<string, SituationMonitorHeadline>(feedbackCandidateHeadlines.map((headline) => [headline.id, headline]));
+  }, [feedbackCandidateHeadlines]);
+
   useEffect(() => {
     scanMonitors(monitorScanItems);
   }, [monitorScanItems, monitors, scanMonitors]);
@@ -596,6 +809,75 @@ export function SituationMonitorContent() {
 	        );
 		            },
     },
+    {
+      title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
+      key: "feedback",
+      width: 120,
+      render: (_, record) => {
+        const first = Array.isArray(record.headlines) ? record.headlines[0] : undefined;
+        const fpCount = record.feedback?.falsePositive ?? 0;
+        const fnCount = record.feedback?.falseNegative ?? 0;
+        const suppressedCount = record.learning?.suppressedCount ?? 0;
+        const boosted = record.learning?.boostedTokens ?? [];
+        const blocked = record.learning?.blockedTokens ?? [];
+        return (
+          <Popover
+            placement="left"
+            content={
+              <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
+                <Space size={8} wrap>
+                  <Tag color="red">FP {fpCount}</Tag>
+                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>SUP {suppressedCount}</Tag>
+                </Space>
+                {boosted.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {boosted.slice(0, 10).map((token) => (
+                        <Tag key={`c-boost-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+                {blocked.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {blocked.slice(0, 10).map((token) => (
+                        <Tag key={`c-block-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+              </Space>
+            }
+          >
+            <Button
+              size="small"
+              danger
+              onClick={() =>
+                void submitSignalFeedback({
+                  signalType: "correlation",
+                  signalId: record.id,
+                  label: "false_positive",
+                  item: first
+                    ? { itemMetaId: first.itemMetaId, title: first.title, source: first.source, link: first.link }
+                    : null,
+                })
+              }
+            >
+              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {fpCount > 0 ? ` (${fpCount})` : ""}
+            </Button>
+          </Popover>
+        );
+      },
+    },
   ];
 
   const momentumColumns: ColumnsType<MomentumSignal> = [
@@ -630,6 +912,75 @@ export function SituationMonitorContent() {
         </Tag>
       ),
     },
+    {
+      title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
+      key: "feedback",
+      width: 120,
+      render: (_, record) => {
+        const first = Array.isArray(record.headlines) ? record.headlines[0] : undefined;
+        const fpCount = record.feedback?.falsePositive ?? 0;
+        const fnCount = record.feedback?.falseNegative ?? 0;
+        const suppressedCount = record.learning?.suppressedCount ?? 0;
+        const boosted = record.learning?.boostedTokens ?? [];
+        const blocked = record.learning?.blockedTokens ?? [];
+        return (
+          <Popover
+            placement="left"
+            content={
+              <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
+                <Space size={8} wrap>
+                  <Tag color="red">FP {fpCount}</Tag>
+                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>SUP {suppressedCount}</Tag>
+                </Space>
+                {boosted.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {boosted.slice(0, 10).map((token) => (
+                        <Tag key={`c-boost-m-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+                {blocked.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {blocked.slice(0, 10).map((token) => (
+                        <Tag key={`c-block-m-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+              </Space>
+            }
+          >
+            <Button
+              size="small"
+              danger
+              onClick={() =>
+                void submitSignalFeedback({
+                  signalType: "correlation",
+                  signalId: record.id,
+                  label: "false_positive",
+                  item: first
+                    ? { itemMetaId: first.itemMetaId, title: first.title, source: first.source, link: first.link }
+                    : null,
+                })
+              }
+            >
+              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {fpCount > 0 ? ` (${fpCount})` : ""}
+            </Button>
+          </Popover>
+        );
+      },
+    },
   ];
 
   const predictiveColumns: ColumnsType<PredictiveSignal> = [
@@ -637,6 +988,75 @@ export function SituationMonitorContent() {
     { title: t("situationMonitor.correlation.score", { defaultValue: "Score" }), dataIndex: "score", key: "score", width: 90 },
     { title: t("situationMonitor.correlation.confidence", { defaultValue: "Confidence" }), dataIndex: "confidence", key: "confidence", width: 120, render: (value: number) => `${value}%` },
     { title: t("situationMonitor.correlation.prediction", { defaultValue: "Prediction" }), dataIndex: "prediction", key: "prediction" },
+    {
+      title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
+      key: "feedback",
+      width: 120,
+      render: (_, record) => {
+        const first = Array.isArray(record.headlines) ? record.headlines[0] : undefined;
+        const fpCount = record.feedback?.falsePositive ?? 0;
+        const fnCount = record.feedback?.falseNegative ?? 0;
+        const suppressedCount = record.learning?.suppressedCount ?? 0;
+        const boosted = record.learning?.boostedTokens ?? [];
+        const blocked = record.learning?.blockedTokens ?? [];
+        return (
+          <Popover
+            placement="left"
+            content={
+              <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
+                <Space size={8} wrap>
+                  <Tag color="red">FP {fpCount}</Tag>
+                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>SUP {suppressedCount}</Tag>
+                </Space>
+                {boosted.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {boosted.slice(0, 10).map((token) => (
+                        <Tag key={`c-boost-p-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+                {blocked.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {blocked.slice(0, 10).map((token) => (
+                        <Tag key={`c-block-p-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+              </Space>
+            }
+          >
+            <Button
+              size="small"
+              danger
+              onClick={() =>
+                void submitSignalFeedback({
+                  signalType: "correlation",
+                  signalId: record.id,
+                  label: "false_positive",
+                  item: first
+                    ? { itemMetaId: first.itemMetaId, title: first.title, source: first.source, link: first.link }
+                    : null,
+                })
+              }
+            >
+              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {fpCount > 0 ? ` (${fpCount})` : ""}
+            </Button>
+          </Popover>
+        );
+      },
+    },
   ];
 
   const crossSourceColumns: ColumnsType<CrossSourceCorrelation> = [
@@ -681,7 +1101,137 @@ export function SituationMonitorContent() {
 	        );
 	      },
 	    },
+    {
+      title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
+      key: "feedback",
+      width: 120,
+      render: (_, record) => {
+        const first = Array.isArray(record.headlines) ? record.headlines[0] : undefined;
+        const fpCount = record.feedback?.falsePositive ?? 0;
+        const fnCount = record.feedback?.falseNegative ?? 0;
+        const suppressedCount = record.learning?.suppressedCount ?? 0;
+        const boosted = record.learning?.boostedTokens ?? [];
+        const blocked = record.learning?.blockedTokens ?? [];
+        return (
+          <Popover
+            placement="left"
+            content={
+              <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
+                <Space size={8} wrap>
+                  <Tag color="red">FP {fpCount}</Tag>
+                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>SUP {suppressedCount}</Tag>
+                </Space>
+                {boosted.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {boosted.slice(0, 10).map((token) => (
+                        <Tag key={`c-boost-x-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+                {blocked.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {blocked.slice(0, 10).map((token) => (
+                        <Tag key={`c-block-x-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+              </Space>
+            }
+          >
+            <Button
+              size="small"
+              danger
+              onClick={() =>
+                void submitSignalFeedback({
+                  signalType: "correlation",
+                  signalId: record.id,
+                  label: "false_positive",
+                  item: first
+                    ? { itemMetaId: first.itemMetaId, title: first.title, source: first.source, link: first.link }
+                    : null,
+                })
+              }
+            >
+              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {fpCount > 0 ? ` (${fpCount})` : ""}
+            </Button>
+          </Popover>
+        );
+      },
+    },
 	  ];
+
+  type CorrelationRow = EmergingPattern | MomentumSignal | CrossSourceCorrelation | PredictiveSignal;
+
+  const correlationExpandable = useMemo(() => {
+    return {
+      rowExpandable: (record: CorrelationRow) => {
+        const boosted = record.learning?.boostedTokens?.length ?? 0;
+        const blocked = record.learning?.blockedTokens?.length ?? 0;
+        const suppressed = record.learning?.suppressedCount ?? 0;
+        const fp = record.feedback?.falsePositive ?? 0;
+        const fn = record.feedback?.falseNegative ?? 0;
+        return boosted > 0 || blocked > 0 || suppressed > 0 || fp > 0 || fn > 0;
+      },
+      expandedRowRender: (record: CorrelationRow) => {
+        const fpCount = record.feedback?.falsePositive ?? 0;
+        const fnCount = record.feedback?.falseNegative ?? 0;
+        const suppressedCount = record.learning?.suppressedCount ?? 0;
+        const boosted = record.learning?.boostedTokens ?? [];
+        const blocked = record.learning?.blockedTokens ?? [];
+
+        return (
+          <Space direction="vertical" size={10} style={{ width: "100%" }}>
+            <Typography.Text type="secondary">
+              {t("situationMonitor.correlation.learningHint", {
+                defaultValue: "Feedback-driven learning: boosted/blocked tokens and per-item suppression.",
+              })}
+            </Typography.Text>
+            <Space size={8} wrap>
+              <Tag color="red">FP {fpCount}</Tag>
+              <Tag color="gold">FN {fnCount}</Tag>
+              <Tag>SUP {suppressedCount}</Tag>
+            </Space>
+            {boosted.length ? (
+              <Space direction="vertical" size={2}>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                </Typography.Text>
+                <Space size={6} wrap>
+                  {boosted.slice(0, 16).map((token) => (
+                    <Tag key={`corr-boost-${record.id}-${token}`}>{token}</Tag>
+                  ))}
+                </Space>
+              </Space>
+            ) : null}
+            {blocked.length ? (
+              <Space direction="vertical" size={2}>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                </Typography.Text>
+                <Space size={6} wrap>
+                  {blocked.slice(0, 16).map((token) => (
+                    <Tag key={`corr-block-${record.id}-${token}`}>{token}</Tag>
+                  ))}
+                </Space>
+              </Space>
+            ) : null}
+          </Space>
+        );
+      },
+    };
+  }, [t]);
 
   const narrativeColumns: ColumnsType<NarrativeData> = [
     {
@@ -697,8 +1247,379 @@ export function SituationMonitorContent() {
     },
     { title: t("situationMonitor.narrative.count", { defaultValue: "Count" }), dataIndex: "count", key: "count", width: 90 },
     { title: t("situationMonitor.narrative.fringe", { defaultValue: "Fringe" }), dataIndex: "fringeCount", key: "fringeCount", width: 90 },
+    {
+      title: t("situationMonitor.narrative.alternative", { defaultValue: "Alt" }),
+      dataIndex: "alternativeCount",
+      key: "alternativeCount",
+      width: 80,
+    },
     { title: t("situationMonitor.narrative.mainstream", { defaultValue: "Mainstream" }), dataIndex: "mainstreamCount", key: "mainstreamCount", width: 110 },
+    {
+      title: t("situationMonitor.narrative.radar", { defaultValue: "Radar" }),
+      key: "radar",
+      width: 140,
+      render: (_, record) => {
+        const radar = record.model?.crossSourceRadar;
+        if (!radar) return "—";
+        const consistency = Math.round((radar.consistency ?? 0) * 100);
+        const divergence = Math.round((radar.divergence ?? 0) * 100);
+        return (
+          <Popover
+            content={
+              <Space direction="vertical" size={4}>
+                <Typography.Text>
+                  {t("situationMonitor.narrative.consistency", { defaultValue: "Consistency" })}: {consistency}%
+                </Typography.Text>
+                <Typography.Text>
+                  {t("situationMonitor.narrative.divergence", { defaultValue: "Divergence" })}: {divergence}%
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.narrative.clusters", { defaultValue: "Clusters" })}: {radar.clusterCount ?? 0}
+                </Typography.Text>
+              </Space>
+            }
+          >
+            <Progress percent={consistency} size="small" showInfo={false} />
+          </Popover>
+        );
+      },
+    },
+    {
+      title: t("situationMonitor.narrative.credibility", { defaultValue: "Credibility" }),
+      key: "credibility",
+      width: 130,
+      render: (_, record) => {
+        const credibility = record.model?.credibility;
+        if (!credibility) return "—";
+        const reasons = Array.isArray(credibility.reasons) ? credibility.reasons : [];
+        const components = credibility.components;
+        return (
+          <Popover
+            placement="left"
+            content={
+              <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
+                {reasons.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text strong>
+                      {t("situationMonitor.narrative.credibilityReasons", { defaultValue: "Reasons" })}
+                    </Typography.Text>
+                    {reasons.slice(0, 4).map((reason) => (
+                      <Typography.Text key={reason} type="secondary">
+                        - {reason}
+                      </Typography.Text>
+                    ))}
+                  </Space>
+                ) : null}
+                <Space direction="vertical" size={2}>
+                  <Typography.Text strong>
+                    {t("situationMonitor.narrative.credibilityBreakdown", { defaultValue: "Breakdown" })}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.narrative.sourceReliability", { defaultValue: "Source reliability" })}
+                  </Typography.Text>
+                  <Progress percent={Math.round((components.sourceReliability ?? 0) * 100)} size="small" showInfo={false} />
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.narrative.corroboration", { defaultValue: "Corroboration" })}
+                  </Typography.Text>
+                  <Progress percent={Math.round((components.corroboration ?? 0) * 100)} size="small" showInfo={false} />
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.narrative.citationSupport", { defaultValue: "Citation support" })}
+                  </Typography.Text>
+                  <Progress percent={Math.round((components.citationSupport ?? 0) * 100)} size="small" showInfo={false} />
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.narrative.divergence", { defaultValue: "Divergence" })}
+                  </Typography.Text>
+                  <Progress percent={Math.round((components.divergence ?? 0) * 100)} size="small" showInfo={false} />
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.narrative.feedbackPenalty", { defaultValue: "Feedback penalty" })}
+                  </Typography.Text>
+                  <Progress percent={Math.round((components.feedbackPenalty ?? 0) * 100)} size="small" showInfo={false} />
+                </Space>
+              </Space>
+            }
+          >
+            <Tag color={toCredibilityColor(credibility.level)}>
+              {credibility.level.toUpperCase()} {credibility.score}
+            </Tag>
+          </Popover>
+        );
+      },
+    },
+    {
+      title: t("situationMonitor.narrative.feedback", { defaultValue: "Feedback" }),
+      key: "feedback",
+      width: 120,
+      render: (_, record) => {
+        const headline = record.headlines?.[0];
+        const fpCount = record.feedback?.falsePositive ?? 0;
+        const fnCount = record.feedback?.falseNegative ?? 0;
+        const suppressedCount = record.learning?.suppressedCount ?? 0;
+        const boosted = record.learning?.boostedTokens ?? [];
+        const blocked = record.learning?.blockedTokens ?? [];
+        return (
+          <Popover
+            placement="left"
+            content={
+              <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
+                <Space size={8} wrap>
+                  <Tag color="red">FP {fpCount}</Tag>
+                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>SUP {suppressedCount}</Tag>
+                </Space>
+                {boosted.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {boosted.slice(0, 10).map((token) => (
+                        <Tag key={`boost-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+                {blocked.length ? (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                    </Typography.Text>
+                    <Space size={6} wrap>
+                      {blocked.slice(0, 10).map((token) => (
+                        <Tag key={`block-${record.id}-${token}`}>{token}</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : null}
+              </Space>
+            }
+          >
+            <Button
+              size="small"
+              danger
+              onClick={() =>
+                void submitSignalFeedback({
+                  signalType: "narrative",
+                  signalId: record.id,
+                  label: "false_positive",
+                  item: headline
+                    ? { itemMetaId: headline.itemMetaId, title: headline.title, source: headline.source, link: headline.link }
+                    : null,
+                })
+              }
+            >
+              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {fpCount > 0 ? ` (${fpCount})` : ""}
+            </Button>
+          </Popover>
+        );
+      },
+    },
   ];
+
+  const narrativeExpandable = useMemo(() => {
+    return {
+      rowExpandable: (record: NarrativeData) => Boolean(record.model),
+      expandedRowRender: (record: NarrativeData) => {
+        const model = record.model;
+        if (!model) return null;
+
+        const path = model.fringeToMainstreamPath;
+        const citation = model.citationChain;
+        const radar = model.crossSourceRadar;
+        const credibility = model.credibility;
+
+        const stepsLabel = path.steps
+          .filter((step) => step.tier !== "unknown")
+          .map((step) => step.tier)
+          .join(" → ");
+        const lagLabel = path.lagToMainstreamMs ? formatDurationMs(path.lagToMainstreamMs) : "—";
+
+        return (
+          <Row gutter={[12, 12]}>
+            <Col xs={24} lg={8}>
+              <Typography.Text strong>
+                {t("situationMonitor.narrative.path", { defaultValue: "Fringe → Mainstream Path" })}
+              </Typography.Text>
+              <div className="mt-1">
+                <Typography.Text>{stepsLabel || "—"}</Typography.Text>
+              </div>
+              <div className="mt-1">
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.narrative.lag", { defaultValue: "Lag to mainstream" })}: {lagLabel}
+                </Typography.Text>
+              </div>
+              <div className="mt-2">
+                <Space direction="vertical" size={2}>
+                  {path.steps.map((step) => {
+                    const firstSeen = step.firstSeenAt ? new Date(step.firstSeenAt) : null;
+                    const lastSeen = step.lastSeenAt ? new Date(step.lastSeenAt) : null;
+                    return (
+                      <Typography.Text key={step.tier} type="secondary">
+                        {step.tier.toUpperCase()}: {step.count}{" "}
+                        {firstSeen
+                          ? `(${formatDateTime(firstSeen, locale, {
+                              month: "2-digit",
+                              day: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })} → ${
+                              lastSeen
+                                ? formatDateTime(lastSeen, locale, {
+                                    month: "2-digit",
+                                    day: "2-digit",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "—"
+                            })`
+                          : ""}
+                      </Typography.Text>
+                    );
+                  })}
+                </Space>
+              </div>
+            </Col>
+            <Col xs={24} lg={8}>
+              <Typography.Text strong>
+                {t("situationMonitor.narrative.radarDetail", { defaultValue: "Cross-source Radar" })}
+              </Typography.Text>
+              <div className="mt-2">
+                <Space size={10} wrap>
+                  <Tag color="geekblue">
+                    {t("situationMonitor.narrative.consistency", { defaultValue: "Consistency" })}:{" "}
+                    {Math.round((radar.consistency ?? 0) * 100)}%
+                  </Tag>
+                  <Tag color="gold">
+                    {t("situationMonitor.narrative.divergence", { defaultValue: "Divergence" })}:{" "}
+                    {Math.round((radar.divergence ?? 0) * 100)}%
+                  </Tag>
+                  <Tag>
+                    {t("situationMonitor.narrative.clusters", { defaultValue: "Clusters" })}: {radar.clusterCount ?? 0}
+                  </Tag>
+                  <Tag color={toCredibilityColor(credibility.level)}>
+                    {t("situationMonitor.narrative.credibility", { defaultValue: "Credibility" })}: {credibility.score}
+                  </Tag>
+                </Space>
+              </div>
+              {credibility.reasons?.length ? (
+                <div className="mt-2">
+                  <Space direction="vertical" size={2}>
+                    {credibility.reasons.slice(0, 4).map((reason) => (
+                      <Typography.Text key={reason} type="secondary">
+                        - {reason}
+                      </Typography.Text>
+                    ))}
+                  </Space>
+                </div>
+              ) : null}
+              {radar.outlierSources?.length ? (
+                <div className="mt-2">
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.narrative.outliers", { defaultValue: "Outliers" })}:
+                  </Typography.Text>
+                  <div className="mt-1">
+                    <Space size={6} wrap>
+                      {radar.outlierSources.slice(0, 8).map((source) => (
+                        <Tag key={source}>{source}</Tag>
+                      ))}
+                    </Space>
+                  </div>
+                </div>
+              ) : null}
+              {radar.clusters?.length ? (
+                <div className="mt-2">
+                  <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                    {radar.clusters.slice(0, 4).map((cluster) => (
+                      <div key={cluster.id}>
+                        <Typography.Text type="secondary">
+                          {cluster.id}: {cluster.itemCount}{" "}
+                          {cluster.sources?.length ? `· ${cluster.sources.slice(0, 4).join(", ")}` : ""}
+                        </Typography.Text>
+                      </div>
+                    ))}
+                  </Space>
+                </div>
+              ) : null}
+            </Col>
+            <Col xs={24} lg={8}>
+              <Typography.Text strong>
+                {t("situationMonitor.narrative.citations", { defaultValue: "Citation Chain" })}
+              </Typography.Text>
+              <div className="mt-2">
+                {citation.topCited?.length ? (
+                  <Space size={6} wrap>
+                    {citation.topCited.slice(0, 8).map((entry) => (
+                      <Tag key={entry.source} color="cyan">
+                        {entry.source} · {entry.weight}
+                      </Tag>
+                    ))}
+                  </Space>
+                ) : (
+                  <Typography.Text type="secondary">—</Typography.Text>
+                )}
+              </div>
+              {citation.links?.length ? (
+                <div className="mt-2">
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.narrative.citationLinks", { defaultValue: "Top links" })}
+                  </Typography.Text>
+                  <div className="mt-1">
+                    <Space direction="vertical" size={2}>
+                      {citation.links.slice(0, 6).map((link) => (
+                        <Typography.Text key={`${link.from}=>${link.to}`} type="secondary">
+                          {link.from} → {link.to} ({link.weight})
+                        </Typography.Text>
+                      ))}
+                    </Space>
+                  </div>
+                </div>
+              ) : null}
+              {record.learning?.boostedTokens?.length ||
+              record.learning?.blockedTokens?.length ||
+              (record.learning?.suppressedCount ?? 0) > 0 ||
+              (record.feedback?.falsePositive ?? 0) > 0 ||
+              (record.feedback?.falseNegative ?? 0) > 0 ? (
+                <div className="mt-3">
+                  <Typography.Text strong>
+                    {t("situationMonitor.narrative.learning", { defaultValue: "Learning" })}
+                  </Typography.Text>
+                  <div className="mt-2">
+                    <Space size={8} wrap>
+                      <Tag color="red">FP {record.feedback?.falsePositive ?? 0}</Tag>
+                      <Tag color="gold">FN {record.feedback?.falseNegative ?? 0}</Tag>
+                      <Tag>SUP {record.learning?.suppressedCount ?? 0}</Tag>
+                    </Space>
+                    {record.learning?.boostedTokens?.length ? (
+                      <Space size={6} wrap>
+                        <Typography.Text type="secondary">
+                          {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}:
+                        </Typography.Text>
+                        {record.learning.boostedTokens.slice(0, 8).map((token) => (
+                          <Tag key={`boost-${token}`}>{token}</Tag>
+                        ))}
+                      </Space>
+                    ) : null}
+                    {record.learning?.blockedTokens?.length ? (
+                      <div className="mt-1">
+                        <Space size={6} wrap>
+                          <Typography.Text type="secondary">
+                            {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}:
+                          </Typography.Text>
+                          {record.learning.blockedTokens.slice(0, 8).map((token) => (
+                            <Tag key={`block-${token}`}>{token}</Tag>
+                          ))}
+                        </Space>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </Col>
+          </Row>
+        );
+      },
+    };
+  }, [locale, t]);
 
   const mainCharacterColumns: ColumnsType<MainCharacterEntry> = [
     { title: "#", dataIndex: "rank", key: "rank", width: 60 },
@@ -1539,6 +2460,16 @@ export function SituationMonitorContent() {
           <Tag color="geekblue">
             {data?.correlationSummary?.status ?? t("common.loading", { defaultValue: "Loading" })}
           </Tag>
+          <Button
+            size="small"
+            icon={<FileSearchOutlined />}
+            onClick={() => {
+              setFeedbackDrawerOpen(true);
+              void loadSignalCatalog();
+            }}
+          >
+            {t("situationMonitor.narrative.reportMissed", { defaultValue: "Report missed" })}
+          </Button>
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
@@ -1548,7 +2479,8 @@ export function SituationMonitorContent() {
         <Col span={24}>
           <Typography.Text type="secondary">
             {t("situationMonitor.correlation.hint", {
-              defaultValue: "Pattern-based correlation across titles (momentum uses a short Redis history window).",
+              defaultValue:
+                "Pattern-based correlation across titles/summary (momentum uses a short Redis history window; feedback updates matching/suppression).",
             })}
           </Typography.Text>
         </Col>
@@ -1557,6 +2489,7 @@ export function SituationMonitorContent() {
             rowKey="id"
             size="small"
             columns={emergingColumns}
+            expandable={correlationExpandable}
             dataSource={data?.correlation?.emergingPatterns ?? []}
             pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
           />
@@ -1569,6 +2502,7 @@ export function SituationMonitorContent() {
             rowKey="id"
             size="small"
             columns={crossSourceColumns}
+            expandable={correlationExpandable}
             dataSource={data?.correlation?.crossSourceCorrelations ?? []}
             pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
           />
@@ -1581,6 +2515,7 @@ export function SituationMonitorContent() {
             rowKey="id"
             size="small"
             columns={momentumColumns}
+            expandable={correlationExpandable}
             dataSource={data?.correlation?.momentumSignals ?? []}
             pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
           />
@@ -1593,6 +2528,7 @@ export function SituationMonitorContent() {
             rowKey="id"
             size="small"
             columns={predictiveColumns}
+            expandable={correlationExpandable}
             dataSource={data?.correlation?.predictiveSignals ?? []}
             pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
           />
@@ -1607,6 +2543,16 @@ export function SituationMonitorContent() {
         <Space size={12}>
           <span>{t("situationMonitor.narrative.title", { defaultValue: "Narrative Tracker" })}</span>
           <Tag color="geekblue">{data?.narrativeSummary?.status ?? t("common.loading", { defaultValue: "Loading" })}</Tag>
+          <Button
+            size="small"
+            icon={<FileSearchOutlined />}
+            onClick={() => {
+              setFeedbackDrawerOpen(true);
+              void loadSignalCatalog();
+            }}
+          >
+            {t("situationMonitor.narrative.reportMissed", { defaultValue: "Report missed" })}
+          </Button>
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
@@ -1614,7 +2560,8 @@ export function SituationMonitorContent() {
     >
       <Typography.Text type="secondary">
         {t("situationMonitor.narrative.hint", {
-          defaultValue: "Keyword-based narratives and fringe-to-mainstream crossover signals.",
+          defaultValue:
+            "Narrative propagation model: cross-source radar, fringe→mainstream path, credibility & citation chain (with continuous learning from feedback).",
         })}
       </Typography.Text>
       <div className="mt-3">
@@ -1625,6 +2572,7 @@ export function SituationMonitorContent() {
           rowKey="id"
           size="small"
           columns={narrativeColumns}
+          expandable={narrativeExpandable}
           dataSource={data?.narrative?.fringeToMainstream ?? []}
           pagination={{ pageSize: 6, hideOnSinglePage: true }}
         />
@@ -1637,6 +2585,7 @@ export function SituationMonitorContent() {
           rowKey="id"
           size="small"
           columns={narrativeColumns}
+          expandable={narrativeExpandable}
           dataSource={data?.narrative?.emergingFringe ?? []}
           pagination={{ pageSize: 6, hideOnSinglePage: true }}
         />
@@ -1649,6 +2598,7 @@ export function SituationMonitorContent() {
           rowKey="id"
           size="small"
           columns={narrativeColumns}
+          expandable={narrativeExpandable}
           dataSource={data?.narrative?.narrativeWatch ?? []}
           pagination={{ pageSize: 6, hideOnSinglePage: true }}
         />
@@ -1661,6 +2611,7 @@ export function SituationMonitorContent() {
           rowKey="id"
           size="small"
           columns={narrativeColumns}
+          expandable={narrativeExpandable}
           dataSource={data?.narrative?.disinfoSignals ?? []}
           pagination={{ pageSize: 6, hideOnSinglePage: true }}
         />
@@ -1852,6 +2803,24 @@ export function SituationMonitorContent() {
       </div>
 
       {error ? <Alert type="error" showIcon message={error} /> : null}
+      {feedbackNotice ? (
+        <div className="mt-3">
+          <Alert
+            showIcon
+            type={feedbackNotice.type}
+            message={feedbackNotice.message}
+            closable
+            onClose={() => setFeedbackNotice(null)}
+            action={
+              feedbackNotice.type === "success" ? (
+                <Button size="small" onClick={() => void load({ includeExternal: false })}>
+                  {t("common.refresh", { defaultValue: "Refresh" })}
+                </Button>
+              ) : null
+            }
+          />
+        </div>
+      ) : null}
 
       <Drawer
         title={t("situationMonitor.panels.title", { defaultValue: "Panels" })}
@@ -1935,6 +2904,149 @@ export function SituationMonitorContent() {
               </List.Item>
             )}
           />
+        </Space>
+      </Drawer>
+
+      <Drawer
+        title={t("situationMonitor.narrative.reportMissed", { defaultValue: "Report missed" })}
+        open={feedbackDrawerOpen}
+        onClose={() => setFeedbackDrawerOpen(false)}
+        width={420}
+      >
+        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            {t("situationMonitor.narrative.reportMissedHint", {
+              defaultValue: "Pick a headline that should have triggered a narrative/correlation signal, then choose the expected signal.",
+            })}
+          </Typography.Text>
+          <Divider style={{ margin: "12px 0" }} />
+          <Space direction="vertical" size={10} style={{ width: "100%" }}>
+            <Typography.Text>{t("situationMonitor.narrative.missedHeadline", { defaultValue: "Headline" })}</Typography.Text>
+            <Select
+              showSearch
+              value={missedHeadlineId || undefined}
+              placeholder={t("situationMonitor.narrative.missedHeadlinePlaceholder", { defaultValue: "Select a headline" })}
+              options={feedbackCandidateHeadlines.map((headline) => ({
+                value: headline.id,
+                label: `${headline.source} · ${translateToZh ? headline.titleZh ?? headline.title : headline.title}`,
+              }))}
+              filterOption={(input, option) =>
+                String(option?.label ?? "")
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
+              onChange={(value) => setMissedHeadlineId(value)}
+            />
+          </Space>
+          {missedHeadlineId && feedbackHeadlineById.has(missedHeadlineId) ? (
+            <Card size="small" styles={{ body: { padding: 12 } }}>
+              {(() => {
+                const headline = feedbackHeadlineById.get(missedHeadlineId);
+                if (!headline) return null;
+                const href = headline.link ? safeHttpUrl(headline.link) : null;
+                const title = translateToZh ? headline.titleZh ?? headline.title : headline.title;
+                const date = Number.isFinite(headline.timestamp) ? new Date(headline.timestamp) : null;
+                return (
+                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                    {href ? (
+                      <Typography.Link href={href} target="_blank" rel="noreferrer">
+                        {title}
+                      </Typography.Link>
+                    ) : (
+                      <Typography.Text>{title}</Typography.Text>
+                    )}
+                    <Space size={8} wrap>
+                      <Typography.Text type="secondary">{headline.source}</Typography.Text>
+                      {date ? (
+                        <Typography.Text type="secondary">
+                          {formatDateTime(date, locale, {
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </Typography.Text>
+                      ) : null}
+                      <Tag color="blue">{categoryLabels[headline.category]}</Tag>
+                    </Space>
+                    {renderHeadlineSummary(headline)}
+                  </Space>
+                );
+              })()}
+            </Card>
+          ) : null}
+          <Space direction="vertical" size={10} style={{ width: "100%" }}>
+            <Typography.Text>{t("situationMonitor.narrative.missedSignalType", { defaultValue: "Signal type" })}</Typography.Text>
+            <Select
+              value={missedSignalType}
+              options={[
+                { value: "narrative", label: t("situationMonitor.narrative.title", { defaultValue: "Narrative" }) },
+                { value: "correlation", label: t("situationMonitor.correlation.title", { defaultValue: "Correlation" }) },
+              ]}
+              onChange={(value) => {
+                setMissedSignalType(value as "narrative" | "correlation");
+                setMissedSignalId("");
+              }}
+            />
+          </Space>
+          <Space direction="vertical" size={10} style={{ width: "100%" }}>
+            <Typography.Text>{t("situationMonitor.narrative.missedSignal", { defaultValue: "Expected signal" })}</Typography.Text>
+            <Select
+              showSearch
+              loading={catalogLoading}
+              value={missedSignalId || undefined}
+              placeholder={t("situationMonitor.narrative.missedSignalPlaceholder", { defaultValue: "Select a signal" })}
+              options={
+                (missedSignalType === "narrative" ? signalCatalog?.narratives : signalCatalog?.correlations)?.map(
+                  (entry) => ({
+                    value: entry.id,
+                    label: `${entry.name} · ${entry.category}`,
+                  }),
+                ) ?? []
+              }
+              filterOption={(input, option) =>
+                String(option?.label ?? "")
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
+              onChange={(value) => setMissedSignalId(value)}
+            />
+          </Space>
+          <Space>
+            <Button
+              type="primary"
+              disabled={!missedHeadlineId || !missedSignalId}
+              onClick={() => {
+                const headline = missedHeadlineId ? feedbackHeadlineById.get(missedHeadlineId) : undefined;
+                if (!headline) {
+                  return;
+                }
+                void submitSignalFeedback({
+                  signalType: missedSignalType,
+                  signalId: missedSignalId,
+                  label: "false_negative",
+                  item: {
+                    itemMetaId: headline.itemMetaId,
+                    title: headline.title,
+                    source: headline.source,
+                    link: headline.link,
+                  },
+                });
+                setFeedbackDrawerOpen(false);
+                setMissedHeadlineId("");
+                setMissedSignalId("");
+              }}
+            >
+              {t("common.submit", { defaultValue: "Submit" })}
+            </Button>
+            <Button
+              onClick={() => {
+                setFeedbackDrawerOpen(false);
+              }}
+            >
+              {t("common.cancel", { defaultValue: "Cancel" })}
+            </Button>
+          </Space>
         </Space>
       </Drawer>
 
