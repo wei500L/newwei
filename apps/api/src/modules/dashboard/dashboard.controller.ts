@@ -16,7 +16,13 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardService } from "./dashboard.service";
-import { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
+import {
+  DashboardSpacetimeGeoHeatmapArticlesQueryDto,
+  DashboardSpacetimeGeoHeatmapQueryDto,
+  DashboardSpacetimePropagationArticlesQueryDto,
+  DashboardSpacetimePropagationQueryDto,
+  DashboardTimeRangeQueryDto
+} from "./dto/dashboard-charts.dto";
 
 @ApiTags("dashboard")
 @ApiBearerAuth()
@@ -75,6 +81,67 @@ export class DashboardController {
   }
 
   @Permissions("dashboards.read")
+  @Get("spacetime/geo-heatmap")
+  async spacetimeGeoHeatmap(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardSpacetimeGeoHeatmapQueryDto
+  ) {
+    const range = this.chartsService.resolveRange(query);
+    const includeBuckets = query.includeBuckets === "1" || query.includeBuckets === "true";
+    return this.chartsService.getSpacetimeGeoHeatmap(range, user.orgId, {
+      eventId: query.eventId,
+      includeBuckets
+    });
+  }
+
+  @Permissions("dashboards.read")
+  @Get("spacetime/geo-heatmap/articles")
+  async spacetimeGeoHeatmapArticles(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardSpacetimeGeoHeatmapArticlesQueryDto
+  ) {
+    const range = this.chartsService.resolveRange(query);
+    return this.chartsService.getSpacetimeGeoHeatmapArticles(range, user.orgId, {
+      eventId: query.eventId,
+      snapshotId: query.snapshotId,
+      pointId: query.pointId,
+      bucketStart: query.bucketStart,
+      limit: query.limit
+    });
+  }
+
+  @Permissions("dashboards.read")
+  @Get("spacetime/propagation")
+  async spacetimePropagation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardSpacetimePropagationQueryDto
+  ) {
+    const range = this.chartsService.resolveRange(query);
+    return this.chartsService.getSpacetimePropagation(range, user.orgId, {
+      eventId: query.eventId,
+      windowHours: query.windowHours,
+      maxNodes: query.maxNodes,
+      maxEdges: query.maxEdges
+    });
+  }
+
+  @Permissions("dashboards.read")
+  @Get("spacetime/propagation/articles")
+  async spacetimePropagationArticles(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardSpacetimePropagationArticlesQueryDto
+  ) {
+    const range = this.chartsService.resolveRange(query);
+    return this.chartsService.getSpacetimePropagationArticles(range, user.orgId, {
+      eventId: query.eventId,
+      source: query.source,
+      cursorStart: query.cursorStart,
+      cursorEnd: query.cursorEnd,
+      limit: query.limit
+    });
+  }
+
+  @Permissions("dashboards.read")
   @Get("sector-heatmap")
   async sectorHeatmap(@Query() query: DashboardTimeRangeQueryDto) {
     const range = this.chartsService.resolveRange(query);
@@ -103,15 +170,21 @@ export class DashboardController {
       let inflight = false;
       let lastWarFingerprint = "";
       let lastCandleFingerprint = "";
+      let lastGeoHeatmapFingerprint = "";
 
       const publish = async (force = false) => {
         if (closed || inflight) return;
         inflight = true;
         try {
+          const geoHeatmapPromise = this.chartsService
+            .getSpacetimeGeoHeatmap(range, user.orgId)
+            .catch(() => null);
+
           const [warEvents, candlestick] = await Promise.all([
             this.chartsService.getWarMapEvents(range, user.orgId),
             this.chartsService.getFinancialCandlestick(range)
           ]);
+          const geoHeatmap = await geoHeatmapPromise;
 
           const warFingerprint = `${warEvents.updatedAt ?? "none"}:${warEvents.events.length}`;
           if (force || warFingerprint !== lastWarFingerprint) {
@@ -123,6 +196,14 @@ export class DashboardController {
           if (force || candleFingerprint !== lastCandleFingerprint) {
             subscriber.next({ type: "financial-candlestick", data: candlestick });
             lastCandleFingerprint = candleFingerprint;
+          }
+
+          if (geoHeatmap) {
+            const geoHeatmapFingerprint = `${geoHeatmap.updatedAt ?? "none"}:${geoHeatmap.points.length}`;
+            if (force || geoHeatmapFingerprint !== lastGeoHeatmapFingerprint) {
+              subscriber.next({ type: "spacetime-geo-heatmap", data: geoHeatmap });
+              lastGeoHeatmapFingerprint = geoHeatmapFingerprint;
+            }
           }
         } catch (error) {
           let code: string | undefined;

@@ -67,7 +67,6 @@ const datasourceOptions = [
   { labelKey: "dashboard.editor.dataSources.brentOil", value: "economic:brent_oil_price" },
   { labelKey: "dashboard.editor.dataSources.cmeBitcoin", value: "economic:crypto_bitcoin_cme" },
   { labelKey: "dashboard.editor.dataSources.cryptoSpot", value: "economic:crypto_js_spot" },
-  { labelKey: "dashboard.editor.dataSources.demo", value: "economic:economic-short" },
 ];
 
 type DashboardRecord = DashboardsQuery["dashboards"][number] | undefined;

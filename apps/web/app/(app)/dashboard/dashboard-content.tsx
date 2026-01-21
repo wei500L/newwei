@@ -83,6 +83,13 @@ const KnowledgeGraph = dynamic(
   }
 );
 
+const SpacetimeViz = dynamic(
+  () => import("./spacetime-viz").then((mod) => mod.SpacetimeViz),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 10 }} />
+  }
+);
+
 const MarketPulse = dynamic(
   () => import("./components/market-pulse").then((mod) => mod.MarketPulse),
   { loading: () => <Skeleton active paragraph={{ rows: 2 }} /> }
@@ -331,6 +338,9 @@ export function DashboardContent() {
              </Card>
            </div>
         </div>
+
+        {/* Spacetime Visualization */}
+        <SpacetimeViz />
 
         {/* System Stats (Hidden by default) */}
         {showSystemStats && (

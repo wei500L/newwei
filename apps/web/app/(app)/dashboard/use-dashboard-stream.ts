@@ -43,6 +43,21 @@ interface FinancialCandlestickResponse {
   updatedAt?: string;
 }
 
+interface SpacetimeGeoHeatPoint {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  heat: number;
+  total: number;
+  sentiment: Record<string, number>;
+}
+
+interface SpacetimeGeoHeatmapResponse {
+  points: SpacetimeGeoHeatPoint[];
+  updatedAt?: string;
+}
+
 interface DashboardStreamErrorPayload {
   code?: string;
   message?: string;
@@ -88,6 +103,13 @@ const isFinancialCandlestickResponse = (
     typeof value.interval === 'string' &&
     Array.isArray(value.points)
   );
+};
+
+const isSpacetimeGeoHeatmapResponse = (
+  value: unknown,
+): value is SpacetimeGeoHeatmapResponse => {
+  if (!isRecord(value)) return false;
+  return Array.isArray(value.points);
 };
 
 const parseStreamData = (payload: string): unknown => {
@@ -164,6 +186,14 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     hasLiveRef.current = false;
     const warEventsKey = ['dashboard', 'war-map', 'events', startIso, endIso] as const;
     const candlestickKey = ['dashboard', 'financial-candlestick', startIso, endIso] as const;
+    const geoHeatmapKey = ['dashboard', 'spacetime', 'geo-heatmap', startIso, endIso] as const;
+    const geoHeatmapPrefixKey = ['dashboard', 'spacetime', 'geo-heatmap'] as const;
+    const geoHeatmapEventPrefixKey = [
+      'dashboard',
+      'spacetime',
+      'geo-heatmap',
+      'event',
+    ] as const;
     let active = true;
 
     const stopPolling = () => {
@@ -176,9 +206,19 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       if (pollingRef.current) return;
       void queryClient.invalidateQueries({ queryKey: warEventsKey, exact: true });
       void queryClient.invalidateQueries({ queryKey: candlestickKey, exact: true });
+      void queryClient.invalidateQueries({
+        queryKey: geoHeatmapPrefixKey,
+        exact: false,
+        refetchType: 'active',
+      });
       pollingRef.current = setInterval(() => {
         void queryClient.invalidateQueries({ queryKey: warEventsKey, exact: true });
         void queryClient.invalidateQueries({ queryKey: candlestickKey, exact: true });
+        void queryClient.invalidateQueries({
+          queryKey: geoHeatmapPrefixKey,
+          exact: false,
+          refetchType: 'active',
+        });
       }, pollIntervalMs);
     };
 
@@ -196,9 +236,15 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
 
     const resolveFallbackStatus = (forceOffline?: boolean): DashboardStreamStatus => {
       if (forceOffline) return 'offline';
+      const hasGeoHeatmapData =
+        Boolean(queryClient.getQueryData(geoHeatmapKey)) ||
+        queryClient
+          .getQueriesData({ queryKey: geoHeatmapPrefixKey, exact: false })
+          .some((entry) => Boolean(entry[1]));
       const hasCachedData =
         queryClient.getQueryData(warEventsKey) ||
-        queryClient.getQueryData(candlestickKey);
+        queryClient.getQueryData(candlestickKey) ||
+        hasGeoHeatmapData;
       return hasCachedData ? 'polling' : 'offline';
     };
 
@@ -221,6 +267,16 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         void queryClient.invalidateQueries({
           queryKey: candlestickKey,
           exact: true,
+          refetchType: 'active'
+        });
+        void queryClient.invalidateQueries({
+          queryKey: geoHeatmapKey,
+          exact: true,
+          refetchType: 'active'
+        });
+        void queryClient.invalidateQueries({
+          queryKey: geoHeatmapEventPrefixKey,
+          exact: false,
           refetchType: 'active'
         });
       }
@@ -272,6 +328,16 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       }
       if (eventType === 'financial-candlestick' && isFinancialCandlestickResponse(payload)) {
         queryClient.setQueryData(candlestickKey, payload);
+        markHealthy();
+        return;
+      }
+      if (eventType === 'spacetime-geo-heatmap' && isSpacetimeGeoHeatmapResponse(payload)) {
+        queryClient.setQueryData(geoHeatmapKey, payload);
+        void queryClient.invalidateQueries({
+          queryKey: geoHeatmapEventPrefixKey,
+          exact: false,
+          refetchType: 'active',
+        });
         markHealthy();
         return;
       }

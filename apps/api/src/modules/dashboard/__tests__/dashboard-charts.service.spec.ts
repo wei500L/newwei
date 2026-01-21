@@ -3,6 +3,11 @@ import { InternalServerErrorException } from "@nestjs/common";
 
 import { DashboardChartsService } from "../dashboard-charts.service";
 
+const createCache = () => ({
+  get: jest.fn(),
+  set: jest.fn()
+});
+
 describe("DashboardChartsService", () => {
   it("filters war map news markers by publishedAt priority (falls back to crawlAt when publishedAt is null)", async () => {
     const prisma = {
@@ -13,7 +18,7 @@ describe("DashboardChartsService", () => {
     const geocoding = {
       resolveCandidates: jest.fn()
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any);
+    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
@@ -63,7 +68,7 @@ describe("DashboardChartsService", () => {
     const geocoding = {
       resolveCandidates: jest.fn()
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any);
+    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
@@ -152,7 +157,7 @@ describe("DashboardChartsService", () => {
     const geocoding = {
       resolveCandidates: jest.fn()
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any);
+    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
@@ -206,7 +211,7 @@ describe("DashboardChartsService", () => {
     const geocoding = {
       resolveCandidates: jest.fn()
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any);
+    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
@@ -313,7 +318,7 @@ describe("DashboardChartsService", () => {
     const geocoding = {
       resolveCandidates: jest.fn()
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any);
+    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
@@ -405,7 +410,7 @@ describe("DashboardChartsService", () => {
     const geocoding = {
       resolveCandidates: jest.fn()
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any);
+    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
