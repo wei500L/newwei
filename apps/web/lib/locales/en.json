@@ -1823,6 +1823,42 @@
         "required": "Required"
       }
     },
+    "newsDedupe": {
+      "description": "Configure semantic dedupe thresholds per topic/category.",
+      "notice": {
+        "title": "How it works",
+        "body": "The pipeline picks the strictest (highest) threshold among matched category/topics; otherwise it uses the default threshold. Length-based adjustments still apply."
+      },
+      "sections": {
+        "overrides": "Per-topic overrides"
+      },
+      "fields": {
+        "defaultThreshold": "Default threshold",
+        "category": "Category/topic",
+        "threshold": "Threshold"
+      },
+      "hints": {
+        "defaultThreshold": "Used when no category/topics match. Range 0–1 (higher = stricter).",
+        "normalizedCount": "Effective overrides: {{count}}"
+      },
+      "placeholders": {
+        "category": "e.g. finance / 科技 / geopolitics"
+      },
+      "actions": {
+        "add": "Add override",
+        "remove": "Remove"
+      },
+      "messages": {
+        "saved": "Saved",
+        "saveFailed": "Failed to save",
+        "loadFailed": "Failed to load settings"
+      },
+      "validation": {
+        "required": "Required",
+        "category": "Required",
+        "threshold": "Required"
+      }
+    },
     "newsPrompts": {
       "saved": "Saved",
       "saveFailed": "Failed to save",
@@ -1940,6 +1976,7 @@
       "knowledgeGraphReview": "Knowledge graph review",
       "newsEvents": "News events",
       "newsIndicator": "News ↔ indicators",
+      "newsDedupe": "News dedupe",
       "newsPrompts": "News prompts",
       "llmGateway": "LLM gateway",
       "roles": "Roles",

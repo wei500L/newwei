@@ -12,6 +12,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
+import { extractApiError } from "@/lib/api-error";
 import dayjs from "@/lib/dayjs";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -292,12 +293,18 @@ export function SectorHeatmap() {
   }
 
   if (isError && !data) {
+    const apiError = extractApiError(error);
+    const description = apiError.code
+      ? `${apiError.message} (code: ${apiError.code})${apiError.detail ? `: ${apiError.detail}` : ""}`
+      : apiError.detail
+        ? `${apiError.message}: ${apiError.detail}`
+        : apiError.message;
     return (
       <div className="h-[300px]">
         <ChartEmptyState
           variant="error"
           title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={error instanceof Error ? error.message : emptyMessage}
+          description={description || emptyMessage}
           actionLabel={t("common.retry")}
           onAction={() => refetch()}
         />

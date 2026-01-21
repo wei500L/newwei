@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpException,
   InternalServerErrorException,
   MessageEvent,
   Query,
@@ -124,11 +125,30 @@ export class DashboardController {
             lastCandleFingerprint = candleFingerprint;
           }
         } catch (error) {
+          let code: string | undefined;
+          let detail = error instanceof Error ? error.message : "Unknown error";
+          if (error instanceof HttpException) {
+            const response = error.getResponse();
+            if (typeof response === "object" && response) {
+              const payload = response as Record<string, unknown>;
+              if (typeof payload.code === "string") {
+                code = payload.code;
+              }
+              if (typeof payload.detail === "string" && payload.detail.trim()) {
+                detail = payload.detail;
+              } else if (typeof payload.message === "string" && payload.message.trim()) {
+                detail = payload.message;
+              }
+            } else if (typeof response === "string" && response.trim()) {
+              detail = response;
+            }
+          }
           subscriber.next({
             type: "stream-error",
             data: {
+              code,
               message: "Dashboard stream update failed",
-              detail: error instanceof Error ? error.message : "Unknown error"
+              detail
             }
           });
         } finally {

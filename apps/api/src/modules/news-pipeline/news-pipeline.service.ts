@@ -31,6 +31,7 @@ import { VectorClientService } from "../vector/vector-client.service";
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
+import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
 import {
   Crawl4aiResponseSchema,
   ParsedCrawl4aiArticle,
@@ -184,6 +185,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     private readonly configService: NewsPipelineConfigService,
     private readonly promptBuilder: NewsPromptBuilder,
     private readonly promptConfig: NewsPromptConfigService,
+    private readonly dedupeSettings: NewsDedupeSettingsService,
     private readonly cache: CacheService,
     private readonly prisma: PrismaService,
     @Optional() private readonly vectorClient?: VectorClientService,
@@ -797,7 +799,12 @@ export class NewsPipelineService implements OnModuleDestroy {
       return {};
     }
 
-    const threshold = this.resolveSummaryDedupThreshold(summary.length);
+    const settings = await this.dedupeSettings.getSettings(options.job.orgId);
+    const thresholdBase = this.dedupeSettings.resolveBaseThreshold(settings, {
+      category: options.cleaned.category,
+      topics: options.cleaned.topics,
+    }).threshold;
+    const threshold = this.resolveSummaryDedupThreshold(summary.length, thresholdBase);
     const baseResult: SummaryDedupeResult = {
       summaryEmbedding: embeddingData.embedding,
       summaryEmbeddingModel: embeddingData.model,
@@ -992,8 +999,11 @@ export class NewsPipelineService implements OnModuleDestroy {
     return best;
   }
 
-  private resolveSummaryDedupThreshold(summaryLength: number) {
-    const base = this.configService.config.pipeline.summaryDedupThreshold;
+  private resolveSummaryDedupThreshold(summaryLength: number, baseThreshold?: number) {
+    const base =
+      typeof baseThreshold === "number" && Number.isFinite(baseThreshold)
+        ? baseThreshold
+        : this.configService.config.pipeline.summaryDedupThreshold;
     if (summaryLength < 80) {
       return Math.min(0.96, base + 0.04);
     }

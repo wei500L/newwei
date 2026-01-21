@@ -177,6 +177,14 @@ describe("NewsPipelineService", () => {
     getConfig: jest.fn().mockResolvedValue(DEFAULT_NEWS_PROMPT_CONFIG)
   };
 
+  const dedupeSettingsService = {
+    getSettings: jest.fn().mockResolvedValue({
+      defaultThreshold: baseConfig.pipeline.summaryDedupThreshold,
+      categoryThresholds: []
+    }),
+    resolveBaseThreshold: jest.fn((settings: any) => ({ threshold: settings.defaultThreshold }))
+  };
+
   const configService = {
     get config() {
       return baseConfig;
@@ -232,6 +240,7 @@ describe("NewsPipelineService", () => {
     configService as any,
     promptBuilder,
     promptConfigService as any,
+    dedupeSettingsService as any,
     cache as any,
     prisma as any
   );

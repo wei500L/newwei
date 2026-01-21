@@ -1164,6 +1164,7 @@ type Mutation {
   updateEntityImpactGraphSettings(input: UpdateEntityImpactGraphSettingsInput!): EntityImpactGraphSettingsModel!
   updateItem(input: UpdateItemInput!): ItemModel!
   updateKnowledgeGraphSettings(input: UpdateKnowledgeGraphSettingsInput!): KnowledgeGraphSettingsModel!
+  updateNewsDedupeSettings(input: UpdateNewsDedupeSettingsInput!): NewsDedupeSettingsModel!
   updateNewsEventSettings(input: UpdateNewsEventSettingsInput!): NewsEventSettingsModel!
   updateNewsIndicatorSettings(input: UpdateNewsIndicatorSettingsInput!): NewsIndicatorSettingsModel!
   updateNewsPromptConfig(input: UpdateNewsPromptConfigInput!): NewsPromptConfigModel!
@@ -1172,6 +1173,21 @@ type Mutation {
   updateRole(input: UpdateRoleInput!): RoleModel!
   upsertAlertRule(input: UpsertAlertRuleInput!): AlertRuleModel!
   upsertDashboard(input: UpsertDashboardInput!): DashboardModel!
+}
+
+input NewsDedupeCategoryThresholdInput {
+  category: String!
+  threshold: Float!
+}
+
+type NewsDedupeCategoryThresholdModel {
+  category: String!
+  threshold: Float!
+}
+
+type NewsDedupeSettingsModel {
+  categoryThresholds: [NewsDedupeCategoryThresholdModel!]!
+  defaultThreshold: Float!
 }
 
 type NewsEventArticleModel {
@@ -1496,6 +1512,7 @@ type Query {
   me: UserModel!
   memberships: [MembershipModel!]!
   myOrganizations: [OrgModel!]!
+  newsDedupeSettings: NewsDedupeSettingsModel!
   newsEvent(id: String!, itemsLimit: Int, timelineLimit: Int): NewsEventModel
   newsEventSettings: NewsEventSettingsModel!
   newsEvents(limit: Int, status: NewsEventStatus, windowDays: Int): [NewsEventModel!]!
@@ -1728,6 +1745,11 @@ input UpdateKnowledgeGraphSettingsInput {
   multiModelValidationModels: [String!]
   seedIngestionEnabled: Boolean!
   seedSwIndustriesPerRun: Int!
+}
+
+input UpdateNewsDedupeSettingsInput {
+  categoryThresholds: [NewsDedupeCategoryThresholdInput!]!
+  defaultThreshold: Float!
 }
 
 input UpdateNewsEventSettingsInput {

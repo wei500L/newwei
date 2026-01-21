@@ -12,6 +12,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
+import { extractApiError } from "@/lib/api-error";
 import dayjs from "@/lib/dayjs";
 import { resolveLocale } from "@/lib/i18n";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -282,12 +283,18 @@ export function FinancialCandlestick() {
   }
 
   if (isError && !data) {
+    const apiError = extractApiError(error);
+    const description = apiError.code
+      ? `${apiError.message} (code: ${apiError.code})${apiError.detail ? `: ${apiError.detail}` : ""}`
+      : apiError.detail
+        ? `${apiError.message}: ${apiError.detail}`
+        : apiError.message;
     return (
       <div className="h-[350px]">
         <ChartEmptyState
           variant="error"
           title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={error instanceof Error ? error.message : emptyMessage}
+          description={description || emptyMessage}
           actionLabel={t("common.retry")}
           onAction={() => refetch()}
         />

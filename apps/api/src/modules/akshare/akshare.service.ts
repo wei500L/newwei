@@ -164,6 +164,21 @@ export class AkshareService implements OnModuleInit {
     };
   }
 
+  private extractCustomMetadata(metadata: Prisma.JsonValue | null): Record<string, unknown> {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return {};
+    }
+
+    const parsed = metadata as Record<string, unknown>;
+    const custom: Record<string, unknown> = { ...parsed };
+    delete custom.method;
+    delete custom.defaultParams;
+    delete custom.parser;
+    delete custom.tags;
+    delete custom.filter;
+    return custom;
+  }
+
   private hasValidParser(parser: AkshareParserConfig | undefined): boolean {
     return Boolean(
       parser &&
@@ -384,7 +399,11 @@ export class AkshareService implements OnModuleInit {
         updates.description = definition.description;
       }
       if (!this.metadataEquals(existingMetadata, mergedMetadataWithOverrides2)) {
-        updates.metadata = toPrismaJsonValue(this.normalizeMetadata(mergedMetadataWithOverrides2));
+        const customMetadata = this.extractCustomMetadata(existingItem.metadata);
+        updates.metadata = toPrismaJsonValue({
+          ...customMetadata,
+          ...this.normalizeMetadata(mergedMetadataWithOverrides2)
+        });
       }
 
       if (Object.keys(updates).length > 0) {

@@ -1823,6 +1823,42 @@
         "required": "必填"
       }
     },
+    "newsDedupe": {
+      "description": "按主题/分类配置语义去重阈值。",
+      "notice": {
+        "title": "生效规则",
+        "body": "命中 category/topics 时取最严格（最高）的阈值，否则使用默认阈值；仍会按摘要长度做微调。"
+      },
+      "sections": {
+        "overrides": "主题覆盖项"
+      },
+      "fields": {
+        "defaultThreshold": "默认阈值",
+        "category": "主题/分类",
+        "threshold": "阈值"
+      },
+      "hints": {
+        "defaultThreshold": "未命中主题/分类时使用，范围 0–1（越高越严格）。",
+        "normalizedCount": "当前生效覆盖项：{{count}}"
+      },
+      "placeholders": {
+        "category": "例如：finance / 科技 / geopolitics"
+      },
+      "actions": {
+        "add": "添加覆盖项",
+        "remove": "删除"
+      },
+      "messages": {
+        "saved": "已保存",
+        "saveFailed": "保存失败",
+        "loadFailed": "加载设置失败"
+      },
+      "validation": {
+        "required": "必填",
+        "category": "必填",
+        "threshold": "必填"
+      }
+    },
     "newsPrompts": {
       "saved": "已保存",
       "saveFailed": "保存失败",
@@ -1940,6 +1976,7 @@
       "knowledgeGraphReview": "知识图谱审核",
       "newsEvents": "新闻事件",
       "newsIndicator": "新闻-指标",
+      "newsDedupe": "新闻去重",
       "newsPrompts": "新闻提示词",
       "llmGateway": "LLM 网关",
       "roles": "角色",

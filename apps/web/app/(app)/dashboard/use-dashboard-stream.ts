@@ -44,6 +44,7 @@ interface FinancialCandlestickResponse {
 }
 
 interface DashboardStreamErrorPayload {
+  code?: string;
   message?: string;
   detail?: string;
 }
@@ -278,8 +279,10 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         const errorPayload = isRecord(payload) ? (payload as DashboardStreamErrorPayload) : null;
         const baseMessage =
           errorPayload?.message ?? 'Dashboard stream update failed';
+        const code = errorPayload?.code;
         const detail = errorPayload?.detail;
-        handleError(detail ? `${baseMessage}: ${detail}` : baseMessage, 'polling');
+        const headline = code ? `${baseMessage} (${code})` : baseMessage;
+        handleError(detail ? `${headline}: ${detail}` : headline, 'polling');
         return;
       }
       if (eventType === 'ping') {

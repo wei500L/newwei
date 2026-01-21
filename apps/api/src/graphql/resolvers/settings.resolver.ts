@@ -19,6 +19,10 @@ import {
   NewsIndicatorSettingsService,
   type NewsIndicatorAssociationSettingsInput
 } from "../../modules/news-indicator/news-indicator-settings.service";
+import {
+  NewsDedupeSettingsService,
+  type NewsDedupeSettingsInput
+} from "../../modules/news-pipeline/news-dedupe-settings.service";
 import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt-config.service";
 import { AuditLogSettingsService } from "../../modules/system-settings/audit-log-settings.service";
 import {
@@ -36,7 +40,8 @@ import {
   UpdateKnowledgeGraphSettingsInput,
   UpdateRateLimitSettingsInput,
   UpdateNewsEventSettingsInput,
-  UpdateNewsIndicatorSettingsInput
+  UpdateNewsIndicatorSettingsInput,
+  UpdateNewsDedupeSettingsInput
 } from "../dto/settings.input";
 import type { GqlRequest } from "../graphql.types";
 import {
@@ -46,6 +51,7 @@ import {
   KnowledgeGraphSettingsModel,
   NewsEventSettingsModel,
   NewsIndicatorSettingsModel,
+  NewsDedupeSettingsModel,
   NewsPromptConfigModel,
   AuthCacheSettingsModel,
   RateLimitSettingsModel
@@ -60,6 +66,7 @@ export class SettingsResolver {
     private readonly knowledgeGraphSettingsService: KnowledgeGraphSettingsService,
     private readonly newsEventSettingsService: NewsEventsSettingsService,
     private readonly newsIndicatorSettingsService: NewsIndicatorSettingsService,
+    private readonly newsDedupeSettingsService: NewsDedupeSettingsService,
     private readonly newsPromptConfigService: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
     private readonly crawlSettings: CrawlSettingsService,
@@ -189,6 +196,32 @@ export class SettingsResolver {
       cacheTtlSeconds: input.cacheTtlSeconds
     };
     return this.newsEventSettingsService.updateSettings(user.orgId, user.id, settingsInput);
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => NewsDedupeSettingsModel)
+  async newsDedupeSettings(@Context("req") req: GqlRequest): Promise<NewsDedupeSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    return this.newsDedupeSettingsService.getSettings(user.orgId);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsDedupeSettingsModel)
+  async updateNewsDedupeSettings(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateNewsDedupeSettingsInput
+  ): Promise<NewsDedupeSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const settingsInput: NewsDedupeSettingsInput = {
+      defaultThreshold: input.defaultThreshold,
+      categoryThresholds: input.categoryThresholds.map((entry) => ({
+        category: entry.category,
+        threshold: entry.threshold
+      }))
+    };
+    return this.newsDedupeSettingsService.updateSettings(user.orgId, user.id, settingsInput);
   }
 
   @HasPermission("dashboard.read")

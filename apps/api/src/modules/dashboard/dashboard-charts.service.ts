@@ -4,7 +4,7 @@ import {
   getCountryName,
   normalizeCountryCode
 } from "@modular/utils";
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { AlertSeverity, ProcessedArticleStatus } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
@@ -39,6 +39,131 @@ const OHLC_FIELD_ALIASES = {
   low: ["low", "最低价"],
   close: ["close", "收盘价"]
 } as const;
+
+type OhlcField = keyof typeof OHLC_FIELD_ALIASES;
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value));
+
+const normalizeSourceFieldKey = (value: string) => value.trim().toLowerCase();
+
+const parseStringList = (value: unknown): string[] | undefined => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : undefined;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const result = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry);
+  return result.length > 0 ? result : undefined;
+};
+
+const uniqStrings = (values: string[]) => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+};
+
+type DataVizConfig = {
+  heatmap: { preferredSourceFields?: string[] };
+  candlestick: { ohlc?: Partial<Record<OhlcField, string[]>> };
+};
+
+const getDataVizConfig = (metadata: unknown): DataVizConfig => {
+  if (!isPlainObject(metadata)) {
+    return { heatmap: {}, candlestick: {} };
+  }
+  const dataViz = metadata.dataViz;
+  if (!isPlainObject(dataViz)) {
+    return { heatmap: {}, candlestick: {} };
+  }
+
+  const heatmap = dataViz.heatmap;
+  const preferredSourceFields = isPlainObject(heatmap)
+    ? parseStringList(heatmap.preferredSourceFields)
+    : undefined;
+
+  const candlestick = dataViz.candlestick;
+  const ohlc = isPlainObject(candlestick) ? candlestick.ohlc : undefined;
+  const ohlcFieldAliases: Partial<Record<OhlcField, string[]>> = {};
+  if (isPlainObject(ohlc)) {
+    (Object.keys(OHLC_FIELD_ALIASES) as OhlcField[]).forEach((field) => {
+      const parsed = parseStringList(ohlc[field]);
+      if (parsed) {
+        ohlcFieldAliases[field] = parsed;
+      }
+    });
+  }
+
+  return {
+    heatmap: {
+      preferredSourceFields
+    },
+    candlestick: {
+      ohlc: Object.keys(ohlcFieldAliases).length > 0 ? ohlcFieldAliases : undefined
+    }
+  };
+};
+
+const buildLabelToSourceFieldMap = (metadata: unknown): Map<string, string> => {
+  const map = new Map<string, string>();
+  if (!isPlainObject(metadata)) {
+    return map;
+  }
+  const parser = metadata.parser;
+  if (!isPlainObject(parser)) {
+    return map;
+  }
+
+  const candidates: unknown[] = [];
+  if (Array.isArray(parser.valueFields)) {
+    candidates.push(...parser.valueFields);
+  }
+  if (Array.isArray(parser.seriesFields)) {
+    candidates.push(...parser.seriesFields);
+  }
+
+  for (const entry of candidates) {
+    if (!isPlainObject(entry)) continue;
+    const field = entry.field;
+    if (typeof field !== "string" || !field.trim()) {
+      continue;
+    }
+    map.set(field, field);
+    const label = entry.label;
+    if (typeof label === "string" && label.trim()) {
+      map.set(label, field);
+    }
+  }
+
+  return map;
+};
+
+const resolvePreferredSourceField = (
+  seriesByField: Map<string, unknown[]>,
+  preferredKeys: string[],
+  labelToField: Map<string, string>
+) => {
+  for (const key of preferredKeys) {
+    if (seriesByField.has(key)) {
+      return key;
+    }
+    const mapped = labelToField.get(key);
+    if (mapped && seriesByField.has(mapped)) {
+      return mapped;
+    }
+  }
+  return undefined;
+};
 
 interface GeoJsonGeometry {
   type:
@@ -754,8 +879,10 @@ export class DashboardChartsService {
       },
       select: {
         id: true,
+        slug: true,
         displayName: true,
-        defaultUnit: true
+        defaultUnit: true,
+        metadata: true
       },
       orderBy: { displayName: "asc" },
       take: MAX_SECTOR_CELLS
@@ -778,9 +905,6 @@ export class DashboardChartsService {
         recordedAt: {
           gte: range.start,
           lte: range.end
-        },
-        sourceField: {
-          in: [...PREFERRED_SOURCE_FIELDS]
         }
       },
       orderBy: { recordedAt: "asc" }
@@ -797,6 +921,13 @@ export class DashboardChartsService {
 
     const cells: SectorHeatmapCell[] = [];
     let updatedAt: Date | undefined;
+    const mappingErrors: Array<{
+      itemId: string;
+      slug: string;
+      displayName: string;
+      preferredSourceFields: string[];
+      availableSourceFields: string[];
+    }> = [];
 
     for (const item of items) {
       const itemGroup = grouped.get(item.id);
@@ -804,8 +935,21 @@ export class DashboardChartsService {
         continue;
       }
 
-      const fieldKey = PREFERRED_SOURCE_FIELDS.find((field) => itemGroup.has(field));
+      const config = getDataVizConfig(item.metadata);
+      const preferredKeys =
+        config.heatmap.preferredSourceFields && config.heatmap.preferredSourceFields.length > 0
+          ? uniqStrings(config.heatmap.preferredSourceFields)
+          : [...PREFERRED_SOURCE_FIELDS];
+      const labelToField = buildLabelToSourceFieldMap(item.metadata);
+      const fieldKey = resolvePreferredSourceField(itemGroup as Map<string, unknown[]>, preferredKeys, labelToField);
       if (!fieldKey) {
+        mappingErrors.push({
+          itemId: item.id,
+          slug: item.slug,
+          displayName: item.displayName,
+          preferredSourceFields: preferredKeys,
+          availableSourceFields: Array.from(itemGroup.keys()).sort((a, b) => a.localeCompare(b))
+        });
         continue;
       }
       const series = itemGroup.get(fieldKey) ?? [];
@@ -842,6 +986,16 @@ export class DashboardChartsService {
       }
     }
 
+    if (mappingErrors.length > 0) {
+      throw new InternalServerErrorException({
+        code: "DASHBOARD_SECTOR_HEATMAP_FIELD_MAPPING_MISMATCH",
+        message: "Sector heatmap field mapping mismatch",
+        detail:
+          "No preferred sourceField matched for one or more items. Configure EconomicDataItem.metadata.dataViz.heatmap.preferredSourceFields.",
+        items: mappingErrors
+      });
+    }
+
     const rowCount = Math.max(1, Math.ceil(cells.length / HEATMAP_COLUMNS));
     return {
       xLabels,
@@ -858,7 +1012,8 @@ export class DashboardChartsService {
         id: true,
         displayName: true,
         defaultFrequency: true,
-        defaultUnit: true
+        defaultUnit: true,
+        metadata: true
       }
     });
 
@@ -870,9 +1025,46 @@ export class DashboardChartsService {
       };
     }
 
-    const aliasToField = new Map<string, keyof typeof OHLC_FIELD_ALIASES>();
-    for (const [field, aliases] of Object.entries(OHLC_FIELD_ALIASES)) {
-      aliases.forEach((alias) => aliasToField.set(alias, field as keyof typeof OHLC_FIELD_ALIASES));
+    const config = getDataVizConfig(item.metadata);
+    const labelToField = buildLabelToSourceFieldMap(item.metadata);
+    const ohlcAliases = (Object.keys(OHLC_FIELD_ALIASES) as OhlcField[]).reduce(
+      (acc, field) => {
+        const configured = config.candlestick.ohlc?.[field];
+        const merged = configured && configured.length > 0 ? configured : OHLC_FIELD_ALIASES[field];
+        const expanded: string[] = [];
+        for (const alias of merged) {
+          expanded.push(alias);
+          const mapped = labelToField.get(alias);
+          if (mapped) {
+            expanded.push(mapped);
+          }
+        }
+        acc[field] = uniqStrings(expanded);
+        return acc;
+      },
+      {} as Record<OhlcField, string[]>
+    );
+
+    const aliasToField = new Map<string, OhlcField>();
+    const aliasRankByField = (Object.keys(OHLC_FIELD_ALIASES) as OhlcField[]).reduce(
+      (acc, field) => {
+        acc[field] = new Map<string, number>();
+        return acc;
+      },
+      {} as Record<OhlcField, Map<string, number>>
+    );
+
+    for (const field of Object.keys(ohlcAliases) as OhlcField[]) {
+      ohlcAliases[field].forEach((alias, index) => {
+        const normalized = normalizeSourceFieldKey(alias);
+        if (!normalized) return;
+        if (!aliasToField.has(normalized)) {
+          aliasToField.set(normalized, field);
+        }
+        if (!aliasRankByField[field].has(normalized)) {
+          aliasRankByField[field].set(normalized, index);
+        }
+      });
     }
 
     const points = await this.prisma.economicDataPoint.findMany({
@@ -883,17 +1075,58 @@ export class DashboardChartsService {
           lte: range.end
         },
         sourceField: {
-          in: Array.from(aliasToField.keys())
+          in: uniqStrings(Object.values(ohlcAliases).flat())
         }
       },
       orderBy: { recordedAt: "asc" }
     });
+
+    if (points.length === 0) {
+      const totalPoints = await this.prisma.economicDataPoint.count({
+        where: {
+          itemId: item.id,
+          recordedAt: {
+            gte: range.start,
+            lte: range.end
+          }
+        }
+      });
+      if (totalPoints > 0) {
+        const available = await this.prisma.economicDataPoint.findMany({
+          where: {
+            itemId: item.id,
+            recordedAt: {
+              gte: range.start,
+              lte: range.end
+            }
+          },
+          distinct: ["sourceField"],
+          select: { sourceField: true },
+          take: 50
+        });
+
+        throw new InternalServerErrorException({
+          code: "DASHBOARD_CANDLESTICK_FIELD_MAPPING_MISMATCH",
+          message: "Candlestick field mapping mismatch",
+          detail:
+            "No OHLC sourceField matched for this item in the requested range. Configure EconomicDataItem.metadata.dataViz.candlestick.ohlc.",
+          item: {
+            id: item.id,
+            slug: DEFAULT_CANDLESTICK_SLUG,
+            displayName: item.displayName
+          },
+          expectedAliases: ohlcAliases,
+          availableSourceFields: available.map((entry) => entry.sourceField).sort((a, b) => a.localeCompare(b))
+        });
+      }
+    }
 
     const unit =
       (points.find((point) => point.unit)?.unit as string | null | undefined) ??
       item.defaultUnit ??
       null;
     const sourceFields: Partial<Record<keyof typeof OHLC_FIELD_ALIASES, string>> = {};
+    const sourceFieldRanks: Partial<Record<keyof typeof OHLC_FIELD_ALIASES, number>> = {};
     const grouped = new Map<
       string,
       {
@@ -902,22 +1135,34 @@ export class DashboardChartsService {
         high?: number;
         low?: number;
         close?: number;
+        ranks: Partial<Record<keyof typeof OHLC_FIELD_ALIASES, number>>;
       }
     >();
 
     for (const point of points) {
-      const field = aliasToField.get(point.sourceField);
+      const normalizedSourceField = normalizeSourceFieldKey(point.sourceField);
+      const field = aliasToField.get(normalizedSourceField);
       if (!field) continue;
-      if (!sourceFields[field]) {
-        sourceFields[field] = point.sourceField;
-      }
+      const rank = aliasRankByField[field].get(normalizedSourceField) ?? Number.MAX_SAFE_INTEGER;
+
       const key = point.recordedAt.toISOString();
       const entry =
         grouped.get(key) ?? {
-          timestamp: point.recordedAt
+          timestamp: point.recordedAt,
+          ranks: {}
         };
-      entry[field] = Number(point.value);
+      const existingRank = entry.ranks[field];
+      if (existingRank === undefined || rank < existingRank) {
+        entry[field] = Number(point.value);
+        entry.ranks[field] = rank;
+      }
       grouped.set(key, entry);
+
+      const globalRank = sourceFieldRanks[field];
+      if (globalRank === undefined || rank < globalRank) {
+        sourceFields[field] = point.sourceField;
+        sourceFieldRanks[field] = rank;
+      }
     }
 
     const sorted = Array.from(grouped.values()).sort(
@@ -927,11 +1172,28 @@ export class DashboardChartsService {
     const resultPoints: FinancialCandlestickPoint[] = [];
     let updatedAt: Date | undefined;
     for (const entry of sorted) {
-      const open = entry.open ?? entry.close ?? entry.high ?? entry.low;
-      if (open === undefined) continue;
-      const close = entry.close ?? open;
-      const high = entry.high ?? Math.max(open, close);
-      const low = entry.low ?? Math.min(open, close);
+      const missing: string[] = [];
+      if (entry.open === undefined) missing.push("open");
+      if (entry.high === undefined) missing.push("high");
+      if (entry.low === undefined) missing.push("low");
+      if (entry.close === undefined) missing.push("close");
+      if (missing.length > 0) {
+        throw new InternalServerErrorException({
+          code: "DASHBOARD_CANDLESTICK_OHLC_INCOMPLETE",
+          message: "Candlestick OHLC data incomplete",
+          detail: `Missing ${missing.join(", ")} at ${entry.timestamp.toISOString()}`,
+          item: {
+            id: item.id,
+            slug: DEFAULT_CANDLESTICK_SLUG,
+            displayName: item.displayName
+          }
+        });
+      }
+
+      const open = entry.open!;
+      const close = entry.close!;
+      const high = entry.high!;
+      const low = entry.low!;
 
       resultPoints.push({
         timestamp: entry.timestamp.toISOString(),

@@ -1,5 +1,17 @@
 import { Field, Float, InputType, Int } from "@nestjs/graphql";
-import { ArrayMaxSize, ArrayMinSize, IsBoolean, IsIn, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from "class-validator";
 
 @InputType()
 export class RateLimitBucketInput {
@@ -344,4 +356,31 @@ export class UpdateNewsIndicatorSettingsInput {
   @Min(0)
   @Max(3600)
   cacheTtlSeconds!: number;
+}
+
+@InputType()
+export class NewsDedupeCategoryThresholdInput {
+  @Field(() => String)
+  @IsString()
+  @MaxLength(120)
+  category!: string;
+
+  @Field(() => Float)
+  @Min(0)
+  @Max(1)
+  threshold!: number;
+}
+
+@InputType()
+export class UpdateNewsDedupeSettingsInput {
+  @Field(() => Float)
+  @Min(0)
+  @Max(1)
+  defaultThreshold!: number;
+
+  @Field(() => [NewsDedupeCategoryThresholdInput])
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => NewsDedupeCategoryThresholdInput)
+  categoryThresholds!: NewsDedupeCategoryThresholdInput[];
 }

@@ -178,6 +178,24 @@ export class NewsEventSettingsModel {
 }
 
 @ObjectType()
+export class NewsDedupeCategoryThresholdModel {
+  @Field(() => String)
+  category!: string;
+
+  @Field(() => Float)
+  threshold!: number;
+}
+
+@ObjectType()
+export class NewsDedupeSettingsModel {
+  @Field(() => Float)
+  defaultThreshold!: number;
+
+  @Field(() => [NewsDedupeCategoryThresholdModel])
+  categoryThresholds!: NewsDedupeCategoryThresholdModel[];
+}
+
+@ObjectType()
 export class NewsIndicatorSettingsModel {
   @Field(() => Boolean)
   enabled!: boolean;
