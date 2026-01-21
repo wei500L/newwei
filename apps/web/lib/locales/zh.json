@@ -1830,7 +1830,9 @@
         "body": "命中 category/topics 时取最严格（最高）的阈值，否则使用默认阈值；仍会按摘要长度做微调。"
       },
       "sections": {
-        "overrides": "主题覆盖项"
+        "overrides": "主题覆盖项",
+        "preview": "生效配置",
+        "tester": "阈值预览"
       },
       "fields": {
         "defaultThreshold": "默认阈值",
@@ -1846,12 +1848,36 @@
       },
       "actions": {
         "add": "添加覆盖项",
-        "remove": "删除"
+        "remove": "删除",
+        "copyJson": "复制 JSON"
       },
       "messages": {
         "saved": "已保存",
         "saveFailed": "保存失败",
-        "loadFailed": "加载设置失败"
+        "loadFailed": "加载设置失败",
+        "copied": "已复制",
+        "copyFailed": "复制失败"
+      },
+      "preview": {
+        "empty": "暂无覆盖项。"
+      },
+      "tester": {
+        "hint": "用于预览命中哪条覆盖项，以及摘要长度微调后的最终阈值。",
+        "fields": {
+          "category": "分类",
+          "topics": "主题列表",
+          "summaryLength": "摘要长度"
+        },
+        "placeholders": {
+          "category": "可选",
+          "topics": "可选（逗号/回车分隔）"
+        },
+        "results": {
+          "base": "基础",
+          "final": "最终",
+          "matched": "命中",
+          "default": "默认"
+        }
       },
       "validation": {
         "required": "必填",

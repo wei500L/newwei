@@ -1830,7 +1830,9 @@
         "body": "The pipeline picks the strictest (highest) threshold among matched category/topics; otherwise it uses the default threshold. Length-based adjustments still apply."
       },
       "sections": {
-        "overrides": "Per-topic overrides"
+        "overrides": "Per-topic overrides",
+        "preview": "Effective config",
+        "tester": "Threshold preview"
       },
       "fields": {
         "defaultThreshold": "Default threshold",
@@ -1846,12 +1848,36 @@
       },
       "actions": {
         "add": "Add override",
-        "remove": "Remove"
+        "remove": "Remove",
+        "copyJson": "Copy JSON"
       },
       "messages": {
         "saved": "Saved",
         "saveFailed": "Failed to save",
-        "loadFailed": "Failed to load settings"
+        "loadFailed": "Failed to load settings",
+        "copied": "Copied.",
+        "copyFailed": "Copy failed"
+      },
+      "preview": {
+        "empty": "No overrides."
+      },
+      "tester": {
+        "hint": "Use this to preview which override matches and what threshold is applied after length adjustments.",
+        "fields": {
+          "category": "Category",
+          "topics": "Topics",
+          "summaryLength": "Summary length"
+        },
+        "placeholders": {
+          "category": "Optional",
+          "topics": "Optional (comma / Enter separated)"
+        },
+        "results": {
+          "base": "Base",
+          "final": "Final",
+          "matched": "matched",
+          "default": "default"
+        }
       },
       "validation": {
         "required": "Required",
