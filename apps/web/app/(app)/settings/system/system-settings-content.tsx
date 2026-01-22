@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 
 import { EmailSettingsPanel } from "@/components/settings/email-settings-panel";
 import { EntityImpactGraphSettingsPanel } from "@/components/settings/entity-impact-graph-settings-panel";
+import { NumberRangeExtra, TokenEstimateExtra, TotalTokenEstimateText } from "@/components/settings/form-field-feedback";
 import { GeoNominatimSettingsPanel } from "@/components/settings/geo-nominatim-settings-panel";
 import { KnowledgeGraphReviewPanel } from "@/components/settings/knowledge-graph-review-panel";
 import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-graph-settings-panel";
@@ -41,17 +42,6 @@ import type {
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 
-function estimateTokens(text: string) {
-  if (!text) {
-    return 0;
-  }
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length === 0) {
-    return Math.ceil(text.length / 4);
-  }
-  return words.reduce((acc, word) => acc + Math.max(1, Math.ceil(word.length / 4)), 0);
-}
-
 interface RateLimitFieldGroupProps {
   title: string;
   description: string;
@@ -67,16 +57,24 @@ function RateLimitFieldGroup({ title, description, field }: RateLimitFieldGroupP
         <Form.Item
           label={t("settings.rateLimits.fields.maxAttempts")}
           name={[field, "limit"]}
-          rules={[{ required: true, message: t("settings.rateLimits.validation.maxAttempts") }]}
+          rules={[
+            { required: true, message: t("settings.rateLimits.validation.maxAttempts") },
+            { type: "number", min: 1, max: 1000, message: t("common.validation.numberRange", { min: 1, max: 1000 }) }
+          ]}
+          extra={<NumberRangeExtra name={[field, "limit"]} min={1} max={1000} />}
         >
           <InputNumber min={1} max={1000} />
         </Form.Item>
         <Form.Item
           label={t("settings.rateLimits.fields.windowSeconds")}
           name={[field, "windowSeconds"]}
-          rules={[{ required: true, message: t("settings.rateLimits.validation.windowSeconds") }]}
+          rules={[
+            { required: true, message: t("settings.rateLimits.validation.windowSeconds") },
+            { type: "number", min: 5, max: 86_400, message: t("common.validation.numberRange", { min: 5, max: 86_400 }) }
+          ]}
+          extra={<NumberRangeExtra name={[field, "windowSeconds"]} min={5} max={86_400} unit="s" />}
         >
-          <InputNumber min={5} max={86_400} />
+          <InputNumber min={5} max={86_400} addonAfter="s" />
         </Form.Item>
       </div>
     </Card>
@@ -205,6 +203,7 @@ function AuditLogRetentionPanel() {
             { required: true, message: t("settings.auditLog.validation.retentionRequired") },
             { type: "number", min: 1, max: 3650, message: t("settings.auditLog.validation.retentionRange") }
           ]}
+          extra={<NumberRangeExtra name="retentionDays" min={1} max={3650} />}
         >
           <InputNumber min={1} max={3650} />
         </Form.Item>
@@ -349,30 +348,46 @@ function CrawlClientSettingsPanel() {
         <Form.Item
           label={t("settings.crawlClient.fields.healthCheckTtl")}
           name="healthCheckTtlMs"
-          rules={[{ required: true, message: t("settings.crawlClient.validation.healthCheckTtl") }]}
+          rules={[
+            { required: true, message: t("settings.crawlClient.validation.healthCheckTtl") },
+            { type: "number", min: 5_000, max: 900_000, message: t("common.validation.numberRange", { min: 5_000, max: 900_000 }) }
+          ]}
+          extra={<NumberRangeExtra name="healthCheckTtlMs" min={5_000} max={900_000} unit="ms" />}
         >
-          <InputNumber min={5_000} max={900_000} step={1_000} style={{ width: "100%" }} />
+          <InputNumber min={5_000} max={900_000} step={1_000} addonAfter="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.crawlClient.fields.requestTimeout")}
           name="requestTimeoutMs"
-          rules={[{ required: true, message: t("settings.crawlClient.validation.requestTimeout") }]}
+          rules={[
+            { required: true, message: t("settings.crawlClient.validation.requestTimeout") },
+            { type: "number", min: 5_000, max: 300_000, message: t("common.validation.numberRange", { min: 5_000, max: 300_000 }) }
+          ]}
+          extra={<NumberRangeExtra name="requestTimeoutMs" min={5_000} max={300_000} unit="ms" />}
         >
-          <InputNumber min={5_000} max={300_000} step={1_000} style={{ width: "100%" }} />
+          <InputNumber min={5_000} max={300_000} step={1_000} addonAfter="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.crawlClient.fields.maxAttempts")}
           name="maxRetries"
-          rules={[{ required: true, message: t("settings.crawlClient.validation.maxAttempts") }]}
+          rules={[
+            { required: true, message: t("settings.crawlClient.validation.maxAttempts") },
+            { type: "number", min: 1, max: 10, message: t("common.validation.numberRange", { min: 1, max: 10 }) }
+          ]}
+          extra={<NumberRangeExtra name="maxRetries" min={1} max={10} />}
         >
           <InputNumber min={1} max={10} step={1} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.crawlClient.fields.retryBackoff")}
           name="retryBackoffMs"
-          rules={[{ required: true, message: t("settings.crawlClient.validation.retryBackoff") }]}
+          rules={[
+            { required: true, message: t("settings.crawlClient.validation.retryBackoff") },
+            { type: "number", min: 500, max: 600_000, message: t("common.validation.numberRange", { min: 500, max: 600_000 }) }
+          ]}
+          extra={<NumberRangeExtra name="retryBackoffMs" min={500} max={600_000} unit="ms" />}
         >
-          <InputNumber min={500} max={600_000} step={500} style={{ width: "100%" }} />
+          <InputNumber min={500} max={600_000} step={500} addonAfter="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
@@ -390,12 +405,6 @@ function NewsPromptSettingsPanel() {
   const { data, loading, refetch } = useNewsPromptConfigQuery();
   const [updateConfig, { loading: saving }] = useUpdateNewsPromptConfigMutation();
   const [messageApi, contextHolder] = message.useMessage();
-
-  const systemTemplate = Form.useWatch("systemPromptTemplate", form) ?? "";
-  const userTemplate = Form.useWatch("userPromptTemplate", form) ?? "";
-  const systemTokens = useMemo(() => estimateTokens(systemTemplate), [systemTemplate]);
-  const userTokens = useMemo(() => estimateTokens(userTemplate), [userTemplate]);
-  const totalTokens = systemTokens + userTokens;
 
   useEffect(() => {
     if (data?.newsPromptConfig) {
@@ -455,7 +464,7 @@ function NewsPromptSettingsPanel() {
           label={t("settings.newsPrompts.fields.systemTemplate")}
           name="systemPromptTemplate"
           rules={[{ required: true, message: t("settings.newsPrompts.validation.systemTemplate") }]}
-          extra={t("settings.newsPrompts.estimatedTokens", { count: systemTokens })}
+          extra={<TokenEstimateExtra name="systemPromptTemplate" />}
         >
           <Input.TextArea rows={5} placeholder={t("settings.newsPrompts.placeholders.systemTemplate")} />
         </Form.Item>
@@ -463,13 +472,11 @@ function NewsPromptSettingsPanel() {
           label={t("settings.newsPrompts.fields.userTemplate")}
           name="userPromptTemplate"
           rules={[{ required: true, message: t("settings.newsPrompts.validation.userTemplate") }]}
-          extra={t("settings.newsPrompts.estimatedTokens", { count: userTokens })}
+          extra={<TokenEstimateExtra name="userPromptTemplate" />}
         >
           <Input.TextArea rows={10} placeholder={t("settings.newsPrompts.placeholders.userTemplate")} />
         </Form.Item>
-        <Typography.Text type="secondary" style={{ display: "block", marginBottom: "0.75rem" }}>
-          {t("settings.newsPrompts.estimatedTotalTokens", { count: totalTokens })}
-        </Typography.Text>
+        <TotalTokenEstimateText systemName="systemPromptTemplate" userName="userPromptTemplate" />
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
             {t("common.saveChanges")}

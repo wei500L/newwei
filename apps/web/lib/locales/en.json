@@ -282,6 +282,15 @@
     "punctuation": {
       "period": "."
     },
+    "numberRange": {
+      "range": "Range: {{min}}-{{max}}{{unit}}",
+      "inRange": "Current: {{value}}{{unit}} ({{toMin}}{{unit}} above min, {{toMax}}{{unit}} to max)",
+      "belowMin": "Current: {{value}}{{unit}} ({{diff}}{{unit}} below min)",
+      "aboveMax": "Current: {{value}}{{unit}} ({{diff}}{{unit}} above max)"
+    },
+    "validation": {
+      "numberRange": "Must be between {{min}} and {{max}}."
+    },
     "above": "above",
     "below": "below",
     "increase": "increase",
@@ -882,7 +891,12 @@
         "offline": "Offline"
       },
       "fallback": "Live updates interrupted; using polling",
-      "offline": "Live updates unavailable"
+      "offline": "Live updates unavailable",
+      "lastUpdate": "Last update",
+      "heartbeat": "Heartbeat",
+      "retries": "Retries",
+      "error": "Error",
+      "window": "Window"
     },
     "filters": {
       "resetAll": "Reset All Filters"

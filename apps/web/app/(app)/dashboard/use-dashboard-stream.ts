@@ -66,10 +66,14 @@ interface DashboardStreamErrorPayload {
 
 export type DashboardStreamStatus = 'live' | 'polling' | 'offline';
 
-interface DashboardStreamState {
+export interface DashboardStreamState {
   connected: boolean;
   status: DashboardStreamStatus;
   error?: string;
+  retryCount: number;
+  lastUpdateAt?: number;
+  lastMessageAt?: number;
+  nextRetryAt?: number;
 }
 
 export interface DashboardStreamOptions {
@@ -149,6 +153,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
   const [state, setState] = useState<DashboardStreamState>({
     connected: false,
     status: 'offline',
+    retryCount: 0,
   });
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -178,11 +183,26 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       retryRef.current = 0;
       statusRef.current = 'offline';
       hasLiveRef.current = false;
-      setState((prev) =>
-        prev.connected || prev.error || prev.status !== 'offline'
-          ? { connected: false, status: 'offline', error: undefined }
-          : prev,
-      );
+      setState((prev) => {
+        const next: DashboardStreamState = {
+          connected: false,
+          status: 'offline',
+          error: undefined,
+          retryCount: 0,
+          lastUpdateAt: undefined,
+          lastMessageAt: undefined,
+          nextRetryAt: undefined,
+        };
+        return prev.connected === next.connected &&
+          prev.status === next.status &&
+          prev.error === next.error &&
+          prev.retryCount === next.retryCount &&
+          prev.lastUpdateAt === next.lastUpdateAt &&
+          prev.lastMessageAt === next.lastMessageAt &&
+          prev.nextRetryAt === next.nextRetryAt
+          ? prev
+          : next;
+      });
       return;
     }
 
@@ -203,6 +223,28 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     let connecting = false;
     let authBlocked = false;
     const unknownEventTypes = new Set<string>();
+
+    const isStreamDataQueryKey = (queryKey: unknown) => {
+      if (!Array.isArray(queryKey)) return false;
+      if (queryKey[0] !== 'dashboard') return false;
+      if (queryKey[1] === 'war-map' && queryKey[2] === 'events') return true;
+      if (queryKey[1] === 'financial-candlestick') return true;
+      if (
+        queryKey[1] === 'spacetime' &&
+        queryKey[2] === 'geo-heatmap' &&
+        queryKey[3] !== 'articles'
+      ) {
+        return true;
+      }
+      return false;
+    };
+
+    const recordMessage = (timestamp = Date.now()) => {
+      if (!active) return;
+      setState((prev) =>
+        prev.lastMessageAt === timestamp ? prev : { ...prev, lastMessageAt: timestamp },
+      );
+    };
 
     const isOnline = () => {
       if (typeof navigator === 'undefined') return true;
@@ -245,6 +287,13 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       const jitter = 0.7 + Math.random() * 0.6;
       const delay = Math.round(baseDelay * jitter);
       retryRef.current = Math.min(attempt + 1, 10);
+      const retryCount = retryRef.current;
+      const nextRetryAt = Date.now() + delay;
+      setState((prev) =>
+        prev.retryCount === retryCount && prev.nextRetryAt === nextRetryAt
+          ? prev
+          : { ...prev, retryCount, nextRetryAt },
+      );
       reconnectRef.current = setTimeout(() => {
         reconnectRef.current = null;
         if (!active) return;
@@ -292,9 +341,20 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       }
       hasLiveRef.current = true;
       setState((prev) =>
-        prev.connected && prev.status === 'live' && !prev.error
+        prev.connected &&
+        prev.status === 'live' &&
+        !prev.error &&
+        prev.retryCount === 0 &&
+        !prev.nextRetryAt
           ? prev
-          : { connected: true, status: 'live', error: undefined },
+          : {
+              ...prev,
+              connected: true,
+              status: 'live',
+              error: undefined,
+              retryCount: 0,
+              nextRetryAt: undefined,
+            },
       );
     };
 
@@ -303,9 +363,20 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       const nextStatus = statusOverride ?? resolveFallbackStatus();
       statusRef.current = nextStatus;
       setState((prev) =>
-        prev.status === nextStatus && prev.error === message && !prev.connected
+        prev.status === nextStatus &&
+        prev.error === message &&
+        !prev.connected &&
+        prev.retryCount === retryRef.current &&
+        (nextStatus === 'polling' ? true : prev.nextRetryAt === undefined)
           ? prev
-          : { connected: false, status: nextStatus, error: message },
+          : {
+              ...prev,
+              connected: false,
+              status: nextStatus,
+              error: message,
+              retryCount: retryRef.current,
+              nextRetryAt: nextStatus === 'polling' ? prev.nextRetryAt : undefined,
+            },
       );
       if (nextStatus === 'polling') {
         startPolling();
@@ -328,13 +399,25 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       statusRef.current = 'offline';
       const message = `Dashboard stream unauthorized (${status})`;
       setState((prev) =>
-        prev.status === 'offline' && prev.error === message && !prev.connected
+        prev.status === 'offline' &&
+        prev.error === message &&
+        !prev.connected &&
+        prev.retryCount === 0 &&
+        !prev.nextRetryAt
           ? prev
-          : { connected: false, status: 'offline', error: message },
+          : {
+              ...prev,
+              connected: false,
+              status: 'offline',
+              error: message,
+              retryCount: 0,
+              nextRetryAt: undefined,
+            },
       );
     };
 
     const handleEvent = (eventType: string, rawData: string) => {
+      recordMessage();
       const payload = parseStreamData(rawData);
       if (eventType === 'war-map-events' && isWarMapEventsResponse(payload)) {
         queryClient.setQueryData(warEventsKey, payload);
@@ -389,6 +472,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         return;
       }
       connecting = true;
+      setState((prev) => (prev.nextRetryAt === undefined ? prev : { ...prev, nextRetryAt: undefined }));
 
       abortRef.current?.abort();
       if (readerRef.current) {
@@ -500,6 +584,11 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       if (authBlocked) return;
       if (statusRef.current === 'live') return;
       retryRef.current = 0;
+      setState((prev) =>
+        prev.retryCount === 0 && prev.nextRetryAt === undefined
+          ? prev
+          : { ...prev, retryCount: 0, nextRetryAt: undefined },
+      );
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;
@@ -519,6 +608,18 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       handleError('Network offline', 'offline');
     };
 
+    const unsubscribeQueryCache = queryClient.getQueryCache().subscribe((event) => {
+      if (!active) return;
+      if (event.type !== 'updated') return;
+      if (event.action.type !== 'success') return;
+      if (!isStreamDataQueryKey(event.query.queryKey)) return;
+      const updatedAt = event.query.state.dataUpdatedAt;
+      if (!updatedAt) return;
+      setState((prev) =>
+        prev.lastUpdateAt === updatedAt ? prev : { ...prev, lastUpdateAt: updatedAt },
+      );
+    });
+
     window.addEventListener('online', handleBrowserOnline);
     window.addEventListener('offline', handleBrowserOffline);
 
@@ -526,6 +627,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
 
     return () => {
       active = false;
+      unsubscribeQueryCache();
       window.removeEventListener('online', handleBrowserOnline);
       window.removeEventListener('offline', handleBrowserOffline);
       abortRef.current?.abort();

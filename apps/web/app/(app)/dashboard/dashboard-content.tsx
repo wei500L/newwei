@@ -153,6 +153,150 @@ const QueueChart = dynamic(
   { loading: () => <DashboardSkeleton className="h-[260px]" rows={4} /> }
 );
 
+interface DashboardStreamStatusLineProps {
+  accessToken?: string;
+  start: Date;
+  end: Date;
+  range: string;
+  queueStatus?: string | null;
+  selectedSector?: string | null;
+  enabled: boolean;
+}
+
+function DashboardStreamStatusLine({
+  accessToken,
+  start,
+  end,
+  range,
+  queueStatus,
+  selectedSector,
+  enabled
+}: DashboardStreamStatusLineProps) {
+  const { t } = useTranslation();
+  const streamState = useDashboardStream({
+    accessToken,
+    start,
+    end,
+    queueStatus,
+    selectedSector,
+    enabled
+  });
+  const lastStreamStatusRef = useRef<DashboardStreamStatus | null>(null);
+
+  const streamStatusMeta = useMemo(() => {
+    const status = streamState.status;
+    if (status === "live") {
+      return {
+        label: t("dashboard.stream.status.live", { defaultValue: "Live" }),
+        dotClass: "bg-emerald-500",
+        pulse: true
+      };
+    }
+    if (status === "polling") {
+      return {
+        label: t("dashboard.stream.status.polling", { defaultValue: "Polling" }),
+        dotClass: "bg-amber-500",
+        pulse: false
+      };
+    }
+    return {
+      label: t("dashboard.stream.status.offline", { defaultValue: "Offline" }),
+      dotClass: "bg-red-500",
+      pulse: false
+    };
+  }, [streamState.status, t]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    const prevStatus = lastStreamStatusRef.current;
+    if (prevStatus === streamState.status) return;
+    lastStreamStatusRef.current = streamState.status;
+    if (prevStatus === null) return;
+    if (streamState.status === "polling") {
+      toast.error(
+        t("dashboard.stream.fallback", {
+          defaultValue: "Live updates interrupted; using polling"
+        })
+      );
+    } else if (streamState.status === "offline") {
+      toast.error(
+        t("dashboard.stream.offline", {
+          defaultValue: "Live updates unavailable"
+        })
+      );
+    }
+  }, [accessToken, streamState.status, t]);
+
+  const lastUpdateLabel = streamState.lastUpdateAt
+    ? dayjs(streamState.lastUpdateAt).format("HH:mm:ss")
+    : "--";
+  const lastUpdateTitle = streamState.lastUpdateAt
+    ? dayjs(streamState.lastUpdateAt).format("YYYY-MM-DD HH:mm:ss")
+    : undefined;
+
+  const lastMessageLabel = streamState.lastMessageAt
+    ? dayjs(streamState.lastMessageAt).format("HH:mm:ss")
+    : "--";
+  const lastMessageTitle = streamState.lastMessageAt
+    ? dayjs(streamState.lastMessageAt).format("YYYY-MM-DD HH:mm:ss")
+    : undefined;
+
+  const errorPreview = useMemo(() => {
+    if (!streamState.error) return null;
+    const trimmed = streamState.error.trim();
+    if (!trimmed) return null;
+    const maxLen = 96;
+    return trimmed.length > maxLen ? `${trimmed.slice(0, maxLen)}...` : trimmed;
+  }, [streamState.error]);
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
+      <span
+        className={`h-2 w-2 rounded-full ${streamStatusMeta.dotClass} ${streamStatusMeta.pulse ? "animate-pulse" : ""}`}
+        aria-hidden="true"
+      />
+      <span>{streamStatusMeta.label}</span>
+      <span className="text-slate-600">|</span>
+      <span title={lastUpdateTitle}>
+        {t("dashboard.stream.lastUpdate", { defaultValue: "Last update" })}: {lastUpdateLabel}
+      </span>
+      {streamState.status === "live" && streamState.lastMessageAt ? (
+        <>
+          <span className="text-slate-600">|</span>
+          <span title={lastMessageTitle}>
+            {t("dashboard.stream.heartbeat", { defaultValue: "Heartbeat" })}: {lastMessageLabel}
+          </span>
+        </>
+      ) : null}
+      {streamState.status === "polling" || streamState.status === "offline" ? (
+        <>
+          <span className="text-slate-600">|</span>
+          <span>
+            {t("dashboard.stream.retries", { defaultValue: "Retries" })}:{" "}
+            {streamState.retryCount}
+          </span>
+        </>
+      ) : null}
+      {errorPreview ? (
+        <>
+          <span className="text-slate-600">|</span>
+          <span
+            className="inline-block max-w-[360px] truncate align-bottom text-red-400"
+            title={streamState.error}
+          >
+            {t("dashboard.stream.error", { defaultValue: "Error" })}: {errorPreview}
+          </span>
+        </>
+      ) : null}
+      <span className="text-slate-600">|</span>
+      <span>
+        {t("dashboard.stream.window", { defaultValue: "Window" })}: {range} (
+        {dayjs(start).format("YYYY-MM-DD")} to {dayjs(end).format("YYYY-MM-DD")})
+      </span>
+    </div>
+  );
+}
+
 export function DashboardContent() {
   const { t } = useTranslation();
   const { data: session } = useSession();
@@ -199,69 +343,16 @@ export function DashboardContent() {
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
   const { queueStatus, selectedSector, setQueueStatus } =
     useDashboardFiltersStore();
-  const streamState = useDashboardStream({
-    accessToken: session?.accessToken,
-    start,
-    end,
-    queueStatus,
-    selectedSector,
-    enabled: Boolean(session?.accessToken)
-  });
   const queueFilterMounted = useRef(false);
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
   const [showSystemStats, setShowSystemStats] = useState(false);
-  const lastStreamStatusRef = useRef<DashboardStreamStatus | null>(null);
   const analysisPanelRef = useRef<HTMLDivElement | null>(null);
-
-  const streamStatusMeta = useMemo(() => {
-    const status = streamState.status;
-    if (status === "live") {
-      return {
-        label: t("dashboard.stream.status.live", { defaultValue: "Live" }),
-        dotClass: "bg-emerald-500",
-        pulse: true
-      };
-    }
-    if (status === "polling") {
-      return {
-        label: t("dashboard.stream.status.polling", { defaultValue: "Polling" }),
-        dotClass: "bg-amber-500",
-        pulse: false
-      };
-    }
-    return {
-      label: t("dashboard.stream.status.offline", { defaultValue: "Offline" }),
-      dotClass: "bg-red-500",
-      pulse: false
-      };
-  }, [streamState.status, t]);
 
   useEffect(() => {
     if (connectionError) {
       message.error(t("dashboard.queue.connectionFailed", { error: connectionError }));
     }
   }, [connectionError, t]);
-
-  useEffect(() => {
-    if (!session?.accessToken) return;
-    const prevStatus = lastStreamStatusRef.current;
-    if (prevStatus === streamState.status) return;
-    lastStreamStatusRef.current = streamState.status;
-    if (prevStatus === null) return;
-    if (streamState.status === "polling") {
-      toast.error(
-        t("dashboard.stream.fallback", {
-          defaultValue: "Live updates interrupted; using polling"
-        })
-      );
-    } else if (streamState.status === "offline") {
-      toast.error(
-        t("dashboard.stream.offline", {
-          defaultValue: "Live updates unavailable"
-        })
-      );
-    }
-  }, [session?.accessToken, streamState.status, t]);
 
   useEffect(() => {
     if (searchParams.get("panel") === "analysis" && analysisPanelRef.current) {
@@ -316,19 +407,15 @@ export function DashboardContent() {
         
         {/* Status Bar */}
         <div className="flex items-center justify-between">
-           <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-             <span
-               className={`h-2 w-2 rounded-full ${streamStatusMeta.dotClass} ${streamStatusMeta.pulse ? "animate-pulse" : ""}`}
-               aria-hidden="true"
-             />
-             <span>{streamStatusMeta.label}</span>
-             <span className="text-slate-600">|</span>
-             <span>Last Update: {dayjs().format('HH:mm:ss')}</span>
-             <span className="text-slate-600">|</span>
-             <span>
-               Window: {range} ({dayjs(start).format("YYYY-MM-DD")} to {dayjs(end).format("YYYY-MM-DD")})
-             </span>
-           </div>
+           <DashboardStreamStatusLine
+             accessToken={session?.accessToken}
+             start={start}
+             end={end}
+             range={range}
+             queueStatus={queueStatus}
+             selectedSector={selectedSector}
+             enabled={Boolean(session?.accessToken)}
+           />
            <Space>
              <span className="text-xs text-slate-500">System Status</span>
              <Switch size="small" checked={showSystemStats} onChange={setShowSystemStats} />

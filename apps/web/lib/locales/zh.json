@@ -282,6 +282,15 @@
     "punctuation": {
       "period": "。"
     },
+    "numberRange": {
+      "range": "范围：{{min}}-{{max}}{{unit}}",
+      "inRange": "当前：{{value}}{{unit}}（距最小值 {{toMin}}{{unit}}，距最大值 {{toMax}}{{unit}}）",
+      "belowMin": "当前：{{value}}{{unit}}（低于最小值 {{diff}}{{unit}}）",
+      "aboveMax": "当前：{{value}}{{unit}}（高于最大值 {{diff}}{{unit}}）"
+    },
+    "validation": {
+      "numberRange": "必须在 {{min}} 到 {{max}} 之间。"
+    },
     "above": "高于",
     "below": "低于",
     "increase": "上涨",
@@ -882,7 +891,12 @@
         "offline": "离线"
       },
       "fallback": "实时更新中断，已切换为轮询",
-      "offline": "实时更新不可用"
+      "offline": "实时更新不可用",
+      "lastUpdate": "最后更新",
+      "heartbeat": "心跳",
+      "retries": "重连次数",
+      "error": "错误",
+      "window": "窗口"
     },
     "filters": {
       "resetAll": "重置全部筛选"
