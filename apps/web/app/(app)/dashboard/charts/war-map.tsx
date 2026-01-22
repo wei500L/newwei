@@ -7,6 +7,7 @@ import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
@@ -560,6 +561,7 @@ export function WarMap({ className }: WarMapProps = {}) {
         name: t("dashboard.charts.warMap.monitors", { defaultValue: "Monitors" }),
         type: "scatter",
         coordinateSystem: "geo",
+        cursor: "pointer",
         z: 12,
         data: monitorsWithLocation.map((monitor) => ({
           kind: "monitor",
@@ -669,6 +671,7 @@ export function WarMap({ className }: WarMapProps = {}) {
       name: t("dashboard.charts.warMap.newsSeries", { defaultValue: "News" }),
       type: "scatter",
       coordinateSystem: "geo",
+      cursor: "pointer",
       data: newsScatterData,
       large: useLargeNewsMode,
       largeThreshold: 800,
@@ -760,6 +763,9 @@ export function WarMap({ className }: WarMapProps = {}) {
                 <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${color};">${data.name}</div>
                 ${location ? `<div style="color: #94a3b8; margin-bottom: 4px;">${location}</div>` : ""}
                 ${keywords ? `<div style="color: #94a3b8;">${keywords}</div>` : ""}
+                <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
+                  Click to open search results
+                </div>
               </div>
             `;
           }
@@ -860,6 +866,22 @@ export function WarMap({ className }: WarMapProps = {}) {
   ]);
 
   const chartEvents = useMemo(() => {
+    const popupBlockedMessage = t("common.popupBlocked", {
+      defaultValue: "Popup blocked. Please allow popups for this site."
+    });
+
+    const openInNewTab = (url: string, labels: { loading: string; success: string }) => {
+      const toastId = toast.loading(labels.loading);
+      const handle = window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => {
+        if (handle) {
+          toast.success(labels.success, { id: toastId });
+        } else {
+          toast.error(popupBlockedMessage, { id: toastId });
+        }
+      }, 200);
+    };
+
     return [
       {
         type: "click",
@@ -873,9 +895,17 @@ export function WarMap({ className }: WarMapProps = {}) {
           if (record.kind === "news") {
             const url = typeof record.url === "string" ? safeHttpUrl(record.url) : null;
             if (!url) {
+              toast.warning(
+                t("dashboard.charts.warMap.missingNewsUrl", {
+                  defaultValue: "No link available for this news marker."
+                })
+              );
               return;
             }
-            window.open(url, "_blank", "noopener,noreferrer");
+            openInNewTab(url, {
+              loading: t("dashboard.charts.warMap.openingNews", { defaultValue: "Opening news link..." }),
+              success: t("dashboard.charts.warMap.openedNews", { defaultValue: "News opened in a new tab" })
+            });
             return;
           }
 
@@ -886,14 +916,28 @@ export function WarMap({ className }: WarMapProps = {}) {
             const fallback = typeof record.name === "string" ? record.name : "";
             const query = (keywords[0] ?? fallback).trim();
             if (!query) {
+              toast.warning(
+                t("dashboard.charts.warMap.missingMonitorQuery", {
+                  defaultValue: "No keywords available for this monitor."
+                })
+              );
               return;
             }
-            window.open(`/search?q=${encodeURIComponent(query)}`, "_blank", "noopener,noreferrer");
+            openInNewTab(`/search?q=${encodeURIComponent(query)}`, {
+              loading: t("dashboard.charts.warMap.openingSearch", {
+                query,
+                defaultValue: `Opening search for "${query}"...`
+              }),
+              success: t("dashboard.charts.warMap.openedSearch", {
+                query,
+                defaultValue: `Search opened for "${query}" in a new tab`
+              })
+            });
           }
         }
       }
     ];
-  }, []);
+  }, [t]);
 
   const geoErrorMessage = getApiErrorMessage(geoQuery.error);
   const eventsErrorMessage = getApiErrorMessage(eventsQuery.error);

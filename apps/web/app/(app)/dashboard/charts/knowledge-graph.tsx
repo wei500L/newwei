@@ -1,9 +1,10 @@
 "use client";
 
-import { Alert, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
+import { Alert, Button, Drawer, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
 import type { EChartsOption } from "echarts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
@@ -52,10 +53,18 @@ export function KnowledgeGraph() {
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const [messageApi, contextHolder] = message.useMessage();
   const [seedDraft, setSeedDraft] = useState("");
+  const [seedError, setSeedError] = useState<string | null>(null);
   const [seedName, setSeedName] = useState<string>("");
   const [maxDepth, setMaxDepth] = useState<number>(2);
   const [maxNodes, setMaxNodes] = useState<number>(200);
   const [settingsApplied, setSettingsApplied] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<{
+    id: string;
+    name: string;
+    type?: string;
+    degree?: number;
+  } | null>(null);
+  const [nodeDrawerOpen, setNodeDrawerOpen] = useState(false);
 
   const { data: settingsData, loading: settingsLoading } = useKnowledgeGraphSettingsQuery({
     fetchPolicy: "cache-and-network"
@@ -81,9 +90,12 @@ export function KnowledgeGraph() {
     (value?: string) => {
       const next = (value ?? seedDraft).trim();
       if (!next) {
-        messageApi.warning(t("dashboard.charts.knowledgeGraphSeedRequired", { defaultValue: "Enter a seed entity" }));
+        const warning = t("dashboard.charts.knowledgeGraphSeedRequired", { defaultValue: "Enter a seed entity" });
+        setSeedError(warning);
+        messageApi.warning(warning);
         return;
       }
+      setSeedError(null);
       setSeedName(next);
     },
     [messageApi, seedDraft, t]
@@ -195,6 +207,7 @@ export function KnowledgeGraph() {
           roam: true,
           draggable: true,
           focusNodeAdjacency: true,
+          cursor: "pointer",
           data: nodes,
           links,
           categories,
@@ -239,14 +252,25 @@ export function KnowledgeGraph() {
     <>
       {contextHolder}
       <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "0.75rem" }}>
-        <Input.Search
-          value={seedDraft}
-          onChange={(evt) => setSeedDraft(evt.target.value)}
-          onSearch={handleSearch}
-          placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Seed entity name" })}
-          allowClear
-          style={{ maxWidth: 360 }}
-        />
+        <div style={{ maxWidth: 360, width: "100%" }}>
+          <Input.Search
+            value={seedDraft}
+            status={seedError ? "error" : undefined}
+            loading={loading}
+            onChange={(evt) => {
+              setSeedDraft(evt.target.value);
+              setSeedError(null);
+            }}
+            onSearch={handleSearch}
+            placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Seed entity name" })}
+            allowClear
+          />
+          {seedError ? (
+            <Text type="danger" className="text-xs">
+              {seedError}
+            </Text>
+          ) : null}
+        </div>
         <Space size="middle">
           <div>
             <Text type="secondary">
@@ -262,6 +286,19 @@ export function KnowledgeGraph() {
           </div>
         </Space>
       </div>
+
+      {seedName ? (
+        <Space size="small" wrap style={{ marginBottom: "0.75rem" }}>
+          <Tag color="geekblue" className="text-xs">
+            {t("dashboard.charts.knowledgeGraphSeedLabel", { defaultValue: "Seed" })}: {seedName}
+          </Tag>
+          {loading ? (
+            <Tag color="processing" className="text-xs">
+              {t("dashboard.charts.knowledgeGraphSearching", { defaultValue: "Searching..." })}
+            </Tag>
+          ) : null}
+        </Space>
+      ) : null}
 
       {settings ? (
         <Space size="small" wrap style={{ marginBottom: "0.75rem" }}>
@@ -320,7 +357,35 @@ export function KnowledgeGraph() {
         </div>
       ) : graph ? (
         <div className="h-[360px] transition-all duration-300">
-          <DashboardChart option={option} theme={echartsTheme} height="100%" />
+          <DashboardChart
+            option={option}
+            theme={echartsTheme}
+            height="100%"
+            onEvents={[
+              {
+                type: "click",
+                handler: (params: any) => {
+                  if (params?.dataType !== "node") {
+                    return;
+                  }
+                  const data = params.data ?? {};
+                  const id = typeof data.id === "string" ? data.id : "";
+                  const name = typeof data.name === "string" ? data.name : "";
+                  if (!id || !name) {
+                    return;
+                  }
+                  const meta = data.originalData ?? {};
+                  setSelectedNode({
+                    id,
+                    name,
+                    type: typeof meta.type === "string" ? meta.type : undefined,
+                    degree: typeof meta.degree === "number" ? meta.degree : undefined
+                  });
+                  setNodeDrawerOpen(true);
+                }
+              }
+            ]}
+          />
         </div>
       ) : (
         <div className="h-[360px] transition-all duration-300">
@@ -330,6 +395,88 @@ export function KnowledgeGraph() {
           />
         </div>
       )}
+      <Drawer
+        open={nodeDrawerOpen && Boolean(selectedNode)}
+        onClose={() => setNodeDrawerOpen(false)}
+        placement="right"
+        width={380}
+        title={selectedNode?.name ?? t("dashboard.charts.knowledgeGraphNodeTitle", { defaultValue: "Node" })}
+      >
+        {selectedNode ? (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <div>
+              <Text type="secondary">
+                {t("dashboard.charts.knowledgeGraphNodeType", { defaultValue: "Type" })}: {selectedNode.type ?? "-"}
+              </Text>
+              <br />
+              <Text type="secondary">
+                {t("dashboard.charts.knowledgeGraphNodeDegree", { defaultValue: "Degree" })}: {selectedNode.degree ?? 0}
+              </Text>
+            </div>
+            <Space wrap>
+              <Button
+                type="primary"
+                onClick={() => {
+                  setSeedDraft(selectedNode.name);
+                  setSeedName(selectedNode.name);
+                  setSeedError(null);
+                  setNodeDrawerOpen(false);
+                }}
+              >
+                {t("dashboard.charts.knowledgeGraphExplore", { defaultValue: "Explore this node" })}
+              </Button>
+              <Button
+                onClick={() => {
+                  const toastId = toast.loading(
+                    t("dashboard.charts.knowledgeGraphOpeningSearch", {
+                      query: selectedNode.name,
+                      defaultValue: `Opening search for "${selectedNode.name}"...`
+                    })
+                  );
+                  const handle = window.open(
+                    `/search?q=${encodeURIComponent(selectedNode.name)}`,
+                    "_blank",
+                    "noopener,noreferrer"
+                  );
+                  window.setTimeout(() => {
+                    if (handle) {
+                      toast.success(
+                        t("dashboard.charts.knowledgeGraphOpenedSearch", {
+                          query: selectedNode.name,
+                          defaultValue: `Search opened for "${selectedNode.name}" in a new tab`
+                        }),
+                        { id: toastId }
+                      );
+                    } else {
+                      toast.error(
+                        t("common.popupBlocked", { defaultValue: "Popup blocked. Please allow popups for this site." }),
+                        { id: toastId }
+                      );
+                    }
+                  }, 200);
+                }}
+              >
+                {t("dashboard.charts.knowledgeGraphOpenSearch", { defaultValue: "Open search" })}
+              </Button>
+              <Button
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(selectedNode.name)
+                    .then(() => toast.success(t("common.copied", { defaultValue: "Copied" })))
+                    .catch(() => toast.error(t("common.copyFailed", { defaultValue: "Copy failed" })));
+                }}
+              >
+                {t("common.copy", { defaultValue: "Copy" })}
+              </Button>
+            </Space>
+            <Text type="secondary" className="text-xs">
+              {t("dashboard.charts.knowledgeGraphExploreHint", {
+                defaultValue: "Tip: use \"Explore this node\" to re-center the graph on it."
+              })}
+            </Text>
+          </Space>
+        ) : null}
+      </Drawer>
     </>
   );
 }

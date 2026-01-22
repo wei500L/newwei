@@ -1,9 +1,10 @@
 "use client";
 
-import { Tag, message, Skeleton, Slider, Space, Typography } from "antd";
+import { Button, Drawer, Tag, message, Skeleton, Slider, Space, Typography } from "antd";
 import type { EChartsOption } from "echarts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
@@ -189,7 +190,15 @@ export function EntityImpactGraph() {
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const { range, start, end } = useDashboardRangeStore();
   const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
+  const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId: string;
+    nodeName: string;
+  } | null>(null);
   const [minConfidence, setMinConfidence] = useState<number>(0.5);
   const [minCorrelation, setMinCorrelation] = useState<number>(0.3);
   const [minCoOccurrence, setMinCoOccurrence] = useState<number>(2);
@@ -233,6 +242,69 @@ export function EntityImpactGraph() {
     });
 
   const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
+
+  const connectionMap = useMemo(() => buildConnectionMap(links), [links]);
+  const selectedNodeRecord = useMemo(
+    () => nodes.find((node) => node.id === selectedNode) ?? null,
+    [nodes, selectedNode]
+  );
+  const relatedEntities = useMemo(() => {
+    if (!selectedNode) return [];
+    const relatedIds = connectionMap.get(selectedNode) ?? [];
+    const byId = new Map(nodes.map((node) => [node.id, node.name] as const));
+    return relatedIds
+      .map((id) => ({ id, name: byId.get(id) }))
+      .filter(
+        (item): item is { id: string; name: string } =>
+          typeof item.name === "string" && item.name.trim().length > 0
+      )
+      .map((item) => ({ id: item.id, name: item.name.trim() }));
+  }, [connectionMap, nodes, selectedNode]);
+
+  const openSearchForEntity = useCallback(
+    (query: string) => {
+      const normalized = query.trim();
+      if (!normalized) {
+        return;
+      }
+      const toastId = toast.loading(
+        t("dashboard.charts.entityGraph.openingSearch", {
+          query: normalized,
+          defaultValue: `Opening search for "${normalized}"...`
+        })
+      );
+      const handle = window.open(`/search?q=${encodeURIComponent(normalized)}`, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => {
+        if (handle) {
+          toast.success(
+            t("dashboard.charts.entityGraph.openedSearch", {
+              query: normalized,
+              defaultValue: `Search opened for "${normalized}" in a new tab`
+            }),
+            { id: toastId }
+          );
+        } else {
+          toast.error(
+            t("common.popupBlocked", { defaultValue: "Popup blocked. Please allow popups for this site." }),
+            { id: toastId }
+          );
+        }
+      }, 200);
+    },
+    [t]
+  );
+
+  const copyEntityName = useCallback(
+    async (value: string) => {
+      try {
+        await navigator.clipboard.writeText(value);
+        toast.success(t("common.copied", { defaultValue: "Copied" }));
+      } catch {
+        toast.error(t("common.copyFailed", { defaultValue: "Copy failed" }));
+      }
+    },
+    [t]
+  );
 
   /**
    * Build ECharts option with graph series configuration
@@ -332,6 +404,7 @@ export function EntityImpactGraph() {
           categories,
           roam: true,
           draggable: true,
+          cursor: "pointer",
           force: {
             repulsion: 500,
             gravity: 0.1,
@@ -378,6 +451,8 @@ export function EntityImpactGraph() {
         if (nodeId) {
           const newSelection = selectedNode === nodeId ? null : nodeId;
           setSelectedNode(newSelection);
+          setContextMenu(null);
+          setDrawerOpen(Boolean(newSelection));
           if (newSelection && nodeName) {
             message.info(
               t("dashboard.charts.entityGraph.nodeSelected", {
@@ -392,6 +467,60 @@ export function EntityImpactGraph() {
     [selectedNode, t]
   );
 
+  const handleNodeContextMenu = useCallback((params: any) => {
+    if (params.dataType !== "node") {
+      return;
+    }
+    const nodeId = params.data?.id;
+    const nodeName = params.data?.name;
+    if (typeof nodeId !== "string" || typeof nodeName !== "string") {
+      return;
+    }
+
+    const nativeEvent = params.event?.event as MouseEvent | undefined;
+    nativeEvent?.preventDefault?.();
+    nativeEvent?.stopPropagation?.();
+
+    let x = typeof params.event?.offsetX === "number" ? params.event.offsetX : Number.NaN;
+    let y = typeof params.event?.offsetY === "number" ? params.event.offsetY : Number.NaN;
+
+    if ((!Number.isFinite(x) || !Number.isFinite(y)) && nativeEvent && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      x = nativeEvent.clientX - rect.left;
+      y = nativeEvent.clientY - rect.top;
+    }
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      x = 8;
+      y = 8;
+    }
+
+    setSelectedNode(nodeId);
+    setContextMenu({ x, y, nodeId, nodeName });
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const dismiss = () => setContextMenu(null);
+    const dismissOnKey = (evt: KeyboardEvent) => {
+      if (evt.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+
+    window.addEventListener("mousedown", dismiss);
+    window.addEventListener("resize", dismiss);
+    window.addEventListener("keydown", dismissOnKey);
+    return () => {
+      window.removeEventListener("mousedown", dismiss);
+      window.removeEventListener("resize", dismiss);
+      window.removeEventListener("keydown", dismissOnKey);
+    };
+  }, [contextMenu]);
+
   /**
    * Handle confidence filter change
    */
@@ -399,6 +528,8 @@ export function EntityImpactGraph() {
     setMinConfidence(value);
     // Clear selection when filter changes
     setSelectedNode(null);
+    setDrawerOpen(false);
+    setContextMenu(null);
   }, []);
 
   if (enabled === false) {
@@ -455,7 +586,7 @@ export function EntityImpactGraph() {
   }
 
   return (
-    <div className="relative h-[400px]">
+    <div ref={containerRef} className="relative h-[400px]">
       <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
         <Tag color="default" className="text-xs">
           Range: {range}
@@ -475,6 +606,10 @@ export function EntityImpactGraph() {
           {
             type: "click",
             handler: handleNodeClick
+          },
+          {
+            type: "contextmenu",
+            handler: handleNodeContextMenu
           }
         ]}
         actions={
@@ -513,6 +648,135 @@ export function EntityImpactGraph() {
           })}
         </div>
       ) : null}
+      {contextMenu ? (
+        <div
+          className="absolute z-20"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onContextMenu={(evt) => evt.preventDefault()}
+          onMouseDown={(evt) => evt.stopPropagation()}
+        >
+          <div className="min-w-[200px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+            <div className="px-3 py-2 text-xs text-slate-600">{contextMenu.nodeName}</div>
+            <div className="border-t border-slate-200" />
+            <div className="p-1">
+              <Button
+                type="text"
+                size="small"
+                block
+                onClick={() => {
+                  openSearchForEntity(contextMenu.nodeName);
+                  setContextMenu(null);
+                }}
+              >
+                {t("dashboard.charts.entityGraph.openSearch", { defaultValue: "Open search" })}
+              </Button>
+              <Button
+                type="text"
+                size="small"
+                block
+                onClick={() => {
+                  void copyEntityName(contextMenu.nodeName);
+                  setContextMenu(null);
+                }}
+              >
+                {t("common.copy", { defaultValue: "Copy" })}
+              </Button>
+              <Button
+                type="text"
+                size="small"
+                block
+                onClick={() => {
+                  setDrawerOpen(true);
+                  setContextMenu(null);
+                }}
+              >
+                {t("common.details", { defaultValue: "Details" })}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <Drawer
+        open={drawerOpen && Boolean(selectedNodeRecord)}
+        onClose={() => setDrawerOpen(false)}
+        placement="right"
+        width={380}
+        title={selectedNodeRecord?.name ?? t("dashboard.charts.entityGraph.detailsTitle", { defaultValue: "Details" })}
+        extra={
+          <Button
+            size="small"
+            onClick={() => {
+              setSelectedNode(null);
+              setDrawerOpen(false);
+            }}
+          >
+            {t("common.clear", { defaultValue: "Clear" })}
+          </Button>
+        }
+      >
+        {selectedNodeRecord ? (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <div>
+              <Text type="secondary">
+                {t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: {selectedNodeRecord.type}
+              </Text>
+              <br />
+              <Text type="secondary">
+                {t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: {selectedNodeRecord.category}
+              </Text>
+              <br />
+              <Text type="secondary">
+                {t("dashboard.charts.entityGraph.weight", { defaultValue: "Weight" })}:{" "}
+                {Number(selectedNodeRecord.value ?? 0).toFixed(1)}
+              </Text>
+              <br />
+              <Text type="secondary">
+                {t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}:{" "}
+                {relatedEntities.length}
+              </Text>
+            </div>
+            <Space wrap>
+              <Button type="primary" onClick={() => openSearchForEntity(selectedNodeRecord.name)}>
+                {t("dashboard.charts.entityGraph.openSearch", { defaultValue: "Open search" })}
+              </Button>
+              <Button onClick={() => void copyEntityName(selectedNodeRecord.name)}>
+                {t("common.copy", { defaultValue: "Copy" })}
+              </Button>
+            </Space>
+            {relatedEntities.length > 0 ? (
+              <div>
+                <Text type="secondary">
+                  {t("dashboard.charts.entityGraph.relatedEntities", { defaultValue: "Related" })}
+                </Text>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {relatedEntities.slice(0, 18).map(({ id, name }) => (
+                    <Tag
+                      key={id}
+                      className="cursor-pointer"
+                      onClick={() => {
+                        openSearchForEntity(name);
+                      }}
+                    >
+                      {name}
+                    </Tag>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <Text type="secondary">
+                {t("dashboard.charts.entityGraph.noRelatedEntities", {
+                  defaultValue: "No related entities found."
+                })}
+              </Text>
+            )}
+            <Text type="secondary" className="text-xs">
+              {t("dashboard.charts.entityGraph.hint", {
+                defaultValue: "Tip: right-click a node for quick actions."
+              })}
+            </Text>
+          </Space>
+        ) : null}
+      </Drawer>
     </div>
   );
 }
