@@ -20,6 +20,13 @@ import { safeHttpUrl } from "@/lib/url";
 import { FacetedSearch, type FilterState } from "./components/faceted-search";
 import { NewsCard } from "./components/news-card";
 import { type ItemViewType, ViewSwitcher } from "./components/view-switcher";
+import {
+  DEFAULT_ITEMS_PAGE_SIZE,
+  ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
+  clampItemsPageSize,
+  getItemsLastPage,
+  normalizeItemsPaginationChange
+} from "./pagination";
 
 const FinancialCard = dynamic(
   () => import("./components/financial-card").then((mod) => mod.FinancialCard),
@@ -72,8 +79,6 @@ function withMetricTooltip(label: string, tooltip: string) {
     </Space>
   );
 }
-
-const MAX_ITEMS_PAGE_SIZE = 50;
 
 interface ItemsDateRangeInput {
   start?: string;
@@ -285,6 +290,7 @@ export function ItemsView({
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const timeZone = process.env.NEXT_PUBLIC_TIME_ZONE ?? "Asia/Shanghai";
   const { data: session } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -296,9 +302,9 @@ export function ItemsView({
   // URL State
   const urlSearch = (searchParams.get("q") ?? "").trim();
   const current = parsePositiveInt(searchParams.get("page"), 1);
-  const rawPageSize = parsePositiveInt(searchParams.get("pageSize"), 10);
-  const pageSize = Math.min(rawPageSize, MAX_ITEMS_PAGE_SIZE);
-  
+  const rawPageSize = parsePositiveInt(searchParams.get("pageSize"), DEFAULT_ITEMS_PAGE_SIZE);
+  const pageSize = clampItemsPageSize(rawPageSize);
+
   // Local State
   const [searchInput, setSearchInput] = useState(urlSearch);
   const [view, setView] = useState<ItemViewType>(initialView);
@@ -339,8 +345,8 @@ export function ItemsView({
         }
       }
       if (updates.pageSize !== undefined) {
-        const value = updates.pageSize ?? 10;
-        if (value !== 10) {
+        const value = updates.pageSize ?? DEFAULT_ITEMS_PAGE_SIZE;
+        if (value !== DEFAULT_ITEMS_PAGE_SIZE) {
           next.set("pageSize", String(value));
         } else {
           next.delete("pageSize");
@@ -359,7 +365,7 @@ export function ItemsView({
     if (rawPageSize === pageSize) {
       return;
     }
-    setQueryParams({ pageSize });
+    setQueryParams({ page: 1, pageSize });
   }, [pageSize, rawPageSize, setQueryParams]);
 
   const handleFilterChange = useCallback(
@@ -412,21 +418,20 @@ export function ItemsView({
         (filtersInput === null ? initialData ?? undefined : undefined);
   const edges = resolvedData?.items.edges ?? EMPTY_EDGES;
   const resolvedTotalCount = resolvedData?.items.totalCount;
-  const totalCount =
-    typeof resolvedTotalCount === "number" ? Math.max(resolvedTotalCount, edges.length) : edges.length;
+  const totalCount = typeof resolvedTotalCount === "number" ? resolvedTotalCount : 0;
 
   useEffect(() => {
     if (isUnsearched || loading || error) {
       return;
     }
-    if (edges.length > 0 || totalCount === 0) {
+    if (typeof resolvedTotalCount !== "number") {
       return;
     }
-    const lastPage = Math.max(1, Math.ceil(totalCount / pageSize));
+    const lastPage = getItemsLastPage(resolvedTotalCount, pageSize);
     if (current > lastPage) {
       setQueryParams({ page: lastPage });
     }
-  }, [current, edges.length, error, isUnsearched, loading, pageSize, setQueryParams, totalCount]);
+  }, [current, error, isUnsearched, loading, pageSize, resolvedTotalCount, setQueryParams]);
 
   const pageData = useMemo<ParsedItem[]>(() => {
     return edges.map((edge) => {
@@ -610,15 +615,25 @@ export function ItemsView({
     };
   }, [canManageCrawl, emptyStateVariant, isUnsearched, t]);
 
-  const handleTableChange = (pager: TablePaginationConfig) => {
-    const nextPageSize = pager.pageSize ?? pageSize;
-    const pageSizeChanged = nextPageSize !== pageSize;
-    const nextPage = pageSizeChanged ? 1 : (pager.current ?? 1);
+  const handlePaginationChange = useCallback(
+    (nextPage: number, nextPageSize?: number) => {
+      const { page, pageSize: normalizedPageSize } = normalizeItemsPaginationChange({
+        nextPage,
+        nextPageSize,
+        currentPageSize: pageSize,
+        totalCount: resolvedTotalCount
+      });
 
-    setQueryParams({
-      page: nextPage,
-      pageSize: nextPageSize
-    });
+      setQueryParams({
+        page,
+        pageSize: normalizedPageSize
+      });
+    },
+    [pageSize, resolvedTotalCount, setQueryParams]
+  );
+
+  const handleTableChange = (pager: TablePaginationConfig) => {
+    handlePaginationChange(pager.current ?? 1, pager.pageSize);
   };
 
   const handleSearch = (value: string) => {
@@ -660,6 +675,7 @@ export function ItemsView({
                     day: "2-digit",
                     hour: "2-digit",
                     minute: "2-digit",
+                    timeZone,
                     timeZoneName: "short"
                   })
                 : t("common.notAvailable")}
@@ -672,6 +688,7 @@ export function ItemsView({
                 day: "2-digit",
                 hour: "2-digit",
                 minute: "2-digit",
+                timeZone,
                 timeZoneName: "short"
               })}
             </Typography.Text>
@@ -825,7 +842,7 @@ export function ItemsView({
             pageSize,
             total: totalCount,
             showSizeChanger: true,
-            pageSizeOptions: ["10", "20", "50"]
+            pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS
           }}
           onChange={handleTableChange}
         />
@@ -839,13 +856,14 @@ export function ItemsView({
           dataSource={pageData}
           rowKey="id"
           pagination={{
-             current,
-             pageSize,
-             total: totalCount,
-             onChange: (page, size) => setQueryParams({ page, pageSize: size }),
-             showSizeChanger: true,
-             pageSizeOptions: ["10", "20", "50"],
-             align: 'center'
+            current,
+            pageSize,
+            total: totalCount,
+            showSizeChanger: true,
+            pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
+            align: "center",
+            onChange: handlePaginationChange,
+            onShowSizeChange: handlePaginationChange
           }}
           renderItem={(item) => (
             <List.Item key={item.id}>
@@ -875,40 +893,41 @@ export function ItemsView({
     }
 
     if (view === "feed") {
-        return (
-            <List
-              itemLayout="vertical"
-              dataSource={pageData}
-              rowKey="id"
-	              pagination={{
-	                 current,
-	                 pageSize,
-	                 total: totalCount,
-	                 onChange: (page, size) => setQueryParams({ page, pageSize: size }),
-	                 showSizeChanger: true,
-	                 pageSizeOptions: ["10", "20", "50"],
-	                 align: 'center'
-	              }}
-              renderItem={(item) => (
-                <List.Item key={item.id}>
-                   <NewsCard
-                     item={{
-                       ...item,
-                       publishedAt: item.publishedAt,
-                       ingestedAt: item.ingestedAt,
-                       topics: item.topics,
-                       entities: item.entities,
-                       qualityScore: item.qualityScore,
-                       duplicateSimilarity: item.duplicateSimilarity,
-                       duplicateOf: item.duplicateOf,
-                       llm: item.llm,
-                       url: item.url
-                     }}
-                   />
-                </List.Item>
-              )}
-            />
-        );
+      return (
+        <List
+          itemLayout="vertical"
+          dataSource={pageData}
+          rowKey="id"
+          pagination={{
+            current,
+            pageSize,
+            total: totalCount,
+            showSizeChanger: true,
+            pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
+            align: "center",
+            onChange: handlePaginationChange,
+            onShowSizeChange: handlePaginationChange
+          }}
+          renderItem={(item) => (
+            <List.Item key={item.id}>
+              <NewsCard
+                item={{
+                  ...item,
+                  publishedAt: item.publishedAt,
+                  ingestedAt: item.ingestedAt,
+                  topics: item.topics,
+                  entities: item.entities,
+                  qualityScore: item.qualityScore,
+                  duplicateSimilarity: item.duplicateSimilarity,
+                  duplicateOf: item.duplicateOf,
+                  llm: item.llm,
+                  url: item.url
+                }}
+              />
+            </List.Item>
+          )}
+        />
+      );
     }
     
     return null;
