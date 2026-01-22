@@ -1,7 +1,7 @@
 import type { AkshareYieldCurveParserConfig } from "../akshare.types";
 
 import { BaseParser } from "./base.parser";
-import type { ParsedDataPoint, ParserContext } from "./parser.interface";
+import type { ParsedDataPoint } from "./parser.interface";
 
 /**
  * Parser for yield curve data with date and series fields
@@ -10,11 +10,7 @@ import type { ParsedDataPoint, ParserContext } from "./parser.interface";
 export class YieldCurveParser extends BaseParser<AkshareYieldCurveParserConfig> {
   readonly type = "yieldCurve";
 
-  parse(
-    config: AkshareYieldCurveParserConfig,
-    payload: unknown,
-    _context?: ParserContext
-  ): ParsedDataPoint[] {
+  parse(config: AkshareYieldCurveParserConfig, payload: unknown): ParsedDataPoint[] {
     const records = this.ensureArray(payload);
     const points: ParsedDataPoint[] = [];
 

@@ -2,8 +2,8 @@ import { DeleteObjectCommand, HeadBucketCommand, PutObjectCommand } from "@aws-s
 
 import type { StorageConfig } from "../config/config.service";
 
-import { StorageService } from "./storage.service";
 import type { StorageSettingsService } from "./storage-settings.service";
+import { StorageService } from "./storage.service";
 
 let sendMock: jest.Mock;
 

@@ -48,6 +48,7 @@ import { Worker, UnrecoverableError } from "bullmq";
 import { Types } from "mongoose";
 
 import { ItemStatus } from "../../common/pipeline-status";
+
 import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
 import {
   QueueErrorKind,
@@ -375,7 +376,12 @@ describe("QueueProcessor", () => {
         source: "test",
       });
 
-      await expect(workerCallback(job)).rejects.toThrow();
+      await expect(workerCallback(job)).resolves.toEqual({ id: "processed-123" });
+
+      const [pipelineJobArg] = (mockPipeline.process as jest.Mock).mock.calls.at(-1) ?? [];
+      expect(pipelineJobArg.rawItemId).toBe("invalid-id");
+      expect(Types.ObjectId.isValid(pipelineJobArg.processedItemId)).toBe(true);
+      expect(pipelineJobArg.processedItemId).not.toBe("invalid-id");
     });
   });
 

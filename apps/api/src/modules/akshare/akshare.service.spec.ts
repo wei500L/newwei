@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 
+import { AkshareParserService } from "./akshare-parser.service";
 import { AkshareService } from "./akshare.service";
 
 describe("AkshareService bulk upsert", () => {
@@ -8,7 +9,14 @@ describe("AkshareService bulk upsert", () => {
       $executeRaw: jest.fn()
     };
 
-    const service = new AkshareService(prismaMock as any, {} as any, {} as any, {} as any, {} as any);
+    const service = new AkshareService(
+      prismaMock as any,
+      {} as any,
+      {} as any,
+      new AkshareParserService(),
+      {} as any,
+      {} as any
+    );
 
     return { prismaMock, service };
   };
@@ -99,19 +107,37 @@ describe("AkshareService parsers", () => {
       $executeRaw: jest.fn()
     };
 
-    const service = new AkshareService(prismaMock as any, {} as any, {} as any, {} as any, {} as any);
+    const service = new AkshareService(
+      prismaMock as any,
+      {} as any,
+      {} as any,
+      new AkshareParserService(),
+      {} as any,
+      {} as any
+    );
 
     return { prismaMock, service };
   };
 
   it("parses intraday clock strings as Asia/Shanghai timestamps", () => {
-    const { service } = createService();
+    const parserService = new AkshareParserService();
     jest.useFakeTimers();
     try {
       jest.setSystemTime(new Date("2026-01-10T00:00:00.000Z"));
-      expect((service as any).parseDate("9:30:00").toISOString()).toBe("2026-01-10T01:30:00.000Z");
-      expect((service as any).parseDate("093000").toISOString()).toBe("2026-01-10T01:30:00.000Z");
-      expect((service as any).parseDate("0930").toISOString()).toBe("2026-01-10T01:30:00.000Z");
+      const config = {
+        type: "timeseries",
+        timestampField: "date",
+        valueFields: [{ field: "x", dataType: "index" }]
+      };
+      expect(parserService.parsePayload(config as any, [{ date: "9:30:00", x: 1 }])[0]?.recordedAt.toISOString()).toBe(
+        "2026-01-10T01:30:00.000Z"
+      );
+      expect(parserService.parsePayload(config as any, [{ date: "093000", x: 1 }])[0]?.recordedAt.toISOString()).toBe(
+        "2026-01-10T01:30:00.000Z"
+      );
+      expect(parserService.parsePayload(config as any, [{ date: "0930", x: 1 }])[0]?.recordedAt.toISOString()).toBe(
+        "2026-01-10T01:30:00.000Z"
+      );
     } finally {
       jest.useRealTimers();
     }
@@ -138,7 +164,7 @@ describe("AkshareService parsers", () => {
   });
 
   it("parses year+month payload into UTC timestamps", () => {
-    const { service } = createService();
+    const parserService = new AkshareParserService();
     const parser = {
       type: "yearMonth",
       yearField: "year",
@@ -158,7 +184,7 @@ describe("AkshareService parsers", () => {
       { year: "1995", month: "2", China_Policy_Index: "200.5" }
     ];
 
-    const points = (service as any).parsePayload(parser, payload, { slug: "china_epu_index" });
+    const points = parserService.parsePayload(parser as any, payload, { slug: "china_epu_index" });
     expect(points).toHaveLength(2);
     expect(points[0]?.recordedAt.toISOString()).toBe("1995-01-01T00:00:00.000Z");
     expect(points[0]?.value).toBeCloseTo(192.91191);
@@ -167,7 +193,7 @@ describe("AkshareService parsers", () => {
   });
 
   it("does not throw when deduping timeseries payload rows", () => {
-    const { service } = createService();
+    const parserService = new AkshareParserService();
     const parser = {
       type: "timeseries",
       timestampField: "date",
@@ -178,7 +204,7 @@ describe("AkshareService parsers", () => {
       { date: "2024-01-01", x: 2 }
     ];
 
-    const points = (service as any).parsePayload(parser, payload);
+    const points = parserService.parsePayload(parser as any, payload);
     expect(points).toHaveLength(1);
     expect(points[0]?.value).toBe(1);
   });

@@ -28,6 +28,7 @@ export type SituationMonitorPanelId =
 export interface SituationMonitorPanelConfig {
   id: SituationMonitorPanelId;
   title: string;
+  titleKey?: string;
   defaultVisible: boolean;
   defaultLayout: Layout;
   locked?: boolean;
@@ -37,6 +38,7 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] = 
   {
     id: "map",
     title: "Global Map",
+    titleKey: "situationMonitor.map.title",
     defaultVisible: true,
     locked: true,
     defaultLayout: { i: "map", x: 0, y: 0, w: 12, h: 9, minW: 6, minH: 7, static: true },
@@ -44,108 +46,126 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] = 
   {
     id: "feeds-politics",
     title: "Politics",
+    titleKey: "situationMonitor.categories.politics",
     defaultVisible: true,
     defaultLayout: { i: "feeds-politics", x: 0, y: 9, w: 4, h: 7, minW: 3, minH: 5 },
   },
   {
     id: "feeds-tech",
     title: "Tech",
+    titleKey: "situationMonitor.categories.tech",
     defaultVisible: true,
     defaultLayout: { i: "feeds-tech", x: 4, y: 9, w: 4, h: 7, minW: 3, minH: 5 },
   },
   {
     id: "feeds-finance",
     title: "Finance",
+    titleKey: "situationMonitor.categories.finance",
     defaultVisible: true,
     defaultLayout: { i: "feeds-finance", x: 8, y: 9, w: 4, h: 7, minW: 3, minH: 5 },
   },
   {
     id: "feeds-gov",
     title: "Government",
+    titleKey: "situationMonitor.categories.gov",
     defaultVisible: true,
     defaultLayout: { i: "feeds-gov", x: 0, y: 16, w: 4, h: 7, minW: 3, minH: 5 },
   },
   {
     id: "feeds-ai",
     title: "AI",
+    titleKey: "situationMonitor.categories.ai",
     defaultVisible: true,
     defaultLayout: { i: "feeds-ai", x: 4, y: 16, w: 4, h: 7, minW: 3, minH: 5 },
   },
   {
     id: "feeds-intel",
     title: "Intel",
+    titleKey: "situationMonitor.categories.intel",
     defaultVisible: true,
     defaultLayout: { i: "feeds-intel", x: 8, y: 16, w: 4, h: 7, minW: 3, minH: 5 },
   },
   {
     id: "alerts",
     title: "Alerts",
+    titleKey: "situationMonitor.alerts.title",
     defaultVisible: true,
     defaultLayout: { i: "alerts", x: 0, y: 23, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
     id: "markets",
     title: "Markets",
+    titleKey: "situationMonitor.markets.title",
     defaultVisible: true,
     defaultLayout: { i: "markets", x: 4, y: 23, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
     id: "crypto",
     title: "Crypto",
+    titleKey: "situationMonitor.crypto.title",
     defaultVisible: true,
     defaultLayout: { i: "crypto", x: 8, y: 23, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
     id: "fed",
     title: "Federal Reserve",
+    titleKey: "situationMonitor.fed.title",
     defaultVisible: true,
     defaultLayout: { i: "fed", x: 0, y: 31, w: 6, h: 10, minW: 4, minH: 7 },
   },
   {
     id: "leaders",
     title: "World Leaders",
+    titleKey: "situationMonitor.leaders.title",
     defaultVisible: true,
     defaultLayout: { i: "leaders", x: 6, y: 31, w: 6, h: 10, minW: 4, minH: 7 },
   },
   {
     id: "situation-venezuela",
     title: "Venezuela Watch",
+    titleKey: "situationMonitor.situations.venezuela",
     defaultVisible: true,
     defaultLayout: { i: "situation-venezuela", x: 0, y: 41, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
     id: "situation-greenland",
     title: "Greenland Watch",
+    titleKey: "situationMonitor.situations.greenland",
     defaultVisible: true,
     defaultLayout: { i: "situation-greenland", x: 4, y: 41, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
     id: "situation-iran",
     title: "Iran Crisis",
+    titleKey: "situationMonitor.situations.iran",
     defaultVisible: true,
     defaultLayout: { i: "situation-iran", x: 8, y: 41, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
     id: "correlation",
     title: "Correlation Engine",
+    titleKey: "situationMonitor.correlation.title",
     defaultVisible: true,
     defaultLayout: { i: "correlation", x: 0, y: 49, w: 8, h: 12, minW: 6, minH: 8 },
   },
   {
     id: "narrative",
     title: "Narrative Tracker",
+    titleKey: "situationMonitor.narrative.title",
     defaultVisible: true,
     defaultLayout: { i: "narrative", x: 8, y: 49, w: 4, h: 12, minW: 4, minH: 8 },
   },
   {
     id: "main-character",
     title: "Main Character",
+    titleKey: "situationMonitor.mainCharacter.title",
     defaultVisible: true,
     defaultLayout: { i: "main-character", x: 8, y: 61, w: 4, h: 8, minW: 4, minH: 6 },
   },
   {
     id: "monitors",
     title: "My Monitors",
+    titleKey: "situationMonitor.monitors.title",
     defaultVisible: true,
     defaultLayout: { i: "monitors", x: 0, y: 69, w: 12, h: 10, minW: 6, minH: 7 },
   },
@@ -163,6 +183,8 @@ export interface SituationMonitorPreset {
   id: SituationMonitorPresetId;
   name: string;
   description: string;
+  nameKey?: string;
+  descriptionKey?: string;
   panels: SituationMonitorPanelId[];
 }
 
@@ -170,7 +192,9 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
   {
     id: "news-junkie",
     name: "News Junkie",
+    nameKey: "situationMonitor.presets.newsJunkie.name",
     description: "Broad news coverage across all categories plus monitors.",
+    descriptionKey: "situationMonitor.presets.newsJunkie.description",
     panels: [
       "map",
       "feeds-politics",
@@ -186,13 +210,17 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
   {
     id: "markets",
     name: "Markets",
+    nameKey: "situationMonitor.presets.markets.name",
     description: "Markets-focused view with finance + macro signals.",
+    descriptionKey: "situationMonitor.presets.markets.description",
     panels: ["map", "feeds-finance", "markets", "crypto", "fed", "alerts"]
   },
   {
     id: "geopolitics",
     name: "Geopolitics",
+    nameKey: "situationMonitor.presets.geopolitics.name",
     description: "Global situation awareness with hotspots and regional watches.",
+    descriptionKey: "situationMonitor.presets.geopolitics.description",
     panels: [
       "map",
       "feeds-politics",
@@ -210,19 +238,25 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
   {
     id: "intel",
     name: "Intel Analyst",
+    nameKey: "situationMonitor.presets.intel.name",
     description: "Deep analysis: correlation, narratives, and key figures.",
+    descriptionKey: "situationMonitor.presets.intel.description",
     panels: ["map", "feeds-intel", "correlation", "narrative", "leaders", "main-character", "monitors"]
   },
   {
     id: "minimal",
     name: "Minimal",
+    nameKey: "situationMonitor.presets.minimal.name",
     description: "Just the essentials: map, key feed, and alerts.",
+    descriptionKey: "situationMonitor.presets.minimal.description",
     panels: ["map", "feeds-politics", "alerts"]
   },
   {
     id: "everything",
     name: "Everything",
+    nameKey: "situationMonitor.presets.everything.name",
     description: "All panels enabled.",
+    descriptionKey: "situationMonitor.presets.everything.description",
     panels: SITUATION_MONITOR_PANELS.map((panel) => panel.id) as SituationMonitorPanelId[]
   }
 ] as const;

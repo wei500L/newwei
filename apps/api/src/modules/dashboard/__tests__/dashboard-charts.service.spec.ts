@@ -1,5 +1,5 @@
-import { ProcessedArticleStatus } from "@prisma/client";
 import { InternalServerErrorException } from "@nestjs/common";
+import { ProcessedArticleStatus } from "@prisma/client";
 
 import { DashboardChartsService } from "../dashboard-charts.service";
 

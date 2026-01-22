@@ -1,10 +1,11 @@
+import { Injectable } from "@nestjs/common";
+import { AlertMetricProvider, type AlertRule } from "@prisma/client";
+
 import { detectRollingSpike, detectZScoreAnomalies, type SeriesPoint } from "../../analysis/anomaly-detector";
 import { CacheService } from "../../cache/cache.service";
 import { PrismaService } from "../../config/prisma.service";
 import { ModelServiceClient, type ModelServiceModelKind, type ModelServiceSeriesPoint } from "../../model-service/model-service.client";
 
-import { Injectable } from "@nestjs/common";
-import { AlertMetricProvider, type AlertRule } from "@prisma/client";
 
 import type { MetricEvaluation, MetricProvider } from "./metric-provider";
 

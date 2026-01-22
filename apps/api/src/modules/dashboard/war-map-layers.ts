@@ -12,7 +12,7 @@ export interface WarMapHotspot {
 export interface WarMapConflictZone {
   id: string;
   name: string;
-  coords: Array<[number, number]>;
+  coords: [number, number][];
   color: string;
 }
 

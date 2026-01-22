@@ -5,11 +5,11 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
-import { SituationMonitorInsightsQueryDto, SituationMonitorSignalFeedbackDto } from "./dto/situation-monitor.dto";
 import { CORRELATION_TOPICS, NARRATIVE_PATTERNS } from "./analysis/patterns";
-import { SituationMonitorService } from "./situation-monitor.service";
+import { SituationMonitorInsightsQueryDto, SituationMonitorSignalFeedbackDto } from "./dto/situation-monitor.dto";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import { SituationMonitorTranslationService } from "./situation-monitor-translation.service";
+import { SituationMonitorService } from "./situation-monitor.service";
 
 function parseBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") {

@@ -1,6 +1,6 @@
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
-import { KnowledgeEntityType, KnowledgeRelationType, type KnowledgeEdge, type KnowledgeEntity, type Prisma } from "@prisma/client";
+import { KnowledgeEntityType, KnowledgeRelationType, type KnowledgeEdge, type KnowledgeEntity } from "@prisma/client";
 
 import { AkshareGatewayClient } from "../akshare/akshare-gateway.client";
 import { PrismaService } from "../config/prisma.service";
@@ -567,7 +567,7 @@ export class KnowledgeGraphImpactService {
     };
   }
 
-  private toRecordArray(payload: unknown): Array<Record<string, unknown>> {
+  private toRecordArray(payload: unknown): Record<string, unknown>[] {
     if (Array.isArray(payload)) {
       return payload.filter(
         (row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row)

@@ -1,4 +1,9 @@
+import { LatestParser } from "./latest.parser";
+import { MacroParser } from "./macro.parser";
 import type { IParser } from "./parser.interface";
+import { TimeseriesParser } from "./timeseries.parser";
+import { YearMonthParser } from "./year-month.parser";
+import { YieldCurveParser } from "./yield-curve.parser";
 
 /**
  * Registry for parser strategies
@@ -53,13 +58,6 @@ export class ParserRegistry {
  * Create a pre-configured parser registry with all built-in parsers
  */
 export function createDefaultParserRegistry(): ParserRegistry {
-  // Lazy import to avoid circular dependencies
-  const { LatestParser } = require("./latest.parser");
-  const { TimeseriesParser } = require("./timeseries.parser");
-  const { MacroParser } = require("./macro.parser");
-  const { YearMonthParser } = require("./year-month.parser");
-  const { YieldCurveParser } = require("./yield-curve.parser");
-
   const registry = new ParserRegistry();
   registry.register(new LatestParser());
   registry.register(new TimeseriesParser());

@@ -262,6 +262,8 @@
     "saveChanges": "保存更改",
     "save": "保存",
     "submit": "提交",
+    "feedbackSaved": "反馈已保存。",
+    "feedbackFailed": "提交反馈失败。",
     "actions": "操作",
     "edit": "编辑",
     "delete": "删除",
@@ -289,28 +291,28 @@
     "close": "关闭",
     "previous": "上一步",
     "next": "下一步",
-    "success": "Success",
-    "failed": "Failed",
-    "none": "None",
-    "unexpectedError": "Unexpected error",
-    "syncStatus": "Sync status",
-    "syncHint": "Changes sync automatically across devices.",
-    "row": "Row",
-    "updated": "Updated.",
-    "operationFailed": "Operation failed.",
-    "invalidInput": "Invalid input.",
-    "serviceUnavailable": "Service is unavailable. Please try again.",
-    "loadingDelayed": "Data is taking longer than usual. Please hold on or refresh.",
-    "loadingDelayedTitle": "Still loading…",
-    "requestFailed": "Request failed",
-    "name": "Name",
-    "syncError": "ERROR",
-    "syncing": "SYNCING",
-    "synced": "SYNCED",
-    "apply": "Apply",
-    "unauthorized": "You are not signed in.",
-    "clear": "Clear",
-    "create": "Create"
+    "success": "成功",
+    "failed": "失败",
+    "none": "无",
+    "unexpectedError": "发生未知错误",
+    "syncStatus": "同步状态",
+    "syncHint": "更改会自动在设备间同步。",
+    "row": "行",
+    "updated": "已更新。",
+    "operationFailed": "操作失败。",
+    "invalidInput": "输入无效。",
+    "serviceUnavailable": "服务不可用，请稍后重试。",
+    "loadingDelayed": "数据加载较慢，请稍等或刷新。",
+    "loadingDelayedTitle": "仍在加载…",
+    "requestFailed": "请求失败",
+    "name": "名称",
+    "syncError": "同步错误",
+    "syncing": "同步中",
+    "synced": "已同步",
+    "apply": "应用",
+    "unauthorized": "尚未登录。",
+    "clear": "清空",
+    "create": "创建"
   },
   "orgSwitcher": {
     "error": {
@@ -981,10 +983,10 @@
       "search": "搜索",
       "subscriptions": "订阅与通知",
       "profile": "个人中心",
-      "situationMonitor": "Situation Monitor",
-      "assistant": "Assistant"
+      "situationMonitor": "态势监控",
+      "assistant": "助手"
     },
-    "adminGroup": "Admin"
+    "adminGroup": "管理"
   },
   "pages": {
     "today": {
@@ -1177,8 +1179,8 @@
       "placeholder": "Ask a question like: Recent negative news about new energy; or correlation between gold and USD index."
     },
     "situationMonitor": {
-      "title": "Situation Monitor",
-      "subtitle": "Correlation, narratives, and key figures across your recent items."
+      "title": "态势监控",
+      "subtitle": "基于近期条目，汇总相关性、叙事与关键人物。"
     }
   },
   "adminConsole": {
@@ -3525,164 +3527,223 @@
   },
   "situationMonitor": {
     "correlation": {
-      "topic": "Topic",
-      "count": "Count",
-      "sources": "Sources",
-      "sample": "Sample",
-      "current": "Current",
+      "topic": "主题",
+      "count": "数量",
+      "sources": "来源",
+      "sample": "示例",
+      "current": "当前",
       "delta": "Δ",
-      "momentum": "Momentum",
-      "score": "Score",
-      "confidence": "Confidence",
-      "prediction": "Prediction",
-      "sourcesList": "Source list",
-      "title": "Correlation Engine",
-      "hint": "Pattern-based correlation across titles (momentum uses a short Redis history window).",
-      "crossSourceTitle": "Cross-source",
-      "momentumTitle": "Momentum",
-      "predictiveTitle": "Predictive"
+      "momentum": "动量",
+      "score": "得分",
+      "confidence": "置信度",
+      "prediction": "预测",
+      "sourcesList": "来源列表",
+      "title": "相关性引擎",
+      "hint": "基于模式对标题进行相关性分析（动量使用短期 Redis 历史窗口）。",
+      "crossSourceTitle": "跨来源",
+      "momentumTitle": "动量",
+      "predictiveTitle": "预测",
+      "feedback": "反馈",
+      "learningHint": "反馈驱动学习：提升/屏蔽 token，并对单条目进行抑制。"
     },
     "narrative": {
-      "name": "Narrative",
-      "count": "Count",
-      "fringe": "Fringe",
-      "mainstream": "Mainstream",
-      "title": "Narrative Tracker",
-      "hint": "Keyword-based narratives and fringe-to-mainstream crossover signals.",
-      "crossing": "Crossing",
-      "emerging": "Emerging",
-      "watch": "Watchlist",
-      "disinfo": "Disinfo"
+      "name": "叙事",
+      "count": "数量",
+      "fringe": "边缘",
+      "alternative": "另类",
+      "mainstream": "主流",
+      "radar": "雷达",
+      "consistency": "一致性",
+      "divergence": "分歧度",
+      "clusters": "簇数",
+      "credibility": "可信度",
+      "credibilityReasons": "原因",
+      "credibilityBreakdown": "拆解",
+      "sourceReliability": "来源可信度",
+      "corroboration": "相互印证",
+      "citationSupport": "引用支撑",
+      "feedbackPenalty": "反馈惩罚",
+      "feedback": "反馈",
+      "falsePositive": "误报 +",
+      "boosted": "提升",
+      "blocked": "屏蔽",
+      "path": "边缘 → 主流路径",
+      "lag": "到主流的滞后",
+      "radarDetail": "跨来源雷达",
+      "outliers": "离群点",
+      "citations": "引用链",
+      "citationLinks": "关键链接",
+      "learning": "学习",
+      "reportMissed": "报告漏报",
+      "reportMissedHint": "选择一条本应触发叙事/相关性信号的标题，然后选择预期信号。",
+      "missedHeadline": "标题",
+      "missedHeadlinePlaceholder": "请选择标题",
+      "missedSignalType": "信号类型",
+      "missedSignal": "预期信号",
+      "missedSignalPlaceholder": "请选择信号",
+      "title": "叙事追踪",
+      "hint": "基于关键词的叙事与边缘→主流的扩散信号。",
+      "crossing": "跨越",
+      "emerging": "新兴",
+      "watch": "关注",
+      "disinfo": "虚假信息"
     },
     "mainCharacter": {
-      "name": "Name",
-      "count": "Mentions",
-      "title": "Main Character"
+      "name": "姓名",
+      "count": "提及次数",
+      "title": "关键人物"
     },
     "categories": {
-      "politics": "Politics",
-      "tech": "Tech",
-      "finance": "Finance",
-      "gov": "Government",
+      "politics": "政治",
+      "tech": "科技",
+      "finance": "金融",
+      "gov": "政府",
       "ai": "AI",
-      "intel": "Intel"
+      "intel": "情报"
     },
     "headlines": {
-      "summary": "Summary",
-      "openItem": "Open item"
+      "summary": "摘要",
+      "openItem": "打开条目"
     },
     "monitors": {
-      "matchTitle": "Monitor matches",
-      "locationResolveMissing": "Enter a location name first.",
-      "locationResolveFailed": "Could not resolve that location.",
-      "locationResolved": "Location resolved.",
-      "locationResolveError": "Failed to resolve location.",
-      "updateFailed": "Failed to update monitor.",
-      "updated": "Monitor updated.",
-      "addFailed": "Could not add monitor (check name/keywords or max monitors reached).",
-      "created": "Monitor created.",
-      "title": "My Monitors",
-      "add": "Add monitor",
-      "hint": "Track keywords across Situation Monitor headlines (case-insensitive).",
-      "tab": "Monitors",
-      "resetConfirm": "Reset all monitors?",
-      "empty": "No monitors yet.",
-      "deleteConfirm": "Delete this monitor?",
-      "matchesTab": "Matches",
-      "clearConfirm": "Clear matches?",
-      "noMatches": "No matches yet.",
-      "editTitle": "Edit monitor",
-      "createTitle": "Create monitor",
+      "matchTitle": "监控命中",
+      "locationResolveMissing": "请先输入地点名称。",
+      "locationResolveFailed": "无法解析该地点。",
+      "locationResolved": "地点已解析。",
+      "locationResolveError": "解析地点失败。",
+      "updateFailed": "更新监控失败。",
+      "updated": "监控已更新。",
+      "addFailed": "无法添加监控（请检查名称/关键词或已达上限）。",
+      "created": "监控已创建。",
+      "title": "我的监控",
+      "add": "添加监控",
+      "hint": "在态势监控标题中跟踪关键词（不区分大小写）。",
+      "tab": "监控项",
+      "resetConfirm": "重置所有监控？",
+      "empty": "暂无监控。",
+      "deleteConfirm": "删除该监控？",
+      "matchesTab": "命中",
+      "clearConfirm": "清空命中记录？",
+      "noMatches": "暂无命中。",
+      "editTitle": "编辑监控",
+      "createTitle": "创建监控",
       "fields": {
-        "name": "Name",
-        "keywords": "Keywords",
-        "color": "Color (optional)",
-        "locationName": "Location name (optional)",
-        "lat": "Lat",
-        "lng": "Lng"
+        "name": "名称",
+        "keywords": "关键词",
+        "color": "颜色（可选）",
+        "locationName": "地点名称（可选）",
+        "lat": "纬度",
+        "lng": "经度"
       },
       "validation": {
-        "name": "Enter a name.",
-        "keywords": "Add at least one keyword."
+        "name": "请输入名称。",
+        "keywords": "请至少添加一个关键词。"
       },
-      "namePlaceholder": "e.g. Supply chain disruption",
-      "keywordsPlaceholder": "Type keywords and press Enter",
-      "colorHint": "Hex color like #1f3b7b. Leave empty for default.",
-      "resolveLocation": "Resolve",
-      "resolveHint": "Uses cached geocoding to fill Lat/Lng.",
-      "locationNamePlaceholder": "e.g. Taipei"
+      "namePlaceholder": "例如：供应链中断",
+      "keywordsPlaceholder": "输入关键词并按回车",
+      "colorHint": "十六进制颜色，如 #1f3b7b；留空则使用默认颜色。",
+      "resolveLocation": "解析",
+      "resolveHint": "使用缓存地理编码自动填充经纬度。",
+      "locationNamePlaceholder": "例如：台北"
     },
     "feeds": {
-      "empty": "No headlines yet.",
-      "alert": "ALERT"
+      "empty": "暂无标题。",
+      "alert": "预警"
     },
     "alerts": {
-      "title": "Alerts",
-      "empty": "No alerts in the current window."
+      "title": "预警",
+      "empty": "当前窗口内暂无预警。"
     },
     "markets": {
-      "title": "Markets",
-      "missingKey": "API key needed",
-      "hint": "Set SITUATION_MONITOR_FINNHUB_API_KEY to enable indices/sectors/commodities.",
-      "price": "Price",
-      "changePct": "Change",
-      "empty": "No markets data yet."
+      "title": "市场",
+      "missingKey": "需要 API Key",
+      "hint": "设置 SITUATION_MONITOR_FINNHUB_API_KEY 以启用指数/行业/大宗商品。",
+      "price": "价格",
+      "changePct": "涨跌幅",
+      "empty": "暂无市场数据。"
     },
     "crypto": {
-      "title": "Crypto",
-      "empty": "No crypto data.",
-      "price": "Price",
-      "change24h": "24h"
+      "title": "加密",
+      "empty": "暂无加密数据。",
+      "price": "价格",
+      "change24h": "24小时"
     },
     "fed": {
-      "title": "Federal Reserve",
-      "empty": "No Federal Reserve data yet.",
-      "hint": "Set SITUATION_MONITOR_FRED_API_KEY to enable indicators and money printer.",
-      "value": "Value",
+      "title": "美联储",
+      "empty": "暂无美联储数据。",
+      "hint": "设置 SITUATION_MONITOR_FRED_API_KEY 以启用指标与资产负债表。",
+      "value": "数值",
       "delta": "Δ",
-      "balanceSheet": "Balance sheet"
+      "balanceSheet": "资产负债表"
     },
     "leaders": {
-      "title": "World Leaders",
-      "leader": "Leader",
-      "mentions": "Mentions",
-      "sample": "Sample"
+      "title": "全球领导人",
+      "leader": "领导人",
+      "mentions": "提及次数",
+      "sample": "示例"
     },
     "situations": {
-      "empty": "No recent headlines."
+      "venezuela": "委内瑞拉观察",
+      "greenland": "格陵兰观察",
+      "iran": "伊朗危机",
+      "empty": "暂无最近标题。"
     },
     "map": {
-      "title": "Global Map"
+      "title": "全球地图"
     },
     "window": {
-      "6h": "Last 6h",
-      "24h": "Last 24h",
-      "72h": "Last 72h"
+      "6h": "近6小时",
+      "24h": "近24小时",
+      "72h": "近72小时"
     },
     "scope": {
-      "tagged": "Tagged sources",
-      "all": "All items"
+      "tagged": "已标注来源",
+      "all": "全部条目"
     },
     "panels": {
-      "title": "Panels",
-      "hint": "Drag cards by their headers to rearrange the dashboard.",
-      "reset": "Reset panels",
-      "fixed": "Fixed",
-      "none": "No panels enabled. Open Panels to re-enable."
+      "title": "面板",
+      "hint": "拖动卡片标题可以调整面板顺序。",
+      "reset": "重置面板",
+      "fixed": "固定",
+      "none": "未启用任何面板。打开“面板”重新启用。"
     },
-    "autoRefresh": "Auto refresh",
-    "translateToZh": "Translate to Simplified Chinese",
-    "translateError": "TRANSLATION ERROR",
-    "updatedAt": "Updated: {{time}}",
+    "autoRefresh": "自动刷新",
+    "translateToZh": "翻译为简体中文",
+    "translateError": "翻译错误",
+    "updatedAt": "更新时间：{{time}}",
     "refresh": {
-      "core": "Refreshing core",
-      "external": "Loading external"
+      "core": "刷新核心数据",
+      "external": "加载外部数据"
     },
-    "sampleSize": "Analyzed: {{count}}",
+    "sampleSize": "分析条目：{{count}}",
     "presets": {
-      "title": "Presets",
-      "custom": "Custom",
-      "resetLayout": "Reset layout when applying"
+      "title": "预设",
+      "custom": "自定义",
+      "resetLayout": "应用时重置布局",
+      "newsJunkie": {
+        "name": "新闻全景",
+        "description": "覆盖全部类别信息流，并包含监控面板。"
+      },
+      "markets": {
+        "name": "市场",
+        "description": "聚焦金融与宏观信号的视图。"
+      },
+      "geopolitics": {
+        "name": "地缘政治",
+        "description": "关注热点与区域态势的全局视图。"
+      },
+      "intel": {
+        "name": "情报分析",
+        "description": "深度分析：相关性、叙事与关键人物。"
+      },
+      "minimal": {
+        "name": "极简",
+        "description": "仅保留地图、核心信息流与预警。"
+      },
+      "everything": {
+        "name": "全部",
+        "description": "启用全部面板。"
+      }
     }
   }
 }

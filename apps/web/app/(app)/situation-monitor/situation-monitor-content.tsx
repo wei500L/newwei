@@ -283,7 +283,7 @@ interface CitationLink {
 interface CitationChain {
   nodes: string[];
   links: CitationLink[];
-  topCited: Array<{ source: string; weight: number }>;
+  topCited: { source: string; weight: number }[];
   citedByCount: number;
 }
 
@@ -2446,7 +2446,7 @@ export function SituationMonitorContent() {
     <Card
       title={t("situationMonitor.map.title", { defaultValue: "Global Map" })}
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
-      styles={{ body: { padding: 0 } }}
+      styles={{ body: { padding: 0, overflow: "hidden" } }}
     >
       <WarMap className="h-full" />
     </Card>
@@ -2624,7 +2624,9 @@ export function SituationMonitorContent() {
       title={
         <Space size={12}>
           <span>{t("situationMonitor.mainCharacter.title", { defaultValue: "Main Character" })}</span>
-          <Tag color="geekblue">{data?.mainCharacterSummary?.status ?? "NO DATA"}</Tag>
+          <Tag color="geekblue">
+            {data?.mainCharacterSummary?.status ?? t("common.empty", { defaultValue: "No data" })}
+          </Tag>
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
@@ -2669,11 +2671,20 @@ export function SituationMonitorContent() {
       case "leaders":
         return renderLeadersPanel();
       case "situation-venezuela":
-        return renderSituationPanel("venezuela", "Venezuela Watch");
+        return renderSituationPanel(
+          "venezuela",
+          t("situationMonitor.situations.venezuela", { defaultValue: "Venezuela Watch" }),
+        );
       case "situation-greenland":
-        return renderSituationPanel("greenland", "Greenland Watch");
+        return renderSituationPanel(
+          "greenland",
+          t("situationMonitor.situations.greenland", { defaultValue: "Greenland Watch" }),
+        );
       case "situation-iran":
-        return renderSituationPanel("iran", "Iran Crisis");
+        return renderSituationPanel(
+          "iran",
+          t("situationMonitor.situations.iran", { defaultValue: "Iran Crisis" }),
+        );
       case "correlation":
         return renderCorrelationPanel();
       case "narrative":
@@ -2699,7 +2710,7 @@ export function SituationMonitorContent() {
           })}
         </Typography.Text>
 
-        <Space wrap>
+        <Space wrap align="center" style={{ width: "100%" }}>
           <Select
             value={windowHours}
             onChange={(value) => setWindowHours(value)}
@@ -2722,40 +2733,40 @@ export function SituationMonitorContent() {
           <Button onClick={() => void load()} loading={loading}>
             {t("common.refresh", { defaultValue: "Refresh" })}
           </Button>
-	          <Button icon={<SettingOutlined />} onClick={() => setPanelsOpen(true)}>
-	            {t("situationMonitor.panels.title", { defaultValue: "Panels" })}
-	          </Button>
-	          {session?.accessToken ? (
-	            <Space size={6} align="center">
-	              {uiSync.state === "error" ? (
-	                uiSync.lastErrorMessage ? (
-	                  <Popover content={uiSync.lastErrorMessage}>
-	                    <Tag color="red">{t("common.syncError", { defaultValue: "ERROR" })}</Tag>
-	                  </Popover>
-	                ) : (
-	                  <Tag color="red">{t("common.syncError", { defaultValue: "ERROR" })}</Tag>
-	                )
-	              ) : uiSync.state === "syncing" ? (
-	                <Tag color="processing">{t("common.syncing", { defaultValue: "SYNCING" })}</Tag>
-	              ) : uiSync.state === "loading" ? (
-	                <Tag color="processing">{t("common.loading", { defaultValue: "LOADING" })}</Tag>
-	              ) : (
-	                <Tag color="green">{t("common.synced", { defaultValue: "SYNCED" })}</Tag>
-	              )}
-	              {uiSync.state === "error" ? (
-	                <Button size="small" onClick={() => requestUiSyncReload()}>
-	                  {t("common.retry", { defaultValue: "Retry" })}
-	                </Button>
-	              ) : null}
-	            </Space>
-	          ) : null}
-	          <Space size={8}>
-	            <Switch checked={autoRefresh} onChange={(checked) => setAutoRefresh(checked)} />
-	            <Typography.Text type="secondary">
-	              {t("situationMonitor.autoRefresh", { defaultValue: "Auto refresh" })}
+          <Button icon={<SettingOutlined />} onClick={() => setPanelsOpen(true)}>
+            {t("situationMonitor.panels.title", { defaultValue: "Panels" })}
+          </Button>
+          {session?.accessToken ? (
+            <Space size={6} align="center">
+              {uiSync.state === "error" ? (
+                uiSync.lastErrorMessage ? (
+                  <Popover content={uiSync.lastErrorMessage}>
+                    <Tag color="red">{t("common.syncError", { defaultValue: "ERROR" })}</Tag>
+                  </Popover>
+                ) : (
+                  <Tag color="red">{t("common.syncError", { defaultValue: "ERROR" })}</Tag>
+                )
+              ) : uiSync.state === "syncing" ? (
+                <Tag color="processing">{t("common.syncing", { defaultValue: "SYNCING" })}</Tag>
+              ) : uiSync.state === "loading" ? (
+                <Tag color="processing">{t("common.loading", { defaultValue: "LOADING" })}</Tag>
+              ) : (
+                <Tag color="green">{t("common.synced", { defaultValue: "SYNCED" })}</Tag>
+              )}
+              {uiSync.state === "error" ? (
+                <Button size="small" onClick={() => requestUiSyncReload()}>
+                  {t("common.retry", { defaultValue: "Retry" })}
+                </Button>
+              ) : null}
+            </Space>
+          ) : null}
+          <Space size={8} align="center">
+            <Switch checked={autoRefresh} onChange={(checked) => setAutoRefresh(checked)} />
+            <Typography.Text type="secondary">
+              {t("situationMonitor.autoRefresh", { defaultValue: "Auto refresh" })}
             </Typography.Text>
           </Space>
-          <Space size={8}>
+          <Space size={8} align="center">
             <Switch checked={translateToZh} onChange={(checked) => setTranslateToZh(checked)} />
             <Typography.Text type="secondary">
               {t("situationMonitor.translateToZh", { defaultValue: "Translate to Simplified Chinese" })}
@@ -2839,7 +2850,9 @@ export function SituationMonitorContent() {
             <Space size={8} wrap>
               <Typography.Text>{t("situationMonitor.presets.title", { defaultValue: "Presets" })}</Typography.Text>
               {activePreset ? (
-                <Tag color="geekblue">{activePreset.name}</Tag>
+                <Tag color="geekblue">
+                  {activePreset.nameKey ? t(activePreset.nameKey, { defaultValue: activePreset.name }) : activePreset.name}
+                </Tag>
               ) : (
                 <Tag color="default">{t("situationMonitor.presets.custom", { defaultValue: "Custom" })}</Tag>
               )}
@@ -2868,8 +2881,14 @@ export function SituationMonitorContent() {
                   ]}
                 >
                   <Space direction="vertical" size={0}>
-                    <Typography.Text>{preset.name}</Typography.Text>
-                    <Typography.Text type="secondary">{preset.description}</Typography.Text>
+                    <Typography.Text>
+                      {preset.nameKey ? t(preset.nameKey, { defaultValue: preset.name }) : preset.name}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      {preset.descriptionKey
+                        ? t(preset.descriptionKey, { defaultValue: preset.description })
+                        : preset.description}
+                    </Typography.Text>
                   </Space>
                 </List.Item>
               )}
@@ -2894,7 +2913,9 @@ export function SituationMonitorContent() {
                 ]}
               >
                 <Space size={8}>
-                  <Typography.Text>{panel.title}</Typography.Text>
+                  <Typography.Text>
+                    {panel.titleKey ? t(panel.titleKey, { defaultValue: panel.title }) : panel.title}
+                  </Typography.Text>
                   {panel.locked ? (
                     <Tag color="default">
                       {t("situationMonitor.panels.fixed", { defaultValue: "Fixed" })}

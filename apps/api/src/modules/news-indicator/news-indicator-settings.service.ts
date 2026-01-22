@@ -24,7 +24,7 @@ export interface NewsIndicatorAssociationSettings {
   cacheTtlSeconds: number;
 }
 
-export interface NewsIndicatorAssociationSettingsInput extends NewsIndicatorAssociationSettings {}
+export type NewsIndicatorAssociationSettingsInput = NewsIndicatorAssociationSettings;
 
 const SETTINGS_CACHE_TTL_SECONDS = 60;
 const CACHE_KEY_PREFIX = "newsIndicator:settings:";

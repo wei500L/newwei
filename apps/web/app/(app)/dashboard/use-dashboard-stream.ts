@@ -82,7 +82,7 @@ export interface DashboardStreamOptions {
   pollIntervalMs?: number;
 }
 
-const DEFAULT_POLL_INTERVAL_MS = 15_000;
+const DEFAULT_POLL_INTERVAL_MS = process.env.NODE_ENV === 'development' ? 5_000 : 15_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

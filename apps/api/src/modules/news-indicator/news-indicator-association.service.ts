@@ -172,13 +172,13 @@ export class NewsIndicatorAssociationService {
       const dailyValues = buildDailyEconomicValues(points);
       const targetReturns = buildDailyReturns(dailyValues);
 
-      const candidates: Array<{
+      const candidates: {
         scopeType: NewsIndicatorScopeType;
         scopeKey: string;
         scopeKeyType: string;
         metric: NewsIndicatorFeatureMetric;
         series: DailySeries;
-      }> = [];
+      }[] = [];
 
       for (const [entityKey, seriesByMetric] of entitySeries.entries()) {
         const [entityName, entityType] = entityKey.split("::");
@@ -216,11 +216,11 @@ export class NewsIndicatorAssociationService {
         }
       }
 
-      const scored: Array<{
+      const scored: {
         candidate: (typeof candidates)[number];
         best: CorrelationResult;
         all: CorrelationResult[];
-      }> = [];
+      }[] = [];
 
       for (const candidate of candidates) {
         const { best, all } = computeBestLagCorrelation(candidate.series, targetReturns, {
@@ -330,7 +330,7 @@ export class NewsIndicatorAssociationService {
   private async loadTopEntityKeys(orgId: string, since: Date, limit: number) {
     const take = Math.min(Math.max(limit, 0), 500);
     if (take === 0) {
-      return [] as Array<{ entityName: string; entityType: string }>;
+      return [] as { entityName: string; entityType: string }[];
     }
 
     const rows = await this.prisma.entitySentimentSnapshot.groupBy({
@@ -352,7 +352,7 @@ export class NewsIndicatorAssociationService {
   private async loadTopTopicKeys(orgId: string, since: Date, limit: number) {
     const take = Math.min(Math.max(limit, 0), 500);
     if (take === 0) {
-      return [] as Array<{ topic: string }>;
+      return [] as { topic: string }[];
     }
 
     const rows = await this.prisma.topicSentimentSnapshot.groupBy({
@@ -371,7 +371,7 @@ export class NewsIndicatorAssociationService {
   private async loadEntityFeatureSeries(
     orgId: string,
     since: Date,
-    keys: Array<{ entityName: string; entityType: string }>
+    keys: { entityName: string; entityType: string }[]
   ) {
     const series = new Map<string, Map<NewsIndicatorFeatureMetric, DailySeries>>();
     const clauses = keys.map((key) => ({ entityName: key.entityName, entityType: key.entityType }));
@@ -418,7 +418,7 @@ export class NewsIndicatorAssociationService {
     return series;
   }
 
-  private async loadTopicFeatureSeries(orgId: string, since: Date, keys: Array<{ topic: string }>) {
+  private async loadTopicFeatureSeries(orgId: string, since: Date, keys: { topic: string }[]) {
     const series = new Map<string, Map<NewsIndicatorFeatureMetric, DailySeries>>();
     const topics = keys.map((key) => key.topic);
     const rows = await this.prisma.topicSentimentSnapshot.findMany({

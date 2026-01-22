@@ -21,6 +21,7 @@ import {
 import { SITUATION_PANELS } from "./config/situations";
 import { WORLD_LEADERS } from "./config/world-leaders";
 import { SituationMonitorExternalService } from "./external/situation-monitor-external.service";
+import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import {
   ALERT_KEYWORDS,
   CATEGORY_TAG_PREFIX,
@@ -36,7 +37,6 @@ import type {
   SituationMonitorSituationPanel,
   SituationMonitorWorldLeader,
 } from "./situation-monitor.types";
-import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 
 const HISTORY_RETENTION_MINUTES = 30;
 const MOMENTUM_WINDOW_MINUTES = 10;

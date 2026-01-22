@@ -1,7 +1,7 @@
 import type { AkshareMacroParserConfig } from "../akshare.types";
 
 import { BaseParser } from "./base.parser";
-import type { ParsedDataPoint, ParserContext } from "./parser.interface";
+import type { ParsedDataPoint } from "./parser.interface";
 
 /**
  * Parser for macroeconomic data with period field
@@ -10,11 +10,7 @@ import type { ParsedDataPoint, ParserContext } from "./parser.interface";
 export class MacroParser extends BaseParser<AkshareMacroParserConfig> {
   readonly type = "macro";
 
-  parse(
-    config: AkshareMacroParserConfig,
-    payload: unknown,
-    _context?: ParserContext
-  ): ParsedDataPoint[] {
+  parse(config: AkshareMacroParserConfig, payload: unknown): ParsedDataPoint[] {
     const records = this.ensureArray(payload);
     const points: ParsedDataPoint[] = [];
 

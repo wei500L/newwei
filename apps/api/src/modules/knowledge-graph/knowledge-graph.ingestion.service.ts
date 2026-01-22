@@ -5,8 +5,8 @@ import type { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
 
-import { KnowledgeGraphSettingsService } from "./knowledge-graph-settings.service";
 import { KnowledgeGraphQualityService } from "./knowledge-graph-quality.service";
+import { KnowledgeGraphSettingsService } from "./knowledge-graph-settings.service";
 import { KnowledgeGraphService } from "./knowledge-graph.service";
 
 const logger = createLogger({ name: "knowledge-graph-ingestion" });

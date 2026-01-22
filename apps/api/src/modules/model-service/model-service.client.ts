@@ -1,9 +1,9 @@
 import { createLogger } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { Injectable } from "@nestjs/common";
-import { firstValueFrom } from "rxjs";
 import type { AxiosError } from "axios";
 import { createHash } from "node:crypto";
+import { firstValueFrom } from "rxjs";
 
 import { ModelServiceSettingsService } from "../system-settings/model-service-settings.service";
 

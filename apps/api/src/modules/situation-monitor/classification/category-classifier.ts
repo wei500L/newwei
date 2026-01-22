@@ -74,7 +74,7 @@ function mapLabelToCategory(raw: string): SituationMonitorCategory | null {
     return normalized as SituationMonitorCategory;
   }
 
-  const mappings: Array<{ pattern: RegExp; category: SituationMonitorCategory }> = [
+  const mappings: { pattern: RegExp; category: SituationMonitorCategory }[] = [
     { pattern: /\b(ai|artificial intelligence|llm|gpt)\b/i, category: "ai" },
     { pattern: /\b(intel|intelligence|osint|defense|military|security|cyber)\b/i, category: "intel" },
     { pattern: /\b(gov|government|policy|regulation|regulatory|agency)\b/i, category: "gov" },
@@ -108,7 +108,7 @@ function classifyFromText(text: string): SituationMonitorCategory | null {
     return null;
   }
 
-  const rules: Array<{ pattern: RegExp; category: SituationMonitorCategory }> = [
+  const rules: { pattern: RegExp; category: SituationMonitorCategory }[] = [
     {
       pattern: /\b(openai|anthropic|deepmind|chatgpt|gpt-?\d|llm|agi|artificial intelligence)\b/i,
       category: "ai",

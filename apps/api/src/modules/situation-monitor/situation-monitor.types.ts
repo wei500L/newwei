@@ -1,5 +1,5 @@
-import type { SituationMonitorCategory } from "./situation-monitor.constants";
 import type { SituationMonitorCategoryClassificationSource } from "./classification/category-classifier";
+import type { SituationMonitorCategory } from "./situation-monitor.constants";
 
 export interface SituationMonitorHeadline {
   id: string;

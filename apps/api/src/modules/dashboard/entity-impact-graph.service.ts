@@ -38,7 +38,7 @@ interface EntityLink {
 interface EntityImpactGraphData {
   nodes: EntityNode[];
   links: EntityLink[];
-  categories: Array<{ name: string }>;
+  categories: { name: string }[];
 }
 
 /**
@@ -394,8 +394,6 @@ export class EntityImpactGraphService {
       { name: "commodity" }
     ].filter((cat) => allowedCategories.includes(cat.name));
 
-    const categoryIndex = new Map(categories.map((cat, idx) => [cat.name, idx]));
-
     // Helper to normalize entity type to category
     const normalizeCategory = (type: string): "person" | "organization" | "stock" | "commodity" => {
       const lower = type.toLowerCase();
@@ -545,7 +543,7 @@ export class EntityImpactGraphService {
     ] as PipelineStage[];
 
     const aggregated = await ProcessedItemModel.aggregate(pipeline).allowDiskUse(true);
-    for (const row of aggregated as Array<{ name: string; type: string; series: Array<{ dateKey: string; count: number }> }>) {
+    for (const row of aggregated as { name: string; type: string; series: { dateKey: string; count: number }[] }[]) {
       const entityKey = `${row.name}::${row.type}`;
       const entitySeries = new Map<string, number>();
       for (const point of row.series ?? []) {

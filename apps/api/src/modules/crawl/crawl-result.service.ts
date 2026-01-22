@@ -123,12 +123,12 @@ export class CrawlResultService {
     const shouldStoreMedia = options.storeMedia ?? false;
 
     // Phase 1: Pre-compute all content hashes and extract markdown
-    const itemsWithHash: Array<{
+    const itemsWithHash: {
       item: Crawl4aiArticle;
       markdown: string;
       markdownResult: ReturnType<CrawlResultService["extractMarkdownResult"]>;
       hash: string;
-    }> = [];
+    }[] = [];
 
     for (const item of items) {
       const markdownResult = this.extractMarkdownResult(item.markdown);
@@ -167,7 +167,7 @@ export class CrawlResultService {
 
     // Phase 3: Separate new items from existing ones
     const newItems: typeof itemsWithHash = [];
-    const existingItems: Array<{ item: Crawl4aiArticle; existing: CrawlResult }> = [];
+    const existingItems: { item: Crawl4aiArticle; existing: CrawlResult }[] = [];
 
     for (const entry of itemsWithHash) {
       const existing = existingMap.get(entry.hash);
@@ -232,7 +232,7 @@ export class CrawlResultService {
       logger.debug({ newCount: newRecordsData.length, createdCount: createdRecords.length }, "persistResults batch create complete");
 
       // Phase 5: Batch create MongoDB content documents
-      const contentDocsData: Array<{
+      const contentDocsData: {
         taskId: string;
         resultId: string;
         markdown: string;
@@ -247,7 +247,7 @@ export class CrawlResultService {
         tables: CrawlResultTable[] | null;
         media?: CrawlMediaCollection | null;
         mediaAssets?: CrawlStoredMediaAsset[] | null;
-      }> = [];
+      }[] = [];
 
       for (const recordData of newRecordsData) {
         const created = createdMap.get(recordData.contentHash);

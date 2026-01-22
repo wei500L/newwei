@@ -2,7 +2,6 @@ import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common
 
 import type { AkshareParserConfig } from "./akshare.types";
 import {
-  createDefaultParserRegistry,
   LatestParser,
   MacroParser,
   type ParsedDataPoint,

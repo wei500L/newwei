@@ -1,8 +1,9 @@
-import { KnowledgeGraphService } from "../../knowledge-graph/knowledge-graph.service";
-import { PrismaService } from "../../config/prisma.service";
 
 import { Injectable } from "@nestjs/common";
 import { AlertEventStatus, AlertMetricProvider, type AlertRule } from "@prisma/client";
+
+import { PrismaService } from "../../config/prisma.service";
+import { KnowledgeGraphService } from "../../knowledge-graph/knowledge-graph.service";
 
 import type { MetricEvaluation, MetricProvider } from "./metric-provider";
 
@@ -103,7 +104,7 @@ export class EntityAssociationMetricProvider implements MetricProvider {
     });
     const neighborsById = new Map(neighbors.map((node) => [node.id, node]));
 
-    const targets: Array<{
+    const targets: {
       entityId: string;
       name: string;
       type: string;
@@ -111,7 +112,7 @@ export class EntityAssociationMetricProvider implements MetricProvider {
       weight: number;
       score: number;
       relationType: string;
-    }> = [];
+    }[] = [];
 
     for (const edge of edges) {
       const otherId = edge.fromEntityId === seed.id ? edge.toEntityId : edge.fromEntityId;

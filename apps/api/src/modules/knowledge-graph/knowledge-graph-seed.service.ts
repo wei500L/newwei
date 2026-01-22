@@ -97,7 +97,7 @@ export class KnowledgeGraphSeedService {
     return /^\d{6}\.SI$/i.test(value);
   }
 
-  private toRecordArray(payload: unknown): Array<Record<string, unknown>> {
+  private toRecordArray(payload: unknown): Record<string, unknown>[] {
     if (Array.isArray(payload)) {
       return payload.filter(
         (row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row)

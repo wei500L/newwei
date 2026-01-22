@@ -180,7 +180,7 @@ export class KnowledgeGraphService {
     );
 
     const linksUpserted = await this.prisma.runInTransaction(async (tx) => {
-      const linkRows: Array<{
+      const linkRows: {
         orgId: string;
         articleId: string;
         entityId: string;
@@ -188,7 +188,7 @@ export class KnowledgeGraphService {
         confidence: number;
         source: KnowledgeRecordSource;
         createdAt: Date;
-      }> = [];
+      }[] = [];
 
       for (const mention of entities) {
         const resolvedType = this.normalizeEntityType(mention.type);
@@ -733,7 +733,7 @@ export class KnowledgeGraphService {
     aliases.add(trimmed);
 
     const withoutBrackets = trimmed
-      .replace(/\s*[\(\uFF08][^\)\uFF09]+[\)\uFF09]\s*/g, " ")
+      .replace(/\s*[(\uFF08][^)\uFF09]+[)\uFF09]\s*/g, " ")
       .replace(/\s+/g, " ")
       .trim();
     if (withoutBrackets && withoutBrackets !== trimmed) {

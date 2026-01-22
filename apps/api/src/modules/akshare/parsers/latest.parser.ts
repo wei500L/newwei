@@ -1,7 +1,7 @@
 import type { AkshareLatestParserConfig } from "../akshare.types";
 
 import { BaseParser } from "./base.parser";
-import type { ParsedDataPoint, ParserContext } from "./parser.interface";
+import type { ParsedDataPoint } from "./parser.interface";
 
 /**
  * Parser for latest/snapshot data
@@ -10,11 +10,7 @@ import type { ParsedDataPoint, ParserContext } from "./parser.interface";
 export class LatestParser extends BaseParser<AkshareLatestParserConfig> {
   readonly type = "latest";
 
-  parse(
-    config: AkshareLatestParserConfig,
-    payload: unknown,
-    _context?: ParserContext
-  ): ParsedDataPoint[] {
+  parse(config: AkshareLatestParserConfig, payload: unknown): ParsedDataPoint[] {
     const records = Array.isArray(payload) ? payload : [payload];
     const now = new Date();
     const points: ParsedDataPoint[] = [];

@@ -262,7 +262,8 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
             pipelineJobId:
               typeof data.pipelineJobId === "string" ? data.pipelineJobId : undefined,
             sourceId: typeof data.sourceId === "string" ? data.sourceId : undefined,
-            error: classified.error,
+            // Preserve the original error so sanitizeError can keep the message (vs. "[object Object]").
+            error: err,
             attemptsMade,
             finalFailure: shouldSendToDlq,
           });

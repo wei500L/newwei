@@ -576,6 +576,12 @@ export function SpacetimeGeoHeatmap({
     return formatDateTime(iso, locale, { dateStyle: "medium", timeStyle: "short" });
   }, [heatmapQuery.data?.updatedAt, locale]);
 
+  const drilldownUpdatedAtLabel = useMemo(() => {
+    const iso = articlesQuery.data?.updatedAt;
+    if (!iso) return null;
+    return formatDateTime(iso, locale, { dateStyle: "medium", timeStyle: "short" });
+  }, [articlesQuery.data?.updatedAt, locale]);
+
   const geoErrorMessage = getApiErrorMessage(geoQuery.error);
   const heatErrorMessage = getApiErrorMessage(heatmapQuery.error);
 
@@ -603,11 +609,6 @@ export function SpacetimeGeoHeatmap({
   const hasVisiblePoints = includeBuckets ? visiblePoints.length > 0 : points.length > 0;
 
   const drilldownTitle = selectedPoint?.name ?? t("dashboard.charts.spacetimeGeoHeatmap.details", { defaultValue: "Details" });
-  const drilldownUpdatedAtLabel = useMemo(() => {
-    const iso = articlesQuery.data?.updatedAt;
-    if (!iso) return null;
-    return formatDateTime(iso, locale, { dateStyle: "medium", timeStyle: "short" });
-  }, [articlesQuery.data?.updatedAt, locale]);
 
   return (
     <>

@@ -1,5 +1,5 @@
-import { URL } from "url";
 import * as dns from "dns";
+import { URL } from "url";
 import { promisify } from "util";
 
 const dnsLookup = promisify(dns.lookup);
@@ -294,7 +294,7 @@ export async function validateSsrfUrlAsync(urlString: string): Promise<SsrfValid
           };
         }
       }
-    } catch (dnsError) {
+    } catch {
       // DNS resolution failed - could be a non-existent domain
       // We allow this as the request will fail anyway
       return { valid: true };

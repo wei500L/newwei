@@ -370,7 +370,7 @@ export class UserSettingsService {
     userId: string,
     input: { monitors?: unknown[]; layout?: Record<string, unknown>; settings?: Record<string, unknown> },
   ): Promise<SituationMonitorUiSettingsResponse> {
-    const operations: Array<Promise<{ key: string; value: Prisma.JsonValue; updatedAt: Date }>> = [];
+    const operations: Promise<{ key: string; value: Prisma.JsonValue; updatedAt: Date }>[] = [];
 
     if (input.monitors !== undefined) {
       const monitors = normalizeMonitors(input.monitors);

@@ -15,9 +15,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
-  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -1200,6 +1198,7 @@ export type Mutation = {
   updateEntityImpactGraphSettings: EntityImpactGraphSettingsModel;
   updateItem: ItemModel;
   updateKnowledgeGraphSettings: KnowledgeGraphSettingsModel;
+  updateNewsDedupeSettings: NewsDedupeSettingsModel;
   updateNewsEventSettings: NewsEventSettingsModel;
   updateNewsIndicatorSettings: NewsIndicatorSettingsModel;
   updateNewsPromptConfig: NewsPromptConfigModel;
@@ -1378,6 +1377,11 @@ export type MutationUpdateKnowledgeGraphSettingsArgs = {
 };
 
 
+export type MutationUpdateNewsDedupeSettingsArgs = {
+  input: UpdateNewsDedupeSettingsInput;
+};
+
+
 export type MutationUpdateNewsEventSettingsArgs = {
   input: UpdateNewsEventSettingsInput;
 };
@@ -1415,6 +1419,23 @@ export type MutationUpsertAlertRuleArgs = {
 
 export type MutationUpsertDashboardArgs = {
   input: UpsertDashboardInput;
+};
+
+export type NewsDedupeCategoryThresholdInput = {
+  category: Scalars['String']['input'];
+  threshold: Scalars['Float']['input'];
+};
+
+export type NewsDedupeCategoryThresholdModel = {
+  __typename?: 'NewsDedupeCategoryThresholdModel';
+  category: Scalars['String']['output'];
+  threshold: Scalars['Float']['output'];
+};
+
+export type NewsDedupeSettingsModel = {
+  __typename?: 'NewsDedupeSettingsModel';
+  categoryThresholds: Array<NewsDedupeCategoryThresholdModel>;
+  defaultThreshold: Scalars['Float']['output'];
 };
 
 export type NewsEventArticleModel = {
@@ -1751,6 +1772,7 @@ export type Query = {
   me: UserModel;
   memberships: Array<MembershipModel>;
   myOrganizations: Array<OrgModel>;
+  newsDedupeSettings: NewsDedupeSettingsModel;
   newsEvent?: Maybe<NewsEventModel>;
   newsEventSettings: NewsEventSettingsModel;
   newsEvents: Array<NewsEventModel>;
@@ -2202,6 +2224,11 @@ export type UpdateKnowledgeGraphSettingsInput = {
   multiModelValidationModels?: InputMaybe<Array<Scalars['String']['input']>>;
   seedIngestionEnabled: Scalars['Boolean']['input'];
   seedSwIndustriesPerRun: Scalars['Int']['input'];
+};
+
+export type UpdateNewsDedupeSettingsInput = {
+  categoryThresholds: Array<NewsDedupeCategoryThresholdInput>;
+  defaultThreshold: Scalars['Float']['input'];
 };
 
 export type UpdateNewsEventSettingsInput = {

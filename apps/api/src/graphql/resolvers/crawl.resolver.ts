@@ -8,9 +8,9 @@ import {
 } from "@nestjs/graphql";
 import { Prisma } from "@prisma/client";
 
+import { PermissionsAll } from "../../common/decorators/permissions.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import { PermissionsAll } from "../../common/decorators/permissions.decorator";
 import { resolveRequestIp } from "../../common/request-ip";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { PrismaService } from "../../modules/config/prisma.service";

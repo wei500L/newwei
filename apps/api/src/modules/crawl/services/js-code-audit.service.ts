@@ -177,7 +177,11 @@ export class JsCodeAuditService {
       .limit(limit)
       .toArray();
 
-    return docs.map(({ _id: _ignored, ...doc }) => doc);
+    return docs.map((entry) => {
+      const { _id, ...doc } = entry as unknown as { _id?: unknown } & JsCodeAuditLogDocument;
+      void _id;
+      return doc;
+    });
   }
 
   /**
@@ -195,7 +199,7 @@ export class JsCodeAuditService {
     totalRequests: number;
     blockedRequests: number;
     uniqueUsers: number;
-    topBlockedPatterns: Array<{ pattern: string; count: number }>;
+    topBlockedPatterns: { pattern: string; count: number }[];
   }> {
     const matchStage: Record<string, unknown> = {};
 
@@ -246,8 +250,8 @@ export class JsCodeAuditService {
 
     const results = await this.getCollection().aggregate(pipeline).toArray();
     const facetResult = results[0] as {
-      totals: Array<{ totalRequests: number; blockedRequests: number; uniqueUsers: string[] }>;
-      blockedPatterns: Array<{ _id: string; count: number }>;
+      totals: { totalRequests: number; blockedRequests: number; uniqueUsers: string[] }[];
+      blockedPatterns: { _id: string; count: number }[];
     };
 
     const totals = facetResult?.totals?.[0];

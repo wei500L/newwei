@@ -24,6 +24,17 @@ import {
   DashboardTimeRangeQueryDto
 } from "./dto/dashboard-charts.dto";
 
+function readEnvInt(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 @ApiTags("dashboard")
 @ApiBearerAuth()
 @Controller("dashboard")
@@ -162,8 +173,13 @@ export class DashboardController {
     @Query() query: DashboardTimeRangeQueryDto
   ): Observable<MessageEvent> {
     const range = this.chartsService.resolveRange(query);
-    const intervalMs = 10_000;
-    const pingMs = 25_000;
+    const defaultIntervalMs = process.env.NODE_ENV === "development" ? 2_000 : 10_000;
+    const intervalMs = clampInt(
+      readEnvInt("DASHBOARD_STREAM_INTERVAL_MS", defaultIntervalMs),
+      1_000,
+      60_000
+    );
+    const pingMs = clampInt(readEnvInt("DASHBOARD_STREAM_PING_MS", 25_000), 5_000, 120_000);
 
     return new Observable<MessageEvent>((subscriber) => {
       let closed = false;

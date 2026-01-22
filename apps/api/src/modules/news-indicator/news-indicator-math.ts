@@ -2,22 +2,22 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type DailySeries = Map<number, number>;
 
-export type CorrelationResult = {
+export interface CorrelationResult {
   lagDays: number;
   correlation: number;
   pValue: number;
   sampleSize: number;
-};
+}
 
-export type BacktestConfig = {
+export interface BacktestConfig {
   triggerZScore: number;
   baselineDays: number;
   holdoutDays: number;
   evaluationTargetStartDayMs: number;
   evaluationTargetEndDayMs: number;
-};
+}
 
-export type BacktestMetrics = {
+export interface BacktestMetrics {
   samples: number;
   triggers: number;
   evaluatedSignals: number;
@@ -26,13 +26,13 @@ export type BacktestMetrics = {
   avgSignedReturn: number;
   totalSignedReturn: number;
   baselineDays: number;
-};
+}
 
-export type NumericSeriesPoint = {
+export interface NumericSeriesPoint {
   id: string;
   recordedAt: Date;
   value: number;
-};
+}
 
 export function toUtcDayStartMs(value: Date): number {
   const d = new Date(value);

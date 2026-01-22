@@ -30,8 +30,8 @@ import { Crawl4aiClient } from "../crawl/crawl4ai.client";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { LiteLlmService } from "./litellm.service";
-import { NewsPipelineConfigService } from "./news-pipeline.config";
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
+import { NewsPipelineConfigService } from "./news-pipeline.config";
 import {
   Crawl4aiResponseSchema,
   ParsedCrawl4aiArticle,

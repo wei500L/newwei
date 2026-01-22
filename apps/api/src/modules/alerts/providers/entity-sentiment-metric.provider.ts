@@ -38,13 +38,13 @@ function buildSortAtWindowOr(start: Date, end: Date): Record<string, unknown>[] 
 }
 
 
-type SentimentWindowStats = {
+interface SentimentWindowStats {
   total: number;
   negative: number;
   positive: number;
   neutral: number;
   scoreSum: number;
-};
+}
 
 @Injectable()
 export class EntitySentimentMetricProvider implements MetricProvider {
@@ -258,7 +258,7 @@ export class EntitySentimentMetricProvider implements MetricProvider {
     end: Date;
     limit: number;
   }): Promise<
-    Array<{
+    {
       processedId: string;
       itemMetaId: string;
       createdAt: string;
@@ -268,7 +268,7 @@ export class EntitySentimentMetricProvider implements MetricProvider {
       source: string | null;
       sentimentLabel: string | null;
       summary: string | null;
-    }>
+    }[]
   > {
     const entityMatch: Record<string, unknown> = {
       name: input.entityName,

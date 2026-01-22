@@ -222,7 +222,7 @@ export class SituationMonitorTranslationService {
 
   private async translateHashesToZh(targets: Map<string, string>): Promise<Map<string, string>> {
     const translated = new Map<string, string>();
-    const missing: Array<{ id: string; text: string }> = [];
+    const missing: { id: string; text: string }[] = [];
 
     for (const [hash, text] of targets.entries()) {
       const cached = await this.cache.get<string>(this.translationCacheKey(hash));
@@ -254,7 +254,8 @@ export class SituationMonitorTranslationService {
     return translated;
   }
 
-  private async requestZhTranslations(items: Array<z.infer<typeof TranslationItemSchema>>): Promise<TranslationResponse> {
+  private async requestZhTranslations(items: z.infer<typeof TranslationItemSchema>[]): Promise<TranslationResponse> {
+    const safeItems = TranslationItemSchema.array().parse(items);
     const systemPrompt = [
       "You are a professional translator.",
       "Translate each provided text into Simplified Chinese (zh-CN).",
@@ -268,7 +269,7 @@ export class SituationMonitorTranslationService {
     const userPrompt = [
       "Translate the following items.",
       "",
-      JSON.stringify({ items }, null, 2),
+      JSON.stringify({ items: safeItems }, null, 2),
     ].join("\n");
 
     const messages: LiteLlmMessage[] = [

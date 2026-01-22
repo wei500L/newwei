@@ -303,7 +303,7 @@ export class KnowledgeGraphQualityService {
       })
     );
 
-    const results: Array<{ model: string; verdict: string; confidence: number } | { model: string; error: string }> =
+    const results: ({ model: string; verdict: string; confidence: number } | { model: string; error: string })[] =
       modelResults.map((entry, index) => {
         const fallbackModel = input.models[index] ?? "unknown";
         if (entry.status === "fulfilled") {

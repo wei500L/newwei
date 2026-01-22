@@ -13,7 +13,7 @@ const REBUILD_DAYS = 2;
 const MIN_ENTITY_CONFIDENCE = 0.5;
 const MAX_ROWS_PER_BUCKET = 5_000;
 
-type SentimentAggregateRow = {
+interface SentimentAggregateRow {
   name: string;
   type: string;
   totalDocs: number;
@@ -21,16 +21,16 @@ type SentimentAggregateRow = {
   positiveDocs: number;
   neutralDocs: number;
   scoreSum: number;
-};
+}
 
-type TopicAggregateRow = {
+interface TopicAggregateRow {
   topic: string;
   totalDocs: number;
   negativeDocs: number;
   positiveDocs: number;
   neutralDocs: number;
   scoreSum: number;
-};
+}
 
 @Injectable()
 export class SentimentSnapshotIngestionService {

@@ -7,9 +7,9 @@ import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
 
 import { AdminAkshareController } from "./admin-akshare.controller";
-import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./akshare.constants";
 import { AkshareGatewayClient } from "./akshare-gateway.client";
 import { AkshareParserService } from "./akshare-parser.service";
+import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./akshare.constants";
 import { AkshareQueueProcessor } from "./akshare.processor";
 import { AkshareService } from "./akshare.service";
 

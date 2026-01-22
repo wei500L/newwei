@@ -1,7 +1,5 @@
 import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
 
-import type { SituationSignalType } from "./situation-signal.types";
-
 const SituationSignalLearningStateSchema = new Schema(
   {
     orgId: { type: String, required: true, index: true },

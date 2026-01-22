@@ -1,7 +1,7 @@
 import type { AkshareTimeseriesParserConfig } from "../akshare.types";
 
 import { BaseParser } from "./base.parser";
-import type { ParsedDataPoint, ParserContext } from "./parser.interface";
+import type { ParsedDataPoint } from "./parser.interface";
 
 /**
  * Parser for timeseries data with timestamp and value fields
@@ -10,11 +10,7 @@ import type { ParsedDataPoint, ParserContext } from "./parser.interface";
 export class TimeseriesParser extends BaseParser<AkshareTimeseriesParserConfig> {
   readonly type = "timeseries";
 
-  parse(
-    config: AkshareTimeseriesParserConfig,
-    payload: unknown,
-    _context?: ParserContext
-  ): ParsedDataPoint[] {
+  parse(config: AkshareTimeseriesParserConfig, payload: unknown): ParsedDataPoint[] {
     const records = this.ensureArray(payload);
     const points: ParsedDataPoint[] = [];
 

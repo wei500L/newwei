@@ -1,6 +1,6 @@
+import { computeEconomicSeriesInsights } from "@modular/utils";
 import { UseGuards } from "@nestjs/common";
 import { Args, Mutation, Query, Resolver } from "@nestjs/graphql";
-import { computeEconomicSeriesInsights } from "@modular/utils";
 import { EconomicDataFrequency, EconomicDataValueType } from "@prisma/client";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";

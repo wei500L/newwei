@@ -35,8 +35,8 @@ import { RbacModule } from "./modules/rbac/rbac.module";
 import { SentimentModule } from "./modules/sentiment/sentiment.module";
 import { SituationMonitorModule } from "./modules/situation-monitor/situation-monitor.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
-import { UserSettingsModule } from "./modules/user-settings/user-settings.module";
 import { UserDigestModule } from "./modules/user-digest/user-digest.module";
+import { UserSettingsModule } from "./modules/user-settings/user-settings.module";
 import { VectorModule } from "./modules/vector/vector.module";
 import { WebSocketModule } from "./modules/websocket/websocket.module";
 

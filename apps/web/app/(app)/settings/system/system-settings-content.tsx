@@ -14,8 +14,8 @@ import { KnowledgeGraphReviewPanel } from "@/components/settings/knowledge-graph
 import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-graph-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { ModelServiceSettingsPanel } from "@/components/settings/model-service-settings-panel";
-import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
 import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-settings-panel";
+import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
 import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import { VectorServiceSettingsPanel } from "@/components/settings/vector-service-settings-panel";

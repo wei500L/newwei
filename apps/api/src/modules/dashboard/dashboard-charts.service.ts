@@ -1,10 +1,10 @@
+import { ProcessedItemModel } from "@modular/mongo";
 import {
   extractCountryCodeFromText,
   getCountryAlpha2,
   getCountryName,
   normalizeCountryCode
 } from "@modular/utils";
-import { ProcessedItemModel } from "@modular/mongo";
 import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { AlertSeverity, ProcessedArticleStatus } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -107,10 +107,10 @@ const normalizeMongoId = (value: unknown): string => {
   return "";
 };
 
-type DataVizConfig = {
+interface DataVizConfig {
   heatmap: { preferredSourceFields?: string[] };
   candlestick: { ohlc?: Partial<Record<OhlcField, string[]>> };
-};
+}
 
 const getDataVizConfig = (metadata: unknown): DataVizConfig => {
   if (!isPlainObject(metadata)) {
@@ -454,7 +454,7 @@ const normalizeLocationCandidate = (input: string): string => {
 // Group key is used for aggregation; keep it stable but avoid losing useful country context for geocoding.
 const normalizeLocationGroupKey = (input: string): string => {
   const trimmed = normalizeLocationCandidate(input);
-  const primaryChunk = trimmed.split(/[,;\/|]/)[0]?.trim() ?? "";
+  const primaryChunk = trimmed.split(/[,;/|]/)[0]?.trim() ?? "";
   return (primaryChunk || trimmed).slice(0, 120);
 };
 
@@ -1125,7 +1125,7 @@ export class DashboardChartsService {
       sentiment: Record<SpacetimeSentimentLabel, number>;
     }
 
-    type LocationAgg = {
+    interface LocationAgg {
       key: string;
       candidates: Map<string, number>;
       heat: number;
@@ -1133,7 +1133,7 @@ export class DashboardChartsService {
       sentiment: Record<SpacetimeSentimentLabel, number>;
       buckets?: Map<string, BucketAgg>;
       lastAt?: Date;
-    };
+    }
 
     const byLocation = new Map<string, LocationAgg>();
     let updatedAt: Date | undefined;
@@ -1190,7 +1190,7 @@ export class DashboardChartsService {
       .sort((a, b) => b.heat - a.heat)
       .slice(0, MAX_SPACETIME_GEO_LOCATIONS);
 
-    type ClusterAgg = {
+    interface ClusterAgg {
       id: string;
       name: string;
       lat: number;
@@ -1199,7 +1199,7 @@ export class DashboardChartsService {
       total: number;
       sentiment: Record<SpacetimeSentimentLabel, number>;
       buckets?: Map<string, BucketAgg>;
-    };
+    }
 
     const clusters = new Map<string, ClusterAgg>();
     const locationKeysByClusterKey = new Map<string, Set<string>>();
@@ -1963,12 +1963,12 @@ export class DashboardChartsService {
       take: 2000
     });
 
-    type Signal = {
+    interface Signal {
       processedArticleId: string;
       processedItemId: string | null;
       source: string;
       timestampMs: number;
-    };
+    }
 
     const signals: Signal[] = [];
     const nodeAgg = new Map<string, { count: number; firstMs: number; lastMs: number }>();
@@ -2033,7 +2033,7 @@ export class DashboardChartsService {
       };
     }
 
-    type EdgeAgg = {
+    interface EdgeAgg {
       kind: SpacetimePropagationEdgeKind;
       source: string;
       target: string;
@@ -2044,7 +2044,7 @@ export class DashboardChartsService {
       lastMs: number;
       similaritySum?: number;
       similarityCount?: number;
-    };
+    }
 
     const edgeAgg = new Map<string, EdgeAgg>();
 
@@ -2595,13 +2595,13 @@ export class DashboardChartsService {
 
     const cells: SectorHeatmapCell[] = [];
     let updatedAt: Date | undefined;
-    const mappingErrors: Array<{
+    const mappingErrors: {
       itemId: string;
       slug: string;
       displayName: string;
       preferredSourceFields: string[];
       availableSourceFields: string[];
-    }> = [];
+    }[] = [];
 
     for (const item of items) {
       const itemGroup = grouped.get(item.id);

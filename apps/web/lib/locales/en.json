@@ -262,6 +262,8 @@
     "saveChanges": "Save changes",
     "save": "Save",
     "submit": "Submit",
+    "feedbackSaved": "Feedback saved.",
+    "feedbackFailed": "Failed to submit feedback.",
     "actions": "Actions",
     "edit": "Edit",
     "delete": "Delete",
@@ -3540,13 +3542,45 @@
       "hint": "Pattern-based correlation across titles (momentum uses a short Redis history window).",
       "crossSourceTitle": "Cross-source",
       "momentumTitle": "Momentum",
-      "predictiveTitle": "Predictive"
+      "predictiveTitle": "Predictive",
+      "feedback": "Feedback",
+      "learningHint": "Feedback-driven learning: boosted/blocked tokens and per-item suppression."
     },
     "narrative": {
       "name": "Narrative",
       "count": "Count",
       "fringe": "Fringe",
+      "alternative": "Alt",
       "mainstream": "Mainstream",
+      "radar": "Radar",
+      "consistency": "Consistency",
+      "divergence": "Divergence",
+      "clusters": "Clusters",
+      "credibility": "Credibility",
+      "credibilityReasons": "Reasons",
+      "credibilityBreakdown": "Breakdown",
+      "sourceReliability": "Source reliability",
+      "corroboration": "Corroboration",
+      "citationSupport": "Citation support",
+      "feedbackPenalty": "Feedback penalty",
+      "feedback": "Feedback",
+      "falsePositive": "False +",
+      "boosted": "Boosted",
+      "blocked": "Blocked",
+      "path": "Fringe → Mainstream Path",
+      "lag": "Lag to mainstream",
+      "radarDetail": "Cross-source Radar",
+      "outliers": "Outliers",
+      "citations": "Citation Chain",
+      "citationLinks": "Top links",
+      "learning": "Learning",
+      "reportMissed": "Report missed",
+      "reportMissedHint": "Pick a headline that should have triggered a narrative/correlation signal, then choose the expected signal.",
+      "missedHeadline": "Headline",
+      "missedHeadlinePlaceholder": "Select a headline",
+      "missedSignalType": "Signal type",
+      "missedSignal": "Expected signal",
+      "missedSignalPlaceholder": "Select a signal",
       "title": "Narrative Tracker",
       "hint": "Keyword-based narratives and fringe-to-mainstream crossover signals.",
       "crossing": "Crossing",
@@ -3649,6 +3683,9 @@
       "sample": "Sample"
     },
     "situations": {
+      "venezuela": "Venezuela Watch",
+      "greenland": "Greenland Watch",
+      "iran": "Iran Crisis",
       "empty": "No recent headlines."
     },
     "map": {
@@ -3682,7 +3719,31 @@
     "presets": {
       "title": "Presets",
       "custom": "Custom",
-      "resetLayout": "Reset layout when applying"
+      "resetLayout": "Reset layout when applying",
+      "newsJunkie": {
+        "name": "News Junkie",
+        "description": "Broad news coverage across all categories plus monitors."
+      },
+      "markets": {
+        "name": "Markets",
+        "description": "Markets-focused view with finance + macro signals."
+      },
+      "geopolitics": {
+        "name": "Geopolitics",
+        "description": "Global situation awareness with hotspots and regional watches."
+      },
+      "intel": {
+        "name": "Intel Analyst",
+        "description": "Deep analysis: correlation, narratives, and key figures."
+      },
+      "minimal": {
+        "name": "Minimal",
+        "description": "Just the essentials: map, key feed, and alerts."
+      },
+      "everything": {
+        "name": "Everything",
+        "description": "All panels enabled."
+      }
     }
   }
 }

@@ -46,7 +46,7 @@ export interface CitationLink {
 export interface CitationChain {
   nodes: string[];
   links: CitationLink[];
-  topCited: Array<{ source: string; weight: number }>;
+  topCited: { source: string; weight: number }[];
   citedByCount: number;
 }
 
@@ -221,12 +221,12 @@ function buildCrossSourceRadar(matches: SituationNewsItem[]): CrossSourceRadar {
     .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
     .slice(0, maxItems);
 
-  type Cluster = {
+  interface Cluster {
     id: string;
     repTokens: Set<string>;
     items: SituationNewsItem[];
     sources: Set<string>;
-  };
+  }
 
   const clusters: Cluster[] = [];
   const sourceSet = new Set<string>();

@@ -13,7 +13,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_ITEMS_PER_EVENT = 5_000;
 const MAX_REFERENCED_ARTICLES_PER_BUCKET = 20;
 
-type TimelineSourceItem = {
+interface TimelineSourceItem {
   processedArticleId: string;
   articleId: string;
   timestamp: Date;
@@ -21,7 +21,7 @@ type TimelineSourceItem = {
   summary: string | null;
   keyPoints: Prisma.JsonValue | null;
   qualityScore: number | null;
-};
+}
 
 @Injectable()
 export class NewsEventsTimelineService {

@@ -5,8 +5,8 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 
-import { KnowledgeGraphSettingsService } from "./knowledge-graph-settings.service";
 import { KnowledgeGraphSeedService } from "./knowledge-graph-seed.service";
+import { KnowledgeGraphSettingsService } from "./knowledge-graph-settings.service";
 
 const logger = createLogger({ name: "knowledge-graph-seed-ingestion" });
 

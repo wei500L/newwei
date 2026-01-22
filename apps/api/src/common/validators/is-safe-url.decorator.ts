@@ -13,9 +13,10 @@ import { validateSsrfUrl, validateSsrfUrlAsync } from "./ssrf-url.validator";
  */
 @ValidatorConstraint({ name: "isSafeUrl", async: true })
 export class IsSafeUrlConstraint implements ValidatorConstraintInterface {
-  private lastError: string = "";
+  private lastError = "";
 
   async validate(value: unknown, args: ValidationArguments): Promise<boolean> {
+    void args;
     if (typeof value !== "string") {
       this.lastError = "URL must be a string";
       return false;
@@ -39,6 +40,7 @@ export class IsSafeUrlConstraint implements ValidatorConstraintInterface {
   }
 
   defaultMessage(args: ValidationArguments): string {
+    void args;
     return this.lastError || "URL is not safe (potential SSRF vulnerability)";
   }
 }

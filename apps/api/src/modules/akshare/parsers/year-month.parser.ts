@@ -1,7 +1,7 @@
 import type { AkshareYearMonthParserConfig } from "../akshare.types";
 
 import { BaseParser } from "./base.parser";
-import type { ParsedDataPoint, ParserContext } from "./parser.interface";
+import type { ParsedDataPoint } from "./parser.interface";
 
 /**
  * Parser for data with separate year and month fields
@@ -10,11 +10,7 @@ import type { ParsedDataPoint, ParserContext } from "./parser.interface";
 export class YearMonthParser extends BaseParser<AkshareYearMonthParserConfig> {
   readonly type = "yearMonth";
 
-  parse(
-    config: AkshareYearMonthParserConfig,
-    payload: unknown,
-    _context?: ParserContext
-  ): ParsedDataPoint[] {
+  parse(config: AkshareYearMonthParserConfig, payload: unknown): ParsedDataPoint[] {
     const records = this.ensureArray(payload);
     const points: ParsedDataPoint[] = [];
 

@@ -5,7 +5,7 @@ import { EconomicAnomalyMetricProvider } from "./economic-anomaly-metric.provide
 describe("EconomicAnomalyMetricProvider.fetch", () => {
   const buildProvider = (overrides?: {
     forecast?: unknown;
-    points?: Array<{ recordedAt: Date; value: number }>;
+    points?: { recordedAt: Date; value: number }[];
     latestValue?: number;
   }) => {
     const now = new Date("2026-01-16T12:00:00.000Z");

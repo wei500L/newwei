@@ -13,9 +13,9 @@ import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
+import { AkshareParserService } from "./akshare-parser.service";
 import { AKSHARE_QUEUE } from "./akshare.constants";
 import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
-import { AkshareParserService } from "./akshare-parser.service";
 import {
   AkshareDataItemConfig,
   AkshareDataItemDefinition,
@@ -29,7 +29,6 @@ import {
   PaginationInput,
   PaginationMeta
 } from "./akshare.types";
-
 import type { ParsedDataPoint } from "./parsers";
 
 interface FetchResult {
@@ -314,23 +313,23 @@ export class AkshareService implements OnModuleInit {
     this.logger.log(`ensureCatalog: Loaded ${existingItems.length} existing items in ${Date.now() - startTime}ms`);
 
     // Phase 5: Collect items for batch operations
-    const newItemsData: Array<{
+    const newItemsData: {
       definition: AkshareDataItemDefinition;
       seedMetadata: AkshareDataItemMetadata;
-      categories: Array<{ id: string; key: string }>;
-    }> = [];
-    const itemUpdates: Array<{
+      categories: { id: string; key: string }[];
+    }[] = [];
+    const itemUpdates: {
       id: string;
       data: Prisma.EconomicDataItemUpdateInput;
-    }> = [];
-    const newCategoryRelations: Array<{
+    }[] = [];
+    const newCategoryRelations: {
       itemId: string;
       categoryId: string;
-    }> = [];
-    const newFetchConfigs: Array<{
+    }[] = [];
+    const newFetchConfigs: {
       itemId: string;
       frequency: EconomicDataFrequency;
-    }> = [];
+    }[] = [];
 
     // Phase 6: Process definitions and collect batch operations
     for (const definition of this.definitions) {
@@ -701,7 +700,7 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private toRecordArray(payload: unknown): Array<Record<string, unknown>> {
+  private toRecordArray(payload: unknown): Record<string, unknown>[] {
     if (Array.isArray(payload)) {
       return payload.filter(
         (item): item is Record<string, unknown> =>
@@ -733,7 +732,7 @@ export class AkshareService implements OnModuleInit {
     return null;
   }
 
-  private selectBestRecord(records: Array<Record<string, unknown>>, filter: AksharePayloadFilterConfig) {
+  private selectBestRecord(records: Record<string, unknown>[], filter: AksharePayloadFilterConfig) {
     const preferField = filter.preferNonZeroField;
     const rankBy = filter.rankBy;
     const rankOrder = filter.rankOrder ?? "desc";

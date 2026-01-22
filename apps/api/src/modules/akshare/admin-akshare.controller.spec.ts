@@ -23,13 +23,21 @@ describe("AdminAkshareController", () => {
       }
     };
 
+    const actionRateLimitMock = {
+      enforceAkshareUpgrade: jest.fn().mockResolvedValue(undefined)
+    };
+
     const controller = new AdminAkshareController(
       httpMock as any,
       envMock as any,
-      prismaMock as any
+      prismaMock as any,
+      actionRateLimitMock as any
     );
 
-    return { controller, httpMock, envMock, prismaMock };
+    // Avoid background polling loops keeping Jest alive in unit tests.
+    (controller as any).watchUpgradeCompletion = jest.fn().mockResolvedValue(undefined);
+
+    return { controller, httpMock, envMock, prismaMock, actionRateLimitMock };
   };
 
   const createMockUser = () => ({

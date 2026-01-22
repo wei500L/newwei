@@ -19,7 +19,7 @@ export interface JsCodeValidationResult {
  * These patterns can lead to arbitrary code execution, data exfiltration,
  * or prototype pollution attacks.
  */
-const BLOCKED_PATTERNS: Array<{ pattern: RegExp; name: string; reason: string }> = [
+const BLOCKED_PATTERNS: { pattern: RegExp; name: string; reason: string }[] = [
   // Code execution
   {
     pattern: /\beval\s*\(/gi,

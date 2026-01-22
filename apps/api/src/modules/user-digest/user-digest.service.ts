@@ -48,7 +48,7 @@ export interface UserDigestEventV1 {
     avgScore: number;
     negativeRatio: number;
   } | null;
-  indicatorAssociations?: Array<{
+  indicatorAssociations?: {
     scopeType: NewsIndicatorScopeType;
     featureMetric: NewsIndicatorFeatureMetric;
     indicatorSlug: string;
@@ -60,7 +60,7 @@ export interface UserDigestEventV1 {
       createdAt: string;
       metrics?: unknown;
     } | null;
-  }>;
+  }[];
 }
 
 function normalizeStringArray(value: unknown, limit: number): string[] {

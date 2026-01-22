@@ -1,5 +1,4 @@
-import { KnowledgeEntityType, KnowledgeRelationType } from "@prisma/client";
-import { KnowledgeRecordSource } from "@prisma/client";
+import { KnowledgeEntityType, KnowledgeRelationType , KnowledgeRecordSource } from "@prisma/client";
 
 import { KnowledgeGraphService } from "../knowledge-graph.service";
 
@@ -18,7 +17,11 @@ describe("KnowledgeGraphService", () => {
         create: jest.fn().mockResolvedValue({ id: "edge-1" }),
         update: jest.fn()
       },
-      knowledgeEdgeEvidence: { upsert: jest.fn().mockResolvedValue(null) }
+      knowledgeEdgeEvidence: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue(null),
+        update: jest.fn()
+      }
     };
 
     const prisma = {
@@ -48,7 +51,8 @@ describe("KnowledgeGraphService", () => {
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(1);
     expect(tx.knowledgeEntity.upsert).toHaveBeenCalledTimes(2);
     expect(tx.knowledgeEdge.create).toHaveBeenCalledTimes(1);
-    expect(tx.knowledgeEdgeEvidence.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.knowledgeEdgeEvidence.findUnique).toHaveBeenCalledTimes(1);
+    expect(tx.knowledgeEdgeEvidence.create).toHaveBeenCalledTimes(1);
   });
 
   it("builds a bounded subgraph with maxDepth", async () => {
