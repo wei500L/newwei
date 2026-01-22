@@ -14,7 +14,7 @@ import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import dayjs from "@/lib/dayjs";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatDateTime, formatUpdatedAt, resolveLocale } from "@/lib/i18n";
 import { classifyRequestError } from "@/lib/request-error";
 import {
   addInterval,
@@ -145,6 +145,13 @@ export function FinancialCandlestick() {
     enabled: Boolean(session?.accessToken),
     placeholderData: (previous) => previous
   });
+
+  const updatedAtLabel = useMemo(() => {
+    const iso = data?.updatedAt;
+    if (!iso) return null;
+    const formatted = formatUpdatedAt(iso, locale);
+    return formatted ? formatted : null;
+  }, [data?.updatedAt, locale]);
 
   const option = useMemo<EChartsOption>(() => {
     if (!data || data.points.length === 0) return {};
@@ -457,6 +464,14 @@ export function FinancialCandlestick() {
         <Tag color={intervalColor} className="text-xs">
           {intervalTagText}
         </Tag>
+        {updatedAtLabel ? (
+          <Tag color="default" className="text-xs">
+            {t("dashboard.updatedAt", {
+              time: updatedAtLabel,
+              defaultValue: "Updated: {{time}}"
+            })}
+          </Tag>
+        ) : null}
       </div>
       <DashboardChart
         group="dashboard-charts"

@@ -14,6 +14,7 @@ import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import dayjs from "@/lib/dayjs";
+import { formatUpdatedAt, resolveLocale } from "@/lib/i18n";
 import { classifyRequestError } from "@/lib/request-error";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -90,7 +91,8 @@ const formatDateForFilename = (date: Date) => {
 };
 
 export function SectorHeatmap() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session, status: sessionStatus } = useSession();
   const { range, start, end } = useDashboardRangeStore();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
@@ -137,6 +139,13 @@ export function SectorHeatmap() {
     staleTime: 60_000,
     enabled: Boolean(session?.accessToken)
   });
+
+  const updatedAtLabel = useMemo(() => {
+    const iso = data?.updatedAt;
+    if (!iso) return null;
+    const formatted = formatUpdatedAt(iso, locale);
+    return formatted ? formatted : null;
+  }, [data?.updatedAt, locale]);
 
   const option = useMemo<EChartsOption>(() => {
     if (!data || data.cells.length === 0) return {};
@@ -387,6 +396,14 @@ export function SectorHeatmap() {
         <Tag color="geekblue" className="text-xs">
           Aggregation: window snapshot
         </Tag>
+        {updatedAtLabel ? (
+          <Tag color="default" className="text-xs">
+            {t("dashboard.updatedAt", {
+              time: updatedAtLabel,
+              defaultValue: "Updated: {{time}}"
+            })}
+          </Tag>
+        ) : null}
       </div>
       <DashboardChart
         option={option}

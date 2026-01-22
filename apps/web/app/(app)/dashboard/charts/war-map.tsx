@@ -2,7 +2,7 @@
 
 import { SettingOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Checkbox, Popover, Skeleton, Space, Tag, Typography } from "antd";
+import { Button, Checkbox, Popover, Skeleton, Space, Tag } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -14,7 +14,7 @@ import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import dayjs from "@/lib/dayjs";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatDateTime, formatUpdatedAt, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 import { useSituationMonitorMonitorsStore } from "@/store/situation-monitor-monitors";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -781,7 +781,7 @@ export function WarMap({ className }: WarMapProps = {}) {
               typeof newsCount === "number"
           );
           const updatedStr = eventsQuery.data?.updatedAt
-            ? formatDateTime(eventsQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
+            ? formatUpdatedAt(eventsQuery.data.updatedAt, locale)
             : "N/A";
           const windowStr = `${formatDateTime(start, locale, { dateStyle: "medium" })} - ${formatDateTime(end, locale, {
             dateStyle: "medium"
@@ -1091,10 +1091,10 @@ export function WarMap({ className }: WarMapProps = {}) {
     dateStyle: "medium"
   })}`;
   const signalsUpdatedLabel = eventsQuery.data?.updatedAt
-    ? formatDateTime(eventsQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
+    ? formatUpdatedAt(eventsQuery.data.updatedAt, locale)
     : null;
   const newsUpdatedLabel = newsMarkersQuery.data?.updatedAt
-    ? formatDateTime(newsMarkersQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
+    ? formatUpdatedAt(newsMarkersQuery.data.updatedAt, locale)
     : null;
 
   return (
@@ -1110,14 +1110,17 @@ export function WarMap({ className }: WarMapProps = {}) {
           <Tag color="green" className="text-xs">
             News: point-in-time (published/ingested)
           </Tag>
+          {signalsUpdatedLabel ? (
+            <Tag color="default" className="text-xs">
+              Signals updated: {signalsUpdatedLabel}
+            </Tag>
+          ) : null}
+          {newsUpdatedLabel ? (
+            <Tag color="default" className="text-xs">
+              News updated: {newsUpdatedLabel}
+            </Tag>
+          ) : null}
         </Space>
-        {signalsUpdatedLabel || newsUpdatedLabel ? (
-          <Typography.Text type="secondary" className="text-[10px]">
-            {signalsUpdatedLabel ? `Signals updated: ${signalsUpdatedLabel}` : null}
-            {signalsUpdatedLabel && newsUpdatedLabel ? " · " : null}
-            {newsUpdatedLabel ? `News updated: ${newsUpdatedLabel}` : null}
-          </Typography.Text>
-        ) : null}
       </div>
       <DashboardChart
         option={option}
