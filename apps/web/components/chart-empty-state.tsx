@@ -5,14 +5,14 @@ import type { ReactNode } from "react";
 
 import { useChartTheme } from "@/hooks/use-chart-theme";
 
-type ChartEmptyStateVariant =
+export type ChartEmptyStateVariant =
   | "empty"
   | "delayed"
   | "backfilling"
   | "offline"
   | "permission"
   | "error";
-type ChartEmptyStatePresentation = "center" | "banner";
+export type ChartEmptyStatePresentation = "center" | "banner";
 
 interface ChartEmptyStateProps {
   title?: string;

@@ -12,10 +12,9 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
-import { extractApiError } from "@/lib/api-error";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, formatUpdatedAt, resolveLocale } from "@/lib/i18n";
-import { classifyRequestError } from "@/lib/request-error";
+import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import {
   addInterval,
   compareGranularity,
@@ -383,63 +382,10 @@ export function FinancialCandlestick() {
   }
 
   if (isError && !data) {
-    const apiError = extractApiError(error);
-    const classification = classifyRequestError(error);
-    const detailText = [
-      classification.status ? `HTTP ${classification.status}` : null,
-      apiError.code ? `code: ${apiError.code}` : null,
-      apiError.detail ?? null
-    ]
-      .filter(Boolean)
-      .join(" • ");
-
-    const baseDescription =
-      classification.kind === "network"
-        ? t("dashboard.dataOffline.description", {
-            defaultValue: "Cannot reach the service. Check your connection and retry."
-          })
-        : classification.kind === "permission"
-          ? t("common.accessDeniedDescription", {
-              defaultValue:
-                "You don't have permission to view this data. Contact an administrator if you need access."
-            })
-          : classification.kind === "service"
-            ? t("common.serviceUnavailable", {
-                defaultValue: "Service is unavailable. Please try again."
-              })
-            : apiError.message || t("common.unexpectedError", { defaultValue: "Unexpected error" });
-
-    const title =
-      classification.kind === "network"
-        ? t("dashboard.dataOffline.title", { defaultValue: "Offline" })
-        : classification.kind === "permission"
-          ? t("common.accessDenied", { defaultValue: "Access denied" })
-          : t("common.requestFailed", { defaultValue: "Request failed" });
-
-    const variant =
-      classification.kind === "network"
-        ? "offline"
-        : classification.kind === "permission"
-          ? "permission"
-          : "error";
+    const emptyState = buildRequestErrorEmptyState({ t, error, onRetry: () => refetch() });
     return (
       <div className="h-[350px] transition-all duration-300">
-        <ChartEmptyState
-          variant={variant}
-          title={title}
-          description={
-            detailText ? (
-              <div className="flex flex-col items-center gap-1">
-                <span>{baseDescription}</span>
-                <span className="font-mono text-[10px] opacity-80">{detailText}</span>
-              </div>
-            ) : (
-              baseDescription
-            )
-          }
-          actionLabel={classification.kind === "permission" ? undefined : t("common.retry")}
-          onAction={classification.kind === "permission" ? undefined : () => refetch()}
-        />
+        <ChartEmptyState {...emptyState} />
       </div>
     );
   }

@@ -15,6 +15,7 @@ import type { ItemsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
+import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import { safeHttpUrl } from "@/lib/url";
 import { useDebounceValue } from "@/lib/use-debounce-value";
 
@@ -1021,16 +1022,11 @@ export function ItemsView({
     }
 
     if (error && pageData.length === 0) {
+      const emptyState = buildRequestErrorEmptyState({ t, error, onRetry: () => refetch() });
       return (
         <ChartEmptyState
           className="h-auto"
-          variant="error"
-          title={t("common.requestFailed", { defaultValue: "Request failed" })}
-          description={t("common.serviceUnavailable", {
-            defaultValue: "Service is unavailable. Please try again."
-          })}
-          actionLabel={t("common.retry")}
-          onAction={() => refetch()}
+          {...emptyState}
         />
       );
     }
