@@ -2,7 +2,7 @@
 
 import { SettingOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Checkbox, Popover, Skeleton, Space } from "antd";
+import { Button, Checkbox, Popover, Skeleton, Space, Tag, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -777,6 +777,9 @@ export function WarMap({ className }: WarMapProps = {}) {
           const updatedStr = eventsQuery.data?.updatedAt
             ? formatDateTime(eventsQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
             : "N/A";
+          const windowStr = `${formatDateTime(start, locale, { dateStyle: "medium" })} - ${formatDateTime(end, locale, {
+            dateStyle: "medium"
+          })}`;
 
           return `
             <div style="min-width: 200px;">
@@ -799,8 +802,12 @@ export function WarMap({ className }: WarMapProps = {}) {
                 <span style="color: #94a3b8;">Derived score:</span>
                 <span>${derivedScore}</span>
               </div>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: #94a3b8;">Window:</span>
+                <span>${windowStr}</span>
+              </div>
               <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
-                Updated: ${updatedStr}
+                Dataset updated: ${updatedStr}
               </div>
             </div>
           `;
@@ -847,6 +854,8 @@ export function WarMap({ className }: WarMapProps = {}) {
     mapReady,
     monitors,
     newsMarkersQuery.data,
+    start,
+    end,
     t
   ]);
 
@@ -1034,9 +1043,38 @@ export function WarMap({ className }: WarMapProps = {}) {
   );
 
   const containerClassName = ["relative", className ?? "h-[400px]"].filter(Boolean).join(" ");
+  const windowLabel = `${formatDateTime(start, locale, { dateStyle: "medium" })} - ${formatDateTime(end, locale, {
+    dateStyle: "medium"
+  })}`;
+  const signalsUpdatedLabel = eventsQuery.data?.updatedAt
+    ? formatDateTime(eventsQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
+    : null;
+  const newsUpdatedLabel = newsMarkersQuery.data?.updatedAt
+    ? formatDateTime(newsMarkersQuery.data.updatedAt, locale, { dateStyle: "medium", timeStyle: "short" })
+    : null;
 
   return (
     <div ref={containerRef} className={containerClassName}>
+      <div className="absolute left-4 top-12 z-10 flex flex-col gap-1">
+        <Space size={6} wrap>
+          <Tag color="default" className="text-xs">
+            Window: {windowLabel}
+          </Tag>
+          <Tag color="geekblue" className="text-xs">
+            Signals: aggregated over window
+          </Tag>
+          <Tag color="green" className="text-xs">
+            News: point-in-time (published/ingested)
+          </Tag>
+        </Space>
+        {signalsUpdatedLabel || newsUpdatedLabel ? (
+          <Typography.Text type="secondary" className="text-[10px]">
+            {signalsUpdatedLabel ? `Signals updated: ${signalsUpdatedLabel}` : null}
+            {signalsUpdatedLabel && newsUpdatedLabel ? " · " : null}
+            {newsUpdatedLabel ? `News updated: ${newsUpdatedLabel}` : null}
+          </Typography.Text>
+        ) : null}
+      </div>
       <DashboardChart
         option={option}
         theme={echartsTheme}

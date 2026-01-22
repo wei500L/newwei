@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -2498,6 +2500,7 @@ export type CrawlMetadataQuery = { __typename?: 'Query', crawlMetadata: Array<{ 
 export type DashboardHeroMetricsQueryVariables = Exact<{
   start: Scalars['DateTime']['input'];
   end: Scalars['DateTime']['input'];
+  granularity?: InputMaybe<TimeGranularity>;
 }>;
 
 
@@ -2507,6 +2510,7 @@ export type MetricDrillDownDetailsQueryVariables = Exact<{
   category: Scalars['String']['input'];
   start: Scalars['DateTime']['input'];
   end: Scalars['DateTime']['input'];
+  granularity?: InputMaybe<TimeGranularity>;
 }>;
 
 
@@ -3863,11 +3867,11 @@ export type CrawlMetadataLazyQueryHookResult = ReturnType<typeof useCrawlMetadat
 export type CrawlMetadataSuspenseQueryHookResult = ReturnType<typeof useCrawlMetadataSuspenseQuery>;
 export type CrawlMetadataQueryResult = Apollo.QueryResult<CrawlMetadataQuery, CrawlMetadataQueryVariables>;
 export const DashboardHeroMetricsDocument = gql`
-    query DashboardHeroMetrics($start: DateTime!, $end: DateTime!) {
+    query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: TimeGranularity = day) {
   conflict: getEconomicData(
     category: "global-conflict-index"
     timeRange: {start: $start, end: $end}
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value
@@ -3879,7 +3883,7 @@ export const DashboardHeroMetricsDocument = gql`
   market: getEconomicData(
     category: "market-sentiment"
     timeRange: {start: $start, end: $end}
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value
@@ -3891,7 +3895,7 @@ export const DashboardHeroMetricsDocument = gql`
   resource: getEconomicData(
     category: "resource-scarcity"
     timeRange: {start: $start, end: $end}
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value
@@ -3903,7 +3907,7 @@ export const DashboardHeroMetricsDocument = gql`
   supply: getEconomicData(
     category: "supply-chain-stability"
     timeRange: {start: $start, end: $end}
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value
@@ -3929,6 +3933,7 @@ export const DashboardHeroMetricsDocument = gql`
  *   variables: {
  *      start: // value for 'start'
  *      end: // value for 'end'
+ *      granularity: // value for 'granularity'
  *   },
  * });
  */
@@ -3949,11 +3954,11 @@ export type DashboardHeroMetricsLazyQueryHookResult = ReturnType<typeof useDashb
 export type DashboardHeroMetricsSuspenseQueryHookResult = ReturnType<typeof useDashboardHeroMetricsSuspenseQuery>;
 export type DashboardHeroMetricsQueryResult = Apollo.QueryResult<DashboardHeroMetricsQuery, DashboardHeroMetricsQueryVariables>;
 export const MetricDrillDownDetailsDocument = gql`
-    query MetricDrillDownDetails($category: String!, $start: DateTime!, $end: DateTime!) {
+    query MetricDrillDownDetails($category: String!, $start: DateTime!, $end: DateTime!, $granularity: TimeGranularity = day) {
   history: getEconomicData(
     category: $category
     timeRange: {start: $start, end: $end}
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value
@@ -3989,6 +3994,7 @@ export const MetricDrillDownDetailsDocument = gql`
  *      category: // value for 'category'
  *      start: // value for 'start'
  *      end: // value for 'end'
+ *      granularity: // value for 'granularity'
  *   },
  * });
  */

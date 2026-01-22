@@ -305,6 +305,8 @@
     "loadingDelayed": "Data is taking longer than usual. Please hold on or refresh.",
     "loadingDelayedTitle": "Still loading…",
     "requestFailed": "Request failed",
+    "accessDenied": "Access denied",
+    "accessDeniedDescription": "You don't have permission to view this data. Contact an administrator if you need access.",
     "name": "Name",
     "syncError": "ERROR",
     "syncing": "SYNCING",
@@ -381,6 +383,11 @@
       "explained": "Latest data at {{time}} (≈{{lag}} behind). Expected interval ≈{{interval}}.",
       "missing": "Latest data time unavailable."
     },
+    "timeRange": {
+      "defaultAggregation": "Default aggregation",
+      "defaultAggregationHint": "Most charts will aggregate data at this granularity for the selected window; individual charts may differ.",
+      "helperText": "Time range affects chart granularity and tooltips."
+    },
     "widgets": {
       "unsupportedSource": "Unsupported data source: {{source}}",
       "loadFailed": "Failed to load"
@@ -412,7 +419,8 @@
       "empty": "No metrics yet"
     },
     "errors": {
-      "metricsUnavailable": "Metrics unavailable"
+      "metricsUnavailable": "Metrics unavailable",
+      "metricsUnavailableHint": "No system metrics were returned. Try refreshing, or contact an administrator if this persists."
     },
     "stats": {
       "totalItems": "Total items",
@@ -3268,6 +3276,9 @@
     "noStack": "No stack"
   },
   "items": {
+    "time": {
+      "published": "Published"
+    },
     "detail": {
       "summaryTitle": "Summary",
       "summaryEmpty": "No summary available.",

@@ -153,6 +153,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const retryRef = useRef(0);
   const statusRef = useRef<DashboardStreamStatus>('offline');
   const hasLiveRef = useRef(false);
@@ -162,6 +163,10 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
   useEffect(() => {
     if (!enabled || !accessToken) {
       abortRef.current?.abort();
+      if (readerRef.current) {
+        void readerRef.current.cancel().catch(() => null);
+        readerRef.current = null;
+      }
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
@@ -195,6 +200,14 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       'event',
     ] as const;
     let active = true;
+    let connecting = false;
+    let authBlocked = false;
+    const unknownEventTypes = new Set<string>();
+
+    const isOnline = () => {
+      if (typeof navigator === 'undefined') return true;
+      return navigator.onLine;
+    };
 
     const stopPolling = () => {
       if (!pollingRef.current) return;
@@ -223,9 +236,14 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     };
 
     const scheduleReconnect = () => {
+      if (!active) return;
+      if (authBlocked) return;
+      if (!isOnline()) return;
       if (reconnectRef.current) return;
       const attempt = retryRef.current;
-      const delay = Math.min(MAX_RECONNECT_DELAY_MS, 1000 * 2 ** attempt);
+      const baseDelay = Math.min(MAX_RECONNECT_DELAY_MS, 1000 * 2 ** attempt);
+      const jitter = 0.7 + Math.random() * 0.6;
+      const delay = Math.round(baseDelay * jitter);
       retryRef.current = Math.min(attempt + 1, 10);
       reconnectRef.current = setTimeout(() => {
         reconnectRef.current = null;
@@ -236,16 +254,8 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
 
     const resolveFallbackStatus = (forceOffline?: boolean): DashboardStreamStatus => {
       if (forceOffline) return 'offline';
-      const hasGeoHeatmapData =
-        Boolean(queryClient.getQueryData(geoHeatmapKey)) ||
-        queryClient
-          .getQueriesData({ queryKey: geoHeatmapPrefixKey, exact: false })
-          .some((entry) => Boolean(entry[1]));
-      const hasCachedData =
-        queryClient.getQueryData(warEventsKey) ||
-        queryClient.getQueryData(candlestickKey) ||
-        hasGeoHeatmapData;
-      return hasCachedData ? 'polling' : 'offline';
+      if (!isOnline()) return 'offline';
+      return 'polling';
     };
 
     const markHealthy = () => {
@@ -297,12 +307,17 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
           ? prev
           : { connected: false, status: nextStatus, error: message },
       );
-      startPolling();
-      scheduleReconnect();
+      if (nextStatus === 'polling') {
+        startPolling();
+        scheduleReconnect();
+      } else {
+        stopPolling();
+      }
     };
 
     const handleUnauthorized = (status: number) => {
       if (!active) return;
+      authBlocked = true;
       emitUnauthorized({ status });
       stopPolling();
       if (reconnectRef.current) {
@@ -353,11 +368,33 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       }
       if (eventType === 'ping') {
         markHealthy();
+        return;
       }
+
+      if (process.env.NODE_ENV !== 'production' && !unknownEventTypes.has(eventType)) {
+        unknownEventTypes.add(eventType);
+        const preview = rawData.length > 200 ? `${rawData.slice(0, 200)}...` : rawData;
+        // eslint-disable-next-line no-console
+        console.debug(`[dashboard-stream] Unhandled event type: ${eventType}`, preview);
+      }
+      markHealthy();
     };
 
     const connect = async () => {
+      if (!active) return;
+      if (authBlocked) return;
+      if (connecting) return;
+      if (!isOnline()) {
+        handleError('Network offline', 'offline');
+        return;
+      }
+      connecting = true;
+
       abortRef.current?.abort();
+      if (readerRef.current) {
+        void readerRef.current.cancel().catch(() => null);
+        readerRef.current = null;
+      }
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;
@@ -387,7 +424,10 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
           return;
         }
 
+        markHealthy();
+
         const reader = response.body.getReader();
+        readerRef.current = reader;
         const decoder = new TextDecoder();
         let buffer = '';
         let currentEvent = '';
@@ -433,7 +473,10 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
           lines.forEach(processLine);
         }
 
-        if (!active) return;
+        if (!active) {
+          void reader.cancel().catch(() => null);
+          return;
+        }
         if (buffer) {
           processLine(buffer);
         }
@@ -442,15 +485,54 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       } catch (error) {
         if (!active) return;
         if (error instanceof Error && error.name === 'AbortError') return;
-        handleError(resolveErrorMessage(error), 'offline');
+        handleError(resolveErrorMessage(error));
+      } finally {
+        connecting = false;
+        if (readerRef.current) {
+          void readerRef.current.cancel().catch(() => null);
+          readerRef.current = null;
+        }
       }
     };
+
+    const handleBrowserOnline = () => {
+      if (!active) return;
+      if (authBlocked) return;
+      if (statusRef.current === 'live') return;
+      retryRef.current = 0;
+      if (reconnectRef.current) {
+        clearTimeout(reconnectRef.current);
+        reconnectRef.current = null;
+      }
+      startPolling();
+      void connect();
+    };
+
+    const handleBrowserOffline = () => {
+      if (!active) return;
+      abortRef.current?.abort();
+      if (reconnectRef.current) {
+        clearTimeout(reconnectRef.current);
+        reconnectRef.current = null;
+      }
+      retryRef.current = 0;
+      handleError('Network offline', 'offline');
+    };
+
+    window.addEventListener('online', handleBrowserOnline);
+    window.addEventListener('offline', handleBrowserOffline);
 
     void connect();
 
     return () => {
       active = false;
+      window.removeEventListener('online', handleBrowserOnline);
+      window.removeEventListener('offline', handleBrowserOffline);
       abortRef.current?.abort();
+      if (readerRef.current) {
+        void readerRef.current.cancel().catch(() => null);
+        readerRef.current = null;
+      }
       stopPolling();
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);

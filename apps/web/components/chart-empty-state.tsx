@@ -5,7 +5,13 @@ import type { ReactNode } from "react";
 
 import { useChartTheme } from "@/hooks/use-chart-theme";
 
-type ChartEmptyStateVariant = "empty" | "delayed" | "backfilling" | "offline" | "error";
+type ChartEmptyStateVariant =
+  | "empty"
+  | "delayed"
+  | "backfilling"
+  | "offline"
+  | "permission"
+  | "error";
 type ChartEmptyStatePresentation = "center" | "banner";
 
 interface ChartEmptyStateProps {
@@ -36,6 +42,8 @@ export function ChartEmptyState({
     switch (variant) {
       case "error":
         return "rgba(220, 38, 38, 0.55)";
+      case "permission":
+        return colors?.accent ?? "rgba(217, 119, 6, 0.6)";
       case "delayed":
         return "rgba(245, 158, 11, 0.6)";
       case "offline":
@@ -51,6 +59,8 @@ export function ChartEmptyState({
   const titleColor =
     variant === "error"
       ? "#dc2626"
+      : variant === "permission"
+        ? "#b45309"
       : variant === "delayed"
         ? "#d97706"
         : variant === "offline"
@@ -68,6 +78,8 @@ export function ChartEmptyState({
     const alertType =
       variant === "error"
         ? "error"
+        : variant === "permission"
+          ? "warning"
         : variant === "delayed" || variant === "offline"
           ? "warning"
           : variant === "backfilling"
@@ -86,11 +98,17 @@ export function ChartEmptyState({
   }
 
   return (
-    <div className={`flex h-full items-center justify-center ${className ?? ""}`}>
+    <div className={`flex h-full w-full items-center justify-center p-4 ${className ?? ""}`}>
       <Empty
-        styles={{ image: { height: 80 } }}
+        styles={{ image: { height: "clamp(56px, 25%, 120px)" } }}
         image={
-          <svg width="120" height="80" viewBox="0 0 120 80" fill="none">
+          <svg
+            viewBox="0 0 120 80"
+            fill="none"
+            className="h-full w-full"
+            preserveAspectRatio="xMidYMid meet"
+            aria-hidden="true"
+          >
             <rect
               x="10"
               y="12"
@@ -117,9 +135,9 @@ export function ChartEmptyState({
                 {title}
               </Typography.Text>
             ) : null}
-            <span className="text-xs" style={{ color: textColor }}>
+            <div className="text-xs text-center leading-relaxed" style={{ color: textColor }}>
               {description}
-            </span>
+            </div>
             {actionNode ? <div className="pt-1">{actionNode}</div> : null}
           </div>
         }

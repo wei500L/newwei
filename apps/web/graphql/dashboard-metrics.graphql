@@ -1,8 +1,8 @@
-query DashboardHeroMetrics($start: DateTime!, $end: DateTime!) {
+query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: TimeGranularity = day) {
   conflict: getEconomicData(
     category: "global-conflict-index"
     timeRange: { start: $start, end: $end }
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value
@@ -14,7 +14,7 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!) {
   market: getEconomicData(
     category: "market-sentiment"
     timeRange: { start: $start, end: $end }
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value
@@ -26,7 +26,7 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!) {
   resource: getEconomicData(
     category: "resource-scarcity"
     timeRange: { start: $start, end: $end }
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value
@@ -38,7 +38,7 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!) {
   supply: getEconomicData(
     category: "supply-chain-stability"
     timeRange: { start: $start, end: $end }
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value
@@ -49,11 +49,16 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!) {
   }
 }
 
-query MetricDrillDownDetails($category: String!, $start: DateTime!, $end: DateTime!) {
+query MetricDrillDownDetails(
+  $category: String!
+  $start: DateTime!
+  $end: DateTime!
+  $granularity: TimeGranularity = day
+) {
   history: getEconomicData(
     category: $category
     timeRange: { start: $start, end: $end }
-    granularity: day
+    granularity: $granularity
   ) {
     timestamp
     value

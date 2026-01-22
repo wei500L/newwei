@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Button, Skeleton } from "antd";
+import { Button, Skeleton, Space, Tag } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
@@ -14,7 +14,17 @@ import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import dayjs from "@/lib/dayjs";
-import { resolveLocale } from "@/lib/i18n";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { classifyRequestError } from "@/lib/request-error";
+import {
+  addInterval,
+  compareGranularity,
+  formatGranularityLabel,
+  intervalToGranularity,
+  parseInterval,
+  resolveDefaultGranularityForRangePreset,
+  UiTimeGranularity,
+} from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 interface FinancialCandlePoint {
@@ -90,11 +100,16 @@ const formatDateForFilename = (date: Date) => {
 export function FinancialCandlestick() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { data: session } = useSession();
-  const { start, end } = useDashboardRangeStore();
+  const { data: session, status: sessionStatus } = useSession();
+  const { range, start, end } = useDashboardRangeStore();
   const theme = useChartTheme();
   const [exportingCsv, setExportingCsv] = useState(false);
-  const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
+  const emptyTitle = t("dashboard.dataEmpty", { defaultValue: "No data" });
+  const emptyHint = t("dashboard.dataEmptyHint", {
+    defaultValue: "No data for the selected range. Try expanding the range."
+  });
+  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
+  const windowLabel = `${formatDateForFilename(start)} - ${formatDateForFilename(end)}`;
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -133,6 +148,14 @@ export function FinancialCandlestick() {
 
   const option = useMemo<EChartsOption>(() => {
     if (!data || data.points.length === 0) return {};
+    const parsedInterval = parseInterval(data.interval);
+    const intervalGranularity = intervalToGranularity(parsedInterval);
+    const intervalGranularityLabel = formatGranularityLabel(intervalGranularity);
+    const intervalUnitSuffix = data.interval ? ` (${data.interval})` : "";
+    const showTime =
+      intervalGranularity === UiTimeGranularity.Minute ||
+      intervalGranularity === UiTimeGranularity.Hour ||
+      intervalGranularity === UiTimeGranularity.Realtime;
     const timestamps = data.points.map((point) => point.timestamp);
     const ohlc = data.points.map((point) => [
       point.open,
@@ -157,6 +180,38 @@ export function FinancialCandlestick() {
         borderColor: theme.colors.primary,
         textStyle: { color: theme.colors.tooltipText, fontFamily: theme.fontFamily },
         borderWidth: 1,
+        formatter: (params: any) => {
+          const payload = Array.isArray(params) ? params[0] : params;
+          const axisValue = payload?.axisValue as string | undefined;
+          const values = payload?.data as number[] | undefined;
+          const startIso = typeof axisValue === "string" ? axisValue : "";
+          const endIso = startIso ? addInterval(startIso, parsedInterval) : null;
+          const startLabel = startIso
+            ? formatDateTime(startIso, locale, showTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" })
+            : "";
+          const endLabel =
+            endIso && dayjs(endIso).isValid()
+              ? formatDateTime(endIso, locale, showTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" })
+              : "";
+          const bucketLabel = endLabel ? `${startLabel} - ${endLabel}` : startLabel;
+          const fmt = (value: number | undefined) =>
+            typeof value === "number" ? `${value}${unitSuffix}` : "N/A";
+          const open = Array.isArray(values) ? values[0] : undefined;
+          const close = Array.isArray(values) ? values[1] : undefined;
+          const low = Array.isArray(values) ? values[2] : undefined;
+          const high = Array.isArray(values) ? values[3] : undefined;
+
+          return [
+            `<div style="min-width:220px;">`,
+            `<div style="font-weight:600;margin-bottom:6px;">${bucketLabel}</div>`,
+            `<div style="display:flex;justify-content:space-between;"><span>Open</span><span>${fmt(open)}</span></div>`,
+            `<div style="display:flex;justify-content:space-between;"><span>High</span><span>${fmt(high)}</span></div>`,
+            `<div style="display:flex;justify-content:space-between;"><span>Low</span><span>${fmt(low)}</span></div>`,
+            `<div style="display:flex;justify-content:space-between;"><span>Close</span><span>${fmt(close)}</span></div>`,
+            `<div style="margin-top:8px;color:#64748b;">Bucket: ${intervalGranularityLabel}${intervalUnitSuffix}</div>`,
+            `</div>`
+          ].join("");
+        },
       },
       grid: {
         left: "2%",
@@ -171,7 +226,16 @@ export function FinancialCandlestick() {
         scale: true,
         boundaryGap: true, // Candles need gap usually
         axisLine: { onZero: false, lineStyle: { color: theme.colors.grid } },
-        axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily },
+        axisLabel: {
+          color: theme.colors.foreground,
+          fontFamily: theme.fontFamily,
+          formatter: (value: unknown) => {
+            if (typeof value !== "string") return "";
+            return showTime
+              ? dayjs(value).format("MM-DD HH:mm")
+              : dayjs(value).format("MM-DD");
+          }
+        },
         splitLine: { show: false }, // No grid
         axisTick: { show: false }
       },
@@ -234,7 +298,28 @@ export function FinancialCandlestick() {
         },
       ],
     };
-  }, [theme, data, locale, t]);
+  }, [theme, data, locale]);
+
+  const parsedInterval = useMemo(() => parseInterval(data?.interval), [data?.interval]);
+  const intervalGranularity = intervalToGranularity(parsedInterval);
+  const intervalGranularityLabel = formatGranularityLabel(intervalGranularity);
+  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
+  const granularityCompare = compareGranularity(intervalGranularity, defaultGranularity);
+  const intervalColor =
+    granularityCompare === "match"
+      ? "geekblue"
+      : granularityCompare === "coarser"
+        ? "orange"
+        : granularityCompare === "finer"
+          ? "cyan"
+          : "default";
+  const intervalDescriptor = data?.interval
+    ? `${intervalGranularityLabel} (${data.interval})`
+    : intervalGranularityLabel;
+  const intervalTagText =
+    granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
+      ? `Interval: ${intervalDescriptor}`
+      : `Interval: ${intervalDescriptor} (default ${defaultGranularityLabel})`;
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.points.length === 0) return;
@@ -274,6 +359,14 @@ export function FinancialCandlestick() {
     ? t("dashboard.charts.exporting", { defaultValue: "Exporting..." })
     : t("dashboard.charts.downloadCsv", { defaultValue: "Download CSV" });
 
+  if (sessionStatus === "loading") {
+    return (
+      <div className="h-[350px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </div>
+    );
+  }
+
   if (isLoading && !data) {
     return (
       <div className="h-[350px] flex items-center">
@@ -284,19 +377,61 @@ export function FinancialCandlestick() {
 
   if (isError && !data) {
     const apiError = extractApiError(error);
-    const description = apiError.code
-      ? `${apiError.message} (code: ${apiError.code})${apiError.detail ? `: ${apiError.detail}` : ""}`
-      : apiError.detail
-        ? `${apiError.message}: ${apiError.detail}`
-        : apiError.message;
+    const classification = classifyRequestError(error);
+    const detailText = [
+      classification.status ? `HTTP ${classification.status}` : null,
+      apiError.code ? `code: ${apiError.code}` : null,
+      apiError.detail ?? null
+    ]
+      .filter(Boolean)
+      .join(" • ");
+
+    const baseDescription =
+      classification.kind === "network"
+        ? t("dashboard.dataOffline.description", {
+            defaultValue: "Cannot reach the service. Check your connection and retry."
+          })
+        : classification.kind === "permission"
+          ? t("common.accessDeniedDescription", {
+              defaultValue:
+                "You don't have permission to view this data. Contact an administrator if you need access."
+            })
+          : classification.kind === "service"
+            ? t("common.serviceUnavailable", {
+                defaultValue: "Service is unavailable. Please try again."
+              })
+            : apiError.message || t("common.unexpectedError", { defaultValue: "Unexpected error" });
+
+    const title =
+      classification.kind === "network"
+        ? t("dashboard.dataOffline.title", { defaultValue: "Offline" })
+        : classification.kind === "permission"
+          ? t("common.accessDenied", { defaultValue: "Access denied" })
+          : t("common.requestFailed", { defaultValue: "Request failed" });
+
+    const variant =
+      classification.kind === "network"
+        ? "offline"
+        : classification.kind === "permission"
+          ? "permission"
+          : "error";
     return (
       <div className="h-[350px]">
         <ChartEmptyState
-          variant="error"
-          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={description || emptyMessage}
-          actionLabel={t("common.retry")}
-          onAction={() => refetch()}
+          variant={variant}
+          title={title}
+          description={
+            detailText ? (
+              <div className="flex flex-col items-center gap-1">
+                <span>{baseDescription}</span>
+                <span className="font-mono text-[10px] opacity-80">{detailText}</span>
+              </div>
+            ) : (
+              baseDescription
+            )
+          }
+          actionLabel={classification.kind === "permission" ? undefined : t("common.retry")}
+          onAction={classification.kind === "permission" ? undefined : () => refetch()}
         />
       </div>
     );
@@ -305,13 +440,24 @@ export function FinancialCandlestick() {
   if (!data || data.points.length === 0) {
     return (
       <div className="h-[350px]">
-        <ChartEmptyState description={emptyMessage} />
+        <ChartEmptyState title={emptyTitle} description={emptyHint} />
       </div>
     );
   }
 
   return (
     <div className="relative h-[350px]">
+      <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
+        <Tag color="default" className="text-xs">
+          Range: {range}
+        </Tag>
+        <Tag color="default" className="text-xs">
+          Window: {windowLabel}
+        </Tag>
+        <Tag color={intervalColor} className="text-xs">
+          {intervalTagText}
+        </Tag>
+      </div>
       <DashboardChart
         group="dashboard-charts"
         option={option}
@@ -321,15 +467,17 @@ export function FinancialCandlestick() {
         )}-${formatDateForFilename(end)}`}
         showExportImage
         actions={
-          <Button
-            size="small"
-            type="default"
-            onClick={handleCsvExport}
-            loading={exportingCsv}
-            disabled={!data || data.points.length === 0}
-          >
-            {csvLabel}
-          </Button>
+          <Space size={8}>
+            <Button
+              size="small"
+              type="default"
+              onClick={handleCsvExport}
+              loading={exportingCsv}
+              disabled={!data || data.points.length === 0}
+            >
+              {csvLabel}
+            </Button>
+          </Space>
         }
       />
       {isLoading ? (

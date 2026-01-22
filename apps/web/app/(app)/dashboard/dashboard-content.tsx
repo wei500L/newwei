@@ -2,9 +2,9 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Button,
   Card,
   Col,
-  Empty,
   Row,
   Skeleton,
   Space,
@@ -20,13 +20,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/generated";
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { TimeRangeControls } from "@/components/time-range-controls";
+import { TimeGranularity, useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
-import { type QueueStatusKey, useDashboardFiltersStore } from "@/store/dashboard-filters";
+import { classifyRequestError } from "@/lib/request-error";
+import { resolveDefaultGranularityForRangePreset, UiTimeGranularity } from "@/lib/time-granularity";
+import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 import { LiveAlertsToasts } from "./live-alerts";
 import { useDashboardStream, type DashboardStreamStatus } from "./use-dashboard-stream";
+import { useDashboardUrlSync } from "./use-dashboard-url-sync";
 import { useQueueEvents } from "./use-queue-events";
 
 const AlertPanel = dynamic(() => import("./alert-panel").then((mod) => mod.AlertPanel), {
@@ -111,20 +116,42 @@ export function DashboardContent() {
   const searchParams = useSearchParams();
   const isAnalysisFocused = searchParams.get("panel") === "analysis";
   const [, messageContext] = message.useMessage();
+  const { resetFilters, hasActiveFilters } = useDashboardUrlSync();
   const { data, loading, error, refetch } = useQueueStatsQuery();
+  const { start, end, range } = useDashboardRangeStore();
 
   // Hero Metrics Query
-  const heroDateRange = useMemo(() => ({
-    start: dayjs.utc().subtract(30, "day").startOf("day").toISOString(),
-    end: dayjs.utc().endOf("day").toISOString()
-  }), []);
+  const heroGranularity = useMemo(() => {
+    const uiGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
+    switch (uiGranularity) {
+      case UiTimeGranularity.Year:
+        return TimeGranularity.Year;
+      case UiTimeGranularity.Quarter:
+        return TimeGranularity.Quarter;
+      case UiTimeGranularity.Month:
+        return TimeGranularity.Month;
+      case UiTimeGranularity.Week:
+        return TimeGranularity.Week;
+      case UiTimeGranularity.Day:
+      default:
+        return TimeGranularity.Day;
+    }
+  }, [end, range, start]);
+
+  const heroDateRange = useMemo(
+    () => ({
+      start: start.toISOString(),
+      end: end.toISOString(),
+      granularity: heroGranularity
+    }),
+    [heroGranularity, start, end]
+  );
 
   const { data: heroData, loading: heroLoading } = useDashboardHeroMetricsQuery({
     variables: heroDateRange,
     fetchPolicy: "cache-and-network"
   });
 
-  const { start, end } = useDashboardRangeStore();
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
   const { queueStatus, selectedSector, setQueueStatus } =
     useDashboardFiltersStore();
@@ -218,30 +245,7 @@ export function DashboardContent() {
     void refetch();
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   }, [queueStatus, queryClient, refetch]);
-
-  if (loading) {
-    return (
-      <div className="flex flex-col gap-6">
-        <Skeleton active paragraph={{ rows: 2 }} />
-        <Skeleton active paragraph={{ rows: 6 }} />
-        <Skeleton active paragraph={{ rows: 6 }} />
-      </div>
-    );
-  }
-
-  if (error || !data?.queueStats) {
-    return <Empty description={t("dashboard.errors.metricsUnavailable")} />;
-  }
-
-  const { counts, processedCount, itemCount } = data.queueStats;
-
-  const chartData: Record<QueueStatusKey, number> = {
-    waiting: counts.waiting,
-    active: counts.active,
-    completed: counts.completed,
-    failed: counts.failed,
-    delayed: counts.delayed,
-  };
+  const queueStats = data?.queueStats ?? null;
 
   return (
     <div className="flex gap-6 h-full items-start">
@@ -250,6 +254,21 @@ export function DashboardContent() {
       
       {/* Center Column: Market Feed & Visuals */}
       <div className="flex-1 flex flex-col gap-6 min-w-0">
+
+        {/* Time Range */}
+        <div className="glass-panel border border-[var(--border)] px-4 py-3">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <span className="text-xs text-slate-600 font-medium">
+              {t("dashboard.timeRange.title", { defaultValue: "Time Range" })}
+            </span>
+            {hasActiveFilters ? (
+              <Button type="link" size="small" onClick={resetFilters} className="px-0">
+                {t("common.reset", { defaultValue: "Reset" })}
+              </Button>
+            ) : null}
+          </div>
+          <TimeRangeControls />
+        </div>
         
         {/* Status Bar */}
         <div className="flex items-center justify-between">
@@ -261,6 +280,10 @@ export function DashboardContent() {
              <span>{streamStatusMeta.label}</span>
              <span className="text-slate-600">|</span>
              <span>Last Update: {dayjs().format('HH:mm:ss')}</span>
+             <span className="text-slate-600">|</span>
+             <span>
+               Window: {range} ({dayjs(start).format("YYYY-MM-DD")} to {dayjs(end).format("YYYY-MM-DD")})
+             </span>
            </div>
            <Space>
              <span className="text-xs text-slate-500">System Status</span>
@@ -345,37 +368,147 @@ export function DashboardContent() {
         {/* System Stats (Hidden by default) */}
         {showSystemStats && (
           <div className="animate-in fade-in slide-in-from-top-4 duration-300">
-            <Row gutter={[20, 20]} className="mb-6">
-              <Col xs={24} md={12} lg={8}>
-                <Card className="content-card h-full flex flex-col justify-center">
-                  <Statistic title={t("dashboard.stats.totalItems")} value={itemCount} valueStyle={{ color: '#1f2933', fontFamily: 'var(--font-mono)' }} />
-                </Card>
-              </Col>
-              <Col xs={24} md={12} lg={8}>
-                <Card className="content-card h-full flex flex-col justify-center">
-                  <Statistic title={t("dashboard.stats.processedItems")} value={processedCount} valueStyle={{ color: '#1f2933', fontFamily: 'var(--font-mono)' }} />
-                </Card>
-              </Col>
-              <Col xs={24} md={24} lg={8}>
-                <Card
-                  className="content-card h-full"
-                  title={
-                    <Space size="small" align="center">
-                      <span>{t("dashboard.queue.snapshot")}</span>
-                      <Tag color={queueLive ? "green" : "default"}>
-                        {queueLive ? t("dashboard.queue.live") : t("dashboard.queue.offline")}
-                      </Tag>
-                    </Space>
-                  }
-                >
-                  <QueueChart
-                    data={chartData}
-                    activeStatus={queueStatus}
-                    onFilterChange={setQueueStatus}
-                  />
-                </Card>
-              </Col>
-            </Row>
+            {loading && !queueStats ? (
+              <Row gutter={[20, 20]} className="mb-6">
+                <Col xs={24} md={12} lg={8}>
+                  <Card className="content-card h-full">
+                    <Skeleton active paragraph={{ rows: 1 }} />
+                  </Card>
+                </Col>
+                <Col xs={24} md={12} lg={8}>
+                  <Card className="content-card h-full">
+                    <Skeleton active paragraph={{ rows: 1 }} />
+                  </Card>
+                </Col>
+                <Col xs={24} md={24} lg={8}>
+                  <Card className="content-card h-full">
+                    <Skeleton active paragraph={{ rows: 2 }} />
+                  </Card>
+                </Col>
+              </Row>
+            ) : error ? (
+              <div className="mb-6 h-[220px]">
+                {(() => {
+                  const classification = classifyRequestError(error);
+                  const detailText = [
+                    classification.status ? `HTTP ${classification.status}` : null,
+                    error.message || null
+                  ]
+                    .filter(Boolean)
+                    .join(" • ");
+
+                  const baseDescription =
+                    classification.kind === "network"
+                      ? t("dashboard.dataOffline.description", {
+                          defaultValue:
+                            "Cannot reach the service. Check your connection and retry."
+                        })
+                      : classification.kind === "permission"
+                        ? t("common.accessDeniedDescription", {
+                            defaultValue:
+                              "You don't have permission to view this data. Contact an administrator if you need access."
+                          })
+                        : classification.kind === "service"
+                          ? t("common.serviceUnavailable", {
+                              defaultValue: "Service is unavailable. Please try again."
+                            })
+                          : t("common.unexpectedError", { defaultValue: "Unexpected error" });
+
+                  const title =
+                    classification.kind === "network"
+                      ? t("dashboard.dataOffline.title", { defaultValue: "Offline" })
+                      : classification.kind === "permission"
+                        ? t("common.accessDenied", { defaultValue: "Access denied" })
+                        : t("common.requestFailed", { defaultValue: "Request failed" });
+
+                  const variant =
+                    classification.kind === "network"
+                      ? "offline"
+                      : classification.kind === "permission"
+                        ? "permission"
+                        : "error";
+
+                  return (
+                    <ChartEmptyState
+                      variant={variant}
+                      title={title}
+                      description={
+                        detailText ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <span>{baseDescription}</span>
+                            <span className="font-mono text-[10px] opacity-80">
+                              {detailText}
+                            </span>
+                          </div>
+                        ) : (
+                          baseDescription
+                        )
+                      }
+                      actionLabel={classification.kind === "permission" ? undefined : t("common.retry")}
+                      onAction={classification.kind === "permission" ? undefined : () => refetch()}
+                    />
+                  );
+                })()}
+              </div>
+            ) : !queueStats ? (
+              <div className="mb-6 h-[220px]">
+                <ChartEmptyState
+                  title={t("dashboard.ticker.empty", { defaultValue: "No metrics yet" })}
+                  description={t("dashboard.errors.metricsUnavailableHint", {
+                    defaultValue:
+                      "No system metrics were returned. Try refreshing, or contact an administrator if this persists."
+                  })}
+                  actionLabel={t("common.refresh")}
+                  onAction={() => refetch()}
+                />
+              </div>
+            ) : (
+              <Row gutter={[20, 20]} className="mb-6">
+                <Col xs={24} md={12} lg={8}>
+                  <Card className="content-card h-full flex flex-col justify-center">
+                    <Statistic
+                      title={t("dashboard.stats.totalItems")}
+                      value={queueStats.itemCount}
+                      valueStyle={{ color: "#1f2933", fontFamily: "var(--font-mono)" }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} md={12} lg={8}>
+                  <Card className="content-card h-full flex flex-col justify-center">
+                    <Statistic
+                      title={t("dashboard.stats.processedItems")}
+                      value={queueStats.processedCount}
+                      valueStyle={{ color: "#1f2933", fontFamily: "var(--font-mono)" }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} md={24} lg={8}>
+                  <Card
+                    className="content-card h-full"
+                    title={
+                      <Space size="small" align="center">
+                        <span>{t("dashboard.queue.snapshot")}</span>
+                        <Tag color={queueLive ? "green" : "default"}>
+                          {queueLive ? t("dashboard.queue.live") : t("dashboard.queue.offline")}
+                        </Tag>
+                      </Space>
+                    }
+                  >
+                    <QueueChart
+                      data={{
+                        waiting: queueStats.counts.waiting,
+                        active: queueStats.counts.active,
+                        completed: queueStats.counts.completed,
+                        failed: queueStats.counts.failed,
+                        delayed: queueStats.counts.delayed,
+                      }}
+                      activeStatus={queueStatus}
+                      onFilterChange={setQueueStatus}
+                    />
+                  </Card>
+                </Col>
+              </Row>
+            )}
           </div>
         )}
 

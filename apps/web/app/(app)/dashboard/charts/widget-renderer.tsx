@@ -1,12 +1,20 @@
 "use client";
 
 import { gql, useQuery } from "@apollo/client";
-import { Alert, Button, Skeleton, Typography } from "antd";
+import { Alert, Button, Skeleton, Space, Tag, Typography } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import type { TimeGranularity } from "@/graphql/generated";
+import dayjs from "@/lib/dayjs";
+import {
+  compareGranularity,
+  formatGranularityLabel,
+  resolveDefaultGranularityForRangePreset,
+  timeGranularityToUiGranularity,
+  uiGranularityToInterval,
+} from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 const ECONOMIC_WIDGET_QUERY = gql`
@@ -69,8 +77,26 @@ export function WidgetRenderer({
   color,
 }: WidgetRenderProps) {
   const { t } = useTranslation();
-  const { start, end } = useDashboardRangeStore();
+  const { range, start, end } = useDashboardRangeStore();
   const sourceInfo = parseDataSource(dataSource);
+  const chosenGranularity = useMemo(
+    () => chooseGranularity(start, end),
+    [end, start],
+  );
+  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
+  const chosenUiGranularity = timeGranularityToUiGranularity(chosenGranularity);
+  const chosenGranularityLabel = formatGranularityLabel(chosenUiGranularity);
+  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
+  const granularityCompare = compareGranularity(chosenUiGranularity, defaultGranularity);
+  const granularityColor =
+    granularityCompare === "match"
+      ? "geekblue"
+      : granularityCompare === "coarser"
+        ? "orange"
+        : granularityCompare === "finer"
+          ? "cyan"
+          : "default";
+  const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
   const {
     data: apiData,
     loading,
@@ -84,7 +110,7 @@ export function WidgetRenderer({
         : {
             category: sourceInfo.category,
             timeRange: { start: start.toISOString(), end: end.toISOString() },
-            granularity: chooseGranularity(start, end),
+            granularity: chosenGranularity,
           },
     fetchPolicy: "cache-first",
   });
@@ -102,9 +128,50 @@ export function WidgetRenderer({
 
   const option = useMemo(() => {
     const seriesData = resolvedData?.map((p) => [p.timestamp, p.value]) ?? [];
+    const interval = uiGranularityToInterval(chosenUiGranularity);
     const common = {
       title: { text: title ?? dataSource },
-      tooltip: { trigger: type === "pie" ? "item" : "axis" },
+      tooltip:
+        type === "pie"
+          ? { trigger: "item" as const }
+          : {
+              trigger: "axis" as const,
+              formatter: (params: any) => {
+                const payload = Array.isArray(params) ? params[0] : params;
+                const axisValue = payload?.axisValue as string | number | undefined;
+                const rawValue = payload?.value as unknown;
+
+                const startTs = Array.isArray(rawValue) ? rawValue[0] : axisValue;
+                const value = Array.isArray(rawValue) ? rawValue[1] : rawValue;
+
+                const startIso =
+                  typeof startTs === "string"
+                    ? startTs
+                    : typeof startTs === "number"
+                      ? new Date(startTs).toISOString()
+                      : "";
+                const endIso = startIso && interval
+                  ? dayjs(startIso).add(interval.count, interval.unit).toISOString()
+                  : null;
+                const labelStart = startIso ? dayjs(startIso).format("YYYY-MM-DD") : "";
+                const labelEnd = endIso ? dayjs(endIso).format("YYYY-MM-DD") : "";
+                const rangeLabel = labelEnd ? `${labelStart} - ${labelEnd}` : labelStart;
+                const valueNumber =
+                  typeof value === "number"
+                    ? value
+                    : typeof value === "string"
+                      ? Number(value)
+                      : typeof payload?.data === "number"
+                        ? payload.data
+                        : Number.NaN;
+
+                return [
+                  `<div style="font-weight:600;margin-bottom:6px;">${rangeLabel}</div>`,
+                  `<div>${Number.isFinite(valueNumber) ? valueNumber.toFixed(2) : String(value ?? "")}</div>`,
+                  `<div style="color:#64748b;margin-top:6px;">Bucket: ${chosenGranularityLabel}</div>`,
+                ].join("");
+              }
+            },
       dataZoom: [{ type: "inside" }, { type: "slider" }],
       xAxis: type === "bar" ? { type: "category" } : { type: "time" },
       yAxis: { type: "value" },
@@ -180,7 +247,7 @@ export function WidgetRenderer({
           ],
         };
     }
-  }, [color, resolvedData, dataSource, title, type]);
+  }, [chosenGranularityLabel, chosenUiGranularity, color, dataSource, resolvedData, title, type]);
 
   const theme = useMemo(
     () =>
@@ -231,11 +298,27 @@ export function WidgetRenderer({
   }
 
   return (
-    <DashboardChart
-      option={option}
-      height={300}
-      group="linked-charts"
-      theme={theme}
-    />
+    <div className="flex flex-col gap-2">
+      <Space size={6} wrap>
+        <Tag color="default" className="text-xs">
+          Range: {range}
+        </Tag>
+        <Tag color="default" className="text-xs">
+          Window: {windowLabel}
+        </Tag>
+        <Tag color={granularityColor} className="text-xs">
+          Aggregation:{" "}
+          {granularityCompare === "match" || defaultGranularity === chosenUiGranularity
+            ? chosenGranularityLabel
+            : `${chosenGranularityLabel} (default ${defaultGranularityLabel})`}
+        </Tag>
+      </Space>
+      <DashboardChart
+        option={option}
+        height={300}
+        group="linked-charts"
+        theme={theme}
+      />
+    </div>
   );
 }

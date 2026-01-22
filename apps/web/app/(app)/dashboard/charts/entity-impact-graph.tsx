@@ -1,6 +1,6 @@
 "use client";
 
-import { message, Skeleton, Slider, Space, Typography } from "antd";
+import { Tag, message, Skeleton, Slider, Space, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -14,6 +14,8 @@ import {
   type EntityImpactNode,
   type EntityImpactLink
 } from "@/hooks/useEntityImpactGraph";
+import dayjs from "@/lib/dayjs";
+import { useDashboardRangeStore } from "@/store/time-range";
 
 const { Text } = Typography;
 
@@ -185,6 +187,8 @@ function transformLinks(
 export function EntityImpactGraph() {
   const { t } = useTranslation();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
+  const { range, start, end } = useDashboardRangeStore();
+  const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [minConfidence, setMinConfidence] = useState<number>(0.5);
   const [minCorrelation, setMinCorrelation] = useState<number>(0.3);
@@ -271,7 +275,8 @@ export function EntityImpactGraph() {
               `${t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: ${originalData.type ?? "-"}`,
               `${t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: ${categoryName}`,
               `${t("dashboard.charts.entityGraph.weight", { defaultValue: "Weight" })}: ${Number(data.value ?? 0).toFixed(1)}`,
-              `${t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}: ${connectionCount}`
+              `${t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}: ${connectionCount}`,
+              `Window: ${windowLabel}`
             ];
 
             // Add related entities if available
@@ -301,7 +306,8 @@ export function EntityImpactGraph() {
             return [
               `<b>${params.name}</b>`,
               `${t("dashboard.charts.entityGraph.linkType", { defaultValue: "Link Type" })}: ${linkType}`,
-              `${strengthLabel}: ${strengthValue}`
+              `${strengthLabel}: ${strengthValue}`,
+              `Window: ${windowLabel}`
             ].join("<br/>");
           }
           return "";
@@ -359,7 +365,7 @@ export function EntityImpactGraph() {
         }
       ]
     };
-  }, [hasData, nodes, links, colors, fontFamily, t, selectedNode]);
+  }, [colors, fontFamily, hasData, links, nodes, selectedNode, t, windowLabel]);
 
   /**
    * Handle node click event
@@ -450,6 +456,17 @@ export function EntityImpactGraph() {
 
   return (
     <div className="relative h-[400px]">
+      <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
+        <Tag color="default" className="text-xs">
+          Range: {range}
+        </Tag>
+        <Tag color="default" className="text-xs">
+          Window: {windowLabel}
+        </Tag>
+        <Tag color="geekblue" className="text-xs">
+          Aggregation: window graph
+        </Tag>
+      </div>
       <DashboardChart
         option={option}
         theme={echartsTheme}

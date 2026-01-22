@@ -1,7 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Skeleton, Typography } from "antd";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { FinancialCandlestick } from "@/app/(app)/dashboard/charts/financial-candlestick";
@@ -10,13 +10,30 @@ import { MarketPulse } from "@/app/(app)/dashboard/components/market-pulse";
 import { MetricDrillDown } from "@/app/(app)/dashboard/metric-drilldown";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { TimeRangeControls } from "@/components/time-range-controls";
-import { useDashboardHeroMetricsQuery } from "@/graphql/generated";
+import { TimeGranularity, useDashboardHeroMetricsQuery } from "@/graphql/generated";
+import { resolveDefaultGranularityForRangePreset, UiTimeGranularity } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 export function MarketOverview() {
   const { t } = useTranslation();
-  const { start, end } = useDashboardRangeStore();
+  const { range, start, end } = useDashboardRangeStore();
   const [activeMetricKey, setActiveMetricKey] = useState<string | null>(null);
+  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
+  const heroGranularity = useMemo(() => {
+    switch (defaultGranularity) {
+      case UiTimeGranularity.Year:
+        return TimeGranularity.Year;
+      case UiTimeGranularity.Quarter:
+        return TimeGranularity.Quarter;
+      case UiTimeGranularity.Month:
+        return TimeGranularity.Month;
+      case UiTimeGranularity.Week:
+        return TimeGranularity.Week;
+      case UiTimeGranularity.Day:
+      default:
+        return TimeGranularity.Day;
+    }
+  }, [defaultGranularity]);
 
   const {
     data: heroData,
@@ -26,7 +43,8 @@ export function MarketOverview() {
   } = useDashboardHeroMetricsQuery({
     variables: {
       start: start.toISOString(),
-      end: end.toISOString()
+      end: end.toISOString(),
+      granularity: heroGranularity
     },
     fetchPolicy: "cache-and-network"
   });

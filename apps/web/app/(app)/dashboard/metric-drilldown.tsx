@@ -11,9 +11,19 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
-import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
+import { TimeGranularity, useMetricDrillDownDetailsQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import dayjs from "@/lib/dayjs";
+import {
+  compareGranularity,
+  formatGranularityLabel,
+  inferGranularityFromTimestampsMs,
+  resolveDefaultGranularityForRangePreset,
+  timeGranularityToUiGranularity,
+  UiTimeGranularity,
+  uiGranularityToInterval,
+} from "@/lib/time-granularity";
+import { useDashboardRangeStore } from "@/store/time-range";
 
 interface WarMapGeoJsonResponse {
   name: string;
@@ -32,18 +42,33 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapName, setMapName] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
+  const { range, start: rangeStart, end: rangeEnd } = useDashboardRangeStore();
+  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, rangeStart, rangeEnd);
+  const requestedGranularity = useMemo(() => {
+    switch (defaultGranularity) {
+      case UiTimeGranularity.Year:
+        return TimeGranularity.Year;
+      case UiTimeGranularity.Quarter:
+        return TimeGranularity.Quarter;
+      case UiTimeGranularity.Month:
+        return TimeGranularity.Month;
+      case UiTimeGranularity.Week:
+        return TimeGranularity.Week;
+      case UiTimeGranularity.Day:
+      default:
+        return TimeGranularity.Day;
+    }
+  }, [defaultGranularity]);
   
-  // Calculate date range for the last 90 days
-  const { start, end } = useMemo(() => ({
-    start: dayjs.utc().subtract(90, "day").startOf("day").toISOString(),
-    end: dayjs.utc().endOf("day").toISOString()
-  }), []);
+  const start = rangeStart.toISOString();
+  const end = rangeEnd.toISOString();
 
   const { data, loading } = useMetricDrillDownDetailsQuery({
     variables: {
       category: metricKey ?? "",
       start,
-      end
+      end,
+      granularity: requestedGranularity
     },
     skip: !visible || !metricKey
   });
@@ -131,24 +156,81 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
 
   const historyData = useMemo(() => 
     data?.history?.map(point => ({
-      date: dayjs(point.timestamp).format('YYYY-MM-DD'),
+      timestamp: point.timestamp,
+      date: dayjs(point.timestamp).format("YYYY-MM-DD"),
       value: point.value
     })) ?? [], 
   [data]);
+
+  const activeUiGranularity = useMemo(() => {
+    const requestedUiGranularity = timeGranularityToUiGranularity(requestedGranularity);
+    const timestampsMs = historyData
+      .map((point) => dayjs(point.timestamp).valueOf())
+      .filter((value) => Number.isFinite(value));
+    const inferred = inferGranularityFromTimestampsMs(timestampsMs);
+    return inferred === UiTimeGranularity.Unknown ? requestedUiGranularity : inferred;
+  }, [historyData, requestedGranularity]);
+
+  const activeInterval = useMemo(() => uiGranularityToInterval(activeUiGranularity), [activeUiGranularity]);
+  const activeGranularityLabel = formatGranularityLabel(activeUiGranularity);
+  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
+  const granularityCompare = compareGranularity(activeUiGranularity, defaultGranularity);
+  const granularityColor =
+    granularityCompare === "match"
+      ? "geekblue"
+      : granularityCompare === "coarser"
+        ? "orange"
+        : granularityCompare === "finer"
+          ? "cyan"
+          : "default";
+  const granularityTagText =
+    granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
+      ? `Aggregation: ${activeGranularityLabel}`
+      : `Aggregation: ${activeGranularityLabel} (default ${defaultGranularityLabel})`;
 
   const trendOption = useMemo<EChartsOption>(() => {
     if (historyData.length === 0) return {};
     return {
       grid: { top: 20, right: 20, bottom: 20, left: 40, containLabel: true },
-      tooltip: { trigger: 'axis' },
+      tooltip: {
+        trigger: "axis",
+        formatter: (params: any) => {
+          const payload = Array.isArray(params) ? params[0] : params;
+          const axisValue = payload?.axisValue as string | undefined;
+          const value = payload?.value as number | undefined;
+          const startIso = axisValue ?? "";
+          const endIso = startIso && activeInterval
+            ? dayjs(startIso).add(activeInterval.count, activeInterval.unit).toISOString()
+            : "";
+          const startLabel = startIso ? dayjs(startIso).format("YYYY-MM-DD") : "";
+          const endLabel = endIso ? dayjs(endIso).format("YYYY-MM-DD") : "";
+          const label = endLabel ? `${startLabel} - ${endLabel}` : startLabel;
+          const valueLabel = typeof value === "number" ? value : payload?.data;
+          return [
+            `<div style="font-weight:600;margin-bottom:6px;">${label}</div>`,
+            `<div>${valueLabel}</div>`,
+            `<div style="color:#64748b;margin-top:6px;">Bucket: ${activeGranularityLabel}</div>`
+          ].join("");
+        }
+      },
       xAxis: { 
         type: 'category', 
-        data: historyData.map(h => h.date),
-        boundaryGap: false
+        data: historyData.map((h) => h.timestamp),
+        boundaryGap: false,
+        axisLabel: {
+          formatter: (value: unknown) => {
+            if (typeof value !== "string") return "";
+            if (activeUiGranularity === UiTimeGranularity.Year) return dayjs(value).format("YYYY");
+            if (activeUiGranularity === UiTimeGranularity.Quarter || activeUiGranularity === UiTimeGranularity.Month) {
+              return dayjs(value).format("YYYY-MM");
+            }
+            return dayjs(value).format("MM-DD");
+          }
+        }
       },
       yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
       series: [{
-        data: historyData.map(h => h.value),
+        data: historyData.map((h) => h.value),
         type: 'line',
         smooth: true,
         areaStyle: { opacity: 0.2 },
@@ -156,7 +238,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         itemStyle: { color: '#1890ff' }
       }]
     };
-  }, [historyData]);
+  }, [activeGranularityLabel, activeInterval, activeUiGranularity, historyData]);
 
   const mapOption = useMemo<EChartsOption>(() => {
     if (!mapLoaded || !mapName) return {};
@@ -226,6 +308,15 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           <Typography.Paragraph type="secondary" className="mb-6">
              {t("dashboard.drilldown.description", "Detailed analysis and historical trend for {{metric}}", { metric: title })}
           </Typography.Paragraph>
+
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Tag color="default" className="text-xs">
+              Range: {range} ({dayjs(rangeStart).format("YYYY-MM-DD")} to {dayjs(rangeEnd).format("YYYY-MM-DD")})
+            </Tag>
+            <Tag color={granularityColor} className="text-xs">
+              {granularityTagText}
+            </Tag>
+          </div>
 
           <Row gutter={[24, 24]}>
             {/* Top Row: Detailed Trend */}

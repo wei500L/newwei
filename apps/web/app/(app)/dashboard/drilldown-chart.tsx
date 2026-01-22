@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Breadcrumb, Button, Card } from "antd";
+import { Alert, Breadcrumb, Button, Card, Space, Tag } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -8,6 +8,13 @@ import { DashboardChart } from "@/components/echart";
 import { TimeGranularity, useEconomicDataQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import dayjs from "@/lib/dayjs";
+import {
+  compareGranularity,
+  formatGranularityLabel,
+  resolveDefaultGranularityForRangePreset,
+  timeGranularityToUiGranularity,
+  uiGranularityToInterval,
+} from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 const GRANS = [
@@ -37,7 +44,22 @@ export function DrilldownChart({
   const { t } = useTranslation();
   const { echartsTheme, colors } = useChartTheme();
   const [level, setLevel] = useState<number>(2); // start at month
-  const { start, end, setCustomRange } = useDashboardRangeStore();
+  const { range, start, end, setCustomRange } = useDashboardRangeStore();
+  const selectedGranularity = GRANS[level];
+  const selectedUiGranularity = timeGranularityToUiGranularity(selectedGranularity);
+  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
+  const granularityCompare = compareGranularity(selectedUiGranularity, defaultGranularity);
+  const granularityColor =
+    granularityCompare === "match"
+      ? "geekblue"
+      : granularityCompare === "coarser"
+        ? "orange"
+        : granularityCompare === "finer"
+          ? "cyan"
+          : "default";
+  const selectedGranularityLabel = formatGranularityLabel(selectedUiGranularity);
+  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
+  const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
 
   const {
     data,
@@ -48,7 +70,7 @@ export function DrilldownChart({
     variables: {
       category,
       timeRange: { start: start.toISOString(), end: end.toISOString() },
-      granularity: GRANS[level],
+      granularity: selectedGranularity,
     },
     fetchPolicy: "network-only",
     notifyOnNetworkStatusChange: true,
@@ -67,9 +89,43 @@ export function DrilldownChart({
         name: dayjs(point.timestamp).toISOString(),
         value: [point.timestamp, point.value],
       })) ?? [];
+    const interval = uiGranularityToInterval(selectedUiGranularity);
     return {
       title: { text: title },
-      tooltip: { trigger: "axis" },
+      tooltip: {
+        trigger: "axis",
+        formatter: (params: any) => {
+          const payload = Array.isArray(params) ? params[0] : params;
+          const axisValue = payload?.axisValue as string | number | undefined;
+          const rawValue = payload?.value as unknown;
+          const startTs = Array.isArray(rawValue) ? rawValue[0] : axisValue;
+          const value = Array.isArray(rawValue) ? rawValue[1] : rawValue;
+          const startIso =
+            typeof startTs === "string"
+              ? startTs
+              : typeof startTs === "number"
+                ? new Date(startTs).toISOString()
+                : "";
+          const endIso =
+            startIso && interval
+              ? dayjs(startIso).add(interval.count, interval.unit).toISOString()
+              : null;
+          const labelStart = startIso ? dayjs(startIso).format("YYYY-MM-DD") : "";
+          const labelEnd = endIso ? dayjs(endIso).format("YYYY-MM-DD") : "";
+          const bucketLabel = labelEnd ? `${labelStart} - ${labelEnd}` : labelStart;
+          const valueNumber =
+            typeof value === "number"
+              ? value
+              : typeof value === "string"
+                ? Number(value)
+                : Number.NaN;
+          return [
+            `<div style="font-weight:600;margin-bottom:6px;">${bucketLabel}</div>`,
+            `<div>${Number.isFinite(valueNumber) ? valueNumber : String(value ?? "")}</div>`,
+            `<div style="color:#64748b;margin-top:6px;">Bucket: ${selectedGranularityLabel}</div>`,
+          ].join("");
+        }
+      },
       xAxis: { type: "time" },
       yAxis: { type: "value" },
       dataZoom: [{ type: "inside" }, { type: "slider" }],
@@ -112,7 +168,7 @@ export function DrilldownChart({
         },
       ],
     };
-  }, [category, points, title, colors]);
+  }, [category, colors, points, selectedGranularityLabel, selectedUiGranularity, title]);
 
   return (
     <Card
@@ -120,6 +176,20 @@ export function DrilldownChart({
       loading={isLoading}
       extra={<Breadcrumb items={breadcrumbs} />}
     >
+      <Space size={6} wrap style={{ marginBottom: 12 }}>
+        <Tag color="default" className="text-xs">
+          Range: {range}
+        </Tag>
+        <Tag color="default" className="text-xs">
+          Window: {windowLabel}
+        </Tag>
+        <Tag color={granularityColor} className="text-xs">
+          Aggregation:{" "}
+          {granularityCompare === "match" || defaultGranularity === selectedUiGranularity
+            ? selectedGranularityLabel
+            : `${selectedGranularityLabel} (default ${defaultGranularityLabel})`}
+        </Tag>
+      </Space>
       {isError ? (
         <Alert
           type="error"

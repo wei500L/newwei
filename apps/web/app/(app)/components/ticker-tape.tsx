@@ -4,8 +4,16 @@ import { ArrowDownOutlined, ArrowUpOutlined, LoadingOutlined } from "@ant-design
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useDashboardHeroMetricsQuery } from "@/graphql/generated";
+import { TimeGranularity, useDashboardHeroMetricsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
+import {
+  compareGranularity,
+  formatGranularityLabel,
+  inferGranularityFromTimestampsMs,
+  resolveDefaultGranularityForRangePreset,
+  UiTimeGranularity,
+} from "@/lib/time-granularity";
+import { useDashboardRangeStore } from "@/store/time-range";
 
 interface MetricPoint {
   value: number;
@@ -15,16 +23,67 @@ type MetricSeries = readonly MetricPoint[];
 
 export function TickerTape() {
   const { t } = useTranslation();
-  const heroDateRange = useMemo(() => ({
-    start: dayjs.utc().subtract(30, "day").startOf("day").toISOString(),
-    end: dayjs.utc().endOf("day").toISOString()
-  }), []);
+  const { range, start, end } = useDashboardRangeStore();
+  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
+  const heroGranularity = useMemo(() => {
+    switch (defaultGranularity) {
+      case UiTimeGranularity.Year:
+        return TimeGranularity.Year;
+      case UiTimeGranularity.Quarter:
+        return TimeGranularity.Quarter;
+      case UiTimeGranularity.Month:
+        return TimeGranularity.Month;
+      case UiTimeGranularity.Week:
+        return TimeGranularity.Week;
+      case UiTimeGranularity.Day:
+      default:
+        return TimeGranularity.Day;
+    }
+  }, [defaultGranularity]);
+
+  const heroDateRange = useMemo(
+    () => ({
+      start: start.toISOString(),
+      end: end.toISOString(),
+      granularity: heroGranularity
+    }),
+    [end, heroGranularity, start]
+  );
+  const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
 
   const { data, loading, error } = useDashboardHeroMetricsQuery({
     variables: heroDateRange,
     pollInterval: 60000,
     fetchPolicy: "cache-and-network"
   });
+
+  const inferredGranularity = useMemo(() => {
+    const candidate =
+      data?.market?.length && data.market.length > 1
+        ? data.market
+        : data?.conflict?.length && data.conflict.length > 1
+          ? data.conflict
+          : data?.resource?.length && data.resource.length > 1
+            ? data.resource
+            : data?.supply?.length && data.supply.length > 1
+              ? data.supply
+              : null;
+    if (!candidate) return UiTimeGranularity.Unknown;
+    const timestamps = candidate
+      .map((point) => dayjs(point.timestamp).valueOf())
+      .filter((value) => Number.isFinite(value));
+    return inferGranularityFromTimestampsMs(timestamps);
+  }, [data]);
+
+  const bucketLabel =
+    inferredGranularity === UiTimeGranularity.Unknown ? defaultGranularity : inferredGranularity;
+  const bucketLabelText = formatGranularityLabel(bucketLabel);
+  const defaultLabelText = formatGranularityLabel(defaultGranularity);
+  const compare = compareGranularity(bucketLabel, defaultGranularity);
+  const bucketTitle =
+    compare === "match" || defaultGranularity === UiTimeGranularity.Unknown
+      ? `${bucketLabelText} buckets`
+      : `${bucketLabelText} buckets (default ${defaultLabelText})`;
 
   const items = useMemo(() => {
     if (!data) return [];
@@ -67,7 +126,10 @@ export function TickerTape() {
     const errorMessage = error ? (error instanceof Error ? error.message : String(error)) : null;
 
     return (
-      <div className="w-full bg-white/85 border-b border-[var(--border)] h-8 flex items-center overflow-hidden relative select-none">
+      <div
+        className="w-full bg-white/85 border-b border-[var(--border)] h-8 flex items-center overflow-hidden relative select-none"
+        title={`${bucketTitle} · Range ${range} · ${windowLabel}`}
+      >
         <div className="absolute left-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-r from-white to-transparent" />
         <div className="absolute right-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-l from-white to-transparent" />
         <div className="flex items-center gap-2 px-8 text-xs">
@@ -84,7 +146,10 @@ export function TickerTape() {
   }
 
   return (
-    <div className="w-full bg-white/85 border-b border-[var(--border)] h-8 flex items-center overflow-hidden relative select-none">
+    <div
+      className="w-full bg-white/85 border-b border-[var(--border)] h-8 flex items-center overflow-hidden relative select-none"
+      title={`${bucketTitle} · Range ${range} · ${windowLabel}`}
+    >
        <div className="absolute left-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-r from-white to-transparent" />
        <div className="absolute right-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-l from-white to-transparent" />
 

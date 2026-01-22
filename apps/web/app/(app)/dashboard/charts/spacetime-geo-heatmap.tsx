@@ -171,7 +171,7 @@ export function SpacetimeGeoHeatmap({
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
-  const { start, end } = useDashboardRangeStore();
+  const { range, start, end } = useDashboardRangeStore();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const registeredMapsRef = useRef(new Set<string>());
@@ -213,6 +213,10 @@ export function SpacetimeGeoHeatmap({
   const cursorBucketIso = cursorBucketStartIso?.trim() ?? "";
   const startIso = start.toISOString();
   const endIso = end.toISOString();
+  const windowLabel = `${formatDateTime(startIso, locale, { dateStyle: "medium" })} - ${formatDateTime(endIso, locale, {
+    dateStyle: "medium"
+  })}`;
+  const windowLabelShort = `${startIso.slice(0, 10)} - ${endIso.slice(0, 10)}`;
 
   const heatmapQueryKey = useMemo(() => {
     if (!eventId && !includeBuckets) {
@@ -442,6 +446,19 @@ export function SpacetimeGeoHeatmap({
       const meta = isRecord(data?.meta) ? (data.meta as Record<string, unknown>) : null;
       const total = typeof meta?.total === "number" ? meta.total : undefined;
       const bucketStart = typeof meta?.bucketStart === "string" ? meta.bucketStart : undefined;
+      const bucketStartLabel = bucketStart
+        ? formatDateTime(bucketStart, locale, { dateStyle: "medium" })
+        : null;
+      const bucketEndIso = (() => {
+        if (!bucketStart) return null;
+        const startMs = new Date(bucketStart).getTime();
+        if (!Number.isFinite(startMs)) return null;
+        return new Date(startMs + 24 * 60 * 60 * 1000).toISOString();
+      })();
+      const bucketEndLabel =
+        bucketEndIso ? formatDateTime(bucketEndIso, locale, { dateStyle: "medium" }) : null;
+      const bucketLabel =
+        bucketStartLabel && bucketEndLabel ? `${bucketStartLabel} - ${bucketEndLabel}` : bucketStartLabel;
       const sentiment = isRecord(meta?.sentiment)
         ? (meta.sentiment as Record<string, unknown>)
         : null;
@@ -455,7 +472,10 @@ export function SpacetimeGeoHeatmap({
       return [
         `<div style="min-width: 220px;">`,
         `<div style="font-weight: 600; margin-bottom: 6px; color: ${colors?.primary ?? "#1f3b7b"};">${name || "Location"}</div>`,
-        bucketStart ? `<div style="margin-bottom: 6px;">bucket: <b>${bucketStart}</b></div>` : "",
+        `<div style="margin-bottom: 6px;">window: <b>${windowLabel}</b></div>`,
+        bucketLabel
+          ? `<div style="margin-bottom: 6px;">bucket: <b>${bucketLabel}</b> <span style="color:#64748b;">(daily)</span></div>`
+          : "",
         total !== undefined ? `<div style="margin-bottom: 6px;">articles: <b>${total}</b></div>` : "",
         `<div style="display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 12px;">`,
         `<div>positive</div><div>${pos} (${ratio(pos)}%)</div>`,
@@ -539,7 +559,7 @@ export function SpacetimeGeoHeatmap({
         buildScatterSeries("unknown")
       ]
     };
-  }, [colors, enabled, fontFamily, geoQuery.data, mapReady, viewPoints]);
+  }, [colors, enabled, fontFamily, geoQuery.data, locale, mapReady, viewPoints, windowLabel]);
 
   const handleChartClick = useCallback(
     (params: unknown) => {
@@ -619,6 +639,15 @@ export function SpacetimeGeoHeatmap({
               {enabled
                 ? t("dashboard.charts.spacetimeGeoHeatmap.active", { defaultValue: "Active" })
                 : t("dashboard.charts.spacetimeGeoHeatmap.inactive", { defaultValue: "Inactive" })}
+            </Tag>
+            <Tag color="default" className="text-xs">
+              Range: {range}
+            </Tag>
+            <Tag color="default" className="text-xs">
+              Window: {windowLabelShort}
+            </Tag>
+            <Tag color="geekblue" className="text-xs">
+              Aggregation: window (recency-weighted)
             </Tag>
             {includeBuckets && cursorBucketIso ? (
               <Tag color="purple">

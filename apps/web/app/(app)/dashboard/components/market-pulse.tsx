@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDownOutlined, ArrowUpOutlined, MinusOutlined } from "@ant-design/icons";
-import { Card, Col, Row, Skeleton, Typography } from "antd";
+import { Card, Col, Row, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,16 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import dayjs from "@/lib/dayjs";
+import { resolveLocale, formatDateTime } from "@/lib/i18n";
+import {
+  compareGranularity,
+  formatGranularityLabel,
+  inferGranularityFromTimestampsMs,
+  resolveDefaultGranularityForRangePreset,
+  UiTimeGranularity,
+  uiGranularityToInterval,
+} from "@/lib/time-granularity";
+import { useDashboardRangeStore } from "@/store/time-range";
 
 // ... Sparkline component (update to use theme colors if possible, but it accepts color prop) ...
 // Actually, I'll update Sparkline to use theme for area gradient properly if needed, but it takes `color` prop.
@@ -86,6 +96,9 @@ interface HeroMetric {
   color: string;
   suffix?: string;
   hasData: boolean;
+  granularity: UiTimeGranularity;
+  lastTimestamp?: number;
+  previousTimestamp?: number;
 }
 
 interface DataPoint {
@@ -105,7 +118,16 @@ interface MarketPulseProps {
 
 const processSeries = (data: DataPoint[] | undefined) => {
   if (!data || data.length === 0) {
-    return { hasData: false, value: null, trend: null, history: [], unit: undefined as string | undefined };
+    return {
+      hasData: false,
+      value: null,
+      trend: null,
+      history: [],
+      unit: undefined as string | undefined,
+      granularity: UiTimeGranularity.Unknown,
+      lastTimestamp: undefined as number | undefined,
+      previousTimestamp: undefined as number | undefined,
+    };
   }
 
   const normalized = data
@@ -121,16 +143,28 @@ const processSeries = (data: DataPoint[] | undefined) => {
     .sort((a, b) => a.ts - b.ts);
 
   if (normalized.length === 0) {
-    return { hasData: false, value: null, trend: null, history: [], unit: undefined as string | undefined };
+    return {
+      hasData: false,
+      value: null,
+      trend: null,
+      history: [],
+      unit: undefined as string | undefined,
+      granularity: UiTimeGranularity.Unknown,
+      lastTimestamp: undefined as number | undefined,
+      previousTimestamp: undefined as number | undefined,
+    };
   }
 
   const history = normalized.map((point) => point.value);
   const current = history.length ? history[history.length - 1]! : null;
   const previous = history.length > 1 ? history[history.length - 2]! : null;
+  const lastTimestamp = normalized.length ? normalized[normalized.length - 1]!.ts : undefined;
+  const previousTimestamp = normalized.length > 1 ? normalized[normalized.length - 2]!.ts : undefined;
   const trend =
     current === null || previous === null || previous === 0
       ? null
       : ((current - previous) / previous) * 100;
+  const granularity = inferGranularityFromTimestampsMs(normalized.map((point) => point.ts));
   const unit = (() => {
     for (let i = normalized.length - 1; i >= 0; i -= 1) {
       const candidate = normalized[i]?.unit;
@@ -141,7 +175,7 @@ const processSeries = (data: DataPoint[] | undefined) => {
     return undefined;
   })();
 
-  return { hasData: true, value: current, trend, history, unit };
+  return { hasData: true, value: current, trend, history, unit, granularity, lastTimestamp, previousTimestamp };
 };
 
 export function MarketPulse({ 
@@ -152,8 +186,11 @@ export function MarketPulse({
   supplyData, 
   onMetricClick 
 }: MarketPulseProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const theme = useChartTheme();
+  const { range, start, end } = useDashboardRangeStore();
+  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
   const notAvailableLabel = t("common.notAvailable", { defaultValue: "Not available" });
   const emptyTitle = t("dashboard.charts.noDataRange", { defaultValue: "No Data Found for Selected Range" });
   const emptyDescription = t("dashboard.hero.emptyDescription", {
@@ -176,6 +213,9 @@ export function MarketPulse({
         color: theme.colors.bearish, // High conflict is bad/red (or bullish color if it means 'high' value? Usually red for danger)
         suffix: conflict.hasData ? conflict.unit : undefined,
         hasData: conflict.hasData,
+        granularity: conflict.granularity,
+        lastTimestamp: conflict.lastTimestamp,
+        previousTimestamp: conflict.previousTimestamp,
       },
       {
         key: "market-sentiment",
@@ -186,6 +226,9 @@ export function MarketPulse({
         color: theme.colors.accent, // Neutral/Warning
         suffix: market.hasData ? market.unit : undefined,
         hasData: market.hasData,
+        granularity: market.granularity,
+        lastTimestamp: market.lastTimestamp,
+        previousTimestamp: market.previousTimestamp,
       },
       {
         key: "resource-scarcity",
@@ -196,6 +239,9 @@ export function MarketPulse({
         color: "#13c2c2", // Cyan
         suffix: resource.hasData ? resource.unit : undefined,
         hasData: resource.hasData,
+        granularity: resource.granularity,
+        lastTimestamp: resource.lastTimestamp,
+        previousTimestamp: resource.previousTimestamp,
       },
       {
         key: "supply-chain-stability",
@@ -206,6 +252,9 @@ export function MarketPulse({
         color: theme.colors.bullish, // Stability is good
         suffix: supply.hasData ? supply.unit : undefined,
         hasData: supply.hasData,
+        granularity: supply.granularity,
+        lastTimestamp: supply.lastTimestamp,
+        previousTimestamp: supply.previousTimestamp,
       },
     ];
   }, [t, conflictData, marketData, resourceData, supplyData, theme.colors]);
@@ -237,8 +286,41 @@ export function MarketPulse({
     );
   }
 
+  const activeGranularity =
+    metrics.find((metric) => metric.hasData && metric.granularity !== UiTimeGranularity.Unknown)?.granularity ??
+    UiTimeGranularity.Unknown;
+  const granularityLabel = formatGranularityLabel(activeGranularity);
+  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
+  const granularityCompare = compareGranularity(activeGranularity, defaultGranularity);
+  const granularityColor =
+    granularityCompare === "match"
+      ? "geekblue"
+      : granularityCompare === "coarser"
+        ? "orange"
+        : granularityCompare === "finer"
+          ? "cyan"
+          : "default";
+  const granularityTagText =
+    granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
+      ? `Aggregation: ${granularityLabel}`
+      : `Aggregation: ${granularityLabel} (default ${defaultGranularityLabel})`;
+
   return (
     <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <Typography.Text type="secondary" className="text-xs">
+          Range: {range} ·{" "}
+          {formatDateTime(start, locale, { dateStyle: "medium" })} -{" "}
+          {formatDateTime(end, locale, { dateStyle: "medium" })}
+        </Typography.Text>
+        <Space size={6} wrap>
+          <Tooltip title="Data points are aggregated into time buckets; trend compares the last two buckets.">
+            <Tag color={granularityColor} className="text-xs">
+              {granularityTagText}
+            </Tag>
+          </Tooltip>
+        </Space>
+      </div>
       <Row gutter={[24, 24]} align="middle">
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.key}>
@@ -250,10 +332,40 @@ export function MarketPulse({
                 {metric.title}
               </Typography.Text>
               <div className="flex items-baseline gap-3 mb-2">
-                <MetricValue
-                  value={metric.hasData && metric.value !== null ? metric.value : notAvailableLabel}
-                  suffix={metric.hasData ? metric.suffix : undefined}
-                />
+                <Tooltip
+                  title={
+                    metric.hasData && metric.lastTimestamp
+                      ? (() => {
+                          const interval = uiGranularityToInterval(metric.granularity);
+                          const showTime =
+                            metric.granularity === UiTimeGranularity.Hour ||
+                            metric.granularity === UiTimeGranularity.Minute;
+                          const startIso = dayjs(metric.lastTimestamp).toISOString();
+                          const endIso =
+                            interval && startIso
+                              ? dayjs(startIso).add(interval.count, interval.unit).toISOString()
+                              : "";
+                          const startLabel = formatDateTime(startIso, locale, showTime
+                            ? { dateStyle: "medium", timeStyle: "short" }
+                            : { dateStyle: "medium" });
+                          const endLabel = endIso
+                            ? formatDateTime(endIso, locale, showTime
+                                ? { dateStyle: "medium", timeStyle: "short" }
+                                : { dateStyle: "medium" })
+                            : "";
+                          const bucketLabel = endLabel ? `${startLabel} - ${endLabel}` : startLabel;
+                          return `Latest bucket: ${bucketLabel} (${formatGranularityLabel(metric.granularity)})`;
+                        })()
+                      : undefined
+                  }
+                >
+                  <span>
+                    <MetricValue
+                      value={metric.hasData && metric.value !== null ? metric.value : notAvailableLabel}
+                      suffix={metric.hasData ? metric.suffix : undefined}
+                    />
+                  </span>
+                </Tooltip>
                 
                 {(() => {
                   const trend = metric.trend;
@@ -269,10 +381,18 @@ export function MarketPulse({
                           : "text-slate-400";
                   const Icon = !hasTrend ? MinusOutlined : trend > 0 ? ArrowUpOutlined : trend < 0 ? ArrowDownOutlined : MinusOutlined;
                   return (
-                    <div className={`flex items-center text-xs font-bold px-1.5 py-0.5 ${trendClass}`}>
-                      <Icon className="text-[10px]" />
-                      <span className="ml-1">{trendLabel}</span>
-                    </div>
+                    <Tooltip
+                      title={
+                        metric.hasData && metric.previousTimestamp && metric.lastTimestamp
+                          ? `Change vs previous ${formatGranularityLabel(metric.granularity).toLowerCase()} bucket`
+                          : "Change vs previous data point"
+                      }
+                    >
+                      <div className={`flex items-center text-xs font-bold px-1.5 py-0.5 ${trendClass}`}>
+                        <Icon className="text-[10px]" />
+                        <span className="ml-1">{trendLabel}</span>
+                      </div>
+                    </Tooltip>
                   );
                 })()}
               </div>

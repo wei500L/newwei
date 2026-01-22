@@ -117,7 +117,7 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken]
   );
-  const { start, end } = useDashboardRangeStore();
+  const { range, start, end } = useDashboardRangeStore();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
@@ -126,6 +126,7 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
   const cursorEndMs = useMemo(() => safeParseTimeMs(cursorEndIso ?? null), [cursorEndIso]);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
+  const windowLabelShort = `${startIso.slice(0, 10)} - ${endIso.slice(0, 10)}`;
 
   const enabled = Boolean(session?.accessToken && eventId);
 
@@ -267,22 +268,54 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
               typeof meta.avgDuplicateSimilarity === "number" && Number.isFinite(meta.avgDuplicateSimilarity)
                 ? meta.avgDuplicateSimilarity
                 : null;
+            const firstLabel =
+              typeof meta.firstAt === "string"
+                ? formatDateTime(meta.firstAt, locale, { dateStyle: "medium", timeStyle: "short" })
+                : null;
+            const lastLabel =
+              typeof meta.lastAt === "string"
+                ? formatDateTime(meta.lastAt, locale, { dateStyle: "medium", timeStyle: "short" })
+                : null;
+            const cursorLabel =
+              cursorStartIso && cursorEndIso
+                ? `${formatDateTime(cursorStartIso, locale, { dateStyle: "medium" })} - ${formatDateTime(cursorEndIso, locale, {
+                    dateStyle: "medium"
+                  })}`
+                : null;
             return [
               `<div style="font-weight:600;margin-bottom:6px;">${data.source} -> ${data.target}</div>`,
               `<div>kind: ${kind}</div>`,
               `<div>weight: ${meta.weight ?? data.value ?? 0}</div>`,
               `<div>avg lag: ${avgLagMin} min</div>`,
               sim !== null ? `<div>avg similarity: ${sim.toFixed(2)}</div>` : "",
-              meta.firstAt ? `<div>first: ${meta.firstAt}</div>` : "",
-              meta.lastAt ? `<div>last: ${meta.lastAt}</div>` : ""
+              firstLabel ? `<div>first: ${firstLabel}</div>` : "",
+              lastLabel ? `<div>last: ${lastLabel}</div>` : "",
+              `<div style="color:#94a3b8;margin-top:6px;">window: ${windowLabelShort}</div>`,
+              cursorLabel ? `<div style="color:#94a3b8;">cursor: ${cursorLabel}</div>` : "",
             ].join("");
           }
           const meta = data.originalData ?? {};
+          const firstLabel =
+            typeof meta.firstAt === "string"
+              ? formatDateTime(meta.firstAt, locale, { dateStyle: "medium", timeStyle: "short" })
+              : null;
+          const lastLabel =
+            typeof meta.lastAt === "string"
+              ? formatDateTime(meta.lastAt, locale, { dateStyle: "medium", timeStyle: "short" })
+              : null;
+          const cursorLabel =
+            cursorStartIso && cursorEndIso
+              ? `${formatDateTime(cursorStartIso, locale, { dateStyle: "medium" })} - ${formatDateTime(cursorEndIso, locale, {
+                  dateStyle: "medium"
+                })}`
+              : null;
           return [
             `<div style="font-weight:600;margin-bottom:6px;">${data.name ?? ""}</div>`,
             `<div>count: ${meta.count ?? 0}</div>`,
-            meta.firstAt ? `<div>first: ${meta.firstAt}</div>` : "",
-            meta.lastAt ? `<div>last: ${meta.lastAt}</div>` : ""
+            firstLabel ? `<div>first: ${firstLabel}</div>` : "",
+            lastLabel ? `<div>last: ${lastLabel}</div>` : "",
+            `<div style="color:#94a3b8;margin-top:6px;">window: ${windowLabelShort}</div>`,
+            cursorLabel ? `<div style="color:#94a3b8;">cursor: ${cursorLabel}</div>` : "",
           ].join("");
         }
       },
@@ -307,7 +340,17 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
         }
       ]
     } as EChartsOption;
-  }, [colors, cursorEndMs, cursorStartMs, fontFamily, propagationQuery.data]);
+  }, [
+    colors,
+    cursorEndMs,
+    cursorEndIso,
+    cursorStartIso,
+    cursorStartMs,
+    fontFamily,
+    locale,
+    propagationQuery.data,
+    windowLabelShort,
+  ]);
 
   const handleChartClick = useCallback((params: unknown) => {
     if (!isRecord(params)) return;
@@ -430,6 +473,23 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
 
   return (
     <div className="flex flex-col gap-1">
+      <Space size="small" wrap>
+        <Tag color="default" className="text-xs">
+          Range: {range}
+        </Tag>
+        <Tag color="default" className="text-xs">
+          Window: {windowLabelShort}
+        </Tag>
+        <Tag color="geekblue" className="text-xs">
+          Aggregation: window graph
+        </Tag>
+        {cursorStartIso && cursorEndIso ? (
+          <Tag color="purple" className="text-xs">
+            Cursor: {formatDateTime(cursorStartIso, locale, { dateStyle: "medium" })} -{" "}
+            {formatDateTime(cursorEndIso, locale, { dateStyle: "medium" })}
+          </Tag>
+        ) : null}
+      </Space>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {t("dashboard.charts.spacetimePropagation.caption", {
           defaultValue: "Directed source-to-source diffusion (duplicate-aware + time-lag fallback)."
@@ -520,4 +580,3 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
     </div>
   );
 }
-

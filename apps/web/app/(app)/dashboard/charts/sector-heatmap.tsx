@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Button, Skeleton, message } from "antd";
+import { Button, Skeleton, Tag, message } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
@@ -14,6 +14,7 @@ import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import dayjs from "@/lib/dayjs";
+import { classifyRequestError } from "@/lib/request-error";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
 
@@ -90,14 +91,18 @@ const formatDateForFilename = (date: Date) => {
 
 export function SectorHeatmap() {
   const { t } = useTranslation();
-  const { data: session } = useSession();
-  const { start, end } = useDashboardRangeStore();
+  const { data: session, status: sessionStatus } = useSession();
+  const { range, start, end } = useDashboardRangeStore();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const { selectedSector, setSelectedSector } = useDashboardFiltersStore();
   const [exportingCsv, setExportingCsv] = useState(false);
-  const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
+  const emptyTitle = t("dashboard.dataEmpty", { defaultValue: "No data" });
+  const emptyHint = t("dashboard.dataEmptyHint", {
+    defaultValue: "No data for the selected range. Try expanding the range."
+  });
   const valueLabel = t("dashboard.charts.sectorHeatmapValueLabel", { defaultValue: "Value" });
   const changeLabel = t("dashboard.charts.sectorHeatmapChangeLabel", { defaultValue: "Change" });
+  const windowLabel = `${formatDateForFilename(start)} - ${formatDateForFilename(end)}`;
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -172,7 +177,7 @@ export function SectorHeatmap() {
           const [, , change, name, valuePoint] = value as HeatmapValue;
           const valueText = unit ? `${valuePoint} ${unit}` : String(valuePoint);
           const sourceText = sourceField ? `<br/>Source: ${sourceField}` : "";
-          return `<b>${name}</b><br/>${changeLabel}: ${change}%<br/>${valueLabel}: ${valueText}${sourceText}`;
+          return `<b>${name}</b><br/>${changeLabel}: ${change}%<br/>${valueLabel}: ${valueText}${sourceText}<br/>Window: ${windowLabel}`;
         }
       },
       grid: {
@@ -236,7 +241,7 @@ export function SectorHeatmap() {
         }
       ]
     };
-  }, [changeLabel, colors, data, fontFamily, selectedSector, valueLabel]);
+  }, [changeLabel, colors, data, fontFamily, selectedSector, valueLabel, windowLabel]);
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.cells.length === 0) return;
@@ -284,6 +289,14 @@ export function SectorHeatmap() {
     ? t("dashboard.charts.exporting", { defaultValue: "Exporting..." })
     : t("dashboard.charts.downloadCsv", { defaultValue: "Download CSV" });
 
+  if (sessionStatus === "loading") {
+    return (
+      <div className="h-[300px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </div>
+    );
+  }
+
   if (isLoading && !data) {
     return (
       <div className="h-[300px] flex items-center">
@@ -294,19 +307,61 @@ export function SectorHeatmap() {
 
   if (isError && !data) {
     const apiError = extractApiError(error);
-    const description = apiError.code
-      ? `${apiError.message} (code: ${apiError.code})${apiError.detail ? `: ${apiError.detail}` : ""}`
-      : apiError.detail
-        ? `${apiError.message}: ${apiError.detail}`
-        : apiError.message;
+    const classification = classifyRequestError(error);
+    const detailText = [
+      classification.status ? `HTTP ${classification.status}` : null,
+      apiError.code ? `code: ${apiError.code}` : null,
+      apiError.detail ?? null
+    ]
+      .filter(Boolean)
+      .join(" • ");
+
+    const baseDescription =
+      classification.kind === "network"
+        ? t("dashboard.dataOffline.description", {
+            defaultValue: "Cannot reach the service. Check your connection and retry."
+          })
+        : classification.kind === "permission"
+          ? t("common.accessDeniedDescription", {
+              defaultValue:
+                "You don't have permission to view this data. Contact an administrator if you need access."
+            })
+          : classification.kind === "service"
+            ? t("common.serviceUnavailable", {
+                defaultValue: "Service is unavailable. Please try again."
+              })
+            : apiError.message || t("common.unexpectedError", { defaultValue: "Unexpected error" });
+
+    const title =
+      classification.kind === "network"
+        ? t("dashboard.dataOffline.title", { defaultValue: "Offline" })
+        : classification.kind === "permission"
+          ? t("common.accessDenied", { defaultValue: "Access denied" })
+          : t("common.requestFailed", { defaultValue: "Request failed" });
+
+    const variant =
+      classification.kind === "network"
+        ? "offline"
+        : classification.kind === "permission"
+          ? "permission"
+          : "error";
     return (
       <div className="h-[300px]">
         <ChartEmptyState
-          variant="error"
-          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={description || emptyMessage}
-          actionLabel={t("common.retry")}
-          onAction={() => refetch()}
+          variant={variant}
+          title={title}
+          description={
+            detailText ? (
+              <div className="flex flex-col items-center gap-1">
+                <span>{baseDescription}</span>
+                <span className="font-mono text-[10px] opacity-80">{detailText}</span>
+              </div>
+            ) : (
+              baseDescription
+            )
+          }
+          actionLabel={classification.kind === "permission" ? undefined : t("common.retry")}
+          onAction={classification.kind === "permission" ? undefined : () => refetch()}
         />
       </div>
     );
@@ -315,13 +370,24 @@ export function SectorHeatmap() {
   if (!data || data.cells.length === 0) {
     return (
       <div className="h-[300px]">
-        <ChartEmptyState description={emptyMessage} />
+        <ChartEmptyState title={emptyTitle} description={emptyHint} />
       </div>
     );
   }
 
   return (
     <div className="relative h-[300px]">
+      <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
+        <Tag color="default" className="text-xs">
+          Range: {range}
+        </Tag>
+        <Tag color="default" className="text-xs">
+          Window: {windowLabel}
+        </Tag>
+        <Tag color="geekblue" className="text-xs">
+          Aggregation: window snapshot
+        </Tag>
+      </div>
       <DashboardChart
         option={option}
         theme={echartsTheme}

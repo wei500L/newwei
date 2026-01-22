@@ -305,6 +305,8 @@
     "loadingDelayed": "数据加载较慢，请稍等或刷新。",
     "loadingDelayedTitle": "仍在加载…",
     "requestFailed": "请求失败",
+    "accessDenied": "无权限访问",
+    "accessDeniedDescription": "你没有权限查看此数据。如需访问，请联系管理员。",
     "name": "名称",
     "syncError": "同步错误",
     "syncing": "同步中",
@@ -381,6 +383,11 @@
       "explained": "最新数据时间：{{time}}（约落后 {{lag}}），预计更新间隔约 {{interval}}。",
       "missing": "无法获取最新数据时间。"
     },
+    "timeRange": {
+      "defaultAggregation": "默认聚合粒度",
+      "defaultAggregationHint": "多数图表会按该粒度对所选时间窗进行聚合；单个图表可能会不同。",
+      "helperText": "时间范围会影响图表粒度与提示信息。"
+    },
     "widgets": {
       "unsupportedSource": "不支持的数据源：{{source}}",
       "loadFailed": "加载失败"
@@ -412,7 +419,8 @@
       "empty": "暂无指标数据"
     },
     "errors": {
-      "metricsUnavailable": "指标不可用"
+      "metricsUnavailable": "指标不可用",
+      "metricsUnavailableHint": "未返回系统指标数据。请尝试刷新，如持续出现请联系管理员。"
     },
     "stats": {
       "totalItems": "总计条目",
@@ -3268,6 +3276,9 @@
     "noStack": "无堆栈"
   },
   "items": {
+    "time": {
+      "published": "发布时间"
+    },
     "detail": {
       "summaryTitle": "摘要",
       "summaryEmpty": "暂无摘要。",

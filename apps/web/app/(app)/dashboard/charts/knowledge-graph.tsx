@@ -265,6 +265,9 @@ export function KnowledgeGraph() {
 
       {settings ? (
         <Space size="small" wrap style={{ marginBottom: "0.75rem" }}>
+          <Tag color="default" className="text-xs">
+            Time: not range-filtered
+          </Tag>
           <Tag color="blue">
             {t("settings.knowledgeGraph.fields.minEdgeConfidence")}:{" "}
             {Number(settings.minEdgeConfidence ?? 0).toFixed(2)}

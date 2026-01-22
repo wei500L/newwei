@@ -2370,12 +2370,12 @@ export function SituationMonitorContent() {
 	                        <Space size={8} wrap>
 	                          {date ? (
 	                            <Typography.Text type="secondary">
+	                              {t("items.time.published", { defaultValue: "Published" })}:{" "}
 	                              {formatDateTime(date, locale, {
-	                                month: "2-digit",
-                                day: "2-digit",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+	                                dateStyle: "medium",
+	                                timeStyle: "short",
+	                                timeZoneName: "short",
+	                              })}
                             </Typography.Text>
                           ) : null}
                           {item.isPowellRelated && item.type !== "powell" ? <Tag color="orange">POWELL</Tag> : null}

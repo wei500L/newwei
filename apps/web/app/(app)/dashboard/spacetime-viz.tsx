@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatGranularityLabel, inferGranularityFromTimestampsMs } from "@/lib/time-granularity";
 
 import { KnowledgeGraph3D } from "./charts/knowledge-graph-3d";
 import { SpacetimeGeoHeatmap } from "./charts/spacetime-geo-heatmap";
@@ -82,6 +83,8 @@ const NEWS_EVENT_QUERY = gql`
   }
 `;
 
+const EVENT_LIST_WINDOW_DAYS = 30;
+
 const resolveEventTitle = (event: NewsEventListItem) => {
   const title = event.title?.trim() ?? "";
   if (title) return title;
@@ -115,7 +118,7 @@ export function SpacetimeViz() {
   const [geoFollowCursor, setGeoFollowCursor] = useState(false);
 
   const { data: eventsData, loading: eventsLoading } = useQuery<{ newsEvents: NewsEventListItem[] }>(NEWS_EVENTS_QUERY, {
-    variables: { limit: 20, windowDays: 30, status: "active" },
+    variables: { limit: 20, windowDays: EVENT_LIST_WINDOW_DAYS, status: "active" },
     fetchPolicy: "cache-and-network"
   });
 
@@ -170,6 +173,15 @@ export function SpacetimeViz() {
   const cursorNext = timeline[cursorIndex + 1] ?? null;
   const cursorStartIso = cursorEntry?.bucketStart ?? null;
   const cursorEndIso = cursorNext?.bucketStart ?? event?.lastAt ?? null;
+  const cursorGranularity = useMemo(() => {
+    const startMs = cursorStartIso ? dayjs(cursorStartIso).valueOf() : Number.NaN;
+    const endMs = cursorEndIso ? dayjs(cursorEndIso).valueOf() : Number.NaN;
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+      return null;
+    }
+    return inferGranularityFromTimestampsMs([startMs, endMs]);
+  }, [cursorEndIso, cursorStartIso]);
+  const cursorGranularityLabel = cursorGranularity ? formatGranularityLabel(cursorGranularity) : null;
 
   const keyPoints = useMemo(() => normalizeStringArray(cursorEntry?.keyPoints), [cursorEntry?.keyPoints]);
 
@@ -269,6 +281,9 @@ export function SpacetimeViz() {
                     style={{ minWidth: 240 }}
                     placeholder={t("dashboard.charts.spacetimeTimeline.eventPlaceholder", { defaultValue: "Select an event" })}
                   />
+                  <Tag color="default" className="text-xs">
+                    Event list: last {EVENT_LIST_WINDOW_DAYS}d
+                  </Tag>
                 </Space>
 
                 <Space wrap size="small" align="center">
@@ -341,9 +356,21 @@ export function SpacetimeViz() {
                         <Typography.Text strong>
                           {cursorEntry?.title?.trim() || t("dashboard.charts.spacetimeTimeline.bucket", { defaultValue: "Bucket" })}
                         </Typography.Text>
-                        <Tag>
-                          {formatDateTime(cursorEntry!.bucketStart, locale, { dateStyle: "medium" })}
-                        </Tag>
+                        {cursorStartIso ? (
+                          <Tag color="purple" className="text-xs">
+                            {formatDateTime(cursorStartIso, locale, { dateStyle: "medium" })}{" "}
+                            {cursorEndIso ? (
+                              <>
+                                - {formatDateTime(cursorEndIso, locale, { dateStyle: "medium" })}
+                              </>
+                            ) : null}
+                          </Tag>
+                        ) : null}
+                        {cursorGranularityLabel ? (
+                          <Tag color="geekblue" className="text-xs">
+                            Bucket: {cursorGranularityLabel}
+                          </Tag>
+                        ) : null}
                       </Space>
                       {cursorEntry?.summary ? (
                         <Typography.Paragraph type="secondary" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
