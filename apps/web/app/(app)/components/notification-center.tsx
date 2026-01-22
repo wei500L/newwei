@@ -3,7 +3,7 @@
 import { BellOutlined } from "@ant-design/icons";
 import { App, Badge, Button, List, Popover, Space, Spin, Tag, Typography } from "antd";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -14,6 +14,7 @@ import {
   useUnreadNotificationCountQuery
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { dedupeNotifications, getNotificationDedupeKey, upsertNotification } from "@/lib/notification-dedupe";
 import { resolveNotificationLink } from "@/lib/notifications";
 
 import { useNotificationStream, type NotificationMessage } from "./use-notification-stream";
@@ -46,10 +47,18 @@ export function NotificationCenter() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState<number>(0);
+  const seenKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (data?.notifications) {
-      setItems(dedupe([...data.notifications]));
+      const nextItems = dedupeNotifications([...data.notifications]);
+      const nextSeen = new Set<string>();
+      for (const item of nextItems) {
+        nextSeen.add(item.id);
+        nextSeen.add(getNotificationDedupeKey(item));
+      }
+      seenKeysRef.current = nextSeen;
+      setItems(nextItems);
     }
   }, [data?.notifications]);
 
@@ -57,16 +66,35 @@ export function NotificationCenter() {
     setUnread(unreadData?.unreadNotificationCount ?? 0);
   }, [unreadData?.unreadNotificationCount]);
 
+  useEffect(() => {
+    const nextSeen = new Set<string>();
+    for (const item of items) {
+      nextSeen.add(item.id);
+      nextSeen.add(getNotificationDedupeKey(item));
+    }
+    seenKeysRef.current = nextSeen;
+  }, [items]);
+
   const handleIncoming = useCallback(
     (incoming: NotificationMessage) => {
+      const incomingKey = getNotificationDedupeKey(incoming);
+      const alreadySeen =
+        seenKeysRef.current.has(incoming.id) || seenKeysRef.current.has(incomingKey);
+
+      if (!alreadySeen) {
+        seenKeysRef.current.add(incoming.id);
+        seenKeysRef.current.add(incomingKey);
+      }
+
       setItems((prev) => {
-        const existing = prev.find((item) => item.id === incoming.id);
-        if (!existing || existing.readAt) {
+        if (!alreadySeen && !incoming.readAt) {
           setUnread((prevCount) => prevCount + 1);
         }
-        return dedupe([incoming, ...prev]).slice(0, MAX_ITEMS);
+        return dedupeNotifications(upsertNotification(prev, incoming)).slice(0, MAX_ITEMS);
       });
-      message.info(incoming.title);
+      if (!alreadySeen) {
+        message.info(incoming.title);
+      }
       void refetchUnread();
     },
     [message, refetchUnread]
@@ -219,17 +247,4 @@ export function NotificationCenter() {
       </Badge>
     </Popover>
   );
-}
-
-function dedupe(list: NotificationItem[]) {
-  const seen = new Set<string>();
-  const result: NotificationItem[] = [];
-  for (const item of list) {
-    if (seen.has(item.id)) {
-      continue;
-    }
-    seen.add(item.id);
-    result.push(item);
-  }
-  return result;
 }
