@@ -58,6 +58,22 @@ const ResponsiveGridLayout = dynamic(
   },
 );
 
+const GRID_BREAKPOINTS = { lg: 992, md: 768, sm: 576, xs: 480, xxs: 0 } as const;
+
+const GRID_COLS = { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 } as const;
+
+const MD_TWO_COLUMN_PANELS = new Set<string>([
+  "feeds-politics",
+  "feeds-tech",
+  "feeds-finance",
+  "feeds-gov",
+  "feeds-ai",
+  "feeds-intel",
+  "situation-venezuela",
+  "situation-greenland",
+  "situation-iran",
+]);
+
 interface HeadlineRef {
   title: string;
   titleZh?: string;
@@ -451,6 +467,57 @@ function mergePanelLayouts(existing: Layout[], updates: Layout[]): Layout[] {
   }
 
   return merged;
+}
+
+function clampColsConstraint(value: unknown, cols: number): number | undefined {
+  return typeof value === "number" ? Math.min(value, cols) : undefined;
+}
+
+function desiredPanelWidth(panelId: string, cols: number): number {
+  if (cols <= 6) {
+    return cols;
+  }
+  if (cols === 10 && MD_TWO_COLUMN_PANELS.has(panelId)) {
+    return 5;
+  }
+  return cols;
+}
+
+function buildPackedResponsiveLayout(base: Layout[], cols: number): Layout[] {
+  const ordered = base
+    .slice()
+    .sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+
+  let cursorX = 0;
+  let cursorY = 0;
+  let rowH = 0;
+
+  return ordered.map((item) => {
+    const w = Math.min(cols, desiredPanelWidth(item.i, cols));
+    const h = typeof item.h === "number" && item.h > 0 ? item.h : 6;
+
+    if (cursorX + w > cols) {
+      cursorX = 0;
+      cursorY += rowH;
+      rowH = 0;
+    }
+
+    const next: Layout = {
+      ...item,
+      x: cursorX,
+      y: cursorY,
+      w,
+      h,
+      minW: clampColsConstraint(item.minW, cols),
+      maxW: clampColsConstraint(item.maxW, cols),
+      i: item.i,
+    };
+
+    cursorX += w;
+    rowH = Math.max(rowH, h);
+
+    return next;
+  });
 }
 
 function isVisibilityMatchingPreset(
@@ -1682,6 +1749,33 @@ export function SituationMonitorContent() {
     [layout, visibility],
   );
 
+  const gridMargin: [number, number] = screens.md ? [16, 16] : [12, 12];
+
+  type GridBreakpoint = keyof typeof GRID_COLS;
+  const [gridBreakpoint, setGridBreakpoint] = useState<GridBreakpoint>("xxs");
+  const gridBreakpointRef = useRef<GridBreakpoint>("xxs");
+
+  const handleGridBreakpointChange = useCallback((next: string) => {
+    if (next in GRID_COLS) {
+      const breakpoint = next as GridBreakpoint;
+      gridBreakpointRef.current = breakpoint;
+      setGridBreakpoint(breakpoint);
+    }
+  }, []);
+
+  const canEditLayout = gridBreakpoint === "lg";
+
+  const gridLayouts = useMemo(
+    () => ({
+      lg: visibleLayout,
+      md: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.md),
+      sm: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.sm),
+      xs: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.xs),
+      xxs: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.xxs),
+    }),
+    [visibleLayout],
+  );
+
   const handleLayoutChange = useCallback(
     (nextLayout: Layout[]) => {
       setLayout(mergePanelLayouts(layout, nextLayout));
@@ -2837,7 +2931,7 @@ export function SituationMonitorContent() {
         title={t("situationMonitor.panels.title", { defaultValue: "Panels" })}
         open={panelsOpen}
         onClose={() => setPanelsOpen(false)}
-        width={360}
+        width={screens.sm ? 360 : "100%"}
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Text type="secondary">
@@ -2932,7 +3026,7 @@ export function SituationMonitorContent() {
         title={t("situationMonitor.narrative.reportMissed", { defaultValue: "Report missed" })}
         open={feedbackDrawerOpen}
         onClose={() => setFeedbackDrawerOpen(false)}
-        width={420}
+        width={screens.md ? 420 : "100%"}
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Text type="secondary">
@@ -3080,14 +3174,21 @@ export function SituationMonitorContent() {
       ) : (
         <ResponsiveGridLayout
           className="layout"
-          layouts={{ lg: visibleLayout }}
-          cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+          layouts={gridLayouts}
+          breakpoints={GRID_BREAKPOINTS}
+          cols={GRID_COLS}
           rowHeight={30}
-          isResizable
-          isDraggable
-          margin={[16, 16]}
+          isResizable={canEditLayout}
+          isDraggable={canEditLayout}
+          margin={gridMargin}
           draggableHandle=".ant-card-head"
-          onLayoutChange={(nextLayout: Layout[]) => handleLayoutChange(nextLayout)}
+          onBreakpointChange={(nextBreakpoint: string) => handleGridBreakpointChange(nextBreakpoint)}
+          onLayoutChange={(nextLayout: Layout[]) => {
+            if (gridBreakpointRef.current !== "lg") {
+              return;
+            }
+            handleLayoutChange(nextLayout);
+          }}
         >
           {visiblePanels.map((panel) => (
             <div key={panel.id}>{renderPanel(panel.id)}</div>
