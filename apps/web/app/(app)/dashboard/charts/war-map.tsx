@@ -2,7 +2,7 @@
 
 import { SettingOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Checkbox, Popover, Skeleton, Space, Tag } from "antd";
+import { Button, Checkbox, Popover, Skeleton, Space, Tag, Tooltip } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -942,22 +942,180 @@ export function WarMap({ className }: WarMapProps = {}) {
   const geoErrorMessage = getApiErrorMessage(geoQuery.error);
   const eventsErrorMessage = getApiErrorMessage(eventsQuery.error);
   const newsMarkersErrorMessage = getApiErrorMessage(newsMarkersQuery.error);
-  const hasEvents = (eventsQuery.data?.events?.length ?? 0) > 0;
-  const hasNewsMarkers = (newsMarkersQuery.data?.markers?.length ?? 0) > 0;
-  const hasSignals = hasEvents || hasNewsMarkers;
+  const events = eventsQuery.data?.events ?? [];
+  const newsMarkers = newsMarkersQuery.data?.markers ?? [];
   const layers = layersQuery.data;
-  const hasMonitorLocations = monitors.some((monitor) => monitor.enabled && Boolean(monitor.location));
-  const hasStaticLayers = Boolean(
-    layers &&
-      ((layerVisibility.hotspots && layers.hotspots.length > 0) ||
-        (layerVisibility.conflictZones && layers.conflictZones.length > 0) ||
-        (layerVisibility.chokepoints && layers.chokepoints.length > 0) ||
-        (layerVisibility.cableLandings && layers.cableLandings.length > 0) ||
-        (layerVisibility.nuclearSites && layers.nuclearSites.length > 0) ||
-        (layerVisibility.militaryBases && layers.militaryBases.length > 0))
-  );
-  const hasRenderableData =
-    hasSignals || hasStaticLayers || (layerVisibility.monitors && hasMonitorLocations);
+  const layersLoaded = Boolean(layers);
+
+  const signalStats = useMemo(() => {
+    let renderable = 0;
+    let high = 0;
+    let medium = 0;
+    let low = 0;
+    for (const event of events) {
+      if (
+        !isFiniteNumber(event.lat) ||
+        !isFiniteNumber(event.lng) ||
+        Math.abs(event.lat) > 90 ||
+        Math.abs(event.lng) > 180
+      ) {
+        continue;
+      }
+      renderable += 1;
+      switch (event.severity) {
+        case WarEventSeverity.High:
+          high += 1;
+          break;
+        case WarEventSeverity.Medium:
+          medium += 1;
+          break;
+        case WarEventSeverity.Low:
+        default:
+          low += 1;
+          break;
+      }
+    }
+
+    return {
+      total: events.length,
+      renderable,
+      bySeverity: { high, medium, low }
+    };
+  }, [events]);
+
+  const newsStats = useMemo(() => {
+    let renderable = 0;
+    let geocoded = 0;
+    let fallback = 0;
+    for (const marker of newsMarkers) {
+      if (
+        !isFiniteNumber(marker.lat) ||
+        !isFiniteNumber(marker.lng) ||
+        Math.abs(marker.lat) > 90 ||
+        Math.abs(marker.lng) > 180
+      ) {
+        continue;
+      }
+      renderable += 1;
+      if (marker.geoSource === "fallback-country") {
+        fallback += 1;
+      } else {
+        geocoded += 1;
+      }
+    }
+    return {
+      total: newsMarkers.length,
+      renderable,
+      byGeoSource: { geocoded, fallback }
+    };
+  }, [newsMarkers]);
+
+  const monitorStats = useMemo(() => {
+    const withLocation = monitors.filter((monitor) => monitor.enabled && Boolean(monitor.location));
+    const totalAvailable = withLocation.length;
+    const totalVisible = layerVisibility.monitors ? totalAvailable : 0;
+    return { totalAvailable, totalVisible };
+  }, [layerVisibility.monitors, monitors]);
+  const hasMonitorLocations = monitorStats.totalAvailable > 0;
+
+  const layerStats = useMemo(() => {
+    const counts = {
+      hotspots: layers?.hotspots.length ?? 0,
+      conflictZones: layers?.conflictZones.length ?? 0,
+      chokepoints: layers?.chokepoints.length ?? 0,
+      cableLandings: layers?.cableLandings.length ?? 0,
+      nuclearSites: layers?.nuclearSites.length ?? 0,
+      militaryBases: layers?.militaryBases.length ?? 0
+    };
+
+    const totalAvailable =
+      counts.hotspots +
+      counts.conflictZones +
+      counts.chokepoints +
+      counts.cableLandings +
+      counts.nuclearSites +
+      counts.militaryBases;
+
+    const totalVisible =
+      (layerVisibility.hotspots ? counts.hotspots : 0) +
+      (layerVisibility.conflictZones ? counts.conflictZones : 0) +
+      (layerVisibility.chokepoints ? counts.chokepoints : 0) +
+      (layerVisibility.cableLandings ? counts.cableLandings : 0) +
+      (layerVisibility.nuclearSites ? counts.nuclearSites : 0) +
+      (layerVisibility.militaryBases ? counts.militaryBases : 0);
+
+    return { counts, totalAvailable, totalVisible };
+  }, [layerVisibility, layers]);
+
+  const totalAvailablePoints =
+    signalStats.renderable +
+    newsStats.renderable +
+    layerStats.totalAvailable +
+    monitorStats.totalAvailable;
+  const totalVisiblePoints =
+    signalStats.renderable +
+    newsStats.renderable +
+    layerStats.totalVisible +
+    monitorStats.totalVisible;
+
+  const hasRenderableData = totalVisiblePoints > 0;
+
+  const hasHiddenOverlays =
+    layerStats.totalAvailable > layerStats.totalVisible ||
+    monitorStats.totalAvailable > monitorStats.totalVisible;
+
+  const hasInvalidSignalGeo =
+    (signalStats.total > 0 && signalStats.renderable === 0) ||
+    (newsStats.total > 0 && newsStats.renderable === 0);
+
+  const emptyStateDescription = useMemo(() => {
+    if (hasInvalidSignalGeo) {
+      return t("dashboard.charts.warMap.empty.invalidGeo", {
+        defaultValue:
+          "Data was returned, but none of the records had valid coordinates. This looks like a data source issue."
+      });
+    }
+
+    if (totalAvailablePoints > 0 && totalVisiblePoints === 0) {
+      return (
+        <div className="flex flex-col items-center gap-1">
+          <span>{emptyMessage}</span>
+          <span>
+            {t("dashboard.charts.warMap.empty.hiddenLayers", {
+              defaultValue: "Some overlay layers are available but hidden by filters. Enable them from Layers."
+            })}
+          </span>
+        </div>
+      );
+    }
+
+    if (
+      !hasHiddenOverlays && layersLoaded && layerStats.totalAvailable === 0 && monitorStats.totalAvailable === 0
+    ) {
+      return (
+        <div className="flex flex-col items-center gap-1">
+          <span>{emptyMessage}</span>
+          <span>
+            {t("dashboard.charts.warMap.empty.noOverlays", {
+              defaultValue: "No static layers or monitor locations are configured."
+            })}
+          </span>
+        </div>
+      );
+    }
+
+    return emptyMessage;
+  }, [
+    emptyMessage,
+    hasHiddenOverlays,
+    hasInvalidSignalGeo,
+    layerStats.totalAvailable,
+    layersLoaded,
+    monitorStats.totalAvailable,
+    t,
+    totalAvailablePoints,
+    totalVisiblePoints
+  ]);
 
   if (!inView) {
     return (
@@ -1096,6 +1254,113 @@ export function WarMap({ className }: WarMapProps = {}) {
   const newsUpdatedLabel = newsMarkersQuery.data?.updatedAt
     ? formatUpdatedAt(newsMarkersQuery.data.updatedAt, locale)
     : null;
+  const formatCount = (value: number) => value.toLocaleString(locale);
+
+  const signalsTooltip = (
+    <div className="text-xs">
+      <div>
+        {t("dashboard.charts.warMap.stats.signalsHint", {
+          defaultValue: "Aggregated over window"
+        })}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}: {formatCount(signalStats.total)}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.stats.renderable", { defaultValue: "Renderable" })}:{" "}
+        {formatCount(signalStats.renderable)}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.stats.high", { defaultValue: "High" })}:{" "}
+        {formatCount(signalStats.bySeverity.high)} •{" "}
+        {t("dashboard.charts.warMap.stats.medium", { defaultValue: "Medium" })}:{" "}
+        {formatCount(signalStats.bySeverity.medium)} •{" "}
+        {t("dashboard.charts.warMap.stats.low", { defaultValue: "Low" })}: {formatCount(signalStats.bySeverity.low)}
+      </div>
+    </div>
+  );
+
+  const newsTooltip = (
+    <div className="text-xs">
+      <div>
+        {t("dashboard.charts.warMap.stats.newsHint", {
+          defaultValue: "Point-in-time (published/ingested)"
+        })}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}: {formatCount(newsStats.total)}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.stats.renderable", { defaultValue: "Renderable" })}: {formatCount(newsStats.renderable)}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.stats.geocoded", { defaultValue: "Geocoded" })}:{" "}
+        {formatCount(newsStats.byGeoSource.geocoded)} •{" "}
+        {t("dashboard.charts.warMap.stats.fallbackCountry", { defaultValue: "Fallback country" })}:{" "}
+        {formatCount(newsStats.byGeoSource.fallback)}
+      </div>
+    </div>
+  );
+
+  const layersTooltip = (
+    <div className="text-xs">
+      <div>
+        {t("dashboard.charts.warMap.stats.layersHint", {
+          defaultValue: "Static layers (not time-filtered)"
+        })}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.hotspots", { defaultValue: "Hotspots" })}: {formatCount(layerStats.counts.hotspots)}
+        {layerVisibility.hotspots ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.conflictZones", { defaultValue: "Conflict zones" })}:{" "}
+        {formatCount(layerStats.counts.conflictZones)}
+        {layerVisibility.conflictZones ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.chokepoints", { defaultValue: "Chokepoints" })}:{" "}
+        {formatCount(layerStats.counts.chokepoints)}
+        {layerVisibility.chokepoints ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.cableLandings", { defaultValue: "Cable landings" })}:{" "}
+        {formatCount(layerStats.counts.cableLandings)}
+        {layerVisibility.cableLandings ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.nuclearSites", { defaultValue: "Nuclear sites" })}:{" "}
+        {formatCount(layerStats.counts.nuclearSites)}
+        {layerVisibility.nuclearSites ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.militaryBases", { defaultValue: "Military bases" })}:{" "}
+        {formatCount(layerStats.counts.militaryBases)}
+        {layerVisibility.militaryBases ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}: {formatCount(layerStats.totalVisible)} /{" "}
+        {formatCount(layerStats.totalAvailable)}
+      </div>
+    </div>
+  );
+
+  const monitorsTooltip = (
+    <div className="text-xs">
+      <div>
+        {t("dashboard.charts.warMap.stats.monitorsHint", {
+          defaultValue: "Custom monitors with saved locations"
+        })}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}: {formatCount(monitorStats.totalAvailable)}
+      </div>
+      <div>
+        {t("dashboard.charts.warMap.stats.showing", { defaultValue: "Showing" })}:{" "}
+        {formatCount(monitorStats.totalVisible)}
+      </div>
+    </div>
+  );
 
   return (
     <div ref={containerRef} className={containerClassName}>
@@ -1104,11 +1369,32 @@ export function WarMap({ className }: WarMapProps = {}) {
           <Tag color="default" className="text-xs">
             Window: {windowLabel}
           </Tag>
-          <Tag color="geekblue" className="text-xs">
-            Signals: aggregated over window
-          </Tag>
-          <Tag color="green" className="text-xs">
-            News: point-in-time (published/ingested)
+          <Tooltip title={signalsTooltip}>
+            <Tag color="geekblue" className="text-xs">
+              {t("dashboard.charts.warMap.stats.signals", { defaultValue: "Signals" })}:{" "}
+              {formatCount(signalStats.renderable)}
+            </Tag>
+          </Tooltip>
+          <Tooltip title={newsTooltip}>
+            <Tag color="green" className="text-xs">
+              {t("dashboard.charts.warMap.stats.news", { defaultValue: "News" })}: {formatCount(newsStats.renderable)}
+            </Tag>
+          </Tooltip>
+          <Tooltip title={layersTooltip}>
+            <Tag color="default" className="text-xs">
+              {t("dashboard.charts.warMap.stats.layers", { defaultValue: "Layers" })}:{" "}
+              {formatCount(layerStats.totalVisible)} / {formatCount(layerStats.totalAvailable)}
+            </Tag>
+          </Tooltip>
+          <Tooltip title={monitorsTooltip}>
+            <Tag color="purple" className="text-xs">
+              {t("dashboard.charts.warMap.stats.monitors", { defaultValue: "Monitors" })}:{" "}
+              {formatCount(monitorStats.totalVisible)} / {formatCount(monitorStats.totalAvailable)}
+            </Tag>
+          </Tooltip>
+          <Tag color="default" className="text-xs">
+            {t("dashboard.charts.dataStats.showing", { defaultValue: "Showing" })}:{" "}
+            {formatCount(totalVisiblePoints)} / {formatCount(totalAvailablePoints)}
           </Tag>
           {signalsUpdatedLabel ? (
             <Tag color="default" className="text-xs">
@@ -1177,7 +1463,7 @@ export function WarMap({ className }: WarMapProps = {}) {
       (eventsQuery.data || newsMarkersQuery.data) &&
       !hasRenderableData ? (
         <div className="absolute inset-0 flex items-center justify-center">
-          <ChartEmptyState description={emptyMessage} />
+          <ChartEmptyState description={emptyStateDescription} />
         </div>
       ) : null}
     </div>

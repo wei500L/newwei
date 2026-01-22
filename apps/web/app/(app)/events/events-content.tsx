@@ -7,7 +7,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import dayjs from "@/lib/dayjs";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
 
 import { EventDetailsDrawer } from "./event-details-drawer";
 
@@ -87,6 +87,8 @@ function resolveEventTitle(event: NewsEventListItem) {
 export function EventsContent({ initialData = null }: EventsContentProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const timeZone = getDefaultTimeZone();
+  const timeZoneLabel = useMemo(() => formatTimeZoneOffsetLabel(new Date(), timeZone), [timeZone]);
   const screens = Grid.useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
@@ -150,8 +152,8 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
   });
 
   const resolvedData = data ?? initialData ?? undefined;
-  const events = resolvedData?.newsEvents ?? [];
   const sortedEvents = useMemo(() => {
+    const events = resolvedData?.newsEvents ?? [];
     return [...events].sort((a, b) => {
       const timeDiff = dayjs(b.lastAt).valueOf() - dayjs(a.lastAt).valueOf();
       if (timeDiff !== 0) {
@@ -159,7 +161,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       }
       return b.itemCount - a.itemCount;
     });
-  }, [events]);
+  }, [resolvedData?.newsEvents]);
 
   const drawerWidth = screens.lg ? 860 : undefined;
 
@@ -191,9 +193,14 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
   return (
     <div className="flex flex-col gap-4">
       <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("pages.events.title", { defaultValue: "News Events" })}
-        </Typography.Title>
+        <Space align="center" wrap size={[8, 6]}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {t("pages.events.title", { defaultValue: "News Events" })}
+          </Typography.Title>
+          <Tooltip title={`${timeZone} (${timeZoneLabel || timeZone})`}>
+            <Tag>{timeZoneLabel || timeZone}</Tag>
+          </Tooltip>
+        </Space>
         <Typography.Text type="secondary">
           {t("pages.events.subtitle", {
             defaultValue: "Clustered storylines built from processed news articles."
@@ -280,6 +287,34 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                 const itemCountLabel = t("pages.events.fields.items", { defaultValue: "Items" });
                 const eventStatusLabel = t(`pages.events.status.${event.status}`, { defaultValue: event.status });
 
+                const startDate = formatDateTime(event.startAt, locale, {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  timeZone
+                });
+                const startTooltip = formatDateTime(event.startAt, locale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                  timeZone,
+                  timeZoneName: "short"
+                });
+                const startRelative = formatRelativeTime(event.startAt, locale, { timeZone });
+
+                const lastDate = formatDateTime(event.lastAt, locale, {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  timeZone
+                });
+                const lastTooltip = formatDateTime(event.lastAt, locale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                  timeZone,
+                  timeZoneName: "short"
+                });
+                const lastRelative = formatRelativeTime(event.lastAt, locale, { timeZone });
+
                 return (
                   <List.Item
                     key={event.id}
@@ -310,19 +345,16 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                           <Space size={[12, 0]} wrap>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                               {startLabel}:{" "}
-                              {formatDateTime(event.startAt, locale, {
-                                year: "numeric",
-                                month: "2-digit",
-                                day: "2-digit"
-                              })}
+                              <Tooltip title={`${startTooltip}${startRelative ? ` (${startRelative})` : ""}`}>
+                                <span>{startDate}</span>
+                              </Tooltip>
                             </Typography.Text>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                               {lastLabel}:{" "}
-                              {formatDateTime(event.lastAt, locale, {
-                                year: "numeric",
-                                month: "2-digit",
-                                day: "2-digit"
-                              })}
+                              <Tooltip title={`${lastTooltip}${lastRelative ? ` (${lastRelative})` : ""}`}>
+                                <span>{lastDate}</span>
+                              </Tooltip>
+                              {lastRelative ? <span className="ml-1 opacity-80">({lastRelative})</span> : null}
                             </Typography.Text>
                           </Space>
                         </div>

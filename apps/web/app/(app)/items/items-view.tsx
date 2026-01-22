@@ -16,6 +16,7 @@ import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
 import { safeHttpUrl } from "@/lib/url";
+import { useDebounceValue } from "@/lib/use-debounce-value";
 
 import { FacetedSearch, type FilterState } from "./components/faceted-search";
 import { NewsCard } from "./components/news-card";
@@ -428,8 +429,15 @@ export function ItemsView({
   const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
 
   // URL State
-  const searchKey = searchParams.toString();
   const urlSearch = (searchParams.get("q") ?? "").trim();
+  const appliedFilters = useMemo(
+    () => parseFiltersFromSearchParams(searchParams, initialFilters),
+    [initialFilters, searchParams]
+  );
+  const appliedFiltersFingerprint = useMemo(
+    () => fingerprintFilters(appliedFilters),
+    [appliedFilters]
+  );
   const current = parsePositiveInt(searchParams.get("page"), 1);
   const rawPageSize = parsePositiveInt(searchParams.get("pageSize"), DEFAULT_ITEMS_PAGE_SIZE);
   const pageSize = clampItemsPageSize(rawPageSize);
@@ -448,14 +456,14 @@ export function ItemsView({
   }, [urlSearch]);
 
   useEffect(() => {
-    const nextFilters = parseFiltersFromSearchParams(searchParams, initialFilters);
-    const nextFingerprint = fingerprintFilters(nextFilters);
     setFilters((currentFilters) => {
-      return fingerprintFilters(currentFilters) === nextFingerprint ? currentFilters : nextFilters;
+      return fingerprintFilters(currentFilters) === appliedFiltersFingerprint
+        ? currentFilters
+        : appliedFilters;
     });
-  }, [initialFilters, searchKey, searchParams]);
+  }, [appliedFilters, appliedFiltersFingerprint]);
 
-  const filtersInput = useMemo(() => buildFiltersInput(filters), [filters]);
+  const filtersInput = useMemo(() => buildFiltersInput(appliedFilters), [appliedFilters]);
   const hasActiveFilters = filtersInput !== null;
   const isUnsearched =
     emptyStateVariant === "search" && urlSearch.length === 0 && !hasActiveFilters;
@@ -508,6 +516,39 @@ export function ItemsView({
     [pathname, router, searchParams]
   );
 
+  const debouncedSearchInput = useDebounceValue(searchInput, 400);
+  const debouncedFilters = useDebounceValue(filters, 400);
+  const debouncedFiltersFingerprint = useMemo(
+    () => fingerprintFilters(debouncedFilters),
+    [debouncedFilters]
+  );
+
+  useEffect(() => {
+    const nextSearch = debouncedSearchInput.trim();
+    const nextSearchParam = nextSearch.length > 0 ? nextSearch : null;
+    const urlSearchParam = urlSearch.length > 0 ? urlSearch : null;
+
+    const shouldUpdateSearch = nextSearchParam !== urlSearchParam;
+    const shouldUpdateFilters = debouncedFiltersFingerprint !== appliedFiltersFingerprint;
+
+    if (!shouldUpdateSearch && !shouldUpdateFilters) {
+      return;
+    }
+
+    setQueryParams({
+      ...(shouldUpdateSearch ? { q: nextSearchParam } : {}),
+      ...(shouldUpdateFilters ? { filters: debouncedFilters } : {}),
+      page: 1
+    });
+  }, [
+    appliedFiltersFingerprint,
+    debouncedFilters,
+    debouncedFiltersFingerprint,
+    debouncedSearchInput,
+    setQueryParams,
+    urlSearch
+  ]);
+
   useEffect(() => {
     if (rawPageSize === pageSize) {
       return;
@@ -519,9 +560,8 @@ export function ItemsView({
     (nextFilters: FilterState) => {
       const normalized = normalizeFiltersState(nextFilters);
       setFilters(normalized);
-      setQueryParams({ page: 1, filters: normalized });
     },
-    [setQueryParams]
+    []
   );
 
   const {
@@ -567,6 +607,40 @@ export function ItemsView({
   const edges = resolvedData?.items.edges ?? EMPTY_EDGES;
   const resolvedTotalCount = resolvedData?.items.totalCount;
   const totalCount = typeof resolvedTotalCount === "number" ? resolvedTotalCount : 0;
+  const filterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (filtersInput?.regions?.length) {
+      parts.push(
+        `${t("items.filters.region", { defaultValue: "Region" })}: ${filtersInput.regions.length.toLocaleString(locale)}`
+      );
+    }
+    if (filtersInput?.topics?.length) {
+      parts.push(
+        `${t("items.filters.topic", { defaultValue: "Topic" })}: ${filtersInput.topics.length.toLocaleString(locale)}`
+      );
+    }
+    if (filtersInput?.sentiments?.length) {
+      parts.push(
+        `${t("items.filters.sentiment", { defaultValue: "Sentiment" })}: ${filtersInput.sentiments.length.toLocaleString(locale)}`
+      );
+    }
+    if (filtersInput?.dateRange) {
+      parts.push(`${t("items.filters.date", { defaultValue: "Date Range" })}: 1`);
+    }
+    return {
+      parts,
+      text: parts.join(" | ")
+    };
+  }, [filtersInput, locale, t]);
+
+  const showingRange = useMemo(() => {
+    if (totalCount === 0 || edges.length === 0) {
+      return null;
+    }
+    const from = (current - 1) * pageSize + 1;
+    const to = Math.min(from + edges.length - 1, totalCount);
+    return { from, to };
+  }, [current, edges.length, pageSize, totalCount]);
 
   useEffect(() => {
     if (isUnsearched || loading || error) {
@@ -962,11 +1036,30 @@ export function ItemsView({
     }
 
     if (!loading && pageData.length === 0) {
+      const isFiltered = Boolean(urlSearch.length > 0 || hasActiveFilters);
+      const filteredDescription = isFiltered ? (
+        <div className="flex flex-col items-center gap-1">
+          <span>
+            {t("items.empty.filteredDescription", {
+              defaultValue: "No items match the current search or filters."
+            })}
+          </span>
+          {urlSearch ? (
+            <span className="font-mono text-[10px] opacity-80">
+              {t("items.stats.query", { defaultValue: "Query" })}: {urlSearch}
+            </span>
+          ) : null}
+          {filterSummary.text ? (
+            <span className="font-mono text-[10px] opacity-80">{filterSummary.text}</span>
+          ) : null}
+        </div>
+      ) : null;
+
       return (
         <ChartEmptyState
           className="h-auto"
           title={emptyStateConfig.title}
-          description={emptyStateConfig.description}
+          description={filteredDescription ?? emptyStateConfig.description}
           actionLabel={emptyStateConfig.actionLabel}
           onAction={
             emptyStateConfig.actionLabel && emptyStateConfig.actionHref
@@ -1125,6 +1218,46 @@ export function ItemsView({
               </Space>
            </Col>
         </Row>
+
+        {!isUnsearched ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {urlSearch ? (
+              <Tooltip title={urlSearch}>
+                <Tag
+                  className="text-xs max-w-[320px] truncate"
+                  color="geekblue"
+                  closable
+                  onClose={() => setQueryParams({ q: null, page: 1 })}
+                >
+                  {t("items.stats.query", { defaultValue: "Query" })}: {urlSearch}
+                </Tag>
+              </Tooltip>
+            ) : null}
+            {filterSummary.text ? (
+              <Tooltip title={filterSummary.text}>
+                <Tag className="text-xs" color="purple">
+                  {t("items.stats.filters", { defaultValue: "Filters" })}: {filterSummary.text}
+                </Tag>
+              </Tooltip>
+            ) : null}
+            <Tag className="text-xs">
+              {t("items.stats.matches", { defaultValue: "Matches" })}:{" "}
+              {typeof resolvedTotalCount === "number"
+                ? totalCount.toLocaleString(locale)
+                : t("common.loading", { defaultValue: "Loading..." })}
+            </Tag>
+            {showingRange ? (
+              <Tag className="text-xs">
+                {t("items.stats.showing", {
+                  from: showingRange.from,
+                  to: showingRange.to,
+                  total: totalCount,
+                  defaultValue: "Showing {{from}}-{{to}} of {{total}}"
+                })}
+              </Tag>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* Main Layout */}
         <Row gutter={24}>

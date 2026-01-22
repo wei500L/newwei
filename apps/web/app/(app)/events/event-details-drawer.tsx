@@ -1,12 +1,12 @@
 "use client";
 
 import { gql, useQuery } from "@apollo/client";
-import { Alert, Divider, Empty, List, Skeleton, Space, Tag, Tabs, Typography } from "antd";
+import { Alert, Divider, Empty, List, Skeleton, Space, Tag, Tabs, Tooltip, Typography } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import dayjs from "@/lib/dayjs";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 
 interface EventItem {
@@ -133,6 +133,8 @@ function formatSimilarity(value: number | null | undefined): string | null {
 export function EventDetailsDrawer({ eventId }: { eventId: string }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const timeZone = getDefaultTimeZone();
+  const timeZoneLabel = useMemo(() => formatTimeZoneOffsetLabel(new Date(), timeZone), [timeZone]);
 
   const { data, loading, error } = useQuery<{ newsEvent: NewsEvent | null }>(NEWS_EVENT_QUERY, {
     variables: { id: eventId, itemsLimit: 80, timelineLimit: 400 },
@@ -177,6 +179,20 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
   const language = event.language?.trim() ?? "";
   const topic = event.primaryTopic?.trim() ?? "";
   const entity = event.primaryEntity?.trim() ?? "";
+  const startRelative = formatRelativeTime(event.startAt, locale, { timeZone });
+  const lastRelative = formatRelativeTime(event.lastAt, locale, { timeZone });
+  const startTooltip = formatDateTime(event.startAt, locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone,
+    timeZoneName: "short"
+  });
+  const lastTooltip = formatDateTime(event.lastAt, locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone,
+    timeZoneName: "short"
+  });
 
   return (
     <div className="flex flex-col gap-3">
@@ -190,15 +206,23 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
           {language ? <Tag color="blue">{language}</Tag> : null}
           {topic ? <Tag color="geekblue">{topic}</Tag> : null}
           {entity ? <Tag color="purple">{entity}</Tag> : null}
+          <Tooltip title={`${timeZone} (${timeZoneLabel || timeZone})`}>
+            <Tag>{timeZoneLabel || timeZone}</Tag>
+          </Tooltip>
         </Space>
         <Space wrap size={[12, 0]}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t("pages.events.fields.startAt", { defaultValue: "Start" })}:{" "}
-            {formatDateTime(event.startAt, locale, { dateStyle: "medium" })}
+            <Tooltip title={`${startTooltip}${startRelative ? ` (${startRelative})` : ""}`}>
+              <span>{formatDateTime(event.startAt, locale, { dateStyle: "medium", timeZone })}</span>
+            </Tooltip>
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t("pages.events.fields.lastAt", { defaultValue: "Last" })}:{" "}
-            {formatDateTime(event.lastAt, locale, { dateStyle: "medium" })}
+            <Tooltip title={`${lastTooltip}${lastRelative ? ` (${lastRelative})` : ""}`}>
+              <span>{formatDateTime(event.lastAt, locale, { dateStyle: "medium", timeZone })}</span>
+            </Tooltip>
+            {lastRelative ? <span className="ml-1 opacity-80">({lastRelative})</span> : null}
           </Typography.Text>
         </Space>
         {event.summary ? (
@@ -235,7 +259,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                         title={
                           <Space wrap size={[8, 6]}>
                             <Typography.Text strong>
-                              {formatDateTime(entry.bucketStart, locale, { dateStyle: "medium" })}
+                              {formatDateTime(entry.bucketStart, locale, { dateStyle: "medium", timeZone })}
                             </Typography.Text>
                             {referencedIds.length > 0 ? (
                               <Tag>{t("pages.events.drawer.references", { defaultValue: "Refs" })}: {referencedIds.length}</Tag>
@@ -309,13 +333,13 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                             <Tag>
                               {publishedLabel}:{" "}
                               {publishedAt
-                                ? formatDateTime(publishedAt, locale, { dateStyle: "medium" })
+                                ? formatDateTime(publishedAt, locale, { dateStyle: "medium", timeZone })
                                 : t("common.notAvailable")}
                             </Tag>
                             <Tag>
                               {ingestedLabel}:{" "}
                               {ingestedAt
-                                ? formatDateTime(ingestedAt, locale, { dateStyle: "medium" })
+                                ? formatDateTime(ingestedAt, locale, { dateStyle: "medium", timeZone })
                                 : t("common.notAvailable")}
                             </Tag>
                           </Space>

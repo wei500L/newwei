@@ -147,6 +147,37 @@ export function SectorHeatmap() {
     return formatted ? formatted : null;
   }, [data?.updatedAt, locale]);
 
+  const heatmapStats = useMemo(() => {
+    if (!data) {
+      return {
+        totalCells: 0,
+        filteredCells: 0,
+        selectedCells: null as number | null,
+        uniqueSectors: 0,
+        xLabels: 0,
+        yLabels: 0
+      };
+    }
+
+    const unique = new Set<string>();
+    let selectedCount = 0;
+    for (const cell of data.cells) {
+      unique.add(cell.name);
+      if (selectedSector && cell.name === selectedSector) {
+        selectedCount += 1;
+      }
+    }
+
+    return {
+      totalCells: data.cells.length,
+      filteredCells: selectedSector ? selectedCount : data.cells.length,
+      selectedCells: selectedSector ? selectedCount : null,
+      uniqueSectors: unique.size,
+      xLabels: data.xLabels.length,
+      yLabels: data.yLabels.length
+    };
+  }, [data, selectedSector]);
+
   const option = useMemo<EChartsOption>(() => {
     if (!data || data.cells.length === 0) return {};
     const heatmapData = data.cells.map((cell) => {
@@ -393,6 +424,33 @@ export function SectorHeatmap() {
         <Tag color="default" className="text-xs">
           Window: {windowLabel}
         </Tag>
+        <Tag color="default" className="text-xs">
+          {t("dashboard.charts.dataStats.points", { defaultValue: "Points" })}:{" "}
+          {heatmapStats.filteredCells.toLocaleString(locale)} / {heatmapStats.totalCells.toLocaleString(locale)}
+        </Tag>
+        <Tag color="default" className="text-xs">
+          {t("dashboard.charts.sectorHeatmapStats.sectors", { defaultValue: "Sectors" })}:{" "}
+          {heatmapStats.uniqueSectors.toLocaleString(locale)}
+        </Tag>
+        <Tag color="default" className="text-xs">
+          {t("dashboard.charts.sectorHeatmapStats.grid", { defaultValue: "Grid" })}: {heatmapStats.xLabels}x{heatmapStats.yLabels}
+        </Tag>
+        {selectedSector ? (
+          <Tag
+            className="text-xs"
+            color={heatmapStats.selectedCells === 0 ? "red" : "geekblue"}
+            closable
+            onClose={() => setSelectedSector(null)}
+          >
+            {t("dashboard.charts.sectorSelected", {
+              sector: selectedSector,
+              defaultValue: `Selected: ${selectedSector}`
+            })}
+            {typeof heatmapStats.selectedCells === "number"
+              ? ` (${heatmapStats.selectedCells.toLocaleString(locale)})`
+              : ""}
+          </Tag>
+        ) : null}
         <Tag color="geekblue" className="text-xs">
           Aggregation: window snapshot
         </Tag>

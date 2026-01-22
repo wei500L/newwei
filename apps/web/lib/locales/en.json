@@ -323,7 +323,16 @@
     "apply": "Apply",
     "unauthorized": "You are not signed in.",
     "clear": "Clear",
-    "create": "Create"
+    "create": "Create",
+    "popupBlocked": "Popup blocked. Please allow popups for this site.",
+    "copied": "Copied",
+    "copyFailed": "Copy failed",
+    "copy": "Copy",
+    "details": "Details",
+    "pause": "Pause",
+    "play": "Play",
+    "prev": "Prev",
+    "fastForward": "Fast"
   },
   "orgSwitcher": {
     "error": {
@@ -395,7 +404,8 @@
     "timeRange": {
       "defaultAggregation": "Default aggregation",
       "defaultAggregationHint": "Most charts will aggregate data at this granularity for the selected window; individual charts may differ.",
-      "helperText": "Time range affects chart granularity and tooltips."
+      "helperText": "Time range affects chart granularity and tooltips.",
+      "title": "Time Range"
     },
     "widgets": {
       "unsupportedSource": "Unsupported data source: {{source}}",
@@ -828,7 +838,15 @@
       "exportFailed": "Export failed",
       "downloadSuccess": "Download completed",
       "downloadFailed": "Download failed",
+      "dataStats": {
+        "showing": "Showing",
+        "points": "Points"
+      },
       "sectorHeatmap": "Sector Performance",
+      "sectorHeatmapStats": {
+        "sectors": "Sectors",
+        "grid": "Grid"
+      },
       "sectorHeatmapValueLabel": "Value",
       "sectorHeatmapChangeLabel": "Change",
       "entityImpactGraph": "Entity Impact Graph",
@@ -857,7 +875,37 @@
         "nuclearSites": "Nuclear sites",
         "militaryBases": "Military bases",
         "newsSeries": "News",
-        "layers": "Layers"
+        "layers": "Layers",
+        "stats": {
+          "signals": "Signals",
+          "signalsHint": "Aggregated over window",
+          "news": "News",
+          "newsHint": "Point-in-time (published/ingested)",
+          "layers": "Layers",
+          "layersHint": "Static layers (not time-filtered)",
+          "monitors": "Monitors",
+          "monitorsHint": "Custom monitors with saved locations",
+          "total": "Total",
+          "renderable": "Renderable",
+          "showing": "Showing",
+          "hidden": "hidden",
+          "high": "High",
+          "medium": "Medium",
+          "low": "Low",
+          "geocoded": "Geocoded",
+          "fallbackCountry": "Fallback country"
+        },
+        "empty": {
+          "invalidGeo": "Data was returned, but none of the records had valid coordinates. This looks like a data source issue.",
+          "hiddenLayers": "Some overlay layers are available but hidden by filters. Enable them from Layers.",
+          "noOverlays": "No static layers or monitor locations are configured."
+        },
+        "missingNewsUrl": "No link available for this news marker.",
+        "openingNews": "Opening news link...",
+        "openedNews": "News opened in a new tab",
+        "missingMonitorQuery": "No keywords available for this monitor.",
+        "openingSearch": "Opening search for \"{{query}}\"...",
+        "openedSearch": "Search opened for \"{{query}}\" in a new tab"
       },
       "entityGraph": {
         "disabledTitle": "Disabled",
@@ -880,9 +928,70 @@
         "title": "Entity Impact Graph",
         "nodeSelected": "Selected: {{node}}",
         "confidenceFilter": "Entity confidence",
-        "stats": "{{nodes}} nodes, {{links}} links"
+        "stats": "{{nodes}} nodes, {{links}} links",
+        "openingSearch": "Opening search for \"{{query}}\"...",
+        "openedSearch": "Search opened for \"{{query}}\" in a new tab",
+        "openSearch": "Open search",
+        "detailsTitle": "Details",
+        "noRelatedEntities": "No related entities found.",
+        "hint": "Tip: right-click a node for quick actions."
       },
-      "sectorSelected": "Selected: {{sector}}"
+      "sectorSelected": "Selected: {{sector}}",
+      "knowledgeGraphReflow": "Reflow",
+      "knowledgeGraphSeedLabel": "Seed",
+      "knowledgeGraphSearching": "Searching...",
+      "knowledgeGraphNodeTitle": "Node",
+      "knowledgeGraphNodeType": "Type",
+      "knowledgeGraphNodeDegree": "Degree",
+      "knowledgeGraphExplore": "Explore this node",
+      "knowledgeGraphOpeningSearch": "Opening search for \"{{query}}\"...",
+      "knowledgeGraphOpenedSearch": "Search opened for \"{{query}}\" in a new tab",
+      "knowledgeGraphOpenSearch": "Open search",
+      "knowledgeGraphExploreHint": "Tip: use \"Explore this node\" to re-center the graph on it.",
+      "spacetimeGeoHeatmap": {
+        "geoFailedTitle": "Map failed",
+        "details": "Details",
+        "active": "Active",
+        "inactive": "Inactive",
+        "bucket": "Bucket",
+        "caption": "Heat + dominant sentiment overlay (click a dot for details).",
+        "emptyBucket": "No geo-tagged news in this bucket.",
+        "empty": "No geo-tagged news in the selected range.",
+        "noArticles": "No articles found for this point.",
+        "moreHint": "More articles available. Narrow the time range to inspect further.",
+        "title": "Geo Sentiment Heatmap",
+        "scope": "Scope",
+        "scopeGlobal": "Global",
+        "scopeEvent": "Event",
+        "followTimeline": "Follow timeline"
+      },
+      "spacetimePropagation": {
+        "emptyTitle": "No event selected",
+        "emptyDescription": "Select an event to render its propagation flow.",
+        "empty": "No propagation signals found in the selected range.",
+        "caption": "Directed source-to-source diffusion (duplicate-aware + time-lag fallback).",
+        "details": "Details",
+        "window": "Window",
+        "noArticles": "No articles found for this source in the selected window.",
+        "moreHint": "More articles available. Narrow the time range to inspect further.",
+        "title": "Propagation Flow"
+      },
+      "spacetimeTimeline": {
+        "title": "Timeline Player",
+        "event": "Event",
+        "eventPlaceholder": "Select an event",
+        "playing": "Playing",
+        "paused": "Paused",
+        "emptyTitle": "No event",
+        "emptyDescription": "Select an event to play its timeline.",
+        "noTimelineTitle": "No timeline",
+        "noTimelineDescription": "This event has no timeline entries.",
+        "step": "Step",
+        "bucket": "Bucket"
+      },
+      "knowledgeGraph3d": {
+        "title": "Knowledge Graph (3D)"
+      }
     },
     "stream": {
       "status": {
@@ -973,7 +1082,8 @@
     },
     "dataLatest": {
       "label": "Latest"
-    }
+    },
+    "updatedAt": "Updated: {{time}}"
   },
   "language": {
     "chinese": "Simplified Chinese",
@@ -3291,7 +3401,8 @@
   },
   "items": {
     "time": {
-      "published": "Published"
+      "published": "Published",
+      "ingested": "Ingested"
     },
     "detail": {
       "summaryTitle": "Summary",
@@ -3356,13 +3467,16 @@
       "date": "Date Range",
       "empty": "No filter options for current results."
     },
-    "time": {
-      "published": "Published",
-      "ingested": "Ingested"
+    "stats": {
+      "query": "Query",
+      "filters": "Filters",
+      "matches": "Matches",
+      "showing": "Showing {{from}}-{{to}} of {{total}}"
     },
     "empty": {
       "defaultTitle": "No items found",
       "defaultDescription": "Try adjusting filters or refresh.",
+      "filteredDescription": "No items match the current search or filters.",
       "todayTitle": "No processed news yet",
       "todayDescription": "No processed news yet. Check subscriptions or crawl tasks.",
       "todayActionAdmin": "Manage crawl tasks",
