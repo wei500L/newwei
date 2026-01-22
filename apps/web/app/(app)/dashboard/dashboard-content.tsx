@@ -34,70 +34,114 @@ import { useDashboardStream, type DashboardStreamStatus } from "./use-dashboard-
 import { useDashboardUrlSync } from "./use-dashboard-url-sync";
 import { useQueueEvents } from "./use-queue-events";
 
+interface DashboardSkeletonProps {
+  className: string;
+  rows?: number;
+}
+
+function DashboardSkeleton({ className, rows = 6 }: DashboardSkeletonProps) {
+  return (
+    <div
+      className={`flex w-full items-center justify-center ${className} transition-all duration-300`}
+    >
+      <Skeleton active paragraph={{ rows }} className="w-full" />
+    </div>
+  );
+}
+
+function SpacetimeVizSkeleton() {
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2">
+          <DashboardSkeleton className="h-[520px]" rows={10} />
+        </div>
+        <div className="xl:col-span-1">
+          <DashboardSkeleton className="h-[520px]" rows={10} />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2">
+          <DashboardSkeleton className="h-[360px]" rows={8} />
+        </div>
+        <div className="xl:col-span-1">
+          <DashboardSkeleton className="h-[420px]" rows={8} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const AlertPanel = dynamic(() => import("./alert-panel").then((mod) => mod.AlertPanel), {
-  loading: () => <Skeleton active paragraph={{ rows: 4 }} />
+  loading: () => <DashboardSkeleton className="min-h-[200px]" rows={4} />
 });
 
 const AnalysisPanel = dynamic(() => import("./analysis-panel").then((mod) => mod.AnalysisPanel), {
-  loading: () => <Skeleton active paragraph={{ rows: 4 }} />
+  loading: () => <DashboardSkeleton className="min-h-[300px]" rows={4} />
 });
 
 const AnalysisStream = dynamic(
   () => import("./components/analysis-stream").then((mod) => mod.AnalysisStream),
   {
-    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+    loading: () => <DashboardSkeleton className="h-full" rows={6} />
   }
 );
 
 const GlobalSentimentTrend = dynamic(
   () => import("./components/global-sentiment-trend").then((mod) => mod.GlobalSentimentTrend),
   {
-    loading: () => <Skeleton active paragraph={{ rows: 4 }} />
+    loading: () => <DashboardSkeleton className="min-h-[320px]" rows={6} />
   }
 );
 
 const SectorHeatmap = dynamic(
   () => import("./charts/sector-heatmap").then((mod) => mod.SectorHeatmap),
   {
-    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+    loading: () => <DashboardSkeleton className="h-[300px]" rows={6} />
   }
 );
 
 const WarMap = dynamic(() => import("./charts/war-map").then((mod) => mod.WarMap), {
-  loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+  loading: () => <DashboardSkeleton className="h-full" rows={6} />
 });
 
 const FinancialCandlestick = dynamic(
   () => import("./charts/financial-candlestick").then((mod) => mod.FinancialCandlestick),
   {
-    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+    loading: () => <DashboardSkeleton className="h-[350px]" rows={6} />
   }
 );
 
 const EntityImpactGraph = dynamic(
   () => import("./charts/entity-impact-graph").then((mod) => mod.EntityImpactGraph),
   {
-    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+    loading: () => <DashboardSkeleton className="h-[400px]" rows={6} />
   }
 );
 
 const KnowledgeGraph = dynamic(
   () => import("./charts/knowledge-graph").then((mod) => mod.KnowledgeGraph),
   {
-    loading: () => <Skeleton active paragraph={{ rows: 6 }} />
+    loading: () => <DashboardSkeleton className="h-[360px]" rows={6} />
   }
 );
 
 const SpacetimeViz = dynamic(
   () => import("./spacetime-viz").then((mod) => mod.SpacetimeViz),
   {
-    loading: () => <Skeleton active paragraph={{ rows: 10 }} />
+    loading: () => <SpacetimeVizSkeleton />
   }
 );
 
 const MarketPulse = dynamic(
   () => import("./components/market-pulse").then((mod) => mod.MarketPulse),
-  { loading: () => <Skeleton active paragraph={{ rows: 2 }} /> }
+  {
+    loading: () => (
+      <div className="mb-6">
+        <DashboardSkeleton className="min-h-[180px]" rows={4} />
+      </div>
+    )
+  }
 );
 
 const MetricDrillDown = dynamic(
@@ -106,7 +150,7 @@ const MetricDrillDown = dynamic(
 
 const QueueChart = dynamic(
   () => import("./queue-chart").then((mod) => mod.QueueChart),
-  { loading: () => <Skeleton active paragraph={{ rows: 4 }} /> }
+  { loading: () => <DashboardSkeleton className="h-[260px]" rows={4} /> }
 );
 
 export function DashboardContent() {

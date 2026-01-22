@@ -361,7 +361,7 @@ export function FinancialCandlestick() {
 
   if (sessionStatus === "loading") {
     return (
-      <div className="h-[350px] flex items-center">
+      <div className="h-[350px] flex items-center transition-all duration-300">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -369,7 +369,7 @@ export function FinancialCandlestick() {
 
   if (isLoading && !data) {
     return (
-      <div className="h-[350px] flex items-center">
+      <div className="h-[350px] flex items-center transition-all duration-300">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -416,7 +416,7 @@ export function FinancialCandlestick() {
           ? "permission"
           : "error";
     return (
-      <div className="h-[350px]">
+      <div className="h-[350px] transition-all duration-300">
         <ChartEmptyState
           variant={variant}
           title={title}
@@ -439,14 +439,14 @@ export function FinancialCandlestick() {
 
   if (!data || data.points.length === 0) {
     return (
-      <div className="h-[350px]">
+      <div className="h-[350px] transition-all duration-300">
         <ChartEmptyState title={emptyTitle} description={emptyHint} />
       </div>
     );
   }
 
   return (
-    <div className="relative h-[350px]">
+    <div className="relative h-[350px] transition-all duration-300">
       <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
         <Tag color="default" className="text-xs">
           Range: {range}

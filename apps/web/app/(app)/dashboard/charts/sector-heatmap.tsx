@@ -291,7 +291,7 @@ export function SectorHeatmap() {
 
   if (sessionStatus === "loading") {
     return (
-      <div className="h-[300px] flex items-center">
+      <div className="h-[300px] flex items-center transition-all duration-300">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -299,7 +299,7 @@ export function SectorHeatmap() {
 
   if (isLoading && !data) {
     return (
-      <div className="h-[300px] flex items-center">
+      <div className="h-[300px] flex items-center transition-all duration-300">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -346,7 +346,7 @@ export function SectorHeatmap() {
           ? "permission"
           : "error";
     return (
-      <div className="h-[300px]">
+      <div className="h-[300px] transition-all duration-300">
         <ChartEmptyState
           variant={variant}
           title={title}
@@ -369,14 +369,14 @@ export function SectorHeatmap() {
 
   if (!data || data.cells.length === 0) {
     return (
-      <div className="h-[300px]">
+      <div className="h-[300px] transition-all duration-300">
         <ChartEmptyState title={emptyTitle} description={emptyHint} />
       </div>
     );
   }
 
   return (
-    <div className="relative h-[300px]">
+    <div className="relative h-[300px] transition-all duration-300">
       <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
         <Tag color="default" className="text-xs">
           Range: {range}

@@ -308,24 +308,22 @@ export function KnowledgeGraph() {
       ) : null}
 
       {!seedName ? (
-        <div className="h-[360px]">
+        <div className="h-[360px] transition-all duration-300">
           <ChartEmptyState
             title={t("dashboard.charts.knowledgeGraphEmptyTitle", { defaultValue: "No seed" })}
             description={t("dashboard.charts.knowledgeGraphEmptyDescription", { defaultValue: "Enter a seed entity to explore" })}
           />
         </div>
       ) : loading ? (
-        <div className="h-[360px] flex items-center">
+        <div className="h-[360px] flex items-center transition-all duration-300">
           <Skeleton active paragraph={{ rows: 6 }} />
         </div>
       ) : graph ? (
-        <DashboardChart
-          option={option}
-          theme={echartsTheme}
-          height={360}
-        />
+        <div className="h-[360px] transition-all duration-300">
+          <DashboardChart option={option} theme={echartsTheme} height="100%" />
+        </div>
       ) : (
-        <div className="h-[360px]">
+        <div className="h-[360px] transition-all duration-300">
           <ChartEmptyState
             title={t("dashboard.charts.knowledgeGraphNotFoundTitle", { defaultValue: "Not found" })}
             description={t("dashboard.charts.knowledgeGraphNotFoundDescription", { defaultValue: "No graph data found for this seed" })}
