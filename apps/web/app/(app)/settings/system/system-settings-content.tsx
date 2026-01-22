@@ -261,40 +261,44 @@ function AuthCacheSettingsPanel() {
           name="profileTtlSeconds"
           rules={[
             { required: true, message: t("settings.authCache.validation.profileTtlRequired") },
-            { type: "number", min: 60, max: 86_400 }
+            { type: "number", min: 60, max: 86_400, message: t("common.validation.numberRange", { min: 60, max: 86_400 }) }
           ]}
+          extra={<NumberRangeExtra name="profileTtlSeconds" min={60} max={86_400} unit="s" />}
         >
-          <InputNumber min={60} max={86_400} step={30} style={{ width: "100%" }} />
+          <InputNumber min={60} max={86_400} step={30} addonAfter="s" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.authCache.fields.lockTtl")}
           name="lockTtlMs"
           rules={[
             { required: true, message: t("settings.authCache.validation.lockTtlRequired") },
-            { type: "number", min: 1_000, max: 120_000 }
+            { type: "number", min: 100, max: 60_000, message: t("common.validation.numberRange", { min: 100, max: 60_000 }) }
           ]}
+          extra={<NumberRangeExtra name="lockTtlMs" min={100} max={60_000} unit="ms" />}
         >
-          <InputNumber min={1_000} max={120_000} step={500} style={{ width: "100%" }} />
+          <InputNumber min={100} max={60_000} step={50} addonAfter="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.authCache.fields.maxWait")}
           name="maxWaitMs"
           rules={[
             { required: true, message: t("settings.authCache.validation.maxWaitRequired") },
-            { type: "number", min: 50, max: 120_000 }
+            { type: "number", min: 50, max: 120_000, message: t("common.validation.numberRange", { min: 50, max: 120_000 }) }
           ]}
+          extra={<NumberRangeExtra name="maxWaitMs" min={50} max={120_000} unit="ms" />}
         >
-          <InputNumber min={50} max={120_000} step={50} style={{ width: "100%" }} />
+          <InputNumber min={50} max={120_000} step={50} addonAfter="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.authCache.fields.retryDelay")}
           name="retryDelayMs"
           rules={[
             { required: true, message: t("settings.authCache.validation.retryDelayRequired") },
-            { type: "number", min: 10, max: 1_000 }
+            { type: "number", min: 10, max: 1_000, message: t("common.validation.numberRange", { min: 10, max: 1_000 }) }
           ]}
+          extra={<NumberRangeExtra name="retryDelayMs" min={10} max={1_000} unit="ms" />}
         >
-          <InputNumber min={10} max={1_000} step={10} style={{ width: "100%" }} />
+          <InputNumber min={10} max={1_000} step={10} addonAfter="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
