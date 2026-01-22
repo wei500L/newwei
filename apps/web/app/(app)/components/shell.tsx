@@ -5,6 +5,7 @@ import type { PropsWithChildren } from "react";
 
 import { ActionRail } from "./action-rail";
 import { TopNav } from "./top-nav";
+import { UrlStateSync } from "./url-state-sync";
 import { UserUiSettingsSync } from "./user-ui-settings-sync";
 
 export function ShellLayout({ children }: PropsWithChildren) {
@@ -13,6 +14,8 @@ export function ShellLayout({ children }: PropsWithChildren) {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {contextHolder}
+
+      <UrlStateSync />
 
       <UserUiSettingsSync />
 

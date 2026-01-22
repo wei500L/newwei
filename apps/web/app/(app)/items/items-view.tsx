@@ -5,7 +5,7 @@ import { gql, useQuery } from "@apollo/client";
 import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import dynamic from "next/dynamic";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { type ReadonlyURLSearchParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -33,6 +33,8 @@ const FinancialCard = dynamic(
   { loading: () => <Skeleton active paragraph={{ rows: 3 }} /> }
 );
 
+const EMPTY_FILTERS_STATE: FilterState = {};
+
 function parsePositiveInt(value: string | null, fallback: number) {
   if (!value) {
     return fallback;
@@ -59,6 +61,132 @@ function normalizeFilterList(
     return undefined;
   }
   return Array.from(new Set(normalized));
+}
+
+const ITEMS_FILTER_QUERY_KEYS = {
+  region: "region",
+  topic: "topic",
+  sentiment: "sentiment",
+  from: "from",
+  to: "to"
+} as const;
+
+function normalizeFiltersState(filters: FilterState): FilterState {
+  const regions = normalizeFilterList(filters.regions)?.sort((a, b) => a.localeCompare(b));
+  const topics = normalizeFilterList(filters.topics)?.sort((a, b) => a.localeCompare(b));
+  const sentiments = normalizeFilterList(filters.sentiments, { lowerCase: true })?.sort((a, b) =>
+    a.localeCompare(b)
+  );
+
+  const start = filters.dateRange?.[0] ?? null;
+  const end = filters.dateRange?.[1] ?? null;
+  const dateRange: FilterState["dateRange"] | undefined =
+    start && end && start.isValid() && end.isValid() && (start.isBefore(end) || start.isSame(end))
+      ? [start, end]
+      : undefined;
+
+  return {
+    ...(regions ? { regions } : {}),
+    ...(topics ? { topics } : {}),
+    ...(sentiments ? { sentiments } : {}),
+    ...(dateRange ? { dateRange } : {})
+  };
+}
+
+function fingerprintFilters(filters: FilterState): string {
+  const normalized = normalizeFiltersState(filters);
+  const dateRange = normalized.dateRange;
+  return JSON.stringify({
+    regions: normalized.regions ?? [],
+    topics: normalized.topics ?? [],
+    sentiments: normalized.sentiments ?? [],
+    from: dateRange?.[0]?.toISOString?.() ?? null,
+    to: dateRange?.[1]?.toISOString?.() ?? null
+  });
+}
+
+function parseDateRangeParam(
+  params: ReadonlyURLSearchParams
+): { dateRange?: FilterState["dateRange"] } {
+  const rawFrom = params.get(ITEMS_FILTER_QUERY_KEYS.from);
+  const rawTo = params.get(ITEMS_FILTER_QUERY_KEYS.to);
+  if (!rawFrom || !rawTo) {
+    return {};
+  }
+  const parsedFrom = dayjs(rawFrom);
+  const parsedTo = dayjs(rawTo);
+  if (!parsedFrom.isValid() || !parsedTo.isValid()) {
+    return {};
+  }
+  if (parsedFrom.isAfter(parsedTo)) {
+    return {};
+  }
+  return { dateRange: [parsedFrom, parsedTo] };
+}
+
+function parseFiltersFromSearchParams(
+  params: ReadonlyURLSearchParams,
+  baseFilters: FilterState
+): FilterState {
+  const base = normalizeFiltersState(baseFilters);
+
+  const regions = params.has(ITEMS_FILTER_QUERY_KEYS.region)
+    ? normalizeFilterList(params.getAll(ITEMS_FILTER_QUERY_KEYS.region))?.sort((a, b) =>
+        a.localeCompare(b)
+      )
+    : undefined;
+  const topics = params.has(ITEMS_FILTER_QUERY_KEYS.topic)
+    ? normalizeFilterList(params.getAll(ITEMS_FILTER_QUERY_KEYS.topic))?.sort((a, b) =>
+        a.localeCompare(b)
+      )
+    : undefined;
+  const sentiments = params.has(ITEMS_FILTER_QUERY_KEYS.sentiment)
+    ? normalizeFilterList(params.getAll(ITEMS_FILTER_QUERY_KEYS.sentiment), {
+        lowerCase: true
+      })?.sort((a, b) => a.localeCompare(b))
+    : undefined;
+
+  const dateOverride = parseDateRangeParam(params).dateRange;
+
+  return {
+    ...(base.regions ? { regions: base.regions } : {}),
+    ...(base.topics ? { topics: base.topics } : {}),
+    ...(base.sentiments ? { sentiments: base.sentiments } : {}),
+    ...(base.dateRange ? { dateRange: base.dateRange } : {}),
+    ...(regions !== undefined ? { regions } : {}),
+    ...(topics !== undefined ? { topics } : {}),
+    ...(sentiments !== undefined ? { sentiments } : {}),
+    ...(dateOverride ? { dateRange: dateOverride } : {})
+  };
+}
+
+function applyFiltersToSearchParams(next: URLSearchParams, filters: FilterState | null) {
+  next.delete(ITEMS_FILTER_QUERY_KEYS.region);
+  next.delete(ITEMS_FILTER_QUERY_KEYS.topic);
+  next.delete(ITEMS_FILTER_QUERY_KEYS.sentiment);
+  next.delete(ITEMS_FILTER_QUERY_KEYS.from);
+  next.delete(ITEMS_FILTER_QUERY_KEYS.to);
+
+  if (!filters) {
+    return;
+  }
+
+  const normalized = normalizeFiltersState(filters);
+  for (const value of normalized.regions ?? []) {
+    next.append(ITEMS_FILTER_QUERY_KEYS.region, value);
+  }
+  for (const value of normalized.topics ?? []) {
+    next.append(ITEMS_FILTER_QUERY_KEYS.topic, value);
+  }
+  for (const value of normalized.sentiments ?? []) {
+    next.append(ITEMS_FILTER_QUERY_KEYS.sentiment, value);
+  }
+
+  const dateRange = normalized.dateRange;
+  if (dateRange && dateRange[0] && dateRange[1]) {
+    next.set(ITEMS_FILTER_QUERY_KEYS.from, dateRange[0].toISOString());
+    next.set(ITEMS_FILTER_QUERY_KEYS.to, dateRange[1].toISOString());
+  }
 }
 
 function toNonEmptyString(value: unknown): string | undefined {
@@ -286,7 +414,7 @@ export function ItemsView({
   emptyStateVariant = "default",
   sortMode = "default",
   initialData = null,
-  initialFilters = {}
+  initialFilters = EMPTY_FILTERS_STATE
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -300,6 +428,7 @@ export function ItemsView({
   const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
 
   // URL State
+  const searchKey = searchParams.toString();
   const urlSearch = (searchParams.get("q") ?? "").trim();
   const current = parsePositiveInt(searchParams.get("page"), 1);
   const rawPageSize = parsePositiveInt(searchParams.get("pageSize"), DEFAULT_ITEMS_PAGE_SIZE);
@@ -308,13 +437,23 @@ export function ItemsView({
   // Local State
   const [searchInput, setSearchInput] = useState(urlSearch);
   const [view, setView] = useState<ItemViewType>(initialView);
-  const [filters, setFilters] = useState<FilterState>(() => initialFilters);
+  const [filters, setFilters] = useState<FilterState>(() =>
+    parseFiltersFromSearchParams(searchParams, initialFilters)
+  );
   const [showFilters, setShowFilters] = useState(false);
   const [showDelayHint, setShowDelayHint] = useState(false);
 
   useEffect(() => {
     setSearchInput(urlSearch);
   }, [urlSearch]);
+
+  useEffect(() => {
+    const nextFilters = parseFiltersFromSearchParams(searchParams, initialFilters);
+    const nextFingerprint = fingerprintFilters(nextFilters);
+    setFilters((currentFilters) => {
+      return fingerprintFilters(currentFilters) === nextFingerprint ? currentFilters : nextFilters;
+    });
+  }, [initialFilters, searchKey, searchParams]);
 
   const filtersInput = useMemo(() => buildFiltersInput(filters), [filters]);
   const hasActiveFilters = filtersInput !== null;
@@ -326,7 +465,12 @@ export function ItemsView({
   );
 
   const setQueryParams = useCallback(
-    (updates: { q?: string | null; page?: number | null; pageSize?: number | null }) => {
+    (updates: {
+      q?: string | null;
+      page?: number | null;
+      pageSize?: number | null;
+      filters?: FilterState | null;
+    }) => {
       const next = new URLSearchParams(searchParams.toString());
       if (updates.q !== undefined) {
         const value = updates.q?.trim() ?? "";
@@ -352,6 +496,9 @@ export function ItemsView({
           next.delete("pageSize");
         }
       }
+      if (updates.filters !== undefined) {
+        applyFiltersToSearchParams(next, updates.filters);
+      }
       const nextQuery = next.toString();
       if (nextQuery === searchParams.toString()) {
         return;
@@ -370,8 +517,9 @@ export function ItemsView({
 
   const handleFilterChange = useCallback(
     (nextFilters: FilterState) => {
-      setFilters(nextFilters);
-      setQueryParams({ page: 1 });
+      const normalized = normalizeFiltersState(nextFilters);
+      setFilters(normalized);
+      setQueryParams({ page: 1, filters: normalized });
     },
     [setQueryParams]
   );
@@ -564,8 +712,8 @@ export function ItemsView({
     if (!filters.sentiments || filters.sentiments.length === 0) {
       return;
     }
-    setFilters((current) => ({ ...current, sentiments: undefined }));
-  }, [availableSentiments.length, filters.sentiments]);
+    handleFilterChange({ ...filters, sentiments: undefined });
+  }, [availableSentiments.length, filters, handleFilterChange]);
 
   const emptyStateConfig = useMemo(() => {
     if (emptyStateVariant === "today") {
