@@ -952,7 +952,7 @@ export default function SubscriptionsPage() {
         okText={t("common.save")}
         onOk={() => channelForm.submit()}
         confirmLoading={creatingChannel || updatingChannel}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={channelForm} layout="vertical" onFinish={handleSubmitChannel}>
           <Form.Item name="id" hidden>
@@ -1024,7 +1024,7 @@ export default function SubscriptionsPage() {
         okText={t("common.save")}
         onOk={() => ruleForm.submit()}
         confirmLoading={updatingRule}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={ruleForm} layout="vertical" onFinish={handleSubmitRuleSubscriptions}>
           <Form.Item

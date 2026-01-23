@@ -185,7 +185,7 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
       title={t("dashboard.sentiment.title", "Global Sentiment Trend")} 
       loading={loading}
       className="h-full shadow-sm"
-      bordered={false}
+      variant="borderless"
       extra={
         <Space size={6} wrap>
           <Tag color="default" className="text-xs">

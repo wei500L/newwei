@@ -344,7 +344,7 @@ export function CrawlTemplatesContent() {
         }}
         onOk={() => form.submit()}
         okButtonProps={{ loading: saving }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form layout="vertical" form={form} onFinish={handleSubmit} preserve={false}>
           <Form.Item

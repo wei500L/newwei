@@ -223,7 +223,7 @@ export function SpacetimeViz() {
           <Card
             title={t("dashboard.charts.spacetimeGeoHeatmap.title", { defaultValue: "Geo Sentiment Heatmap" })}
             className="glass-card sm-panel-card h-[520px]"
-            bordered={false}
+            variant="borderless"
           >
             <div className="flex flex-col gap-2 h-full">
               <Space wrap size="small" align="center">
@@ -265,7 +265,7 @@ export function SpacetimeViz() {
           <Card
             title={t("dashboard.charts.spacetimeTimeline.title", { defaultValue: "Timeline Player" })}
             className="glass-card sm-panel-card h-[520px]"
-            bordered={false}
+            variant="borderless"
           >
             <div className="h-full flex flex-col gap-3">
               <Space direction="vertical" size={6}>
@@ -398,7 +398,7 @@ export function SpacetimeViz() {
           <Card
             title={t("dashboard.charts.spacetimePropagation.title", { defaultValue: "Propagation Flow" })}
             className="glass-card"
-            bordered={false}
+            variant="borderless"
           >
             <SpacetimePropagation
               eventId={selectedEventId}
@@ -413,7 +413,7 @@ export function SpacetimeViz() {
           <Card
             title={t("dashboard.charts.knowledgeGraph3d.title", { defaultValue: "Knowledge Graph (3D)" })}
             className="glass-card"
-            bordered={false}
+            variant="borderless"
           >
             <KnowledgeGraph3D defaultSeed={suggestedSeed} />
           </Card>

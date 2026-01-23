@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Drawer, Tag, message, Skeleton, Slider, Space, Typography } from "antd";
+import { App, Button, Drawer, Skeleton, Slider, Space, Tag, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -187,6 +187,7 @@ function transformLinks(
  */
 export function EntityImpactGraph() {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const { range, start, end } = useDashboardRangeStore();
   const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
@@ -464,7 +465,7 @@ export function EntityImpactGraph() {
         }
       }
     },
-    [selectedNode, t]
+    [message, selectedNode, t]
   );
 
   const handleNodeContextMenu = useCallback((params: any) => {

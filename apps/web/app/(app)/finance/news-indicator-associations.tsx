@@ -584,7 +584,7 @@ export function NewsIndicatorAssociations() {
       <Drawer
         open={selectedId !== null}
         width={860}
-        destroyOnClose
+        destroyOnHidden
         onClose={() => setSelectedId(null)}
         title={t("pages.newsIndicator.drawer.title", { defaultValue: "Association details" })}
       >

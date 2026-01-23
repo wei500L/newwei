@@ -406,7 +406,7 @@ export function SituationMonitorMonitorsPanel() {
         onCancel={closeModal}
         onOk={() => void handleSubmit()}
         okText={editingMonitor ? t("common.save", { defaultValue: "Save" }) : t("common.create", { defaultValue: "Create" })}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}

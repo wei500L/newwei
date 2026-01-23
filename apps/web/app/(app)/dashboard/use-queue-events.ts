@@ -25,9 +25,11 @@ export function useQueueEvents(): QueueEventState {
   const [state, setState] = useState<QueueEventState>({ connected: false });
   const socketRef = useRef<Socket | null>(null);
   const token = session?.accessToken as string | undefined;
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canManageQueue = permissions.includes("queue.manage");
 
   useEffect(() => {
-    if (status !== "authenticated" || !token) {
+    if (status !== "authenticated" || !token || !canManageQueue) {
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
@@ -83,7 +85,7 @@ export function useQueueEvents(): QueueEventState {
       socketRef.current = null;
       setState({ connected: false });
     };
-  }, [status, token]);
+  }, [canManageQueue, status, token]);
 
   return state;
 }

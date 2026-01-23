@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  App,
   Button,
   Card,
   Form,
@@ -10,7 +11,6 @@ import {
   Space,
   Skeleton,
   Typography,
-  message,
 } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -32,6 +32,7 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 export function AnalysisPanel() {
   const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const { data, loading, error, refetch } = useAnalysisResultsQuery({
     variables: { limit: 10 },
@@ -273,6 +274,7 @@ interface AnomalyFormProps {
 
 function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const [form] = Form.useForm<AnomalyFormValues>();
   const parseSeriesJson = (raw?: string) => {
     if (!raw || !raw.trim()) return [];

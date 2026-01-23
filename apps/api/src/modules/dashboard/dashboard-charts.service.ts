@@ -172,10 +172,14 @@ const buildLabelToSourceFieldMap = (metadata: unknown): Map<string, string> => {
     if (typeof field !== "string" || !field.trim()) {
       continue;
     }
-    map.set(field, field);
+    const trimmedField = field.trim();
+    map.set(trimmedField, trimmedField);
+    map.set(normalizeSourceFieldKey(trimmedField), trimmedField);
     const label = entry.label;
     if (typeof label === "string" && label.trim()) {
-      map.set(label, field);
+      const trimmedLabel = label.trim();
+      map.set(trimmedLabel, trimmedField);
+      map.set(normalizeSourceFieldKey(trimmedLabel), trimmedField);
     }
   }
 
@@ -187,13 +191,33 @@ const resolvePreferredSourceField = (
   preferredKeys: string[],
   labelToField: Map<string, string>
 ) => {
+  const normalizedToActual = new Map<string, string>();
+  for (const key of seriesByField.keys()) {
+    const normalized = normalizeSourceFieldKey(key);
+    if (!normalizedToActual.has(normalized)) {
+      normalizedToActual.set(normalized, key);
+    }
+  }
+
   for (const key of preferredKeys) {
     if (seriesByField.has(key)) {
       return key;
     }
-    const mapped = labelToField.get(key);
-    if (mapped && seriesByField.has(mapped)) {
-      return mapped;
+    const normalizedKey = normalizeSourceFieldKey(key);
+    const mapped = labelToField.get(key) ?? labelToField.get(normalizedKey);
+    if (mapped) {
+      if (seriesByField.has(mapped)) {
+        return mapped;
+      }
+      const normalizedMapped = normalizedToActual.get(normalizeSourceFieldKey(mapped));
+      if (normalizedMapped) {
+        return normalizedMapped;
+      }
+    }
+
+    const normalizedMatch = normalizedToActual.get(normalizedKey);
+    if (normalizedMatch) {
+      return normalizedMatch;
     }
   }
   return undefined;
@@ -2615,7 +2639,11 @@ export class DashboardChartsService {
           ? uniqStrings(config.heatmap.preferredSourceFields)
           : [...PREFERRED_SOURCE_FIELDS];
       const labelToField = buildLabelToSourceFieldMap(item.metadata);
-      const fieldKey = resolvePreferredSourceField(itemGroup as Map<string, unknown[]>, preferredKeys, labelToField);
+      const fieldKey = resolvePreferredSourceField(
+        itemGroup as Map<string, unknown[]>,
+        preferredKeys,
+        labelToField
+      );
       if (!fieldKey) {
         mappingErrors.push({
           itemId: item.id,

@@ -373,7 +373,7 @@ export function UserDigestPanel() {
         confirmLoading={savingPreference}
         okText={t("common.saveChanges", { defaultValue: "Save changes" })}
         cancelText={t("common.cancel", { defaultValue: "Cancel" })}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={handleSavePreference}>
           <Form.Item

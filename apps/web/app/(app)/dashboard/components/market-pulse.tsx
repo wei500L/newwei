@@ -268,7 +268,7 @@ export function MarketPulse({
           <Row gutter={[20, 20]}>
             {[1, 2, 3, 4].map((i) => (
               <Col xs={24} sm={12} lg={6} key={i}>
-                <Card bordered={false} className="shadow-sm">
+                <Card variant="borderless" className="shadow-sm">
                   <Skeleton active paragraph={{ rows: 2 }} />
                 </Card>
               </Col>

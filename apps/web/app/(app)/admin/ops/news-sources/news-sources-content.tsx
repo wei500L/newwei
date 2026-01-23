@@ -887,7 +887,7 @@ export function NewsSourcesContent() {
         }}
         onOk={() => form.submit()}
         okButtonProps={{ loading: saving }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form layout="vertical" form={form} onFinish={handleSubmit} preserve={false}>
           <Form.Item
@@ -1154,7 +1154,7 @@ export function NewsSourcesContent() {
             </Button>
           </Space>
         }
-        destroyOnClose
+        destroyOnHidden
       >
         {previewData ? (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>

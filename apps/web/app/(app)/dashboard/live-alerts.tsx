@@ -1,7 +1,7 @@
 "use client";
 
 import { useApolloClient } from "@apollo/client";
-import { message } from "antd";
+import { App } from "antd";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -9,6 +9,7 @@ import { AlertEventsStreamDocument, type AlertEventsStreamSubscription } from "@
 
 export function LiveAlertsToasts() {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const client = useApolloClient();
   const notifiedRef = useRef(false);
 
@@ -67,7 +68,7 @@ export function LiveAlertsToasts() {
       sub.unsubscribe();
       notifiedRef.current = false;
     };
-  }, [client, t]);
+  }, [client, message, t]);
 
   return null;
 }

@@ -295,7 +295,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       onCancel={onClose}
       width={1200}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
       centered
       className="top-4"
     >
@@ -321,7 +321,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           <Row gutter={[24, 24]}>
             {/* Top Row: Detailed Trend */}
             <Col span={24}>
-              <Card size="small" title={t("dashboard.drilldown.historicalTrend", "Historical Trend Analysis")} bordered={false} className="bg-gray-50">
+              <Card size="small" title={t("dashboard.drilldown.historicalTrend", "Historical Trend Analysis")} variant="borderless" className="bg-gray-50">
                 <DashboardChart option={trendOption} height={250} />
               </Card>
             </Col>
@@ -330,7 +330,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
              <Col xs={24} lg={14}>
               <Card 
                 title={<><GlobalOutlined /> {t("dashboard.drilldown.geoImpact", "Geographic Impact")}</>} 
-                bordered={false}
+                variant="borderless"
                 className="h-full border border-gray-100"
               >
                 {mapLoaded ? (
@@ -356,7 +356,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
             <Col xs={24} lg={10}>
               <Card 
                 title={<><UnorderedListOutlined /> {t("dashboard.drilldown.relatedIntelligence", "Related Intelligence")}</>} 
-                bordered={false}
+                variant="borderless"
                 className="h-full border border-gray-100"
                 styles={{ body: { maxHeight: 400, overflowY: "auto" } }}
               >

@@ -371,7 +371,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       <Drawer
         open={selectedEventId !== null}
         width={drawerWidth}
-        destroyOnClose
+        destroyOnHidden
         onClose={() => setSelectedEventId(null)}
         title={t("pages.events.drawer.title", { defaultValue: "Event details" })}
       >

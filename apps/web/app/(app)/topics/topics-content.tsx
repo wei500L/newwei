@@ -480,7 +480,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
         width={drawerWidth}
         open={Boolean(selectedEvent)}
         onClose={() => setSelectedEvent(null)}
-        destroyOnClose
+        destroyOnHidden
       >
         {selectedEvent ? (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>

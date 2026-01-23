@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Button, Skeleton, Tag, message } from "antd";
+import { App, Button, Skeleton, Tag } from "antd";
+import axios from "axios";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
@@ -36,6 +37,57 @@ interface SectorHeatmapResponse {
 }
 
 type HeatmapValue = [number, number, number, string, number];
+
+type SectorHeatmapFieldMismatchPayload = {
+  code?: unknown;
+  message?: unknown;
+  detail?: unknown;
+  items?: unknown;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value));
+
+const extractSectorHeatmapFieldMismatch = (error: unknown) => {
+  if (!axios.isAxiosError(error)) {
+    return null;
+  }
+  const payload = error.response?.data as SectorHeatmapFieldMismatchPayload | undefined;
+  if (!payload || !isRecord(payload)) {
+    return null;
+  }
+  if (payload.code !== "DASHBOARD_SECTOR_HEATMAP_FIELD_MAPPING_MISMATCH") {
+    return null;
+  }
+
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  const details = items
+    .slice(0, 8)
+    .map((item) => {
+      if (!isRecord(item)) {
+        return null;
+      }
+      const displayName = typeof item.displayName === "string" ? item.displayName.trim() : "";
+      const slug = typeof item.slug === "string" ? item.slug.trim() : "";
+      const name = displayName || slug || "Unknown item";
+      const available = Array.isArray(item.availableSourceFields)
+        ? item.availableSourceFields.filter(
+            (entry): entry is string => typeof entry === "string" && entry.trim().length > 0
+          )
+        : [];
+      return {
+        name,
+        available: available.slice(0, 10)
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+  return {
+    message: typeof payload.message === "string" ? payload.message : "Sector heatmap error",
+    detail: typeof payload.detail === "string" ? payload.detail : undefined,
+    items: details
+  };
+};
 
 const escapeCsvValue = (value: string | number | null | undefined) => {
   const text = value === null || value === undefined ? "" : String(value);
@@ -91,6 +143,7 @@ const formatDateForFilename = (date: Date) => {
 
 export function SectorHeatmap() {
   const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const { data: session, status: sessionStatus } = useSession();
   const { range, start, end } = useDashboardRangeStore();
@@ -345,6 +398,46 @@ export function SectorHeatmap() {
   }
 
   if (isError && !data) {
+    const fieldMismatch = extractSectorHeatmapFieldMismatch(error);
+    if (fieldMismatch) {
+      const list = fieldMismatch.items
+        .map((entry) => `${entry.name}: ${entry.available.join(", ") || "no source fields"}`)
+        .join("\n");
+      return (
+        <div className="h-[300px] transition-all duration-300">
+          <ChartEmptyState
+            variant="error"
+            title={t("dashboard.charts.sectorHeatmap.configErrorTitle", {
+              defaultValue: "Sector heatmap configuration error"
+            })}
+            description={
+              <div className="flex flex-col items-center gap-1">
+                <span>
+                  {t("dashboard.charts.sectorHeatmap.configErrorDescription", {
+                    defaultValue:
+                      "Some economic indicators have no matching source field for the heatmap."
+                  })}
+                </span>
+                <span className="font-mono text-[10px] opacity-80">
+                  code: DASHBOARD_SECTOR_HEATMAP_FIELD_MAPPING_MISMATCH
+                </span>
+                {fieldMismatch.detail ? (
+                  <span className="font-mono text-[10px] opacity-80">{fieldMismatch.detail}</span>
+                ) : null}
+                {list ? (
+                  <pre className="max-w-[520px] whitespace-pre-wrap text-left font-mono text-[10px] opacity-80">
+                    {list}
+                  </pre>
+                ) : null}
+              </div>
+            }
+            actionLabel={t("common.retry", { defaultValue: "Retry" })}
+            onAction={() => void refetch()}
+          />
+        </div>
+      );
+    }
+
     const emptyState = buildRequestErrorEmptyState({ t, error, onRetry: () => refetch() });
     return (
       <div className="h-[300px] transition-all duration-300">

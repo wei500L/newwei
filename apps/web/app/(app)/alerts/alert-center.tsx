@@ -1298,7 +1298,7 @@ export function AlertCenterContent() {
                       onCancel={() => setReplayOpen(false)}
                       footer={null}
                       width={840}
-                      destroyOnClose
+                      destroyOnHidden
                     >
                       {replayLoading ? (
                         <div className="flex justify-center py-10">

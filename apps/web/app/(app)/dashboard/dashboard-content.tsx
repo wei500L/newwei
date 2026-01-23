@@ -2,6 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  App,
   Button,
   Card,
   Col,
@@ -11,7 +12,6 @@ import {
   Statistic,
   Switch,
   Tag,
-  message,
 } from "antd";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
@@ -299,13 +299,17 @@ function DashboardStreamStatusLine({
 
 export function DashboardContent() {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const { data: session } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canManageQueue = permissions.includes("queue.manage");
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const isAnalysisFocused = searchParams.get("panel") === "analysis";
-  const [, messageContext] = message.useMessage();
   const { resetFilters, hasActiveFilters } = useDashboardUrlSync();
-  const { data, loading, error, refetch } = useQueueStatsQuery();
+  const { data, loading, error, refetch } = useQueueStatsQuery({
+    skip: !canManageQueue
+  });
   const { start, end, range } = useDashboardRangeStore();
 
   // Hero Metrics Query
@@ -352,7 +356,7 @@ export function DashboardContent() {
     if (connectionError) {
       message.error(t("dashboard.queue.connectionFailed", { error: connectionError }));
     }
-  }, [connectionError, t]);
+  }, [connectionError, message, t]);
 
   useEffect(() => {
     if (searchParams.get("panel") === "analysis" && analysisPanelRef.current) {
@@ -362,6 +366,7 @@ export function DashboardContent() {
 
   useEffect(() => {
     if (!lastEvent) return;
+    if (!canManageQueue) return;
     void refetch();
     if (lastEvent.event === "FAILED") {
       message.error(t("dashboard.queue.jobFailed", { jobId: lastEvent.jobId }));
@@ -370,21 +375,22 @@ export function DashboardContent() {
     } else if (lastEvent.event === "ACTIVE") {
       message.info(t("dashboard.queue.jobStarted", { jobId: lastEvent.jobId }));
     }
-  }, [lastEvent, refetch, t]);
+  }, [canManageQueue, lastEvent, message, refetch, t]);
 
   useEffect(() => {
     if (!queueFilterMounted.current) {
       queueFilterMounted.current = true;
       return;
     }
-    void refetch();
+    if (canManageQueue) {
+      void refetch();
+    }
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-  }, [queueStatus, queryClient, refetch]);
+  }, [canManageQueue, queueStatus, queryClient, refetch]);
   const queueStats = data?.queueStats ?? null;
 
   return (
     <div className="flex gap-6 h-full items-start">
-      {messageContext}
       <LiveAlertsToasts />
       
       {/* Center Column: Market Feed & Visuals */}
@@ -455,7 +461,7 @@ export function DashboardContent() {
            </div>
 
            {/* Sector Heatmap - Side Panel */}
-           <Card title={t("dashboard.charts.sectorHeatmap", { defaultValue: "Sector Performance" })} className="glass-card h-[500px]" bordered={false}>
+           <Card title={t("dashboard.charts.sectorHeatmap", { defaultValue: "Sector Performance" })} className="glass-card h-[500px]" variant="borderless">
              <SectorHeatmap />
            </Card>
         </div>
@@ -469,7 +475,7 @@ export function DashboardContent() {
              />
            </div>
            <div className="xl:col-span-1">
-             <Card className="glass-card h-full" bordered={false}>
+             <Card className="glass-card h-full" variant="borderless">
                <FinancialCandlestick />
              </Card>
            </div>
@@ -478,7 +484,7 @@ export function DashboardContent() {
         {/* Entity Impact Graph */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
            <div className="xl:col-span-3">
-             <Card title={t("dashboard.charts.entityImpactGraph", { defaultValue: "Entity Impact Graph" })} className="glass-card" bordered={false}>
+             <Card title={t("dashboard.charts.entityImpactGraph", { defaultValue: "Entity Impact Graph" })} className="glass-card" variant="borderless">
                <EntityImpactGraph />
              </Card>
            </div>
@@ -487,7 +493,7 @@ export function DashboardContent() {
         {/* Knowledge Graph */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
            <div className="xl:col-span-3">
-             <Card title={t("dashboard.charts.knowledgeGraph", { defaultValue: "Knowledge Graph" })} className="glass-card" bordered={false}>
+             <Card title={t("dashboard.charts.knowledgeGraph", { defaultValue: "Knowledge Graph" })} className="glass-card" variant="borderless">
                <KnowledgeGraph />
              </Card>
            </div>
@@ -499,7 +505,18 @@ export function DashboardContent() {
         {/* System Stats (Hidden by default) */}
         {showSystemStats && (
           <div className="animate-in fade-in slide-in-from-top-4 duration-300">
-            {loading && !queueStats ? (
+            {!canManageQueue ? (
+              <div className="mb-6 h-[220px]">
+                <ChartEmptyState
+                  title={t("common.accessDenied", { defaultValue: "Access denied" })}
+                  description={t("common.accessDeniedDescription", {
+                    defaultValue:
+                      "You don't have permission to view this data. Contact an administrator if you need access."
+                  })}
+                  variant="permission"
+                />
+              </div>
+            ) : loading && !queueStats ? (
               <Row gutter={[20, 20]} className="mb-6">
                 <Col xs={24} md={12} lg={8}>
                   <Card className="content-card h-full">
