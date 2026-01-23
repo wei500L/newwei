@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
+import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
 
 type VectorServiceSettingsSource = "env" | "db";
@@ -128,7 +129,7 @@ export function VectorServiceSettingsPanel() {
           ? (error as { response?: { status?: number } }).response?.status
           : undefined;
       if (statusCode === 400) {
-        messageApi.error(t("systemSettings.vectorService.errors.badRequest"));
+        messageApi.error(extractApiError(error).message ?? t("systemSettings.vectorService.errors.badRequest"));
       } else {
         messageApi.error(t("systemSettings.vectorService.errors.saveFailed"));
       }
@@ -297,4 +298,3 @@ export function VectorServiceSettingsPanel() {
     </>
   );
 }
-

@@ -202,6 +202,55 @@ describe("LiteLlmService", () => {
         expect.any(Object)
       );
     });
+
+    it("should retry without metadata when gateway rejects metadata field", async () => {
+      const error400 = new AxiosError("Bad request", "ERR_BAD_REQUEST", undefined, undefined, {
+        status: 400,
+        data: { error: { message: "Unrecognized request argument supplied: metadata" } },
+        statusText: "Bad Request",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      });
+
+      mockAxiosPost
+        .mockRejectedValueOnce(error400)
+        .mockResolvedValueOnce(mockCompletionResponse);
+
+      await service.acompletion({ ...completionParams, metadata: { source: "jest" } });
+
+      expect(mockAxiosPost).toHaveBeenCalledTimes(2);
+      expect(mockAxiosPost.mock.calls[1]?.[1]).not.toHaveProperty("metadata");
+    });
+
+    it("should downgrade json_schema to json_object when gateway rejects json_schema", async () => {
+      const error400 = new AxiosError("Bad request", "ERR_BAD_REQUEST", undefined, undefined, {
+        status: 400,
+        data: { error: { message: "Unsupported response_format type: json_schema" } },
+        statusText: "Bad Request",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      });
+
+      mockAxiosPost
+        .mockRejectedValueOnce(error400)
+        .mockResolvedValueOnce(mockCompletionResponse);
+
+      await service.acompletion({
+        ...completionParams,
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "test", schema: {} },
+        } as any,
+      });
+
+      expect(mockAxiosPost).toHaveBeenCalledTimes(2);
+      expect(mockAxiosPost).toHaveBeenNthCalledWith(
+        2,
+        "/v1/chat/completions",
+        expect.objectContaining({ response_format: { type: "json_object" } }),
+        expect.any(Object)
+      );
+    });
   });
 
   describe("retry logic", () => {

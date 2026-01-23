@@ -8,10 +8,11 @@ import { EnvService, type VectorServiceConfig } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import {
   decryptStringValueV1,
-  encryptStringValueV1,
   isEncryptedStringValueV1,
   resolveSettingsKey
 } from "../storage/storage-settings.crypto";
+
+import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type VectorServiceSettingsSource = "env" | "db";
 export type VectorServiceTokenSource = "stored" | "env" | "none";
@@ -53,15 +54,17 @@ export class VectorServiceSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
-    private readonly env: EnvService
+    private readonly env: EnvService,
+    private readonly securitySettings: SystemSecuritySettingsService
   ) {}
 
   async getPublicSettings(): Promise<VectorServiceSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
 
+    const storedToken = stored ? this.resolveToken(stored.token) : undefined;
     const tokenSource: VectorServiceTokenSource =
-      this.hasStoredToken(stored) ? "stored" : effective.token ? "env" : "none";
+      storedToken ? "stored" : effective.token ? "env" : "none";
 
     return {
       source: stored ? "db" : "env",
@@ -97,7 +100,7 @@ export class VectorServiceSettingsService {
       typeof input.baseUrl === "string" ? input.baseUrl.trim() : input.baseUrl ?? null;
     const normalizedBaseUrl = baseUrl ? this.validateUrl(baseUrl) : null;
 
-    const nextTokenRaw = this.resolveNextToken(stored, input.token);
+    const nextTokenRaw = await this.resolveNextToken(stored, input.token);
 
     const nextStored: StoredVectorServiceSettings = {
       enabled: input.enabled,
@@ -236,7 +239,10 @@ export class VectorServiceSettingsService {
     };
   }
 
-  private resolveNextToken(stored: StoredVectorServiceSettings | null, next: string | null | undefined): unknown {
+  private async resolveNextToken(
+    stored: StoredVectorServiceSettings | null,
+    next: string | null | undefined
+  ): Promise<unknown> {
     if (next === undefined) {
       return stored?.token ?? null;
     }
@@ -246,15 +252,7 @@ export class VectorServiceSettingsService {
       return null;
     }
 
-    const encryptionKey = resolveSettingsKey(this.env);
-    if (!encryptionKey) {
-      this.logger.warn(
-        "SYSTEM_SETTINGS_ENCRYPTION_KEY is not set; storing vector service token in plaintext"
-      );
-      return normalized;
-    }
-
-    return encryptStringValueV1(normalized, encryptionKey);
+    return this.securitySettings.encodeSecretForStorage(normalized);
   }
 
   private resolveToken(raw: unknown): string | undefined {
@@ -281,10 +279,6 @@ export class VectorServiceSettingsService {
       }
     }
     return undefined;
-  }
-
-  private hasStoredToken(stored: StoredVectorServiceSettings | null) {
-    return Boolean(stored?.token);
   }
 
   private validateUrl(value: string) {
@@ -339,4 +333,3 @@ export class VectorServiceSettingsService {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }
-

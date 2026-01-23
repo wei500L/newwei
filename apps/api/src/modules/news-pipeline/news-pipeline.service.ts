@@ -22,6 +22,7 @@ import { EventEmitter } from "node:events";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 
+import { extractFirstJson } from "../../common/llm-json";
 import { ItemStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
@@ -1186,8 +1187,12 @@ export class NewsPipelineService implements OnModuleDestroy {
       throw new Error("LiteLLM returned empty content");
     }
     let parsed: unknown;
+    const jsonText = extractFirstJson(content);
+    if (!jsonText) {
+      throw new Error("LiteLLM return was not valid JSON");
+    }
     try {
-      parsed = JSON.parse(content);
+      parsed = JSON.parse(jsonText);
     } catch (error) {
       this.logger.error({ error }, "Failed to parse LiteLLM JSON output");
       throw new Error("LiteLLM return was not valid JSON");

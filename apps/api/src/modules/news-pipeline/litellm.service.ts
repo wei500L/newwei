@@ -90,12 +90,19 @@ export interface LiteLlmStreamChunk {
   finishReason?: string;
 }
 
+interface GatewayCompatibilityFlags {
+  supportsMetadata: boolean;
+  supportsResponseFormat: boolean;
+  supportsJsonSchema: boolean;
+}
+
 @Injectable()
 export class LiteLlmService {
   private client: AxiosInstance;
   private currentBaseUrl: string;
   private currentApiKey?: string;
   private readonly logger = createLogger({ name: "litellm-service" });
+  private readonly compatibility = new Map<string, GatewayCompatibilityFlags>();
 
   constructor(
     private readonly configService: NewsPipelineConfigService,
@@ -207,18 +214,19 @@ export class LiteLlmService {
 
     while (attempt < maxAttempts) {
       try {
+        const compatibility = this.getCompatibilityFlags();
         const payload = {
           model,
           messages: params.messages,
           temperature: params.temperature ?? cfg.temperature,
           top_p: params.top_p ?? cfg.topP,
           max_tokens: params.max_tokens ?? cfg.maxOutputTokens,
-          response_format: params.response_format ?? undefined,
+          response_format: this.resolveResponseFormat(params.response_format, compatibility),
           stream: false,
-          metadata: params.metadata,
+          metadata: compatibility.supportsMetadata ? params.metadata : undefined,
         };
         const start = Date.now();
-        const response = await this.postWithFallback<LiteLlmCompletionResponse>(
+        const response = await this.postWithCompatibilityFallback<LiteLlmCompletionResponse>(
           "/v1/chat/completions",
           "/chat/completions",
           payload,
@@ -269,30 +277,32 @@ export class LiteLlmService {
     model: string,
     params: LiteLlmCompletionParams,
   ): AsyncGenerator<LiteLlmStreamChunk> {
+    const compatibility = this.getCompatibilityFlags();
     const payload = {
       model,
       messages: params.messages,
       temperature: params.temperature ?? cfg.temperature,
       top_p: params.top_p ?? cfg.topP,
       max_tokens: params.max_tokens ?? cfg.maxOutputTokens,
-      response_format: params.response_format ?? undefined,
+      response_format: this.resolveResponseFormat(params.response_format, compatibility),
       stream: true,
-      metadata: params.metadata,
+      metadata: compatibility.supportsMetadata ? params.metadata : undefined,
     };
 
-    const response = await this.postWithFallback(
+    const response = await this.postWithCompatibilityFallback(
       "/v1/chat/completions",
       "/chat/completions",
       payload,
       {
         responseType: "stream",
         timeout: params.timeoutMs ?? cfg.timeoutMs,
+        headers: { Accept: "text/event-stream" },
       },
     );
     const stream = response.data as Readable;
 
     for await (const data of this.iterateSseData(stream)) {
-      if (data === "[DONE]") {
+      if (data.trim() === "[DONE]") {
         return;
       }
       let parsed:
@@ -329,13 +339,14 @@ export class LiteLlmService {
 
     while (attempt < maxAttempts) {
       try {
+        const compatibility = this.getCompatibilityFlags();
         const payload = {
           model,
           input: params.input,
-          metadata: params.metadata,
+          metadata: compatibility.supportsMetadata ? params.metadata : undefined,
         };
         const start = Date.now();
-        const response = await this.postWithFallback<LiteLlmEmbeddingResponse>(
+        const response = await this.postWithCompatibilityFallback<LiteLlmEmbeddingResponse>(
           "/v1/embeddings",
           "/embeddings",
           payload,
@@ -401,6 +412,234 @@ export class LiteLlmService {
     }
   }
 
+  private async postWithCompatibilityFallback<T = unknown>(
+    primaryPath: string,
+    fallbackPath: string,
+    payload: Record<string, unknown>,
+    config?: AxiosRequestConfig,
+  ): Promise<AxiosResponse<T>> {
+    try {
+      return await this.postWithFallback<T>(primaryPath, fallbackPath, payload, config);
+    } catch (error) {
+      if (!(error instanceof AxiosError)) {
+        throw error;
+      }
+      const status = error.response?.status;
+      if (!status || ![400, 422].includes(status)) {
+        throw error;
+      }
+
+      const errorText = this.extractAxiosErrorText(error).toLowerCase();
+      const mentionsMetadata = errorText.includes("metadata");
+      const mentionsResponseFormat =
+        errorText.includes("response_format") ||
+        errorText.includes("response format") ||
+        errorText.includes("json_schema") ||
+        errorText.includes("json schema") ||
+        errorText.includes("structured output") ||
+        errorText.includes("structured outputs");
+
+      if (!mentionsMetadata && !mentionsResponseFormat) {
+        throw error;
+      }
+
+      const candidates = this.buildCompatibilityPayloadCandidates(payload, {
+        dropMetadata: mentionsMetadata,
+        adjustResponseFormat: mentionsResponseFormat,
+      });
+
+      if (candidates.length === 0) {
+        throw error;
+      }
+
+      let lastError: unknown = error;
+      for (const candidate of candidates) {
+        try {
+          const response = await this.postWithFallback<T>(
+            primaryPath,
+            fallbackPath,
+            candidate.payload,
+            config,
+          );
+          this.applyCompatibilityUpdate(candidate.update);
+          return response;
+        } catch (candidateError) {
+          lastError = candidateError;
+        }
+      }
+      throw lastError;
+    }
+  }
+
+  private buildCompatibilityPayloadCandidates(
+    payload: Record<string, unknown>,
+    options: { dropMetadata: boolean; adjustResponseFormat: boolean },
+  ) {
+    const candidates: Array<{ payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }> = [];
+
+    const hasMetadata = "metadata" in payload && payload.metadata !== undefined;
+    const hasResponseFormat = "response_format" in payload && payload.response_format !== undefined;
+    const responseFormatType =
+      hasResponseFormat &&
+      payload.response_format &&
+      typeof payload.response_format === "object" &&
+      "type" in (payload.response_format as Record<string, unknown>)
+        ? (payload.response_format as { type?: unknown }).type
+        : undefined;
+    const hasJsonSchema = responseFormatType === "json_schema";
+
+    const stripMetadata = (input: Record<string, unknown>) => {
+      const next = { ...input };
+      delete next.metadata;
+      return next;
+    };
+
+    const stripResponseFormat = (input: Record<string, unknown>) => {
+      const next = { ...input };
+      delete next.response_format;
+      return next;
+    };
+
+    const downgradeJsonSchema = (input: Record<string, unknown>) => ({
+      ...input,
+      response_format: { type: "json_object" },
+    });
+
+    if (options.dropMetadata && hasMetadata && options.adjustResponseFormat && hasResponseFormat) {
+      if (hasJsonSchema) {
+        candidates.push({
+          payload: stripMetadata(downgradeJsonSchema(payload)),
+          update: { supportsMetadata: false, supportsJsonSchema: false },
+        });
+      }
+      candidates.push({
+        payload: stripMetadata(stripResponseFormat(payload)),
+        update: { supportsMetadata: false, supportsResponseFormat: false, supportsJsonSchema: false },
+      });
+    }
+
+    if (options.dropMetadata && hasMetadata) {
+      candidates.push({
+        payload: stripMetadata(payload),
+        update: { supportsMetadata: false },
+      });
+    }
+
+    if (options.adjustResponseFormat && hasResponseFormat) {
+      if (hasJsonSchema) {
+        candidates.push({
+          payload: downgradeJsonSchema(payload),
+          update: { supportsJsonSchema: false },
+        });
+      }
+      candidates.push({
+        payload: stripResponseFormat(payload),
+        update: { supportsResponseFormat: false, supportsJsonSchema: false },
+      });
+    }
+
+    return this.dedupePayloadCandidates(candidates);
+  }
+
+  private dedupePayloadCandidates(
+    candidates: Array<{ payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }>,
+  ) {
+    const seen = new Set<string>();
+    const unique: Array<{ payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }> = [];
+    for (const candidate of candidates) {
+      let key: string;
+      try {
+        key = JSON.stringify(candidate.payload);
+      } catch {
+        key = String(unique.length);
+      }
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      unique.push(candidate);
+    }
+    return unique;
+  }
+
+  private applyCompatibilityUpdate(update: Partial<GatewayCompatibilityFlags>) {
+    if (!update || Object.keys(update).length === 0) {
+      return;
+    }
+    const flags = this.getCompatibilityFlags();
+    this.compatibility.set(this.currentBaseUrl, { ...flags, ...update });
+  }
+
+  private getCompatibilityFlags(): GatewayCompatibilityFlags {
+    const existing = this.compatibility.get(this.currentBaseUrl);
+    if (existing) {
+      return existing;
+    }
+    const initial: GatewayCompatibilityFlags = {
+      supportsMetadata: true,
+      supportsResponseFormat: true,
+      supportsJsonSchema: true,
+    };
+    this.compatibility.set(this.currentBaseUrl, initial);
+    return initial;
+  }
+
+  private resolveResponseFormat(
+    responseFormat: LiteLlmCompletionParams["response_format"],
+    compatibility: GatewayCompatibilityFlags,
+  ) {
+    if (!responseFormat || !compatibility.supportsResponseFormat) {
+      return undefined;
+    }
+
+    if (!compatibility.supportsJsonSchema) {
+      const type =
+        responseFormat &&
+        typeof responseFormat === "object" &&
+        "type" in (responseFormat as Record<string, unknown>)
+          ? (responseFormat as { type?: unknown }).type
+          : undefined;
+      if (type === "json_schema") {
+        return { type: "json_object" };
+      }
+    }
+
+    return responseFormat;
+  }
+
+  private extractAxiosErrorText(error: AxiosError) {
+    const responseData = error.response?.data as unknown;
+    if (!responseData) {
+      return error.message || "";
+    }
+    if (typeof responseData === "string") {
+      return responseData;
+    }
+    if (typeof responseData === "object") {
+      const record = responseData as Record<string, unknown>;
+      const errorField = record.error;
+      if (errorField && typeof errorField === "object") {
+        const message = (errorField as { message?: unknown }).message;
+        if (typeof message === "string") {
+          return message;
+        }
+      }
+      const message = record.message;
+      if (typeof message === "string") {
+        return message;
+      }
+      if (Array.isArray(message)) {
+        return message.filter((entry) => typeof entry === "string").join("; ");
+      }
+      try {
+        return JSON.stringify(record);
+      } catch {
+        return error.message || "";
+      }
+    }
+    return String(responseData);
+  }
+
   private isRetryable(error: unknown) {
     if (!(error instanceof AxiosError)) {
       return false;
@@ -413,7 +652,7 @@ export class LiteLlmService {
 
   private buildClient(cfg: { apiBase: string; apiKey?: string; timeoutMs: number }) {
     const baseUrl = normalizeApiBase(cfg.apiBase);
-    const apiKey = typeof cfg.apiKey === "string" && cfg.apiKey.trim() ? cfg.apiKey.trim() : undefined;
+    const apiKey = normalizeApiKey(cfg.apiKey);
     this.currentBaseUrl = baseUrl;
     this.currentApiKey = apiKey;
     return axios.create({
@@ -439,7 +678,7 @@ export class LiteLlmService {
       throw new Error("LiteLLM request throttled by local rate limiter");
     }
     const base = normalizeApiBase(cfg.apiBase);
-    const apiKey = typeof cfg.apiKey === "string" && cfg.apiKey.trim() ? cfg.apiKey.trim() : undefined;
+    const apiKey = normalizeApiKey(cfg.apiKey);
     const shouldRebuild = base !== this.currentBaseUrl || apiKey !== this.currentApiKey;
     if (shouldRebuild) {
       this.client = this.buildClient(cfg);
@@ -494,4 +733,16 @@ function normalizeApiBase(raw: string) {
   }
 
   return base.replace(/\/+$/, "");
+}
+
+function normalizeApiKey(raw: unknown): string | undefined {
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const normalized = trimmed.replace(/^bearer\s+/i, "").trim();
+  return normalized ? normalized : undefined;
 }

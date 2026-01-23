@@ -1,15 +1,15 @@
 import { createLogger } from "@modular/utils";
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { EnvService, StorageConfig } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import { SystemSecuritySettingsService } from "../system-settings/system-security-settings.service";
 
 import {
   decryptStringValueV1,
-  encryptStringValueV1,
   isEncryptedStringValueV1,
   resolveSettingsKey
 } from "./storage-settings.crypto";
@@ -67,7 +67,8 @@ export class StorageSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly securitySettings: SystemSecuritySettingsService
   ) {}
 
   async getStorageConfig(): Promise<StorageConfig> {
@@ -131,7 +132,10 @@ export class StorageSettingsService {
         this.asString(recordMap.get(STORAGE_SETTING_KEYS.accessKeyId)) ??
         fallback.accessKeyId,
       hasSecretAccessKey: Boolean(
-        recordMap.get(STORAGE_SETTING_KEYS.secretAccessKey) ?? fallback.secretAccessKey
+        this.resolveSecret(
+          recordMap.get(STORAGE_SETTING_KEYS.secretAccessKey),
+          fallback.secretAccessKey
+        )
       )
     };
   }
@@ -142,40 +146,34 @@ export class StorageSettingsService {
     input: StorageSettingsInput
   ): Promise<StorageSettingsResponse> {
     const updates = this.normalizeUpdates(input);
-    const encryptionKey = resolveSettingsKey(this.env);
 
-    if (updates.secretAccessKey !== undefined) {
-      if (!encryptionKey) {
-        throw new BadRequestException(
-          "SYSTEM_SETTINGS_ENCRYPTION_KEY is required to store secret keys"
-        );
-      }
-    }
-
-    const operations = Object.entries(updates).map(([key, value]) => {
+    const operations: Prisma.PrismaPromise<unknown>[] = [];
+    for (const [key, value] of Object.entries(updates)) {
       const settingKey = STORAGE_SETTING_KEYS[key as keyof StorageSettingsInput];
       const isPublic = PUBLIC_SETTING_KEYS.has(settingKey);
       const recordValue =
-        settingKey === STORAGE_SETTING_KEYS.secretAccessKey && value && encryptionKey
-          ? encryptStringValueV1(String(value), encryptionKey)
+        settingKey === STORAGE_SETTING_KEYS.secretAccessKey && value
+          ? await this.securitySettings.encodeSecretForStorage(String(value))
           : value;
 
-      return this.prisma.systemSetting.upsert({
-        where: { key: settingKey },
-        update: {
-          value: recordValue,
-          isPublic,
-          updatedById: actorId
-        },
-        create: {
-          key: settingKey,
-          value: recordValue,
-          isPublic,
-          updatedById: actorId,
-          description: "Storage configuration"
-        }
-      });
-    });
+      operations.push(
+        this.prisma.systemSetting.upsert({
+          where: { key: settingKey },
+          update: {
+            value: recordValue,
+            isPublic,
+            updatedById: actorId
+          },
+          create: {
+            key: settingKey,
+            value: recordValue,
+            isPublic,
+            updatedById: actorId,
+            description: "Storage configuration"
+          }
+        })
+      );
+    }
 
     if (operations.length > 0) {
       await this.prisma.$transaction(operations);

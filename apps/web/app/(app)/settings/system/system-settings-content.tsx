@@ -19,6 +19,7 @@ import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-setti
 import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
 import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
+import { SystemSecuritySettingsPanel } from "@/components/settings/system-security-settings-panel";
 import { VectorServiceSettingsPanel } from "@/components/settings/vector-service-settings-panel";
 import {
   useAuditLogRetentionQuery,
@@ -752,6 +753,7 @@ export function SystemSettingsContent() {
           label: t("settings.tabs.rateLimitPolicies"),
           children: <RateLimitPoliciesPanel />
         },
+        { key: "security", label: t("systemSettings.tabs.security"), children: <SystemSecuritySettingsPanel /> },
         { key: "llmGateway", label: t("settings.tabs.llmGateway"), children: <LlmGatewaySettingsPanel /> },
         { key: "vectorService", label: t("systemSettings.tabs.vectorService"), children: <VectorServiceSettingsPanel /> },
         { key: "modelService", label: t("systemSettings.tabs.modelService"), children: <ModelServiceSettingsPanel /> },

@@ -2061,6 +2061,9 @@
       "actions": {
         "new": "New gateway",
         "activate": "Activate",
+        "test": "Test",
+        "testUnsaved": "Test (unsaved)",
+        "models": "Models",
         "clearKey": "Clear key",
         "keepKey": "Keep key"
       },
@@ -2073,6 +2076,7 @@
         "apiKey": "API key"
       },
       "fields": {
+        "preset": "Vendor preset",
         "name": "Name",
         "apiBase": "API base URL",
         "apiKey": "API key",
@@ -2088,13 +2092,21 @@
         "enabled": "Enabled"
       },
       "placeholders": {
+        "preset": "Choose a preset (optional)",
         "name": "e.g. LiteLLM (prod)",
         "apiKey": "Optional",
         "apiKeyEdit": "Leave empty to keep unchanged",
         "fallbackModels": "comma-separated, e.g. openai/gpt-4o-mini,anthropic/claude-3-haiku"
       },
+      "presets": {
+        "glm": "GLM (Zhipu)",
+        "kimi": "Kimi K2 (Moonshot)",
+        "deepseek": "DeepSeek",
+        "qwen": "Qwen (DashScope)"
+      },
       "hints": {
-        "apiKey": "Encrypted in MySQL when SYSTEM_SETTINGS_ENCRYPTION_KEY is set; otherwise stored as plaintext.",
+        "apiBase": "Accepts either a base URL (e.g. https://api.openai.com) or a full endpoint URL (e.g. https://api.openai.com/v1/chat/completions). We normalize it automatically.",
+        "apiKey": "Stored in system settings. Encrypted in MySQL when secret encryption is enabled (System Settings -> Security) and SYSTEM_SETTINGS_ENCRYPTION_KEY is configured; otherwise stored as plaintext. You can paste either sk-... or a full \"Bearer sk-...\" value.",
         "apiKeyEdit": "Provide a new key to rotate it. Use the toggle below to clear.",
         "fallbackModels": "Used when the primary model request fails."
       },
@@ -2130,6 +2142,64 @@
         "toggleFailed": "Failed to update profile status",
         "activateFailed": "Failed to activate profile",
         "badRequest": "Invalid input"
+      },
+      "test": {
+        "modal": {
+          "title": "Test {{name}}"
+        },
+        "actions": {
+          "run": "Run test"
+        },
+        "fields": {
+          "model": "Model override",
+          "prompt": "Prompt",
+          "includeEmbeddings": "Test embeddings",
+          "embeddingModel": "Embedding model override",
+          "embeddingInput": "Embedding input"
+        },
+        "placeholders": {
+          "prompt": "Say \"OK\" and nothing else.",
+          "embeddingInput": "hello"
+        },
+        "hints": {
+          "model": "Leave empty to use the profile default + fallback models.",
+          "embeddingModel": "Leave empty to use the profile embedding model."
+        },
+        "sections": {
+          "completion": "Chat completion",
+          "embedding": "Embeddings"
+        },
+        "tokens": "{{total}} tokens",
+        "dimensions": "{{n}} dims",
+        "cost": "$ {{cost}}",
+        "errors": {
+          "failed": "Test failed"
+        }
+      },
+      "testUnsaved": {
+        "modal": {
+          "title": "Test current config"
+        },
+        "errors": {
+          "failed": "Test failed"
+        }
+      },
+      "models": {
+        "modal": {
+          "title": "Models ({{name}})"
+        },
+        "columns": {
+          "id": "Model"
+        },
+        "count": "{{count}} models",
+        "errors": {
+          "failed": "Failed to load models"
+        }
+      },
+      "modelsUnsaved": {
+        "modal": {
+          "title": "Models (unsaved)"
+        }
       }
     },
     "adminOnly": {
@@ -2332,6 +2402,49 @@
         "sendFailed": "Failed to send test email"
       }
     },
+    "security": {
+      "description": "Control how secrets are stored in MySQL (LLM gateway API keys, internal tokens, S3 secret keys).",
+      "status": {
+        "label": "Status",
+        "encryptionEnabled": "Encryption enabled",
+        "encryptionDisabled": "Encryption disabled",
+        "keyPresent": "Env key present",
+        "keyMissing": "Env key missing",
+        "keyInvalid": "Env key invalid"
+      },
+      "fields": {
+        "secretEncryptionEnabled": "Encrypt stored secrets"
+      },
+      "hints": {
+        "secretEncryptionEnabled": "When enabled, new/updated secrets are encrypted using SYSTEM_SETTINGS_ENCRYPTION_KEY. Existing records are not migrated automatically."
+      },
+      "alerts": {
+        "keyMissing": {
+          "title": "SYSTEM_SETTINGS_ENCRYPTION_KEY is not set",
+          "body": "To enable encryption, set SYSTEM_SETTINGS_ENCRYPTION_KEY (32 bytes base64 or 64 hex chars) and restart the API."
+        },
+        "keyReady": {
+          "title": "Encryption key detected",
+          "body": "You can enable secret encryption to store new secrets encrypted in MySQL."
+        },
+        "enabledMissingKey": {
+          "title": "Encryption enabled but key is missing/invalid",
+          "body": "Set SYSTEM_SETTINGS_ENCRYPTION_KEY and restart the API to access encrypted secrets.",
+          "bodyWithError": "Set SYSTEM_SETTINGS_ENCRYPTION_KEY and restart the API to access encrypted secrets. Error: {{error}}"
+        }
+      },
+      "messages": {
+        "saved": "Saved"
+      },
+      "errors": {
+        "loadFailed": "Failed to load security settings",
+        "saveFailed": "Failed to save security settings"
+      },
+      "modal": {
+        "disableTitle": "Disable encryption?",
+        "disableContent": "New secrets will be stored as plaintext. Existing encrypted values will remain encrypted."
+      }
+    },
     "vectorService": {
       "description": "Manage the API integration with the vector service (semantic dedupe/search).",
       "notice": {
@@ -2483,6 +2596,7 @@
     "tabs": {
       "geoNominatim": "Geocoding (Nominatim)",
       "email": "Email (SMTP)",
+      "security": "Security",
       "vectorService": "Vector service",
       "modelService": "Model service",
       "akshare": "AKShare"

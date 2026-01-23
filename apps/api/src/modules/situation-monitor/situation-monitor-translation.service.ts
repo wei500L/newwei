@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { zodToJsonSchema, type JsonSchema7Type } from "zod-to-json-schema";
 
+import { safeJsonParseFromText } from "../../common/llm-json";
 import { CacheService } from "../cache/cache.service";
 import { LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
 import type { JsonSchemaResponseFormat } from "../news-pipeline/news-prompt.builder";
@@ -287,7 +288,10 @@ export class SituationMonitorTranslationService {
     });
 
     const content = completion.choices?.[0]?.message?.content ?? "";
-    const parsed = JSON.parse(content) as unknown;
+    const parsed = safeJsonParseFromText<unknown>(content);
+    if (!parsed) {
+      throw new Error("LiteLLM return was not valid JSON");
+    }
     return TranslationResponseSchema.parse(parsed);
   }
 

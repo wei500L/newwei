@@ -56,9 +56,9 @@
       "emptyDescription": "规则触发后，告警将显示在这里。",
       "metrics": "值 {{value}} · 变化 {{change}}",
       "evidence": "证据 {{source}} · 阈值 {{threshold}}",
-      "triggerReason": "Trigger {{reason}}",
-      "evidenceEmpty": "No evidence fields.",
-      "window": "Window {{window}}"
+      "triggerReason": "触发 {{reason}}",
+      "evidenceEmpty": "暂无证据字段。",
+      "window": "窗口 {{window}}"
     },
     "rules": {
       "title": "告警规则",
@@ -67,7 +67,7 @@
       "triggerFailed": "触发预警失败。",
       "summary": "提供方 {{provider}} / 指标 {{metric}} · 每 {{interval}} 秒检查 · 冷却 {{cooldown}} 秒",
       "channels": "通知渠道：{{channels}}",
-      "threshold": "Threshold {{threshold}}"
+      "threshold": "阈值 {{threshold}}"
     },
     "center": {
       "title": "预警中心",
@@ -164,12 +164,12 @@
           "actor": "执行人",
           "statuses": "状态"
         },
-        "tuning": "Tuning suggestion",
-        "tuningError": "Failed to load tuning suggestion.",
+        "tuning": "调参建议",
+        "tuningError": "加载调参建议失败。",
         "tuningStats": "Reviewed {{reviewed}} · Confirmed {{confirmed}} · Ignored {{ignored}} · FP rate {{rate}}",
-        "tuningEmpty": "No tuning suggestion.",
-        "tuningThreshold": "Suggested threshold {{value}}",
-        "tuningRange": "Suggested range {{lower}} - {{upper}}"
+        "tuningEmpty": "暂无调参建议。",
+        "tuningThreshold": "建议阈值 {{value}}",
+        "tuningRange": "建议范围 {{lower}} - {{upper}}"
       }
     },
     "streamError": "告警流错误：{{error}}",
@@ -203,8 +203,8 @@
         "channelsPlaceholder": "请输入渠道",
         "muteUntil": "静默至",
         "notifyAllMembers": "通知全部成员",
-        "metadataJson": "Metadata (JSON)",
-        "metadataJsonHint": "Optional JSON object merged into rule metadata."
+        "metadataJson": "元数据（JSON）",
+        "metadataJsonHint": "可选 JSON 对象，将合并到规则元数据中。"
       },
       "pipeline": {
         "title": "流水线",
@@ -335,15 +335,15 @@
     "unauthorized": "尚未登录。",
     "clear": "清空",
     "create": "创建",
-    "popupBlocked": "Popup blocked. Please allow popups for this site.",
-    "copied": "Copied",
-    "copyFailed": "Copy failed",
-    "copy": "Copy",
-    "details": "Details",
-    "pause": "Pause",
-    "play": "Play",
-    "prev": "Prev",
-    "fastForward": "Fast"
+    "popupBlocked": "弹窗被拦截，请允许本站点弹窗。",
+    "copied": "已复制",
+    "copyFailed": "复制失败",
+    "copy": "复制",
+    "details": "详情",
+    "pause": "暂停",
+    "play": "播放",
+    "prev": "上一个",
+    "fastForward": "快进"
   },
   "orgSwitcher": {
     "error": {
@@ -416,7 +416,7 @@
       "defaultAggregation": "默认聚合粒度",
       "defaultAggregationHint": "多数图表会按该粒度对所选时间窗进行聚合；单个图表可能会不同。",
       "helperText": "时间范围会影响图表粒度与提示信息。",
-      "title": "Time Range"
+      "title": "时间范围"
     },
     "widgets": {
       "unsupportedSource": "不支持的数据源：{{source}}",
@@ -510,13 +510,13 @@
     "drilldown": {
       "title": "下钻",
       "loadFailed": "加载失败",
-      "liveAnalysis": "Live Analysis",
-      "description": "Detailed analysis and historical trend for {{metric}}",
-      "historicalTrend": "Historical Trend Analysis",
-      "geoImpact": "Geographic Impact",
-      "noGeoData": "No geographic data detected in recent alerts.",
-      "relatedIntelligence": "Related Intelligence",
-      "noEvents": "No related intelligence events found in the recent period."
+      "liveAnalysis": "实时分析",
+      "description": "针对 {{metric}} 的详细分析与历史趋势",
+      "historicalTrend": "历史趋势分析",
+      "geoImpact": "地理影响",
+      "noGeoData": "近期告警中未检测到地理数据。",
+      "relatedIntelligence": "相关情报",
+      "noEvents": "近期未找到相关情报事件。"
     },
     "alertConfig": {
       "title": "告警配置"
@@ -878,15 +878,15 @@
       "warMap": {
         "title": "区域信号态势图",
         "series": "信号",
-        "conflictZones": "Conflict zones",
-        "hotspots": "Hotspots",
-        "monitors": "Monitors",
-        "chokepoints": "Chokepoints",
-        "cableLandings": "Cable landings",
-        "nuclearSites": "Nuclear sites",
-        "militaryBases": "Military bases",
-        "newsSeries": "News",
-        "layers": "Layers",
+        "conflictZones": "冲突区域",
+        "hotspots": "热点",
+        "monitors": "监控",
+        "chokepoints": "咽喉要道",
+        "cableLandings": "海缆登陆点",
+        "nuclearSites": "核设施",
+        "militaryBases": "军事基地",
+        "newsSeries": "新闻",
+        "layers": "图层",
         "stats": {
           "signals": "信号",
           "signalsHint": "按窗口聚合",
@@ -911,97 +911,97 @@
           "hiddenLayers": "有可用的叠加图层，但被筛选隐藏了；可在“Layers”中开启。",
           "noOverlays": "未配置任何静态图层或带位置的监控器。"
         },
-        "missingNewsUrl": "No link available for this news marker.",
-        "openingNews": "Opening news link...",
-        "openedNews": "News opened in a new tab",
-        "missingMonitorQuery": "No keywords available for this monitor.",
-        "openingSearch": "Opening search for \"{{query}}\"...",
-        "openedSearch": "Search opened for \"{{query}}\" in a new tab"
+        "missingNewsUrl": "该新闻标记暂无链接。",
+        "openingNews": "正在打开新闻链接...",
+        "openedNews": "已在新标签页打开新闻。",
+        "missingMonitorQuery": "该监控暂无关键词。",
+        "openingSearch": "正在打开搜索“{{query}}”...",
+        "openedSearch": "已在新标签页打开“{{query}}”的搜索。"
       },
       "entityGraph": {
-        "disabledTitle": "Disabled",
-        "disabledDescription": "Disabled by admin",
-        "person": "Person",
-        "organization": "Organization",
-        "stock": "Stock",
-        "commodity": "Commodity",
-        "other": "Other",
-        "type": "Type",
-        "category": "Category",
-        "weight": "Weight",
-        "connections": "Connections",
-        "relatedEntities": "Related",
-        "correlation": "Correlation",
-        "coOccurrence": "Co-occurrence",
-        "correlationValue": "Correlation",
-        "coOccurrenceCount": "Count",
-        "linkType": "Link Type",
-        "title": "Entity Impact Graph",
-        "nodeSelected": "Selected: {{node}}",
-        "confidenceFilter": "Entity confidence",
-        "stats": "{{nodes}} nodes, {{links}} links",
-        "openingSearch": "Opening search for \"{{query}}\"...",
-        "openedSearch": "Search opened for \"{{query}}\" in a new tab",
-        "openSearch": "Open search",
-        "detailsTitle": "Details",
-        "noRelatedEntities": "No related entities found.",
-        "hint": "Tip: right-click a node for quick actions."
+        "disabledTitle": "已禁用",
+        "disabledDescription": "已被管理员禁用",
+        "person": "人物",
+        "organization": "组织",
+        "stock": "股票",
+        "commodity": "大宗商品",
+        "other": "其他",
+        "type": "类型",
+        "category": "类别",
+        "weight": "权重",
+        "connections": "连接",
+        "relatedEntities": "相关",
+        "correlation": "相关性",
+        "coOccurrence": "共现",
+        "correlationValue": "相关性",
+        "coOccurrenceCount": "数量",
+        "linkType": "关联类型",
+        "title": "实体影响图",
+        "nodeSelected": "已选择：{{node}}",
+        "confidenceFilter": "实体置信度",
+        "stats": "{{nodes}} 个节点，{{links}} 条连接",
+        "openingSearch": "正在打开搜索“{{query}}”...",
+        "openedSearch": "已在新标签页打开“{{query}}”的搜索。",
+        "openSearch": "打开搜索",
+        "detailsTitle": "详情",
+        "noRelatedEntities": "未找到相关实体。",
+        "hint": "提示：右键点击节点可进行快速操作。"
       },
-      "sectorSelected": "Selected: {{sector}}",
-      "knowledgeGraphReflow": "Reflow",
-      "knowledgeGraphSeedLabel": "Seed",
-      "knowledgeGraphSearching": "Searching...",
-      "knowledgeGraphNodeTitle": "Node",
-      "knowledgeGraphNodeType": "Type",
-      "knowledgeGraphNodeDegree": "Degree",
-      "knowledgeGraphExplore": "Explore this node",
-      "knowledgeGraphOpeningSearch": "Opening search for \"{{query}}\"...",
-      "knowledgeGraphOpenedSearch": "Search opened for \"{{query}}\" in a new tab",
-      "knowledgeGraphOpenSearch": "Open search",
-      "knowledgeGraphExploreHint": "Tip: use \"Explore this node\" to re-center the graph on it.",
+      "sectorSelected": "已选择：{{sector}}",
+      "knowledgeGraphReflow": "重新布局",
+      "knowledgeGraphSeedLabel": "种子",
+      "knowledgeGraphSearching": "搜索中...",
+      "knowledgeGraphNodeTitle": "节点",
+      "knowledgeGraphNodeType": "类型",
+      "knowledgeGraphNodeDegree": "度数",
+      "knowledgeGraphExplore": "探索此节点",
+      "knowledgeGraphOpeningSearch": "正在打开搜索“{{query}}”...",
+      "knowledgeGraphOpenedSearch": "已在新标签页打开“{{query}}”的搜索。",
+      "knowledgeGraphOpenSearch": "打开搜索",
+      "knowledgeGraphExploreHint": "提示：使用“探索此节点”将图谱重新居中到该节点。",
       "spacetimeGeoHeatmap": {
-        "geoFailedTitle": "Map failed",
-        "details": "Details",
-        "active": "Active",
-        "inactive": "Inactive",
-        "bucket": "Bucket",
-        "caption": "Heat + dominant sentiment overlay (click a dot for details).",
-        "emptyBucket": "No geo-tagged news in this bucket.",
-        "empty": "No geo-tagged news in the selected range.",
-        "noArticles": "No articles found for this point.",
-        "moreHint": "More articles available. Narrow the time range to inspect further.",
-        "title": "Geo Sentiment Heatmap",
-        "scope": "Scope",
-        "scopeGlobal": "Global",
-        "scopeEvent": "Event",
-        "followTimeline": "Follow timeline"
+        "geoFailedTitle": "地图加载失败",
+        "details": "详情",
+        "active": "活跃",
+        "inactive": "不活跃",
+        "bucket": "分桶",
+        "caption": "热度 + 主导情绪叠加（点击点查看详情）。",
+        "emptyBucket": "该分桶中没有带地理标记的新闻。",
+        "empty": "所选范围内没有带地理标记的新闻。",
+        "noArticles": "该点没有找到文章。",
+        "moreHint": "还有更多文章可用。请缩小时间范围以继续查看。",
+        "title": "地理情绪热力图",
+        "scope": "范围",
+        "scopeGlobal": "全球",
+        "scopeEvent": "事件",
+        "followTimeline": "跟随时间线"
       },
       "spacetimePropagation": {
-        "emptyTitle": "No event selected",
-        "emptyDescription": "Select an event to render its propagation flow.",
-        "empty": "No propagation signals found in the selected range.",
-        "caption": "Directed source-to-source diffusion (duplicate-aware + time-lag fallback).",
-        "details": "Details",
-        "window": "Window",
-        "noArticles": "No articles found for this source in the selected window.",
-        "moreHint": "More articles available. Narrow the time range to inspect further.",
-        "title": "Propagation Flow"
+        "emptyTitle": "未选择事件",
+        "emptyDescription": "选择一个事件以渲染其传播流。",
+        "empty": "所选范围内未发现传播信号。",
+        "caption": "定向来源到来源扩散（去重感知 + 时间滞后回退）。",
+        "details": "详情",
+        "window": "窗口",
+        "noArticles": "所选窗口内未找到该来源的文章。",
+        "moreHint": "还有更多文章可用。请缩小时间范围以继续查看。",
+        "title": "传播流"
       },
       "spacetimeTimeline": {
-        "title": "Timeline Player",
-        "event": "Event",
-        "eventPlaceholder": "Select an event",
-        "playing": "Playing",
-        "paused": "Paused",
-        "emptyTitle": "No event",
-        "emptyDescription": "Select an event to play its timeline.",
-        "noTimelineTitle": "No timeline",
-        "noTimelineDescription": "This event has no timeline entries.",
-        "step": "Step",
-        "bucket": "Bucket"
+        "title": "时间线播放器",
+        "event": "事件",
+        "eventPlaceholder": "选择事件",
+        "playing": "播放中",
+        "paused": "已暂停",
+        "emptyTitle": "无事件",
+        "emptyDescription": "选择事件以播放其时间线。",
+        "noTimelineTitle": "无时间线",
+        "noTimelineDescription": "该事件没有时间线条目。",
+        "step": "步骤",
+        "bucket": "分桶"
       },
       "knowledgeGraph3d": {
-        "title": "Knowledge Graph (3D)"
+        "title": "知识图谱（3D）"
       }
     },
     "stream": {
@@ -1070,31 +1070,31 @@
       "volatility": "当前值{{direction}}历史均值 {{percent}}%，波动较为剧烈。",
       "trend": "观察到强劲的{{direction}}趋势（较上一周期变化 {{percent}}%）。",
       "stable": "数据在历史范围内保持稳定。",
-      "label": "Insight"
+      "label": "洞察"
     },
     "analysisStream": {
-      "title": "Analysis Stream",
-      "updates": "{{count}} updates",
-      "loading": "Preparing analysis stream...",
-      "empty": "No analysis updates yet.",
-      "summaryUnavailable": "Summary unavailable",
-      "subscriptionError": "Live updates disconnected",
+      "title": "分析流",
+      "updates": "{{count}} 条更新",
+      "loading": "正在准备分析流...",
+      "empty": "暂无分析更新。",
+      "summaryUnavailable": "摘要不可用",
+      "subscriptionError": "实时更新已断开",
       "mode": {
-        "live": "Live",
-        "polling": "Polling ({{seconds}}s)"
+        "live": "实时",
+        "polling": "轮询（每 {{seconds}} 秒）"
       },
-      "pollFallback": "Switched to polling every {{seconds}}s due to live update errors.",
+      "pollFallback": "由于实时更新错误，已切换为每 {{seconds}} 秒轮询。",
       "pollFallbackToast": "Live updates disconnected — switched to polling ({{seconds}}s).",
-      "liveRecoveredToast": "Live updates reconnected."
+      "liveRecoveredToast": "实时更新已恢复连接。"
     },
     "sentiment": {
-      "label": "Sentiment",
-      "title": "Global Sentiment Trend"
+      "label": "情绪",
+      "title": "全球情绪趋势"
     },
     "dataLatest": {
-      "label": "Latest"
+      "label": "最新"
     },
-    "updatedAt": "Updated: {{time}}"
+    "updatedAt": "更新时间：{{time}}"
   },
   "language": {
     "chinese": "简体中文",
@@ -1142,7 +1142,7 @@
       "overlay": "预警与新闻态势概览",
       "demoBadge": "演示",
       "demoNote": "当前为演示指标，待接入真实预警地理上下文。",
-      "empty": "No alerts or geo-tagged news signals in the selected range."
+      "empty": "所选范围内没有告警或带地理标记的新闻信号。"
     },
     "search": {
       "title": "搜索",
@@ -1172,8 +1172,8 @@
         "timelineTitle": "时间线",
         "timelineEmpty": "暂无相关内容。"
       },
-      "latestAtLabel": "Latest",
-      "latestAtHelp": "Sorted by Published time when available; falls back to Ingested time."
+      "latestAtLabel": "最新",
+      "latestAtHelp": "有发布时间则按发布时间排序；否则回退为入库时间。"
     },
     "events": {
       "title": "新闻事件",
@@ -1298,7 +1298,7 @@
         "indicator": "指标",
         "lag": "滞后",
         "correlation": "相关",
-        "pValue": "p-value",
+        "pValue": "p 值",
         "samples": "样本数",
         "backtest": "回测",
         "updated": "更新时间"
@@ -1307,7 +1307,7 @@
         "title": "关联详情",
         "loadFailed": "加载关联失败。",
         "correlation": "相关系数",
-        "pValue": "p-value",
+        "pValue": "p 值",
         "lag": "滞后",
         "window": "窗口",
         "samples": "样本数",
@@ -1317,9 +1317,9 @@
       }
     },
     "assistant": {
-      "title": "AI Assistant",
-      "subtitle": "Natural language analysis powered by your data pipeline.",
-      "placeholder": "Ask a question like: Recent negative news about new energy; or correlation between gold and USD index."
+      "title": "AI 助手",
+      "subtitle": "由你的数据管道驱动的自然语言分析。",
+      "placeholder": "例如：最近关于新能源的负面新闻；或黄金与美元指数的相关性。"
     },
     "situationMonitor": {
       "title": "态势监控",
@@ -1426,8 +1426,8 @@
       "status": "状态",
       "nextRun": "下次运行",
       "lastRun": "上次运行",
-      "template": "Template",
-      "lastSuccess": "Last success"
+      "template": "模板",
+      "lastSuccess": "最近成功"
     },
     "types": {
       "general": "综合",
@@ -1441,7 +1441,7 @@
       "new": "新增数据源",
       "edit": "编辑数据源",
       "runNow": "立即运行",
-      "preview": "Preview"
+      "preview": "预览"
     },
     "fields": {
       "name": "名称",
@@ -1461,27 +1461,27 @@
       "metadata": "元数据（JSON）",
       "crawlOptions": "抓取选项（JSON）",
       "forceRefresh": "强制刷新",
-      "template": "Crawl template",
-      "seedEnabled": "Enable seed discovery",
-      "seedMode": "Seed mode",
-      "seedModeHint": "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from the feed URL.",
-      "seedFeedUrl": "Feed URL (optional)",
-      "seedFeedUrlHint": "If empty, the source URL will be used as the feed URL.",
-      "seedDomain": "Seed domain (optional)",
-      "seedDomainHint": "Defaults to the source URL origin if empty.",
-      "seedPattern": "URL pattern (optional)",
-      "seedPatternHint": "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'.",
-      "seedQuery": "Seed query (optional)",
-      "seedQueryHint": "If empty, keywords will be used to score URLs.",
-      "seedQueryPlaceholder": "e.g. earnings regulation",
-      "seedMaxUrls": "Max discovered URLs",
-      "seedMaxNewUrlsPerRun": "Max new URLs per run",
-      "seedScoreThreshold": "Score threshold",
-      "seedScoreThresholdHint": "0 disables the scoring filter; values range from 0..1.",
-      "seedDedupeWindowHours": "Dedupe window (hours)",
-      "seedCacheTtlSeconds": "Seed cache TTL (seconds)",
-      "seedConcurrency": "Preview concurrency",
-      "seedConcurrencyHint": "Used by Preview to fetch metadata; scheduling uses lightweight URL scoring."
+      "template": "爬取模板",
+      "seedEnabled": "启用种子发现",
+      "seedMode": "种子模式",
+      "seedModeHint": "站点地图模式会从 sitemap.xml 发现 URL；RSS 模式会从订阅源地址发现 URL。",
+      "seedFeedUrl": "订阅源 URL（可选）",
+      "seedFeedUrlHint": "为空时，将使用新闻源 URL 作为订阅源 URL。",
+      "seedDomain": "种子域名（可选）",
+      "seedDomainHint": "为空时默认使用新闻源 URL 的 origin。",
+      "seedPattern": "URL 模式（可选）",
+      "seedPatternHint": "支持 * 和 ? 通配符，例如：*news* 或 */2026/*。",
+      "seedQuery": "种子查询（可选）",
+      "seedQueryHint": "为空时，将使用关键词对 URL 进行评分。",
+      "seedQueryPlaceholder": "例如：财报 监管",
+      "seedMaxUrls": "最大可发现 URL 数",
+      "seedMaxNewUrlsPerRun": "每次运行最多新增 URL",
+      "seedScoreThreshold": "评分阈值",
+      "seedScoreThresholdHint": "0 表示禁用评分过滤；取值范围 0..1。",
+      "seedDedupeWindowHours": "去重窗口（小时）",
+      "seedCacheTtlSeconds": "种子缓存 TTL（秒）",
+      "seedConcurrency": "预览并发数",
+      "seedConcurrencyHint": "预览用于抓取元信息；调度会使用轻量级 URL 评分。"
     },
     "messages": {
       "created": "已创建数据源。",
@@ -1496,52 +1496,52 @@
       "saveFailed": "保存数据源失败。",
       "runFailed": "调度失败。",
       "deleteFailed": "删除数据源失败。",
-      "previewFailed": "Failed to preview news source."
+      "previewFailed": "预览新闻源失败。"
     },
     "delete": {
       "title": "删除数据源？",
       "description": "将移除数据源并停止调度。"
     },
     "seed": {
-      "mode": "Sitemap seed"
+      "mode": "站点地图种子"
     },
     "health": {
-      "circuitOpenUntil": "Circuit open until {{time}}",
-      "circuitOpen": "Circuit open",
-      "lastFailureAt": "Last failure {{time}}",
-      "failing": "Failing",
-      "failingCount": "Failing ({{count}})",
-      "healthy": "Healthy"
+      "circuitOpenUntil": "熔断开启至 {{time}}",
+      "circuitOpen": "熔断开启",
+      "lastFailureAt": "最近失败 {{time}}",
+      "failing": "异常",
+      "failingCount": "异常（{{count}}）",
+      "healthy": "正常"
     },
     "preview": {
       "columns": {
         "url": "URL",
-        "relevance": "Relevance",
-        "status": "Status",
-        "dedupe": "Dedupe",
-        "error": "Error"
+        "relevance": "相关度",
+        "status": "状态",
+        "dedupe": "去重",
+        "error": "错误"
       },
-      "alreadyCrawled": "Crawled",
-      "newUrl": "New",
-      "inFlightStatus": "In-flight: {{status}}",
-      "inFlight": "In-flight",
-      "title": "News source preview",
-      "modeSitemap": "Sitemap",
+      "alreadyCrawled": "已爬取",
+      "newUrl": "新增",
+      "inFlightStatus": "进行中：{{status}}",
+      "inFlight": "进行中",
+      "title": "新闻源预览",
+      "modeSitemap": "站点地图",
       "modeRss": "RSS",
-      "modeSingle": "Single",
-      "scheduleCount": "Would schedule: {{count}}",
-      "availableToSchedule": "Available: {{count}}",
-      "skippedCount": "Skipped: {{count}}",
-      "inFlightCount": "In-flight: {{count}}/{{limit}}",
-      "loading": "Loading preview...",
-      "empty": "No preview data."
+      "modeSingle": "单条",
+      "scheduleCount": "将调度：{{count}}",
+      "availableToSchedule": "可调度：{{count}}",
+      "skippedCount": "已跳过：{{count}}",
+      "inFlightCount": "进行中：{{count}}/{{limit}}",
+      "loading": "正在加载预览...",
+      "empty": "暂无预览数据。"
     },
     "sections": {
-      "seed": "Seed discovery",
-      "seedHint": "Discover article URLs from either a sitemap or an RSS/Atom feed, then schedule up to N fresh URLs per run."
+      "seed": "种子发现",
+      "seedHint": "从站点地图或 RSS/Atom 订阅源发现文章 URL，并在每次运行中最多调度 N 条新的 URL。"
     },
     "seedMode": {
-      "sitemap": "Sitemap",
+      "sitemap": "站点地图",
       "rss": "RSS / Atom"
     }
   },
@@ -1555,10 +1555,10 @@
       "overview": "市场概览",
       "monitor": "重点监测",
       "associations": "新闻-指标",
-      "overviewTitle": "Market Overview",
-      "overviewSubtitle": "Track macro and market signals across the selected time range.",
-      "sectorHeatmap": "Sector Heatmap",
-      "candlestick": "Candlestick"
+      "overviewTitle": "市场概览",
+      "overviewSubtitle": "在所选时间范围内跟踪宏观与市场信号。",
+      "sectorHeatmap": "板块热力图",
+      "candlestick": "K 线图"
     },
     "macro": {
       "overview": "宏观概览",
@@ -1571,25 +1571,25 @@
     "channelsTitle": "预警渠道",
     "channelsEmpty": "暂无预警渠道。",
     "notificationsTitle": "通知",
-    "channelCreated": "Channel created",
-    "channelUpdated": "Channel updated",
-    "channelDeleted": "Channel deleted",
-    "ruleUpdated": "Rule subscriptions updated",
-    "rulesTitle": "Rule Subscriptions",
-    "rulesEmpty": "No alert rules configured.",
-    "mutedUntil": "Muted until {{time}}",
-    "ruleCooldown": "Cooldown {{seconds}}s",
+    "channelCreated": "渠道已创建",
+    "channelUpdated": "渠道已更新",
+    "channelDeleted": "渠道已删除",
+    "ruleUpdated": "规则订阅已更新",
+    "rulesTitle": "规则订阅",
+    "rulesEmpty": "未配置告警规则。",
+    "mutedUntil": "静音至 {{time}}",
+    "ruleCooldown": "冷却 {{seconds}} 秒",
     "ruleNotifications": "Notifications {{count}} · Latest {{time}}",
-    "manageRule": "Manage rule",
-    "addChannel": "Add channel",
-    "deleteChannelConfirm": "Delete this channel?",
-    "notifyEvery": "Every {{minutes}} min",
-    "notifyImmediate": "Immediate",
-    "channelFrequency": "Frequency: {{frequency}}",
-    "editChannel": "Edit channel",
-    "channelActive": "Enabled",
-    "channelMuteUntil": "Mute until",
-    "channelNotifyInterval": "Notification frequency"
+    "manageRule": "管理规则",
+    "addChannel": "添加渠道",
+    "deleteChannelConfirm": "删除此渠道？",
+    "notifyEvery": "每 {{minutes}} 分钟",
+    "notifyImmediate": "立即",
+    "channelFrequency": "频率：{{frequency}}",
+    "editChannel": "编辑渠道",
+    "channelActive": "已启用",
+    "channelMuteUntil": "静音至",
+    "channelNotifyInterval": "通知频率"
   },
   "brand": {
     "short": "M",
@@ -2061,6 +2061,9 @@
       "actions": {
         "new": "新增网关",
         "activate": "启用",
+        "test": "测试",
+        "testUnsaved": "不保存测试",
+        "models": "模型列表",
         "clearKey": "清空 Key",
         "keepKey": "保留 Key"
       },
@@ -2073,13 +2076,14 @@
         "apiKey": "API Key"
       },
       "fields": {
+        "preset": "供应商预设",
         "name": "名称",
         "apiBase": "API Base URL",
         "apiKey": "API Key",
         "model": "默认模型",
         "embeddingModel": "Embedding 模型",
         "timeoutMs": "超时 (ms)",
-        "temperature": "Temperature",
+        "temperature": "温度",
         "topP": "Top P",
         "maxOutputTokens": "最大输出 Token",
         "maxRetries": "最大重试次数",
@@ -2088,13 +2092,21 @@
         "enabled": "启用"
       },
       "placeholders": {
+        "preset": "选择预设（可选）",
         "name": "例如：LiteLLM（生产）",
         "apiKey": "可选",
         "apiKeyEdit": "留空表示不变",
         "fallbackModels": "逗号分隔，例如 openai/gpt-4o-mini,anthropic/claude-3-haiku"
       },
+      "presets": {
+        "glm": "GLM（智谱）",
+        "kimi": "Kimi K2（月之暗面）",
+        "deepseek": "DeepSeek",
+        "qwen": "Qwen（DashScope）"
+      },
       "hints": {
-        "apiKey": "写入系统设置；若配置 SYSTEM_SETTINGS_ENCRYPTION_KEY 则会加密存储，否则会明文存储。",
+        "apiBase": "支持填写 Base URL（例如 https://api.openai.com），也支持直接粘贴完整接口地址（例如 https://api.openai.com/v1/chat/completions），系统会自动规范化。",
+        "apiKey": "写入系统设置；当在「系统设置 → 安全」开启“加密存储密钥/Token”且配置 SYSTEM_SETTINGS_ENCRYPTION_KEY 时，会加密存储；否则明文存储。支持直接粘贴 sk-... 或完整的 \"Bearer sk-...\"。",
         "apiKeyEdit": "输入新 Key 用于轮换；也可以用下方开关清空。",
         "fallbackModels": "主模型失败时会按顺序尝试。"
       },
@@ -2130,6 +2142,64 @@
         "toggleFailed": "更新启用状态失败",
         "activateFailed": "启用失败",
         "badRequest": "参数错误"
+      },
+      "test": {
+        "modal": {
+          "title": "测试 {{name}}"
+        },
+        "actions": {
+          "run": "运行测试"
+        },
+        "fields": {
+          "model": "模型覆盖",
+          "prompt": "提示词",
+          "includeEmbeddings": "测试 Embedding",
+          "embeddingModel": "Embedding 模型覆盖",
+          "embeddingInput": "Embedding 输入"
+        },
+        "placeholders": {
+          "prompt": "只回复 \"OK\"，不要输出其他内容。",
+          "embeddingInput": "hello"
+        },
+        "hints": {
+          "model": "留空则使用网关配置的默认模型 + Fallback 模型。",
+          "embeddingModel": "留空则使用网关配置的 Embedding 模型。"
+        },
+        "sections": {
+          "completion": "对话补全",
+          "embedding": "Embedding"
+        },
+        "tokens": "{{total}} Token",
+        "dimensions": "{{n}} 维",
+        "cost": "$ {{cost}}",
+        "errors": {
+          "failed": "测试失败"
+        }
+      },
+      "testUnsaved": {
+        "modal": {
+          "title": "测试当前配置"
+        },
+        "errors": {
+          "failed": "测试失败"
+        }
+      },
+      "models": {
+        "modal": {
+          "title": "模型列表（{{name}}）"
+        },
+        "columns": {
+          "id": "模型"
+        },
+        "count": "{{count}} 个模型",
+        "errors": {
+          "failed": "加载模型失败"
+        }
+      },
+      "modelsUnsaved": {
+        "modal": {
+          "title": "模型列表（未保存）"
+        }
       }
     },
     "adminOnly": {
@@ -2332,6 +2402,49 @@
         "sendFailed": "发送测试邮件失败"
       }
     },
+    "security": {
+      "description": "控制密钥/Token 在 MySQL 中的存储方式（LLM 网关 API Key、内部 Token、S3 Secret 等）。",
+      "status": {
+        "label": "状态",
+        "encryptionEnabled": "已开启加密",
+        "encryptionDisabled": "未开启加密",
+        "keyPresent": "环境密钥已配置",
+        "keyMissing": "环境密钥未配置",
+        "keyInvalid": "环境密钥无效"
+      },
+      "fields": {
+        "secretEncryptionEnabled": "加密存储密钥/Token"
+      },
+      "hints": {
+        "secretEncryptionEnabled": "开启后，新写入/更新的密钥会使用 SYSTEM_SETTINGS_ENCRYPTION_KEY 加密；历史数据不会自动迁移。"
+      },
+      "alerts": {
+        "keyMissing": {
+          "title": "未配置 SYSTEM_SETTINGS_ENCRYPTION_KEY",
+          "body": "如需开启加密，请配置 SYSTEM_SETTINGS_ENCRYPTION_KEY（32 字节 base64 或 64 位 hex），并重启 API。"
+        },
+        "keyReady": {
+          "title": "已检测到加密密钥",
+          "body": "现在可以开启加密，将新写入的密钥加密存储到 MySQL。"
+        },
+        "enabledMissingKey": {
+          "title": "已开启加密但密钥缺失/无效",
+          "body": "请配置 SYSTEM_SETTINGS_ENCRYPTION_KEY 并重启 API，以访问已加密的密钥。",
+          "bodyWithError": "请配置 SYSTEM_SETTINGS_ENCRYPTION_KEY 并重启 API，以访问已加密的密钥。错误：{{error}}"
+        }
+      },
+      "messages": {
+        "saved": "已保存"
+      },
+      "errors": {
+        "loadFailed": "加载安全设置失败",
+        "saveFailed": "保存安全设置失败"
+      },
+      "modal": {
+        "disableTitle": "关闭加密？",
+        "disableContent": "后续新写入的密钥将以明文存储；已加密的历史数据不会自动解密。"
+      }
+    },
     "vectorService": {
       "description": "配置 API 与向量服务的集成（语义去重/搜索）。",
       "notice": {
@@ -2354,8 +2467,8 @@
       "fields": {
         "enabled": "启用向量服务",
         "fallbackToMongo": "回退到 MongoDB",
-        "baseUrl": "Base URL",
-        "token": "Internal token",
+        "baseUrl": "基础地址（Base URL）",
+        "token": "内部令牌",
         "timeoutMs": "超时（ms）",
         "maxRetries": "最大重试次数"
       },
@@ -2415,8 +2528,8 @@
       },
       "fields": {
         "enabled": "启用模型服务",
-        "baseUrl": "Base URL",
-        "internalToken": "Internal token",
+        "baseUrl": "基础地址（Base URL）",
+        "internalToken": "内部令牌",
         "timeoutMs": "超时（ms）",
         "maxRetries": "最大重试次数"
       },
@@ -2483,6 +2596,7 @@
     "tabs": {
       "geoNominatim": "地理编码（Nominatim）",
       "email": "邮件（SMTP）",
+      "security": "安全",
       "vectorService": "向量服务",
       "modelService": "模型服务",
       "akshare": "AKShare"
@@ -2750,9 +2864,9 @@
         "reconnectingShort": "WS 重连中",
         "errorShort": "WS 错误",
         "idle": "WS 空闲",
-        "autoFallback": "WebSocket failed. Switched to Polling automatically (authenticated server-side proxy).",
-        "fallbackHint": "Tip: Polling uses the authenticated server-side proxy and often works even when WebSocket is blocked by CORS/origin rules.",
-        "autoFallbackTitle": "Switched to Polling"
+        "autoFallback": "WebSocket 连接失败，已自动切换为轮询（使用已认证的服务端代理）。",
+        "fallbackHint": "提示：轮询使用已认证的服务端代理，即使 WebSocket 被 CORS/origin 规则阻断也通常可用。",
+        "autoFallbackTitle": "已切换到轮询"
       },
       "polling": {
         "warningTitle": "轮询失败"
@@ -3022,8 +3136,8 @@
           "cleanFit": "清理后"
         }
       },
-      "ingestQueued": "Queued for LLM processing and added to Items.",
-      "title": "Crawl Task"
+      "ingestQueued": "已加入队列进行 LLM 处理，并添加到条目中。",
+      "title": "爬取任务"
     },
     "multiUrl": {
       "title": "多 URL",
@@ -3373,7 +3487,7 @@
       "username": "用户名",
       "password": "密码"
     },
-    "title": "Crawl Tasks"
+    "title": "爬取任务"
   },
   "errors": {
     "kinds": {
@@ -3446,14 +3560,14 @@
         "location": "地点",
         "category": "分类",
         "quality": "质量",
-        "duplicateSimilarity": "Duplicate similarity",
-        "duplicateOf": "Duplicate of",
-        "llmModel": "LLM model",
-        "llmLatency": "LLM latency",
-        "llmCost": "LLM cost",
-        "llmTokens": "LLM total tokens"
+        "duplicateSimilarity": "重复相似度",
+        "duplicateOf": "重复于",
+        "llmModel": "LLM 模型",
+        "llmLatency": "LLM 延迟",
+        "llmCost": "LLM 成本",
+        "llmTokens": "LLM 总 token 数"
       },
-      "keyPointsMore": "+{{count}} more"
+      "keyPointsMore": "+{{count}} 条更多"
     },
     "columns": {
       "name": "标题",
@@ -3464,7 +3578,7 @@
       "open": "打开",
       "status": "状态",
       "created": "已创建",
-      "duplicate": "Duplicate"
+      "duplicate": "重复"
     },
     "search": {
       "placeholder": "搜索标题、摘要、专题、实体、地点"
@@ -3472,11 +3586,11 @@
     "filters": {
       "button": "筛选",
       "title": "筛选",
-      "region": "Region",
-      "topic": "Topic",
-      "sentiment": "Sentiment",
-      "date": "Date Range",
-      "empty": "No filter options for current results."
+      "region": "地区",
+      "topic": "主题",
+      "sentiment": "情绪",
+      "date": "日期范围",
+      "empty": "当前结果没有可用筛选项。"
     },
     "stats": {
       "query": "查询",
@@ -3494,8 +3608,8 @@
       "todayActionSubscriber": "管理订阅",
       "searchTitle": "无匹配结果",
       "searchDescription": "请调整关键词或筛选条件。",
-      "searchIdleTitle": "Start searching",
-      "searchIdleDescription": "Enter keywords or adjust filters to search processed items."
+      "searchIdleTitle": "开始搜索",
+      "searchIdleDescription": "输入关键词或调整筛选条件以搜索已处理条目。"
     },
     "status": {
       "active": "启用",
@@ -3514,165 +3628,165 @@
       }
     },
     "duplicate": {
-      "duplicate": "Duplicate",
-      "similarity": "Similarity"
+      "duplicate": "重复",
+      "similarity": "相似度"
     },
     "sentiment": {
-      "positive": "Positive",
-      "neutral": "Neutral",
-      "negative": "Negative"
+      "positive": "正面",
+      "neutral": "中性",
+      "negative": "负面"
     },
     "view": {
-      "label": "View mode",
-      "feed": "Feed",
-      "grid": "Grid",
-      "list": "List"
+      "label": "视图模式",
+      "feed": "信息流",
+      "grid": "网格",
+      "list": "列表"
     }
   },
   "crawlTemplates": {
     "errors": {
-      "loadFailed": "Failed to load crawl templates.",
-      "saveFailed": "Failed to save crawl template.",
-      "deleteFailed": "Failed to delete template."
+      "loadFailed": "加载爬取模板失败。",
+      "saveFailed": "保存爬取模板失败。",
+      "deleteFailed": "删除模板失败。"
     },
     "messages": {
-      "updated": "Template updated.",
-      "created": "Template created.",
-      "deleted": "Template deleted."
+      "updated": "模板已更新。",
+      "created": "模板已创建。",
+      "deleted": "模板已删除。"
     },
     "delete": {
-      "title": "Delete template?",
-      "description": "News sources using this template will stop applying it."
+      "title": "删除模板？",
+      "description": "使用此模板的新闻源将停止应用该模板。"
     },
-    "title": "Crawl Templates",
+    "title": "爬取模板",
     "columns": {
-      "name": "Name",
-      "status": "Status"
+      "name": "名称",
+      "status": "状态"
     },
     "actions": {
-      "new": "New template",
-      "edit": "Edit template"
+      "new": "新建模板",
+      "edit": "编辑模板"
     },
-    "searchPlaceholder": "Search templates",
+    "searchPlaceholder": "搜索模板",
     "fields": {
-      "name": "Name",
-      "description": "Description",
-      "active": "Active",
-      "proxyUrl": "Proxy URL",
-      "userAgent": "User Agent",
-      "stealth": "Stealth mode",
-      "undetected": "Undetected browser",
-      "images": "Include images",
-      "advancedJson": "Advanced crawl options (JSON)"
+      "name": "名称",
+      "description": "描述",
+      "active": "启用",
+      "proxyUrl": "代理 URL",
+      "userAgent": "User-Agent",
+      "stealth": "隐身模式",
+      "undetected": "反检测浏览器",
+      "images": "包含图片",
+      "advancedJson": "高级爬取选项（JSON）"
     },
     "sections": {
-      "commonOptions": "Common Options"
+      "commonOptions": "通用选项"
     }
   },
   "quality": {
     "errors": {
-      "loadFailed": "Failed to load quality dashboard."
+      "loadFailed": "加载质量看板失败。"
     },
     "columns": {
-      "stage": "Stage",
-      "error": "Error",
-      "count": "Count"
+      "stage": "阶段",
+      "error": "错误",
+      "count": "数量"
     },
     "sources": {
       "columns": {
-        "name": "Source",
-        "failedJobs": "Failed jobs",
-        "streak": "Failure streak",
-        "circuit": "Circuit"
+        "name": "来源",
+        "failedJobs": "失败任务",
+        "streak": "连续失败",
+        "circuit": "熔断"
       },
-      "circuitOpen": "Circuit open",
-      "title": "Source Reliability",
-      "total": "Total sources",
-      "active": "Active",
-      "failing": "Failing"
+      "circuitOpen": "熔断开启",
+      "title": "来源可靠性",
+      "total": "来源总数",
+      "active": "正常",
+      "failing": "异常"
     },
-    "title": "Data Quality",
-    "subtitle": "Pipeline success, latency, and source reliability.",
+    "title": "数据质量",
+    "subtitle": "管道成功率、延迟与来源可靠性。",
     "windows": {
-      "60m": "Last 60m",
-      "4h": "Last 4h",
-      "24h": "Last 24h"
+      "60m": "最近 60 分钟",
+      "4h": "最近 4 小时",
+      "24h": "最近 24 小时"
     },
     "pipeline": {
-      "title": "Pipeline",
-      "total": "Total",
-      "completed": "Completed",
-      "failed": "Failed",
-      "successRate": "Success rate",
-      "llmLatency": "Avg LLM latency",
-      "ingestP50": "Ingest p50",
-      "ingestP90": "Ingest p90",
-      "outboxOldest": "Outbox oldest",
-      "failures": "Top Failures"
+      "title": "管道",
+      "total": "总计",
+      "completed": "已完成",
+      "failed": "失败",
+      "successRate": "成功率",
+      "llmLatency": "平均 LLM 延迟",
+      "ingestP50": "入库 p50",
+      "ingestP90": "入库 p90",
+      "outboxOldest": "Outbox 最久滞留",
+      "failures": "主要失败项"
     }
   },
   "assistant": {
-    "streamError": "Assistant stream error: {{error}}",
+    "streamError": "助手流式响应错误：{{error}}",
     "preview": {
-      "series": "Series",
-      "model": "Model",
-      "modelService": "Model service",
-      "actual": "Actual",
-      "forecast": "Forecast",
-      "error": "Error",
-      "docUrl": "Source doc",
-      "period": "Period",
-      "window": "Time window",
-      "stats": "Stats",
-      "seriesA": "Series A",
-      "seriesB": "Series B",
-      "transform": "Transform",
-      "lookbackDays": "Lookback days",
-      "n": "Data points",
-      "pearson": "Pearson"
+      "series": "序列",
+      "model": "模型",
+      "modelService": "模型服务",
+      "actual": "实际值",
+      "forecast": "预测值",
+      "error": "错误",
+      "docUrl": "来源文档",
+      "period": "周期",
+      "window": "时间窗口",
+      "stats": "统计",
+      "seriesA": "序列 A",
+      "seriesB": "序列 B",
+      "transform": "变换",
+      "lookbackDays": "回溯天数",
+      "n": "数据点",
+      "pearson": "皮尔逊"
     },
     "tabs": {
-      "query": "Query",
-      "report": "Report",
-      "forecast": "Forecast"
+      "query": "查询",
+      "report": "报告",
+      "forecast": "预测"
     },
-    "messageRequired": "Please enter a question.",
-    "requestFailed": "Request failed: {{error}}",
-    "askLabel": "Ask",
-    "submit": "Run",
+    "messageRequired": "请输入问题。",
+    "requestFailed": "请求失败：{{error}}",
+    "askLabel": "提问",
+    "submit": "运行",
     "report": {
-      "period": "Period",
-      "daily": "Daily",
-      "weekly": "Weekly",
-      "topic": "Topic filter (optional)",
-      "topicPlaceholder": "e.g. new energy",
-      "limit": "Max items"
+      "period": "周期",
+      "daily": "按日",
+      "weekly": "按周",
+      "topic": "主题筛选（可选）",
+      "topicPlaceholder": "例如：新能源",
+      "limit": "最多条数"
     },
     "forecast": {
-      "seriesRequired": "Please enter a series.",
-      "series": "Economic series (slug or name)",
-      "seriesPlaceholder": "e.g. usd_index_history or economic:usd_index_history:latest",
-      "lookbackDays": "Lookback days",
-      "modelKind": "Model",
+      "seriesRequired": "请输入序列。",
+      "series": "经济序列（slug 或名称）",
+      "seriesPlaceholder": "例如：usd_index_history 或 economic:usd_index_history:latest",
+      "lookbackDays": "回溯天数",
+      "modelKind": "模型",
       "model": {
         "ets": "ETS",
         "arima": "ARIMA"
       },
-      "seasonalPeriod": "Seasonal period",
-      "confidenceLevel": "Confidence level",
-      "sourceField": "Source field (optional)",
-      "sourceFieldPlaceholder": "e.g. close or last"
+      "seasonalPeriod": "季节周期",
+      "confidenceLevel": "置信水平",
+      "sourceField": "源字段（可选）",
+      "sourceFieldPlaceholder": "例如：close 或 last"
     },
-    "historyTitle": "History",
-    "empty": "No assistant runs yet.",
-    "generating": "Generating...",
-    "pending": "Pending...",
-    "detailTitle": "Run Detail",
+    "historyTitle": "历史记录",
+    "empty": "暂无助手运行记录。",
+    "generating": "生成中...",
+    "pending": "等待中...",
+    "detailTitle": "运行详情",
     "detail": {
-      "summary": "Summary",
-      "input": "Input",
-      "output": "Output",
-      "empty": "Select a run from the list."
+      "summary": "摘要",
+      "input": "输入",
+      "output": "输出",
+      "empty": "从列表中选择一次运行。"
     }
   },
   "situationMonitor": {

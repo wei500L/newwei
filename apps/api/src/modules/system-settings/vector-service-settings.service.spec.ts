@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 
 import { VectorServiceSettingsService } from "./vector-service-settings.service";
+import { decodeSystemSettingsKey, encryptStringValueV1 } from "../storage/storage-settings.crypto";
 
 const prismaMock = {
   systemSetting: {
@@ -38,12 +39,30 @@ describe("VectorServiceSettingsService", () => {
   let service: VectorServiceSettingsService;
   let cacheState: any;
   let persistedValue: any;
+  let encryptionEnabled: boolean;
+  const securitySettingsMock = {
+    encodeSecretForStorage: jest.fn(async (plain: string) => {
+      if (!encryptionEnabled) {
+        return plain;
+      }
+      const key = decodeSystemSettingsKey(envMock.systemSettingsEncryptionKey);
+      return encryptStringValueV1(plain, key);
+    })
+  } as any;
 
   beforeEach(() => {
     jest.resetAllMocks();
     cacheState = null;
     persistedValue = undefined;
     envMock.systemSettingsEncryptionKey = undefined;
+    encryptionEnabled = false;
+    securitySettingsMock.encodeSecretForStorage = jest.fn(async (plain: string) => {
+      if (!encryptionEnabled) {
+        return plain;
+      }
+      const key = decodeSystemSettingsKey(envMock.systemSettingsEncryptionKey);
+      return encryptStringValueV1(plain, key);
+    });
 
     cacheMock.get = jest.fn(async () => cacheState);
     cacheMock.set = jest.fn(async (_key: string, value: unknown) => {
@@ -70,7 +89,7 @@ describe("VectorServiceSettingsService", () => {
     prismaMock.auditLog.create = jest.fn().mockResolvedValue(undefined);
     prismaMock.auditLogOutbox.create = jest.fn().mockResolvedValue(undefined);
 
-    service = new VectorServiceSettingsService(prismaMock, cacheMock, envMock);
+    service = new VectorServiceSettingsService(prismaMock, cacheMock, envMock, securitySettingsMock);
   });
 
   it("returns env defaults when no record exists", async () => {
@@ -106,6 +125,7 @@ describe("VectorServiceSettingsService", () => {
 
   it("stores token encrypted and returns it decrypted via getEffectiveConfig", async () => {
     envMock.systemSettingsEncryptionKey = "0".repeat(64);
+    encryptionEnabled = true;
 
     await service.updateSettings("org-1", "actor-1", {
       enabled: true,

@@ -1,4 +1,5 @@
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
+import { decodeSystemSettingsKey, encryptStringValueV1 } from "../storage/storage-settings.crypto";
 
 const prismaMock = {
   systemSetting: {
@@ -37,12 +38,30 @@ describe("LlmGatewaySettingsService", () => {
   let service: LlmGatewaySettingsService;
   let cacheState: any;
   let persistedValue: any;
+  let encryptionEnabled: boolean;
+  const securitySettingsMock = {
+    encodeSecretForStorage: jest.fn(async (plain: string) => {
+      if (!encryptionEnabled) {
+        return plain;
+      }
+      const key = decodeSystemSettingsKey(envMock.systemSettingsEncryptionKey);
+      return encryptStringValueV1(plain, key);
+    })
+  } as any;
 
   beforeEach(() => {
     jest.resetAllMocks();
     cacheState = null;
     persistedValue = undefined;
     envMock.systemSettingsEncryptionKey = undefined;
+    encryptionEnabled = false;
+    securitySettingsMock.encodeSecretForStorage = jest.fn(async (plain: string) => {
+      if (!encryptionEnabled) {
+        return plain;
+      }
+      const key = decodeSystemSettingsKey(envMock.systemSettingsEncryptionKey);
+      return encryptStringValueV1(plain, key);
+    });
 
     cacheMock.get = jest.fn(async () => cacheState);
     cacheMock.set = jest.fn(async (_key: string, value: unknown) => {
@@ -64,7 +83,7 @@ describe("LlmGatewaySettingsService", () => {
     });
     prismaMock.auditLog.create = jest.fn().mockResolvedValue(undefined);
 
-    service = new LlmGatewaySettingsService(prismaMock, cacheMock, envMock);
+    service = new LlmGatewaySettingsService(prismaMock, cacheMock, envMock, securitySettingsMock);
   });
 
   it("returns empty settings when no record exists", async () => {
@@ -91,6 +110,21 @@ describe("LlmGatewaySettingsService", () => {
     expect(listed.profiles).toHaveLength(1);
   });
 
+  it("clears activeId when the active profile is disabled", async () => {
+    const created = await service.createProfile("org-1", "actor-1", {
+      name: "LiteLLM Local",
+      apiBase: "http://localhost:4001",
+      model: "openai/gpt-4o-mini",
+      enabled: true
+    });
+
+    await service.updateProfile("org-1", "actor-1", created.id, { enabled: false });
+
+    const listed = await service.list();
+    expect(listed.activeId).toBeNull();
+    expect(listed.profiles[0]?.enabled).toBe(false);
+  });
+
   it("stores apiKey in plaintext when SYSTEM_SETTINGS_ENCRYPTION_KEY is missing", async () => {
     const created = await service.createProfile("org-1", "actor-1", {
       name: "My Gateway",
@@ -108,8 +142,41 @@ describe("LlmGatewaySettingsService", () => {
     expect(active?.apiKey).toBe("sk-test");
   });
 
+  it("stores apiKey in plaintext when encryption toggle is disabled", async () => {
+    envMock.systemSettingsEncryptionKey = "0".repeat(64);
+
+    const created = await service.createProfile("org-1", "actor-1", {
+      name: "My Gateway",
+      apiBase: "http://localhost:4001",
+      model: "openai/gpt-4o-mini",
+      apiKey: "sk-test"
+    });
+
+    expect(created.hasApiKey).toBe(true);
+
+    const rawApiKey = persistedValue?.profiles?.[0]?.apiKey;
+    expect(rawApiKey).toBe("sk-test");
+  });
+
+  it("strips Bearer prefix when storing apiKey", async () => {
+    const created = await service.createProfile("org-1", "actor-1", {
+      name: "My Gateway",
+      apiBase: "http://localhost:4001",
+      model: "openai/gpt-4o-mini",
+      apiKey: "Bearer sk-test"
+    });
+
+    expect(created.hasApiKey).toBe(true);
+    const rawApiKey = persistedValue?.profiles?.[0]?.apiKey;
+    expect(rawApiKey).toBe("sk-test");
+
+    const active = await service.getActiveConfig();
+    expect(active?.apiKey).toBe("sk-test");
+  });
+
   it("stores apiKey encrypted and returns it decrypted via getActiveConfig", async () => {
     envMock.systemSettingsEncryptionKey = "0".repeat(64);
+    encryptionEnabled = true;
 
     const created = await service.createProfile("org-1", "actor-1", {
       name: "Secure Gateway",
@@ -127,5 +194,21 @@ describe("LlmGatewaySettingsService", () => {
 
     const active = await service.getActiveConfig();
     expect(active?.apiKey).toBe("sk-test");
+  });
+
+  it("returns a profile config by id with decrypted apiKey", async () => {
+    envMock.systemSettingsEncryptionKey = "0".repeat(64);
+
+    const created = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway",
+      apiBase: "http://localhost:4001",
+      model: "openai/gpt-4o-mini",
+      apiKey: "sk-test"
+    });
+
+    const cfg = await service.getProfileConfig(created.id);
+    expect(cfg?.apiKey).toBe("sk-test");
+    expect(cfg?.apiBase).toBe("http://localhost:4001");
+    expect(cfg?.model).toBe("openai/gpt-4o-mini");
   });
 });

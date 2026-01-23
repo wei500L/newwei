@@ -9,10 +9,11 @@ import { EnvService, type LiteLlmEnvConfig } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import {
   decryptStringValueV1,
-  encryptStringValueV1,
   isEncryptedStringValueV1,
   resolveSettingsKey
 } from "../storage/storage-settings.crypto";
+
+import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type LlmGatewayProfilePublic = Omit<LiteLlmEnvConfig, "apiKey"> & {
   id: string;
@@ -62,7 +63,8 @@ export class LlmGatewaySettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
-    private readonly env: EnvService
+    private readonly env: EnvService,
+    private readonly securitySettings: SystemSecuritySettingsService
   ) {}
 
   async list(): Promise<LlmGatewaySettingsPublic> {
@@ -81,7 +83,7 @@ export class LlmGatewaySettingsService {
     const settings = await this.loadSettings();
     const fallback = this.env.liteLlmConfig;
     const now = new Date().toISOString();
-    const profile = this.buildProfileFromInput(
+    const profile = await this.buildProfileFromInput(
       {
         id: randomUUID(),
         createdAt: now,
@@ -123,12 +125,15 @@ export class LlmGatewaySettingsService {
     if (!existing) {
       throw new NotFoundException("LLM gateway profile not found");
     }
-    const updated = this.buildProfileFromInput(
+    const updated = await this.buildProfileFromInput(
       { ...existing, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() },
       existing,
       input
     );
     settings.profiles[index] = updated;
+    if (settings.activeId === id && !updated.enabled) {
+      settings.activeId = null;
+    }
 
     await this.saveSettings(orgId, actorId, settings, "llm_gateway_update", {
       id,
@@ -190,6 +195,29 @@ export class LlmGatewaySettingsService {
       (candidate) => candidate.id === settings.activeId
     );
     if (!profile || !profile.enabled) {
+      return null;
+    }
+
+    const apiKey = this.resolveApiKey(profile.apiKey);
+    return {
+      model: profile.model,
+      embeddingModel: profile.embeddingModel,
+      apiBase: profile.apiBase,
+      apiKey,
+      timeoutMs: profile.timeoutMs,
+      temperature: profile.temperature,
+      topP: profile.topP,
+      maxOutputTokens: profile.maxOutputTokens,
+      maxRetries: profile.maxRetries,
+      fallbackModels: profile.fallbackModels,
+      requestsPerMinute: profile.requestsPerMinute
+    };
+  }
+
+  async getProfileConfig(id: string): Promise<(LiteLlmEnvConfig & { apiKey?: string }) | null> {
+    const settings = await this.loadSettings();
+    const profile = settings.profiles.find((candidate) => candidate.id === id);
+    if (!profile) {
       return null;
     }
 
@@ -340,12 +368,12 @@ export class LlmGatewaySettingsService {
     };
   }
 
-  private buildProfileFromInput(
+  private async buildProfileFromInput(
     base: Pick<StoredProfile, "id" | "createdAt" | "updatedAt"> &
       Partial<StoredProfile>,
     fallback: LiteLlmEnvConfig | StoredProfile,
     input: LlmGatewayProfileInput
-  ): StoredProfile {
+  ): Promise<StoredProfile> {
     const name = this.normalizeString(input.name) ?? base.name ?? (fallback as StoredProfile).name;
     if (!name) {
       throw new BadRequestException("name is required");
@@ -357,7 +385,7 @@ export class LlmGatewaySettingsService {
       throw new BadRequestException("apiBase and model are required");
     }
 
-    const nextApiKey = this.normalizeApiKeyInput(input.apiKey, base.apiKey);
+    const nextApiKey = await this.normalizeApiKeyInput(input.apiKey, base.apiKey);
 
     return {
       id: base.id,
@@ -403,25 +431,17 @@ export class LlmGatewaySettingsService {
     };
   }
 
-  private normalizeApiKeyInput(next: string | null | undefined, existing: unknown) {
+  private async normalizeApiKeyInput(next: string | null | undefined, existing: unknown) {
     if (next === undefined) {
       return existing;
     }
 
-    const normalized = typeof next === "string" ? next.trim() : "";
+    const normalized = typeof next === "string" ? this.stripBearerPrefix(next) : "";
     if (!normalized) {
       return null;
     }
 
-    const encryptionKey = resolveSettingsKey(this.env);
-    if (!encryptionKey) {
-      this.logger.warn(
-        "SYSTEM_SETTINGS_ENCRYPTION_KEY is not set; storing LLM gateway API key in plaintext"
-      );
-      return normalized;
-    }
-
-    return encryptStringValueV1(normalized, encryptionKey);
+    return this.securitySettings.encodeSecretForStorage(normalized);
   }
 
   private resolveApiKey(raw: unknown): string | undefined {
@@ -429,7 +449,7 @@ export class LlmGatewaySettingsService {
       return undefined;
     }
     if (typeof raw === "string") {
-      const trimmed = raw.trim();
+      const trimmed = this.stripBearerPrefix(raw);
       return trimmed ? trimmed : undefined;
     }
     if (isEncryptedStringValueV1(raw)) {
@@ -440,7 +460,7 @@ export class LlmGatewaySettingsService {
       }
       try {
         const decrypted = decryptStringValueV1(raw, key);
-        const trimmed = decrypted.trim();
+        const trimmed = this.stripBearerPrefix(decrypted);
         return trimmed ? trimmed : undefined;
       } catch (error) {
         this.logger.warn({ err: error }, "Failed to decrypt LLM gateway key");
@@ -451,7 +471,7 @@ export class LlmGatewaySettingsService {
   }
 
   private hasApiKey(profile: StoredProfile) {
-    return Boolean(profile.apiKey);
+    return Boolean(this.resolveApiKey(profile.apiKey));
   }
 
   private toPublicProfile(profile: StoredProfile): LlmGatewayProfilePublic {
@@ -519,5 +539,16 @@ export class LlmGatewaySettingsService {
 
   private toPrismaJson(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+  }
+
+  private stripBearerPrefix(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "";
+    }
+    if (/^bearer$/i.test(trimmed)) {
+      return "";
+    }
+    return trimmed.replace(/^bearer\s+/i, "").trim();
   }
 }

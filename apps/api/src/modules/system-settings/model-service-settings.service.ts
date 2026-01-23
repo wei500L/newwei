@@ -8,10 +8,11 @@ import { EnvService, type ModelServiceConfig } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import {
   decryptStringValueV1,
-  encryptStringValueV1,
   isEncryptedStringValueV1,
   resolveSettingsKey
 } from "../storage/storage-settings.crypto";
+
+import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type ModelServiceSettingsSource = "env" | "db";
 export type ModelServiceTokenSource = "stored" | "env" | "none";
@@ -51,15 +52,17 @@ export class ModelServiceSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
-    private readonly env: EnvService
+    private readonly env: EnvService,
+    private readonly securitySettings: SystemSecuritySettingsService
   ) {}
 
   async getPublicSettings(): Promise<ModelServiceSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
 
+    const storedToken = stored ? this.resolveToken(stored.internalToken) : undefined;
     const tokenSource: ModelServiceTokenSource =
-      this.hasStoredToken(stored) ? "stored" : effective.internalToken ? "env" : "none";
+      storedToken ? "stored" : effective.internalToken ? "env" : "none";
 
     return {
       source: stored ? "db" : "env",
@@ -94,7 +97,7 @@ export class ModelServiceSettingsService {
       typeof input.baseUrl === "string" ? input.baseUrl.trim() : input.baseUrl ?? null;
     const normalizedBaseUrl = baseUrl ? this.validateUrl(baseUrl) : null;
 
-    const nextTokenRaw = this.resolveNextToken(stored, input.internalToken);
+    const nextTokenRaw = await this.resolveNextToken(stored, input.internalToken);
 
     const nextStored: StoredModelServiceSettings = {
       enabled: input.enabled,
@@ -229,7 +232,10 @@ export class ModelServiceSettingsService {
     };
   }
 
-  private resolveNextToken(stored: StoredModelServiceSettings | null, next: string | null | undefined): unknown {
+  private async resolveNextToken(
+    stored: StoredModelServiceSettings | null,
+    next: string | null | undefined
+  ): Promise<unknown> {
     if (next === undefined) {
       return stored?.internalToken ?? null;
     }
@@ -239,15 +245,7 @@ export class ModelServiceSettingsService {
       return null;
     }
 
-    const encryptionKey = resolveSettingsKey(this.env);
-    if (!encryptionKey) {
-      this.logger.warn(
-        "SYSTEM_SETTINGS_ENCRYPTION_KEY is not set; storing model service token in plaintext"
-      );
-      return normalized;
-    }
-
-    return encryptStringValueV1(normalized, encryptionKey);
+    return this.securitySettings.encodeSecretForStorage(normalized);
   }
 
   private resolveToken(raw: unknown): string | undefined {
@@ -274,10 +272,6 @@ export class ModelServiceSettingsService {
       }
     }
     return undefined;
-  }
-
-  private hasStoredToken(stored: StoredModelServiceSettings | null) {
-    return Boolean(stored?.internalToken);
   }
 
   private validateUrl(value: string) {
@@ -332,4 +326,3 @@ export class ModelServiceSettingsService {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }
-

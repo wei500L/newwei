@@ -5,6 +5,7 @@ import type { EconomicDataPoint } from "@prisma/client";
 import type { Queue } from "bullmq";
 import type { PubSubEngine } from "graphql-subscriptions";
 
+import { safeJsonParseFromText } from "../../common/llm-json";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ItemsService } from "../items/items.service";
@@ -61,11 +62,7 @@ function parseSeriesSpecifier(input: string): ParsedSeriesSpecifier {
 }
 
 function safeJsonParse<T>(raw: string): T | null {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+  return safeJsonParseFromText<T>(raw);
 }
 
 function pearsonCorrelation(x: number[], y: number[]): number | null {

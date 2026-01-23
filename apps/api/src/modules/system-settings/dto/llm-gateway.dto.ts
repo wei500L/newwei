@@ -38,7 +38,7 @@ export class CreateLlmGatewayDto {
 
   @ApiPropertyOptional({
     description:
-      "Stored encrypted when SYSTEM_SETTINGS_ENCRYPTION_KEY is configured (falls back to plaintext when missing)."
+      "Stored in system settings. Encrypted when secret encryption is enabled (System Settings -> Security) and SYSTEM_SETTINGS_ENCRYPTION_KEY is configured; otherwise stored as plaintext."
   })
   @IsOptional()
   @IsString()

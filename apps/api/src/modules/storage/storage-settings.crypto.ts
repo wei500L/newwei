@@ -97,5 +97,9 @@ export function resolveSettingsKey(env: EnvService): Buffer | undefined {
   if (!raw) {
     return undefined;
   }
-  return decodeSystemSettingsKey(raw);
+  try {
+    return decodeSystemSettingsKey(raw);
+  } catch {
+    return undefined;
+  }
 }
