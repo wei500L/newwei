@@ -180,7 +180,15 @@ describe("NewsPipelineService", () => {
   const dedupeSettingsService = {
     getSettings: jest.fn().mockResolvedValue({
       defaultThreshold: baseConfig.pipeline.summaryDedupThreshold,
-      categoryThresholds: []
+      categoryThresholds: [],
+      useEmbeddings: true,
+      llmJudgeInstructions: null,
+      llmJudgeModel: null,
+      llmJudgeMaxComparisons: 12,
+      llmJudgeCandidateChars: 1200,
+      llmJudgePromptVersion: "news-dedupe-judge-v1",
+      llmJudgeSystemPromptTemplate: "system prompt",
+      llmJudgeUserPromptTemplate: "user prompt"
     }),
     resolveBaseThreshold: jest.fn((settings: any) => ({ threshold: settings.defaultThreshold }))
   };
@@ -497,6 +505,68 @@ describe("NewsPipelineService", () => {
     await service.process(job, raw);
     await flushOutbox();
 
+    expect(prisma.itemMeta.update).toHaveBeenCalledWith({
+      where: { id: job.itemMetaId },
+      data: { status: "duplicate" }
+    });
+  });
+
+  it("uses LLM dedupe when embeddings are disabled", async () => {
+    baseConfig.pipeline.summaryDedupMinChars = 1;
+    baseConfig.pipeline.summaryDedupThreshold = 0.8;
+
+    dedupeSettingsService.getSettings.mockResolvedValueOnce({
+      defaultThreshold: baseConfig.pipeline.summaryDedupThreshold,
+      categoryThresholds: [],
+      useEmbeddings: false,
+      llmJudgeInstructions: null,
+      llmJudgeModel: "openai/gpt-4o-mini",
+      llmJudgeMaxComparisons: 5,
+      llmJudgeCandidateChars: 1200,
+      llmJudgePromptVersion: "news-dedupe-judge-v1",
+      llmJudgeSystemPromptTemplate: "system prompt",
+      llmJudgeUserPromptTemplate: "user prompt"
+    });
+
+    const duplicateId = "64b5f0c4f6e4b0495c3f4a11";
+    const findChain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: duplicateId,
+          result: { summary: "Clean body with minor edits", title: "Duplicate title" }
+        }
+      ])
+    };
+    (ProcessedItemModel.find as jest.Mock).mockReturnValueOnce(findChain);
+
+    const originalCompletion = await (liteLlm.acompletion as jest.Mock).getMockImplementation()!();
+
+    (liteLlm.acompletion as jest.Mock)
+      .mockResolvedValueOnce(originalCompletion)
+      .mockResolvedValueOnce({
+        id: "judge",
+        model: "openai/gpt-4o-mini",
+        created: Date.now(),
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: JSON.stringify({ similarity: 0.95, is_duplicate: true, rationale: "same event" })
+            }
+          }
+        ]
+      });
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(liteLlm.embedding).not.toHaveBeenCalled();
+    expect(liteLlm.acompletion).toHaveBeenCalledTimes(2);
     expect(prisma.itemMeta.update).toHaveBeenCalledWith({
       where: { id: job.itemMetaId },
       data: { status: "duplicate" }

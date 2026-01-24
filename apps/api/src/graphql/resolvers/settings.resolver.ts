@@ -214,8 +214,38 @@ export class SettingsResolver {
   ): Promise<NewsDedupeSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
+    const current = await this.newsDedupeSettingsService.getSettings(user.orgId);
     const settingsInput: NewsDedupeSettingsInput = {
       defaultThreshold: input.defaultThreshold,
+      useEmbeddings: input.useEmbeddings,
+      llmJudgeInstructions:
+        input.llmJudgeInstructions === undefined
+          ? current.llmJudgeInstructions
+          : input.llmJudgeInstructions,
+      llmJudgeModel:
+        input.llmJudgeModel === undefined
+          ? current.llmJudgeModel
+          : input.llmJudgeModel,
+      llmJudgeMaxComparisons:
+        input.llmJudgeMaxComparisons === undefined
+          ? current.llmJudgeMaxComparisons
+          : input.llmJudgeMaxComparisons,
+      llmJudgeCandidateChars:
+        input.llmJudgeCandidateChars === undefined
+          ? current.llmJudgeCandidateChars
+          : input.llmJudgeCandidateChars,
+      llmJudgePromptVersion:
+        input.llmJudgePromptVersion === undefined
+          ? current.llmJudgePromptVersion
+          : input.llmJudgePromptVersion,
+      llmJudgeSystemPromptTemplate:
+        input.llmJudgeSystemPromptTemplate === undefined
+          ? current.llmJudgeSystemPromptTemplate
+          : input.llmJudgeSystemPromptTemplate,
+      llmJudgeUserPromptTemplate:
+        input.llmJudgeUserPromptTemplate === undefined
+          ? current.llmJudgeUserPromptTemplate
+          : input.llmJudgeUserPromptTemplate,
       categoryThresholds: input.categoryThresholds.map((entry) => ({
         category: entry.category,
         threshold: entry.threshold

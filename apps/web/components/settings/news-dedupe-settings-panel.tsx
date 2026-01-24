@@ -13,6 +13,7 @@ import {
   InputNumber,
   Select,
   Space,
+  Switch,
   Spin,
   Table,
   Tag,
@@ -31,6 +32,14 @@ interface NewsDedupeCategoryThresholdModel {
 
 interface NewsDedupeSettingsModel {
   defaultThreshold: number;
+  useEmbeddings: boolean;
+  llmJudgeInstructions: string | null;
+  llmJudgeModel: string | null;
+  llmJudgeMaxComparisons: number;
+  llmJudgeCandidateChars: number;
+  llmJudgePromptVersion: string;
+  llmJudgeSystemPromptTemplate: string;
+  llmJudgeUserPromptTemplate: string;
   categoryThresholds: NewsDedupeCategoryThresholdModel[];
 }
 
@@ -44,13 +53,42 @@ interface MutationData {
 
 interface FormValues {
   defaultThreshold: number;
+  useEmbeddings: boolean;
+  llmJudgeInstructions: string | null;
+  llmJudgeModel: string | null;
+  llmJudgeMaxComparisons: number | null;
+  llmJudgeCandidateChars: number | null;
+  llmJudgePromptVersion: string | null;
+  llmJudgeSystemPromptTemplate: string | null;
+  llmJudgeUserPromptTemplate: string | null;
   categoryThresholds: NewsDedupeCategoryThresholdModel[];
+}
+
+interface UpdateNewsDedupeSettingsInput {
+  defaultThreshold: number;
+  useEmbeddings: boolean;
+  categoryThresholds: NewsDedupeCategoryThresholdModel[];
+  llmJudgeInstructions?: string | null;
+  llmJudgeModel?: string | null;
+  llmJudgeMaxComparisons?: number | null;
+  llmJudgeCandidateChars?: number | null;
+  llmJudgePromptVersion?: string | null;
+  llmJudgeSystemPromptTemplate?: string | null;
+  llmJudgeUserPromptTemplate?: string | null;
 }
 
 const NEWS_DEDUPE_SETTINGS_QUERY = gql`
   query NewsDedupeSettings {
     newsDedupeSettings {
       defaultThreshold
+      useEmbeddings
+      llmJudgeInstructions
+      llmJudgeModel
+      llmJudgeMaxComparisons
+      llmJudgeCandidateChars
+      llmJudgePromptVersion
+      llmJudgeSystemPromptTemplate
+      llmJudgeUserPromptTemplate
       categoryThresholds {
         category
         threshold
@@ -63,6 +101,14 @@ const UPDATE_NEWS_DEDUPE_SETTINGS_MUTATION = gql`
   mutation UpdateNewsDedupeSettings($input: UpdateNewsDedupeSettingsInput!) {
     updateNewsDedupeSettings(input: $input) {
       defaultThreshold
+      useEmbeddings
+      llmJudgeInstructions
+      llmJudgeModel
+      llmJudgeMaxComparisons
+      llmJudgeCandidateChars
+      llmJudgePromptVersion
+      llmJudgeSystemPromptTemplate
+      llmJudgeUserPromptTemplate
       categoryThresholds {
         category
         threshold
@@ -188,6 +234,14 @@ export function NewsDedupeSettingsPanel() {
     if (data?.newsDedupeSettings) {
       form.setFieldsValue({
         defaultThreshold: data.newsDedupeSettings.defaultThreshold,
+        useEmbeddings: data.newsDedupeSettings.useEmbeddings,
+        llmJudgeInstructions: data.newsDedupeSettings.llmJudgeInstructions,
+        llmJudgeModel: data.newsDedupeSettings.llmJudgeModel,
+        llmJudgeMaxComparisons: data.newsDedupeSettings.llmJudgeMaxComparisons,
+        llmJudgeCandidateChars: data.newsDedupeSettings.llmJudgeCandidateChars,
+        llmJudgePromptVersion: data.newsDedupeSettings.llmJudgePromptVersion,
+        llmJudgeSystemPromptTemplate: data.newsDedupeSettings.llmJudgeSystemPromptTemplate,
+        llmJudgeUserPromptTemplate: data.newsDedupeSettings.llmJudgeUserPromptTemplate,
         categoryThresholds: data.newsDedupeSettings.categoryThresholds ?? []
       });
     }
@@ -222,10 +276,35 @@ export function NewsDedupeSettingsPanel() {
 
   const handleSubmit = async (values: FormValues) => {
     try {
-      const payload: FormValues = {
+      const payload: UpdateNewsDedupeSettingsInput = {
         defaultThreshold: Math.min(1, Math.max(0, values.defaultThreshold)),
+        useEmbeddings: Boolean(values.useEmbeddings),
         categoryThresholds: normalizeCategoryThresholds(values.categoryThresholds ?? [])
       };
+
+      if (!values.useEmbeddings) {
+        payload.llmJudgeInstructions = values.llmJudgeInstructions?.trim()
+          ? values.llmJudgeInstructions.trim()
+          : null;
+        payload.llmJudgeModel = values.llmJudgeModel?.trim() ? values.llmJudgeModel.trim() : null;
+        payload.llmJudgeMaxComparisons =
+          typeof values.llmJudgeMaxComparisons === "number" && Number.isFinite(values.llmJudgeMaxComparisons)
+            ? values.llmJudgeMaxComparisons
+            : null;
+        payload.llmJudgeCandidateChars =
+          typeof values.llmJudgeCandidateChars === "number" && Number.isFinite(values.llmJudgeCandidateChars)
+            ? values.llmJudgeCandidateChars
+            : null;
+        payload.llmJudgePromptVersion = values.llmJudgePromptVersion?.trim()
+          ? values.llmJudgePromptVersion.trim()
+          : null;
+        payload.llmJudgeSystemPromptTemplate = values.llmJudgeSystemPromptTemplate?.trim()
+          ? values.llmJudgeSystemPromptTemplate.trim()
+          : null;
+        payload.llmJudgeUserPromptTemplate = values.llmJudgeUserPromptTemplate?.trim()
+          ? values.llmJudgeUserPromptTemplate.trim()
+          : null;
+      }
       await updateSettings({ variables: { input: payload } });
       await refetch();
       messageApi.success(t("settings.newsDedupe.messages.saved", { defaultValue: "Saved" }));
@@ -293,6 +372,129 @@ export function NewsDedupeSettingsPanel() {
       ) : null}
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
+        <Card
+          size="small"
+          title={t("settings.newsDedupe.sections.mode", { defaultValue: "Similarity method" })}
+          style={{ marginBottom: "1rem" }}
+        >
+          <Form.Item
+            label={t("settings.newsDedupe.fields.useEmbeddings", { defaultValue: "Use embeddings" })}
+            name="useEmbeddings"
+            valuePropName="checked"
+            extra={t("settings.newsDedupe.hints.useEmbeddings", {
+              defaultValue:
+                "On: compute embeddings vectors for semantic dedupe (fast + scalable, but needs embedding support and storage). Off: use an LLM judge to score similarity (slower + higher cost, but no embeddings storage)."
+            })}
+          >
+            <Switch
+              checkedChildren={t("settings.newsDedupe.options.useEmbeddings.on", { defaultValue: "Embeddings" })}
+              unCheckedChildren={t("settings.newsDedupe.options.useEmbeddings.off", { defaultValue: "LLM" })}
+            />
+          </Form.Item>
+
+          <Form.Item shouldUpdate noStyle>
+            {({ getFieldValue }) =>
+              getFieldValue("useEmbeddings") ? null : (
+                <>
+                  <Form.Item
+                    label={t("settings.newsDedupe.fields.llmJudgeModel", {
+                      defaultValue: "LLM judge model (optional)"
+                    })}
+                    name="llmJudgeModel"
+                    extra={t("settings.newsDedupe.hints.llmJudgeModel", {
+                      defaultValue:
+                        "Overrides which model is used for LLM-based dedupe. Leave blank to use the pipeline's default completion model."
+                    })}
+                  >
+                    <Input placeholder="openai/gpt-4o-mini" />
+                  </Form.Item>
+
+                  <Space wrap style={{ display: "flex" }}>
+                    <Form.Item
+                      label={t("settings.newsDedupe.fields.llmJudgeMaxComparisons", {
+                        defaultValue: "Max comparisons"
+                      })}
+                      name="llmJudgeMaxComparisons"
+                      extra={t("settings.newsDedupe.hints.llmJudgeMaxComparisons", {
+                        defaultValue: "Upper bound on LLM judge calls per item (cost/latency control)."
+                      })}
+                      style={{ flex: 1, minWidth: 240 }}
+                    >
+                      <InputNumber min={1} max={30} step={1} style={{ width: "100%" }} />
+                    </Form.Item>
+
+                    <Form.Item
+                      label={t("settings.newsDedupe.fields.llmJudgeCandidateChars", {
+                        defaultValue: "Candidate chars"
+                      })}
+                      name="llmJudgeCandidateChars"
+                      extra={t("settings.newsDedupe.hints.llmJudgeCandidateChars", {
+                        defaultValue: "Truncation length for each summary sent to the judge."
+                      })}
+                      style={{ flex: 1, minWidth: 240 }}
+                    >
+                      <InputNumber min={200} max={5000} step={50} style={{ width: "100%" }} />
+                    </Form.Item>
+                  </Space>
+
+                  <Form.Item
+                    label={t("settings.newsDedupe.fields.llmJudgeInstructions", {
+                      defaultValue: "LLM judge instructions (optional)"
+                    })}
+                    name="llmJudgeInstructions"
+                    extra={t("settings.newsDedupe.hints.llmJudgeInstructions", {
+                      defaultValue:
+                        "Extra system-level instructions appended to the dedupe judge prompt. Keep it short to avoid prompt injection and output-format issues."
+                    })}
+                  >
+                    <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} placeholder="…" />
+                  </Form.Item>
+
+                  <Divider style={{ margin: "0.75rem 0" }} />
+
+                  <Form.Item
+                    label={t("settings.newsDedupe.fields.llmJudgePromptVersion", {
+                      defaultValue: "Prompt version"
+                    })}
+                    name="llmJudgePromptVersion"
+                    extra={t("settings.newsDedupe.hints.llmJudgePromptVersion", {
+                      defaultValue: "Saved to metadata for tracking prompt changes."
+                    })}
+                  >
+                    <Input placeholder="news-dedupe-judge-v1" />
+                  </Form.Item>
+
+                  <Form.Item
+                    label={t("settings.newsDedupe.fields.llmJudgeSystemPromptTemplate", {
+                      defaultValue: "System prompt template"
+                    })}
+                    name="llmJudgeSystemPromptTemplate"
+                    extra={t("settings.newsDedupe.hints.llmJudgeSystemPromptTemplate", {
+                      defaultValue:
+                        "Supports placeholders: {{language_hint}}, {{additional_instructions}}. Leave blank to reset to defaults."
+                    })}
+                  >
+                    <Input.TextArea autoSize={{ minRows: 4, maxRows: 12 }} />
+                  </Form.Item>
+
+                  <Form.Item
+                    label={t("settings.newsDedupe.fields.llmJudgeUserPromptTemplate", {
+                      defaultValue: "User prompt template"
+                    })}
+                    name="llmJudgeUserPromptTemplate"
+                    extra={t("settings.newsDedupe.hints.llmJudgeUserPromptTemplate", {
+                      defaultValue:
+                        "Supports placeholders: {{threshold}}, {{title_a_section}}, {{summary_a}}, {{title_b_section}}, {{summary_b}}. Leave blank to reset to defaults."
+                    })}
+                  >
+                    <Input.TextArea autoSize={{ minRows: 6, maxRows: 16 }} />
+                  </Form.Item>
+                </>
+              )
+            }
+          </Form.Item>
+        </Card>
+
         <Card
           size="small"
           title={t("settings.newsDedupe.sections.overrides", { defaultValue: "Per-topic overrides" })}

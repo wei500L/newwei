@@ -1188,6 +1188,14 @@ type NewsDedupeCategoryThresholdModel {
 type NewsDedupeSettingsModel {
   categoryThresholds: [NewsDedupeCategoryThresholdModel!]!
   defaultThreshold: Float!
+  llmJudgeCandidateChars: Int!
+  llmJudgeInstructions: String
+  llmJudgeMaxComparisons: Int!
+  llmJudgeModel: String
+  llmJudgePromptVersion: String!
+  llmJudgeSystemPromptTemplate: String!
+  llmJudgeUserPromptTemplate: String!
+  useEmbeddings: Boolean!
 }
 
 type NewsEventArticleModel {
@@ -1750,6 +1758,14 @@ input UpdateKnowledgeGraphSettingsInput {
 input UpdateNewsDedupeSettingsInput {
   categoryThresholds: [NewsDedupeCategoryThresholdInput!]!
   defaultThreshold: Float!
+  llmJudgeCandidateChars: Int
+  llmJudgeInstructions: String
+  llmJudgeMaxComparisons: Int
+  llmJudgeModel: String
+  llmJudgePromptVersion: String
+  llmJudgeSystemPromptTemplate: String
+  llmJudgeUserPromptTemplate: String
+  useEmbeddings: Boolean!
 }
 
 input UpdateNewsEventSettingsInput {

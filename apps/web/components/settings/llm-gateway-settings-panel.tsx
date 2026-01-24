@@ -52,7 +52,7 @@ interface LlmGatewaySettingsResponse {
 
 interface LlmGatewayTestResponse {
   apiBase: string;
-  completion: {
+  completion?: {
     model: string;
     content: string | null;
     finishReason?: string;
@@ -60,6 +60,14 @@ interface LlmGatewayTestResponse {
     usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
     costUsd?: number;
     keySpendUsd?: number;
+  };
+  completionError?: {
+    message: string;
+    status?: number;
+    axiosCode?: string;
+    requestId?: string;
+    upstreamType?: string;
+    upstreamCode?: string;
   };
   embedding?: {
     model: string;
@@ -72,6 +80,10 @@ interface LlmGatewayTestResponse {
   embeddingError?: {
     message: string;
     status?: number;
+    axiosCode?: string;
+    requestId?: string;
+    upstreamType?: string;
+    upstreamCode?: string;
   };
 }
 
@@ -141,18 +153,34 @@ function toFallbackModelsText(models: string[]) {
   return (models ?? []).join(", ");
 }
 
+function renderGatewayErrorMeta(error: {
+  status?: number;
+  axiosCode?: string;
+  requestId?: string;
+  upstreamType?: string;
+  upstreamCode?: string;
+}) {
+  return (
+    <Space wrap>
+      {typeof error.status === "number" ? <Tag color="red">HTTP {error.status}</Tag> : null}
+      {error.upstreamType ? <Tag>type: {error.upstreamType}</Tag> : null}
+      {error.upstreamCode ? <Tag>code: {error.upstreamCode}</Tag> : null}
+      {error.axiosCode ? <Tag>axios: {error.axiosCode}</Tag> : null}
+      {error.requestId ? (
+        <Typography.Text type="secondary">
+          request-id:{" "}
+          <Typography.Text code copyable>
+            {error.requestId}
+          </Typography.Text>
+        </Typography.Text>
+      ) : null}
+    </Space>
+  );
+}
+
 function formatApiErrorMessage(error: unknown): string | null {
-  const apiMessage =
-    typeof error === "object" && error && "response" in error
-      ? (error as { response?: { data?: { message?: unknown } } }).response?.data?.message
-      : undefined;
-  if (typeof apiMessage === "string") {
-    return apiMessage;
-  }
-  if (Array.isArray(apiMessage)) {
-    return apiMessage.filter((entry) => typeof entry === "string").join("; ");
-  }
-  return null;
+  const info = extractApiError(error);
+  return info.message?.trim() ? info.message.trim() : null;
 }
 
 export function LlmGatewaySettingsPanel() {
@@ -605,20 +633,33 @@ export function LlmGatewaySettingsPanel() {
         <Typography.Title level={5} style={{ marginBottom: 0 }}>
           {t("settings.llmGateway.test.sections.completion")}
         </Typography.Title>
-        <Space wrap>
-          <Tag color="blue">{result.completion.model}</Tag>
-          <Tag>{result.completion.latencyMs}ms</Tag>
-          {result.completion.finishReason ? <Tag>{result.completion.finishReason}</Tag> : null}
-          {result.completion.usage ? (
-            <Tag>{t("settings.llmGateway.test.tokens", { total: result.completion.usage.total_tokens })}</Tag>
-          ) : null}
-          {typeof result.completion.costUsd === "number" ? (
-            <Tag color="geekblue">{t("settings.llmGateway.test.cost", { cost: result.completion.costUsd.toFixed(6) })}</Tag>
-          ) : null}
-        </Space>
-        <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
-          {result.completion.content ?? "-"}
-        </Typography.Paragraph>
+        {result.completion ? (
+          <>
+            <Space wrap>
+              <Tag color="blue">{result.completion.model}</Tag>
+              <Tag>{result.completion.latencyMs}ms</Tag>
+              {result.completion.finishReason ? <Tag>{result.completion.finishReason}</Tag> : null}
+              {result.completion.usage ? (
+                <Tag>{t("settings.llmGateway.test.tokens", { total: result.completion.usage.total_tokens })}</Tag>
+              ) : null}
+              {typeof result.completion.costUsd === "number" ? (
+                <Tag color="geekblue">
+                  {t("settings.llmGateway.test.cost", { cost: result.completion.costUsd.toFixed(6) })}
+                </Tag>
+              ) : null}
+            </Space>
+            <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
+              {result.completion.content ?? "-"}
+            </Typography.Paragraph>
+          </>
+        ) : result.completionError ? (
+          <>
+            {renderGatewayErrorMeta(result.completionError)}
+            <Alert type="error" showIcon message={result.completionError.message} />
+          </>
+        ) : (
+          <Typography.Text type="secondary">-</Typography.Text>
+        )}
 
         {result.embedding ? (
           <>
@@ -641,6 +682,7 @@ export function LlmGatewaySettingsPanel() {
             <Typography.Title level={5} style={{ marginBottom: 0, marginTop: 8 }}>
               {t("settings.llmGateway.test.sections.embedding")}
             </Typography.Title>
+            {renderGatewayErrorMeta(result.embeddingError)}
             <Alert type="error" showIcon message={result.embeddingError.message} />
           </>
         ) : null}
@@ -712,7 +754,7 @@ export function LlmGatewaySettingsPanel() {
           payload
         );
         const result = response.data;
-        if (!result?.completion) {
+        if (!result || (!result.completion && !result.completionError)) {
           messageApi.error(t("settings.llmGateway.testUnsaved.errors.failed"));
           return;
         }
@@ -814,12 +856,13 @@ export function LlmGatewaySettingsPanel() {
         payload
       );
       const result = response.data;
-      if (!result?.completion) {
+      if (!result || (!result.completion && !result.completionError)) {
         setTestResult(null);
         setTestErrorMessage(t("settings.llmGateway.test.errors.failed"));
         return;
       }
       setTestResult(result);
+      setTestErrorMessage(result.completionError?.message ?? null);
     } catch (error) {
       captureClientError("Failed to test LLM gateway profile", error);
       const messageText = formatApiErrorMessage(error);

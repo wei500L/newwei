@@ -193,6 +193,30 @@ export class NewsDedupeSettingsModel {
 
   @Field(() => [NewsDedupeCategoryThresholdModel])
   categoryThresholds!: NewsDedupeCategoryThresholdModel[];
+
+  @Field(() => Boolean)
+  useEmbeddings!: boolean;
+
+  @Field(() => String, { nullable: true })
+  llmJudgeInstructions!: string | null;
+
+  @Field(() => String, { nullable: true })
+  llmJudgeModel!: string | null;
+
+  @Field(() => Int)
+  llmJudgeMaxComparisons!: number;
+
+  @Field(() => Int)
+  llmJudgeCandidateChars!: number;
+
+  @Field(() => String)
+  llmJudgePromptVersion!: string;
+
+  @Field(() => String)
+  llmJudgeSystemPromptTemplate!: string;
+
+  @Field(() => String)
+  llmJudgeUserPromptTemplate!: string;
 }
 
 @ObjectType()

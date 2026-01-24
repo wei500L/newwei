@@ -7,6 +7,11 @@ import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { NewsPipelineConfigService } from "./news-pipeline.config";
+import {
+  DEFAULT_NEWS_DEDUPE_PROMPT_VERSION,
+  DEFAULT_NEWS_DEDUPE_SYSTEM_PROMPT_TEMPLATE,
+  DEFAULT_NEWS_DEDUPE_USER_PROMPT_TEMPLATE,
+} from "./news-dedupe-llm";
 
 export interface NewsDedupeCategoryThreshold {
   category: string;
@@ -16,11 +21,27 @@ export interface NewsDedupeCategoryThreshold {
 export interface NewsDedupeSettings {
   defaultThreshold: number;
   categoryThresholds: NewsDedupeCategoryThreshold[];
+  useEmbeddings: boolean;
+  llmJudgeInstructions: string | null;
+  llmJudgeModel: string | null;
+  llmJudgeMaxComparisons: number;
+  llmJudgeCandidateChars: number;
+  llmJudgePromptVersion: string;
+  llmJudgeSystemPromptTemplate: string;
+  llmJudgeUserPromptTemplate: string;
 }
 
 export interface NewsDedupeSettingsInput {
   defaultThreshold: number;
   categoryThresholds: NewsDedupeCategoryThreshold[];
+  useEmbeddings: boolean;
+  llmJudgeInstructions: string | null;
+  llmJudgeModel: string | null;
+  llmJudgeMaxComparisons: number | null;
+  llmJudgeCandidateChars: number | null;
+  llmJudgePromptVersion: string | null;
+  llmJudgeSystemPromptTemplate: string | null;
+  llmJudgeUserPromptTemplate: string | null;
 }
 
 const SETTINGS_CACHE_TTL_SECONDS = 60;
@@ -31,6 +52,16 @@ const MAX_CATEGORY_THRESHOLDS = 100;
 const MAX_CATEGORY_LENGTH = 120;
 const MIN_THRESHOLD = 0;
 const MAX_THRESHOLD = 1;
+const MAX_LLM_JUDGE_INSTRUCTIONS_LENGTH = 2_000;
+const MAX_LLM_JUDGE_MODEL_LENGTH = 120;
+const DEFAULT_LLM_JUDGE_MAX_COMPARISONS = 12;
+const MIN_LLM_JUDGE_MAX_COMPARISONS = 1;
+const MAX_LLM_JUDGE_MAX_COMPARISONS = 30;
+const DEFAULT_LLM_JUDGE_CANDIDATE_CHARS = 1_200;
+const MIN_LLM_JUDGE_CANDIDATE_CHARS = 200;
+const MAX_LLM_JUDGE_CANDIDATE_CHARS = 5_000;
+const MAX_LLM_JUDGE_PROMPT_VERSION_LENGTH = 80;
+const MAX_LLM_JUDGE_PROMPT_TEMPLATE_LENGTH = 12_000;
 
 @Injectable()
 export class NewsDedupeSettingsService {
@@ -109,6 +140,12 @@ export class NewsDedupeSettingsService {
           metadata: toPrismaJsonValue({
             defaultThreshold: normalized.defaultThreshold,
             categories: normalized.categoryThresholds.length,
+            useEmbeddings: normalized.useEmbeddings,
+            llmJudgeInstructionsConfigured: Boolean(normalized.llmJudgeInstructions),
+            llmJudgeModelConfigured: Boolean(normalized.llmJudgeModel),
+            llmJudgeMaxComparisons: normalized.llmJudgeMaxComparisons,
+            llmJudgeCandidateChars: normalized.llmJudgeCandidateChars,
+            llmJudgePromptVersion: normalized.llmJudgePromptVersion,
           }),
         },
       },
@@ -191,6 +228,14 @@ export class NewsDedupeSettingsService {
     return {
       defaultThreshold: this.pipelineConfig.config.pipeline.summaryDedupThreshold,
       categoryThresholds: [],
+      useEmbeddings: true,
+      llmJudgeInstructions: null,
+      llmJudgeModel: null,
+      llmJudgeMaxComparisons: DEFAULT_LLM_JUDGE_MAX_COMPARISONS,
+      llmJudgeCandidateChars: DEFAULT_LLM_JUDGE_CANDIDATE_CHARS,
+      llmJudgePromptVersion: DEFAULT_NEWS_DEDUPE_PROMPT_VERSION,
+      llmJudgeSystemPromptTemplate: DEFAULT_NEWS_DEDUPE_SYSTEM_PROMPT_TEMPLATE,
+      llmJudgeUserPromptTemplate: DEFAULT_NEWS_DEDUPE_USER_PROMPT_TEMPLATE,
     };
   }
 
@@ -205,6 +250,40 @@ export class NewsDedupeSettingsService {
       MAX_THRESHOLD,
       defaults.defaultThreshold,
     );
+    const useEmbeddings =
+      typeof (value as { useEmbeddings?: unknown }).useEmbeddings === "boolean"
+        ? Boolean((value as { useEmbeddings?: unknown }).useEmbeddings)
+        : defaults.useEmbeddings;
+    const llmJudgeInstructions = this.cleanLlmJudgeInstructions(
+      (value as { llmJudgeInstructions?: unknown }).llmJudgeInstructions,
+    );
+    const llmJudgeModel = this.cleanLlmJudgeModel(
+      (value as { llmJudgeModel?: unknown }).llmJudgeModel,
+    );
+    const llmJudgeMaxComparisons = this.clampInt(
+      (value as { llmJudgeMaxComparisons?: unknown }).llmJudgeMaxComparisons,
+      MIN_LLM_JUDGE_MAX_COMPARISONS,
+      MAX_LLM_JUDGE_MAX_COMPARISONS,
+      defaults.llmJudgeMaxComparisons,
+    );
+    const llmJudgeCandidateChars = this.clampInt(
+      (value as { llmJudgeCandidateChars?: unknown }).llmJudgeCandidateChars,
+      MIN_LLM_JUDGE_CANDIDATE_CHARS,
+      MAX_LLM_JUDGE_CANDIDATE_CHARS,
+      defaults.llmJudgeCandidateChars,
+    );
+    const llmJudgePromptVersion =
+      this.cleanPromptVersion(
+        (value as { llmJudgePromptVersion?: unknown }).llmJudgePromptVersion,
+      ) ?? defaults.llmJudgePromptVersion;
+    const llmJudgeSystemPromptTemplate =
+      this.cleanPromptTemplate(
+        (value as { llmJudgeSystemPromptTemplate?: unknown }).llmJudgeSystemPromptTemplate,
+      ) ?? defaults.llmJudgeSystemPromptTemplate;
+    const llmJudgeUserPromptTemplate =
+      this.cleanPromptTemplate(
+        (value as { llmJudgeUserPromptTemplate?: unknown }).llmJudgeUserPromptTemplate,
+      ) ?? defaults.llmJudgeUserPromptTemplate;
 
     const rawList = Array.isArray(value.categoryThresholds)
       ? value.categoryThresholds
@@ -249,6 +328,14 @@ export class NewsDedupeSettingsService {
     return {
       defaultThreshold,
       categoryThresholds,
+      useEmbeddings,
+      llmJudgeInstructions,
+      llmJudgeModel,
+      llmJudgeMaxComparisons,
+      llmJudgeCandidateChars,
+      llmJudgePromptVersion,
+      llmJudgeSystemPromptTemplate,
+      llmJudgeUserPromptTemplate,
     };
   }
 
@@ -269,6 +356,58 @@ export class NewsDedupeSettingsService {
       return null;
     }
     return trimmed.length > MAX_CATEGORY_LENGTH ? trimmed.slice(0, MAX_CATEGORY_LENGTH) : trimmed;
+  }
+
+  private cleanLlmJudgeInstructions(value: unknown) {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed.length > MAX_LLM_JUDGE_INSTRUCTIONS_LENGTH
+      ? trimmed.slice(0, MAX_LLM_JUDGE_INSTRUCTIONS_LENGTH)
+      : trimmed;
+  }
+
+  private cleanLlmJudgeModel(value: unknown) {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed.length > MAX_LLM_JUDGE_MODEL_LENGTH
+      ? trimmed.slice(0, MAX_LLM_JUDGE_MODEL_LENGTH)
+      : trimmed;
+  }
+
+  private cleanPromptVersion(value: unknown) {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed.length > MAX_LLM_JUDGE_PROMPT_VERSION_LENGTH
+      ? trimmed.slice(0, MAX_LLM_JUDGE_PROMPT_VERSION_LENGTH)
+      : trimmed;
+  }
+
+  private cleanPromptTemplate(value: unknown) {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed.length > MAX_LLM_JUDGE_PROMPT_TEMPLATE_LENGTH
+      ? trimmed.slice(0, MAX_LLM_JUDGE_PROMPT_TEMPLATE_LENGTH)
+      : trimmed;
   }
 
   private normalizeTopicKey(value: string) {
@@ -307,5 +446,19 @@ export class NewsDedupeSettingsService {
     }
     return numeric;
   }
-}
 
+  private clampInt(value: unknown, min: number, max: number, fallback: number) {
+    const numeric = this.toNumber(value);
+    if (numeric === null || Number.isNaN(numeric)) {
+      return fallback;
+    }
+    const rounded = Math.round(numeric);
+    if (rounded < min) {
+      return min;
+    }
+    if (rounded > max) {
+      return max;
+    }
+    return rounded;
+  }
+}

@@ -378,6 +378,52 @@ export class UpdateNewsDedupeSettingsInput {
   @Max(1)
   defaultThreshold!: number;
 
+  @Field(() => Boolean)
+  @IsBoolean()
+  useEmbeddings!: boolean;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  llmJudgeInstructions?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  llmJudgeModel?: string | null;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(30)
+  llmJudgeMaxComparisons?: number | null;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(200)
+  @Max(5000)
+  llmJudgeCandidateChars?: number | null;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  llmJudgePromptVersion?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(12000)
+  llmJudgeSystemPromptTemplate?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(12000)
+  llmJudgeUserPromptTemplate?: string | null;
+
   @Field(() => [NewsDedupeCategoryThresholdInput])
   @ArrayMaxSize(100)
   @ValidateNested({ each: true })

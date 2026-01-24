@@ -22,7 +22,7 @@ import { EventEmitter } from "node:events";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 
-import { extractFirstJson } from "../../common/llm-json";
+import { extractFirstJson, safeJsonParseFromText } from "../../common/llm-json";
 import { ItemStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
@@ -31,6 +31,12 @@ import { Crawl4aiClient } from "../crawl/crawl4ai.client";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { LiteLlmService } from "./litellm.service";
+import {
+  buildNewsDedupeSystemPrompt,
+  buildNewsDedupeUserPrompt,
+  NEWS_DEDUPE_RESPONSE_FORMAT,
+  NewsDedupeJudgeSchema,
+} from "./news-dedupe-llm";
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import {
@@ -166,6 +172,8 @@ interface OutboxDeliveryRequestedEvent {
 
 const OUTBOX_DELIVERY_REQUESTED_EVENT = "newsPipeline.outbox.deliveryRequested";
 const MAX_TIMEOUT_MS = 2_147_483_647;
+const MAX_LLM_DEDUPE_COMPARISONS = 12;
+const MAX_LLM_DEDUPE_CANDIDATE_CHARS = 1_200;
 
 @Injectable()
 export class NewsPipelineService implements OnModuleDestroy {
@@ -795,22 +803,52 @@ export class NewsPipelineService implements OnModuleDestroy {
       return {};
     }
 
-    const embeddingData = await this.buildSummaryEmbedding(summary, options.job);
-    if (!embeddingData) {
-      return {};
-    }
-
     const settings = await this.dedupeSettings.getSettings(options.job.orgId);
     const thresholdBase = this.dedupeSettings.resolveBaseThreshold(settings, {
       category: options.cleaned.category,
       topics: options.cleaned.topics,
     }).threshold;
     const threshold = this.resolveSummaryDedupThreshold(summary.length, thresholdBase);
-    const baseResult: SummaryDedupeResult = {
+    const baseResult: SummaryDedupeResult = { thresholdUsed: threshold };
+
+    if (!settings.useEmbeddings) {
+      const duplicate = await this.findLlmDuplicate({
+        orgId: options.job.orgId,
+        summary,
+        threshold,
+        job: options.job,
+        cleaned: options.cleaned,
+        llmJudgeInstructions: settings.llmJudgeInstructions,
+        llmJudgeModel: settings.llmJudgeModel,
+        llmJudgeMaxComparisons: settings.llmJudgeMaxComparisons,
+        llmJudgeCandidateChars: settings.llmJudgeCandidateChars,
+        llmJudgePromptVersion: settings.llmJudgePromptVersion,
+        llmJudgeSystemPromptTemplate: settings.llmJudgeSystemPromptTemplate,
+        llmJudgeUserPromptTemplate: settings.llmJudgeUserPromptTemplate,
+      });
+      if (!duplicate) {
+        return baseResult;
+      }
+
+      await this.markItemMetaDuplicate(options.job, duplicate.id, duplicate.similarity);
+      return {
+        ...baseResult,
+        duplicateOf: duplicate.id,
+        duplicateSimilarity: duplicate.similarity,
+      };
+    }
+
+    const embeddingData = await this.buildSummaryEmbedding(summary, options.job);
+    if (!embeddingData) {
+      return baseResult;
+    }
+
+    const embeddingBaseResult: SummaryDedupeResult = {
+      ...baseResult,
       summaryEmbedding: embeddingData.embedding,
       summaryEmbeddingModel: embeddingData.model,
-      thresholdUsed: threshold,
     };
+
     const duplicate = await this.findSemanticDuplicate(
       options.job.orgId,
       embeddingData.embedding,
@@ -818,7 +856,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       threshold,
     );
     if (!duplicate) {
-      return baseResult;
+      return embeddingBaseResult;
     }
 
     await this.markItemMetaDuplicate(
@@ -828,10 +866,253 @@ export class NewsPipelineService implements OnModuleDestroy {
     );
 
     return {
-      ...baseResult,
+      ...embeddingBaseResult,
       duplicateOf: duplicate.id,
       duplicateSimilarity: duplicate.similarity,
     };
+  }
+
+  private async findLlmDuplicate(options: {
+    orgId: string;
+    summary: string;
+    threshold: number;
+    job: PipelineJobContext;
+    cleaned: CleanedNews;
+    llmJudgeInstructions?: string | null;
+    llmJudgeModel?: string | null;
+    llmJudgeMaxComparisons?: number;
+    llmJudgeCandidateChars?: number;
+    llmJudgePromptVersion?: string;
+    llmJudgeSystemPromptTemplate?: string;
+    llmJudgeUserPromptTemplate?: string;
+  }): Promise<{ id: string; similarity: number } | null> {
+    const cfg = this.configService.config.pipeline;
+    const lookbackMs = cfg.summaryDedupLookbackHours * 60 * 60 * 1000;
+    const cutoff = new Date(Date.now() - lookbackMs);
+    const maxComparisons =
+      typeof options.llmJudgeMaxComparisons === "number" && Number.isFinite(options.llmJudgeMaxComparisons)
+        ? Math.max(1, Math.round(options.llmJudgeMaxComparisons))
+        : MAX_LLM_DEDUPE_COMPARISONS;
+    const candidateChars =
+      typeof options.llmJudgeCandidateChars === "number" && Number.isFinite(options.llmJudgeCandidateChars)
+        ? Math.max(1, Math.round(options.llmJudgeCandidateChars))
+        : MAX_LLM_DEDUPE_CANDIDATE_CHARS;
+
+    const candidates = await ProcessedItemModel.find({
+      orgId: options.orgId,
+      status: "completed",
+      duplicateOf: null,
+      createdAt: { $gte: cutoff },
+      "result.summary": { $exists: true, $ne: null },
+    })
+      .select({ _id: 1, "result.summary": 1, "result.title": 1 })
+      .sort({ createdAt: -1 })
+      .limit(cfg.summaryDedupMaxCandidates)
+      .lean();
+
+    const normalizedQuery = this.normalizeForQuickSimilarity(options.summary);
+    const ranked = candidates
+      .map((candidate) => {
+        const summary = this.extractCandidateSummary(candidate);
+        const title = this.extractCandidateTitle(candidate);
+        const quick =
+          summary && normalizedQuery
+            ? this.quickSimilarity(normalizedQuery, this.normalizeForQuickSimilarity(summary))
+            : 0;
+        const id = (candidate as { _id?: unknown })._id?.toString?.() ?? "";
+        return { id, summary, title, quick };
+      })
+      .filter((entry) => entry.id && entry.summary)
+      .sort((a, b) => b.quick - a.quick)
+      .slice(0, Math.min(cfg.summaryDedupMaxCandidates, maxComparisons * 3));
+
+    const queryText = options.summary.slice(0, candidateChars);
+    let best: { id: string; similarity: number } | null = null;
+    for (const candidate of ranked.slice(0, maxComparisons)) {
+      const candidateText = candidate.summary!.slice(0, candidateChars);
+      if (this.normalizeForQuickSimilarity(candidateText) === normalizedQuery) {
+        return { id: candidate.id, similarity: 1 };
+      }
+
+      const score = await this.scoreSummaryDuplicateWithLlm({
+        job: options.job,
+        threshold: options.threshold,
+        summaryA: queryText,
+        summaryB: candidateText,
+        titleA: options.cleaned.title,
+        titleB: candidate.title,
+        language: options.cleaned.language,
+        instructions: options.llmJudgeInstructions,
+        model: options.llmJudgeModel,
+        promptVersion: options.llmJudgePromptVersion,
+        systemPromptTemplate: options.llmJudgeSystemPromptTemplate,
+        userPromptTemplate: options.llmJudgeUserPromptTemplate,
+      });
+      if (!score || !score.isDuplicate) {
+        continue;
+      }
+
+      if (!best || score.similarity > best.similarity) {
+        best = { id: candidate.id, similarity: score.similarity };
+      }
+
+      if (score.similarity >= 0.98) {
+        break;
+      }
+    }
+
+    return best && best.similarity >= options.threshold ? best : null;
+  }
+
+  private async scoreSummaryDuplicateWithLlm(options: {
+    job: PipelineJobContext;
+    threshold: number;
+    summaryA: string;
+    summaryB: string;
+    titleA?: string | null;
+    titleB?: string | null;
+    language?: string | null;
+    instructions?: string | null;
+    model?: string | null;
+    promptVersion?: string;
+    systemPromptTemplate?: string;
+    userPromptTemplate?: string;
+  }): Promise<{ similarity: number; isDuplicate: boolean } | null> {
+    try {
+      const model = options.model?.trim() ? options.model.trim() : undefined;
+      const response = await this.liteLlm.acompletion({
+        ...(model ? { model } : {}),
+        messages: [
+          {
+            role: "system",
+            content: buildNewsDedupeSystemPrompt(
+              options.language,
+              options.instructions,
+              options.systemPromptTemplate,
+            ),
+          },
+          {
+            role: "user",
+            content: buildNewsDedupeUserPrompt(
+              {
+                threshold: options.threshold,
+                summaryA: options.summaryA,
+                summaryB: options.summaryB,
+                titleA: options.titleA,
+                titleB: options.titleB,
+              },
+              options.userPromptTemplate,
+            ),
+          },
+        ],
+        temperature: 0,
+        top_p: 1,
+        max_tokens: 256,
+        response_format: NEWS_DEDUPE_RESPONSE_FORMAT,
+        metadata: {
+          jobId: options.job.jobId,
+          source: "news-pipeline",
+          stage: "dedupe",
+          threshold: options.threshold,
+          promptVersion: options.promptVersion,
+        },
+      });
+
+      const content = response.choices?.[0]?.message?.content;
+      if (!content) {
+        return null;
+      }
+
+      const raw = safeJsonParseFromText<unknown>(content);
+      const parsed = NewsDedupeJudgeSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.logger.warn(
+          { jobId: options.job.jobId, issues: parsed.error.issues },
+          "LLM dedupe judge returned invalid payload",
+        );
+        return null;
+      }
+
+      const similarity = Math.min(1, Math.max(0, parsed.data.similarity));
+      const isDuplicate = parsed.data.is_duplicate || similarity >= options.threshold;
+      return { similarity, isDuplicate };
+    } catch (error) {
+      this.logger.warn(
+        { error, jobId: options.job.jobId },
+        "LLM dedupe judge call failed",
+      );
+      return null;
+    }
+  }
+
+  private extractCandidateSummary(candidate: unknown): string | null {
+    if (!candidate || typeof candidate !== "object") {
+      return null;
+    }
+    const record = candidate as Record<string, unknown>;
+    const result = record.result;
+    if (!result || typeof result !== "object") {
+      return null;
+    }
+    const summary = (result as Record<string, unknown>).summary;
+    return typeof summary === "string" && summary.trim() ? summary.trim() : null;
+  }
+
+  private extractCandidateTitle(candidate: unknown): string | null {
+    if (!candidate || typeof candidate !== "object") {
+      return null;
+    }
+    const record = candidate as Record<string, unknown>;
+    const result = record.result;
+    if (!result || typeof result !== "object") {
+      return null;
+    }
+    const title = (result as Record<string, unknown>).title;
+    return typeof title === "string" && title.trim() ? title.trim() : null;
+  }
+
+  private normalizeForQuickSimilarity(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[\p{P}\p{S}\s]+/gu, "")
+      .trim();
+  }
+
+  private quickSimilarity(a: string, b: string): number {
+    if (!a || !b) {
+      return 0;
+    }
+    if (a === b) {
+      return 1;
+    }
+    const n = Math.min(3, Math.max(2, Math.min(a.length, b.length) >= 64 ? 3 : 2));
+    const aSet = this.toNgrams(a, n);
+    const bSet = this.toNgrams(b, n);
+    if (aSet.size === 0 || bSet.size === 0) {
+      return 0;
+    }
+    let intersection = 0;
+    for (const token of aSet) {
+      if (bSet.has(token)) {
+        intersection += 1;
+      }
+    }
+    const union = aSet.size + bSet.size - intersection;
+    return union > 0 ? intersection / union : 0;
+  }
+
+  private toNgrams(text: string, n: number): Set<string> {
+    const grams = new Set<string>();
+    if (n <= 1) {
+      for (const ch of text) {
+        grams.add(ch);
+      }
+      return grams;
+    }
+    for (let i = 0; i <= text.length - n; i += 1) {
+      grams.add(text.slice(i, i + n));
+    }
+    return grams;
   }
 
   private async buildSummaryEmbedding(

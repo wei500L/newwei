@@ -56,11 +56,16 @@ export interface LlmGatewayEmbeddingTestResult {
 export interface LlmGatewayTestError {
   message: string;
   status?: number;
+  axiosCode?: string;
+  requestId?: string;
+  upstreamType?: string;
+  upstreamCode?: string;
 }
 
 export interface LlmGatewayTestResult {
   apiBase: string;
-  completion: LlmGatewayChatTestResult;
+  completion?: LlmGatewayChatTestResult;
+  completionError?: LlmGatewayTestError;
   embedding?: LlmGatewayEmbeddingTestResult;
   embeddingError?: LlmGatewayTestError;
 }
@@ -252,7 +257,10 @@ export class LlmGatewayTestService {
 
     const prompt = input.prompt?.trim() ? input.prompt.trim() : DEFAULT_PROMPT;
     const completionModelOverride = input.model?.trim() ? input.model.trim() : undefined;
-    const completion = await this.testCompletion(client, cfg, prompt, completionModelOverride);
+
+    const completionResult = await this.testCompletion(client, cfg, prompt, completionModelOverride);
+    const completion = completionResult.completion;
+    const completionError = completionResult.error;
 
     const shouldTestEmbeddings =
       input.includeEmbeddings ??
@@ -280,7 +288,8 @@ export class LlmGatewayTestService {
 
     return {
       apiBase: baseUrl,
-      completion,
+      ...(completion ? { completion } : {}),
+      ...(completionError ? { completionError } : {}),
       ...(embedding ? { embedding } : {}),
       ...(embeddingError ? { embeddingError } : {})
     };
@@ -342,7 +351,10 @@ export class LlmGatewayTestService {
     });
 
     const prompt = input.prompt?.trim() ? input.prompt.trim() : DEFAULT_PROMPT;
-    const completion = await this.testCompletion(client, cfg, prompt);
+
+    const completionResult = await this.testCompletion(client, cfg, prompt);
+    const completion = completionResult.completion;
+    const completionError = completionResult.error;
 
     const shouldTestEmbeddings = input.includeEmbeddings ?? Boolean(cfg.embeddingModel);
     let embedding: LlmGatewayEmbeddingTestResult | undefined;
@@ -365,7 +377,8 @@ export class LlmGatewayTestService {
 
     return {
       apiBase: baseUrl,
-      completion,
+      ...(completion ? { completion } : {}),
+      ...(completionError ? { completionError } : {}),
       ...(embedding ? { embedding } : {}),
       ...(embeddingError ? { embeddingError } : {})
     };
@@ -384,7 +397,7 @@ export class LlmGatewayTestService {
     },
     prompt: string,
     modelOverride?: string
-  ): Promise<LlmGatewayChatTestResult> {
+  ): Promise<{ completion?: LlmGatewayChatTestResult; error?: LlmGatewayTestError }> {
     const uniqueModels = Array.from(
       new Set(
         (
@@ -397,7 +410,7 @@ export class LlmGatewayTestService {
       )
     );
     if (uniqueModels.length === 0) {
-      throw new BadRequestException("model is not configured");
+      return { error: { message: "model is not configured" } };
     }
 
     let lastError: unknown;
@@ -428,12 +441,14 @@ export class LlmGatewayTestService {
             : undefined;
 
         return {
-          model: response.data.model?.trim() || model,
-          content,
-          ...(finishReason ? { finishReason } : {}),
-          latencyMs,
-          ...(response.data.usage ? { usage: response.data.usage } : {}),
-          ...this.extractCosts(response)
+          completion: {
+            model: response.data.model?.trim() || model,
+            content,
+            ...(finishReason ? { finishReason } : {}),
+            latencyMs,
+            ...(response.data.usage ? { usage: response.data.usage } : {}),
+            ...this.extractCosts(response)
+          } satisfies LlmGatewayChatTestResult
         };
       } catch (error) {
         lastError = error;
@@ -447,7 +462,9 @@ export class LlmGatewayTestService {
       }
     }
 
-    this.throwGatewayError(lastError, { apiKeyConfigured: Boolean(cfg.apiKey) });
+    return {
+      error: this.toGatewayErrorInfo(lastError, { apiKeyConfigured: Boolean(cfg.apiKey) })
+    };
   }
 
   private async testEmbeddings(
@@ -521,7 +538,7 @@ export class LlmGatewayTestService {
       const hasHtmlContentType =
         typeof contentType === "string" && contentType.toLowerCase().includes("text/html");
       const hasHtmlBody =
-        typeof response.data === "string" && /<\\s*!doctype\\s+html|<\\s*html\\b/i.test(response.data);
+        typeof response.data === "string" && /<\s*!doctype\s+html|<\s*html\b/i.test(response.data);
 
       if (ok && (hasHtmlContentType || hasHtmlBody)) {
         return {
@@ -596,6 +613,12 @@ export class LlmGatewayTestService {
   ): LlmGatewayTestError {
     if (error instanceof AxiosError) {
       const status = error.response?.status;
+      const axiosCode = normalizeOptionalString(error.code);
+      const requestId =
+        extractRequestIdFromHeaders(error.response?.headers) ??
+        extractRequestIdFromResponseData(error.response?.data);
+      const upstreamMeta = extractUpstreamErrorMeta(error.response?.data);
+
       let detail = extractAxiosDetail(error);
       if (status === 401 && detail && detail.toLowerCase() === "unauthorized") {
         detail = undefined;
@@ -611,7 +634,11 @@ export class LlmGatewayTestService {
         : `LLM gateway request failed${detail ? `: ${detail}` : ""}`;
       return {
         message,
-        ...(status ? { status } : {})
+        ...(status ? { status } : {}),
+        ...(axiosCode ? { axiosCode } : {}),
+        ...(requestId ? { requestId } : {}),
+        ...(upstreamMeta.upstreamType ? { upstreamType: upstreamMeta.upstreamType } : {}),
+        ...(upstreamMeta.upstreamCode ? { upstreamCode: upstreamMeta.upstreamCode } : {})
       };
     }
 
@@ -931,6 +958,90 @@ function normalizeOptionalString(raw: unknown): string | undefined {
   }
   const trimmed = raw.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function extractRequestIdFromHeaders(headers: unknown): string | undefined {
+  if (!headers || typeof headers !== "object") {
+    return undefined;
+  }
+  const record = headers as Record<string, unknown>;
+  const candidates = [
+    record["x-request-id"],
+    record["openai-request-id"],
+    record["x-openai-request-id"],
+    record["x-correlation-id"],
+    record["x-amzn-requestid"],
+    record["x-amzn-request-id"],
+    record["x-amz-request-id"],
+  ];
+
+  for (const candidate of candidates) {
+    const value = Array.isArray(candidate)
+      ? candidate.filter((entry) => typeof entry === "string").join(", ")
+      : candidate;
+    const trimmed = normalizeOptionalString(value);
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return undefined;
+}
+
+function extractRequestIdFromText(text: string | undefined): string | undefined {
+  if (!text) {
+    return undefined;
+  }
+  const match = /request\s*id\s*[:=]\s*([A-Za-z0-9._-]{6,})/i.exec(text);
+  return match?.[1]?.trim() ? match[1].trim() : undefined;
+}
+
+function extractRequestIdFromResponseData(data: unknown): string | undefined {
+  if (!data) {
+    return undefined;
+  }
+  if (typeof data === "string") {
+    return extractRequestIdFromText(data);
+  }
+  if (typeof data !== "object") {
+    return undefined;
+  }
+  const record = data as Record<string, unknown>;
+  const errorObj =
+    record.error && typeof record.error === "object"
+      ? (record.error as Record<string, unknown>)
+      : undefined;
+  const requestId =
+    normalizeOptionalString(record.request_id) ??
+    normalizeOptionalString(record.requestId) ??
+    normalizeOptionalString(errorObj?.request_id) ??
+    normalizeOptionalString(errorObj?.requestId);
+  return requestId ?? extractRequestIdFromText(extractMessageLike(errorObj?.message) ?? extractMessageLike(record.message));
+}
+
+function extractUpstreamErrorMeta(data: unknown): { upstreamType?: string; upstreamCode?: string } {
+  if (!data || typeof data !== "object") {
+    return {};
+  }
+  const record = data as Record<string, unknown>;
+  const errorObj =
+    record.error && typeof record.error === "object"
+      ? (record.error as Record<string, unknown>)
+      : undefined;
+
+  const upstreamType =
+    normalizeOptionalString(errorObj?.type) ??
+    normalizeOptionalString(record.type) ??
+    normalizeOptionalString(record.error_type);
+  const upstreamCode =
+    normalizeOptionalString(errorObj?.code) ??
+    normalizeOptionalString(record.code) ??
+    normalizeOptionalString(record.error_code);
+
+  return {
+    ...(upstreamType ? { upstreamType } : {}),
+    ...(upstreamCode ? { upstreamCode } : {})
+  };
 }
 
 function normalizeStringList(raw: unknown): string[] {
