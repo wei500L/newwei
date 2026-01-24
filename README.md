@@ -246,45 +246,57 @@ infra/
 
 ### LiteLLM 部署指南
 
-News Pipeline 默认将 LiteLLM 代理暴露在 `http://localhost:4001`，因此只要按下列步骤部署即可被 `LiteLlmService` 热加载使用：
+本项目的 `LiteLlmService` 走 OpenAI-compatible 接口；推荐使用 LiteLLM Proxy 作为统一网关。
 
-1. **安装 LiteLLM Proxy**  
-   推荐使用独立虚拟环境或容器运行：
+- **Docker Compose（推荐）**：`infra/docker/docker-compose.yml` 已内置 `litellm` 服务
+  - 容器内（API 访问）：`http://litellm:4000`
+  - 宿主机（本机调试）：`http://localhost:4001`
+- **本机开发（pnpm dev）**：也可以单独跑一个 LiteLLM Proxy，保证 `http://localhost:4001` 可达即可
 
-   ```bash
-   python3 -m venv .venv-litellm
-   source .venv-litellm/bin/activate
-   pip install "litellm[proxy]"
-   ```
+1. **配置 LiteLLM Proxy（docker-compose）**
 
-   或者直接使用官方镜像：`docker run -p 4001:4000 ghcr.io/berriai/litellm:main`.
+   修改 `infra/docker/.env`（可从 `infra/docker/.env.sample` 复制）：
 
-2. **提供上游模型凭证**  
-   LiteLLM 会把兼容 OpenAI/Anthropic 等模型代理到统一接口，需在代理进程环境中注入真实凭证，例如：
+   - `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`：上游模型真实凭证（LiteLLM 代理内使用）
+   - 可选：`LITELLM_MASTER_KEY` 用于保护代理（若设置，也请把 `LITELLM_API_KEY` 设为同一值，方便 API 侧调用）
+   - `NEWS_PIPELINE_CONFIG_PATH`：docker 默认使用 `config/news-pipeline.config.docker.yaml`（容器内指向 `http://litellm:4000`）
 
-   ```bash
-   export OPENAI_API_KEY="sk-xxx"
-   export ANTHROPIC_API_KEY="xxx" # 可选
-   ```
-
-   如果需要自定义模型路由、RPM 限制或日志，可以创建 `litellm.config.yaml`（示例见官方文档），并使用 `litellm --config /path/to/litellm.config.yaml` 启动。
-
-3. **运行代理并监听 4001 端口**
+2. **启动服务**
 
    ```bash
-   litellm --port 4001 --num_workers 4
+   pnpm docker:up
    ```
 
-   News Pipeline 会自动轮询 `config/news-pipeline.config.yaml` 中的 `litellm_config.api_url`/`fallback_models` 以及 `.env` 的 `LITELLM_*` 覆盖值，因此只要保证该端口可达即可。
+   如只想单独启动 LiteLLM Proxy：
 
-4. **校验 API 是否连通**
    ```bash
-   curl http://localhost:4001/v1/models
-   curl http://localhost:4001/v1/chat/completions \
-     -H "Content-Type: application/json" \
-     -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
+   pnpm docker:up -d litellm
    ```
-   返回 200 表示 LiteLLM 部署成功。此时执行 `pnpm dev` 或 `pnpm docker:up`，就能让 BullMQ 队列中的 `NewsPipelineService` 实际走 LiteLLM 代理完成清洗任务。
+
+3. **校验 LiteLLM Proxy 是否可用**
+
+   ```bash
+   curl http://localhost:4001/health/liveliness
+   curl http://localhost:4001/health/readiness
+   ```
+
+   如配置了 `LITELLM_MASTER_KEY`，访问受保护接口需带上：
+
+   ```bash
+   curl http://localhost:4001/v1/models -H "Authorization: Bearer ${LITELLM_MASTER_KEY}"
+   ```
+
+4. **本机模式（可选）**
+
+   不使用 docker-compose 时，可按 LiteLLM 官方方式启动代理（示例）：
+
+   ```bash
+   docker run -p 4001:4000 \
+     -v $(pwd)/infra/litellm/litellm-config.yaml:/app/config.yaml \
+     -e OPENAI_API_KEY="sk-xxx" \
+     ghcr.io/berriai/litellm:main-stable \
+     --config /app/config.yaml
+   ```
 
 ## TODO 与扩展点
 

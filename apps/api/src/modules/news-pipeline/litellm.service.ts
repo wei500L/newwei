@@ -9,6 +9,8 @@ import axios, {
 import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
+
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
 
@@ -250,8 +252,9 @@ export class LiteLlmService {
             : undefined,
         );
         const costUsd = headerCost ?? payloadCost ?? usageCost;
+        const normalized = this.normalizeCompletionResponse(response.data);
         return {
-          ...response.data,
+          ...normalized,
           costUsd: costUsd ?? undefined,
           keySpendUsd: keySpendUsd ?? undefined,
           latencyMs,
@@ -325,6 +328,42 @@ export class LiteLlmService {
         yield { model, raw: parsed, finishReason };
       }
     }
+  }
+
+  private normalizeCompletionResponse(
+    data: LiteLlmCompletionResponse,
+  ): LiteLlmCompletionResponse {
+    const choices = Array.isArray(data.choices) ? data.choices : [];
+    const normalizedChoices = choices.map((choice) => {
+      const content = extractOpenAiTextFromChoice(choice as unknown);
+      const rawMessage =
+        choice && typeof choice === "object"
+          ? (choice as unknown as Record<string, unknown>).message
+          : undefined;
+      const role =
+        rawMessage && typeof rawMessage === "object" && typeof (rawMessage as Record<string, unknown>).role === "string"
+          ? ((rawMessage as Record<string, unknown>).role as string)
+          : "assistant";
+
+      const messageRecord =
+        rawMessage && typeof rawMessage === "object"
+          ? (rawMessage as Record<string, unknown>)
+          : {};
+
+      return {
+        ...(choice as unknown as Record<string, unknown>),
+        message: {
+          ...messageRecord,
+          role,
+          content,
+        },
+      } as unknown as LiteLlmCompletionChoice;
+    });
+
+    return {
+      ...data,
+      choices: normalizedChoices,
+    };
   }
 
   private async executeEmbeddingWithRetry(

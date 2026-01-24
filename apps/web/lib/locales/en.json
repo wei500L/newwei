@@ -2055,6 +2055,25 @@
     },
     "llmGateway": {
       "description": "Manage OpenAI-compatible LLM gateway profiles. The active profile overrides runtime requests made by the API.",
+      "proxyStatus": {
+        "title": "LiteLLM Proxy status",
+        "target": "Target: {{name}}",
+        "actions": {
+          "checkHealth": "Check proxy health",
+          "models": "Models"
+        },
+        "liveliness": "Liveliness",
+        "readiness": "Readiness",
+        "checkedAt": "Checked at: {{time}}",
+        "hint": "Check /health/liveliness and /health/readiness on the selected gateway API base.",
+        "models": {
+          "notChecked": "Models not checked yet"
+        },
+        "empty": "No gateway profiles yet. Create one to start.",
+        "errors": {
+          "failed": "Failed to check proxy health"
+        }
+      },
       "active": "Active",
       "keySet": "Key set",
       "keyMissing": "No key",
@@ -2099,14 +2118,16 @@
         "fallbackModels": "comma-separated, e.g. openai/gpt-4o-mini,anthropic/claude-3-haiku"
       },
       "presets": {
+        "litellmDocker": "LiteLLM (Docker Compose)",
+        "litellmLocal": "LiteLLM (Local)",
         "glm": "GLM (Zhipu)",
         "kimi": "Kimi K2 (Moonshot)",
         "deepseek": "DeepSeek",
         "qwen": "Qwen (DashScope)"
       },
       "hints": {
-        "apiBase": "Accepts either a base URL (e.g. https://api.openai.com) or a full endpoint URL (e.g. https://api.openai.com/v1/chat/completions). We normalize it automatically.",
-        "apiKey": "Stored in system settings. Encrypted in MySQL when secret encryption is enabled (System Settings -> Security) and SYSTEM_SETTINGS_ENCRYPTION_KEY is configured; otherwise stored as plaintext. You can paste either sk-... or a full \"Bearer sk-...\" value.",
+        "apiBase": "This base URL is used by the API server (not the browser). For Docker Compose, use http://litellm:4000; for local dev, use http://localhost:4001. Accepts either a base URL (e.g. https://api.openai.com) or a full endpoint URL (e.g. https://api.openai.com/v1/chat/completions). We normalize it automatically.",
+        "apiKey": "Stored in system settings. Encrypted in MySQL when secret encryption is enabled (System Settings -> Security) and SYSTEM_SETTINGS_ENCRYPTION_KEY is configured; otherwise stored as plaintext. You can paste either sk-... or a full \"Bearer sk-...\" value. If your gateway is a LiteLLM Proxy protected by a master key, paste the master key here; otherwise leave it empty. Upstream provider keys (e.g. OPENAI_API_KEY) must be configured on the LiteLLM Proxy side.",
         "apiKeyEdit": "Provide a new key to rotate it. Use the toggle below to clear.",
         "fallbackModels": "Used when the primary model request fails."
       },
@@ -2487,6 +2508,9 @@
         "keepToken": "Keep token"
       },
       "validation": {
+        "baseUrlRequired": "Base URL is required when enabled",
+        "baseUrlInvalid": "Base URL must be a valid http(s) URL",
+        "tokenRequired": "Token is required when enabled",
         "timeoutRequired": "Timeout is required",
         "maxRetriesRequired": "Max retries is required"
       },

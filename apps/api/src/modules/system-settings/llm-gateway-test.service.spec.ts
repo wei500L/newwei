@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { AxiosError, AxiosHeaders, AxiosResponse } from "axios";
 
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
@@ -144,6 +145,33 @@ describe("LlmGatewayTestService", () => {
     );
   });
 
+  it("extracts completion text from content parts array", async () => {
+    const response: AxiosResponse = {
+      data: {
+        model: "openai/gpt-4o-mini",
+        choices: [
+          {
+            message: {
+              content: [{ type: "text", text: "OK" }]
+            },
+            finish_reason: "stop"
+          }
+        ],
+        usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 }
+      },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() }
+    };
+
+    mockAxiosPost.mockResolvedValueOnce(response);
+
+    const result = await service.testProfile("profile-1", { includeEmbeddings: false });
+
+    expect(result.completion.content).toBe("OK");
+  });
+
   it("returns embeddingError when embeddings test fails", async () => {
     const error400 = new AxiosError("Bad request", "ERR_BAD_REQUEST", undefined, undefined, {
       status: 400,
@@ -163,6 +191,27 @@ describe("LlmGatewayTestService", () => {
     expect(result.embeddingError?.message).toContain("HTTP 400");
   });
 
+  it("returns embeddingError when embedding vector is missing", async () => {
+    const embeddingResponseMissing: AxiosResponse = {
+      data: {
+        model: "openai/text-embedding-3-small",
+        data: [{ index: 0 }],
+        usage: { prompt_tokens: 3, total_tokens: 3 }
+      },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() }
+    };
+
+    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse).mockResolvedValueOnce(embeddingResponseMissing);
+
+    const result = await service.testProfile("profile-1", { includeEmbeddings: true });
+
+    expect(result.embedding).toBeUndefined();
+    expect(result.embeddingError?.message).toContain("Embedding response did not include an embedding vector");
+  });
+
   it("lists models via /v1/models", async () => {
     const response: AxiosResponse = {
       data: {
@@ -180,6 +229,157 @@ describe("LlmGatewayTestService", () => {
     expect(result.apiBase).toBe("http://localhost:4001");
     expect(result.models).toEqual(["openai/gpt-4o-mini", "claude-3-opus-20240229"]);
     expect(mockAxiosGet).toHaveBeenCalledWith("/v1/models", expect.any(Object));
+  });
+
+  it("checks proxy liveliness + readiness endpoints", async () => {
+    const livelinessResponse: AxiosResponse = {
+      data: { status: "ok" },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() }
+    };
+    const readinessResponse: AxiosResponse = {
+      data: { status: "ok" },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() }
+    };
+
+    mockAxiosGet.mockResolvedValueOnce(livelinessResponse).mockResolvedValueOnce(readinessResponse);
+
+    const result = await service.checkProxyHealth("profile-1");
+
+    expect(result.apiBase).toBe("http://localhost:4001");
+    expect(result.liveliness.ok).toBe(true);
+    expect(result.liveliness.status).toBe(200);
+    expect(result.readiness.ok).toBe(true);
+    expect(result.readiness.status).toBe(200);
+
+    expect(mockAxiosCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseURL: "http://localhost:4001",
+        timeout: 10_000,
+        headers: expect.objectContaining({
+          Authorization: "Bearer sk-test"
+        })
+      })
+    );
+
+    expect(mockAxiosGet).toHaveBeenNthCalledWith(1, "/health/liveliness", { timeout: 10_000 });
+    expect(mockAxiosGet).toHaveBeenNthCalledWith(2, "/health/readiness", { timeout: 10_000 });
+  });
+
+  it("returns failed check results when proxy endpoints error", async () => {
+    const error404 = new AxiosError("Not found", "ERR_BAD_REQUEST", undefined, undefined, {
+      status: 404,
+      data: {},
+      statusText: "Not Found",
+      headers: {},
+      config: { headers: new AxiosHeaders() }
+    });
+
+    const readinessResponse: AxiosResponse = {
+      data: { status: "ok" },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() }
+    };
+
+    mockAxiosGet.mockRejectedValueOnce(error404).mockResolvedValueOnce(readinessResponse);
+
+    const result = await service.checkProxyHealth("profile-1");
+
+    expect(result.liveliness.ok).toBe(false);
+    expect(result.liveliness.status).toBe(404);
+    expect(result.liveliness.message).toContain("HTTP 404");
+    expect(result.readiness.ok).toBe(true);
+    expect(result.readiness.status).toBe(200);
+  });
+
+  it("marks proxy health endpoints unhealthy when they return HTML", async () => {
+    const htmlResponse: AxiosResponse = {
+      data: "<!doctype html><html><head><title>Not health</title></head><body>OK</body></html>",
+      status: 200,
+      statusText: "OK",
+      headers: {
+        "content-type": "text/html; charset=utf-8"
+      },
+      config: { headers: new AxiosHeaders() }
+    };
+
+    const readinessResponse: AxiosResponse = {
+      data: { status: "ok" },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() }
+    };
+
+    mockAxiosGet.mockResolvedValueOnce(htmlResponse).mockResolvedValueOnce(readinessResponse);
+
+    const result = await service.checkProxyHealth("profile-1");
+
+    expect(result.liveliness.ok).toBe(false);
+    expect(result.liveliness.status).toBe(200);
+    expect(result.liveliness.message).toContain("HTML");
+    expect(result.readiness.ok).toBe(true);
+    expect(result.readiness.status).toBe(200);
+  });
+
+  it("surfaces upstream error details instead of Axios codes", async () => {
+    const error401 = new AxiosError("Unauthorized", "ERR_BAD_REQUEST", undefined, undefined, {
+      status: 401,
+      data: { error: { message: "Incorrect API key provided." } },
+      statusText: "Unauthorized",
+      headers: {},
+      config: { headers: new AxiosHeaders() }
+    });
+
+    mockAxiosGet.mockRejectedValueOnce(error401);
+
+    try {
+      await service.listModels("profile-1");
+      throw new Error("Expected listModels to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      const response = (error as BadRequestException).getResponse() as { message?: unknown };
+      expect(response.message).toContain("HTTP 401");
+      expect(response.message).toContain("Incorrect API key provided.");
+      expect(response.message).not.toContain("ERR_BAD_REQUEST");
+    }
+  });
+
+  it("replaces generic Axios codes with actionable auth hints", async () => {
+    const error401 = new AxiosError(
+      "Request failed with status code 401",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 401,
+        data: { message: "ERR_BAD_REQUEST" },
+        statusText: "",
+        headers: {},
+        config: { headers: new AxiosHeaders() }
+      }
+    );
+
+    mockAxiosGet.mockRejectedValueOnce(error401);
+
+    try {
+      await service.listModels("profile-1");
+      throw new Error("Expected listModels to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      const response = (error as BadRequestException).getResponse() as { message?: unknown };
+      expect(response.message).toContain("HTTP 401");
+      expect(response.message).toContain("Unauthorized");
+      expect(response.message).toContain("apiKey");
+      expect(response.message).not.toContain("ERR_BAD_REQUEST");
+    }
   });
 
   it("falls back to /models on 404", async () => {

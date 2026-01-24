@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import { safeHttpUrl } from "@/lib/url";
 
 type VectorServiceSettingsSource = "env" | "db";
 type VectorServiceTokenSource = "stored" | "env" | "none";
@@ -54,6 +55,8 @@ export function VectorServiceSettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const enabled = Form.useWatch("enabled", form);
+  const clearToken = Form.useWatch("clearToken", form);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -248,6 +251,24 @@ export function VectorServiceSettingsPanel() {
           label={t("systemSettings.vectorService.fields.baseUrl")}
           name="baseUrl"
           extra={t("systemSettings.vectorService.hints.baseUrl")}
+          dependencies={["enabled"]}
+          rules={[
+            {
+              validator: async (_: unknown, value: unknown) => {
+                const isEnabled = Boolean(form.getFieldValue("enabled"));
+                const trimmed = typeof value === "string" ? value.trim() : "";
+                if (!trimmed) {
+                  if (isEnabled && !settings.baseUrl) {
+                    throw new Error(t("systemSettings.vectorService.validation.baseUrlRequired"));
+                  }
+                  return;
+                }
+                if (!safeHttpUrl(trimmed)) {
+                  throw new Error(t("systemSettings.vectorService.validation.baseUrlInvalid"));
+                }
+              }
+            }
+          ]}
         >
           <Input placeholder={t("systemSettings.vectorService.placeholders.baseUrl")} />
         </Form.Item>
@@ -256,14 +277,40 @@ export function VectorServiceSettingsPanel() {
           label={t("systemSettings.vectorService.fields.token")}
           name="token"
           extra={t("systemSettings.vectorService.hints.token")}
+          dependencies={["enabled", "clearToken"]}
+          rules={[
+            {
+              validator: async (_: unknown, value: unknown) => {
+                const isEnabled = Boolean(form.getFieldValue("enabled"));
+                if (!isEnabled) {
+                  return;
+                }
+
+                const isClearToken = Boolean(form.getFieldValue("clearToken"));
+                const trimmed = typeof value === "string" ? value.trim() : "";
+                if (!trimmed && !settings.hasToken && !isClearToken) {
+                  throw new Error(t("systemSettings.vectorService.validation.tokenRequired"));
+                }
+              }
+            }
+          ]}
         >
-          <Input.Password placeholder={t("systemSettings.vectorService.placeholders.token")} />
+          <Input.Password
+            placeholder={t("systemSettings.vectorService.placeholders.token")}
+            disabled={Boolean(clearToken)}
+          />
         </Form.Item>
 
         <Form.Item name="clearToken" valuePropName="checked">
           <Switch
             checkedChildren={t("systemSettings.vectorService.actions.clearToken")}
             unCheckedChildren={t("systemSettings.vectorService.actions.keepToken")}
+            onChange={(checked) => {
+              if (checked) {
+                form.setFieldsValue({ token: "" });
+              }
+            }}
+            disabled={Boolean(enabled) && !settings.hasToken}
           />
         </Form.Item>
 

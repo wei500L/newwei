@@ -3,6 +3,7 @@
 import {
   Alert,
   Button,
+  Card,
   Form,
   Grid,
   Input,
@@ -79,6 +80,20 @@ interface LlmGatewayModelsResponse {
   models: string[];
 }
 
+interface LlmGatewayProxyEndpointCheck {
+  ok: boolean;
+  status?: number;
+  message?: string;
+  data?: unknown;
+}
+
+interface LlmGatewayProxyHealthResponse {
+  apiBase: string;
+  checkedAt: string;
+  liveliness: LlmGatewayProxyEndpointCheck;
+  readiness: LlmGatewayProxyEndpointCheck;
+}
+
 interface LlmGatewayTestFormValues {
   model?: string;
   prompt?: string;
@@ -108,6 +123,8 @@ interface LlmGatewayFormValues {
 const EMPTY_SETTINGS: LlmGatewaySettingsResponse = { activeId: null, profiles: [] };
 const DRAFT_CREATE_KEY = "__draft_create__";
 const DRAFT_EDIT_KEY = "__draft_edit__";
+const DEFAULT_LLM_GATEWAY_API_BASE =
+  (process.env.NEXT_PUBLIC_LLM_GATEWAY_DEFAULT_API_BASE ?? "").trim() || "http://localhost:4001";
 
 function toFallbackModels(input: string | undefined) {
   if (!input) {
@@ -149,6 +166,16 @@ export function LlmGatewaySettingsPanel() {
   const [activating, setActivating] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
+  const [checkingProxyHealth, setCheckingProxyHealth] = useState<string | null>(null);
+  const [proxyHealthProfileId, setProxyHealthProfileId] = useState<string | null>(null);
+  const [proxyHealth, setProxyHealth] = useState<LlmGatewayProxyHealthResponse | null>(null);
+  const [proxyHealthErrorMessage, setProxyHealthErrorMessage] = useState<string | null>(null);
+  const [modelsSnapshot, setModelsSnapshot] = useState<{
+    profileId: string;
+    apiBase: string;
+    count: number;
+    checkedAt: string;
+  } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<LlmGatewayProfile | null>(null);
@@ -166,8 +193,34 @@ export function LlmGatewaySettingsPanel() {
     [session?.accessToken]
   );
 
+  const statusProfile = useMemo(() => {
+    if (settings.activeId) {
+      const active = settings.profiles.find((profile) => profile.id === settings.activeId);
+      if (active) {
+        return active;
+      }
+    }
+    return settings.profiles[0] ?? null;
+  }, [settings.activeId, settings.profiles]);
+
   const presets = useMemo(
     () => [
+      {
+        key: "litellmDocker",
+        label: t("settings.llmGateway.presets.litellmDocker"),
+        apiBase: "http://litellm:4000",
+        model: "openai/gpt-4o-mini",
+        embeddingModel: "openai/text-embedding-3-small",
+        fallbackModels: ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"]
+      },
+      {
+        key: "litellmLocal",
+        label: t("settings.llmGateway.presets.litellmLocal"),
+        apiBase: "http://localhost:4001",
+        model: "openai/gpt-4o-mini",
+        embeddingModel: "openai/text-embedding-3-small",
+        fallbackModels: ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"]
+      },
       {
         key: "glm",
         label: t("settings.llmGateway.presets.glm"),
@@ -191,6 +244,29 @@ export function LlmGatewaySettingsPanel() {
         label: t("settings.llmGateway.presets.qwen"),
         apiBase: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         model: "qwen-turbo"
+      }
+    ],
+    [t]
+  );
+
+  const apiBaseRules = useMemo(
+    () => [
+      { required: true, message: t("settings.llmGateway.validation.apiBaseRequired") },
+      {
+        validator: (_: unknown, value: unknown) => {
+          if (typeof value !== "string" || value.trim().length === 0) {
+            return Promise.resolve();
+          }
+          try {
+            const parsed = new URL(value);
+            if (!["http:", "https:"].includes(parsed.protocol)) {
+              throw new Error("invalid protocol");
+            }
+            return Promise.resolve();
+          } catch {
+            return Promise.reject(new Error(t("settings.llmGateway.validation.apiBaseUrl")));
+          }
+        }
       }
     ],
     [t]
@@ -245,7 +321,7 @@ export function LlmGatewaySettingsPanel() {
     createForm.setFieldsValue({
       preset: undefined,
       name: "",
-      apiBase: template?.apiBase ?? "http://localhost:4001",
+      apiBase: template?.apiBase ?? DEFAULT_LLM_GATEWAY_API_BASE,
       model: template?.model ?? "openai/gpt-4o-mini",
       embeddingModel: template?.embeddingModel ?? "",
       timeoutMs: template?.timeoutMs ?? 60_000,
@@ -408,8 +484,8 @@ export function LlmGatewaySettingsPanel() {
       const nextValues: Partial<LlmGatewayFormValues> = {
         apiBase: preset.apiBase,
         model: preset.model,
-        embeddingModel: "",
-        fallbackModels: ""
+        embeddingModel: preset.embeddingModel ?? "",
+        fallbackModels: preset.fallbackModels ? toFallbackModelsText(preset.fallbackModels) : ""
       };
       const currentName = form.getFieldValue("name");
       if (!currentName) {
@@ -467,6 +543,27 @@ export function LlmGatewaySettingsPanel() {
     [screens.md, t]
   );
 
+  const handleCheckProxyHealth = async (profile: LlmGatewayProfile) => {
+    setCheckingProxyHealth(profile.id);
+    setProxyHealthErrorMessage(null);
+    setProxyHealthProfileId(profile.id);
+    try {
+      const response = await apiClient.get<LlmGatewayProxyHealthResponse>(
+        `system-settings/llm-gateways/${profile.id}/proxy-health`
+      );
+      setProxyHealth(response.data ?? null);
+    } catch (error) {
+      captureClientError("Failed to check LLM gateway proxy health", error);
+      const messageText = formatApiErrorMessage(error);
+      setProxyHealth(null);
+      setProxyHealthErrorMessage(
+        messageText ? messageText : t("settings.llmGateway.proxyStatus.errors.failed")
+      );
+    } finally {
+      setCheckingProxyHealth((current) => (current === profile.id ? null : current));
+    }
+  };
+
   const handleListModels = async (profile: LlmGatewayProfile) => {
     setLoadingModels(profile.id);
     try {
@@ -475,6 +572,12 @@ export function LlmGatewaySettingsPanel() {
       );
       const result = response.data;
       const models = result?.models ?? [];
+      setModelsSnapshot({
+        profileId: profile.id,
+        apiBase: result?.apiBase ?? profile.apiBase,
+        count: models.length,
+        checkedAt: new Date().toISOString()
+      });
       openModelsModal(
         t("settings.llmGateway.models.modal.title", { name: profile.name }),
         result?.apiBase ?? profile.apiBase,
@@ -859,6 +962,86 @@ export function LlmGatewaySettingsPanel() {
           {t("settings.llmGateway.description")}
         </Typography.Paragraph>
 
+        <Card size="small" title={t("settings.llmGateway.proxyStatus.title")}>
+          {statusProfile ? (
+            <Space direction="vertical" size="small" style={{ display: "flex" }}>
+              <Typography.Text type="secondary">
+                {t("settings.llmGateway.proxyStatus.target", { name: statusProfile.name })}
+              </Typography.Text>
+
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                {t("settings.llmGateway.fields.apiBase")}:{" "}
+                <Typography.Text code copyable>
+                  {(proxyHealthProfileId === statusProfile.id ? proxyHealth?.apiBase : undefined) ??
+                    (modelsSnapshot?.profileId === statusProfile.id ? modelsSnapshot.apiBase : undefined) ??
+                    statusProfile.apiBase}
+                </Typography.Text>
+              </Typography.Paragraph>
+
+              <Space wrap>
+                <Button
+                  size="small"
+                  onClick={() => void handleCheckProxyHealth(statusProfile)}
+                  loading={checkingProxyHealth === statusProfile.id}
+                >
+                  {t("settings.llmGateway.proxyStatus.actions.checkHealth")}
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => void handleListModels(statusProfile)}
+                  loading={loadingModels === statusProfile.id}
+                >
+                  {t("settings.llmGateway.proxyStatus.actions.models")}
+                </Button>
+              </Space>
+
+              {proxyHealthProfileId === statusProfile.id && proxyHealth ? (
+                <>
+                  <Space wrap>
+                    <Tag color={proxyHealth.liveliness.ok ? "green" : "red"}>
+                      {t("settings.llmGateway.proxyStatus.liveliness")}{" "}
+                      {proxyHealth.liveliness.ok ? t("common.success") : t("common.failed")}
+                      {proxyHealth.liveliness.status ? ` (HTTP ${proxyHealth.liveliness.status})` : ""}
+                    </Tag>
+                    <Tag color={proxyHealth.readiness.ok ? "green" : "red"}>
+                      {t("settings.llmGateway.proxyStatus.readiness")}{" "}
+                      {proxyHealth.readiness.ok ? t("common.success") : t("common.failed")}
+                      {proxyHealth.readiness.status ? ` (HTTP ${proxyHealth.readiness.status})` : ""}
+                    </Tag>
+                  </Space>
+
+                  <Typography.Text type="secondary">
+                    {t("settings.llmGateway.proxyStatus.checkedAt", {
+                      time: new Date(proxyHealth.checkedAt).toLocaleString()
+                    })}
+                  </Typography.Text>
+
+                  {!proxyHealth.liveliness.ok && proxyHealth.liveliness.message ? (
+                    <Typography.Text type="secondary">{proxyHealth.liveliness.message}</Typography.Text>
+                  ) : null}
+                  {!proxyHealth.readiness.ok && proxyHealth.readiness.message ? (
+                    <Typography.Text type="secondary">{proxyHealth.readiness.message}</Typography.Text>
+                  ) : null}
+                </>
+              ) : (
+                <Typography.Text type="secondary">{t("settings.llmGateway.proxyStatus.hint")}</Typography.Text>
+              )}
+
+              <Typography.Text type="secondary">
+                {modelsSnapshot?.profileId === statusProfile.id
+                  ? t("settings.llmGateway.models.count", { count: modelsSnapshot.count })
+                  : t("settings.llmGateway.proxyStatus.models.notChecked")}
+              </Typography.Text>
+
+              {proxyHealthProfileId === statusProfile.id && proxyHealthErrorMessage ? (
+                <Alert type="error" showIcon message={proxyHealthErrorMessage} />
+              ) : null}
+            </Space>
+          ) : (
+            <Typography.Text type="secondary">{t("settings.llmGateway.proxyStatus.empty")}</Typography.Text>
+          )}
+        </Card>
+
         {errorMessage ? (
           <Alert type="error" showIcon message={errorMessage} />
         ) : null}
@@ -931,12 +1114,9 @@ export function LlmGatewaySettingsPanel() {
             label={t("settings.llmGateway.fields.apiBase")}
             name="apiBase"
             extra={t("settings.llmGateway.hints.apiBase")}
-            rules={[
-              { required: true, message: t("settings.llmGateway.validation.apiBaseRequired") },
-              { type: "url", message: t("settings.llmGateway.validation.apiBaseUrl") }
-            ]}
+            rules={apiBaseRules}
           >
-            <Input placeholder="http://localhost:4001" />
+            <Input placeholder={DEFAULT_LLM_GATEWAY_API_BASE} />
           </Form.Item>
           <Form.Item
             label={t("settings.llmGateway.fields.apiKey")}
@@ -1074,10 +1254,7 @@ export function LlmGatewaySettingsPanel() {
             label={t("settings.llmGateway.fields.apiBase")}
             name="apiBase"
             extra={t("settings.llmGateway.hints.apiBase")}
-            rules={[
-              { required: true, message: t("settings.llmGateway.validation.apiBaseRequired") },
-              { type: "url", message: t("settings.llmGateway.validation.apiBaseUrl") }
-            ]}
+            rules={apiBaseRules}
           >
             <Input />
           </Form.Item>

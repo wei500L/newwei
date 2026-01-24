@@ -151,6 +151,32 @@ describe("LiteLlmService", () => {
       );
     });
 
+    it("should normalize content parts array into plain text", async () => {
+      mockAxiosPost.mockResolvedValueOnce({
+        ...mockCompletionResponse,
+        data: {
+          ...(mockCompletionResponse.data as any),
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant",
+                content: [
+                  { type: "text", text: "Hello" },
+                  { type: "text", text: ", world!" },
+                ],
+              },
+              finish_reason: "stop",
+            },
+          ],
+        },
+      });
+
+      const result = await service.acompletion(completionParams);
+
+      expect(result.choices[0].message.content).toBe("Hello, world!");
+    });
+
     it("should use custom model when provided", async () => {
       await service.acompletion({ ...completionParams, model: "custom-model" });
 

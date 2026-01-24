@@ -1,0 +1,64 @@
+litellm_config:
+  model: openai/gpt-4o-mini
+  embedding_model: openai/text-embedding-3-small
+  api_url: http://litellm:4000
+  api_key: ""
+  timeout_ms: 60000
+  temperature: 0.2
+  top_p: 0.9
+  max_tokens: 1200
+  retry_attempts: 3
+  fallback_models:
+    - anthropic/claude-3-haiku
+    - openai/gpt-4o-mini
+  requests_per_minute: 60
+  stream: false
+  response_format: json_schema
+
+crawl4ai_config:
+  user_agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36
+  max_concurrent: 3
+  timeout_ms: 120000
+  keyword_match_threshold: 0.55
+  markdown:
+    content_source: cleaned_html
+    escape_html: true
+    body_width: 80
+  clean_markdown:
+    css_selector: "article,main,.article-body"
+    remove_overlay_elements: true
+    word_count_threshold: 120
+    excluded_tags:
+      - nav
+      - footer
+      - script
+      - style
+  crawler_defaults:
+    scan_full_page: true
+    adjust_viewport_to_content: true
+    wait_for_images: true
+    capture_screenshot: false
+    exclude_external_links: true
+    process_iframes: true
+    score_links: false
+    simulate_user: true
+    override_navigator: true
+  virtual_scroll:
+    enabled: true
+    container_selector: "body"
+    scroll_count: 4
+    scroll_by: viewport
+    wait_after_scroll_ms: 600
+
+pipeline:
+  cache_ttl_seconds: 3600
+  max_input_characters: 48000
+  summary_max_tokens: 256
+  rate_limit_window_seconds: 60
+  allow_media_embedding: true
+  detect_language: true
+  summary_dedup_enabled: true
+  summary_dedup_threshold: 0.9
+  summary_dedup_lookback_hours: 48
+  summary_dedup_max_candidates: 100
+  summary_dedup_min_chars: 40

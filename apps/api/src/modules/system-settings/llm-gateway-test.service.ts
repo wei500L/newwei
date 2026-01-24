@@ -8,6 +8,8 @@ import {
 } from "@nestjs/common";
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from "axios";
 
+import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
+
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 
 interface ChatCompletionResponse {
@@ -29,7 +31,7 @@ interface ModelsResponseEntry {
 }
 
 interface ModelsResponse {
-  data?: Array<ModelsResponseEntry | string>;
+  data?: (ModelsResponseEntry | string)[];
 }
 
 export interface LlmGatewayChatTestResult {
@@ -66,6 +68,20 @@ export interface LlmGatewayTestResult {
 export interface LlmGatewayModelsResult {
   apiBase: string;
   models: string[];
+}
+
+export interface LlmGatewayProxyEndpointCheck {
+  ok: boolean;
+  status?: number;
+  message?: string;
+  data?: unknown;
+}
+
+export interface LlmGatewayProxyHealthResult {
+  apiBase: string;
+  checkedAt: string;
+  liveliness: LlmGatewayProxyEndpointCheck;
+  readiness: LlmGatewayProxyEndpointCheck;
 }
 
 export interface LlmGatewayModelsConfigInput {
@@ -108,6 +124,42 @@ export class LlmGatewayTestService {
 
   constructor(private readonly settings: LlmGatewaySettingsService) {}
 
+  async checkProxyHealth(profileId: string): Promise<LlmGatewayProxyHealthResult> {
+    const cfg = await this.settings.getProfileConfig(profileId);
+    if (!cfg) {
+      throw new NotFoundException("LLM gateway profile not found");
+    }
+
+    const baseUrl = normalizeApiBase(cfg.apiBase);
+    if (!baseUrl) {
+      throw new BadRequestException("apiBase is not configured");
+    }
+
+    const timeoutMs = Math.min(cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS, 10_000);
+    const apiKey = normalizeApiKey(cfg.apiKey);
+    const client = axios.create({
+      baseURL: baseUrl,
+      timeout: timeoutMs,
+      headers: {
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+      }
+    });
+
+    const context = { apiKeyConfigured: Boolean(apiKey) };
+
+    const [liveliness, readiness] = await Promise.all([
+      this.checkProxyEndpoint(client, "/health/liveliness", timeoutMs, context),
+      this.checkProxyEndpoint(client, "/health/readiness", timeoutMs, context)
+    ]);
+
+    return {
+      apiBase: baseUrl,
+      checkedAt: new Date().toISOString(),
+      liveliness,
+      readiness
+    };
+  }
+
   async listModels(profileId: string): Promise<LlmGatewayModelsResult> {
     const cfg = await this.settings.getProfileConfig(profileId);
     if (!cfg) {
@@ -138,7 +190,7 @@ export class LlmGatewayTestService {
       const models = normalizeModels(response.data);
       return { apiBase: baseUrl, models };
     } catch (error) {
-      this.throwGatewayError(error);
+      this.throwGatewayError(error, { apiKeyConfigured: Boolean(cfg.apiKey) });
     }
   }
 
@@ -174,7 +226,7 @@ export class LlmGatewayTestService {
       const models = normalizeModels(response.data);
       return { apiBase: baseUrl, models };
     } catch (error) {
-      this.throwGatewayError(error);
+      this.throwGatewayError(error, { apiKeyConfigured: Boolean(apiKey) });
     }
   }
 
@@ -217,7 +269,7 @@ export class LlmGatewayTestService {
           : undefined;
         embedding = await this.testEmbeddings(client, cfg, embeddingInput, embeddingModelOverride);
       } catch (error) {
-        const info = this.toGatewayErrorInfo(error);
+        const info = this.toGatewayErrorInfo(error, { apiKeyConfigured: Boolean(cfg.apiKey) });
         embeddingError = info;
         this.logger.warn(
           { profileId, status: info.status, message: info.message },
@@ -302,7 +354,7 @@ export class LlmGatewayTestService {
       try {
         embedding = await this.testEmbeddings(client, cfg, embeddingInput);
       } catch (error) {
-        const info = this.toGatewayErrorInfo(error);
+        const info = this.toGatewayErrorInfo(error, { apiKeyConfigured: Boolean(apiKey) });
         embeddingError = info;
         this.logger.warn(
           { profileId: input.profileId, status: info.status, message: info.message },
@@ -321,7 +373,15 @@ export class LlmGatewayTestService {
 
   private async testCompletion(
     client: ReturnType<typeof axios.create>,
-    cfg: { model: string; fallbackModels: string[]; temperature: number; topP: number; maxOutputTokens: number; timeoutMs: number },
+    cfg: {
+      model: string;
+      apiKey?: string;
+      fallbackModels: string[];
+      temperature: number;
+      topP: number;
+      maxOutputTokens: number;
+      timeoutMs: number;
+    },
     prompt: string,
     modelOverride?: string
   ): Promise<LlmGatewayChatTestResult> {
@@ -360,13 +420,12 @@ export class LlmGatewayTestService {
           { timeout: cfg.timeoutMs }
         );
         const latencyMs = Date.now() - start;
-        const choice = response.data.choices?.[0];
-        const content =
-          typeof choice?.message?.content === "string" || choice?.message?.content === null
-            ? (choice.message?.content ?? null)
-            : null;
+        const choice = (response.data as unknown as { choices?: unknown[] })?.choices?.[0];
+        const content = extractOpenAiTextFromChoice(choice);
         const finishReason =
-          typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined;
+          choice && typeof choice === "object" && typeof (choice as Record<string, unknown>).finish_reason === "string"
+            ? ((choice as Record<string, unknown>).finish_reason as string)
+            : undefined;
 
         return {
           model: response.data.model?.trim() || model,
@@ -388,7 +447,7 @@ export class LlmGatewayTestService {
       }
     }
 
-    this.throwGatewayError(lastError);
+    this.throwGatewayError(lastError, { apiKeyConfigured: Boolean(cfg.apiKey) });
   }
 
   private async testEmbeddings(
@@ -415,11 +474,14 @@ export class LlmGatewayTestService {
       { timeout: cfg.timeoutMs }
     );
     const latencyMs = Date.now() - start;
-    const firstEmbedding = response.data.data?.[0]?.embedding ?? [];
+    const firstEmbedding = response.data.data?.[0]?.embedding;
+    if (!Array.isArray(firstEmbedding) || firstEmbedding.length === 0) {
+      throw new BadGatewayException("Embedding response did not include an embedding vector");
+    }
 
     return {
       model: response.data.model?.trim() || model,
-      dimensions: Array.isArray(firstEmbedding) ? firstEmbedding.length : 0,
+      dimensions: firstEmbedding.length,
       latencyMs,
       ...(response.data.usage ? { usage: response.data.usage } : {}),
       ...this.extractCosts(response)
@@ -442,14 +504,72 @@ export class LlmGatewayTestService {
     };
   }
 
-  private throwGatewayError(error: unknown): never {
+  private async checkProxyEndpoint(
+    client: ReturnType<typeof axios.create>,
+    path: string,
+    timeoutMs: number,
+    context?: {
+      apiKeyConfigured?: boolean;
+    }
+  ): Promise<LlmGatewayProxyEndpointCheck> {
+    try {
+      const response = await client.get(path, { timeout: timeoutMs });
+      const status = response.status;
+      const ok = status >= 200 && status < 300;
+
+      const contentType = response.headers?.["content-type"];
+      const hasHtmlContentType =
+        typeof contentType === "string" && contentType.toLowerCase().includes("text/html");
+      const hasHtmlBody =
+        typeof response.data === "string" && /<\\s*!doctype\\s+html|<\\s*html\\b/i.test(response.data);
+
+      if (ok && (hasHtmlContentType || hasHtmlBody)) {
+        return {
+          ok: false,
+          status,
+          message: "Unexpected HTML response (not a LiteLLM Proxy health endpoint)."
+        };
+      }
+
+      return {
+        ok,
+        status
+      };
+    } catch (error) {
+      const info = this.toGatewayErrorInfo(error, context);
+      const message = info.message.startsWith("LLM gateway request failed")
+        ? info.message.replace(/^LLM gateway request failed\\s*/i, "").trim()
+        : info.message;
+      return {
+        ok: false,
+        ...(info.status ? { status: info.status } : {}),
+        message
+      };
+    }
+  }
+
+  private throwGatewayError(
+    error: unknown,
+    context?: {
+      apiKeyConfigured?: boolean;
+    }
+  ): never {
     if (error instanceof BadRequestException || error instanceof NotFoundException) {
       throw error;
     }
 
     if (error instanceof AxiosError) {
       const status = error.response?.status;
-      const detail = extractAxiosDetail(error);
+      let detail = extractAxiosDetail(error);
+      if (status === 401 && detail && detail.toLowerCase() === "unauthorized") {
+        detail = undefined;
+      }
+      if (status === 403 && detail && detail.toLowerCase() === "forbidden") {
+        detail = undefined;
+      }
+      if (status === 401 || status === 403) {
+        detail = detail ?? buildAuthHint(status ?? 401, context?.apiKeyConfigured);
+      }
       const message = status
         ? `LLM gateway request failed (HTTP ${status})${detail ? `: ${detail}` : ""}`
         : `LLM gateway request failed${detail ? `: ${detail}` : ""}`;
@@ -463,15 +583,29 @@ export class LlmGatewayTestService {
       throw new BadRequestException(message);
     }
 
-    throw error instanceof Error
-      ? new BadRequestException(error.message)
-      : new BadRequestException("LLM gateway request failed");
+      throw error instanceof Error
+        ? new BadRequestException(error.message)
+        : new BadRequestException("LLM gateway request failed");
   }
 
-  private toGatewayErrorInfo(error: unknown): LlmGatewayTestError {
+  private toGatewayErrorInfo(
+    error: unknown,
+    context?: {
+      apiKeyConfigured?: boolean;
+    }
+  ): LlmGatewayTestError {
     if (error instanceof AxiosError) {
       const status = error.response?.status;
-      const detail = extractAxiosDetail(error);
+      let detail = extractAxiosDetail(error);
+      if (status === 401 && detail && detail.toLowerCase() === "unauthorized") {
+        detail = undefined;
+      }
+      if (status === 403 && detail && detail.toLowerCase() === "forbidden") {
+        detail = undefined;
+      }
+      if (status === 401 || status === 403) {
+        detail = detail ?? buildAuthHint(status ?? 401, context?.apiKeyConfigured);
+      }
       const message = status
         ? `LLM gateway request failed (HTTP ${status})${detail ? `: ${detail}` : ""}`
         : `LLM gateway request failed${detail ? `: ${detail}` : ""}`;
@@ -542,31 +676,210 @@ function extractNumber(value: unknown): number | undefined {
 }
 
 function extractAxiosDetail(error: AxiosError) {
-  if (error.code) {
-    return error.code;
+  const status = error.response?.status;
+  const axiosCode = normalizeOptionalString(error.code);
+  const responseData = error.response?.data as unknown;
+  const responseDetail = normalizeAxiosDetail(extractDetailFromResponseData(responseData), {
+    status,
+    axiosCode
+  });
+  if (responseDetail) {
+    return redactSecrets(responseDetail).slice(0, 500);
   }
 
-  const data = error.response?.data as unknown;
+  const statusText = normalizeAxiosDetail(normalizeOptionalString(error.response?.statusText), {
+    status,
+    axiosCode
+  });
+  if (statusText) {
+    return redactSecrets(statusText).slice(0, 500);
+  }
+
+  const message = normalizeAxiosDetail(normalizeOptionalString(error.message), { status, axiosCode });
+  if (message) {
+    return redactSecrets(message).slice(0, 500);
+  }
+
+  const code = normalizeAxiosDetail(axiosCode, { status, axiosCode });
+  if (code) {
+    return redactSecrets(code).slice(0, 500);
+  }
+
+  return undefined;
+}
+
+function extractDetailFromResponseData(data: unknown): string | undefined {
   if (!data) {
     return undefined;
   }
+
   if (typeof data === "string") {
-    return data.slice(0, 500);
+    const trimmed = data.trim();
+    return trimmed ? trimmed : undefined;
   }
+
+  if (Array.isArray(data)) {
+    const messages = data
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (messages.length > 0) {
+      return messages.join("; ");
+    }
+  }
+
   if (typeof data === "object") {
     const record = data as Record<string, unknown>;
-    const message = record.message;
-    if (typeof message === "string" && message.trim()) {
-      return message.trim().slice(0, 500);
+
+    const openAiMessage = extractMessageLike(record.error);
+    if (openAiMessage) {
+      return openAiMessage;
     }
+
+    const message = extractMessageLike(record.message);
+    if (message) {
+      return message;
+    }
+
+    const detail = extractMessageLike(record.detail);
+    if (detail) {
+      return detail;
+    }
+
+    const errorDescription = extractMessageLike(record.error_description);
+    if (errorDescription) {
+      return errorDescription;
+    }
+
     try {
-      return JSON.stringify(record).slice(0, 500);
+      const json = JSON.stringify(record);
+      return json ? json : undefined;
     } catch {
       return undefined;
     }
   }
 
-  return String(data).slice(0, 500);
+  try {
+    const text = String(data).trim();
+    return text ? text : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractMessageLike(value: unknown): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const messages = value
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (messages.length > 0) {
+      return messages.join("; ");
+    }
+    return undefined;
+  }
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const message = extractMessageLike(record.message);
+    if (message) {
+      return message;
+    }
+    const detail = extractMessageLike(record.detail);
+    if (detail) {
+      return detail;
+    }
+    const error = extractMessageLike(record.error);
+    if (error) {
+      return error;
+    }
+
+    const title = extractMessageLike(record.title);
+    if (title) {
+      return title;
+    }
+
+    const statusText = extractMessageLike(record.statusText);
+    if (statusText) {
+      return statusText;
+    }
+
+    try {
+      const json = JSON.stringify(record);
+      return json ? json : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
+}
+
+function redactSecrets(text: string): string {
+  const bearerRedacted = text.replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]");
+  return bearerRedacted.replace(/\bsk-[A-Za-z0-9]{10,}\b/g, "sk-[REDACTED]");
+}
+
+function buildAuthHint(status: number, apiKeyConfigured: boolean | undefined): string {
+  const base = status === 403 ? "Forbidden" : "Unauthorized";
+  if (apiKeyConfigured === false) {
+    return `${base} (apiKey is not configured)`;
+  }
+  if (apiKeyConfigured === true) {
+    return `${base} (check apiKey)`;
+  }
+  return base;
+}
+
+function normalizeAxiosDetail(
+  detail: string | undefined,
+  context: { status?: number; axiosCode?: string }
+): string | undefined {
+  const trimmed = detail?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (["{}", "[]", "[object Object]"].includes(trimmed)) {
+    return undefined;
+  }
+
+  if (isGenericAxiosErrorCode(trimmed)) {
+    return undefined;
+  }
+
+  if (
+    context.status !== undefined &&
+    new RegExp(`^Request failed with status code ${context.status}$`, "i").test(trimmed)
+  ) {
+    return undefined;
+  }
+
+  if (context.axiosCode && trimmed === context.axiosCode && isGenericAxiosErrorCode(trimmed)) {
+    return undefined;
+  }
+
+  return trimmed;
+}
+
+function isGenericAxiosErrorCode(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (["ERR_BAD_REQUEST", "ERR_BAD_RESPONSE"].includes(trimmed)) {
+    return true;
+  }
+  return /^ERR_[A-Z_]+$/.test(trimmed);
 }
 
 function normalizeApiBase(raw: string) {

@@ -77,6 +77,12 @@ export class LlmGatewaySettingsController {
     return this.tester.listModels(id);
   }
 
+  @Get(":id/proxy-health")
+  @Permissions("settings.manage")
+  async proxyHealth(@Param("id") id: string) {
+    return this.tester.checkProxyHealth(id);
+  }
+
   @Post("models-config")
   @Permissions("settings.manage")
   async listModelsConfig(@Body() body: LlmGatewayModelsConfigDto) {

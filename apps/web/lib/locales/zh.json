@@ -2055,6 +2055,25 @@
     },
     "llmGateway": {
       "description": "管理 OpenAI 兼容的 LLM 网关配置。启用的配置会用于后端运行时调用。",
+      "proxyStatus": {
+        "title": "LiteLLM Proxy 状态",
+        "target": "检测对象：{{name}}",
+        "actions": {
+          "checkHealth": "检测健康状态",
+          "models": "模型列表"
+        },
+        "liveliness": "Liveliness",
+        "readiness": "Readiness",
+        "checkedAt": "检测时间：{{time}}",
+        "hint": "点击“检测健康状态”将请求网关的 /health/liveliness 与 /health/readiness。",
+        "models": {
+          "notChecked": "尚未拉取模型列表"
+        },
+        "empty": "暂无网关配置，请先创建一个。",
+        "errors": {
+          "failed": "检测 Proxy 健康状态失败"
+        }
+      },
       "active": "当前",
       "keySet": "已配置",
       "keyMissing": "未配置",
@@ -2099,14 +2118,16 @@
         "fallbackModels": "逗号分隔，例如 openai/gpt-4o-mini,anthropic/claude-3-haiku"
       },
       "presets": {
+        "litellmDocker": "LiteLLM（Docker Compose）",
+        "litellmLocal": "LiteLLM（本机）",
         "glm": "GLM（智谱）",
         "kimi": "Kimi K2（月之暗面）",
         "deepseek": "DeepSeek",
         "qwen": "Qwen（DashScope）"
       },
       "hints": {
-        "apiBase": "支持填写 Base URL（例如 https://api.openai.com），也支持直接粘贴完整接口地址（例如 https://api.openai.com/v1/chat/completions），系统会自动规范化。",
-        "apiKey": "写入系统设置；当在「系统设置 → 安全」开启“加密存储密钥/Token”且配置 SYSTEM_SETTINGS_ENCRYPTION_KEY 时，会加密存储；否则明文存储。支持直接粘贴 sk-... 或完整的 \"Bearer sk-...\"。",
+        "apiBase": "此地址由后端 API 进程访问（不是浏览器）。Docker Compose 部署推荐填 http://litellm:4000；本机开发一般为 http://localhost:4001。支持填写 Base URL（例如 https://api.openai.com），也支持直接粘贴完整接口地址（例如 https://api.openai.com/v1/chat/completions），系统会自动规范化。",
+        "apiKey": "写入系统设置；当在「系统设置 → 安全」开启“加密存储密钥/Token”且配置 SYSTEM_SETTINGS_ENCRYPTION_KEY 时，会加密存储；否则明文存储。支持直接粘贴 sk-... 或完整的 \"Bearer sk-...\"。如果网关是 LiteLLM Proxy 并启用了 master key，则此处填 master key；否则可留空。上游供应商的真实 Key（如 OPENAI_API_KEY）需要在 LiteLLM Proxy 的环境变量中配置。",
         "apiKeyEdit": "输入新 Key 用于轮换；也可以用下方开关清空。",
         "fallbackModels": "主模型失败时会按顺序尝试。"
       },
@@ -2487,6 +2508,9 @@
         "keepToken": "保留 token"
       },
       "validation": {
+        "baseUrlRequired": "启用时必须填写 Base URL",
+        "baseUrlInvalid": "Base URL 必须是有效的 http(s) URL",
+        "tokenRequired": "启用时必须填写 token",
         "timeoutRequired": "超时必填",
         "maxRetriesRequired": "最大重试次数必填"
       },
