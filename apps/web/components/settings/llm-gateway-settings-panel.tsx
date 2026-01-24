@@ -47,6 +47,7 @@ interface LlmGatewayProfile {
 
 interface LlmGatewaySettingsResponse {
   activeId: string | null;
+  embeddingActiveId: string | null;
   profiles: LlmGatewayProfile[];
 }
 
@@ -107,6 +108,7 @@ interface LlmGatewayProxyHealthResponse {
 }
 
 interface LlmGatewayTestFormValues {
+  includeCompletion: boolean;
   model?: string;
   prompt?: string;
   includeEmbeddings: boolean;
@@ -119,7 +121,7 @@ interface LlmGatewayFormValues {
   name: string;
   apiBase: string;
   apiKey?: string;
-  model: string;
+  model?: string;
   embeddingModel?: string;
   timeoutMs: number;
   temperature: number;
@@ -132,9 +134,10 @@ interface LlmGatewayFormValues {
   enabled: boolean;
 }
 
-const EMPTY_SETTINGS: LlmGatewaySettingsResponse = { activeId: null, profiles: [] };
+const EMPTY_SETTINGS: LlmGatewaySettingsResponse = { activeId: null, embeddingActiveId: null, profiles: [] };
 const DRAFT_CREATE_KEY = "__draft_create__";
 const DRAFT_EDIT_KEY = "__draft_edit__";
+const FOLLOW_COMPLETION_KEY = "__follow_completion__";
 const DEFAULT_LLM_GATEWAY_API_BASE =
   (process.env.NEXT_PUBLIC_LLM_GATEWAY_DEFAULT_API_BASE ?? "").trim() || "http://localhost:4001";
 
@@ -192,6 +195,7 @@ export function LlmGatewaySettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
+  const [embeddingActivating, setEmbeddingActivating] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
   const [checkingProxyHealth, setCheckingProxyHealth] = useState<string | null>(null);
@@ -214,6 +218,7 @@ export function LlmGatewaySettingsPanel() {
   const [testErrorMessage, setTestErrorMessage] = useState<string | null>(null);
   const [testForm] = Form.useForm<LlmGatewayTestFormValues>();
   const screens = Grid.useBreakpoint();
+  const includeCompletion = Form.useWatch("includeCompletion", testForm) ?? true;
   const includeEmbeddings = Form.useWatch("includeEmbeddings", testForm) ?? false;
 
   const apiClient = useMemo(
@@ -230,6 +235,21 @@ export function LlmGatewaySettingsPanel() {
     }
     return settings.profiles[0] ?? null;
   }, [settings.activeId, settings.profiles]);
+
+  const completionActiveProfile = useMemo(() => {
+    if (!settings.activeId) {
+      return null;
+    }
+    return settings.profiles.find((profile) => profile.id === settings.activeId) ?? null;
+  }, [settings.activeId, settings.profiles]);
+
+  const embeddingEffectiveId = settings.embeddingActiveId ?? settings.activeId;
+  const embeddingActiveProfile = useMemo(() => {
+    if (!embeddingEffectiveId) {
+      return null;
+    }
+    return settings.profiles.find((profile) => profile.id === embeddingEffectiveId) ?? null;
+  }, [embeddingEffectiveId, settings.profiles]);
 
   const presets = useMemo(
     () => [
@@ -371,7 +391,7 @@ export function LlmGatewaySettingsPanel() {
         name: values.name.trim(),
         apiBase: values.apiBase.trim(),
         apiKey: values.apiKey?.trim() ? values.apiKey.trim() : undefined,
-        model: values.model.trim(),
+        ...(values.model?.trim() ? { model: values.model.trim() } : {}),
         embeddingModel: values.embeddingModel?.trim() ? values.embeddingModel.trim() : null,
         timeoutMs: values.timeoutMs,
         temperature: values.temperature,
@@ -412,7 +432,7 @@ export function LlmGatewaySettingsPanel() {
       const payload: Record<string, unknown> = {
         name: values.name.trim(),
         apiBase: values.apiBase.trim(),
-        model: values.model.trim(),
+        ...(values.model?.trim() ? { model: values.model.trim() } : {}),
         embeddingModel: values.embeddingModel?.trim() ? values.embeddingModel.trim() : null,
         timeoutMs: values.timeoutMs,
         temperature: values.temperature,
@@ -478,6 +498,34 @@ export function LlmGatewaySettingsPanel() {
       messageApi.error(t("settings.llmGateway.errors.activateFailed"));
     } finally {
       setActivating(false);
+    }
+  };
+
+  const handleActivateEmbedding = async (profileId: string | null) => {
+    setEmbeddingActivating(true);
+    try {
+      await apiClient.put("system-settings/llm-gateways/embedding-active", { activeId: profileId });
+      await loadSettings();
+      messageApi.success(
+        t("settings.llmGateway.embeddingActive.messages.activated", { defaultValue: "Embeddings 配置已更新" })
+      );
+    } catch (error) {
+      captureClientError("Failed to activate embeddings gateway profile", error);
+      const statusCode =
+        typeof error === "object" && error && "response" in error
+          ? (error as { response?: { status?: number } }).response?.status
+          : undefined;
+      if (statusCode === 400) {
+        messageApi.error(extractApiError(error).message ?? t("settings.llmGateway.errors.badRequest"));
+      } else {
+        messageApi.error(
+          t("settings.llmGateway.embeddingActive.errors.activateFailed", {
+            defaultValue: "更新 Embeddings 配置失败"
+          })
+        );
+      }
+    } finally {
+      setEmbeddingActivating(false);
     }
   };
 
@@ -730,17 +778,23 @@ export function LlmGatewaySettingsPanel() {
         const includeApiKey = apiKeyValue.length > 0;
         const clearApiKey = Boolean(values.clearApiKey);
 
+        const completionModel = values.model?.trim();
+        const embeddingModel = values.embeddingModel?.trim();
+        const hasCompletionModel = Boolean(completionModel);
+        const hasEmbeddingModel = Boolean(embeddingModel);
+
         const payload: Record<string, unknown> = {
           ...(profileId ? { profileId } : {}),
           apiBase: values.apiBase.trim(),
-          model: values.model.trim(),
+          ...(completionModel ? { model: completionModel } : {}),
+          includeCompletion: hasCompletionModel,
           timeoutMs: values.timeoutMs,
           temperature: values.temperature,
           topP: values.topP,
           maxOutputTokens: values.maxOutputTokens,
           fallbackModels: toFallbackModels(values.fallbackModels),
-          ...(values.embeddingModel?.trim() ? { embeddingModel: values.embeddingModel.trim() } : {}),
-          includeEmbeddings: Boolean(values.embeddingModel?.trim())
+          ...(embeddingModel ? { embeddingModel } : {}),
+          includeEmbeddings: hasEmbeddingModel
         };
 
         if (includeApiKey) {
@@ -754,7 +808,10 @@ export function LlmGatewaySettingsPanel() {
           payload
         );
         const result = response.data;
-        if (!result || (!result.completion && !result.completionError)) {
+        if (
+          !result ||
+          (!result.completion && !result.completionError && !result.embedding && !result.embeddingError)
+        ) {
           messageApi.error(t("settings.llmGateway.testUnsaved.errors.failed"));
           return;
         }
@@ -844,7 +901,9 @@ export function LlmGatewaySettingsPanel() {
     setTesting(profileId);
     setTestErrorMessage(null);
     try {
+      const shouldTestCompletion = values.includeCompletion !== false;
       const payload = {
+        includeCompletion: shouldTestCompletion,
         ...(values.model?.trim() ? { model: values.model.trim() } : {}),
         ...(values.prompt?.trim() ? { prompt: values.prompt.trim() } : {}),
         includeEmbeddings: values.includeEmbeddings,
@@ -856,13 +915,16 @@ export function LlmGatewaySettingsPanel() {
         payload
       );
       const result = response.data;
-      if (!result || (!result.completion && !result.completionError)) {
+      if (
+        !result ||
+        (!result.completion && !result.completionError && !result.embedding && !result.embeddingError)
+      ) {
         setTestResult(null);
         setTestErrorMessage(t("settings.llmGateway.test.errors.failed"));
         return;
       }
       setTestResult(result);
-      setTestErrorMessage(result.completionError?.message ?? null);
+      setTestErrorMessage(result.completionError?.message ?? result.embeddingError?.message ?? null);
     } catch (error) {
       captureClientError("Failed to test LLM gateway profile", error);
       const messageText = formatApiErrorMessage(error);
@@ -875,6 +937,7 @@ export function LlmGatewaySettingsPanel() {
 
   const openTest = (profile: LlmGatewayProfile) => {
     const initialValues: LlmGatewayTestFormValues = {
+      includeCompletion: true,
       model: "",
       prompt: "",
       includeEmbeddings: Boolean(profile.embeddingModel),
@@ -895,11 +958,16 @@ export function LlmGatewaySettingsPanel() {
       dataIndex: "name",
       key: "name",
       render: (_: unknown, record) => (
-        <Space direction="vertical" size={2}>
+          <Space direction="vertical" size={2}>
           <Space size={6} wrap>
             <Typography.Text strong>{record.name}</Typography.Text>
             {settings.activeId === record.id && record.enabled ? (
               <Tag color="blue">{t("settings.llmGateway.active")}</Tag>
+            ) : null}
+            {settings.embeddingActiveId === record.id && record.enabled ? (
+              <Tag color="purple">
+                {t("settings.llmGateway.embeddingActive.tag", { defaultValue: "Embeddings" })}
+              </Tag>
             ) : null}
           </Space>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -1085,6 +1153,172 @@ export function LlmGatewaySettingsPanel() {
           )}
         </Card>
 
+        <Card
+          size="small"
+          title={t("settings.llmGateway.embeddingActive.title", { defaultValue: "Embeddings 网关" })}
+        >
+          <Space direction="vertical" size="small" style={{ display: "flex" }}>
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.embeddingActive.hint", {
+                defaultValue: "用于 Embeddings / 向量化请求（可与对话模型使用不同的网关和模型）。"
+              })}
+            </Typography.Text>
+
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.embeddingActive.currentCompletion", {
+                defaultValue: "当前对话模型配置"
+              })}
+              :{" "}
+              {completionActiveProfile ? (
+                <Typography.Text>
+                  {completionActiveProfile.name}{" "}
+                  <Typography.Text code copyable>
+                    {completionActiveProfile.model}
+                  </Typography.Text>
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">-</Typography.Text>
+              )}
+            </Typography.Text>
+
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.embeddingActive.currentEmbedding", { defaultValue: "当前 Embeddings 配置" })}
+              :{" "}
+              {embeddingActiveProfile ? (
+                <Space size={6} wrap>
+                  <Typography.Text>{embeddingActiveProfile.name}</Typography.Text>
+                  {settings.embeddingActiveId ? (
+                    settings.embeddingActiveId === settings.activeId ? (
+                      <Tag color="purple">
+                        {t("settings.llmGateway.embeddingActive.lockedSame", {
+                          defaultValue: "显式锁定（当前与对话一致）"
+                        })}
+                      </Tag>
+                    ) : (
+                      <Tag color="purple">
+                        {t("settings.llmGateway.embeddingActive.independent", { defaultValue: "独立配置" })}
+                      </Tag>
+                    )
+                  ) : completionActiveProfile ? (
+                    <Tag>
+                      {t("settings.llmGateway.embeddingActive.following", { defaultValue: "跟随对话模型" })}
+                    </Tag>
+                  ) : (
+                    <Tag>
+                      {t("settings.llmGateway.embeddingActive.default", { defaultValue: "默认配置" })}
+                    </Tag>
+                  )}
+                  {embeddingActiveProfile.embeddingModel ? (
+                    <Typography.Text code copyable>
+                      {embeddingActiveProfile.embeddingModel}
+                    </Typography.Text>
+                  ) : (
+                    <Tag color="red">
+                      {t("settings.llmGateway.embeddingActive.missingEmbeddingModel", {
+                        defaultValue: "未配置 Embedding 模型"
+                      })}
+                    </Tag>
+                  )}
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">-</Typography.Text>
+              )}
+            </Typography.Text>
+
+            <Form layout="inline" style={{ width: "100%" }}>
+              <Form.Item
+                label={t("settings.llmGateway.embeddingActive.selectLabel", { defaultValue: "切换 Embeddings 网关" })}
+                style={{ flex: 1, minWidth: 260 }}
+              >
+                <Select
+                  value={settings.embeddingActiveId ? settings.embeddingActiveId : FOLLOW_COMPLETION_KEY}
+                  placeholder={t("settings.llmGateway.embeddingActive.selectPlaceholder", {
+                    defaultValue: "选择用于 Embeddings 的网关 Profile"
+                  })}
+                  loading={loading || embeddingActivating}
+                  options={[
+                    {
+                      value: FOLLOW_COMPLETION_KEY,
+                      label: (
+                        <Space size={6} wrap>
+                          <Typography.Text>
+                            {completionActiveProfile
+                              ? t("settings.llmGateway.embeddingActive.followCompletion", {
+                                  defaultValue: "跟随对话模型（{{name}}）",
+                                  name: completionActiveProfile.name
+                                })
+                              : t("settings.llmGateway.embeddingActive.followDefault", {
+                                  defaultValue: "使用默认配置（config/env）"
+                                })}
+                          </Typography.Text>
+                          <Tag>{t("settings.llmGateway.embeddingActive.followTag", { defaultValue: "跟随" })}</Tag>
+                        </Space>
+                      )
+                    },
+                    ...settings.profiles.map((profile) => ({
+                      value: profile.id,
+                      disabled: !profile.enabled || !profile.embeddingModel,
+                      label: (
+                        <Space size={6} wrap>
+                          <Typography.Text>{profile.name}</Typography.Text>
+                          {!profile.enabled ? (
+                            <Tag color="red">{t("common.disabled")}</Tag>
+                          ) : !profile.embeddingModel ? (
+                            <Tag color="red">
+                              {t("settings.llmGateway.embeddingActive.missingEmbeddingModelShort", {
+                                defaultValue: "缺少 Embedding 模型"
+                              })}
+                            </Tag>
+                          ) : (
+                            <Tag color="purple">
+                              {t("settings.llmGateway.embeddingActive.tag", { defaultValue: "Embeddings" })}
+                            </Tag>
+                          )}
+                        </Space>
+                      )
+                    }))
+                  ]}
+                  onChange={(value) =>
+                    void handleActivateEmbedding(value === FOLLOW_COMPLETION_KEY ? null : value)
+                  }
+                  style={{ width: "100%" }}
+                />
+              </Form.Item>
+            </Form>
+
+            {embeddingActiveProfile ? (
+              <>
+                <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                  {t("settings.llmGateway.fields.apiBase")}:{" "}
+                  <Typography.Text code copyable>
+                    {embeddingActiveProfile.apiBase}
+                  </Typography.Text>
+                </Typography.Paragraph>
+                <Space wrap>
+                  <Tag color={embeddingActiveProfile.enabled ? "green" : "red"}>
+                    {embeddingActiveProfile.enabled ? t("common.enabled") : t("common.disabled")}
+                  </Tag>
+                  <Tag color={embeddingActiveProfile.hasApiKey ? "green" : "default"}>
+                    {embeddingActiveProfile.hasApiKey
+                      ? t("settings.llmGateway.keySet")
+                      : t("settings.llmGateway.keyMissing")}
+                  </Tag>
+                </Space>
+              </>
+            ) : null}
+
+            {!settings.profiles.some((profile) => profile.enabled && profile.embeddingModel) ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("settings.llmGateway.embeddingActive.noEligibleProfiles", {
+                  defaultValue: "暂无可用的 Embeddings Profile：请先在某个 Profile 中填写 Embedding 模型并启用。"
+                })}
+              />
+            ) : null}
+          </Space>
+        </Card>
+
         {errorMessage ? (
           <Alert type="error" showIcon message={errorMessage} />
         ) : null}
@@ -1171,9 +1405,11 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             label={t("settings.llmGateway.fields.model")}
             name="model"
-            rules={[{ required: true, message: t("settings.llmGateway.validation.modelRequired") }]}
+            extra={t("settings.llmGateway.hints.modelOptional", {
+              defaultValue: "可选：仅用于对话/补全请求；只配置 Embeddings 网关时可以留空。"
+            })}
           >
-            <Input placeholder="openai/gpt-4o-mini" />
+            <Input allowClear placeholder="openai/gpt-4o-mini" />
           </Form.Item>
           <Form.Item label={t("settings.llmGateway.fields.embeddingModel")} name="embeddingModel">
             <Input placeholder="openai/text-embedding-3-small" />
@@ -1314,9 +1550,11 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             label={t("settings.llmGateway.fields.model")}
             name="model"
-            rules={[{ required: true, message: t("settings.llmGateway.validation.modelRequired") }]}
+            extra={t("settings.llmGateway.hints.modelOptional", {
+              defaultValue: "可选：仅用于对话/补全请求；只配置 Embeddings 网关时可以留空。"
+            })}
           >
-            <Input />
+            <Input allowClear />
           </Form.Item>
           <Form.Item label={t("settings.llmGateway.fields.embeddingModel")} name="embeddingModel">
             <Input allowClear />
@@ -1393,6 +1631,7 @@ export function LlmGatewaySettingsPanel() {
       <Modal
         title={testProfile ? t("settings.llmGateway.test.modal.title", { name: testProfile.name }) : undefined}
         open={Boolean(testProfile)}
+        forceRender
         onCancel={closeTest}
         width={screens.md ? 720 : "100%"}
         footer={[
@@ -1440,11 +1679,24 @@ export function LlmGatewaySettingsPanel() {
           </Typography.Paragraph>
 
           <Form.Item
+            label={t("settings.llmGateway.test.fields.includeCompletion", {
+              defaultValue: "测试对话/补全"
+            })}
+            name="includeCompletion"
+            valuePropName="checked"
+            extra={t("settings.llmGateway.test.hints.includeCompletion", {
+              defaultValue: "关闭后仅测试 Embeddings。"
+            })}
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
             label={t("settings.llmGateway.test.fields.model")}
             name="model"
             extra={t("settings.llmGateway.test.hints.model")}
           >
-            <Input allowClear placeholder={testProfile?.model ?? ""} />
+            <Input allowClear disabled={!includeCompletion} placeholder={testProfile?.model ?? ""} />
           </Form.Item>
 
           <Form.Item
@@ -1454,6 +1706,7 @@ export function LlmGatewaySettingsPanel() {
             <Input.TextArea
               placeholder={t("settings.llmGateway.test.placeholders.prompt")}
               autoSize={{ minRows: 2, maxRows: 6 }}
+              disabled={!includeCompletion}
             />
           </Form.Item>
 

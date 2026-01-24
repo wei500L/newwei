@@ -6,6 +6,7 @@ import axios, {
   type AxiosResponse,
   AxiosInstance,
 } from "axios";
+import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -100,9 +101,7 @@ interface GatewayCompatibilityFlags {
 
 @Injectable()
 export class LiteLlmService {
-  private client: AxiosInstance;
-  private currentBaseUrl: string;
-  private currentApiKey?: string;
+  private readonly clients = new Map<string, AxiosInstance>();
   private readonly logger = createLogger({ name: "litellm-service" });
   private readonly compatibility = new Map<string, GatewayCompatibilityFlags>();
 
@@ -110,19 +109,15 @@ export class LiteLlmService {
     private readonly configService: NewsPipelineConfigService,
     private readonly rateLimiter: RateLimiterService,
     private readonly llmGatewaySettings: LlmGatewaySettingsService,
-  ) {
-    this.currentBaseUrl = "";
-    this.currentApiKey = undefined;
-    this.client = this.buildClient(this.configService.config.litellm);
-  }
+  ) {}
 
   async getEmbeddingModel(): Promise<string | undefined> {
-    const cfg = await this.resolveConfig();
+    const cfg = await this.resolveEmbeddingConfig();
     return cfg.embeddingModel;
   }
 
   async getCompletionModels(): Promise<string[]> {
-    const cfg = await this.resolveConfig();
+    const cfg = await this.resolveCompletionConfig();
     const models = [cfg.model, ...cfg.fallbackModels].filter(
       (model): model is string => typeof model === "string" && model.trim().length > 0,
     );
@@ -132,7 +127,7 @@ export class LiteLlmService {
   async acompletion(
     params: LiteLlmCompletionParams,
   ): Promise<LiteLlmCompletionResponse> {
-    const cfg = await this.enforceRateLimit();
+    const { cfg, client, baseUrl } = await this.prepareRequest("completion");
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
       new Set(
@@ -142,7 +137,7 @@ export class LiteLlmService {
     let lastError: unknown;
     for (const model of uniqueModels) {
       try {
-        return await this.executeWithRetry(cfg, model, params);
+        return await this.executeWithRetry(client, baseUrl, cfg, model, params);
       } catch (error) {
         lastError = error;
         this.logger.warn(
@@ -162,16 +157,16 @@ export class LiteLlmService {
   async embedding(
     params: LiteLlmEmbeddingParams,
   ): Promise<LiteLlmEmbeddingResponse> {
-    const cfg = await this.enforceRateLimit();
+    const { cfg, client, baseUrl } = await this.prepareRequest("embedding");
     const model = params.model ?? cfg.embeddingModel ?? cfg.model;
     if (!model) {
       throw new Error("LiteLLM embedding model is not configured");
     }
-    return this.executeEmbeddingWithRetry(cfg, model, params);
+    return this.executeEmbeddingWithRetry(client, baseUrl, cfg, model, params);
   }
 
   async *stream(params: LiteLlmCompletionParams): AsyncGenerator<LiteLlmStreamChunk> {
-    const cfg = await this.enforceRateLimit();
+    const { cfg, client, baseUrl } = await this.prepareRequest("completion");
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
       new Set(models.filter((model) => typeof model === "string" && model.length > 0)),
@@ -181,7 +176,7 @@ export class LiteLlmService {
     for (const model of uniqueModels) {
       let started = false;
       try {
-        for await (const chunk of this.executeStream(cfg, model, params)) {
+        for await (const chunk of this.executeStream(client, baseUrl, cfg, model, params)) {
           started = true;
           yield chunk;
         }
@@ -205,6 +200,8 @@ export class LiteLlmService {
   }
 
   private async executeWithRetry(
+    client: AxiosInstance,
+    baseUrl: string,
     cfg: { timeoutMs: number; temperature: number; topP: number; maxOutputTokens: number; maxRetries: number },
     model: string,
     params: LiteLlmCompletionParams,
@@ -216,7 +213,7 @@ export class LiteLlmService {
 
     while (attempt < maxAttempts) {
       try {
-        const compatibility = this.getCompatibilityFlags();
+        const compatibility = this.getCompatibilityFlags(baseUrl);
         const payload = {
           model,
           messages: params.messages,
@@ -229,6 +226,8 @@ export class LiteLlmService {
         };
         const start = Date.now();
         const response = await this.postWithCompatibilityFallback<LiteLlmCompletionResponse>(
+          client,
+          baseUrl,
           "/v1/chat/completions",
           "/chat/completions",
           payload,
@@ -276,11 +275,13 @@ export class LiteLlmService {
   }
 
   private async *executeStream(
+    client: AxiosInstance,
+    baseUrl: string,
     cfg: { timeoutMs: number; temperature: number; topP: number; maxOutputTokens: number },
     model: string,
     params: LiteLlmCompletionParams,
   ): AsyncGenerator<LiteLlmStreamChunk> {
-    const compatibility = this.getCompatibilityFlags();
+    const compatibility = this.getCompatibilityFlags(baseUrl);
     const payload = {
       model,
       messages: params.messages,
@@ -293,6 +294,8 @@ export class LiteLlmService {
     };
 
     const response = await this.postWithCompatibilityFallback(
+      client,
+      baseUrl,
       "/v1/chat/completions",
       "/chat/completions",
       payload,
@@ -367,6 +370,8 @@ export class LiteLlmService {
   }
 
   private async executeEmbeddingWithRetry(
+    client: AxiosInstance,
+    baseUrl: string,
     cfg: { timeoutMs: number; maxRetries: number },
     model: string,
     params: LiteLlmEmbeddingParams,
@@ -378,7 +383,7 @@ export class LiteLlmService {
 
     while (attempt < maxAttempts) {
       try {
-        const compatibility = this.getCompatibilityFlags();
+        const compatibility = this.getCompatibilityFlags(baseUrl);
         const payload = {
           model,
           input: params.input,
@@ -386,6 +391,8 @@ export class LiteLlmService {
         };
         const start = Date.now();
         const response = await this.postWithCompatibilityFallback<LiteLlmEmbeddingResponse>(
+          client,
+          baseUrl,
           "/v1/embeddings",
           "/embeddings",
           payload,
@@ -436,29 +443,32 @@ export class LiteLlmService {
   }
 
   private async postWithFallback<T = unknown>(
+    client: AxiosInstance,
     primaryPath: string,
     fallbackPath: string,
     payload: unknown,
     config?: AxiosRequestConfig,
   ): Promise<AxiosResponse<T>> {
     try {
-      return await this.client.post<T>(primaryPath, payload, config);
+      return await client.post<T>(primaryPath, payload, config);
     } catch (error) {
       if (error instanceof AxiosError && error.response?.status === 404) {
-        return this.client.post<T>(fallbackPath, payload, config);
+        return client.post<T>(fallbackPath, payload, config);
       }
       throw error;
     }
   }
 
   private async postWithCompatibilityFallback<T = unknown>(
+    client: AxiosInstance,
+    baseUrl: string,
     primaryPath: string,
     fallbackPath: string,
     payload: Record<string, unknown>,
     config?: AxiosRequestConfig,
   ): Promise<AxiosResponse<T>> {
     try {
-      return await this.postWithFallback<T>(primaryPath, fallbackPath, payload, config);
+      return await this.postWithFallback<T>(client, primaryPath, fallbackPath, payload, config);
     } catch (error) {
       if (!(error instanceof AxiosError)) {
         throw error;
@@ -495,12 +505,13 @@ export class LiteLlmService {
       for (const candidate of candidates) {
         try {
           const response = await this.postWithFallback<T>(
+            client,
             primaryPath,
             fallbackPath,
             candidate.payload,
             config,
           );
-          this.applyCompatibilityUpdate(candidate.update);
+          this.applyCompatibilityUpdate(baseUrl, candidate.update);
           return response;
         } catch (candidateError) {
           lastError = candidateError;
@@ -601,16 +612,19 @@ export class LiteLlmService {
     return unique;
   }
 
-  private applyCompatibilityUpdate(update: Partial<GatewayCompatibilityFlags>) {
+  private applyCompatibilityUpdate(
+    baseUrl: string,
+    update: Partial<GatewayCompatibilityFlags>,
+  ) {
     if (!update || Object.keys(update).length === 0) {
       return;
     }
-    const flags = this.getCompatibilityFlags();
-    this.compatibility.set(this.currentBaseUrl, { ...flags, ...update });
+    const flags = this.getCompatibilityFlags(baseUrl);
+    this.compatibility.set(baseUrl, { ...flags, ...update });
   }
 
-  private getCompatibilityFlags(): GatewayCompatibilityFlags {
-    const existing = this.compatibility.get(this.currentBaseUrl);
+  private getCompatibilityFlags(baseUrl: string): GatewayCompatibilityFlags {
+    const existing = this.compatibility.get(baseUrl);
     if (existing) {
       return existing;
     }
@@ -619,7 +633,7 @@ export class LiteLlmService {
       supportsResponseFormat: true,
       supportsJsonSchema: true,
     };
-    this.compatibility.set(this.currentBaseUrl, initial);
+    this.compatibility.set(baseUrl, initial);
     return initial;
   }
 
@@ -689,12 +703,24 @@ export class LiteLlmService {
     );
   }
 
-  private buildClient(cfg: { apiBase: string; apiKey?: string; timeoutMs: number }) {
+  private buildClientKey(baseUrl: string, apiKey: string | undefined) {
+    if (!apiKey) {
+      return `${baseUrl}::`;
+    }
+    const digest = createHash("sha256").update(apiKey).digest("hex");
+    return `${baseUrl}::${digest}`;
+  }
+
+  private getClient(cfg: { apiBase: string; apiKey?: string; timeoutMs: number }) {
     const baseUrl = normalizeApiBase(cfg.apiBase);
     const apiKey = normalizeApiKey(cfg.apiKey);
-    this.currentBaseUrl = baseUrl;
-    this.currentApiKey = apiKey;
-    return axios.create({
+    const key = this.buildClientKey(baseUrl, apiKey);
+    const existing = this.clients.get(key);
+    if (existing) {
+      return { client: existing, baseUrl };
+    }
+
+    const client = axios.create({
       baseURL: baseUrl,
       timeout: cfg.timeoutMs,
       headers: {
@@ -702,12 +728,18 @@ export class LiteLlmService {
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
     });
+
+    this.clients.set(key, client);
+    return { client, baseUrl };
   }
 
-  private async enforceRateLimit() {
+  private async prepareRequest(kind: "completion" | "embedding") {
     const pipelineCfg = this.configService.config;
-    const cfg = await this.resolveConfig();
-    const limitKey = `litellm:rpm`;
+    const cfg =
+      kind === "embedding"
+        ? await this.resolveEmbeddingConfig()
+        : await this.resolveCompletionConfig();
+    const limitKey = `litellm:rpm:${kind}`;
     const allowed = await this.rateLimiter.consume(
       limitKey,
       cfg.requestsPerMinute,
@@ -716,19 +748,28 @@ export class LiteLlmService {
     if (!allowed) {
       throw new Error("LiteLLM request throttled by local rate limiter");
     }
-    const base = normalizeApiBase(cfg.apiBase);
-    const apiKey = normalizeApiKey(cfg.apiKey);
-    const shouldRebuild = base !== this.currentBaseUrl || apiKey !== this.currentApiKey;
-    if (shouldRebuild) {
-      this.client = this.buildClient(cfg);
-    }
-    return cfg;
+
+    const { client, baseUrl } = this.getClient(cfg);
+    return { cfg, client, baseUrl };
   }
 
-  private async resolveConfig() {
+  private async resolveCompletionConfig() {
     const pipelineCfg = this.configService.config;
     const overrides = await this.llmGatewaySettings.getActiveConfig();
     return overrides ? { ...pipelineCfg.litellm, ...overrides } : pipelineCfg.litellm;
+  }
+
+  private async resolveEmbeddingConfig() {
+    const pipelineCfg = this.configService.config;
+    const overrides = await this.llmGatewaySettings.getActiveEmbeddingConfig();
+    if (!overrides) {
+      return pipelineCfg.litellm;
+    }
+    const merged = { ...pipelineCfg.litellm, ...overrides };
+    if (overrides.embeddingModel === undefined) {
+      merged.embeddingModel = pipelineCfg.litellm.embeddingModel;
+    }
+    return merged;
   }
 
   private extractHeaderCost(value: unknown) {

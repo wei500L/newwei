@@ -51,9 +51,18 @@ export class LlmGatewayModelsConfigDto {
 }
 
 export class LlmGatewayTestConfigDto extends LlmGatewayModelsConfigDto {
-  @ApiProperty({ description: "Model to use for the test request." })
+  @ApiPropertyOptional({
+    description:
+      "Optional chat/completions model to use for the test request; required when includeCompletion is true."
+  })
+  @IsOptional()
   @IsString()
-  model!: string;
+  model?: string;
+
+  @ApiPropertyOptional({ description: "When false, skips the chat completion test." })
+  @IsOptional()
+  @IsBoolean()
+  includeCompletion?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -101,4 +110,3 @@ export class LlmGatewayTestConfigDto extends LlmGatewayModelsConfigDto {
   @IsString()
   embeddingInput?: string;
 }
-

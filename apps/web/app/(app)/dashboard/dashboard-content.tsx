@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { TimeGranularity, useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/generated";
+import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import { resolveDefaultGranularityForRangePreset, UiTimeGranularity } from "@/lib/time-granularity";
@@ -291,7 +292,7 @@ function DashboardStreamStatusLine({
       <span className="text-slate-600">|</span>
       <span>
         {t("dashboard.stream.window", { defaultValue: "Window" })}: {range} (
-        {dayjs(start).format("YYYY-MM-DD")} to {dayjs(end).format("YYYY-MM-DD")})
+        {formatDashboardDate(start)} to {formatDashboardDate(end)})
       </span>
     </div>
   );

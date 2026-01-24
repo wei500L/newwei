@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { DashboardChart } from "@/components/echart";
 import { TimeGranularity, useEconomicDataQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import {
   compareGranularity,
@@ -59,7 +60,7 @@ export function DrilldownChart({
           : "default";
   const selectedGranularityLabel = formatGranularityLabel(selectedUiGranularity);
   const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
-  const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
+  const windowLabel = formatDashboardWindowLabel(start, end);
 
   const {
     data,

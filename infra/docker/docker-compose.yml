@@ -55,7 +55,6 @@ services:
       retries: 5
 
   qdrant:
-    profiles: ["extras"]
     image: qdrant/qdrant:v1.10.1
     restart: unless-stopped
     ports:
@@ -187,7 +186,6 @@ services:
       start_period: 20s
 
   crawl4ai:
-    profiles: ["extras"]
     image: ${CRAWL4AI_IMAGE:-unclecode/crawl4ai:0}
     restart: unless-stopped
     ports:
@@ -269,7 +267,6 @@ services:
       start_period: 300s
 
   vector:
-    profiles: ["extras"]
     build:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile

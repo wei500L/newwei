@@ -26,6 +26,7 @@ export type LlmGatewayProfilePublic = Omit<LiteLlmEnvConfig, "apiKey"> & {
 
 export interface LlmGatewaySettingsPublic {
   activeId: string | null;
+  embeddingActiveId: string | null;
   profiles: LlmGatewayProfilePublic[];
 }
 
@@ -47,6 +48,7 @@ interface StoredProfile extends Omit<LiteLlmEnvConfig, "apiKey"> {
 
 interface StoredSettings {
   activeId: string | null;
+  embeddingActiveId: string | null;
   profiles: StoredProfile[];
 }
 
@@ -71,6 +73,7 @@ export class LlmGatewaySettingsService {
     const settings = await this.loadSettings();
     return {
       activeId: settings.activeId,
+      embeddingActiveId: settings.embeddingActiveId,
       profiles: settings.profiles.map((profile) => this.toPublicProfile(profile))
     };
   }
@@ -134,6 +137,9 @@ export class LlmGatewaySettingsService {
     if (settings.activeId === id && !updated.enabled) {
       settings.activeId = null;
     }
+    if (settings.embeddingActiveId === id && (!updated.enabled || !updated.embeddingModel)) {
+      settings.embeddingActiveId = null;
+    }
 
     await this.saveSettings(orgId, actorId, settings, "llm_gateway_update", {
       id,
@@ -156,6 +162,9 @@ export class LlmGatewaySettingsService {
     settings.profiles = nextProfiles;
     if (settings.activeId === id) {
       settings.activeId = null;
+    }
+    if (settings.embeddingActiveId === id) {
+      settings.embeddingActiveId = null;
     }
 
     await this.saveSettings(orgId, actorId, settings, "llm_gateway_delete", { id });
@@ -185,6 +194,33 @@ export class LlmGatewaySettingsService {
     return this.list();
   }
 
+  async setEmbeddingActiveProfile(
+    orgId: string,
+    actorId: string,
+    activeId: string | null
+  ): Promise<LlmGatewaySettingsPublic> {
+    const settings = await this.loadSettings();
+    if (activeId) {
+      const found = settings.profiles.find((profile) => profile.id === activeId);
+      if (!found) {
+        throw new NotFoundException("LLM gateway profile not found");
+      }
+      if (!found.enabled) {
+        throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
+      }
+      if (!found.embeddingModel) {
+        throw new BadRequestException("Cannot activate profile for embeddings without embeddingModel configured");
+      }
+    }
+    settings.embeddingActiveId = activeId;
+
+    await this.saveSettings(orgId, actorId, settings, "llm_gateway_embedding_activate", {
+      embeddingActiveId: activeId
+    });
+
+    return this.list();
+  }
+
   async getActiveConfig(): Promise<(LiteLlmEnvConfig & { apiKey?: string }) | null> {
     const settings = await this.loadSettings();
     if (!settings.activeId) {
@@ -194,6 +230,34 @@ export class LlmGatewaySettingsService {
     const profile = settings.profiles.find(
       (candidate) => candidate.id === settings.activeId
     );
+    if (!profile || !profile.enabled) {
+      return null;
+    }
+
+    const apiKey = this.resolveApiKey(profile.apiKey);
+    return {
+      model: profile.model,
+      embeddingModel: profile.embeddingModel,
+      apiBase: profile.apiBase,
+      apiKey,
+      timeoutMs: profile.timeoutMs,
+      temperature: profile.temperature,
+      topP: profile.topP,
+      maxOutputTokens: profile.maxOutputTokens,
+      maxRetries: profile.maxRetries,
+      fallbackModels: profile.fallbackModels,
+      requestsPerMinute: profile.requestsPerMinute
+    };
+  }
+
+  async getActiveEmbeddingConfig(): Promise<(LiteLlmEnvConfig & { apiKey?: string }) | null> {
+    const settings = await this.loadSettings();
+    const activeId = settings.embeddingActiveId ?? settings.activeId;
+    if (!activeId) {
+      return null;
+    }
+
+    const profile = settings.profiles.find((candidate) => candidate.id === activeId);
     if (!profile || !profile.enabled) {
       return null;
     }
@@ -315,19 +379,31 @@ export class LlmGatewaySettingsService {
 
   private normalizeSettings(raw: unknown): StoredSettings {
     const record = raw as Partial<StoredSettings> | null;
-    const activeId = this.normalizeString(record?.activeId) ?? null;
+    const activeIdRaw = this.normalizeString(record?.activeId) ?? null;
+    const embeddingActiveIdRaw =
+      this.normalizeString((record as unknown as { embeddingActiveId?: unknown })?.embeddingActiveId) ?? null;
     const profiles = Array.isArray(record?.profiles) ? record?.profiles : [];
 
     const normalizedProfiles = profiles
       .map((entry) => this.normalizeProfile(entry))
       .filter((entry): entry is StoredProfile => entry !== null);
 
-    const activeExists = activeId
-      ? normalizedProfiles.some((profile) => profile.id === activeId)
-      : false;
+    const activeProfile = activeIdRaw
+      ? normalizedProfiles.find((profile) => profile.id === activeIdRaw)
+      : null;
+    const activeId = activeProfile && activeProfile.enabled ? activeProfile.id : null;
+
+    const embeddingProfile = embeddingActiveIdRaw
+      ? normalizedProfiles.find((profile) => profile.id === embeddingActiveIdRaw)
+      : null;
+    const embeddingActiveId =
+      embeddingProfile && embeddingProfile.enabled && embeddingProfile.embeddingModel
+        ? embeddingProfile.id
+        : null;
 
     return {
-      activeId: activeExists ? activeId : null,
+      activeId,
+      embeddingActiveId,
       profiles: normalizedProfiles
     };
   }

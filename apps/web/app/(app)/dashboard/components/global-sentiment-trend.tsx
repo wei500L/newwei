@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
@@ -33,7 +34,7 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
   const locale = resolveLocale(i18n.language);
   const theme = useChartTheme();
   const { range, start, end } = useDashboardRangeStore();
-  const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
+  const windowLabel = formatDashboardWindowLabel(start, end);
 
   const option = useMemo<EChartsOption>(() => {
     if (!data || data.length === 0) return {};

@@ -212,6 +212,23 @@ describe("LlmGatewayTestService", () => {
     expect(result.embeddingError?.message).toContain("Embedding response did not include an embedding vector");
   });
 
+  it("skips completion when includeCompletion is false", async () => {
+    mockAxiosPost.mockResolvedValueOnce(mockEmbeddingResponse);
+
+    const result = await service.testProfile("profile-1", { includeCompletion: false, includeEmbeddings: true });
+
+    expect(result.completion).toBeUndefined();
+    expect(result.completionError).toBeUndefined();
+    expect(result.embedding?.dimensions).toBe(3);
+
+    expect(mockAxiosPost).toHaveBeenCalledTimes(1);
+    expect(mockAxiosPost).toHaveBeenCalledWith(
+      "/v1/embeddings",
+      expect.objectContaining({ model: "openai/text-embedding-3-small" }),
+      expect.any(Object)
+    );
+  });
+
   it("lists models via /v1/models", async () => {
     const response: AxiosResponse = {
       data: {
@@ -509,5 +526,43 @@ describe("LlmGatewayTestService", () => {
     expect(result.apiBase).toBe("http://localhost:4001");
     expect(result.models).toEqual(["openai/gpt-4o-mini"]);
     expect(settingsMock.getProfileConfig).not.toHaveBeenCalled();
+  });
+
+  it("allows config tests to reuse stored model when model is omitted", async () => {
+    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse);
+
+    await service.testConfig({
+      profileId: "profile-1",
+      apiBase: config.apiBase,
+      includeEmbeddings: false
+    });
+
+    expect(settingsMock.getProfileConfig).toHaveBeenCalledWith("profile-1");
+    expect(mockAxiosPost).toHaveBeenCalledWith(
+      "/v1/chat/completions",
+      expect.objectContaining({ model: config.model }),
+      expect.any(Object)
+    );
+  });
+
+  it("supports embeddings-only config tests without requiring a completion model", async () => {
+    mockAxiosPost.mockResolvedValueOnce(mockEmbeddingResponse);
+
+    const result = await service.testConfig({
+      apiBase: config.apiBase,
+      apiKey: config.apiKey,
+      embeddingModel: config.embeddingModel ?? undefined,
+      includeCompletion: false,
+      includeEmbeddings: true
+    });
+
+    expect(result.completion).toBeUndefined();
+    expect(result.embedding?.dimensions).toBe(3);
+    expect(mockAxiosPost).toHaveBeenCalledTimes(1);
+    expect(mockAxiosPost).toHaveBeenCalledWith(
+      "/v1/embeddings",
+      expect.objectContaining({ model: "openai/text-embedding-3-small" }),
+      expect.any(Object)
+    );
   });
 });

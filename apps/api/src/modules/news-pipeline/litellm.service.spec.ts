@@ -99,6 +99,7 @@ describe("LiteLlmService", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     jest.useFakeTimers({ advanceTimers: true });
+    mockAxiosCreate.mockImplementation(() => ({ post: mockAxiosPost }));
 
     rateLimiterService = {
       consume: jest.fn().mockResolvedValue(true),
@@ -106,6 +107,7 @@ describe("LiteLlmService", () => {
 
     llmGatewaySettings = {
       getActiveConfig: jest.fn().mockResolvedValue(null),
+      getActiveEmbeddingConfig: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<LlmGatewaySettingsService>;
 
     configService = {
@@ -511,7 +513,7 @@ describe("LiteLlmService", () => {
       await service.acompletion(completionParams);
 
       expect(rateLimiterService.consume).toHaveBeenCalledWith(
-        "litellm:rpm",
+        "litellm:rpm:completion",
         60, // requestsPerMinute
         60  // rateLimitWindowSeconds
       );
@@ -664,6 +666,62 @@ describe("LiteLlmService", () => {
 
       expect(mockAxiosPost).toHaveBeenCalledTimes(2);
       expect(result.model).toBe("text-embedding-3-small");
+    });
+
+    it("should apply embedding gateway settings overrides", async () => {
+      llmGatewaySettings.getActiveEmbeddingConfig.mockResolvedValueOnce({
+        apiBase: "http://embedding-base:4002",
+        apiKey: "embedding-key",
+        embeddingModel: "embed-model",
+      });
+
+      await service.embedding(embeddingParams);
+
+      const lastCreateCall = mockAxiosCreate.mock.calls[mockAxiosCreate.mock.calls.length - 1]?.[0] as
+        | { baseURL?: string; headers?: Record<string, string> }
+        | undefined;
+
+      expect(lastCreateCall?.baseURL).toBe("http://embedding-base:4002");
+      expect(lastCreateCall?.headers?.Authorization).toBe("Bearer embedding-key");
+      expect(mockAxiosPost).toHaveBeenCalledWith(
+        "/v1/embeddings",
+        expect.objectContaining({ model: "embed-model" }),
+        expect.any(Object)
+      );
+    });
+
+    it("should isolate axios clients between completion and embedding configs", async () => {
+      const completionPost = jest.fn().mockResolvedValue(mockCompletionResponse);
+      const embeddingPost = jest.fn().mockResolvedValue(mockEmbeddingResponse);
+
+      mockAxiosCreate.mockImplementation((config?: { baseURL?: string }) => {
+        if (config?.baseURL === "http://embedding-base:4002") {
+          return { post: embeddingPost };
+        }
+        return { post: completionPost };
+      });
+
+      llmGatewaySettings.getActiveEmbeddingConfig.mockResolvedValueOnce({
+        apiBase: "http://embedding-base:4002",
+        apiKey: "embedding-key",
+        embeddingModel: "text-embedding-3-small",
+      });
+
+      await Promise.all([
+        service.acompletion({ messages: [{ role: "user", content: "Hello" }] }),
+        service.embedding({ input: "Hello" }),
+      ]);
+
+      expect(completionPost).toHaveBeenCalledWith(
+        "/v1/chat/completions",
+        expect.any(Object),
+        expect.any(Object)
+      );
+      expect(embeddingPost).toHaveBeenCalledWith(
+        "/v1/embeddings",
+        expect.any(Object),
+        expect.any(Object)
+      );
     });
   });
 

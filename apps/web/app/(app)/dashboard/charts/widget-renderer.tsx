@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import type { TimeGranularity } from "@/graphql/generated";
+import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import {
   compareGranularity,
@@ -95,8 +96,8 @@ export function WidgetRenderer({
         ? "orange"
         : granularityCompare === "finer"
           ? "cyan"
-          : "default";
-  const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
+      : "default";
+  const windowLabel = formatDashboardWindowLabel(start, end);
   const {
     data: apiData,
     loading,

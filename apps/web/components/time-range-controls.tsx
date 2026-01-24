@@ -5,7 +5,7 @@ import type { SegmentedValue } from "antd/es/segmented";
 import type { Dayjs } from "dayjs";
 import { useTranslation } from "react-i18next";
 
-import dayjs from "@/lib/dayjs";
+import { toDashboardZonedTime } from "@/lib/dashboard-time";
 import {
   formatGranularityLabel,
   resolveDefaultGranularityForRangePreset,
@@ -61,7 +61,7 @@ export function TimeRangeControls() {
           size="middle"
         />
         <DatePicker.RangePicker
-          value={[dayjs(start), dayjs(end)]}
+          value={[toDashboardZonedTime(start), toDashboardZonedTime(end)]}
           allowEmpty={[false, false]}
           onChange={handleCustomChange}
         />

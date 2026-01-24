@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { DashboardChart } from "@/components/echart";
 import { TimeGranularity, useMetricDrillDownDetailsQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
+import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import {
   compareGranularity,
@@ -311,7 +312,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
 
           <div className="mb-4 flex flex-wrap gap-2">
             <Tag color="default" className="text-xs">
-              Range: {range} ({dayjs(rangeStart).format("YYYY-MM-DD")} to {dayjs(rangeEnd).format("YYYY-MM-DD")})
+              Range: {range} ({formatDashboardDate(rangeStart)} to {formatDashboardDate(rangeEnd)})
             </Tag>
             <Tag color={granularityColor} className="text-xs">
               {granularityTagText}

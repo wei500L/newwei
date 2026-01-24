@@ -5,6 +5,7 @@ import dayjs from "@/lib/dayjs";
 
 import en from "./locales/en.json";
 import zh from "./locales/zh.json";
+import { getDefaultTimeZone } from "./time-zone";
 
 export const supportedLocales = ["en-US", "zh-CN"] as const;
 export type SupportedLocale = (typeof supportedLocales)[number];
@@ -80,9 +81,7 @@ export function initI18n() {
   return i18next;
 }
 
-export function getDefaultTimeZone(): string {
-  return process.env.NEXT_PUBLIC_TIME_ZONE ?? "Asia/Shanghai";
-}
+export { getDefaultTimeZone };
 
 function extractTimeZoneName(
   date: Date,

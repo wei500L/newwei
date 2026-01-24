@@ -44,11 +44,7 @@ const hasProfile = (globalArgs, profileName) => {
   return false;
 };
 
-const knownExtrasServices = new Map([
-  ['crawl4ai', 'pnpm docker:up:extras -d crawl4ai'],
-  ['vector', 'pnpm docker:up:extras -d vector'],
-  ['qdrant', 'pnpm docker:up:extras -d qdrant']
-]);
+const knownExtrasServices = new Map([]);
 
 const splitComposeArgs = (args) => {
   const globalArgs = [];

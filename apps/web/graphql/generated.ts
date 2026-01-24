@@ -1436,6 +1436,14 @@ export type NewsDedupeSettingsModel = {
   __typename?: 'NewsDedupeSettingsModel';
   categoryThresholds: Array<NewsDedupeCategoryThresholdModel>;
   defaultThreshold: Scalars['Float']['output'];
+  llmJudgeCandidateChars: Scalars['Int']['output'];
+  llmJudgeInstructions?: Maybe<Scalars['String']['output']>;
+  llmJudgeMaxComparisons: Scalars['Int']['output'];
+  llmJudgeModel?: Maybe<Scalars['String']['output']>;
+  llmJudgePromptVersion: Scalars['String']['output'];
+  llmJudgeSystemPromptTemplate: Scalars['String']['output'];
+  llmJudgeUserPromptTemplate: Scalars['String']['output'];
+  useEmbeddings: Scalars['Boolean']['output'];
 };
 
 export type NewsEventArticleModel = {
@@ -2229,6 +2237,14 @@ export type UpdateKnowledgeGraphSettingsInput = {
 export type UpdateNewsDedupeSettingsInput = {
   categoryThresholds: Array<NewsDedupeCategoryThresholdInput>;
   defaultThreshold: Scalars['Float']['input'];
+  llmJudgeCandidateChars?: InputMaybe<Scalars['Int']['input']>;
+  llmJudgeInstructions?: InputMaybe<Scalars['String']['input']>;
+  llmJudgeMaxComparisons?: InputMaybe<Scalars['Int']['input']>;
+  llmJudgeModel?: InputMaybe<Scalars['String']['input']>;
+  llmJudgePromptVersion?: InputMaybe<Scalars['String']['input']>;
+  llmJudgeSystemPromptTemplate?: InputMaybe<Scalars['String']['input']>;
+  llmJudgeUserPromptTemplate?: InputMaybe<Scalars['String']['input']>;
+  useEmbeddings: Scalars['Boolean']['input'];
 };
 
 export type UpdateNewsEventSettingsInput = {

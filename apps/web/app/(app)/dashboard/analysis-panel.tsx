@@ -27,6 +27,7 @@ import {
   type AnalysisResultsQuery,
   type AnalysisEventsSubscription,
 } from "@/graphql/generated";
+import { dashboardNow } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
@@ -219,8 +220,8 @@ function CorrelationForm({ onSubmit, loading }: CorrelationFormProps) {
         indicatorName: t("analysis.correlation.defaults.indicator"),
         changePercent: 0,
         value: 0,
-        startDate: dayjs().subtract(30, "day").format("YYYY-MM-DD"),
-        endDate: dayjs().format("YYYY-MM-DD"),
+        startDate: dashboardNow().subtract(30, "day").format("YYYY-MM-DD"),
+        endDate: dashboardNow().format("YYYY-MM-DD"),
         newsSummaries: [],
       }}
       onFinish={onSubmit}

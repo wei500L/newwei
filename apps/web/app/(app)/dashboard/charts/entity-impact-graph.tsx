@@ -15,7 +15,7 @@ import {
   type EntityImpactNode,
   type EntityImpactLink
 } from "@/hooks/useEntityImpactGraph";
-import dayjs from "@/lib/dayjs";
+import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 const { Text } = Typography;
@@ -190,7 +190,7 @@ export function EntityImpactGraph() {
   const { message } = App.useApp();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const { range, start, end } = useDashboardRangeStore();
-  const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
+  const windowLabel = formatDashboardWindowLabel(start, end);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);

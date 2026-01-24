@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import dayjs from "@/lib/dayjs";
+import { dashboardNow } from "@/lib/dashboard-time";
 
 export type DashboardRangePreset = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "3Y" | "custom";
 
@@ -13,7 +13,7 @@ export interface DashboardRangeState {
   setCustomRange: (start: Date, end: Date) => void;
 }
 
-const now = () => dayjs();
+const now = () => dashboardNow();
 
 const calculateRange = (preset: DashboardRangePreset) => {
   const end = now();

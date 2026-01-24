@@ -3,6 +3,13 @@ import { IsBoolean, IsOptional, IsString, MaxLength } from "class-validator";
 
 export class LlmGatewayTestDto {
   @ApiPropertyOptional({
+    description: "When false, skips the chat completion test and only runs the embeddings test."
+  })
+  @IsOptional()
+  @IsBoolean()
+  includeCompletion?: boolean;
+
+  @ApiPropertyOptional({
     description:
       "Optional override model for the completion test. When omitted, uses the profile default + fallback models."
   })

@@ -97,13 +97,14 @@ export interface LlmGatewayModelsConfigInput {
 }
 
 export interface LlmGatewayTestConfigInput extends LlmGatewayModelsConfigInput {
-  model: string;
+  model?: string;
   embeddingModel?: string;
   temperature?: number;
   topP?: number;
   maxOutputTokens?: number;
   fallbackModels?: string[];
   prompt?: string;
+  includeCompletion?: boolean;
   includeEmbeddings?: boolean;
   embeddingInput?: string;
 }
@@ -111,6 +112,7 @@ export interface LlmGatewayTestConfigInput extends LlmGatewayModelsConfigInput {
 export interface LlmGatewayTestInput {
   model?: string;
   prompt?: string;
+  includeCompletion?: boolean;
   includeEmbeddings?: boolean;
   embeddingModel?: string;
   embeddingInput?: string;
@@ -255,10 +257,13 @@ export class LlmGatewayTestService {
       }
     });
 
+    const shouldTestCompletion = input.includeCompletion ?? true;
     const prompt = input.prompt?.trim() ? input.prompt.trim() : DEFAULT_PROMPT;
     const completionModelOverride = input.model?.trim() ? input.model.trim() : undefined;
 
-    const completionResult = await this.testCompletion(client, cfg, prompt, completionModelOverride);
+    const completionResult = shouldTestCompletion
+      ? await this.testCompletion(client, cfg, prompt, completionModelOverride)
+      : { completion: undefined, error: undefined };
     const completion = completionResult.completion;
     const completionError = completionResult.error;
 
@@ -286,6 +291,10 @@ export class LlmGatewayTestService {
       }
     }
 
+    if (!completion && !completionError && !embedding && !embeddingError) {
+      throw new BadRequestException("Nothing to test");
+    }
+
     return {
       apiBase: baseUrl,
       ...(completion ? { completion } : {}),
@@ -302,8 +311,10 @@ export class LlmGatewayTestService {
       throw new BadRequestException("apiBase is not configured");
     }
 
+    const shouldTestCompletion = input.includeCompletion ?? true;
     const model = input.model?.trim();
-    if (!model) {
+    const storedModel = stored?.model?.trim();
+    if (shouldTestCompletion && !model && !storedModel) {
       throw new BadRequestException("model is not configured");
     }
 
@@ -319,9 +330,16 @@ export class LlmGatewayTestService {
     const fallbackModelsRaw = input.fallbackModels ?? stored?.fallbackModels ?? [];
     const fallbackModels = normalizeStringList(fallbackModelsRaw);
 
+    const embeddingModel = normalizeOptionalString(input.embeddingModel) ?? stored?.embeddingModel;
+    const shouldTestEmbeddings = input.includeEmbeddings ?? Boolean(embeddingModel);
+
+    if (!shouldTestCompletion && !shouldTestEmbeddings) {
+      throw new BadRequestException("Nothing to test");
+    }
+
     const cfg = {
-      model,
-      embeddingModel: normalizeOptionalString(input.embeddingModel) ?? stored?.embeddingModel,
+      model: model ?? stored?.model ?? embeddingModel ?? "unknown",
+      embeddingModel,
       apiBase: baseUrl,
       apiKey,
       timeoutMs,
@@ -352,11 +370,11 @@ export class LlmGatewayTestService {
 
     const prompt = input.prompt?.trim() ? input.prompt.trim() : DEFAULT_PROMPT;
 
-    const completionResult = await this.testCompletion(client, cfg, prompt);
+    const completionResult = shouldTestCompletion
+      ? await this.testCompletion(client, cfg, prompt)
+      : { completion: undefined, error: undefined };
     const completion = completionResult.completion;
     const completionError = completionResult.error;
-
-    const shouldTestEmbeddings = input.includeEmbeddings ?? Boolean(cfg.embeddingModel);
     let embedding: LlmGatewayEmbeddingTestResult | undefined;
     let embeddingError: LlmGatewayTestError | undefined;
     if (shouldTestEmbeddings) {
@@ -600,9 +618,9 @@ export class LlmGatewayTestService {
       throw new BadRequestException(message);
     }
 
-      throw error instanceof Error
-        ? new BadRequestException(error.message)
-        : new BadRequestException("LLM gateway request failed");
+    throw error instanceof Error
+      ? new BadRequestException(error.message)
+      : new BadRequestException("LLM gateway request failed");
   }
 
   private toGatewayErrorInfo(

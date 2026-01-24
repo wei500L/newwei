@@ -107,7 +107,100 @@ describe("LlmGatewaySettingsService", () => {
 
     const listed = await service.list();
     expect(listed.activeId).toBe(created.id);
+    expect(listed.embeddingActiveId).toBeNull();
     expect(listed.profiles).toHaveLength(1);
+  });
+
+  it("uses active profile for embeddings when embeddingActiveId is unset", async () => {
+    const first = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway A",
+      apiBase: "http://gateway-a:4001/v1",
+      model: "openai/gpt-4o-mini",
+      embeddingModel: "openai/text-embedding-3-small",
+      enabled: true
+    });
+
+    const second = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway B",
+      apiBase: "http://gateway-b:4001/v1",
+      model: "openai/gpt-4o-mini",
+      embeddingModel: "openai/text-embedding-3-small",
+      enabled: true
+    });
+
+    await service.setActiveProfile("org-1", "actor-1", second.id);
+
+    const embeddingCfg = await service.getActiveEmbeddingConfig();
+    expect(embeddingCfg?.apiBase).toBe("http://gateway-b:4001/v1");
+
+    const listed = await service.list();
+    expect(listed.activeId).toBe(second.id);
+    expect(listed.embeddingActiveId).toBeNull();
+    expect(listed.profiles.map((profile) => profile.id)).toEqual([first.id, second.id]);
+  });
+
+  it("persists embeddingActiveId when explicitly set", async () => {
+    const first = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway A",
+      apiBase: "http://gateway-a:4001/v1",
+      model: "openai/gpt-4o-mini",
+      embeddingModel: "openai/text-embedding-3-small",
+      enabled: true
+    });
+
+    const second = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway B",
+      apiBase: "http://gateway-b:4001/v1",
+      model: "openai/gpt-4o-mini",
+      embeddingModel: "openai/text-embedding-3-small",
+      enabled: true
+    });
+
+    await service.setActiveProfile("org-1", "actor-1", second.id);
+    await service.setEmbeddingActiveProfile("org-1", "actor-1", first.id);
+
+    const listed = await service.list();
+    expect(listed.activeId).toBe(second.id);
+    expect(listed.embeddingActiveId).toBe(first.id);
+  });
+
+  it("allows embeddingActiveId to match activeId when explicitly set", async () => {
+    const created = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway",
+      apiBase: "http://gateway:4001/v1",
+      model: "openai/gpt-4o-mini",
+      embeddingModel: "openai/text-embedding-3-small",
+      enabled: true
+    });
+
+    await service.setEmbeddingActiveProfile("org-1", "actor-1", created.id);
+
+    const listed = await service.list();
+    expect(listed.activeId).toBe(created.id);
+    expect(listed.embeddingActiveId).toBe(created.id);
+  });
+
+  it("clears activeId when persisted active profile is disabled", async () => {
+    persistedValue = {
+      activeId: "profile-1",
+      embeddingActiveId: null,
+      profiles: [
+        {
+          id: "profile-1",
+          name: "Disabled Gateway",
+          apiBase: "http://localhost:4001/v1",
+          model: "openai/gpt-4o-mini",
+          enabled: false,
+          createdAt: "2024-01-01T00:00:00.000Z",
+          updatedAt: "2024-01-01T00:00:00.000Z"
+        }
+      ]
+    };
+
+    const listed = await service.list();
+    expect(listed.activeId).toBeNull();
+    expect(listed.profiles).toHaveLength(1);
+    expect(listed.profiles[0]?.enabled).toBe(false);
   });
 
   it("clears activeId when the active profile is disabled", async () => {

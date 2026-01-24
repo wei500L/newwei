@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { TimeGranularity, useDashboardHeroMetricsQuery } from "@/graphql/generated";
+import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import {
   compareGranularity,
@@ -49,7 +50,7 @@ export function TickerTape() {
     }),
     [end, heroGranularity, start]
   );
-  const windowLabel = `${dayjs(start).format("YYYY-MM-DD")} - ${dayjs(end).format("YYYY-MM-DD")}`;
+  const windowLabel = formatDashboardWindowLabel(start, end);
 
   const { data, loading, error } = useDashboardHeroMetricsQuery({
     variables: heroDateRange,

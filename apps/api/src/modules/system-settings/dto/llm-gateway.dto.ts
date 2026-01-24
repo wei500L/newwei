@@ -44,9 +44,13 @@ export class CreateLlmGatewayDto {
   @IsString()
   apiKey?: string | null;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      "Optional chat/completions model; leave empty when configuring an embeddings-only gateway profile."
+  })
+  @IsOptional()
   @IsString()
-  model!: string;
+  model?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -193,6 +197,16 @@ export class UpdateLlmGatewayDto {
 export class SetActiveLlmGatewayDto {
   @ApiPropertyOptional({
     description: "Set to null to disable DB overrides and fall back to config file/env."
+  })
+  @IsOptional()
+  @IsString()
+  activeId?: string | null;
+}
+
+export class SetEmbeddingActiveLlmGatewayDto {
+  @ApiPropertyOptional({
+    description:
+      "Set to null to use the active completion profile (or config file/env) for embeddings."
   })
   @IsOptional()
   @IsString()

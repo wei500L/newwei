@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 
 import {
   CreateLlmGatewayDto,
+  SetEmbeddingActiveLlmGatewayDto,
   SetActiveLlmGatewayDto,
   UpdateLlmGatewayDto
 } from "./dto/llm-gateway.dto";
@@ -40,6 +41,15 @@ export class LlmGatewaySettingsController {
   @Permissions("settings.manage")
   async setActive(@CurrentUser() user: AuthenticatedUser, @Body() body: SetActiveLlmGatewayDto) {
     return this.settings.setActiveProfile(user.orgId, user.id, body.activeId ?? null);
+  }
+
+  @Put("embedding-active")
+  @Permissions("settings.manage")
+  async setEmbeddingActive(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: SetEmbeddingActiveLlmGatewayDto
+  ) {
+    return this.settings.setEmbeddingActiveProfile(user.orgId, user.id, body.activeId ?? null);
   }
 
   @Put(":id")
