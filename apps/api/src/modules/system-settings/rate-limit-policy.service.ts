@@ -1,4 +1,6 @@
+import { createLogger } from "@modular/utils";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma, type RateLimitPolicy as RateLimitPolicyModel } from "@prisma/client";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
@@ -37,28 +39,71 @@ interface RateLimitPolicyCacheEntry {
 
 @Injectable()
 export class RateLimitPolicyService {
+  private readonly logger = createLogger({ name: "rate-limit-policy" });
+
   constructor(private readonly prisma: PrismaService, private readonly cache: CacheService) {}
 
   async listPolicies(): Promise<RateLimitPolicy[]> {
-    const records = await this.prisma.rateLimitPolicy.findMany({
-      orderBy: { feature: "asc" }
-    });
-    return records.map((record) => this.toPolicy(record));
+    try {
+      const records = await this.prisma.rateLimitPolicy.findMany({
+        orderBy: { feature: "asc" }
+      });
+      return records.map((record) => this.toPolicy(record));
+    } catch (error) {
+      if (this.isSchemaOutOfDateError(error)) {
+        this.logger.warn(
+          { err: error },
+          "RateLimitPolicy schema is out of date; returning empty list (run `pnpm db:migrate`)"
+        );
+        return [];
+      }
+      throw error;
+    }
   }
 
   async getPolicy(feature: string): Promise<RateLimitPolicy | null> {
     const normalizedFeature = this.normalizeFeature(feature);
     const cacheKey = this.cacheKey(normalizedFeature);
-    const cached = await this.cache.get<RateLimitPolicyCacheEntry>(cacheKey);
+
+    let cached: RateLimitPolicyCacheEntry | null = null;
+    try {
+      cached = await this.cache.get<RateLimitPolicyCacheEntry>(cacheKey);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, feature: normalizedFeature },
+        "Failed to read rate limit policy from cache; falling back to database"
+      );
+    }
+
     if (cached) {
       return cached.policy;
     }
 
-    const record = await this.prisma.rateLimitPolicy.findUnique({
-      where: { feature: normalizedFeature }
-    });
+    let record: RateLimitPolicyModel | null = null;
+    try {
+      record = await this.prisma.rateLimitPolicy.findUnique({
+        where: { feature: normalizedFeature }
+      });
+    } catch (error) {
+      if (this.isSchemaOutOfDateError(error)) {
+        this.logger.warn(
+          { err: error, feature: normalizedFeature },
+          "RateLimitPolicy schema is out of date; falling back to default settings (run `pnpm db:migrate`)"
+        );
+        return null;
+      }
+      throw error;
+    }
+
     const policy = record ? this.toPolicy(record) : null;
-    await this.cache.set(cacheKey, { policy }, CACHE_TTL_SECONDS);
+    try {
+      await this.cache.set(cacheKey, { policy }, CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, feature: normalizedFeature },
+        "Failed to write rate limit policy to cache"
+      );
+    }
     return policy;
   }
 
@@ -107,7 +152,14 @@ export class RateLimitPolicyService {
     ).catch(() => undefined);
 
     const policy = this.toPolicy(created);
-    await this.cache.set(this.cacheKey(normalizedFeature), { policy }, CACHE_TTL_SECONDS);
+    try {
+      await this.cache.set(this.cacheKey(normalizedFeature), { policy }, CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, feature: normalizedFeature },
+        "Failed to write rate limit policy to cache after create"
+      );
+    }
     return policy;
   }
 
@@ -164,7 +216,14 @@ export class RateLimitPolicyService {
     ).catch(() => undefined);
 
     const policy = this.toPolicy(updated);
-    await this.cache.set(this.cacheKey(normalizedFeature), { policy }, CACHE_TTL_SECONDS);
+    try {
+      await this.cache.set(this.cacheKey(normalizedFeature), { policy }, CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, feature: normalizedFeature },
+        "Failed to write rate limit policy to cache after update"
+      );
+    }
     return policy;
   }
 
@@ -197,12 +256,27 @@ export class RateLimitPolicyService {
       { orgId, actorId, resource: "system_settings", action: "rate_limit_policy_delete" }
     ).catch(() => undefined);
 
-    await this.cache.del(this.cacheKey(normalizedFeature));
+    try {
+      await this.cache.del(this.cacheKey(normalizedFeature));
+    } catch (error) {
+      this.logger.warn(
+        { err: error, feature: normalizedFeature },
+        "Failed to evict rate limit policy cache after delete"
+      );
+    }
   }
 
   async invalidateCache(feature?: string) {
     if (feature) {
-      await this.cache.del(this.cacheKey(this.normalizeFeature(feature)));
+      const normalizedFeature = this.normalizeFeature(feature);
+      try {
+        await this.cache.del(this.cacheKey(normalizedFeature));
+      } catch (error) {
+        this.logger.warn(
+          { err: error, feature: normalizedFeature },
+          "Failed to evict rate limit policy cache"
+        );
+      }
       return;
     }
     // Best-effort: rely on TTL for bulk invalidation to avoid blocking.
@@ -267,5 +341,12 @@ export class RateLimitPolicyService {
       return Math.floor(value);
     }
     return 0;
+  }
+
+  private isSchemaOutOfDateError(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === "P2021" || error.code === "P2022")
+    );
   }
 }

@@ -27,7 +27,7 @@ export class ActionRateLimitService {
     const normalizedIp = ip?.trim();
     if (normalizedIp) {
       await this.consumeOrThrow({
-        key: `crawl:create:ip:${normalizedIp}`,
+        key: `crawl:create:${orgId}:ip:${normalizedIp}`,
         limit: ipLimit,
         windowSeconds,
         message: "Too many crawl tasks created from this IP. Please wait before creating new tasks."

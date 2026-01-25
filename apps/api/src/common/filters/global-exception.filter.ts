@@ -180,6 +180,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     ) {
       return HttpStatus.SERVICE_UNAVAILABLE;
     }
+    if (this.isSchemaOutOfDateError(exception)) {
+      return HttpStatus.SERVICE_UNAVAILABLE;
+    }
     return HttpStatus.INTERNAL_SERVER_ERROR;
   }
 
@@ -187,6 +190,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     exception: unknown,
     statusCode: number,
   ): NormalizedHttpResponse {
+    if (this.isSchemaOutOfDateError(exception)) {
+      return {
+        statusCode,
+        message:
+          "Database schema is out of date; run `pnpm db:migrate` (and `pnpm db:seed`) before starting the API",
+        ...(this.exposeErrorDetails && exception instanceof Error
+          ? {
+              error: {
+                name: exception.name,
+                message: exception.message,
+                stack: exception.stack
+              }
+            }
+          : {})
+      };
+    }
+
     if (exception instanceof HttpException) {
       const response = exception.getResponse();
       const error = this.getErrorFromResponse(response, statusCode);
@@ -226,6 +246,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode,
       message: "Internal server error",
     };
+  }
+
+  private isSchemaOutOfDateError(exception: unknown): boolean {
+    return (
+      exception instanceof Prisma.PrismaClientKnownRequestError &&
+      (exception.code === "P2021" || exception.code === "P2022")
+    );
   }
 
   private getErrorFromResponse(response: unknown, statusCode: number): string {

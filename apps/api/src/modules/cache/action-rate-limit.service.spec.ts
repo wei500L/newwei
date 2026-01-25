@@ -38,7 +38,7 @@ describe("ActionRateLimitService", () => {
     );
     expect(rateLimiterMock.consume).toHaveBeenNthCalledWith(
       2,
-      "crawl:create:ip:10.0.0.1",
+      "crawl:create:org-1:ip:10.0.0.1",
       10,
       300
     );
@@ -68,7 +68,7 @@ describe("ActionRateLimitService", () => {
     );
     expect(rateLimiterMock.consume).toHaveBeenNthCalledWith(
       2,
-      "crawl:create:ip:10.0.0.1",
+      "crawl:create:org-1:ip:10.0.0.1",
       3,
       120
     );

@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
 import type { ArgumentsHost } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 
 import { GlobalExceptionFilter } from "./global-exception.filter";
 
@@ -94,5 +95,38 @@ describe("GlobalExceptionFilter", () => {
     const body = json.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(body.message).toBe("Internal server error");
     expect(String(body.message)).not.toContain("Prisma");
+  });
+
+  it("maps Prisma schema mismatch errors to 503 with actionable message", () => {
+    const exceptionEvents = { record: jest.fn() } as unknown as {
+      record: (payload: unknown) => void;
+    };
+    const filter = new GlobalExceptionFilter(exceptionEvents as never);
+
+    const exception = new Prisma.PrismaClientKnownRequestError("missing table", {
+      code: "P2021",
+      clientVersion: "test"
+    });
+
+    const json = jest.fn();
+    const response = {
+      setHeader: jest.fn(),
+      status: jest.fn(() => ({ json }))
+    };
+    const request = { url: "/graphql", method: "POST" };
+
+    const host = {
+      getType: () => "http",
+      switchToHttp: () => ({
+        getResponse: () => response,
+        getRequest: () => request
+      })
+    } as unknown as ArgumentsHost;
+
+    filter.catch(exception, host);
+
+    expect(response.status).toHaveBeenCalledWith(HttpStatus.SERVICE_UNAVAILABLE);
+    const body = json.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(String(body.message)).toContain("Database schema");
   });
 });
