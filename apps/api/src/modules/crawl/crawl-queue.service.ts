@@ -27,7 +27,7 @@ export class CrawlQueueService {
       "crawl-task",
       { taskId, orgId, triggeredById, traceId },
       {
-        jobId: `${taskId}:${Date.now()}`,
+        jobId: `${taskId}-${Date.now()}`,
         removeOnComplete: true,
         removeOnFail: false,
         attempts,

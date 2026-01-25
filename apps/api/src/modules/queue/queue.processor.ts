@@ -283,7 +283,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
             error: classified.error,
           };
 
-          const dlqJobId = `dlq:${ITEM_PIPELINE_QUEUE_NAME}:${job.id}:${attemptsMade}`;
+          const dlqJobId = `dlq-${ITEM_PIPELINE_QUEUE_NAME}-${job.id}-${attemptsMade}`;
           try {
             await this.dlqQueue.add("dlq", dlqPayload, {
               jobId: dlqJobId,

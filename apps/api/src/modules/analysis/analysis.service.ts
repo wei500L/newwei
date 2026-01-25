@@ -41,7 +41,7 @@ export class AnalysisService {
     await this.queue.add(
       "correlation",
       { type: "correlation", analysisId: record.id, traceId },
-      { jobId: `corr:${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
+      { jobId: `corr-${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
     );
     return record;
   }
@@ -58,7 +58,7 @@ export class AnalysisService {
     await this.queue.add(
       "anomaly",
       { type: "anomaly", analysisId: record.id, traceId },
-      { jobId: `anomaly:${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
+      { jobId: `anomaly-${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
     );
     return record;
   }

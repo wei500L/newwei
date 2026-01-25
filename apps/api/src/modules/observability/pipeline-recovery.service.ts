@@ -61,7 +61,7 @@ export class PipelineRecoveryService {
     const runs = processed.map((record) => {
       const rawItemId = record.rawItemId?.toString?.() ?? "";
       const processedItemId = (record as { _id?: unknown })._id?.toString?.() ?? "";
-      const jobId = rawItemId ? `${itemMetaId}:${rawItemId}` : "";
+      const jobId = rawItemId ? `${itemMetaId}-${rawItemId}` : "";
       return {
         jobId,
         rawItemId,

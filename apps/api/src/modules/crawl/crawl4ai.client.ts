@@ -199,23 +199,23 @@ export class Crawl4aiClient {
         headless,
         enable_stealth: options.enableStealthMode ?? undefined,
         browser_type: options.enableUndetectedBrowser ? "undetected" : undefined,
-        disable_images: options.includeImages === false ? true : undefined,
-        emulate_mobile: false,
+        light_mode: options.includeImages === false ? true : undefined,
         use_managed_browser: useManagedBrowser ? true : undefined,
         use_persistent_context: usePersistentContext ? true : undefined,
         user_data_dir: options.userDataDir,
         proxy_config: proxyPayload,
         headers,
         cookies,
-        user_agent: userAgent
+        user_agent: userAgent,
+        user_agent_mode: options.userAgentMode,
+        user_agent_generator_config: userAgentGenerator,
+        storage_state: this.buildStorageState(options.storageState)
       })
     };
     const crawlerConfig = {
       type: "CrawlerRunConfig",
       params: this.compact({
         cache_mode: options.cacheMode ?? "bypass",
-        only_main_content: options.onlyMainContent ?? true,
-        extract_links: options.extractLinks ?? false,
         scan_full_page: options.scanFullPage ?? false,
         adjust_viewport_to_content: options.adjustViewportToContent ? true : undefined,
         scroll_delay: scrollDelay,
@@ -236,7 +236,6 @@ export class Crawl4aiClient {
         wait_for: this.buildWaitFor(options),
         wait_for_timeout: this.normalizeWaitForTimeout(options.waitForTimeoutMs),
         session_id: options.sessionId,
-        storage_state: this.buildStorageState(options.storageState),
         ...(cleanMarkdown ?? {}),
         table_score_threshold: this.normalizeTableScore(options.tableScoreThreshold),
         table_extraction: this.buildTableExtraction(options.tableExtraction),
@@ -248,7 +247,7 @@ export class Crawl4aiClient {
         css_selector: cssSelector,
         excluded_tags: excludedTags,
         wait_for_images: waitForImages ? true : undefined,
-        text_mode: textMode ? true : undefined,
+        only_text: textMode ? true : undefined,
         screenshot: captureScreenshot ? true : undefined,
         virtual_scroll_config: virtualScroll
       })
@@ -298,10 +297,20 @@ export class Crawl4aiClient {
             type: customStrategy.type
           };
     }
+    const contentFilter: CrawlMarkdownFilter | undefined =
+      options.markdownFilter ??
+      (options.onlyMainContent
+        ? {
+            type: "pruning",
+            thresholdType: "dynamic",
+            minWordThreshold:
+              typeof options.wordCountThreshold === "number" ? options.wordCountThreshold : undefined
+          }
+        : undefined);
     const params = this.compact({
       content_source: options.markdownOptions?.contentSource,
       options: this.buildMarkdownOptionsPayload(options.markdownOptions),
-      content_filter: this.buildContentFilterPayload(options.markdownFilter)
+      content_filter: this.buildContentFilterPayload(contentFilter)
     });
     return Object.keys(params).length > 0
       ? {
@@ -396,7 +405,6 @@ export class Crawl4aiClient {
     const params = this.compact({
       include_internal: config.includeInternal,
       include_external: config.includeExternal,
-      include_social: config.includeSocial,
       max_links: config.maxLinks,
       concurrency: config.concurrency,
       timeout: config.timeoutSeconds,
@@ -610,8 +618,6 @@ export class Crawl4aiClient {
           url_matcher: matcher?.pattern,
           match_mode: matcher?.matchMode,
           cache_mode: overrides?.cacheMode,
-          only_main_content: overrides?.onlyMainContent,
-          extract_links: overrides?.extractLinks,
           scan_full_page: overrides?.scanFullPage,
           adjust_viewport_to_content: overrides?.adjustViewportToContent ? true : undefined,
           scroll_delay:
@@ -630,7 +636,7 @@ export class Crawl4aiClient {
           css_selector: cssSelector,
           excluded_tags: excludedTags,
           wait_for_images: overrides?.waitForImages ? true : undefined,
-          text_mode: overrides?.textMode ? true : undefined,
+          only_text: overrides?.textMode ? true : undefined,
           screenshot: overrides?.captureScreenshot ? true : undefined,
           virtual_scroll_config: virtualScroll
         });

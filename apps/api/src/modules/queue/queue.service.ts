@@ -41,7 +41,7 @@ export class QueueService {
     opts: JobsOptions = {},
     meta: PipelineJobMeta = {}
   ) {
-    const jobId = `${itemMetaId}:${rawItemId}`;
+    const jobId = `${itemMetaId}-${rawItemId}`;
     const traceId = ensureTraceId(getCurrentTraceId());
     const processedItemId =
       typeof meta.processedItemId === "string" && meta.processedItemId.length > 0

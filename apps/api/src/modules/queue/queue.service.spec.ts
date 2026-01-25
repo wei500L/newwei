@@ -80,7 +80,7 @@ describe("QueueService", () => {
     );
 
     expect(orgStats.upsertJobMetaAndCount).toHaveBeenCalledWith({
-      jobId: "meta-1:65f1c2d3e4f5a6b7c8d9e0f1",
+      jobId: "meta-1-65f1c2d3e4f5a6b7c8d9e0f1",
       orgId: "org-1",
       status: "delayed",
       keepCompleted: false,

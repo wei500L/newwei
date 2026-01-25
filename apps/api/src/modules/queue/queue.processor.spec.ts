@@ -498,7 +498,7 @@ describe("QueueProcessor", () => {
           errorKind: QueueErrorKind.Permanent,
         }),
         expect.objectContaining({
-          jobId: expect.stringContaining("dlq:"),
+          jobId: expect.stringContaining("dlq-"),
           removeOnComplete: false,
           removeOnFail: false,
           attempts: 1,
@@ -562,7 +562,7 @@ describe("QueueProcessor", () => {
         "dlq",
         expect.any(Object),
         expect.objectContaining({
-          jobId: `dlq:${ITEM_PIPELINE_QUEUE_NAME}:${job.id}:2`,
+          jobId: `dlq-${ITEM_PIPELINE_QUEUE_NAME}-${job.id}-2`,
         })
       );
     });

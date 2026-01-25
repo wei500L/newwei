@@ -1041,7 +1041,7 @@ export class AlertsService {
           this.buildDeliveryJobName(delivery.id),
           { type: "deliver", deliveryId: delivery.id, traceId },
           {
-            jobId: `deliver:${delivery.id}`,
+            jobId: `deliver-${delivery.id}`,
             attempts,
             backoff: { type: "alertNotifications" },
             removeOnComplete: true,
@@ -1371,7 +1371,7 @@ export class AlertsService {
       this.buildRuleJobName(rule.id),
       { type: "evaluate", ruleId: rule.id },
       {
-        jobId: `evaluate:${rule.id}`,
+        jobId: `evaluate-${rule.id}`,
         repeat: { every },
         removeOnComplete: true,
         removeOnFail: false
@@ -1396,6 +1396,7 @@ export class AlertsService {
         }
       }
     }
+    await this.queue.remove(`evaluate-${ruleId}`);
     await this.queue.remove(`evaluate:${ruleId}`);
     await this.queue.remove(this.buildRuleJobName(ruleId));
   }
