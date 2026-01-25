@@ -1,7 +1,7 @@
 'use client';
 
 import { InfoCircleOutlined } from '@ant-design/icons';
-import { Card, Col, Collapse, Descriptions, List, Row, Skeleton, Space, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Card, Col, Collapse, Descriptions, List, Row, Skeleton, Space, Tag, Tooltip, Typography } from 'antd';
 import type { CollapseProps } from 'antd';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -99,10 +99,13 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     [item?.raw?.payload]
   );
   const processedStatus = item?.processed?.status ?? null;
+  const processedError = item?.processed?.error ?? null;
   const rawSource = item?.raw?.source ?? null;
   const duplicateSimilarity = item?.processed?.duplicateSimilarity ?? null;
   const duplicateOf = item?.processed?.duplicateOf ?? null;
   const llm = item?.processed?.llm ?? null;
+  const processedErrorMessage = toString(processedError?.message);
+  const processedErrorName = toString(processedError?.name);
 
   const summary = toString(processedResult?.summary);
   const keyPoints = toStringList(processedResult?.key_points);
@@ -265,6 +268,14 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
 
   return (
     <div className="flex flex-col gap-6">
+      {processedStatus === 'failed' && processedErrorMessage ? (
+        <Alert
+          type="error"
+          showIcon
+          message={t('items.detail.processedErrorTitle', { defaultValue: 'Processing failed' })}
+          description={processedErrorName ? `${processedErrorName}: ${processedErrorMessage}` : processedErrorMessage}
+        />
+      ) : null}
       <Space direction="vertical" size={2}>
         <Typography.Title level={4} ellipsis={{ rows: 2 }} style={{ margin: 0 }}>
           {item.title}

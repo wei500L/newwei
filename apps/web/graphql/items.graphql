@@ -112,6 +112,10 @@ query Item($id: String!) {
     processed {
       id
       status
+      error {
+        message
+        name
+      }
       tags
       duplicateOf
       duplicateSimilarity

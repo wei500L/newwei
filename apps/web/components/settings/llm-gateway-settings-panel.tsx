@@ -45,9 +45,12 @@ interface LlmGatewayProfile {
   updatedAt: string;
 }
 
+type LlmGatewayEmbeddingMode = "follow_completion" | "use_default";
+
 interface LlmGatewaySettingsResponse {
   activeId: string | null;
   embeddingActiveId: string | null;
+  embeddingMode: LlmGatewayEmbeddingMode;
   profiles: LlmGatewayProfile[];
 }
 
@@ -134,10 +137,16 @@ interface LlmGatewayFormValues {
   enabled: boolean;
 }
 
-const EMPTY_SETTINGS: LlmGatewaySettingsResponse = { activeId: null, embeddingActiveId: null, profiles: [] };
+const EMPTY_SETTINGS: LlmGatewaySettingsResponse = {
+  activeId: null,
+  embeddingActiveId: null,
+  embeddingMode: "follow_completion",
+  profiles: []
+};
 const DRAFT_CREATE_KEY = "__draft_create__";
 const DRAFT_EDIT_KEY = "__draft_edit__";
 const FOLLOW_COMPLETION_KEY = "__follow_completion__";
+const USE_DEFAULT_KEY = "__use_default__";
 const DEFAULT_LLM_GATEWAY_API_BASE =
   (process.env.NEXT_PUBLIC_LLM_GATEWAY_DEFAULT_API_BASE ?? "").trim() || "http://localhost:4001";
 
@@ -243,13 +252,32 @@ export function LlmGatewaySettingsPanel() {
     return settings.profiles.find((profile) => profile.id === settings.activeId) ?? null;
   }, [settings.activeId, settings.profiles]);
 
-  const embeddingEffectiveId = settings.embeddingActiveId ?? settings.activeId;
+  const embeddingResolved = useMemo(() => {
+    if (settings.embeddingActiveId) {
+      return { kind: "profile" as const, id: settings.embeddingActiveId };
+    }
+    if (settings.embeddingMode === "use_default") {
+      return { kind: "default" as const };
+    }
+    if (settings.activeId) {
+      return { kind: "follow_completion" as const, id: settings.activeId };
+    }
+    return { kind: "default" as const };
+  }, [settings.activeId, settings.embeddingActiveId, settings.embeddingMode]);
+
+  const embeddingSelectValue = useMemo(() => {
+    if (settings.embeddingActiveId) {
+      return settings.embeddingActiveId;
+    }
+    return settings.embeddingMode === "use_default" ? USE_DEFAULT_KEY : FOLLOW_COMPLETION_KEY;
+  }, [settings.embeddingActiveId, settings.embeddingMode]);
+
   const embeddingActiveProfile = useMemo(() => {
-    if (!embeddingEffectiveId) {
+    if (embeddingResolved.kind === "default") {
       return null;
     }
-    return settings.profiles.find((profile) => profile.id === embeddingEffectiveId) ?? null;
-  }, [embeddingEffectiveId, settings.profiles]);
+    return settings.profiles.find((profile) => profile.id === embeddingResolved.id) ?? null;
+  }, [embeddingResolved, settings.profiles]);
 
   const presets = useMemo(
     () => [
@@ -501,10 +529,16 @@ export function LlmGatewaySettingsPanel() {
     }
   };
 
-  const handleActivateEmbedding = async (profileId: string | null) => {
+  const handleActivateEmbedding = async (
+    profileId: string | null,
+    mode?: LlmGatewayEmbeddingMode
+  ) => {
     setEmbeddingActivating(true);
     try {
-      await apiClient.put("system-settings/llm-gateways/embedding-active", { activeId: profileId });
+      await apiClient.put("system-settings/llm-gateways/embedding-active", {
+        activeId: profileId,
+        ...(!profileId && mode ? { mode } : {})
+      });
       await loadSettings();
       messageApi.success(
         t("settings.llmGateway.embeddingActive.messages.activated", { defaultValue: "Embeddings 配置已更新" })
@@ -1184,7 +1218,20 @@ export function LlmGatewaySettingsPanel() {
             <Typography.Text type="secondary">
               {t("settings.llmGateway.embeddingActive.currentEmbedding", { defaultValue: "当前 Embeddings 配置" })}
               :{" "}
-              {embeddingActiveProfile ? (
+              {embeddingResolved.kind === "default" ? (
+                <Space size={6} wrap>
+                  <Typography.Text>
+                    {t("settings.llmGateway.embeddingActive.default", {
+                      defaultValue: "默认配置（config/env）"
+                    })}
+                  </Typography.Text>
+                  <Tag>
+                    {t("settings.llmGateway.embeddingActive.defaultTag", {
+                      defaultValue: "默认"
+                    })}
+                  </Tag>
+                </Space>
+              ) : embeddingActiveProfile ? (
                 <Space size={6} wrap>
                   <Typography.Text>{embeddingActiveProfile.name}</Typography.Text>
                   {settings.embeddingActiveId ? (
@@ -1212,6 +1259,12 @@ export function LlmGatewaySettingsPanel() {
                     <Typography.Text code copyable>
                       {embeddingActiveProfile.embeddingModel}
                     </Typography.Text>
+                  ) : embeddingResolved.kind === "follow_completion" ? (
+                    <Tag>
+                      {t("settings.llmGateway.embeddingActive.inheritEmbeddingModel", {
+                        defaultValue: "继承默认 Embedding 模型"
+                      })}
+                    </Tag>
                   ) : (
                     <Tag color="red">
                       {t("settings.llmGateway.embeddingActive.missingEmbeddingModel", {
@@ -1231,7 +1284,7 @@ export function LlmGatewaySettingsPanel() {
                 style={{ flex: 1, minWidth: 260 }}
               >
                 <Select
-                  value={settings.embeddingActiveId ? settings.embeddingActiveId : FOLLOW_COMPLETION_KEY}
+                  value={embeddingSelectValue}
                   placeholder={t("settings.llmGateway.embeddingActive.selectPlaceholder", {
                     defaultValue: "选择用于 Embeddings 的网关 Profile"
                   })}
@@ -1247,11 +1300,28 @@ export function LlmGatewaySettingsPanel() {
                                   defaultValue: "跟随对话模型（{{name}}）",
                                   name: completionActiveProfile.name
                                 })
-                              : t("settings.llmGateway.embeddingActive.followDefault", {
-                                  defaultValue: "使用默认配置（config/env）"
+                              : t("settings.llmGateway.embeddingActive.followCompletionEmpty", {
+                                  defaultValue: "跟随对话模型（当前未启用）"
                                 })}
                           </Typography.Text>
                           <Tag>{t("settings.llmGateway.embeddingActive.followTag", { defaultValue: "跟随" })}</Tag>
+                        </Space>
+                      )
+                    },
+                    {
+                      value: USE_DEFAULT_KEY,
+                      label: (
+                        <Space size={6} wrap>
+                          <Typography.Text>
+                            {t("settings.llmGateway.embeddingActive.useDefault", {
+                              defaultValue: "使用默认配置（config/env）"
+                            })}
+                          </Typography.Text>
+                          <Tag>
+                            {t("settings.llmGateway.embeddingActive.defaultTag", {
+                              defaultValue: "默认"
+                            })}
+                          </Tag>
                         </Space>
                       )
                     },
@@ -1278,9 +1348,17 @@ export function LlmGatewaySettingsPanel() {
                       )
                     }))
                   ]}
-                  onChange={(value) =>
-                    void handleActivateEmbedding(value === FOLLOW_COMPLETION_KEY ? null : value)
-                  }
+                  onChange={(value) => {
+                    if (value === FOLLOW_COMPLETION_KEY) {
+                      void handleActivateEmbedding(null, "follow_completion");
+                      return;
+                    }
+                    if (value === USE_DEFAULT_KEY) {
+                      void handleActivateEmbedding(null, "use_default");
+                      return;
+                    }
+                    void handleActivateEmbedding(value);
+                  }}
                   style={{ width: "100%" }}
                 />
               </Form.Item>

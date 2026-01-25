@@ -86,7 +86,10 @@ export const apiEnvSchema = baseEnvSchema.extend({
   LITELLM_EMBEDDING_MODEL: z.string().optional(),
   LITELLM_API_URL: z.string().url().optional(),
   LITELLM_API_BASE: z.string().url().default("http://localhost:4001"),
-  LITELLM_API_KEY: z.string().optional(),
+  LITELLM_API_KEY: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).optional()
+  ),
   LITELLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   LITELLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.2),
   LITELLM_TOP_P: z.coerce.number().min(0).max(1).default(0.9),

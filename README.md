@@ -258,7 +258,7 @@ infra/
    修改 `infra/docker/.env`（可从 `infra/docker/.env.sample` 复制）：
 
    - `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`：上游模型真实凭证（LiteLLM 代理内使用）
-   - 可选：`LITELLM_MASTER_KEY` 用于保护代理（若设置，也请把 `LITELLM_API_KEY` 设为同一值，方便 API 侧调用）
+   - 可选：`LITELLM_MASTER_KEY` 用于保护代理（非空才生效；若设置，也请把 `LITELLM_API_KEY` 设为同一值，方便 API 侧调用）
    - `NEWS_PIPELINE_CONFIG_PATH`：docker 默认使用 `config/news-pipeline.config.docker.yaml`（容器内指向 `http://litellm:4000`）
 
 2. **启动服务**

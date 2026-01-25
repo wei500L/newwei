@@ -96,6 +96,15 @@ export class RawItemPreviewModelGraph {
 }
 
 @ObjectType()
+export class ProcessedItemErrorModelGraph {
+  @Field()
+  message!: string;
+
+  @Field(() => String, { nullable: true })
+  name?: string | null;
+}
+
+@ObjectType()
 export class ProcessedItemModelGraph {
   @Field(() => ID)
   id!: string;
@@ -105,6 +114,9 @@ export class ProcessedItemModelGraph {
 
   @Field()
   status!: string;
+
+  @Field(() => ProcessedItemErrorModelGraph, { nullable: true })
+  error?: ProcessedItemErrorModelGraph | null;
 
   @Field(() => [String])
   tags!: string[];

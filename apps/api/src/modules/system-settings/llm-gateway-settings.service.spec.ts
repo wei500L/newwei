@@ -89,6 +89,7 @@ describe("LlmGatewaySettingsService", () => {
   it("returns empty settings when no record exists", async () => {
     const response = await service.list();
     expect(response.activeId).toBeNull();
+    expect(response.embeddingMode).toBe("follow_completion");
     expect(response.profiles).toEqual([]);
   });
 
@@ -108,6 +109,7 @@ describe("LlmGatewaySettingsService", () => {
     const listed = await service.list();
     expect(listed.activeId).toBe(created.id);
     expect(listed.embeddingActiveId).toBeNull();
+    expect(listed.embeddingMode).toBe("follow_completion");
     expect(listed.profiles).toHaveLength(1);
   });
 
@@ -136,6 +138,37 @@ describe("LlmGatewaySettingsService", () => {
     const listed = await service.list();
     expect(listed.activeId).toBe(second.id);
     expect(listed.embeddingActiveId).toBeNull();
+    expect(listed.embeddingMode).toBe("follow_completion");
+    expect(listed.profiles.map((profile) => profile.id)).toEqual([first.id, second.id]);
+  });
+
+  it("supports using default config/env for embeddings even when completion profile is active", async () => {
+    const first = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway A",
+      apiBase: "http://gateway-a:4001/v1",
+      model: "openai/gpt-4o-mini",
+      embeddingModel: "openai/text-embedding-3-small",
+      enabled: true
+    });
+
+    const second = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway B",
+      apiBase: "http://gateway-b:4001/v1",
+      model: "openai/gpt-4o-mini",
+      embeddingModel: "openai/text-embedding-3-small",
+      enabled: true
+    });
+
+    await service.setActiveProfile("org-1", "actor-1", second.id);
+    await service.setEmbeddingActiveProfile("org-1", "actor-1", null, "use_default");
+
+    const embeddingCfg = await service.getActiveEmbeddingConfig();
+    expect(embeddingCfg).toBeNull();
+
+    const listed = await service.list();
+    expect(listed.activeId).toBe(second.id);
+    expect(listed.embeddingActiveId).toBeNull();
+    expect(listed.embeddingMode).toBe("use_default");
     expect(listed.profiles.map((profile) => profile.id)).toEqual([first.id, second.id]);
   });
 

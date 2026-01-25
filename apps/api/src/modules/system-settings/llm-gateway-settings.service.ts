@@ -24,9 +24,12 @@ export type LlmGatewayProfilePublic = Omit<LiteLlmEnvConfig, "apiKey"> & {
   updatedAt: string;
 };
 
+export type LlmGatewayEmbeddingMode = "follow_completion" | "use_default";
+
 export interface LlmGatewaySettingsPublic {
   activeId: string | null;
   embeddingActiveId: string | null;
+  embeddingMode: LlmGatewayEmbeddingMode;
   profiles: LlmGatewayProfilePublic[];
 }
 
@@ -49,6 +52,7 @@ interface StoredProfile extends Omit<LiteLlmEnvConfig, "apiKey"> {
 interface StoredSettings {
   activeId: string | null;
   embeddingActiveId: string | null;
+  embeddingMode?: unknown;
   profiles: StoredProfile[];
 }
 
@@ -74,6 +78,7 @@ export class LlmGatewaySettingsService {
     return {
       activeId: settings.activeId,
       embeddingActiveId: settings.embeddingActiveId,
+      embeddingMode: settings.embeddingMode,
       profiles: settings.profiles.map((profile) => this.toPublicProfile(profile))
     };
   }
@@ -197,7 +202,8 @@ export class LlmGatewaySettingsService {
   async setEmbeddingActiveProfile(
     orgId: string,
     actorId: string,
-    activeId: string | null
+    activeId: string | null,
+    mode?: LlmGatewayEmbeddingMode
   ): Promise<LlmGatewaySettingsPublic> {
     const settings = await this.loadSettings();
     if (activeId) {
@@ -208,11 +214,11 @@ export class LlmGatewaySettingsService {
       if (!found.enabled) {
         throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
       }
-      if (!found.embeddingModel) {
-        throw new BadRequestException("Cannot activate profile for embeddings without embeddingModel configured");
-      }
     }
     settings.embeddingActiveId = activeId;
+    if (!activeId) {
+      settings.embeddingMode = mode ?? "follow_completion";
+    }
 
     await this.saveSettings(orgId, actorId, settings, "llm_gateway_embedding_activate", {
       embeddingActiveId: activeId
@@ -252,7 +258,9 @@ export class LlmGatewaySettingsService {
 
   async getActiveEmbeddingConfig(): Promise<(LiteLlmEnvConfig & { apiKey?: string }) | null> {
     const settings = await this.loadSettings();
-    const activeId = settings.embeddingActiveId ?? settings.activeId;
+    const activeId =
+      settings.embeddingActiveId ??
+      (settings.embeddingMode === "use_default" ? null : settings.activeId);
     if (!activeId) {
       return null;
     }
@@ -382,6 +390,9 @@ export class LlmGatewaySettingsService {
     const activeIdRaw = this.normalizeString(record?.activeId) ?? null;
     const embeddingActiveIdRaw =
       this.normalizeString((record as unknown as { embeddingActiveId?: unknown })?.embeddingActiveId) ?? null;
+    const embeddingModeRaw = this.normalizeString((record as { embeddingMode?: unknown } | null)?.embeddingMode);
+    const embeddingMode: LlmGatewayEmbeddingMode =
+      embeddingModeRaw === "use_default" ? "use_default" : "follow_completion";
     const profiles = Array.isArray(record?.profiles) ? record?.profiles : [];
 
     const normalizedProfiles = profiles
@@ -404,6 +415,7 @@ export class LlmGatewaySettingsService {
     return {
       activeId,
       embeddingActiveId,
+      embeddingMode,
       profiles: normalizedProfiles
     };
   }

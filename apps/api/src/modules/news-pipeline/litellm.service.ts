@@ -127,7 +127,8 @@ export class LiteLlmService {
   async acompletion(
     params: LiteLlmCompletionParams,
   ): Promise<LiteLlmCompletionResponse> {
-    const { cfg, client, baseUrl } = await this.prepareRequest("completion");
+    const { cfg, client, baseUrl, apiKeyConfigured } =
+      await this.prepareRequest("completion");
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
       new Set(
@@ -137,7 +138,14 @@ export class LiteLlmService {
     let lastError: unknown;
     for (const model of uniqueModels) {
       try {
-        return await this.executeWithRetry(client, baseUrl, cfg, model, params);
+        return await this.executeWithRetry(
+          client,
+          baseUrl,
+          cfg,
+          apiKeyConfigured,
+          model,
+          params,
+        );
       } catch (error) {
         lastError = error;
         this.logger.warn(
@@ -157,16 +165,25 @@ export class LiteLlmService {
   async embedding(
     params: LiteLlmEmbeddingParams,
   ): Promise<LiteLlmEmbeddingResponse> {
-    const { cfg, client, baseUrl } = await this.prepareRequest("embedding");
+    const { cfg, client, baseUrl, apiKeyConfigured } =
+      await this.prepareRequest("embedding");
     const model = params.model ?? cfg.embeddingModel ?? cfg.model;
     if (!model) {
       throw new Error("LiteLLM embedding model is not configured");
     }
-    return this.executeEmbeddingWithRetry(client, baseUrl, cfg, model, params);
+    return this.executeEmbeddingWithRetry(
+      client,
+      baseUrl,
+      cfg,
+      apiKeyConfigured,
+      model,
+      params,
+    );
   }
 
   async *stream(params: LiteLlmCompletionParams): AsyncGenerator<LiteLlmStreamChunk> {
-    const { cfg, client, baseUrl } = await this.prepareRequest("completion");
+    const { cfg, client, baseUrl, apiKeyConfigured } =
+      await this.prepareRequest("completion");
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
       new Set(models.filter((model) => typeof model === "string" && model.length > 0)),
@@ -176,7 +193,14 @@ export class LiteLlmService {
     for (const model of uniqueModels) {
       let started = false;
       try {
-        for await (const chunk of this.executeStream(client, baseUrl, cfg, model, params)) {
+        for await (const chunk of this.executeStream(
+          client,
+          baseUrl,
+          cfg,
+          apiKeyConfigured,
+          model,
+          params,
+        )) {
           started = true;
           yield chunk;
         }
@@ -203,6 +227,7 @@ export class LiteLlmService {
     client: AxiosInstance,
     baseUrl: string,
     cfg: { timeoutMs: number; temperature: number; topP: number; maxOutputTokens: number; maxRetries: number },
+    apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
   ) {
@@ -259,6 +284,7 @@ export class LiteLlmService {
           latencyMs,
         } satisfies LiteLlmCompletionResponse;
       } catch (error) {
+        this.decorateAxiosError(error, { apiKeyConfigured });
         lastError = error;
         attempt += 1;
         if (attempt >= maxAttempts || !this.isRetryable(error)) {
@@ -278,6 +304,7 @@ export class LiteLlmService {
     client: AxiosInstance,
     baseUrl: string,
     cfg: { timeoutMs: number; temperature: number; topP: number; maxOutputTokens: number },
+    apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
   ): AsyncGenerator<LiteLlmStreamChunk> {
@@ -293,18 +320,24 @@ export class LiteLlmService {
       metadata: compatibility.supportsMetadata ? params.metadata : undefined,
     };
 
-    const response = await this.postWithCompatibilityFallback(
-      client,
-      baseUrl,
-      "/v1/chat/completions",
-      "/chat/completions",
-      payload,
-      {
-        responseType: "stream",
-        timeout: params.timeoutMs ?? cfg.timeoutMs,
-        headers: { Accept: "text/event-stream" },
-      },
-    );
+    let response: AxiosResponse;
+    try {
+      response = await this.postWithCompatibilityFallback(
+        client,
+        baseUrl,
+        "/v1/chat/completions",
+        "/chat/completions",
+        payload,
+        {
+          responseType: "stream",
+          timeout: params.timeoutMs ?? cfg.timeoutMs,
+          headers: { Accept: "text/event-stream" },
+        },
+      );
+    } catch (error) {
+      this.decorateAxiosError(error, { apiKeyConfigured });
+      throw error;
+    }
     const stream = response.data as Readable;
 
     for await (const data of this.iterateSseData(stream)) {
@@ -373,6 +406,7 @@ export class LiteLlmService {
     client: AxiosInstance,
     baseUrl: string,
     cfg: { timeoutMs: number; maxRetries: number },
+    apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmEmbeddingParams,
   ) {
@@ -423,6 +457,7 @@ export class LiteLlmService {
           latencyMs,
         } satisfies LiteLlmEmbeddingResponse;
       } catch (error) {
+        this.decorateAxiosError(error, { apiKeyConfigured });
         lastError = error;
         attempt += 1;
         if (attempt >= maxAttempts || !this.isRetryable(error)) {
@@ -693,6 +728,48 @@ export class LiteLlmService {
     return String(responseData);
   }
 
+  private decorateAxiosError(
+    error: unknown,
+    context: {
+      apiKeyConfigured: boolean;
+    },
+  ) {
+    if (!(error instanceof AxiosError)) {
+      return;
+    }
+    const status = error.response?.status;
+    if (typeof status !== "number") {
+      return;
+    }
+
+    let detail = this.extractAxiosErrorText(error);
+    detail = typeof detail === "string" ? detail.trim() : "";
+
+    const lowerDetail = detail.toLowerCase();
+    if (status === 401 || status === 403) {
+      const authHint = this.buildAuthHint(status, context.apiKeyConfigured);
+      if (!detail || lowerDetail === "unauthorized" || lowerDetail === "forbidden") {
+        detail = authHint;
+      } else if (!lowerDetail.includes("apikey") && !lowerDetail.includes("api key")) {
+        detail = `${detail} (${authHint})`;
+      }
+    }
+
+    if (detail.length > 500) {
+      detail = `${detail.slice(0, 500)}…`;
+    }
+
+    error.message = `LiteLLM request failed (HTTP ${status})${detail ? `: ${detail}` : ""}`;
+  }
+
+  private buildAuthHint(status: number, apiKeyConfigured: boolean) {
+    const base = status === 403 ? "Forbidden" : "Unauthorized";
+    if (apiKeyConfigured) {
+      return `${base} (check apiKey)`;
+    }
+    return `${base} (apiKey is not configured)`;
+  }
+
   private isRetryable(error: unknown) {
     if (!(error instanceof AxiosError)) {
       return false;
@@ -714,10 +791,11 @@ export class LiteLlmService {
   private getClient(cfg: { apiBase: string; apiKey?: string; timeoutMs: number }) {
     const baseUrl = normalizeApiBase(cfg.apiBase);
     const apiKey = normalizeApiKey(cfg.apiKey);
+    const apiKeyConfigured = Boolean(apiKey);
     const key = this.buildClientKey(baseUrl, apiKey);
     const existing = this.clients.get(key);
     if (existing) {
-      return { client: existing, baseUrl };
+      return { client: existing, baseUrl, apiKeyConfigured };
     }
 
     const client = axios.create({
@@ -730,7 +808,7 @@ export class LiteLlmService {
     });
 
     this.clients.set(key, client);
-    return { client, baseUrl };
+    return { client, baseUrl, apiKeyConfigured };
   }
 
   private async prepareRequest(kind: "completion" | "embedding") {
@@ -749,8 +827,8 @@ export class LiteLlmService {
       throw new Error("LiteLLM request throttled by local rate limiter");
     }
 
-    const { client, baseUrl } = this.getClient(cfg);
-    return { cfg, client, baseUrl };
+    const { client, baseUrl, apiKeyConfigured } = this.getClient(cfg);
+    return { cfg, client, baseUrl, apiKeyConfigured };
   }
 
   private async resolveCompletionConfig() {

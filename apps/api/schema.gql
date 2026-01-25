@@ -1433,6 +1433,11 @@ input PolicyEventImpactInput {
   policyName: String!
 }
 
+type ProcessedItemErrorModelGraph {
+  message: String!
+  name: String
+}
+
 type ProcessedItemLlmModel {
   completionTokens: Float
   costUsd: Float
@@ -1447,6 +1452,7 @@ type ProcessedItemModelGraph {
   createdAt: DateTime!
   duplicateOf: String
   duplicateSimilarity: Float
+  error: ProcessedItemErrorModelGraph
   id: ID!
   itemMetaId: String!
   llm: ProcessedItemLlmModel

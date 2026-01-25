@@ -1693,6 +1693,12 @@ export type PolicyEventImpactInput = {
   policyName: Scalars['String']['input'];
 };
 
+export type ProcessedItemErrorModelGraph = {
+  __typename?: 'ProcessedItemErrorModelGraph';
+  message: Scalars['String']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+};
+
 export type ProcessedItemLlmModel = {
   __typename?: 'ProcessedItemLlmModel';
   completionTokens?: Maybe<Scalars['Float']['output']>;
@@ -1709,6 +1715,7 @@ export type ProcessedItemModelGraph = {
   createdAt: Scalars['DateTime']['output'];
   duplicateOf?: Maybe<Scalars['String']['output']>;
   duplicateSimilarity?: Maybe<Scalars['Float']['output']>;
+  error?: Maybe<ProcessedItemErrorModelGraph>;
   id: Scalars['ID']['output'];
   itemMetaId: Scalars['String']['output'];
   llm?: Maybe<ProcessedItemLlmModel>;
@@ -2620,7 +2627,7 @@ export type ItemQueryVariables = Exact<{
 }>;
 
 
-export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, ingestedAt: any, publishedAt?: string | null, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, result?: string | null, resultJson?: any | null, createdAt: any, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null } | null };
+export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, ingestedAt: any, publishedAt?: string | null, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, result?: string | null, resultJson?: any | null, createdAt: any, error?: { __typename?: 'ProcessedItemErrorModelGraph', message: string, name?: string | null } | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null } | null };
 
 export type KnowledgeGraphEvidenceReviewQueueQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -4663,6 +4670,10 @@ export const ItemDocument = gql`
     processed {
       id
       status
+      error {
+        message
+        name
+      }
       tags
       duplicateOf
       duplicateSimilarity

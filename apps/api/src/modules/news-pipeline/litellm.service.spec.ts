@@ -414,6 +414,40 @@ describe("LiteLlmService", () => {
     });
   });
 
+  describe("error messaging", () => {
+    const completionParams: LiteLlmCompletionParams = {
+      messages: [{ role: "user", content: "Hello" }],
+    };
+
+    beforeEach(() => {
+      configService.config = {
+        ...mockConfig,
+        litellm: {
+          ...mockConfig.litellm,
+          apiKey: undefined,
+          fallbackModels: [],
+          maxRetries: 1,
+        },
+      };
+    });
+
+    it("should add auth hint when apiKey is missing and gateway returns 401", async () => {
+      const error401 = new AxiosError("Unauthorized", "ERR_BAD_REQUEST", undefined, undefined, {
+        status: 401,
+        data: undefined,
+        statusText: "Unauthorized",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      });
+
+      mockAxiosPost.mockRejectedValueOnce(error401);
+
+      const promise = service.acompletion(completionParams);
+      await expect(promise).rejects.toThrow(/HTTP 401/i);
+      await expect(promise).rejects.toThrow(/apiKey is not configured/i);
+    });
+  });
+
   describe("model fallback", () => {
     const completionParams: LiteLlmCompletionParams = {
       messages: [{ role: "user", content: "Hello" }],

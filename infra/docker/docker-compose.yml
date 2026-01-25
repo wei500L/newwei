@@ -162,10 +162,14 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     restart: unless-stopped
+    entrypoint: /bin/sh
     command:
-      - "--config"
-      - "/app/config.yaml"
-      - "--detailed_debug"
+      - -ec
+      - |
+        if [ -z "${LITELLM_MASTER_KEY:-}" ]; then
+          unset LITELLM_MASTER_KEY
+        fi
+        exec litellm --config /app/config.yaml --detailed_debug
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

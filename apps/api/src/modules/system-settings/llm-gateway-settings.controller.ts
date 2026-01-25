@@ -49,7 +49,12 @@ export class LlmGatewaySettingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: SetEmbeddingActiveLlmGatewayDto
   ) {
-    return this.settings.setEmbeddingActiveProfile(user.orgId, user.id, body.activeId ?? null);
+    return this.settings.setEmbeddingActiveProfile(
+      user.orgId,
+      user.id,
+      body.activeId ?? null,
+      body.mode
+    );
   }
 
   @Put(":id")

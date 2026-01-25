@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -211,4 +212,13 @@ export class SetEmbeddingActiveLlmGatewayDto {
   @IsOptional()
   @IsString()
   activeId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "How to resolve embeddings gateway when activeId is null: follow_completion (default) or use_default (config/env)."
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(["follow_completion", "use_default"])
+  mode?: "follow_completion" | "use_default";
 }
