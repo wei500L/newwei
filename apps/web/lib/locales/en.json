@@ -3566,6 +3566,8 @@
       "payloadProcessed": "Processed JSON",
       "payloadRaw": "Raw JSON",
       "payloadMarkdown": "Cleaned Markdown",
+      "markdownFallback": "Markdown fallback",
+      "markdownFallbackTooltip": "LLM response omitted cleaned_markdown; showing crawled markdown as fallback.",
       "readOriginal": "Read original",
       "openItem": "Open item",
       "empty": "Item not found.",
@@ -3589,7 +3591,9 @@
         "llmModel": "LLM model",
         "llmLatency": "LLM latency",
         "llmCost": "LLM cost",
-        "llmTokens": "LLM total tokens"
+        "llmTokens": "LLM total tokens",
+        "embeddingModel": "Embedding model",
+        "embeddingDims": "Embedding dims"
       },
       "keyPointsMore": "+{{count}} more"
     },

@@ -122,6 +122,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const qualityScoreLabel = formatRatioAsPercent(qualityScore, locale);
   const originalUrl = safeHttpUrl(rawPayload?.url);
   const cleanedMarkdown = toString(processedResult?.cleaned_markdown);
+  const cleanedMarkdownSource = toString(processedResult?.cleaned_markdown_source);
+  const markdownFallbackUsed = cleanedMarkdownSource === 'crawl_fallback';
   const hasSummaryContent = Boolean(summary) || keyPoints.length > 0;
   const summaryText = summary?.trim();
   const canExpandSummary = Boolean(summaryText && summaryText.length > 300);
@@ -152,6 +154,12 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const llmTokens =
     typeof llm?.totalTokens === 'number'
       ? Math.round(llm.totalTokens).toString()
+      : t('common.notAvailable');
+  const embeddingModel = item?.processed?.summaryEmbeddingModel ?? null;
+  const embeddingDimensions = item?.processed?.summaryEmbeddingDimensions ?? null;
+  const embeddingDimensionsLabel =
+    typeof embeddingDimensions === 'number'
+      ? embeddingDimensions.toString()
       : t('common.notAvailable');
   const llmSummary = useMemo(() => {
     const bits: string[] = [];
@@ -246,11 +254,33 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   if (cleanedMarkdown) {
     payloadPanels.push({
       key: 'markdown',
-      label: t('items.detail.payloadMarkdown', { defaultValue: 'Cleaned Markdown' }),
+      label: (
+        <Space size={8} wrap>
+          <span>{t('items.detail.payloadMarkdown', { defaultValue: 'Cleaned Markdown' })}</span>
+          {markdownFallbackUsed ? (
+            <Tag color="orange">
+              {t('items.detail.markdownFallback', { defaultValue: 'Markdown fallback' })}
+            </Tag>
+          ) : null}
+        </Space>
+      ),
       children: (
-        <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
-          {cleanedMarkdown}
-        </pre>
+        <Space direction="vertical" size="middle" className="w-full">
+          {markdownFallbackUsed ? (
+            <Alert
+              type="warning"
+              showIcon
+              message={t('items.detail.markdownFallback', { defaultValue: 'Markdown fallback' })}
+              description={t('items.detail.markdownFallbackTooltip', {
+                defaultValue:
+                  'LLM response omitted cleaned_markdown; showing crawled markdown as fallback.'
+              })}
+            />
+          ) : null}
+          <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
+            {cleanedMarkdown}
+          </pre>
+        </Space>
       )
     });
   }
@@ -320,6 +350,16 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                   : t('items.duplicate.similarity', { defaultValue: 'Similarity' })}{' '}
                 {duplicateScore}
               </Tag>
+            </Tooltip>
+          ) : null}
+          {markdownFallbackUsed ? (
+            <Tooltip
+              title={t('items.detail.markdownFallbackTooltip', {
+                defaultValue:
+                  'LLM response omitted cleaned_markdown; showing crawled markdown as fallback.'
+              })}
+            >
+              <Tag color="orange">{t('items.detail.markdownFallback', { defaultValue: 'Markdown fallback' })}</Tag>
             </Tooltip>
           ) : null}
         </Space>
@@ -480,6 +520,16 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 label={t('items.detail.fields.llmTokens', { defaultValue: 'LLM total tokens' })}
               >
                 {llmTokens}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t('items.detail.fields.embeddingModel', { defaultValue: 'Embedding model' })}
+              >
+                {embeddingModel ?? t('common.notAvailable')}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t('items.detail.fields.embeddingDims', { defaultValue: 'Embedding dims' })}
+              >
+                {embeddingDimensionsLabel}
               </Descriptions.Item>
               <Descriptions.Item label={t('items.detail.fields.createdAt', { defaultValue: 'Created at' })}>
                 {formatDateTime(item.createdAt, locale, {

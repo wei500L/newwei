@@ -148,6 +148,17 @@ export const NormalizedNewsPayloadSchema = z
 
 export type NormalizedNewsPayload = z.infer<typeof NormalizedNewsPayloadSchema>;
 
+const cleanedMarkdownSourceSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const normalized = value.trim();
+    return normalized === "llm" || normalized === "crawl_fallback" ? normalized : undefined;
+  },
+  z.enum(["llm", "crawl_fallback"]).optional(),
+);
+
 export const CleanedNewsSchema = z.object({
   title: z.string().nullable().optional(),
   subtitle: z.string().nullable().optional(),
@@ -173,6 +184,7 @@ export const CleanedNewsSchema = z.object({
     .default([]),
   kg_relations: z.array(KgRelationSchema).default([]),
   cleaned_markdown: z.string().min(1),
+  cleaned_markdown_source: cleanedMarkdownSourceSchema,
   removed_noise_types: z.array(z.string().min(1)).default([]),
   quality_score: z.number().min(0).max(1).nullable().optional(),
   llm_model: z.string().nullable().optional(),

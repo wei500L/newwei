@@ -136,6 +136,12 @@ export class ProcessedItemModelGraph {
   @Field(() => ProcessedItemLlmModel, { nullable: true })
   llm?: ProcessedItemLlmModel | null;
 
+  @Field(() => String, { nullable: true, description: "Embedding model used for summary dedupe" })
+  summaryEmbeddingModel?: string | null;
+
+  @Field(() => Int, { nullable: true, description: "Summary embedding vector dimensions" })
+  summaryEmbeddingDimensions?: number | null;
+
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
 }

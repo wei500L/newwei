@@ -1723,6 +1723,10 @@ export type ProcessedItemModelGraph = {
   /** Processed result JSON object */
   resultJson?: Maybe<Scalars['JSON']['output']>;
   status: Scalars['String']['output'];
+  /** Summary embedding vector dimensions */
+  summaryEmbeddingDimensions?: Maybe<Scalars['Int']['output']>;
+  /** Embedding model used for summary dedupe */
+  summaryEmbeddingModel?: Maybe<Scalars['String']['output']>;
   tags: Array<Scalars['String']['output']>;
 };
 
@@ -2627,7 +2631,7 @@ export type ItemQueryVariables = Exact<{
 }>;
 
 
-export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, ingestedAt: any, publishedAt?: string | null, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, result?: string | null, resultJson?: any | null, createdAt: any, error?: { __typename?: 'ProcessedItemErrorModelGraph', message: string, name?: string | null } | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null } | null };
+export type ItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, updatedAt: any, ingestedAt: any, publishedAt?: string | null, meta: { __typename?: 'ItemMetaModel', id: string, externalId: string, name: string, status: string, createdAt: any, updatedAt: any }, raw?: { __typename?: 'RawItemModelGraph', id: string, payload: string, source?: string | null, createdAt: any, updatedAt: any } | null, processed?: { __typename?: 'ProcessedItemModelGraph', id: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, summaryEmbeddingModel?: string | null, summaryEmbeddingDimensions?: number | null, result?: string | null, resultJson?: any | null, createdAt: any, error?: { __typename?: 'ProcessedItemErrorModelGraph', message: string, name?: string | null } | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null } | null };
 
 export type KnowledgeGraphEvidenceReviewQueueQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -4686,6 +4690,8 @@ export const ItemDocument = gql`
         costUsd
         latencyMs
       }
+      summaryEmbeddingModel
+      summaryEmbeddingDimensions
       result
       resultJson
       createdAt

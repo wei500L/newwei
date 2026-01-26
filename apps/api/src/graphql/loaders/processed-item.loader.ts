@@ -11,6 +11,8 @@ export interface ProcessedItemDoc {
   result?: Record<string, unknown> | string | null;
   duplicateOf?: string | null;
   duplicateSimilarity?: number | null;
+  summaryEmbeddingModel?: string | null;
+  summaryEmbeddingDimensions?: number | null;
   llm?: {
     model?: string | null;
     promptVersion?: string | null;
@@ -52,6 +54,15 @@ export class ProcessedItemLoader implements NestDataLoader<string, ProcessedItem
         .lean()) as unknown as ProcessedItemRecord[];
       const map = new Map<string, ProcessedItemDoc>();
       docs.forEach((doc) => {
+        const summaryEmbeddingModel =
+          typeof (doc as { summaryEmbeddingModel?: unknown }).summaryEmbeddingModel === "string"
+            ? String((doc as { summaryEmbeddingModel?: unknown }).summaryEmbeddingModel)
+            : null;
+        const summaryEmbeddingRaw = (doc as { summaryEmbedding?: unknown }).summaryEmbedding;
+        const summaryEmbeddingDimensions = Array.isArray(summaryEmbeddingRaw)
+          ? summaryEmbeddingRaw.length
+          : null;
+
         const candidate: ProcessedItemDoc = {
           id: doc._id.toString(),
           itemMetaId: doc.itemMetaId,
@@ -61,6 +72,8 @@ export class ProcessedItemLoader implements NestDataLoader<string, ProcessedItem
           duplicateOf: doc.duplicateOf ? doc.duplicateOf.toString() : null,
           duplicateSimilarity:
             typeof doc.duplicateSimilarity === "number" ? doc.duplicateSimilarity : null,
+          summaryEmbeddingModel,
+          summaryEmbeddingDimensions,
           llm: doc.llm ?? undefined,
           createdAt: doc.createdAt,
           updatedAt: doc.updatedAt

@@ -1510,6 +1510,7 @@ export class NewsPipelineService implements OnModuleDestroy {
 
     if (fallback.trim().length > 0) {
       record.cleaned_markdown = fallback;
+      record.cleaned_markdown_source = "crawl_fallback";
     }
 
     return record;

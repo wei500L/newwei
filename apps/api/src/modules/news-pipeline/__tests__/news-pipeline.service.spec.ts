@@ -379,6 +379,7 @@ describe("NewsPipelineService", () => {
     const createArgs = (prisma.mongoOutbox.create as jest.Mock).mock.calls[0]?.[0];
     const payload = createArgs?.data?.payload as any;
     expect(payload.document.result.cleaned_markdown).toBe("# Headline\nBody paragraph");
+    expect(payload.document.result.cleaned_markdown_source).toBe("crawl_fallback");
   });
 
   it("uses stored crawl results when crawlResultId is provided", async () => {
