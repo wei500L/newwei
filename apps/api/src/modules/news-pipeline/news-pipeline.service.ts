@@ -672,22 +672,37 @@ export class NewsPipelineService implements OnModuleDestroy {
     if (!article) {
       return "";
     }
+
+    const pickNonEmpty = (...candidates: unknown[]) => {
+      for (const candidate of candidates) {
+        if (typeof candidate !== "string") {
+          continue;
+        }
+        const trimmed = candidate.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+      return "";
+    };
+
     if (typeof article.markdown === "string") {
-      return article.markdown;
+      return pickNonEmpty(article.markdown);
     }
+
     if (article.markdown) {
       const record = article.markdown;
-      return (
-        record.fit_markdown ??
-        record.fitMarkdown ??
-        record.raw_markdown ??
-        record.rawMarkdown ??
-        record.markdown ??
-        record.text ??
-        ""
+      return pickNonEmpty(
+        record.fit_markdown,
+        record.fitMarkdown,
+        record.raw_markdown,
+        record.rawMarkdown,
+        record.markdown,
+        record.text,
       );
     }
-    return article.text ?? "";
+
+    return pickNonEmpty(article.text);
   }
 
   private async cleanArticle(
@@ -1769,26 +1784,33 @@ export class NewsPipelineService implements OnModuleDestroy {
         this.parseDate(options.article.fetchedAt) ??
         new Date();
 
+      const sourceUrl = options.article.sourceUrl?.trim() ?? "";
+      const persistedUrl = this.toArticleUrl(sourceUrl);
+      const persistedMetadata: Record<string, unknown> = {
+        ...(options.article.metadata ?? {}),
+        ...(sourceUrl.length > persistedUrl.length ? { originalUrl: sourceUrl } : {}),
+      };
+
       const articleRecord = await tx.article.upsert({
         where: { contentHash: options.contentHash },
         update: {
-          url: options.article.sourceUrl,
+          url: persistedUrl,
           sourceLabel: options.payload.sourceName ?? null,
           language: options.cleaned.language ?? options.payload.language ?? null,
           titleGuess: options.cleaned.title ?? undefined,
-          metadata: toPrismaJsonValue(options.article.metadata ?? {}),
+          metadata: toPrismaJsonValue(persistedMetadata),
           crawlAt,
         },
         create: {
           orgId: options.orgId,
           sourceId: options.sourceId,
-          url: options.article.sourceUrl,
+          url: persistedUrl,
           sourceLabel: options.payload.sourceName ?? null,
           language: options.cleaned.language ?? options.payload.language ?? null,
           titleGuess: options.cleaned.title ?? undefined,
           crawlAt,
           contentHash: options.contentHash,
-          metadata: toPrismaJsonValue(options.article.metadata ?? {}),
+          metadata: toPrismaJsonValue(persistedMetadata),
         },
       });
 
@@ -2322,6 +2344,14 @@ export class NewsPipelineService implements OnModuleDestroy {
       return trimmed;
     }
     return `${trimmed.slice(0, 190).trimEnd()}…`;
+  }
+
+  private toArticleUrl(value: string) {
+    const trimmed = value.trim();
+    if (trimmed.length <= 512) {
+      return trimmed;
+    }
+    return trimmed.slice(0, 512);
   }
 
   private getCrawlLockTtlMs() {

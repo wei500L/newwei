@@ -105,9 +105,17 @@ function fingerprintMonitors(monitors: unknown): string {
   return JSON.stringify(normalized);
 }
 
-function fingerprintLayout(payload: { layout: unknown[]; visibility: Record<string, boolean> }): string {
-  const normalizedLayout = Array.isArray(payload.layout)
-    ? payload.layout
+function fingerprintLayout(payload: unknown): string {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return JSON.stringify({ layout: [], visibility: {} });
+  }
+
+  const record = payload as Record<string, unknown>;
+  const rawLayout = record.layout;
+  const rawVisibility = record.visibility;
+
+  const normalizedLayout = Array.isArray(rawLayout)
+    ? rawLayout
         .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
         .map((entry) => entry as Record<string, unknown>)
         .map((entry) => ({
@@ -123,11 +131,14 @@ function fingerprintLayout(payload: { layout: unknown[]; visibility: Record<stri
         .sort((a, b) => a.i.localeCompare(b.i))
     : [];
 
-  const visibility = Object.fromEntries(
-    Object.entries(payload.visibility)
-      .filter(([key, val]) => typeof key === "string" && typeof val === "boolean")
-      .sort(([a], [b]) => a.localeCompare(b)),
-  );
+  const visibilityEntries =
+    rawVisibility && typeof rawVisibility === "object" && !Array.isArray(rawVisibility)
+      ? Object.entries(rawVisibility as Record<string, unknown>)
+          .filter(([key, val]) => typeof key === "string" && typeof val === "boolean")
+          .sort(([a], [b]) => a.localeCompare(b))
+      : [];
+
+  const visibility = Object.fromEntries(visibilityEntries);
 
   return JSON.stringify({ layout: normalizedLayout, visibility });
 }

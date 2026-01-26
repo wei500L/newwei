@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
+import { ITEM_PIPELINE_QUEUE_NAME } from "../queue/queue.constants";
 
 export interface PipelineQualitySummary {
   windowMinutes: number;
@@ -150,7 +151,14 @@ export class PipelineQualityService {
         },
       ]),
       TaskLogModel.aggregate([
-        { $match: { orgId, status: "failed", createdAt: { $gte: since } } },
+        {
+          $match: {
+            orgId,
+            queue: ITEM_PIPELINE_QUEUE_NAME,
+            status: "failed",
+            createdAt: { $gte: since },
+          },
+        },
         {
           $project: {
             stage: 1,

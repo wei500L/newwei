@@ -339,6 +339,30 @@ describe("NewsPipelineService", () => {
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
   });
 
+  it("uses raw_markdown when fit_markdown is empty", async () => {
+    const response: Crawl4aiResponse = {
+      results: [
+        {
+          url: "https://example.com/story",
+          markdown: {
+            fit_markdown: "",
+            raw_markdown: "# Headline\nBody paragraph",
+          },
+          metadata: { title: "Headline" },
+          publishedAt: "2024-01-01T00:00:00Z",
+          success: true,
+        },
+      ],
+    };
+    crawlClient.crawl.mockResolvedValueOnce(response);
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    const cachedValue = (cache.set as jest.Mock).mock.calls[0]?.[1] as { markdown?: unknown } | undefined;
+    expect(cachedValue?.markdown).toBe("# Headline\nBody paragraph");
+  });
+
   it("falls back to crawled markdown when LLM omits cleaned_markdown", async () => {
     (liteLlm.acompletion as jest.Mock).mockResolvedValueOnce({
       id: "cmpl",

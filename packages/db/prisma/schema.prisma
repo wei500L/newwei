@@ -370,7 +370,7 @@ model Article {
   orgId       String
   source      NewsSource?   @relation(fields: [sourceId], references: [id])
   sourceId    String?
-  url         String
+  url         String        @db.VarChar(512)
   sourceLabel String?
   language    String?
   titleGuess  String?
