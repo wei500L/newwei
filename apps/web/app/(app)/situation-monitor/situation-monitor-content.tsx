@@ -1753,12 +1753,10 @@ export function SituationMonitorContent() {
 
   type GridBreakpoint = keyof typeof GRID_COLS;
   const [gridBreakpoint, setGridBreakpoint] = useState<GridBreakpoint>("xxs");
-  const gridBreakpointRef = useRef<GridBreakpoint>("xxs");
 
   const handleGridBreakpointChange = useCallback((next: string) => {
     if (next in GRID_COLS) {
       const breakpoint = next as GridBreakpoint;
-      gridBreakpointRef.current = breakpoint;
       setGridBreakpoint(breakpoint);
     }
   }, []);
@@ -1767,7 +1765,7 @@ export function SituationMonitorContent() {
 
   const gridLayouts = useMemo(
     () => ({
-      lg: visibleLayout,
+      lg: visibleLayout.map((item) => ({ ...item })),
       md: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.md),
       sm: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.sm),
       xs: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.xs),
@@ -3183,10 +3181,10 @@ export function SituationMonitorContent() {
           margin={gridMargin}
           draggableHandle=".ant-card-head"
           onBreakpointChange={(nextBreakpoint: string) => handleGridBreakpointChange(nextBreakpoint)}
-          onLayoutChange={(nextLayout: Layout[]) => {
-            if (gridBreakpointRef.current !== "lg") {
-              return;
-            }
+          onDragStop={(nextLayout: Layout[]) => {
+            handleLayoutChange(nextLayout);
+          }}
+          onResizeStop={(nextLayout: Layout[]) => {
             handleLayoutChange(nextLayout);
           }}
         >

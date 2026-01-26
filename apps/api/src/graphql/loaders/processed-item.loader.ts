@@ -7,6 +7,7 @@ export interface ProcessedItemDoc {
   id: string;
   itemMetaId: string;
   status: string;
+  error?: { message: string; name?: string | null } | null;
   tags: string[];
   result?: Record<string, unknown> | string | null;
   duplicateOf?: string | null;
@@ -63,10 +64,26 @@ export class ProcessedItemLoader implements NestDataLoader<string, ProcessedItem
           ? summaryEmbeddingRaw.length
           : null;
 
+        const errorRaw = (doc as { error?: unknown }).error;
+        const error =
+          errorRaw && typeof errorRaw === "object" && !Array.isArray(errorRaw)
+            ? {
+                message:
+                  typeof (errorRaw as { message?: unknown }).message === "string"
+                    ? String((errorRaw as { message?: unknown }).message)
+                    : "Unknown error",
+                name:
+                  typeof (errorRaw as { name?: unknown }).name === "string"
+                    ? String((errorRaw as { name?: unknown }).name)
+                    : null,
+              }
+            : null;
+
         const candidate: ProcessedItemDoc = {
           id: doc._id.toString(),
           itemMetaId: doc.itemMetaId,
           status: doc.status,
+          error,
           tags: doc.tags ?? [],
           result: doc.result ?? undefined,
           duplicateOf: doc.duplicateOf ? doc.duplicateOf.toString() : null,

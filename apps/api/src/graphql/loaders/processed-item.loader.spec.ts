@@ -52,5 +52,44 @@ describe("ProcessedItemLoader", () => {
       tags: ["ok"],
     });
   });
-});
 
+  it("surfaces error metadata when the latest run failed", async () => {
+    const loader = new ProcessedItemLoader();
+    const now = new Date();
+    const older = new Date(now.getTime() - 60_000);
+
+    const docs = [
+      {
+        _id: { toString: () => "pending-id" },
+        itemMetaId: "meta-1",
+        status: "pending",
+        tags: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        _id: { toString: () => "failed-id" },
+        itemMetaId: "meta-1",
+        status: "failed",
+        tags: [],
+        error: { message: "boom", name: "LiteLLMError" },
+        createdAt: older,
+        updatedAt: older,
+      },
+    ];
+
+    (ProcessedItemModel.find as jest.Mock).mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(docs),
+    });
+
+    const dataLoader = loader.generateDataLoader();
+    const result = await dataLoader.load("meta-1");
+
+    expect(result).toMatchObject({
+      id: "failed-id",
+      status: "failed",
+      error: { message: "boom", name: "LiteLLMError" },
+    });
+  });
+});

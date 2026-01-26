@@ -35,6 +35,11 @@ const ProcessedItemResultSchema = new Schema(
     key_points: { type: [String], default: [] },
     entities: { type: [ProcessedItemEntitySchema], default: [] },
     cleaned_markdown: { type: String, required: true },
+    cleaned_markdown_source: {
+      type: String,
+      enum: ["llm", "crawl_fallback"],
+      default: undefined,
+    },
     removed_noise_types: { type: [String], default: [] },
     quality_score: { type: Number, min: 0, max: 1, default: null },
     llm_model: { type: String, default: null },

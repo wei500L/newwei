@@ -1422,13 +1422,15 @@ export class NewsPipelineService implements OnModuleDestroy {
     const keyPoints = this.toStringArray(processed.keyPoints);
     const removedNoiseTypes = this.toStringArray(processed.removedNoiseTypes);
     const entities = this.normalizeEntities(processed.entities);
-    const cleanedMarkdown =
-      (processed.cleanedMarkdownRef && processed.cleanedMarkdownRef.length > 0
-        ? processed.cleanedMarkdownRef
-        : null) ??
-      processed.summary ??
-      processed.article.url ??
-      processed.article.contentHash;
+    let cleanedMarkdown = "";
+    if (processed.title) {
+      cleanedMarkdown = `# ${processed.title}\n\n`;
+    }
+    if (processed.summary) {
+      cleanedMarkdown = `${cleanedMarkdown}${processed.summary}`;
+    }
+    cleanedMarkdown =
+      cleanedMarkdown.trim() || processed.article.url || processed.article.contentHash;
 
     return CleanedNewsSchema.parse({
       title: processed.title ?? null,

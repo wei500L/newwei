@@ -50,6 +50,7 @@ declare const ProcessedItemSchema: Schema<any, Model<any, any, any, any, any, an
             confidence: number;
         }>;
         cleaned_markdown: string;
+        cleaned_markdown_source?: string | null | undefined;
         removed_noise_types: string[];
         quality_score: number;
         llm_model: string;
@@ -113,6 +114,7 @@ declare const ProcessedItemSchema: Schema<any, Model<any, any, any, any, any, an
             confidence: number;
         }>;
         cleaned_markdown: string;
+        cleaned_markdown_source?: string | null | undefined;
         removed_noise_types: string[];
         quality_score: number;
         llm_model: string;
@@ -181,6 +183,7 @@ declare const ProcessedItemSchema: Schema<any, Model<any, any, any, any, any, an
             confidence: number;
         }>;
         cleaned_markdown: string;
+        cleaned_markdown_source?: string | null | undefined;
         removed_noise_types: string[];
         quality_score: number;
         llm_model: string;
@@ -249,6 +252,7 @@ export declare const ProcessedItemModel: Model<{
             confidence: number;
         }>;
         cleaned_markdown: string;
+        cleaned_markdown_source?: string | null | undefined;
         removed_noise_types: string[];
         quality_score: number;
         llm_model: string;
@@ -312,6 +316,7 @@ export declare const ProcessedItemModel: Model<{
             confidence: number;
         }>;
         cleaned_markdown: string;
+        cleaned_markdown_source?: string | null | undefined;
         removed_noise_types: string[];
         quality_score: number;
         llm_model: string;
@@ -375,6 +380,7 @@ export declare const ProcessedItemModel: Model<{
             confidence: number;
         }>;
         cleaned_markdown: string;
+        cleaned_markdown_source?: string | null | undefined;
         removed_noise_types: string[];
         quality_score: number;
         llm_model: string;

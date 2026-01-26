@@ -482,9 +482,11 @@ export function UserUiSettingsSync() {
             if (remoteHasMonitors && data?.monitors) {
               useSituationMonitorMonitorsStore.getState().hydrateFromRemote(data.monitors);
             }
-            if (remoteHasLayout && data?.layout) {
-              useSituationMonitorLayoutStore.getState().hydrateFromRemote(data.layout);
-            }
+            const remoteLayoutFingerprint = remoteHasLayout && data?.layout ? fingerprintLayout(data.layout) : "";
+            const layoutRepaired =
+              remoteHasLayout && data?.layout
+                ? useSituationMonitorLayoutStore.getState().hydrateFromRemote(data.layout)
+                : false;
             if (remoteHasSettings && data?.settings) {
               useSituationMonitorSettingsStore.getState().hydrateFromRemote(data.settings);
             }
@@ -546,7 +548,7 @@ export function UserUiSettingsSync() {
               }
             } else {
               lastSentRef.current.monitors = currentMonitorsFingerprint;
-              lastSentRef.current.layout = currentLayoutFingerprint;
+              lastSentRef.current.layout = layoutRepaired ? remoteLayoutFingerprint : currentLayoutFingerprint;
               lastSentRef.current.settings = currentSettingsFingerprint;
 
               useUserUiSyncStatusStore.getState().markIdle("situation-monitor");

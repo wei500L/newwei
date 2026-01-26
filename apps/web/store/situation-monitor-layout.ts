@@ -261,13 +261,45 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
   }
 ] as const;
 
+const LOCKED_PANEL_IDS = new Set<SituationMonitorPanelId>(
+  SITUATION_MONITOR_PANELS.filter((panel) => panel.locked).map((panel) => panel.id),
+);
+
 function buildDefaults() {
   const visibility: Record<SituationMonitorPanelId, boolean> = Object.fromEntries(
     SITUATION_MONITOR_PANELS.map((panel) => [panel.id, panel.defaultVisible]),
   ) as Record<SituationMonitorPanelId, boolean>;
 
-  const layout = SITUATION_MONITOR_PANELS.map((panel) => panel.defaultLayout);
+  const layout = SITUATION_MONITOR_PANELS.map((panel) => ({ ...panel.defaultLayout }));
   return { visibility, layout };
+}
+
+function getLayoutItem(layout: Layout[], id: SituationMonitorPanelId): Layout | undefined {
+  return layout.find((item) => item.i === id);
+}
+
+function isLockedPanelLayoutValid(layout: Layout[], defaults: Layout[]): boolean {
+  for (const panelId of LOCKED_PANEL_IDS) {
+    const actual = getLayoutItem(layout, panelId);
+    const expected = getLayoutItem(defaults, panelId);
+    if (!actual || !expected) {
+      return false;
+    }
+    if (actual.x !== expected.x || actual.y !== expected.y || actual.w !== expected.w || actual.h !== expected.h) {
+      return false;
+    }
+    if (expected.static === true && actual.static !== true) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function repairLayoutIfNeeded(layout: Layout[], defaults: Layout[]): { layout: Layout[]; repaired: boolean } {
+  if (!isLockedPanelLayoutValid(layout, defaults)) {
+    return { layout: defaults, repaired: true };
+  }
+  return { layout, repaired: false };
 }
 
 function buildVisibilityForPreset(preset: SituationMonitorPreset): Record<SituationMonitorPanelId, boolean> {
@@ -308,7 +340,7 @@ export interface SituationMonitorLayoutState {
   setLayout: (layout: Layout[]) => void;
   setPanelVisible: (id: SituationMonitorPanelId, visible: boolean) => void;
   togglePanel: (id: SituationMonitorPanelId) => void;
-  hydrateFromRemote: (payload: unknown) => void;
+  hydrateFromRemote: (payload: unknown) => boolean;
   applyPreset: (presetId: SituationMonitorPresetId, options?: { resetLayout?: boolean }) => void;
   reset: () => void;
   ensure: () => void;
@@ -332,7 +364,7 @@ export const useSituationMonitorLayoutStore = create<SituationMonitorLayoutState
       const defaults = buildDefaults();
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
         set(defaults);
-        return;
+        return true;
       }
 
       const record = payload as Record<string, unknown>;
@@ -350,10 +382,15 @@ export const useSituationMonitorLayoutStore = create<SituationMonitorLayoutState
         }
       }
 
+      const mergedLayout = mergeLayout(Array.isArray(rawLayout) ? (rawLayout as Layout[]) : [], defaults.layout);
+      const repairedLayout = repairLayoutIfNeeded(mergedLayout, defaults.layout);
+
       set({
         visibility: { ...defaults.visibility, ...visibilityPatch },
-        layout: mergeLayout(Array.isArray(rawLayout) ? (rawLayout as Layout[]) : [], defaults.layout),
+        layout: repairedLayout.layout,
       });
+
+      return repairedLayout.repaired;
     },
     applyPreset: (presetId, options) => {
       const preset = SITUATION_MONITOR_PRESETS.find((entry) => entry.id === presetId);
@@ -371,9 +408,11 @@ export const useSituationMonitorLayoutStore = create<SituationMonitorLayoutState
     ensure: () => {
       const nextDefaults = buildDefaults();
       const state = get();
+      const mergedLayout = mergeLayout(state.layout, nextDefaults.layout);
+      const repairedLayout = repairLayoutIfNeeded(mergedLayout, nextDefaults.layout);
       set({
         visibility: { ...nextDefaults.visibility, ...state.visibility },
-        layout: mergeLayout(state.layout, nextDefaults.layout),
+        layout: repairedLayout.layout,
       });
     },
   };
