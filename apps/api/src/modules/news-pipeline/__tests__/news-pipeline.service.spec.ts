@@ -119,6 +119,7 @@ describe("NewsPipelineService", () => {
 
   const liteLlm = {
     getEmbeddingModel: jest.fn(async () => "openai/text-embedding-3-small"),
+    getCompletionTimeoutMs: jest.fn(async () => 60_000),
     acompletion: jest.fn(async () => ({
       id: "cmpl",
       model: "openai/gpt-4o-mini",
@@ -336,6 +337,48 @@ describe("NewsPipelineService", () => {
     expect(prisma.mongoOutbox.create).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.delete).toHaveBeenCalledTimes(1);
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to crawled markdown when LLM omits cleaned_markdown", async () => {
+    (liteLlm.acompletion as jest.Mock).mockResolvedValueOnce({
+      id: "cmpl",
+      model: "openai/gpt-4o-mini",
+      created: Date.now(),
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              title: "Clean Headline",
+              subtitle: null,
+              author: null,
+              source: "Example",
+              published_at: "2024-01-01T00:00:00Z",
+              language: "en",
+              location: null,
+              category: null,
+              topics: ["news"],
+              summary: "Clean body",
+              key_points: ["Clean body"],
+              entities: [],
+              removed_noise_types: [],
+              quality_score: 0.9,
+              llm_model: "openai/gpt-4o-mini",
+              llm_prompt_version: "v1"
+            })
+          }
+        }
+      ]
+    });
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    const createArgs = (prisma.mongoOutbox.create as jest.Mock).mock.calls[0]?.[0];
+    const payload = createArgs?.data?.payload as any;
+    expect(payload.document.result.cleaned_markdown).toBe("# Headline\nBody paragraph");
   });
 
   it("uses stored crawl results when crawlResultId is provided", async () => {

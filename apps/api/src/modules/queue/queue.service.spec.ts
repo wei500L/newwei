@@ -25,6 +25,10 @@ jest.mock("@modular/utils", () => {
 });
 
 describe("QueueService", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("reads org counts without scanning jobs", async () => {
     const { QueueService } = require("./queue.service") as typeof import("./queue.service");
     const queue = {
@@ -86,5 +90,33 @@ describe("QueueService", () => {
       keepCompleted: false,
       keepFailed: true,
     });
+  });
+
+  it("does not upsert pending item when the queue job already exists", async () => {
+    const { QueueService } = require("./queue.service") as typeof import("./queue.service");
+    const { ProcessedItemModel } = require("@modular/mongo") as typeof import("@modular/mongo");
+
+    const existingJob = { id: "job-1" };
+    const queue = {
+      add: jest.fn().mockRejectedValue(new Error("Job meta-1-raw-1 already exists")),
+      getJob: jest.fn().mockResolvedValue(existingJob),
+    } as any;
+
+    const orgStats = {
+      getCounts: jest.fn(),
+      upsertJobMetaAndCount: jest.fn(),
+    } as any;
+
+    const service = new QueueService(queue, orgStats);
+    const job = await service.enqueueItem(
+      "org-1",
+      "meta-1",
+      "65f1c2d3e4f5a6b7c8d9e0f1",
+      {},
+      { processedItemId: "65f1c2d3e4f5a6b7c8d9e0f2" }
+    );
+
+    expect(job).toBe(existingJob);
+    expect(ProcessedItemModel.updateOne).not.toHaveBeenCalled();
   });
 });

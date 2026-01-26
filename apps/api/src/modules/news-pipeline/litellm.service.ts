@@ -124,6 +124,11 @@ export class LiteLlmService {
     return Array.from(new Set(models.map((model) => model.trim())));
   }
 
+  async getCompletionTimeoutMs(): Promise<number> {
+    const cfg = await this.resolveCompletionConfig();
+    return cfg.timeoutMs;
+  }
+
   async acompletion(
     params: LiteLlmCompletionParams,
   ): Promise<LiteLlmCompletionResponse> {

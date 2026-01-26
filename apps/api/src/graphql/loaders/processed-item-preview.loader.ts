@@ -29,6 +29,20 @@ type ProcessedItemPreviewRecord = Omit<ProcessedItemPreviewDoc, "id"> & {
   duplicateOf?: { toString(): string } | string | null;
 };
 
+function statusPriority(status: string): number {
+  switch (status) {
+    case "completed":
+      return 3;
+    case "failed":
+      return 2;
+    case "processing":
+      return 1;
+    case "pending":
+    default:
+      return 0;
+  }
+}
+
 const PROCESSED_ITEM_PREVIEW_PROJECTION: Record<string, 1> = {
   itemMetaId: 1,
   status: 1,
@@ -63,20 +77,23 @@ export class ProcessedItemPreviewLoader implements NestDataLoader<string, Proces
 
       const map = new Map<string, ProcessedItemPreviewDoc>();
       docs.forEach((doc) => {
-        if (!map.has(doc.itemMetaId)) {
-          map.set(doc.itemMetaId, {
-            id: doc._id.toString(),
-            itemMetaId: doc.itemMetaId,
-            status: doc.status,
-            tags: doc.tags ?? [],
-            result: doc.result ?? undefined,
-            duplicateOf: doc.duplicateOf ? doc.duplicateOf.toString() : null,
-            duplicateSimilarity:
-              typeof doc.duplicateSimilarity === "number" ? doc.duplicateSimilarity : null,
-            llm: doc.llm ?? undefined,
-            createdAt: doc.createdAt,
-            updatedAt: doc.updatedAt
-          });
+        const candidate: ProcessedItemPreviewDoc = {
+          id: doc._id.toString(),
+          itemMetaId: doc.itemMetaId,
+          status: doc.status,
+          tags: doc.tags ?? [],
+          result: doc.result ?? undefined,
+          duplicateOf: doc.duplicateOf ? doc.duplicateOf.toString() : null,
+          duplicateSimilarity:
+            typeof doc.duplicateSimilarity === "number" ? doc.duplicateSimilarity : null,
+          llm: doc.llm ?? undefined,
+          createdAt: doc.createdAt,
+          updatedAt: doc.updatedAt
+        };
+
+        const existing = map.get(doc.itemMetaId);
+        if (!existing || statusPriority(candidate.status) > statusPriority(existing.status)) {
+          map.set(doc.itemMetaId, candidate);
         }
       });
 

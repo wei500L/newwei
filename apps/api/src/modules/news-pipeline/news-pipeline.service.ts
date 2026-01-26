@@ -722,6 +722,10 @@ export class NewsPipelineService implements OnModuleDestroy {
     const pipelineCfg = this.configService.config.pipeline;
     const truncated = article.markdown.slice(0, pipelineCfg.maxInputChars);
     const promptConfig = await this.promptConfig.getConfig();
+    const completionTimeoutMs = Math.max(
+      await this.liteLlm.getCompletionTimeoutMs(),
+      180_000
+    );
     const response = await this.liteLlm.acompletion({
       messages: [
         {
@@ -757,10 +761,11 @@ export class NewsPipelineService implements OnModuleDestroy {
         jobId: job.jobId,
         source: "news-pipeline",
       },
+      timeoutMs: completionTimeoutMs,
     });
 
     const cleaned = this.withPromptMetadata(
-      this.parseResponse(response),
+      this.parseResponse(response, { fallbackCleanedMarkdown: truncated }),
       promptConfig.version,
       response.model,
     );
@@ -1462,6 +1467,7 @@ export class NewsPipelineService implements OnModuleDestroy {
 
   private parseResponse(
     response: Awaited<ReturnType<LiteLlmService["acompletion"]>>,
+    options?: { fallbackCleanedMarkdown?: string },
   ): CleanedNews {
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -1478,7 +1484,35 @@ export class NewsPipelineService implements OnModuleDestroy {
       this.logger.error({ error }, "Failed to parse LiteLLM JSON output");
       throw new Error("LiteLLM return was not valid JSON");
     }
+    if (options?.fallbackCleanedMarkdown) {
+      parsed = this.applyCleanedMarkdownFallback(parsed, options.fallbackCleanedMarkdown);
+    }
     return CleanedNewsSchema.parse(parsed);
+  }
+
+  private applyCleanedMarkdownFallback(parsed: unknown, fallback: string) {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return parsed;
+    }
+
+    const record = parsed as Record<string, unknown>;
+    const candidate =
+      typeof record.cleaned_markdown === "string"
+        ? record.cleaned_markdown
+        : typeof record.cleanedMarkdown === "string"
+          ? record.cleanedMarkdown
+          : undefined;
+
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      record.cleaned_markdown = candidate;
+      return record;
+    }
+
+    if (fallback.trim().length > 0) {
+      record.cleaned_markdown = fallback;
+    }
+
+    return record;
   }
 
   private withPromptMetadata(

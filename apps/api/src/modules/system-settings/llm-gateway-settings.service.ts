@@ -52,7 +52,7 @@ interface StoredProfile extends Omit<LiteLlmEnvConfig, "apiKey"> {
 interface StoredSettings {
   activeId: string | null;
   embeddingActiveId: string | null;
-  embeddingMode?: unknown;
+  embeddingMode: LlmGatewayEmbeddingMode;
   profiles: StoredProfile[];
 }
 

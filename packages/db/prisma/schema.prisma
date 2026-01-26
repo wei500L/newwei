@@ -403,7 +403,7 @@ model ProcessedArticle {
   publishedAt        DateTime?
   category           String?
   topics             Json?
-  summary            String?
+  summary            String? @db.Text
   keyPoints          Json?
   entities           Json?
   kgRelations        Json?

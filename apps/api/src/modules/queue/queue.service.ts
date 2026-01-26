@@ -1,7 +1,7 @@
 import { ProcessedItemModel, TaskLogModel } from "@modular/mongo";
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
-import { Queue, JobsOptions } from "bullmq";
+import { Queue, JobsOptions, type Job } from "bullmq";
 import { Types } from "mongoose";
 
 import { QueueOrgStatsService, type TrackedJobStatus } from "./queue-org-stats.service";
@@ -48,6 +48,38 @@ export class QueueService {
         ? meta.processedItemId
         : new Types.ObjectId().toHexString();
 
+    let job: Job;
+    try {
+      job = await this.queue.add(
+        "process-item",
+        {
+          itemMetaId,
+          rawItemId,
+          orgId,
+          traceId,
+          processedItemId,
+          pipelineJobId: meta.pipelineJobId,
+          sourceId: meta.sourceId,
+        },
+        {
+          jobId,
+          removeOnComplete: true,
+          removeOnFail: false,
+          attempts: 5,
+          backoff: { type: "exponential", delay: 2000 },
+          ...opts
+        }
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("already exists")) {
+        const existing = await this.queue.getJob(jobId);
+        if (existing) {
+          return existing;
+        }
+      }
+      throw error;
+    }
+
     const now = new Date();
     try {
       if (Types.ObjectId.isValid(processedItemId) && Types.ObjectId.isValid(rawItemId)) {
@@ -79,27 +111,6 @@ export class QueueService {
         "Failed to upsert pending processed item"
       );
     }
-
-    const job = await this.queue.add(
-      "process-item",
-      {
-        itemMetaId,
-        rawItemId,
-        orgId,
-        traceId,
-        processedItemId,
-        pipelineJobId: meta.pipelineJobId,
-        sourceId: meta.sourceId,
-      },
-      {
-        jobId,
-        removeOnComplete: true,
-        removeOnFail: false,
-        attempts: 5,
-        backoff: { type: "exponential", delay: 2000 },
-        ...opts
-      }
-    );
 
     const delay = typeof opts.delay === "number" ? opts.delay : 0;
     const status: TrackedJobStatus = delay > 0 ? "delayed" : "waiting";

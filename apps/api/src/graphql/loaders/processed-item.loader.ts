@@ -29,6 +29,20 @@ type ProcessedItemRecord = Omit<ProcessedItemDoc, "id"> & {
   duplicateOf?: { toString(): string } | string | null;
 };
 
+function statusPriority(status: string): number {
+  switch (status) {
+    case "completed":
+      return 3;
+    case "failed":
+      return 2;
+    case "processing":
+      return 1;
+    case "pending":
+    default:
+      return 0;
+  }
+}
+
 @Injectable({ scope: Scope.REQUEST })
 export class ProcessedItemLoader implements NestDataLoader<string, ProcessedItemDoc | null> {
   generateDataLoader(): DataLoader<string, ProcessedItemDoc | null> {
@@ -38,22 +52,23 @@ export class ProcessedItemLoader implements NestDataLoader<string, ProcessedItem
         .lean()) as unknown as ProcessedItemRecord[];
       const map = new Map<string, ProcessedItemDoc>();
       docs.forEach((doc) => {
-        if (!map.has(doc.itemMetaId)) {
-          map.set(doc.itemMetaId, {
-            id: doc._id.toString(),
-            itemMetaId: doc.itemMetaId,
-            status: doc.status,
-            tags: doc.tags ?? [],
-            result: doc.result ?? undefined,
-            duplicateOf: doc.duplicateOf ? doc.duplicateOf.toString() : null,
-            duplicateSimilarity:
-              typeof doc.duplicateSimilarity === "number"
-                ? doc.duplicateSimilarity
-                : null,
-            llm: doc.llm ?? undefined,
-            createdAt: doc.createdAt,
-            updatedAt: doc.updatedAt
-          });
+        const candidate: ProcessedItemDoc = {
+          id: doc._id.toString(),
+          itemMetaId: doc.itemMetaId,
+          status: doc.status,
+          tags: doc.tags ?? [],
+          result: doc.result ?? undefined,
+          duplicateOf: doc.duplicateOf ? doc.duplicateOf.toString() : null,
+          duplicateSimilarity:
+            typeof doc.duplicateSimilarity === "number" ? doc.duplicateSimilarity : null,
+          llm: doc.llm ?? undefined,
+          createdAt: doc.createdAt,
+          updatedAt: doc.updatedAt
+        };
+
+        const existing = map.get(doc.itemMetaId);
+        if (!existing || statusPriority(candidate.status) > statusPriority(existing.status)) {
+          map.set(doc.itemMetaId, candidate);
         }
       });
       return keys.map((key) => map.get(key as string) ?? null);
