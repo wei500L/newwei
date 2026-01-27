@@ -888,10 +888,13 @@
         "newsSeries": "新闻",
         "layers": "图层",
         "stats": {
+          "window": "窗口",
           "signals": "信号",
           "signalsHint": "按窗口聚合",
+          "signalsUpdated": "信号更新时间",
           "news": "新闻",
           "newsHint": "点位数据（发布时间/入库时间）",
+          "newsUpdated": "新闻更新时间",
           "layers": "图层",
           "layersHint": "静态图层（不受时间窗口影响）",
           "monitors": "监控器",
@@ -3873,7 +3876,17 @@
       "momentumTitle": "动量",
       "predictiveTitle": "预测",
       "feedback": "反馈",
-      "learningHint": "反馈驱动学习：提升/屏蔽 token，并对单条目进行抑制。"
+      "learningHint": "反馈驱动学习：提升/屏蔽 token，并对单条目进行抑制。",
+      "level": {
+        "high": "高",
+        "elevated": "较高",
+        "emerging": "新兴"
+      },
+      "momentumStatus": {
+        "surging": "激增",
+        "rising": "上升",
+        "stable": "稳定"
+      }
     },
     "narrative": {
       "name": "叙事",
@@ -3886,6 +3899,11 @@
       "divergence": "分歧度",
       "clusters": "簇数",
       "credibility": "可信度",
+      "credibilityLevel": {
+        "high": "高",
+        "medium": "中",
+        "low": "低"
+      },
       "credibilityReasons": "原因",
       "credibilityBreakdown": "拆解",
       "sourceReliability": "来源可信度",

@@ -1367,7 +1367,7 @@ export function WarMap({ className }: WarMapProps = {}) {
       <div className="absolute left-4 top-12 z-10 flex flex-col gap-1">
         <Space size={6} wrap>
           <Tag color="default" className="text-xs">
-            Window: {windowLabel}
+            {t("dashboard.charts.warMap.stats.window", { defaultValue: "Window" })}: {windowLabel}
           </Tag>
           <Tooltip title={signalsTooltip}>
             <Tag color="geekblue" className="text-xs">
@@ -1398,12 +1398,13 @@ export function WarMap({ className }: WarMapProps = {}) {
           </Tag>
           {signalsUpdatedLabel ? (
             <Tag color="default" className="text-xs">
-              Signals updated: {signalsUpdatedLabel}
+              {t("dashboard.charts.warMap.stats.signalsUpdated", { defaultValue: "Signals updated" })}:{" "}
+              {signalsUpdatedLabel}
             </Tag>
           ) : null}
           {newsUpdatedLabel ? (
             <Tag color="default" className="text-xs">
-              News updated: {newsUpdatedLabel}
+              {t("dashboard.charts.warMap.stats.newsUpdated", { defaultValue: "News updated" })}: {newsUpdatedLabel}
             </Tag>
           ) : null}
         </Space>

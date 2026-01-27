@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Put } from "@nestjs/common";
+import { Body, Controller, Get, Header, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -16,6 +16,7 @@ export class UserUiSettingsController {
   constructor(private readonly settings: UserSettingsService) {}
 
   @Get("situation-monitor")
+  @Header("Cache-Control", "no-store")
   @Permissions("items.read")
   async getSituationMonitorUiSettings(@CurrentUser() user: AuthenticatedUser) {
     return this.settings.getSituationMonitorUiSettings(user.orgId, user.id);
@@ -31,6 +32,7 @@ export class UserUiSettingsController {
   }
 
   @Get("war-map")
+  @Header("Cache-Control", "no-store")
   @Permissions("items.read")
   async getWarMapUiSettings(@CurrentUser() user: AuthenticatedUser) {
     return this.settings.getWarMapUiSettings(user.orgId, user.id);

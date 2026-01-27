@@ -138,11 +138,6 @@ export class SituationMonitorFeedbackService {
         orgId: options.orgId,
         signalType: options.signalType,
         signalId,
-        falsePositiveCount: 0,
-        falseNegativeCount: 0,
-        suppressedItemMetaIds: [],
-        boostedTokenCounts: {},
-        blockedTokenCounts: {},
       },
       $inc: inc,
     };

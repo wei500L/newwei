@@ -415,7 +415,7 @@ function mergeTranslationStatus(
 }
 
 function toTagColor(level: string) {
-  switch (level) {
+  switch (level.toLowerCase()) {
     case "high":
       return "red";
     case "elevated":
@@ -428,7 +428,7 @@ function toTagColor(level: string) {
 }
 
 function toCredibilityColor(level: string) {
-  switch (level) {
+  switch (level.toLowerCase()) {
     case "high":
       return "green";
     case "medium":
@@ -910,7 +910,11 @@ export function SituationMonitorContent() {
       render: (_value: string, record) => (
         <Space size={8}>
           <span>{translateToZh ? record.nameZh ?? record.name : record.name}</span>
-          <Tag color={toTagColor(record.level)}>{record.level.toUpperCase()}</Tag>
+          <Tag color={toTagColor(record.level)}>
+            {t(`situationMonitor.correlation.level.${record.level.toLowerCase()}`, {
+              defaultValue: record.level.toUpperCase(),
+            })}
+          </Tag>
         </Space>
       ),
     },
@@ -1042,11 +1046,17 @@ export function SituationMonitorContent() {
       dataIndex: "momentum",
       key: "momentum",
       width: 110,
-      render: (value: MomentumSignal["momentum"]) => (
-        <Tag color={value === "surging" ? "red" : value === "rising" ? "orange" : "default"}>
-          {value.toUpperCase()}
-        </Tag>
-      ),
+      render: (value: MomentumSignal["momentum"]) => {
+        const normalized = value.toLowerCase();
+        const color = normalized === "surging" ? "red" : normalized === "rising" ? "orange" : "default";
+        return (
+          <Tag color={color}>
+            {t(`situationMonitor.correlation.momentumStatus.${normalized}`, {
+              defaultValue: value.toUpperCase(),
+            })}
+          </Tag>
+        );
+      },
     },
     {
       title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
@@ -1214,7 +1224,11 @@ export function SituationMonitorContent() {
       render: (_value: string, record) => (
         <Space size={8}>
           <span>{translateToZh ? record.nameZh ?? record.name : record.name}</span>
-          <Tag color={toTagColor(record.level)}>{record.level.toUpperCase()}</Tag>
+          <Tag color={toTagColor(record.level)}>
+            {t(`situationMonitor.correlation.level.${record.level.toLowerCase()}`, {
+              defaultValue: record.level.toUpperCase(),
+            })}
+          </Tag>
         </Space>
       ),
     },
@@ -1388,7 +1402,11 @@ export function SituationMonitorContent() {
       render: (_value: string, record) => (
         <Space size={8}>
           <span>{translateToZh ? record.nameZh ?? record.name : record.name}</span>
-          <Tag color={record.severity === "disinfo" ? "red" : "default"}>{record.severity.toUpperCase()}</Tag>
+          <Tag color={record.severity === "disinfo" ? "red" : "default"}>
+            {t(`situationMonitor.narrative.${record.severity.toLowerCase()}`, {
+              defaultValue: record.severity.toUpperCase(),
+            })}
+          </Tag>
         </Space>
       ),
     },
@@ -1486,7 +1504,10 @@ export function SituationMonitorContent() {
             }
           >
             <Tag color={toCredibilityColor(credibility.level)}>
-              {credibility.level.toUpperCase()} {credibility.score}
+              {t(`situationMonitor.narrative.credibilityLevel.${credibility.level.toLowerCase()}`, {
+                defaultValue: credibility.level.toUpperCase(),
+              })}{" "}
+              {credibility.score}
             </Tag>
           </Popover>
         );

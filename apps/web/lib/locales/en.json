@@ -888,10 +888,13 @@
         "newsSeries": "News",
         "layers": "Layers",
         "stats": {
+          "window": "Window",
           "signals": "Signals",
           "signalsHint": "Aggregated over window",
+          "signalsUpdated": "Signals updated",
           "news": "News",
           "newsHint": "Point-in-time (published/ingested)",
+          "newsUpdated": "News updated",
           "layers": "Layers",
           "layersHint": "Static layers (not time-filtered)",
           "monitors": "Monitors",
@@ -3873,7 +3876,17 @@
       "momentumTitle": "Momentum",
       "predictiveTitle": "Predictive",
       "feedback": "Feedback",
-      "learningHint": "Feedback-driven learning: boosted/blocked tokens and per-item suppression."
+      "learningHint": "Feedback-driven learning: boosted/blocked tokens and per-item suppression.",
+      "level": {
+        "high": "HIGH",
+        "elevated": "ELEVATED",
+        "emerging": "EMERGING"
+      },
+      "momentumStatus": {
+        "surging": "SURGING",
+        "rising": "RISING",
+        "stable": "STABLE"
+      }
     },
     "narrative": {
       "name": "Narrative",
@@ -3886,6 +3899,11 @@
       "divergence": "Divergence",
       "clusters": "Clusters",
       "credibility": "Credibility",
+      "credibilityLevel": {
+        "high": "HIGH",
+        "medium": "MEDIUM",
+        "low": "LOW"
+      },
       "credibilityReasons": "Reasons",
       "credibilityBreakdown": "Breakdown",
       "sourceReliability": "Source reliability",

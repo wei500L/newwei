@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   HttpException,
   InternalServerErrorException,
   MessageEvent,
@@ -52,6 +53,7 @@ export class DashboardController {
 
   @Permissions("dashboards.read")
   @Get("war-map/geojson")
+  @Header("Cache-Control", "no-store")
   async warMapGeoJson(@Query() query: DashboardTimeRangeQueryDto) {
     this.chartsService.resolveRange(query);
     try {
@@ -67,6 +69,7 @@ export class DashboardController {
 
   @Permissions("dashboards.read")
   @Get("war-map/layers")
+  @Header("Cache-Control", "no-store")
   async warMapLayers() {
     return this.chartsService.getWarMapLayers();
   }
