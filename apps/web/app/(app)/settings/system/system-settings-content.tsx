@@ -19,6 +19,7 @@ import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-setti
 import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
 import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
+import { SituationMonitorSettingsPanel } from "@/components/settings/situation-monitor-settings-panel";
 import { SystemSecuritySettingsPanel } from "@/components/settings/system-security-settings-panel";
 import { VectorServiceSettingsPanel } from "@/components/settings/vector-service-settings-panel";
 import {
@@ -755,6 +756,11 @@ export function SystemSettingsContent() {
         },
         { key: "security", label: t("systemSettings.tabs.security"), children: <SystemSecuritySettingsPanel /> },
         { key: "llmGateway", label: t("settings.tabs.llmGateway"), children: <LlmGatewaySettingsPanel /> },
+        {
+          key: "situationMonitor",
+          label: t("systemSettings.tabs.situationMonitor"),
+          children: <SituationMonitorSettingsPanel />
+        },
         { key: "vectorService", label: t("systemSettings.tabs.vectorService"), children: <VectorServiceSettingsPanel /> },
         { key: "modelService", label: t("systemSettings.tabs.modelService"), children: <ModelServiceSettingsPanel /> },
         { key: "geoNominatim", label: t("systemSettings.tabs.geoNominatim"), children: <GeoNominatimSettingsPanel /> },

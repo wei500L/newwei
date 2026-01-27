@@ -8,6 +8,7 @@ import { safeJsonParseFromText } from "../../common/llm-json";
 import { CacheService } from "../cache/cache.service";
 import { LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
 import type { JsonSchemaResponseFormat } from "../news-pipeline/news-prompt.builder";
+import { SituationMonitorSettingsService } from "../system-settings/situation-monitor-settings.service";
 
 import type { SituationMonitorInsightsResponse } from "./situation-monitor.service";
 import type { SituationMonitorHeadline, SituationMonitorFedNewsItem } from "./situation-monitor.types";
@@ -17,6 +18,7 @@ const logger = createLogger({ name: "situation-monitor-translation" });
 const TRANSLATION_CACHE_KEY_PREFIX = "situation-monitor:translation:v1:zh-cn";
 const TRANSLATION_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30;
 const TRANSLATION_BATCH_MAX_CHARS = 3_000;
+const DEFAULT_TRANSLATION_MAX_CONCURRENCY = 2;
 
 const TranslationItemSchema = z.object({
   id: z.string().min(1),
@@ -81,11 +83,64 @@ function chunkByChars<T extends { text: string }>(items: T[], maxChars: number):
   return chunks;
 }
 
+class AsyncSemaphore {
+  private limit: number;
+  private active = 0;
+  private queue: Array<() => void> = [];
+
+  constructor(limit: number) {
+    this.limit = Math.max(1, Math.trunc(limit));
+  }
+
+  setLimit(limit: number) {
+    this.limit = Math.max(1, Math.trunc(limit));
+    this.drain();
+  }
+
+  async withPermit<T>(fn: () => Promise<T>): Promise<T> {
+    const release = await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  private acquire(): Promise<() => void> {
+    if (this.active < this.limit) {
+      this.active += 1;
+      return Promise.resolve(() => this.release());
+    }
+
+    return new Promise((resolve) => {
+      this.queue.push(() => {
+        this.active += 1;
+        resolve(() => this.release());
+      });
+    });
+  }
+
+  private release() {
+    this.active = Math.max(0, this.active - 1);
+    this.drain();
+  }
+
+  private drain() {
+    while (this.active < this.limit && this.queue.length > 0) {
+      const next = this.queue.shift();
+      next?.();
+    }
+  }
+}
+
 @Injectable()
 export class SituationMonitorTranslationService {
+  private readonly semaphore = new AsyncSemaphore(DEFAULT_TRANSLATION_MAX_CONCURRENCY);
+
   constructor(
     private readonly cache: CacheService,
     private readonly llm: LiteLlmService,
+    private readonly settings: SituationMonitorSettingsService,
   ) {}
 
   async applyZhTranslationsBestEffort(
@@ -97,6 +152,9 @@ export class SituationMonitorTranslationService {
     }
 
     try {
+      const maxConcurrency = await this.settings.getTranslationMaxConcurrency();
+      this.semaphore.setLimit(maxConcurrency);
+
       const translated = await this.translateHashesToZh(targets);
       this.applyTranslationMap(insights, translated);
       return { applied: true };
@@ -174,31 +232,41 @@ export class SituationMonitorTranslationService {
       for (const entry of insights.fed.news) {
         collect(entry.title);
         collect(entry.description);
+        collect(entry.typeLabel);
       }
     }
 
     if (insights.correlation) {
       const correlation = insights.correlation;
       for (const entry of correlation.emergingPatterns ?? []) {
+        collect(entry.name);
         for (const headline of entry.headlines ?? []) {
           collect(headline.title);
         }
       }
       for (const entry of correlation.momentumSignals ?? []) {
+        collect(entry.name);
         for (const headline of entry.headlines ?? []) {
           collect(headline.title);
         }
       }
       for (const entry of correlation.crossSourceCorrelations ?? []) {
+        collect(entry.name);
         for (const headline of entry.headlines ?? []) {
           collect(headline.title);
         }
       }
       for (const entry of correlation.predictiveSignals ?? []) {
+        collect(entry.name);
+        collect(entry.prediction);
         for (const headline of entry.headlines ?? []) {
           collect(headline.title);
         }
       }
+    }
+
+    if (insights.correlationSummary) {
+      collect(insights.correlationSummary.status);
     }
 
     if (insights.narrative) {
@@ -211,11 +279,20 @@ export class SituationMonitorTranslationService {
       ];
       for (const list of buckets) {
         for (const entry of list ?? []) {
+          collect(entry.name);
           for (const headline of entry.headlines ?? []) {
             collect(headline.title);
           }
         }
       }
+    }
+
+    if (insights.narrativeSummary) {
+      collect(insights.narrativeSummary.status);
+    }
+
+    if (insights.mainCharacterSummary) {
+      collect(insights.mainCharacterSummary.status);
     }
 
     return targets;
@@ -239,17 +316,25 @@ export class SituationMonitorTranslationService {
     }
 
     const chunks = chunkByChars(missing, TRANSLATION_BATCH_MAX_CHARS);
-    for (const chunk of chunks) {
-      const response = await this.requestZhTranslations(chunk);
-      for (const entry of response.translations) {
-        const hash = entry.id;
-        const zh = normalizeText(entry.zh);
-        if (!targets.has(hash) || !zh) {
-          continue;
+    const tasks = chunks.map((chunk) =>
+      this.semaphore.withPermit(async () => {
+        const response = await this.requestZhTranslations(chunk);
+        for (const entry of response.translations) {
+          const hash = entry.id;
+          const zh = normalizeText(entry.zh);
+          if (!targets.has(hash) || !zh) {
+            continue;
+          }
+          translated.set(hash, zh);
+          await this.cache.set(this.translationCacheKey(hash), zh, TRANSLATION_CACHE_TTL_SECONDS);
         }
-        translated.set(hash, zh);
-        await this.cache.set(this.translationCacheKey(hash), zh, TRANSLATION_CACHE_TTL_SECONDS);
-      }
+      }),
+    );
+
+    const results = await Promise.allSettled(tasks);
+    const failed = results.find((result) => result.status === "rejected") as PromiseRejectedResult | undefined;
+    if (failed) {
+      throw failed.reason instanceof Error ? failed.reason : new Error("Failed to translate via LLM gateway");
     }
 
     return translated;
@@ -351,6 +436,10 @@ export class SituationMonitorTranslationService {
       if (descriptionZh) {
         entry.descriptionZh = descriptionZh;
       }
+      const typeLabelZh = translateText(entry.typeLabel);
+      if (typeLabelZh) {
+        entry.typeLabelZh = typeLabelZh;
+      }
     };
 
     if (insights.headlines) {
@@ -411,25 +500,46 @@ export class SituationMonitorTranslationService {
           ref.titleZh = titleZh;
         }
       };
+      const applyNameRef = (ref: { name: string; nameZh?: string }) => {
+        const nameZh = translateText(ref.name);
+        if (nameZh) {
+          ref.nameZh = nameZh;
+        }
+      };
       for (const entry of correlation.emergingPatterns ?? []) {
+        applyNameRef(entry);
         for (const ref of entry.headlines ?? []) {
           applyHeadlineRef(ref);
         }
       }
       for (const entry of correlation.momentumSignals ?? []) {
+        applyNameRef(entry);
         for (const ref of entry.headlines ?? []) {
           applyHeadlineRef(ref);
         }
       }
       for (const entry of correlation.crossSourceCorrelations ?? []) {
+        applyNameRef(entry);
         for (const ref of entry.headlines ?? []) {
           applyHeadlineRef(ref);
         }
       }
       for (const entry of correlation.predictiveSignals ?? []) {
+        applyNameRef(entry);
+        const predictionZh = translateText(entry.prediction);
+        if (predictionZh) {
+          entry.predictionZh = predictionZh;
+        }
         for (const ref of entry.headlines ?? []) {
           applyHeadlineRef(ref);
         }
+      }
+    }
+
+    if (insights.correlationSummary) {
+      const statusZh = translateText(insights.correlationSummary.status);
+      if (statusZh) {
+        insights.correlationSummary.statusZh = statusZh;
       }
     }
 
@@ -441,6 +551,12 @@ export class SituationMonitorTranslationService {
           ref.titleZh = titleZh;
         }
       };
+      const applyNarrativeName = (ref: { name: string; nameZh?: string }) => {
+        const nameZh = translateText(ref.name);
+        if (nameZh) {
+          ref.nameZh = nameZh;
+        }
+      };
       const buckets = [
         narrative.emergingFringe,
         narrative.fringeToMainstream,
@@ -449,10 +565,25 @@ export class SituationMonitorTranslationService {
       ];
       for (const list of buckets) {
         for (const entry of list ?? []) {
+          applyNarrativeName(entry);
           for (const headline of entry.headlines ?? []) {
             applyNarrativeHeadline(headline);
           }
         }
+      }
+    }
+
+    if (insights.narrativeSummary) {
+      const statusZh = translateText(insights.narrativeSummary.status);
+      if (statusZh) {
+        insights.narrativeSummary.statusZh = statusZh;
+      }
+    }
+
+    if (insights.mainCharacterSummary) {
+      const statusZh = translateText(insights.mainCharacterSummary.status);
+      if (statusZh) {
+        insights.mainCharacterSummary.statusZh = statusZh;
       }
     }
   }

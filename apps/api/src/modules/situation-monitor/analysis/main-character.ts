@@ -50,6 +50,7 @@ export function getMainCharacterSummary(results: MainCharacterResults): {
   name: string;
   count: number;
   status: string;
+  statusZh?: string;
 } {
   if (!results.topCharacter) {
     return { name: "", count: 0, status: "NO DATA" };

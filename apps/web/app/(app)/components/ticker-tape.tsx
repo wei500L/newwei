@@ -108,15 +108,15 @@ export function TickerTape() {
     };
 
     const resolved = [
-      buildItem("Market Sentiment", data.market),
-      buildItem("Conflict Index", data.conflict),
-      buildItem("Resource Scarcity", data.resource),
-      buildItem("Supply Stability", data.supply)
+      buildItem(t("dashboard.hero.marketSentiment", { defaultValue: "Market Sentiment" }), data.market),
+      buildItem(t("dashboard.hero.globalConflictIndex", { defaultValue: "Conflict Index" }), data.conflict),
+      buildItem(t("dashboard.hero.resourceScarcity", { defaultValue: "Resource Scarcity" }), data.resource),
+      buildItem(t("dashboard.hero.supplyChain", { defaultValue: "Supply Stability" }), data.supply)
     ];
     return resolved.filter(
       (item): item is { label: string; value: number; trend: number } => Boolean(item)
     );
-  }, [data]);
+  }, [data, t]);
 
   if (items.length === 0) {
     const message = loading

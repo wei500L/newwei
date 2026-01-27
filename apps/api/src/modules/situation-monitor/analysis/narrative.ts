@@ -73,6 +73,7 @@ export interface NarrativePropagationModel {
 export interface NarrativeData {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   severity: NarrativePattern["severity"];
   count: number;
@@ -712,7 +713,7 @@ export function analyzeNarratives(
   return results;
 }
 
-export function getNarrativeSummary(results: NarrativeResults | null): { total: number; status: string } {
+export function getNarrativeSummary(results: NarrativeResults | null): { total: number; status: string; statusZh?: string } {
   if (!results) {
     return { total: 0, status: "NO DATA" };
   }

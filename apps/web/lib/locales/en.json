@@ -2591,6 +2591,42 @@
         "cancel": "Cancel"
       }
     },
+    "situationMonitor": {
+      "description": "Tune situation monitor LLM translation behavior (concurrency).",
+      "status": {
+        "label": "Status",
+        "env": "Using env defaults",
+        "saved": "Saved override"
+      },
+      "fields": {
+        "translationMaxConcurrency": "Translation max concurrency"
+      },
+      "hints": {
+        "translationMaxConcurrency": "Max concurrent LLM translation requests used by the situation monitor translator."
+      },
+      "actions": {
+        "reset": "Reset to env"
+      },
+      "validation": {
+        "translationMaxConcurrency": "Concurrency is required"
+      },
+      "messages": {
+        "saved": "Saved",
+        "reset": "Reset to env defaults"
+      },
+      "errors": {
+        "loadFailed": "Failed to load situation monitor settings",
+        "saveFailed": "Failed to save situation monitor settings",
+        "badRequest": "Invalid input",
+        "resetFailed": "Failed to reset situation monitor settings"
+      },
+      "modal": {
+        "resetTitle": "Reset situation monitor settings",
+        "resetContent": "Remove stored overrides and revert to env values?",
+        "confirm": "Confirm",
+        "cancel": "Cancel"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "Load version",
@@ -2621,6 +2657,7 @@
       "geoNominatim": "Geocoding (Nominatim)",
       "email": "Email (SMTP)",
       "security": "Security",
+      "situationMonitor": "Situation monitor",
       "vectorService": "Vector service",
       "modelService": "Model service",
       "akshare": "AKShare"

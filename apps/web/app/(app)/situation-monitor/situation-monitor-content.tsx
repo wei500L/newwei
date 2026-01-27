@@ -96,6 +96,7 @@ interface SignalLearning {
 interface EmergingPattern {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   count: number;
   level: "high" | "elevated" | "emerging";
@@ -108,6 +109,7 @@ interface EmergingPattern {
 interface MomentumSignal {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   current: number;
   delta: number;
@@ -120,10 +122,12 @@ interface MomentumSignal {
 interface PredictiveSignal {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   score: number;
   confidence: number;
   prediction: string;
+  predictionZh?: string;
   level: "high" | "medium" | "low";
   headlines: HeadlineRef[];
   feedback?: SignalFeedback;
@@ -133,6 +137,7 @@ interface PredictiveSignal {
 interface CrossSourceCorrelation {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   sourceCount: number;
   sources: string[];
@@ -250,6 +255,7 @@ interface SituationMonitorFedNewsItem {
   timestamp: number;
   type: "monetary" | "powell" | "speech" | "testimony" | "announcement";
   typeLabel: string;
+  typeLabelZh?: string;
   isPowellRelated: boolean;
   hasVideo: boolean;
 }
@@ -326,6 +332,7 @@ interface NarrativePropagationModel {
 interface NarrativeData {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   severity: "watch" | "emerging" | "spreading" | "disinfo";
   count: number;
@@ -376,11 +383,35 @@ interface SituationMonitorInsightsResponse {
   crypto?: SituationMonitorCryptoItem[];
   fed?: SituationMonitorFedSnapshot;
   correlation?: CorrelationResults | null;
-  correlationSummary?: { totalSignals: number; status: string };
+  correlationSummary?: { totalSignals: number; status: string; statusZh?: string };
   narrative?: NarrativeResults | null;
-  narrativeSummary?: { total: number; status: string };
+  narrativeSummary?: { total: number; status: string; statusZh?: string };
   mainCharacter?: { characters: MainCharacterEntry[]; topCharacter: MainCharacterEntry | null };
-  mainCharacterSummary?: { name: string; count: number; status: string };
+  mainCharacterSummary?: { name: string; count: number; status: string; statusZh?: string };
+}
+
+function mergeTranslationStatus(
+  base: SituationMonitorInsightsResponse["translation"],
+  next: SituationMonitorInsightsResponse["translation"],
+): SituationMonitorInsightsResponse["translation"] {
+  if (!base) {
+    return next;
+  }
+  if (!next) {
+    return base;
+  }
+  if (base.target !== next.target) {
+    return base;
+  }
+  if (base.applied && next.applied) {
+    return base;
+  }
+  const error = [base.error, next.error].filter(Boolean).join(" | ");
+  return {
+    target: base.target,
+    applied: false,
+    ...(error ? { error } : {}),
+  };
 }
 
 function toTagColor(level: string) {
@@ -609,7 +640,16 @@ export function SituationMonitorContent() {
 
       const coreData = coreResponse.data ?? null;
       if (coreData) {
-        setData((prev) => (prev ? { ...prev, ...coreData } : coreData));
+        setData((prev) => {
+          if (!prev) {
+            return coreData;
+          }
+          return {
+            ...prev,
+            ...coreData,
+            translation: coreData.translation,
+          };
+        });
       }
 
       if (!includeExternal) {
@@ -633,7 +673,35 @@ export function SituationMonitorContent() {
 
       const externalData = externalResponse.data ?? null;
       if (externalData) {
-        setData((prev) => (prev ? { ...prev, ...externalData } : externalData));
+        setData((prev) => {
+          if (!prev) {
+            return externalData;
+          }
+
+          const merged: SituationMonitorInsightsResponse = { ...prev };
+          if (externalData.crypto !== undefined) {
+            merged.crypto = externalData.crypto;
+          }
+          if (externalData.markets !== undefined) {
+            merged.markets = externalData.markets;
+          }
+          if (externalData.fed !== undefined) {
+            merged.fed = externalData.fed;
+          }
+
+          // External refresh always has `analyzedItems: 0`; keep core counters and window/maxItems.
+          merged.windowHours = prev.windowHours;
+          merged.maxItems = prev.maxItems;
+          merged.analyzedItems = prev.analyzedItems;
+
+          // Still surface the latest refresh timestamp so the header reflects the most recent load.
+          if (externalData.generatedAt) {
+            merged.generatedAt = externalData.generatedAt;
+          }
+
+          merged.translation = mergeTranslationStatus(prev.translation, externalData.translation);
+          return merged;
+        });
       }
     } catch (err) {
       captureClientError("Failed to load situation monitor insights", err);
@@ -839,9 +907,9 @@ export function SituationMonitorContent() {
       title: t("situationMonitor.correlation.topic", { defaultValue: "Topic" }),
       dataIndex: "name",
       key: "name",
-      render: (value: string, record) => (
+      render: (_value: string, record) => (
         <Space size={8}>
-          <span>{value}</span>
+          <span>{translateToZh ? record.nameZh ?? record.name : record.name}</span>
           <Tag color={toTagColor(record.level)}>{record.level.toUpperCase()}</Tag>
         </Space>
       ),
@@ -952,6 +1020,7 @@ export function SituationMonitorContent() {
       title: t("situationMonitor.correlation.topic", { defaultValue: "Topic" }),
       dataIndex: "name",
       key: "name",
+      render: (_value: string, record) => (translateToZh ? record.nameZh ?? record.name : record.name),
     },
     {
       title: t("situationMonitor.correlation.current", { defaultValue: "Current" }),
@@ -1051,10 +1120,21 @@ export function SituationMonitorContent() {
   ];
 
   const predictiveColumns: ColumnsType<PredictiveSignal> = [
-    { title: t("situationMonitor.correlation.topic", { defaultValue: "Topic" }), dataIndex: "name", key: "name" },
+    {
+      title: t("situationMonitor.correlation.topic", { defaultValue: "Topic" }),
+      dataIndex: "name",
+      key: "name",
+      render: (_value: string, record) => (translateToZh ? record.nameZh ?? record.name : record.name),
+    },
     { title: t("situationMonitor.correlation.score", { defaultValue: "Score" }), dataIndex: "score", key: "score", width: 90 },
     { title: t("situationMonitor.correlation.confidence", { defaultValue: "Confidence" }), dataIndex: "confidence", key: "confidence", width: 120, render: (value: number) => `${value}%` },
-    { title: t("situationMonitor.correlation.prediction", { defaultValue: "Prediction" }), dataIndex: "prediction", key: "prediction" },
+    {
+      title: t("situationMonitor.correlation.prediction", { defaultValue: "Prediction" }),
+      dataIndex: "prediction",
+      key: "prediction",
+      render: (_value: string, record) =>
+        translateToZh ? record.predictionZh ?? record.prediction : record.prediction,
+    },
     {
       title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
       key: "feedback",
@@ -1131,9 +1211,9 @@ export function SituationMonitorContent() {
       title: t("situationMonitor.correlation.topic", { defaultValue: "Topic" }),
       dataIndex: "name",
       key: "name",
-      render: (value: string, record) => (
+      render: (_value: string, record) => (
         <Space size={8}>
-          <span>{value}</span>
+          <span>{translateToZh ? record.nameZh ?? record.name : record.name}</span>
           <Tag color={toTagColor(record.level)}>{record.level.toUpperCase()}</Tag>
         </Space>
       ),
@@ -1305,9 +1385,9 @@ export function SituationMonitorContent() {
       title: t("situationMonitor.narrative.name", { defaultValue: "Narrative" }),
       dataIndex: "name",
       key: "name",
-      render: (value: string, record) => (
+      render: (_value: string, record) => (
         <Space size={8}>
-          <span>{value}</span>
+          <span>{translateToZh ? record.nameZh ?? record.name : record.name}</span>
           <Tag color={record.severity === "disinfo" ? "red" : "default"}>{record.severity.toUpperCase()}</Tag>
         </Space>
       ),
@@ -2346,7 +2426,9 @@ export function SituationMonitorContent() {
 	                    <List.Item key={item.id}>
 	                      <Space direction="vertical" size={2} style={{ width: "100%" }}>
 	                        <Space size={8} wrap>
-	                          <Tag color={item.type === "powell" ? "orange" : "blue"}>{item.typeLabel}</Tag>
+	                          <Tag color={item.type === "powell" ? "orange" : "blue"}>
+	                            {translateToZh ? item.typeLabelZh ?? item.typeLabel : item.typeLabel}
+	                          </Tag>
 	                          {item.hasVideo ? <Tag color="purple">VIDEO</Tag> : null}
 	                          {href ? (
 	                            <Typography.Link href={href} target="_blank" rel="noreferrer">
@@ -2550,7 +2632,9 @@ export function SituationMonitorContent() {
         <Space size={12}>
           <span>{t("situationMonitor.correlation.title", { defaultValue: "Correlation Engine" })}</span>
           <Tag color="geekblue">
-            {data?.correlationSummary?.status ?? t("common.loading", { defaultValue: "Loading" })}
+            {(translateToZh
+              ? data?.correlationSummary?.statusZh ?? data?.correlationSummary?.status
+              : data?.correlationSummary?.status) ?? t("common.loading", { defaultValue: "Loading" })}
           </Tag>
           <Button
             size="small"
@@ -2634,7 +2718,11 @@ export function SituationMonitorContent() {
       title={
         <Space size={12}>
           <span>{t("situationMonitor.narrative.title", { defaultValue: "Narrative Tracker" })}</span>
-          <Tag color="geekblue">{data?.narrativeSummary?.status ?? t("common.loading", { defaultValue: "Loading" })}</Tag>
+          <Tag color="geekblue">
+            {(translateToZh
+              ? data?.narrativeSummary?.statusZh ?? data?.narrativeSummary?.status
+              : data?.narrativeSummary?.status) ?? t("common.loading", { defaultValue: "Loading" })}
+          </Tag>
           <Button
             size="small"
             icon={<FileSearchOutlined />}
@@ -2717,7 +2805,9 @@ export function SituationMonitorContent() {
         <Space size={12}>
           <span>{t("situationMonitor.mainCharacter.title", { defaultValue: "Main Character" })}</span>
           <Tag color="geekblue">
-            {data?.mainCharacterSummary?.status ?? t("common.empty", { defaultValue: "No data" })}
+            {(translateToZh
+              ? data?.mainCharacterSummary?.statusZh ?? data?.mainCharacterSummary?.status
+              : data?.mainCharacterSummary?.status) ?? t("common.empty", { defaultValue: "No data" })}
           </Tag>
         </Space>
       }
@@ -3565,7 +3655,9 @@ export function SituationMonitorContent() {
                           <List.Item key={item.id}>
                             <Space direction="vertical" size={2} style={{ width: "100%" }}>
                               <Space size={8} wrap>
-                                <Tag color={item.type === "powell" ? "orange" : "blue"}>{item.typeLabel}</Tag>
+                                <Tag color={item.type === "powell" ? "orange" : "blue"}>
+                                  {translateToZh ? item.typeLabelZh ?? item.typeLabel : item.typeLabel}
+                                </Tag>
                                 {item.hasVideo ? <Tag color="purple">VIDEO</Tag> : null}
                                 {href ? (
                                   <Typography.Link href={href} target="_blank" rel="noreferrer">
@@ -3731,7 +3823,9 @@ export function SituationMonitorContent() {
               <Space size={12}>
                 <span>{t("situationMonitor.correlation.title", { defaultValue: "Correlation Engine" })}</span>
                 <Tag color="geekblue">
-                  {data?.correlationSummary?.status ?? t("common.loading", { defaultValue: "Loading" })}
+                  {(translateToZh
+                    ? data?.correlationSummary?.statusZh ?? data?.correlationSummary?.status
+                    : data?.correlationSummary?.status) ?? t("common.loading", { defaultValue: "Loading" })}
                 </Tag>
               </Space>
             }
@@ -3801,7 +3895,9 @@ export function SituationMonitorContent() {
               <Space size={12}>
                 <span>{t("situationMonitor.narrative.title", { defaultValue: "Narrative Tracker" })}</span>
                 <Tag color="geekblue">
-                  {data?.narrativeSummary?.status ?? t("common.loading", { defaultValue: "Loading" })}
+                  {(translateToZh
+                    ? data?.narrativeSummary?.statusZh ?? data?.narrativeSummary?.status
+                    : data?.narrativeSummary?.status) ?? t("common.loading", { defaultValue: "Loading" })}
                 </Tag>
               </Space>
             }
@@ -3867,7 +3963,11 @@ export function SituationMonitorContent() {
             title={
               <Space size={12}>
                 <span>{t("situationMonitor.mainCharacter.title", { defaultValue: "Main Character" })}</span>
-                <Tag color="geekblue">{data?.mainCharacterSummary?.status ?? "NO DATA"}</Tag>
+                <Tag color="geekblue">
+                  {(translateToZh
+                    ? data?.mainCharacterSummary?.statusZh ?? data?.mainCharacterSummary?.status
+                    : data?.mainCharacterSummary?.status) ?? "NO DATA"}
+                </Tag>
               </Space>
             }
             className="glass-panel border border-[var(--border)] mt-4"

@@ -101,6 +101,7 @@ export interface SituationMonitorFedNewsItem {
   timestamp: number;
   type: SituationMonitorFedNewsType;
   typeLabel: string;
+  typeLabelZh?: string;
   isPowellRelated: boolean;
   hasVideo: boolean;
 }

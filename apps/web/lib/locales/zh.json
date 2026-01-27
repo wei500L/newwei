@@ -2591,6 +2591,42 @@
         "cancel": "取消"
       }
     },
+    "situationMonitor": {
+      "description": "调整态势监控的大模型翻译行为（并发控制）。",
+      "status": {
+        "label": "状态",
+        "env": "使用环境变量默认值",
+        "saved": "已保存覆盖配置"
+      },
+      "fields": {
+        "translationMaxConcurrency": "翻译最大并发数"
+      },
+      "hints": {
+        "translationMaxConcurrency": "态势监控翻译器并行请求大模型的最大数量。"
+      },
+      "actions": {
+        "reset": "重置为环境变量"
+      },
+      "validation": {
+        "translationMaxConcurrency": "并发数必填"
+      },
+      "messages": {
+        "saved": "已保存",
+        "reset": "已重置为环境变量默认值"
+      },
+      "errors": {
+        "loadFailed": "加载态势监控配置失败",
+        "saveFailed": "保存态势监控配置失败",
+        "badRequest": "输入无效",
+        "resetFailed": "重置态势监控配置失败"
+      },
+      "modal": {
+        "resetTitle": "重置态势监控配置",
+        "resetContent": "将删除已保存的覆盖配置并回退到环境变量默认值，是否继续？",
+        "confirm": "确认",
+        "cancel": "取消"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "加载版本",
@@ -2621,6 +2657,7 @@
       "geoNominatim": "地理编码（Nominatim）",
       "email": "邮件（SMTP）",
       "security": "安全",
+      "situationMonitor": "态势监控",
       "vectorService": "向量服务",
       "modelService": "模型服务",
       "akshare": "AKShare"

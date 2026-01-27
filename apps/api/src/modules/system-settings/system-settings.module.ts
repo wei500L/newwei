@@ -20,6 +20,8 @@ import { RateLimitConfigService } from "./rate-limit-config.service";
 import { RateLimitPolicyController } from "./rate-limit-policy.controller";
 import { RateLimitPolicyService } from "./rate-limit-policy.service";
 import { RateLimitSettingsController } from "./rate-limit-settings.controller";
+import { SituationMonitorSettingsController } from "./situation-monitor-settings.controller";
+import { SituationMonitorSettingsService } from "./situation-monitor-settings.service";
 import { SystemSecuritySettingsController } from "./system-security-settings.controller";
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 import { VectorServiceSettingsController } from "./vector-service-settings.controller";
@@ -39,6 +41,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     LlmGatewaySettingsController,
     SystemSecuritySettingsController,
     ModelServiceSettingsController,
+    SituationMonitorSettingsController,
     VectorServiceSettingsController
   ],
   providers: [
@@ -51,6 +54,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
+    SituationMonitorSettingsService,
     VectorServiceSettingsService
   ],
   exports: [
@@ -62,6 +66,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
+    SituationMonitorSettingsService,
     VectorServiceSettingsService
   ]
 })

@@ -23,6 +23,7 @@ export interface CorrelationLearningSnapshot {
 export interface EmergingPattern {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   count: number;
   level: "high" | "elevated" | "emerging";
@@ -35,6 +36,7 @@ export interface EmergingPattern {
 export interface MomentumSignal {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   current: number;
   delta: number;
@@ -47,6 +49,7 @@ export interface MomentumSignal {
 export interface CrossSourceCorrelation {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   sourceCount: number;
   sources: string[];
@@ -59,10 +62,12 @@ export interface CrossSourceCorrelation {
 export interface PredictiveSignal {
   id: string;
   name: string;
+  nameZh?: string;
   category: string;
   score: number;
   confidence: number;
   prediction: string;
+  predictionZh?: string;
   level: "high" | "medium" | "low";
   headlines: { title: string; titleZh?: string; link: string; source: string; itemMetaId?: string }[];
   feedback?: CorrelationFeedbackStats;
@@ -328,6 +333,7 @@ export function analyzeCorrelations(
 export function getCorrelationSummary(results: CorrelationResults | null): {
   totalSignals: number;
   status: string;
+  statusZh?: string;
 } {
   if (!results) {
     return { totalSignals: 0, status: "NO DATA" };
