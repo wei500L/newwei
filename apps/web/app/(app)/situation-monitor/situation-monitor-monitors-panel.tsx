@@ -1,7 +1,7 @@
 "use client";
 
 import { DeleteOutlined, EditOutlined, EnvironmentOutlined, FileSearchOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, InputNumber, List, Modal, Popconfirm, Select, Space, Switch, Tabs, Tag, Typography, message } from "antd";
+import { App, Button, Card, Form, Input, InputNumber, List, Modal, Popconfirm, Select, Space, Switch, Tabs, Tag, Typography } from "antd";
 import { useSession } from "next-auth/react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -41,6 +41,7 @@ function buildTabsLabel(label: string, count: number, color?: string) {
 
 export function SituationMonitorMonitorsPanel() {
   const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const translateToZh = useSituationMonitorSettingsStore((state) => state.translateToZh);

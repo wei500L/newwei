@@ -86,7 +86,7 @@ function chunkByChars<T extends { text: string }>(items: T[], maxChars: number):
 class AsyncSemaphore {
   private limit: number;
   private active = 0;
-  private queue: Array<() => void> = [];
+  private queue: (() => void)[] = [];
 
   constructor(limit: number) {
     this.limit = Math.max(1, Math.trunc(limit));

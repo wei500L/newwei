@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge, Button, Card, Col, DatePicker, Form, Input, List, Modal, Row, Select, Skeleton, Space, Switch, Tag, Typography, message, Popconfirm } from "antd";
+import { App, Badge, Button, Card, Col, DatePicker, Form, Input, List, Modal, Popconfirm, Row, Select, Skeleton, Space, Switch, Tag, Typography } from "antd";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
@@ -220,6 +220,7 @@ const extractRuleId = (payload: Record<string, unknown> | null | undefined): str
 
 export default function SubscriptionsPage() {
   const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();

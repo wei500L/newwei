@@ -11,7 +11,6 @@ import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
-
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
 
@@ -565,7 +564,7 @@ export class LiteLlmService {
     payload: Record<string, unknown>,
     options: { dropMetadata: boolean; adjustResponseFormat: boolean },
   ) {
-    const candidates: Array<{ payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }> = [];
+    const candidates: { payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }[] = [];
 
     const hasMetadata = "metadata" in payload && payload.metadata !== undefined;
     const hasResponseFormat = "response_format" in payload && payload.response_format !== undefined;
@@ -632,10 +631,10 @@ export class LiteLlmService {
   }
 
   private dedupePayloadCandidates(
-    candidates: Array<{ payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }>,
+    candidates: { payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }[],
   ) {
     const seen = new Set<string>();
-    const unique: Array<{ payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }> = [];
+    const unique: { payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }[] = [];
     for (const candidate of candidates) {
       let key: string;
       try {

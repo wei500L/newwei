@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Input, Select, Space, Typography, message } from "antd";
+import { App, Button, Card, Input, Select, Space, Typography } from "antd";
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 import { useEffect, useMemo } from "react";
@@ -85,6 +85,7 @@ export function DashboardEditor({
   onDelete,
 }: DashboardEditorProps) {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const {
     widgets,
     addWidget,

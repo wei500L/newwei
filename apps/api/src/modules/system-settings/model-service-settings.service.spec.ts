@@ -1,7 +1,8 @@
 import { BadRequestException } from "@nestjs/common";
 
-import { ModelServiceSettingsService } from "./model-service-settings.service";
 import { decodeSystemSettingsKey, encryptStringValueV1 } from "../storage/storage-settings.crypto";
+
+import { ModelServiceSettingsService } from "./model-service-settings.service";
 
 const prismaMock = {
   systemSetting: {

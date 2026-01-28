@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Col, List, Row, Space, Tag, Typography, message, Spin } from "antd";
+import { Alert, App, Button, Card, Col, List, Row, Space, Spin, Tag, Typography } from "antd";
 import { useSession } from "next-auth/react";
 import { useTranslation } from "react-i18next";
 
@@ -63,6 +63,7 @@ const buildThresholdSummary = (
 
 export function AlertsConfigContent() {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageAlerts = permissions.includes("alerts.manage");

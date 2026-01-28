@@ -5,14 +5,14 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
+import { LlmGatewayModelsConfigDto, LlmGatewayTestConfigDto } from "./dto/llm-gateway-test-config.dto";
+import { LlmGatewayTestDto } from "./dto/llm-gateway-test.dto";
 import {
   CreateLlmGatewayDto,
   SetEmbeddingActiveLlmGatewayDto,
   SetActiveLlmGatewayDto,
   UpdateLlmGatewayDto
 } from "./dto/llm-gateway.dto";
-import { LlmGatewayTestDto } from "./dto/llm-gateway-test.dto";
-import { LlmGatewayModelsConfigDto, LlmGatewayTestConfigDto } from "./dto/llm-gateway-test-config.dto";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
 

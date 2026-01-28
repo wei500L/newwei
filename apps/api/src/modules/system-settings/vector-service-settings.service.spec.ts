@@ -1,7 +1,8 @@
 import { BadRequestException } from "@nestjs/common";
 
-import { VectorServiceSettingsService } from "./vector-service-settings.service";
 import { decodeSystemSettingsKey, encryptStringValueV1 } from "../storage/storage-settings.crypto";
+
+import { VectorServiceSettingsService } from "./vector-service-settings.service";
 
 const prismaMock = {
   systemSetting: {

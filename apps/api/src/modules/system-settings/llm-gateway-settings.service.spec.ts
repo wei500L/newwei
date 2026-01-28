@@ -1,5 +1,6 @@
-import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 import { decodeSystemSettingsKey, encryptStringValueV1 } from "../storage/storage-settings.crypto";
+
+import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 
 const prismaMock = {
   systemSetting: {

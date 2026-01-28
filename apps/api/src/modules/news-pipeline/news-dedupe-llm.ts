@@ -1,5 +1,5 @@
-import { type JsonSchema7Type, zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
+import { type JsonSchema7Type, zodToJsonSchema } from "zod-to-json-schema";
 
 import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
 

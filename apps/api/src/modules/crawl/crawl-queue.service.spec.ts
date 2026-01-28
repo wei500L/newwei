@@ -109,7 +109,7 @@ describe("CrawlQueueService.enqueueTask", () => {
     await service.enqueueTask("task-1", "org-1", "user-1");
 
     expect(queue.add).toHaveBeenCalledTimes(1);
-    const [_name, data, opts] = queue.add.mock.calls[0];
+    const [, data, opts] = queue.add.mock.calls[0];
     expect(data).toMatchObject({
       taskId: "task-1",
       orgId: "org-1",

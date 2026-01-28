@@ -6,12 +6,12 @@ import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
-import { NewsPipelineConfigService } from "./news-pipeline.config";
 import {
   DEFAULT_NEWS_DEDUPE_PROMPT_VERSION,
   DEFAULT_NEWS_DEDUPE_SYSTEM_PROMPT_TEMPLATE,
   DEFAULT_NEWS_DEDUPE_USER_PROMPT_TEMPLATE,
 } from "./news-dedupe-llm";
+import { NewsPipelineConfigService } from "./news-pipeline.config";
 
 export interface NewsDedupeCategoryThreshold {
   category: string;

@@ -4,13 +4,13 @@ import { SearchOutlined } from "@ant-design/icons";
 import { gql, useMutation } from "@apollo/client";
 import {
   Alert,
+  App,
   Button,
   Card,
   Descriptions,
   Input,
   List,
   Modal,
-  message,
   Select,
   Space,
   Switch,
@@ -561,6 +561,7 @@ function renderSourceList(
 
 export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
   const { data: session, status } = useSession();

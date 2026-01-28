@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Put } from "@nestjs/common";
+import { Body, Controller, Get, Header, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -15,6 +15,7 @@ export class UserDigestController {
   constructor(private readonly digest: UserDigestService) {}
 
   @Get("preference")
+  @Header("Cache-Control", "no-store")
   @Permissions("items.read")
   async getPreference(@CurrentUser() user: AuthenticatedUser) {
     return this.digest.getPreference(user.orgId, user.id);
@@ -27,9 +28,9 @@ export class UserDigestController {
   }
 
   @Get()
+  @Header("Cache-Control", "no-store")
   @Permissions("items.read")
   async getDigest(@CurrentUser() user: AuthenticatedUser) {
     return this.digest.generateDigest(user.orgId, user.id);
   }
 }
-

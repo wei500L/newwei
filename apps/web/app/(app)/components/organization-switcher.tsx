@@ -125,6 +125,7 @@ export function OrganizationSwitcher() {
         <Tooltip title={t("orgSwitcher.tooltip")}>
           <AutoComplete
             allowClear
+            id="topnav-organization"
             placeholder={t("orgSwitcher.placeholder")}
             style={{ minWidth: 220 }}
             value={orgIdOrSlug}

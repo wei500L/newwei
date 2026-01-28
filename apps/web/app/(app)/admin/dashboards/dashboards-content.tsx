@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Select, Space, Spin, Typography, message } from "antd";
+import { Alert, App, Button, Card, Select, Space, Spin, Typography } from "antd";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,7 @@ import {
 
 export function DashboardsContent() {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageDashboards = permissions.includes("dashboards.write");

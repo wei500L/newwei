@@ -2,7 +2,7 @@
 
 import { CloseCircleOutlined, RobotOutlined } from "@ant-design/icons";
 import { gql, useMutation, useQuery, useSubscription } from "@apollo/client";
-import { Alert, Button, Card, Descriptions, Divider, Drawer, Form, Input, InputNumber, List, Select, Space, Tabs, Tag, Typography, message } from "antd";
+import { Alert, App, Button, Card, Descriptions, Divider, Drawer, Form, Input, InputNumber, List, Select, Space, Tabs, Tag, Typography } from "antd";
 import { useSession } from "next-auth/react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -145,9 +145,12 @@ const statusColor = (status: AssistantRunStatus): string => {
 
 export function AssistantContent() {
   const { t, i18n } = useTranslation();
+  const { message: messageApi } = App.useApp();
   const locale = resolveLocale(i18n.language);
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const authenticated = status === "authenticated";
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canRunAssistant = permissions.includes("assistant.run");
 
   const [queryForm] = Form.useForm<{ message: string }>();
   const [reportForm] = Form.useForm<{ period: "daily" | "weekly"; topic?: string; limit?: number }>();
@@ -204,7 +207,12 @@ export function AssistantContent() {
     },
     onError: (err) => {
       const errMessage = err instanceof Error ? err.message : String(err);
-      message.error(t("assistant.streamError", { defaultValue: "Assistant stream error: {{error}}", error: errMessage }));
+      messageApi.error(
+        t("assistant.streamError", {
+          defaultValue: "Assistant stream error: {{error}}",
+          error: errMessage
+        })
+      );
     },
   });
 
@@ -488,6 +496,17 @@ export function AssistantContent() {
       ) : null}
 
       <Card>
+        {!canRunAssistant ? (
+          <Alert
+            style={{ marginBottom: 12 }}
+            type="warning"
+            showIcon
+            message={t("common.accessDenied", { defaultValue: "Access denied" })}
+            description={t("assistant.runPermissionRequired", {
+              defaultValue: "You do not have permission to run assistant tasks."
+            })}
+          />
+        ) : null}
         <Tabs
           defaultActiveKey="query"
           items={[
@@ -503,7 +522,14 @@ export function AssistantContent() {
                     const messageRaw = values.message ?? "";
                     const messageValue = messageRaw.trim();
                     if (!messageValue) {
-                      message.warning(t("assistant.messageRequired", { defaultValue: "Please enter a question." }));
+                      messageApi.warning(
+                        t("assistant.messageRequired", { defaultValue: "Please enter a question." })
+                      );
+                      return;
+                    }
+
+                    if (!canRunAssistant) {
+                      messageApi.warning(t("common.accessDenied", { defaultValue: "Access denied" }));
                       return;
                     }
 
@@ -518,7 +544,7 @@ export function AssistantContent() {
                       await refetch();
                     } catch (err) {
                       const errMessage = err instanceof Error ? err.message : String(err);
-                      message.error(
+                      messageApi.error(
                         t("assistant.requestFailed", { defaultValue: "Request failed: {{error}}", error: errMessage })
                       );
                     }
@@ -537,7 +563,12 @@ export function AssistantContent() {
                     <Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder={placeholder} />
                   </Form.Item>
                   <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={querySaving}>
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      loading={querySaving}
+                      disabled={!canRunAssistant}
+                    >
                       {t("assistant.submit", { defaultValue: "Run" })}
                     </Button>
                   </Form.Item>
@@ -557,6 +588,11 @@ export function AssistantContent() {
                     const topic = typeof values.topic === "string" ? values.topic.trim() : "";
                     const limit = typeof values.limit === "number" && Number.isFinite(values.limit) ? values.limit : null;
 
+                    if (!canRunAssistant) {
+                      messageApi.warning(t("common.accessDenied", { defaultValue: "Access denied" }));
+                      return;
+                    }
+
                     try {
                       const res = await requestAssistantReport({
                         variables: { input: { period, topic: topic || null, limit } },
@@ -571,7 +607,7 @@ export function AssistantContent() {
                       await refetch();
                     } catch (err) {
                       const errMessage = err instanceof Error ? err.message : String(err);
-                      message.error(
+                      messageApi.error(
                         t("assistant.requestFailed", { defaultValue: "Request failed: {{error}}", error: errMessage })
                       );
                     }
@@ -596,7 +632,12 @@ export function AssistantContent() {
                     <InputNumber min={1} max={100} style={{ width: "100%" }} />
                   </Form.Item>
                   <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={reportSaving}>
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      loading={reportSaving}
+                      disabled={!canRunAssistant}
+                    >
                       {t("assistant.submit", { defaultValue: "Run" })}
                     </Button>
                   </Form.Item>
@@ -621,7 +662,16 @@ export function AssistantContent() {
                   onFinish={async (values) => {
                     const series = typeof values.series === "string" ? values.series.trim() : "";
                     if (!series) {
-                      message.warning(t("assistant.forecast.seriesRequired", { defaultValue: "Please enter a series." }));
+                      messageApi.warning(
+                        t("assistant.forecast.seriesRequired", {
+                          defaultValue: "Please enter a series."
+                        })
+                      );
+                      return;
+                    }
+
+                    if (!canRunAssistant) {
+                      messageApi.warning(t("common.accessDenied", { defaultValue: "Access denied" }));
                       return;
                     }
 
@@ -670,7 +720,7 @@ export function AssistantContent() {
                       await refetch();
                     } catch (err) {
                       const errMessage = err instanceof Error ? err.message : String(err);
-                      message.error(
+                      messageApi.error(
                         t("assistant.requestFailed", { defaultValue: "Request failed: {{error}}", error: errMessage })
                       );
                     }
@@ -708,7 +758,12 @@ export function AssistantContent() {
                     <Input placeholder={t("assistant.forecast.sourceFieldPlaceholder", { defaultValue: "e.g. close or last" })} />
                   </Form.Item>
                   <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={forecastSaving}>
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      loading={forecastSaving}
+                      disabled={!canRunAssistant}
+                    >
                       {t("assistant.submit", { defaultValue: "Run" })}
                     </Button>
                   </Form.Item>

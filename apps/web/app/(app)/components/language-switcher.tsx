@@ -12,6 +12,7 @@ export function LanguageSwitcher() {
   return (
     <Select
       size="small"
+      id="topnav-language"
       value={current}
       onChange={(value) => void changeLanguage(value as SupportedLocale)}
       options={[

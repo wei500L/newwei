@@ -3,12 +3,12 @@
 import { DashboardOutlined, GlobalOutlined, SearchOutlined } from "@ant-design/icons";
 import { sanitizeCrawlOptions } from "@modular/utils";
 import {
+  App,
   Alert,
   Button,
   Card,
   Form,
   Input,
-  message,
   Select,
   Space,
   Table,
@@ -60,6 +60,7 @@ function safeParseJson<T>(input?: string | null): T | null {
 
 export function CrawlTasksView() {
   const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const searchParams = useSearchParams();
   const router = useRouter();

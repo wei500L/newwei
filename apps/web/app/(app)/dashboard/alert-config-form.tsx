@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  App,
   Button,
   DatePicker,
   Divider,
@@ -11,7 +12,6 @@ import {
   Space,
   Switch,
   Typography,
-  message,
 } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -101,6 +101,7 @@ const systemMetricSlugs = [
 
 export function AlertConfigForm() {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const { data, refetch } = useAlertRulesQuery();
   const { data: channelsData, refetch: refetchChannels } =
     useAlertChannelsQuery();
