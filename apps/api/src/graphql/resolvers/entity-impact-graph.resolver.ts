@@ -15,7 +15,7 @@ import { EntityImpactGraphInput, EntityImpactGraphModel } from "../models/entity
 export class EntityImpactGraphResolver {
   constructor(private readonly entityImpactGraphService: EntityImpactGraphService) {}
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => EntityImpactGraphModel, { description: "Get entity impact graph data for visualization" })
   async getEntityImpactGraph(
     @Context("req") req: GqlRequest,

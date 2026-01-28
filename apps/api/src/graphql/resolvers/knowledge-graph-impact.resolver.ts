@@ -25,7 +25,7 @@ export class KnowledgeGraphImpactResolver {
     private readonly cache: CacheService
   ) {}
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => KnowledgeGraphImpactAnalysisModel, { nullable: true })
   async getExecutiveChangeImpact(
     @Context("req") req: GqlRequest,
@@ -45,7 +45,7 @@ export class KnowledgeGraphImpactResolver {
     });
   }
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => KnowledgeGraphImpactAnalysisModel, { nullable: true })
   async getCommodityMoveImpact(
     @Context("req") req: GqlRequest,
@@ -65,7 +65,7 @@ export class KnowledgeGraphImpactResolver {
     });
   }
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => KnowledgeGraphImpactAnalysisModel, { nullable: true })
   async getPolicyEventImpact(
     @Context("req") req: GqlRequest,

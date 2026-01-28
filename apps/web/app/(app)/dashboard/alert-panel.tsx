@@ -29,15 +29,21 @@ const eventStatusBadge: Record<string, "success" | "processing" | "error" | "def
 export function AlertPanel() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { data: eventsData, loading, error, refetch: refetchEvents } = useAlertEventsQuery({
-    variables: { limit: 10 }
-  });
   const client = useApolloClient();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const authenticated = status === "authenticated";
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadAlerts = permissions.includes("alerts.read");
   const canManageAlerts = permissions.includes("alerts.manage");
+  const { data: eventsData, loading, error, refetch: refetchEvents } = useAlertEventsQuery({
+    variables: { limit: 10 },
+    skip: !authenticated || !canReadAlerts
+  });
 
   useEffect(() => {
+    if (!authenticated || !canReadAlerts) {
+      return;
+    }
     const sub = client
       .subscribe<AlertEventsStreamSubscription>({
         query: AlertEventsStreamDocument
@@ -48,9 +54,25 @@ export function AlertPanel() {
         }
       });
     return () => sub.unsubscribe();
-  }, [client, refetchEvents]);
+  }, [authenticated, canReadAlerts, client, refetchEvents]);
 
   const events = eventsData?.alertEvents ?? [];
+  if (status === "loading") {
+    return <Skeleton active paragraph={{ rows: 3 }} />;
+  }
+
+  if (authenticated && !canReadAlerts) {
+    return (
+      <ChartEmptyState
+        variant="permission"
+        title={t("common.accessDenied", { defaultValue: "Access denied" })}
+        description={t("common.accessDeniedDescription", {
+          defaultValue:
+            "You don't have permission to view this data. Contact an administrator if you need access."
+        })}
+      />
+    );
+  }
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>

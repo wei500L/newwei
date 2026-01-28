@@ -122,28 +122,19 @@ export function UserDigestPanel() {
   const [digest, setDigest] = useState<UserDigestV1 | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form] = Form.useForm<PreferenceFormValues>();
 
   const loadPreference = useCallback(async () => {
     setLoadingPreference(true);
     try {
       const response = await apiClient.get<UserDigestPreferenceV1>("user-digest/preference");
       setPreference(response.data ?? EMPTY_PREFERENCE);
-      form.setFieldsValue({
-        focusEntities: response.data?.focusEntities ?? [],
-        focusTopics: response.data?.focusTopics ?? [],
-        windowDays: response.data?.windowDays ?? EMPTY_PREFERENCE.windowDays,
-        maxEvents: response.data?.maxEvents ?? EMPTY_PREFERENCE.maxEvents,
-        includeIndicators: response.data?.includeIndicators ?? EMPTY_PREFERENCE.includeIndicators,
-        maxIndicatorsPerEvent: response.data?.maxIndicatorsPerEvent ?? EMPTY_PREFERENCE.maxIndicatorsPerEvent
-      });
     } catch (err) {
       captureClientError("Failed to load user digest preference", err);
       setErrorMessage(t("pages.digest.preferenceLoadFailed", { defaultValue: "Failed to load digest preference." }));
     } finally {
       setLoadingPreference(false);
     }
-  }, [apiClient, form, t]);
+  }, [apiClient, t]);
 
   const loadDigest = useCallback(async () => {
     setLoadingDigest(true);
@@ -166,14 +157,6 @@ export function UserDigestPanel() {
   }, [loadDigest, loadPreference]);
 
   const handleOpenModal = () => {
-    form.setFieldsValue({
-      focusEntities: preference.focusEntities,
-      focusTopics: preference.focusTopics,
-      windowDays: preference.windowDays,
-      maxEvents: preference.maxEvents,
-      includeIndicators: preference.includeIndicators,
-      maxIndicatorsPerEvent: preference.maxIndicatorsPerEvent
-    });
     setModalOpen(true);
   };
 
@@ -369,13 +352,25 @@ export function UserDigestPanel() {
         open={modalOpen}
         title={t("pages.digest.preferences.title", { defaultValue: "Digest Preferences" })}
         onCancel={() => setModalOpen(false)}
-        onOk={() => form.submit()}
         confirmLoading={savingPreference}
+        okButtonProps={{ htmlType: "submit", form: "user-digest-preference-form" }}
         okText={t("common.saveChanges", { defaultValue: "Save changes" })}
         cancelText={t("common.cancel", { defaultValue: "Cancel" })}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" onFinish={handleSavePreference}>
+        <Form
+          id="user-digest-preference-form"
+          layout="vertical"
+          initialValues={{
+            focusEntities: preference.focusEntities,
+            focusTopics: preference.focusTopics,
+            windowDays: preference.windowDays,
+            maxEvents: preference.maxEvents,
+            includeIndicators: preference.includeIndicators,
+            maxIndicatorsPerEvent: preference.maxIndicatorsPerEvent
+          }}
+          onFinish={handleSavePreference}
+        >
           <Form.Item
             label={t("pages.digest.preferences.windowDays", { defaultValue: "Window days" })}
             name="windowDays"

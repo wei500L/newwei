@@ -64,7 +64,7 @@ interface DashboardStreamErrorPayload {
   detail?: string;
 }
 
-export type DashboardStreamStatus = 'live' | 'polling' | 'offline';
+export type DashboardStreamStatus = 'live' | 'offline';
 
 export interface DashboardStreamState {
   connected: boolean;
@@ -83,10 +83,8 @@ export interface DashboardStreamOptions {
   queueStatus?: string | null;
   selectedSector?: string | null;
   enabled?: boolean;
-  pollIntervalMs?: number;
 }
 
-const DEFAULT_POLL_INTERVAL_MS = process.env.NODE_ENV === 'development' ? 5_000 : 15_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -145,7 +143,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     start,
     end,
     enabled = true,
-    pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
     queueStatus,
     selectedSector,
   } = options;
@@ -155,7 +152,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     status: 'offline',
     retryCount: 0,
   });
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
@@ -171,10 +167,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       if (readerRef.current) {
         void readerRef.current.cancel().catch(() => null);
         readerRef.current = null;
-      }
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
       }
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);
@@ -212,7 +204,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     const warEventsKey = ['dashboard', 'war-map', 'events', startIso, endIso] as const;
     const candlestickKey = ['dashboard', 'financial-candlestick', startIso, endIso] as const;
     const geoHeatmapKey = ['dashboard', 'spacetime', 'geo-heatmap', startIso, endIso] as const;
-    const geoHeatmapPrefixKey = ['dashboard', 'spacetime', 'geo-heatmap'] as const;
     const geoHeatmapEventPrefixKey = [
       'dashboard',
       'spacetime',
@@ -251,32 +242,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       return navigator.onLine;
     };
 
-    const stopPolling = () => {
-      if (!pollingRef.current) return;
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    };
-
-    const startPolling = () => {
-      if (pollingRef.current) return;
-      void queryClient.invalidateQueries({ queryKey: warEventsKey, exact: true });
-      void queryClient.invalidateQueries({ queryKey: candlestickKey, exact: true });
-      void queryClient.invalidateQueries({
-        queryKey: geoHeatmapPrefixKey,
-        exact: false,
-        refetchType: 'active',
-      });
-      pollingRef.current = setInterval(() => {
-        void queryClient.invalidateQueries({ queryKey: warEventsKey, exact: true });
-        void queryClient.invalidateQueries({ queryKey: candlestickKey, exact: true });
-        void queryClient.invalidateQueries({
-          queryKey: geoHeatmapPrefixKey,
-          exact: false,
-          refetchType: 'active',
-        });
-      }, pollIntervalMs);
-    };
-
     const scheduleReconnect = () => {
       if (!active) return;
       if (authBlocked) return;
@@ -301,12 +266,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       }, delay);
     };
 
-    const resolveFallbackStatus = (forceOffline?: boolean): DashboardStreamStatus => {
-      if (forceOffline) return 'offline';
-      if (!isOnline()) return 'offline';
-      return 'polling';
-    };
-
     const markHealthy = () => {
       if (!active) return;
       if (reconnectRef.current) {
@@ -314,7 +273,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         reconnectRef.current = null;
       }
       retryRef.current = 0;
-      stopPolling();
       const wasLive = statusRef.current === 'live';
       statusRef.current = 'live';
       if (!wasLive && hasLiveRef.current) {
@@ -358,39 +316,41 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       );
     };
 
-    const handleError = (message: string, statusOverride?: DashboardStreamStatus) => {
+    const handleError = (message: string, forceOffline?: boolean) => {
       if (!active) return;
-      const nextStatus = statusOverride ?? resolveFallbackStatus();
-      statusRef.current = nextStatus;
+      statusRef.current = 'offline';
       setState((prev) =>
-        prev.status === nextStatus &&
-        prev.error === message &&
-        !prev.connected &&
-        prev.retryCount === retryRef.current &&
-        (nextStatus === 'polling' ? true : prev.nextRetryAt === undefined)
+        prev.status === 'offline' && prev.error === message && !prev.connected
           ? prev
           : {
               ...prev,
               connected: false,
-              status: nextStatus,
+              status: 'offline',
               error: message,
-              retryCount: retryRef.current,
-              nextRetryAt: nextStatus === 'polling' ? prev.nextRetryAt : undefined,
             },
       );
-      if (nextStatus === 'polling') {
-        startPolling();
-        scheduleReconnect();
-      } else {
-        stopPolling();
+
+      if (forceOffline || !isOnline()) {
+        if (reconnectRef.current) {
+          clearTimeout(reconnectRef.current);
+          reconnectRef.current = null;
+        }
+        retryRef.current = 0;
+        setState((prev) =>
+          prev.retryCount === 0 && prev.nextRetryAt === undefined
+            ? prev
+            : { ...prev, retryCount: 0, nextRetryAt: undefined },
+        );
+        return;
       }
+
+      scheduleReconnect();
     };
 
     const handleUnauthorized = (status: number) => {
       if (!active) return;
       authBlocked = true;
       emitUnauthorized({ status });
-      stopPolling();
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;
@@ -446,7 +406,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         const code = errorPayload?.code;
         const detail = errorPayload?.detail;
         const headline = code ? `${baseMessage} (${code})` : baseMessage;
-        handleError(detail ? `${headline}: ${detail}` : headline, 'polling');
+        handleError(detail ? `${headline}: ${detail}` : headline);
         return;
       }
       if (eventType === 'ping') {
@@ -468,7 +428,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       if (authBlocked) return;
       if (connecting) return;
       if (!isOnline()) {
-        handleError('Network offline', 'offline');
+        handleError('Network offline', true);
         return;
       }
       connecting = true;
@@ -504,7 +464,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
             handleUnauthorized(response.status);
             return;
           }
-          handleError(`Dashboard stream failed (${response.status})`, 'polling');
+          handleError(`Dashboard stream failed (${response.status})`);
           return;
         }
 
@@ -593,7 +553,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;
       }
-      startPolling();
       void connect();
     };
 
@@ -605,7 +564,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         reconnectRef.current = null;
       }
       retryRef.current = 0;
-      handleError('Network offline', 'offline');
+      handleError('Network offline', true);
     };
 
     const unsubscribeQueryCache = queryClient.getQueryCache().subscribe((event) => {
@@ -635,7 +594,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         void readerRef.current.cancel().catch(() => null);
         readerRef.current = null;
       }
-      stopPolling();
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;
@@ -645,7 +603,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     accessToken,
     enabled,
     endIso,
-    pollIntervalMs,
     queryClient,
     queueStatus,
     selectedSector,

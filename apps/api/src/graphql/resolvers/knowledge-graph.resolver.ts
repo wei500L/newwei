@@ -31,7 +31,7 @@ export class KnowledgeGraphResolver {
     private readonly cache: CacheService
   ) {}
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => KnowledgeGraphModel, { nullable: true, description: "Get a knowledge graph subgraph for a seed entity" })
   async getKnowledgeGraphSubgraph(
     @Context("req") req: GqlRequest,

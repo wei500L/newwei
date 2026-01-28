@@ -323,6 +323,8 @@ export function CrawlTasksView() {
       <Space style={{ marginBottom: 16 }} wrap>
         <Space.Compact style={{ width: 260 }}>
           <Input
+            id="crawl-task-search"
+            name="crawlTaskSearch"
             placeholder={t("crawl.search.placeholder")}
             allowClear
             value={searchInput}

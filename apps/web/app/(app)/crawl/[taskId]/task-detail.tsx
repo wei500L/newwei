@@ -1663,9 +1663,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         title={t("crawl.detail.results.title")}
         style={{ marginTop: 24 }}
         extra={
-          <Space>
+            <Space>
             <Space.Compact style={{ width: 260 }}>
               <Input
+                id="crawl-task-result-search"
+                name="crawlTaskResultSearch"
                 placeholder={t("crawl.detail.results.searchPlaceholder")}
                 allowClear
                 value={resultSearchInput}

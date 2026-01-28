@@ -14,7 +14,7 @@ import { EntitySentimentSnapshotModel, TopicSentimentSnapshotModel } from "../mo
 export class SentimentResolver {
   constructor(private readonly sentiment: SentimentService) {}
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => [EntitySentimentSnapshotModel])
   async entitySentimentSeries(
     @Context("req") req: GqlRequest,
@@ -30,7 +30,7 @@ export class SentimentResolver {
     });
   }
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => [TopicSentimentSnapshotModel])
   async topicSentimentSeries(
     @Context("req") req: GqlRequest,
@@ -52,4 +52,3 @@ export class SentimentResolver {
     return user;
   }
 }
-

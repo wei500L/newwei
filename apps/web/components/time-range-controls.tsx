@@ -61,6 +61,7 @@ export function TimeRangeControls() {
           size="middle"
         />
         <DatePicker.RangePicker
+          id={{ start: "dashboard-range-start", end: "dashboard-range-end" }}
           value={[toDashboardZonedTime(start), toDashboardZonedTime(end)]}
           allowEmpty={[false, false]}
           onChange={handleCustomChange}

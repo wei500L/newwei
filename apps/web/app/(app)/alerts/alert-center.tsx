@@ -1415,6 +1415,8 @@ export function AlertCenterContent() {
                     {canManageAlerts ? (
                       <>
                         <Input.TextArea
+                          id="alerts-feedback-note"
+                          name="alertsFeedbackNote"
                           value={feedbackNote}
                           onChange={(event) => setFeedbackNote(event.target.value)}
                           rows={2}

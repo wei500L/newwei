@@ -19,7 +19,7 @@ import {
 export class NewsIndicatorResolver {
   constructor(private readonly associations: NewsIndicatorAssociationService) {}
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => [NewsIndicatorAssociationModel])
   async newsIndicatorAssociations(
     @Context("req") req: GqlRequest,
@@ -41,7 +41,7 @@ export class NewsIndicatorResolver {
     return rows.map((row) => this.toAssociationModel(row));
   }
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => NewsIndicatorAssociationModel, { nullable: true })
   async newsIndicatorAssociation(
     @Context("req") req: GqlRequest,
@@ -123,4 +123,3 @@ export class NewsIndicatorResolver {
     return user;
   }
 }
-

@@ -1,4 +1,15 @@
 import { Field, Float, GraphQLISODateTime, InputType, Int, ObjectType } from "@nestjs/graphql";
+import {
+  IsArray,
+  IsDate,
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min
+} from "class-validator";
 
 /**
  * Entity model representing a named entity extracted from news content
@@ -91,26 +102,49 @@ export class EntityImpactGraphModel {
 @InputType()
 export class EntityImpactGraphInput {
   @Field(() => GraphQLISODateTime, { nullable: true, description: "Start date for data range" })
+  @IsOptional()
+  @IsDate()
   startDate?: Date;
 
   @Field(() => GraphQLISODateTime, { nullable: true, description: "End date for data range" })
+  @IsOptional()
+  @IsDate()
   endDate?: Date;
 
   @Field(() => Float, { nullable: true, description: "Minimum entity confidence threshold (0-1)" })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
   minConfidence?: number;
 
   @Field(() => Float, { nullable: true, description: "Minimum absolute correlation threshold (0-1)" })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
   minCorrelation?: number;
 
   @Field(() => Int, { nullable: true, description: "Minimum co-occurrence count between entities" })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   minCoOccurrence?: number;
 
   @Field(() => Int, { nullable: true, description: "Maximum number of nodes to return" })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(500)
   maxNodes?: number;
 
   @Field(() => [String], {
     nullable: true,
     description: "Restrict graph to categories (person, organization, stock, commodity)"
   })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @IsIn(["person", "organization", "stock", "commodity"], { each: true })
   categories?: string[];
 }

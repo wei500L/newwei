@@ -195,6 +195,8 @@ export function AuditLogsContent() {
         </Typography.Paragraph>
         <Space wrap>
           <Input.Search
+            id="audit-logs-search"
+            name="auditLogsSearch"
             placeholder={t("auditLogs.searchPlaceholder")}
             allowClear
             onSearch={setSearch}

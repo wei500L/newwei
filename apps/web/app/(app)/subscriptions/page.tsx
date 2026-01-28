@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   NotificationType,
   useAlertEventsQuery,
@@ -221,13 +222,20 @@ export default function SubscriptionsPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
+  const authenticated = sessionStatus === "authenticated";
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadAlerts = permissions.includes("alerts.read");
   const canManageAlerts = permissions.includes("alerts.manage");
-  const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useAlertRulesQuery();
-  const { data: channelsData, loading: channelsLoading, refetch: refetchChannels } = useAlertChannelsQuery();
+  const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useAlertRulesQuery({
+    skip: !authenticated || !canReadAlerts
+  });
+  const { data: channelsData, loading: channelsLoading, refetch: refetchChannels } = useAlertChannelsQuery({
+    skip: !authenticated || !canReadAlerts
+  });
   const { data: eventsData, loading: eventsLoading, refetch: refetchEvents } = useAlertEventsQuery({
-    variables: { limit: 50 }
+    variables: { limit: 50 },
+    skip: !authenticated || !canReadAlerts
   });
   const {
     data: notificationsData,
@@ -303,45 +311,55 @@ export default function SubscriptionsPage() {
     if (!channelModalOpen) {
       return;
     }
-    if (channelModalMode === "create") {
+
+    const timeoutId = window.setTimeout(() => {
+      if (channelModalMode === "create") {
+        channelForm.setFieldsValue({
+          name: "",
+          type: "webhook",
+          target: "",
+          isActive: true,
+          muteUntil: null,
+          notifyIntervalSeconds: null
+        });
+        return;
+      }
+      if (!activeChannel) {
+        return;
+      }
+      const config = toRecord(activeChannel.config);
       channelForm.setFieldsValue({
-        name: "",
-        type: "webhook",
-        target: "",
-        isActive: true,
-        muteUntil: null,
-        notifyIntervalSeconds: null
+        id: activeChannel.id,
+        name: activeChannel.name,
+        type: activeChannel.type,
+        target: activeChannel.target,
+        isActive: activeChannel.isActive ?? true,
+        muteUntil: extractMuteUntil(config),
+        notifyIntervalSeconds: extractNotifyIntervalSeconds(config)
       });
-      return;
-    }
-    if (!activeChannel) {
-      return;
-    }
-    const config = toRecord(activeChannel.config);
-    channelForm.setFieldsValue({
-      id: activeChannel.id,
-      name: activeChannel.name,
-      type: activeChannel.type,
-      target: activeChannel.target,
-      isActive: activeChannel.isActive ?? true,
-      muteUntil: extractMuteUntil(config),
-      notifyIntervalSeconds: extractNotifyIntervalSeconds(config)
-    });
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [activeChannel, channelForm, channelModalMode, channelModalOpen]);
 
   useEffect(() => {
     if (!ruleModalOpen) {
       return;
     }
-    if (!activeRule) {
-      return;
-    }
-    const metadata = toRecord(activeRule.metadata);
-    ruleForm.setFieldsValue({
-      channelIds: (activeRule.channels ?? []).map((channel) => channel.id),
-      muteUntil: parseDateValue(metadata?.muteUntil),
-      notifyAllMembers: metadata?.notifyAllMembers === true || metadata?.notifyAllUsers === true
-    });
+
+    const timeoutId = window.setTimeout(() => {
+      if (!activeRule) {
+        return;
+      }
+      const metadata = toRecord(activeRule.metadata);
+      ruleForm.setFieldsValue({
+        channelIds: (activeRule.channels ?? []).map((channel) => channel.id),
+        muteUntil: parseDateValue(metadata?.muteUntil),
+        notifyAllMembers: metadata?.notifyAllMembers === true || metadata?.notifyAllUsers === true
+      });
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [activeRule, ruleForm, ruleModalOpen]);
 
   const resolveAlertEvent = (notification: (typeof notifications)[number]) => {
@@ -583,14 +601,27 @@ export default function SubscriptionsPage() {
           <Button
             size="small"
             onClick={async () => {
-              await Promise.all([refetchRules(), refetchEvents(), refetchNotifications()]);
+              const tasks: Promise<unknown>[] = [refetchNotifications()];
+              if (canReadAlerts) {
+                tasks.push(refetchRules(), refetchEvents());
+              }
+              await Promise.all(tasks);
             }}
           >
             {t("common.refresh")}
           </Button>
         }
       >
-        {isRulesInitialLoading || isEventsInitialLoading ? (
+        {authenticated && !canReadAlerts ? (
+          <ChartEmptyState
+            variant="permission"
+            title={t("common.accessDenied", { defaultValue: "Access denied" })}
+            description={t("common.accessDeniedDescription", {
+              defaultValue:
+                "You don't have permission to view this data. Contact an administrator if you need access."
+            })}
+          />
+        ) : isRulesInitialLoading || isEventsInitialLoading ? (
           <Skeleton active paragraph={{ rows: 4 }} />
         ) : (
           <List
@@ -706,22 +737,30 @@ export default function SubscriptionsPage() {
             className="content-card"
             title={
               <Space size="middle" align="center">
-                <Typography.Text strong>
-                  {t("subscriptions.channelsTitle", { defaultValue: "Alert Channels" })}
-                </Typography.Text>
-              </Space>
-            }
-            extra={
-              <Space size="small">
-                <Button size="small" onClick={() => void refetchChannels()}>
+            <Typography.Text strong>
+              {t("subscriptions.channelsTitle", { defaultValue: "Alert Channels" })}
+            </Typography.Text>
+          </Space>
+        }
+        extra={
+          <Space size="small">
+            <Button
+              size="small"
+              onClick={() => {
+                if (canReadAlerts) {
+                  void refetchChannels();
+                }
+              }}
+              disabled={!canReadAlerts}
+            >
                   {t('common.refresh')}
-                </Button>
-                {canManageAlerts ? (
-                  <Button
-                    size="small"
-                    type="primary"
-                    onClick={() => {
-                      setChannelModalMode("create");
+            </Button>
+            {canManageAlerts && canReadAlerts ? (
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => {
+                  setChannelModalMode("create");
                       setActiveChannelId(null);
                       setChannelModalOpen(true);
                     }}
@@ -729,15 +768,24 @@ export default function SubscriptionsPage() {
                     {t("subscriptions.addChannel", { defaultValue: "Add channel" })}
                   </Button>
                 ) : null}
-              </Space>
-            }
-          >
-            {isChannelsInitialLoading ? (
-              <Skeleton active paragraph={{ rows: 3 }} />
-            ) : (
-              <List
-                dataSource={channels}
-                locale={{
+          </Space>
+        }
+      >
+        {authenticated && !canReadAlerts ? (
+          <ChartEmptyState
+            variant="permission"
+            title={t("common.accessDenied", { defaultValue: "Access denied" })}
+            description={t("common.accessDeniedDescription", {
+              defaultValue:
+                "You don't have permission to view this data. Contact an administrator if you need access."
+            })}
+          />
+        ) : isChannelsInitialLoading ? (
+          <Skeleton active paragraph={{ rows: 3 }} />
+        ) : (
+          <List
+            dataSource={channels}
+            locale={{
                   emptyText: t("subscriptions.channelsEmpty", {
                     defaultValue: "No alert channels configured."
                   })

@@ -1180,6 +1180,8 @@ export function ItemsView({
              <Space>
                 <Space.Compact>
                   <Input
+                    id="items-search"
+                    name="itemsSearch"
                     placeholder={t("items.search.placeholder")}
                     allowClear
                     value={searchInput}

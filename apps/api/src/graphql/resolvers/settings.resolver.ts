@@ -93,7 +93,7 @@ export class SettingsResolver {
     return this.rateLimitConfig.updateRateLimitSettings(user.orgId, user.id, input);
   }
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => EntityImpactGraphSettingsModel)
   async entityImpactGraphSettings(
     @Context("req") req: GqlRequest
@@ -122,7 +122,7 @@ export class SettingsResolver {
     return this.entityImpactGraphSettingsService.updateSettings(user.orgId, user.id, settingsInput);
   }
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => KnowledgeGraphSettingsModel)
   async knowledgeGraphSettings(@Context("req") req: GqlRequest): Promise<KnowledgeGraphSettingsModel> {
     const user = this.requireUser(req);
@@ -168,7 +168,7 @@ export class SettingsResolver {
     return this.knowledgeGraphSettingsService.updateSettings(user.orgId, user.id, settingsInput);
   }
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => NewsEventSettingsModel)
   async newsEventSettings(@Context("req") req: GqlRequest): Promise<NewsEventSettingsModel> {
     const user = this.requireUser(req);
@@ -254,7 +254,7 @@ export class SettingsResolver {
     return this.newsDedupeSettingsService.updateSettings(user.orgId, user.id, settingsInput);
   }
 
-  @HasPermission("dashboard.read")
+  @HasPermission("dashboards.read")
   @Query(() => NewsIndicatorSettingsModel)
   async newsIndicatorSettings(@Context("req") req: GqlRequest): Promise<NewsIndicatorSettingsModel> {
     const user = this.requireUser(req);

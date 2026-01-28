@@ -12,6 +12,7 @@ import {
   Skeleton,
   Typography,
 } from "antd";
+import { useSession } from "next-auth/react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -34,10 +35,16 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 export function AnalysisPanel() {
   const { t, i18n } = useTranslation();
   const { message } = App.useApp();
+  const { data: session, status } = useSession();
+  const authenticated = status === "authenticated";
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadAnalysis = permissions.includes("analysis.read");
+  const canRunAnalysis = permissions.includes("analysis.run");
   const locale = resolveLocale(i18n.language);
   const { data, loading, error, refetch } = useAnalysisResultsQuery({
     variables: { limit: 10 },
     notifyOnNetworkStatusChange: true,
+    skip: !authenticated || !canReadAnalysis,
   });
   const [liveUpdates, setLiveUpdates] = useState<
     Record<string, AnalysisEventsSubscription["analysisEvents"] & { summaryText: string }>
@@ -47,6 +54,7 @@ export function AnalysisPanel() {
   const [requestAnomaly, { loading: savingAnomaly }] =
     useRequestAnomalyMutation();
   useAnalysisEventsSubscription({
+    skip: !authenticated || !canReadAnalysis,
     onData: ({ data }) => {
       const event = data.data?.analysisEvents;
       if (!event) return;
@@ -98,12 +106,44 @@ export function AnalysisPanel() {
     );
   }, [data?.analysisResults, liveUpdates]);
 
+  if (status === "loading") {
+    return <Skeleton active paragraph={{ rows: 4 }} />;
+  }
+
+  if (authenticated && !canReadAnalysis) {
+    return (
+      <ChartEmptyState
+        variant="permission"
+        title={t("common.accessDenied", { defaultValue: "Access denied" })}
+        description={t("common.accessDeniedDescription", {
+          defaultValue:
+            "You don't have permission to view this data. Contact an administrator if you need access."
+        })}
+      />
+    );
+  }
+
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      {authenticated && !canRunAnalysis ? (
+        <ChartEmptyState
+          presentation="banner"
+          variant="permission"
+          title={t("common.accessDenied", { defaultValue: "Access denied" })}
+          description={t("analysis.runPermissionRequired", {
+            defaultValue: "You can view results, but you don't have permission to run new analyses.",
+          })}
+        />
+      ) : null}
       <Card title={t("analysis.correlation.title")}>
         <CorrelationForm
+          disabled={!canRunAnalysis}
           loading={savingCorr}
           onSubmit={async (values) => {
+            if (!canRunAnalysis) {
+              message.warning(t("common.accessDenied", { defaultValue: "Access denied" }));
+              return;
+            }
             try {
               await requestCorrelation({ variables: { input: values } });
               message.success(t("analysis.correlation.submitted"));
@@ -122,8 +162,13 @@ export function AnalysisPanel() {
       </Card>
       <Card title={t("analysis.anomaly.title")}>
         <AnomalyForm
+          disabled={!canRunAnalysis}
           loading={savingAnomaly}
           onSubmit={async (values) => {
+            if (!canRunAnalysis) {
+              message.warning(t("common.accessDenied", { defaultValue: "Access denied" }));
+              return;
+            }
             try {
               await requestAnomaly({ variables: { input: values } });
               message.success(t("analysis.anomaly.submitted"));
@@ -207,15 +252,17 @@ export function AnalysisPanel() {
 interface CorrelationFormProps {
   onSubmit: (values: CorrelationAnalysisInput) => Promise<void>;
   loading?: boolean;
+  disabled?: boolean;
 }
 
-function CorrelationForm({ onSubmit, loading }: CorrelationFormProps) {
+function CorrelationForm({ onSubmit, loading, disabled }: CorrelationFormProps) {
   const { t } = useTranslation();
   const [form] = Form.useForm<CorrelationAnalysisInput>();
   return (
     <Form<CorrelationAnalysisInput>
       layout="inline"
       form={form}
+      disabled={disabled}
       initialValues={{
         indicatorName: t("analysis.correlation.defaults.indicator"),
         changePercent: 0,
@@ -256,7 +303,7 @@ function CorrelationForm({ onSubmit, loading }: CorrelationFormProps) {
         />
       </Form.Item>
       <Form.Item>
-        <Button type="primary" htmlType="submit" loading={loading}>
+        <Button type="primary" htmlType="submit" loading={loading} disabled={disabled}>
           {t("common.submit")}
         </Button>
       </Form.Item>
@@ -271,9 +318,10 @@ interface AnomalyFormValues extends AnomalyAnalysisInput {
 interface AnomalyFormProps {
   onSubmit: (values: AnomalyAnalysisInput) => Promise<void>;
   loading?: boolean;
+  disabled?: boolean;
 }
 
-function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
+function AnomalyForm({ onSubmit, loading, disabled }: AnomalyFormProps) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const [form] = Form.useForm<AnomalyFormValues>();
@@ -318,6 +366,7 @@ function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
     <Form<AnomalyFormValues>
       layout="inline"
       form={form}
+      disabled={disabled}
       initialValues={{
         metric: t("analysis.anomaly.defaults.metric"),
         timestamp: dayjs().toISOString(),
@@ -389,7 +438,7 @@ function AnomalyForm({ onSubmit, loading }: AnomalyFormProps) {
         />
       </Form.Item>
       <Form.Item>
-        <Button type="primary" htmlType="submit" loading={loading}>
+        <Button type="primary" htmlType="submit" loading={loading} disabled={disabled}>
           {t("common.submit")}
         </Button>
       </Form.Item>

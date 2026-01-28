@@ -193,13 +193,6 @@ function DashboardStreamStatusLine({
         pulse: true
       };
     }
-    if (status === "polling") {
-      return {
-        label: t("dashboard.stream.status.polling", { defaultValue: "Polling" }),
-        dotClass: "bg-amber-500",
-        pulse: false
-      };
-    }
     return {
       label: t("dashboard.stream.status.offline", { defaultValue: "Offline" }),
       dotClass: "bg-red-500",
@@ -213,13 +206,7 @@ function DashboardStreamStatusLine({
     if (prevStatus === streamState.status) return;
     lastStreamStatusRef.current = streamState.status;
     if (prevStatus === null) return;
-    if (streamState.status === "polling") {
-      toast.error(
-        t("dashboard.stream.fallback", {
-          defaultValue: "Live updates interrupted; using polling"
-        })
-      );
-    } else if (streamState.status === "offline") {
+    if (streamState.status === "offline") {
       toast.error(
         t("dashboard.stream.offline", {
           defaultValue: "Live updates unavailable"
@@ -269,7 +256,7 @@ function DashboardStreamStatusLine({
           </span>
         </>
       ) : null}
-      {streamState.status === "polling" || streamState.status === "offline" ? (
+      {streamState.status === "offline" ? (
         <>
           <span className="text-slate-600">|</span>
           <span>

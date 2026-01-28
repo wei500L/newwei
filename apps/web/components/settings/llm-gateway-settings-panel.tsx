@@ -608,7 +608,9 @@ export function LlmGatewaySettingsPanel() {
 
   const openModelsModal = useCallback(
     (title: string, apiBase: string, models: string[]) => {
-      type ModelRow = { id: string };
+      interface ModelRow {
+        id: string;
+      }
       const rows: ModelRow[] = models.map((id) => ({ id }));
       const columns: ColumnsType<ModelRow> = [
         {

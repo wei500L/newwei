@@ -10,7 +10,7 @@ const sampleUser: AuthenticatedUser = {
   lastName: "User",
   orgId: "org-1",
   roleIds: ["role-1"],
-  permissions: ["dashboard.read"]
+  permissions: ["dashboards.read"]
 };
 
 describe("EntityImpactGraphResolver", () => {
@@ -112,4 +112,3 @@ describe("EntityImpactGraphResolver", () => {
     await expect(resolver.getEntityImpactGraph({} as any, undefined)).rejects.toThrow("Unauthenticated");
   });
 });
-

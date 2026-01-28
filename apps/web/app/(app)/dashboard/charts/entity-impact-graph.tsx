@@ -2,6 +2,7 @@
 
 import { App, Button, Drawer, Skeleton, Slider, Space, Tag, Typography } from "antd";
 import type { EChartsOption } from "echarts";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -189,6 +190,10 @@ export function EntityImpactGraph() {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
+  const { data: session, status: sessionStatus } = useSession();
+  const authenticated = sessionStatus === "authenticated";
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadDashboards = permissions.includes("dashboards.read");
   const { range, start, end } = useDashboardRangeStore();
   const windowLabel = formatDashboardWindowLabel(start, end);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -207,8 +212,14 @@ export function EntityImpactGraph() {
   const [categories, setCategories] = useState<string[]>(["person", "organization", "stock", "commodity"]);
   const [settingsApplied, setSettingsApplied] = useState(false);
 
-  const { data: settingsData, loading: settingsLoading } = useEntityImpactGraphSettingsQuery({
-    fetchPolicy: "cache-and-network"
+  const {
+    data: settingsData,
+    loading: settingsLoading,
+    error: settingsError,
+    refetch: refetchSettings
+  } = useEntityImpactGraphSettingsQuery({
+    fetchPolicy: "cache-and-network",
+    skip: !authenticated || !canReadDashboards
   });
 
   const settings = settingsData?.entityImpactGraphSettings;
@@ -227,10 +238,10 @@ export function EntityImpactGraph() {
       setSettingsApplied(true);
       return;
     }
-    if (!settingsLoading) {
+    if (!settingsLoading && !settingsError) {
       setSettingsApplied(true);
     }
-  }, [settings, settingsApplied, settingsLoading]);
+  }, [settings, settingsApplied, settingsError, settingsLoading]);
 
   const { nodes, links, metadata, loading, error, refetch, hasData } =
     useEntityImpactGraph({
@@ -239,7 +250,7 @@ export function EntityImpactGraph() {
       minCoOccurrence,
       maxNodes,
       categories,
-      skip: enabled === false || !settingsApplied
+      skip: !authenticated || !canReadDashboards || enabled === false || !settingsApplied
     });
 
   const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
@@ -532,6 +543,43 @@ export function EntityImpactGraph() {
     setDrawerOpen(false);
     setContextMenu(null);
   }, []);
+
+  if (sessionStatus === "loading") {
+    return (
+      <div className="h-[400px] flex items-center">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </div>
+    );
+  }
+
+  if (authenticated && !canReadDashboards) {
+    return (
+      <div className="h-[400px]">
+        <ChartEmptyState
+          variant="permission"
+          title={t("common.accessDenied", { defaultValue: "Access denied" })}
+          description={t("common.accessDeniedDescription", {
+            defaultValue:
+              "You don't have permission to view this data. Contact an administrator if you need access."
+          })}
+        />
+      </div>
+    );
+  }
+
+  if (!settingsApplied && settingsError) {
+    return (
+      <div className="h-[400px]">
+        <ChartEmptyState
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          description={settingsError.message}
+          actionLabel={t("common.retry", { defaultValue: "Retry" })}
+          onAction={() => void refetchSettings()}
+        />
+      </div>
+    );
+  }
 
   if (enabled === false) {
     return (

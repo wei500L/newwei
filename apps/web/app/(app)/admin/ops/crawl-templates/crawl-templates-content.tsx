@@ -314,6 +314,8 @@ export function CrawlTemplatesContent() {
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Input.Search
+            id="crawl-templates-search"
+            name="crawlTemplatesSearch"
             placeholder={t("crawlTemplates.searchPlaceholder", { defaultValue: "Search templates" })}
             allowClear
             value={search}

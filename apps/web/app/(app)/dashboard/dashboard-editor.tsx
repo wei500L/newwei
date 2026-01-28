@@ -176,18 +176,24 @@ export function DashboardEditor({
         <Space direction="vertical" style={{ width: "100%" }} size="small">
           <Space wrap>
             <Input
+              id="dashboard-editor-name"
+              name="dashboardEditorName"
               style={{ width: 220 }}
               value={name}
               placeholder={t("dashboard.editor.fields.name")}
               onChange={(e) => setMeta({ name: e.target.value })}
             />
             <Input
+              id="dashboard-editor-slug"
+              name="dashboardEditorSlug"
               style={{ width: 200 }}
               value={slug}
               placeholder={t("dashboard.editor.fields.slug")}
               onChange={(e) => setMeta({ slug: e.target.value })}
             />
             <Input
+              id="dashboard-editor-description"
+              name="dashboardEditorDescription"
               style={{ width: 320 }}
               value={description}
               placeholder={t("dashboard.editor.fields.description")}
@@ -208,6 +214,8 @@ export function DashboardEditor({
               <Typography.Text type="secondary">{t("dashboard.editor.fields.primary")}</Typography.Text>
               <input
                 type="color"
+                id="dashboard-editor-primary-color"
+                name="dashboardEditorPrimaryColor"
                 value={primaryColor}
                 onChange={(e) => setMeta({ primaryColor: e.target.value })}
                 style={{

@@ -52,7 +52,7 @@ export function MacroContent() {
     <Tabs
       activeKey={activeKey}
       onChange={handleChange}
-      destroyInactiveTabPane
+      destroyOnHidden
       items={tabs.map((tab) => ({
         key: tab.key,
         label: tab.label,

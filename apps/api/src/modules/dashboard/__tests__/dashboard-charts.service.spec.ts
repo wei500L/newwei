@@ -177,6 +177,61 @@ describe("DashboardChartsService", () => {
     ]);
   });
 
+  it("selects sector heatmap sourceField from default preferences (supports common current value keys)", async () => {
+    const prisma = {
+      economicDataItem: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "item-1",
+            slug: "macro_metric",
+            displayName: "Macro Metric",
+            defaultUnit: "pts",
+            metadata: {}
+          }
+        ])
+      },
+      economicDataPoint: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            itemId: "item-1",
+            recordedAt: new Date("2026-01-01T00:00:00.000Z"),
+            value: 4200,
+            unit: "pts",
+            sourceField: "今值"
+          },
+          {
+            itemId: "item-1",
+            recordedAt: new Date("2026-01-02T00:00:00.000Z"),
+            value: 4300,
+            unit: "pts",
+            sourceField: "今值"
+          }
+        ])
+      }
+    };
+    const geocoding = {
+      resolveCandidates: jest.fn()
+    };
+    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
+
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T23:59:59.999Z")
+    };
+
+    const response = await service.getSectorHeatmap(range);
+
+    expect(response.cells).toEqual([
+      expect.objectContaining({
+        name: "Macro Metric",
+        sourceField: "今值",
+        value: 4300,
+        change: Number(((4300 - 4200) / 4200 * 100).toFixed(2)),
+        unit: "pts"
+      })
+    ]);
+  });
+
   it("throws sector heatmap error code when mapping does not match available source fields", async () => {
     const prisma = {
       economicDataItem: {

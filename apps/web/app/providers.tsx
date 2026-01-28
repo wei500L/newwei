@@ -24,6 +24,7 @@ import {
   type SupportedLocale
 } from "@/lib/i18n";
 
+import { ForbiddenNotice } from "./forbidden-notice";
 import { SessionErrorListener } from "./session-error-listener";
 import { UnauthorizedRedirect } from "./unauthorized-redirect";
 
@@ -190,6 +191,7 @@ export function AppProviders({ children }: PropsWithChildren) {
           <ApolloProvider client={apolloClient}>
             <QueryClientProvider client={queryClient}>
               <UnauthorizedRedirect />
+              <ForbiddenNotice />
               <SessionErrorListener />
               <Toaster position="top-right" theme="light" richColors />
               {children}

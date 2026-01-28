@@ -858,6 +858,8 @@ export function NewsSourcesContent() {
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Input.Search
+            id="news-sources-search"
+            name="newsSourcesSearch"
             placeholder={t("newsSources.searchPlaceholder", { defaultValue: "Search by name or URL" })}
             allowClear
             value={search}

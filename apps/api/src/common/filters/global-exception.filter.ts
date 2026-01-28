@@ -18,6 +18,12 @@ interface NormalizedHttpResponse {
   statusCode: number;
   message: string;
   error?: unknown;
+  code?: string;
+  detail?: string;
+  item?: unknown;
+  items?: unknown;
+  expectedAliases?: unknown;
+  availableSourceFields?: unknown;
 }
 
 type HostContextType = "http" | "graphql" | "rpc" | "ws";
@@ -209,12 +215,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       const response = exception.getResponse();
+      const safePayload = this.extractSafePayload(response);
       const error = this.getErrorFromResponse(response, statusCode);
       if (statusCode >= 500) {
         return {
           statusCode,
           message: "Internal server error",
-          error
+          error,
+          ...safePayload
         };
       }
 
@@ -226,7 +234,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return {
         statusCode,
         message,
-        error
+        error,
+        ...safePayload
       };
     }
 
@@ -246,6 +255,45 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode,
       message: "Internal server error",
     };
+  }
+
+  private extractSafePayload(response: unknown): Omit<NormalizedHttpResponse, "statusCode" | "message" | "error"> {
+    if (typeof response !== "object" || response === null || Array.isArray(response)) {
+      return {};
+    }
+
+    const payload = response as Record<string, unknown>;
+    const code = payload.code;
+    if (typeof code !== "string" || !this.isSafeErrorCode(code)) {
+      return {};
+    }
+
+    const detail = payload.detail;
+    const safe: Omit<NormalizedHttpResponse, "statusCode" | "message" | "error"> = { code };
+
+    if (typeof detail === "string" && detail.trim()) {
+      safe.detail = detail;
+    }
+
+    if ("item" in payload) {
+      safe.item = payload.item;
+    }
+    if ("items" in payload) {
+      safe.items = payload.items;
+    }
+    if ("expectedAliases" in payload) {
+      safe.expectedAliases = payload.expectedAliases;
+    }
+    if ("availableSourceFields" in payload) {
+      safe.availableSourceFields = payload.availableSourceFields;
+    }
+
+    return safe;
+  }
+
+  private isSafeErrorCode(code: string): boolean {
+    const normalized = code.trim();
+    return normalized.length > 0 && /^[A-Z0-9_]+$/.test(normalized);
   }
 
   private isSchemaOutOfDateError(exception: unknown): boolean {

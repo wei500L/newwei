@@ -1,6 +1,6 @@
 import axios, { AxiosHeaders, type AxiosError, type AxiosRequestConfig } from "axios";
 
-import { emitUnauthorized } from "./auth-events";
+import { emitForbidden, emitUnauthorized } from "./auth-events";
 import { env } from "./env";
 import { createTraceHeaders } from "./trace";
 
@@ -61,6 +61,25 @@ export const createApiClient = (options: ApiClientOptions = {}) => {
       }
 
       emitUnauthorized({ status });
+    }
+
+    if (status === 403 && typeof window !== "undefined") {
+      const payload = error.response?.data as unknown;
+      const reason =
+        payload && typeof payload === "object" && !Array.isArray(payload) && "message" in payload
+          ? (() => {
+              const raw = (payload as { message?: unknown }).message;
+              if (typeof raw === "string") {
+                return raw;
+              }
+              if (Array.isArray(raw)) {
+                const parts = raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+                return parts.length > 0 ? parts.join(", ") : undefined;
+              }
+              return undefined;
+            })()
+          : undefined;
+      emitForbidden({ status, reason });
     }
 
     return Promise.reject(error);

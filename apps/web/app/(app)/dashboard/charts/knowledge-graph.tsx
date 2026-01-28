@@ -2,7 +2,8 @@
 
 import { Alert, Button, Drawer, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
 import type { EChartsOption } from "echarts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -51,13 +52,16 @@ function getConfidenceColor(confidence: number) {
 export function KnowledgeGraph() {
   const { t } = useTranslation();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
+  const { data: session, status: sessionStatus } = useSession();
+  const authenticated = sessionStatus === "authenticated";
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadDashboards = permissions.includes("dashboards.read");
   const [messageApi, contextHolder] = message.useMessage();
   const [seedDraft, setSeedDraft] = useState("");
   const [seedError, setSeedError] = useState<string | null>(null);
   const [seedName, setSeedName] = useState<string>("");
   const [maxDepth, setMaxDepth] = useState<number>(2);
   const [maxNodes, setMaxNodes] = useState<number>(200);
-  const [settingsApplied, setSettingsApplied] = useState(false);
   const [selectedNode, setSelectedNode] = useState<{
     id: string;
     name: string;
@@ -66,25 +70,18 @@ export function KnowledgeGraph() {
   } | null>(null);
   const [nodeDrawerOpen, setNodeDrawerOpen] = useState(false);
 
-  const { data: settingsData, loading: settingsLoading } = useKnowledgeGraphSettingsQuery({
-    fetchPolicy: "cache-and-network"
+  const {
+    data: settingsData,
+    loading: settingsLoading,
+    error: settingsError,
+    refetch: refetchSettings
+  } = useKnowledgeGraphSettingsQuery({
+    fetchPolicy: "cache-and-network",
+    skip: !authenticated || !canReadDashboards
   });
 
   const settings = settingsData?.knowledgeGraphSettings;
   const enabled = settings?.enabled ?? false;
-
-  useEffect(() => {
-    if (settingsApplied) {
-      return;
-    }
-    if (settings) {
-      setSettingsApplied(true);
-      return;
-    }
-    if (!settingsLoading) {
-      setSettingsApplied(true);
-    }
-  }, [settings, settingsApplied, settingsLoading]);
 
   const handleSearch = useCallback(
     (value?: string) => {
@@ -110,7 +107,7 @@ export function KnowledgeGraph() {
       }
     },
     fetchPolicy: "cache-first",
-    skip: !enabled || !settingsApplied || !seedName
+    skip: !authenticated || !canReadDashboards || !enabled || !seedName
   });
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
@@ -228,6 +225,51 @@ export function KnowledgeGraph() {
     };
   }, [colors, fontFamily, graph]);
 
+  if (sessionStatus === "loading") {
+    return (
+      <div className="h-[420px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </div>
+    );
+  }
+
+  if (authenticated && !canReadDashboards) {
+    return (
+      <div className="h-[420px]">
+        <ChartEmptyState
+          variant="permission"
+          title={t("common.accessDenied", { defaultValue: "Access denied" })}
+          description={t("common.accessDeniedDescription", {
+            defaultValue:
+              "You don't have permission to view this data. Contact an administrator if you need access."
+          })}
+        />
+      </div>
+    );
+  }
+
+  if (settingsLoading) {
+    return (
+      <div className="h-[420px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </div>
+    );
+  }
+
+  if (settingsError) {
+    return (
+      <div className="h-[420px]">
+        <ChartEmptyState
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          description={settingsError.message}
+          actionLabel={t("common.retry", { defaultValue: "Retry" })}
+          onAction={() => void refetchSettings()}
+        />
+      </div>
+    );
+  }
+
   if (enabled === false) {
     return (
       <div className="h-[420px]">
@@ -236,14 +278,6 @@ export function KnowledgeGraph() {
           title={t("dashboard.charts.knowledgeGraphDisabledTitle", { defaultValue: "Disabled" })}
           description={t("dashboard.charts.knowledgeGraphDisabledDescription", { defaultValue: "Disabled by admin" })}
         />
-      </div>
-    );
-  }
-
-  if (!settingsApplied) {
-    return (
-      <div className="h-[420px] flex items-center">
-        <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
   }

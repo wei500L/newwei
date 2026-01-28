@@ -27,7 +27,7 @@ export class NewsIndicatorController {
   constructor(private readonly associations: NewsIndicatorAssociationService) {}
 
   @Get("associations")
-  @Permissions("dashboard.read")
+  @Permissions("dashboards.read")
   async listAssociations(
     @CurrentUser() user: AuthenticatedUser,
     @Query("limit") limit?: string,
@@ -48,7 +48,7 @@ export class NewsIndicatorController {
   }
 
   @Get("associations/:id")
-  @Permissions("dashboard.read")
+  @Permissions("dashboards.read")
   async getAssociation(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
@@ -68,4 +68,3 @@ export class NewsIndicatorController {
     return this.associations.refreshOrg(user.orgId);
   }
 }
-

@@ -39,8 +39,15 @@ const PREFERRED_SOURCE_FIELDS = [
   "close",
   "收盘价",
   "value",
+  "current_value",
+  "今值",
+  "最新值",
   "latest_price",
-  "current_price"
+  "最新价",
+  "现价",
+  "current_price",
+  "最新",
+  "美元"
 ] as const;
 
 const OHLC_FIELD_ALIASES = {

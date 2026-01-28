@@ -278,6 +278,7 @@ export function ErrorsContent() {
           <Space direction="vertical" size={4}>
             <Typography.Text type="secondary">{t("errors.filters.timeRange")}</Typography.Text>
             <RangePicker
+              id={{ start: "admin-errors-start", end: "admin-errors-end" }}
               value={filters.dateRange}
               onChange={(value) => handleRangeChange(value as [Dayjs, Dayjs] | null)}
               allowClear

@@ -108,6 +108,8 @@ export function CommandBar() {
         <input
           ref={inputRef}
           type="text"
+          id="command-bar-query"
+          name="commandBarQuery"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("nav.commandPlaceholder", {

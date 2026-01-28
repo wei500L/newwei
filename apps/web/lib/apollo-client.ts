@@ -15,7 +15,7 @@ import { getMainDefinition } from "@apollo/client/utilities";
 import { createClient } from "graphql-ws";
 import { getSession } from "next-auth/react";
 
-import { emitUnauthorized } from "./auth-events";
+import { emitForbidden, emitUnauthorized } from "./auth-events";
 import { captureClientError } from "./client-telemetry";
 import { env } from "./env";
 import { createTraceHeaders } from "./trace";
@@ -66,6 +66,9 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, response })
       if (error.extensions?.code === "UNAUTHENTICATED") {
         emitUnauthorized({ status: 401, reason: error.message });
       }
+      if (error.extensions?.code === "FORBIDDEN") {
+        emitForbidden({ status: 403, reason: error.message });
+      }
       const traceId =
         (error.extensions?.traceId as string | undefined) ?? responseTraceId ?? undefined;
       captureClientError(`[GraphQL error]: ${error.message}`, error, {
@@ -84,6 +87,9 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, response })
       (networkError as NetworkErrorWithResponse)?.response?.status;
     if (statusCode === 401) {
       emitUnauthorized({ status: statusCode });
+    }
+    if (statusCode === 403) {
+      emitForbidden({ status: statusCode });
     }
     captureClientError("[Network error]", networkError, {
       traceId: responseTraceId ?? undefined,

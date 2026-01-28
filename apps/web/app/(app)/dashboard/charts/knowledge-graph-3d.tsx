@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Button, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as THREE from "three";
@@ -55,35 +56,31 @@ export interface KnowledgeGraph3DProps {
 export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
   const { t } = useTranslation();
   const { colors } = useChartTheme();
+  const { data: session, status: sessionStatus } = useSession();
+  const authenticated = sessionStatus === "authenticated";
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadDashboards = permissions.includes("dashboards.read");
   const [messageApi, contextHolder] = message.useMessage();
   const [seedDraft, setSeedDraft] = useState("");
   const [seedName, setSeedName] = useState<string>("");
   const [maxDepth, setMaxDepth] = useState<number>(2);
   const [maxNodes, setMaxNodes] = useState<number>(160);
-  const [settingsApplied, setSettingsApplied] = useState(false);
   const [selectedNode, setSelectedNode] = useState<NodeMeta | null>(null);
   const [layoutNonce, setLayoutNonce] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const { data: settingsData, loading: settingsLoading } = useKnowledgeGraphSettingsQuery({
-    fetchPolicy: "cache-and-network"
+  const {
+    data: settingsData,
+    loading: settingsLoading,
+    error: settingsError,
+    refetch: refetchSettings
+  } = useKnowledgeGraphSettingsQuery({
+    fetchPolicy: "cache-and-network",
+    skip: !authenticated || !canReadDashboards
   });
 
   const settings = settingsData?.knowledgeGraphSettings;
   const enabled = settings?.enabled ?? false;
-
-  useEffect(() => {
-    if (settingsApplied) {
-      return;
-    }
-    if (settings) {
-      setSettingsApplied(true);
-      return;
-    }
-    if (!settingsLoading) {
-      setSettingsApplied(true);
-    }
-  }, [settings, settingsApplied, settingsLoading]);
 
   useEffect(() => {
     const normalized = (defaultSeed ?? "").trim();
@@ -118,7 +115,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       }
     },
     fetchPolicy: "cache-first",
-    skip: !enabled || !settingsApplied || !seedName
+    skip: !authenticated || !canReadDashboards || !enabled || !seedName
   });
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
@@ -440,6 +437,51 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
     };
   }, [colors, degreeMap, graph, layoutNonce]);
 
+  if (sessionStatus === "loading") {
+    return (
+      <div className="h-[420px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </div>
+    );
+  }
+
+  if (authenticated && !canReadDashboards) {
+    return (
+      <div className="h-[420px]">
+        <ChartEmptyState
+          variant="permission"
+          title={t("common.accessDenied", { defaultValue: "Access denied" })}
+          description={t("common.accessDeniedDescription", {
+            defaultValue:
+              "You don't have permission to view this data. Contact an administrator if you need access."
+          })}
+        />
+      </div>
+    );
+  }
+
+  if (settingsLoading) {
+    return (
+      <div className="h-[420px] flex items-center">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </div>
+    );
+  }
+
+  if (settingsError) {
+    return (
+      <div className="h-[420px]">
+        <ChartEmptyState
+          variant="error"
+          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          description={settingsError.message}
+          actionLabel={t("common.retry", { defaultValue: "Retry" })}
+          onAction={() => void refetchSettings()}
+        />
+      </div>
+    );
+  }
+
   if (enabled === false) {
     return (
       <div className="h-[420px]">
@@ -448,14 +490,6 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
           title={t("dashboard.charts.knowledgeGraphDisabledTitle", { defaultValue: "Disabled" })}
           description={t("dashboard.charts.knowledgeGraphDisabledDescription", { defaultValue: "Disabled by admin" })}
         />
-      </div>
-    );
-  }
-
-  if (!settingsApplied) {
-    return (
-      <div className="h-[420px] flex items-center">
-        <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
   }

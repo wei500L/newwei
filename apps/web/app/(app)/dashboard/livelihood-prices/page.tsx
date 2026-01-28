@@ -24,6 +24,18 @@ const agConfigs = [
   { slug: "cotton_futures_main", labelKey: "dashboard.livelihood.agri.cotton" },
 ];
 
+const roundUpNiceMax = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 1;
+  }
+  const exponent = Math.floor(Math.log10(value));
+  const magnitude = 10 ** exponent;
+  const normalized = value / magnitude;
+  const rounded =
+    normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return rounded * magnitude;
+};
+
 export default function LivelihoodPricesPage() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -101,16 +113,18 @@ export default function LivelihoodPricesPage() {
   const validRadarData = radarData.filter(
     (item): item is { name: string; value: number } => typeof item.value === "number",
   );
-  const radarMax =
+  const radarMax = roundUpNiceMax(
     validRadarData.length > 0
       ? Math.max(...validRadarData.map((entry) => entry.value))
-      : 1;
+      : 1,
+  );
   const radarOption = {
     radar: {
       indicator: validRadarData.map((item) => ({
         name: item.name,
         max: radarMax,
       })),
+      splitNumber: 5,
     },
     series: [
       {
@@ -152,8 +166,8 @@ export default function LivelihoodPricesPage() {
     },
     xAxis: { type: "time" },
     yAxis: [
-      { type: "value", name: t("dashboard.livelihood.tourism.axisIncome") },
-      { type: "value", name: "%", axisLabel: { formatter: "{value}%" } },
+      { type: "value", name: t("dashboard.livelihood.tourism.axisIncome"), alignTicks: false },
+      { type: "value", name: "%", alignTicks: false, axisLabel: { formatter: "{value}%" } },
     ],
     series: [
       {

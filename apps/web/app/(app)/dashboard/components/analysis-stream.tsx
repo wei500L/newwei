@@ -1,11 +1,13 @@
 "use client";
 
 import { LoadingOutlined } from "@ant-design/icons";
+import { Button } from "antd";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   AnalysisType,
   useAnalysisEventsSubscription,
@@ -16,20 +18,34 @@ import dayjs from "@/lib/dayjs";
 
 const LIVE_UPDATES_LIMIT = 50;
 const LIVE_SUMMARY_LIMIT = 4000;
-const POLL_FALLBACK_INTERVAL_MS = 30_000;
 const CONNECTION_TOAST_ID = "analysis-stream-connection";
 
 export function AnalysisStream() {
   const { t } = useTranslation();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const authenticated = status === "authenticated";
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadAnalysis = permissions.includes("analysis.read");
+  const canStream = authenticated && canReadAnalysis;
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
-  const [pollFallbackEnabled, setPollFallbackEnabled] = useState(false);
+  const [subscriptionEnabled, setSubscriptionEnabled] = useState(true);
 
-  const { data, loading, error } = useAnalysisResultsQuery({
+  useEffect(() => {
+    if (subscriptionEnabled) {
+      return;
+    }
+    const timer = window.setTimeout(() => setSubscriptionEnabled(true), 50);
+    return () => window.clearTimeout(timer);
+  }, [subscriptionEnabled]);
+
+  const retrySubscription = () => {
+    setSubscriptionError(null);
+    setSubscriptionEnabled(false);
+  };
+
+  const { data, loading, error, refetch } = useAnalysisResultsQuery({
     variables: { limit: 20 },
-    skip: !authenticated,
-    ...(pollFallbackEnabled ? { pollInterval: POLL_FALLBACK_INTERVAL_MS } : {})
+    skip: !authenticated || !canReadAnalysis,
   });
 
   const [liveUpdates, setLiveUpdates] = useState<
@@ -40,7 +56,7 @@ export function AnalysisStream() {
   >({});
 
   useAnalysisEventsSubscription({
-    skip: !authenticated,
+    skip: !authenticated || !subscriptionEnabled || !canReadAnalysis,
     onData: ({ data: subscription }) => {
       const event = subscription.data?.analysisEvents;
       if (!event) return;
@@ -85,12 +101,10 @@ export function AnalysisStream() {
         }, {});
       });
       setSubscriptionError(null);
-      setPollFallbackEnabled(false);
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : String(error);
       setSubscriptionError(message);
-      setPollFallbackEnabled(true);
     }
   });
 
@@ -143,48 +157,37 @@ export function AnalysisStream() {
   const subscriptionErrorLabel = t("dashboard.analysisStream.subscriptionError", {
     defaultValue: "Live updates disconnected",
   });
-  const pollIntervalSeconds = Math.round(POLL_FALLBACK_INTERVAL_MS / 1000);
   const liveModeLabel = t("dashboard.analysisStream.mode.live", { defaultValue: "Live" });
-  const pollModeLabel = t("dashboard.analysisStream.mode.polling", {
-    defaultValue: "Polling ({{seconds}}s)",
-    seconds: pollIntervalSeconds
-  });
-  const pollFallbackBannerLabel = t("dashboard.analysisStream.pollFallback", {
-    defaultValue: "Switched to polling every {{seconds}}s due to live update errors.",
-    seconds: pollIntervalSeconds
-  });
-  const pollFallbackToastLabel = t("dashboard.analysisStream.pollFallbackToast", {
-    defaultValue: "Live updates disconnected — switched to polling ({{seconds}}s).",
-    seconds: pollIntervalSeconds
+  const offlineModeLabel = t("dashboard.analysisStream.mode.offline", {
+    defaultValue: "Offline",
   });
   const liveRecoveredToastLabel = t("dashboard.analysisStream.liveRecoveredToast", {
     defaultValue: "Live updates reconnected.",
   });
 
-  const lastPollFallbackRef = useRef<boolean | null>(null);
+  const lastOfflineRef = useRef<boolean | null>(null);
   useEffect(() => {
-    if (!authenticated) {
-      lastPollFallbackRef.current = null;
+    if (!canStream) {
+      lastOfflineRef.current = null;
       return;
     }
 
-    const prev = lastPollFallbackRef.current;
-    if (prev === pollFallbackEnabled) {
+    const offline = Boolean(subscriptionError);
+    const prev = lastOfflineRef.current;
+    if (prev === offline) {
       return;
     }
-    lastPollFallbackRef.current = pollFallbackEnabled;
+    lastOfflineRef.current = offline;
     if (prev === null) {
       return;
     }
 
-    if (pollFallbackEnabled) {
-      toast.error(pollFallbackToastLabel, {
+    if (offline) {
+      toast.error(subscriptionErrorLabel, {
         id: CONNECTION_TOAST_ID,
         closeButton: true,
         duration: 10_000,
-        ...(subscriptionError
-          ? { description: `${subscriptionErrorLabel}: ${subscriptionError}` }
-          : {})
+        ...(subscriptionError ? { description: subscriptionError } : {})
       });
       return;
     }
@@ -194,15 +197,13 @@ export function AnalysisStream() {
       duration: 4_000,
     });
   }, [
-    authenticated,
+    canStream,
     liveRecoveredToastLabel,
-    pollFallbackEnabled,
-    pollFallbackToastLabel,
     subscriptionError,
     subscriptionErrorLabel,
   ]);
 
-  return (
+  return canStream ? (
     <div className="flex flex-col h-full glass-panel overflow-hidden relative text-sm">
       <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border)] bg-white/70">
         <div className="flex items-center gap-2">
@@ -219,12 +220,12 @@ export function AnalysisStream() {
            <span
              className={[
                "rounded-full border px-2 py-[2px] text-[10px] font-medium",
-               pollFallbackEnabled
-                 ? "border-amber-200 bg-amber-50 text-amber-800"
+               subscriptionError
+                 ? "border-red-200 bg-red-50 text-red-800"
                  : "border-emerald-200 bg-emerald-50 text-emerald-800"
              ].join(" ")}
            >
-             {pollFallbackEnabled ? pollModeLabel : liveModeLabel}
+             {subscriptionError ? offlineModeLabel : liveModeLabel}
            </span>
            <span className="text-[10px] text-slate-500">
              {updatesLabel}
@@ -234,18 +235,22 @@ export function AnalysisStream() {
 
       {/* Terminal Feed */}
       <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--primary)]/20 scrollbar-track-transparent p-4 space-y-4">
-        {pollFallbackEnabled ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <div className="font-medium">{pollFallbackBannerLabel}</div>
-            {subscriptionError ? (
-              <div className="mt-1 opacity-80">
-                {subscriptionErrorLabel}: {subscriptionError}
+        {subscriptionError ? (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium">{subscriptionErrorLabel}</div>
+                <div className="mt-1 opacity-80">{subscriptionError}</div>
               </div>
-            ) : null}
-          </div>
-        ) : subscriptionError ? (
-          <div className="text-[var(--destructive)] text-xs">
-            {subscriptionErrorLabel}: {subscriptionError}
+              <div className="flex shrink-0 items-center gap-2">
+                <Button size="small" onClick={() => void refetch()}>
+                  {t("common.refresh", { defaultValue: "Refresh" })}
+                </Button>
+                <Button size="small" type="primary" onClick={retrySubscription}>
+                  {t("common.retry", { defaultValue: "Retry" })}
+                </Button>
+              </div>
+            </div>
           </div>
         ) : null}
 
@@ -297,6 +302,24 @@ export function AnalysisStream() {
       </div>
 
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-white/5 to-transparent opacity-40" />
+    </div>
+  ) : authenticated && !canReadAnalysis ? (
+    <div className="flex h-full">
+      <ChartEmptyState
+        presentation="center"
+        variant="permission"
+        title={t("common.accessDenied", { defaultValue: "Access denied" })}
+        description={t("common.accessDeniedDescription", {
+          defaultValue:
+            "You don't have permission to view this data. Contact an administrator if you need access."
+        })}
+      />
+    </div>
+  ) : (
+    <div className="flex flex-col h-full glass-panel overflow-hidden relative text-sm">
+      <div className="flex flex-1 items-center justify-center px-4 py-6 text-xs text-slate-500">
+        {t("auth.login.required", { defaultValue: "Please sign in to view this panel." })}
+      </div>
     </div>
   );
 }

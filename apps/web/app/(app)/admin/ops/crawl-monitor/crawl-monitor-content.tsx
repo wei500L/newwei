@@ -526,7 +526,6 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
   const [mode, setMode] = useState<TransportMode>(() => (wsUrl ? "ws" : "polling"));
   const [wsStatus, setWsStatus] = useState<WsStatus>("idle");
   const [wsError, setWsError] = useState<string | null>(null);
-  const [wsFallbackNotice, setWsFallbackNotice] = useState<string | null>(null);
   const [monitor, setMonitor] = useState<MonitorState | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
   const [completedFilter, setCompletedFilter] = useState<"all" | "success" | "error">("all");
@@ -534,19 +533,12 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
   const [detailModal, setDetailModal] = useState<{ title: string; payload: unknown } | null>(null);
 
   const modeRef = useRef<TransportMode>(mode);
-  const wsEverConnectedRef = useRef(false);
-  const wsFallbackAttemptedRef = useRef(false);
   const reconnectAttempts = useRef(0);
   const reconnectTimeoutId = useRef<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     modeRef.current = mode;
-    if (mode === "ws") {
-      wsEverConnectedRef.current = false;
-      wsFallbackAttemptedRef.current = false;
-      setWsFallbackNotice(null);
-    }
   }, [mode]);
 
   const pollErrorInfo = useMemo(() => {
@@ -787,27 +779,6 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
     if (errors.status === "fulfilled") updateMonitorField("errors", errors.value);
   }, [updateMonitorField]);
 
-  const maybeFallbackToPolling = useCallback(async () => {
-    if (modeRef.current !== "ws") return;
-    if (wsEverConnectedRef.current) return;
-    if (wsFallbackAttemptedRef.current) return;
-    wsFallbackAttemptedRef.current = true;
-
-    try {
-      await fetchMonitorJson("health");
-    } catch {
-      return;
-    }
-
-    setWsFallbackNotice(
-      t("crawl.monitor.ws.autoFallback", {
-        defaultValue:
-          "WebSocket failed. Switched to Polling automatically (authenticated server-side proxy)."
-      })
-    );
-    setMode("polling");
-  }, [t]);
-
   const connectWebSocket = useCallback(() => {
     if (!wsUrl) {
       setWsStatus("error");
@@ -833,7 +804,6 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
 
       ws.onopen = () => {
         if (wsRef.current !== ws) return;
-        wsEverConnectedRef.current = true;
         reconnectAttempts.current = 0;
         setWsStatus("connected");
         setWsError(null);
@@ -865,14 +835,12 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
         if (wsRef.current !== ws) return;
         setWsStatus("error");
         setWsError(t("crawl.monitor.ws.error", { defaultValue: "WebSocket error." }));
-        void maybeFallbackToPolling();
       };
 
       ws.onclose = () => {
         if (wsRef.current !== ws) return;
         wsRef.current = null;
         if (modeRef.current !== "ws") return;
-        void maybeFallbackToPolling();
         const attempt = reconnectAttempts.current + 1;
         reconnectAttempts.current = attempt;
         const delayMs = Math.min(30_000, 1_000 * Math.pow(2, Math.min(attempt, 5)));
@@ -883,9 +851,8 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
     } catch (error) {
       setWsStatus("error");
       setWsError(error instanceof Error ? error.message : t("crawl.monitor.ws.error", { defaultValue: "WebSocket error." }));
-      void maybeFallbackToPolling();
     }
-  }, [maybeFallbackToPolling, t, wsUrl]);
+  }, [t, wsUrl]);
 
   const openDetailModal = useCallback((title: string, payload: unknown) => {
     setDetailModal({ title, payload });
@@ -1594,15 +1561,6 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
                 </Space>
               </Space>
             }
-          />
-        ) : null}
-
-        {mode === "polling" && wsFallbackNotice ? (
-          <Alert
-            type="info"
-            showIcon
-            message={t("crawl.monitor.ws.autoFallbackTitle", { defaultValue: "Switched to Polling" })}
-            description={wsFallbackNotice}
           />
         ) : null}
 

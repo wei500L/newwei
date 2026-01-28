@@ -38,12 +38,12 @@ interface SectorHeatmapResponse {
 
 type HeatmapValue = [number, number, number, string, number];
 
-type SectorHeatmapFieldMismatchPayload = {
+interface SectorHeatmapFieldMismatchPayload {
   code?: unknown;
   message?: unknown;
   detail?: unknown;
   items?: unknown;
-};
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
