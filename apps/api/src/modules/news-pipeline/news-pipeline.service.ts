@@ -27,6 +27,7 @@ import { ItemStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+import { CrawlExecutionService } from "../crawl/crawl-execution.service";
 import { Crawl4aiClient } from "../crawl/crawl4ai.client";
 import { VectorClientService } from "../vector/vector-client.service";
 
@@ -187,6 +188,7 @@ export class NewsPipelineService implements OnModuleDestroy {
   private outboxDeliveryScheduled = false;
   private outboxDeliveryInFlight = false;
   private readonly outboxRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly crawlActorByOrgId = new Map<string, string>();
 
   constructor(
     private readonly crawlClient: Crawl4aiClient,
@@ -198,6 +200,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     private readonly cache: CacheService,
     private readonly prisma: PrismaService,
     @Optional() private readonly vectorClient?: VectorClientService,
+    @Optional() private readonly crawlExecution?: CrawlExecutionService,
   ) {
     this.outboxEventEmitter.on(
       OUTBOX_DELIVERY_REQUESTED_EVENT,
@@ -205,6 +208,108 @@ export class NewsPipelineService implements OnModuleDestroy {
         this.enqueueOutboxDelivery(event);
       },
     );
+  }
+
+  private buildCrawlTaskOptions(payload: NormalizedNewsPayload): Record<string, unknown> {
+    const cfg = this.configService.config.crawl4ai;
+    return {
+      ...cfg.crawlerDefaults,
+      cleanMarkdown: cfg.cleanMarkdown ?? cfg.crawlerDefaults.cleanMarkdown,
+      markdownOptions: cfg.markdown ?? cfg.crawlerDefaults.markdownOptions,
+      ...payload.crawlOptions,
+      userAgent: payload.crawlOptions?.userAgent ?? cfg.crawlerDefaults.userAgent ?? cfg.userAgent,
+    };
+  }
+
+  private async resolveCrawlActorId(orgId: string): Promise<string | null> {
+    const cached = this.crawlActorByOrgId.get(orgId);
+    if (cached) {
+      return cached;
+    }
+
+    const membership = await this.prisma.membership.findFirst({
+      where: { orgId },
+      select: { userId: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const userId = typeof membership?.userId === "string" ? membership.userId : "";
+    if (!userId) {
+      return null;
+    }
+
+    this.crawlActorByOrgId.set(orgId, userId);
+    return userId;
+  }
+
+  private async findRecentStoredCrawlResultId(options: {
+    orgId: string;
+    url: string;
+    since: Date;
+  }): Promise<string | null> {
+    const record = await this.prisma.crawlResult.findFirst({
+      where: {
+        sourceUrl: options.url,
+        fetchedAt: { gte: options.since },
+        task: { orgId: options.orgId },
+      },
+      orderBy: { fetchedAt: "desc" },
+      select: { id: true },
+    });
+    return record?.id ?? null;
+  }
+
+  private async crawlViaCrawlTask(options: {
+    orgId: string;
+    url: string;
+    payload: NormalizedNewsPayload;
+  }): Promise<{ crawlResultId: string; crawlTaskId: string } | null> {
+    if (!this.crawlExecution) {
+      return null;
+    }
+
+    const actorId = await this.resolveCrawlActorId(options.orgId);
+    if (!actorId) {
+      return null;
+    }
+
+    const crawlOptions = this.buildCrawlTaskOptions(options.payload);
+    const displayName = options.payload.sourceName
+      ? `NewsSource: ${options.payload.sourceName}`.slice(0, 80)
+      : null;
+    const crawlTask = await this.prisma.crawlTask.create({
+      data: {
+        orgId: options.orgId,
+        createdById: actorId,
+        targetUrl: options.url,
+        displayName,
+        status: "pending",
+        concurrency: 1,
+        keywords: toPrismaJsonValue(options.payload.keywords),
+        config: toPrismaJsonValue(crawlOptions),
+      },
+      select: { id: true },
+    });
+
+    await this.crawlExecution.runTask(crawlTask.id, options.orgId);
+
+    const crawlResult =
+      (await this.prisma.crawlResult.findFirst({
+        where: { taskId: crawlTask.id, sourceUrl: options.url },
+        orderBy: { fetchedAt: "desc" },
+        select: { id: true },
+      })) ??
+      (await this.prisma.crawlResult.findFirst({
+        where: { taskId: crawlTask.id },
+        orderBy: { fetchedAt: "desc" },
+        select: { id: true },
+      }));
+
+    if (!crawlResult) {
+      return null;
+    }
+
+    return { crawlResultId: crawlResult.id, crawlTaskId: crawlTask.id };
   }
 
   /**
@@ -469,6 +574,55 @@ export class NewsPipelineService implements OnModuleDestroy {
       }
     }
 
+    if (!payload.forceRefresh) {
+      const cacheTtlSeconds = this.configService.config.pipeline.cacheTtlSeconds;
+      const since = new Date(Date.now() - cacheTtlSeconds * 1000);
+      try {
+        const recentResultId = await this.findRecentStoredCrawlResultId({
+          orgId: job.orgId,
+          url: payload.url,
+          since,
+        });
+        if (recentResultId) {
+          const stored = await this.fetchStoredCrawlResult(job.orgId, recentResultId);
+          payload.metadata.crawlResultId = recentResultId;
+          return {
+            ...stored,
+            fromCache: true,
+          };
+        }
+      } catch (error) {
+        this.logger.warn(
+          { error, orgId: job.orgId, url: payload.url },
+          "Failed to load recent stored crawl result; falling back to crawl4ai",
+        );
+      }
+    }
+
+    if (this.crawlExecution) {
+      try {
+        const created = await this.crawlViaCrawlTask({
+          orgId: job.orgId,
+          url: payload.url,
+          payload,
+        });
+        if (created) {
+          const stored = await this.fetchStoredCrawlResult(job.orgId, created.crawlResultId);
+          payload.metadata.crawlResultId = created.crawlResultId;
+          payload.metadata.crawlTaskId = created.crawlTaskId;
+          return {
+            ...stored,
+            fromCache: false,
+          };
+        }
+      } catch (error) {
+        this.logger.warn(
+          { error, orgId: job.orgId, url: payload.url },
+          "Failed to crawl via crawl task; falling back to crawl4ai",
+        );
+      }
+    }
+
     let executedCrawl = false;
     const normalized = await this.cache.wrap(
       cacheKey,
@@ -594,14 +748,7 @@ export class NewsPipelineService implements OnModuleDestroy {
   }
 
   private async executeCrawl(payload: NormalizedNewsPayload): Promise<ParsedCrawl4aiResponse> {
-    const cfg = this.configService.config.crawl4ai;
-    const options = {
-      ...cfg.crawlerDefaults,
-      cleanMarkdown: cfg.cleanMarkdown ?? cfg.crawlerDefaults.cleanMarkdown,
-      markdownOptions: cfg.markdown ?? cfg.crawlerDefaults.markdownOptions,
-      ...payload.crawlOptions,
-      userAgent: payload.crawlOptions?.userAgent ?? cfg.crawlerDefaults.userAgent ?? cfg.userAgent,
-    };
+    const options = this.buildCrawlTaskOptions(payload);
     const request = {
       url: payload.url,
       keywords: payload.keywords.length > 0 ? payload.keywords : undefined,
