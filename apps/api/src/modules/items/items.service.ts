@@ -257,28 +257,6 @@ export class ItemsService {
     }
 
     const externalId = `crawlResult:${normalizedId}`;
-    const existing = await this.prisma.itemMeta.findFirst({
-      where: { orgId, externalId }
-    });
-
-    const existingMongoRef = existing?.mongoRef ? existing.mongoRef.trim() : "";
-    if (existing && existingMongoRef) {
-      const shouldEnqueue =
-        existing.status === ItemStatus.Pending ||
-        existing.status === ItemStatus.Processing ||
-        existing.status === ItemStatus.Failed;
-      if (shouldEnqueue) {
-        try {
-          await this.queueService.enqueueItem(orgId, existing.id, existingMongoRef);
-        } catch (error) {
-          if (!(error instanceof Error && error.message.includes("already exists"))) {
-            throw error;
-          }
-        }
-      }
-      return existing;
-    }
-
     const crawlResult = await this.prisma.crawlResult.findFirst({
       where: {
         id: normalizedId,
@@ -296,7 +274,8 @@ export class ItemsService {
             id: true,
             displayName: true,
             targetUrl: true,
-            keywords: true
+            keywords: true,
+            config: true
           }
         }
       }
@@ -307,11 +286,52 @@ export class ItemsService {
     }
 
     const resolvedExternalId = `crawlResult:${crawlResult.id}`;
+    const existing = await this.prisma.itemMeta.findFirst({
+      where: { orgId, externalId: resolvedExternalId }
+    });
+
     if (!existing && resolvedExternalId !== externalId) {
       throw new BadRequestException("crawlResultId mismatch");
     }
 
-    const sourceName = crawlResult.task.displayName ?? undefined;
+    const crawlTaskConfig =
+      crawlResult.task.config && typeof crawlResult.task.config === "object" && !Array.isArray(crawlResult.task.config)
+        ? (crawlResult.task.config as Record<string, unknown>)
+        : null;
+    const itemPayloadConfig =
+      crawlTaskConfig?.itemPayload && typeof crawlTaskConfig.itemPayload === "object" && !Array.isArray(crawlTaskConfig.itemPayload)
+        ? (crawlTaskConfig.itemPayload as Record<string, unknown>)
+        : null;
+    const itemPayloadMetadata =
+      itemPayloadConfig?.metadata && typeof itemPayloadConfig.metadata === "object" && !Array.isArray(itemPayloadConfig.metadata)
+        ? (itemPayloadConfig.metadata as Record<string, unknown>)
+        : {};
+
+    const sourceNameOverrideRaw = itemPayloadConfig?.sourceName;
+    const sourceNameOverride =
+      typeof sourceNameOverrideRaw === "string" && sourceNameOverrideRaw.trim().length > 0
+        ? sourceNameOverrideRaw.trim()
+        : undefined;
+    const sourceName = sourceNameOverride ?? crawlResult.task.displayName ?? undefined;
+    const languageRaw = itemPayloadConfig?.language;
+    const language =
+      typeof languageRaw === "string" && languageRaw.trim().length > 0 ? languageRaw.trim() : undefined;
+    const tags = this.toStringArray(itemPayloadConfig?.tags);
+    const summaryHints = this.toStringArray(itemPayloadConfig?.summaryHints);
+    const forceRefresh = false;
+
+    const pipelineJobIdRaw = crawlTaskConfig?.pipelineJobId;
+    const pipelineJobId =
+      typeof pipelineJobIdRaw === "string" && pipelineJobIdRaw.trim().length > 0
+        ? pipelineJobIdRaw.trim()
+        : undefined;
+    const sourceIdRaw = itemPayloadMetadata?.sourceId;
+    const sourceId =
+      typeof sourceIdRaw === "string" && sourceIdRaw.trim().length > 0 ? sourceIdRaw.trim() : undefined;
+    const priorityRaw = crawlTaskConfig?.pipelinePriority;
+    const pipelinePriority =
+      typeof priorityRaw === "number" && Number.isFinite(priorityRaw) ? Math.round(priorityRaw) : undefined;
+
     const metadata =
       crawlResult.metadata && typeof crawlResult.metadata === "object" && !Array.isArray(crawlResult.metadata)
         ? (crawlResult.metadata as Record<string, unknown>)
@@ -321,10 +341,12 @@ export class ItemsService {
     const payload: Record<string, unknown> = {
       url: crawlResult.sourceUrl,
       ...(sourceName ? { sourceName } : {}),
+      ...(language ? { language } : {}),
       keywords: crawlKeywords,
-      tags: [],
-      summaryHints: [],
+      tags,
+      summaryHints,
       metadata: {
+        ...itemPayloadMetadata,
         ...metadata,
         crawlTaskId: crawlResult.taskId,
         ...(crawlResult.task.displayName ? { crawlTaskDisplayName: crawlResult.task.displayName } : {}),
@@ -333,8 +355,32 @@ export class ItemsService {
         crawlFetchedAt: crawlResult.fetchedAt.toISOString(),
         crawlContentHash: crawlResult.contentHash
       },
-      forceRefresh: false
+      forceRefresh
     };
+
+    const existingMongoRef = existing?.mongoRef ? existing.mongoRef.trim() : "";
+    if (existing && existingMongoRef) {
+      const shouldEnqueue =
+        existing.status === ItemStatus.Pending ||
+        existing.status === ItemStatus.Processing ||
+        existing.status === ItemStatus.Failed;
+      if (shouldEnqueue) {
+        try {
+          await this.queueService.enqueueItem(
+            orgId,
+            existing.id,
+            existingMongoRef,
+            pipelinePriority !== undefined ? { priority: pipelinePriority } : {},
+            { pipelineJobId, sourceId }
+          );
+        } catch (error) {
+          if (!(error instanceof Error && error.message.includes("already exists"))) {
+            throw error;
+          }
+        }
+      }
+      return existing;
+    }
 
     if (existing) {
       const rawItem = await RawItemModel.create({
@@ -351,7 +397,13 @@ export class ItemsService {
         return existing;
       }
       try {
-        await this.queueService.enqueueItem(orgId, existing.id, rawItem.id);
+        await this.queueService.enqueueItem(
+          orgId,
+          existing.id,
+          rawItem.id,
+          pipelinePriority !== undefined ? { priority: pipelinePriority } : {},
+          { pipelineJobId, sourceId }
+        );
       } catch (error) {
         if (!(error instanceof Error && error.message.includes("already exists"))) {
           throw error;
@@ -362,14 +414,14 @@ export class ItemsService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
-        const baseName = crawlResult.task.displayName
-          ? `${crawlResult.task.displayName}: ${crawlResult.sourceUrl}`
+        const baseName = sourceName
+          ? `${sourceName}: ${crawlResult.sourceUrl}`
           : crawlResult.sourceUrl;
 
         const itemMeta = await tx.itemMeta.create({
           data: {
             orgId,
-            externalId,
+            externalId: resolvedExternalId,
             name: this.toItemMetaName(baseName),
             status: ItemStatus.Pending,
             mongoRef: ""
@@ -409,7 +461,13 @@ export class ItemsService {
       ).catch(() => undefined);
 
       try {
-        await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
+        await this.queueService.enqueueItem(
+          orgId,
+          created.itemMeta.id,
+          created.rawItem.id,
+          pipelinePriority !== undefined ? { priority: pipelinePriority } : {},
+          { pipelineJobId, sourceId }
+        );
       } catch (error) {
         if (!(error instanceof Error && error.message.includes("already exists"))) {
           throw error;

@@ -252,7 +252,13 @@ describe("ItemsService.createFromCrawlResult", () => {
         })
       })
     );
-    expect(queueService.enqueueItem).toHaveBeenCalledWith("org-1", "meta-1", "raw-1");
+    expect(queueService.enqueueItem).toHaveBeenCalledWith(
+      "org-1",
+      "meta-1",
+      "raw-1",
+      {},
+      { pipelineJobId: undefined, sourceId: undefined }
+    );
     expect(created.id).toBe("meta-1");
   });
 });

@@ -201,7 +201,9 @@ describe("NewsPipelineService", () => {
       findFirst: jest.fn().mockResolvedValue({ userId: "user-1" })
     },
     crawlTask: {
-      create: jest.fn().mockResolvedValue({ id: "crawl-task-1" })
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: "crawl-task-1" }),
+      update: jest.fn().mockResolvedValue({ id: "crawl-task-1" }),
     },
     crawlResult: {
       findFirst: jest.fn().mockResolvedValue(null)

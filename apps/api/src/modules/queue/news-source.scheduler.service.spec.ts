@@ -11,13 +11,6 @@ jest.mock("@modular/utils", () => {
   };
 });
 
-jest.mock("@modular/mongo", () => ({
-  RawItemModel: {
-    create: jest.fn(),
-  },
-}));
-
-import { RawItemModel } from "@modular/mongo";
 import { PipelineJobStatus } from "@prisma/client";
 
 import { NewsSourceSchedulerService } from "./news-source.scheduler.service";
@@ -30,15 +23,17 @@ describe("NewsSourceSchedulerService", () => {
         update: jest.fn(),
         updateMany: jest.fn(),
       },
+      membership: {
+        findFirst: jest.fn(),
+      },
       article: {
         findMany: jest.fn(),
       },
       pipelineJob: {
-        findFirst: jest.fn(),
         findMany: jest.fn(),
         updateMany: jest.fn(),
       },
-      itemMeta: {
+      crawlTask: {
         updateMany: jest.fn(),
       },
       $transaction: jest.fn(),
@@ -48,8 +43,8 @@ describe("NewsSourceSchedulerService", () => {
       discoverSitemapUrls: jest.fn(),
     } as any;
 
-    const queueService = {
-      enqueueItem: jest.fn(),
+    const crawlQueue = {
+      enqueueTask: jest.fn(),
     } as any;
 
     const cache = {
@@ -70,12 +65,12 @@ describe("NewsSourceSchedulerService", () => {
     const service = new NewsSourceSchedulerService(
       prisma,
       metadataService,
-      queueService,
+      crawlQueue,
       cache,
       env,
     );
 
-    return { service, prisma, metadataService, queueService, cache, env };
+    return { service, prisma, metadataService, crawlQueue, cache, env };
   };
 
   beforeEach(() => {
@@ -83,7 +78,7 @@ describe("NewsSourceSchedulerService", () => {
   });
 
   it("schedules up to maxNewUrlsPerRun for sitemap seeds", async () => {
-    const { service, prisma, metadataService, queueService } = createService();
+    const { service, prisma, metadataService, crawlQueue } = createService();
     const now = new Date("2026-01-01T00:00:00.000Z");
 
     (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([
@@ -119,16 +114,12 @@ describe("NewsSourceSchedulerService", () => {
       },
     ]);
 
+    (prisma.membership.findFirst as jest.Mock).mockResolvedValue({ userId: "user-actor" });
     (prisma.article.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.pipelineJob.findMany as jest.Mock).mockResolvedValue([]);
 
     let jobIndex = 0;
-    let metaIndex = 0;
-    let rawIndex = 0;
-
-    (RawItemModel.create as jest.Mock).mockImplementation(async () => ({
-      id: `raw-${++rawIndex}`,
-    }));
+    let taskIndex = 0;
 
     (prisma.$transaction as jest.Mock).mockImplementation(
       async (fn: (tx: any) => Promise<any>) =>
@@ -140,15 +131,17 @@ describe("NewsSourceSchedulerService", () => {
             })),
             update: jest.fn(async () => ({})),
           },
-          itemMeta: {
-            create: jest.fn(async () => ({ id: `meta-${++metaIndex}` })),
-            update: jest.fn(async () => ({})),
+          crawlTask: {
+            findFirst: jest.fn(async () => null),
+            create: jest.fn(async () => ({ id: `task-${++taskIndex}` })),
+            update: jest.fn(async (args: any) => ({ id: args?.where?.id ?? `task-${taskIndex}` })),
           },
         }),
     );
 
     (prisma.newsSource.update as jest.Mock).mockResolvedValue(undefined);
-    (queueService.enqueueItem as jest.Mock).mockResolvedValue(undefined);
+    (prisma.crawlTask.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    (crawlQueue.enqueueTask as jest.Mock).mockResolvedValue(undefined);
 
     await (service as any).scheduleDueSources(now, 10);
 
@@ -160,27 +153,13 @@ describe("NewsSourceSchedulerService", () => {
       },
     });
 
-    expect(queueService.enqueueItem).toHaveBeenCalledTimes(2);
-    expect(queueService.enqueueItem).toHaveBeenNthCalledWith(
-      1,
-      "org-1",
-      "meta-1",
-      "raw-1",
-      { priority: 101 },
-      { pipelineJobId: "job-1", sourceId: "source-1" },
-    );
-    expect(queueService.enqueueItem).toHaveBeenNthCalledWith(
-      2,
-      "org-1",
-      "meta-2",
-      "raw-2",
-      { priority: 101 },
-      { pipelineJobId: "job-2", sourceId: "source-1" },
-    );
+    expect(crawlQueue.enqueueTask).toHaveBeenCalledTimes(2);
+    expect(crawlQueue.enqueueTask).toHaveBeenNthCalledWith(1, "task-1", "org-1", "user-actor");
+    expect(crawlQueue.enqueueTask).toHaveBeenNthCalledWith(2, "task-2", "org-1", "user-actor");
   });
 
   it("skips recently crawled and in-flight URLs during sitemap seeding", async () => {
-    const { service, prisma, metadataService, queueService } = createService();
+    const { service, prisma, metadataService, crawlQueue } = createService();
     const now = new Date("2026-01-01T00:00:00.000Z");
 
     (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([
@@ -216,6 +195,7 @@ describe("NewsSourceSchedulerService", () => {
       },
     ]);
 
+    (prisma.membership.findFirst as jest.Mock).mockResolvedValue({ userId: "user-actor" });
     (prisma.article.findMany as jest.Mock).mockResolvedValue([
       { url: "https://example.com/news/apple-1" },
     ]);
@@ -224,12 +204,7 @@ describe("NewsSourceSchedulerService", () => {
       .mockResolvedValueOnce([{ url: "https://example.com/news/apple-2" }]);
 
     let jobIndex = 0;
-    let metaIndex = 0;
-    let rawIndex = 0;
-
-    (RawItemModel.create as jest.Mock).mockImplementation(async () => ({
-      id: `raw-${++rawIndex}`,
-    }));
+    let taskIndex = 0;
 
     (prisma.$transaction as jest.Mock).mockImplementation(
       async (fn: (tx: any) => Promise<any>) =>
@@ -238,30 +213,26 @@ describe("NewsSourceSchedulerService", () => {
             create: jest.fn(async () => ({ id: `job-${++jobIndex}`, metadata: null })),
             update: jest.fn(async () => ({})),
           },
-          itemMeta: {
-            create: jest.fn(async () => ({ id: `meta-${++metaIndex}` })),
-            update: jest.fn(async () => ({})),
+          crawlTask: {
+            findFirst: jest.fn(async () => null),
+            create: jest.fn(async () => ({ id: `task-${++taskIndex}` })),
+            update: jest.fn(async (args: any) => ({ id: args?.where?.id ?? `task-${taskIndex}` })),
           },
         }),
     );
 
     (prisma.newsSource.update as jest.Mock).mockResolvedValue(undefined);
-    (queueService.enqueueItem as jest.Mock).mockResolvedValue(undefined);
+    (prisma.crawlTask.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    (crawlQueue.enqueueTask as jest.Mock).mockResolvedValue(undefined);
 
     await (service as any).scheduleDueSources(now, 10);
 
-    expect(queueService.enqueueItem).toHaveBeenCalledTimes(1);
-    expect(queueService.enqueueItem).toHaveBeenCalledWith(
-      "org-1",
-      "meta-1",
-      "raw-1",
-      { priority: 101 },
-      { pipelineJobId: "job-1", sourceId: "source-1" },
-    );
+    expect(crawlQueue.enqueueTask).toHaveBeenCalledTimes(1);
+    expect(crawlQueue.enqueueTask).toHaveBeenCalledWith("task-1", "org-1", "user-actor");
   });
 
   it("reschedules when a seed source is at in-flight capacity", async () => {
-    const { service, prisma, metadataService, queueService, env } = createService();
+    const { service, prisma, metadataService, crawlQueue, env } = createService();
     const now = new Date("2026-01-01T00:00:00.000Z");
 
     (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([
@@ -315,7 +286,7 @@ describe("NewsSourceSchedulerService", () => {
         nextRunAt: new Date(now.getTime() + env.newsSourceSchedulerConfig.inFlightRescheduleDelayMs),
       },
     });
-    expect(queueService.enqueueItem).not.toHaveBeenCalled();
+    expect(crawlQueue.enqueueTask).not.toHaveBeenCalled();
     expect(prisma.newsSource.update).not.toHaveBeenCalled();
   });
 });

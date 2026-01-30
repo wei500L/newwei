@@ -1,17 +1,16 @@
-import { RawItemModel } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PipelineJobStatus, Prisma } from "@prisma/client";
 
-import { ItemStatus } from "../../common/pipeline-status";
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { CrawlMetadataService } from "../crawl/crawl-metadata.service";
+import { CrawlQueueService } from "../crawl/crawl-queue.service";
 
 import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
-import { QueueService } from "./queue.service";
 
 const logger = createLogger({ name: "news-source-scheduler" });
 const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
@@ -43,11 +42,12 @@ interface SeedConfig {
 export class NewsSourceSchedulerService {
   private readonly sourcePriorityMin = -100;
   private readonly sourcePriorityMax = 100;
+  private readonly crawlActorByOrgId = new Map<string, string>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly metadataService: CrawlMetadataService,
-    private readonly queueService: QueueService,
+    private readonly crawlQueue: CrawlQueueService,
     private readonly cache: CacheService,
     private readonly env: EnvService,
   ) {}
@@ -102,6 +102,27 @@ export class NewsSourceSchedulerService {
     const normalized = Number.isFinite(priority) ? Math.round(priority) : 0;
     const clamped = Math.max(this.sourcePriorityMin, Math.min(this.sourcePriorityMax, normalized));
     return this.sourcePriorityMax + 1 - clamped;
+  }
+
+  private async resolveCrawlActorId(orgId: string): Promise<string | null> {
+    const cached = this.crawlActorByOrgId.get(orgId);
+    if (cached) {
+      return cached;
+    }
+
+    const membership = await this.prisma.membership.findFirst({
+      where: { orgId },
+      select: { userId: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const userId = typeof membership?.userId === "string" ? membership.userId : "";
+    if (!userId) {
+      return null;
+    }
+
+    this.crawlActorByOrgId.set(orgId, userId);
+    return userId;
   }
 
   private buildPayload(
@@ -451,6 +472,14 @@ export class NewsSourceSchedulerService {
         }
 
         const bullPriority = this.toBullmqPriority(source.priority);
+        const crawlActorId = await this.resolveCrawlActorId(source.orgId);
+        if (!crawlActorId) {
+          logger.warn(
+            { sourceId: source.id, orgId: source.orgId },
+            "News source scheduler cannot resolve crawl task actor; skipping scheduling",
+          );
+          continue;
+        }
         const seedParentUrl = seedConfig
           ? seedConfig.mode === "rss"
             ? (seedConfig.feedUrl ?? source.url)
@@ -466,7 +495,44 @@ export class NewsSourceSchedulerService {
               : undefined
           );
 
-          const { pipelineJobId, itemMetaId, rawItemId } = await this.prisma.$transaction(async (tx) => {
+          const displayNamePrefix = `NewsSource:${source.id}:`;
+          const displayName = `${displayNamePrefix}${source.name ?? ""}`.slice(0, 80);
+
+          const itemPayloadConfig: Record<string, unknown> = {
+            sourceId: source.id,
+            sourceType: source.siteType,
+            crawlTemplateId: source.crawlTemplateId ?? undefined,
+            ...(seedConfig
+              ? {
+                  newsSourceSeed: {
+                    mode: seedConfig.mode,
+                    parentUrl: seedParentUrl ?? source.url,
+                    relevanceScore: job.relevanceScore,
+                  },
+                }
+              : {}),
+          };
+
+          const crawlTaskConfig: Record<string, unknown> = {
+            ...(payload.crawlOptions ?? {}),
+            ingestToItems: true,
+            pipelineJobId: "",
+            pipelinePriority: bullPriority,
+            itemPayload: {
+              sourceName: payload.sourceName,
+              language: payload.language,
+              keywords: payload.keywords,
+              tags: payload.tags,
+              summaryHints: payload.summaryHints,
+              metadata: {
+                ...itemPayloadConfig,
+                ...(payload.metadata ?? {}),
+              },
+              forceRefresh: payload.forceRefresh,
+            },
+          };
+
+          const { pipelineJobId, crawlTaskId } = await this.prisma.$transaction(async (tx) => {
             const pipelineJob = await tx.pipelineJob.create({
               data: {
                 orgId: source.orgId,
@@ -486,57 +552,75 @@ export class NewsSourceSchedulerService {
               }
             });
 
-            const itemMeta = await tx.itemMeta.create({
-              data: {
+            crawlTaskConfig.pipelineJobId = pipelineJob.id;
+
+            const existingTask = await tx.crawlTask.findFirst({
+              where: {
                 orgId: source.orgId,
-                externalId: pipelineJob.id,
-                name: source.name ? `${source.name}: ${job.url}` : job.url,
-                status: ItemStatus.Pending,
-                mongoRef: ""
-              }
+                targetUrl: job.url,
+                displayName: { startsWith: displayNamePrefix },
+              },
+              select: { id: true },
             });
 
-            const rawItem = await RawItemModel.create({
-              itemMetaId: itemMeta.id,
-              payload,
-              source: "news-source"
-            });
-
-            await tx.itemMeta.update({
-              where: { id: itemMeta.id },
-              data: { mongoRef: rawItem.id }
-            });
+            let taskId: string;
+            if (existingTask) {
+              const updatedTask = await tx.crawlTask.update({
+                where: { id: existingTask.id },
+                data: {
+                  displayName,
+                  status: "pending",
+                  concurrency: 1,
+                  keywords: payload.keywords,
+                  config: toPrismaJsonValue(crawlTaskConfig),
+                  lastError: null,
+                },
+                select: { id: true },
+              });
+              taskId = updatedTask.id;
+            } else {
+              const createdTask = await tx.crawlTask.create({
+                data: {
+                  orgId: source.orgId,
+                  createdById: crawlActorId,
+                  targetUrl: job.url,
+                  displayName,
+                  status: "pending",
+                  concurrency: 1,
+                  keywords: payload.keywords,
+                  config: toPrismaJsonValue(crawlTaskConfig),
+                },
+                select: { id: true },
+              });
+              taskId = createdTask.id;
+            }
 
             await tx.pipelineJob.update({
               where: { id: pipelineJob.id },
               data: {
                 metadata: {
                   ...(pipelineJob.metadata as Record<string, unknown> | null | undefined),
-                  itemMetaId: itemMeta.id,
-                  rawItemId: rawItem.id
-                }
-              }
+                  crawlTaskId: taskId,
+                },
+              },
             });
 
             return {
               pipelineJobId: pipelineJob.id,
-              itemMetaId: itemMeta.id,
-              rawItemId: rawItem.id
+              crawlTaskId: taskId,
             };
           });
 
           try {
-            await this.queueService.enqueueItem(
-              source.orgId,
-              itemMetaId,
-              rawItemId,
-              { priority: bullPriority },
-              { pipelineJobId, sourceId: source.id },
-            );
+            await this.crawlQueue.enqueueTask(crawlTaskId, source.orgId, crawlActorId);
+            await this.prisma.crawlTask.updateMany({
+              where: { id: crawlTaskId },
+              data: { status: "queued" },
+            });
           } catch (queueError) {
             logger.error(
-              { error: queueError, pipelineJobId, orgId: source.orgId, sourceId: source.id },
-              "Failed to enqueue news source pipeline job",
+              { error: queueError, pipelineJobId, orgId: source.orgId, sourceId: source.id, crawlTaskId },
+              "Failed to enqueue news source crawl task",
             );
             await Promise.allSettled([
               this.prisma.pipelineJob.updateMany({
@@ -547,9 +631,12 @@ export class NewsSourceSchedulerService {
                   completedAt: new Date(),
                 },
               }),
-              this.prisma.itemMeta.updateMany({
-                where: { id: itemMetaId },
-                data: { status: ItemStatus.Failed },
+              this.prisma.crawlTask.updateMany({
+                where: { id: crawlTaskId },
+                data: {
+                  status: "failed",
+                  lastError: queueError instanceof Error ? queueError.message : String(queueError),
+                },
               }),
             ]);
           }

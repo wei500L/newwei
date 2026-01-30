@@ -252,39 +252,75 @@ export class NewsPipelineService implements OnModuleDestroy {
     url: string;
     payload: NormalizedNewsPayload;
   }): Promise<{ crawlResultId: string; crawlTaskId: string }> {
-    const actorId = await this.resolveCrawlActorId(options.orgId);
-    if (!actorId) {
-      throw new Error("crawl task actor unavailable");
-    }
-
     const crawlOptions = this.buildCrawlTaskOptions(options.payload);
-    const displayName = options.payload.sourceName
-      ? `NewsSource: ${options.payload.sourceName}`.slice(0, 80)
-      : null;
-    const crawlTask = await this.prisma.crawlTask.create({
-      data: {
+    const displayNameLabel = options.payload.sourceName?.trim()
+      ? options.payload.sourceName.trim()
+      : (() => {
+          try {
+            return new URL(options.url).hostname;
+          } catch {
+            return options.url;
+          }
+        })();
+    const displayName = `NewsPipeline: ${displayNameLabel}`.slice(0, 80);
+
+    const existingTask = await this.prisma.crawlTask.findFirst({
+      where: {
         orgId: options.orgId,
-        createdById: actorId,
         targetUrl: options.url,
-        displayName,
-        status: "pending",
-        concurrency: 1,
-        keywords: toPrismaJsonValue(options.payload.keywords),
-        config: toPrismaJsonValue(crawlOptions),
+        OR: [
+          { displayName: { startsWith: "NewsPipeline:" } },
+          { displayName: { startsWith: "NewsSource:" } },
+        ],
       },
+      orderBy: { createdAt: "desc" },
       select: { id: true },
     });
 
-    await this.crawlExecution.runTask(crawlTask.id, options.orgId);
+    let crawlTaskId: string;
+    if (existingTask) {
+      crawlTaskId = existingTask.id;
+      await this.prisma.crawlTask.update({
+        where: { id: crawlTaskId },
+        data: {
+          displayName,
+          keywords: toPrismaJsonValue(options.payload.keywords),
+          config: toPrismaJsonValue(crawlOptions),
+        },
+        select: { id: true },
+      });
+    } else {
+      const actorId = await this.resolveCrawlActorId(options.orgId);
+      if (!actorId) {
+        throw new Error("crawl task actor unavailable");
+      }
+
+      const createdTask = await this.prisma.crawlTask.create({
+        data: {
+          orgId: options.orgId,
+          createdById: actorId,
+          targetUrl: options.url,
+          displayName,
+          status: "pending",
+          concurrency: 1,
+          keywords: toPrismaJsonValue(options.payload.keywords),
+          config: toPrismaJsonValue(crawlOptions),
+        },
+        select: { id: true },
+      });
+      crawlTaskId = createdTask.id;
+    }
+
+    await this.crawlExecution.runTask(crawlTaskId, options.orgId);
 
     const crawlResult =
       (await this.prisma.crawlResult.findFirst({
-        where: { taskId: crawlTask.id, sourceUrl: options.url },
+        where: { taskId: crawlTaskId, sourceUrl: options.url },
         orderBy: { fetchedAt: "desc" },
         select: { id: true },
       })) ??
       (await this.prisma.crawlResult.findFirst({
-        where: { taskId: crawlTask.id },
+        where: { taskId: crawlTaskId },
         orderBy: { fetchedAt: "desc" },
         select: { id: true },
       }));
@@ -293,7 +329,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       throw new Error("crawl task produced no results");
     }
 
-    return { crawlResultId: crawlResult.id, crawlTaskId: crawlTask.id };
+    return { crawlResultId: crawlResult.id, crawlTaskId };
   }
 
   /**
