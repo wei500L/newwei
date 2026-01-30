@@ -20,7 +20,7 @@ pnpm prepare
 # 校验环境配置
 pnpm --filter infra-scripts run env:check
 
-# 应用 Prisma schema 并灌入示例数据
+# 应用 Prisma schema 并初始化基础数据（不会灌入演示/模拟内容）
 pnpm db:migrate
 pnpm db:seed
 
@@ -38,7 +38,10 @@ pnpm dev
 - MinIO S3 Endpoint：http://localhost:9000
 - MinIO Console：http://localhost:9001
 
-预置管理员账号：`admin@example.com` / `Change_me123!`
+首次运行前请在 `.env` 配置种子数据（用于创建你的组织与初始管理员）：
+
+- `SEED_ORG_SLUG` / `SEED_ORG_NAME`（可选：`SEED_ORG_DESCRIPTION`）
+- `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_FIRST_NAME` / `SEED_ADMIN_LAST_NAME`
 
 如需保护 Bull Board，可在 `.env` 配置 `BULL_BOARD_USERNAME` / `BULL_BOARD_PASSWORD` 启用 Basic Auth。
 
@@ -158,7 +161,7 @@ docker run -it --rm registry.cn-shanghai.aliyuncs.com/akfamily/aktools:jupyter p
 | `pnpm build`                                 | 对所有包执行 Turbo 构建                         |
 | `pnpm lint` / `pnpm typecheck` / `pnpm test` | 汇总执行 lint、类型检查与测试                   |
 | `pnpm db:migrate`                            | 通过 `packages/db` 执行 Prisma 迁移             |
-| `pnpm db:seed`                               | 灌入默认的组织、角色与管理员账号                |
+| `pnpm db:seed`                               | 根据 `.env` 的 `SEED_*` 创建组织、角色与管理员账号，并初始化“新闻-指标”默认设置 |
 | `pnpm docker:*`                              | 包装 docker-compose 全生命周期（infra/scripts） |
 
 关键包脚本：
@@ -202,7 +205,7 @@ infra/
   - `CRAWL4AI_API_KEY`：可选 API Key，若服务启用鉴权可在 Header 传递。
   - `CRAWL4AI_TIMEOUT_MS` / `CRAWL4AI_MAX_CONCURRENCY` / `CRAWL4AI_MAX_RETRIES`：用于 BullMQ 任务的超时、并发与重试上限。
   - `CRAWL_MEDIA_FETCH_TIMEOUT_MS` / `CRAWL_MEDIA_MAX_BYTES` / `CRAWL_MEDIA_MAX_PER_RESULT`：控制在 `storeMedia` 打开时后端下载新闻图片/视频的网络超时、单文件最大字节与每条结果最多缓存的媒体数量。
-- `pnpm db:migrate && pnpm db:seed` 会创建 `CrawlTask` / `CrawlResult` 表并灌入一个示例任务；Mongo 中新增 `CrawlResultContent` 模型用来存储 Markdown。
+- `pnpm db:migrate` 会创建 `CrawlTask` / `CrawlResult` 等表结构；`pnpm db:seed` 会根据 `.env` 的 `SEED_*` 创建组织、角色与管理员账号，并写入“新闻-指标（News ↔ Indicators）”功能的默认 Settings（后续可在后台补齐真实指标数据与配置）。
 - Docker Compose 中新增 `crawl4ai` 服务（默认 `unclecode/crawl4ai:0`，可用 `CRAWL4AI_IMAGE` 覆盖），并有健康检查；若需要本地调试可以通过 `http://localhost:8082` 命中。
 - 参考 crawl4ai 官方文档关于 _Full-Page Scanning_（见 `docs/md_v2/blog/releases/0.4.1.md`）的实现，我们在任务配置中加入 “Full-page scanning” 开关与滚动延迟，API 会在调用 `/crawl` 时自动下发 `scan_full_page` 与 `scroll_delay`，可用于处理瀑布流/无限滚动的新闻站点。
 - 参考 crawl4ai 官方 _Link & Media Extraction_ 指南（`docs/md_v2/core/link-media.md`），当 `storeMedia` 打开时 API 会自动启用 `wait_for_images`、允许跨域图片并解析 `result.media`；后端会在 `CRAWL_MEDIA_*` 限制内抓取最多 6 个图片/视频并以内联 Base64 存进 `CrawlResultContent.mediaAssets`，前端详情页可直接预览或下载这些媒体。

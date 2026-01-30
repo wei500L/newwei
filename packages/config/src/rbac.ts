@@ -88,21 +88,3 @@ export const DEFAULT_ROLES: DefaultRoleDefinition[] = [
     isSystem: true
   }
 ];
-
-export interface SeedUserDefinition {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  roles: string[];
-}
-
-export const DEFAULT_USERS: SeedUserDefinition[] = [
-  {
-    email: "admin@example.com",
-    password: "Change_me123!",
-    firstName: "Admin",
-    lastName: "User",
-    roles: ["admin"]
-  }
-];

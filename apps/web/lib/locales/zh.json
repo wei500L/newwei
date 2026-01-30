@@ -1270,9 +1270,11 @@
       "disabledDescription": "管理员已关闭该功能。",
       "disabledCta": "打开系统设置",
       "ingestionOffTitle": "刷新任务未启用",
-      "ingestionOffDescription": "定时刷新未启用，结果可能过期。",
+      "ingestionOffDescription": "定时刷新未启用，但你仍可以点击“重新计算”手动运行一次。",
       "loadFailed": "加载关联失败。",
-      "empty": "暂无关联。请配置指标 Slug 并等待定时刷新。",
+      "empty": "暂无关联结果。",
+      "emptyNoIndicators": "尚未配置指标 Slug。",
+      "dataRequirements": "至少需要 ≥ {{minSampleSize}} 天的已处理新闻（含专题/实体/情绪）与对应的指标点位（windowDays={{windowDays}}），才会计算出关联。",
       "emptyCta": "打开系统设置",
       "refreshDone": "已触发刷新。",
       "refreshFailed": "刷新失败。",
@@ -1969,7 +1971,11 @@
       },
       "hints": {
         "ingestionEnabled": "控制定时刷新任务。",
-        "indicatorSlugs": "示例：CPIAUCSL, DGS10, FEDFUNDS"
+        "indicatorSlugs": "填写 EconomicDataItem.slug；最多 50 个。",
+        "minSampleSize": "需要至少这么多天的“情绪快照 × 指标点位”重叠样本；可理解为至少需要这么多天的新闻数据。"
+      },
+      "actions": {
+        "applyRecommended": "添加推荐的 key-monitor 指标"
       },
       "placeholders": {
         "indicatorSlugs": "输入指标 Slug"
@@ -2336,7 +2342,39 @@
       "description": "配置 API 地理编码服务（用于新闻地图定位）的 Nominatim 标识信息。",
       "notice": {
         "title": "Nominatim 使用要求",
-        "body": "建议填写清晰的 User-Agent 与可联系的邮箱，以降低被限流或封禁风险。"
+        "body": "建议填写清晰的 User-Agent 与可联系的邮箱，以降低被限流或封禁风险。使用 OSM 公共 Nominatim 时，本系统会强制每 2 秒最多 1 次请求。"
+      },
+      "health": {
+        "title": "服务健康",
+        "description": "在空闲时段自动测试 Nominatim 是否可用，并显示最近一次结果（每天 14:00（香港时间）运行）。",
+        "actions": {
+          "check": "立即检查"
+        },
+        "fields": {
+          "checkedAt": "最近检查",
+          "baseUrl": "Base URL",
+          "rateLimit": "请求频率限制"
+        },
+        "status": {
+          "label": "健康状态",
+          "unknown": "未检查",
+          "ok": "正常",
+          "no_result": "无结果",
+          "rate_limited": "触发限流",
+          "upstream_forbidden": "403 Forbidden",
+          "upstream_rate_limited": "上游限流",
+          "upstream_error": "上游错误",
+          "network_error": "网络错误",
+          "invalid_query": "无效查询"
+        },
+        "messages": {
+          "checked": "健康检查已完成",
+          "checkRateLimited": "已触发本地限流，请稍后再试"
+        },
+        "errors": {
+          "loadFailed": "加载健康状态失败",
+          "checkFailed": "健康检查失败"
+        }
       },
       "test": {
         "title": "地理编码测试",
@@ -2354,7 +2392,12 @@
         },
         "noResult": "没有返回结果（可能被限流或未找到）。",
         "errors": {
-          "failed": "地理编码测试失败"
+          "failed": "地理编码测试失败",
+          "rateLimited": "请求过于频繁（每 {{seconds}} 秒最多 1 次），请稍后再试。",
+          "forbidden": "Nominatim 返回 403 Forbidden：可能已被封禁（几小时到几天）；严重/长期违规可能永久封禁。",
+          "upstreamRateLimited": "Nominatim 上游限流（HTTP 429），请稍后再试。",
+          "upstreamError": "Nominatim 请求失败（HTTP {{status}}）。",
+          "networkError": "网络错误或超时，请稍后重试。"
         }
       },
       "fields": {
@@ -3968,6 +4011,8 @@
       "matchTitle": "监控命中",
       "locationResolveMissing": "请先输入地点名称。",
       "locationResolveFailed": "无法解析该地点。",
+      "locationResolveRateLimited": "地理编码请求过于频繁，请稍后再试。",
+      "locationResolveForbidden": "地理编码服务返回 403 Forbidden，可能已被封禁，请稍后再试或更换服务。",
       "locationResolved": "地点已解析。",
       "locationResolveError": "解析地点失败。",
       "updateFailed": "更新监控失败。",

@@ -1,4 +1,4 @@
-import { createLogger } from "@modular/utils";
+import { createLogger, NEWS_INDICATOR_RECOMMENDED_SLUGS } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
@@ -140,7 +140,7 @@ export class NewsIndicatorSettingsService {
       topEntities: 50,
       topTopics: 50,
       maxAssociationsPerIndicator: 60,
-      indicatorSlugs: [],
+      indicatorSlugs: [...NEWS_INDICATOR_RECOMMENDED_SLUGS],
       backtestTriggerZScore: 2,
       backtestBaselineDays: 30,
       backtestHoldoutDays: 30,

@@ -105,7 +105,7 @@ export class NewsIndicatorAssociationService {
 
   async refreshOrg(orgId: string) {
     const settings = await this.settingsService.getSettings(orgId);
-    if (!settings.enabled || !settings.ingestionEnabled) {
+    if (!settings.enabled) {
       return { indicators: 0, associationsUpserted: 0, backtestsCreated: 0 };
     }
     if (settings.indicatorSlugs.length === 0) {

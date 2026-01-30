@@ -62,6 +62,8 @@ interface AssociationDetails extends Association {
 interface NewsIndicatorSettings {
   enabled: boolean;
   ingestionEnabled: boolean;
+  windowDays: number;
+  minSampleSize: number;
   indicatorSlugs: string[];
 }
 
@@ -70,6 +72,8 @@ const NEWS_INDICATOR_SETTINGS_QUERY = gql`
     newsIndicatorSettings {
       enabled
       ingestionEnabled
+      windowDays
+      minSampleSize
       indicatorSlugs
     }
   }
@@ -248,6 +252,9 @@ export function NewsIndicatorAssociations() {
   const settings = settingsData?.newsIndicatorSettings;
   const enabled = settings?.enabled ?? true;
   const ingestionEnabled = settings?.ingestionEnabled ?? true;
+  const windowDays = settings?.windowDays ?? 180;
+  const minSampleSize = settings?.minSampleSize ?? 30;
+  const hasIndicatorSlugs = (settings?.indicatorSlugs ?? []).length > 0;
 
   const {
     data: assocData,
@@ -480,7 +487,7 @@ export function NewsIndicatorAssociations() {
         <AlertBox
           title={t("pages.newsIndicator.ingestionOffTitle", { defaultValue: "Ingestion disabled" })}
           description={t("pages.newsIndicator.ingestionOffDescription", {
-            defaultValue: "Scheduled refresh is disabled. Results may be stale."
+            defaultValue: "Scheduled refresh is disabled. You can still click Recompute to run once."
           })}
         />
       ) : null}
@@ -561,9 +568,23 @@ export function NewsIndicatorAssociations() {
           ) : associations.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t("pages.newsIndicator.empty", {
-                defaultValue: "No associations yet. Configure indicator slugs and wait for scheduled refresh."
-              })}
+              description={
+                <Space direction="vertical" size={0}>
+                  <Typography.Text>
+                    {hasIndicatorSlugs
+                      ? t("pages.newsIndicator.empty", { defaultValue: "No associations yet." })
+                      : t("pages.newsIndicator.emptyNoIndicators", { defaultValue: "No indicator slugs configured yet." })}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {t("pages.newsIndicator.dataRequirements", {
+                      defaultValue:
+                        "Needs ≥ {{minSampleSize}} days of processed news (topics/entities/sentiment) and matching indicator data points (windowDays={{windowDays}}).",
+                      minSampleSize,
+                      windowDays
+                    })}
+                  </Typography.Text>
+                </Space>
+              }
             >
               <Button type="primary" onClick={() => router.push("/admin/system?tab=newsIndicator")}>
                 {t("pages.newsIndicator.emptyCta", { defaultValue: "Open system settings" })}

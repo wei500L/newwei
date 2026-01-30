@@ -1,20 +1,122 @@
-import { CORE_PERMISSIONS, DEFAULT_ROLES, DEFAULT_USERS } from "@modular/config";
-import bcrypt from "bcrypt";
+import { CORE_PERMISSIONS, DEFAULT_ROLES } from "@modular/config";
+import { NEWS_INDICATOR_RECOMMENDED_SLUGS } from "@modular/utils";
+import { hash as bcryptHash } from "bcrypt";
 
 import { prisma } from "./client";
 
 export interface SeedOptions {
-  orgSlug?: string;
+  orgSlug: string;
+  orgName: string;
+  orgDescription?: string | null;
+  adminEmail: string;
+  adminPassword: string;
+  adminFirstName: string;
+  adminLastName: string;
 }
 
-export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
+const NEWS_INDICATOR_SETTINGS_KEY_PREFIX = "news_indicator_association_settings:";
+
+async function seedNewsIndicatorSettings(input: { orgId: string; updatedById?: string | null }) {
+  const key = `${NEWS_INDICATOR_SETTINGS_KEY_PREFIX}${input.orgId}`;
+
+  const existing = await prisma.systemSetting.findUnique({ where: { key } });
+  const existingValueRaw: unknown = existing?.value ?? null;
+  const existingValue =
+    existingValueRaw && typeof existingValueRaw === "object" && !Array.isArray(existingValueRaw)
+      ? (existingValueRaw as Record<string, unknown>)
+      : null;
+  const existingSlugs = Array.isArray(existingValue?.indicatorSlugs)
+    ? existingValue.indicatorSlugs
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value) => value.length > 0)
+    : [];
+  const resolvedSlugs = existingSlugs.length > 0 ? existingSlugs : [...NEWS_INDICATOR_RECOMMENDED_SLUGS];
+  const ingestionEnabled = typeof existingValue?.ingestionEnabled === "boolean" ? existingValue.ingestionEnabled : false;
+
+  await prisma.systemSetting.upsert({
+    where: { key },
+    update: {
+      value: {
+        ...(existingValue ?? {}),
+        enabled: true,
+        ingestionEnabled,
+        indicatorSlugs: Array.from(new Set(resolvedSlugs))
+      },
+      description: `News indicator association settings (org=${input.orgId})`,
+      ...(input.updatedById ? { updatedById: input.updatedById } : {})
+    },
+    create: {
+      key,
+      value: {
+        enabled: true,
+        ingestionEnabled: false,
+        windowDays: 180,
+        maxLagDays: 7,
+        minSampleSize: 30,
+        minAbsCorrelation: 0.2,
+        maxPValue: 0.2,
+        topEntities: 50,
+        topTopics: 50,
+        maxAssociationsPerIndicator: 60,
+        indicatorSlugs: [...NEWS_INDICATOR_RECOMMENDED_SLUGS],
+        backtestTriggerZScore: 2,
+        backtestBaselineDays: 30,
+        backtestHoldoutDays: 30,
+        cacheTtlSeconds: 120
+      },
+      description: `News indicator association settings (org=${input.orgId})`,
+      ...(input.updatedById ? { updatedById: input.updatedById } : {})
+    }
+  });
+}
+
+export const seed = async ({
+  orgSlug,
+  orgName,
+  orgDescription = null,
+  adminEmail,
+  adminPassword,
+  adminFirstName,
+  adminLastName
+}: SeedOptions) => {
+  const normalizedOrgSlug = orgSlug.trim();
+  const normalizedOrgName = orgName.trim();
+  const normalizedAdminEmail = adminEmail.trim().toLowerCase();
+  const normalizedAdminPassword = adminPassword.trim();
+  const normalizedAdminFirstName = adminFirstName.trim();
+  const normalizedAdminLastName = adminLastName.trim();
+
+  if (!normalizedOrgSlug) {
+    throw new Error("Seed requires orgSlug");
+  }
+
+  if (!normalizedOrgName) {
+    throw new Error("Seed requires orgName");
+  }
+
+  if (!normalizedAdminEmail) {
+    throw new Error("Seed requires adminEmail");
+  }
+
+  if (!normalizedAdminPassword.trim()) {
+    throw new Error("Seed requires adminPassword");
+  }
+
+  if (!normalizedAdminFirstName) {
+    throw new Error("Seed requires adminFirstName");
+  }
+
+  if (!normalizedAdminLastName) {
+    throw new Error("Seed requires adminLastName");
+  }
+
   const org = await prisma.org.upsert({
-    where: { slug: orgSlug },
+    where: { slug: normalizedOrgSlug },
     update: {},
     create: {
-      name: "Acme Corp",
-      slug: orgSlug,
-      description: "Seed organization",
+      name: normalizedOrgName,
+      slug: normalizedOrgSlug,
+      description: orgDescription,
       isActive: true
     }
   });
@@ -73,112 +175,60 @@ export const seed = async ({ orgSlug = "acme" }: SeedOptions = {}) => {
     }
   }
 
-  for (const userDef of DEFAULT_USERS) {
-    const passwordHash = await bcrypt.hash(userDef.password, 10);
-    const user = await prisma.user.upsert({
-      where: { email: userDef.email },
-      update: {
-        passwordHash,
-        firstName: userDef.firstName,
-        lastName: userDef.lastName,
-        isActive: true
-      },
-      create: {
-        email: userDef.email,
-        passwordHash,
-        firstName: userDef.firstName,
-        lastName: userDef.lastName
-      }
-    });
-
-    for (const roleName of userDef.roles) {
-      const role = await prisma.role.findFirstOrThrow({
-        where: { orgId: org.id, name: roleName }
-      });
-      await prisma.membership.upsert({
-        where: {
-          userId_orgId: {
-            userId: user.id,
-            orgId: org.id
-          }
-        },
-        update: {
-          roleId: role.id
-        },
-        create: {
-          userId: user.id,
-          orgId: org.id,
-          roleId: role.id
-        }
-      });
+  const passwordHash = await bcryptHash(normalizedAdminPassword, 10);
+  const adminUser = await prisma.user.upsert({
+    where: { email: normalizedAdminEmail },
+    update: {
+      passwordHash,
+      firstName: normalizedAdminFirstName,
+      lastName: normalizedAdminLastName,
+      isActive: true
+    },
+    create: {
+      email: normalizedAdminEmail,
+      passwordHash,
+      firstName: normalizedAdminFirstName,
+      lastName: normalizedAdminLastName,
+      isActive: true
     }
-  }
-
-  const seedOwner = await prisma.user.findUnique({
-    where: { email: DEFAULT_USERS[0]?.email }
   });
 
-  // Seed a demo item metadata row
-  await prisma.itemMeta.upsert({
+  const adminRole = await prisma.role.findFirstOrThrow({
+    where: { orgId: org.id, name: "admin" }
+  });
+
+  await prisma.membership.upsert({
     where: {
-      orgId_externalId: {
-        orgId: org.id,
-        externalId: "item-001"
+      userId_orgId: {
+        userId: adminUser.id,
+        orgId: org.id
       }
     },
     update: {
-      name: "Sample Item",
-      status: "active"
+      roleId: adminRole.id
     },
     create: {
+      userId: adminUser.id,
       orgId: org.id,
-      externalId: "item-001",
-      name: "Sample Item",
-      status: "active",
-      mongoRef: "rawitem-001"
+      roleId: adminRole.id
     }
   });
 
-  if (seedOwner) {
-    await prisma.crawlTask.upsert({
-      where: { id: "seed-crawl-task" },
-      update: {
-        targetUrl: "https://news.ycombinator.com/",
-        status: "pending"
-      },
-      create: {
-        id: "seed-crawl-task",
-        orgId: org.id,
-        createdById: seedOwner.id,
-        targetUrl: "https://news.ycombinator.com/",
-        displayName: "HN Headlines",
-        status: "pending",
-        concurrency: 2,
-        keywords: ["ai", "security"],
-        config: {
-          scanFullPage: true,
-          adjustViewportToContent: true,
-          scrollDelayMs: 200,
-          enableUndetectedBrowser: true,
-          enableStealthMode: true,
-          simulateUser: true,
-          overrideNavigator: true
-        },
-        lastServerMemoryMb: 420.5,
-        lastPeakMemoryMb: 950.2,
-        lastMemoryEfficiency: 78.4,
-        timeRangeFrom: new Date(Date.now() - 1000 * 60 * 60 * 24),
-        timeRangeTo: new Date(),
-        runCount: 0
-      }
-    });
-  }
+  await seedNewsIndicatorSettings({ orgId: org.id, updatedById: adminUser.id });
 
   return org;
 };
 
 if (require.main === module) {
-  seed()
+  seed({
+    orgSlug: process.env.SEED_ORG_SLUG ?? "",
+    orgName: process.env.SEED_ORG_NAME ?? "",
+    orgDescription: process.env.SEED_ORG_DESCRIPTION ?? null,
+    adminEmail: process.env.SEED_ADMIN_EMAIL ?? "",
+    adminPassword: process.env.SEED_ADMIN_PASSWORD ?? "",
+    adminFirstName: process.env.SEED_ADMIN_FIRST_NAME ?? "",
+    adminLastName: process.env.SEED_ADMIN_LAST_NAME ?? ""
+  })
     .then((org) => {
       console.log("Seed data ready for org", org.slug);
       return prisma.$disconnect();

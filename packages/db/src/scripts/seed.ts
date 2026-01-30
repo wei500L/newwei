@@ -15,7 +15,27 @@ const connectionString =
 
 process.env.DATABASE_URL = connectionString;
 
-seed()
+function requireEnvValue(key: string): string {
+  const value = process.env[key];
+  if (typeof value !== 'string') {
+    throw new Error(`Missing required env var: ${key}`);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`Missing required env var: ${key}`);
+  }
+  return trimmed;
+}
+
+seed({
+  orgSlug: requireEnvValue('SEED_ORG_SLUG'),
+  orgName: requireEnvValue('SEED_ORG_NAME'),
+  orgDescription: (process.env.SEED_ORG_DESCRIPTION ?? '').trim() || null,
+  adminEmail: requireEnvValue('SEED_ADMIN_EMAIL'),
+  adminPassword: requireEnvValue('SEED_ADMIN_PASSWORD'),
+  adminFirstName: requireEnvValue('SEED_ADMIN_FIRST_NAME'),
+  adminLastName: requireEnvValue('SEED_ADMIN_LAST_NAME')
+})
   .then(() => {
     console.log('Seed data created');
     process.exit(0);

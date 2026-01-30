@@ -4,7 +4,9 @@
     "baseUrl": "./src",
     "paths": {
       "@modular/config": ["../../config/src/index.ts"],
-      "@modular/config/*": ["../../config/src/*"]
+      "@modular/config/*": ["../../config/src/*"],
+      "@modular/utils": ["../../utils/src/index.ts"],
+      "@modular/utils/*": ["../../utils/src/*"]
     }
   },
   "include": ["src/**/*.ts"],

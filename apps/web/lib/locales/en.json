@@ -1270,9 +1270,11 @@
       "disabledDescription": "Disabled by admin.",
       "disabledCta": "Open system settings",
       "ingestionOffTitle": "Ingestion disabled",
-      "ingestionOffDescription": "Scheduled refresh is disabled. Results may be stale.",
+      "ingestionOffDescription": "Scheduled refresh is disabled. You can still click Recompute to run once.",
       "loadFailed": "Failed to load associations.",
-      "empty": "No associations yet. Configure indicator slugs and wait for scheduled refresh.",
+      "empty": "No associations yet.",
+      "emptyNoIndicators": "No indicator slugs configured yet.",
+      "dataRequirements": "Needs ≥ {{minSampleSize}} days of processed news (topics/entities/sentiment) and matching indicator data points (windowDays={{windowDays}}).",
       "emptyCta": "Open system settings",
       "refreshDone": "Refresh triggered.",
       "refreshFailed": "Refresh failed.",
@@ -1969,7 +1971,11 @@
       },
       "hints": {
         "ingestionEnabled": "Controls scheduled refresh jobs.",
-        "indicatorSlugs": "Example: CPIAUCSL, DGS10, FEDFUNDS"
+        "indicatorSlugs": "Use EconomicDataItem.slug values; max 50.",
+        "minSampleSize": "Minimum number of days with overlapping sentiment snapshots and indicator points; roughly equals minimum news-days needed."
+      },
+      "actions": {
+        "applyRecommended": "Add recommended key-monitor indicators"
       },
       "placeholders": {
         "indicatorSlugs": "Enter indicator slugs"
@@ -2336,7 +2342,39 @@
       "description": "Configure Nominatim identification used by the API geocoding service for map news locations.",
       "notice": {
         "title": "Nominatim usage policy",
-        "body": "Provide a descriptive User-Agent and a valid contact email to reduce the risk of rate limiting or blocking."
+        "body": "Provide a descriptive User-Agent and a valid contact email to reduce the risk of rate limiting or blocking. When using the OSM public Nominatim instance, the API enforces at most 1 request per 2 seconds."
+      },
+      "health": {
+        "title": "Service health",
+        "description": "Automatically checks whether Nominatim is reachable during idle hours and shows the most recent result (runs daily at 14:00 Asia/Hong_Kong).",
+        "actions": {
+          "check": "Check now"
+        },
+        "fields": {
+          "checkedAt": "Last checked",
+          "baseUrl": "Base URL",
+          "rateLimit": "Rate limit"
+        },
+        "status": {
+          "label": "Health status",
+          "unknown": "Not checked",
+          "ok": "OK",
+          "no_result": "No result",
+          "rate_limited": "Rate limited",
+          "upstream_forbidden": "403 Forbidden",
+          "upstream_rate_limited": "Upstream rate limited",
+          "upstream_error": "Upstream error",
+          "network_error": "Network error",
+          "invalid_query": "Invalid query"
+        },
+        "messages": {
+          "checked": "Health check completed",
+          "checkRateLimited": "Rate limited locally. Try again later."
+        },
+        "errors": {
+          "loadFailed": "Failed to load health status",
+          "checkFailed": "Health check failed"
+        }
       },
       "test": {
         "title": "Test geocoding",
@@ -2354,7 +2392,12 @@
         },
         "noResult": "No result (may be rate-limited or not found).",
         "errors": {
-          "failed": "Failed to run geocode test"
+          "failed": "Failed to run geocode test",
+          "rateLimited": "Too many requests (max 1 request per {{seconds}} seconds). Please try again later.",
+          "forbidden": "Nominatim returned 403 Forbidden: you may be temporarily blocked (hours to days); severe or repeated abuse may result in a permanent block.",
+          "upstreamRateLimited": "Upstream rate limited (HTTP 429). Please try again later.",
+          "upstreamError": "Nominatim request failed (HTTP {{status}}).",
+          "networkError": "Network error or timeout. Please try again later."
         }
       },
       "fields": {
@@ -3968,6 +4011,8 @@
       "matchTitle": "Monitor matches",
       "locationResolveMissing": "Enter a location name first.",
       "locationResolveFailed": "Could not resolve that location.",
+      "locationResolveRateLimited": "Geocoding is being rate limited. Please try again later.",
+      "locationResolveForbidden": "Geocoding returned 403 Forbidden. It may be temporarily blocked.",
       "locationResolved": "Location resolved.",
       "locationResolveError": "Failed to resolve location.",
       "updateFailed": "Failed to update monitor.",

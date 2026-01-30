@@ -7,3 +7,4 @@ export * from "./tracing";
 export * from "./geo";
 export * from "./error-sanitizer";
 export * from "./economic-insights";
+export * from "./news-indicator-presets";

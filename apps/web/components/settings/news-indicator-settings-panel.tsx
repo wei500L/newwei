@@ -5,6 +5,7 @@ import { Alert, Button, Form, InputNumber, Select, Space, Spin, Switch, Typograp
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { NEWS_INDICATOR_RECOMMENDED_SLUGS } from "@modular/utils";
 import { captureClientError } from "@/lib/client-telemetry";
 
 interface NewsIndicatorSettingsModel {
@@ -99,7 +100,7 @@ function normalizeIndicatorSlugs(values: string[]) {
   const trimmed = values
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
-  return Array.from(new Set(trimmed)).slice(0, 200);
+  return Array.from(new Set(trimmed)).slice(0, 50);
 }
 
 export function NewsIndicatorSettingsPanel() {
@@ -122,7 +123,10 @@ export function NewsIndicatorSettingsPanel() {
   const indicatorSlugs = Form.useWatch("indicatorSlugs", form);
   const indicatorOptions = useMemo(
     () =>
-      normalizeIndicatorSlugs(Array.isArray(indicatorSlugs) ? indicatorSlugs : []).map((slug) => ({
+      normalizeIndicatorSlugs([
+        ...(Array.isArray(indicatorSlugs) ? indicatorSlugs : []),
+        ...NEWS_INDICATOR_RECOMMENDED_SLUGS
+      ]).map((slug) => ({
         label: slug,
         value: slug
       })),
@@ -201,10 +205,31 @@ export function NewsIndicatorSettingsPanel() {
         <Form.Item
           label={t("settings.newsIndicator.fields.indicatorSlugs", { defaultValue: "Indicator slugs" })}
           name="indicatorSlugs"
-          extra={t("settings.newsIndicator.hints.indicatorSlugs", {
-            defaultValue: "Example: CPIAUCSL, DGS10, FEDFUNDS"
-          })}
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          extra={
+            <Space direction="vertical" size={4}>
+              <Typography.Text type="secondary">
+                {t("settings.newsIndicator.hints.indicatorSlugs", {
+                  defaultValue: "Use EconomicDataItem.slug values; max 50."
+                })}
+              </Typography.Text>
+              <div>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    const merged = normalizeIndicatorSlugs([
+                      ...(Array.isArray(indicatorSlugs) ? indicatorSlugs : []),
+                      ...NEWS_INDICATOR_RECOMMENDED_SLUGS
+                    ]);
+                    form.setFieldsValue({ indicatorSlugs: merged });
+                  }}
+                >
+                  {t("settings.newsIndicator.actions.applyRecommended", {
+                    defaultValue: "Add recommended key-monitor indicators"
+                  })}
+                </Button>
+              </div>
+            </Space>
+          }
         >
           <Select
             mode="tags"
@@ -222,7 +247,7 @@ export function NewsIndicatorSettingsPanel() {
           name="windowDays"
           rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
         >
-          <InputNumber min={7} max={365} style={{ width: "100%" }} />
+          <InputNumber min={7} max={3650} style={{ width: "100%" }} />
         </Form.Item>
 
           <Form.Item
@@ -238,9 +263,13 @@ export function NewsIndicatorSettingsPanel() {
           <Form.Item
           label={t("settings.newsIndicator.fields.minSampleSize", { defaultValue: "Min sample size" })}
           name="minSampleSize"
+          extra={t("settings.newsIndicator.hints.minSampleSize", {
+            defaultValue:
+              "Minimum number of days with overlapping sentiment snapshots and indicator points; roughly equals minimum news-days needed."
+          })}
           rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
         >
-          <InputNumber min={2} max={5000} style={{ width: "100%" }} />
+          <InputNumber min={10} max={2000} style={{ width: "100%" }} />
         </Form.Item>
 
           <Form.Item
