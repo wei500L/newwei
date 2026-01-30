@@ -505,12 +505,15 @@ export function NewsSourcesContent() {
     };
 
     try {
-      await apiClient.post("admin/news-sources", payload);
+      const response = await apiClient.post<NewsSourceRecord>("admin/news-sources", payload);
       messageApi.success(
         t("newsSources.messages.created", { defaultValue: "News source created." })
       );
       closeCreateDrawer();
       await loadSources();
+      if (response.data) {
+        openEdit(response.data);
+      }
     } catch (error) {
       captureClientError("Failed to create news source (task drawer)", error);
       messageApi.error(

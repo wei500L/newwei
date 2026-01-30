@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { captureClientError } from "@/lib/client-telemetry";
+import { normalizeUnit } from "@/lib/economic-units";
 import { formatDateTime, resolveLocale, type SupportedLocale } from "@/lib/i18n";
 
 type NewsIndicatorScopeType = "entity" | "topic";
@@ -179,17 +180,29 @@ function formatCorrelation(value: number): string {
   if (!Number.isFinite(value)) {
     return "-";
   }
-  return value.toFixed(3);
+  return `r=${value.toFixed(3)}`;
+}
+
+function formatSignificanceStars(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+  // Conventional thresholds: * p<0.1, ** p<0.05, *** p<0.01
+  if (value < 0.01) return "***";
+  if (value < 0.05) return "**";
+  if (value < 0.1) return "*";
+  return "";
 }
 
 function formatPValue(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "-";
   }
+  const stars = formatSignificanceStars(value);
   if (value < 0.0001) {
-    return "<0.0001";
+    return `<0.0001${stars}`;
   }
-  return value.toFixed(4);
+  return `${value.toFixed(4)}${stars}`;
 }
 
 function pickBacktestMetric(metrics: unknown, key: string): number | null {
@@ -334,6 +347,7 @@ export function NewsIndicatorAssociations() {
             <Typography.Text>{value.displayName}</Typography.Text>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {value.slug}
+              {value.defaultUnit ? ` · ${normalizeUnit(value.defaultUnit) ?? value.defaultUnit}` : ""}
             </Typography.Text>
           </Space>
         )
@@ -655,6 +669,9 @@ function AssociationDetailsView({ association, locale }: { association: Associat
         <Space wrap size={[6, 6]}>
           <Tag>{association.featureMetric}</Tag>
           <Tag color="geekblue">{indicator.slug}</Tag>
+          {indicator.defaultUnit ? (
+            <Tag>{normalizeUnit(indicator.defaultUnit) ?? indicator.defaultUnit}</Tag>
+          ) : null}
           <Typography.Text>{indicator.displayName}</Typography.Text>
         </Space>
         <Space wrap size={[12, 0]}>

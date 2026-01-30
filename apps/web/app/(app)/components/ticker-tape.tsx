@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { TimeGranularity, useDashboardHeroMetricsQuery } from "@/graphql/generated";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
+import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
   compareGranularity,
   formatGranularityLabel,
@@ -18,6 +19,9 @@ import { useDashboardRangeStore } from "@/store/time-range";
 
 interface MetricPoint {
   value: number;
+  unit?: string | null;
+  dataType?: string | null;
+  item?: { defaultUnit?: string | null } | null;
 }
 
 type MetricSeries = readonly MetricPoint[];
@@ -100,10 +104,16 @@ export function TickerTape() {
       if (!series || series.length === 0) return null;
       const last = series.at(-1);
       if (!last) return null;
+      const unit = resolveEconomicUnit({
+        unit: last.unit ?? null,
+        defaultUnit: last.item?.defaultUnit ?? null,
+        dataType: last.dataType ?? null,
+      });
       return {
         label,
         value: last.value,
-        trend: getTrend(series)
+        trend: getTrend(series),
+        unit
       };
     };
 
@@ -114,7 +124,7 @@ export function TickerTape() {
       buildItem(t("dashboard.hero.supplyChain", { defaultValue: "Supply Stability" }), data.supply)
     ];
     return resolved.filter(
-      (item): item is { label: string; value: number; trend: number } => Boolean(item)
+      (item): item is { label: string; value: number; trend: number; unit: string | null } => Boolean(item)
     );
   }, [data, t]);
 
@@ -158,7 +168,10 @@ export function TickerTape() {
           {[...items, ...items, ...items].map((item, i) => (
              <div key={`${item?.label ?? "metric"}-${i}`} className="flex items-center gap-2 text-xs">
                 <span className="text-slate-500 font-semibold">{item.label}</span>
-                <span className="text-slate-700">{typeof item.value === 'number' ? item.value.toFixed(2) : '--'}</span>
+                <span className="text-slate-700">
+                  {typeof item.value === "number" ? item.value.toFixed(2) : "--"}
+                  {item.unit ? <span className="text-slate-400 ml-1">{item.unit}</span> : null}
+                </span>
                 <span className={`${item.trend > 0 ? 'text-[var(--bullish)]' : item.trend < 0 ? 'text-[var(--bearish)]' : 'text-slate-400'} flex items-center`}>
                    {item.trend > 0 ? <ArrowUpOutlined style={{fontSize: 10}}/> : item.trend < 0 ? <ArrowDownOutlined style={{fontSize: 10}}/> : null}
                    <span className="ml-1">{Math.abs(item.trend).toFixed(2)}%</span>
