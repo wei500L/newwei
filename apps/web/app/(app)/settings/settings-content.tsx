@@ -23,6 +23,7 @@ import { useTranslation } from "react-i18next";
 
 import { NumberRangeExtra, TokenEstimateExtra, TotalTokenEstimateText } from "@/components/settings/form-field-feedback";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
+import { UnitInputNumber } from "@/components/settings/unit-input-number";
 import type {
   UpdateAuditLogRetentionMutationVariables,
   UpdateAuthCacheSettingsMutationVariables,
@@ -774,7 +775,7 @@ function CrawlClientSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="healthCheckTtlMs" min={5_000} max={900_000} unit="ms" />}
         >
-          <InputNumber min={5_000} max={900_000} step={1_000} addonAfter="ms" style={{ width: "100%" }} />
+          <UnitInputNumber min={5_000} max={900_000} step={1_000} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.crawlClient.fields.requestTimeout")}
@@ -785,7 +786,7 @@ function CrawlClientSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="requestTimeoutMs" min={5_000} max={300_000} unit="ms" />}
         >
-          <InputNumber min={5_000} max={300_000} step={1_000} addonAfter="ms" style={{ width: "100%" }} />
+          <UnitInputNumber min={5_000} max={300_000} step={1_000} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.crawlClient.fields.maxAttempts")}
@@ -807,7 +808,7 @@ function CrawlClientSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="retryBackoffMs" min={500} max={600_000} unit="ms" />}
         >
-          <InputNumber min={500} max={600_000} step={500} addonAfter="ms" style={{ width: "100%" }} />
+          <UnitInputNumber min={500} max={600_000} step={500} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
@@ -1017,7 +1018,7 @@ function RateLimitFieldGroup({ title, description, field }: RateLimitFieldGroupP
           ]}
           extra={<NumberRangeExtra name={[field, "windowSeconds"]} min={5} max={86_400} unit="s" />}
         >
-          <InputNumber min={5} max={86_400} addonAfter="s" />
+          <UnitInputNumber min={5} max={86_400} unit="s" />
         </Form.Item>
       </div>
     </Card>

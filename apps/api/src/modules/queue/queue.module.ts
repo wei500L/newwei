@@ -9,6 +9,7 @@ import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
 import { NewsSourceSchedulerService } from "./news-source.scheduler.service";
+import { QueueCleanupService } from "./queue-cleanup.service";
 import { QueueEventPublisher } from "./queue-event.publisher";
 import { QueueOrgStatsService } from "./queue-org-stats.service";
 import { QueueOrgStatsTracker } from "./queue-org-stats.tracker";
@@ -28,10 +29,10 @@ import { QueueService } from "./queue.service";
   providers: [
     {
       provide: PIPELINE_QUEUE,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => {
+      inject: [EnvService, QueueCleanupService],
+      useFactory: (env: EnvService, cleanup: QueueCleanupService) => {
         const config = env.bullmqConfig;
-        return new Queue(ITEM_PIPELINE_QUEUE_NAME, {
+        const queue = new Queue(ITEM_PIPELINE_QUEUE_NAME, {
           connection: {
             host: config.connection.host,
             port: config.connection.port,
@@ -51,14 +52,16 @@ import { QueueService } from "./queue.service";
             },
           },
         });
+        cleanup.track(queue);
+        return queue;
       }
     },
     {
       provide: PIPELINE_DLQ_QUEUE,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => {
+      inject: [EnvService, QueueCleanupService],
+      useFactory: (env: EnvService, cleanup: QueueCleanupService) => {
         const config = env.bullmqConfig;
-        return new Queue(ITEM_PIPELINE_DLQ_QUEUE_NAME, {
+        const queue = new Queue(ITEM_PIPELINE_DLQ_QUEUE_NAME, {
           connection: {
             host: config.connection.host,
             port: config.connection.port,
@@ -74,14 +77,16 @@ import { QueueService } from "./queue.service";
             attempts: 1,
           },
         });
+        cleanup.track(queue);
+        return queue;
       },
     },
     {
       provide: PIPELINE_QUEUE_EVENTS,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => {
+      inject: [EnvService, QueueCleanupService],
+      useFactory: (env: EnvService, cleanup: QueueCleanupService) => {
         const config = env.bullmqConfig;
-        return new QueueEvents(ITEM_PIPELINE_QUEUE_NAME, {
+        const events = new QueueEvents(ITEM_PIPELINE_QUEUE_NAME, {
           connection: {
             host: config.connection.host,
             port: config.connection.port,
@@ -89,6 +94,8 @@ import { QueueService } from "./queue.service";
             db: config.connection.db
           }
         });
+        cleanup.track(events);
+        return events;
       }
     },
     {
@@ -102,6 +109,7 @@ import { QueueService } from "./queue.service";
     QueueProcessor,
     QueueService,
     QueueEventPublisher,
+    QueueCleanupService,
     QueueOrgStatsService,
     QueueOrgStatsTracker,
     QueueGateway,

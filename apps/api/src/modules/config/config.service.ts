@@ -228,6 +228,8 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<boolean>("GRAPHQL_PLAYGROUND", { infer: true }) ?? false,
       introspection:
         this.get<boolean>("GRAPHQL_INTROSPECTION", { infer: true }) ?? false,
+      subscriptionsEnabled:
+        this.get<boolean>("GRAPHQL_SUBSCRIPTIONS_ENABLED", { infer: true }) ?? true,
       depthLimit: this.get<number>("GRAPHQL_DEPTH_LIMIT", { infer: true }) ?? 8,
       complexityLimit:
         this.get<number>("GRAPHQL_COMPLEXITY_LIMIT", { infer: true }) ?? 2000,

@@ -194,12 +194,11 @@ export function AuditLogsContent() {
           {t("auditLogs.description")}
         </Typography.Paragraph>
         <Space wrap>
-          <Input.Search
+          <Input
             id="audit-logs-search"
             name="auditLogsSearch"
             placeholder={t("auditLogs.searchPlaceholder")}
             allowClear
-            onSearch={setSearch}
             onChange={(event) => setSearch(event.target.value)}
             value={search}
             style={{ width: 240 }}

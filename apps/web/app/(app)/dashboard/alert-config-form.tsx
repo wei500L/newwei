@@ -3,6 +3,7 @@
 import {
   App,
   Button,
+  ConfigProvider,
   DatePicker,
   Divider,
   Form,
@@ -114,11 +115,13 @@ export function AlertConfigForm() {
   const [channelForm] = Form.useForm();
 
   return (
-    <Space direction="vertical" style={{ width: "100%" }} size="large">
+    <ConfigProvider input={{ autoComplete: "off" }} textArea={{ autoComplete: "off" }}>
+      <Space direction="vertical" style={{ width: "100%" }} size="large">
       <div>
         <Typography.Title level={5}>{t("alerts.config.title")}</Typography.Title>
         <Form
           form={form}
+          autoComplete="off"
           layout="vertical"
           initialValues={{
             id: existingRule?.id,
@@ -214,35 +217,43 @@ export function AlertConfigForm() {
               ...baseMetadata
             };
             const metadata = Object.keys(mergedMetadata).length ? mergedMetadata : undefined;
-            await upsertRule({
-              variables: {
-                input: {
-                  id: values.id ?? undefined,
-                  name: values.name,
-                  metricProvider: values.metricProvider,
-                  metricSlug: values.metricSlug,
-                  operator: values.operator,
-                  thresholdValue: values.thresholdValue ?? undefined,
-                  thresholdLower: values.thresholdLower ?? undefined,
-                  thresholdUpper: values.thresholdUpper ?? undefined,
-                  severity: values.severity,
-                  status: values.status,
-                  cooldownSeconds: values.cooldownSeconds,
-                  checkIntervalSec: values.checkIntervalSec,
-                  metadata,
-                  channelIds: values.channelIds,
+            try {
+              await upsertRule({
+                variables: {
+                  input: {
+                    id: values.id ?? undefined,
+                    name: values.name,
+                    metricProvider: values.metricProvider,
+                    metricSlug: values.metricSlug,
+                    operator: values.operator,
+                    thresholdValue: values.thresholdValue ?? undefined,
+                    thresholdLower: values.thresholdLower ?? undefined,
+                    thresholdUpper: values.thresholdUpper ?? undefined,
+                    severity: values.severity,
+                    status: values.status,
+                    cooldownSeconds: values.cooldownSeconds,
+                    checkIntervalSec: values.checkIntervalSec,
+                    metadata,
+                    channelIds: values.channelIds,
+                  },
                 },
-              },
-            });
-            await Promise.all([refetch(), refetchChannels()]);
-            message.success(t("alerts.config.saved"));
+              });
+              await Promise.all([refetch(), refetchChannels()]);
+              message.success(t("alerts.config.saved"));
+            } catch (error) {
+              message.error(
+                error instanceof Error
+                  ? error.message
+                  : t("alerts.config.saveFailed", { defaultValue: "Failed to save." })
+              );
+            }
           }}
         >
           <Form.Item name="id" hidden>
-            <Input />
+            <Input type="hidden" />
           </Form.Item>
           <Form.Item label={t("alerts.config.fields.name")} name="name" rules={[{ required: true }]}>
-            <Input />
+            <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
             label={t("alerts.config.fields.metricProvider")}
@@ -530,25 +541,34 @@ export function AlertConfigForm() {
         </Typography.Title>
         <Form
           form={channelForm}
+          autoComplete="off"
           layout="inline"
           initialValues={{ type: "webhook" }}
           onFinish={async (values) => {
-            await createChannel({
-              variables: {
-                input: {
-                  type: values.type,
-                  name: values.name,
-                  target: values.target,
+            try {
+              await createChannel({
+                variables: {
+                  input: {
+                    type: values.type,
+                    name: values.channelName,
+                    target: values.target,
+                  },
                 },
-              },
-            });
-            await Promise.all([refetch(), refetchChannels()]);
-            message.success(t("alerts.channels.created"));
-            channelForm.resetFields();
+              });
+              await Promise.all([refetch(), refetchChannels()]);
+              message.success(t("alerts.channels.created"));
+              channelForm.resetFields();
+            } catch (error) {
+              message.error(
+                error instanceof Error
+                  ? error.message
+                  : t("alerts.channels.createFailed", { defaultValue: "Failed to create channel." })
+              );
+            }
           }}
         >
-          <Form.Item name="name" rules={[{ required: true }]} label={t("alerts.channels.fields.name")}>
-            <Input placeholder={t("alerts.channels.fields.namePlaceholder")} />
+          <Form.Item name="channelName" rules={[{ required: true }]} label={t("alerts.channels.fields.name")}>
+            <Input autoComplete="off" placeholder={t("alerts.channels.fields.namePlaceholder")} />
           </Form.Item>
           <Form.Item name="type" rules={[{ required: true }]} label={t("alerts.channels.fields.type")}>
             <Select
@@ -569,6 +589,7 @@ export function AlertConfigForm() {
           </Form.Item>
         </Form>
       </div>
-    </Space>
+      </Space>
+    </ConfigProvider>
   );
 }

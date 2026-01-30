@@ -41,6 +41,7 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionExpired = searchParams.get("sessionExpired") === "1";
+  const logoutFailed = searchParams.get("logoutFailed") === "1";
 
   const onFinish = async (values: LoginFormValues) => {
     const parsed = buildLoginSchema(t).safeParse(values);
@@ -108,6 +109,11 @@ export default function LoginPage() {
         {sessionExpired && (
           <Form.Item>
             <Alert type="warning" message={t("auth.login.sessionExpired")} showIcon />
+          </Form.Item>
+        )}
+        {logoutFailed && (
+          <Form.Item>
+            <Alert type="warning" message={t("auth.logoutFailed")} showIcon />
           </Form.Item>
         )}
         <Form.Item

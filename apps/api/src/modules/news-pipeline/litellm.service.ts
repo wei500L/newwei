@@ -705,6 +705,19 @@ export class LiteLlmService {
       return error.message || "";
     }
     if (typeof responseData === "string") {
+      const trimmed = responseData.trim();
+      const lower = trimmed.toLowerCase();
+      if (lower.startsWith("<!doctype") || lower.includes("<html")) {
+        const titleMatch = trimmed.match(/<title[^>]*>([^<]{1,200})<\/title>/i);
+        if (titleMatch?.[1]) {
+          return titleMatch[1].trim();
+        }
+        const h1Match = trimmed.match(/<h1[^>]*>([^<]{1,200})<\/h1>/i);
+        if (h1Match?.[1]) {
+          return h1Match[1].trim();
+        }
+        return "HTML error response";
+      }
       return responseData;
     }
     if (typeof responseData === "object") {

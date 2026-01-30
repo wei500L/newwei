@@ -397,23 +397,24 @@ export function SituationMonitorMonitorsPanel() {
         />
       </div>
 
-      <Modal
-        title={
-          editingMonitor
-            ? t("situationMonitor.monitors.editTitle", { defaultValue: "Edit monitor" })
-            : t("situationMonitor.monitors.createTitle", { defaultValue: "Create monitor" })
-        }
-        open={modalOpen}
-        onCancel={closeModal}
-        onOk={() => void handleSubmit()}
-        okText={editingMonitor ? t("common.save", { defaultValue: "Save" }) : t("common.create", { defaultValue: "Create" })}
-        destroyOnHidden
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{ name: "", keywords: [], color: undefined, locationName: undefined, locationLat: undefined, locationLng: undefined }}
+        preserve={false}
+        component={false}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{ name: "", keywords: [], color: undefined, locationName: undefined, locationLat: undefined, locationLng: undefined }}
-          preserve={false}
+        <Modal
+          title={
+            editingMonitor
+              ? t("situationMonitor.monitors.editTitle", { defaultValue: "Edit monitor" })
+              : t("situationMonitor.monitors.createTitle", { defaultValue: "Create monitor" })
+          }
+          open={modalOpen}
+          onCancel={closeModal}
+          onOk={() => void handleSubmit()}
+          okText={editingMonitor ? t("common.save", { defaultValue: "Save" }) : t("common.create", { defaultValue: "Create" })}
+          destroyOnHidden
         >
           <Form.Item
             label={t("situationMonitor.monitors.fields.name", { defaultValue: "Name" })}
@@ -492,8 +493,8 @@ export function SituationMonitorMonitorsPanel() {
               <InputNumber style={{ width: "100%" }} placeholder="121.56" min={-180} max={180} step={0.01} />
             </Form.Item>
           </Space>
-        </Form>
-      </Modal>
+        </Modal>
+      </Form>
     </Card>
   );
 }

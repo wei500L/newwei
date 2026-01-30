@@ -521,7 +521,7 @@ export function NewsIndicatorAssociations() {
                 />
               </Space>
 
-              <Input.Search
+              <Input
                 allowClear
                 value={scopeKey}
                 onChange={(evt) => setScopeKey(evt.target.value)}

@@ -24,6 +24,9 @@ interface NormalizedHttpResponse {
   items?: unknown;
   expectedAliases?: unknown;
   availableSourceFields?: unknown;
+  requiredPermissions?: unknown;
+  permissionsMode?: unknown;
+  missingPermissions?: unknown;
 }
 
 type HostContextType = "http" | "graphql" | "rpc" | "ws";
@@ -160,6 +163,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         code: this.resolveGraphqlCode(statusCode),
         http: { status: statusCode },
         traceId,
+        ...(normalized.code ? { appCode: normalized.code } : {}),
+        ...(normalized.detail ? { detail: normalized.detail } : {}),
+        ...("item" in normalized ? { item: normalized.item } : {}),
+        ...("items" in normalized ? { items: normalized.items } : {}),
+        ...("expectedAliases" in normalized ? { expectedAliases: normalized.expectedAliases } : {}),
+        ...("availableSourceFields" in normalized
+          ? { availableSourceFields: normalized.availableSourceFields }
+          : {}),
+        ...("requiredPermissions" in normalized
+          ? { requiredPermissions: normalized.requiredPermissions }
+          : {}),
+        ...("permissionsMode" in normalized ? { permissionsMode: normalized.permissionsMode } : {}),
+        ...("missingPermissions" in normalized ? { missingPermissions: normalized.missingPermissions } : {}),
         ...(this.exposeErrorDetails &&
         exception instanceof Error &&
         !(exception instanceof HttpException)
@@ -286,6 +302,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
     if ("availableSourceFields" in payload) {
       safe.availableSourceFields = payload.availableSourceFields;
+    }
+    if ("requiredPermissions" in payload) {
+      safe.requiredPermissions = payload.requiredPermissions;
+    }
+    if ("permissionsMode" in payload) {
+      safe.permissionsMode = payload.permissionsMode;
+    }
+    if ("missingPermissions" in payload) {
+      safe.missingPermissions = payload.missingPermissions;
     }
 
     return safe;

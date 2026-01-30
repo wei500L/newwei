@@ -7,6 +7,7 @@ import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 
 import { AnalysisPromptService } from "./analysis-prompt.service";
+import { AnalysisQueueCleanupService } from "./analysis-queue-cleanup.service";
 import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_QUEUE_NAME } from "./analysis.constants";
 import { AnalysisProcessor } from "./analysis.processor";
 import { ANALYSIS_PUBSUB, createAnalysisPubSub } from "./analysis.pubsub";
@@ -18,15 +19,24 @@ import { AnalysisService } from "./analysis.service";
     AnalysisService,
     AnalysisPromptService,
     AnalysisProcessor,
+    AnalysisQueueCleanupService,
     {
       provide: ANALYSIS_QUEUE,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => new Queue(ANALYSIS_QUEUE_NAME, { connection: env.redisConfig })
+      inject: [EnvService, AnalysisQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: AnalysisQueueCleanupService) => {
+        const queue = new Queue(ANALYSIS_QUEUE_NAME, { connection: env.redisConfig });
+        cleanup.track(queue);
+        return queue;
+      }
     },
     {
       provide: ANALYSIS_QUEUE_EVENTS,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => new QueueEvents(ANALYSIS_QUEUE_NAME, { connection: env.redisConfig })
+      inject: [EnvService, AnalysisQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: AnalysisQueueCleanupService) => {
+        const events = new QueueEvents(ANALYSIS_QUEUE_NAME, { connection: env.redisConfig });
+        cleanup.track(events);
+        return events;
+      }
     },
     {
       provide: ANALYSIS_PUBSUB,

@@ -110,6 +110,7 @@ export function CommandBar() {
           type="text"
           id="command-bar-query"
           name="commandBarQuery"
+          autoComplete="off"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("nav.commandPlaceholder", {

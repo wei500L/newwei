@@ -77,10 +77,13 @@ export function CrawlTemplatesContent() {
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState<CrawlTemplateRecord[]>([]);
   const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<CrawlTemplateRecord | null>(null);
-  const [form] = Form.useForm<CrawlTemplateFormValues>();
+  const [modalState, setModalState] = useState<{
+    open: boolean;
+    editing: CrawlTemplateRecord | null;
+    initialValues: Partial<CrawlTemplateFormValues>;
+  }>({ open: false, editing: null, initialValues: {} });
   const screens = Grid.useBreakpoint();
+  const formId = "crawl-template-form";
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -109,33 +112,36 @@ export function CrawlTemplatesContent() {
   }, [canView, loadTemplates]);
 
   const openCreate = () => {
-    setEditing(null);
-    form.resetFields();
-    form.setFieldsValue({
-      isActive: true,
-      enableStealthMode: false,
-      enableUndetectedBrowser: false,
-      includeImages: true,
-      crawlOptionsJson: "{}"
+    setModalState({
+      open: true,
+      editing: null,
+      initialValues: {
+        isActive: true,
+        enableStealthMode: false,
+        enableUndetectedBrowser: false,
+        includeImages: true,
+        crawlOptionsJson: "{}"
+      }
     });
-    setModalOpen(true);
   };
 
   const openEdit = (template: CrawlTemplateRecord) => {
-    setEditing(template);
     const options = normalizeOptions(template.crawlOptions);
-    form.setFieldsValue({
-      name: template.name,
-      description: template.description ?? "",
-      isActive: template.isActive,
-      proxyUrl: normalizeString(options?.proxyUrl),
-      userAgent: normalizeString(options?.userAgent),
-      enableStealthMode: normalizeBoolean(options?.enableStealthMode),
-      enableUndetectedBrowser: normalizeBoolean(options?.enableUndetectedBrowser),
-      includeImages: options?.includeImages === false ? false : true,
-      crawlOptionsJson: options ? JSON.stringify(options, null, 2) : "{}"
+    setModalState({
+      open: true,
+      editing: template,
+      initialValues: {
+        name: template.name,
+        description: template.description ?? "",
+        isActive: template.isActive,
+        proxyUrl: normalizeString(options?.proxyUrl),
+        userAgent: normalizeString(options?.userAgent),
+        enableStealthMode: normalizeBoolean(options?.enableStealthMode),
+        enableUndetectedBrowser: normalizeBoolean(options?.enableUndetectedBrowser),
+        includeImages: options?.includeImages === false ? false : true,
+        crawlOptionsJson: options ? JSON.stringify(options, null, 2) : "{}"
+      }
     });
-    setModalOpen(true);
   };
 
   const buildCrawlOptions = (values: CrawlTemplateFormValues) => {
@@ -186,19 +192,18 @@ export function CrawlTemplatesContent() {
         isActive: values.isActive,
         crawlOptions
       };
-      if (editing) {
-        await apiClient.patch(`admin/crawl-templates/${editing.id}`, payload);
+      const currentEditing = modalState.editing;
+      if (currentEditing) {
+        await apiClient.patch(`admin/crawl-templates/${currentEditing.id}`, payload);
       } else {
         await apiClient.post("admin/crawl-templates", payload);
       }
       messageApi.success(
-        editing
+        currentEditing
           ? t("crawlTemplates.messages.updated", { defaultValue: "Template updated." })
           : t("crawlTemplates.messages.created", { defaultValue: "Template created." })
       );
-      setModalOpen(false);
-      setEditing(null);
-      form.resetFields();
+      setModalState({ open: false, editing: null, initialValues: {} });
       await loadTemplates();
     } catch (error) {
       captureClientError("Failed to save crawl template", error);
@@ -313,14 +318,14 @@ export function CrawlTemplatesContent() {
         }
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <Input.Search
+          <Input
             id="crawl-templates-search"
             name="crawlTemplatesSearch"
             placeholder={t("crawlTemplates.searchPlaceholder", { defaultValue: "Search templates" })}
             allowClear
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            onSearch={() => void loadTemplates()}
+            onPressEnter={() => void loadTemplates()}
           />
           <Table
             rowKey="id"
@@ -333,22 +338,25 @@ export function CrawlTemplatesContent() {
       </Card>
 
       <Modal
-        open={modalOpen}
+        open={modalState.open}
         title={
-          editing
+          modalState.editing
             ? t("crawlTemplates.actions.edit", { defaultValue: "Edit template" })
             : t("crawlTemplates.actions.new", { defaultValue: "New template" })
         }
         onCancel={() => {
-          setModalOpen(false);
-          setEditing(null);
-          form.resetFields();
+          setModalState({ open: false, editing: null, initialValues: {} });
         }}
-        onOk={() => form.submit()}
-        okButtonProps={{ loading: saving }}
+        okButtonProps={{ loading: saving, htmlType: "submit", form: formId }}
         destroyOnHidden
       >
-        <Form layout="vertical" form={form} onFinish={handleSubmit} preserve={false}>
+        <Form
+          key={modalState.open ? (modalState.editing?.id ?? "create") : "closed"}
+          id={formId}
+          layout="vertical"
+          initialValues={modalState.initialValues}
+          onFinish={handleSubmit}
+        >
           <Form.Item
             name="name"
             label={t("crawlTemplates.fields.name", { defaultValue: "Name" })}

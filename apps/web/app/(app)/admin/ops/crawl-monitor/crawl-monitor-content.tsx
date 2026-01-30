@@ -400,9 +400,36 @@ function buildBrowserOption(
 function normalizeTimestamp(input: unknown): string | undefined {
   const s = asString(input);
   if (s) return s;
+
   const n = asNumber(input);
-  if (typeof n === "number") return dayjs(n * 1000).toISOString();
+  if (typeof n !== "number") return undefined;
+
+  // Crawl4AI's monitoring payload may emit:
+  // - unix seconds (e.g. 1769652909)
+  // - unix milliseconds (e.g. 1769652909000)
+  // - monotonic seconds (e.g. 105313.04) -> not convertible to an absolute timestamp
+  if (n > 10_000_000_000) return dayjs(n).toISOString();
+  if (n > 1_000_000_000) return dayjs(n * 1000).toISOString();
+
   return undefined;
+}
+
+function getLastNumericValue(values: unknown[]): number | undefined {
+  for (let idx = values.length - 1; idx >= 0; idx -= 1) {
+    const n = asNumber(values[idx]);
+    if (typeof n === "number") return n;
+  }
+  return undefined;
+}
+
+function deriveTimelineTimestamp(timeline: unknown): number | undefined {
+  const memory = getLastNumericValue(readArray(timeline, ["memory", "timestamps"]));
+  const requests = getLastNumericValue(readArray(timeline, ["requests", "timestamps"]));
+  const browsers = getLastNumericValue(readArray(timeline, ["browsers", "timestamps"]));
+
+  const candidates = [memory, requests, browsers].filter((value): value is number => typeof value === "number");
+  if (candidates.length === 0) return undefined;
+  return Math.max(...candidates);
 }
 
 function normalizeLogList(input: unknown): unknown[] {
@@ -685,19 +712,22 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
         fetchMonitorJson("logs/errors", { limit: 100 })
       ]);
 
+      const timeline = {
+        memory: timelineMemory,
+        requests: timelineRequests,
+        browsers: timelineBrowsers
+      };
+      const derivedTimestamp = normalizeTimestamp(deriveTimelineTimestamp(timeline));
+
       setMonitor((prev) => ({
         receivedAt: Date.now(),
         source: mode,
-        payloadTimestamp: prev?.payloadTimestamp,
+        payloadTimestamp: derivedTimestamp ?? prev?.payloadTimestamp,
         health,
         requests,
         browsers,
         endpointsStats,
-        timeline: {
-          memory: timelineMemory,
-          requests: timelineRequests,
-          browsers: timelineBrowsers
-        },
+        timeline,
         janitor,
         errors
       }));
@@ -767,10 +797,12 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
         if (timelineMemory.status === "fulfilled") nextTimeline.memory = timelineMemory.value;
         if (timelineRequests.status === "fulfilled") nextTimeline.requests = timelineRequests.value;
         if (timelineBrowsers.status === "fulfilled") nextTimeline.browsers = timelineBrowsers.value;
+        const derivedTimestamp = normalizeTimestamp(deriveTimelineTimestamp(nextTimeline));
         return {
           receivedAt: Date.now(),
           source: "polling",
           ...(prev ?? {}),
+          payloadTimestamp: derivedTimestamp ?? prev?.payloadTimestamp,
           timeline: nextTimeline
         };
       });
@@ -814,10 +846,12 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
         try {
           const parsed = JSON.parse(String(event.data)) as unknown;
           if (!isRecord(parsed)) return;
+          const derivedTimestamp =
+            normalizeTimestamp(parsed.timestamp) ?? normalizeTimestamp(deriveTimelineTimestamp(parsed.timeline));
           setMonitor((prev) => ({
             receivedAt: Date.now(),
             source: "ws",
-            payloadTimestamp: normalizeTimestamp(parsed.timestamp) ?? prev?.payloadTimestamp,
+            payloadTimestamp: derivedTimestamp ?? prev?.payloadTimestamp,
             health: parsed.health ?? prev?.health,
             requests: parsed.requests ?? prev?.requests,
             browsers: parsed.browsers ?? prev?.browsers,

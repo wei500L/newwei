@@ -456,7 +456,7 @@ model NewsEvent {
   primaryTopic String?
   primaryEntity String?
   title       String?
-  summary     String?
+  summary     String? @db.Text
   startAt     DateTime
   lastAt      DateTime
   representativeProcessedArticle ProcessedArticle? @relation("NewsEventRepresentative", fields: [representativeProcessedArticleId], references: [id])
@@ -502,7 +502,7 @@ model NewsEventTimelineEntry {
   eventId            String
   bucketStart        DateTime
   title              String?
-  summary            String?
+  summary            String? @db.Text
   keyPoints          Json?
   referencedArticleIds Json?
   createdAt          DateTime    @default(now())

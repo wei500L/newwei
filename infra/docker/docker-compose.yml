@@ -351,6 +351,7 @@ services:
       - ./.env
     environment:
       PORT: 3000
+      NEXT_DIST_DIR: .next-docker
       CI: "false"
       HUSKY: "0"
       WATCHPACK_POLLING: "true"

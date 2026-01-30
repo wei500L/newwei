@@ -40,6 +40,7 @@ export function TopNav() {
   const handleLogout = useCallback(
     async (logoutAll: boolean) => {
       setLoggingOut(true);
+      let callbackUrl = "/login";
       try {
         const response = await fetch("/api/logout", {
           method: "POST",
@@ -48,15 +49,16 @@ export function TopNav() {
         });
 
         if (!response.ok) {
-          throw new Error("Logout failed");
+          callbackUrl = "/login?logoutFailed=1";
         }
-
-        await signOut({ callbackUrl: "/login" });
       } catch (error) {
         captureClientError("Logout error", error);
+        callbackUrl = "/login?logoutFailed=1";
       } finally {
         setLoggingOut(false);
       }
+
+      await signOut({ callbackUrl });
     },
     []
   );

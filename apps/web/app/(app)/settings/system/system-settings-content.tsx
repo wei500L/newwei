@@ -21,6 +21,7 @@ import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import { SituationMonitorSettingsPanel } from "@/components/settings/situation-monitor-settings-panel";
 import { SystemSecuritySettingsPanel } from "@/components/settings/system-security-settings-panel";
+import { UnitInputNumber } from "@/components/settings/unit-input-number";
 import { VectorServiceSettingsPanel } from "@/components/settings/vector-service-settings-panel";
 import {
   useAuditLogRetentionQuery,
@@ -76,7 +77,7 @@ function RateLimitFieldGroup({ title, description, field }: RateLimitFieldGroupP
           ]}
           extra={<NumberRangeExtra name={[field, "windowSeconds"]} min={5} max={86_400} unit="s" />}
         >
-          <InputNumber min={5} max={86_400} addonAfter="s" />
+          <UnitInputNumber min={5} max={86_400} unit="s" />
         </Form.Item>
       </div>
     </Card>
@@ -267,7 +268,7 @@ function AuthCacheSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="profileTtlSeconds" min={60} max={86_400} unit="s" />}
         >
-          <InputNumber min={60} max={86_400} step={30} addonAfter="s" style={{ width: "100%" }} />
+          <UnitInputNumber min={60} max={86_400} step={30} unit="s" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.authCache.fields.lockTtl")}
@@ -278,7 +279,7 @@ function AuthCacheSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="lockTtlMs" min={100} max={60_000} unit="ms" />}
         >
-          <InputNumber min={100} max={60_000} step={50} addonAfter="ms" style={{ width: "100%" }} />
+          <UnitInputNumber min={100} max={60_000} step={50} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.authCache.fields.maxWait")}
@@ -289,7 +290,7 @@ function AuthCacheSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="maxWaitMs" min={50} max={120_000} unit="ms" />}
         >
-          <InputNumber min={50} max={120_000} step={50} addonAfter="ms" style={{ width: "100%" }} />
+          <UnitInputNumber min={50} max={120_000} step={50} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.authCache.fields.retryDelay")}
@@ -300,7 +301,7 @@ function AuthCacheSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="retryDelayMs" min={10} max={1_000} unit="ms" />}
         >
-          <InputNumber min={10} max={1_000} step={10} addonAfter="ms" style={{ width: "100%" }} />
+          <UnitInputNumber min={10} max={1_000} step={10} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
@@ -360,7 +361,7 @@ function CrawlClientSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="healthCheckTtlMs" min={5_000} max={900_000} unit="ms" />}
         >
-          <InputNumber min={5_000} max={900_000} step={1_000} addonAfter="ms" style={{ width: "100%" }} />
+          <UnitInputNumber min={5_000} max={900_000} step={1_000} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.crawlClient.fields.requestTimeout")}
@@ -371,7 +372,7 @@ function CrawlClientSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="requestTimeoutMs" min={5_000} max={300_000} unit="ms" />}
         >
-          <InputNumber min={5_000} max={300_000} step={1_000} addonAfter="ms" style={{ width: "100%" }} />
+          <UnitInputNumber min={5_000} max={300_000} step={1_000} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           label={t("settings.crawlClient.fields.maxAttempts")}
@@ -393,7 +394,7 @@ function CrawlClientSettingsPanel() {
           ]}
           extra={<NumberRangeExtra name="retryBackoffMs" min={500} max={600_000} unit="ms" />}
         >
-          <InputNumber min={500} max={600_000} step={500} addonAfter="ms" style={{ width: "100%" }} />
+          <UnitInputNumber min={500} max={600_000} step={500} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>

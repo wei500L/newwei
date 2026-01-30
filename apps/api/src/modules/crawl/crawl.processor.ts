@@ -164,7 +164,5 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy() {
     await this.worker?.close();
-    await this.queue.close();
-    await this.events.close();
   }
 }

@@ -1,15 +1,4 @@
 
-> @modular/api@0.1.0 typecheck /mnt/d/wei/apps/api
+> @modular/api@0.1.0 typecheck D:\wei\apps\api
 > tsc -p tsconfig.typecheck.json --noEmit
 
-src/modules/situation-monitor/analysis/narrative.ts(242,37): error TS2532: Object is possibly 'undefined'.
-src/modules/situation-monitor/analysis/narrative.ts(251,7): error TS2532: Object is possibly 'undefined'.
-src/modules/situation-monitor/analysis/narrative.ts(252,7): error TS2532: Object is possibly 'undefined'.
-src/modules/situation-monitor/analysis/narrative.ts(279,43): error TS18048: 'main' is possibly 'undefined'.
-src/modules/situation-monitor/analysis/narrative.ts(285,51): error TS18048: 'main' is possibly 'undefined'.
-src/modules/situation-monitor/analysis/narrative.ts(468,9): error TS2322: Type '{ from: string | undefined; to: string | undefined; weight: number; }[]' is not assignable to type 'CitationLink[]'.
-  Type '{ from: string | undefined; to: string | undefined; weight: number; }' is not assignable to type 'CitationLink'.
-    Types of property 'from' are incompatible.
-      Type 'string | undefined' is not assignable to type 'string'.
-        Type 'undefined' is not assignable to type 'string'.
- ELIFECYCLE  Command failed with exit code 2.

@@ -335,21 +335,22 @@ export function RateLimitPoliciesPanel() {
         />
       )}
 
-      <Modal
-        title={t("settings.rateLimitPolicies.modal.createTitle")}
-        open={createOpen}
-        onCancel={() => {
-          setCreateOpen(false);
-          createForm.resetFields();
-        }}
-        onOk={() => createForm.submit()}
-        okButtonProps={{ loading: saving }}
-        destroyOnHidden
+      <Form<RateLimitPolicyFormValues>
+        form={createForm}
+        layout="vertical"
+        onFinish={handleCreate}
+        component={false}
       >
-        <Form<RateLimitPolicyFormValues>
-          form={createForm}
-          layout="vertical"
-          onFinish={handleCreate}
+        <Modal
+          title={t("settings.rateLimitPolicies.modal.createTitle")}
+          open={createOpen}
+          onCancel={() => {
+            setCreateOpen(false);
+            createForm.resetFields();
+          }}
+          onOk={() => createForm.submit()}
+          okButtonProps={{ loading: saving }}
+          destroyOnHidden
         >
           <Form.Item
             name="feature"
@@ -401,24 +402,25 @@ export function RateLimitPoliciesPanel() {
           <Form.Item name="description" label={t("settings.rateLimitPolicies.fields.description")}>
             <Input.TextArea rows={3} placeholder={t("settings.rateLimitPolicies.placeholders.description")} />
           </Form.Item>
-        </Form>
-      </Modal>
+        </Modal>
+      </Form>
 
-      <Modal
-        title={t("settings.rateLimitPolicies.modal.editTitle")}
-        open={Boolean(editingPolicy)}
-        onCancel={() => {
-          setEditingPolicy(null);
-          editForm.resetFields();
-        }}
-        onOk={() => editForm.submit()}
-        okButtonProps={{ loading: saving }}
-        destroyOnHidden
+      <Form<RateLimitPolicyFormValues>
+        form={editForm}
+        layout="vertical"
+        onFinish={handleEdit}
+        component={false}
       >
-        <Form<RateLimitPolicyFormValues>
-          form={editForm}
-          layout="vertical"
-          onFinish={handleEdit}
+        <Modal
+          title={t("settings.rateLimitPolicies.modal.editTitle")}
+          open={Boolean(editingPolicy)}
+          onCancel={() => {
+            setEditingPolicy(null);
+            editForm.resetFields();
+          }}
+          onOk={() => editForm.submit()}
+          okButtonProps={{ loading: saving }}
+          destroyOnHidden
         >
           <Form.Item
             name="feature"
@@ -463,8 +465,8 @@ export function RateLimitPoliciesPanel() {
           <Form.Item name="description" label={t("settings.rateLimitPolicies.fields.description")}>
             <Input.TextArea rows={3} placeholder={t("settings.rateLimitPolicies.placeholders.description")} />
           </Form.Item>
-        </Form>
-      </Modal>
+        </Modal>
+      </Form>
     </>
   );
 }

@@ -990,29 +990,35 @@ export default function SubscriptionsPage() {
         </Col>
       </Row>
 
-      <Modal
-        title={
-          channelModalMode === "create"
-            ? t("subscriptions.addChannel", { defaultValue: "Add channel" })
-            : t("subscriptions.editChannel", { defaultValue: "Edit channel" })
-        }
-        open={channelModalOpen}
-        onCancel={() => setChannelModalOpen(false)}
-        okText={t("common.save")}
-        onOk={() => channelForm.submit()}
-        confirmLoading={creatingChannel || updatingChannel}
-        destroyOnHidden
+      <Form
+        form={channelForm}
+        autoComplete="off"
+        layout="vertical"
+        onFinish={handleSubmitChannel}
+        component={false}
       >
-        <Form form={channelForm} layout="vertical" onFinish={handleSubmitChannel}>
+        <Modal
+          title={
+            channelModalMode === "create"
+              ? t("subscriptions.addChannel", { defaultValue: "Add channel" })
+              : t("subscriptions.editChannel", { defaultValue: "Edit channel" })
+          }
+          open={channelModalOpen}
+          onCancel={() => setChannelModalOpen(false)}
+          okText={t("common.save")}
+          onOk={() => channelForm.submit()}
+          confirmLoading={creatingChannel || updatingChannel}
+          destroyOnHidden
+        >
           <Form.Item name="id" hidden>
-            <Input />
+            <Input type="hidden" />
           </Form.Item>
           <Form.Item
             label={t("alerts.channels.fields.name", { defaultValue: "Name" })}
             name="name"
             rules={[{ required: true }]}
           >
-            <Input />
+            <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
             label={t("alerts.channels.fields.type", { defaultValue: "Type" })}
@@ -1032,7 +1038,7 @@ export default function SubscriptionsPage() {
             name="target"
             rules={[{ required: true }]}
           >
-            <Input />
+            <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
             label={t("subscriptions.channelActive", { defaultValue: "Enabled" })}
@@ -1063,19 +1069,19 @@ export default function SubscriptionsPage() {
               ]}
             />
           </Form.Item>
-        </Form>
-      </Modal>
+        </Modal>
+      </Form>
 
-      <Modal
-        title={t("subscriptions.manageRule", { defaultValue: "Manage rule" })}
-        open={ruleModalOpen}
-        onCancel={() => setRuleModalOpen(false)}
-        okText={t("common.save")}
-        onOk={() => ruleForm.submit()}
-        confirmLoading={updatingRule}
-        destroyOnHidden
-      >
-        <Form form={ruleForm} layout="vertical" onFinish={handleSubmitRuleSubscriptions}>
+      <Form form={ruleForm} layout="vertical" onFinish={handleSubmitRuleSubscriptions} component={false}>
+        <Modal
+          title={t("subscriptions.manageRule", { defaultValue: "Manage rule" })}
+          open={ruleModalOpen}
+          onCancel={() => setRuleModalOpen(false)}
+          okText={t("common.save")}
+          onOk={() => ruleForm.submit()}
+          confirmLoading={updatingRule}
+          destroyOnHidden
+        >
           <Form.Item
             label={t("alerts.config.fields.channels", { defaultValue: "Channels" })}
             name="channelIds"
@@ -1102,8 +1108,8 @@ export default function SubscriptionsPage() {
           >
             <Switch />
           </Form.Item>
-        </Form>
-      </Modal>
+        </Modal>
+      </Form>
     </div>
   );
 }

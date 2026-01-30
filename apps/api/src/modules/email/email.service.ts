@@ -1,5 +1,5 @@
 import { createLogger, getCurrentTraceId } from "@modular/utils";
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, OnModuleDestroy } from "@nestjs/common";
 import { isEmail } from "class-validator";
 import Handlebars, { TemplateDelegate } from "handlebars";
 import { existsSync, readFileSync } from "node:fs";
@@ -35,7 +35,7 @@ const EMAIL_EXTRACT_REGEX =
   /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+/gi;
 
 @Injectable()
-export class EmailService {
+export class EmailService implements OnModuleDestroy {
   private readonly logger = createLogger({ name: "email" });
   private readonly transporter: Transporter;
   private verifyInFlight: Promise<void> | null = null;
@@ -88,6 +88,14 @@ export class EmailService {
       },
       "SMTP transporter initialized"
     );
+  }
+
+  onModuleDestroy() {
+    try {
+      this.transporter.close();
+    } catch (error) {
+      this.logger.debug({ error }, "Failed to close SMTP transporter");
+    }
   }
 
   async send(options: SendEmailOptions) {

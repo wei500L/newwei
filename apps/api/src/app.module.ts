@@ -40,6 +40,9 @@ import { UserSettingsModule } from "./modules/user-settings/user-settings.module
 import { VectorModule } from "./modules/vector/vector.module";
 import { WebSocketModule } from "./modules/websocket/websocket.module";
 
+const scheduleEnabled = process.env.SCHEDULE_ENABLED !== "false";
+const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
+
 @Module({
   imports: [
     WinstonModule.forRoot({
@@ -54,13 +57,13 @@ import { WebSocketModule } from "./modules/websocket/websocket.module";
         })
       ]
     }),
-    ScheduleModule.forRoot(),
+    ...(scheduleEnabled ? [ScheduleModule.forRoot()] : []),
     ConfigModule,
     DatabaseModule,
     CacheModule,
     VectorModule,
     QueueModule,
-    QueueAdminModule,
+    ...(bullBoardEnabled ? [QueueAdminModule] : []),
     AuthModule,
     AuditModule,
     RbacModule,

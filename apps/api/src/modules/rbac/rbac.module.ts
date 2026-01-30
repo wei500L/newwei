@@ -7,8 +7,10 @@ import { AuditLogRetentionService } from "./audit-log-retention.service";
 import { RbacController } from "./rbac.controller";
 import { RbacService } from "./rbac.service";
 
+const scheduleEnabled = process.env.SCHEDULE_ENABLED !== "false";
+
 @Module({
-  imports: [DatabaseModule, ScheduleModule],
+  imports: [DatabaseModule, ...(scheduleEnabled ? [ScheduleModule] : [])],
   controllers: [RbacController],
   providers: [RbacService, AuditLogRetentionService],
   exports: [RbacService]

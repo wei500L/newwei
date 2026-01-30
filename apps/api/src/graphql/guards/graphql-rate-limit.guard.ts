@@ -27,7 +27,7 @@ export class GraphqlRateLimitGuard implements CanActivate {
     const ip = resolveRequestIp(request) ?? "anonymous";
 
     const loginBucket = await this.rateLimitConfig.getBucketConfig("login");
-    const limit = Math.max(loginBucket.limit * 12, 60);
+    const limit = Math.max(loginBucket.limit * 30, 120);
     const windowSeconds = loginBucket.windowSeconds;
 
     const allowed = await this.rateLimiter.consume(`graphql:${ip}`, limit, windowSeconds);

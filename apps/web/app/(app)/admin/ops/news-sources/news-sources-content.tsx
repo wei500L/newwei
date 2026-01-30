@@ -109,6 +109,26 @@ interface NewsSourceFormValues {
   seedConcurrency?: number;
 }
 
+const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
+  siteType: "general",
+  frequencySeconds: 3600,
+  priority: 0,
+  isActive: true,
+  forceRefresh: false,
+  seedEnabled: false,
+  seedMode: "sitemap",
+  seedDomain: "",
+  seedPattern: "",
+  seedFeedUrl: "",
+  seedQuery: "",
+  seedMaxUrls: 20,
+  seedMaxNewUrlsPerRun: 10,
+  seedScoreThreshold: 0,
+  seedDedupeWindowHours: 24,
+  seedCacheTtlSeconds: 600,
+  seedConcurrency: 5
+};
+
 const parseStringList = (value?: string) =>
   (value ?? "")
     .split(/\r?\n/)
@@ -166,10 +186,11 @@ export function NewsSourcesContent() {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState<NewsSourceRecord | null>(null);
+  const [modalFormValues, setModalFormValues] = useState<Partial<NewsSourceFormValues>>(
+    NEWS_SOURCE_CREATE_INITIAL_VALUES
+  );
   const [form] = Form.useForm<NewsSourceFormValues>();
   const screens = Grid.useBreakpoint();
-  const seedEnabledValue = Form.useWatch("seedEnabled", form);
-  const seedModeValue = Form.useWatch("seedMode", form);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewRunNowLoading, setPreviewRunNowLoading] = useState(false);
@@ -212,6 +233,15 @@ export function NewsSourcesContent() {
     }
   }, [canView, loadSources, loadTemplates]);
 
+  useEffect(() => {
+    if (!modalOpen) {
+      return;
+    }
+
+    form.resetFields();
+    form.setFieldsValue(modalFormValues);
+  }, [form, modalFormValues, modalOpen]);
+
   const filteredSources = useMemo(() => {
     if (!search.trim()) {
       return sources;
@@ -246,26 +276,11 @@ export function NewsSourcesContent() {
 
   const openCreate = () => {
     setEditingSource(null);
-    form.resetFields();
-    form.setFieldsValue({
-      siteType: "general",
-      frequencySeconds: 3600,
-      priority: 0,
-      isActive: true,
-      seedEnabled: false,
-      seedMode: "sitemap",
-      seedMaxUrls: 20,
-      seedMaxNewUrlsPerRun: 10,
-      seedScoreThreshold: 0,
-      seedDedupeWindowHours: 24,
-      seedCacheTtlSeconds: 600,
-      seedConcurrency: 5
-    });
+    setModalFormValues(NEWS_SOURCE_CREATE_INITIAL_VALUES);
     setModalOpen(true);
   };
 
   const openEdit = (source: NewsSourceRecord) => {
-    setEditingSource(source);
     const config =
       source.config && typeof source.config === "object" && !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
@@ -299,7 +314,9 @@ export function NewsSourcesContent() {
         ? seedConfig.concurrency
         : 5;
     const seedMode = seedConfig?.mode === "rss" ? "rss" : "sitemap";
-    form.setFieldsValue({
+
+    const nextFormValues: Partial<NewsSourceFormValues> = {
+      ...NEWS_SOURCE_CREATE_INITIAL_VALUES,
       name: source.name,
       url: source.url,
       siteType: source.siteType,
@@ -326,7 +343,10 @@ export function NewsSourcesContent() {
       seedDedupeWindowHours,
       seedCacheTtlSeconds,
       seedConcurrency
-    });
+    };
+
+    setEditingSource(source);
+    setModalFormValues(nextFormValues);
     setModalOpen(true);
   };
 
@@ -857,7 +877,7 @@ export function NewsSourcesContent() {
         }
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <Input.Search
+          <Input
             id="news-sources-search"
             name="newsSourcesSearch"
             placeholder={t("newsSources.searchPlaceholder", { defaultValue: "Search by name or URL" })}
@@ -875,23 +895,29 @@ export function NewsSourcesContent() {
         </Space>
       </Card>
 
-      <Modal
-        open={modalOpen}
-        title={
-          editingSource
-            ? t("newsSources.actions.edit", { defaultValue: "Edit source" })
-            : t("newsSources.actions.new", { defaultValue: "New source" })
-        }
-        onCancel={() => {
-          setModalOpen(false);
-          setEditingSource(null);
-          form.resetFields();
-        }}
-        onOk={() => form.submit()}
-        okButtonProps={{ loading: saving }}
-        destroyOnHidden
+      <Form<NewsSourceFormValues>
+        form={form}
+        layout="vertical"
+        initialValues={NEWS_SOURCE_CREATE_INITIAL_VALUES}
+        onFinish={handleSubmit}
+        component={false}
       >
-        <Form layout="vertical" form={form} onFinish={handleSubmit} preserve={false}>
+        <Modal
+          open={modalOpen}
+          title={
+            editingSource
+              ? t("newsSources.actions.edit", { defaultValue: "Edit source" })
+              : t("newsSources.actions.new", { defaultValue: "New source" })
+          }
+          onCancel={() => {
+            setModalOpen(false);
+            setEditingSource(null);
+            form.resetFields();
+          }}
+          onOk={() => form.submit()}
+          okButtonProps={{ loading: saving }}
+          destroyOnHidden
+        >
           <Form.Item
             name="name"
             label={t("newsSources.fields.name", { defaultValue: "Name" })}
@@ -1013,112 +1039,128 @@ export function NewsSourcesContent() {
             <Switch />
           </Form.Item>
 
-          <div style={{ display: seedEnabledValue ? "block" : "none" }}>
-            <Form.Item
-              name="seedMode"
-              label={t("newsSources.fields.seedMode", { defaultValue: "Seed mode" })}
-              tooltip={t("newsSources.fields.seedModeHint", {
-                defaultValue: "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from the feed URL."
-              })}
-            >
-              <Select
-                options={[
-                  { label: t("newsSources.seedMode.sitemap", { defaultValue: "Sitemap" }), value: "sitemap" },
-                  { label: t("newsSources.seedMode.rss", { defaultValue: "RSS / Atom" }), value: "rss" }
-                ]}
-              />
-            </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, nextValues) =>
+              prevValues.seedEnabled !== nextValues.seedEnabled || prevValues.seedMode !== nextValues.seedMode
+            }
+          >
+            {({ getFieldValue }) => {
+              const seedEnabled = getFieldValue("seedEnabled") === true;
+              const seedMode = getFieldValue("seedMode") === "rss" ? "rss" : "sitemap";
 
-            {seedModeValue === "rss" ? (
-              <Form.Item
-                name="seedFeedUrl"
-                label={t("newsSources.fields.seedFeedUrl", { defaultValue: "Feed URL (optional)" })}
-                tooltip={t("newsSources.fields.seedFeedUrlHint", {
-                  defaultValue: "If empty, the source URL will be used as the feed URL."
-                })}
-              >
-                <Input placeholder="https://example.com/rss.xml" />
-              </Form.Item>
-            ) : (
-              <>
-                <Form.Item
-                  name="seedDomain"
-                  label={t("newsSources.fields.seedDomain", { defaultValue: "Seed domain (optional)" })}
-                  tooltip={t("newsSources.fields.seedDomainHint", {
-                    defaultValue: "Defaults to the source URL origin if empty."
-                  })}
-                >
-                  <Input placeholder="https://example.com" />
-                </Form.Item>
-                <Form.Item
-                  name="seedPattern"
-                  label={t("newsSources.fields.seedPattern", { defaultValue: "URL pattern (optional)" })}
-                  tooltip={t("newsSources.fields.seedPatternHint", {
-                    defaultValue: "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'."
-                  })}
-                >
-                  <Input placeholder="*news*" />
-                </Form.Item>
-              </>
-            )}
-            <Form.Item
-              name="seedQuery"
-              label={t("newsSources.fields.seedQuery", { defaultValue: "Seed query (optional)" })}
-              tooltip={t("newsSources.fields.seedQueryHint", {
-                defaultValue: "If empty, keywords will be used to score URLs."
-              })}
-            >
-              <Input
-                placeholder={t("newsSources.fields.seedQueryPlaceholder", {
-                  defaultValue: "e.g. earnings regulation"
-                })}
-              />
-            </Form.Item>
-            <Form.Item
-              name="seedMaxUrls"
-              label={t("newsSources.fields.seedMaxUrls", { defaultValue: "Max discovered URLs" })}
-            >
-              <InputNumber min={1} max={200} style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item
-              name="seedMaxNewUrlsPerRun"
-              label={t("newsSources.fields.seedMaxNewUrlsPerRun", { defaultValue: "Max new URLs per run" })}
-            >
-              <InputNumber min={1} max={50} style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item
-              name="seedScoreThreshold"
-              label={t("newsSources.fields.seedScoreThreshold", { defaultValue: "Score threshold" })}
-              tooltip={t("newsSources.fields.seedScoreThresholdHint", {
-                defaultValue: "0 disables the scoring filter; values range from 0..1."
-              })}
-            >
-              <InputNumber min={0} max={1} step={0.05} style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item
-              name="seedDedupeWindowHours"
-              label={t("newsSources.fields.seedDedupeWindowHours", { defaultValue: "Dedupe window (hours)" })}
-            >
-              <InputNumber min={0} max={720} style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item
-              name="seedCacheTtlSeconds"
-              label={t("newsSources.fields.seedCacheTtlSeconds", { defaultValue: "Seed cache TTL (seconds)" })}
-            >
-              <InputNumber min={10} max={3600} style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item
-              name="seedConcurrency"
-              label={t("newsSources.fields.seedConcurrency", { defaultValue: "Preview concurrency" })}
-              tooltip={t("newsSources.fields.seedConcurrencyHint", {
-                defaultValue: "Used by Preview to fetch metadata; scheduling uses lightweight URL scoring."
-              })}
-            >
-              <InputNumber min={1} max={10} style={{ width: "100%" }} />
-            </Form.Item>
-          </div>
-        </Form>
-      </Modal>
+              return (
+                <div style={{ display: seedEnabled ? "block" : "none" }}>
+                  <Form.Item
+                    name="seedMode"
+                    label={t("newsSources.fields.seedMode", { defaultValue: "Seed mode" })}
+                    tooltip={t("newsSources.fields.seedModeHint", {
+                      defaultValue:
+                        "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from the feed URL."
+                    })}
+                  >
+                    <Select
+                      options={[
+                        { label: t("newsSources.seedMode.sitemap", { defaultValue: "Sitemap" }), value: "sitemap" },
+                        { label: t("newsSources.seedMode.rss", { defaultValue: "RSS / Atom" }), value: "rss" }
+                      ]}
+                    />
+                  </Form.Item>
+
+                  {seedMode === "rss" ? (
+                    <Form.Item
+                      name="seedFeedUrl"
+                      label={t("newsSources.fields.seedFeedUrl", { defaultValue: "Feed URL (optional)" })}
+                      tooltip={t("newsSources.fields.seedFeedUrlHint", {
+                        defaultValue: "If empty, the source URL will be used as the feed URL."
+                      })}
+                    >
+                      <Input placeholder="https://example.com/rss.xml" />
+                    </Form.Item>
+                  ) : (
+                    <>
+                      <Form.Item
+                        name="seedDomain"
+                        label={t("newsSources.fields.seedDomain", { defaultValue: "Seed domain (optional)" })}
+                        tooltip={t("newsSources.fields.seedDomainHint", {
+                          defaultValue: "Defaults to the source URL origin if empty."
+                        })}
+                      >
+                        <Input placeholder="https://example.com" />
+                      </Form.Item>
+                      <Form.Item
+                        name="seedPattern"
+                        label={t("newsSources.fields.seedPattern", { defaultValue: "URL pattern (optional)" })}
+                        tooltip={t("newsSources.fields.seedPatternHint", {
+                          defaultValue: "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'."
+                        })}
+                      >
+                        <Input placeholder="*news*" />
+                      </Form.Item>
+                    </>
+                  )}
+                  <Form.Item
+                    name="seedQuery"
+                    label={t("newsSources.fields.seedQuery", { defaultValue: "Seed query (optional)" })}
+                    tooltip={t("newsSources.fields.seedQueryHint", {
+                      defaultValue: "If empty, keywords will be used to score URLs."
+                    })}
+                  >
+                    <Input
+                      placeholder={t("newsSources.fields.seedQueryPlaceholder", {
+                        defaultValue: "e.g. earnings regulation"
+                      })}
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name="seedMaxUrls"
+                    label={t("newsSources.fields.seedMaxUrls", { defaultValue: "Max discovered URLs" })}
+                  >
+                    <InputNumber min={1} max={200} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="seedMaxNewUrlsPerRun"
+                    label={t("newsSources.fields.seedMaxNewUrlsPerRun", { defaultValue: "Max new URLs per run" })}
+                  >
+                    <InputNumber min={1} max={50} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="seedScoreThreshold"
+                    label={t("newsSources.fields.seedScoreThreshold", { defaultValue: "Score threshold" })}
+                    tooltip={t("newsSources.fields.seedScoreThresholdHint", {
+                      defaultValue: "0 disables the scoring filter; values range from 0..1."
+                    })}
+                  >
+                    <InputNumber min={0} max={1} step={0.05} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="seedDedupeWindowHours"
+                    label={t("newsSources.fields.seedDedupeWindowHours", { defaultValue: "Dedupe window (hours)" })}
+                  >
+                    <InputNumber min={0} max={720} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="seedCacheTtlSeconds"
+                    label={t("newsSources.fields.seedCacheTtlSeconds", { defaultValue: "Seed cache TTL (seconds)" })}
+                  >
+                    <InputNumber min={10} max={3600} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="seedConcurrency"
+                    label={t("newsSources.fields.seedConcurrency", { defaultValue: "Preview concurrency" })}
+                    tooltip={t("newsSources.fields.seedConcurrencyHint", {
+                      defaultValue:
+                        "Used by Preview to fetch metadata; scheduling uses lightweight URL scoring."
+                    })}
+                  >
+                    <InputNumber min={1} max={10} style={{ width: "100%" }} />
+                  </Form.Item>
+                </div>
+              );
+            }}
+          </Form.Item>
+        </Modal>
+      </Form>
 
       <Modal
         open={previewOpen}

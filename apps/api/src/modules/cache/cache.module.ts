@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Inject, Injectable, Module, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
 
 import { EnvService } from '../config/config.service';
@@ -7,6 +7,19 @@ import { ActionRateLimitService } from './action-rate-limit.service';
 import { CacheService } from './cache.service';
 import { REDIS_CLIENT } from './cache.tokens';
 import { RateLimiterService } from './rate-limiter.service';
+
+@Injectable()
+class RedisClientCleanup implements OnModuleDestroy {
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
+
+  async onModuleDestroy() {
+    try {
+      await this.redis.quit();
+    } catch {
+      this.redis.disconnect();
+    }
+  }
+}
 
 @Global()
 @Module({
@@ -27,7 +40,8 @@ import { RateLimiterService } from './rate-limiter.service';
     },
     CacheService,
     RateLimiterService,
-    ActionRateLimitService
+    ActionRateLimitService,
+    RedisClientCleanup
   ],
   exports: [CacheService, RateLimiterService, ActionRateLimitService, REDIS_CLIENT]
 })

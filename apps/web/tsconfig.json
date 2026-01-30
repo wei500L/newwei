@@ -31,8 +31,13 @@
     },
     "incremental": true,
     "isolatedModules": true,
-    "types": ["node"],
-    "typeRoots": ["./node_modules/@types", "../../node_modules/@types"],
+    "types": [
+      "node"
+    ],
+    "typeRoots": [
+      "./node_modules/@types",
+      "../../node_modules/@types"
+    ],
     "plugins": [
       {
         "name": "next"
@@ -40,11 +45,12 @@
     ]
   },
   "include": [
+    "**/*.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    "**/*.d.ts",
+    ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next/types/**/*.ts"
+    ".next-docker/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

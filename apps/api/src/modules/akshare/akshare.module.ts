@@ -9,6 +9,7 @@ import { DatabaseModule } from "../config/database.module";
 import { AdminAkshareController } from "./admin-akshare.controller";
 import { AkshareGatewayClient } from "./akshare-gateway.client";
 import { AkshareParserService } from "./akshare-parser.service";
+import { AkshareQueueCleanupService } from "./akshare-queue-cleanup.service";
 import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./akshare.constants";
 import { AkshareQueueProcessor } from "./akshare.processor";
 import { AkshareService } from "./akshare.service";
@@ -32,24 +33,29 @@ import { AkshareService } from "./akshare.service";
     AkshareGatewayClient,
     AkshareService,
     AkshareQueueProcessor,
+    AkshareQueueCleanupService,
     {
       provide: AKSHARE_QUEUE,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => {
+      inject: [EnvService, AkshareQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: AkshareQueueCleanupService) => {
         const redis = env.redisConfig;
-        return new Queue<unknown>(AKSHARE_QUEUE_NAME, {
+        const queue = new Queue<unknown>(AKSHARE_QUEUE_NAME, {
           connection: redis
         });
+        cleanup.track(queue);
+        return queue;
       }
     },
     {
       provide: AKSHARE_QUEUE_EVENTS,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => {
+      inject: [EnvService, AkshareQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: AkshareQueueCleanupService) => {
         const redis = env.redisConfig;
-        return new QueueEvents(AKSHARE_QUEUE_NAME, {
+        const events = new QueueEvents(AKSHARE_QUEUE_NAME, {
           connection: redis
         });
+        cleanup.track(events);
+        return events;
       }
     },
     {

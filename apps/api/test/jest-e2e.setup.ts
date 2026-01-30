@@ -9,7 +9,7 @@ process.env.MYSQL_PASSWORD = process.env.MYSQL_PASSWORD ?? "secret";
 process.env.MYSQL_DB = process.env.MYSQL_DB ?? "app";
 
 process.env.MONGO_URI = process.env.MONGO_URI ?? "mongodb://localhost:27017";
-process.env.REDIS_HOST = process.env.REDIS_HOST ?? "localhost";
+process.env.REDIS_HOST = process.env.REDIS_HOST ?? "127.0.0.1";
 process.env.REDIS_PORT = process.env.REDIS_PORT ?? "6379";
 
 process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET ?? "test-nextauth-123456";
@@ -17,7 +17,13 @@ process.env.NEXTAUTH_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
 process.env.API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:4000";
 process.env.GRAPHQL_PLAYGROUND = process.env.GRAPHQL_PLAYGROUND ?? "true";
 process.env.GRAPHQL_INTROSPECTION = process.env.GRAPHQL_INTROSPECTION ?? "true";
+process.env.GRAPHQL_SUBSCRIPTIONS_ENABLED =
+  process.env.GRAPHQL_SUBSCRIPTIONS_ENABLED ?? "false";
+process.env.SCHEDULE_ENABLED = process.env.SCHEDULE_ENABLED ?? "false";
+process.env.BULL_BOARD_ENABLED = process.env.BULL_BOARD_ENABLED ?? "false";
 
 process.env.SMTP_USER = process.env.SMTP_USER ?? "test@example.com";
 process.env.SMTP_PASS = process.env.SMTP_PASS ?? "test";
 process.env.CRAWL4AI_BASE_URL = process.env.CRAWL4AI_BASE_URL ?? "http://localhost:8082";
+
+process.env.AKSHARE_ENABLED = process.env.AKSHARE_ENABLED ?? "false";

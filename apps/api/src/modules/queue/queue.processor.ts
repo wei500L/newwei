@@ -622,7 +622,5 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     if (this.worker) {
       await this.worker.close();
     }
-    await this.queue.close();
-    await this.dlqQueue.close();
   }
 }

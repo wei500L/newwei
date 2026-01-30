@@ -69,14 +69,17 @@ export const createApiClient = (options: ApiClientOptions = {}) => {
         payload && typeof payload === "object" && !Array.isArray(payload) && "message" in payload
           ? (() => {
               const raw = (payload as { message?: unknown }).message;
+              const detailRaw = (payload as { detail?: unknown }).detail;
+              const detail = typeof detailRaw === "string" && detailRaw.trim().length > 0 ? detailRaw.trim() : undefined;
               if (typeof raw === "string") {
-                return raw;
+                return detail ? `${raw}: ${detail}` : raw;
               }
               if (Array.isArray(raw)) {
                 const parts = raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-                return parts.length > 0 ? parts.join(", ") : undefined;
+                const message = parts.length > 0 ? parts.join(", ") : undefined;
+                return message && detail ? `${message}: ${detail}` : message;
               }
-              return undefined;
+              return detail;
             })()
           : undefined;
       emitForbidden({ status, reason });

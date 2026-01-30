@@ -185,6 +185,7 @@
         "systemMetricSlug": "System metric slug"
       },
       "saved": "Saved",
+      "saveFailed": "Failed to save.",
       "fields": {
         "name": "Name",
         "metricProvider": "Metric provider",
@@ -234,6 +235,7 @@
     "channels": {
       "title": "Channels",
       "created": "Created",
+      "createFailed": "Failed to create channel.",
       "fields": {
         "name": "Name",
         "namePlaceholder": "Enter Name",
@@ -383,6 +385,7 @@
       }
     },
     "tabs": {
+      "overview": "Overview",
       "keyMonitor": "Key monitor",
       "militaryAlert": "Military alert",
       "economicAlert": "Economic alert",
@@ -1608,7 +1611,16 @@
     "openTask": "Open task",
     "openItem": "Open item",
     "openAnalysis": "Open analysis",
-    "openAlert": "Open alert"
+    "openAlert": "Open alert",
+    "type": {
+      "alert_triggered": "Alert triggered",
+      "analysis_completed": "Analysis completed",
+      "analysis_failed": "Analysis failed",
+      "crawl_completed": "Crawl completed",
+      "crawl_failed": "Crawl failed",
+      "org_invite": "Organization invite",
+      "system": "System"
+    }
   },
   "settings": {
     "rateLimits": {

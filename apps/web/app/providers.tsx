@@ -23,7 +23,9 @@ import {
   resolveLocale,
   type SupportedLocale
 } from "@/lib/i18n";
+import { classifyRequestError } from "@/lib/request-error";
 
+import { ApolloAuthSync } from "./apollo-auth-sync";
 import { ForbiddenNotice } from "./forbidden-notice";
 import { SessionErrorListener } from "./session-error-listener";
 import { UnauthorizedRedirect } from "./unauthorized-redirect";
@@ -64,11 +66,34 @@ export function AppProviders({ children }: PropsWithChildren) {
           });
         }
       }),
-      defaultOptions: {
-        queries: {
-          refetchOnWindowFocus: false,
-          staleTime: 30_000
-        }
+       defaultOptions: {
+         queries: {
+           retry: (failureCount, error) => {
+             const classification = classifyRequestError(error);
+             if (
+               classification.kind === "auth" ||
+               classification.kind === "permission" ||
+               classification.kind === "validation" ||
+               classification.kind === "conflict" ||
+               classification.kind === "notFound" ||
+               classification.kind === "cancelled"
+             ) {
+               return false;
+             }
+             if (classification.kind === "rateLimit") {
+               return failureCount < 2;
+             }
+             if (classification.kind === "timeout" || classification.kind === "network") {
+               return failureCount < 2;
+             }
+             if (classification.kind === "service") {
+               return classification.status === 503 ? failureCount < 2 : false;
+             }
+             return failureCount < 1;
+           },
+           refetchOnWindowFocus: false,
+           staleTime: 30_000
+         }
       }
     })
   );
@@ -186,12 +211,15 @@ export function AppProviders({ children }: PropsWithChildren) {
       <ConfigProvider
         locale={antdLocale}
         theme={antdTheme}
+        input={{ autoComplete: "off" }}
+        textArea={{ autoComplete: "off" }}
       >
         <AntApp>
           <ApolloProvider client={apolloClient}>
             <QueryClientProvider client={queryClient}>
               <UnauthorizedRedirect />
               <ForbiddenNotice />
+              <ApolloAuthSync />
               <SessionErrorListener />
               <Toaster position="top-right" theme="light" richColors />
               {children}

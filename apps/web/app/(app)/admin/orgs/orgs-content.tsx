@@ -488,19 +488,24 @@ export function OrgAdminContent() {
         )}
       </Card>
 
-      <Modal
-        title={t("orgAdmin.createTitle")}
-        open={createOpen}
-        onCancel={() => {
-          setCreateOpen(false);
-          createForm.resetFields();
-          createSlugModeRef.current = "auto";
-        }}
-        onOk={() => createForm.submit()}
-        okButtonProps={{ loading: creating }}
-        destroyOnHidden
+      <Form<CreateOrgInput>
+        form={createForm}
+        layout="vertical"
+        onFinish={handleCreate}
+        component={false}
       >
-        <Form<CreateOrgInput> form={createForm} layout="vertical" onFinish={handleCreate}>
+        <Modal
+          title={t("orgAdmin.createTitle")}
+          open={createOpen}
+          onCancel={() => {
+            setCreateOpen(false);
+            createForm.resetFields();
+            createSlugModeRef.current = "auto";
+          }}
+          onOk={() => createForm.submit()}
+          okButtonProps={{ loading: creating }}
+          destroyOnHidden
+        >
           <Form.Item
             name="name"
             label={t("orgAdmin.fields.name")}
@@ -541,21 +546,26 @@ export function OrgAdminContent() {
           <Form.Item name="description" label={t("orgAdmin.fields.description")} rules={[{ max: 500 }]}>
             <Input.TextArea rows={3} placeholder={t("orgAdmin.placeholders.description")} />
           </Form.Item>
-        </Form>
-      </Modal>
+        </Modal>
+      </Form>
 
-      <Modal
-        title={t("orgAdmin.editTitle")}
-        open={Boolean(editingOrg)}
-        onCancel={() => {
-          setEditingOrg(null);
-          editForm.resetFields();
-        }}
-        onOk={() => editForm.submit()}
-        okButtonProps={{ loading: saving }}
-        destroyOnHidden
+      <Form<UpdateOrgInput>
+        form={editForm}
+        layout="vertical"
+        onFinish={handleEdit}
+        component={false}
       >
-        <Form<UpdateOrgInput> form={editForm} layout="vertical" onFinish={handleEdit}>
+        <Modal
+          title={t("orgAdmin.editTitle")}
+          open={Boolean(editingOrg)}
+          onCancel={() => {
+            setEditingOrg(null);
+            editForm.resetFields();
+          }}
+          onOk={() => editForm.submit()}
+          okButtonProps={{ loading: saving }}
+          destroyOnHidden
+        >
           <Form.Item
             name="name"
             label={t("orgAdmin.fields.name")}
@@ -580,8 +590,8 @@ export function OrgAdminContent() {
           <Form.Item name="description" label={t("orgAdmin.fields.description")} rules={[{ max: 500 }]}>
             <Input.TextArea rows={3} />
           </Form.Item>
-        </Form>
-      </Modal>
+        </Modal>
+      </Form>
     </>
   );
 }

@@ -185,6 +185,7 @@
         "systemMetricSlug": "系统指标标识"
       },
       "saved": "已保存",
+      "saveFailed": "保存失败。",
       "fields": {
         "name": "名称",
         "metricProvider": "指标提供方",
@@ -234,6 +235,7 @@
     "channels": {
       "title": "渠道",
       "created": "已创建",
+      "createFailed": "创建渠道失败。",
       "fields": {
         "name": "名称",
         "namePlaceholder": "请输入名称",
@@ -383,6 +385,7 @@
       }
     },
     "tabs": {
+      "overview": "总览",
       "keyMonitor": "关键监控",
       "militaryAlert": "军事告警",
       "economicAlert": "经济告警",
@@ -1608,7 +1611,16 @@
     "openItem": "查看条目",
     "openAnalysis": "查看分析",
     "openAlert": "查看预警",
-    "unreadCount_one": "{{count}} 条未读通知"
+    "unreadCount_one": "{{count}} 条未读通知",
+    "type": {
+      "alert_triggered": "预警触发",
+      "analysis_completed": "分析完成",
+      "analysis_failed": "分析失败",
+      "crawl_completed": "采集完成",
+      "crawl_failed": "采集失败",
+      "org_invite": "组织邀请",
+      "system": "系统"
+    }
   },
   "settings": {
     "rateLimits": {

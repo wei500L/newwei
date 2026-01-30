@@ -1,5 +1,6 @@
 "use client";
 
+import { SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Drawer, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
@@ -287,18 +288,26 @@ export function KnowledgeGraph() {
       {contextHolder}
       <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "0.75rem" }}>
         <div style={{ maxWidth: 360, width: "100%" }}>
-          <Input.Search
-            value={seedDraft}
-            status={seedError ? "error" : undefined}
-            loading={loading}
-            onChange={(evt) => {
-              setSeedDraft(evt.target.value);
-              setSeedError(null);
-            }}
-            onSearch={handleSearch}
-            placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Seed entity name" })}
-            allowClear
-          />
+          <Space.Compact style={{ width: "100%" }}>
+            <Input
+              value={seedDraft}
+              status={seedError ? "error" : undefined}
+              onChange={(evt) => {
+                setSeedDraft(evt.target.value);
+                setSeedError(null);
+              }}
+              onPressEnter={(event) => handleSearch(event.currentTarget.value)}
+              placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Seed entity name" })}
+              allowClear
+            />
+            <Button
+              type="primary"
+              icon={<SearchOutlined />}
+              loading={loading}
+              aria-label={t("common.search", { defaultValue: "Search" })}
+              onClick={() => handleSearch()}
+            />
+          </Space.Compact>
           {seedError ? (
             <Text type="danger" className="text-xs">
               {seedError}

@@ -1,21 +1,35 @@
-import type { INestApplication} from "@nestjs/common";
-import { UnauthorizedException } from "@nestjs/common";
-import { GqlExecutionContext } from "@nestjs/graphql";
+import type { INestApplication } from "@nestjs/common";
+import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { sign } from "jsonwebtoken";
 import request from "supertest";
 
 import { AppModule } from "../src/app.module";
 import { GqlAuthGuard } from "../src/common/guards/gql-auth.guard";
-import { JwtAuthGuard } from "../src/common/guards/jwt-auth.guard";
 import { GraphqlRateLimitGuard } from "../src/graphql/guards/graphql-rate-limit.guard";
+import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS } from "../src/modules/akshare/akshare.constants";
+import { AkshareQueueProcessor } from "../src/modules/akshare/akshare.processor";
+import { ALERTS_QUEUE, ALERTS_QUEUE_EVENTS } from "../src/modules/alerts/alerts.constants";
+import { AlertsProcessor } from "../src/modules/alerts/alerts.processor";
+import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS } from "../src/modules/analysis/analysis.constants";
+import { AnalysisProcessor } from "../src/modules/analysis/analysis.processor";
+import { ASSISTANT_QUEUE, ASSISTANT_QUEUE_EVENTS } from "../src/modules/assistant/assistant.constants";
+import { AssistantProcessor } from "../src/modules/assistant/assistant.processor";
 import { AuthService } from "../src/modules/auth/auth.service";
 import type { AuthenticatedUser } from "../src/modules/auth/auth.service";
 import { RateLimiterService } from "../src/modules/cache/rate-limiter.service";
+import { MONGO_CONNECTION } from "../src/modules/config/mongo.provider";
 import { PrismaService } from "../src/modules/config/prisma.service";
+import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS } from "../src/modules/crawl/crawl.constants";
+import { CrawlQueueProcessor } from "../src/modules/crawl/crawl.processor";
 import { DashboardService } from "../src/modules/dashboard/dashboard.service";
 import { ItemsService } from "../src/modules/items/items.service";
+import { NotificationsGateway } from "../src/modules/notifications/notifications.gateway";
 import { OrgService } from "../src/modules/org/org.service";
 import { QueueEventPublisher } from "../src/modules/queue/queue-event.publisher";
+import { QueueGateway } from "../src/modules/queue/queue.gateway";
+import { QueueProcessor } from "../src/modules/queue/queue.processor";
+import { PIPELINE_DLQ_QUEUE, PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS } from "../src/modules/queue/queue.constants";
 import { RbacService } from "../src/modules/rbac/rbac.service";
 
 const sampleUser: AuthenticatedUser = {
@@ -26,6 +40,39 @@ const sampleUser: AuthenticatedUser = {
   orgId: "org-1",
   roleIds: ["role-1"],
   permissions: ["items.read", "items.write", "users.read", "queue.manage"]
+};
+
+const readOnlyUser: AuthenticatedUser = {
+  ...sampleUser,
+  id: "user-2",
+  permissions: ["items.read"]
+};
+
+const orgWriterUser: AuthenticatedUser = {
+  ...sampleUser,
+  id: "user-3",
+  permissions: ["org.write"]
+};
+
+const usersById: Record<string, AuthenticatedUser> = {
+  [sampleUser.id]: sampleUser,
+  [readOnlyUser.id]: readOnlyUser,
+  [orgWriterUser.id]: orgWriterUser
+};
+
+function createJwt(user: AuthenticatedUser) {
+  const secret = process.env.JWT_SECRET ?? "test-secret-123456";
+  return sign({ sub: user.id, orgId: user.orgId }, secret, {
+    issuer: "modular-monolith",
+    audience: "modular-monolith-clients",
+    expiresIn: "1h"
+  });
+}
+
+const tokens = {
+  fullAccess: createJwt(sampleUser),
+  readOnly: createJwt(readOnlyUser),
+  orgWriter: createJwt(orgWriterUser)
 };
 
 const sampleItems = [
@@ -84,16 +131,16 @@ describe("GraphQL API", () => {
   } as unknown as PrismaService;
 
   beforeAll(async () => {
-    process.env.JWT_SECRET = "test-secret";
+    process.env.JWT_SECRET = "test-secret-123456";
     process.env.MYSQL_HOST = "localhost";
     process.env.MYSQL_PORT = "3306";
     process.env.MYSQL_USER = "root";
     process.env.MYSQL_PASSWORD = "secret";
     process.env.MYSQL_DB = "app";
     process.env.MONGO_URI = "mongodb://localhost:27017";
-    process.env.REDIS_HOST = "localhost";
+    process.env.REDIS_HOST = "127.0.0.1";
     process.env.REDIS_PORT = "6379";
-    process.env.NEXTAUTH_SECRET = "test-next";
+    process.env.NEXTAUTH_SECRET = "test-nextauth-123456";
     process.env.API_BASE_URL = "http://localhost:4000";
     process.env.NEXTAUTH_URL = "http://localhost:3000";
     process.env.JWT_ACCESS_EXPIRES_IN = "15m";
@@ -108,8 +155,42 @@ describe("GraphQL API", () => {
       .useValue(prismaMock)
       .overrideProvider(AuthService)
       .useValue({
-        getUserProfile: jest.fn().mockResolvedValue(sampleUser)
+        getUserProfile: jest.fn().mockImplementation(async (userId: string) => usersById[userId] ?? sampleUser)
       })
+      .overrideProvider(MONGO_CONNECTION)
+      .useValue({})
+      .overrideProvider(PIPELINE_QUEUE)
+      .useValue({ add: jest.fn(), getJobCounts: jest.fn(), getJob: jest.fn(), close: jest.fn() })
+      .overrideProvider(PIPELINE_DLQ_QUEUE)
+      .useValue({ add: jest.fn(), close: jest.fn() })
+      .overrideProvider(PIPELINE_QUEUE_EVENTS)
+      .useValue({ on: jest.fn(), off: jest.fn(), close: jest.fn() })
+      .overrideProvider(ANALYSIS_QUEUE)
+      .useValue({ add: jest.fn(), close: jest.fn() })
+      .overrideProvider(ANALYSIS_QUEUE_EVENTS)
+      .useValue({ on: jest.fn(), off: jest.fn(), close: jest.fn() })
+      .overrideProvider(ASSISTANT_QUEUE)
+      .useValue({ add: jest.fn(), close: jest.fn() })
+      .overrideProvider(ASSISTANT_QUEUE_EVENTS)
+      .useValue({ on: jest.fn(), off: jest.fn(), close: jest.fn() })
+      .overrideProvider(ALERTS_QUEUE)
+      .useValue({ add: jest.fn(), close: jest.fn() })
+      .overrideProvider(ALERTS_QUEUE_EVENTS)
+      .useValue({ on: jest.fn(), off: jest.fn(), close: jest.fn() })
+      .overrideProvider(CRAWL_QUEUE)
+      .useValue({ add: jest.fn(), close: jest.fn() })
+      .overrideProvider(CRAWL_QUEUE_EVENTS)
+      .useValue({ on: jest.fn(), off: jest.fn(), close: jest.fn() })
+      .overrideProvider(AKSHARE_QUEUE)
+      .useValue({
+        add: jest.fn(),
+        close: jest.fn(),
+        getRepeatableJobs: jest.fn().mockResolvedValue([]),
+        removeRepeatableByKey: jest.fn(),
+        drain: jest.fn()
+      })
+      .overrideProvider(AKSHARE_QUEUE_EVENTS)
+      .useValue({ on: jest.fn(), off: jest.fn(), close: jest.fn() })
       .overrideProvider(ItemsService)
       .useValue({
         listWithCursor: jest.fn().mockResolvedValue({
@@ -145,8 +226,25 @@ describe("GraphQL API", () => {
               }
             };
           })(),
-        publish: jest.fn()
+        publish: jest.fn(),
+        registerListener: jest.fn(() => () => undefined)
       })
+      .overrideProvider(QueueGateway)
+      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() })
+      .overrideProvider(NotificationsGateway)
+      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() })
+      .overrideProvider(QueueProcessor)
+      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() })
+      .overrideProvider(AlertsProcessor)
+      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() })
+      .overrideProvider(AnalysisProcessor)
+      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() })
+      .overrideProvider(AssistantProcessor)
+      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() })
+      .overrideProvider(CrawlQueueProcessor)
+      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() })
+      .overrideProvider(AkshareQueueProcessor)
+      .useValue({ onModuleInit: jest.fn(), onModuleDestroy: jest.fn() })
       .overrideProvider(DashboardService)
       .useValue({
         stats: jest.fn().mockResolvedValue({
@@ -206,30 +304,6 @@ describe("GraphQL API", () => {
       .useValue({
         canActivate: () => true
       })
-      .overrideProvider(JwtAuthGuard)
-      .useValue({
-        canActivate: () => true
-      })
-      .overrideProvider(GqlAuthGuard)
-      .useValue({
-        canActivate: (context: any) => {
-          const ctx = GqlExecutionContext.create(context);
-          const request = ctx.getContext().req;
-          const authHeader = request?.headers?.authorization as string | undefined;
-          if (!authHeader) {
-            throw new UnauthorizedException();
-          }
-          const permissionsHeader = request?.headers?.["x-test-permissions"] as string | undefined;
-          const permissions = permissionsHeader
-            ? permissionsHeader.split(",").map((value) => value.trim())
-            : sampleUser.permissions;
-          request.user = {
-            ...sampleUser,
-            permissions
-          };
-          return true;
-        }
-      })
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -244,18 +318,15 @@ describe("GraphQL API", () => {
     const response = await request(app.getHttpServer())
       .post("/graphql")
       .send({ query: "query { me { id email } }" })
-      .expect(200);
+      .expect(401);
 
-    expect(response.body.errors?.[0]?.extensions?.code ?? response.body.errors?.[0]?.extensions?.response?.statusCode).toBe(
-      "UNAUTHENTICATED"
-    );
+    expect(response.body.errors?.[0]?.extensions?.code).toBe("UNAUTHORIZED");
   });
 
   it("returns me and items for authorised user", async () => {
     const response = await request(app.getHttpServer())
       .post("/graphql")
-      .set("authorization", "Bearer test")
-      .set("x-test-permissions", sampleUser.permissions.join(","))
+      .set("authorization", `Bearer ${tokens.fullAccess}`)
       .send({ query: "query { me { id email } items(first: 10) { edges { node { id title status } } pageInfo { hasNextPage } } }" })
       .expect(200);
 
@@ -267,12 +338,11 @@ describe("GraphQL API", () => {
   it("returns forbidden when permission missing", async () => {
     const response = await request(app.getHttpServer())
       .post("/graphql")
-      .set("authorization", "Bearer test")
-      .set("x-test-permissions", "items.read")
+      .set("authorization", `Bearer ${tokens.readOnly}`)
       .send({
         query: "mutation { createItem(input: { title: \"New\", externalId: \"new\", payload: \"{}\" }) { id } }"
       })
-      .expect(200);
+      .expect(403);
 
     const error = response.body.errors?.[0];
     expect(error).toBeDefined();
@@ -282,7 +352,7 @@ describe("GraphQL API", () => {
   it("returns organizations for authenticated user", async () => {
     const response = await request(app.getHttpServer())
       .post("/graphql")
-      .set("authorization", "Bearer test")
+      .set("authorization", `Bearer ${tokens.fullAccess}`)
       .send({ query: "query { myOrganizations { id name slug isActive } }" })
       .expect(200);
 
@@ -294,13 +364,12 @@ describe("GraphQL API", () => {
   it("rejects overly complex items query", async () => {
     const response = await request(app.getHttpServer())
       .post("/graphql")
-      .set("authorization", "Bearer test")
-      .set("x-test-permissions", sampleUser.permissions.join(","))
+      .set("authorization", `Bearer ${tokens.fullAccess}`)
       .send({
         query:
           "query { items(first: 500) { edges { cursor node { id title status meta { id name status } raw { id payload } processed { id result } } } pageInfo { hasNextPage endCursor } totalCount } }"
       })
-      .expect(200);
+      .expect(500);
 
     const error = response.body.errors?.[0];
     expect(error).toBeDefined();
@@ -310,8 +379,7 @@ describe("GraphQL API", () => {
   it("creates orgs when org.write is present", async () => {
     const response = await request(app.getHttpServer())
       .post("/graphql")
-      .set("authorization", "Bearer test")
-      .set("x-test-permissions", "org.write")
+      .set("authorization", `Bearer ${tokens.orgWriter}`)
       .send({
         query:
           "mutation { createOrg(input: { name: \"Beta\", slug: \"beta\" }) { id name slug isActive } }"

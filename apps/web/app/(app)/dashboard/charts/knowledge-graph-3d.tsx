@@ -1,5 +1,6 @@
 "use client";
 
+import { SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -498,14 +499,22 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
     <>
       {contextHolder}
       <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap" }}>
-        <Input.Search
-          value={seedDraft}
-          onChange={(evt) => setSeedDraft(evt.target.value)}
-          onSearch={handleSearch}
-          placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Seed entity name" })}
-          allowClear
-          style={{ maxWidth: 320 }}
-        />
+        <Space.Compact style={{ maxWidth: 320, width: "100%" }}>
+          <Input
+            value={seedDraft}
+            onChange={(evt) => setSeedDraft(evt.target.value)}
+            onPressEnter={(event) => handleSearch(event.currentTarget.value)}
+            placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Seed entity name" })}
+            allowClear
+          />
+          <Button
+            type="primary"
+            icon={<SearchOutlined />}
+            loading={loading}
+            aria-label={t("common.search", { defaultValue: "Search" })}
+            onClick={() => handleSearch()}
+          />
+        </Space.Compact>
         <Button
           onClick={() => {
             setLayoutNonce((prev) => prev + 1);

@@ -1711,7 +1711,6 @@ export function LlmGatewaySettingsPanel() {
       <Modal
         title={testProfile ? t("settings.llmGateway.test.modal.title", { name: testProfile.name }) : undefined}
         open={Boolean(testProfile)}
-        forceRender
         onCancel={closeTest}
         width={screens.md ? 720 : "100%"}
         footer={[

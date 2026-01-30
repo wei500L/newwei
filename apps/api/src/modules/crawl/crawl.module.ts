@@ -16,6 +16,7 @@ import { CrawlTaskJanitorService } from "./crawl-task-janitor.service";
 import { CrawlTaskService } from "./crawl-task.service";
 import { CrawlTemplateController } from "./crawl-template.controller";
 import { CrawlTemplateService } from "./crawl-template.service";
+import { CrawlQueueCleanupService } from "./crawl-queue-cleanup.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { CrawlController } from "./crawl.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
@@ -60,12 +61,13 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     JsCodeAuditService,
     Crawl4aiClient,
     CrawlQueueProcessor,
+    CrawlQueueCleanupService,
     {
       provide: CRAWL_QUEUE,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => {
+      inject: [EnvService, CrawlQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
         const redis = env.redisConfig;
-        return new Queue<CrawlJobData>(CRAWL_QUEUE_NAME, {
+        const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_NAME, {
           connection: redis,
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
@@ -77,16 +79,20 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
             }
           }
         });
+        cleanup.track(queue);
+        return queue;
       }
     },
     {
       provide: CRAWL_QUEUE_EVENTS,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => {
+      inject: [EnvService, CrawlQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
         const redis = env.redisConfig;
-        return new QueueEvents(CRAWL_QUEUE_NAME, {
+        const events = new QueueEvents(CRAWL_QUEUE_NAME, {
           connection: redis
         });
+        cleanup.track(events);
+        return events;
       }
     },
     {

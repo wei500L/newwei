@@ -58,5 +58,7 @@ export const captureClientError = (
   }
 
   const prefix = context.traceId ? `[trace:${context.traceId}] ` : "";
-  console.error(`${prefix}${message}`, normalizedError, context.extras);
+  const log =
+    process.env.NODE_ENV === "production" ? console.error : console.warn;
+  log(`${prefix}${message}`, normalizedError, context.extras);
 };

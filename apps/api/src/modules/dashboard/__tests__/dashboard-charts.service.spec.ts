@@ -136,22 +136,27 @@ describe("DashboardChartsService", () => {
         ])
       },
       economicDataPoint: {
-        findMany: jest.fn().mockResolvedValue([
+        groupBy: jest.fn().mockResolvedValue([
           {
             itemId: "item-1",
-            recordedAt: new Date("2026-01-01T00:00:00.000Z"),
-            value: 100,
-            unit: "USD",
-            sourceField: "最近报价"
-          },
-          {
-            itemId: "item-1",
+            sourceField: "最近报价",
+            _count: { _all: 2 }
+          }
+        ]),
+        findFirst: jest.fn().mockImplementation(({ orderBy }) => {
+          if (orderBy?.recordedAt === "asc") {
+            return {
+              recordedAt: new Date("2026-01-01T00:00:00.000Z"),
+              value: 100,
+              unit: "USD"
+            };
+          }
+          return {
             recordedAt: new Date("2026-01-02T00:00:00.000Z"),
             value: 110,
-            unit: "USD",
-            sourceField: "最近报价"
-          }
-        ])
+            unit: "USD"
+          };
+        })
       }
     };
     const geocoding = {
@@ -191,22 +196,27 @@ describe("DashboardChartsService", () => {
         ])
       },
       economicDataPoint: {
-        findMany: jest.fn().mockResolvedValue([
+        groupBy: jest.fn().mockResolvedValue([
           {
             itemId: "item-1",
-            recordedAt: new Date("2026-01-01T00:00:00.000Z"),
-            value: 4200,
-            unit: "pts",
-            sourceField: "今值"
-          },
-          {
-            itemId: "item-1",
+            sourceField: "今值",
+            _count: { _all: 2 }
+          }
+        ]),
+        findFirst: jest.fn().mockImplementation(({ orderBy }) => {
+          if (orderBy?.recordedAt === "asc") {
+            return {
+              recordedAt: new Date("2026-01-01T00:00:00.000Z"),
+              value: 4200,
+              unit: "pts"
+            };
+          }
+          return {
             recordedAt: new Date("2026-01-02T00:00:00.000Z"),
             value: 4300,
-            unit: "pts",
-            sourceField: "今值"
-          }
-        ])
+            unit: "pts"
+          };
+        })
       }
     };
     const geocoding = {
@@ -252,15 +262,14 @@ describe("DashboardChartsService", () => {
         ])
       },
       economicDataPoint: {
-        findMany: jest.fn().mockResolvedValue([
+        groupBy: jest.fn().mockResolvedValue([
           {
             itemId: "item-2",
-            recordedAt: new Date("2026-01-01T00:00:00.000Z"),
-            value: 50,
-            unit: "u",
-            sourceField: "weird_field"
+            sourceField: "weird_field",
+            _count: { _all: 1 }
           }
-        ])
+        ]),
+        findFirst: jest.fn()
       }
     };
     const geocoding = {

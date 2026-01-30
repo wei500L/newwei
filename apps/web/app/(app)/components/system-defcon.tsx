@@ -2,6 +2,7 @@
 
 import { Tooltip } from "antd";
 import { useSession } from "next-auth/react";
+import { useEffect } from "react";
 
 import { useQueueStatsQuery } from "@/graphql/generated";
 
@@ -10,10 +11,32 @@ export function SystemDefcon() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageQueue = permissions.includes("queue.manage");
 
-  const { data, loading, error } = useQueueStatsQuery({
-    pollInterval: 10000,
+  const { data, loading, error, startPolling, stopPolling } = useQueueStatsQuery({
     skip: !canManageQueue
   });
+
+  useEffect(() => {
+    if (!canManageQueue) {
+      return;
+    }
+
+    const pollIntervalMs = 30_000;
+
+    const updatePolling = () => {
+      if (document.visibilityState === "visible") {
+        startPolling(pollIntervalMs);
+      } else {
+        stopPolling();
+      }
+    };
+
+    updatePolling();
+    document.addEventListener("visibilitychange", updatePolling);
+    return () => {
+      document.removeEventListener("visibilitychange", updatePolling);
+      stopPolling();
+    };
+  }, [canManageQueue, startPolling, stopPolling]);
 
   const stats = canManageQueue ? data?.queueStats ?? null : null;
   const activeJobs = stats?.counts?.active ?? null;

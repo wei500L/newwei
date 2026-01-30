@@ -11,6 +11,7 @@ import { ModelServiceModule } from "../model-service/model-service.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
+import { AlertsQueueCleanupService } from "./alerts-queue-cleanup.service";
 import { ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, ALERTS_QUEUE_NAME, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
 import { AlertsProcessor } from "./alerts.processor";
 import { ALERTS_PUBSUB, createAlertsPubSub } from "./alerts.pubsub";
@@ -42,6 +43,7 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     AlertsService,
     AlertsNotificationThrottleService,
     AlertsProcessor,
+    AlertsQueueCleanupService,
     EconomicDataMetricProvider,
     EconomicAnomalyMetricProvider,
     PipelineMetricProvider,
@@ -84,20 +86,24 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     },
     {
       provide: ALERTS_QUEUE,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => {
-        return new Queue(ALERTS_QUEUE_NAME, {
+      inject: [EnvService, AlertsQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: AlertsQueueCleanupService) => {
+        const queue = new Queue(ALERTS_QUEUE_NAME, {
           connection: env.redisConfig
         });
+        cleanup.track(queue);
+        return queue;
       }
     },
     {
       provide: ALERTS_QUEUE_EVENTS,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => {
-        return new QueueEvents(ALERTS_QUEUE_NAME, {
+      inject: [EnvService, AlertsQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: AlertsQueueCleanupService) => {
+        const events = new QueueEvents(ALERTS_QUEUE_NAME, {
           connection: env.redisConfig
         });
+        cleanup.track(events);
+        return events;
       }
     },
     {

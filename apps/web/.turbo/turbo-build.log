@@ -1,74 +1,98 @@
 
-> @modular/web@0.1.0 prebuild /mnt/d/wei/apps/web
+> @modular/web@0.1.0 prebuild D:\wei\apps\web
 > pnpm run generate
 
 
-> @modular/web@0.1.0 generate /mnt/d/wei/apps/web
+> @modular/web@0.1.0 generate D:\wei\apps\web
 > graphql-codegen --config codegen.cjs
 
 [STARTED] Parse Configuration
 [SUCCESS] Parse Configuration
 [STARTED] Generate outputs
-[STARTED] Generate to graphql/generated.ts
+[STARTED] Generate to D:\wei\apps\web\graphql\generated.ts
 [STARTED] Load GraphQL schemas
 [SUCCESS] Load GraphQL schemas
 [STARTED] Load GraphQL documents
 [SUCCESS] Load GraphQL documents
 [STARTED] Generate
 [SUCCESS] Generate
-[SUCCESS] Generate to graphql/generated.ts
+[SUCCESS] Generate to D:\wei\apps\web\graphql\generated.ts
 [SUCCESS] Generate outputs
 
-> @modular/web@0.1.0 build /mnt/d/wei/apps/web
+> @modular/web@0.1.0 build D:\wei\apps\web
 > next build
 
   ▲ Next.js 15.0.0-canary.45
   - Environments: .env
 
    Creating an optimized production build ...
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (128kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
  ✓ Compiled successfully
    Linting and checking validity of types ...
 
 ./app/(app)/admin/dashboards/dashboards-content.tsx
-28:9  Warning: The 'dashboards' logical expression could make the dependencies of useEffect Hook (at line 35) change on every render. To fix this, wrap the initialization of 'dashboards' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-28:9  Warning: The 'dashboards' logical expression could make the dependencies of useMemo Hook (at line 39) change on every render. To fix this, wrap the initialization of 'dashboards' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-
-./app/(app)/alerts/alert-center.tsx
-220:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 227) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-220:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 253) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-281:9  Warning: The 'replayPoints' logical expression could make the dependencies of useMemo Hook (at line 350) change on every render. To fix this, wrap the initialization of 'replayPoints' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-302:25  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
-343:22  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
-566:19  Warning: The attribute aria-selected is not supported by the role button.  jsx-a11y/role-supports-aria-props
+29:9  Warning: The 'dashboards' logical expression could make the dependencies of useEffect Hook (at line 36) change on every render. To fix this, wrap the initialization of 'dashboards' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+29:9  Warning: The 'dashboards' logical expression could make the dependencies of useMemo Hook (at line 40) change on every render. To fix this, wrap the initialization of 'dashboards' in its own useMemo() Hook.  react-hooks/exhaustive-deps
 
 ./app/(app)/components/avatar-fallback.tsx
 66:11  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
 
-./app/(app)/components/ticker-tape.tsx
-24:31  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
-31:47  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+./app/(app)/components/user-ui-settings-sync-indicator.tsx
+15:35  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/charts/entity-impact-graph.tsx
+348:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+459:14  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+482:54  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
 
 ./app/(app)/dashboard/charts/financial-candlestick.tsx
-236:6  Warning: React Hook useMemo has unnecessary dependencies: 'locale' and 't'. Either exclude them or remove the dependency array.  react-hooks/exhaustive-deps
+189:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/charts/knowledge-graph.tsx
+174:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+401:35  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
 
 ./app/(app)/dashboard/charts/sector-heatmap.tsx
-162:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
-217:33  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
-340:31  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+260:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+315:33  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+527:31  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/charts/spacetime-geo-heatmap.tsx
+339:67  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+353:9  Warning: The 'rawPoints' logical expression could make the dependencies of useMemo Hook (at line 378) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'rawPoints' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+443:39  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/charts/spacetime-propagation.tsx
+260:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
 
 ./app/(app)/dashboard/charts/war-map.tsx
-296:67  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
-402:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+359:67  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+475:19  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+489:30  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+489:40  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+530:46  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+551:31  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+701:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+945:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 984) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+946:9  Warning: The 'newsMarkers' logical expression could make the dependencies of useMemo Hook (at line 1011) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'newsMarkers' in its own useMemo() Hook.  react-hooks/exhaustive-deps
 
-./app/(app)/dashboard/components/economic-chart-card.tsx
-212:27  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
-219:33  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+./app/(app)/dashboard/charts/widget-renderer.tsx
+140:35  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/components/global-sentiment-trend.tsx
+76:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
 
 ./app/(app)/dashboard/drilldown-chart.tsx
-57:9  Warning: The 'points' logical expression could make the dependencies of useMemo Hook (at line 115) change on every render. To fix this, wrap the initialization of 'points' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+80:9  Warning: The 'points' logical expression could make the dependencies of useMemo Hook (at line 172) change on every render. To fix this, wrap the initialization of 'points' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+98:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
 
 ./app/(app)/dashboard/metric-drilldown.tsx
-79:60  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+105:60  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+198:29  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/(app)/dashboard/spacetime-viz.tsx
+125:9  Warning: The 'events' logical expression could make the dependencies of useEffect Hook (at line 131) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+125:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 194) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
 
 ./app/(app)/items/components/faceted-search.tsx
 32:36  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
@@ -78,13 +102,13 @@
 126:43  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
 
 ./app/(app)/subscriptions/page.tsx
-255:9  Warning: The 'rules' logical expression could make the dependencies of useMemo Hook (at line 300) change on every render. To fix this, wrap the initialization of 'rules' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-256:9  Warning: The 'channels' logical expression could make the dependencies of useMemo Hook (at line 298) change on every render. To fix this, wrap the initialization of 'channels' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-257:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 264) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-258:9  Warning: The 'notifications' logical expression could make the dependencies of useMemo Hook (at line 267) change on every render. To fix this, wrap the initialization of 'notifications' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-258:9  Warning: The 'notifications' logical expression could make the dependencies of useMemo Hook (at line 294) change on every render. To fix this, wrap the initialization of 'notifications' in its own useMemo() Hook.  react-hooks/exhaustive-deps
-429:46  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
-510:56  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+264:9  Warning: The 'rules' logical expression could make the dependencies of useMemo Hook (at line 309) change on every render. To fix this, wrap the initialization of 'rules' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+265:9  Warning: The 'channels' logical expression could make the dependencies of useMemo Hook (at line 307) change on every render. To fix this, wrap the initialization of 'channels' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+266:9  Warning: The 'events' logical expression could make the dependencies of useMemo Hook (at line 273) change on every render. To fix this, wrap the initialization of 'events' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+267:9  Warning: The 'notifications' logical expression could make the dependencies of useMemo Hook (at line 276) change on every render. To fix this, wrap the initialization of 'notifications' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+267:9  Warning: The 'notifications' logical expression could make the dependencies of useMemo Hook (at line 303) change on every render. To fix this, wrap the initialization of 'notifications' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+448:46  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+529:56  Warning: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
 
 ./app/(app)/topics/topics-content.tsx
 188:9  Warning: The 'groups' logical expression could make the dependencies of useMemo Hook (at line 207) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'groups' in its own useMemo() Hook.  react-hooks/exhaustive-deps
@@ -97,72 +121,75 @@
 
 info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules
    Collecting page data ...
-   Generating static pages (0/47) ...
-   Generating static pages (11/47) 
-   Generating static pages (23/47) 
-   Generating static pages (35/47) 
- ✓ Generating static pages (47/47)
+   Generating static pages (0/50) ...
+   Generating static pages (12/50) 
+   Generating static pages (24/50) 
+   Generating static pages (37/50) 
+ ✓ Generating static pages (50/50)
    Finalizing page optimization ...
    Collecting build traces ...
 
 Route (app)                                 Size     First Load JS
-┌ ƒ /                                       165 B          91.2 kB
-├ ƒ /_not-found                             905 B            92 kB
-├ ƒ /admin                                  7.23 kB         287 kB
-├ ƒ /admin/alerts                           16 kB           405 kB
-├ ƒ /admin/audit-logs                       15.7 kB         446 kB
-├ ƒ /admin/dashboards                       17.4 kB         369 kB
-├ ƒ /admin/errors                           8.45 kB         489 kB
-├ ƒ /admin/ops                              6.93 kB         286 kB
-├ ƒ /admin/ops/crawl-monitor                16.2 kB         391 kB
-├ ƒ /admin/ops/crawl-tasks                  38.3 kB         716 kB
-├ ƒ /admin/ops/crawl-tasks/[taskId]         13.1 kB         479 kB
-├ ƒ /admin/ops/crawl-templates              9.78 kB         422 kB
-├ ƒ /admin/ops/news-sources                 18.1 kB         488 kB
-├ ƒ /admin/orgs                             15.4 kB         477 kB
-├ ƒ /admin/quality                          8.01 kB         397 kB
-├ ƒ /admin/settings                         5.06 kB         486 kB
-├ ƒ /admin/storage                          11.5 kB         304 kB
-├ ƒ /admin/system                           7.61 kB         489 kB
-├ ƒ /alerts                                 25.9 kB         419 kB
+┌ ƒ /                                       165 B          91.3 kB
+├ ƒ /_not-found                             905 B          92.1 kB
+├ ƒ /admin                                  1.63 kB         287 kB
+├ ƒ /admin/alerts                           20 kB           420 kB
+├ ƒ /admin/audit-logs                       12 kB           477 kB
+├ ƒ /admin/dashboards                       14 kB           390 kB
+├ ƒ /admin/errors                           11.3 kB         521 kB
+├ ƒ /admin/ops                              1.22 kB         286 kB
+├ ƒ /admin/ops/crawl-monitor                21.5 kB         392 kB
+├ ƒ /admin/ops/crawl-tasks                  35.8 kB         765 kB
+├ ƒ /admin/ops/crawl-tasks/[taskId]         26.9 kB         528 kB
+├ ƒ /admin/ops/crawl-templates              11.3 kB         422 kB
+├ ƒ /admin/ops/news-sources                 19.6 kB         520 kB
+├ ƒ /admin/orgs                             14.2 kB         508 kB
+├ ƒ /admin/quality                          10.7 kB         397 kB
+├ ƒ /admin/settings                         8.93 kB         488 kB
+├ ƒ /admin/storage                          7.5 kB          305 kB
+├ ƒ /admin/system                           44.3 kB         524 kB
+├ ƒ /alerts                                 29.3 kB         465 kB
 ├ ƒ /api/auth/[...nextauth]                 0 B                0 B
 ├ ƒ /api/crawl4ai/monitor/[...monitorPath]  0 B                0 B
 ├ ƒ /api/logout                             0 B                0 B
 ├ ƒ /api/organizations/switch               0 B                0 B
-├ ƒ /crawl                                  165 B          91.2 kB
-├ ƒ /crawl/[taskId]                         165 B          91.2 kB
-├ ƒ /dashboard                              14.3 kB         331 kB
-├ ƒ /dashboard/economic-alert               7.25 kB         387 kB
-├ ƒ /dashboard/economic-long                6.91 kB         386 kB
-├ ƒ /dashboard/economic-medium              7.06 kB         386 kB
-├ ƒ /dashboard/economic-short               10.2 kB         386 kB
-├ ƒ /dashboard/key-monitor                  6.74 kB         390 kB
-├ ƒ /dashboard/livelihood-prices            6.84 kB         386 kB
-├ ƒ /dashboard/military-alert               18.6 kB         433 kB
-├ ƒ /finance                                143 kB          753 kB
-├ ƒ /finance/key-monitor                    165 B          91.2 kB
-├ ƒ /finance/livelihood                     6.84 kB         386 kB
-├ ƒ /finance/macro                          8.2 kB          388 kB
-├ ƒ /finance/trends                         165 B          91.2 kB
+├ ƒ /assistant                              21.4 kB         465 kB
+├ ƒ /crawl                                  165 B          91.3 kB
+├ ƒ /crawl/[taskId]                         165 B          91.3 kB
+├ ƒ /dashboard                              21.8 kB         428 kB
+├ ƒ /dashboard/economic-alert               2.16 kB         422 kB
+├ ƒ /dashboard/economic-long                1.87 kB         421 kB
+├ ƒ /dashboard/economic-medium              1.96 kB         421 kB
+├ ƒ /dashboard/economic-short               5.01 kB         421 kB
+├ ƒ /dashboard/key-monitor                  9.72 kB         426 kB
+├ ƒ /dashboard/livelihood-prices            1.84 kB         421 kB
+├ ƒ /dashboard/military-alert               20.5 kB         468 kB
+├ ƒ /events                                 11.3 kB         412 kB
+├ ƒ /finance                                167 kB          909 kB
+├ ƒ /finance/key-monitor                    165 B          91.3 kB
+├ ƒ /finance/livelihood                     1.84 kB         421 kB
+├ ƒ /finance/macro                          3.24 kB         423 kB
+├ ƒ /finance/trends                         165 B          91.3 kB
 ├ ○ /icon.svg                               0 B                0 B
-├ ƒ /items                                  262 B           499 kB
-├ ƒ /items/[id]                             10.6 kB         391 kB
-├ ƒ /login                                  10.6 kB         236 kB
-├ ƒ /map                                    15.4 kB         363 kB
-├ ƒ /profile                                28.8 kB         305 kB
-├ ƒ /search                                 707 B           500 kB
-├ ƒ /settings                               165 B          91.2 kB
-├ ƒ /settings/system                        165 B          91.2 kB
-├ ƒ /subscriptions                          19.8 kB         461 kB
-├ ƒ /today                                  698 B           500 kB
-└ ƒ /topics                                 15.4 kB         377 kB
-+ First Load JS shared by all               91 kB
+├ ƒ /items                                  448 B           556 kB
+├ ƒ /items/[id]                             18.6 kB         424 kB
+├ ƒ /login                                  4.52 kB         236 kB
+├ ƒ /map                                    15.5 kB         419 kB
+├ ƒ /profile                                23.3 kB         306 kB
+├ ƒ /search                                 848 B           557 kB
+├ ƒ /settings                               165 B          91.3 kB
+├ ƒ /settings/system                        165 B          91.3 kB
+├ ƒ /situation-monitor                      38.4 kB         587 kB
+├ ƒ /subscriptions                          18.7 kB         502 kB
+├ ƒ /today                                  9.48 kB         611 kB
+└ ƒ /topics                                 10.5 kB         408 kB
++ First Load JS shared by all               91.1 kB
   ├ chunks/1353-6283db19bb0c6a22.js         36.1 kB
   ├ chunks/2cdcef58-b48cf403aaed1880.js     51.7 kB
-  └ other shared chunks (total)             3.27 kB
+  └ other shared chunks (total)             3.38 kB
 
 
-ƒ Middleware                                95.9 kB
+ƒ Middleware                                96 kB
 
 ○  (Static)   prerendered as static content
 ƒ  (Dynamic)  server-rendered on demand

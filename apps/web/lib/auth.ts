@@ -73,6 +73,22 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "Failed to refresh token");
+      if (response.status === 401 || response.status === 403) {
+        console.warn("Refresh token rejected", {
+          traceId,
+          meta: {
+            userId: token.user.id,
+            status: response.status
+          }
+        });
+        return {
+          ...token,
+          accessToken: "",
+          refreshToken: "",
+          accessTokenExpires: 0,
+          error: "RefreshAccessTokenError"
+        };
+      }
       throw new Error(errorText || "Failed to refresh token");
     }
 
@@ -112,7 +128,7 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
 
 const config: NextAuthConfig = {
   trustHost: true,
-  debug: process.env.NODE_ENV !== "production",
+  debug: process.env.NEXTAUTH_DEBUG === "1" || process.env.NEXTAUTH_DEBUG === "true",
   secret: serverEnv.NEXTAUTH_SECRET,
   session: {
     strategy: "jwt"

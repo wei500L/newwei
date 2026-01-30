@@ -143,6 +143,36 @@ const statusColor = (status: AssistantRunStatus): string => {
   }
 };
 
+const isTerminalStatus = (status: AssistantRunStatus): boolean => status === "completed" || status === "failed";
+
+const summarizeAssistantError = (error: string): string => {
+  const trimmed = error.trim();
+  if (!trimmed) return "";
+
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("<!doctype") || lower.includes("<html")) {
+    const title = trimmed.match(/<title[^>]*>([^<]{1,200})<\/title>/i)?.[1];
+    if (title) return title.trim();
+    const h1 = trimmed.match(/<h1[^>]*>([^<]{1,200})<\/h1>/i)?.[1];
+    if (h1) return h1.trim();
+    return "HTML error response";
+  }
+
+  const singleLine = trimmed.replace(/\s+/g, " ");
+  if (singleLine.length > 280) {
+    return `${singleLine.slice(0, 280)}…`;
+  }
+  return singleLine;
+};
+
+const clampAssistantErrorDetails = (error: string): string => {
+  const trimmed = error.trim();
+  if (trimmed.length > 4000) {
+    return `${trimmed.slice(0, 4000)}…`;
+  }
+  return trimmed;
+};
+
 export function AssistantContent() {
   const { t, i18n } = useTranslation();
   const { message: messageApi } = App.useApp();
@@ -236,6 +266,9 @@ export function AssistantContent() {
     const merged = base.map((run) => {
       const live = liveUpdates[run.id];
       if (!live) return run;
+      if (isTerminalStatus(run.status) && !isTerminalStatus(live.status)) {
+        return run;
+      }
       return {
         ...run,
         status: live.status,
@@ -812,9 +845,9 @@ export function AssistantContent() {
                 description={
                   run.error ? (
                     <Space direction="vertical" size={4}>
-                      <Typography.Text type="danger">
-                        <CloseCircleOutlined /> {run.error}
-                      </Typography.Text>
+                      <Typography.Paragraph type="danger" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
+                        <CloseCircleOutlined /> {summarizeAssistantError(run.error)}
+                      </Typography.Paragraph>
                       {run.summary ? (
                         <Typography.Paragraph ellipsis={{ rows: 3 }}>
                           {run.summary}
@@ -859,7 +892,37 @@ export function AssistantContent() {
             </Space>
 
             {activeRun.error ? (
-              <Alert type="error" showIcon message={activeRun.error} />
+              (() => {
+                const summary = summarizeAssistantError(activeRun.error);
+                const raw = clampAssistantErrorDetails(activeRun.error);
+                const showRaw =
+                  raw.length > 320 ||
+                  raw.includes("\n") ||
+                  raw.toLowerCase().startsWith("<!doctype") ||
+                  raw.toLowerCase().includes("<html");
+
+                return (
+                  <Alert
+                    type="error"
+                    showIcon
+                    message={summary}
+                    description={
+                      showRaw ? (
+                        <Typography.Paragraph
+                          style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}
+                          ellipsis={{
+                            rows: 4,
+                            expandable: true,
+                            symbol: t("common.more", { defaultValue: "More" }),
+                          }}
+                        >
+                          {raw}
+                        </Typography.Paragraph>
+                      ) : undefined
+                    }
+                  />
+                );
+              })()
             ) : null}
 
             <Card size="small" title={t("assistant.detail.summary", { defaultValue: "Summary" })}>

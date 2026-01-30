@@ -2602,7 +2602,8 @@ export class DashboardChartsService {
       return { xLabels, yLabels, cells: [] };
     }
 
-    const points = await this.prisma.economicDataPoint.findMany({
+    const seriesGroups = await this.prisma.economicDataPoint.groupBy({
+      by: ["itemId", "sourceField"],
       where: {
         itemId: {
           in: items.map((item) => item.id)
@@ -2612,16 +2613,19 @@ export class DashboardChartsService {
           lte: range.end
         }
       },
-      orderBy: { recordedAt: "asc" }
+      _count: { _all: true }
     });
 
-    const grouped = new Map<string, Map<string, typeof points>>();
-    for (const point of points) {
-      const itemGroup = grouped.get(point.itemId) ?? new Map();
-      const fieldGroup = itemGroup.get(point.sourceField) ?? [];
-      fieldGroup.push(point);
-      itemGroup.set(point.sourceField, fieldGroup);
-      grouped.set(point.itemId, itemGroup);
+    const availableFieldsByItemId = new Map<string, Set<string>>();
+    for (const group of seriesGroups) {
+      const itemId = group.itemId;
+      const sourceField = group.sourceField;
+      if (!itemId || !sourceField) {
+        continue;
+      }
+      const existing = availableFieldsByItemId.get(itemId) ?? new Set<string>();
+      existing.add(sourceField);
+      availableFieldsByItemId.set(itemId, existing);
     }
 
     const cells: SectorHeatmapCell[] = [];
@@ -2635,8 +2639,8 @@ export class DashboardChartsService {
     }[] = [];
 
     for (const item of items) {
-      const itemGroup = grouped.get(item.id);
-      if (!itemGroup) {
+      const fields = availableFieldsByItemId.get(item.id);
+      if (!fields || fields.size === 0) {
         continue;
       }
 
@@ -2646,8 +2650,10 @@ export class DashboardChartsService {
           ? uniqStrings(config.heatmap.preferredSourceFields)
           : [...PREFERRED_SOURCE_FIELDS];
       const labelToField = buildLabelToSourceFieldMap(item.metadata);
+      const seriesByField = new Map<string, unknown[]>();
+      Array.from(fields).forEach((field) => seriesByField.set(field, []));
       const fieldKey = resolvePreferredSourceField(
-        itemGroup as Map<string, unknown[]>,
+        seriesByField,
         preferredKeys,
         labelToField
       );
@@ -2657,19 +2663,48 @@ export class DashboardChartsService {
           slug: item.slug,
           displayName: item.displayName,
           preferredSourceFields: preferredKeys,
-          availableSourceFields: Array.from(itemGroup.keys()).sort((a, b) => a.localeCompare(b))
+          availableSourceFields: Array.from(fields).sort((a, b) => a.localeCompare(b))
         });
         continue;
       }
-      const series = itemGroup.get(fieldKey) ?? [];
-      if (series.length === 0) {
+
+      const pointWhere = {
+        itemId: item.id,
+        sourceField: fieldKey,
+        recordedAt: {
+          gte: range.start,
+          lte: range.end
+        }
+      };
+
+      const [firstPoint, lastPoint] = await Promise.all([
+        this.prisma.economicDataPoint.findFirst({
+          where: pointWhere,
+          select: {
+            recordedAt: true,
+            value: true,
+            unit: true
+          },
+          orderBy: { recordedAt: "asc" }
+        }),
+        this.prisma.economicDataPoint.findFirst({
+          where: pointWhere,
+          select: {
+            recordedAt: true,
+            value: true,
+            unit: true
+          },
+          orderBy: { recordedAt: "desc" }
+        })
+      ]);
+
+      if (!firstPoint || !lastPoint) {
         continue;
       }
 
-      const firstValue = Number(series[0]?.value ?? 0);
-      const lastPoint = series[series.length - 1];
-      const lastValue = Number(lastPoint?.value ?? 0);
-      const unit = (lastPoint?.unit as string | null | undefined) ?? item.defaultUnit ?? null;
+      const firstValue = Number(firstPoint.value ?? 0);
+      const lastValue = Number(lastPoint.value ?? 0);
+      const unit = (lastPoint.unit as string | null | undefined) ?? item.defaultUnit ?? null;
       const change =
         firstValue === 0 ? 0 : ((lastValue - firstValue) / Math.abs(firstValue)) * 100;
 

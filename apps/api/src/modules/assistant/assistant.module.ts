@@ -8,6 +8,7 @@ import { ModelServiceModule } from "../model-service/model-service.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
 import { AssistantPromptService } from "./assistant-prompt.service";
+import { AssistantQueueCleanupService } from "./assistant-queue-cleanup.service";
 import { ASSISTANT_QUEUE, ASSISTANT_QUEUE_EVENTS, ASSISTANT_QUEUE_NAME } from "./assistant.constants";
 import { AssistantProcessor } from "./assistant.processor";
 import { ASSISTANT_PUBSUB, createAssistantPubSub } from "./assistant.pubsub";
@@ -20,15 +21,24 @@ import type { AssistantJobPayload } from "./assistant.types";
     AssistantService,
     AssistantPromptService,
     AssistantProcessor,
+    AssistantQueueCleanupService,
     {
       provide: ASSISTANT_QUEUE,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => new Queue<AssistantJobPayload>(ASSISTANT_QUEUE_NAME, { connection: env.redisConfig })
+      inject: [EnvService, AssistantQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: AssistantQueueCleanupService) => {
+        const queue = new Queue<AssistantJobPayload>(ASSISTANT_QUEUE_NAME, { connection: env.redisConfig });
+        cleanup.track(queue);
+        return queue;
+      }
     },
     {
       provide: ASSISTANT_QUEUE_EVENTS,
-      inject: [EnvService],
-      useFactory: (env: EnvService) => new QueueEvents(ASSISTANT_QUEUE_NAME, { connection: env.redisConfig })
+      inject: [EnvService, AssistantQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: AssistantQueueCleanupService) => {
+        const events = new QueueEvents(ASSISTANT_QUEUE_NAME, { connection: env.redisConfig });
+        cleanup.track(events);
+        return events;
+      }
     },
     {
       provide: ASSISTANT_PUBSUB,

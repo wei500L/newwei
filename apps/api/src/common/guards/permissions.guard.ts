@@ -39,13 +39,19 @@ export class PermissionsGuard implements CanActivate {
       if (allowAuthenticated) {
         return true;
       }
-      throw new ForbiddenException("Permission metadata missing");
+      throw new ForbiddenException({
+        code: "PERMISSION_METADATA_MISSING",
+        message: "Permission metadata missing"
+      });
     }
 
     const request = context.switchToHttp().getRequest();
     const user = request.user as { permissions?: string[] } | undefined;
     if (!user) {
-      throw new ForbiddenException("Missing user context");
+      throw new ForbiddenException({
+        code: "MISSING_USER_CONTEXT",
+        message: "Missing user context"
+      });
     }
 
     const userPermissions = new Set(user.permissions ?? []);
@@ -54,7 +60,23 @@ export class PermissionsGuard implements CanActivate {
         ? requirement.permissions.every((permission) => userPermissions.has(permission))
         : requirement.permissions.some((permission) => userPermissions.has(permission));
     if (!hasPermission) {
-      throw new ForbiddenException("Insufficient permissions");
+      const requiredPermissions = requirement.permissions;
+      const missingPermissions =
+        requirement.mode === PermissionsMode.All
+          ? requiredPermissions.filter((permission) => !userPermissions.has(permission))
+          : [];
+      const detail =
+        requirement.mode === PermissionsMode.All
+          ? `Missing permissions: ${missingPermissions.join(", ") || "unknown"}`
+          : `Requires any permission: ${requiredPermissions.join(", ") || "unknown"}`;
+      throw new ForbiddenException({
+        code: "INSUFFICIENT_PERMISSIONS",
+        message: "Insufficient permissions",
+        detail,
+        requiredPermissions,
+        permissionsMode: requirement.mode,
+        missingPermissions: missingPermissions.length > 0 ? missingPermissions : undefined
+      });
     }
 
     return true;

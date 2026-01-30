@@ -195,17 +195,21 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
             credentials: true,
             origin: corsOrigin
           },
-          subscriptions: {
-            "graphql-ws": {
-              onConnect: (context: { connectionParams?: unknown; extra: any }) => {
-                const { connectionParams, extra } = context;
-                extra.request = {
-                  headers: connectionParams ?? {},
-                  ip: extra?.socket?.remoteAddress
-                } as { headers: Record<string, unknown>; ip?: string };
+          ...(cfg.subscriptionsEnabled
+            ? {
+                subscriptions: {
+                  "graphql-ws": {
+                    onConnect: (context: { connectionParams?: unknown; extra: any }) => {
+                      const { connectionParams, extra } = context;
+                      extra.request = {
+                        headers: connectionParams ?? {},
+                        ip: extra?.socket?.remoteAddress
+                      } as { headers: Record<string, unknown>; ip?: string };
+                    }
+                  }
+                }
               }
-            }
-          },
+            : {}),
           buildSchemaOptions: {
             directives: [hasPermissionDirective, complexityDirective]
           },
@@ -272,21 +276,22 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     ProcessedItemPreviewLoader,
     GqlAuthGuard,
     GqlPermissionsGuard,
+    GraphqlRateLimitGuard,
     {
       provide: APP_INTERCEPTOR,
       useClass: DataLoaderInterceptor
     },
     {
       provide: APP_GUARD,
-      useClass: GqlAuthGuard
+      useExisting: GqlAuthGuard
     },
     {
       provide: APP_GUARD,
-      useClass: GqlPermissionsGuard
+      useExisting: GqlPermissionsGuard
     },
     {
       provide: APP_GUARD,
-      useClass: GraphqlRateLimitGuard
+      useExisting: GraphqlRateLimitGuard
     }
   ]
 })
