@@ -2,7 +2,6 @@
 import { RawItemModel, TaskLogModel, ProcessedItemModel } from "@modular/mongo";
 import { createHash } from "crypto";
 
-import type { Crawl4aiResponse } from "../../crawl/crawl4ai.client";
 import type { NewsPipelineConfig } from "../news-pipeline.config";
 import { NormalizedNewsPayloadSchema } from "../news-pipeline.schema";
 import { NewsPipelineService } from "../news-pipeline.service";
@@ -100,21 +99,12 @@ describe("NewsPipelineService", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
   };
 
-  const crawlClient = {
-    crawl: jest.fn(async () => {
-      const response: Crawl4aiResponse = {
-        results: [
-          {
-            url: "https://example.com/story",
-            markdown: "# Headline\nBody paragraph",
-            metadata: { title: "Headline" },
-            publishedAt: "2024-01-01T00:00:00Z",
-            success: true
-          }
-        ]
-      };
-      return response;
-    })
+  const defaultMarkdown = "# Headline\nBody paragraph";
+  const defaultCrawlResultId = "crawl-result-1";
+  const defaultMarkdownRef = "mongo-markdown-1";
+
+  const crawlExecution = {
+    runTask: jest.fn().mockResolvedValue({ inserted: 1, skipped: 0 })
   };
 
   const liteLlm = {
@@ -164,16 +154,6 @@ describe("NewsPipelineService", () => {
     }))
   };
 
-  const cache: any = {};
-  cache.get = jest.fn().mockResolvedValue(null);
-  cache.set = jest.fn().mockResolvedValue(undefined);
-  cache.del = jest.fn().mockResolvedValue(undefined);
-  cache.wrap = jest.fn(async (key: string, ttlSeconds: number, fn: () => Promise<any>) => {
-    const value = await fn();
-    await cache.set(key, value, ttlSeconds);
-    return value;
-  });
-
   const promptConfigService = {
     getConfig: jest.fn().mockResolvedValue(DEFAULT_NEWS_PROMPT_CONFIG)
   };
@@ -217,6 +197,12 @@ describe("NewsPipelineService", () => {
     article: {
       upsert: jest.fn().mockResolvedValue({ id: "article-1" })
     },
+    membership: {
+      findFirst: jest.fn().mockResolvedValue({ userId: "user-1" })
+    },
+    crawlTask: {
+      create: jest.fn().mockResolvedValue({ id: "crawl-task-1" })
+    },
     crawlResult: {
       findFirst: jest.fn().mockResolvedValue(null)
     },
@@ -244,14 +230,13 @@ describe("NewsPipelineService", () => {
   );
 
   const service = new NewsPipelineService(
-    crawlClient as any,
     liteLlm as any,
     configService as any,
     promptBuilder,
     promptConfigService as any,
     dedupeSettingsService as any,
-    cache as any,
-    prisma as any
+    prisma as any,
+    crawlExecution as any
   );
 
   const rawItemId = "507f1f77bcf86cd799439011";
@@ -300,6 +285,40 @@ describe("NewsPipelineService", () => {
     (RawItemModel.findById as jest.Mock).mockReturnValue({
       lean: jest.fn().mockResolvedValue(null)
     });
+
+    const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
+      CrawlResultContentModel: { findById: jest.Mock };
+    };
+
+    const defaultContentHash = createHash("sha256").update(defaultMarkdown).digest("hex");
+    prisma.crawlResult.findFirst.mockImplementation(async (args: any) => {
+      if (args?.where?.id) {
+        return {
+          id: defaultCrawlResultId,
+          sourceUrl: "https://example.com/story",
+          fetchedAt: new Date("2024-01-01T00:00:00Z"),
+          markdownRef: defaultMarkdownRef,
+          contentHash: defaultContentHash,
+          metadata: { title: "Headline" }
+        };
+      }
+
+      if (args?.where?.taskId) {
+        return { id: defaultCrawlResultId };
+      }
+
+      return null;
+    });
+
+    CrawlResultContentModel.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        markdown: defaultMarkdown,
+        markdownWithCitations: null,
+        referencesMarkdown: null,
+        crawlRunId: null,
+        metadata: { title: "Headline" }
+      })
+    });
     const findChain = {
       select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
@@ -330,37 +349,13 @@ describe("NewsPipelineService", () => {
     await service.process(job, raw);
     await flushOutbox();
 
-    expect(crawlClient.crawl).toHaveBeenCalledTimes(1);
+    expect(prisma.crawlTask.create).toHaveBeenCalledTimes(1);
+    expect(crawlExecution.runTask).toHaveBeenCalledTimes(1);
     expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
-    expect(cache.set).toHaveBeenCalledTimes(1);
     expect(promptConfigService.getConfig).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.create).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.delete).toHaveBeenCalledTimes(1);
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
-  });
-
-  it("uses raw_markdown when fit_markdown is empty", async () => {
-    const response: Crawl4aiResponse = {
-      results: [
-        {
-          url: "https://example.com/story",
-          markdown: {
-            fit_markdown: "",
-            raw_markdown: "# Headline\nBody paragraph",
-          },
-          metadata: { title: "Headline" },
-          publishedAt: "2024-01-01T00:00:00Z",
-          success: true,
-        },
-      ],
-    };
-    crawlClient.crawl.mockResolvedValueOnce(response);
-
-    await service.process(job, raw);
-    await flushOutbox();
-
-    const cachedValue = (cache.set as jest.Mock).mock.calls[0]?.[1] as { markdown?: unknown } | undefined;
-    expect(cachedValue?.markdown).toBe("# Headline\nBody paragraph");
   });
 
   it("falls back to crawled markdown when LLM omits cleaned_markdown", async () => {
@@ -441,13 +436,17 @@ describe("NewsPipelineService", () => {
     });
     await flushOutbox();
 
-    expect(crawlClient.crawl).not.toHaveBeenCalled();
+    expect(prisma.membership.findFirst).not.toHaveBeenCalled();
+    expect(prisma.crawlTask.create).not.toHaveBeenCalled();
+    expect(crawlExecution.runTask).not.toHaveBeenCalled();
     expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
     expect(prisma.crawlResult.findFirst).toHaveBeenCalledTimes(1);
     expect(CrawlResultContentModel.findById).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to crawling when stored crawl result is missing", async () => {
+    prisma.crawlResult.findFirst.mockResolvedValueOnce(null);
+
     await service.process(job, {
       ...raw,
       payload: {
@@ -459,7 +458,8 @@ describe("NewsPipelineService", () => {
     });
     await flushOutbox();
 
-    expect(crawlClient.crawl).toHaveBeenCalledTimes(1);
+    expect(prisma.crawlTask.create).toHaveBeenCalledTimes(1);
+    expect(crawlExecution.runTask).toHaveBeenCalledTimes(1);
   });
 
   it("reuses existing processed article when content hash matches", async () => {
@@ -704,16 +704,10 @@ describe("NewsPipelineService", () => {
     });
   });
 
-  it("throws when crawl returns no successful results", async () => {
-    crawlClient.crawl.mockResolvedValueOnce({
-      results: [
-        { url: "https://example.com", markdown: "", success: false }
-      ]
-    });
+  it("throws when crawl task produces no results", async () => {
+    prisma.crawlResult.findFirst.mockResolvedValue(null);
 
-    await expect(service.process(job, raw)).rejects.toThrow(
-      "crawl4ai returned no successful article"
-    );
+    await expect(service.process(job, raw)).rejects.toThrow("crawl task produced no results");
   });
 
   it("normalizes payloads via schema parsing", () => {

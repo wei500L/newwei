@@ -19,16 +19,13 @@ import {
 import { Types } from "mongoose";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 
 import { extractFirstJson, safeJsonParseFromText } from "../../common/llm-json";
 import { ItemStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
-import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { CrawlExecutionService } from "../crawl/crawl-execution.service";
-import { Crawl4aiClient } from "../crawl/crawl4ai.client";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { LiteLlmService } from "./litellm.service";
@@ -41,18 +38,12 @@ import {
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import {
-  Crawl4aiResponseSchema,
-  ParsedCrawl4aiArticle,
-  ParsedCrawl4aiResponse,
-} from "./news-pipeline.crawl.schema";
-import {
   CleanedNewsSchema,
   CleanedNews,
   NormalizedNewsPayload,
   NormalizedNewsPayloadSchema,
 } from "./news-pipeline.schema";
 import {
-  CrawlCacheEntry,
   PipelineJobContext,
   RawPipelineItem,
 } from "./news-pipeline.types";
@@ -179,7 +170,6 @@ const MAX_LLM_DEDUPE_CANDIDATE_CHARS = 1_200;
 @Injectable()
 export class NewsPipelineService implements OnModuleDestroy {
   private readonly logger = createLogger({ name: "news-pipeline" });
-  private readonly crawlCachePrefix = "news:crawl:";
   private readonly outboxRetryBaseDelayMs = 30_000;
   private readonly outboxStaleLockMs = 5 * 60_000;
   private readonly outboxBatchSize = 10;
@@ -191,16 +181,14 @@ export class NewsPipelineService implements OnModuleDestroy {
   private readonly crawlActorByOrgId = new Map<string, string>();
 
   constructor(
-    private readonly crawlClient: Crawl4aiClient,
     private readonly liteLlm: LiteLlmService,
     private readonly configService: NewsPipelineConfigService,
     private readonly promptBuilder: NewsPromptBuilder,
     private readonly promptConfig: NewsPromptConfigService,
     private readonly dedupeSettings: NewsDedupeSettingsService,
-    private readonly cache: CacheService,
     private readonly prisma: PrismaService,
+    private readonly crawlExecution: CrawlExecutionService,
     @Optional() private readonly vectorClient?: VectorClientService,
-    @Optional() private readonly crawlExecution?: CrawlExecutionService,
   ) {
     this.outboxEventEmitter.on(
       OUTBOX_DELIVERY_REQUESTED_EVENT,
@@ -263,14 +251,10 @@ export class NewsPipelineService implements OnModuleDestroy {
     orgId: string;
     url: string;
     payload: NormalizedNewsPayload;
-  }): Promise<{ crawlResultId: string; crawlTaskId: string } | null> {
-    if (!this.crawlExecution) {
-      return null;
-    }
-
+  }): Promise<{ crawlResultId: string; crawlTaskId: string }> {
     const actorId = await this.resolveCrawlActorId(options.orgId);
     if (!actorId) {
-      return null;
+      throw new Error("crawl task actor unavailable");
     }
 
     const crawlOptions = this.buildCrawlTaskOptions(options.payload);
@@ -306,7 +290,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       }));
 
     if (!crawlResult) {
-      return null;
+      throw new Error("crawl task produced no results");
     }
 
     return { crawlResultId: crawlResult.id, crawlTaskId: crawlTask.id };
@@ -527,54 +511,23 @@ export class NewsPipelineService implements OnModuleDestroy {
     job: PipelineJobContext,
     payload: NormalizedNewsPayload
   ): Promise<CrawledArticle & { fromCache: boolean }> {
-    const crawlResultId = this.extractCrawlResultId(payload);
-    if (crawlResultId) {
-      try {
-        const stored = await this.fetchStoredCrawlResult(job.orgId, crawlResultId);
-        return {
-          ...stored,
-          fromCache: true,
-        };
-      } catch (error) {
-        this.logger.warn(
-          { error, orgId: job.orgId, crawlResultId, url: payload.url },
-          "Failed to load stored crawl result; falling back to crawl4ai",
-        );
-      }
-    }
-
-    const cacheKey = this.cacheKey(job.orgId, payload.url);
-    if (payload.forceRefresh) {
-      await this.cache.del(cacheKey);
-    } else {
-      const cached = await this.cache.get<CrawlCacheEntry>(cacheKey);
-      if (cached?.markdown) {
-        const cachedWithHash = {
-          ...cached,
-          contentHash: cached.contentHash ?? this.hashContent(cached.markdown),
-        };
-        const metadata =
-          cachedWithHash.metadata &&
-          typeof cachedWithHash.metadata === "object" &&
-          !Array.isArray(cachedWithHash.metadata)
-            ? (cachedWithHash.metadata as Record<string, unknown>)
-            : {};
-        return {
-          sourceUrl: payload.url,
-          markdown: cachedWithHash.markdown,
-          markdownWithCitations: cachedWithHash.markdownWithCitations ?? undefined,
-          referencesMarkdown: cachedWithHash.referencesMarkdown ?? undefined,
-          metadata,
-          publishedAt: cachedWithHash.publishedAt ?? null,
-          runId: cachedWithHash.runId ?? null,
-          fetchedAt: cachedWithHash.fetchedAt ?? new Date().toISOString(),
-          contentHash: cachedWithHash.contentHash,
-          fromCache: true,
-        };
-      }
-    }
-
     if (!payload.forceRefresh) {
+      const crawlResultId = this.extractCrawlResultId(payload);
+      if (crawlResultId) {
+        try {
+          const stored = await this.fetchStoredCrawlResult(job.orgId, crawlResultId);
+          return {
+            ...stored,
+            fromCache: true,
+          };
+        } catch (error) {
+          this.logger.warn(
+            { error, orgId: job.orgId, crawlResultId, url: payload.url },
+            "Failed to load stored crawl result; continuing with crawl task",
+          );
+        }
+      }
+
       const cacheTtlSeconds = this.configService.config.pipeline.cacheTtlSeconds;
       const since = new Date(Date.now() - cacheTtlSeconds * 1000);
       try {
@@ -594,62 +547,23 @@ export class NewsPipelineService implements OnModuleDestroy {
       } catch (error) {
         this.logger.warn(
           { error, orgId: job.orgId, url: payload.url },
-          "Failed to load recent stored crawl result; falling back to crawl4ai",
+          "Failed to load recent stored crawl result; continuing with crawl task",
         );
       }
     }
 
-    if (this.crawlExecution) {
-      try {
-        const created = await this.crawlViaCrawlTask({
-          orgId: job.orgId,
-          url: payload.url,
-          payload,
-        });
-        if (created) {
-          const stored = await this.fetchStoredCrawlResult(job.orgId, created.crawlResultId);
-          payload.metadata.crawlResultId = created.crawlResultId;
-          payload.metadata.crawlTaskId = created.crawlTaskId;
-          return {
-            ...stored,
-            fromCache: false,
-          };
-        }
-      } catch (error) {
-        this.logger.warn(
-          { error, orgId: job.orgId, url: payload.url },
-          "Failed to crawl via crawl task; falling back to crawl4ai",
-        );
-      }
-    }
+    const created = await this.crawlViaCrawlTask({
+      orgId: job.orgId,
+      url: payload.url,
+      payload,
+    });
 
-    let executedCrawl = false;
-    const normalized = await this.cache.wrap(
-      cacheKey,
-      this.configService.config.pipeline.cacheTtlSeconds,
-      async () => {
-        executedCrawl = true;
-        const crawlResponse = await this.executeCrawl(payload);
-        const article = this.pickSuccessfulArticle(crawlResponse.results);
-        return this.normalizeArticle(
-          article,
-          payload.url,
-          crawlResponse.runId ?? null,
-        );
-      },
-      {
-        lockTtlMs: this.getCrawlLockTtlMs(),
-        retryDelayMs: 100,
-        maxWaitMs: this.getCrawlLockTtlMs(),
-      },
-    );
-    const normalizedWithHash = {
-      ...normalized,
-      contentHash: normalized.contentHash ?? this.hashContent(normalized.markdown),
-    };
+    const stored = await this.fetchStoredCrawlResult(job.orgId, created.crawlResultId);
+    payload.metadata.crawlResultId = created.crawlResultId;
+    payload.metadata.crawlTaskId = created.crawlTaskId;
     return {
-      ...normalizedWithHash,
-      fromCache: !executedCrawl,
+      ...stored,
+      fromCache: false,
     };
   }
 
@@ -745,111 +659,6 @@ export class NewsPipelineService implements OnModuleDestroy {
       fetchedAt,
       contentHash,
     };
-  }
-
-  private async executeCrawl(payload: NormalizedNewsPayload): Promise<ParsedCrawl4aiResponse> {
-    const options = this.buildCrawlTaskOptions(payload);
-    const request = {
-      url: payload.url,
-      keywords: payload.keywords.length > 0 ? payload.keywords : undefined,
-      options,
-    };
-    const response = await this.retry(
-      async () => this.crawlClient.crawl(request),
-      3,
-      2_000,
-    );
-    return Crawl4aiResponseSchema.parse(response);
-  }
-
-  private pickSuccessfulArticle(results: ParsedCrawl4aiArticle[]) {
-    const article = results.find((result) => result.success !== false);
-    if (!article) {
-      throw new Error("crawl4ai returned no successful article");
-    }
-    return article;
-  }
-
-  private normalizeArticle(
-    article: ParsedCrawl4aiArticle,
-    url: string,
-    runId?: string | null,
-  ): CrawledArticle {
-    const markdown = this.extractMarkdown(article);
-    if (!markdown) {
-      throw new Error("Crawl result missing markdown");
-    }
-    const contentHash = this.hashContent(markdown);
-    const markdownRecord =
-      typeof article.markdown === "string" || !article.markdown ? null : article.markdown;
-
-    const markdownWithCitations =
-      typeof markdownRecord?.markdown_with_citations === "string"
-        ? markdownRecord.markdown_with_citations
-        : typeof markdownRecord?.markdownWithCitations === "string"
-          ? markdownRecord.markdownWithCitations
-          : undefined;
-
-    const referencesMarkdown =
-      typeof markdownRecord?.references_markdown === "string"
-        ? markdownRecord.references_markdown
-        : typeof markdownRecord?.referencesMarkdown === "string"
-          ? markdownRecord.referencesMarkdown
-          : undefined;
-
-    const metadata =
-      article.metadata && typeof article.metadata === "object" && !Array.isArray(article.metadata)
-        ? (article.metadata as Record<string, unknown>)
-        : {};
-
-    return {
-      sourceUrl: article.url ?? url,
-      markdown,
-      markdownWithCitations,
-      referencesMarkdown,
-      metadata,
-      publishedAt: article.publishedAt ?? null,
-      runId: article.success === false ? null : (runId ?? null),
-      fetchedAt: new Date().toISOString(),
-      contentHash,
-    };
-  }
-
-  private extractMarkdown(article: ParsedCrawl4aiArticle) {
-    if (!article) {
-      return "";
-    }
-
-    const pickNonEmpty = (...candidates: unknown[]) => {
-      for (const candidate of candidates) {
-        if (typeof candidate !== "string") {
-          continue;
-        }
-        const trimmed = candidate.trim();
-        if (trimmed.length > 0) {
-          return trimmed;
-        }
-      }
-      return "";
-    };
-
-    if (typeof article.markdown === "string") {
-      return pickNonEmpty(article.markdown);
-    }
-
-    if (article.markdown) {
-      const record = article.markdown;
-      return pickNonEmpty(
-        record.fit_markdown,
-        record.fitMarkdown,
-        record.raw_markdown,
-        record.rawMarkdown,
-        record.markdown,
-        record.text,
-      );
-    }
-
-    return pickNonEmpty(article.text);
   }
 
   private async cleanArticle(
@@ -2476,11 +2285,6 @@ export class NewsPipelineService implements OnModuleDestroy {
     return Types.ObjectId.isValid(ref) ? ref : null;
   }
 
-  private cacheKey(orgId: string, url: string) {
-    const hash = this.hashContent(url);
-    return `${this.crawlCachePrefix}${orgId}:${hash}`;
-  }
-
   private hashContent(content: string) {
     return createHash("sha256").update(content).digest("hex");
   }
@@ -2501,11 +2305,6 @@ export class NewsPipelineService implements OnModuleDestroy {
     return trimmed.slice(0, 512);
   }
 
-  private getCrawlLockTtlMs() {
-    const timeoutMs = this.configService.config.crawl4ai.timeoutMs;
-    return Math.max(timeoutMs + 5_000, 10_000);
-  }
-
   private isDuplicateKeyError(error: unknown) {
     return Boolean(
       error &&
@@ -2524,31 +2323,6 @@ export class NewsPipelineService implements OnModuleDestroy {
       baseDelayMs * 2 ** Math.max(Math.min(attempt, maxAttempts) - 1, 0);
     const jitterFactor = 0.5 + Math.random(); // add jitter to avoid synchronized retries
     return Math.round(exponentialDelay * jitterFactor);
-  }
-
-  private async retry<T>(
-    fn: () => Promise<T>,
-    attempts: number,
-    delayMs: number,
-  ) {
-    let tries = 0;
-    let lastError: unknown;
-    while (tries < attempts) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error;
-        tries += 1;
-        if (tries >= attempts) {
-          throw error;
-        }
-        const backoffDelay = this.computeBackoffDelay(delayMs, tries, attempts);
-        await sleep(backoffDelay);
-      }
-    }
-    throw lastError instanceof Error
-      ? lastError
-      : new Error("operation failed");
   }
 
   private async runStage<T>(
