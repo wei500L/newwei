@@ -104,6 +104,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlSettingsService,
     CrawlTaskService,
     CrawlExecutionService,
+    CrawlQueueService,
     CrawlResultService,
     CrawlMetadataService,
     Crawl4aiClient,

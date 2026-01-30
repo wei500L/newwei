@@ -2,7 +2,7 @@ import { TaskLogModel } from "@modular/mongo";
 import { createLogger, sanitizeError } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import type { CrawlTask, Prisma } from "@prisma/client";
-import { NotificationType } from "@prisma/client";
+import { NotificationType, PipelineJobStatus } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { EnvService } from "../config/config.service";
@@ -54,6 +54,7 @@ export interface CrawlExecutionRetryContext {
 @Injectable()
 export class CrawlExecutionService {
   private readonly retryableStatusCodes = new Set([408, 423, 425, 429, 500, 502, 503, 504]);
+  private readonly pipelineJobIdMaxLength = 128;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -77,6 +78,9 @@ export class CrawlExecutionService {
         skipped: 0
       };
     }
+
+    const pipelineJobId = this.extractPipelineJobId(task.config);
+    const sourceId = this.extractPipelineSourceId(task.config);
 
     await this.prisma.crawlTask.update({
       where: { id: task.id },
@@ -180,6 +184,10 @@ export class CrawlExecutionService {
         summary.retryableFailures = failureRetryableCount;
       }
 
+      if (pipelineJobId && summary.inserted === 0 && summary.skipped === 0) {
+        throw new Error("crawl task produced no results");
+      }
+
       await this.prisma.crawlTask.update({
         where: { id: task.id },
         data: {
@@ -265,6 +273,39 @@ export class CrawlExecutionService {
           nextRetryAt: nextRetryAt ? nextRetryAt.toISOString() : null
         }
       });
+
+      if (pipelineJobId) {
+        try {
+          await this.prisma.pipelineJob.updateMany({
+            where: { id: pipelineJobId },
+            data: {
+              status: shouldRetry ? PipelineJobStatus.delayed : PipelineJobStatus.failed,
+              completedAt: shouldRetry ? null : new Date(),
+              error: message,
+              attempts: typeof attempt === "number" && Number.isFinite(attempt) ? Math.max(0, attempt) : 0,
+            }
+          });
+        } catch (pipelineError) {
+          logger.warn(
+            { pipelineError, pipelineJobId, taskId: task.id, orgId },
+            "Failed to update pipeline job status for crawl failure"
+          );
+        }
+      }
+
+      if (sourceId && pipelineJobId && !shouldRetry) {
+        try {
+          await this.markSourceFailureState({
+            sourceId,
+            failureAt: new Date(),
+          });
+        } catch (sourceError) {
+          logger.warn(
+            { sourceError, sourceId, pipelineJobId, taskId: task.id, orgId },
+            "Failed to update news source failure state for crawl failure"
+          );
+        }
+      }
 
       if (triggeredById && !shouldRetry) {
         await this.safeNotifyCrawl(
@@ -1609,6 +1650,101 @@ export class CrawlExecutionService {
     return ["timeout", "temporarily", "rate limit", "connection reset", "connection refused"].some((needle) =>
       normalized.includes(needle)
     );
+  }
+
+  private extractPipelineJobId(config: Prisma.JsonValue | null): string | null {
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
+      return null;
+    }
+    const raw = (config as Record<string, unknown>).pipelineJobId;
+    const trimmed = typeof raw === "string" ? raw.trim() : "";
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed.slice(0, this.pipelineJobIdMaxLength);
+  }
+
+  private extractPipelineSourceId(config: Prisma.JsonValue | null): string | null {
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
+      return null;
+    }
+    const record = config as Record<string, unknown>;
+    const directSourceIdRaw = record.sourceId;
+    const directSourceId = typeof directSourceIdRaw === "string" ? directSourceIdRaw.trim() : "";
+    if (directSourceId) {
+      return directSourceId;
+    }
+
+    const itemPayload = record.itemPayload;
+    if (!itemPayload || typeof itemPayload !== "object" || Array.isArray(itemPayload)) {
+      return null;
+    }
+    const metadata = (itemPayload as Record<string, unknown>).metadata;
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return null;
+    }
+    const raw = (metadata as Record<string, unknown>).sourceId;
+    const trimmed = typeof raw === "string" ? raw.trim() : "";
+    return trimmed ? trimmed : null;
+  }
+
+  private computeExponentialBackoffDelayMs(baseDelayMs: number, attempt: number, maxDelayMs: number) {
+    const normalizedAttempt = Math.max(1, Math.floor(attempt));
+    const exponential = baseDelayMs * 2 ** Math.max(0, normalizedAttempt - 1);
+    const capped = Math.min(exponential, maxDelayMs);
+    const jitterFactor = 0.75 + Math.random() * 0.5;
+    return Math.round(capped * jitterFactor);
+  }
+
+  private async markSourceFailureState(options: { sourceId: string; failureAt: Date }) {
+    const cfg = this.env.newsSourceSchedulerConfig;
+    const threshold = Math.max(0, Math.floor(cfg.circuitBreakerThreshold));
+
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.newsSource.findUnique({
+        where: { id: options.sourceId },
+        select: { consecutiveFailures: true, isActive: true },
+      });
+      if (!existing?.isActive) {
+        return;
+      }
+
+      const previousFailures = Number(existing.consecutiveFailures ?? 0);
+      const consecutiveFailures = previousFailures + 1;
+
+      const retryDelayMs = this.computeExponentialBackoffDelayMs(
+        cfg.failureRecoveryDelayMs,
+        consecutiveFailures,
+        cfg.failureMaxDelayMs,
+      );
+      const retryAt = new Date(options.failureAt.getTime() + retryDelayMs);
+
+      let circuitOpenUntil: Date | null = null;
+      if (threshold > 0 && consecutiveFailures >= threshold) {
+        const circuitAttempt = consecutiveFailures - threshold + 1;
+        const circuitDelayMs = this.computeExponentialBackoffDelayMs(
+          cfg.circuitBreakerBaseDelayMs,
+          circuitAttempt,
+          cfg.circuitBreakerMaxDelayMs,
+        );
+        circuitOpenUntil = new Date(options.failureAt.getTime() + circuitDelayMs);
+      }
+
+      const nextRunAt =
+        circuitOpenUntil && circuitOpenUntil.getTime() > retryAt.getTime()
+          ? circuitOpenUntil
+          : retryAt;
+
+      await tx.newsSource.update({
+        where: { id: options.sourceId },
+        data: {
+          lastFailureAt: options.failureAt,
+          consecutiveFailures,
+          circuitOpenUntil,
+          nextRunAt,
+        },
+      });
+    });
   }
 
   private pickNumber(source: Record<string, unknown> | undefined, keys: string[]): number | undefined {
