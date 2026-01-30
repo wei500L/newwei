@@ -25,7 +25,8 @@ import {
   Typography,
 } from "antd";
 import type { FormInstance } from "antd/es/form";
-import { useState } from "react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import dayjs from "@/lib/dayjs";
@@ -37,6 +38,9 @@ interface CreateCrawlTaskDrawerProps {
   open: boolean;
   loading: boolean;
   canWriteItems: boolean;
+  title?: ReactNode;
+  submitLabel?: ReactNode;
+  defaultTemplateKey?: string;
   onClose: () => void;
   onSubmit: (values: CreateCrawlTaskFormValues) => void | Promise<void>;
 }
@@ -73,6 +77,9 @@ export function CreateCrawlTaskDrawer({
   open,
   loading,
   canWriteItems,
+  title,
+  submitLabel,
+  defaultTemplateKey,
   onClose,
   onSubmit,
 }: CreateCrawlTaskDrawerProps) {
@@ -107,7 +114,7 @@ export function CreateCrawlTaskDrawer({
     setCurrentStep(currentStep - 1);
   };
 
-  const handleTemplateSelect = (templateKey: string) => {
+  const handleTemplateSelect = useCallback((templateKey: string) => {
     setSelectedTemplate(templateKey);
     // Set default values based on template
     switch (templateKey) {
@@ -168,7 +175,25 @@ export function CreateCrawlTaskDrawer({
         });
         break;
     }
-  };
+  }, [canWriteItems, form]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const normalizedKey = defaultTemplateKey?.trim();
+    if (!normalizedKey) {
+      return;
+    }
+    if (normalizedKey === selectedTemplate) {
+      return;
+    }
+    const exists = TEMPLATES.some((template) => template.key === normalizedKey);
+    if (!exists) {
+      return;
+    }
+    handleTemplateSelect(normalizedKey);
+  }, [defaultTemplateKey, handleTemplateSelect, open, selectedTemplate]);
 
   const resetAndClose = () => {
     setCurrentStep(0);
@@ -177,7 +202,7 @@ export function CreateCrawlTaskDrawer({
 
   return (
     <Drawer
-      title={t("crawl.createDrawer.title")}
+      title={title ?? t("crawl.createDrawer.title")}
       placement="right"
       width={600}
       open={open}
@@ -274,7 +299,7 @@ export function CreateCrawlTaskDrawer({
             )}
             {currentStep === 2 && (
               <Button type="primary" htmlType="submit" loading={loading}>
-                {t("crawl.createDrawer.submit")}
+                {submitLabel ?? t("crawl.createDrawer.submit")}
               </Button>
             )}
           </div>

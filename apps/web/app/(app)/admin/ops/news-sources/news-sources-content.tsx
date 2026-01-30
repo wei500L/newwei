@@ -1,5 +1,6 @@
 "use client";
 
+import { sanitizeCrawlOptions } from "@modular/utils";
 import {
   Alert,
   Button,
@@ -23,6 +24,8 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { CreateCrawlTaskDrawer } from "@/app/(app)/crawl/components/CreateCrawlTaskDrawer";
+import type { CreateCrawlTaskFormValues } from "@/app/(app)/crawl/types";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -156,6 +159,21 @@ const parseJsonField = (value: string | undefined, label: string) => {
   }
 };
 
+const inferSourceNameFromUrl = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    return parsed.hostname || trimmed;
+  } catch {
+    return trimmed;
+  }
+};
+
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
@@ -178,18 +196,22 @@ export function NewsSourcesContent() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
+  const canWriteItems = permissions.includes("items.write");
   const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [creatingFromTaskDrawer, setCreatingFromTaskDrawer] = useState(false);
   const [sources, setSources] = useState<NewsSourceRecord[]>([]);
   const [templates, setTemplates] = useState<CrawlTemplateRecord[]>([]);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [editingSource, setEditingSource] = useState<NewsSourceRecord | null>(null);
   const [modalFormValues, setModalFormValues] = useState<Partial<NewsSourceFormValues>>(
     NEWS_SOURCE_CREATE_INITIAL_VALUES
   );
   const [form] = Form.useForm<NewsSourceFormValues>();
+  const [createDrawerForm] = Form.useForm<CreateCrawlTaskFormValues>();
   const screens = Grid.useBreakpoint();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -276,8 +298,9 @@ export function NewsSourcesContent() {
 
   const openCreate = () => {
     setEditingSource(null);
-    setModalFormValues(NEWS_SOURCE_CREATE_INITIAL_VALUES);
-    setModalOpen(true);
+    setModalOpen(false);
+    createDrawerForm.resetFields();
+    setCreateDrawerOpen(true);
   };
 
   const openEdit = (source: NewsSourceRecord) => {
@@ -441,6 +464,63 @@ export function NewsSourcesContent() {
     }
 
     return Object.keys(config).length ? config : null;
+  };
+
+  const closeCreateDrawer = () => {
+    setCreateDrawerOpen(false);
+    createDrawerForm.resetFields();
+  };
+
+  const handleCreateFromTaskDrawer = async (values: CreateCrawlTaskFormValues) => {
+    setCreatingFromTaskDrawer(true);
+    let crawlOptions: ReturnType<typeof sanitizeCrawlOptions>;
+    try {
+      crawlOptions = sanitizeCrawlOptions(values);
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : "Invalid crawl options");
+      setCreatingFromTaskDrawer(false);
+      return;
+    }
+
+    const url = values.url.trim();
+    const name = values.displayName?.trim() || inferSourceNameFromUrl(url) || url;
+    const config: Record<string, unknown> = {};
+    if (values.keywords?.length) {
+      config.keywords = values.keywords;
+    }
+    if (Object.keys(crawlOptions).length > 0) {
+      config.crawlOptions = crawlOptions;
+    }
+
+    const payload = {
+      name,
+      url,
+      siteType: NEWS_SOURCE_CREATE_INITIAL_VALUES.siteType ?? "general",
+      language: "",
+      crawlTemplateId: null,
+      frequencySeconds: NEWS_SOURCE_CREATE_INITIAL_VALUES.frequencySeconds ?? 3600,
+      priority: NEWS_SOURCE_CREATE_INITIAL_VALUES.priority ?? 0,
+      isActive: NEWS_SOURCE_CREATE_INITIAL_VALUES.isActive ?? true,
+      config: Object.keys(config).length ? config : null,
+    };
+
+    try {
+      await apiClient.post("admin/news-sources", payload);
+      messageApi.success(
+        t("newsSources.messages.created", { defaultValue: "News source created." })
+      );
+      closeCreateDrawer();
+      await loadSources();
+    } catch (error) {
+      captureClientError("Failed to create news source (task drawer)", error);
+      messageApi.error(
+        error instanceof Error
+          ? error.message
+          : t("newsSources.errors.saveFailed", { defaultValue: "Failed to save news source." })
+      );
+    } finally {
+      setCreatingFromTaskDrawer(false);
+    }
   };
 
   const handleSubmit = async (values: NewsSourceFormValues) => {
@@ -1161,6 +1241,20 @@ export function NewsSourcesContent() {
           </Form.Item>
         </Modal>
       </Form>
+
+      {canManage ? (
+        <CreateCrawlTaskDrawer
+          form={createDrawerForm}
+          open={createDrawerOpen}
+          loading={creatingFromTaskDrawer}
+          canWriteItems={canWriteItems}
+          title={t("newsSources.actions.new", { defaultValue: "New source" })}
+          submitLabel={t("common.create", { defaultValue: "Create" })}
+          defaultTemplateKey="news"
+          onClose={closeCreateDrawer}
+          onSubmit={handleCreateFromTaskDrawer}
+        />
+      ) : null}
 
       <Modal
         open={previewOpen}
