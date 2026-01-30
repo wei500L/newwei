@@ -10,6 +10,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import type { EconomicSeriesInsightsMap, EconomicSeriesMap } from "@/hooks/useEconomicData";
 import dayjs from "@/lib/dayjs";
+import { normalizeUnit } from "@/lib/economic-units";
 
 import { getSeriesField } from "../utils/series";
 
@@ -78,7 +79,10 @@ export function EconomicChartCard({
 
     const percentChange = insight?.percentChange ?? fallbackPercentChange;
     const change = insight?.change ?? fallbackChange;
-    const unit = insight?.unit ?? fieldSeries.unit ?? record.unit;
+    const unit =
+      normalizeUnit(insight?.unit) ??
+      normalizeUnit(fieldSeries.unit) ??
+      normalizeUnit(record.unit);
 
     const message =
       insight?.message ??

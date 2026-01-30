@@ -7,8 +7,10 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: Tim
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
   market: getEconomicData(
@@ -19,8 +21,10 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: Tim
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
   resource: getEconomicData(
@@ -31,8 +35,10 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: Tim
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
   supply: getEconomicData(
@@ -43,8 +49,10 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: Tim
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
 }
@@ -63,8 +71,10 @@ query MetricDrillDownDetails(
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
   relatedAlerts: alertEvents(limit: 20) {

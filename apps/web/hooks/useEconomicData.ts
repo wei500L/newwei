@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import { useDashboardRangeStore } from "@/store/time-range";
 import type { ChartDataState } from "@/lib/chart-data-state";
+import { deriveUnitFromValueType, normalizeUnit } from "@/lib/economic-units";
 import {
   type EconomicSeriesInsightModel,
   type EconomicDataPointModel,
@@ -45,20 +46,29 @@ export type EconomicSeriesInsightsMap = Record<string, Record<string, EconomicSe
  * @param pointUnit - Unit from the current data point
  * @param currentUnit - Currently assigned unit (group or field level)
  * @param defaultUnit - Default unit from item configuration
+ * @param dataType - Data type of the economic series (used as a unit fallback)
  * @returns The resolved unit or null if none available
  */
 function resolveUnit(
   pointUnit: string | null,
   currentUnit: string | null | undefined,
-  defaultUnit: string | null
+  defaultUnit: string | null,
+  dataType: EconomicDataValueType
 ): string | null {
-  if (pointUnit && pointUnit !== currentUnit) {
-    return pointUnit;
+  const normalizedPointUnit = normalizeUnit(pointUnit);
+  const normalizedCurrentUnit = normalizeUnit(currentUnit);
+  const normalizedDefaultUnit = normalizeUnit(defaultUnit);
+
+  if (normalizedPointUnit && normalizedPointUnit !== normalizedCurrentUnit) {
+    return normalizedPointUnit;
   }
-  if (currentUnit) {
-    return currentUnit;
+  if (normalizedCurrentUnit) {
+    return normalizedCurrentUnit;
   }
-  return defaultUnit;
+  if (normalizedDefaultUnit) {
+    return normalizedDefaultUnit;
+  }
+  return deriveUnitFromValueType(dataType);
 }
 
 function normalizePointTimestamp(point: Pick<EconomicDataPointModel, "timestamp">): string {
@@ -99,21 +109,21 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
         existing ??
         ({
           name: point.item.displayName,
-          unit: resolveUnit(pointUnit, null, defaultUnit),
+          unit: resolveUnit(pointUnit, null, defaultUnit, point.dataType),
           metadata: point.item.metadata ?? null,
           dataType: point.dataType,
           fields: {}
         } satisfies EconomicSeriesGroup);
 
-      group.unit = resolveUnit(pointUnit, group.unit, defaultUnit);
+      group.unit = resolveUnit(pointUnit, group.unit, defaultUnit, point.dataType);
 
       const fieldSeries: EconomicSeriesField = group.fields[fieldKey] ?? {
         key: fieldKey,
         label: point.sourceField ?? point.item.displayName,
-        unit: resolveUnit(pointUnit, group.unit, defaultUnit),
+        unit: resolveUnit(pointUnit, group.unit, defaultUnit, point.dataType),
         values: []
       };
-      fieldSeries.unit = resolveUnit(pointUnit, fieldSeries.unit, group.unit);
+      fieldSeries.unit = resolveUnit(pointUnit, fieldSeries.unit, group.unit, point.dataType);
       fieldSeries.values.push({
         timestamp: normalizePointTimestamp(point),
         value: point.value

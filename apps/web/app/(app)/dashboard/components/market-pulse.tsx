@@ -10,6 +10,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import dayjs from "@/lib/dayjs";
+import { resolveEconomicUnit } from "@/lib/economic-units";
 import { resolveLocale, formatDateTime } from "@/lib/i18n";
 import {
   compareGranularity,
@@ -105,6 +106,8 @@ interface DataPoint {
   timestamp: string;
   value: number;
   unit?: string | null;
+  dataType?: string | null;
+  item?: { defaultUnit?: string | null } | null;
 }
 
 interface MarketPulseProps {
@@ -133,10 +136,15 @@ const processSeries = (data: DataPoint[] | undefined) => {
   const normalized = data
     .map((point) => {
       const ts = dayjs(point.timestamp).valueOf();
+      const unit = resolveEconomicUnit({
+        unit: point.unit ?? null,
+        defaultUnit: point.item?.defaultUnit ?? null,
+        dataType: point.dataType ?? null,
+      });
       return {
         ts,
         value: point.value,
-        unit: typeof point.unit === "string" && point.unit.trim() ? point.unit : undefined
+        unit: unit ?? undefined
       };
     })
     .filter((point) => Number.isFinite(point.ts) && Number.isFinite(point.value))

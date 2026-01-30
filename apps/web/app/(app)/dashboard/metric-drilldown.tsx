@@ -15,6 +15,7 @@ import { TimeGranularity, useMetricDrillDownDetailsQuery } from "@/graphql/gener
 import { createApiClient } from "@/lib/api-client";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
+import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
   compareGranularity,
   formatGranularityLabel,
@@ -155,6 +156,21 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [data]);
 
+  const seriesUnit = useMemo(() => {
+    const series = data?.history ?? [];
+    for (let i = series.length - 1; i >= 0; i -= 1) {
+      const point = series[i];
+      if (!point) continue;
+      const unit = resolveEconomicUnit({
+        unit: point.unit ?? null,
+        defaultUnit: point.item?.defaultUnit ?? null,
+        dataType: point.dataType ?? null,
+      });
+      if (unit) return unit;
+    }
+    return null;
+  }, [data?.history]);
+
   const historyData = useMemo(() => 
     data?.history?.map(point => ({
       timestamp: point.timestamp,
@@ -209,7 +225,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           const valueLabel = typeof value === "number" ? value : payload?.data;
           return [
             `<div style="font-weight:600;margin-bottom:6px;">${label}</div>`,
-            `<div>${valueLabel}</div>`,
+            `<div>${valueLabel}${seriesUnit ? ` ${seriesUnit}` : ""}</div>`,
             `<div style="color:#64748b;margin-top:6px;">Bucket: ${activeGranularityLabel}</div>`
           ].join("");
         }
@@ -239,7 +255,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         itemStyle: { color: '#1890ff' }
       }]
     };
-  }, [activeGranularityLabel, activeInterval, activeUiGranularity, historyData]);
+  }, [activeGranularityLabel, activeInterval, activeUiGranularity, historyData, seriesUnit]);
 
   const mapOption = useMemo<EChartsOption>(() => {
     if (!mapLoaded || !mapName) return {};
@@ -314,6 +330,11 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
             <Tag color="default" className="text-xs">
               Range: {range} ({formatDashboardDate(rangeStart)} to {formatDashboardDate(rangeEnd)})
             </Tag>
+            {seriesUnit ? (
+              <Tag color="default" className="text-xs">
+                Unit: {seriesUnit}
+              </Tag>
+            ) : null}
             <Tag color={granularityColor} className="text-xs">
               {granularityTagText}
             </Tag>
@@ -376,7 +397,10 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                           <Tag className="mt-1 mr-0" color={statusColor[event.status] ?? "default"}>
                             {event.status.toUpperCase()}
                           </Tag>
-                          <span className="text-xs text-gray-500 ml-2">Value: {event.metricValue}</span>
+                          <span className="text-xs text-gray-500 ml-2">
+                            Value: {event.metricValue}
+                            {seriesUnit ? ` ${seriesUnit}` : ""}
+                          </span>
                         </div>
                       )
                     }))}

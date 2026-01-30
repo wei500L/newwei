@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -2529,7 +2531,7 @@ export type DashboardHeroMetricsQueryVariables = Exact<{
 }>;
 
 
-export type DashboardHeroMetricsQuery = { __typename?: 'Query', conflict: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }>, market: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }>, resource: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }>, supply: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }> };
+export type DashboardHeroMetricsQuery = { __typename?: 'Query', conflict: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, market: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, resource: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, supply: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }> };
 
 export type MetricDrillDownDetailsQueryVariables = Exact<{
   category: Scalars['String']['input'];
@@ -2539,7 +2541,7 @@ export type MetricDrillDownDetailsQueryVariables = Exact<{
 }>;
 
 
-export type MetricDrillDownDetailsQuery = { __typename?: 'Query', history: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, item: { __typename?: 'EconomicDataItemModel', displayName: string } }>, relatedAlerts: Array<{ __typename?: 'AlertEventModel', id: string, severity: AlertSeverity, message?: string | null, triggeredAt: any, status: AlertEventStatus, metricValue: number, context?: any | null }> };
+export type MetricDrillDownDetailsQuery = { __typename?: 'Query', history: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, relatedAlerts: Array<{ __typename?: 'AlertEventModel', id: string, severity: AlertSeverity, message?: string | null, triggeredAt: any, status: AlertEventStatus, metricValue: number, context?: any | null }> };
 
 export type DashboardsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -3901,8 +3903,10 @@ export const DashboardHeroMetricsDocument = gql`
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
   market: getEconomicData(
@@ -3913,8 +3917,10 @@ export const DashboardHeroMetricsDocument = gql`
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
   resource: getEconomicData(
@@ -3925,8 +3931,10 @@ export const DashboardHeroMetricsDocument = gql`
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
   supply: getEconomicData(
@@ -3937,8 +3945,10 @@ export const DashboardHeroMetricsDocument = gql`
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
 }
@@ -3988,8 +3998,10 @@ export const MetricDrillDownDetailsDocument = gql`
     timestamp
     value
     unit
+    dataType
     item {
       displayName
+      defaultUnit
     }
   }
   relatedAlerts: alertEvents(limit: 20) {

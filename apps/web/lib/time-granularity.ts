@@ -253,3 +253,11 @@ export const inferGranularityFromTimestampsMs = (timestampsMs: number[]): UiTime
   if (diff <= 120 * day) return UiTimeGranularity.Quarter;
   return UiTimeGranularity.Year;
 };
+
+export const resolveActiveGranularityFromTimestampsMs = (
+  fallback: UiTimeGranularity,
+  timestampsMs: number[],
+): UiTimeGranularity => {
+  const inferred = inferGranularityFromTimestampsMs(timestampsMs);
+  return inferred === UiTimeGranularity.Unknown ? fallback : inferred;
+};

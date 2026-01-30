@@ -4,6 +4,7 @@ import {
   inferGranularityFromTimestampsMs,
   intervalToGranularity,
   parseInterval,
+  resolveActiveGranularityFromTimestampsMs,
   resolveDefaultGranularityForRangePreset,
   UiTimeGranularity,
 } from "../lib/time-granularity";
@@ -80,5 +81,9 @@ describe("time-granularity helpers", () => {
     expect(inferGranularityFromTimestampsMs([0, 7 * day, 14 * day])).toBe(UiTimeGranularity.Week);
     expect(inferGranularityFromTimestampsMs([0, 30 * day, 60 * day])).toBe(UiTimeGranularity.Month);
   });
-});
 
+  it("falls back to requested granularity when data cadence cannot be inferred", () => {
+    expect(resolveActiveGranularityFromTimestampsMs(UiTimeGranularity.Month, [])).toBe(UiTimeGranularity.Month);
+    expect(resolveActiveGranularityFromTimestampsMs(UiTimeGranularity.Month, [0])).toBe(UiTimeGranularity.Month);
+  });
+});

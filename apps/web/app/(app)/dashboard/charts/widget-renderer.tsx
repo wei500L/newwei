@@ -9,10 +9,12 @@ import { DashboardChart } from "@/components/echart";
 import type { TimeGranularity } from "@/graphql/generated";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
+import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
   compareGranularity,
   formatGranularityLabel,
   resolveDefaultGranularityForRangePreset,
+  resolveActiveGranularityFromTimestampsMs,
   timeGranularityToUiGranularity,
   uiGranularityToInterval,
 } from "@/lib/time-granularity";
@@ -31,6 +33,11 @@ const ECONOMIC_WIDGET_QUERY = gql`
     ) {
       timestamp
       value
+      unit
+      dataType
+      item {
+        defaultUnit
+      }
     }
   }
 `;
@@ -67,8 +74,22 @@ export interface WidgetRenderProps {
   title?: string;
   dataSource: string;
   color?: string;
-  data?: { timestamp: string | number; value: number }[];
+  data?: {
+    timestamp: string | number;
+    value: number;
+    unit?: string | null;
+    dataType?: string | null;
+    item?: { defaultUnit?: string | null } | null;
+  }[];
 }
+
+type ResolvedDataPoint = {
+  timestamp: string | number;
+  value: number;
+  unit?: string | null;
+  dataType?: string | null;
+  item?: { defaultUnit?: string | null } | null;
+};
 
 export function WidgetRenderer({
   type,
@@ -86,17 +107,6 @@ export function WidgetRenderer({
   );
   const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
   const chosenUiGranularity = timeGranularityToUiGranularity(chosenGranularity);
-  const chosenGranularityLabel = formatGranularityLabel(chosenUiGranularity);
-  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
-  const granularityCompare = compareGranularity(chosenUiGranularity, defaultGranularity);
-  const granularityColor =
-    granularityCompare === "match"
-      ? "geekblue"
-      : granularityCompare === "coarser"
-        ? "orange"
-        : granularityCompare === "finer"
-          ? "cyan"
-      : "default";
   const windowLabel = formatDashboardWindowLabel(start, end);
   const {
     data: apiData,
@@ -116,20 +126,67 @@ export function WidgetRenderer({
     fetchPolicy: "cache-first",
   });
 
-  const resolvedData:
-    | { timestamp: string | number; value: number }[]
-    | undefined =
+  const resolvedData: ResolvedDataPoint[] | undefined =
     data ??
     apiData?.getEconomicData?.map(
-      (p: { timestamp: string; value: number }) => ({
+      (p: {
+        timestamp: string;
+        value: number;
+        unit?: string | null;
+        dataType?: string | null;
+        item?: { defaultUnit?: string | null } | null;
+      }) => ({
         timestamp: p.timestamp,
         value: p.value,
+        unit: p.unit ?? null,
+        dataType: p.dataType ?? null,
+        item: p.item ?? null,
       }),
     );
 
+  const timestampsMs = useMemo(
+    () =>
+      (resolvedData ?? [])
+        .map((point) => dayjs(point.timestamp).valueOf())
+        .filter((value) => Number.isFinite(value)),
+    [resolvedData],
+  );
+  const activeUiGranularity = useMemo(
+    () => resolveActiveGranularityFromTimestampsMs(chosenUiGranularity, timestampsMs),
+    [chosenUiGranularity, timestampsMs],
+  );
+
+  const chosenGranularityLabel = formatGranularityLabel(chosenUiGranularity);
+  const activeGranularityLabel = formatGranularityLabel(activeUiGranularity);
+  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
+  const granularityCompare = compareGranularity(activeUiGranularity, defaultGranularity);
+  const granularityColor =
+    granularityCompare === "match"
+      ? "geekblue"
+      : granularityCompare === "coarser"
+        ? "orange"
+        : granularityCompare === "finer"
+          ? "cyan"
+          : "default";
+
+  const seriesUnit = useMemo(() => {
+    const series = resolvedData ?? [];
+    for (let i = series.length - 1; i >= 0; i -= 1) {
+      const point = series[i];
+      if (!point) continue;
+      const unit = resolveEconomicUnit({
+        unit: point.unit ?? null,
+        defaultUnit: point.item?.defaultUnit ?? null,
+        dataType: point.dataType ?? null,
+      });
+      if (unit) return unit;
+    }
+    return null;
+  }, [resolvedData]);
+
   const option = useMemo(() => {
     const seriesData = resolvedData?.map((p) => [p.timestamp, p.value]) ?? [];
-    const interval = uiGranularityToInterval(chosenUiGranularity);
+    const interval = uiGranularityToInterval(activeUiGranularity);
     const common = {
       title: { text: title ?? dataSource },
       tooltip:
@@ -168,8 +225,8 @@ export function WidgetRenderer({
 
                 return [
                   `<div style="font-weight:600;margin-bottom:6px;">${rangeLabel}</div>`,
-                  `<div>${Number.isFinite(valueNumber) ? valueNumber.toFixed(2) : String(value ?? "")}</div>`,
-                  `<div style="color:#64748b;margin-top:6px;">Bucket: ${chosenGranularityLabel}</div>`,
+                  `<div>${Number.isFinite(valueNumber) ? valueNumber.toFixed(2) : String(value ?? "")}${seriesUnit ? ` ${seriesUnit}` : ""}</div>`,
+                  `<div style="color:#64748b;margin-top:6px;">Bucket: ${activeGranularityLabel}</div>`,
                 ].join("");
               }
             },
@@ -248,7 +305,7 @@ export function WidgetRenderer({
           ],
         };
     }
-  }, [chosenGranularityLabel, chosenUiGranularity, color, dataSource, resolvedData, title, type]);
+  }, [activeGranularityLabel, activeUiGranularity, color, dataSource, resolvedData, seriesUnit, title, type]);
 
   const theme = useMemo(
     () =>
@@ -307,11 +364,19 @@ export function WidgetRenderer({
         <Tag color="default" className="text-xs">
           Window: {windowLabel}
         </Tag>
+        {seriesUnit ? (
+          <Tag color="default" className="text-xs">
+            Unit: {seriesUnit}
+          </Tag>
+        ) : null}
         <Tag color={granularityColor} className="text-xs">
           Aggregation:{" "}
-          {granularityCompare === "match" || defaultGranularity === chosenUiGranularity
-            ? chosenGranularityLabel
-            : `${chosenGranularityLabel} (default ${defaultGranularityLabel})`}
+          {granularityCompare === "match" || defaultGranularity === activeUiGranularity
+            ? activeGranularityLabel
+            : `${activeGranularityLabel} (default ${defaultGranularityLabel})`}
+          {activeUiGranularity !== chosenUiGranularity
+            ? ` (requested ${chosenGranularityLabel})`
+            : ""}
         </Tag>
       </Space>
       <DashboardChart

@@ -9,10 +9,12 @@ import { TimeGranularity, useEconomicDataQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
+import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
   compareGranularity,
   formatGranularityLabel,
   resolveDefaultGranularityForRangePreset,
+  resolveActiveGranularityFromTimestampsMs,
   timeGranularityToUiGranularity,
   uiGranularityToInterval,
 } from "@/lib/time-granularity";
@@ -49,18 +51,6 @@ export function DrilldownChart({
   const selectedGranularity = GRANS[level];
   const selectedUiGranularity = timeGranularityToUiGranularity(selectedGranularity);
   const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
-  const granularityCompare = compareGranularity(selectedUiGranularity, defaultGranularity);
-  const granularityColor =
-    granularityCompare === "match"
-      ? "geekblue"
-      : granularityCompare === "coarser"
-        ? "orange"
-        : granularityCompare === "finer"
-          ? "cyan"
-          : "default";
-  const selectedGranularityLabel = formatGranularityLabel(selectedUiGranularity);
-  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
-  const windowLabel = formatDashboardWindowLabel(start, end);
 
   const {
     data,
@@ -79,6 +69,44 @@ export function DrilldownChart({
   const isError = Boolean(error);
   const points = data?.getEconomicData ?? [];
 
+  const timestampsMs = useMemo(
+    () =>
+      points
+        .map((point) => dayjs(point.timestamp).valueOf())
+        .filter((value) => Number.isFinite(value)),
+    [points],
+  );
+  const activeUiGranularity = useMemo(
+    () => resolveActiveGranularityFromTimestampsMs(selectedUiGranularity, timestampsMs),
+    [selectedUiGranularity, timestampsMs],
+  );
+  const granularityCompare = compareGranularity(activeUiGranularity, defaultGranularity);
+  const granularityColor =
+    granularityCompare === "match"
+      ? "geekblue"
+      : granularityCompare === "coarser"
+        ? "orange"
+        : granularityCompare === "finer"
+          ? "cyan"
+          : "default";
+  const selectedGranularityLabel = formatGranularityLabel(selectedUiGranularity);
+  const activeGranularityLabel = formatGranularityLabel(activeUiGranularity);
+  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
+  const windowLabel = formatDashboardWindowLabel(start, end);
+  const seriesUnit = useMemo(() => {
+    for (let i = points.length - 1; i >= 0; i -= 1) {
+      const point = points[i];
+      if (!point) continue;
+      const unit = resolveEconomicUnit({
+        unit: point.unit ?? null,
+        defaultUnit: point.item?.defaultUnit ?? null,
+        dataType: point.dataType ?? null,
+      });
+      if (unit) return unit;
+    }
+    return null;
+  }, [points]);
+
   const breadcrumbs = GRANS.slice(0, level + 1).map((g, idx) => ({
     title: t(`dashboard.granularity.${g}`),
     onClick: () => setLevel(idx),
@@ -90,7 +118,7 @@ export function DrilldownChart({
         name: dayjs(point.timestamp).toISOString(),
         value: [point.timestamp, point.value],
       })) ?? [];
-    const interval = uiGranularityToInterval(selectedUiGranularity);
+    const interval = uiGranularityToInterval(activeUiGranularity);
     return {
       title: { text: title },
       tooltip: {
@@ -122,8 +150,8 @@ export function DrilldownChart({
                 : Number.NaN;
           return [
             `<div style="font-weight:600;margin-bottom:6px;">${bucketLabel}</div>`,
-            `<div>${Number.isFinite(valueNumber) ? valueNumber : String(value ?? "")}</div>`,
-            `<div style="color:#64748b;margin-top:6px;">Bucket: ${selectedGranularityLabel}</div>`,
+            `<div>${Number.isFinite(valueNumber) ? valueNumber : String(value ?? "")}${seriesUnit ? ` ${seriesUnit}` : ""}</div>`,
+            `<div style="color:#64748b;margin-top:6px;">Bucket: ${activeGranularityLabel}</div>`,
           ].join("");
         }
       },
@@ -169,7 +197,7 @@ export function DrilldownChart({
         },
       ],
     };
-  }, [category, colors, points, selectedGranularityLabel, selectedUiGranularity, title]);
+  }, [activeGranularityLabel, activeUiGranularity, category, colors, points, seriesUnit, title]);
 
   return (
     <Card
@@ -184,11 +212,19 @@ export function DrilldownChart({
         <Tag color="default" className="text-xs">
           Window: {windowLabel}
         </Tag>
+        {seriesUnit ? (
+          <Tag color="default" className="text-xs">
+            Unit: {seriesUnit}
+          </Tag>
+        ) : null}
         <Tag color={granularityColor} className="text-xs">
           Aggregation:{" "}
-          {granularityCompare === "match" || defaultGranularity === selectedUiGranularity
-            ? selectedGranularityLabel
-            : `${selectedGranularityLabel} (default ${defaultGranularityLabel})`}
+          {granularityCompare === "match" || defaultGranularity === activeUiGranularity
+            ? activeGranularityLabel
+            : `${activeGranularityLabel} (default ${defaultGranularityLabel})`}
+          {activeUiGranularity !== selectedUiGranularity
+            ? ` (requested ${selectedGranularityLabel})`
+            : ""}
         </Tag>
       </Space>
       {isError ? (
