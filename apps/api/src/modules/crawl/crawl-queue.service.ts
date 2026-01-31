@@ -104,4 +104,82 @@ export class CrawlQueueService {
     }
     return taskIds;
   }
+
+  async listQueuedTaskIds(scanLimit = 5_000): Promise<Set<string>> {
+    const states = ["waiting", "delayed", "failed", "paused"] as const;
+    const pageSize = 500;
+    const taskIds = new Set<string>();
+    for (let start = 0; start < scanLimit; start += pageSize) {
+      const end = Math.min(scanLimit - 1, start + pageSize - 1);
+      const jobs = await this.crawlQueue.getJobs([...states], start, end);
+      for (const job of jobs) {
+        const taskId = job.data?.taskId;
+        if (typeof taskId === "string" && taskId.length > 0) {
+          taskIds.add(taskId);
+        }
+      }
+      if (jobs.length < pageSize) {
+        break;
+      }
+    }
+    return taskIds;
+  }
+
+  async removeQueuedJobsForTasks(taskIds: Set<string>, scanLimit = 5_000) {
+    if (taskIds.size === 0) {
+      return { scanned: 0, removed: 0, removedTaskIds: [] as string[] };
+    }
+
+    const states = ["waiting", "delayed", "failed", "paused"] as const;
+    const pageSize = 200;
+    let scanned = 0;
+    let removed = 0;
+    const removedTaskIds = new Set<string>();
+
+    for (let start = 0; start < scanLimit; start += pageSize) {
+      const end = Math.min(scanLimit - 1, start + pageSize - 1);
+      const jobs = await this.crawlQueue.getJobs([...states], start, end);
+      scanned += jobs.length;
+
+      const matching = jobs.filter((job) => taskIds.has(job.data?.taskId));
+      await Promise.all(
+        matching.map(async (job: Job) => {
+          try {
+            const taskId = job.data?.taskId;
+            await job.remove();
+            removed += 1;
+            if (typeof taskId === "string" && taskId.length > 0) {
+              removedTaskIds.add(taskId);
+            }
+          } catch (error) {
+            if (isJobLockedRemovalError(error)) {
+              return;
+            }
+
+            let state: string | undefined;
+            try {
+              state = await job.getState();
+            } catch {
+              state = undefined;
+            }
+
+            logger.warn(
+              { jobId: job.id, state, err: error },
+              "Failed to remove queued crawl job"
+            );
+          }
+        })
+      );
+
+      if (jobs.length < pageSize) {
+        break;
+      }
+    }
+
+    return { scanned, removed, removedTaskIds: Array.from(removedTaskIds) };
+  }
+
+  async getJobCounts() {
+    return this.crawlQueue.getJobCounts("waiting", "active", "delayed", "failed", "paused");
+  }
 }

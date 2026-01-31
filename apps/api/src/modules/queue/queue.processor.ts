@@ -6,7 +6,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import { PipelineJobStatus } from "@prisma/client";
+import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { Worker, UnrecoverableError, type Queue } from "bullmq";
 import { Types } from "mongoose";
 
@@ -18,6 +18,7 @@ import type {
   PipelineJobContext,
   RawPipelineItem,
 } from "../news-pipeline/news-pipeline.types";
+import { NotificationsService } from "../notifications/notifications.service";
 
 import {
   ITEM_PIPELINE_QUEUE_NAME,
@@ -69,6 +70,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly env: EnvService,
     private readonly pipeline: NewsPipelineService,
     private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async onModuleInit() {
@@ -505,14 +507,18 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
   }) {
     const cfg = this.env.newsSourceSchedulerConfig;
     const threshold = Math.max(0, Math.floor(cfg.circuitBreakerThreshold));
+    const autoDisableThresholdRaw = cfg.autoDisableThreshold;
+    const autoDisableThreshold = Number.isFinite(autoDisableThresholdRaw)
+      ? Math.max(0, Math.floor(autoDisableThresholdRaw))
+      : 0;
 
-    await this.prisma.$transaction(async (tx) => {
+    const { notifyCircuitOpen, notifyAutoDisable } = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.newsSource.findUnique({
         where: { id: options.sourceId },
-        select: { consecutiveFailures: true, isActive: true },
+        select: { consecutiveFailures: true, isActive: true, orgId: true, name: true },
       });
       if (!existing?.isActive) {
-        return;
+        return { notifyCircuitOpen: null, notifyAutoDisable: null };
       }
 
       const previousFailures = Number(existing.consecutiveFailures ?? 0);
@@ -536,10 +542,29 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         circuitOpenUntil = new Date(options.failureAt.getTime() + circuitDelayMs);
       }
 
+      let notifyCircuitOpen: { orgId: string; name: string; circuitOpenUntil: Date } | null = null;
+      if (threshold > 0 && consecutiveFailures === threshold && circuitOpenUntil) {
+        notifyCircuitOpen = {
+          orgId: existing.orgId,
+          name: existing.name,
+          circuitOpenUntil
+        };
+      }
+
       const nextRunAt =
         circuitOpenUntil && circuitOpenUntil.getTime() > retryAt.getTime()
           ? circuitOpenUntil
           : retryAt;
+
+      const shouldDisable = autoDisableThreshold > 0 && consecutiveFailures >= autoDisableThreshold;
+      let notifyAutoDisable: { orgId: string; name: string; failures: number } | null = null;
+      if (shouldDisable && consecutiveFailures === autoDisableThreshold) {
+        notifyAutoDisable = {
+          orgId: existing.orgId,
+          name: existing.name,
+          failures: consecutiveFailures
+        };
+      }
 
       await tx.newsSource.update({
         where: { id: options.sourceId },
@@ -547,10 +572,56 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           lastFailureAt: options.failureAt,
           consecutiveFailures,
           circuitOpenUntil,
-          nextRunAt,
+          nextRunAt: shouldDisable ? null : nextRunAt,
+          isActive: shouldDisable ? false : undefined,
         },
       });
+
+      return { notifyCircuitOpen, notifyAutoDisable };
     });
+
+    if (notifyCircuitOpen) {
+      try {
+        await this.notifications.notify({
+          orgId: notifyCircuitOpen.orgId,
+          userId: null,
+          type: NotificationType.system,
+          title: "News source circuit opened",
+          body: `News source "${notifyCircuitOpen.name}" reached ${threshold} consecutive failures and is paused until ${notifyCircuitOpen.circuitOpenUntil.toISOString()}.`,
+          data: {
+            sourceId: options.sourceId,
+            consecutiveFailures: threshold,
+            circuitOpenUntil: notifyCircuitOpen.circuitOpenUntil.toISOString()
+          }
+        });
+      } catch (error) {
+        logger.warn(
+          { error, sourceId: options.sourceId, orgId: notifyCircuitOpen.orgId },
+          "Failed to notify circuit open for news source",
+        );
+      }
+    }
+
+    if (notifyAutoDisable) {
+      try {
+        await this.notifications.notify({
+          orgId: notifyAutoDisable.orgId,
+          userId: null,
+          type: NotificationType.system,
+          title: "News source disabled after failures",
+          body: `News source "${notifyAutoDisable.name}" was disabled after ${notifyAutoDisable.failures} consecutive failures.`,
+          data: {
+            sourceId: options.sourceId,
+            consecutiveFailures: notifyAutoDisable.failures
+          }
+        });
+      } catch (error) {
+        logger.warn(
+          { error, sourceId: options.sourceId, orgId: notifyAutoDisable.orgId },
+          "Failed to notify auto-disable for news source",
+        );
+      }
+    }
   }
 
   private async markFailureState(options: {
@@ -619,8 +690,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    if (this.worker) {
-      await this.worker.close();
-    }
+    await Promise.allSettled([
+      this.worker?.close(),
+      this.queue.close(),
+      this.dlqQueue.close(),
+    ]);
   }
 }

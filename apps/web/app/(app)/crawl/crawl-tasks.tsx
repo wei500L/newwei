@@ -64,6 +64,7 @@ export function CrawlTasksView() {
   const locale = resolveLocale(i18n.language);
   const searchParams = useSearchParams();
   const router = useRouter();
+  const sourceIdFilter = (searchParams.get("sourceId") ?? "").trim();
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
@@ -299,6 +300,19 @@ export function CrawlTasksView() {
     }
   }, [canManage, searchParams]);
 
+  useEffect(() => {
+    if (!canView) {
+      return;
+    }
+    if (!sourceIdFilter) {
+      return;
+    }
+    const prefix = `NewsSource:${sourceIdFilter}:`;
+    setSearchInput(prefix);
+    setSearch(prefix);
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  }, [canView, sourceIdFilter]);
+
   if (status === "loading") {
     return (
       <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
@@ -321,6 +335,22 @@ export function CrawlTasksView() {
 
   return (
     <div className="content-card">
+      {sourceIdFilter ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={t("crawl.filter.sourceId", {
+            defaultValue: "Filtered by NewsSource {{id}}",
+            id: sourceIdFilter
+          })}
+          action={
+            <Button size="small" onClick={() => router.push("/admin/ops/crawl-tasks")}>
+              {t("common.clear", { defaultValue: "Clear" })}
+            </Button>
+          }
+        />
+      ) : null}
       <Space style={{ marginBottom: 16 }} wrap>
         <Space.Compact style={{ width: 260 }}>
           <Input

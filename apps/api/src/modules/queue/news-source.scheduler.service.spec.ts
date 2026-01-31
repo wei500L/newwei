@@ -50,6 +50,10 @@ describe("NewsSourceSchedulerService", () => {
     const cache = {
       withLock: jest.fn(),
       wrap: jest.fn(async (_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
+      del: jest.fn().mockResolvedValue(undefined),
+      set: jest.fn().mockResolvedValue(undefined),
+      setIfAbsent: jest.fn().mockResolvedValue(true),
+      incr: jest.fn().mockResolvedValue(1),
     } as any;
 
     const env = {
@@ -62,15 +66,20 @@ describe("NewsSourceSchedulerService", () => {
       },
     } as any;
 
+    const crawlTaskService = {} as any;
+    const notifications = { notify: jest.fn() } as any;
+
     const service = new NewsSourceSchedulerService(
       prisma,
       metadataService,
       crawlQueue,
       cache,
       env,
+      crawlTaskService,
+      notifications,
     );
 
-    return { service, prisma, metadataService, crawlQueue, cache, env };
+    return { service, prisma, metadataService, crawlQueue, cache, env, crawlTaskService, notifications };
   };
 
   beforeEach(() => {

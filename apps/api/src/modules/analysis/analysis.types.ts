@@ -1,8 +1,8 @@
 import type { SeriesPoint } from "./anomaly-detector";
 
 export type AnalysisJobPayload =
-  | { type: "correlation"; analysisId: string; traceId?: string }
-  | { type: "anomaly"; analysisId: string; traceId?: string };
+  | { type: "correlation"; analysisId: string; orgId?: string; traceId?: string }
+  | { type: "anomaly"; analysisId: string; orgId?: string; traceId?: string };
 
 export interface CorrelationInput {
   indicatorName: string;

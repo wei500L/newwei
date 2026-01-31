@@ -4,13 +4,16 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { EconomicDataPoint } from "@prisma/client";
 import type { Queue } from "bullmq";
 import type { PubSubEngine } from "graphql-subscriptions";
+import { createHash } from "node:crypto";
 
 import { safeJsonParseFromText } from "../../common/llm-json";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ItemsService } from "../items/items.service";
 import { ModelServiceClient } from "../model-service/model-service.client";
-import { LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
+import { LiteLlmGuardrailViolationError, LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
+import { AssistantSafetySettingsService } from "../system-settings/assistant-safety-settings.service";
+import { OpenAiKeysSettingsService } from "../system-settings/openai-keys-settings.service";
 
 import {
   AssistantPromptService,
@@ -103,6 +106,8 @@ export class AssistantService {
   constructor(
     private readonly llm: LiteLlmService,
     private readonly env: EnvService,
+    private readonly assistantSafety: AssistantSafetySettingsService,
+    private readonly openaiKeys: OpenAiKeysSettingsService,
     private readonly prisma: PrismaService,
     private readonly items: ItemsService,
     private readonly modelService: ModelServiceClient,
@@ -122,7 +127,7 @@ export class AssistantService {
     const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       "query",
-      { type: "query", runId: record.id, traceId },
+      { type: "query", runId: record.id, orgId, traceId },
       { jobId: `assistant:query:${record.id}`, removeOnComplete: true, attempts: this.env.assistantConfig.maxRetries }
     );
     return record;
@@ -139,7 +144,7 @@ export class AssistantService {
     const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       "report",
-      { type: "report", runId: record.id, traceId },
+      { type: "report", runId: record.id, orgId, traceId },
       { jobId: `assistant:report:${record.id}`, removeOnComplete: true, attempts: this.env.assistantConfig.maxRetries }
     );
     return record;
@@ -156,7 +161,7 @@ export class AssistantService {
     const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       "forecast",
-      { type: "forecast", runId: record.id, traceId },
+      { type: "forecast", runId: record.id, orgId, traceId },
       { jobId: `assistant:forecast:${record.id}`, removeOnComplete: true, attempts: this.env.assistantConfig.maxRetries }
     );
     return record;
@@ -177,17 +182,38 @@ export class AssistantService {
     await record.save();
     await this.publish(record.orgId, record.id, record.type, record.status, undefined, createdAt);
 
+    const baseGuardrails = (await this.assistantSafety.getEffectiveConfig()).guardrails;
+    const guardrails = await this.pickGuardrailsForRun(record.id, baseGuardrails);
+
     try {
       if (job.type === "query") {
-        const output = await this.runQuery(record.orgId, record.id, createdAt, record.input as AssistantQueryInput);
+        const output = await this.runQuery(
+          record.orgId,
+          record.id,
+          createdAt,
+          record.input as AssistantQueryInput,
+          guardrails
+        );
         record.output = output;
         record.summary = output.summary;
       } else if (job.type === "report") {
-        const output = await this.runReport(record.orgId, record.id, createdAt, record.input as AssistantReportInput);
+        const output = await this.runReport(
+          record.orgId,
+          record.id,
+          createdAt,
+          record.input as AssistantReportInput,
+          guardrails
+        );
         record.output = output;
         record.summary = output.summary;
       } else if (job.type === "forecast") {
-        const output = await this.runForecast(record.orgId, record.id, createdAt, record.input as AssistantForecastInput);
+        const output = await this.runForecast(
+          record.orgId,
+          record.id,
+          createdAt,
+          record.input as AssistantForecastInput,
+          guardrails
+        );
         record.output = output;
         record.summary = output.summary;
       } else {
@@ -199,6 +225,24 @@ export class AssistantService {
       await record.save();
       await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, createdAt);
     } catch (error: unknown) {
+      if (error instanceof LiteLlmGuardrailViolationError) {
+        logger.warn(
+          { job, appliedGuardrails: error.appliedGuardrails, upstreamStatus: error.upstreamStatus },
+          "Assistant request blocked by content safety guardrails",
+        );
+        record.status = "completed";
+        record.summary = error.message;
+        record.output = {
+          blocked: true,
+          summary: error.message,
+          appliedGuardrails: error.appliedGuardrails,
+          upstreamStatus: error.upstreamStatus ?? null
+        };
+        record.error = undefined;
+        await record.save();
+        await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, createdAt);
+        return;
+      }
       logger.error({ job, error }, "Assistant job failed");
       record.status = "failed";
       record.error = error instanceof Error ? error.message : String(error);
@@ -219,7 +263,55 @@ export class AssistantService {
     }
   }
 
-  private async runQuery(orgId: string, runId: string, createdAt: Date, input: AssistantQueryInput) {
+  private async pickGuardrailsForRun(runId: string, baseGuardrails?: string[]) {
+    if (!Array.isArray(baseGuardrails)) {
+      return undefined;
+    }
+    const normalized = Array.from(
+      new Set(
+        baseGuardrails
+          .filter((entry): entry is string => typeof entry === "string")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0),
+      ),
+    );
+    if (normalized.length === 0) {
+      return undefined;
+    }
+
+    const keyCount = await this.openaiKeys.getKeyCount();
+    if (keyCount <= 1) {
+      return normalized;
+    }
+
+    const bucket = this.stableBucket(runId, keyCount);
+    return normalized.map((name) => this.mapOpenAiGuardrailName(name, bucket));
+  }
+
+  private stableBucket(input: string, buckets: number): number {
+    const normalizedBuckets = Math.max(1, Math.floor(buckets));
+    const digest = createHash("sha256").update(input).digest();
+    const value = digest.readUInt32BE(0);
+    return value % normalizedBuckets;
+  }
+
+  private mapOpenAiGuardrailName(name: string, bucket: number): string {
+    if (bucket <= 0) {
+      return name;
+    }
+    if (name === "openai-moderation-pre" || name === "openai-moderation-post") {
+      return `${name}-${bucket + 1}`;
+    }
+    return name;
+  }
+
+  private async runQuery(
+    orgId: string,
+    runId: string,
+    createdAt: Date,
+    input: AssistantQueryInput,
+    guardrails?: string[]
+  ) {
     const message = typeof input?.message === "string" ? input.message.trim() : "";
     if (!message) {
       throw new Error("Assistant query message is required");
@@ -230,6 +322,7 @@ export class AssistantService {
       messages: planner.messages,
       response_format: planner.responseFormat,
       timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
+      guardrails,
       metadata: { orgId, source: "assistant-planner" }
     });
     const planRaw = planResponse.choices?.[0]?.message?.content;
@@ -261,7 +354,7 @@ export class AssistantService {
         items: renderedItems
       });
 
-      const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages);
+      const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, { guardrails });
       return {
         plan,
         items: renderedItems,
@@ -271,21 +364,35 @@ export class AssistantService {
     }
 
     if (plan.kind === "correlation_gold_usd") {
-      return this.runCorrelationQuery(orgId, runId, createdAt, message, {
-        lookbackDays: plan.lookbackDays,
-        transform: plan.transform,
-        seriesA: "gold_futures_main",
-        seriesB: "usd_index_history"
-      });
+      return this.runCorrelationQuery(
+        orgId,
+        runId,
+        createdAt,
+        message,
+        {
+          lookbackDays: plan.lookbackDays,
+          transform: plan.transform,
+          seriesA: "gold_futures_main",
+          seriesB: "usd_index_history"
+        },
+        guardrails
+      );
     }
 
     if (plan.kind === "correlation_two_series") {
-      return this.runCorrelationQuery(orgId, runId, createdAt, message, {
-        lookbackDays: plan.lookbackDays,
-        transform: plan.transform,
-        seriesA: plan.seriesA,
-        seriesB: plan.seriesB
-      });
+      return this.runCorrelationQuery(
+        orgId,
+        runId,
+        createdAt,
+        message,
+        {
+          lookbackDays: plan.lookbackDays,
+          transform: plan.transform,
+          seriesA: plan.seriesA,
+          seriesB: plan.seriesB
+        },
+        guardrails
+      );
     }
 
     const messages: LiteLlmMessage[] = [
@@ -299,11 +406,17 @@ export class AssistantService {
       },
       { role: "user", content: `User request: ${message}` }
     ];
-    const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages);
+    const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, { guardrails });
     return { plan, summary: stream.summary, raw: stream.raw };
   }
 
-  private async runReport(orgId: string, runId: string, createdAt: Date, input: AssistantReportInput) {
+  private async runReport(
+    orgId: string,
+    runId: string,
+    createdAt: Date,
+    input: AssistantReportInput,
+    guardrails?: string[]
+  ) {
     const period = input?.period === "weekly" ? "weekly" : "daily";
     const lookbackDays = period === "weekly" ? 7 : 1;
     const limit = Math.min(100, Math.max(1, Number(input?.limit ?? 40)));
@@ -353,7 +466,7 @@ export class AssistantService {
       }
     ];
 
-    const stream = await this.streamMessages(orgId, runId, "report", createdAt, messages);
+    const stream = await this.streamMessages(orgId, runId, "report", createdAt, messages, { guardrails });
     return {
       period,
       topic: topic || null,
@@ -365,7 +478,13 @@ export class AssistantService {
     };
   }
 
-  private async runForecast(orgId: string, runId: string, createdAt: Date, input: AssistantForecastInput) {
+  private async runForecast(
+    orgId: string,
+    runId: string,
+    createdAt: Date,
+    input: AssistantForecastInput,
+    guardrails?: string[]
+  ) {
     const seriesInput = typeof input?.series === "string" ? input.series.trim() : "";
     if (!seriesInput) {
       throw new Error("Forecast series is required");
@@ -466,7 +585,7 @@ export class AssistantService {
       }
     ];
 
-    const stream = await this.streamMessages(orgId, runId, "forecast", createdAt, messages);
+    const stream = await this.streamMessages(orgId, runId, "forecast", createdAt, messages, { guardrails });
     return {
       series: { slug: item.slug, displayName: item.displayName, field: sourceField, docUrl: item.sourceDocUrl ?? null },
       timeWindow: { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) },
@@ -487,7 +606,8 @@ export class AssistantService {
     runId: string,
     createdAt: Date,
     question: string,
-    input: { seriesA: string; seriesB: string; lookbackDays?: number; transform?: string | null }
+    input: { seriesA: string; seriesB: string; lookbackDays?: number; transform?: string | null },
+    guardrails?: string[]
   ) {
     const lookbackDays = Math.min(3650, Math.max(7, input.lookbackDays ?? 365));
     const transform = input.transform === "level" ? "level" : "return";
@@ -498,7 +618,7 @@ export class AssistantService {
     const specA = parseSeriesSpecifier(input.seriesA);
     const specB = parseSeriesSpecifier(input.seriesB);
 
-    const resolved = await this.resolveCorrelationSeries(orgId, question, specA, specB);
+    const resolved = await this.resolveCorrelationSeries(orgId, question, specA, specB, guardrails);
     const itemA = resolved.seriesA.item;
     const itemB = resolved.seriesB.item;
 
@@ -520,7 +640,7 @@ export class AssistantService {
       ? await this.pickCorrelationFieldsWithLlm(orgId, {
           seriesA: { slug: itemA.slug, displayName: itemA.displayName, fields: fieldsA },
           seriesB: { slug: itemB.slug, displayName: itemB.displayName, fields: fieldsB }
-        })
+        }, guardrails)
       : null;
 
     const fieldA = this.pickPreferredField(
@@ -591,7 +711,7 @@ export class AssistantService {
       references
     });
 
-    const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages);
+    const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, { guardrails });
     return {
       plan: {
         kind: "correlation_two_series",
@@ -652,13 +772,15 @@ export class AssistantService {
     input: {
       seriesA: { slug: string; displayName?: string | null; fields: { name: string; count: number }[] };
       seriesB: { slug: string; displayName?: string | null; fields: { name: string; count: number }[] };
-    }
+    },
+    guardrails?: string[]
   ): Promise<{ fieldA: string; fieldB: string } | null> {
     const selector = this.prompts.buildCorrelationFieldSelectorRequest(input);
     const selectionResponse = await this.llm.acompletion({
       messages: selector.messages,
       response_format: selector.responseFormat,
       timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
+      guardrails,
       metadata: { orgId, source: "assistant-field-selector" }
     });
 
@@ -728,7 +850,8 @@ export class AssistantService {
     orgId: string,
     question: string,
     seriesA: ParsedSeriesSpecifier,
-    seriesB: ParsedSeriesSpecifier
+    seriesB: ParsedSeriesSpecifier,
+    guardrails?: string[]
   ): Promise<{
     seriesA: {
       item: { id: string; slug: string; displayName: string; description?: string | null; sourceDocUrl?: string | null };
@@ -798,6 +921,7 @@ export class AssistantService {
         messages: selector.messages,
         response_format: selector.responseFormat,
         timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
+        guardrails,
         metadata: { orgId, source: "assistant-series-selector" }
       });
 
@@ -1026,10 +1150,12 @@ export class AssistantService {
     type: AssistantRunType,
     createdAt: Date,
     messages: LiteLlmMessage[],
-    initialChunk?: string
+    options?: { initialChunk?: string; guardrails?: string[] }
   ): Promise<{ summary: string; raw: Record<string, unknown> }> {
     const flushChars = Math.max(1, Number(this.env.assistantConfig.streamFlushChars ?? 80));
     const flushMs = Math.max(0, Number(this.env.assistantConfig.streamFlushMs ?? 250));
+    const initialChunk = options?.initialChunk;
+    const guardrails = options?.guardrails;
 
     let buffer = "";
     let summary = "";
@@ -1053,7 +1179,11 @@ export class AssistantService {
         await flush();
       }
 
-      for await (const chunk of this.llm.stream({ messages, timeoutMs: this.env.assistantConfig.llmTimeoutMs })) {
+      for await (const chunk of this.llm.stream({
+        messages,
+        timeoutMs: this.env.assistantConfig.llmTimeoutMs,
+        guardrails
+      })) {
         if (typeof chunk.model === "string") {
           lastModel = chunk.model;
         }
@@ -1073,6 +1203,9 @@ export class AssistantService {
         await flush();
       } catch (flushError) {
         logger.warn({ flushError }, "Failed to flush partial summary after stream error");
+      }
+      if (error instanceof LiteLlmGuardrailViolationError) {
+        throw error;
       }
       const normalized = error instanceof Error ? error : new Error(String(error));
       const streamError = new AssistantStreamError(normalized.message, summary, { cause: normalized });

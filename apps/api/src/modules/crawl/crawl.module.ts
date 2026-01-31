@@ -9,6 +9,8 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlMetadataService } from "./crawl-metadata.service";
+import { CrawlQueueCleanupService } from "./crawl-queue-cleanup.service";
+import { CrawlQueueEventPublisher } from "./crawl-queue-event.publisher";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
@@ -16,11 +18,11 @@ import { CrawlTaskJanitorService } from "./crawl-task-janitor.service";
 import { CrawlTaskService } from "./crawl-task.service";
 import { CrawlTemplateController } from "./crawl-template.controller";
 import { CrawlTemplateService } from "./crawl-template.service";
-import { CrawlQueueCleanupService } from "./crawl-queue-cleanup.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { CrawlController } from "./crawl.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
 import type { CrawlJobData } from "./crawl.types";
+import { Crawl4aiQueueController } from "./crawl4ai-queue.controller";
 import { Crawl4aiClient } from "./crawl4ai.client";
 import { NewsSourceController } from "./news-source.controller";
 import { NewsSourceService } from "./news-source.service";
@@ -46,7 +48,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       }
     })
   ],
-  controllers: [CrawlController, NewsSourceController, CrawlTemplateController],
+  controllers: [CrawlController, NewsSourceController, CrawlTemplateController, Crawl4aiQueueController],
   providers: [
     CrawlSettingsService,
     CrawlTaskService,
@@ -61,6 +63,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     JsCodeAuditService,
     Crawl4aiClient,
     CrawlQueueProcessor,
+    CrawlQueueEventPublisher,
     CrawlQueueCleanupService,
     {
       provide: CRAWL_QUEUE,
@@ -108,6 +111,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlResultService,
     CrawlMetadataService,
     Crawl4aiClient,
+    CrawlQueueEventPublisher,
     CRAWL_QUEUE,
     CRAWL_QUEUE_EVENTS,
     getQueueToken(CRAWL_QUEUE_NAME)

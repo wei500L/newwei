@@ -288,6 +288,44 @@ describe("LlmGatewayTestService", () => {
     expect(mockAxiosGet).toHaveBeenNthCalledWith(2, "/health/readiness", { timeout: 10_000 });
   });
 
+  it("fetches proxy model info", async () => {
+    const modelInfoResponse: AxiosResponse = {
+      data: {
+        models: [
+          {
+            model_name: "openai/gpt-4o-mini",
+            litellm_params: {
+              model: "openai/gpt-4o-mini",
+              api_key: "sk-super-secret",
+              rpm: 60
+            }
+          }
+        ]
+      },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() }
+    };
+
+    mockAxiosGet.mockResolvedValueOnce(modelInfoResponse);
+
+    const result = await service.getProxyModelInfo("profile-1");
+
+    expect(result.apiBase).toBe("http://localhost:4001");
+    expect(result.models).toHaveLength(1);
+    expect(result.models[0]?.modelName).toBe("openai/gpt-4o-mini");
+    expect(result.models[0]?.litellmParams).toEqual(
+      expect.objectContaining({
+        model: "openai/gpt-4o-mini",
+        rpm: 60
+      })
+    );
+    expect(result.models[0]?.litellmParams).not.toHaveProperty("api_key");
+
+    expect(mockAxiosGet).toHaveBeenCalledWith("/v1/model/info", { timeout: 60_000 });
+  });
+
   it("returns failed check results when proxy endpoints error", async () => {
     const error404 = new AxiosError("Not found", "ERR_BAD_REQUEST", undefined, undefined, {
       status: 404,

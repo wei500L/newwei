@@ -4,6 +4,9 @@ import type { EnvService } from "../config/config.service";
 import type { PrismaService } from "../config/prisma.service";
 import type { ModelServiceClient } from "../model-service/model-service.client";
 import type { LiteLlmMessage, LiteLlmService, LiteLlmStreamChunk } from "../news-pipeline/litellm.service";
+import { LiteLlmGuardrailViolationError } from "../news-pipeline/litellm.service";
+import type { AssistantSafetySettingsService } from "../system-settings/assistant-safety-settings.service";
+import type { OpenAiKeysSettingsService } from "../system-settings/openai-keys-settings.service";
 
 import { AssistantPromptService } from "./assistant-prompt.service";
 import { AssistantStreamError } from "./assistant.errors";
@@ -41,6 +44,8 @@ function createService(overrides?: { stream?: LiteLlmService["stream"] }) {
     }
   } as unknown as EnvService;
 
+  const assistantSafety = {} as unknown as AssistantSafetySettingsService;
+  const openaiKeys = { getKeyCount: jest.fn(async () => 0) } as unknown as OpenAiKeysSettingsService;
   const prisma = {} as unknown as PrismaService;
   const items = {} as never;
   const modelService = {} as unknown as ModelServiceClient;
@@ -48,7 +53,22 @@ function createService(overrides?: { stream?: LiteLlmService["stream"] }) {
   const queue = {} as never;
   const pubsub = { publish: jest.fn(async () => undefined) } as unknown as PubSubEngine;
 
-  return { service: new AssistantService(llm, env, prisma, items, modelService, prompts, queue, pubsub), llm, pubsub };
+  return {
+    service: new AssistantService(
+      llm,
+      env,
+      assistantSafety,
+      openaiKeys,
+      prisma,
+      items,
+      modelService,
+      prompts,
+      queue,
+      pubsub
+    ),
+    llm,
+    pubsub
+  };
 }
 
 describe("AssistantService.streamMessages", () => {
@@ -60,16 +80,18 @@ describe("AssistantService.streamMessages", () => {
         streamMessages: (
           orgId: string,
           runId: string,
-          type: "query" | "report" | "forecast",
-          createdAt: Date,
-          messages: LiteLlmMessage[],
-          initialChunk?: string
-        ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
+        type: "query" | "report" | "forecast",
+        createdAt: Date,
+        messages: LiteLlmMessage[],
+        options?: { initialChunk?: string; guardrails?: string[] }
+      ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
       }
     ).streamMessages.bind(service);
 
     try {
-      await streamMessages("org", "run", "query", new Date(), [{ role: "user", content: "hi" }], "init-");
+      await streamMessages("org", "run", "query", new Date(), [{ role: "user", content: "hi" }], {
+        initialChunk: "init-"
+      });
       throw new Error("expected streamMessages to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(AssistantStreamError);
@@ -78,5 +100,31 @@ describe("AssistantService.streamMessages", () => {
       expect(streamError.partialSummary).toBe("init-foobar");
       expect(streamError.cause).toBeInstanceOf(Error);
     }
+  });
+
+  it("does not wrap LiteLlmGuardrailViolationError", async () => {
+    async function* blockedStream(): AsyncGenerator<LiteLlmStreamChunk> {
+      yield { model: "test-model", raw: {}, delta: "x" };
+      throw new LiteLlmGuardrailViolationError("blocked", { appliedGuardrails: ["openai-moderation-pre"] });
+    }
+
+    const { service } = createService({ stream: jest.fn(() => blockedStream()) as unknown as LiteLlmService["stream"] });
+
+    const streamMessages = (
+      service as unknown as {
+        streamMessages: (
+          orgId: string,
+          runId: string,
+        type: "query" | "report" | "forecast",
+        createdAt: Date,
+        messages: LiteLlmMessage[],
+        options?: { initialChunk?: string; guardrails?: string[] }
+      ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
+      }
+    ).streamMessages.bind(service);
+
+    await expect(
+      streamMessages("org", "run", "query", new Date(), [{ role: "user", content: "hi" }])
+    ).rejects.toBeInstanceOf(LiteLlmGuardrailViolationError);
   });
 });

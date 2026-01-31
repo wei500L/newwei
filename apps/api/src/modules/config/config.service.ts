@@ -65,11 +65,16 @@ export interface NewsSourceSchedulerConfig {
   lockTtlMs: number;
   inFlightLookbackMs: number;
   inFlightRescheduleDelayMs: number;
+  jitterMaxMs: number;
+  maxEnqueuePerTick: number;
+  backpressureMaxPendingJobs: number;
+  backpressureDelayMs: number;
   failureRecoveryDelayMs: number;
   failureMaxDelayMs: number;
   circuitBreakerThreshold: number;
   circuitBreakerBaseDelayMs: number;
   circuitBreakerMaxDelayMs: number;
+  autoDisableThreshold: number;
 }
 
 export interface WebSocketSecurityConfig {
@@ -396,6 +401,10 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get liteLlmConfigInternalToken(): string | undefined {
+    return this.get<string | undefined>("LITELLM_CONFIG_INTERNAL_TOKEN", { infer: true });
+  }
+
   get newsPipelineEnv(): NewsPipelineEnvConfig {
     return {
       cacheTtlSeconds:
@@ -437,6 +446,18 @@ export class EnvService extends ConfigService<ApiEnv> {
       inFlightRescheduleDelayMs:
         this.get<number>("NEWS_SOURCE_SCHEDULER_INFLIGHT_RESCHEDULE_DELAY_MS", { infer: true }) ??
         300_000,
+      jitterMaxMs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_JITTER_MAX_MS", { infer: true }) ??
+        60_000,
+      maxEnqueuePerTick:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_MAX_ENQUEUE_PER_TICK", { infer: true }) ??
+        100,
+      backpressureMaxPendingJobs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_BACKPRESSURE_MAX_PENDING_JOBS", { infer: true }) ??
+        100,
+      backpressureDelayMs:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_BACKPRESSURE_DELAY_MS", { infer: true }) ??
+        300_000,
       failureRecoveryDelayMs:
         this.get<number>("NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS", { infer: true }) ??
         600_000,
@@ -452,6 +473,9 @@ export class EnvService extends ConfigService<ApiEnv> {
       circuitBreakerMaxDelayMs:
         this.get<number>("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS", { infer: true }) ??
         86_400_000,
+      autoDisableThreshold:
+        this.get<number>("NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD", { infer: true }) ??
+        0,
     };
   }
 
@@ -499,6 +523,10 @@ export class EnvService extends ConfigService<ApiEnv> {
   }
 
   get assistantConfig() {
+    const guardrails = (this.get<string>("ASSISTANT_GUARDRAILS", { infer: true }) ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
     return {
       queueConcurrency:
         this.get<number>("ASSISTANT_QUEUE_CONCURRENCY", { infer: true }) ?? 2,
@@ -509,7 +537,10 @@ export class EnvService extends ConfigService<ApiEnv> {
       streamFlushChars:
         this.get<number>("ASSISTANT_STREAM_FLUSH_CHARS", { infer: true }) ?? 80,
       streamFlushMs:
-        this.get<number>("ASSISTANT_STREAM_FLUSH_MS", { infer: true }) ?? 250
+        this.get<number>("ASSISTANT_STREAM_FLUSH_MS", { infer: true }) ?? 250,
+      guardrailsEnabled:
+        this.get<boolean>("ASSISTANT_GUARDRAILS_ENABLED", { infer: true }) ?? true,
+      guardrails
     };
   }
 

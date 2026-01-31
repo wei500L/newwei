@@ -1699,14 +1699,18 @@ export class CrawlExecutionService {
   private async markSourceFailureState(options: { sourceId: string; failureAt: Date }) {
     const cfg = this.env.newsSourceSchedulerConfig;
     const threshold = Math.max(0, Math.floor(cfg.circuitBreakerThreshold));
+    const autoDisableThresholdRaw = cfg.autoDisableThreshold;
+    const autoDisableThreshold = Number.isFinite(autoDisableThresholdRaw)
+      ? Math.max(0, Math.floor(autoDisableThresholdRaw))
+      : 0;
 
-    await this.prisma.$transaction(async (tx) => {
+    const { notifyCircuitOpen, notifyAutoDisable } = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.newsSource.findUnique({
         where: { id: options.sourceId },
-        select: { consecutiveFailures: true, isActive: true },
+        select: { consecutiveFailures: true, isActive: true, orgId: true, name: true },
       });
       if (!existing?.isActive) {
-        return;
+        return { notifyCircuitOpen: null, notifyAutoDisable: null };
       }
 
       const previousFailures = Number(existing.consecutiveFailures ?? 0);
@@ -1730,10 +1734,29 @@ export class CrawlExecutionService {
         circuitOpenUntil = new Date(options.failureAt.getTime() + circuitDelayMs);
       }
 
+      let notifyCircuitOpen: { orgId: string; name: string; circuitOpenUntil: Date } | null = null;
+      if (threshold > 0 && consecutiveFailures === threshold && circuitOpenUntil) {
+        notifyCircuitOpen = {
+          orgId: existing.orgId,
+          name: existing.name,
+          circuitOpenUntil
+        };
+      }
+
       const nextRunAt =
         circuitOpenUntil && circuitOpenUntil.getTime() > retryAt.getTime()
           ? circuitOpenUntil
           : retryAt;
+
+      const shouldDisable = autoDisableThreshold > 0 && consecutiveFailures >= autoDisableThreshold;
+      let notifyAutoDisable: { orgId: string; name: string; failures: number } | null = null;
+      if (shouldDisable && consecutiveFailures === autoDisableThreshold) {
+        notifyAutoDisable = {
+          orgId: existing.orgId,
+          name: existing.name,
+          failures: consecutiveFailures
+        };
+      }
 
       await tx.newsSource.update({
         where: { id: options.sourceId },
@@ -1741,10 +1764,56 @@ export class CrawlExecutionService {
           lastFailureAt: options.failureAt,
           consecutiveFailures,
           circuitOpenUntil,
-          nextRunAt,
+          nextRunAt: shouldDisable ? null : nextRunAt,
+          isActive: shouldDisable ? false : undefined,
         },
       });
+
+      return { notifyCircuitOpen, notifyAutoDisable };
     });
+
+    if (notifyCircuitOpen) {
+      try {
+        await this.notifications.notify({
+          orgId: notifyCircuitOpen.orgId,
+          userId: null,
+          type: NotificationType.system,
+          title: "News source circuit opened",
+          body: `News source "${notifyCircuitOpen.name}" reached ${threshold} consecutive failures and is paused until ${notifyCircuitOpen.circuitOpenUntil.toISOString()}.`,
+          data: {
+            sourceId: options.sourceId,
+            consecutiveFailures: threshold,
+            circuitOpenUntil: notifyCircuitOpen.circuitOpenUntil.toISOString()
+          }
+        });
+      } catch (error) {
+        logger.warn(
+          { error, sourceId: options.sourceId, orgId: notifyCircuitOpen.orgId },
+          "Failed to notify circuit open for news source",
+        );
+      }
+    }
+
+    if (notifyAutoDisable) {
+      try {
+        await this.notifications.notify({
+          orgId: notifyAutoDisable.orgId,
+          userId: null,
+          type: NotificationType.system,
+          title: "News source disabled after failures",
+          body: `News source "${notifyAutoDisable.name}" was disabled after ${notifyAutoDisable.failures} consecutive failures.`,
+          data: {
+            sourceId: options.sourceId,
+            consecutiveFailures: notifyAutoDisable.failures
+          }
+        });
+      } catch (error) {
+        logger.warn(
+          { error, sourceId: options.sourceId, orgId: notifyAutoDisable.orgId },
+          "Failed to notify auto-disable for news source",
+        );
+      }
+    }
   }
 
   private pickNumber(source: Record<string, unknown> | undefined, keys: string[]): number | undefined {

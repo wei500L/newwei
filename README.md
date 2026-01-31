@@ -261,8 +261,12 @@ infra/
    修改 `infra/docker/.env`（可从 `infra/docker/.env.sample` 复制）：
 
    - `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`：上游模型真实凭证（LiteLLM 代理内使用）
+   - 可选：`OPENAI_API_KEYS` / `ANTHROPIC_API_KEYS`：逗号分隔的多 Key 列表，用于同一模型多部署负载均衡（Proxy 会在启动时将同一 `model_name` 扩展为多个 deployments 并自动分流）
    - 可选：`LITELLM_MASTER_KEY` 用于保护代理（非空才生效；若设置，也请把 `LITELLM_API_KEY` 设为同一值，方便 API 侧调用）
    - `NEWS_PIPELINE_CONFIG_PATH`：docker 默认使用 `config/news-pipeline.config.docker.yaml`（容器内指向 `http://litellm:4000`）
+   - **内容安全 / 防封号（Guardrails）**：
+     - LiteLLM Proxy 侧 guardrails 定义在 `infra/litellm/litellm-config.yaml`（docker-compose 会挂载并在启动时生成最终 config）。
+     - API 侧（AI Assistant）默认会在每次请求里附带 `ASSISTANT_GUARDRAILS=openai-moderation-pre` 来做 `pre_call` 输入审核；如需禁用可设 `ASSISTANT_GUARDRAILS_ENABLED=false`。
 
 2. **启动服务**
 

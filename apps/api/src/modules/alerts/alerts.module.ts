@@ -11,6 +11,7 @@ import { ModelServiceModule } from "../model-service/model-service.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
+import { AlertsQueueEventPublisher } from "./alerts-queue-event.publisher";
 import { AlertsQueueCleanupService } from "./alerts-queue-cleanup.service";
 import { ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, ALERTS_QUEUE_NAME, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
 import { AlertsProcessor } from "./alerts.processor";
@@ -42,6 +43,7 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
   providers: [
     AlertsService,
     AlertsNotificationThrottleService,
+    AlertsQueueEventPublisher,
     AlertsProcessor,
     AlertsQueueCleanupService,
     EconomicDataMetricProvider,
@@ -115,6 +117,13 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
       useExisting: ALERTS_QUEUE
     }
   ],
-  exports: [AlertsService, ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, ALERTS_PUBSUB, getQueueToken(ALERTS_QUEUE_NAME)]
+  exports: [
+    AlertsService,
+    AlertsQueueEventPublisher,
+    ALERTS_QUEUE,
+    ALERTS_QUEUE_EVENTS,
+    ALERTS_PUBSUB,
+    getQueueToken(ALERTS_QUEUE_NAME)
+  ]
 })
 export class AlertsModule {}

@@ -1,7 +1,8 @@
 import { createLogger } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { PipelineJobStatus, Prisma } from "@prisma/client";
+import { NotificationType, PipelineJobStatus, Prisma } from "@prisma/client";
+import { parseExpression } from "cron-parser";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
@@ -9,6 +10,8 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { CrawlMetadataService } from "../crawl/crawl-metadata.service";
 import { CrawlQueueService } from "../crawl/crawl-queue.service";
+import { CrawlTaskService } from "../crawl/crawl-task.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
 
@@ -38,6 +41,18 @@ interface SeedConfig {
   cacheTtlSeconds: number;
 }
 
+interface CronWindowConfig {
+  daysOfWeek?: number[];
+  startHour?: number;
+  endHour?: number;
+}
+
+interface CronScheduleConfig {
+  expression: string;
+  timezone?: string;
+  window?: CronWindowConfig;
+}
+
 @Injectable()
 export class NewsSourceSchedulerService {
   private readonly sourcePriorityMin = -100;
@@ -50,6 +65,8 @@ export class NewsSourceSchedulerService {
     private readonly crawlQueue: CrawlQueueService,
     private readonly cache: CacheService,
     private readonly env: EnvService,
+    private readonly crawlTaskService: CrawlTaskService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -64,6 +81,480 @@ export class NewsSourceSchedulerService {
       config.lockTtlMs,
       async () => this.scheduleDueSources(new Date(), config.batchSize),
     );
+  }
+
+  async dispatchNow(orgId: string, sourceId: string, triggeredById: string) {
+    const now = new Date();
+    const schedulerConfig = this.env.newsSourceSchedulerConfig;
+    return this.cache.withLock(
+      `news-source-dispatch:${sourceId}`,
+      60_000,
+      async () => {
+        const source = await this.prisma.newsSource.findUnique({
+          where: { id: sourceId },
+          include: {
+            crawlTemplate: {
+              select: { id: true, isActive: true, crawlOptions: true }
+            }
+          }
+        });
+
+        if (!source || source.orgId !== orgId) {
+          throw new NotFoundException("News source not found");
+        }
+
+        const dedupe = this.computeMinuteDispatchDedupeKey(source.id, now);
+        const dedupeAcquired = await this.cache.setIfAbsent(
+          dedupe.key,
+          { until: dedupe.until },
+          dedupe.ttlSeconds
+        );
+        if (!dedupeAcquired) {
+          return {
+            sourceId: source.id,
+            mode: this.normalizeSeedConfig(source)?.mode ?? "single",
+            scheduledFor: now.toISOString(),
+            nextRunAt: (source.nextRunAt ?? now).toISOString(),
+            scheduledCount: 0,
+            skippedCount: 0,
+            enqueueFailures: 0,
+            pipelineJobIds: [] as string[],
+            crawlTaskIds: [] as string[],
+            inFlightCount: undefined,
+            inFlightLimit: undefined,
+            reason: "deduped" as const,
+            dedupeUntil: dedupe.until
+          };
+        }
+
+        try {
+        await this.cache.del(`news-source:backpressure:${source.id}`).catch(() => undefined);
+
+        const activeCutoff = new Date(now.getTime() - schedulerConfig.inFlightLookbackMs);
+        const seedConfig = this.normalizeSeedConfig(source);
+        const inFlightLimit = seedConfig ? seedConfig.maxNewUrlsPerRun : 1;
+        const inFlightJobs = await this.prisma.pipelineJob.findMany({
+          where: {
+            sourceId: source.id,
+            status: { in: ACTIVE_PIPELINE_JOB_STATUSES },
+            createdAt: { gte: activeCutoff }
+          },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, status: true, createdAt: true },
+          take: inFlightLimit
+        });
+
+        const inFlightCount = inFlightJobs.length;
+        const remainingCapacity = seedConfig ? seedConfig.maxNewUrlsPerRun - inFlightCount : 0;
+        const shouldBlock = seedConfig ? remainingCapacity <= 0 : inFlightCount > 0;
+
+        if (shouldBlock) {
+          const rescheduleAt = new Date(now.getTime() + schedulerConfig.inFlightRescheduleDelayMs);
+          await this.prisma.newsSource.updateMany({
+            where: { id: source.id, orgId },
+            data: { isActive: true, circuitOpenUntil: null, nextRunAt: rescheduleAt }
+          });
+
+          return {
+            sourceId: source.id,
+            mode: seedConfig ? seedConfig.mode : "single",
+            scheduledFor: now.toISOString(),
+            nextRunAt: rescheduleAt.toISOString(),
+            scheduledCount: 0,
+            skippedCount: 0,
+            enqueueFailures: 0,
+            pipelineJobIds: [] as string[],
+            crawlTaskIds: [] as string[],
+            inFlightCount,
+            inFlightLimit,
+            reason: "in_flight" as const
+          };
+        }
+
+        const scheduledFor = now;
+        const nextRunAt = this.computeNextRunAt(source, scheduledFor, now);
+        const maxNewUrlsThisRun = seedConfig ? Math.max(0, remainingCapacity) : 1;
+
+        const jobsToSchedule = seedConfig
+          ? await this.resolveSeedCandidates(source, seedConfig)
+          : [{ url: source.url, relevanceScore: undefined }];
+
+        const candidateUrls = jobsToSchedule.map((job) => job.url);
+        const [recentArticles, activeUrls] = await Promise.all([
+          seedConfig
+            ? this.findRecentArticleUrls(source.orgId, candidateUrls, seedConfig.dedupeWindowHours)
+            : Promise.resolve(new Set<string>()),
+          seedConfig
+            ? this.findActivePipelineUrls(source.id, candidateUrls, activeCutoff)
+            : Promise.resolve(new Set<string>())
+        ]);
+
+        const newJobs = seedConfig
+          ? jobsToSchedule
+              .filter((job) => !recentArticles.has(job.url))
+              .filter((job) => !activeUrls.has(job.url))
+              .slice(0, maxNewUrlsThisRun)
+          : jobsToSchedule;
+        const skippedCount = Math.max(0, jobsToSchedule.length - newJobs.length);
+
+        await this.prisma.newsSource.update({
+          where: { id: source.id },
+          data: {
+            isActive: true,
+            circuitOpenUntil: null,
+            lastRunAt: scheduledFor,
+            nextRunAt
+          }
+        });
+
+        if (newJobs.length === 0) {
+          return {
+            sourceId: source.id,
+            mode: seedConfig ? seedConfig.mode : "single",
+            scheduledFor: scheduledFor.toISOString(),
+            nextRunAt: nextRunAt.toISOString(),
+            scheduledCount: 0,
+            skippedCount,
+            enqueueFailures: 0,
+            pipelineJobIds: [] as string[],
+            crawlTaskIds: [] as string[],
+            inFlightCount,
+            inFlightLimit,
+            reason: "no_new_urls" as const
+          };
+        }
+
+        const bullPriority = this.toBullmqPriority(source.priority);
+        const seedParentUrl = seedConfig
+          ? seedConfig.mode === "rss"
+            ? (seedConfig.feedUrl ?? source.url)
+            : source.url
+          : undefined;
+
+        const pipelineJobIds: string[] = [];
+        const crawlTaskIds: string[] = [];
+        let enqueueFailures = 0;
+
+        for (const job of newJobs) {
+          const payload = this.buildPayload(
+            source,
+            job.url,
+            seedConfig
+              ? { mode: seedConfig.mode, parentUrl: seedParentUrl ?? source.url, relevanceScore: job.relevanceScore }
+              : undefined
+          );
+
+          const displayNamePrefix = `NewsSource:${source.id}:`;
+          const displayName = `${displayNamePrefix}${source.name ?? ""}`.slice(0, 80);
+
+          const itemPayloadConfig: Record<string, unknown> = {
+            sourceId: source.id,
+            sourceType: source.siteType,
+            crawlTemplateId: source.crawlTemplateId ?? undefined,
+            ...(seedConfig
+              ? {
+                  newsSourceSeed: {
+                    mode: seedConfig.mode,
+                    parentUrl: seedParentUrl ?? source.url,
+                    relevanceScore: job.relevanceScore,
+                  },
+                }
+              : {}),
+          };
+
+          const crawlTaskConfig: Record<string, unknown> = {
+            ...(payload.crawlOptions ?? {}),
+            ingestToItems: true,
+            pipelineJobId: "",
+            pipelinePriority: bullPriority,
+            itemPayload: {
+              sourceName: payload.sourceName,
+              language: payload.language,
+              keywords: payload.keywords,
+              tags: payload.tags,
+              summaryHints: payload.summaryHints,
+              metadata: {
+                ...itemPayloadConfig,
+                ...(payload.metadata ?? {}),
+              },
+              forceRefresh: payload.forceRefresh,
+            },
+          };
+
+          const { pipelineJobId, crawlTaskId } = await this.prisma.$transaction(async (tx) => {
+            const pipelineJob = await tx.pipelineJob.create({
+              data: {
+                orgId: source.orgId,
+                sourceId: source.id,
+                url: job.url,
+                priority: source.priority,
+                status: PipelineJobStatus.queued,
+                queueName: ITEM_PIPELINE_QUEUE_NAME,
+                scheduledFor,
+                metadata: {
+                  sourceName: source.name,
+                  sourceType: source.siteType,
+                  seedMode: seedConfig ? seedConfig.mode : "single",
+                  seedParentUrl: seedConfig ? seedParentUrl : undefined,
+                  relevanceScore: seedConfig ? job.relevanceScore : undefined,
+                  triggeredById
+                }
+              }
+            });
+
+            crawlTaskConfig.pipelineJobId = pipelineJob.id;
+
+            const existingTask = await tx.crawlTask.findFirst({
+              where: {
+                orgId: source.orgId,
+                targetUrl: job.url,
+                displayName: { startsWith: displayNamePrefix },
+              },
+              select: { id: true },
+            });
+
+            let taskId: string;
+            if (existingTask) {
+              const updatedTask = await tx.crawlTask.update({
+                where: { id: existingTask.id },
+                data: {
+                  displayName,
+                  status: "pending",
+                  concurrency: 1,
+                  keywords: payload.keywords,
+                  config: toPrismaJsonValue(crawlTaskConfig),
+                  lastError: null,
+                },
+                select: { id: true },
+              });
+              taskId = updatedTask.id;
+            } else {
+              const createdTask = await tx.crawlTask.create({
+                data: {
+                  orgId: source.orgId,
+                  createdById: triggeredById,
+                  targetUrl: job.url,
+                  displayName,
+                  status: "pending",
+                  concurrency: 1,
+                  keywords: payload.keywords,
+                  config: toPrismaJsonValue(crawlTaskConfig),
+                },
+                select: { id: true },
+              });
+              taskId = createdTask.id;
+            }
+
+            await tx.pipelineJob.update({
+              where: { id: pipelineJob.id },
+              data: {
+                metadata: {
+                  ...(pipelineJob.metadata as Record<string, unknown> | null | undefined),
+                  crawlTaskId: taskId,
+                },
+              },
+            });
+
+            return {
+              pipelineJobId: pipelineJob.id,
+              crawlTaskId: taskId,
+            };
+          });
+
+          pipelineJobIds.push(pipelineJobId);
+          crawlTaskIds.push(crawlTaskId);
+
+          try {
+            await this.crawlQueue.enqueueTask(crawlTaskId, source.orgId, triggeredById);
+            await this.prisma.crawlTask.updateMany({
+              where: { id: crawlTaskId },
+              data: { status: "queued" },
+            });
+          } catch (queueError) {
+            enqueueFailures += 1;
+            logger.error(
+              { error: queueError, pipelineJobId, orgId: source.orgId, sourceId: source.id, crawlTaskId },
+              "Failed to enqueue news source crawl task",
+            );
+            await Promise.allSettled([
+              this.prisma.pipelineJob.updateMany({
+                where: { id: pipelineJobId },
+                data: {
+                  status: PipelineJobStatus.failed,
+                  error: queueError instanceof Error ? queueError.message : String(queueError),
+                  completedAt: new Date(),
+                },
+              }),
+              this.prisma.crawlTask.updateMany({
+                where: { id: crawlTaskId },
+                data: {
+                  status: "failed",
+                  lastError: queueError instanceof Error ? queueError.message : String(queueError),
+                },
+              }),
+            ]);
+          }
+        }
+
+        return {
+          sourceId: source.id,
+          mode: seedConfig ? seedConfig.mode : "single",
+          scheduledFor: scheduledFor.toISOString(),
+          nextRunAt: nextRunAt.toISOString(),
+          scheduledCount: newJobs.length,
+          skippedCount,
+          enqueueFailures,
+          pipelineJobIds,
+          crawlTaskIds,
+          inFlightCount,
+          inFlightLimit,
+          reason: "ok" as const
+        };
+        } catch (error) {
+          await this.cache.del(dedupe.key).catch(() => undefined);
+          throw error;
+        }
+      }
+    );
+  }
+
+  async cancelQueuedCrawls(orgId: string, sourceId: string, triggeredById: string) {
+    const source = await this.prisma.newsSource.findUnique({
+      where: { id: sourceId },
+      select: { id: true, orgId: true }
+    });
+    if (!source || source.orgId !== orgId) {
+      throw new NotFoundException("News source not found");
+    }
+
+    const prefix = `NewsSource:${source.id}:`;
+    const queuedTaskIds = await this.crawlQueue.listQueuedTaskIds();
+    if (queuedTaskIds.size === 0) {
+      return {
+        sourceId: source.id,
+        removedJobs: 0,
+        scannedJobs: 0,
+        canceledTaskIds: [] as string[]
+      };
+    }
+
+    const matchingTasks = await this.prisma.crawlTask.findMany({
+      where: {
+        orgId,
+        id: { in: Array.from(queuedTaskIds) },
+        displayName: { startsWith: prefix }
+      },
+      select: { id: true }
+    });
+
+    const taskIdsToCancel = new Set(matchingTasks.map((task) => task.id));
+    const { scanned, removed, removedTaskIds } = await this.crawlQueue.removeQueuedJobsForTasks(
+      taskIdsToCancel
+    );
+
+    if (removedTaskIds.length > 0) {
+      await this.prisma.crawlTask.updateMany({
+        where: { orgId, id: { in: removedTaskIds } },
+        data: {
+          status: "paused",
+          lastError: `Canceled by ${triggeredById}`
+        }
+      });
+    }
+
+    return {
+      sourceId: source.id,
+      removedJobs: removed,
+      scannedJobs: scanned,
+      canceledTaskIds: removedTaskIds
+    };
+  }
+
+  async clearInFlight(orgId: string, sourceId: string) {
+    const source = await this.prisma.newsSource.findUnique({
+      where: { id: sourceId },
+      select: { id: true, orgId: true }
+    });
+    if (!source || source.orgId !== orgId) {
+      throw new NotFoundException("News source not found");
+    }
+
+    const activeCutoff = new Date(
+      Date.now() - this.env.newsSourceSchedulerConfig.inFlightLookbackMs
+    );
+
+    const cleared = await this.prisma.pipelineJob.updateMany({
+      where: {
+        orgId,
+        sourceId: source.id,
+        status: { in: ACTIVE_PIPELINE_JOB_STATUSES },
+        createdAt: { gte: activeCutoff }
+      },
+      data: {
+        status: PipelineJobStatus.failed,
+        error: "Cleared by admin",
+        completedAt: new Date()
+      }
+    });
+
+    return {
+      sourceId: source.id,
+      cutoff: activeCutoff.toISOString(),
+      clearedJobs: cleared.count
+    };
+  }
+
+  async retryLatestFailedTask(
+    orgId: string,
+    sourceId: string,
+    userId: string,
+    ip?: string,
+    actorPermissions?: string[]
+  ) {
+    const source = await this.prisma.newsSource.findUnique({
+      where: { id: sourceId },
+      select: { id: true, orgId: true }
+    });
+    if (!source || source.orgId !== orgId) {
+      throw new NotFoundException("News source not found");
+    }
+
+    const latestJob = await this.prisma.pipelineJob.findFirst({
+      where: { orgId, sourceId: source.id },
+      orderBy: { createdAt: "desc" },
+      select: { metadata: true }
+    });
+
+    const isRecord = (value: unknown): value is Record<string, unknown> =>
+      Boolean(value) && typeof value === "object" && !Array.isArray(value);
+    const crawlTaskId = isRecord(latestJob?.metadata) ? latestJob?.metadata.crawlTaskId : null;
+    if (typeof crawlTaskId !== "string" || crawlTaskId.length === 0) {
+      throw new NotFoundException("No crawl task found for latest job");
+    }
+
+    const task = await this.prisma.crawlTask.findFirst({
+      where: { orgId, id: crawlTaskId },
+      select: { status: true }
+    });
+    if (!task) {
+      throw new NotFoundException("crawl task not found");
+    }
+    if (task.status !== "failed") {
+      return {
+        sourceId: source.id,
+        crawlTaskId,
+        status: task.status,
+        retried: false
+      };
+    }
+
+    const retried = await this.crawlTaskService.retryTask(orgId, userId, crawlTaskId, ip, actorPermissions);
+    return {
+      sourceId: source.id,
+      crawlTaskId,
+      status: retried.status,
+      retried: true
+    };
   }
 
   private normalizeStringList(value: unknown) {
@@ -102,6 +593,197 @@ export class NewsSourceSchedulerService {
     const normalized = Number.isFinite(priority) ? Math.round(priority) : 0;
     const clamped = Math.max(this.sourcePriorityMin, Math.min(this.sourcePriorityMax, normalized));
     return this.sourcePriorityMax + 1 - clamped;
+  }
+
+  private computeNextIntervalRunAt(frequencySeconds: number, scheduledFor: Date, now: Date) {
+    const seconds = Number.isFinite(frequencySeconds) ? Math.max(0, Math.floor(frequencySeconds)) : 0;
+    const anchor = Math.max(scheduledFor.getTime(), now.getTime());
+    const baseMs = anchor + seconds * 1000;
+
+    const jitterMaxMsRaw = this.env.newsSourceSchedulerConfig.jitterMaxMs;
+    const jitterMaxMs = Number.isFinite(jitterMaxMsRaw) ? Math.max(0, Math.floor(jitterMaxMsRaw)) : 0;
+    if (jitterMaxMs <= 0 || seconds === 0) {
+      return new Date(baseMs);
+    }
+
+    const cappedJitterMaxMs = Math.min(jitterMaxMs, seconds * 1000);
+    const jitterMs =
+      cappedJitterMaxMs > 0 ? Math.floor(Math.random() * (cappedJitterMaxMs + 1)) : 0;
+    return new Date(baseMs + jitterMs);
+  }
+
+  private normalizeCronSchedule(source: NewsSourceWithTemplate): CronScheduleConfig | null {
+    const rawConfig =
+      source.config && typeof source.config === "object" && !Array.isArray(source.config)
+        ? (source.config as Record<string, unknown>)
+        : null;
+
+    const schedule =
+      rawConfig?.schedule && typeof rawConfig.schedule === "object" && !Array.isArray(rawConfig.schedule)
+        ? (rawConfig.schedule as Record<string, unknown>)
+        : null;
+
+    const modeRaw = typeof schedule?.mode === "string" ? schedule.mode.trim().toLowerCase() : "";
+    if (modeRaw !== "cron") {
+      return null;
+    }
+
+    const cron =
+      schedule?.cron && typeof schedule.cron === "object" && !Array.isArray(schedule.cron)
+        ? (schedule.cron as Record<string, unknown>)
+        : null;
+
+    const expression = typeof cron?.expression === "string" ? cron.expression.trim() : "";
+    if (!expression) {
+      return null;
+    }
+
+    const timezoneRaw = typeof cron?.timezone === "string" ? cron.timezone.trim() : "";
+    const timezone = timezoneRaw.length > 0 ? timezoneRaw : undefined;
+
+    const window =
+      schedule?.window && typeof schedule.window === "object" && !Array.isArray(schedule.window)
+        ? (schedule.window as Record<string, unknown>)
+        : null;
+
+    const daysOfWeekRaw = Array.isArray(window?.daysOfWeek) ? window?.daysOfWeek : [];
+    const daysOfWeek = daysOfWeekRaw
+      .filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry))
+      .map((value) => Math.floor(value))
+      .filter((value) => value >= 0 && value <= 6);
+
+    const startHourRaw = window?.startHour;
+    const endHourRaw = window?.endHour;
+    const startHour =
+      typeof startHourRaw === "number" && Number.isFinite(startHourRaw)
+        ? Math.max(0, Math.min(23, Math.floor(startHourRaw)))
+        : undefined;
+    const endHour =
+      typeof endHourRaw === "number" && Number.isFinite(endHourRaw)
+        ? Math.max(1, Math.min(24, Math.floor(endHourRaw)))
+        : undefined;
+
+    const cronWindow: CronWindowConfig | undefined =
+      daysOfWeek.length > 0 || startHour !== undefined || endHour !== undefined
+        ? {
+            daysOfWeek: daysOfWeek.length > 0 ? Array.from(new Set(daysOfWeek)) : undefined,
+            startHour,
+            endHour,
+          }
+        : undefined;
+
+    return {
+      expression,
+      timezone,
+      window: cronWindow
+    };
+  }
+
+  private getZonedWeekdayAndHour(date: Date, timezone?: string) {
+    const weekdayMap: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    };
+
+    const tz = timezone ?? "UTC";
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        weekday: "short",
+        hour: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(date);
+
+      const weekdayLabel = parts.find((part) => part.type === "weekday")?.value;
+      const hourLabel = parts.find((part) => part.type === "hour")?.value;
+
+      const weekday = typeof weekdayLabel === "string" ? weekdayMap[weekdayLabel] : undefined;
+      const hour = typeof hourLabel === "string" ? Number.parseInt(hourLabel, 10) : NaN;
+
+      if (typeof weekday !== "number" || !Number.isFinite(hour)) {
+        return { weekday: null as number | null, hour: null as number | null };
+      }
+      return { weekday, hour };
+    } catch {
+      return { weekday: null as number | null, hour: null as number | null };
+    }
+  }
+
+  private isWithinCronWindow(date: Date, window: CronWindowConfig | undefined, timezone?: string) {
+    if (!window) {
+      return true;
+    }
+
+    const { weekday, hour } = this.getZonedWeekdayAndHour(date, timezone);
+    if (weekday === null || hour === null) {
+      return true;
+    }
+
+    const allowedDays = window.daysOfWeek;
+    if (Array.isArray(allowedDays) && allowedDays.length > 0 && !allowedDays.includes(weekday)) {
+      return false;
+    }
+
+    const startHour = window.startHour;
+    const endHour = window.endHour;
+    if (
+      typeof startHour === "number" &&
+      typeof endHour === "number" &&
+      Number.isFinite(startHour) &&
+      Number.isFinite(endHour) &&
+      startHour < endHour
+    ) {
+      if (hour < startHour || hour >= endHour) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private computeNextRunAt(source: NewsSourceWithTemplate, scheduledFor: Date, now: Date) {
+    const cron = this.normalizeCronSchedule(source);
+    if (cron) {
+      const base = new Date(Math.max(scheduledFor.getTime(), now.getTime()));
+      const tz = cron.timezone ?? "UTC";
+      try {
+        const interval = parseExpression(cron.expression, { currentDate: base, tz });
+        for (let i = 0; i < 200; i += 1) {
+          const next = interval.next().toDate();
+          if (this.isWithinCronWindow(next, cron.window, tz)) {
+            return next;
+          }
+        }
+        return interval.next().toDate();
+      } catch (error) {
+        logger.warn(
+          { sourceId: source.id, orgId: source.orgId, error },
+          "Failed to compute cron nextRunAt; falling back to interval schedule",
+        );
+      }
+    }
+
+    return this.computeNextIntervalRunAt(source.frequencySeconds, scheduledFor, now);
+  }
+
+  private computeMinuteDispatchDedupeKey(sourceId: string, now: Date) {
+    const bucketStart = new Date(now.getTime());
+    bucketStart.setSeconds(0, 0);
+    const bucketEnd = new Date(bucketStart.getTime() + 60_000);
+    const ttlSeconds = Math.max(
+      1,
+      Math.ceil((bucketEnd.getTime() - now.getTime()) / 1000) + 5
+    );
+    return {
+      key: `news-source:dispatch-minute:${sourceId}:${bucketStart.toISOString()}`,
+      until: bucketEnd.toISOString(),
+      ttlSeconds
+    };
   }
 
   private async resolveCrawlActorId(orgId: string): Promise<string | null> {
@@ -356,6 +1038,105 @@ export class NewsSourceSchedulerService {
   }
 
   private async scheduleDueSources(now: Date, batchSize: number) {
+    const schedulerConfig = this.env.newsSourceSchedulerConfig;
+    const maxPending = schedulerConfig.backpressureMaxPendingJobs;
+    if (maxPending > 0) {
+      try {
+        const pendingJobs = await this.crawlQueue.getPendingJobCount();
+        if (pendingJobs > maxPending) {
+          const sourcesToDelay = await this.prisma.newsSource.findMany({
+            where: {
+              isActive: true,
+              AND: [
+                { OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] },
+                { OR: [{ circuitOpenUntil: null }, { circuitOpenUntil: { lte: now } }] },
+              ],
+            },
+            orderBy: [{ nextRunAt: "asc" }, { priority: "desc" }, { updatedAt: "asc" }],
+            take: batchSize,
+          });
+
+          if (sourcesToDelay.length > 0) {
+            const rescheduleAt = new Date(now.getTime() + schedulerConfig.backpressureDelayMs);
+            await this.prisma.newsSource.updateMany({
+              where: {
+                id: { in: sourcesToDelay.map((source) => source.id) },
+                OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }],
+              },
+              data: { nextRunAt: rescheduleAt },
+            });
+
+            const ttlSeconds = Math.max(1, Math.ceil(schedulerConfig.backpressureDelayMs / 1000));
+            await Promise.allSettled(
+              sourcesToDelay.map((source) =>
+                this.cache.set(
+                  `news-source:backpressure:${source.id}`,
+                  { until: rescheduleAt.toISOString(), pendingJobs, threshold: maxPending },
+                  ttlSeconds
+                )
+              )
+            );
+
+            const countTtlSeconds = 24 * 60 * 60;
+            await Promise.allSettled(
+              sourcesToDelay.map((source) =>
+                this.cache.incr(`news-source:backpressure-count:${source.id}`, countTtlSeconds)
+              )
+            );
+
+            const sourcesByOrgId = new Map<string, number>();
+            for (const source of sourcesToDelay) {
+              sourcesByOrgId.set(source.orgId, (sourcesByOrgId.get(source.orgId) ?? 0) + 1);
+            }
+
+            await Promise.allSettled(
+              Array.from(sourcesByOrgId.entries()).map(async ([orgId, delayedCount]) => {
+                const notifyKey = `news-source:backpressure-notify:${orgId}`;
+                const shouldNotify = await this.cache.setIfAbsent(
+                  notifyKey,
+                  { until: rescheduleAt.toISOString(), pendingJobs, threshold: maxPending },
+                  30 * 60
+                );
+                if (!shouldNotify) {
+                  return;
+                }
+
+                await this.notifications.notify({
+                  orgId,
+                  userId: null,
+                  type: NotificationType.system,
+                  title: "News source scheduler backpressure",
+                  body: `Delayed ${delayedCount} source(s) until ${rescheduleAt.toISOString()} (pending ${pendingJobs} > threshold ${maxPending}).`,
+                  data: {
+                    pendingJobs,
+                    threshold: maxPending,
+                    delayedCount,
+                    rescheduleAt: rescheduleAt.toISOString()
+                  }
+                });
+              })
+            );
+
+            logger.warn(
+              {
+                pendingJobs,
+                threshold: maxPending,
+                delayedCount: sourcesToDelay.length,
+                rescheduleAt,
+              },
+              "Backpressure: delayed news source scheduling due to crawl queue backlog",
+            );
+          }
+          return;
+        }
+      } catch (error) {
+        logger.warn(
+          { error, threshold: maxPending },
+          "Failed to evaluate crawl queue backlog for news source backpressure",
+        );
+      }
+    }
+
     const sources = await this.prisma.newsSource.findMany({
       where: {
         isActive: true,
@@ -373,8 +1154,31 @@ export class NewsSourceSchedulerService {
       take: batchSize,
     });
 
+    const maxEnqueuePerTick = Math.max(0, Math.floor(schedulerConfig.maxEnqueuePerTick));
+    let enqueuedThisTick = 0;
+
     for (const source of sources) {
-      const activeCutoff = new Date(now.getTime() - this.env.newsSourceSchedulerConfig.inFlightLookbackMs);
+      if (maxEnqueuePerTick > 0 && enqueuedThisTick >= maxEnqueuePerTick) {
+        logger.info(
+          { enqueuedThisTick, maxEnqueuePerTick },
+          "Reached max enqueue per tick; stopping news source scheduling for this run",
+        );
+        break;
+      }
+
+      const dedupe = this.computeMinuteDispatchDedupeKey(source.id, now);
+      const dedupeAcquired = await this.cache.setIfAbsent(
+        dedupe.key,
+        { until: dedupe.until },
+        dedupe.ttlSeconds
+      );
+      if (!dedupeAcquired) {
+        continue;
+      }
+
+      void this.cache.del(`news-source:backpressure:${source.id}`).catch(() => undefined);
+
+      const activeCutoff = new Date(now.getTime() - schedulerConfig.inFlightLookbackMs);
       const seedConfig = this.normalizeSeedConfig(source);
       const inFlightLimit = seedConfig ? seedConfig.maxNewUrlsPerRun : 1;
       const inFlightJobs = await this.prisma.pipelineJob.findMany({
@@ -395,7 +1199,7 @@ export class NewsSourceSchedulerService {
       if (shouldBlock) {
         const newest = inFlightJobs[0];
         const rescheduleAt = new Date(
-          now.getTime() + this.env.newsSourceSchedulerConfig.inFlightRescheduleDelayMs,
+          now.getTime() + schedulerConfig.inFlightRescheduleDelayMs,
         );
         try {
           await this.prisma.newsSource.updateMany({
@@ -431,9 +1235,7 @@ export class NewsSourceSchedulerService {
       }
 
       const scheduledFor = source.nextRunAt ?? now;
-      const nextRunAt = new Date(
-        scheduledFor.getTime() + source.frequencySeconds * 1000,
-      );
+      const nextRunAt = this.computeNextRunAt(source, scheduledFor, now);
 
       const maxNewUrlsThisRun = seedConfig ? Math.max(0, remainingCapacity) : 1;
       try {
@@ -471,6 +1273,30 @@ export class NewsSourceSchedulerService {
           continue;
         }
 
+        const remainingEnqueueCapacity =
+          maxEnqueuePerTick > 0 ? Math.max(0, maxEnqueuePerTick - enqueuedThisTick) : newJobs.length;
+        const jobsToEnqueue = newJobs.slice(0, remainingEnqueueCapacity);
+        if (jobsToEnqueue.length === 0) {
+          logger.info(
+            { sourceId: source.id, orgId: source.orgId, enqueuedThisTick, maxEnqueuePerTick },
+            "Skipped scheduling due to global enqueue limit",
+          );
+          break;
+        }
+        if (jobsToEnqueue.length < newJobs.length) {
+          logger.info(
+            {
+              sourceId: source.id,
+              orgId: source.orgId,
+              limited: jobsToEnqueue.length,
+              original: newJobs.length,
+              enqueuedThisTick,
+              maxEnqueuePerTick,
+            },
+            "Limited news source scheduling due to global enqueue cap",
+          );
+        }
+
         const bullPriority = this.toBullmqPriority(source.priority);
         const crawlActorId = await this.resolveCrawlActorId(source.orgId);
         if (!crawlActorId) {
@@ -486,7 +1312,7 @@ export class NewsSourceSchedulerService {
             : source.url
           : undefined;
 
-        for (const job of newJobs) {
+        for (const job of jobsToEnqueue) {
           const payload = this.buildPayload(
             source,
             job.url,
@@ -617,6 +1443,7 @@ export class NewsSourceSchedulerService {
               where: { id: crawlTaskId },
               data: { status: "queued" },
             });
+            enqueuedThisTick += 1;
           } catch (queueError) {
             logger.error(
               { error: queueError, pipelineJobId, orgId: source.orgId, sourceId: source.id, crawlTaskId },
@@ -640,6 +1467,14 @@ export class NewsSourceSchedulerService {
               }),
             ]);
           }
+        }
+
+        if (maxEnqueuePerTick > 0 && enqueuedThisTick >= maxEnqueuePerTick) {
+          logger.info(
+            { enqueuedThisTick, maxEnqueuePerTick },
+            "Reached max enqueue per tick; stopping news source scheduling for this run",
+          );
+          break;
         }
       } catch (error) {
         logger.error(

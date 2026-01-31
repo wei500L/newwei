@@ -7,8 +7,11 @@ import {
   ServiceUnavailableException
 } from "@nestjs/common";
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from "axios";
+import { createHash } from "node:crypto";
 
 import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
+
+import { CacheService } from "../cache/cache.service";
 
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 
@@ -42,6 +45,11 @@ export interface LlmGatewayChatTestResult {
   usage?: ChatCompletionResponse["usage"];
   costUsd?: number;
   keySpendUsd?: number;
+  callId?: string;
+  modelId?: string;
+  modelApiBase?: string;
+  modelGroup?: string;
+  proxyVersion?: string;
 }
 
 export interface LlmGatewayEmbeddingTestResult {
@@ -51,6 +59,11 @@ export interface LlmGatewayEmbeddingTestResult {
   usage?: EmbeddingResponse["usage"];
   costUsd?: number;
   keySpendUsd?: number;
+  callId?: string;
+  modelId?: string;
+  modelApiBase?: string;
+  modelGroup?: string;
+  proxyVersion?: string;
 }
 
 export interface LlmGatewayTestError {
@@ -87,6 +100,34 @@ export interface LlmGatewayProxyHealthResult {
   checkedAt: string;
   liveliness: LlmGatewayProxyEndpointCheck;
   readiness: LlmGatewayProxyEndpointCheck;
+}
+
+export interface LlmGatewayProxyModelInfoEntry {
+  modelName: string;
+  litellmParams?: Record<string, unknown>;
+  modelInfo?: Record<string, unknown>;
+}
+
+export interface LlmGatewayProxyModelInfoResult {
+  apiBase: string;
+  checkedAt: string;
+  cached?: boolean;
+  cacheTtlSeconds?: number;
+  models: LlmGatewayProxyModelInfoEntry[];
+}
+
+export interface LlmGatewayProxyLoadBalancingTestResult {
+  apiBase: string;
+  model: string;
+  attempts: number;
+  succeeded: number;
+  failed: number;
+  durationMs: number;
+  checkedAt: string;
+  modelIdDistribution: Record<string, number>;
+  modelApiBaseDistribution: Record<string, number>;
+  callIdSamples: string[];
+  errors: LlmGatewayTestError[];
 }
 
 export interface LlmGatewayModelsConfigInput {
@@ -129,7 +170,15 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 1_200;
 export class LlmGatewayTestService {
   private readonly logger = createLogger({ name: "llm-gateway-test" });
 
-  constructor(private readonly settings: LlmGatewaySettingsService) {}
+  constructor(
+    private readonly settings: LlmGatewaySettingsService,
+    private readonly cache: CacheService
+  ) {}
+
+  private buildProxyModelInfoCacheKey(profileId: string, apiBase: string) {
+    const digest = createHash("sha256").update(apiBase).digest("hex").slice(0, 16);
+    return `llm_gateway:proxy_model_info:v1:${profileId}:${digest}`;
+  }
 
   async checkProxyHealth(profileId: string): Promise<LlmGatewayProxyHealthResult> {
     const cfg = await this.settings.getProfileConfig(profileId);
@@ -164,6 +213,189 @@ export class LlmGatewayTestService {
       checkedAt: new Date().toISOString(),
       liveliness,
       readiness
+    };
+  }
+
+  async getProxyModelInfo(
+    profileId: string,
+    options?: { force?: boolean }
+  ): Promise<LlmGatewayProxyModelInfoResult> {
+    const cfg = await this.settings.getProfileConfig(profileId);
+    if (!cfg) {
+      throw new NotFoundException("LLM gateway profile not found");
+    }
+
+    const baseUrl = normalizeApiBase(cfg.apiBase);
+    if (!baseUrl) {
+      throw new BadRequestException("apiBase is not configured");
+    }
+
+    const cacheTtlSeconds = 60;
+    const cacheKey = this.buildProxyModelInfoCacheKey(profileId, baseUrl);
+    if (!options?.force) {
+      try {
+        const cached = await this.cache.get<LlmGatewayProxyModelInfoResult>(cacheKey);
+        if (cached) {
+          return {
+            ...cached,
+            cached: true,
+            cacheTtlSeconds
+          };
+        }
+      } catch (error) {
+        this.logger.warn({ err: error }, "Failed to read proxy model info cache");
+      }
+    }
+
+    const client = axios.create({
+      baseURL: baseUrl,
+      timeout: cfg.timeoutMs,
+      headers: {
+        ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {})
+      }
+    });
+
+    const context = { apiKeyConfigured: Boolean(cfg.apiKey) };
+
+    try {
+      const response = await getWithFallback<{ models?: unknown }>(
+        client,
+        "/v1/model/info",
+        "/model/info",
+        { timeout: cfg.timeoutMs }
+      );
+
+      const rawModels = response.data?.models;
+      const models = Array.isArray(rawModels) ? rawModels : [];
+      const normalized = models
+        .map((entry) => normalizeProxyModelInfoEntry(entry))
+        .filter((entry): entry is LlmGatewayProxyModelInfoEntry => entry !== null);
+
+      const result: LlmGatewayProxyModelInfoResult = {
+        apiBase: baseUrl,
+        checkedAt: new Date().toISOString(),
+        models: normalized
+      };
+      if (!options?.force) {
+        try {
+          await this.cache.set(cacheKey, result, cacheTtlSeconds);
+        } catch (error) {
+          this.logger.warn({ err: error }, "Failed to write proxy model info cache");
+        }
+      }
+      return result;
+    } catch (error) {
+      this.throwGatewayError(error, context);
+    }
+  }
+
+  async testProxyLoadBalancing(
+    profileId: string,
+    input: {
+      model?: string;
+      attempts?: number;
+      concurrency?: number;
+      prompt?: string;
+    }
+  ): Promise<LlmGatewayProxyLoadBalancingTestResult> {
+    const cfg = await this.settings.getProfileConfig(profileId);
+    if (!cfg) {
+      throw new NotFoundException("LLM gateway profile not found");
+    }
+
+    const baseUrl = normalizeApiBase(cfg.apiBase);
+    if (!baseUrl) {
+      throw new BadRequestException("apiBase is not configured");
+    }
+
+    const model = normalizeOptionalString(input.model) ?? normalizeOptionalString(cfg.model);
+    if (!model) {
+      throw new BadRequestException("model is not configured");
+    }
+
+    const attempts = clampInt(input.attempts, 1, 50, 8);
+    const concurrency = clampInt(input.concurrency, 1, 10, 2);
+    const prompt = normalizeOptionalString(input.prompt) ?? DEFAULT_PROMPT;
+
+    const client = axios.create({
+      baseURL: baseUrl,
+      timeout: cfg.timeoutMs,
+      headers: {
+        "Content-Type": "application/json",
+        ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {})
+      }
+    });
+
+    const context = { apiKeyConfigured: Boolean(cfg.apiKey) };
+    const startedAt = Date.now();
+
+    const modelIdDistribution: Record<string, number> = {};
+    const modelApiBaseDistribution: Record<string, number> = {};
+    const callIdSamples: string[] = [];
+    const errors: LlmGatewayTestError[] = [];
+
+    let succeeded = 0;
+    let failed = 0;
+
+    const semaphore = new AsyncSemaphore(concurrency);
+
+    await Promise.allSettled(
+      Array.from({ length: attempts }).map((_, idx) =>
+        semaphore.withPermit(async () => {
+          try {
+            const payload = {
+              model,
+              messages: [{ role: "user", content: `${prompt}\n#${idx + 1}` }],
+              temperature: 0,
+              top_p: 1,
+              max_tokens: 16,
+              stream: false
+            };
+
+            const response = await postWithFallback<ChatCompletionResponse>(
+              client,
+              "/v1/chat/completions",
+              "/chat/completions",
+              payload,
+              { timeout: cfg.timeoutMs }
+            );
+
+            succeeded += 1;
+
+            const modelId =
+              normalizeOptionalString(response.headers?.["x-litellm-model-id"]) ?? "unknown";
+            const apiBase =
+              normalizeOptionalString(response.headers?.["x-litellm-model-api-base"]) ?? "unknown";
+
+            modelIdDistribution[modelId] = (modelIdDistribution[modelId] ?? 0) + 1;
+            modelApiBaseDistribution[apiBase] = (modelApiBaseDistribution[apiBase] ?? 0) + 1;
+
+            const callId = normalizeOptionalString(response.headers?.["x-litellm-call-id"]);
+            if (callId && callIdSamples.length < 20) {
+              callIdSamples.push(callId);
+            }
+          } catch (error) {
+            failed += 1;
+            if (errors.length < 10) {
+              errors.push(this.toGatewayErrorInfo(error, context));
+            }
+          }
+        })
+      )
+    );
+
+    return {
+      apiBase: baseUrl,
+      model,
+      attempts,
+      succeeded,
+      failed,
+      durationMs: Date.now() - startedAt,
+      checkedAt: new Date().toISOString(),
+      modelIdDistribution,
+      modelApiBaseDistribution,
+      callIdSamples,
+      errors
     };
   }
 
@@ -465,7 +697,8 @@ export class LlmGatewayTestService {
             ...(finishReason ? { finishReason } : {}),
             latencyMs,
             ...(response.data.usage ? { usage: response.data.usage } : {}),
-            ...this.extractCosts(response)
+            ...this.extractCosts(response),
+            ...this.extractLiteLlmHeaders(response)
           } satisfies LlmGatewayChatTestResult
         };
       } catch (error) {
@@ -519,7 +752,8 @@ export class LlmGatewayTestService {
       dimensions: firstEmbedding.length,
       latencyMs,
       ...(response.data.usage ? { usage: response.data.usage } : {}),
-      ...this.extractCosts(response)
+      ...this.extractCosts(response),
+      ...this.extractLiteLlmHeaders(response)
     };
   }
 
@@ -536,6 +770,22 @@ export class LlmGatewayTestService {
     return {
       ...(costUsd !== undefined ? { costUsd } : {}),
       ...(keySpendUsd !== undefined ? { keySpendUsd } : {})
+    };
+  }
+
+  private extractLiteLlmHeaders(response: AxiosResponse) {
+    const callId = normalizeOptionalString(response.headers?.["x-litellm-call-id"]);
+    const modelId = normalizeOptionalString(response.headers?.["x-litellm-model-id"]);
+    const modelApiBase = normalizeOptionalString(response.headers?.["x-litellm-model-api-base"]);
+    const proxyVersion = normalizeOptionalString(response.headers?.["x-litellm-version"]);
+    const modelGroup = normalizeOptionalString(response.headers?.["x-litellm-model-group"]);
+
+    return {
+      ...(callId ? { callId } : {}),
+      ...(modelId ? { modelId } : {}),
+      ...(modelApiBase ? { modelApiBase } : {}),
+      ...(modelGroup ? { modelGroup } : {}),
+      ...(proxyVersion ? { proxyVersion } : {})
     };
   }
 
@@ -709,6 +959,62 @@ async function getWithFallback<T>(
   }
 }
 
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+class AsyncSemaphore {
+  private limit: number;
+  private active = 0;
+  private queue: (() => void)[] = [];
+
+  constructor(limit: number) {
+    this.limit = Math.max(1, Math.trunc(limit));
+  }
+
+  async withPermit<T>(fn: () => Promise<T>): Promise<T> {
+    const release = await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  private acquire(): Promise<() => void> {
+    if (this.active < this.limit) {
+      this.active += 1;
+      return Promise.resolve(() => this.release());
+    }
+
+    return new Promise((resolve) => {
+      this.queue.push(() => {
+        this.active += 1;
+        resolve(() => this.release());
+      });
+    });
+  }
+
+  private release() {
+    this.active = Math.max(0, this.active - 1);
+    this.drain();
+  }
+
+  private drain() {
+    while (this.active < this.limit) {
+      const next = this.queue.shift();
+      if (!next) {
+        return;
+      }
+      next();
+    }
+  }
+}
+
 function extractNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -872,6 +1178,60 @@ function extractMessageLike(value: unknown): string | undefined {
 function redactSecrets(text: string): string {
   const bearerRedacted = text.replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]");
   return bearerRedacted.replace(/\bsk-[A-Za-z0-9]{10,}\b/g, "sk-[REDACTED]");
+}
+
+function sanitizeProxyModelInfoValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return redactSecrets(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null || value === undefined) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeProxyModelInfoValue(entry));
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const next: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(record)) {
+      if (key === "api_key" || key === "apiKey" || key === "Authorization" || key === "authorization") {
+        continue;
+      }
+      next[key] = sanitizeProxyModelInfoValue(entry);
+    }
+    return next;
+  }
+  return value;
+}
+
+function normalizeProxyModelInfoEntry(raw: unknown): LlmGatewayProxyModelInfoEntry | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const modelName = typeof record.model_name === "string" ? record.model_name.trim() : "";
+  if (!modelName) {
+    return null;
+  }
+
+  const litellmParamsRaw = record.litellm_params;
+  const modelInfoRaw = record.model_info;
+
+  const litellmParams =
+    litellmParamsRaw && typeof litellmParamsRaw === "object" && !Array.isArray(litellmParamsRaw)
+      ? (sanitizeProxyModelInfoValue(litellmParamsRaw) as Record<string, unknown>)
+      : undefined;
+
+  const modelInfo =
+    modelInfoRaw && typeof modelInfoRaw === "object" && !Array.isArray(modelInfoRaw)
+      ? (sanitizeProxyModelInfoValue(modelInfoRaw) as Record<string, unknown>)
+      : undefined;
+
+  return {
+    modelName,
+    ...(litellmParams ? { litellmParams } : {}),
+    ...(modelInfo ? { modelInfo } : {})
+  };
 }
 
 function buildAuthHint(status: number, apiKeyConfigured: boolean | undefined): string {

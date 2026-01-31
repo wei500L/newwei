@@ -17,6 +17,15 @@ export class CacheService implements OnModuleDestroy {
     return value ? (JSON.parse(value) as T) : null;
   }
 
+  async getMany<T>(keys: string[]): Promise<(T | null)[]> {
+    if (keys.length === 0) {
+      return [];
+    }
+
+    const values = await this.redis.mget(keys);
+    return values.map((value) => (value ? (JSON.parse(value) as T) : null));
+  }
+
   async set<T>(key: string, value: T, ttlSeconds?: number) {
     const payload = JSON.stringify(value);
     if (ttlSeconds) {
@@ -24,6 +33,13 @@ export class CacheService implements OnModuleDestroy {
     } else {
       await this.redis.set(key, payload);
     }
+  }
+
+  async setIfAbsent<T>(key: string, value: T, ttlSeconds: number) {
+    const payload = JSON.stringify(value);
+    const ttl = Math.max(1, Math.floor(ttlSeconds));
+    const result = await this.redis.set(key, payload, "EX", ttl, "NX");
+    return result === "OK";
   }
 
   async del(key: string) {

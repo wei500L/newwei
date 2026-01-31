@@ -863,6 +863,8 @@
       },
       "sectorHeatmapValueLabel": "Value",
       "sectorHeatmapChangeLabel": "Change",
+      "sectorHeatmapConfigErrorTitle": "Sector heatmap configuration error",
+      "sectorHeatmapConfigErrorDescription": "Some economic indicators have no matching source field for the heatmap.",
       "entityImpactGraph": "Entity Impact Graph",
       "knowledgeGraph": "Knowledge Graph",
       "knowledgeGraphSeedRequired": "Enter a seed entity",
@@ -1426,6 +1428,23 @@
   "newsSources": {
     "title": "News Sources",
     "searchPlaceholder": "Search by name or URL",
+    "autoRefresh": {
+      "label": "Auto refresh",
+      "updatedAt": "Updated at {{time}}"
+    },
+    "liveUpdates": {
+      "label": "Live updates",
+      "connected": "Live",
+      "connecting": "Connecting",
+      "disconnected": "Disconnected",
+      "error": "Error",
+      "lastEvent": "Last event: {{time}}",
+      "details": {
+        "lastEvent": "Last event",
+        "refreshOn": "Refresh on",
+        "resetCounters": "Reset counters"
+      }
+    },
     "columns": {
       "name": "Name",
       "type": "Type",
@@ -2076,12 +2095,32 @@
     },
     "llmGateway": {
       "description": "Manage OpenAI-compatible LLM gateway profiles. The active profile overrides runtime requests made by the API.",
+      "guardrails": {
+        "title": "AI Assistant content safety (OpenAI omni-moderation)",
+        "scope": "Only applies to the AI Assistant feature: before requests are sent upstream, LiteLLM Proxy calls OpenAI omni-moderation to screen user input. Flagged requests are blocked early to reduce upstream policy risk/bans.",
+        "howItWorks": {
+          "title": "How it works",
+          "body": "The API attaches guardrail names (e.g. openai-moderation-pre) to each Assistant request. LiteLLM Proxy runs these checks in pre_call and blocks unsafe inputs before calling the upstream LLM."
+        },
+        "setup": {
+          "title": "Setup",
+          "proxyConfigPrefix": "1) Enable in LiteLLM Proxy config:",
+          "proxyConfigSuffix": "This repo already includes the OpenAI moderation guardrail (requires OPENAI_API_KEY):",
+          "apiEnvPrefix": "2) Enable in API env vars:",
+          "apiEnvSuffix": "(comma-separate to add more guardrail names if needed)",
+          "verify": "3) Verify: in the AI Assistant page, try an obviously malicious/violating prompt. It should be blocked with a friendly message and will not call the upstream LLM."
+        },
+        "notes": "Cost: OpenAI omni-moderation is typically not billed separately (check OpenAI’s latest policy). It adds a small latency overhead. By default we only screen inputs (pre_call). If you also want to screen outputs, add openai-moderation-post to ASSISTANT_GUARDRAILS."
+      },
       "proxyStatus": {
         "title": "LiteLLM Proxy status",
         "target": "Target: {{name}}",
         "actions": {
           "checkHealth": "Check proxy health",
-          "models": "Models"
+          "modelInfo": "Model info",
+          "loadBalancing": "Load balancing",
+          "models": "Models",
+          "lbTest": "LB test"
         },
         "liveliness": "Liveliness",
         "readiness": "Readiness",
@@ -2092,7 +2131,81 @@
         },
         "empty": "No gateway profiles yet. Create one to start.",
         "errors": {
-          "failed": "Failed to check proxy health"
+          "failed": "Failed to check proxy health",
+          "modelInfoFailed": "Failed to load proxy model info",
+          "lbTestFailed": "Load balancing test failed"
+        }
+      },
+      "proxyModelInfo": {
+        "modal": {
+          "title": "LiteLLM Proxy model info: {{name}}"
+        },
+        "summary": "Model groups: {{groups}}, deployments: {{deployments}}",
+        "hint": "When the same model has multiple deployments, LiteLLM Proxy will automatically distribute traffic across them.",
+        "columns": {
+          "model": "Model",
+          "deployments": "Deployments",
+          "details": "Details"
+        }
+      },
+      "proxyLoadBalancing": {
+        "modal": {
+          "title": "LiteLLM Proxy load balancing"
+        },
+        "hint": "Fill multiple keys and routing strategy, then paste the snippet into infra/docker/.env and restart the litellm service to enable multi-deployment load balancing.",
+        "fields": {
+          "openaiKeys": "OPENAI_API_KEYS",
+          "anthropicKeys": "ANTHROPIC_API_KEYS",
+          "routingStrategy": "routing_strategy",
+          "deploymentRpm": "LITELLM_DEPLOYMENT_RPM",
+          "deploymentTpm": "LITELLM_DEPLOYMENT_TPM",
+          "redisHost": "LITELLM_REDIS_HOST",
+          "redisPort": "LITELLM_REDIS_PORT",
+          "redisPassword": "LITELLM_REDIS_PASSWORD"
+        },
+        "hints": {
+          "keys": "Comma- or newline-separated; leave empty to disable multi-key."
+        }
+      },
+      "proxyLbTest": {
+        "modal": {
+          "title": "LiteLLM Proxy load balancing test: {{name}}"
+        },
+        "actions": {
+          "run": "Run test"
+        },
+        "fields": {
+          "model": "Model override",
+          "attempts": "Attempts",
+          "concurrency": "Concurrency",
+          "prompt": "Prompt"
+        },
+        "hints": {
+          "model": "Leave empty to use the profile default model.",
+          "prompt": "Leave empty to use the default prompt."
+        },
+        "checkedAt": "Checked at: {{time}}",
+        "summary": {
+          "title": "LB test",
+          "succeeded": "Succeeded",
+          "success": "Success",
+          "failed": "Failed",
+          "duration": "Duration",
+          "deployments": "Model IDs",
+          "modelIds": "Model IDs",
+          "apiBases": "API bases"
+        },
+        "sections": {
+          "modelIds": "Model ID distribution",
+          "apiBases": "API base distribution",
+          "callIds": "Call ID samples",
+          "errors": "Errors"
+        },
+        "columns": {
+          "id": "ID",
+          "apiBase": "API base",
+          "count": "Count",
+          "ratio": "Share"
         }
       },
       "active": "Active",
@@ -2244,6 +2357,122 @@
         }
       }
     },
+    "assistantSafety": {
+      "title": "Assistant safety",
+      "hint": {
+        "title": "Guardrails are enforced via LiteLLM Proxy",
+        "body": "Enable/disable moderation guardrails for the AI assistant. Make sure the LiteLLM Proxy config defines the required guardrails."
+      },
+      "docs": {
+        "scope": "This setting ONLY affects the AI Assistant page (/assistant). Other features using LiteLlmService (news pipeline / analysis / monitoring) do not pass guardrails, so they are NOT moderated by this switch.",
+        "setupTitle": "Setup checklist:",
+        "setupBody": "1) Configure LiteLLM Proxy guardrails in infra/litellm/litellm-config.yaml (openai-moderation-pre / openai-moderation-post).\n2) In this panel, save OpenAI API keys (stored in MySQL).\n3) Set LITELLM_CONFIG_INTERNAL_TOKEN in both API and litellm env (root .env or infra/docker/.env) so litellm can fetch keys on startup, then restart the litellm service.\n4) (Optional) In this panel, enable output moderation if you also want to moderate assistant responses (may impact streaming)."
+      },
+      "openaiKeys": {
+        "title": "OpenAI keys (LiteLLM upstream)",
+        "description": "These keys are stored in MySQL and fetched by LiteLLM Proxy at startup (requires LITELLM_CONFIG_INTERNAL_TOKEN), used for OpenAI model calls and omni-moderation guardrails. If you provide multiple keys, assistant moderation calls are spread across them. Restart the litellm service after updating.",
+        "compliance": "Please ensure your usage complies with OpenAI's terms. Do not use multiple keys to bypass provider limits or billing policies.",
+        "status": {
+          "configured": "Configured",
+          "empty": "Not configured",
+          "count": "{{count}} keys",
+          "tokenOk": "Internal token configured",
+          "tokenMissing": "Missing internal token",
+          "lbOn": "LB on",
+          "lbOff": "LB off"
+        },
+        "warnings": {
+          "tokenMissing": "LITELLM_CONFIG_INTERNAL_TOKEN is not configured. LiteLLM cannot fetch keys from MySQL at startup."
+        },
+        "fields": {
+          "keys": "OpenAI API keys",
+          "keysHint": "Comma or newline separated. Add (append) will merge/dedupe; Save (replace) will overwrite the stored list.",
+          "keysPlaceholder": "sk-...\nsk-...\n..."
+        },
+        "preview": "Detected {{count}} key(s) in input.",
+        "actions": {
+          "append": "Add (append)",
+          "replace": "Save (replace)"
+        },
+        "messages": {
+          "saved": "Saved.",
+          "appended": "Added.",
+          "emptyInput": "Please paste at least one key."
+        },
+        "errors": {
+          "loadFailed": "Failed to load OpenAI keys configuration.",
+          "saveFailed": "Save failed.",
+          "appendFailed": "Add failed."
+        },
+        "replace": {
+          "modal": {
+            "title": "Replace key list?",
+            "content": "This will overwrite the stored key list."
+          }
+        },
+        "remove": {
+          "modal": {
+            "title": "Remove this key?",
+            "content": "This removes the selected key from the database."
+          },
+          "messages": {
+            "done": "Removed."
+          },
+          "errors": {
+            "failed": "Remove failed."
+          }
+        },
+        "list": {
+          "title": "Stored key fingerprints",
+          "empty": "No keys stored."
+        },
+        "reset": {
+          "action": "Clear keys",
+          "modal": {
+            "title": "Clear OpenAI keys?",
+            "content": "This removes stored OpenAI API keys from the database."
+          },
+          "messages": {
+            "done": "Cleared."
+          },
+          "errors": {
+            "failed": "Clear failed."
+          }
+        }
+      },
+      "guardrails": {
+        "label": "Effective guardrails"
+      },
+      "fields": {
+        "enabled": "Enable guardrails",
+        "outputModerationEnabled": "Enable output moderation",
+        "outputModerationHint": "May buffer streaming responses depending on upstream guardrail behavior."
+      },
+      "source": {
+        "env": "Env",
+        "db": "DB override"
+      },
+      "messages": {
+        "saved": "Saved"
+      },
+      "errors": {
+        "loadFailed": "Failed to load assistant safety settings.",
+        "saveFailed": "Save failed."
+      },
+      "reset": {
+        "action": "Reset to env",
+        "modal": {
+          "title": "Reset to env defaults?",
+          "content": "This removes the database override and falls back to the env configuration."
+        },
+        "messages": {
+          "done": "Reset."
+        },
+        "errors": {
+          "failed": "Reset failed."
+        }
+      }
+    },
     "adminOnly": {
       "title": "Admin only",
       "description": "Admin only description"
@@ -2262,6 +2491,7 @@
       "newsDedupe": "News dedupe",
       "newsPrompts": "News prompts",
       "llmGateway": "LLM gateway",
+      "assistantSafety": "Assistant safety",
       "roles": "Roles",
       "permissions": "Permissions",
       "members": "Members"
@@ -3835,6 +4065,23 @@
       "4h": "Last 4h",
       "24h": "Last 24h"
     },
+    "autoRefresh": {
+      "label": "Auto refresh"
+    },
+    "liveUpdates": {
+      "label": "Live updates",
+      "connected": "Live",
+      "connecting": "Connecting",
+      "disconnected": "Disconnected",
+      "error": "Error",
+      "lastEvent": "Last event: {{time}}",
+      "details": {
+        "lastEvent": "Last event",
+        "refreshOn": "Refresh on",
+        "resetCounters": "Reset counters"
+      }
+    },
+    "updatedAt": "Updated at: {{time}}",
     "pipeline": {
       "title": "Pipeline",
       "total": "Total",
@@ -3845,11 +4092,78 @@
       "ingestP50": "Ingest p50",
       "ingestP90": "Ingest p90",
       "outboxOldest": "Outbox oldest",
-      "failures": "Top Failures"
+      "failures": "Top Failures",
+      "outbox": {
+        "pending": "Outbox pending",
+        "processing": "Outbox processing",
+        "failed": "Outbox failed",
+        "stale": "Outbox stale"
+      }
+    },
+    "llm": {
+      "title": "LLM",
+      "columns": {
+        "model": "Model",
+        "count": "Count",
+        "avgLatency": "Avg latency",
+        "avgCost": "Avg cost",
+        "avgTokens": "Avg tokens"
+      }
+    },
+    "taskLogs": {
+      "title": "Task logs",
+      "summary": {
+        "title": "Top errors",
+        "totals": {
+          "total": "Total logs",
+          "pending": "Pending",
+          "processing": "Processing",
+          "completed": "Completed",
+          "failed": "Failed"
+        },
+        "columns": {
+          "queue": "Queue",
+          "stage": "Stage",
+          "error": "Error",
+          "count": "Count",
+          "sample": "Sample"
+        }
+      },
+      "filters": {
+        "queue": "Queue (optional)",
+        "stage": "Stage (optional)",
+        "since": "Since",
+        "minutes": "min",
+        "limit": "Limit",
+        "statusAll": "All statuses"
+      },
+      "status": {
+        "pending": "pending",
+        "processing": "processing",
+        "completed": "completed",
+        "failed": "failed"
+      },
+      "columns": {
+        "time": "Time",
+        "queue": "Queue",
+        "stage": "Stage",
+        "status": "Status",
+        "message": "Message",
+        "jobId": "Job"
+      }
     }
   },
   "assistant": {
     "streamError": "Assistant stream error: {{error}}",
+    "blocked": {
+      "tag": "Blocked",
+      "title": "Blocked by safety checks",
+      "description": "Your input was blocked by content safety moderation. Please revise and try again.",
+      "details": {
+        "guardrails": "Applied guardrails",
+        "upstreamStatus": "Upstream status"
+      }
+    },
     "preview": {
       "series": "Series",
       "model": "Model",

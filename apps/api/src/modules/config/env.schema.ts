@@ -91,6 +91,10 @@ export const apiEnvSchema = baseEnvSchema.extend({
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z.string().min(1).optional()
   ),
+  LITELLM_CONFIG_INTERNAL_TOKEN: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(16).optional()
+  ),
   LITELLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   LITELLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.2),
   LITELLM_TOP_P: z.coerce.number().min(0).max(1).default(0.9),
@@ -160,11 +164,16 @@ export const apiEnvSchema = baseEnvSchema.extend({
   NEWS_SOURCE_SCHEDULER_LOCK_TTL_MS: z.coerce.number().int().positive().default(120_000),
   NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS: z.coerce.number().int().positive().default(21_600_000),
   NEWS_SOURCE_SCHEDULER_INFLIGHT_RESCHEDULE_DELAY_MS: z.coerce.number().int().positive().default(300_000),
+  NEWS_SOURCE_SCHEDULER_JITTER_MAX_MS: z.coerce.number().int().nonnegative().default(60_000),
+  NEWS_SOURCE_SCHEDULER_MAX_ENQUEUE_PER_TICK: z.coerce.number().int().nonnegative().default(100),
+  NEWS_SOURCE_SCHEDULER_BACKPRESSURE_MAX_PENDING_JOBS: z.coerce.number().int().nonnegative().default(100),
+  NEWS_SOURCE_SCHEDULER_BACKPRESSURE_DELAY_MS: z.coerce.number().int().positive().default(300_000),
   NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS: z.coerce.number().int().positive().default(600_000),
   NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS: z.coerce.number().int().positive().default(21_600_000),
   NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().nonnegative().default(3),
   NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS: z.coerce.number().int().positive().default(3_600_000),
   NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS: z.coerce.number().int().positive().default(86_400_000),
+  NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD: z.coerce.number().int().nonnegative().default(0),
   ALERT_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(4),
   ALERT_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   ALERT_MAX_RETRIES: z.coerce.number().int().positive().default(3),
@@ -204,6 +213,11 @@ export const apiEnvSchema = baseEnvSchema.extend({
   ASSISTANT_LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
   ASSISTANT_STREAM_FLUSH_CHARS: z.coerce.number().int().positive().default(80),
   ASSISTANT_STREAM_FLUSH_MS: z.coerce.number().int().nonnegative().default(250),
+  ASSISTANT_GUARDRAILS_ENABLED: envBoolean.default(true),
+  ASSISTANT_GUARDRAILS: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().default("openai-moderation-pre")
+  ),
   SYSTEM_SETTINGS_ENCRYPTION_KEY: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),

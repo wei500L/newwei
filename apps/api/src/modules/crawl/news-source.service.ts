@@ -2,11 +2,17 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { NewsSourceType, PipelineJobStatus, Prisma } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
+import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { CrawlMetadataService } from "./crawl-metadata.service";
-import { CreateNewsSourceDto, ListNewsSourceDto, UpdateNewsSourceDto } from "./dto/news-source.dto";
+import {
+  CreateNewsSourceDto,
+  ListNewsSourceDto,
+  ScheduleNewsSourceDto,
+  UpdateNewsSourceDto,
+} from "./dto/news-source.dto";
 
 const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
   PipelineJobStatus.pending,
@@ -48,7 +54,8 @@ export class NewsSourceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metadataService: CrawlMetadataService,
-    private readonly env: EnvService
+    private readonly env: EnvService,
+    private readonly cache: CacheService
   ) {}
 
   async listSources(orgId: string, query?: ListNewsSourceDto) {
@@ -61,9 +68,222 @@ export class NewsSourceService {
       ];
     }
 
-    return this.prisma.newsSource.findMany({
+    const sources = await this.prisma.newsSource.findMany({
       where,
-      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }]
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      include: {
+        jobs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            url: true,
+            createdAt: true,
+            startedAt: true,
+            completedAt: true,
+            error: true,
+            metadata: true
+          }
+        },
+        articles: {
+          orderBy: { crawlAt: "desc" },
+          take: 1,
+          select: { id: true, url: true, crawlAt: true, titleGuess: true }
+        }
+      }
+    });
+
+    const isRecord = (value: unknown): value is Record<string, unknown> =>
+      Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+    const crawlTaskIds = Array.from(
+      new Set(
+        sources
+          .map((source) => source.jobs?.[0]?.metadata)
+          .map((metadata) => (isRecord(metadata) ? metadata.crawlTaskId : null))
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+      )
+    );
+
+    const crawlTasks =
+      crawlTaskIds.length > 0
+        ? await this.prisma.crawlTask.findMany({
+            where: { orgId, id: { in: crawlTaskIds } },
+            select: {
+              id: true,
+              status: true,
+              lastError: true,
+              lastRunAt: true,
+              lastSuccessAt: true,
+              lastResultAt: true
+            }
+          })
+        : [];
+
+    const crawlTaskById = new Map(crawlTasks.map((task) => [task.id, task]));
+
+    const sourceIdSet = new Set(sources.map((source) => source.id));
+    const activeNewsSourceCrawlTasks = await this.prisma.crawlTask.findMany({
+      where: {
+        orgId,
+        status: { in: ["queued", "running"] },
+        displayName: { startsWith: "NewsSource:" }
+      },
+      select: { status: true, displayName: true }
+    });
+
+    const queueCountsBySourceId = new Map<string, { queued: number; running: number }>();
+    const extractSourceIdFromDisplayName = (displayName: string) => {
+      const match = /^NewsSource:([^:]+):/.exec(displayName);
+      return match?.[1] ?? null;
+    };
+    for (const task of activeNewsSourceCrawlTasks) {
+      const displayName = task.displayName;
+      if (typeof displayName !== "string" || displayName.length === 0) {
+        continue;
+      }
+      const sourceId = extractSourceIdFromDisplayName(displayName);
+      if (!sourceId || !sourceIdSet.has(sourceId)) {
+        continue;
+      }
+      const entry = queueCountsBySourceId.get(sourceId) ?? { queued: 0, running: 0 };
+      if (task.status === "queued") {
+        entry.queued += 1;
+      } else if (task.status === "running") {
+        entry.running += 1;
+      }
+      queueCountsBySourceId.set(sourceId, entry);
+    }
+
+    const backpressureKeys = sources.map((source) => `news-source:backpressure:${source.id}`);
+    const backpressureEntries = await this.cache.getMany<{
+      until?: unknown;
+      pendingJobs?: unknown;
+      threshold?: unknown;
+    }>(backpressureKeys);
+    const backpressureUntilBySourceId = new Map<string, string>();
+    const backpressurePendingJobsBySourceId = new Map<string, number>();
+    const backpressureThresholdBySourceId = new Map<string, number>();
+    for (const [index, entry] of backpressureEntries.entries()) {
+      const until = entry?.until;
+      if (typeof until !== "string" || until.length === 0) {
+        continue;
+      }
+
+      const id = sources[index]?.id;
+      if (typeof id !== "string" || id.length === 0) {
+        continue;
+      }
+
+      backpressureUntilBySourceId.set(id, until);
+
+      const pendingJobs = entry?.pendingJobs;
+      if (typeof pendingJobs === "number" && Number.isFinite(pendingJobs)) {
+        backpressurePendingJobsBySourceId.set(id, pendingJobs);
+      }
+
+      const threshold = entry?.threshold;
+      if (typeof threshold === "number" && Number.isFinite(threshold)) {
+        backpressureThresholdBySourceId.set(id, threshold);
+      }
+    }
+
+    const backpressureCountKeys = sources.map(
+      (source) => `news-source:backpressure-count:${source.id}`
+    );
+    const backpressureCounts = await this.cache.getMany<number>(backpressureCountKeys);
+    const backpressureCountBySourceId = new Map<string, number>();
+    for (const [index, value] of backpressureCounts.entries()) {
+      const id = sources[index]?.id;
+      if (typeof id === "string" && id.length > 0) {
+        backpressureCountBySourceId.set(id, typeof value === "number" ? value : 0);
+      }
+    }
+
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const pipelineJobs24h =
+      sources.length > 0
+        ? await this.prisma.pipelineJob.findMany({
+            where: {
+              orgId,
+              sourceId: { in: sources.map((source) => source.id) },
+              createdAt: { gte: since }
+            },
+            select: {
+              sourceId: true,
+              status: true,
+              startedAt: true,
+              completedAt: true
+            }
+          })
+        : [];
+
+    const statsBySourceId = new Map<
+      string,
+      { completed: number; failed: number; durationSumMs: number; durationCount: number }
+    >();
+    for (const job of pipelineJobs24h) {
+      const sourceId = job.sourceId;
+      if (!sourceId) {
+        continue;
+      }
+      const entry = statsBySourceId.get(sourceId) ?? {
+        completed: 0,
+        failed: 0,
+        durationSumMs: 0,
+        durationCount: 0
+      };
+      if (job.status === PipelineJobStatus.completed) {
+        entry.completed += 1;
+      } else if (job.status === PipelineJobStatus.failed) {
+        entry.failed += 1;
+      }
+      if (job.startedAt && job.completedAt) {
+        entry.durationSumMs += job.completedAt.getTime() - job.startedAt.getTime();
+        entry.durationCount += 1;
+      }
+      statsBySourceId.set(sourceId, entry);
+    }
+
+    return sources.map((source) => {
+      const { jobs, articles, ...rest } = source;
+      const latestJob = jobs?.[0] ?? null;
+      const latestArticle = articles?.[0] ?? null;
+      const crawlTaskId = isRecord(latestJob?.metadata) ? latestJob?.metadata.crawlTaskId : null;
+      const latestCrawlTask =
+        typeof crawlTaskId === "string" && crawlTaskId.length > 0
+          ? crawlTaskById.get(crawlTaskId) ?? null
+          : null;
+      const crawlTaskQueueCounts = queueCountsBySourceId.get(source.id) ?? { queued: 0, running: 0 };
+      const backpressureUntil = backpressureUntilBySourceId.get(source.id) ?? null;
+      const backpressurePendingJobs = backpressurePendingJobsBySourceId.get(source.id) ?? null;
+      const backpressureThreshold = backpressureThresholdBySourceId.get(source.id) ?? null;
+      const backpressureCount24h = backpressureCountBySourceId.get(source.id) ?? 0;
+      const stats = statsBySourceId.get(source.id) ?? null;
+      const totalFinished = stats ? stats.completed + stats.failed : 0;
+      const successRate = totalFinished > 0 ? stats!.completed / totalFinished : null;
+      const avgDurationMs =
+        stats && stats.durationCount > 0 ? stats.durationSumMs / stats.durationCount : null;
+
+      return {
+        ...rest,
+        latestJob,
+        latestCrawlTask,
+        latestArticle,
+        crawlTaskQueuedCount: crawlTaskQueueCounts.queued,
+        crawlTaskRunningCount: crawlTaskQueueCounts.running,
+        backpressureUntil,
+        backpressurePendingJobs,
+        backpressureThreshold,
+        backpressureCount24h,
+        stats24h: {
+          completed: stats?.completed ?? 0,
+          failed: stats?.failed ?? 0,
+          successRate,
+          avgDurationMs,
+        }
+      };
     });
   }
 
@@ -191,6 +411,27 @@ export class NewsSourceService {
         nextRunAt: new Date(),
         circuitOpenUntil: null
       }
+    });
+  }
+
+  async schedule(orgId: string, id: string, input: ScheduleNewsSourceDto) {
+    const existing = await this.prisma.newsSource.findUnique({ where: { id } });
+    if (!existing || existing.orgId !== orgId) {
+      throw new NotFoundException("News source not found");
+    }
+
+    const nextRunAt = new Date(input.nextRunAt);
+    if (Number.isNaN(nextRunAt.getTime())) {
+      throw new BadRequestException("nextRunAt must be a valid ISO date string");
+    }
+
+    return this.prisma.newsSource.update({
+      where: { id },
+      data: {
+        isActive: true,
+        nextRunAt,
+        circuitOpenUntil: null,
+      },
     });
   }
 

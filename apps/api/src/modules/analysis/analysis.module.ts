@@ -7,6 +7,7 @@ import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 
 import { AnalysisPromptService } from "./analysis-prompt.service";
+import { AnalysisQueueEventPublisher } from "./analysis-queue-event.publisher";
 import { AnalysisQueueCleanupService } from "./analysis-queue-cleanup.service";
 import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_QUEUE_NAME } from "./analysis.constants";
 import { AnalysisProcessor } from "./analysis.processor";
@@ -18,6 +19,7 @@ import { AnalysisService } from "./analysis.service";
   providers: [
     AnalysisService,
     AnalysisPromptService,
+    AnalysisQueueEventPublisher,
     AnalysisProcessor,
     AnalysisQueueCleanupService,
     {
@@ -47,6 +49,13 @@ import { AnalysisService } from "./analysis.service";
       useExisting: ANALYSIS_QUEUE
     }
   ],
-  exports: [AnalysisService, ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_PUBSUB, getQueueToken(ANALYSIS_QUEUE_NAME)]
+  exports: [
+    AnalysisService,
+    AnalysisQueueEventPublisher,
+    ANALYSIS_QUEUE,
+    ANALYSIS_QUEUE_EVENTS,
+    ANALYSIS_PUBSUB,
+    getQueueToken(ANALYSIS_QUEUE_NAME)
+  ]
 })
 export class AnalysisModule {}

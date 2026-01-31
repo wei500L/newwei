@@ -35,6 +35,11 @@ export interface LiteLlmCompletionParams {
   top_p?: number;
   max_tokens?: number;
   response_format?: JsonSchemaResponseFormat | Record<string, unknown>;
+  /**
+   * LiteLLM Proxy guardrail names to apply for this request.
+   * These must be configured on the LiteLLM Proxy side (config.yaml -> `guardrails`).
+   */
+  guardrails?: string[];
   metadata?: Record<string, unknown>;
   timeoutMs?: number;
   maxRetries?: number;
@@ -98,6 +103,28 @@ interface GatewayCompatibilityFlags {
   supportsJsonSchema: boolean;
 }
 
+export class LiteLlmGuardrailViolationError extends Error {
+  public readonly appliedGuardrails: string[];
+  public readonly upstreamStatus?: number;
+  public readonly detail?: string;
+
+  constructor(
+    message: string,
+    options?: {
+      appliedGuardrails?: string[];
+      upstreamStatus?: number;
+      detail?: string;
+      cause?: Error;
+    },
+  ) {
+    super(message, options?.cause ? { cause: options.cause } : undefined);
+    this.name = "LiteLlmGuardrailViolationError";
+    this.appliedGuardrails = options?.appliedGuardrails ?? [];
+    this.upstreamStatus = options?.upstreamStatus;
+    this.detail = options?.detail;
+  }
+}
+
 @Injectable()
 export class LiteLlmService {
   private readonly clients = new Map<string, AxiosInstance>();
@@ -151,6 +178,9 @@ export class LiteLlmService {
           params,
         );
       } catch (error) {
+        if (error instanceof LiteLlmGuardrailViolationError) {
+          throw error;
+        }
         lastError = error;
         this.logger.warn(
           {
@@ -210,6 +240,9 @@ export class LiteLlmService {
         }
         return;
       } catch (error) {
+        if (error instanceof LiteLlmGuardrailViolationError) {
+          throw error;
+        }
         if (started) {
           throw error;
         }
@@ -243,6 +276,7 @@ export class LiteLlmService {
     while (attempt < maxAttempts) {
       try {
         const compatibility = this.getCompatibilityFlags(baseUrl);
+        const guardrails = this.normalizeGuardrails(params.guardrails);
         const payload = {
           model,
           messages: params.messages,
@@ -251,6 +285,7 @@ export class LiteLlmService {
           max_tokens: params.max_tokens ?? cfg.maxOutputTokens,
           response_format: this.resolveResponseFormat(params.response_format, compatibility),
           stream: false,
+          guardrails: guardrails.length > 0 ? guardrails : undefined,
           metadata: compatibility.supportsMetadata ? params.metadata : undefined,
         };
         const start = Date.now();
@@ -262,6 +297,7 @@ export class LiteLlmService {
           payload,
           { timeout: params.timeoutMs ?? cfg.timeoutMs },
         );
+        this.throwIfGuardrailsBlockedResponse(response);
         const latencyMs = Date.now() - start;
         const headerCost = this.extractHeaderCost(
           response.headers?.["x-litellm-response-cost"] ??
@@ -288,6 +324,12 @@ export class LiteLlmService {
           latencyMs,
         } satisfies LiteLlmCompletionResponse;
       } catch (error) {
+        if (error instanceof AxiosError) {
+          const guardrailError = this.maybeConvertAxiosErrorToGuardrailViolation(error);
+          if (guardrailError) {
+            throw guardrailError;
+          }
+        }
         this.decorateAxiosError(error, { apiKeyConfigured });
         lastError = error;
         attempt += 1;
@@ -313,6 +355,7 @@ export class LiteLlmService {
     params: LiteLlmCompletionParams,
   ): AsyncGenerator<LiteLlmStreamChunk> {
     const compatibility = this.getCompatibilityFlags(baseUrl);
+    const guardrails = this.normalizeGuardrails(params.guardrails);
     const payload = {
       model,
       messages: params.messages,
@@ -321,6 +364,7 @@ export class LiteLlmService {
       max_tokens: params.max_tokens ?? cfg.maxOutputTokens,
       response_format: this.resolveResponseFormat(params.response_format, compatibility),
       stream: true,
+      guardrails: guardrails.length > 0 ? guardrails : undefined,
       metadata: compatibility.supportsMetadata ? params.metadata : undefined,
     };
 
@@ -339,10 +383,44 @@ export class LiteLlmService {
         },
       );
     } catch (error) {
+      if (error instanceof AxiosError) {
+        const guardrailError = this.maybeConvertAxiosErrorToGuardrailViolation(error);
+        if (guardrailError) {
+          throw guardrailError;
+        }
+      }
       this.decorateAxiosError(error, { apiKeyConfigured });
       throw error;
     }
     const stream = response.data as Readable;
+    const contentTypeRaw = response.headers?.["content-type"];
+    const contentType = typeof contentTypeRaw === "string" ? contentTypeRaw.toLowerCase() : "";
+    if (contentType && !contentType.includes("text/event-stream")) {
+      const bodyText = await this.readReadableToString(stream, 128 * 1024);
+      try {
+        const parsed = JSON.parse(bodyText) as unknown;
+        const message = this.extractGuardrailBlockedMessage(parsed);
+        if (message) {
+          throw new LiteLlmGuardrailViolationError(message, {
+            appliedGuardrails: this.getAppliedGuardrailsFromHeaders(response.headers),
+            upstreamStatus: response.status,
+            detail: typeof bodyText === "string" ? bodyText.slice(0, 500) : undefined,
+          });
+        }
+      } catch (error) {
+        if (error instanceof LiteLlmGuardrailViolationError) {
+          throw error;
+        }
+      }
+
+      this.logger.warn(
+        { model, contentType: contentTypeRaw },
+        "LiteLLM stream returned non-SSE response",
+      );
+      throw new Error(
+        `LiteLLM stream returned non-SSE response (${typeof contentTypeRaw === "string" ? contentTypeRaw : "unknown content-type"})`,
+      );
+    }
 
     for await (const data of this.iterateSseData(stream)) {
       if (data.trim() === "[DONE]") {
@@ -876,6 +954,165 @@ export class LiteLlmService {
       return value;
     }
     return undefined;
+  }
+
+  private normalizeGuardrails(raw: unknown): string[] {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const normalized = raw
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    return Array.from(new Set(normalized));
+  }
+
+  private getAppliedGuardrailsFromHeaders(headers: unknown): string[] {
+    if (!headers || typeof headers !== "object") {
+      return [];
+    }
+    const record = headers as Record<string, unknown>;
+    const raw =
+      record["x-litellm-applied-guardrails"] ??
+      record["x-litellm-applied-guardrails".toLowerCase()];
+    return this.parseAppliedGuardrailsHeader(raw);
+  }
+
+  private parseAppliedGuardrailsHeader(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      const flat = value
+        .filter((entry): entry is string => typeof entry === "string")
+        .flatMap((entry) => entry.split(","));
+      return Array.from(new Set(flat.map((entry) => entry.trim()).filter((entry) => entry.length > 0)));
+    }
+    if (typeof value !== "string") {
+      return [];
+    }
+    return Array.from(
+      new Set(
+        value
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0),
+      ),
+    );
+  }
+
+  private extractGuardrailBlockedMessage(data: unknown): string | null {
+    if (!data || typeof data !== "object") {
+      return null;
+    }
+    const record = data as Record<string, unknown>;
+    const messagesRaw = record.messages;
+    if (!Array.isArray(messagesRaw) || messagesRaw.length === 0) {
+      return null;
+    }
+    const choicesRaw = record.choices;
+    const hasChoices = Array.isArray(choicesRaw) && choicesRaw.length > 0;
+    if (hasChoices) {
+      return null;
+    }
+    const first = messagesRaw[0];
+    if (first && typeof first === "object") {
+      const content = (first as { content?: unknown }).content;
+      if (typeof content === "string" && content.trim().length > 0) {
+        return content.trim();
+      }
+    }
+    return "Unable to complete request: blocked by content safety policy.";
+  }
+
+  private throwIfGuardrailsBlockedResponse(response: AxiosResponse) {
+    const message = this.extractGuardrailBlockedMessage(response.data);
+    if (!message) {
+      return;
+    }
+    throw new LiteLlmGuardrailViolationError(message, {
+      appliedGuardrails: this.getAppliedGuardrailsFromHeaders(response.headers),
+      upstreamStatus: response.status,
+    });
+  }
+
+  private maybeConvertAxiosErrorToGuardrailViolation(error: AxiosError): LiteLlmGuardrailViolationError | null {
+    const status = error.response?.status;
+    if (typeof status !== "number") {
+      return null;
+    }
+
+    const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(error.response?.headers);
+    const detail = this.extractAxiosErrorText(error).trim();
+    const lower = detail.toLowerCase();
+
+    const isDefiniteGuardrail =
+      lower.includes("violated guardrail") ||
+      lower.includes("guardrail_intervened") ||
+      (lower.includes("guardrail") && (lower.includes("policy") || lower.includes("blocked") || lower.includes("reject")));
+
+    const isInjection =
+      lower.includes("prompt injection") ||
+      lower.includes("promptinjection") ||
+      lower.includes("jailbreak");
+
+    const isTrustSafety =
+      (lower.includes("trust") && lower.includes("safety") && lower.includes("violation")) ||
+      lower.includes("trust & safety violation");
+
+    const isModeration =
+      lower.includes("moderation") && (lower.includes("flag") || lower.includes("blocked") || lower.includes("violate"));
+
+    const looksLikeGuardrail = isDefiniteGuardrail || isInjection || isTrustSafety || isModeration;
+    const shouldConvert =
+      looksLikeGuardrail || (appliedGuardrails.length > 0 && [400, 403, 422].includes(status));
+
+    if (!shouldConvert) {
+      return null;
+    }
+
+    const userMessage = this.buildUserFacingGuardrailMessage(detail);
+    return new LiteLlmGuardrailViolationError(userMessage, {
+      appliedGuardrails,
+      upstreamStatus: status,
+      detail: detail || undefined,
+      cause: error,
+    });
+  }
+
+  private buildUserFacingGuardrailMessage(detail: string): string {
+    const raw = typeof detail === "string" ? detail.trim() : "";
+    const lower = raw.toLowerCase();
+    if (lower.includes("guardrail") && (lower.includes("not found") || lower.includes("unknown"))) {
+      return "AI safety checks are misconfigured (guardrail not found). Please contact an administrator.";
+    }
+    if (lower.includes("prompt injection") || lower.includes("promptinjection") || lower.includes("jailbreak")) {
+      return "Unable to complete request: prompt injection/jailbreak detected.";
+    }
+    if (lower.includes("trust") && lower.includes("safety") && lower.includes("violation")) {
+      return "Unable to complete request: trust & safety violation detected.";
+    }
+    if (lower.includes("language") && lower.includes("violation")) {
+      return "Unable to complete request: language policy violation detected.";
+    }
+    if (lower.includes("guardrail") || lower.includes("moderation")) {
+      return "Unable to complete request: blocked by content safety guardrails.";
+    }
+    return "Unable to complete request: blocked by content safety policy.";
+  }
+
+  private async readReadableToString(stream: Readable, maxBytes: number): Promise<string> {
+    const chunks: Buffer[] = [];
+    let total = 0;
+
+    for await (const chunk of stream) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      total += buf.length;
+      if (total > maxBytes) {
+        chunks.push(buf.subarray(0, Math.max(0, maxBytes - (total - buf.length))));
+        break;
+      }
+      chunks.push(buf);
+    }
+
+    return Buffer.concat(chunks).toString("utf8");
   }
 }
 

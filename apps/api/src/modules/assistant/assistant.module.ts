@@ -8,6 +8,7 @@ import { ModelServiceModule } from "../model-service/model-service.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
 import { AssistantPromptService } from "./assistant-prompt.service";
+import { AssistantQueueEventPublisher } from "./assistant-queue-event.publisher";
 import { AssistantQueueCleanupService } from "./assistant-queue-cleanup.service";
 import { ASSISTANT_QUEUE, ASSISTANT_QUEUE_EVENTS, ASSISTANT_QUEUE_NAME } from "./assistant.constants";
 import { AssistantProcessor } from "./assistant.processor";
@@ -20,6 +21,7 @@ import type { AssistantJobPayload } from "./assistant.types";
   providers: [
     AssistantService,
     AssistantPromptService,
+    AssistantQueueEventPublisher,
     AssistantProcessor,
     AssistantQueueCleanupService,
     {
@@ -49,6 +51,13 @@ import type { AssistantJobPayload } from "./assistant.types";
       useExisting: ASSISTANT_QUEUE
     }
   ],
-  exports: [AssistantService, ASSISTANT_QUEUE, ASSISTANT_QUEUE_EVENTS, ASSISTANT_PUBSUB, getQueueToken(ASSISTANT_QUEUE_NAME)]
+  exports: [
+    AssistantService,
+    AssistantQueueEventPublisher,
+    ASSISTANT_QUEUE,
+    ASSISTANT_QUEUE_EVENTS,
+    ASSISTANT_PUBSUB,
+    getQueueToken(ASSISTANT_QUEUE_NAME)
+  ]
 })
 export class AssistantModule {}

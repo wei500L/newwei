@@ -67,6 +67,12 @@ interface AssistantEventsSubscriptionData {
   assistantEvents: Pick<AssistantRun, "id" | "type" | "status" | "summary" | "error" | "createdAt">;
 }
 
+interface AssistantBlockedInfo {
+  message: string;
+  appliedGuardrails: string[];
+  upstreamStatus: number | null;
+}
+
 const ASSISTANT_RUNS_QUERY = gql`
   query AssistantRuns($limit: Int) {
     assistantRuns(limit: $limit) {
@@ -313,6 +319,27 @@ export function AssistantContent() {
   const asRecord = (value: unknown): Record<string, unknown> | null => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     return value as Record<string, unknown>;
+  };
+
+  const getBlockedInfo = (run: AssistantRun | null): AssistantBlockedInfo | null => {
+    if (!run) return null;
+    const output = asRecord(run.output);
+    if (!output || output.blocked !== true) {
+      return null;
+    }
+    const message =
+      typeof output.summary === "string" && output.summary.trim()
+        ? output.summary.trim()
+        : typeof run.summary === "string" && run.summary.trim()
+          ? run.summary.trim()
+          : t("assistant.blocked.title", { defaultValue: "Blocked by safety checks" });
+    const appliedGuardrailsRaw = output.appliedGuardrails;
+    const appliedGuardrails = Array.isArray(appliedGuardrailsRaw)
+      ? appliedGuardrailsRaw.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      : [];
+    const upstreamStatusRaw = output.upstreamStatus;
+    const upstreamStatus = typeof upstreamStatusRaw === "number" && Number.isFinite(upstreamStatusRaw) ? upstreamStatusRaw : null;
+    return { message, appliedGuardrails, upstreamStatus };
   };
 
   const formatNumber = (value: unknown, maximumFractionDigits = 6): string => {
@@ -831,6 +858,9 @@ export function AssistantContent() {
                   <Space size={10} wrap>
                     <Typography.Text strong>{run.type}</Typography.Text>
                     <Tag color={statusColor(run.status)}>{run.status}</Tag>
+                    {getBlockedInfo(run) ? (
+                      <Tag color="volcano">{t("assistant.blocked.tag", { defaultValue: "Blocked" })}</Tag>
+                    ) : null}
                     <Typography.Text type="secondary">
                       {formatDateTime(new Date(run.createdAt), locale, {
                         year: "numeric",
@@ -843,10 +873,15 @@ export function AssistantContent() {
                   </Space>
                 }
                 description={
-                  run.error ? (
+                  run.error || getBlockedInfo(run) ? (
                     <Space direction="vertical" size={4}>
                       <Typography.Paragraph type="danger" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
-                        <CloseCircleOutlined /> {summarizeAssistantError(run.error)}
+                        <CloseCircleOutlined />{" "}
+                        {summarizeAssistantError(
+                          run.error ??
+                            getBlockedInfo(run)?.message ??
+                            t("assistant.blocked.title", { defaultValue: "Blocked by safety checks" })
+                        )}
                       </Typography.Paragraph>
                       {run.summary ? (
                         <Typography.Paragraph ellipsis={{ rows: 3 }}>
@@ -880,6 +915,9 @@ export function AssistantContent() {
             <Space size={10} wrap>
               <Typography.Text strong>{activeRun.type}</Typography.Text>
               <Tag color={statusColor(activeRun.status)}>{activeRun.status}</Tag>
+              {getBlockedInfo(activeRun) ? (
+                <Tag color="volcano">{t("assistant.blocked.tag", { defaultValue: "Blocked" })}</Tag>
+              ) : null}
               <Typography.Text type="secondary">
                 {formatDateTime(new Date(activeRun.createdAt), locale, {
                   year: "numeric",
@@ -924,6 +962,47 @@ export function AssistantContent() {
                 );
               })()
             ) : null}
+
+            {(() => {
+              const blocked = getBlockedInfo(activeRun);
+              if (!blocked) return null;
+              return (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={t("assistant.blocked.title", { defaultValue: "Blocked by safety checks" })}
+                  description={
+                    <Space direction="vertical" size={8}>
+                      <Typography.Text>{blocked.message}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {t("assistant.blocked.description", {
+                          defaultValue:
+                            "Your input was blocked by content safety moderation. Please revise and try again."
+                        })}
+                      </Typography.Text>
+                      {blocked.appliedGuardrails.length > 0 ? (
+                        <Space wrap>
+                          <Typography.Text type="secondary">
+                            {t("assistant.blocked.details.guardrails", { defaultValue: "Applied guardrails" })}:
+                          </Typography.Text>
+                          {blocked.appliedGuardrails.map((name) => (
+                            <Tag key={name} color="geekblue">
+                              {name}
+                            </Tag>
+                          ))}
+                        </Space>
+                      ) : null}
+                      {blocked.upstreamStatus ? (
+                        <Typography.Text type="secondary">
+                          {t("assistant.blocked.details.upstreamStatus", { defaultValue: "Upstream status" })}:{" "}
+                          {blocked.upstreamStatus}
+                        </Typography.Text>
+                      ) : null}
+                    </Space>
+                  }
+                />
+              );
+            })()}
 
             <Card size="small" title={t("assistant.detail.summary", { defaultValue: "Summary" })}>
               <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>

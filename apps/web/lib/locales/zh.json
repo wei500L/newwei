@@ -863,6 +863,8 @@
       },
       "sectorHeatmapValueLabel": "数值",
       "sectorHeatmapChangeLabel": "涨跌幅",
+      "sectorHeatmapConfigErrorTitle": "板块热力图配置错误",
+      "sectorHeatmapConfigErrorDescription": "部分经济指标无法映射到热力图数据字段。",
       "entityImpactGraph": "实体影响图谱",
       "knowledgeGraph": "知识图谱",
       "knowledgeGraphSeedRequired": "请输入种子实体",
@@ -1426,6 +1428,23 @@
   "newsSources": {
     "title": "新闻数据源",
     "searchPlaceholder": "按名称或 URL 搜索",
+    "autoRefresh": {
+      "label": "自动刷新",
+      "updatedAt": "更新时间：{{time}}"
+    },
+    "liveUpdates": {
+      "label": "实时更新",
+      "connected": "实时",
+      "connecting": "连接中",
+      "disconnected": "已断开",
+      "error": "错误",
+      "lastEvent": "最近事件：{{time}}",
+      "details": {
+        "lastEvent": "最近事件",
+        "refreshOn": "触发刷新",
+        "resetCounters": "重置计数"
+      }
+    },
     "columns": {
       "name": "名称",
       "type": "类型",
@@ -2076,12 +2095,32 @@
     },
     "llmGateway": {
       "description": "管理 OpenAI 兼容的 LLM 网关配置。启用的配置会用于后端运行时调用。",
+      "guardrails": {
+        "title": "AI Assistant 内容安全（OpenAI omni-moderation）",
+        "scope": "仅用于 AI Assistant：在请求发送到上游模型之前，通过 LiteLLM Proxy 调用 OpenAI omni-moderation 做输入审核；命中会直接阻断并返回提示，从源头降低上游 API 风控/封禁风险。",
+        "howItWorks": {
+          "title": "工作方式",
+          "body": "系统会在每次 Assistant 调用的请求体里附带 guardrails 名称（例如 openai-moderation-pre），由 LiteLLM Proxy 在 pre_call 阶段先跑审核；不通过则不会调用上游模型。"
+        },
+        "setup": {
+          "title": "配置步骤",
+          "proxyConfigPrefix": "1) 在 LiteLLM Proxy 配置中启用：",
+          "proxyConfigSuffix": "已内置并依赖 OPENAI_API_KEY 的 OpenAI 审核 guardrail：",
+          "apiEnvPrefix": "2) 在 API 服务环境变量中启用：",
+          "apiEnvSuffix": "（可按需用逗号追加更多 guardrail 名称）",
+          "verify": "3) 验证：在「AI Assistant」页面输入明显违规/恶意提示词，应被阻断并返回友好提示；不会向上游 LLM 发起请求。"
+        },
+        "notes": "费用：OpenAI omni-moderation 目前通常不单独收费（以 OpenAI 最新政策为准）；会增加少量延迟。默认仅做输入审核（pre_call），如需也审核输出可将 openai-moderation-post 加入 ASSISTANT_GUARDRAILS。"
+      },
       "proxyStatus": {
         "title": "LiteLLM Proxy 状态",
         "target": "检测对象：{{name}}",
         "actions": {
           "checkHealth": "检测健康状态",
-          "models": "模型列表"
+          "modelInfo": "模型详情",
+          "loadBalancing": "负载均衡配置",
+          "models": "模型列表",
+          "lbTest": "负载均衡测试"
         },
         "liveliness": "Liveliness",
         "readiness": "Readiness",
@@ -2092,7 +2131,81 @@
         },
         "empty": "暂无网关配置，请先创建一个。",
         "errors": {
-          "failed": "检测 Proxy 健康状态失败"
+          "failed": "检测 Proxy 健康状态失败",
+          "modelInfoFailed": "获取 Proxy 模型详情失败",
+          "lbTestFailed": "负载均衡测试失败"
+        }
+      },
+      "proxyModelInfo": {
+        "modal": {
+          "title": "LiteLLM Proxy 模型详情：{{name}}"
+        },
+        "summary": "模型组：{{groups}}，Deployments：{{deployments}}",
+        "hint": "同一个模型出现多个 Deployments 时，LiteLLM Proxy 会在它们之间自动分发请求。",
+        "columns": {
+          "model": "模型",
+          "deployments": "Deployments",
+          "details": "详情"
+        }
+      },
+      "proxyLoadBalancing": {
+        "modal": {
+          "title": "LiteLLM Proxy 负载均衡配置"
+        },
+        "hint": "填写多 Key 与路由策略后，将下方片段写入 infra/docker/.env，然后重启 litellm 服务即可启用同一模型多部署自动分流。",
+        "fields": {
+          "openaiKeys": "OPENAI_API_KEYS",
+          "anthropicKeys": "ANTHROPIC_API_KEYS",
+          "routingStrategy": "routing_strategy",
+          "deploymentRpm": "LITELLM_DEPLOYMENT_RPM",
+          "deploymentTpm": "LITELLM_DEPLOYMENT_TPM",
+          "redisHost": "LITELLM_REDIS_HOST",
+          "redisPort": "LITELLM_REDIS_PORT",
+          "redisPassword": "LITELLM_REDIS_PASSWORD"
+        },
+        "hints": {
+          "keys": "逗号或换行分隔；为空则不启用多 Key。"
+        }
+      },
+      "proxyLbTest": {
+        "modal": {
+          "title": "LiteLLM Proxy 负载均衡测试：{{name}}"
+        },
+        "actions": {
+          "run": "运行测试"
+        },
+        "fields": {
+          "model": "模型覆盖",
+          "attempts": "请求次数",
+          "concurrency": "并发",
+          "prompt": "Prompt"
+        },
+        "hints": {
+          "model": "留空则使用 Profile 的默认模型。",
+          "prompt": "留空会使用默认 Prompt。"
+        },
+        "checkedAt": "负载均衡测试时间：{{time}}",
+        "summary": {
+          "title": "LB 测试",
+          "succeeded": "成功",
+          "success": "成功",
+          "failed": "失败",
+          "duration": "耗时",
+          "deployments": "Model IDs",
+          "modelIds": "Model IDs",
+          "apiBases": "API bases"
+        },
+        "sections": {
+          "modelIds": "Model ID 分布",
+          "apiBases": "API base 分布",
+          "callIds": "Call ID 样本",
+          "errors": "错误"
+        },
+        "columns": {
+          "id": "ID",
+          "apiBase": "API base",
+          "count": "次数",
+          "ratio": "占比"
         }
       },
       "active": "当前",
@@ -2244,6 +2357,122 @@
         }
       }
     },
+    "assistantSafety": {
+      "title": "助手安全",
+      "hint": {
+        "title": "Guardrails 通过 LiteLLM Proxy 执行",
+        "body": "在这里启用/关闭 AI 助手的内容安全 Guardrails。请确保 LiteLLM Proxy 配置里已定义对应 guardrails。"
+      },
+      "docs": {
+        "scope": "该设置只影响「AI 助手」页面（/assistant）。其他使用 LiteLlmService 的能力（新闻流水线/分析/监测等）不会传 guardrails，因此不会被这套拦截影响。",
+        "setupTitle": "启用检查清单：",
+        "setupBody": "1）在 infra/litellm/litellm-config.yaml 配置 LiteLLM Proxy guardrails（openai-moderation-pre / openai-moderation-post）。\n2）在本面板配置 OpenAI API Key（会写入 MySQL）。\n3）在 API 与 litellm 的环境变量中同时配置 LITELLM_CONFIG_INTERNAL_TOKEN（根目录 .env 或 infra/docker/.env），然后重启 litellm 服务使其在启动时拉取 Key 生成配置。\n4）（可选）在本面板启用「输出审核」，用于对 AI 助手的输出再做一次审核（可能影响流式输出）。"
+      },
+      "openaiKeys": {
+        "title": "OpenAI Key（LiteLLM 上游）",
+        "description": "这些 Key 会写入 MySQL，并由 LiteLLM Proxy 在启动时通过内部接口拉取（需要配置 LITELLM_CONFIG_INTERNAL_TOKEN），用于 OpenAI 模型调用与 omni-moderation 审核。支持多个 Key：AI 助手会把 moderation 调用分摊到各 Key。更新后需要重启 litellm 服务生效。",
+        "compliance": "请确保你的使用方式符合 OpenAI 条款；不要用多个 Key 去规避上游的配额/计费策略。",
+        "status": {
+          "configured": "已配置",
+          "empty": "未配置",
+          "count": "{{count}} 个",
+          "tokenOk": "已配置内部 Token",
+          "tokenMissing": "缺少内部 Token",
+          "lbOn": "负载均衡：开",
+          "lbOff": "负载均衡：关"
+        },
+        "warnings": {
+          "tokenMissing": "未配置 LITELLM_CONFIG_INTERNAL_TOKEN，litellm 启动时无法从 MySQL 拉取 Key 生成配置。"
+        },
+        "fields": {
+          "keys": "OpenAI API Keys",
+          "keysHint": "支持逗号或换行分隔；「追加保存」会合并去重，「覆盖保存」会覆盖数据库里已存的 Key 列表。",
+          "keysPlaceholder": "sk-...\nsk-...\n..."
+        },
+        "messages": {
+          "saved": "已保存",
+          "appended": "已追加",
+          "emptyInput": "请至少粘贴一个 Key。"
+        },
+        "errors": {
+          "loadFailed": "加载 OpenAI Key 配置失败。",
+          "saveFailed": "保存失败。",
+          "appendFailed": "追加失败。"
+        },
+        "preview": "当前输入解析到 {{count}} 个 Key。",
+        "actions": {
+          "append": "追加保存",
+          "replace": "覆盖保存"
+        },
+        "replace": {
+          "modal": {
+            "title": "确认覆盖 Key 列表？",
+            "content": "将覆盖数据库里已存的 Key 列表。"
+          }
+        },
+        "remove": {
+          "modal": {
+            "title": "确认删除该 Key？",
+            "content": "将从数据库中删除选中的 Key。"
+          },
+          "messages": {
+            "done": "已删除"
+          },
+          "errors": {
+            "failed": "删除失败。"
+          }
+        },
+        "list": {
+          "title": "已存 Key 指纹",
+          "empty": "暂无 Key。"
+        },
+        "reset": {
+          "action": "清空 Key",
+          "modal": {
+            "title": "确认清空 OpenAI Key？",
+            "content": "将删除数据库中存储的 OpenAI API Key。"
+          },
+          "messages": {
+            "done": "已清空"
+          },
+          "errors": {
+            "failed": "清空失败。"
+          }
+        }
+      },
+      "guardrails": {
+        "label": "生效的 Guardrails"
+      },
+      "fields": {
+        "enabled": "启用 Guardrails",
+        "outputModerationEnabled": "启用输出审核",
+        "outputModerationHint": "部分 guardrails 可能会导致流式响应被缓冲。"
+      },
+      "source": {
+        "env": "环境变量",
+        "db": "数据库覆盖"
+      },
+      "messages": {
+        "saved": "已保存"
+      },
+      "errors": {
+        "loadFailed": "加载助手安全设置失败。",
+        "saveFailed": "保存失败。"
+      },
+      "reset": {
+        "action": "重置为环境变量",
+        "modal": {
+          "title": "重置为环境变量默认值？",
+          "content": "将删除数据库覆盖配置，并回退到环境变量默认值。"
+        },
+        "messages": {
+          "done": "已重置"
+        },
+        "errors": {
+          "failed": "重置失败。"
+        }
+      }
+    },
     "adminOnly": {
       "title": "管理员仅",
       "description": "管理员仅说明"
@@ -2262,6 +2491,7 @@
       "newsDedupe": "新闻去重",
       "newsPrompts": "新闻提示词",
       "llmGateway": "LLM 网关",
+      "assistantSafety": "助手安全",
       "roles": "角色",
       "permissions": "权限",
       "members": "成员"
@@ -3835,6 +4065,23 @@
       "4h": "最近 4 小时",
       "24h": "最近 24 小时"
     },
+    "autoRefresh": {
+      "label": "自动刷新"
+    },
+    "liveUpdates": {
+      "label": "实时更新",
+      "connected": "实时",
+      "connecting": "连接中",
+      "disconnected": "已断开",
+      "error": "错误",
+      "lastEvent": "最近事件：{{time}}",
+      "details": {
+        "lastEvent": "最近事件",
+        "refreshOn": "触发刷新",
+        "resetCounters": "重置计数"
+      }
+    },
+    "updatedAt": "更新时间：{{time}}",
     "pipeline": {
       "title": "管道",
       "total": "总计",
@@ -3845,11 +4092,78 @@
       "ingestP50": "入库 p50",
       "ingestP90": "入库 p90",
       "outboxOldest": "Outbox 最久滞留",
-      "failures": "主要失败项"
+      "failures": "主要失败项",
+      "outbox": {
+        "pending": "Outbox 待处理",
+        "processing": "Outbox 处理中",
+        "failed": "Outbox 失败",
+        "stale": "Outbox 卡住"
+      }
+    },
+    "llm": {
+      "title": "LLM",
+      "columns": {
+        "model": "模型",
+        "count": "数量",
+        "avgLatency": "平均延迟",
+        "avgCost": "平均成本",
+        "avgTokens": "平均 Tokens"
+      }
+    },
+    "taskLogs": {
+      "title": "任务日志",
+      "summary": {
+        "title": "主要错误",
+        "totals": {
+          "total": "日志总数",
+          "pending": "待处理",
+          "processing": "处理中",
+          "completed": "已完成",
+          "failed": "失败"
+        },
+        "columns": {
+          "queue": "队列",
+          "stage": "阶段",
+          "error": "错误",
+          "count": "数量",
+          "sample": "样例"
+        }
+      },
+      "filters": {
+        "queue": "队列（可选）",
+        "stage": "阶段（可选）",
+        "since": "时间范围",
+        "minutes": "分钟",
+        "limit": "数量",
+        "statusAll": "全部状态"
+      },
+      "status": {
+        "pending": "pending",
+        "processing": "processing",
+        "completed": "completed",
+        "failed": "failed"
+      },
+      "columns": {
+        "time": "时间",
+        "queue": "队列",
+        "stage": "阶段",
+        "status": "状态",
+        "message": "信息",
+        "jobId": "任务"
+      }
     }
   },
   "assistant": {
     "streamError": "助手流式响应错误：{{error}}",
+    "blocked": {
+      "tag": "已拦截",
+      "title": "请求已被内容安全拦截",
+      "description": "你的输入触发了内容安全审核，已被拦截并未发送到上游模型。请修改后重试。",
+      "details": {
+        "guardrails": "生效的 Guardrails",
+        "upstreamStatus": "上游状态码"
+      }
+    },
     "preview": {
       "series": "序列",
       "model": "模型",

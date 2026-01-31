@@ -13,6 +13,7 @@ import { NumberRangeExtra, TokenEstimateExtra, TotalTokenEstimateText } from "@/
 import { GeoNominatimSettingsPanel } from "@/components/settings/geo-nominatim-settings-panel";
 import { KnowledgeGraphReviewPanel } from "@/components/settings/knowledge-graph-review-panel";
 import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-graph-settings-panel";
+import { AssistantSafetySettingsPanel } from "@/components/settings/assistant-safety-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { ModelServiceSettingsPanel } from "@/components/settings/model-service-settings-panel";
 import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-settings-panel";
@@ -757,6 +758,11 @@ export function SystemSettingsContent() {
         },
         { key: "security", label: t("systemSettings.tabs.security"), children: <SystemSecuritySettingsPanel /> },
         { key: "llmGateway", label: t("settings.tabs.llmGateway"), children: <LlmGatewaySettingsPanel /> },
+        {
+          key: "assistantSafety",
+          label: t("settings.tabs.assistantSafety", { defaultValue: "Assistant Safety" }),
+          children: <AssistantSafetySettingsPanel />
+        },
         {
           key: "situationMonitor",
           label: t("systemSettings.tabs.situationMonitor"),

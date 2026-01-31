@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { LlmGatewayModelsConfigDto, LlmGatewayTestConfigDto } from "./dto/llm-gateway-test-config.dto";
 import { LlmGatewayTestDto } from "./dto/llm-gateway-test.dto";
+import { LlmGatewayProxyLoadBalancingTestDto } from "./dto/llm-gateway-proxy-lb-test.dto";
 import {
   CreateLlmGatewayDto,
   SetEmbeddingActiveLlmGatewayDto,
@@ -96,6 +97,21 @@ export class LlmGatewaySettingsController {
   @Permissions("settings.manage")
   async proxyHealth(@Param("id") id: string) {
     return this.tester.checkProxyHealth(id);
+  }
+
+  @Get(":id/proxy-model-info")
+  @Permissions("settings.manage")
+  async proxyModelInfo(@Param("id") id: string, @Query("force") force?: string) {
+    return this.tester.getProxyModelInfo(id, { force: force === "1" || force === "true" });
+  }
+
+  @Post(":id/proxy-lb-test")
+  @Permissions("settings.manage")
+  async proxyLoadBalancingTest(
+    @Param("id") id: string,
+    @Body() body: LlmGatewayProxyLoadBalancingTestDto
+  ) {
+    return this.tester.testProxyLoadBalancing(id, body);
   }
 
   @Post("models-config")

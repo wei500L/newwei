@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import {
   App,
   Button,
@@ -292,6 +292,7 @@ export function DashboardContent() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageQueue = permissions.includes("queue.manage");
   const queryClient = useQueryClient();
+  const dashboardFetchingCount = useIsFetching({ queryKey: ["dashboard"] });
   const searchParams = useSearchParams();
   const isAnalysisFocused = searchParams.get("panel") === "analysis";
   const { resetFilters, hasActiveFilters } = useDashboardUrlSync();
@@ -299,6 +300,8 @@ export function DashboardContent() {
     skip: !canManageQueue
   });
   const { start, end, range } = useDashboardRangeStore();
+  const [isRangeUpdating, setIsRangeUpdating] = useState(false);
+  const lastRangeFingerprintRef = useRef<string | null>(null);
 
   // Hero Metrics Query
   const heroGranularity = useMemo(() => {
@@ -331,6 +334,7 @@ export function DashboardContent() {
     variables: heroDateRange,
     fetchPolicy: "cache-and-network"
   });
+  const isDashboardUpdating = dashboardFetchingCount > 0 || heroLoading;
 
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
   const { queueStatus, selectedSector, setQueueStatus } =
@@ -339,6 +343,29 @@ export function DashboardContent() {
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
   const [showSystemStats, setShowSystemStats] = useState(false);
   const analysisPanelRef = useRef<HTMLDivElement | null>(null);
+  const rangeFingerprint = useMemo(
+    () => `${start.toISOString()}_${end.toISOString()}`,
+    [end, start]
+  );
+
+  useEffect(() => {
+    if (lastRangeFingerprintRef.current === null) {
+      lastRangeFingerprintRef.current = rangeFingerprint;
+      return;
+    }
+    if (lastRangeFingerprintRef.current === rangeFingerprint) {
+      return;
+    }
+    lastRangeFingerprintRef.current = rangeFingerprint;
+    setIsRangeUpdating(true);
+  }, [rangeFingerprint]);
+
+  useEffect(() => {
+    if (!isRangeUpdating) return;
+    if (!isDashboardUpdating) {
+      setIsRangeUpdating(false);
+    }
+  }, [isDashboardUpdating, isRangeUpdating]);
 
   useEffect(() => {
     if (connectionError) {
@@ -390,11 +417,18 @@ export function DashboardContent() {
             <span className="text-xs text-slate-600 font-medium">
               {t("dashboard.timeRange.title", { defaultValue: "Time Range" })}
             </span>
-            {hasActiveFilters ? (
-              <Button type="link" size="small" onClick={resetFilters} className="px-0">
-                {t("common.reset", { defaultValue: "Reset" })}
-              </Button>
-            ) : null}
+            <Space size={8}>
+              {isRangeUpdating ? (
+                <Tag color="processing" className="text-xs">
+                  {t("common.loading", { defaultValue: "Loading..." })}
+                </Tag>
+              ) : null}
+              {hasActiveFilters ? (
+                <Button type="link" size="small" onClick={resetFilters} className="px-0">
+                  {t("common.reset", { defaultValue: "Reset" })}
+                </Button>
+              ) : null}
+            </Space>
           </div>
           <TimeRangeControls />
         </div>

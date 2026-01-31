@@ -1,4 +1,4 @@
 
-> @modular/web@0.1.0 typecheck D:\wei\apps\web
+> @modular/web@0.1.0 typecheck /mnt/d/wei/apps/web
 > tsc --noEmit
 

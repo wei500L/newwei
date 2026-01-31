@@ -7,7 +7,10 @@ import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
 import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
+import { NewsSourceDispatchController } from "./news-source-dispatch.controller";
+import { NewsSourceOpsController } from "./news-source-ops.controller";
 import { NewsSourceSchedulerService } from "./news-source.scheduler.service";
 import { QueueCleanupService } from "./queue-cleanup.service";
 import { QueueEventPublisher } from "./queue-event.publisher";
@@ -25,7 +28,8 @@ import { QueueProcessor } from "./queue.processor";
 import { QueueService } from "./queue.service";
 
 @Module({
-  imports: [CacheModule, CrawlModule, NewsPipelineModule, AuthModule],
+  imports: [CacheModule, CrawlModule, NewsPipelineModule, NotificationsModule, AuthModule],
+  controllers: [NewsSourceDispatchController, NewsSourceOpsController],
   providers: [
     {
       provide: PIPELINE_QUEUE,

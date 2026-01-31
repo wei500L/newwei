@@ -110,6 +110,46 @@ interface LlmGatewayProxyHealthResponse {
   readiness: LlmGatewayProxyEndpointCheck;
 }
 
+interface LlmGatewayProxyModelInfoEntry {
+  modelName: string;
+  litellmParams?: Record<string, unknown>;
+  modelInfo?: Record<string, unknown>;
+}
+
+interface LlmGatewayProxyModelInfoResponse {
+  apiBase: string;
+  checkedAt: string;
+  models: LlmGatewayProxyModelInfoEntry[];
+}
+
+interface LlmGatewayProxyLoadBalancingTestResponse {
+  apiBase: string;
+  model: string;
+  attempts: number;
+  succeeded: number;
+  failed: number;
+  durationMs: number;
+  checkedAt: string;
+  modelIdDistribution: Record<string, number>;
+  modelApiBaseDistribution: Record<string, number>;
+  callIdSamples: string[];
+  errors: {
+    message: string;
+    status?: number;
+    axiosCode?: string;
+    requestId?: string;
+    upstreamType?: string;
+    upstreamCode?: string;
+  }[];
+}
+
+interface LlmGatewayProxyLoadBalancingTestFormValues {
+  model?: string;
+  attempts?: number;
+  concurrency?: number;
+  prompt?: string;
+}
+
 interface LlmGatewayTestFormValues {
   includeCompletion: boolean;
   model?: string;
@@ -135,6 +175,17 @@ interface LlmGatewayFormValues {
   fallbackModels?: string;
   clearApiKey?: boolean;
   enabled: boolean;
+}
+
+interface LiteLlmProxyLbFormValues {
+  openaiKeys?: string;
+  anthropicKeys?: string;
+  routingStrategy?: string;
+  redisHost?: string;
+  redisPort?: number;
+  redisPassword?: string;
+  deploymentRpm?: number;
+  deploymentTpm?: number;
 }
 
 const EMPTY_SETTINGS: LlmGatewaySettingsResponse = {
@@ -195,6 +246,43 @@ function formatApiErrorMessage(error: unknown): string | null {
   return info.message?.trim() ? info.message.trim() : null;
 }
 
+function normalizeCommaOrLineSeparatedTokens(value: unknown): string[] {
+  if (typeof value !== "string") {
+    return [];
+  }
+  return value
+    .split(/[\n,]+/g)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function buildLiteLlmProxyLbEnvSnippet(input: {
+  openaiKeys: string[];
+  anthropicKeys: string[];
+  routingStrategy: string;
+  redisHost: string;
+  redisPort: number;
+  redisPassword: string;
+  deploymentRpm?: number;
+  deploymentTpm?: number;
+}) {
+  const lines: string[] = [];
+  lines.push("# LiteLLM Proxy multi-deployment load balancing");
+  lines.push(
+    `OPENAI_API_KEYS=${input.openaiKeys.length > 0 ? input.openaiKeys.join(",") : ""}`
+  );
+  lines.push(
+    `ANTHROPIC_API_KEYS=${input.anthropicKeys.length > 0 ? input.anthropicKeys.join(",") : ""}`
+  );
+  lines.push(`LITELLM_ROUTING_STRATEGY=${input.routingStrategy}`);
+  lines.push(`LITELLM_REDIS_HOST=${input.redisHost}`);
+  lines.push(`LITELLM_REDIS_PORT=${input.redisPort}`);
+  lines.push(`LITELLM_REDIS_PASSWORD=${input.redisPassword}`);
+  lines.push(`LITELLM_DEPLOYMENT_RPM=${input.deploymentRpm ?? ""}`);
+  lines.push(`LITELLM_DEPLOYMENT_TPM=${input.deploymentTpm ?? ""}`);
+  return lines.join("\n");
+}
+
 export function LlmGatewaySettingsPanel() {
   const { t } = useTranslation();
   const { data: session } = useSession();
@@ -207,10 +295,19 @@ export function LlmGatewaySettingsPanel() {
   const [embeddingActivating, setEmbeddingActivating] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
+  const [loadingProxyModelInfo, setLoadingProxyModelInfo] = useState<string | null>(null);
   const [checkingProxyHealth, setCheckingProxyHealth] = useState<string | null>(null);
   const [proxyHealthProfileId, setProxyHealthProfileId] = useState<string | null>(null);
   const [proxyHealth, setProxyHealth] = useState<LlmGatewayProxyHealthResponse | null>(null);
   const [proxyHealthErrorMessage, setProxyHealthErrorMessage] = useState<string | null>(null);
+  const [proxyModelInfoSnapshot, setProxyModelInfoSnapshot] = useState<{
+    profileId: string;
+    apiBase: string;
+    groups: number;
+    deployments: number;
+    loadBalancedGroups: number;
+    checkedAt: string;
+  } | null>(null);
   const [modelsSnapshot, setModelsSnapshot] = useState<{
     profileId: string;
     apiBase: string;
@@ -226,14 +323,64 @@ export function LlmGatewaySettingsPanel() {
   const [testResult, setTestResult] = useState<LlmGatewayTestResponse | null>(null);
   const [testErrorMessage, setTestErrorMessage] = useState<string | null>(null);
   const [testForm] = Form.useForm<LlmGatewayTestFormValues>();
+  const [proxyLbTestProfile, setProxyLbTestProfile] = useState<LlmGatewayProfile | null>(null);
+  const [proxyLbTestResult, setProxyLbTestResult] = useState<LlmGatewayProxyLoadBalancingTestResponse | null>(null);
+  const [proxyLbTestErrorMessage, setProxyLbTestErrorMessage] = useState<string | null>(null);
+  const [proxyLbTesting, setProxyLbTesting] = useState<string | null>(null);
+  const [proxyLbTestForm] = Form.useForm<LlmGatewayProxyLoadBalancingTestFormValues>();
+  const [proxyLbTestSnapshot, setProxyLbTestSnapshot] = useState<{
+    profileId: string;
+    apiBase: string;
+    model: string;
+    succeeded: number;
+    failed: number;
+    durationMs: number;
+    modelIds: number;
+    apiBases: number;
+    checkedAt: string;
+  } | null>(null);
+  const [proxyLbOpen, setProxyLbOpen] = useState(false);
+  const [proxyLbForm] = Form.useForm<LiteLlmProxyLbFormValues>();
   const screens = Grid.useBreakpoint();
   const includeCompletion = Form.useWatch("includeCompletion", testForm) ?? true;
   const includeEmbeddings = Form.useWatch("includeEmbeddings", testForm) ?? false;
+  const proxyLbOpenaiKeys = Form.useWatch("openaiKeys", proxyLbForm) ?? "";
+  const proxyLbAnthropicKeys = Form.useWatch("anthropicKeys", proxyLbForm) ?? "";
+  const proxyLbRoutingStrategy = Form.useWatch("routingStrategy", proxyLbForm) ?? "simple-shuffle";
+  const proxyLbRedisHost = Form.useWatch("redisHost", proxyLbForm) ?? "redis";
+  const proxyLbRedisPort = Form.useWatch("redisPort", proxyLbForm) ?? 6379;
+  const proxyLbRedisPassword = Form.useWatch("redisPassword", proxyLbForm) ?? "";
+  const proxyLbDeploymentRpm = Form.useWatch("deploymentRpm", proxyLbForm);
+  const proxyLbDeploymentTpm = Form.useWatch("deploymentTpm", proxyLbForm);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken]
   );
+
+  const proxyLbEnvSnippet = useMemo(() => {
+    const openaiKeys = normalizeCommaOrLineSeparatedTokens(proxyLbOpenaiKeys);
+    const anthropicKeys = normalizeCommaOrLineSeparatedTokens(proxyLbAnthropicKeys);
+    return buildLiteLlmProxyLbEnvSnippet({
+      openaiKeys,
+      anthropicKeys,
+      routingStrategy: String(proxyLbRoutingStrategy || "simple-shuffle"),
+      redisHost: String(proxyLbRedisHost || "redis"),
+      redisPort: Number(proxyLbRedisPort || 6379),
+      redisPassword: String(proxyLbRedisPassword || ""),
+      deploymentRpm: typeof proxyLbDeploymentRpm === "number" ? proxyLbDeploymentRpm : undefined,
+      deploymentTpm: typeof proxyLbDeploymentTpm === "number" ? proxyLbDeploymentTpm : undefined
+    });
+  }, [
+    proxyLbAnthropicKeys,
+    proxyLbDeploymentRpm,
+    proxyLbDeploymentTpm,
+    proxyLbOpenaiKeys,
+    proxyLbRedisHost,
+    proxyLbRedisPassword,
+    proxyLbRedisPort,
+    proxyLbRoutingStrategy
+  ]);
 
   const statusProfile = useMemo(() => {
     if (settings.activeId) {
@@ -244,6 +391,26 @@ export function LlmGatewaySettingsPanel() {
     }
     return settings.profiles[0] ?? null;
   }, [settings.activeId, settings.profiles]);
+
+  const statusProfileProxyModelInfo = useMemo(() => {
+    if (!statusProfile) {
+      return null;
+    }
+    if (proxyModelInfoSnapshot?.profileId !== statusProfile.id) {
+      return null;
+    }
+    return proxyModelInfoSnapshot;
+  }, [proxyModelInfoSnapshot, statusProfile]);
+
+  const statusProfileProxyLbTest = useMemo(() => {
+    if (!statusProfile) {
+      return null;
+    }
+    if (proxyLbTestSnapshot?.profileId !== statusProfile.id) {
+      return null;
+    }
+    return proxyLbTestSnapshot;
+  }, [proxyLbTestSnapshot, statusProfile]);
 
   const completionActiveProfile = useMemo(() => {
     if (!settings.activeId) {
@@ -411,6 +578,99 @@ export function LlmGatewaySettingsPanel() {
     });
     setCreateOpen(true);
   };
+
+  const openProxyLbWizard = useCallback(() => {
+    proxyLbForm.setFieldsValue({
+      openaiKeys: "",
+      anthropicKeys: "",
+      routingStrategy: "simple-shuffle",
+      redisHost: "redis",
+      redisPort: 6379,
+      redisPassword: "",
+      deploymentRpm: undefined,
+      deploymentTpm: undefined
+    });
+    setProxyLbOpen(true);
+  }, [proxyLbForm]);
+
+  const openProxyLbTest = useCallback(
+    (profile: LlmGatewayProfile) => {
+      setProxyLbTestProfile(profile);
+      setProxyLbTestResult(null);
+      setProxyLbTestErrorMessage(null);
+      proxyLbTestForm.setFieldsValue({
+        model: "",
+        attempts: 8,
+        concurrency: 2,
+        prompt: ""
+      });
+    },
+    [proxyLbTestForm]
+  );
+
+  const closeProxyLbTest = useCallback(() => {
+    setProxyLbTestProfile(null);
+    setProxyLbTestResult(null);
+    setProxyLbTestErrorMessage(null);
+    proxyLbTestForm.resetFields();
+  }, [proxyLbTestForm]);
+
+  const runProxyLbTest = useCallback(
+    async (profile: LlmGatewayProfile, values: LlmGatewayProxyLoadBalancingTestFormValues) => {
+      setProxyLbTesting(profile.id);
+      setProxyLbTestErrorMessage(null);
+      setProxyLbTestResult(null);
+      try {
+        const payload: Record<string, unknown> = {};
+        if (values.model?.trim()) {
+          payload.model = values.model.trim();
+        }
+        if (typeof values.attempts === "number") {
+          payload.attempts = values.attempts;
+        }
+        if (typeof values.concurrency === "number") {
+          payload.concurrency = values.concurrency;
+        }
+        if (values.prompt?.trim()) {
+          payload.prompt = values.prompt.trim();
+        }
+        const response = await apiClient.post<LlmGatewayProxyLoadBalancingTestResponse>(
+          `system-settings/llm-gateways/${profile.id}/proxy-lb-test`,
+          payload
+        );
+        const result = response.data ?? null;
+        setProxyLbTestResult(result);
+        if (result) {
+          const modelIds = Object.keys(result.modelIdDistribution ?? {}).length;
+          const apiBases = Object.keys(result.modelApiBaseDistribution ?? {}).length;
+          setProxyLbTestSnapshot({
+            profileId: profile.id,
+            apiBase: result.apiBase ?? profile.apiBase,
+            model: result.model ?? profile.model,
+            succeeded: result.succeeded ?? 0,
+            failed: result.failed ?? 0,
+            durationMs: result.durationMs ?? 0,
+            modelIds,
+            apiBases,
+            checkedAt: result.checkedAt ?? new Date().toISOString()
+          });
+        }
+      } catch (error) {
+        captureClientError("Failed to run LiteLLM proxy load balancing test", error);
+        const messageText = formatApiErrorMessage(error);
+        setProxyLbTestErrorMessage(
+          messageText
+            ? messageText
+            : t("settings.llmGateway.proxyStatus.errors.lbTestFailed", {
+                defaultValue: "负载均衡测试失败"
+              })
+        );
+      } finally {
+        setProxyLbTesting((current) => (current === profile.id ? null : current));
+      }
+    },
+    [apiClient, t]
+  );
 
   const handleCreate = async (values: LlmGatewayFormValues) => {
     setSaving(true);
@@ -655,6 +915,159 @@ export function LlmGatewaySettingsPanel() {
     [screens.md, t]
   );
 
+  const openProxyModelInfoModal = useCallback(
+    (title: string, apiBase: string, result: LlmGatewayProxyModelInfoResponse) => {
+      type ModelInfoRow = {
+        id: string;
+        modelName: string;
+        deployments: number;
+        providerModels: string[];
+        apiBases: string[];
+        rpms: number[];
+        tpms: number[];
+      };
+
+      const groups = new Map<string, LlmGatewayProxyModelInfoEntry[]>();
+      for (const model of result.models ?? []) {
+        const key = model.modelName;
+        const next = groups.get(key) ?? [];
+        next.push(model);
+        groups.set(key, next);
+      }
+
+      const rows: ModelInfoRow[] = Array.from(groups.entries()).map(([modelName, entries]) => {
+        const providerModels = Array.from(
+          new Set(
+            entries
+              .map((entry) => entry.litellmParams?.["model"])
+              .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+              .map((value) => value.trim())
+          )
+        );
+        const apiBases = Array.from(
+          new Set(
+            entries
+              .map((entry) => entry.litellmParams?.["api_base"])
+              .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+              .map((value) => value.trim())
+          )
+        );
+        const rpms = Array.from(
+          new Set(
+            entries
+              .map((entry) => entry.litellmParams?.["rpm"])
+              .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+          )
+        ).sort((a, b) => a - b);
+        const tpms = Array.from(
+          new Set(
+            entries
+              .map((entry) => entry.litellmParams?.["tpm"])
+              .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+          )
+        ).sort((a, b) => a - b);
+
+        return {
+          id: modelName,
+          modelName,
+          deployments: entries.length,
+          providerModels,
+          apiBases,
+          rpms,
+          tpms
+        };
+      });
+
+      const totalDeployments = rows.reduce((acc, row) => acc + row.deployments, 0);
+
+      const columns: ColumnsType<ModelInfoRow> = [
+        {
+          title: t("settings.llmGateway.proxyModelInfo.columns.model", { defaultValue: "模型" }),
+          dataIndex: "modelName",
+          key: "modelName",
+          render: (value: string) => (
+            <Typography.Text code copyable>
+              {value}
+            </Typography.Text>
+          )
+        },
+        {
+          title: t("settings.llmGateway.proxyModelInfo.columns.deployments", { defaultValue: "Deployments" }),
+          dataIndex: "deployments",
+          key: "deployments",
+          width: 140,
+          render: (value: number) => (
+            <Tag color={value > 1 ? "green" : "default"}>{value}</Tag>
+          )
+        },
+        {
+          title: t("settings.llmGateway.proxyModelInfo.columns.details", { defaultValue: "详情" }),
+          key: "details",
+          render: (_: unknown, record: ModelInfoRow) => {
+            const parts: string[] = [];
+            if (record.providerModels.length > 0) {
+              parts.push(`model: ${record.providerModels.join(", ")}`);
+            }
+            if (record.apiBases.length > 0) {
+              parts.push(`api_base: ${record.apiBases.join(", ")}`);
+            }
+            if (record.rpms.length > 0) {
+              parts.push(`rpm: ${record.rpms.join(", ")}`);
+            }
+            if (record.tpms.length > 0) {
+              parts.push(`tpm: ${record.tpms.join(", ")}`);
+            }
+            return (
+              <Typography.Text type="secondary">
+                {parts.length > 0 ? parts.join(" | ") : "-"}
+              </Typography.Text>
+            );
+          }
+        }
+      ];
+
+      Modal.info({
+        title,
+        width: screens.md ? 860 : "100%",
+        content: (
+          <Space direction="vertical" size="small" style={{ display: "flex" }}>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              {t("settings.llmGateway.fields.apiBase")}:{" "}
+              <Typography.Text code copyable>
+                {apiBase}
+              </Typography.Text>
+            </Typography.Paragraph>
+
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.proxyModelInfo.summary", {
+                defaultValue: "模型组：{{groups}}，Deployments：{{deployments}}",
+                groups: rows.length,
+                deployments: totalDeployments
+              })}
+            </Typography.Text>
+
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.proxyModelInfo.hint", {
+                defaultValue: "同一个模型出现多个 Deployments 时，LiteLLM Proxy 会在它们之间自动分发请求。"
+              })}
+            </Typography.Text>
+
+            <Table<ModelInfoRow>
+              size="small"
+              rowKey="id"
+              dataSource={rows}
+              columns={columns}
+              pagination={{ pageSize: 8, hideOnSinglePage: true }}
+              scroll={{ y: 420 }}
+              locale={{ emptyText: t("common.empty") }}
+            />
+          </Space>
+        )
+      });
+    },
+    [screens.md, t]
+  );
+
   const handleCheckProxyHealth = async (profile: LlmGatewayProfile) => {
     setCheckingProxyHealth(profile.id);
     setProxyHealthErrorMessage(null);
@@ -673,6 +1086,57 @@ export function LlmGatewaySettingsPanel() {
       );
     } finally {
       setCheckingProxyHealth((current) => (current === profile.id ? null : current));
+    }
+  };
+
+  const handleProxyModelInfo = async (profile: LlmGatewayProfile) => {
+    setLoadingProxyModelInfo(profile.id);
+    try {
+      const response = await apiClient.get<LlmGatewayProxyModelInfoResponse>(
+        `system-settings/llm-gateways/${profile.id}/proxy-model-info`
+      );
+      const result = response.data;
+      const models = Array.isArray(result?.models) ? result.models : [];
+      const groups = new Map<string, number>();
+      for (const entry of models) {
+        const key = entry?.modelName;
+        if (typeof key !== "string" || key.trim().length === 0) {
+          continue;
+        }
+        groups.set(key, (groups.get(key) ?? 0) + 1);
+      }
+      const groupEntries = Array.from(groups.values());
+      const groupCount = groupEntries.length;
+      const deployments = groupEntries.reduce((acc, count) => acc + count, 0);
+      const loadBalancedGroups = groupEntries.filter((count) => count > 1).length;
+
+      setProxyModelInfoSnapshot({
+        profileId: profile.id,
+        apiBase: result?.apiBase ?? profile.apiBase,
+        groups: groupCount,
+        deployments,
+        loadBalancedGroups,
+        checkedAt: result?.checkedAt ?? new Date().toISOString()
+      });
+
+      openProxyModelInfoModal(
+        t("settings.llmGateway.proxyModelInfo.modal.title", {
+          defaultValue: "LiteLLM Proxy 模型详情：{{name}}",
+          name: profile.name
+        }),
+        result?.apiBase ?? profile.apiBase,
+        result ?? { apiBase: profile.apiBase, checkedAt: new Date().toISOString(), models: [] }
+      );
+    } catch (error) {
+      captureClientError("Failed to fetch LiteLLM proxy model info", error);
+      const messageText = formatApiErrorMessage(error);
+      messageApi.error(
+        messageText
+          ? messageText
+          : t("settings.llmGateway.proxyStatus.errors.modelInfoFailed", { defaultValue: "获取 Proxy 模型详情失败" })
+      );
+    } finally {
+      setLoadingProxyModelInfo((current) => (current === profile.id ? null : current));
     }
   };
 
@@ -772,6 +1236,165 @@ export function LlmGatewaySettingsPanel() {
         ) : null}
       </Space>
     ),
+    [t]
+  );
+
+  const renderProxyLbTestResult = useCallback(
+    (result: LlmGatewayProxyLoadBalancingTestResponse) => {
+      const total = Math.max(1, result.succeeded + result.failed);
+      const modelIdRows = Object.entries(result.modelIdDistribution ?? {})
+        .map(([key, count]) => ({
+          id: key,
+          count,
+          ratio: Math.round((count / total) * 1000) / 10
+        }))
+        .sort((a, b) => b.count - a.count);
+      const apiBaseRows = Object.entries(result.modelApiBaseDistribution ?? {})
+        .map(([key, count]) => ({
+          id: key,
+          count,
+          ratio: Math.round((count / total) * 1000) / 10
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      return (
+        <Space direction="vertical" size="small" style={{ display: "flex" }}>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            {t("settings.llmGateway.fields.apiBase")}:{" "}
+            <Typography.Text code copyable>
+              {result.apiBase}
+            </Typography.Text>
+          </Typography.Paragraph>
+
+          <Space wrap>
+            <Tag color="blue">{result.model}</Tag>
+            <Tag color={result.failed > 0 ? "red" : "green"}>
+              {t("settings.llmGateway.proxyLbTest.summary.success", {
+                defaultValue: "Success",
+                n: result.succeeded
+              })}
+              : {result.succeeded}
+            </Tag>
+            <Tag color={result.failed > 0 ? "red" : "default"}>
+              {t("settings.llmGateway.proxyLbTest.summary.failed", { defaultValue: "Failed" })}: {result.failed}
+            </Tag>
+            <Tag>{t("settings.llmGateway.proxyLbTest.summary.duration", { defaultValue: "Duration" })}: {result.durationMs}ms</Tag>
+            <Tag>
+              {t("settings.llmGateway.proxyLbTest.summary.deployments", { defaultValue: "Model IDs" })}: {Object.keys(result.modelIdDistribution ?? {}).length}
+            </Tag>
+            <Tag>
+              {t("settings.llmGateway.proxyLbTest.summary.apiBases", { defaultValue: "API bases" })}: {Object.keys(result.modelApiBaseDistribution ?? {}).length}
+            </Tag>
+          </Space>
+
+          <Typography.Text type="secondary">
+            {t("settings.llmGateway.proxyLbTest.sections.modelIds", { defaultValue: "Model ID distribution" })}
+          </Typography.Text>
+          <Table
+            size="small"
+            rowKey="id"
+            dataSource={modelIdRows}
+            pagination={{ pageSize: 5, hideOnSinglePage: true }}
+            columns={[
+              {
+                title: t("settings.llmGateway.proxyLbTest.columns.id", { defaultValue: "ID" }),
+                dataIndex: "id",
+                key: "id",
+                render: (value: string) => (
+                  <Typography.Text code copyable>
+                    {value}
+                  </Typography.Text>
+                )
+              },
+              {
+                title: t("settings.llmGateway.proxyLbTest.columns.count", { defaultValue: "Count" }),
+                dataIndex: "count",
+                key: "count",
+                width: 100
+              },
+              {
+                title: t("settings.llmGateway.proxyLbTest.columns.ratio", { defaultValue: "Share" }),
+                dataIndex: "ratio",
+                key: "ratio",
+                width: 120,
+                render: (value: number) => `${value}%`
+              }
+            ]}
+          />
+
+          <Typography.Text type="secondary">
+            {t("settings.llmGateway.proxyLbTest.sections.apiBases", { defaultValue: "API base distribution" })}
+          </Typography.Text>
+          <Table
+            size="small"
+            rowKey="id"
+            dataSource={apiBaseRows}
+            pagination={{ pageSize: 5, hideOnSinglePage: true }}
+            columns={[
+              {
+                title: t("settings.llmGateway.proxyLbTest.columns.apiBase", { defaultValue: "API base" }),
+                dataIndex: "id",
+                key: "id",
+                render: (value: string) => (
+                  <Typography.Text code copyable>
+                    {value}
+                  </Typography.Text>
+                )
+              },
+              {
+                title: t("settings.llmGateway.proxyLbTest.columns.count", { defaultValue: "Count" }),
+                dataIndex: "count",
+                key: "count",
+                width: 100
+              },
+              {
+                title: t("settings.llmGateway.proxyLbTest.columns.ratio", { defaultValue: "Share" }),
+                dataIndex: "ratio",
+                key: "ratio",
+                width: 120,
+                render: (value: number) => `${value}%`
+              }
+            ]}
+          />
+
+          {result.callIdSamples?.length ? (
+            <>
+              <Typography.Text type="secondary">
+                {t("settings.llmGateway.proxyLbTest.sections.callIds", { defaultValue: "Call ID samples" })}
+              </Typography.Text>
+              <Space wrap>
+                {result.callIdSamples.map((value) => (
+                  <Tag key={value}>
+                    <Typography.Text code copyable>
+                      {value}
+                    </Typography.Text>
+                  </Tag>
+                ))}
+              </Space>
+            </>
+          ) : null}
+
+          {result.errors?.length ? (
+            <>
+              <Typography.Text type="secondary">
+                {t("settings.llmGateway.proxyLbTest.sections.errors", { defaultValue: "Errors" })}
+              </Typography.Text>
+              <Space direction="vertical" size="small" style={{ display: "flex" }}>
+                {result.errors.map((error, idx) => (
+                  <Alert
+                    key={`${idx}-${error.message}`}
+                    type="error"
+                    showIcon
+                    message={error.message}
+                    description={renderGatewayErrorMeta(error)}
+                  />
+                ))}
+              </Space>
+            </>
+          ) : null}
+        </Space>
+      );
+    },
     [t]
   );
 
@@ -1109,6 +1732,52 @@ export function LlmGatewaySettingsPanel() {
           {t("settings.llmGateway.description")}
         </Typography.Paragraph>
 
+        <Card size="small" title={t("settings.llmGateway.guardrails.title")}>
+          <Space direction="vertical" size="small" style={{ display: "flex" }}>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              {t("settings.llmGateway.guardrails.scope")}
+            </Typography.Paragraph>
+
+            <Alert
+              type="info"
+              showIcon
+              message={t("settings.llmGateway.guardrails.howItWorks.title")}
+              description={
+                <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                  {t("settings.llmGateway.guardrails.howItWorks.body")}
+                </Typography.Paragraph>
+              }
+            />
+
+            <Typography.Text strong>{t("settings.llmGateway.guardrails.setup.title")}</Typography.Text>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              <li>
+                <Typography.Text type="secondary">
+                  {t("settings.llmGateway.guardrails.setup.proxyConfigPrefix")}{" "}
+                  <Typography.Text code>infra/litellm/litellm-config.yaml</Typography.Text>{" "}
+                  {t("settings.llmGateway.guardrails.setup.proxyConfigSuffix")}{" "}
+                  <Typography.Text code>openai-moderation-pre</Typography.Text>
+                </Typography.Text>
+              </li>
+              <li>
+                <Typography.Text type="secondary">
+                  {t("settings.llmGateway.guardrails.setup.apiEnvPrefix")}{" "}
+                  <Typography.Text code>ASSISTANT_GUARDRAILS</Typography.Text>=
+                  <Typography.Text code>openai-moderation-pre</Typography.Text>{" "}
+                  {t("settings.llmGateway.guardrails.setup.apiEnvSuffix")}
+                </Typography.Text>
+              </li>
+              <li>
+                <Typography.Text type="secondary">{t("settings.llmGateway.guardrails.setup.verify")}</Typography.Text>
+              </li>
+            </ul>
+
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              {t("settings.llmGateway.guardrails.notes")}
+            </Typography.Paragraph>
+          </Space>
+        </Card>
+
         <Card size="small" title={t("settings.llmGateway.proxyStatus.title")}>
           {statusProfile ? (
             <Space direction="vertical" size="small" style={{ display: "flex" }}>
@@ -1135,10 +1804,23 @@ export function LlmGatewaySettingsPanel() {
                 </Button>
                 <Button
                   size="small"
+                  onClick={() => void handleProxyModelInfo(statusProfile)}
+                  loading={loadingProxyModelInfo === statusProfile.id}
+                >
+                  {t("settings.llmGateway.proxyStatus.actions.modelInfo", { defaultValue: "模型详情" })}
+                </Button>
+                <Button
+                  size="small"
                   onClick={() => void handleListModels(statusProfile)}
                   loading={loadingModels === statusProfile.id}
                 >
                   {t("settings.llmGateway.proxyStatus.actions.models")}
+                </Button>
+                <Button size="small" onClick={openProxyLbWizard}>
+                  {t("settings.llmGateway.proxyStatus.actions.loadBalancing", { defaultValue: "负载均衡配置" })}
+                </Button>
+                <Button size="small" onClick={() => openProxyLbTest(statusProfile)}>
+                  {t("settings.llmGateway.proxyStatus.actions.lbTest", { defaultValue: "负载均衡测试" })}
                 </Button>
               </Space>
 
@@ -1173,6 +1855,84 @@ export function LlmGatewaySettingsPanel() {
               ) : (
                 <Typography.Text type="secondary">{t("settings.llmGateway.proxyStatus.hint")}</Typography.Text>
               )}
+
+              {statusProfileProxyModelInfo ? (
+                <Space direction="vertical" size={4} style={{ display: "flex" }}>
+                  <Space wrap>
+                    <Tag color={statusProfileProxyModelInfo.loadBalancedGroups > 0 ? "green" : "default"}>
+                      {t("settings.llmGateway.proxyStatus.loadBalancing", { defaultValue: "Load balancing" })}:{" "}
+                      {statusProfileProxyModelInfo.loadBalancedGroups > 0
+                        ? t("common.enabled")
+                        : t("common.disabled")}
+                    </Tag>
+                    <Tag>
+                      {t("settings.llmGateway.proxyStatus.modelGroups", { defaultValue: "Model groups" })}:{" "}
+                      {statusProfileProxyModelInfo.groups}
+                    </Tag>
+                    <Tag>
+                      {t("settings.llmGateway.proxyStatus.deployments", { defaultValue: "Deployments" })}:{" "}
+                      {statusProfileProxyModelInfo.deployments}
+                    </Tag>
+                    {statusProfileProxyModelInfo.loadBalancedGroups > 0 ? (
+                      <Tag color="green">
+                        {t("settings.llmGateway.proxyStatus.loadBalancedGroups", {
+                          defaultValue: "Balanced groups"
+                        })}
+                        : {statusProfileProxyModelInfo.loadBalancedGroups}
+                      </Tag>
+                    ) : null}
+                  </Space>
+                  <Typography.Text type="secondary">
+                    {t("settings.llmGateway.proxyModelInfo.checkedAt", {
+                      defaultValue: "模型详情检测时间：{{time}}",
+                      time: new Date(statusProfileProxyModelInfo.checkedAt).toLocaleString()
+                    })}
+                  </Typography.Text>
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">
+                  {t("settings.llmGateway.proxyModelInfo.notChecked", {
+                    defaultValue: "尚未检测模型 Deployments，点击“模型详情”查看负载均衡情况。"
+                  })}
+                </Typography.Text>
+              )}
+
+              {statusProfileProxyLbTest ? (
+                <Space direction="vertical" size={4} style={{ display: "flex" }}>
+                  <Space wrap>
+                    <Tag color={statusProfileProxyLbTest.failed > 0 ? "red" : "green"}>
+                      {t("settings.llmGateway.proxyLbTest.summary.title", { defaultValue: "LB test" })}:{" "}
+                      {statusProfileProxyLbTest.failed > 0 ? t("common.failed") : t("common.success")}
+                    </Tag>
+                    <Tag>
+                      {t("settings.llmGateway.proxyLbTest.summary.succeeded", { defaultValue: "Succeeded" })}:{" "}
+                      {statusProfileProxyLbTest.succeeded}
+                    </Tag>
+                    <Tag color={statusProfileProxyLbTest.failed > 0 ? "red" : "default"}>
+                      {t("settings.llmGateway.proxyLbTest.summary.failed", { defaultValue: "Failed" })}:{" "}
+                      {statusProfileProxyLbTest.failed}
+                    </Tag>
+                    <Tag>
+                      {t("settings.llmGateway.proxyLbTest.summary.modelIds", { defaultValue: "Model IDs" })}:{" "}
+                      {statusProfileProxyLbTest.modelIds}
+                    </Tag>
+                    <Tag>
+                      {t("settings.llmGateway.proxyLbTest.summary.apiBases", { defaultValue: "API bases" })}:{" "}
+                      {statusProfileProxyLbTest.apiBases}
+                    </Tag>
+                    <Tag>
+                      {t("settings.llmGateway.proxyLbTest.summary.duration", { defaultValue: "Duration" })}:{" "}
+                      {statusProfileProxyLbTest.durationMs}ms
+                    </Tag>
+                  </Space>
+                  <Typography.Text type="secondary">
+                    {t("settings.llmGateway.proxyLbTest.checkedAt", {
+                      defaultValue: "负载均衡测试时间：{{time}}",
+                      time: new Date(statusProfileProxyLbTest.checkedAt).toLocaleString()
+                    })}
+                  </Typography.Text>
+                </Space>
+              ) : null}
 
               <Typography.Text type="secondary">
                 {modelsSnapshot?.profileId === statusProfile.id
@@ -1818,6 +2578,241 @@ export function LlmGatewaySettingsPanel() {
         ) : null}
 
         {testResult ? <div style={{ marginTop: 12 }}>{renderTestResult(testResult)}</div> : null}
+      </Modal>
+
+      <Modal
+        title={
+          proxyLbTestProfile
+            ? t("settings.llmGateway.proxyLbTest.modal.title", {
+                defaultValue: "LiteLLM Proxy 负载均衡测试：{{name}}",
+                name: proxyLbTestProfile.name
+              })
+            : undefined
+        }
+        open={Boolean(proxyLbTestProfile)}
+        onCancel={closeProxyLbTest}
+        width={screens.md ? 720 : "100%"}
+        footer={[
+          <Button key="close" onClick={closeProxyLbTest}>
+            {t("common.close")}
+          </Button>,
+          <Button
+            key="run"
+            type="primary"
+            onClick={() => proxyLbTestForm.submit()}
+            disabled={!proxyLbTestProfile}
+            loading={proxyLbTestProfile ? proxyLbTesting === proxyLbTestProfile.id : false}
+          >
+            {t("settings.llmGateway.proxyLbTest.actions.run", { defaultValue: "运行测试" })}
+          </Button>
+        ]}
+      >
+        <Form
+          form={proxyLbTestForm}
+          layout="vertical"
+          onFinish={(values) => {
+            if (!proxyLbTestProfile) {
+              return;
+            }
+            void runProxyLbTest(proxyLbTestProfile, values);
+          }}
+        >
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            {t("settings.llmGateway.fields.apiBase")}:{" "}
+            <Typography.Text code copyable>
+              {proxyLbTestProfile?.apiBase ?? "-"}
+            </Typography.Text>
+          </Typography.Paragraph>
+
+          <Form.Item
+            label={t("settings.llmGateway.proxyLbTest.fields.model", { defaultValue: "模型覆盖" })}
+            name="model"
+            extra={t("settings.llmGateway.proxyLbTest.hints.model", {
+              defaultValue: "留空则使用 Profile 的默认模型。"
+            })}
+          >
+            <Input allowClear placeholder={proxyLbTestProfile?.model ?? ""} />
+          </Form.Item>
+
+          <Space wrap style={{ display: "flex" }}>
+            <Form.Item
+              label={t("settings.llmGateway.proxyLbTest.fields.attempts", { defaultValue: "请求次数" })}
+              name="attempts"
+              style={{ minWidth: 200, flex: 1 }}
+            >
+              <InputNumber min={1} max={50} step={1} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("settings.llmGateway.proxyLbTest.fields.concurrency", { defaultValue: "并发" })}
+              name="concurrency"
+              style={{ minWidth: 200, flex: 1 }}
+            >
+              <InputNumber min={1} max={10} step={1} style={{ width: "100%" }} />
+            </Form.Item>
+          </Space>
+
+          <Form.Item
+            label={t("settings.llmGateway.proxyLbTest.fields.prompt", { defaultValue: "Prompt" })}
+            name="prompt"
+            extra={t("settings.llmGateway.proxyLbTest.hints.prompt", {
+              defaultValue: "留空会使用默认的 \"Say \\\"OK\\\" and nothing else.\""
+            })}
+          >
+            <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
+          </Form.Item>
+        </Form>
+
+        {proxyLbTestErrorMessage ? (
+          <Alert type="error" showIcon message={proxyLbTestErrorMessage} style={{ marginTop: 12 }} />
+        ) : null}
+
+        {proxyLbTestResult ? (
+          <div style={{ marginTop: 12 }}>{renderProxyLbTestResult(proxyLbTestResult)}</div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        title={t("settings.llmGateway.proxyLoadBalancing.modal.title", {
+          defaultValue: "LiteLLM Proxy 负载均衡配置"
+        })}
+        open={proxyLbOpen}
+        onCancel={() => setProxyLbOpen(false)}
+        width={screens.md ? 720 : "100%"}
+        footer={[
+          <Button key="close" onClick={() => setProxyLbOpen(false)}>
+            {t("common.close")}
+          </Button>,
+          <Button
+            key="copy"
+            type="primary"
+            onClick={() => {
+              void navigator.clipboard.writeText(proxyLbEnvSnippet);
+              messageApi.success(t("common.copied", { defaultValue: "已复制" }));
+            }}
+          >
+            {t("common.copy", { defaultValue: "复制" })}
+          </Button>
+        ]}
+      >
+        <Space direction="vertical" size="middle" style={{ display: "flex" }}>
+          <Typography.Text type="secondary">
+            {t("settings.llmGateway.proxyLoadBalancing.hint", {
+              defaultValue:
+                "填写多 Key 与路由策略后，将下方片段写入 infra/docker/.env，然后重启 litellm 服务即可启用同一模型多部署自动分流。"
+            })}
+          </Typography.Text>
+
+          <Form form={proxyLbForm} layout="vertical">
+            <Form.Item
+              label={t("settings.llmGateway.proxyLoadBalancing.fields.openaiKeys", {
+                defaultValue: "OPENAI_API_KEYS"
+              })}
+              name="openaiKeys"
+              extra={t("settings.llmGateway.proxyLoadBalancing.hints.keys", {
+                defaultValue: "逗号或换行分隔；为空则不启用 OpenAI 多 Key。"
+              })}
+            >
+              <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
+            </Form.Item>
+
+            <Form.Item
+              label={t("settings.llmGateway.proxyLoadBalancing.fields.anthropicKeys", {
+                defaultValue: "ANTHROPIC_API_KEYS"
+              })}
+              name="anthropicKeys"
+              extra={t("settings.llmGateway.proxyLoadBalancing.hints.keys", {
+                defaultValue: "逗号或换行分隔；为空则不启用 Anthropic 多 Key。"
+              })}
+            >
+              <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
+            </Form.Item>
+
+            <Space wrap style={{ display: "flex" }}>
+              <Form.Item
+                label={t("settings.llmGateway.proxyLoadBalancing.fields.routingStrategy", {
+                  defaultValue: "routing_strategy"
+                })}
+                name="routingStrategy"
+                style={{ minWidth: 240, flex: 1 }}
+              >
+                <Select
+                  options={[
+                    { value: "simple-shuffle", label: "simple-shuffle" },
+                    { value: "least-busy", label: "least-busy" },
+                    { value: "usage-based-routing", label: "usage-based-routing" },
+                    { value: "latency-based-routing", label: "latency-based-routing" }
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item
+                label={t("settings.llmGateway.proxyLoadBalancing.fields.deploymentRpm", {
+                  defaultValue: "LITELLM_DEPLOYMENT_RPM"
+                })}
+                name="deploymentRpm"
+                style={{ minWidth: 220, flex: 1 }}
+              >
+                <InputNumber min={1} max={1_000_000} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+              <Form.Item
+                label={t("settings.llmGateway.proxyLoadBalancing.fields.deploymentTpm", {
+                  defaultValue: "LITELLM_DEPLOYMENT_TPM"
+                })}
+                name="deploymentTpm"
+                style={{ minWidth: 220, flex: 1 }}
+              >
+                <InputNumber min={1} max={10_000_000} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+            </Space>
+
+            <Space wrap style={{ display: "flex" }}>
+              <Form.Item
+                label={t("settings.llmGateway.proxyLoadBalancing.fields.redisHost", {
+                  defaultValue: "LITELLM_REDIS_HOST"
+                })}
+                name="redisHost"
+                style={{ minWidth: 240, flex: 1 }}
+              >
+                <Input />
+              </Form.Item>
+              <Form.Item
+                label={t("settings.llmGateway.proxyLoadBalancing.fields.redisPort", {
+                  defaultValue: "LITELLM_REDIS_PORT"
+                })}
+                name="redisPort"
+                style={{ minWidth: 200, flex: 1 }}
+              >
+                <InputNumber min={1} max={65535} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+              <Form.Item
+                label={t("settings.llmGateway.proxyLoadBalancing.fields.redisPassword", {
+                  defaultValue: "LITELLM_REDIS_PASSWORD"
+                })}
+                name="redisPassword"
+                style={{ minWidth: 240, flex: 1 }}
+              >
+                <Input.Password />
+              </Form.Item>
+            </Space>
+          </Form>
+
+          <Typography.Paragraph
+            copyable={{ text: proxyLbEnvSnippet }}
+            style={{ marginBottom: 0 }}
+          >
+            <pre
+              style={{
+                margin: 0,
+                padding: 12,
+                borderRadius: 8,
+                border: "1px solid #f0f0f0",
+                background: "#fafafa",
+                overflow: "auto"
+              }}
+            >
+              {proxyLbEnvSnippet}
+            </pre>
+          </Typography.Paragraph>
+        </Space>
       </Modal>
     </>
   );

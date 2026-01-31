@@ -1,4 +1,4 @@
 
-> @modular/api@0.1.0 typecheck D:\wei\apps\api
+> @modular/api@0.1.0 typecheck /mnt/d/wei/apps/api
 > tsc -p tsconfig.typecheck.json --noEmit
 

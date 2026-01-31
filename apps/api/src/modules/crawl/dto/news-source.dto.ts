@@ -2,6 +2,7 @@ import { NewsSourceType } from "@prisma/client";
 import { Type } from "class-transformer";
 import {
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -115,4 +116,9 @@ export class UpdateNewsSourceDto {
   @IsOptional()
   @IsObject()
   config?: Record<string, unknown> | null;
+}
+
+export class ScheduleNewsSourceDto {
+  @IsDateString()
+  nextRunAt!: string;
 }

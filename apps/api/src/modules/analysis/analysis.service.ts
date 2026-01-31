@@ -40,7 +40,7 @@ export class AnalysisService {
     const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       "correlation",
-      { type: "correlation", analysisId: record.id, traceId },
+      { type: "correlation", analysisId: record.id, orgId, traceId },
       { jobId: `corr-${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
     );
     return record;
@@ -57,7 +57,7 @@ export class AnalysisService {
     const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       "anomaly",
-      { type: "anomaly", analysisId: record.id, traceId },
+      { type: "anomaly", analysisId: record.id, orgId, traceId },
       { jobId: `anomaly-${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
     );
     return record;

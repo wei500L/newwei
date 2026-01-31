@@ -7,7 +7,7 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import dynamic from "next/dynamic";
 import { type ReadonlyURLSearchParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -36,6 +36,9 @@ const FinancialCard = dynamic(
 );
 
 const EMPTY_FILTERS_STATE: FilterState = {};
+
+const ITEMS_SEARCH_DEBOUNCE_MS = 400;
+const ITEMS_FILTERS_URL_DEBOUNCE_MS = 200;
 
 function parsePositiveInt(value: string | null, fallback: number) {
   if (!value) {
@@ -431,43 +434,73 @@ export function ItemsView({
 
   // URL State
   const urlSearch = (searchParams.get("q") ?? "").trim();
-  const appliedFilters = useMemo(
+  const urlFilters = useMemo(
     () => parseFiltersFromSearchParams(searchParams, initialFilters),
     [initialFilters, searchParams]
   );
-  const appliedFiltersFingerprint = useMemo(
-    () => fingerprintFilters(appliedFilters),
-    [appliedFilters]
-  );
-  const current = parsePositiveInt(searchParams.get("page"), 1);
-  const rawPageSize = parsePositiveInt(searchParams.get("pageSize"), DEFAULT_ITEMS_PAGE_SIZE);
-  const pageSize = clampItemsPageSize(rawPageSize);
+  const urlFiltersFingerprint = useMemo(() => fingerprintFilters(urlFilters), [urlFilters]);
+  const urlPage = parsePositiveInt(searchParams.get("page"), 1);
+  const urlRawPageSize = parsePositiveInt(searchParams.get("pageSize"), DEFAULT_ITEMS_PAGE_SIZE);
+  const urlPageSize = clampItemsPageSize(urlRawPageSize);
 
-  // Local State
+  // Local State (UI + query source of truth)
   const [searchInput, setSearchInput] = useState(urlSearch);
+  const [search, setSearch] = useState(urlSearch);
   const [view, setView] = useState<ItemViewType>(initialView);
   const [filters, setFilters] = useState<FilterState>(() =>
     parseFiltersFromSearchParams(searchParams, initialFilters)
   );
+  const [page, setPage] = useState(urlPage);
+  const [pageSize, setPageSize] = useState(urlPageSize);
   const [showFilters, setShowFilters] = useState(false);
   const [showDelayHint, setShowDelayHint] = useState(false);
+  const urlFiltersRef = useRef(urlFilters);
+
+  useEffect(() => {
+    urlFiltersRef.current = urlFilters;
+  }, [urlFilters]);
 
   useEffect(() => {
     setSearchInput(urlSearch);
+    setSearch(urlSearch);
   }, [urlSearch]);
 
   useEffect(() => {
     setFilters((currentFilters) => {
-      return fingerprintFilters(currentFilters) === appliedFiltersFingerprint
+      return fingerprintFilters(currentFilters) === urlFiltersFingerprint
         ? currentFilters
-        : appliedFilters;
+        : urlFiltersRef.current;
     });
-  }, [appliedFilters, appliedFiltersFingerprint]);
+  }, [urlFiltersFingerprint]);
 
-  const filtersInput = useMemo(() => buildFiltersInput(appliedFilters), [appliedFilters]);
+  useEffect(() => {
+    setPage(urlPage);
+  }, [urlPage]);
+
+  useEffect(() => {
+    setPageSize(urlPageSize);
+  }, [urlPageSize]);
+
+  const debouncedSearchInput = useDebounceValue(searchInput, ITEMS_SEARCH_DEBOUNCE_MS);
+  const debouncedFilters = useDebounceValue(filters, ITEMS_FILTERS_URL_DEBOUNCE_MS);
+  const debouncedFiltersFingerprint = useMemo(
+    () => fingerprintFilters(debouncedFilters),
+    [debouncedFilters]
+  );
+
+  useEffect(() => {
+    const nextSearch = debouncedSearchInput.trim();
+    if (nextSearch === search) {
+      return;
+    }
+    setSearch(nextSearch);
+    setPage(1);
+  }, [debouncedSearchInput, search]);
+
+  const filtersInput = useMemo(() => buildFiltersInput(filters), [filters]);
   const hasActiveFilters = filtersInput !== null;
   const isUnsearched =
-    emptyStateVariant === "search" && urlSearch.length === 0 && !hasActiveFilters;
+    emptyStateVariant === "search" && search.length === 0 && !hasActiveFilters;
   const orderBy = useMemo<ItemsOrderBy>(
     () => (sortMode === "publishedDesc" ? "PUBLISHED_DESC" : "CREATED_DESC"),
     [sortMode]
@@ -480,7 +513,10 @@ export function ItemsView({
       pageSize?: number | null;
       filters?: FilterState | null;
     }) => {
-      const next = new URLSearchParams(searchParams.toString());
+      const currentQuery = window.location.search.startsWith("?")
+        ? window.location.search.slice(1)
+        : window.location.search;
+      const next = new URLSearchParams(currentQuery);
       if (updates.q !== undefined) {
         const value = updates.q?.trim() ?? "";
         if (value) {
@@ -509,28 +545,29 @@ export function ItemsView({
         applyFiltersToSearchParams(next, updates.filters);
       }
       const nextQuery = next.toString();
-      if (nextQuery === searchParams.toString()) {
+      if (nextQuery === currentQuery) {
         return;
       }
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
     },
-    [pathname, router, searchParams]
-  );
-
-  const debouncedSearchInput = useDebounceValue(searchInput, 400);
-  const debouncedFilters = useDebounceValue(filters, 400);
-  const debouncedFiltersFingerprint = useMemo(
-    () => fingerprintFilters(debouncedFilters),
-    [debouncedFilters]
+    [pathname, router]
   );
 
   useEffect(() => {
-    const nextSearch = debouncedSearchInput.trim();
-    const nextSearchParam = nextSearch.length > 0 ? nextSearch : null;
-    const urlSearchParam = urlSearch.length > 0 ? urlSearch : null;
+    const currentParams = new URLSearchParams(window.location.search);
+    const currentSearch = (currentParams.get("q") ?? "").trim();
+    const currentSearchParam = currentSearch.length > 0 ? currentSearch : null;
+    const currentFiltersFingerprint = fingerprintFilters(
+      parseFiltersFromSearchParams(
+        currentParams as unknown as ReadonlyURLSearchParams,
+        initialFilters
+      )
+    );
 
-    const shouldUpdateSearch = nextSearchParam !== urlSearchParam;
-    const shouldUpdateFilters = debouncedFiltersFingerprint !== appliedFiltersFingerprint;
+    const nextSearchParam = search.length > 0 ? search : null;
+
+    const shouldUpdateSearch = nextSearchParam !== currentSearchParam;
+    const shouldUpdateFilters = debouncedFiltersFingerprint !== currentFiltersFingerprint;
 
     if (!shouldUpdateSearch && !shouldUpdateFilters) {
       return;
@@ -542,25 +579,27 @@ export function ItemsView({
       page: 1
     });
   }, [
-    appliedFiltersFingerprint,
     debouncedFilters,
     debouncedFiltersFingerprint,
-    debouncedSearchInput,
+    initialFilters,
+    search,
     setQueryParams,
-    urlSearch
   ]);
 
   useEffect(() => {
-    if (rawPageSize === pageSize) {
+    if (urlRawPageSize === urlPageSize) {
       return;
     }
-    setQueryParams({ page: 1, pageSize });
-  }, [pageSize, rawPageSize, setQueryParams]);
+    setPage(1);
+    setPageSize(urlPageSize);
+    setQueryParams({ page: 1, pageSize: urlPageSize });
+  }, [setQueryParams, urlPageSize, urlRawPageSize]);
 
   const handleFilterChange = useCallback(
     (nextFilters: FilterState) => {
       const normalized = normalizeFiltersState(nextFilters);
       setFilters(normalized);
+      setPage(1);
     },
     []
   );
@@ -575,8 +614,8 @@ export function ItemsView({
     variables: {
       first: pageSize,
       after: null,
-      page: current,
-      search: urlSearch || null,
+      page,
+      search: search || null,
       filters: filtersInput,
       orderBy
     },
@@ -585,7 +624,7 @@ export function ItemsView({
 
   const { data: facetsData } = useQuery<ItemFacetsQuery, ItemFacetsQueryVariables>(ITEM_FACETS_QUERY, {
     variables: {
-      search: urlSearch || null,
+      search: search || null,
       filters: filtersInput
     },
     fetchPolicy: "cache-and-network"
@@ -638,10 +677,10 @@ export function ItemsView({
     if (totalCount === 0 || edges.length === 0) {
       return null;
     }
-    const from = (current - 1) * pageSize + 1;
+    const from = (page - 1) * pageSize + 1;
     const to = Math.min(from + edges.length - 1, totalCount);
     return { from, to };
-  }, [current, edges.length, pageSize, totalCount]);
+  }, [edges.length, page, pageSize, totalCount]);
 
   useEffect(() => {
     if (isUnsearched || loading || error) {
@@ -651,10 +690,11 @@ export function ItemsView({
       return;
     }
     const lastPage = getItemsLastPage(resolvedTotalCount, pageSize);
-    if (current > lastPage) {
+    if (page > lastPage) {
+      setPage(lastPage);
       setQueryParams({ page: lastPage });
     }
-  }, [current, error, isUnsearched, loading, pageSize, resolvedTotalCount, setQueryParams]);
+  }, [error, isUnsearched, loading, page, pageSize, resolvedTotalCount, setQueryParams]);
 
   const pageData = useMemo<ParsedItem[]>(() => {
     return edges.map((edge) => {
@@ -840,15 +880,17 @@ export function ItemsView({
 
   const handlePaginationChange = useCallback(
     (nextPage: number, nextPageSize?: number) => {
-      const { page, pageSize: normalizedPageSize } = normalizeItemsPaginationChange({
+      const { page: normalizedPage, pageSize: normalizedPageSize } = normalizeItemsPaginationChange({
         nextPage,
         nextPageSize,
         currentPageSize: pageSize,
         totalCount: resolvedTotalCount
       });
 
+      setPage(normalizedPage);
+      setPageSize(normalizedPageSize);
       setQueryParams({
-        page,
+        page: normalizedPage,
         pageSize: normalizedPageSize
       });
     },
@@ -861,6 +903,9 @@ export function ItemsView({
 
   const handleSearch = (value: string) => {
     const nextValue = value.trim();
+    setSearchInput(nextValue);
+    setSearch(nextValue);
+    setPage(1);
     setQueryParams({
       q: nextValue || null,
       page: 1
@@ -1032,7 +1077,7 @@ export function ItemsView({
     }
 
     if (!loading && pageData.length === 0) {
-      const isFiltered = Boolean(urlSearch.length > 0 || hasActiveFilters);
+      const isFiltered = Boolean(search.length > 0 || hasActiveFilters);
       const filteredDescription = isFiltered ? (
         <div className="flex flex-col items-center gap-1">
           <span>
@@ -1040,9 +1085,9 @@ export function ItemsView({
               defaultValue: "No items match the current search or filters."
             })}
           </span>
-          {urlSearch ? (
+          {search ? (
             <span className="font-mono text-[10px] opacity-80">
-              {t("items.stats.query", { defaultValue: "Query" })}: {urlSearch}
+              {t("items.stats.query", { defaultValue: "Query" })}: {search}
             </span>
           ) : null}
           {filterSummary.text ? (
@@ -1075,7 +1120,7 @@ export function ItemsView({
           loading={loading}
           size="large"
           pagination={{
-            current,
+            current: page,
             pageSize,
             total: totalCount,
             showSizeChanger: true,
@@ -1093,7 +1138,7 @@ export function ItemsView({
           dataSource={pageData}
           rowKey="id"
           pagination={{
-            current,
+            current: page,
             pageSize,
             total: totalCount,
             showSizeChanger: true,
@@ -1136,7 +1181,7 @@ export function ItemsView({
           dataSource={pageData}
           rowKey="id"
           pagination={{
-            current,
+            current: page,
             pageSize,
             total: totalCount,
             showSizeChanger: true,
@@ -1189,6 +1234,8 @@ export function ItemsView({
                       const value = event.target.value;
                       setSearchInput(value);
                       if (!value) {
+                        setSearch("");
+                        setPage(1);
                         setQueryParams({ q: null, page: 1 });
                       }
                     }}
@@ -1219,15 +1266,15 @@ export function ItemsView({
 
         {!isUnsearched ? (
           <div className="flex flex-wrap items-center gap-2">
-            {urlSearch ? (
-              <Tooltip title={urlSearch}>
+            {search ? (
+              <Tooltip title={search}>
                 <Tag
                   className="text-xs max-w-[320px] truncate"
                   color="geekblue"
                   closable
-                  onClose={() => setQueryParams({ q: null, page: 1 })}
+                  onClose={() => handleSearch("")}
                 >
-                  {t("items.stats.query", { defaultValue: "Query" })}: {urlSearch}
+                  {t("items.stats.query", { defaultValue: "Query" })}: {search}
                 </Tag>
               </Tooltip>
             ) : null}

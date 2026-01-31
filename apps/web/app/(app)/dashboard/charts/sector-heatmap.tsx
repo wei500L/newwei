@@ -407,13 +407,13 @@ export function SectorHeatmap() {
         <div className="h-[300px] transition-all duration-300">
           <ChartEmptyState
             variant="error"
-            title={t("dashboard.charts.sectorHeatmap.configErrorTitle", {
+            title={t("dashboard.charts.sectorHeatmapConfigErrorTitle", {
               defaultValue: "Sector heatmap configuration error"
             })}
             description={
               <div className="flex flex-col items-center gap-1">
                 <span>
-                  {t("dashboard.charts.sectorHeatmap.configErrorDescription", {
+                  {t("dashboard.charts.sectorHeatmapConfigErrorDescription", {
                     defaultValue:
                       "Some economic indicators have no matching source field for the heatmap."
                   })}

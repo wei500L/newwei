@@ -3,6 +3,8 @@ import { Global, Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { GeoModule } from "../geo/geo.module";
 
+import { AssistantSafetySettingsController } from "./assistant-safety-settings.controller";
+import { AssistantSafetySettingsService } from "./assistant-safety-settings.service";
 import { AuditLogSettingsController } from "./audit-log-settings.controller";
 import { AuditLogSettingsService } from "./audit-log-settings.service";
 import { AuthCacheSettingsController } from "./auth-cache-settings.controller";
@@ -16,6 +18,9 @@ import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
 import { ModelServiceSettingsController } from "./model-service-settings.controller";
 import { ModelServiceSettingsService } from "./model-service-settings.service";
+import { OpenAiKeysInternalController } from "./openai-keys-internal.controller";
+import { OpenAiKeysSettingsController } from "./openai-keys-settings.controller";
+import { OpenAiKeysSettingsService } from "./openai-keys-settings.service";
 import { RateLimitConfigService } from "./rate-limit-config.service";
 import { RateLimitPolicyController } from "./rate-limit-policy.controller";
 import { RateLimitPolicyService } from "./rate-limit-policy.service";
@@ -39,6 +44,9 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     GeoNominatimSettingsController,
     GeoNominatimTestController,
     LlmGatewaySettingsController,
+    AssistantSafetySettingsController,
+    OpenAiKeysSettingsController,
+    OpenAiKeysInternalController,
     SystemSecuritySettingsController,
     ModelServiceSettingsController,
     SituationMonitorSettingsController,
@@ -55,7 +63,9 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
     SituationMonitorSettingsService,
-    VectorServiceSettingsService
+    VectorServiceSettingsService,
+    AssistantSafetySettingsService,
+    OpenAiKeysSettingsService
   ],
   exports: [
     RateLimitConfigService,
@@ -63,6 +73,8 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     AuditLogSettingsService,
     GeoNominatimSettingsService,
     LlmGatewaySettingsService,
+    AssistantSafetySettingsService,
+    OpenAiKeysSettingsService,
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,

@@ -22,7 +22,10 @@
       "Bash(pnpm turbo run typecheck:*)",
       "Bash(pnpm --filter web exec tsc:*)",
       "Bash(pnpm -F web exec tsc:*)",
-      "Skill(workflow:review)"
+      "Skill(workflow:review)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "mcp__ace-tool__enhance_prompt"
     ]
   }
 }

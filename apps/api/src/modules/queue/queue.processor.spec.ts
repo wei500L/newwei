@@ -129,13 +129,23 @@ const createMockPrisma = () => ({
   },
   newsSource: {
     updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-    findUnique: jest.fn().mockResolvedValue({ consecutiveFailures: 0, isActive: true }),
+    findUnique: jest.fn().mockResolvedValue({
+      consecutiveFailures: 0,
+      isActive: true,
+      orgId: "org-1",
+      name: "Source 1"
+    }),
     update: jest.fn().mockResolvedValue({}),
   },
   $transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => {
     const tx = {
       newsSource: {
-        findUnique: jest.fn().mockResolvedValue({ consecutiveFailures: 0, isActive: true }),
+        findUnique: jest.fn().mockResolvedValue({
+          consecutiveFailures: 0,
+          isActive: true,
+          orgId: "org-1",
+          name: "Source 1"
+        }),
         update: jest.fn().mockResolvedValue({}),
       },
     };
@@ -150,6 +160,7 @@ describe("QueueProcessor", () => {
   let mockEnv: ReturnType<typeof createMockEnvService>;
   let mockPipeline: ReturnType<typeof createMockPipeline>;
   let mockPrisma: ReturnType<typeof createMockPrisma>;
+  let mockNotifications: { notify: jest.Mock };
   let workerCallback: (job: any) => Promise<any>;
   let failedHandler: (job: any, err: Error) => Promise<void>;
 
@@ -161,6 +172,7 @@ describe("QueueProcessor", () => {
     mockEnv = createMockEnvService();
     mockPipeline = createMockPipeline();
     mockPrisma = createMockPrisma();
+    mockNotifications = { notify: jest.fn().mockResolvedValue(undefined) };
 
     (RawItemModel.findById as jest.Mock).mockImplementation((id: string) =>
       Promise.resolve(createMockRawItem(id))
@@ -171,7 +183,8 @@ describe("QueueProcessor", () => {
       mockDlqQueue as any,
       mockEnv as any,
       mockPipeline as any,
-      mockPrisma as any
+      mockPrisma as any,
+      mockNotifications as any
     );
   });
 

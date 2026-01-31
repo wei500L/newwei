@@ -1,7 +1,7 @@
 export type AssistantJobPayload =
-  | { type: "query"; runId: string; traceId?: string }
-  | { type: "report"; runId: string; traceId?: string }
-  | { type: "forecast"; runId: string; traceId?: string };
+  | { type: "query"; runId: string; orgId?: string; traceId?: string }
+  | { type: "report"; runId: string; orgId?: string; traceId?: string }
+  | { type: "forecast"; runId: string; orgId?: string; traceId?: string };
 
 export interface AssistantQueryInput {
   message: string;

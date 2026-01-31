@@ -5,7 +5,12 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
-import { CreateNewsSourceDto, ListNewsSourceDto, UpdateNewsSourceDto } from "./dto/news-source.dto";
+import {
+  CreateNewsSourceDto,
+  ListNewsSourceDto,
+  ScheduleNewsSourceDto,
+  UpdateNewsSourceDto,
+} from "./dto/news-source.dto";
 import { NewsSourceService } from "./news-source.service";
 
 @ApiTags("crawl")
@@ -46,6 +51,16 @@ export class NewsSourceController {
   @Permissions("crawl.write")
   async run(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
     return this.newsSources.runNow(user.orgId, id);
+  }
+
+  @Post(":id/schedule")
+  @Permissions("crawl.write")
+  async schedule(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() body: ScheduleNewsSourceDto
+  ) {
+    return this.newsSources.schedule(user.orgId, id, body);
   }
 
   @Get(":id/preview")

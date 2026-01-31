@@ -68,11 +68,13 @@ export type AlertJobPayload =
   | {
       type: "evaluate";
       ruleId: string;
+      orgId?: string;
       traceId?: string;
     }
   | {
       type: "deliver";
       deliveryId: string;
+      orgId?: string;
       traceId?: string;
       scheduledAtMs?: number;
     };
@@ -607,7 +609,7 @@ export class AlertsService {
     });
 
     await this.ensureRuleSchedule(rule);
-    await this.enqueueRuleCheck(rule.id);
+    await this.enqueueRuleCheck(rule.id, rule.orgId);
     return rule;
   }
 
@@ -621,11 +623,11 @@ export class AlertsService {
     return true;
   }
 
-  async enqueueRuleCheck(ruleId: string) {
+  async enqueueRuleCheck(ruleId: string, orgId?: string) {
     const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       this.buildRuleJobName(ruleId),
-      { type: "evaluate", ruleId, traceId },
+      { type: "evaluate", ruleId, orgId, traceId },
       {
         jobId: `evaluate:${ruleId}:${Date.now()}`,
         removeOnComplete: true,
@@ -639,7 +641,7 @@ export class AlertsService {
       where: { status: AlertStatus.active }
     });
     for (const rule of activeRules) {
-      await this.enqueueRuleCheck(rule.id);
+      await this.enqueueRuleCheck(rule.id, rule.orgId);
     }
   }
 
@@ -729,7 +731,7 @@ export class AlertsService {
     const inAppDeliveries = await this.createInAppDeliveries(rule, event.id);
 
     if (externalDeliveries.length > 0) {
-      await this.enqueueNotificationJobs(externalDeliveries);
+      await this.enqueueNotificationJobs(externalDeliveries, rule.orgId);
     }
 
     const hasAnyDeliveries = externalDeliveries.length > 0 || inAppDeliveries.length > 0;
@@ -1029,7 +1031,7 @@ export class AlertsService {
     }
   }
 
-  private async enqueueNotificationJobs(deliveries: { id: string }[]) {
+  private async enqueueNotificationJobs(deliveries: { id: string }[], orgId?: string) {
     if (deliveries.length === 0) {
       return;
     }
@@ -1039,7 +1041,7 @@ export class AlertsService {
       deliveries.map((delivery) =>
         this.queue.add(
           this.buildDeliveryJobName(delivery.id),
-          { type: "deliver", deliveryId: delivery.id, traceId },
+          { type: "deliver", deliveryId: delivery.id, orgId, traceId },
           {
             jobId: `deliver-${delivery.id}`,
             attempts,
@@ -1361,7 +1363,7 @@ export class AlertsService {
     );
   }
 
-  private async ensureRuleSchedule(rule: { id: string; checkIntervalSec: number; status: AlertStatus }) {
+  private async ensureRuleSchedule(rule: { id: string; orgId?: string; checkIntervalSec: number; status: AlertStatus }) {
     await this.removeJob(rule.id, false);
     if (rule.status !== AlertStatus.active) {
       return;
@@ -1369,7 +1371,7 @@ export class AlertsService {
     const every = Math.max(60, rule.checkIntervalSec) * 1000;
     await this.queue.add(
       this.buildRuleJobName(rule.id),
-      { type: "evaluate", ruleId: rule.id },
+      { type: "evaluate", ruleId: rule.id, orgId: rule.orgId },
       {
         jobId: `evaluate-${rule.id}`,
         repeat: { every },
