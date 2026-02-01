@@ -24,6 +24,45 @@ import { parseMetadata } from "../schemas/economic-data.schema";
 export class EconomicDataResolver {
   constructor(private readonly akshareService: AkshareService) {}
 
+  private resolveDefaultGranularityForRange(start: Date, end: Date): TimeGranularity {
+    const diffMs = Math.max(0, end.getTime() - start.getTime());
+    const minuteMs = 60 * 1000;
+    const hourMs = 60 * minuteMs;
+    const dayMs = 24 * hourMs;
+    const diffDays = Math.max(1, Math.round(diffMs / dayMs));
+
+    if (diffMs <= 6 * hourMs) return TimeGranularity.minute;
+    if (diffMs <= 2 * dayMs) return TimeGranularity.hour;
+    if (diffDays > 1095) return TimeGranularity.year;
+    if (diffDays > 365) return TimeGranularity.quarter;
+    if (diffDays > 120) return TimeGranularity.month;
+    if (diffDays > 45) return TimeGranularity.week;
+    return TimeGranularity.day;
+  }
+
+  private parseGranularity(raw: string | null | undefined): TimeGranularity | null {
+    switch (raw) {
+      case "realtime":
+        return TimeGranularity.realtime;
+      case "minute":
+        return TimeGranularity.minute;
+      case "hour":
+        return TimeGranularity.hour;
+      case "day":
+        return TimeGranularity.day;
+      case "week":
+        return TimeGranularity.week;
+      case "month":
+        return TimeGranularity.month;
+      case "quarter":
+        return TimeGranularity.quarter;
+      case "year":
+        return TimeGranularity.year;
+      default:
+        return null;
+    }
+  }
+
   private timeGranularityRank(granularity: TimeGranularity): number {
     switch (granularity) {
       case TimeGranularity.realtime:
@@ -70,13 +109,11 @@ export class EconomicDataResolver {
   }
 
   private resolveEffectiveGranularity(
-    requested: TimeGranularity | undefined,
+    requested: TimeGranularity | null | undefined,
     defaultFrequency: EconomicDataFrequency | null | undefined
-  ): TimeGranularity | null {
-    const base = this.defaultFrequencyToTimeGranularity(defaultFrequency);
-    if (!requested) return base;
-    if (!base) return requested;
-    return this.coarsestTimeGranularity(requested, base);
+  ): TimeGranularity {
+    const base = this.defaultFrequencyToTimeGranularity(defaultFrequency) ?? TimeGranularity.day;
+    return requested ?? base;
   }
 
   private mapItemToModel(item: {
@@ -110,12 +147,30 @@ export class EconomicDataResolver {
   ): Promise<EconomicDataPointModel[]> {
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
-    const points = await this.akshareService.getDataByCategory(category, start, end, granularity);
+    const resolvedGranularity = granularity ?? this.resolveDefaultGranularityForRange(start, end);
+    const baseGranularity = granularity
+      ? null
+      : this.parseGranularity(await this.akshareService.getCategoryBaseGranularity(category));
+    const appliedGranularity = baseGranularity
+      ? this.coarsestTimeGranularity(resolvedGranularity, baseGranularity)
+      : resolvedGranularity;
+
+    const skipGranularityValidation = Boolean(!granularity && baseGranularity);
+    const points = skipGranularityValidation
+      ? await this.akshareService.getDataByCategory(
+          category,
+          start,
+          end,
+          appliedGranularity,
+          undefined,
+          { skipGranularityValidation: true }
+        )
+      : await this.akshareService.getDataByCategory(category, start, end, appliedGranularity);
     // Handle both legacy array return and paginated result
     const dataPoints = Array.isArray(points) ? points : points.data;
     return dataPoints.map((point) => ({
       timestamp: point.recordedAt,
-      effectiveGranularity: this.resolveEffectiveGranularity(granularity, point.item?.defaultFrequency),
+      effectiveGranularity: appliedGranularity,
       value: Number(point.value),
       unit: point.unit,
       sourceField: point.sourceField,

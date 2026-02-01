@@ -38,6 +38,12 @@ describe("AkshareService.getDataByCategory", () => {
             item: { defaultFrequency: EconomicDataFrequency.daily }
           }
         ])
+      },
+      economicDataItem: {
+        findMany: jest.fn().mockResolvedValue([
+          { defaultFrequency: EconomicDataFrequency.daily },
+          { defaultFrequency: EconomicDataFrequency.daily }
+        ])
       }
     };
 
@@ -83,6 +89,9 @@ describe("AkshareService.getDataByCategory", () => {
     const prisma = {
       economicDataPoint: {
         findMany: jest.fn().mockResolvedValue(points)
+      },
+      economicDataItem: {
+        findMany: jest.fn().mockResolvedValue([{ defaultFrequency: EconomicDataFrequency.daily }])
       }
     };
 
@@ -113,6 +122,9 @@ describe("AkshareService.getDataByCategory", () => {
     const prisma = {
       economicDataPoint: {
         findMany: jest.fn().mockResolvedValue([])
+      },
+      economicDataItem: {
+        findMany: jest.fn().mockResolvedValue([{ defaultFrequency: EconomicDataFrequency.hourly }])
       }
     };
 

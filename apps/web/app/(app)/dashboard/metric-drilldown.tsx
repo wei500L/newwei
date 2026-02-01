@@ -11,16 +11,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
-import { TimeGranularity, useMetricDrillDownDetailsQuery } from "@/graphql/generated";
+import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
-  compareGranularity,
   formatGranularityLabel,
   pickCoarsestGranularity,
-  resolveDefaultGranularityForRangePreset,
   timeGranularityToUiGranularity,
   UiTimeGranularity,
   uiGranularityToInterval,
@@ -45,22 +43,6 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   const [mapName, setMapName] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const { range, start: rangeStart, end: rangeEnd } = useDashboardRangeStore();
-  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, rangeStart, rangeEnd);
-  const requestedGranularity = useMemo(() => {
-    switch (defaultGranularity) {
-      case UiTimeGranularity.Year:
-        return TimeGranularity.Year;
-      case UiTimeGranularity.Quarter:
-        return TimeGranularity.Quarter;
-      case UiTimeGranularity.Month:
-        return TimeGranularity.Month;
-      case UiTimeGranularity.Week:
-        return TimeGranularity.Week;
-      case UiTimeGranularity.Day:
-      default:
-        return TimeGranularity.Day;
-    }
-  }, [defaultGranularity]);
   
   const start = rangeStart.toISOString();
   const end = rangeEnd.toISOString();
@@ -70,7 +52,8 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       category: metricKey ?? "",
       start,
       end,
-      granularity: requestedGranularity
+      // "Auto" negotiation: backend picks the effective aggregation granularity.
+      granularity: null
     },
     skip: !visible || !metricKey
   });
@@ -180,29 +163,15 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   [data]);
 
   const activeUiGranularity = useMemo(() => {
-    const requestedUiGranularity = timeGranularityToUiGranularity(requestedGranularity);
     const backendGranularity = pickCoarsestGranularity(
       (data?.history ?? []).map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
     );
-    return backendGranularity === UiTimeGranularity.Unknown ? requestedUiGranularity : backendGranularity;
-  }, [data?.history, requestedGranularity]);
+    return backendGranularity;
+  }, [data?.history]);
 
   const activeInterval = useMemo(() => uiGranularityToInterval(activeUiGranularity), [activeUiGranularity]);
   const activeGranularityLabel = formatGranularityLabel(activeUiGranularity);
-  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
-  const granularityCompare = compareGranularity(activeUiGranularity, defaultGranularity);
-  const granularityColor =
-    granularityCompare === "match"
-      ? "geekblue"
-      : granularityCompare === "coarser"
-        ? "orange"
-        : granularityCompare === "finer"
-          ? "cyan"
-          : "default";
-  const granularityTagText =
-    granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
-      ? `Aggregation: ${activeGranularityLabel}`
-      : `Aggregation: ${activeGranularityLabel} (default ${defaultGranularityLabel})`;
+  const granularityTagText = `Aggregation: ${activeGranularityLabel}`;
 
   const trendOption = useMemo<EChartsOption>(() => {
     if (historyData.length === 0) return {};
@@ -334,7 +303,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 Unit: {seriesUnit}
               </Tag>
             ) : null}
-            <Tag color={granularityColor} className="text-xs">
+            <Tag color="geekblue" className="text-xs">
               {granularityTagText}
             </Tag>
           </div>

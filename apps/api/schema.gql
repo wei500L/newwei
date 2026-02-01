@@ -743,9 +743,9 @@ type EconomicDataPointModel {
   dataType: EconomicDataValueType!
 
   """
-  Effective aggregation granularity negotiated by the backend (may be coarser than the requested granularity).
+  Effective aggregation granularity agreed by the backend and used to produce this time series.
   """
-  effectiveGranularity: TimeGranularity
+  effectiveGranularity: TimeGranularity!
   item: EconomicDataItemModel!
   sourceField: String
   timestamp: DateTime!

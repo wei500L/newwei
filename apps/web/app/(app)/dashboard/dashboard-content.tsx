@@ -23,14 +23,13 @@ import { toast } from "sonner";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
-import { TimeGranularity, useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/generated";
+import { useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/generated";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import {
   pickCoarsestGranularity,
   pickFinestGranularity,
-  resolveDefaultGranularityForRangePreset,
   timeGranularityToUiGranularity,
   UiTimeGranularity,
 } from "@/lib/time-granularity";
@@ -314,30 +313,14 @@ export function DashboardContent() {
   const lastRangeFingerprintRef = useRef<string | null>(null);
 
   // Hero Metrics Query
-  const heroGranularity = useMemo(() => {
-    const uiGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
-    switch (uiGranularity) {
-      case UiTimeGranularity.Year:
-        return TimeGranularity.Year;
-      case UiTimeGranularity.Quarter:
-        return TimeGranularity.Quarter;
-      case UiTimeGranularity.Month:
-        return TimeGranularity.Month;
-      case UiTimeGranularity.Week:
-        return TimeGranularity.Week;
-      case UiTimeGranularity.Day:
-      default:
-        return TimeGranularity.Day;
-    }
-  }, [end, range, start]);
-
   const heroDateRange = useMemo(
     () => ({
       start: start.toISOString(),
       end: end.toISOString(),
-      granularity: heroGranularity
+      // "Auto" negotiation: backend picks the effective aggregation granularity.
+      granularity: null
     }),
-    [heroGranularity, start, end]
+    [start, end]
   );
 
   const { data: heroData, loading: heroLoading } = useDashboardHeroMetricsQuery({

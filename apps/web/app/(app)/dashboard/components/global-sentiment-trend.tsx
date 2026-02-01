@@ -11,10 +11,8 @@ import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
-  compareGranularity,
   formatGranularityLabel,
   pickCoarsestGranularity,
-  resolveDefaultGranularityForRangePreset,
   timeGranularityToUiGranularity,
   UiTimeGranularity,
 } from "@/lib/time-granularity";
@@ -160,7 +158,6 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
     };
   }, [data, locale, t, theme]);
 
-  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
   const actualGranularity = useMemo(
     () =>
       pickCoarsestGranularity(
@@ -169,20 +166,9 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
     [data],
   );
   const actualGranularityLabel = formatGranularityLabel(actualGranularity);
-  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
-  const granularityCompare = compareGranularity(actualGranularity, defaultGranularity);
   const granularityColor =
-    granularityCompare === "match"
-      ? "geekblue"
-      : granularityCompare === "coarser"
-        ? "orange"
-        : granularityCompare === "finer"
-          ? "cyan"
-          : "default";
-  const granularityTagText =
-    granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
-      ? `Aggregation: ${actualGranularityLabel}`
-      : `Aggregation: ${actualGranularityLabel} (default ${defaultGranularityLabel})`;
+    actualGranularity === UiTimeGranularity.Unknown ? "default" : "geekblue";
+  const granularityTagText = `Aggregation: ${actualGranularityLabel}`;
 
   return (
     <Card 

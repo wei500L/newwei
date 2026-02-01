@@ -51,11 +51,10 @@ export class EconomicDataPointModel {
   timestamp!: Date;
 
   @Field(() => TimeGranularity, {
-    nullable: true,
     description:
-      "Effective aggregation granularity negotiated by the backend (may be coarser than the requested granularity)."
+      "Effective aggregation granularity agreed by the backend and used to produce this time series."
   })
-  effectiveGranularity?: TimeGranularity | null;
+  effectiveGranularity!: TimeGranularity;
 
   @Field(() => Float)
   value!: number;

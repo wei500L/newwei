@@ -435,6 +435,9 @@
     "timeRange": {
       "aggregation": "聚合粒度",
       "aggregationHint": "聚合粒度由后端返回，可能与建议粒度不同。",
+      "aggregationHintBackend": "聚合粒度由后端返回。",
+      "aggregationHintPending": "正在等待后端返回聚合粒度。",
+      "aggregationHintUnavailable": "此页面不提供聚合粒度信息。",
       "aggregationMismatchHint": "建议粒度为 {{suggested}}，但后端实际使用 {{observed}}。解读趋势时请以实际粒度为准。",
       "defaultAggregation": "建议聚合粒度",
       "defaultAggregationHint": "建议粒度由所选时间窗推导；实际数据桶可能因数据可用性而不同。",
@@ -2141,7 +2144,7 @@
         "maxLagDays": "最大滞后天数",
         "minSampleSize": "最小样本数",
         "minAbsCorrelation": "最小绝对相关系数",
-        "maxPValue": "最大 p-value",
+        "maxPValue": "最大 p 值",
         "topEntities": "Top 实体数",
         "topTopics": "Top 主题数",
         "maxAssociationsPerIndicator": "每指标最大关联数",
@@ -2365,16 +2368,16 @@
         "actions": {
           "run": "运行测试"
         },
-        "fields": {
-          "model": "模型覆盖",
-          "attempts": "请求次数",
-          "concurrency": "并发",
-          "prompt": "Prompt"
-        },
-        "hints": {
-          "model": "留空则使用 Profile 的默认模型。",
-          "prompt": "留空会使用默认 Prompt。"
-        },
+      "fields": {
+        "model": "模型覆盖",
+        "attempts": "请求次数",
+        "concurrency": "并发",
+        "prompt": "提示词"
+      },
+      "hints": {
+        "model": "留空则使用 Profile 的默认模型。",
+        "prompt": "留空会使用默认提示词。"
+      },
         "checkedAt": "负载均衡测试时间：{{time}}",
         "summary": {
           "title": "LB 测试",
@@ -2382,9 +2385,9 @@
           "success": "成功",
           "failed": "失败",
           "duration": "耗时",
-          "deployments": "Model IDs",
-          "modelIds": "Model IDs",
-          "apiBases": "API bases"
+          "deployments": "模型 ID",
+          "modelIds": "模型 ID",
+          "apiBases": "API Base"
         },
         "sections": {
           "modelIds": "Model ID 分布",
@@ -2394,7 +2397,7 @@
         },
         "columns": {
           "id": "ID",
-          "apiBase": "API base",
+          "apiBase": "API Base",
           "count": "次数",
           "ratio": "占比"
         }
@@ -2422,7 +2425,7 @@
       "fields": {
         "preset": "供应商预设",
         "name": "名称",
-        "apiBase": "API Base URL",
+        "apiBase": "API Base 地址",
         "apiKey": "API Key",
         "model": "默认模型",
         "embeddingModel": "Embedding 模型",
@@ -2512,13 +2515,13 @@
         "hints": {
           "model": "留空则使用网关配置的默认模型 + Fallback 模型。",
           "embeddingModel": "留空则使用网关配置的 Embedding 模型。",
-          "includeCompletion": "关闭后仅测试 Embeddings。"
+          "includeCompletion": "关闭后仅测试向量（Embeddings）。"
         },
         "sections": {
           "completion": "对话补全",
-          "embedding": "Embedding"
+          "embedding": "向量（Embedding）"
         },
-        "tokens": "{{total}} Token",
+        "tokens": "Token：{{total}}",
         "dimensions": "{{n}} 维",
         "cost": "$ {{cost}}",
         "errors": {
@@ -2655,7 +2658,7 @@
           "tooManyKeys": "将超过最多 {{max}} 个 Key 的限制。"
         },
         "fields": {
-          "keys": "OpenAI API Keys",
+          "keys": "OpenAI API Key 列表",
           "keysHint": "支持逗号或换行分隔；「追加保存」会合并去重，「覆盖保存」会覆盖数据库里已存的 Key 列表。",
           "keysPlaceholder": "sk-...\nsk-...\n..."
         },
@@ -2869,7 +2872,7 @@
         },
         "fields": {
           "checkedAt": "最近检查",
-          "baseUrl": "Base URL",
+          "baseUrl": "基础 URL",
           "rateLimit": "请求频率限制"
         },
         "status": {
@@ -2878,7 +2881,7 @@
           "ok": "正常",
           "no_result": "无结果",
           "rate_limited": "触发限流",
-          "upstream_forbidden": "403 Forbidden",
+          "upstream_forbidden": "403 禁止访问",
           "upstream_rate_limited": "上游限流",
           "upstream_error": "上游错误",
           "network_error": "网络错误",
@@ -4266,10 +4269,10 @@
     },
     "metrics": {
       "quality": {
-        "tooltip": "Quality score from LLM cleaning stage (0–1, shown as %)."
+        "tooltip": "来自 LLM 清洗阶段的质量分（0–1，以百分比展示）。"
       },
       "duplicate": {
-        "tooltip": "Duplicate similarity from dedup stage (0–1, shown as %)."
+        "tooltip": "来自去重阶段的重复相似度（0–1，以百分比展示）。"
       }
     },
     "duplicate": {
@@ -4430,10 +4433,10 @@
         "statusAll": "全部状态"
       },
       "status": {
-        "pending": "pending",
-        "processing": "processing",
-        "completed": "completed",
-        "failed": "failed"
+        "pending": "待处理",
+        "processing": "处理中",
+        "completed": "已完成",
+        "failed": "失败"
       },
       "columns": {
         "time": "时间",

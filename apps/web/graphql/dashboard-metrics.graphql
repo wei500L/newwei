@@ -1,4 +1,4 @@
-query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: TimeGranularity = day) {
+query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: TimeGranularity) {
   conflict: getEconomicData(
     category: "global-conflict-index"
     timeRange: { start: $start, end: $end }
@@ -65,7 +65,7 @@ query MetricDrillDownDetails(
   $category: String!
   $start: DateTime!
   $end: DateTime!
-  $granularity: TimeGranularity = day
+  $granularity: TimeGranularity
 ) {
   history: getEconomicData(
     category: $category

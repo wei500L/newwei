@@ -8,6 +8,7 @@ import { EconomicDataResolver } from "./economic-data.resolver";
 describe("EconomicDataResolver", () => {
   const mockAkshareService = {
     getDataByCategory: jest.fn(),
+    getCategoryBaseGranularity: jest.fn(),
     listFetchConfigs: jest.fn(),
     updateFetchConfig: jest.fn(),
     triggerDataFetch: jest.fn()
@@ -17,6 +18,7 @@ describe("EconomicDataResolver", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (mockAkshareService.getCategoryBaseGranularity as jest.Mock).mockResolvedValue(null);
   });
 
   describe("getEconomicData", () => {
@@ -118,7 +120,8 @@ describe("EconomicDataResolver", () => {
       expect(result[0].item.metadata).toBeNull();
     });
 
-    it("negotiates effective granularity based on item defaultFrequency", async () => {
+    it("coarsens granularity when omitted based on category base frequency", async () => {
+      (mockAkshareService.getCategoryBaseGranularity as jest.Mock).mockResolvedValue("week");
       (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
         {
           recordedAt: new Date("2024-01-05T12:00:00Z"),
@@ -140,13 +143,20 @@ describe("EconomicDataResolver", () => {
       const result = await resolver.getEconomicData(
         "economic-indicators",
         { start: "2024-01-01", end: "2024-01-31" },
-        TimeGranularity.day
       );
 
+      expect(mockAkshareService.getDataByCategory).toHaveBeenCalledWith(
+        "economic-indicators",
+        new Date("2024-01-01"),
+        new Date("2024-01-31"),
+        TimeGranularity.week,
+        undefined,
+        { skipGranularityValidation: true }
+      );
       expect(result[0]?.effectiveGranularity).toBe(TimeGranularity.week);
     });
 
-    it("reports realtime effective granularity when requested granularity is omitted", async () => {
+    it("uses backend default granularity when requested granularity is omitted", async () => {
       (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
         {
           recordedAt: new Date("2024-01-05T12:34:56Z"),
@@ -167,10 +177,16 @@ describe("EconomicDataResolver", () => {
 
       const result = await resolver.getEconomicData(
         "economic-indicators",
-        { start: "2024-01-01", end: "2024-01-31" }
+        { start: "2024-01-01T00:00:00Z", end: "2024-01-01T05:00:00Z" }
       );
 
-      expect(result[0]?.effectiveGranularity).toBe(TimeGranularity.realtime);
+      expect(mockAkshareService.getDataByCategory).toHaveBeenCalledWith(
+        "economic-indicators",
+        new Date("2024-01-01T00:00:00Z"),
+        new Date("2024-01-01T05:00:00Z"),
+        TimeGranularity.minute
+      );
+      expect(result[0]?.effectiveGranularity).toBe(TimeGranularity.minute);
     });
 
     it("allows requesting hourly aggregation for realtime series", async () => {

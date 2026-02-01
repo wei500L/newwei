@@ -1,18 +1,12 @@
 "use client";
 
-import { ExclamationCircleOutlined } from "@ant-design/icons";
 import { DatePicker, Segmented, Space, Tag, Tooltip, Typography } from "antd";
 import type { SegmentedValue } from "antd/es/segmented";
 import type { Dayjs } from "dayjs";
 import { useTranslation } from "react-i18next";
 
 import { toDashboardZonedTime } from "@/lib/dashboard-time";
-import {
-  compareGranularity,
-  formatGranularityLabel,
-  resolveDefaultGranularityForRangePreset,
-  UiTimeGranularity,
-} from "@/lib/time-granularity";
+import { formatGranularityLabel, UiTimeGranularity } from "@/lib/time-granularity";
 import { useDashboardRangeStore, type DashboardRangePreset } from "@/store/time-range";
 
 const presets: { label: string; value: DashboardRangePreset }[] = [
@@ -27,8 +21,7 @@ const presets: { label: string; value: DashboardRangePreset }[] = [
 
 export interface TimeRangeControlsProps {
   /**
-   * When provided, the UI will display the observed aggregation bucket size (as reported by the
-   * backend) and warn when it differs from the suggested/default granularity.
+   * When provided, the UI will display the aggregation bucket size as reported by the backend.
    */
   appliedGranularity?: UiTimeGranularity | null;
 
@@ -43,8 +36,8 @@ export interface TimeRangeControlsProps {
 export function TimeRangeControls({ appliedGranularity, appliedGranularityRange }: TimeRangeControlsProps) {
   const { t } = useTranslation();
   const { range, start, end, setRange, setCustomRange } = useDashboardRangeStore();
-  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
-  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
+  const backendGranularityEnabled =
+    typeof appliedGranularity !== "undefined" || typeof appliedGranularityRange !== "undefined";
   const resolvedAppliedGranularity =
     appliedGranularity && appliedGranularity !== UiTimeGranularity.Unknown
       ? appliedGranularity
@@ -70,49 +63,30 @@ export function TimeRangeControls({ appliedGranularity, appliedGranularityRange 
       )}-${formatGranularityLabel(mixedCoarsest!)})`
     : appliedGranularityLabel;
 
-  const granularityCompareTarget = hasMixedGranularity ? mixedCoarsest! : resolvedAppliedGranularity;
-  const granularityCompare = granularityCompareTarget
-    ? compareGranularity(granularityCompareTarget, defaultGranularity)
-    : "unknown";
-  const granularityColor =
-    granularityCompareTarget && granularityCompare !== "unknown"
-      ? granularityCompare === "match"
-        ? "geekblue"
-        : granularityCompare === "coarser"
-          ? "orange"
-          : "cyan"
-      : "geekblue";
-
-  const aggregationLabel = resolvedAppliedGranularity
-    ? t("dashboard.timeRange.aggregation", { defaultValue: "Aggregation" })
-    : t("dashboard.timeRange.defaultAggregation", { defaultValue: "Suggested aggregation" });
-
-  const aggregationText = resolvedAppliedGranularity
-    ? granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
+  const aggregationLabel = t("dashboard.timeRange.aggregation", { defaultValue: "Aggregation" });
+  const aggregationColor =
+    resolvedAppliedGranularity || hasMixedGranularity
+      ? "geekblue"
+      : backendGranularityEnabled
+        ? "processing"
+        : "default";
+  const aggregationText =
+    resolvedAppliedGranularity || hasMixedGranularity
       ? `${aggregationLabel}: ${appliedGranularityDisplayLabel}`
-      : `${aggregationLabel}: ${appliedGranularityDisplayLabel} (${t("dashboard.timeRange.defaultAggregationSuffix", { defaultValue: "suggested" })} ${defaultGranularityLabel})`
-    : `${aggregationLabel}: ${defaultGranularityLabel}`;
+      : backendGranularityEnabled
+        ? `${aggregationLabel}: ${t("common.loading", { defaultValue: "Loading..." })}`
+        : `${aggregationLabel}: ${t("common.notAvailable", { defaultValue: "Not available" })}`;
 
-  const hasMismatch =
-    Boolean(resolvedAppliedGranularity) &&
-    granularityCompare === "coarser" &&
-    defaultGranularity !== UiTimeGranularity.Unknown;
-
-  const aggregationHint = resolvedAppliedGranularity
-    ? hasMismatch
-      ? t("dashboard.timeRange.aggregationMismatchHint", {
-          defaultValue:
-            "Suggested granularity is {{suggested}} but backend applied {{observed}}. Use the applied bucket size when interpreting trends.",
-          suggested: defaultGranularityLabel,
-          observed: appliedGranularityDisplayLabel ?? ""
+  const aggregationHint = backendGranularityEnabled
+    ? resolvedAppliedGranularity || hasMixedGranularity
+      ? t("dashboard.timeRange.aggregationHintBackend", {
+          defaultValue: "Aggregation is reported by the backend."
         })
-      : t("dashboard.timeRange.aggregationHint", {
-          defaultValue:
-            "Aggregation is reported by the backend and may differ from the suggested granularity."
+      : t("dashboard.timeRange.aggregationHintPending", {
+          defaultValue: "Waiting for backend to report aggregation granularity."
         })
-    : t("dashboard.timeRange.defaultAggregationHint", {
-        defaultValue:
-          "Suggested granularity is derived from the selected window; actual buckets may differ depending on data availability."
+    : t("dashboard.timeRange.aggregationHintUnavailable", {
+        defaultValue: "This view does not report aggregation granularity."
       });
 
   const handlePresetChange = (value: SegmentedValue) => {
@@ -152,10 +126,7 @@ export function TimeRangeControls({ appliedGranularity, appliedGranularityRange 
 
       <Space size={8} wrap align="center">
         <Tooltip title={aggregationHint}>
-          <Tag color={granularityColor} className="text-xs">
-            {hasMismatch ? (
-              <ExclamationCircleOutlined style={{ marginRight: 6 }} aria-hidden />
-            ) : null}
+          <Tag color={aggregationColor} className="text-xs">
             {aggregationText}
           </Tag>
         </Tooltip>

@@ -6,17 +6,13 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
-import type { TimeGranularity } from "@/graphql/generated";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
-  compareGranularity,
   formatGranularityLabel,
   pickCoarsestGranularity,
-  resolveDefaultGranularityForRangePreset,
   timeGranularityToUiGranularity,
-  UiTimeGranularity,
   uiGranularityToInterval,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -54,23 +50,6 @@ const parseDataSource = (dataSource: string) => {
   return { kind: "unknown" as const };
 };
 
-const chooseGranularity = (
-  start: Date,
-  end: Date,
-  explicit?: TimeGranularity,
-) => {
-  if (explicit) return explicit;
-  const diffDays = Math.max(
-    1,
-    Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)),
-  );
-  if (diffDays > 1095) return "year";
-  if (diffDays > 365) return "quarter";
-  if (diffDays > 120) return "month";
-  if (diffDays > 45) return "week";
-  return "day";
-};
-
 export interface WidgetRenderProps {
   type: string;
   title?: string;
@@ -105,12 +84,6 @@ export function WidgetRenderer({
   const { t } = useTranslation();
   const { range, start, end } = useDashboardRangeStore();
   const sourceInfo = parseDataSource(dataSource);
-  const chosenGranularity = useMemo(
-    () => chooseGranularity(start, end),
-    [end, start],
-  );
-  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
-  const chosenUiGranularity = timeGranularityToUiGranularity(chosenGranularity);
   const windowLabel = formatDashboardWindowLabel(start, end);
   const {
     data: apiData,
@@ -125,7 +98,8 @@ export function WidgetRenderer({
         : {
             category: sourceInfo.category,
             timeRange: { start: start.toISOString(), end: end.toISOString() },
-            granularity: chosenGranularity,
+            // "Auto" negotiation: backend picks the effective aggregation granularity.
+            granularity: null,
           },
     fetchPolicy: "cache-first",
   });
@@ -154,21 +128,10 @@ export function WidgetRenderer({
     const backend = pickCoarsestGranularity(
       (resolvedData ?? []).map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
     );
-    return backend === UiTimeGranularity.Unknown ? chosenUiGranularity : backend;
-  }, [chosenUiGranularity, resolvedData]);
+    return backend;
+  }, [resolvedData]);
 
-  const chosenGranularityLabel = formatGranularityLabel(chosenUiGranularity);
   const activeGranularityLabel = formatGranularityLabel(activeUiGranularity);
-  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
-  const granularityCompare = compareGranularity(activeUiGranularity, defaultGranularity);
-  const granularityColor =
-    granularityCompare === "match"
-      ? "geekblue"
-      : granularityCompare === "coarser"
-        ? "orange"
-        : granularityCompare === "finer"
-          ? "cyan"
-          : "default";
 
   const seriesUnit = useMemo(() => {
     const series = resolvedData ?? [];
@@ -370,14 +333,8 @@ export function WidgetRenderer({
             Unit: {seriesUnit}
           </Tag>
         ) : null}
-        <Tag color={granularityColor} className="text-xs">
-          Aggregation:{" "}
-          {granularityCompare === "match" || defaultGranularity === activeUiGranularity
-            ? activeGranularityLabel
-            : `${activeGranularityLabel} (default ${defaultGranularityLabel})`}
-          {activeUiGranularity !== chosenUiGranularity
-            ? ` (requested ${chosenGranularityLabel})`
-            : ""}
+        <Tag color="geekblue" className="text-xs">
+          Aggregation: {activeGranularityLabel}
         </Tag>
       </Space>
       <DashboardChart

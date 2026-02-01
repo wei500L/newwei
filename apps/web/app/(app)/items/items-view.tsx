@@ -40,6 +40,8 @@ const EMPTY_FILTERS_STATE: FilterState = {};
 
 const ITEMS_SEARCH_DEBOUNCE_MS = 400;
 const ITEMS_FILTERS_URL_DEBOUNCE_MS = 200;
+const ITEMS_TABLE_MIN_SCROLL_X = 840;
+const ITEMS_TABLE_MIN_BODY_SCROLL_Y = 240;
 
 function ItemsTableLoadingSkeleton({ rows }: { rows: number }) {
   const safeRows = Math.max(1, rows);
@@ -527,7 +529,66 @@ export function ItemsView({
   const [pageSize, setPageSize] = useState(urlPageSize);
   const [showFilters, setShowFilters] = useState(false);
   const [showDelayHint, setShowDelayHint] = useState(false);
+  const listTableContainerRef = useRef<HTMLDivElement | null>(null);
+  const [listTableScrollX, setListTableScrollX] = useState<number | null>(null);
+  const [listTableScrollY, setListTableScrollY] = useState<number | null>(null);
   const urlFiltersRef = useRef(urlFilters);
+
+  const updateListTableScroll = useCallback(() => {
+    const container = listTableContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const rect = container.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || 0;
+    const headerEl = container.querySelector(".ant-table-thead") as HTMLElement | null;
+    const paginationEl = container.querySelector(".ant-table-pagination") as HTMLElement | null;
+
+    const headerHeight = headerEl?.getBoundingClientRect().height ?? 0;
+    const paginationHeight = paginationEl?.getBoundingClientRect().height ?? 0;
+
+    // `items-view` lives inside the ShellLayout scrolling container. Reserve some padding so the
+    // virtualized table doesn't butt up against the bottom of the viewport.
+    const bottomPadding = 24;
+    const available = viewportHeight - rect.top - bottomPadding;
+
+    const nextScrollY = Math.max(
+      ITEMS_TABLE_MIN_BODY_SCROLL_Y,
+      Math.floor(available - headerHeight - paginationHeight)
+    );
+    const nextScrollX = Math.max(ITEMS_TABLE_MIN_SCROLL_X, Math.floor(container.clientWidth));
+
+    setListTableScrollX((prev) => (prev === nextScrollX ? prev : nextScrollX));
+    setListTableScrollY((prev) => (prev === nextScrollY ? prev : nextScrollY));
+  }, []);
+
+  useEffect(() => {
+    if (view !== "list") {
+      setListTableScrollX(null);
+      setListTableScrollY(null);
+      return;
+    }
+
+    let rafId: number | null = null;
+
+    const handleResize = () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+      rafId = window.requestAnimationFrame(() => updateListTableScroll());
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [updateListTableScroll, view]);
 
   useEffect(() => {
     urlFiltersRef.current = urlFilters;
@@ -574,6 +635,15 @@ export function ItemsView({
   const hasActiveFilters = filtersInput !== null;
   const isUnsearched =
     emptyStateVariant === "search" && search.length === 0 && !hasActiveFilters;
+  const listTableScroll =
+    typeof listTableScrollX === "number" && typeof listTableScrollY === "number"
+      ? {
+          x: listTableScrollX,
+          y: listTableScrollY,
+          scrollToFirstRowOnChange: true
+        }
+      : undefined;
+  const listTableVirtualEnabled = Boolean(listTableScroll);
   const orderBy = useMemo<ItemsOrderBy>(
     () => (sortMode === "publishedDesc" ? "PUBLISHED_DESC" : "CREATED_DESC"),
     [sortMode]
@@ -857,6 +927,13 @@ export function ItemsView({
     });
   }, [edges]);
 
+  useEffect(() => {
+    if (view !== "list") {
+      return;
+    }
+    updateListTableScroll();
+  }, [error, hasActiveFilters, pageData.length, search, updateListTableScroll, view]);
+
   const availableRegions = useMemo(() => {
     const regions = facetsData?.itemFacets?.regions;
     if (regions && regions.length > 0) {
@@ -985,140 +1062,154 @@ export function ItemsView({
     });
   };
 
-  const columns: ColumnsType<ParsedItem> = [
-    {
-      title: t("items.columns.name", { defaultValue: "Title" }),
-      dataIndex: "name",
-      key: "name"
-    },
-    {
-      title: t("items.columns.source", { defaultValue: "Source" }),
-      dataIndex: "source",
-      key: "source",
-      render: (value: string | undefined) => value ?? t("common.notAvailable")
-    },
-    {
-      title: t("items.columns.time", { defaultValue: "Time" }),
-      dataIndex: "publishedAt",
-      key: "publishedAt",
-      render: (_: string | undefined, record) => {
-        const publishedLabel = t("items.time.published", { defaultValue: "Published" });
-        const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
-        const ingestedAt = record.ingestedAt ?? record.createdAt;
-        return (
-          <Space direction="vertical" size={0}>
-            <Typography.Text>
-              {publishedLabel}:{" "}
-              {record.publishedAt
-                ? formatDateTime(record.publishedAt, locale, {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    timeZone,
-                    timeZoneName: "short"
-                  })
-                : t("common.notAvailable")}
-            </Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {ingestedLabel}:{" "}
-              {formatDateTime(ingestedAt, locale, {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                timeZone,
-                timeZoneName: "short"
-              })}
-            </Typography.Text>
-          </Space>
-        );
-      }
-    },
-    {
-      title: withMetricTooltip(
-        t("items.columns.quality", { defaultValue: "Quality" }),
-        t("items.metrics.quality.tooltip", {
-          defaultValue: "Quality score from LLM cleaning stage (0–1, shown as %)."
-        })
-      ),
-      dataIndex: "qualityScore",
-      key: "qualityScore",
-      render: (value: number | undefined, record) => {
-        const formatted = formatRatioAsPercent(value, locale);
-        if (!formatted) {
-          return <Tag>{t("common.notAvailable")}</Tag>;
+  const columns = useMemo<ColumnsType<ParsedItem>>(
+    () => [
+      {
+        title: t("items.columns.name", { defaultValue: "Title" }),
+        dataIndex: "name",
+        key: "name",
+        ellipsis: true
+      },
+      {
+        title: t("items.columns.source", { defaultValue: "Source" }),
+        dataIndex: "source",
+        key: "source",
+        width: 120,
+        render: (value: string | undefined) => value ?? t("common.notAvailable")
+      },
+      {
+        title: t("items.columns.time", { defaultValue: "Time" }),
+        dataIndex: "publishedAt",
+        key: "publishedAt",
+        width: 240,
+        render: (_: string | undefined, record) => {
+          const publishedLabel = t("items.time.published", { defaultValue: "Published" });
+          const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
+          const ingestedAt = record.ingestedAt ?? record.createdAt;
+          return (
+            <Space direction="vertical" size={0}>
+              <Typography.Text>
+                {publishedLabel}:{" "}
+                {record.publishedAt
+                  ? formatDateTime(record.publishedAt, locale, {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      timeZone,
+                      timeZoneName: "short"
+                    })
+                  : t("common.notAvailable")}
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {ingestedLabel}:{" "}
+                {formatDateTime(ingestedAt, locale, {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  timeZone,
+                  timeZoneName: "short"
+                })}
+              </Typography.Text>
+            </Space>
+          );
         }
+      },
+      {
+        title: withMetricTooltip(
+          t("items.columns.quality", { defaultValue: "Quality" }),
+          t("items.metrics.quality.tooltip", {
+            defaultValue: "Quality score from LLM cleaning stage (0–1, shown as %)."
+          })
+        ),
+        dataIndex: "qualityScore",
+        key: "qualityScore",
+        width: 110,
+        render: (value: number | undefined, record) => {
+          const formatted = formatRatioAsPercent(value, locale);
+          if (!formatted) {
+            return <Tag>{t("common.notAvailable")}</Tag>;
+          }
 
-        const tooltip = (
-          <div className="text-xs">
-            <div>
-              {t("items.metrics.quality.tooltip", {
-                defaultValue: "Quality score from LLM cleaning stage (0–1, shown as %)."
-              })}
+          const tooltip = (
+            <div className="text-xs">
+              <div>
+                {t("items.metrics.quality.tooltip", {
+                  defaultValue: "Quality score from LLM cleaning stage (0–1, shown as %)."
+                })}
+              </div>
+              {record.llm?.model ? <div>Model: {record.llm.model}</div> : null}
+              {record.llm?.promptVersion ? <div>Prompt: {record.llm.promptVersion}</div> : null}
             </div>
-            {record.llm?.model ? <div>Model: {record.llm.model}</div> : null}
-            {record.llm?.promptVersion ? <div>Prompt: {record.llm.promptVersion}</div> : null}
-          </div>
-        );
+          );
 
-        return (
-          <Tooltip title={tooltip}>
-            <Tag color="blue">{formatted}</Tag>
-          </Tooltip>
-        );
-      }
-    },
-    {
-      title: withMetricTooltip(
-        t("items.columns.duplicate", { defaultValue: "Duplicate" }),
-        t("items.metrics.duplicate.tooltip", {
-          defaultValue: "Duplicate similarity from dedup stage (0–1, shown as %)."
-        })
-      ),
-      dataIndex: "duplicateSimilarity",
-      key: "duplicateSimilarity",
-      render: (value: number | undefined, record) => {
-        const formatted = formatRatioAsPercent(value, locale);
-        if (!formatted) {
-          return <Tag>{t("common.notAvailable")}</Tag>;
+          return (
+            <Tooltip title={tooltip}>
+              <Tag color="blue">{formatted}</Tag>
+            </Tooltip>
+          );
         }
-        const label = record.duplicateOf
-          ? t("items.duplicate.duplicate", { defaultValue: "Duplicate" })
-          : t("items.duplicate.similarity", { defaultValue: "Similarity" });
+      },
+      {
+        title: withMetricTooltip(
+          t("items.columns.duplicate", { defaultValue: "Duplicate" }),
+          t("items.metrics.duplicate.tooltip", {
+            defaultValue: "Duplicate similarity from dedup stage (0–1, shown as %)."
+          })
+        ),
+        dataIndex: "duplicateSimilarity",
+        key: "duplicateSimilarity",
+        width: 120,
+        render: (value: number | undefined, record) => {
+          const formatted = formatRatioAsPercent(value, locale);
+          if (!formatted) {
+            return <Tag>{t("common.notAvailable")}</Tag>;
+          }
+          const label = record.duplicateOf
+            ? t("items.duplicate.duplicate", { defaultValue: "Duplicate" })
+            : t("items.duplicate.similarity", { defaultValue: "Similarity" });
 
-        const tooltip = (
-          <div className="text-xs">
-            <div>
-              {t("items.metrics.duplicate.tooltip", {
-                defaultValue: "Duplicate similarity from dedup stage (0–1, shown as %)."
-              })}
+          const tooltip = (
+            <div className="text-xs">
+              <div>
+                {t("items.metrics.duplicate.tooltip", {
+                  defaultValue: "Duplicate similarity from dedup stage (0–1, shown as %)."
+                })}
+              </div>
+              {record.duplicateOf ? <div>Duplicate of: {record.duplicateOf}</div> : null}
             </div>
-            {record.duplicateOf ? <div>Duplicate of: {record.duplicateOf}</div> : null}
-          </div>
-        );
+          );
 
-        return (
-          <Tooltip title={tooltip}>
-            <Tag color="gold">
-              {label} {formatted}
-            </Tag>
-          </Tooltip>
-        );
+          return (
+            <Tooltip title={tooltip}>
+              <Tag color="gold">
+                {label} {formatted}
+              </Tag>
+            </Tooltip>
+          );
+        }
+      },
+      {
+        title: t("items.columns.open", { defaultValue: "Open" }),
+        key: "open",
+        width: 100,
+        render: (_: unknown, record) => (
+          <Button
+            type="link"
+            size="small"
+            onClick={() => router.push(`/items/${record.id}`)}
+            className="px-0"
+          >
+            {t("items.detail.openItem", { defaultValue: "Open item" })}
+          </Button>
+        )
       }
-    },
-    {
-      title: t("items.columns.open", { defaultValue: "Open" }),
-      key: "open",
-      render: (_: unknown, record) => (
-        <Button type="link" size="small" onClick={() => router.push(`/items/${record.id}`)} className="px-0">
-          {t("items.detail.openItem", { defaultValue: "Open item" })}
-        </Button>
-      )
-    }
-  ];
+    ],
+    [locale, router, t, timeZone]
+  );
 
   const renderContent = () => {
     if (loading && !pageData.length) {
@@ -1202,28 +1293,32 @@ export function ItemsView({
       />
     ) : null;
 
-    if (view === "list") {
-      return (
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          {errorBanner}
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={pageData}
-            loading={loading}
-            size="large"
-            pagination={{
-              current: page,
-              pageSize,
-              total: totalCount,
-              showSizeChanger: true,
-              pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS
-            }}
-            onChange={handleTableChange}
-          />
-        </Space>
-      );
-    }
+	    if (view === "list") {
+	      return (
+	        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+	          {errorBanner}
+	          <div ref={listTableContainerRef} className="w-full">
+	            <Table
+	              rowKey="id"
+	              columns={columns}
+	              dataSource={pageData}
+	              loading={loading}
+	              size="large"
+	              virtual={listTableVirtualEnabled}
+	              scroll={listTableScroll}
+	              pagination={{
+	                current: page,
+	                pageSize,
+	                total: totalCount,
+	                showSizeChanger: true,
+	                pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS
+	              }}
+	              onChange={handleTableChange}
+	            />
+	          </div>
+	        </Space>
+	      );
+	    }
 
     if (view === "grid") {
       return (

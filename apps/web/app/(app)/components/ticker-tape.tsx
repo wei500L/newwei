@@ -4,16 +4,13 @@ import { ArrowDownOutlined, ArrowUpOutlined, LoadingOutlined } from "@ant-design
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { TimeGranularity, useDashboardHeroMetricsQuery } from "@/graphql/generated";
+import { useDashboardHeroMetricsQuery } from "@/graphql/generated";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
-  compareGranularity,
   formatGranularityLabel,
   pickCoarsestGranularity,
-  resolveDefaultGranularityForRangePreset,
   timeGranularityToUiGranularity,
-  UiTimeGranularity,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
@@ -29,30 +26,15 @@ type MetricSeries = readonly MetricPoint[];
 export function TickerTape() {
   const { t } = useTranslation();
   const { range, start, end } = useDashboardRangeStore();
-  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
-  const heroGranularity = useMemo(() => {
-    switch (defaultGranularity) {
-      case UiTimeGranularity.Year:
-        return TimeGranularity.Year;
-      case UiTimeGranularity.Quarter:
-        return TimeGranularity.Quarter;
-      case UiTimeGranularity.Month:
-        return TimeGranularity.Month;
-      case UiTimeGranularity.Week:
-        return TimeGranularity.Week;
-      case UiTimeGranularity.Day:
-      default:
-        return TimeGranularity.Day;
-    }
-  }, [defaultGranularity]);
 
   const heroDateRange = useMemo(
     () => ({
       start: start.toISOString(),
       end: end.toISOString(),
-      granularity: heroGranularity
+      // "Auto" negotiation: backend picks the effective aggregation granularity.
+      granularity: null
     }),
-    [end, heroGranularity, start]
+    [end, start]
   );
   const windowLabel = formatDashboardWindowLabel(start, end);
 
@@ -72,15 +54,8 @@ export function TickerTape() {
     return pickCoarsestGranularity(effective);
   }, [data]);
 
-  const bucketLabel =
-    inferredGranularity === UiTimeGranularity.Unknown ? defaultGranularity : inferredGranularity;
-  const bucketLabelText = formatGranularityLabel(bucketLabel);
-  const defaultLabelText = formatGranularityLabel(defaultGranularity);
-  const compare = compareGranularity(bucketLabel, defaultGranularity);
-  const bucketTitle =
-    compare === "match" || defaultGranularity === UiTimeGranularity.Unknown
-      ? `${bucketLabelText} buckets`
-      : `${bucketLabelText} buckets (default ${defaultLabelText})`;
+  const bucketLabelText = formatGranularityLabel(inferredGranularity);
+  const bucketTitle = `${bucketLabelText} buckets`;
 
   const items = useMemo(() => {
     if (!data) return [];

@@ -13,10 +13,8 @@ import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import { resolveLocale, formatDateTime } from "@/lib/i18n";
 import {
-  compareGranularity,
   formatGranularityLabel,
   pickCoarsestGranularity,
-  resolveDefaultGranularityForRangePreset,
   timeGranularityToUiGranularity,
   UiTimeGranularity,
   uiGranularityToInterval,
@@ -202,7 +200,6 @@ export function MarketPulse({
   const locale = resolveLocale(i18n.language);
   const theme = useChartTheme();
   const { range, start, end } = useDashboardRangeStore();
-  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
   const notAvailableLabel = t("common.notAvailable", { defaultValue: "Not available" });
   const emptyTitle = t("dashboard.charts.noDataRange", { defaultValue: "No Data Found for Selected Range" });
   const emptyDescription = t("dashboard.hero.emptyDescription", {
@@ -302,20 +299,9 @@ export function MarketPulse({
     metrics.filter((metric) => metric.hasData).map((metric) => metric.granularity),
   );
   const granularityLabel = formatGranularityLabel(activeGranularity);
-  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
-  const granularityCompare = compareGranularity(activeGranularity, defaultGranularity);
   const granularityColor =
-    granularityCompare === "match"
-      ? "geekblue"
-      : granularityCompare === "coarser"
-        ? "orange"
-        : granularityCompare === "finer"
-          ? "cyan"
-          : "default";
-  const granularityTagText =
-    granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
-      ? `Aggregation: ${granularityLabel}`
-      : `Aggregation: ${granularityLabel} (default ${defaultGranularityLabel})`;
+    activeGranularity === UiTimeGranularity.Unknown ? "default" : "geekblue";
+  const granularityTagText = `Aggregation: ${granularityLabel}`;
   const granularityTooltip = (() => {
     const detailParts = metrics
       .filter((metric) => metric.hasData && metric.granularity !== UiTimeGranularity.Unknown)

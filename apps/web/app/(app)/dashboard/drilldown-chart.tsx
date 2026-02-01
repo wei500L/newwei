@@ -11,10 +11,8 @@ import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
-  compareGranularity,
   formatGranularityLabel,
   pickCoarsestGranularity,
-  resolveDefaultGranularityForRangePreset,
   timeGranularityToUiGranularity,
   UiTimeGranularity,
   uiGranularityToInterval,
@@ -51,7 +49,6 @@ export function DrilldownChart({
   const { range, start, end, setCustomRange } = useDashboardRangeStore();
   const selectedGranularity = GRANS[level];
   const selectedUiGranularity = timeGranularityToUiGranularity(selectedGranularity);
-  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
 
   const {
     data,
@@ -74,20 +71,20 @@ export function DrilldownChart({
     const backend = pickCoarsestGranularity(
       points.map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
     );
-    return backend === UiTimeGranularity.Unknown ? selectedUiGranularity : backend;
+    return points.length > 0 ? backend : selectedUiGranularity;
   }, [points, selectedUiGranularity]);
-  const granularityCompare = compareGranularity(activeUiGranularity, defaultGranularity);
+  const granularityMismatch =
+    points.length > 0 &&
+    activeUiGranularity !== UiTimeGranularity.Unknown &&
+    activeUiGranularity !== selectedUiGranularity;
   const granularityColor =
-    granularityCompare === "match"
-      ? "geekblue"
-      : granularityCompare === "coarser"
-        ? "orange"
-        : granularityCompare === "finer"
-          ? "cyan"
-          : "default";
+    activeUiGranularity === UiTimeGranularity.Unknown
+      ? "default"
+      : granularityMismatch
+        ? "error"
+        : "geekblue";
   const selectedGranularityLabel = formatGranularityLabel(selectedUiGranularity);
   const activeGranularityLabel = formatGranularityLabel(activeUiGranularity);
-  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
   const windowLabel = formatDashboardWindowLabel(start, end);
   const seriesUnit = useMemo(() => {
     for (let i = points.length - 1; i >= 0; i -= 1) {
@@ -214,13 +211,8 @@ export function DrilldownChart({
           </Tag>
         ) : null}
         <Tag color={granularityColor} className="text-xs">
-          Aggregation:{" "}
-          {granularityCompare === "match" || defaultGranularity === activeUiGranularity
-            ? activeGranularityLabel
-            : `${activeGranularityLabel} (default ${defaultGranularityLabel})`}
-          {activeUiGranularity !== selectedUiGranularity
-            ? ` (requested ${selectedGranularityLabel})`
-            : ""}
+          Aggregation: {activeGranularityLabel}
+          {granularityMismatch ? ` (requested ${selectedGranularityLabel})` : ""}
         </Tag>
       </Space>
       {isError ? (

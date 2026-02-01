@@ -18,11 +18,9 @@ import { formatDateTime, formatUpdatedAt, resolveLocale } from "@/lib/i18n";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import {
   addInterval,
-  compareGranularity,
   formatGranularityLabel,
   intervalToGranularity,
   parseInterval,
-  resolveDefaultGranularityForRangePreset,
   UiTimeGranularity,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -108,7 +106,6 @@ export function FinancialCandlestick() {
   const emptyHint = t("dashboard.dataEmptyHint", {
     defaultValue: "No data for the selected range. Try expanding the range."
   });
-  const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
   const windowLabel = `${formatDateForFilename(start)} - ${formatDateForFilename(end)}`;
 
   const apiClient = useMemo(
@@ -310,23 +307,12 @@ export function FinancialCandlestick() {
   const parsedInterval = useMemo(() => parseInterval(data?.interval), [data?.interval]);
   const intervalGranularity = intervalToGranularity(parsedInterval);
   const intervalGranularityLabel = formatGranularityLabel(intervalGranularity);
-  const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
-  const granularityCompare = compareGranularity(intervalGranularity, defaultGranularity);
   const intervalColor =
-    granularityCompare === "match"
-      ? "geekblue"
-      : granularityCompare === "coarser"
-        ? "orange"
-        : granularityCompare === "finer"
-          ? "cyan"
-          : "default";
+    intervalGranularity === UiTimeGranularity.Unknown ? "default" : "geekblue";
   const intervalDescriptor = data?.interval
     ? `${intervalGranularityLabel} (${data.interval})`
     : intervalGranularityLabel;
-  const intervalTagText =
-    granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
-      ? `Interval: ${intervalDescriptor}`
-      : `Interval: ${intervalDescriptor} (default ${defaultGranularityLabel})`;
+  const intervalTagText = `Interval: ${intervalDescriptor}`;
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.points.length === 0) return;

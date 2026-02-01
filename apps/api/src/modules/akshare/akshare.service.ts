@@ -1,7 +1,7 @@
 import { AkshareResponseModel } from "@modular/mongo";
 import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime, toISODateString } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
-import { Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
 import { EconomicDataFrequency, EconomicDataRunStatus, Prisma } from "@prisma/client";
 import { Queue, type RepeatableJob, type RepeatOptions } from "bullmq";
 import type Redis from "ioredis";
@@ -1072,6 +1072,30 @@ export class AkshareService implements OnModuleInit {
     return this.granularityRank(a) >= this.granularityRank(b) ? a : b;
   }
 
+  async getCategoryBaseGranularity(categoryKey: string): Promise<string | null> {
+    const items = await this.prisma.economicDataItem.findMany({
+      where: {
+        categories: {
+          some: {
+            category: {
+              key: categoryKey
+            }
+          }
+        }
+      },
+      select: {
+        defaultFrequency: true
+      }
+    });
+
+    if (!items.length) {
+      return null;
+    }
+
+    const granularities = items.map((item) => this.defaultFrequencyToGranularity(item.defaultFrequency));
+    return granularities.reduce((coarsest, next) => this.coarsestGranularity(coarsest, next), granularities[0]!);
+  }
+
   private bucketTimestamp(date: Date, granularity: string) {
     const d = new Date(date);
     switch (granularity) {
@@ -1172,7 +1196,23 @@ export class AkshareService implements OnModuleInit {
     return { start: normalizedStart, end: normalizedEnd };
   }
 
-  async getDataByCategory(categoryKey: string, start: Date, end: Date, granularity?: string, pagination?: PaginationInput) {
+  async getDataByCategory(
+    categoryKey: string,
+    start: Date,
+    end: Date,
+    granularity?: string,
+    pagination?: PaginationInput,
+    options?: { skipGranularityValidation?: boolean }
+  ) {
+    if (granularity && !options?.skipGranularityValidation) {
+      const baseGranularity = await this.getCategoryBaseGranularity(categoryKey);
+      if (baseGranularity && this.granularityRank(granularity) < this.granularityRank(baseGranularity)) {
+        throw new BadRequestException(
+          `Requested granularity '${granularity}' is finer than this category's base frequency ('${baseGranularity}').`
+        );
+      }
+    }
+
     const range = granularity ? this.alignRangeToGranularityUtc(start, end, granularity) : { start, end };
     const limit = Math.min(pagination?.limit ?? DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT);
 
@@ -1234,11 +1274,7 @@ export class AkshareService implements OnModuleInit {
         { timestamp: Date; valueSum: number; count: number; sample: typeof points[number] }
       >();
       for (const point of points) {
-        const effectiveGranularity = this.coarsestGranularity(
-          granularity,
-          this.defaultFrequencyToGranularity(point.item?.defaultFrequency)
-        );
-        const bucketKey = this.bucketTimestamp(point.recordedAt, effectiveGranularity);
+        const bucketKey = this.bucketTimestamp(point.recordedAt, granularity);
         const seriesKey = `${point.itemId}::${point.sourceField ?? ""}::${bucketKey}`;
         const existing = bucketed.get(seriesKey);
         if (existing) {
