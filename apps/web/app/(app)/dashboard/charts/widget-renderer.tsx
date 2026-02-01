@@ -13,9 +13,10 @@ import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
   compareGranularity,
   formatGranularityLabel,
+  pickCoarsestGranularity,
   resolveDefaultGranularityForRangePreset,
-  resolveActiveGranularityFromTimestampsMs,
   timeGranularityToUiGranularity,
+  UiTimeGranularity,
   uiGranularityToInterval,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -32,6 +33,7 @@ const ECONOMIC_WIDGET_QUERY = gql`
       granularity: $granularity
     ) {
       timestamp
+      effectiveGranularity
       value
       unit
       dataType
@@ -76,6 +78,7 @@ export interface WidgetRenderProps {
   color?: string;
   data?: {
     timestamp: string | number;
+    effectiveGranularity?: string | null;
     value: number;
     unit?: string | null;
     dataType?: string | null;
@@ -85,6 +88,7 @@ export interface WidgetRenderProps {
 
 type ResolvedDataPoint = {
   timestamp: string | number;
+  effectiveGranularity?: string | null;
   value: number;
   unit?: string | null;
   dataType?: string | null;
@@ -131,12 +135,14 @@ export function WidgetRenderer({
     apiData?.getEconomicData?.map(
       (p: {
         timestamp: string;
+        effectiveGranularity?: string | null;
         value: number;
         unit?: string | null;
         dataType?: string | null;
         item?: { defaultUnit?: string | null } | null;
       }) => ({
         timestamp: p.timestamp,
+        effectiveGranularity: p.effectiveGranularity ?? null,
         value: p.value,
         unit: p.unit ?? null,
         dataType: p.dataType ?? null,
@@ -144,17 +150,12 @@ export function WidgetRenderer({
       }),
     );
 
-  const timestampsMs = useMemo(
-    () =>
-      (resolvedData ?? [])
-        .map((point) => dayjs(point.timestamp).valueOf())
-        .filter((value) => Number.isFinite(value)),
-    [resolvedData],
-  );
-  const activeUiGranularity = useMemo(
-    () => resolveActiveGranularityFromTimestampsMs(chosenUiGranularity, timestampsMs),
-    [chosenUiGranularity, timestampsMs],
-  );
+  const activeUiGranularity = useMemo(() => {
+    const backend = pickCoarsestGranularity(
+      (resolvedData ?? []).map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
+    );
+    return backend === UiTimeGranularity.Unknown ? chosenUiGranularity : backend;
+  }, [chosenUiGranularity, resolvedData]);
 
   const chosenGranularityLabel = formatGranularityLabel(chosenUiGranularity);
   const activeGranularityLabel = formatGranularityLabel(activeUiGranularity);

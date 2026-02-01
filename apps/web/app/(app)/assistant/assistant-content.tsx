@@ -69,6 +69,7 @@ interface AssistantEventsSubscriptionData {
 
 interface AssistantBlockedInfo {
   message: string;
+  code?: string | null;
   appliedGuardrails: string[];
   upstreamStatus: number | null;
 }
@@ -327,7 +328,7 @@ export function AssistantContent() {
     if (!output || output.blocked !== true) {
       return null;
     }
-    const message =
+    const rawMessage =
       typeof output.summary === "string" && output.summary.trim()
         ? output.summary.trim()
         : typeof run.summary === "string" && run.summary.trim()
@@ -337,9 +338,19 @@ export function AssistantContent() {
     const appliedGuardrails = Array.isArray(appliedGuardrailsRaw)
       ? appliedGuardrailsRaw.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
       : [];
+    const codeRaw = output.code;
+    const code = typeof codeRaw === "string" && codeRaw.trim() ? codeRaw.trim() : null;
     const upstreamStatusRaw = output.upstreamStatus;
     const upstreamStatus = typeof upstreamStatusRaw === "number" && Number.isFinite(upstreamStatusRaw) ? upstreamStatusRaw : null;
-    return { message, appliedGuardrails, upstreamStatus };
+
+    const message =
+      code
+        ? t(`assistant.blocked.codes.${code}`, {
+            defaultValue: rawMessage
+          })
+        : rawMessage;
+
+    return { message, code, appliedGuardrails, upstreamStatus };
   };
 
   const formatNumber = (value: unknown, maximumFractionDigits = 6): string => {
@@ -885,7 +896,7 @@ export function AssistantContent() {
                       </Typography.Paragraph>
                       {run.summary ? (
                         <Typography.Paragraph ellipsis={{ rows: 3 }}>
-                          {run.summary}
+                          {getBlockedInfo(run)?.message ?? run.summary}
                         </Typography.Paragraph>
                       ) : null}
                     </Space>
@@ -980,6 +991,11 @@ export function AssistantContent() {
                             "Your input was blocked by content safety moderation. Please revise and try again."
                         })}
                       </Typography.Text>
+                      {blocked.code ? (
+                        <Typography.Text type="secondary">
+                          {t("assistant.blocked.details.code", { defaultValue: "Reason code" })}: {blocked.code}
+                        </Typography.Text>
+                      ) : null}
                       {blocked.appliedGuardrails.length > 0 ? (
                         <Space wrap>
                           <Typography.Text type="secondary">
@@ -1006,7 +1022,8 @@ export function AssistantContent() {
 
             <Card size="small" title={t("assistant.detail.summary", { defaultValue: "Summary" })}>
               <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>
-                {activeRun.summary ??
+                {getBlockedInfo(activeRun)?.message ??
+                  activeRun.summary ??
                   (activeRun.status === "running"
                     ? t("assistant.generating", { defaultValue: "Generating..." })
                     : t("assistant.pending", { defaultValue: "Pending..." }))}

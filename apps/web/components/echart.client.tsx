@@ -6,6 +6,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { ChartSkeleton } from "@/components/chart-skeleton";
+
 type Installer = Parameters<typeof echarts.use>[0];
 
 const installed = new Set<string>();
@@ -404,6 +406,7 @@ export function DashboardChart({
   const [supportsHover, setSupportsHover] = useState(true);
   const [isInView, setIsInView] = useState(!lazy);
   const [shouldInit, setShouldInit] = useState(!lazy);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -446,10 +449,14 @@ export function DashboardChart({
       { rootMargin: lazyRootMargin }
     );
 
-    observer.observe(dom);
+      observer.observe(dom);
 
     return () => observer.disconnect();
   }, [lazy, lazyRootMargin]);
+
+  useEffect(() => {
+    setReady(false);
+  }, [renderer, group, theme, shouldInit]);
 
 	  useEffect(() => {
 	    const dom = ref.current;
@@ -659,6 +666,7 @@ export function DashboardChart({
       await ensureOptionModules(option);
       if (cancelled) return;
       chart.setOption(option);
+      setReady(true);
     })().catch(() => undefined);
 
     return () => {
@@ -748,9 +756,19 @@ export function DashboardChart({
     ? "absolute right-2 top-2 z-10 flex items-center gap-2 opacity-0 pointer-events-none transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
     : "absolute right-2 top-2 z-10 flex items-center gap-2";
 
+  const showLoadingSkeleton = !ready;
+
   return (
     <div className="group relative w-full" style={{ height }}>
-      <div ref={ref} className="h-full w-full" />
+      <div
+        ref={ref}
+        className={`h-full w-full transition-opacity duration-200 ${showLoadingSkeleton ? "opacity-0" : "opacity-100"}`}
+      />
+      {showLoadingSkeleton ? (
+        <div className="pointer-events-none absolute inset-0">
+          <ChartSkeleton height={height} />
+        </div>
+      ) : null}
       {renderActions ? (
         <div className={actionClassName}>
           {actions}

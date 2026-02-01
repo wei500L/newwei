@@ -117,6 +117,89 @@ describe("EconomicDataResolver", () => {
       expect(result[0].item.defaultUnit).toBeNull();
       expect(result[0].item.metadata).toBeNull();
     });
+
+    it("negotiates effective granularity based on item defaultFrequency", async () => {
+      (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
+        {
+          recordedAt: new Date("2024-01-05T12:00:00Z"),
+          value: 100,
+          unit: null,
+          sourceField: null,
+          dataType: "index",
+          item: {
+            slug: "weekly_series",
+            displayName: "Weekly Series",
+            groupLabel: null,
+            defaultUnit: null,
+            defaultFrequency: EconomicDataFrequency.weekly,
+            metadata: null
+          }
+        }
+      ]);
+
+      const result = await resolver.getEconomicData(
+        "economic-indicators",
+        { start: "2024-01-01", end: "2024-01-31" },
+        TimeGranularity.day
+      );
+
+      expect(result[0]?.effectiveGranularity).toBe(TimeGranularity.week);
+    });
+
+    it("reports realtime effective granularity when requested granularity is omitted", async () => {
+      (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
+        {
+          recordedAt: new Date("2024-01-05T12:34:56Z"),
+          value: 100,
+          unit: null,
+          sourceField: null,
+          dataType: "index",
+          item: {
+            slug: "realtime_series",
+            displayName: "Realtime Series",
+            groupLabel: null,
+            defaultUnit: null,
+            defaultFrequency: EconomicDataFrequency.realtime,
+            metadata: null
+          }
+        }
+      ]);
+
+      const result = await resolver.getEconomicData(
+        "economic-indicators",
+        { start: "2024-01-01", end: "2024-01-31" }
+      );
+
+      expect(result[0]?.effectiveGranularity).toBe(TimeGranularity.realtime);
+    });
+
+    it("allows requesting hourly aggregation for realtime series", async () => {
+      (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
+        {
+          recordedAt: new Date("2024-01-05T12:34:56Z"),
+          value: 100,
+          unit: null,
+          sourceField: null,
+          dataType: "index",
+          item: {
+            slug: "realtime_series",
+            displayName: "Realtime Series",
+            groupLabel: null,
+            defaultUnit: null,
+            defaultFrequency: EconomicDataFrequency.realtime,
+            metadata: null
+          }
+        }
+      ]);
+
+      const result = await resolver.getEconomicData(
+        "economic-indicators",
+        { start: "2024-01-01", end: "2024-01-31" },
+        TimeGranularity.hour
+      );
+
+      expect(result[0]?.effectiveGranularity).toBe(TimeGranularity.hour);
+    });
   });
 
   describe("getEconomicDataInsights", () => {

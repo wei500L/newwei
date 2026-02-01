@@ -1,9 +1,10 @@
-import { Controller, ForbiddenException, Get, Headers, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Headers, Post, UnauthorizedException } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 
 import { Public } from "../../common/decorators/public.decorator";
 import { EnvService } from "../config/config.service";
 
+import { ReportLiteLlmOpenAiKeysAppliedDto } from "./dto/litellm-openai-keys-applied.dto";
 import { OpenAiKeysSettingsService } from "./openai-keys-settings.service";
 
 @ApiTags("internal")
@@ -32,6 +33,31 @@ export class OpenAiKeysInternalController {
 
     const keys = await this.openaiKeys.getPlaintextKeys();
     return { openaiApiKeys: keys };
+  }
+
+  @Post("openai-keys/applied")
+  async reportAppliedOpenAiKeys(
+    @Headers("authorization") authorization: string | undefined,
+    @Body() body: ReportLiteLlmOpenAiKeysAppliedDto
+  ) {
+    const expected = this.env.liteLlmConfigInternalToken;
+    if (!expected) {
+      throw new ForbiddenException("LITELLM_CONFIG_INTERNAL_TOKEN is not configured");
+    }
+
+    const token = this.extractBearerToken(authorization);
+    if (!token) {
+      throw new UnauthorizedException("Missing bearer token");
+    }
+    if (token !== expected) {
+      throw new UnauthorizedException("Invalid bearer token");
+    }
+
+    await this.openaiKeys.reportAppliedKeyFingerprints({
+      source: body.source,
+      keyFingerprints: body.keyFingerprints
+    });
+    return { ok: true };
   }
 
   private extractBearerToken(header: string | undefined): string | null {

@@ -1,6 +1,7 @@
 query EconomicData($category: String!, $timeRange: DateRangeInput!, $granularity: TimeGranularity) {
   getEconomicData(category: $category, timeRange: $timeRange, granularity: $granularity) {
     timestamp
+    effectiveGranularity
     value
     unit
     sourceField
@@ -19,6 +20,7 @@ query EconomicDataWithInsights($category: String!, $timeRange: DateRangeInput!) 
   getEconomicDataWithInsights(category: $category, timeRange: $timeRange) {
     points {
       timestamp
+      effectiveGranularity
       value
       unit
       sourceField

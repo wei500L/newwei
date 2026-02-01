@@ -3,6 +3,8 @@ import { Global, Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { GeoModule } from "../geo/geo.module";
 
+import { AssistantSafetyDiagnosticsService } from "./assistant-safety-diagnostics.service";
+import { AssistantSafetyMetricsService } from "./assistant-safety-metrics.service";
 import { AssistantSafetySettingsController } from "./assistant-safety-settings.controller";
 import { AssistantSafetySettingsService } from "./assistant-safety-settings.service";
 import { AuditLogSettingsController } from "./audit-log-settings.controller";
@@ -65,6 +67,8 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     SituationMonitorSettingsService,
     VectorServiceSettingsService,
     AssistantSafetySettingsService,
+    AssistantSafetyDiagnosticsService,
+    AssistantSafetyMetricsService,
     OpenAiKeysSettingsService
   ],
   exports: [

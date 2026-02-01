@@ -103,7 +103,16 @@ interface GatewayCompatibilityFlags {
   supportsJsonSchema: boolean;
 }
 
+export type LiteLlmGuardrailViolationCode =
+  | "GUARDRAIL_MISCONFIG"
+  | "PROMPT_INJECTION"
+  | "TRUST_SAFETY_VIOLATION"
+  | "LANGUAGE_POLICY_VIOLATION"
+  | "MODERATION_BLOCKED"
+  | "GUARDRAIL_BLOCKED";
+
 export class LiteLlmGuardrailViolationError extends Error {
+  public readonly code: LiteLlmGuardrailViolationCode;
   public readonly appliedGuardrails: string[];
   public readonly upstreamStatus?: number;
   public readonly detail?: string;
@@ -111,6 +120,7 @@ export class LiteLlmGuardrailViolationError extends Error {
   constructor(
     message: string,
     options?: {
+      code?: LiteLlmGuardrailViolationCode;
       appliedGuardrails?: string[];
       upstreamStatus?: number;
       detail?: string;
@@ -119,6 +129,7 @@ export class LiteLlmGuardrailViolationError extends Error {
   ) {
     super(message, options?.cause ? { cause: options.cause } : undefined);
     this.name = "LiteLlmGuardrailViolationError";
+    this.code = options?.code ?? "GUARDRAIL_BLOCKED";
     this.appliedGuardrails = options?.appliedGuardrails ?? [];
     this.upstreamStatus = options?.upstreamStatus;
     this.detail = options?.detail;
@@ -401,8 +412,11 @@ export class LiteLlmService {
         const parsed = JSON.parse(bodyText) as unknown;
         const message = this.extractGuardrailBlockedMessage(parsed);
         if (message) {
-          throw new LiteLlmGuardrailViolationError(message, {
-            appliedGuardrails: this.getAppliedGuardrailsFromHeaders(response.headers),
+          const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(response.headers);
+          const normalized = this.buildUserFacingGuardrailMessage(message);
+          throw new LiteLlmGuardrailViolationError(normalized.message, {
+            code: normalized.code,
+            appliedGuardrails,
             upstreamStatus: response.status,
             detail: typeof bodyText === "string" ? bodyText.slice(0, 500) : undefined,
           });
@@ -1023,12 +1037,15 @@ export class LiteLlmService {
   }
 
   private throwIfGuardrailsBlockedResponse(response: AxiosResponse) {
-    const message = this.extractGuardrailBlockedMessage(response.data);
-    if (!message) {
+    const rawMessage = this.extractGuardrailBlockedMessage(response.data);
+    if (!rawMessage) {
       return;
     }
-    throw new LiteLlmGuardrailViolationError(message, {
-      appliedGuardrails: this.getAppliedGuardrailsFromHeaders(response.headers),
+    const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(response.headers);
+    const normalized = this.buildUserFacingGuardrailMessage(rawMessage);
+    throw new LiteLlmGuardrailViolationError(normalized.message, {
+      code: normalized.code,
+      appliedGuardrails,
       upstreamStatus: response.status,
     });
   }
@@ -1068,8 +1085,9 @@ export class LiteLlmService {
       return null;
     }
 
-    const userMessage = this.buildUserFacingGuardrailMessage(detail);
-    return new LiteLlmGuardrailViolationError(userMessage, {
+    const normalized = this.buildUserFacingGuardrailMessage(detail);
+    return new LiteLlmGuardrailViolationError(normalized.message, {
+      code: normalized.code,
       appliedGuardrails,
       upstreamStatus: status,
       detail: detail || undefined,
@@ -1077,25 +1095,49 @@ export class LiteLlmService {
     });
   }
 
-  private buildUserFacingGuardrailMessage(detail: string): string {
+  private buildUserFacingGuardrailMessage(detail: string): { message: string; code: LiteLlmGuardrailViolationCode } {
     const raw = typeof detail === "string" ? detail.trim() : "";
     const lower = raw.toLowerCase();
     if (lower.includes("guardrail") && (lower.includes("not found") || lower.includes("unknown"))) {
-      return "AI safety checks are misconfigured (guardrail not found). Please contact an administrator.";
+      return {
+        message: "AI safety checks are misconfigured (guardrail not found). Please contact an administrator.",
+        code: "GUARDRAIL_MISCONFIG"
+      };
     }
     if (lower.includes("prompt injection") || lower.includes("promptinjection") || lower.includes("jailbreak")) {
-      return "Unable to complete request: prompt injection/jailbreak detected.";
+      return {
+        message: "Unable to complete request: prompt injection/jailbreak detected.",
+        code: "PROMPT_INJECTION"
+      };
     }
     if (lower.includes("trust") && lower.includes("safety") && lower.includes("violation")) {
-      return "Unable to complete request: trust & safety violation detected.";
+      return {
+        message: "Unable to complete request: trust & safety violation detected.",
+        code: "TRUST_SAFETY_VIOLATION"
+      };
     }
     if (lower.includes("language") && lower.includes("violation")) {
-      return "Unable to complete request: language policy violation detected.";
+      return {
+        message: "Unable to complete request: language policy violation detected.",
+        code: "LANGUAGE_POLICY_VIOLATION"
+      };
     }
-    if (lower.includes("guardrail") || lower.includes("moderation")) {
-      return "Unable to complete request: blocked by content safety guardrails.";
+    if (lower.includes("moderation")) {
+      return {
+        message: "Unable to complete request: blocked by content moderation.",
+        code: "MODERATION_BLOCKED"
+      };
     }
-    return "Unable to complete request: blocked by content safety policy.";
+    if (lower.includes("guardrail")) {
+      return {
+        message: "Unable to complete request: blocked by content safety guardrails.",
+        code: "GUARDRAIL_BLOCKED"
+      };
+    }
+    return {
+      message: "Unable to complete request: blocked by content safety policy.",
+      code: "GUARDRAIL_BLOCKED"
+    };
   }
 
   private async readReadableToString(stream: Readable, maxBytes: number): Promise<string> {

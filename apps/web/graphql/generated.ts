@@ -776,6 +776,8 @@ export type EconomicDataItemModel = {
 export type EconomicDataPointModel = {
   __typename?: 'EconomicDataPointModel';
   dataType: EconomicDataValueType;
+  /** Effective aggregation granularity negotiated by the backend (may be coarser than the requested granularity). */
+  effectiveGranularity?: Maybe<TimeGranularity>;
   item: EconomicDataItemModel;
   sourceField?: Maybe<Scalars['String']['output']>;
   timestamp: Scalars['DateTime']['output'];
@@ -2136,8 +2138,11 @@ export type Subscription = {
 
 export enum TimeGranularity {
   Day = 'day',
+  Hour = 'hour',
+  Minute = 'minute',
   Month = 'month',
   Quarter = 'quarter',
+  Realtime = 'realtime',
   Week = 'week',
   Year = 'year'
 }
@@ -2531,7 +2536,7 @@ export type DashboardHeroMetricsQueryVariables = Exact<{
 }>;
 
 
-export type DashboardHeroMetricsQuery = { __typename?: 'Query', conflict: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, market: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, resource: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, supply: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }> };
+export type DashboardHeroMetricsQuery = { __typename?: 'Query', conflict: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity?: TimeGranularity | null, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, market: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity?: TimeGranularity | null, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, resource: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity?: TimeGranularity | null, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, supply: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity?: TimeGranularity | null, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }> };
 
 export type MetricDrillDownDetailsQueryVariables = Exact<{
   category: Scalars['String']['input'];
@@ -2541,7 +2546,7 @@ export type MetricDrillDownDetailsQueryVariables = Exact<{
 }>;
 
 
-export type MetricDrillDownDetailsQuery = { __typename?: 'Query', history: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, relatedAlerts: Array<{ __typename?: 'AlertEventModel', id: string, severity: AlertSeverity, message?: string | null, triggeredAt: any, status: AlertEventStatus, metricValue: number, context?: any | null }> };
+export type MetricDrillDownDetailsQuery = { __typename?: 'Query', history: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity?: TimeGranularity | null, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, relatedAlerts: Array<{ __typename?: 'AlertEventModel', id: string, severity: AlertSeverity, message?: string | null, triggeredAt: any, status: AlertEventStatus, metricValue: number, context?: any | null }> };
 
 export type DashboardsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2569,7 +2574,7 @@ export type EconomicDataQueryVariables = Exact<{
 }>;
 
 
-export type EconomicDataQuery = { __typename?: 'Query', getEconomicData: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, sourceField?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } }> };
+export type EconomicDataQuery = { __typename?: 'Query', getEconomicData: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity?: TimeGranularity | null, value: number, unit?: string | null, sourceField?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } }> };
 
 export type EconomicDataWithInsightsQueryVariables = Exact<{
   category: Scalars['String']['input'];
@@ -2577,7 +2582,7 @@ export type EconomicDataWithInsightsQueryVariables = Exact<{
 }>;
 
 
-export type EconomicDataWithInsightsQuery = { __typename?: 'Query', getEconomicDataWithInsights: { __typename?: 'EconomicDataWithInsightsModel', points: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, value: number, unit?: string | null, sourceField?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } }>, insights: Array<{ __typename?: 'EconomicSeriesInsightModel', itemSlug: string, seriesKey: string, sourceField?: string | null, unit?: string | null, sampleCount: number, currentValue?: number | null, previousValue?: number | null, change?: number | null, percentChange?: number | null, mean?: number | null, stdDev?: number | null, zScore?: number | null, direction: EconomicInsightDirection, classification: EconomicInsightClassification, message: string }> } };
+export type EconomicDataWithInsightsQuery = { __typename?: 'Query', getEconomicDataWithInsights: { __typename?: 'EconomicDataWithInsightsModel', points: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity?: TimeGranularity | null, value: number, unit?: string | null, sourceField?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } }>, insights: Array<{ __typename?: 'EconomicSeriesInsightModel', itemSlug: string, seriesKey: string, sourceField?: string | null, unit?: string | null, sampleCount: number, currentValue?: number | null, previousValue?: number | null, change?: number | null, percentChange?: number | null, mean?: number | null, stdDev?: number | null, zScore?: number | null, direction: EconomicInsightDirection, classification: EconomicInsightClassification, message: string }> } };
 
 export type EconomicFetchConfigsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -3901,6 +3906,7 @@ export const DashboardHeroMetricsDocument = gql`
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType
@@ -3915,6 +3921,7 @@ export const DashboardHeroMetricsDocument = gql`
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType
@@ -3929,6 +3936,7 @@ export const DashboardHeroMetricsDocument = gql`
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType
@@ -3943,6 +3951,7 @@ export const DashboardHeroMetricsDocument = gql`
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType
@@ -3996,6 +4005,7 @@ export const MetricDrillDownDetailsDocument = gql`
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType
@@ -4183,6 +4193,7 @@ export const EconomicDataDocument = gql`
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     sourceField
@@ -4237,6 +4248,7 @@ export const EconomicDataWithInsightsDocument = gql`
   getEconomicDataWithInsights(category: $category, timeRange: $timeRange) {
     points {
       timestamp
+      effectiveGranularity
       value
       unit
       sourceField

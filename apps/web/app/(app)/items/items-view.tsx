@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import type { ItemsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -39,6 +40,78 @@ const EMPTY_FILTERS_STATE: FilterState = {};
 
 const ITEMS_SEARCH_DEBOUNCE_MS = 400;
 const ITEMS_FILTERS_URL_DEBOUNCE_MS = 200;
+
+function ItemsTableLoadingSkeleton({ rows }: { rows: number }) {
+  const safeRows = Math.max(1, rows);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white/70">
+      <div className="flex h-[56px] items-center gap-4 border-b border-[var(--border)] px-4">
+        <Skeleton.Input active size="small" style={{ width: 180 }} />
+        <Skeleton.Input active size="small" style={{ width: 260 }} />
+        <Skeleton.Input active size="small" style={{ width: 120 }} />
+      </div>
+      <div className="divide-y divide-[var(--border)]">
+        {Array.from({ length: safeRows }).map((_, idx) => (
+          <div key={idx} className="flex h-[56px] items-center gap-4 px-4">
+            <Skeleton.Input active size="small" style={{ width: 140 }} />
+            <Skeleton.Input active size="small" style={{ width: 420 }} />
+            <Skeleton.Input active size="small" style={{ width: 160 }} />
+            <div className="ml-auto">
+              <Skeleton.Button active size="small" style={{ width: 72 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex h-[56px] items-center justify-end gap-2 border-t border-[var(--border)] px-4">
+        <Skeleton.Button active size="small" style={{ width: 64 }} />
+        <Skeleton.Button active size="small" style={{ width: 64 }} />
+        <Skeleton.Button active size="small" style={{ width: 64 }} />
+      </div>
+    </div>
+  );
+}
+
+function ItemsCardLoadingSkeleton({ compact }: { compact?: boolean }) {
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="flex flex-col gap-3 p-[20px]">
+        <div className="flex flex-wrap gap-2">
+          <Skeleton.Button active size="small" style={{ width: 72, height: 22 }} />
+          <Skeleton.Button active size="small" style={{ width: 72, height: 22 }} />
+          <Skeleton.Button active size="small" style={{ width: 72, height: 22 }} />
+        </div>
+        <Skeleton active title={{ width: "70%" }} paragraph={{ rows: compact ? 3 : 5 }} />
+        {!compact ? (
+          <div className="flex items-center justify-between gap-3">
+            <Skeleton.Input active size="small" style={{ width: 200 }} />
+            <Skeleton.Button active size="small" style={{ width: 92 }} />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ItemsFeedLoadingSkeleton({ count }: { count: number }) {
+  return (
+    <div className="flex flex-col gap-4">
+      {Array.from({ length: Math.max(1, count) }).map((_, idx) => (
+        <ItemsCardLoadingSkeleton key={idx} />
+      ))}
+    </div>
+  );
+}
+
+function ItemsGridLoadingSkeleton({ count }: { count: number }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+      {Array.from({ length: Math.max(1, count) }).map((_, idx) => (
+        <ItemsCardLoadingSkeleton key={idx} compact />
+      ))}
+    </div>
+  );
+}
 
 function parsePositiveInt(value: string | null, fallback: number) {
   if (!value) {
@@ -1049,9 +1122,18 @@ export function ItemsView({
 
   const renderContent = () => {
     if (loading && !pageData.length) {
+      const skeleton =
+        view === "list" ? (
+          <ItemsTableLoadingSkeleton rows={pageSize} />
+        ) : view === "grid" ? (
+          <ItemsGridLoadingSkeleton count={pageSize} />
+        ) : (
+          <ItemsFeedLoadingSkeleton count={pageSize} />
+        );
+
       return (
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
-          <Skeleton active paragraph={{ rows: 6 }} />
+          {skeleton}
           {showDelayHint ? (
             <ChartEmptyState
               className="h-auto"
@@ -1111,104 +1193,122 @@ export function ItemsView({
       );
     }
 
+    const shouldShowErrorBanner = Boolean(error && pageData.length > 0);
+    const errorBanner = shouldShowErrorBanner ? (
+      <RequestErrorBanner
+        error={error}
+        onRetry={() => void refetch()}
+        showCachedDataHint
+      />
+    ) : null;
+
     if (view === "list") {
       return (
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={pageData}
-          loading={loading}
-          size="large"
-          pagination={{
-            current: page,
-            pageSize,
-            total: totalCount,
-            showSizeChanger: true,
-            pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS
-          }}
-          onChange={handleTableChange}
-        />
+        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          {errorBanner}
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={pageData}
+            loading={loading}
+            size="large"
+            pagination={{
+              current: page,
+              pageSize,
+              total: totalCount,
+              showSizeChanger: true,
+              pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS
+            }}
+            onChange={handleTableChange}
+          />
+        </Space>
       );
     }
 
     if (view === "grid") {
       return (
-        <List
-          grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
-          dataSource={pageData}
-          rowKey="id"
-          pagination={{
-            current: page,
-            pageSize,
-            total: totalCount,
-            showSizeChanger: true,
-            pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
-            align: "center",
-            onChange: handlePaginationChange,
-            onShowSizeChange: handlePaginationChange
-          }}
-          renderItem={(item) => (
-            <List.Item key={item.id}>
-               {/* Naive heuristic to choose card type: if it has price/ticker, assume financial */}
-               {(item.price !== undefined || item.ticker) ? (
-                 <FinancialCard item={item} />
-               ) : (
-                 <NewsCard
-                   item={{
-                     ...item,
-                     publishedAt: item.publishedAt,
-                     ingestedAt: item.ingestedAt,
-                     topics: item.topics,
-                     entities: item.entities,
-                     qualityScore: item.qualityScore,
-                     duplicateSimilarity: item.duplicateSimilarity,
-                     duplicateOf: item.duplicateOf,
-                     llm: item.llm,
-                     url: item.url
-                   }}
-                 />
-               )}
-            </List.Item>
-          )}
-        />
+        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          {errorBanner}
+          <List
+            grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
+            dataSource={pageData}
+            rowKey="id"
+            pagination={{
+              current: page,
+              pageSize,
+              total: totalCount,
+              showSizeChanger: true,
+              pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
+              align: "center",
+              onChange: handlePaginationChange,
+              onShowSizeChange: handlePaginationChange
+            }}
+            renderItem={(item) => (
+              <List.Item key={item.id}>
+                {/* Naive heuristic to choose card type: if it has price/ticker, assume financial */}
+                {item.price !== undefined || item.ticker ? (
+                  <FinancialCard item={item} />
+                ) : (
+                  <NewsCard
+                    item={{
+                      ...item,
+                      publishedAt: item.publishedAt,
+                      ingestedAt: item.ingestedAt,
+                      topics: item.topics,
+                      entities: item.entities,
+                      qualityScore: item.qualityScore,
+                      duplicateSimilarity: item.duplicateSimilarity,
+                      duplicateOf: item.duplicateOf,
+                      llm: item.llm,
+                      url: item.url
+                    }}
+                  />
+                )}
+              </List.Item>
+            )}
+          />
+        </Space>
       );
     }
 
     if (view === "feed") {
       return (
-        <List
-          itemLayout="vertical"
-          dataSource={pageData}
-          rowKey="id"
-          pagination={{
-            current: page,
-            pageSize,
-            total: totalCount,
-            showSizeChanger: true,
-            pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
-            align: "center",
-            onChange: handlePaginationChange,
-            onShowSizeChange: handlePaginationChange
-          }}
-          renderItem={(item) => (
-            <List.Item key={item.id}>
-              <NewsCard
-                item={{
-                  ...item,
-                  publishedAt: item.publishedAt,
-                  ingestedAt: item.ingestedAt,
-                  topics: item.topics,
-                  entities: item.entities,
-                  qualityScore: item.qualityScore,
-                  duplicateSimilarity: item.duplicateSimilarity,
-                  duplicateOf: item.duplicateOf,
-                  llm: item.llm,
-                  url: item.url
-                }}
-              />
-            </List.Item>
-          )}
-        />
+        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          {errorBanner}
+          <List
+            itemLayout="vertical"
+            dataSource={pageData}
+            rowKey="id"
+            pagination={{
+              current: page,
+              pageSize,
+              total: totalCount,
+              showSizeChanger: true,
+              pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
+              align: "center",
+              onChange: handlePaginationChange,
+              onShowSizeChange: handlePaginationChange
+            }}
+            renderItem={(item) => (
+              <List.Item key={item.id}>
+                <NewsCard
+                  item={{
+                    ...item,
+                    publishedAt: item.publishedAt,
+                    ingestedAt: item.ingestedAt,
+                    topics: item.topics,
+                    entities: item.entities,
+                    qualityScore: item.qualityScore,
+                    duplicateSimilarity: item.duplicateSimilarity,
+                    duplicateOf: item.duplicateOf,
+                    llm: item.llm,
+                    url: item.url
+                  }}
+                />
+              </List.Item>
+            )}
+          />
+        </Space>
       );
     }
     

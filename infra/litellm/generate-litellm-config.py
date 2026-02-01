@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -57,6 +58,20 @@ def normalize_key_list(raw: Any) -> List[str]:
   return unique
 
 
+def strip_bearer_prefix(value: str) -> str:
+  trimmed = value.strip()
+  if trimmed.lower().startswith("bearer "):
+    return trimmed[7:].strip()
+  return trimmed
+
+
+def fingerprint_key(value: str) -> str:
+  normalized = strip_bearer_prefix(value)
+  if not normalized:
+    return ""
+  return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def fetch_openai_keys_from_api() -> List[str]:
   api_base = os.environ.get("LITELLM_CONFIG_API_BASE", "").strip()
   token = os.environ.get("LITELLM_CONFIG_INTERNAL_TOKEN", "").strip()
@@ -88,6 +103,47 @@ def build_api_key_overrides() -> Dict[str, List[str]]:
   if openai_keys:
     overrides["OPENAI_API_KEY"] = openai_keys
   return overrides
+
+
+def resolve_effective_openai_keys(api_key_overrides: Dict[str, List[str]]) -> List[str]:
+  keys = api_key_overrides.get("OPENAI_API_KEY")
+  if keys:
+    return [strip_bearer_prefix(k) for k in keys if strip_bearer_prefix(k)]
+
+  keys = parse_csv(os.environ.get("OPENAI_API_KEYS", ""))
+  if keys:
+    return [strip_bearer_prefix(k) for k in keys if strip_bearer_prefix(k)]
+
+  single = strip_bearer_prefix(os.environ.get("OPENAI_API_KEY", ""))
+  if single:
+    return [single]
+
+  return []
+
+
+def report_applied_openai_key_fingerprints(source: str, fingerprints: List[str]) -> None:
+  api_base = os.environ.get("LITELLM_CONFIG_API_BASE", "").strip()
+  token = os.environ.get("LITELLM_CONFIG_INTERNAL_TOKEN", "").strip()
+  if not api_base or not token:
+    return
+
+  url = api_base.rstrip("/") + "/internal/litellm/openai-keys/applied"
+  payload = json.dumps({"source": source, "keyFingerprints": fingerprints}).encode("utf-8")
+  headers = {
+    "Authorization": f"Bearer {token}",
+    "Content-Type": "application/json",
+  }
+
+  for attempt in range(6):
+    try:
+      req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+      with urllib.request.urlopen(req, timeout=5) as resp:
+        resp.read()
+      return
+    except Exception:
+      if attempt >= 5:
+        return
+      time.sleep(2)
 
 
 def expand_model_entry(
@@ -230,6 +286,20 @@ def main() -> None:
     model_list = []
 
   api_key_overrides = build_api_key_overrides()
+  effective_openai_keys = resolve_effective_openai_keys(api_key_overrides)
+  openai_key_source = "none"
+  if api_key_overrides.get("OPENAI_API_KEY"):
+    openai_key_source = "db"
+  elif effective_openai_keys:
+    openai_key_source = "env"
+  openai_key_fingerprints: List[str] = []
+  seen_fingerprints = set()
+  for key in effective_openai_keys:
+    fp = fingerprint_key(key)
+    if not fp or fp in seen_fingerprints:
+      continue
+    seen_fingerprints.add(fp)
+    openai_key_fingerprints.append(fp)
 
   default_rpm = parse_positive_int(os.environ.get("LITELLM_DEPLOYMENT_RPM", ""))
   default_tpm = parse_positive_int(os.environ.get("LITELLM_DEPLOYMENT_TPM", ""))
@@ -262,6 +332,8 @@ def main() -> None:
 
   with open(args.output, "w", encoding="utf-8") as f:
     yaml.safe_dump(out_cfg, f, sort_keys=False)
+
+  report_applied_openai_key_fingerprints(openai_key_source, openai_key_fingerprints)
 
 
 if __name__ == "__main__":

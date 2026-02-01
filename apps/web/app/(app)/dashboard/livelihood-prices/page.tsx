@@ -46,6 +46,8 @@ export default function LivelihoodPricesPage() {
     refetch,
     hasData,
     latestTimestamp,
+    appliedGranularity,
+    appliedGranularityRange,
     delayMs,
     expectedIntervalMs,
     chartState
@@ -192,7 +194,10 @@ export default function LivelihoodPricesPage() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ marginBottom: 16 }}>
         <Typography.Title level={4}>{t("dashboard.livelihood.title")}</Typography.Title>
-        <TimeRangeControls />
+        <TimeRangeControls
+          appliedGranularity={appliedGranularity}
+          appliedGranularityRange={appliedGranularityRange}
+        />
       </div>
       <ChartStateBanner
         state={chartState}

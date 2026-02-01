@@ -33,7 +33,8 @@
           "placeholder": "请输入组织标识"
         }
       },
-      "submit": "登录"
+      "submit": "登录",
+      "required": "请登录后查看此面板。"
     },
     "logoutFailed": "退出失败",
     "logoutThisDevice": "退出当前设备",
@@ -166,7 +167,7 @@
         },
         "tuning": "调参建议",
         "tuningError": "加载调参建议失败。",
-        "tuningStats": "Reviewed {{reviewed}} · Confirmed {{confirmed}} · Ignored {{ignored}} · FP rate {{rate}}",
+        "tuningStats": "已审核 {{reviewed}} · 已确认 {{confirmed}} · 已忽略 {{ignored}} · 误报率 {{rate}}",
         "tuningEmpty": "暂无调参建议。",
         "tuningThreshold": "建议阈值 {{value}}",
         "tuningRange": "建议范围 {{lower}} - {{upper}}"
@@ -327,6 +328,7 @@
     "loadingDelayed": "数据加载较慢，请稍等或刷新。",
     "loadingDelayedTitle": "仍在加载…",
     "requestFailed": "请求失败",
+    "showingCachedData": "正在显示缓存数据。",
     "accessDenied": "无权限访问",
     "accessDeniedDescription": "你没有权限查看此数据。如需访问，请联系管理员。",
     "name": "名称",
@@ -345,7 +347,22 @@
     "pause": "暂停",
     "play": "播放",
     "prev": "上一个",
-    "fastForward": "快进"
+    "fastForward": "快进",
+    "noData": "暂无数据",
+    "enable": "启用",
+    "disable": "禁用",
+    "weekday": {
+      "mon": "周一",
+      "tue": "周二",
+      "wed": "周三",
+      "thu": "周四",
+      "fri": "周五",
+      "sat": "周六",
+      "sun": "周日"
+    },
+    "more": "更多",
+    "search": "搜索",
+    "ok": "确定"
   },
   "orgSwitcher": {
     "error": {
@@ -416,8 +433,13 @@
       "missing": "无法获取最新数据时间。"
     },
     "timeRange": {
-      "defaultAggregation": "默认聚合粒度",
-      "defaultAggregationHint": "多数图表会按该粒度对所选时间窗进行聚合；单个图表可能会不同。",
+      "aggregation": "聚合粒度",
+      "aggregationHint": "聚合粒度由后端返回，可能与建议粒度不同。",
+      "aggregationMismatchHint": "建议粒度为 {{suggested}}，但后端实际使用 {{observed}}。解读趋势时请以实际粒度为准。",
+      "defaultAggregation": "建议聚合粒度",
+      "defaultAggregationHint": "建议粒度由所选时间窗推导；实际数据桶可能因数据可用性而不同。",
+      "defaultAggregationSuffix": "建议",
+      "mixed": "混合",
       "helperText": "时间范围会影响图表粒度与提示信息。",
       "title": "时间范围"
     },
@@ -1089,10 +1111,11 @@
       "subscriptionError": "实时更新已断开",
       "mode": {
         "live": "实时",
-        "polling": "轮询（每 {{seconds}} 秒）"
+        "polling": "轮询（每 {{seconds}} 秒）",
+        "offline": "离线"
       },
       "pollFallback": "由于实时更新错误，已切换为每 {{seconds}} 秒轮询。",
-      "pollFallbackToast": "Live updates disconnected — switched to polling ({{seconds}}s).",
+      "pollFallbackToast": "实时更新已断开，已切换为轮询（{{seconds}}s）。",
       "liveRecoveredToast": "实时更新已恢复连接。"
     },
     "sentiment": {
@@ -1300,7 +1323,9 @@
           "volume": "热度",
           "avgScore": "平均分",
           "negativeRatio": "负面占比"
-        }
+        },
+        "activeHint": "已启用筛选条件；可尝试清除以查看更多结果。",
+        "clear": "清除筛选"
       },
       "columns": {
         "scope": "范围",
@@ -1313,6 +1338,21 @@
         "backtest": "回测",
         "updated": "更新时间"
       },
+      "status": {
+        "pending": "待处理",
+        "running": "运行中",
+        "completed": "已完成",
+        "failed": "失败"
+      },
+      "correlationSign": {
+        "positive": "正相关",
+        "negative": "负相关"
+      },
+      "backtestSummary": {
+        "hitRate": "命中率",
+        "avgSignedReturn": "平均方向收益",
+        "triggers": "触发次数"
+      },
       "drawer": {
         "title": "关联详情",
         "loadFailed": "加载关联失败。",
@@ -1324,7 +1364,8 @@
         "analyzed": "评估区间",
         "backtests": "回测记录",
         "backtestsEmpty": "暂无回测记录。"
-      }
+      },
+      "ingestionOffCta": "打开系统设置"
     },
     "assistant": {
       "title": "AI 助手",
@@ -1377,8 +1418,8 @@
         "description": "调整缓存、限流与抓取默认值"
       },
       "quality": {
-        "title": "Data Quality",
-        "description": "Monitor pipeline success, latency, and source reliability"
+        "title": "数据质量",
+        "description": "监控流水线成功率、延迟与数据源可靠性"
       },
       "knowledgeGraphReview": {
         "title": "知识图谱审核",
@@ -1403,8 +1444,8 @@
         "description": "管理数据源调度与抓取配置"
       },
       "crawlTemplates": {
-        "title": "Crawl Templates",
-        "description": "Manage reusable Crawl4ai configuration templates"
+        "title": "抓取模板",
+        "description": "管理可复用的 Crawl4AI 配置模板"
       }
     }
   },
@@ -1454,7 +1495,9 @@
       "nextRun": "下次运行",
       "lastRun": "上次运行",
       "template": "模板",
-      "lastSuccess": "最近成功"
+      "lastSuccess": "最近成功",
+      "stats24h": "24h",
+      "latest": "最新"
     },
     "types": {
       "general": "综合",
@@ -1468,7 +1511,13 @@
       "new": "新增数据源",
       "edit": "编辑数据源",
       "runNow": "立即运行",
-      "preview": "预览"
+      "preview": "预览",
+      "openTask": "打开任务",
+      "viewTasks": "抓取任务",
+      "reschedule": "重新调度",
+      "schedule": "调度",
+      "ops": "运维",
+      "scheduleBatch": "调度（{{count}}）"
     },
     "fields": {
       "name": "名称",
@@ -1508,7 +1557,16 @@
       "seedDedupeWindowHours": "去重窗口（小时）",
       "seedCacheTtlSeconds": "种子缓存 TTL（秒）",
       "seedConcurrency": "预览并发数",
-      "seedConcurrencyHint": "预览用于抓取元信息；调度会使用轻量级 URL 评分。"
+      "seedConcurrencyHint": "预览用于抓取元信息；调度会使用轻量级 URL 评分。",
+      "scheduleMode": "调度模式",
+      "cronExpression": "Cron 表达式",
+      "cronExpressionRequired": "Cron 模式需要填写 Cron 表达式。",
+      "cronTimezone": "时区（IANA）",
+      "cronTimezoneHint": "示例：UTC、Asia/Shanghai、America/New_York。",
+      "cronWindowDays": "允许的工作日（可选）",
+      "cronWindowStartHour": "开始小时（0-23）",
+      "cronWindowEndHour": "结束小时（1-24）",
+      "nextRunAt": "下次运行时间"
     },
     "messages": {
       "created": "已创建数据源。",
@@ -1516,7 +1574,22 @@
       "enabled": "已启用数据源。",
       "disabled": "已停用数据源。",
       "runQueued": "已加入抓取队列。",
-      "deleted": "已删除数据源。"
+      "deleted": "已删除数据源。",
+      "runDeduped": "本分钟已触发过调度。",
+      "tryAfter": "请在 {{time}} 后再试",
+      "runSkippedInFlight": "已跳过（进行中 {{count}}/{{limit}}）。",
+      "nextRunAt": "下次运行：{{time}}",
+      "noNewUrls": "暂无新的 URL 可调度。",
+      "runQueuedCount": "已加入 {{count}} 个任务。",
+      "runSkippedCount": "已跳过 {{count}} 个。",
+      "runEnqueueFailures": "入队失败 {{count}} 个。",
+      "dispatchInProgress": "调度正在进行中，请稍等并刷新。",
+      "batchTogglePartial": "已更新 {{ok}}/{{total}} 个数据源。",
+      "enabledBatch": "已启用 {{count}} 个数据源。",
+      "disabledBatch": "已禁用 {{count}} 个数据源。",
+      "batchDispatch": "已调度 {{sources}} 个数据源：入队 {{tasks}} 个任务，跳过 {{skipped}} 个，入队失败 {{enqueueFailures}} 个，冲突 {{conflicts}} 个，请求失败 {{failures}} 个。",
+      "scheduledBatchPartial": "已为 {{ok}}/{{total}} 个数据源设置运行时间：{{time}}。",
+      "scheduledBatch": "已为 {{count}} 个数据源设置运行时间：{{time}}。"
     },
     "errors": {
       "loadFailed": "加载数据源失败。",
@@ -1565,11 +1638,100 @@
     },
     "sections": {
       "seed": "种子发现",
-      "seedHint": "从站点地图或 RSS/Atom 订阅源发现文章 URL，并在每次运行中最多调度 N 条新的 URL。"
+      "seedHint": "从站点地图或 RSS/Atom 订阅源发现文章 URL，并在每次运行中最多调度 N 条新的 URL。",
+      "schedule": "调度",
+      "scheduleHint": "可选择按间隔（频率）调度或使用 Cron 表达式，并可选设置时间窗口。"
     },
     "seedMode": {
       "sitemap": "站点地图",
       "rss": "RSS / Atom"
+    },
+    "ops": {
+      "cancelQueued": {
+        "title": "取消已排队的抓取？",
+        "description": "将移除该数据源在 crawl4ai 队列中等待/延迟的作业；正在运行的作业不会被中断。",
+        "ok": "取消排队",
+        "done": "已移除 {{removed}} 个作业（扫描 {{scanned}} 个）。",
+        "failed": "取消排队抓取失败。",
+        "label": "取消排队抓取"
+      },
+      "clearInflight": {
+        "title": "清理进行中的流水线任务？",
+        "description": "将把最近的进行中流水线任务标记为失败以解除调度阻塞，请谨慎使用。",
+        "ok": "清理进行中",
+        "done": "已清理 {{count}} 个任务。",
+        "failed": "清理进行中任务失败。",
+        "label": "清理进行中任务"
+      },
+      "retryLatest": {
+        "skipped": "最新任务不是失败状态（status: {{status}}）。",
+        "done": "已重试最新任务。",
+        "failed": "重试最新任务失败。",
+        "label": "重试最近失败任务"
+      }
+    },
+    "schedule": {
+      "validation": {
+        "future": "下次运行时间必须在未来。",
+        "invalid": "请选择有效的日期/时间。"
+      },
+      "current": "当前：{{time}}",
+      "none": "尚未设置调度。",
+      "title": "调度抓取",
+      "hintTitle": "通过 crawl4ai 入队",
+      "description": "设置下次运行时间。调度器每分钟检查并入队 CrawlTask；crawl4ai 会限制并发以避免阻塞。",
+      "enablesSource": "这将启用 {{count}} 个数据源。",
+      "presets": {
+        "in5m": "+5m",
+        "in30m": "+30m",
+        "in1h": "+1h",
+        "nextHour": "下一个整点",
+        "tomorrow9": "明天 09:00",
+        "nextInterval": "下一个周期"
+      },
+      "selectedCount": "应用于 {{count}} 个数据源。",
+      "frequencyHint": "频率：每 {{seconds}} 秒。"
+    },
+    "queueCounts": {
+      "queued": "排队：{{count}}",
+      "active": "进行中：{{count}}"
+    },
+    "nextRun": {
+      "due": "到期",
+      "backpressureReason": "背压：抓取队列 pending {{pendingJobs}} > 阈值 {{threshold}}。",
+      "backpressureReasonFallback": "背压：抓取队列积压过高。",
+      "backpressureUntil": "延迟至 {{time}}",
+      "backpressure": "背压"
+    },
+    "stats24h": {
+      "jobs": "{{ok}} 成功 / {{fail}} 失败",
+      "avgDuration": "平均耗时：{{value}}",
+      "backpressure": "24h 背压：{{count}}",
+      "jobsShort": "{{ok}}/{{fail}}"
+    },
+    "latest": {
+      "jobError": "作业失败：{{error}}",
+      "jobId": "作业：{{id}}",
+      "taskError": "任务失败：{{error}}",
+      "taskId": "任务：{{id}}"
+    },
+    "queue": {
+      "title": "Crawl4AI 队列",
+      "loadFailed": "加载队列统计失败",
+      "pending": "待处理",
+      "waiting": "等待中",
+      "active": "运行中",
+      "delayed": "延迟",
+      "failed": "失败",
+      "concurrency": "并发",
+      "updatedAt": "更新时间 {{time}}"
+    },
+    "selection": {
+      "count": "已选择：{{count}}"
+    },
+    "scheduleMode": {
+      "interval": "间隔",
+      "cron": "Cron"
     }
   },
   "finance": {
@@ -1606,7 +1768,7 @@
     "rulesEmpty": "未配置告警规则。",
     "mutedUntil": "静音至 {{time}}",
     "ruleCooldown": "冷却 {{seconds}} 秒",
-    "ruleNotifications": "Notifications {{count}} · Latest {{time}}",
+    "ruleNotifications": "通知 {{count}} · 最近 {{time}}",
     "manageRule": "管理规则",
     "addChannel": "添加渠道",
     "deleteChannelConfirm": "删除此渠道？",
@@ -2017,16 +2179,33 @@
       "sections": {
         "overrides": "主题覆盖项",
         "preview": "生效配置",
-        "tester": "阈值预览"
+        "tester": "阈值预览",
+        "mode": "相似度方法"
       },
       "fields": {
         "defaultThreshold": "默认阈值",
         "category": "主题/分类",
-        "threshold": "阈值"
+        "threshold": "阈值",
+        "useEmbeddings": "使用 Embeddings",
+        "llmJudgeModel": "LLM 评审模型（可选）",
+        "llmJudgeMaxComparisons": "最大对比次数",
+        "llmJudgeCandidateChars": "候选字符数",
+        "llmJudgeInstructions": "LLM 评审指令（可选）",
+        "llmJudgePromptVersion": "Prompt 版本",
+        "llmJudgeSystemPromptTemplate": "System Prompt 模板",
+        "llmJudgeUserPromptTemplate": "User Prompt 模板"
       },
       "hints": {
         "defaultThreshold": "未命中主题/分类时使用，范围 0–1（越高越严格）。",
-        "normalizedCount": "当前生效覆盖项：{{count}}"
+        "normalizedCount": "当前生效覆盖项：{{count}}",
+        "useEmbeddings": "开：使用 Embeddings 向量做语义去重（更快、更易扩展，但需要 embedding 支持与存储）。关：使用 LLM 评审打分相似度（更慢、成本更高，但无需向量存储）。",
+        "llmJudgeModel": "覆盖用于 LLM 去重的模型；留空则使用流水线默认的对话/补全模型。",
+        "llmJudgeMaxComparisons": "每条内容最多进行多少次 LLM 对比（控制成本/延迟）。",
+        "llmJudgeCandidateChars": "发送给评审模型的每段摘要最大截断长度。",
+        "llmJudgeInstructions": "追加到评审 prompt 的系统级指令；请保持简短，避免 prompt 注入或输出格式问题。",
+        "llmJudgePromptVersion": "保存到 metadata，用于跟踪 prompt 版本变更。",
+        "llmJudgeSystemPromptTemplate": "支持占位符：{{language_hint}}、{{additional_instructions}}；留空则重置为默认。",
+        "llmJudgeUserPromptTemplate": "支持占位符：{{threshold}}、{{title_a_section}}、{{summary_a}}、{{title_b_section}}、{{summary_b}}；留空则重置为默认。"
       },
       "placeholders": {
         "category": "例如：finance / 科技 / geopolitics"
@@ -2068,6 +2247,12 @@
         "required": "必填",
         "category": "必填",
         "threshold": "必填"
+      },
+      "options": {
+        "useEmbeddings": {
+          "on": "向量（Embeddings）",
+          "off": "LLM 评审"
+        }
       }
     },
     "newsPrompts": {
@@ -2122,8 +2307,8 @@
           "models": "模型列表",
           "lbTest": "负载均衡测试"
         },
-        "liveliness": "Liveliness",
-        "readiness": "Readiness",
+        "liveliness": "存活检查",
+        "readiness": "就绪检查",
         "checkedAt": "检测时间：{{time}}",
         "hint": "点击“检测健康状态”将请求网关的 /health/liveliness 与 /health/readiness。",
         "models": {
@@ -2134,19 +2319,25 @@
           "failed": "检测 Proxy 健康状态失败",
           "modelInfoFailed": "获取 Proxy 模型详情失败",
           "lbTestFailed": "负载均衡测试失败"
-        }
+        },
+        "loadBalancing": "负载均衡",
+        "modelGroups": "模型组",
+        "deployments": "部署",
+        "loadBalancedGroups": "均衡组"
       },
       "proxyModelInfo": {
         "modal": {
           "title": "LiteLLM Proxy 模型详情：{{name}}"
         },
-        "summary": "模型组：{{groups}}，Deployments：{{deployments}}",
-        "hint": "同一个模型出现多个 Deployments 时，LiteLLM Proxy 会在它们之间自动分发请求。",
+        "summary": "模型组：{{groups}}，部署：{{deployments}}",
+        "hint": "同一个模型存在多个部署（Deployments）时，LiteLLM Proxy 会在它们之间自动分发请求。",
         "columns": {
           "model": "模型",
-          "deployments": "Deployments",
+          "deployments": "部署",
           "details": "详情"
-        }
+        },
+        "checkedAt": "模型详情检测时间：{{time}}",
+        "notChecked": "尚未检测模型 Deployments，点击“模型详情”查看负载均衡情况。"
       },
       "proxyLoadBalancing": {
         "modal": {
@@ -2263,7 +2454,8 @@
         "apiBase": "此地址由后端 API 进程访问（不是浏览器）。Docker Compose 部署推荐填 http://litellm:4000；本机开发一般为 http://localhost:4001。支持填写 Base URL（例如 https://api.openai.com），也支持直接粘贴完整接口地址（例如 https://api.openai.com/v1/chat/completions），系统会自动规范化。",
         "apiKey": "写入系统设置；当在「系统设置 → 安全」开启“加密存储密钥/Token”且配置 SYSTEM_SETTINGS_ENCRYPTION_KEY 时，会加密存储；否则明文存储。支持直接粘贴 sk-... 或完整的 \"Bearer sk-...\"。如果网关是 LiteLLM Proxy 并启用了 master key，则此处填 master key；否则可留空。上游供应商的真实 Key（如 OPENAI_API_KEY）需要在 LiteLLM Proxy 的环境变量中配置。",
         "apiKeyEdit": "输入新 Key 用于轮换；也可以用下方开关清空。",
-        "fallbackModels": "主模型失败时会按顺序尝试。"
+        "fallbackModels": "主模型失败时会按顺序尝试。",
+        "modelOptional": "可选：仅用于对话/补全请求；只配置 Embeddings 网关时可以留空。"
       },
       "validation": {
         "nameRequired": "请填写名称",
@@ -2310,7 +2502,8 @@
           "prompt": "提示词",
           "includeEmbeddings": "测试 Embedding",
           "embeddingModel": "Embedding 模型覆盖",
-          "embeddingInput": "Embedding 输入"
+          "embeddingInput": "Embedding 输入",
+          "includeCompletion": "测试对话/补全"
         },
         "placeholders": {
           "prompt": "只回复 \"OK\"，不要输出其他内容。",
@@ -2318,7 +2511,8 @@
         },
         "hints": {
           "model": "留空则使用网关配置的默认模型 + Fallback 模型。",
-          "embeddingModel": "留空则使用网关配置的 Embedding 模型。"
+          "embeddingModel": "留空则使用网关配置的 Embedding 模型。",
+          "includeCompletion": "关闭后仅测试 Embeddings。"
         },
         "sections": {
           "completion": "对话补全",
@@ -2355,10 +2549,79 @@
         "modal": {
           "title": "模型列表（未保存）"
         }
+      },
+      "embeddingActive": {
+        "messages": {
+          "activated": "Embeddings 配置已更新"
+        },
+        "errors": {
+          "activateFailed": "更新 Embeddings 配置失败"
+        },
+        "tag": "Embeddings",
+        "title": "Embeddings 网关",
+        "hint": "用于 Embeddings / 向量化请求（可与对话模型使用不同的网关和模型）。",
+        "currentCompletion": "当前对话模型配置",
+        "currentEmbedding": "当前 Embeddings 配置",
+        "default": "默认配置（config/env）",
+        "defaultTag": "默认",
+        "lockedSame": "显式锁定（当前与对话一致）",
+        "independent": "独立配置",
+        "following": "跟随对话模型",
+        "inheritEmbeddingModel": "继承默认 Embedding 模型",
+        "missingEmbeddingModel": "未配置 Embedding 模型",
+        "selectLabel": "切换 Embeddings 网关",
+        "selectPlaceholder": "选择用于 Embeddings 的网关 Profile",
+        "followCompletion": "跟随对话模型（{{name}}）",
+        "followCompletionEmpty": "跟随对话模型（当前未启用）",
+        "followTag": "跟随",
+        "useDefault": "使用默认配置（config/env）",
+        "missingEmbeddingModelShort": "缺少 Embedding 模型",
+        "noEligibleProfiles": "暂无可用的 Embeddings Profile：请先在某个 Profile 中填写 Embedding 模型并启用。"
       }
     },
     "assistantSafety": {
       "title": "助手安全",
+      "diagnostics": {
+        "actions": {
+          "run": "运行自检"
+        },
+        "lastChecked": "上次自检：{{time}}",
+        "fields": {
+          "litellmBase": "LiteLLM 地址",
+          "litellmLiveliness": "存活检查",
+          "litellmModels": "Models 接口",
+          "litellmGuardrailsList": "Guardrails 列表",
+          "guardrails": "生效的 Guardrails",
+          "openaiKeys": "OpenAI Key"
+        },
+        "guardrails": {
+          "count": "{{count}} 个 guardrails",
+          "allPresent": "已包含所有预期 guardrails",
+          "missingCount": "缺失 {{count}} 个"
+        },
+        "messages": {
+          "done": "自检完成"
+        },
+        "errors": {
+          "failed": "自检失败"
+        }
+      },
+      "metrics": {
+        "title": "拦截统计",
+        "days": "最近 {{days}} 天",
+        "columns": {
+          "date": "日期",
+          "total": "总数",
+          "blocked": "拦截",
+          "rate": "拦截率",
+          "moderationCalls": "审核调用（估算）",
+          "guardrails": "Guardrails",
+          "codes": "原因代码"
+        },
+        "errors": {
+          "loadFailed": "加载统计失败。"
+        }
+      },
       "hint": {
         "title": "Guardrails 通过 LiteLLM Proxy 执行",
         "body": "在这里启用/关闭 AI 助手的内容安全 Guardrails。请确保 LiteLLM Proxy 配置里已定义对应 guardrails。"
@@ -2371,18 +2634,25 @@
       "openaiKeys": {
         "title": "OpenAI Key（LiteLLM 上游）",
         "description": "这些 Key 会写入 MySQL，并由 LiteLLM Proxy 在启动时通过内部接口拉取（需要配置 LITELLM_CONFIG_INTERNAL_TOKEN），用于 OpenAI 模型调用与 omni-moderation 审核。支持多个 Key：AI 助手会把 moderation 调用分摊到各 Key。更新后需要重启 litellm 服务生效。",
+        "quotaHint": "预计可用的免费审核额度：{{quota}} 次/天（每个 Key {{perKey}} 次/天）。当前 AI 助手设置每次运行预计消耗 {{callsPerRun}} 次。",
         "compliance": "请确保你的使用方式符合 OpenAI 条款；不要用多个 Key 去规避上游的配额/计费策略。",
         "status": {
           "configured": "已配置",
           "empty": "未配置",
           "count": "{{count}} 个",
+          "remaining": "剩余 {{count}} 个名额",
+          "applied": "已生效",
+          "notApplied": "未生效",
+          "restartRequired": "需要重启生效",
           "tokenOk": "已配置内部 Token",
           "tokenMissing": "缺少内部 Token",
           "lbOn": "负载均衡：开",
           "lbOff": "负载均衡：关"
         },
         "warnings": {
-          "tokenMissing": "未配置 LITELLM_CONFIG_INTERNAL_TOKEN，litellm 启动时无法从 MySQL 拉取 Key 生成配置。"
+          "tokenMissing": "未配置 LITELLM_CONFIG_INTERNAL_TOKEN，litellm 启动时无法从 MySQL 拉取 Key 生成配置。",
+          "restartRequired": "Key 列表已变更；请重启 litellm 服务以应用最新配置。",
+          "tooManyKeys": "将超过最多 {{max}} 个 Key 的限制。"
         },
         "fields": {
           "keys": "OpenAI API Keys",
@@ -2392,7 +2662,8 @@
         "messages": {
           "saved": "已保存",
           "appended": "已追加",
-          "emptyInput": "请至少粘贴一个 Key。"
+          "emptyInput": "请至少粘贴一个 Key。",
+          "tooManyKeys": "Key 数量过多，最多 {{max}} 个。"
         },
         "errors": {
           "loadFailed": "加载 OpenAI Key 配置失败。",
@@ -2426,6 +2697,12 @@
           "title": "已存 Key 指纹",
           "empty": "暂无 Key。"
         },
+        "applied": {
+          "title": "LiteLLM 已应用",
+          "at": "时间",
+          "source": "来源",
+          "empty": "暂未上报生效的 Key。"
+        },
         "reset": {
           "action": "清空 Key",
           "modal": {
@@ -2437,6 +2714,16 @@
           },
           "errors": {
             "failed": "清空失败。"
+          }
+        },
+        "buckets": {
+          "title": "负载均衡分桶",
+          "hint": "助手审核请求会被确定性分配到某个分桶；每个分桶映射到具体的 guardrail 名称和上游 Key。",
+          "columns": {
+            "bucket": "分桶",
+            "fingerprint": "Key 指纹",
+            "pre": "前置（pre-call）",
+            "post": "后置（post-call）"
           }
         }
       },
@@ -2954,6 +3241,7 @@
   },
   "analysis": {
     "streamError": "分析流错误：{{error}}",
+    "runPermissionRequired": "你可以查看结果，但没有权限运行新的分析。",
     "correlation": {
       "title": "相关性分析",
       "submitted": "相关性分析已提交",
@@ -3836,7 +4124,10 @@
       "username": "用户名",
       "password": "密码"
     },
-    "title": "爬取任务"
+    "title": "爬取任务",
+    "filter": {
+      "sourceId": "已按新闻源 {{id}} 过滤"
+    }
   },
   "errors": {
     "kinds": {
@@ -3920,7 +4211,8 @@
         "embeddingModel": "Embedding 模型",
         "embeddingDims": "Embedding 维度"
       },
-      "keyPointsMore": "+{{count}} 条更多"
+      "keyPointsMore": "+{{count}} 条更多",
+      "processedErrorTitle": "处理失败"
     },
     "columns": {
       "name": "标题",
@@ -4159,7 +4451,16 @@
       "tag": "已拦截",
       "title": "请求已被内容安全拦截",
       "description": "你的输入触发了内容安全审核，已被拦截并未发送到上游模型。请修改后重试。",
+      "codes": {
+        "GUARDRAIL_MISCONFIG": "安全拦截配置异常，请联系管理员。",
+        "PROMPT_INJECTION": "检测到提示词注入/越狱尝试，已拦截。",
+        "TRUST_SAFETY_VIOLATION": "触发信任与安全策略，已拦截。",
+        "LANGUAGE_POLICY_VIOLATION": "触发语言政策限制，已拦截。",
+        "MODERATION_BLOCKED": "内容审核未通过，已拦截。",
+        "GUARDRAIL_BLOCKED": "触发内容安全策略，已拦截。"
+      },
       "details": {
+        "code": "原因代码",
         "guardrails": "生效的 Guardrails",
         "upstreamStatus": "上游状态码"
       }
@@ -4224,7 +4525,8 @@
       "input": "输入",
       "output": "输出",
       "empty": "从列表中选择一次运行。"
-    }
+    },
+    "runPermissionRequired": "你没有权限运行助手任务。"
   },
   "situationMonitor": {
     "correlation": {

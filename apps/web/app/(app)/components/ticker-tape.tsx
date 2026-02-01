@@ -6,13 +6,13 @@ import { useTranslation } from "react-i18next";
 
 import { TimeGranularity, useDashboardHeroMetricsQuery } from "@/graphql/generated";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
-import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
   compareGranularity,
   formatGranularityLabel,
-  inferGranularityFromTimestampsMs,
+  pickCoarsestGranularity,
   resolveDefaultGranularityForRangePreset,
+  timeGranularityToUiGranularity,
   UiTimeGranularity,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -63,21 +63,13 @@ export function TickerTape() {
   });
 
   const inferredGranularity = useMemo(() => {
-    const candidate =
-      data?.market?.length && data.market.length > 1
-        ? data.market
-        : data?.conflict?.length && data.conflict.length > 1
-          ? data.conflict
-          : data?.resource?.length && data.resource.length > 1
-            ? data.resource
-            : data?.supply?.length && data.supply.length > 1
-              ? data.supply
-              : null;
-    if (!candidate) return UiTimeGranularity.Unknown;
-    const timestamps = candidate
-      .map((point) => dayjs(point.timestamp).valueOf())
-      .filter((value) => Number.isFinite(value));
-    return inferGranularityFromTimestampsMs(timestamps);
+    const effective = [
+      ...(data?.market ?? []),
+      ...(data?.conflict ?? []),
+      ...(data?.resource ?? []),
+      ...(data?.supply ?? []),
+    ].map((point) => timeGranularityToUiGranularity(point.effectiveGranularity));
+    return pickCoarsestGranularity(effective);
   }, [data]);
 
   const bucketLabel =

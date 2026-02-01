@@ -13,14 +13,16 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
   compareGranularity,
   formatGranularityLabel,
-  inferGranularityFromTimestampsMs,
+  pickCoarsestGranularity,
   resolveDefaultGranularityForRangePreset,
+  timeGranularityToUiGranularity,
   UiTimeGranularity,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 interface DataPoint {
   timestamp: string;
+  effectiveGranularity?: string | null;
   value: number;
 }
 
@@ -41,10 +43,9 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
 
     const timestamps = data.map((d) => d.timestamp);
     const values = data.map((d) => d.value);
-    const timestampsMs = data
-      .map((d) => dayjs(d.timestamp).valueOf())
-      .filter((value) => Number.isFinite(value));
-    const actualGranularity = inferGranularityFromTimestampsMs(timestampsMs);
+    const actualGranularity = pickCoarsestGranularity(
+      data.map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
+    );
     const actualGranularityLabel = formatGranularityLabel(actualGranularity);
     const intervalUnit = (() => {
       switch (actualGranularity) {
@@ -160,11 +161,13 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
   }, [data, locale, t, theme]);
 
   const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
-  const timestampsMs = useMemo(
-    () => (data ?? []).map((d) => dayjs(d.timestamp).valueOf()).filter((v) => Number.isFinite(v)),
-    [data]
+  const actualGranularity = useMemo(
+    () =>
+      pickCoarsestGranularity(
+        (data ?? []).map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
+      ),
+    [data],
   );
-  const actualGranularity = inferGranularityFromTimestampsMs(timestampsMs);
   const actualGranularityLabel = formatGranularityLabel(actualGranularity);
   const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
   const granularityCompare = compareGranularity(actualGranularity, defaultGranularity);

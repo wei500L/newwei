@@ -5,6 +5,7 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: Tim
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType
@@ -19,6 +20,7 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: Tim
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType
@@ -33,6 +35,7 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: Tim
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType
@@ -47,6 +50,7 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: Tim
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType
@@ -69,6 +73,7 @@ query MetricDrillDownDetails(
     granularity: $granularity
   ) {
     timestamp
+    effectiveGranularity
     value
     unit
     dataType

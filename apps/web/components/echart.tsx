@@ -1,15 +1,23 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import { lazy, Suspense } from "react";
+
+import { ChartSkeleton } from "@/components/chart-skeleton";
 
 import type { EchartProps } from "./echart.client";
 
-export const DashboardChart = dynamic<EchartProps>(
-  () => import("./echart.client").then((m) => m.DashboardChart),
-  {
-    ssr: false,
-    loading: () => <div style={{ width: "100%", height: 360 }} />,
-  },
+const DashboardChartInner = lazy(() =>
+  import("./echart.client").then((m) => ({ default: m.DashboardChart }))
 );
+
+export function DashboardChart(props: EchartProps) {
+  const height = props.height ?? 360;
+
+  return (
+    <Suspense fallback={<ChartSkeleton height={height} />}>
+      <DashboardChartInner {...props} />
+    </Suspense>
+  );
+}
 
 export type { EchartProps };

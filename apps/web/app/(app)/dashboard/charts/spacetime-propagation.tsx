@@ -1,13 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Drawer, List, Skeleton, Space, Tag, Typography } from "antd";
+import { Drawer, List, Skeleton, Space, Tag, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
@@ -446,21 +447,23 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
     );
   }
 
-  if (propagationQuery.error) {
+  const propagation = propagationQuery.data;
+  const hasPropagation = Boolean(propagation && propagation.nodes.length > 0);
+  const showStalePropagationErrorBanner = Boolean(propagationQuery.error && hasPropagation);
+
+  if (propagationQuery.error && !hasPropagation) {
     return (
       <div className="h-[360px]">
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={(propagationQuery.error as Error).message}
+        <RequestErrorBanner
+          error={propagationQuery.error}
+          onRetry={() => void propagationQuery.refetch()}
+          presentation="center"
         />
       </div>
     );
   }
 
-  const propagation = propagationQuery.data;
-  if (!propagation || propagation.nodes.length === 0) {
+  if (!hasPropagation) {
     return (
       <div className="h-[360px]">
         <ChartEmptyState
@@ -495,6 +498,15 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
           defaultValue: "Directed source-to-source diffusion (duplicate-aware + time-lag fallback)."
         })}
       </Typography.Text>
+      {showStalePropagationErrorBanner ? (
+        <div className="mb-2">
+          <RequestErrorBanner
+            error={propagationQuery.error}
+            onRetry={() => void propagationQuery.refetch()}
+            showCachedDataHint
+          />
+        </div>
+      ) : null}
       <DashboardChart option={option} theme={echartsTheme} height={360} onEvents={onEvents} />
 
       <Drawer
@@ -517,65 +529,87 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
 
         {articlesQuery.isLoading && !articlesQuery.data ? (
           <Skeleton active paragraph={{ rows: 8 }} />
-        ) : articlesQuery.error ? (
-          <Alert
-            type="error"
-            showIcon
-            message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-            description={(articlesQuery.error as Error).message}
-          />
-        ) : !articlesQuery.data || articlesQuery.data.articles.length === 0 ? (
-          <ChartEmptyState
-            title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
-            description={t("dashboard.charts.spacetimePropagation.noArticles", {
-              defaultValue: "No articles found for this source in the selected window."
-            })}
-          />
-        ) : (
-          <>
-            <List
-              dataSource={articlesQuery.data.articles}
-              renderItem={(article) => {
-                const url = safeHttpUrl(article.url);
-                const title = article.title?.trim() ?? "";
-                const ts = resolveArticleTimestamp(article);
-                return (
-                  <List.Item key={article.id}>
-                    <List.Item.Meta
-                      title={
-                        url ? (
-                          <a href={url} target="_blank" rel="noreferrer">
-                            {title || url}
-                          </a>
-                        ) : (
-                          <span>{title || t("common.emptyValue", { defaultValue: "N/A" })}</span>
-                        )
-                      }
-                      description={
-                        <Space size="small" wrap>
-                          {article.sourceLabel ? <Tag color="geekblue">{article.sourceLabel}</Tag> : null}
-                          {renderSentimentTag(article.sentiment)}
-                          {ts ? (
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {formatDateTime(ts, locale, { dateStyle: "medium", timeStyle: "short" })}
-                            </Typography.Text>
-                          ) : null}
-                        </Space>
-                      }
+        ) : (() => {
+            const payload = articlesQuery.data;
+            const articles = payload?.articles ?? [];
+            const hasArticles = articles.length > 0;
+
+            if (articlesQuery.error && !hasArticles) {
+              return (
+                <RequestErrorBanner
+                  error={articlesQuery.error}
+                  onRetry={() => void articlesQuery.refetch()}
+                  presentation="center"
+                />
+              );
+            }
+
+            if (!hasArticles) {
+              return (
+                <ChartEmptyState
+                  title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+                  description={t("dashboard.charts.spacetimePropagation.noArticles", {
+                    defaultValue: "No articles found for this source in the selected window."
+                  })}
+                />
+              );
+            }
+
+            return (
+              <>
+                {articlesQuery.error ? (
+                  <div className="mb-3">
+                    <RequestErrorBanner
+                      error={articlesQuery.error}
+                      onRetry={() => void articlesQuery.refetch()}
+                      showCachedDataHint
                     />
-                  </List.Item>
-                );
-              }}
-            />
-            {articlesQuery.data.hasMore ? (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t("dashboard.charts.spacetimePropagation.moreHint", {
-                  defaultValue: "More articles available. Narrow the time range to inspect further."
-                })}
-              </Typography.Text>
-            ) : null}
-          </>
-        )}
+                  </div>
+                ) : null}
+                <List
+                  dataSource={articles}
+                  renderItem={(article) => {
+                    const url = safeHttpUrl(article.url);
+                    const title = article.title?.trim() ?? "";
+                    const ts = resolveArticleTimestamp(article);
+                    return (
+                      <List.Item key={article.id}>
+                        <List.Item.Meta
+                          title={
+                            url ? (
+                              <a href={url} target="_blank" rel="noreferrer">
+                                {title || url}
+                              </a>
+                            ) : (
+                              <span>{title || t("common.emptyValue", { defaultValue: "N/A" })}</span>
+                            )
+                          }
+                          description={
+                            <Space size="small" wrap>
+                              {article.sourceLabel ? <Tag color="geekblue">{article.sourceLabel}</Tag> : null}
+                              {renderSentimentTag(article.sentiment)}
+                              {ts ? (
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  {formatDateTime(ts, locale, { dateStyle: "medium", timeStyle: "short" })}
+                                </Typography.Text>
+                              ) : null}
+                            </Space>
+                          }
+                        />
+                      </List.Item>
+                    );
+                  }}
+                />
+                {payload?.hasMore ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {t("dashboard.charts.spacetimePropagation.moreHint", {
+                      defaultValue: "More articles available. Narrow the time range to inspect further."
+                    })}
+                  </Typography.Text>
+                ) : null}
+              </>
+            );
+          })()}
       </Drawer>
     </div>
   );

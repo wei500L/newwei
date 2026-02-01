@@ -24,6 +24,61 @@ import { parseMetadata } from "../schemas/economic-data.schema";
 export class EconomicDataResolver {
   constructor(private readonly akshareService: AkshareService) {}
 
+  private timeGranularityRank(granularity: TimeGranularity): number {
+    switch (granularity) {
+      case TimeGranularity.realtime:
+        return 0;
+      case TimeGranularity.minute:
+        return 1;
+      case TimeGranularity.hour:
+        return 2;
+      case TimeGranularity.day:
+        return 3;
+      case TimeGranularity.week:
+        return 4;
+      case TimeGranularity.month:
+        return 5;
+      case TimeGranularity.quarter:
+        return 6;
+      case TimeGranularity.year:
+        return 7;
+      default:
+        return 99;
+    }
+  }
+
+  private coarsestTimeGranularity(a: TimeGranularity, b: TimeGranularity): TimeGranularity {
+    return this.timeGranularityRank(a) >= this.timeGranularityRank(b) ? a : b;
+  }
+
+  private defaultFrequencyToTimeGranularity(
+    frequency: EconomicDataFrequency | null | undefined
+  ): TimeGranularity | null {
+    switch (frequency) {
+      case EconomicDataFrequency.realtime:
+        return TimeGranularity.realtime;
+      case EconomicDataFrequency.hourly:
+        return TimeGranularity.hour;
+      case EconomicDataFrequency.weekly:
+        return TimeGranularity.week;
+      case EconomicDataFrequency.monthly:
+        return TimeGranularity.month;
+      case EconomicDataFrequency.daily:
+      default:
+        return TimeGranularity.day;
+    }
+  }
+
+  private resolveEffectiveGranularity(
+    requested: TimeGranularity | undefined,
+    defaultFrequency: EconomicDataFrequency | null | undefined
+  ): TimeGranularity | null {
+    const base = this.defaultFrequencyToTimeGranularity(defaultFrequency);
+    if (!requested) return base;
+    if (!base) return requested;
+    return this.coarsestTimeGranularity(requested, base);
+  }
+
   private mapItemToModel(item: {
     slug: string;
     displayName?: string | null;
@@ -60,6 +115,7 @@ export class EconomicDataResolver {
     const dataPoints = Array.isArray(points) ? points : points.data;
     return dataPoints.map((point) => ({
       timestamp: point.recordedAt,
+      effectiveGranularity: this.resolveEffectiveGranularity(granularity, point.item?.defaultFrequency),
       value: Number(point.value),
       unit: point.unit,
       sourceField: point.sourceField,
@@ -82,6 +138,7 @@ export class EconomicDataResolver {
 
     const mappedPoints = dataPoints.map((point) => ({
       timestamp: point.recordedAt,
+      effectiveGranularity: this.resolveEffectiveGranularity(granularity, point.item?.defaultFrequency),
       value: Number(point.value),
       unit: point.unit,
       sourceField: point.sourceField,
@@ -195,12 +252,14 @@ export class EconomicDataResolver {
         displayName: string;
         groupLabel: string | null;
         defaultUnit: string | null;
+        defaultFrequency: EconomicDataFrequency;
         metadata: unknown;
       };
     }>;
 
     const dataPoints = result.data.map((point) => ({
       timestamp: point.recordedAt,
+      effectiveGranularity: this.resolveEffectiveGranularity(granularity, point.item?.defaultFrequency),
       value: typeof point.value === "number" ? point.value : Number(point.value),
       unit: point.unit,
       sourceField: point.sourceField,

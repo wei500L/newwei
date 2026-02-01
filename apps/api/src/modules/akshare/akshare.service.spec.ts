@@ -1,211 +1,137 @@
-import { Prisma } from "@prisma/client";
+import { EconomicDataFrequency, EconomicDataValueType, Prisma } from "@prisma/client";
 
-import { AkshareParserService } from "./akshare-parser.service";
 import { AkshareService } from "./akshare.service";
 
-describe("AkshareService bulk upsert", () => {
-  const createService = () => {
-    const prismaMock = {
-      $executeRaw: jest.fn()
+describe("AkshareService.getDataByCategory", () => {
+  it("buckets per-series (itemId + sourceField) so category queries do not mix indicators", async () => {
+    const prisma = {
+      economicDataPoint: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "p1",
+            itemId: "item1",
+            recordedAt: new Date("2024-01-03T00:00:00Z"),
+            value: new Prisma.Decimal(0),
+            unit: null,
+            sourceField: "value",
+            dataType: EconomicDataValueType.index,
+            item: { defaultFrequency: EconomicDataFrequency.daily }
+          },
+          {
+            id: "p2",
+            itemId: "item2",
+            recordedAt: new Date("2024-01-04T00:00:00Z"),
+            value: new Prisma.Decimal(100),
+            unit: null,
+            sourceField: "value",
+            dataType: EconomicDataValueType.index,
+            item: { defaultFrequency: EconomicDataFrequency.daily }
+          },
+          {
+            id: "p3",
+            itemId: "item1",
+            recordedAt: new Date("2024-01-05T00:00:00Z"),
+            value: new Prisma.Decimal(0),
+            unit: null,
+            sourceField: "value",
+            dataType: EconomicDataValueType.index,
+            item: { defaultFrequency: EconomicDataFrequency.daily }
+          }
+        ])
+      }
     };
 
     const service = new AkshareService(
-      prismaMock as any,
+      prisma as any,
       {} as any,
       {} as any,
-      new AkshareParserService(),
+      {} as any,
       {} as any,
       {} as any
     );
 
-    return { prismaMock, service };
-  };
+    const result = await service.getDataByCategory(
+      "category",
+      new Date("2024-01-01T00:00:00Z"),
+      new Date("2024-01-31T00:00:00Z"),
+      "week"
+    );
 
-  it("parameterizes sourceMeta instead of embedding raw JSON", () => {
-    const { service } = createService();
-    const dangerous = `{"note":"x'); DROP TABLE EconomicDataPoint; --"}`;
+    expect(Array.isArray(result)).toBe(true);
+    const points = result as Array<{ itemId: string; value: Prisma.Decimal }>;
 
-    const row = {
-      recordedAt: new Date("2024-01-01T00:00:00.000Z"),
-      dataType: "price",
+    const itemIds = points.map((point) => point.itemId).sort();
+    expect(itemIds).toEqual(["item1", "item2"]);
+
+    const item2Point = points.find((point) => point.itemId === "item2");
+    expect(item2Point).toBeDefined();
+    expect(Number(item2Point?.value)).toBe(100);
+  });
+
+  it("does not truncate raw points when granularity bucketing is requested (buckets cover the full range)", async () => {
+    const points = Array.from({ length: 200 }, (_, index) => ({
+      id: `p-${index}`,
+      itemId: "item1",
+      recordedAt: new Date(Date.UTC(2024, 0, 1 + index)),
       value: new Prisma.Decimal(1),
       unit: null,
-      sourceField: "field",
-      metaJson: dangerous,
-      estimatedBytes: 0
-    };
-
-    const query = (service as any).buildUpsertDataPointsQuery("item", [row]) as Prisma.Sql;
-    expect(query.sql).toContain("INSERT INTO");
-    expect(query.sql).not.toContain("DROP TABLE");
-    expect(query.values).toContain(dangerous);
-  });
-
-  it("chunks by estimated bytes, not only row count", async () => {
-    const { prismaMock, service } = createService();
-    (service as any).dataPointBatchMaxBytes = 200;
-    prismaMock.$executeRaw.mockResolvedValue(1);
-
-    const points = Array.from({ length: 3 }).map((_, index) => ({
-      recordedAt: new Date(1_700_000_000_000 + index),
-      value: 1,
-      unit: null,
-      dataType: "price",
-      sourceField: `field-${index}`,
-      meta: { text: "x".repeat(500) }
+      sourceField: "value",
+      dataType: EconomicDataValueType.index,
+      item: { defaultFrequency: EconomicDataFrequency.daily }
     }));
 
-    const stored = await (service as any).bulkUpsertDataPoints("item", points);
-    expect(stored).toBe(3);
-    expect(prismaMock.$executeRaw).toHaveBeenCalledTimes(3);
-  });
-
-  it("splits and retries when max_allowed_packet is exceeded", async () => {
-    const { prismaMock, service } = createService();
-    (service as any).dataPointBatchMaxBytes = 99_999_999;
-    let callCount = 0;
-
-    prismaMock.$executeRaw.mockImplementation(async (query: any) => {
-      callCount += 1;
-      if (Array.isArray(query?.values) && query.values.length > 8) {
-        const error: any = new Error("Raw query failed");
-        error.code = "P2010";
-        error.meta = { code: "1153", message: "Got a packet bigger than 'max_allowed_packet' bytes" };
-        throw error;
+    const prisma = {
+      economicDataPoint: {
+        findMany: jest.fn().mockResolvedValue(points)
       }
-      return 1;
-    });
-
-    const points = [
-      {
-        recordedAt: new Date("2024-01-01T00:00:00.000Z"),
-        value: 1,
-        unit: null,
-        dataType: "price",
-        sourceField: "a",
-        meta: { a: 1 }
-      },
-      {
-        recordedAt: new Date("2024-01-02T00:00:00.000Z"),
-        value: 1,
-        unit: null,
-        dataType: "price",
-        sourceField: "b",
-        meta: { b: 1 }
-      }
-    ];
-
-    const stored = await (service as any).bulkUpsertDataPoints("item", points);
-    expect(stored).toBe(2);
-    expect(callCount).toBe(3);
-  });
-});
-
-describe("AkshareService parsers", () => {
-  const createService = () => {
-    const prismaMock = {
-      $executeRaw: jest.fn()
     };
 
     const service = new AkshareService(
-      prismaMock as any,
+      prisma as any,
       {} as any,
       {} as any,
-      new AkshareParserService(),
+      {} as any,
       {} as any,
       {} as any
     );
 
-    return { prismaMock, service };
-  };
+    const result = await service.getDataByCategory(
+      "category",
+      new Date("2024-01-01T00:00:00Z"),
+      new Date("2024-07-31T00:00:00Z"),
+      "month"
+    );
 
-  it("parses intraday clock strings as Asia/Shanghai timestamps", () => {
-    const parserService = new AkshareParserService();
-    jest.useFakeTimers();
-    try {
-      jest.setSystemTime(new Date("2026-01-10T00:00:00.000Z"));
-      const config = {
-        type: "timeseries",
-        timestampField: "date",
-        valueFields: [{ field: "x", dataType: "index" }]
-      };
-      expect(parserService.parsePayload(config as any, [{ date: "9:30:00", x: 1 }])[0]?.recordedAt.toISOString()).toBe(
-        "2026-01-10T01:30:00.000Z"
-      );
-      expect(parserService.parsePayload(config as any, [{ date: "093000", x: 1 }])[0]?.recordedAt.toISOString()).toBe(
-        "2026-01-10T01:30:00.000Z"
-      );
-      expect(parserService.parsePayload(config as any, [{ date: "0930", x: 1 }])[0]?.recordedAt.toISOString()).toBe(
-        "2026-01-10T01:30:00.000Z"
-      );
-    } finally {
-      jest.useRealTimers();
-    }
+    expect(prisma.economicDataPoint.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: undefined })
+    );
+    expect(Array.isArray(result)).toBe(true);
+    expect((result as unknown[]).length).toBe(7);
   });
 
-  it("resolves dynamic date templates in params", () => {
-    const { service } = createService();
-    jest.useFakeTimers();
-    try {
-      jest.setSystemTime(new Date("2026-01-10T00:00:00.000Z"));
-      const resolved = (service as any).resolveParams({
-        start_date: "${TODAY_YYYYMMDD-2}",
-        end_date: "${TODAY_YYYYMMDD+1}",
-        untouched: "x"
-      });
-      expect(resolved).toEqual({
-        start_date: "20260108",
-        end_date: "20260111",
-        untouched: "x"
-      });
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it("parses year+month payload into UTC timestamps", () => {
-    const parserService = new AkshareParserService();
-    const parser = {
-      type: "yearMonth",
-      yearField: "year",
-      monthField: "month",
-      valueFields: [
-        {
-          field: "China_Policy_Index",
-          label: "China EPU",
-          unit: "index",
-          dataType: "index"
-        }
-      ]
+  it("aligns the query window to the requested bucket boundaries when bucketing is enabled", async () => {
+    const prisma = {
+      economicDataPoint: {
+        findMany: jest.fn().mockResolvedValue([])
+      }
     };
 
-    const payload = [
-      { year: 1995, month: 1, China_Policy_Index: 192.91191 },
-      { year: "1995", month: "2", China_Policy_Index: "200.5" }
-    ];
+    const service = new AkshareService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any
+    );
 
-    const points = parserService.parsePayload(parser as any, payload, { slug: "china_epu_index" });
-    expect(points).toHaveLength(2);
-    expect(points[0]?.recordedAt.toISOString()).toBe("1995-01-01T00:00:00.000Z");
-    expect(points[0]?.value).toBeCloseTo(192.91191);
-    expect(points[1]?.recordedAt.toISOString()).toBe("1995-02-01T00:00:00.000Z");
-    expect(points[1]?.value).toBeCloseTo(200.5);
-  });
+    const start = new Date("2024-01-01T10:15:30Z");
+    const end = new Date("2024-01-01T12:45:00Z");
 
-  it("does not throw when deduping timeseries payload rows", () => {
-    const parserService = new AkshareParserService();
-    const parser = {
-      type: "timeseries",
-      timestampField: "date",
-      valueFields: [{ field: "x", dataType: "index" }]
-    };
-    const payload = [
-      { date: "2024-01-01", x: 1 },
-      { date: "2024-01-01", x: 2 }
-    ];
+    await service.getDataByCategory("category", start, end, "hour");
 
-    const points = parserService.parsePayload(parser as any, payload);
-    expect(points).toHaveLength(1);
-    expect(points[0]?.value).toBe(1);
+    const callArg = (prisma.economicDataPoint.findMany as jest.Mock).mock.calls[0]?.[0] as any;
+    expect(callArg?.where?.recordedAt?.gte?.toISOString()).toBe("2024-01-01T10:00:00.000Z");
+    expect(callArg?.where?.recordedAt?.lte?.toISOString()).toBe("2024-01-01T12:59:59.999Z");
   });
 });

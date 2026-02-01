@@ -1,5 +1,5 @@
 import { createLogger } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 
@@ -23,6 +23,10 @@ export interface OpenAiKeysSettingsPublic {
   hasKeys: boolean;
   keyFingerprints: string[];
   internalTokenConfigured: boolean;
+  appliedAt: string | null;
+  appliedSource: "db" | "env" | "none" | null;
+  appliedKeyFingerprints: string[];
+  restartRequired: boolean;
 }
 
 interface StoredOpenAiKeysSettings {
@@ -38,6 +42,23 @@ const SETTINGS_KEY = "openai_keys";
 const SETTINGS_DESCRIPTION = "OpenAI upstream API keys (used by LiteLLM proxy + moderation guardrails).";
 const CACHE_KEY = "openai_keys:settings";
 const CACHE_TTL_SECONDS = 30;
+const MAX_KEYS = 100;
+
+const APPLIED_STATUS_KEY = "litellm_openai_keys_applied";
+const APPLIED_STATUS_DESCRIPTION = "LiteLLM Proxy applied OpenAI key fingerprints (reported at startup).";
+const APPLIED_CACHE_KEY = "openai_keys:applied_status";
+const APPLIED_CACHE_TTL_SECONDS = 30;
+
+interface StoredOpenAiKeysAppliedStatus {
+  source?: unknown;
+  keyFingerprints?: unknown;
+  appliedAt?: unknown;
+}
+
+interface CachedOpenAiKeysAppliedStatus {
+  exists: boolean;
+  value?: StoredOpenAiKeysAppliedStatus;
+}
 
 interface StoredOpenAiKeyEntryV1 {
   fingerprint: string;
@@ -67,12 +88,28 @@ export class OpenAiKeysSettingsService {
     const stored = await this.loadStoredSettings();
     const keysCount = this.countStoredKeys(stored?.openaiApiKeys);
     const keyFingerprints = this.listKeyFingerprints(stored?.openaiApiKeys);
+    const appliedStatus = await this.loadAppliedStatus();
+    const appliedAt = typeof appliedStatus?.appliedAt === "string" ? appliedStatus.appliedAt : null;
+    const appliedKeyFingerprints = this.normalizeFingerprints(appliedStatus?.keyFingerprints);
+    const appliedSource = this.normalizeAppliedSource(appliedStatus?.source);
+
+    const restartRequired =
+      keysCount > 0
+        ? appliedSource !== "db" ||
+          keyFingerprints.length === 0 ||
+          appliedKeyFingerprints.length === 0 ||
+          !this.sameFingerprintSets(keyFingerprints, appliedKeyFingerprints)
+        : appliedSource === "db" && appliedKeyFingerprints.length > 0;
     return {
       source: stored ? "db" : "none",
       keysCount,
       hasKeys: keysCount > 0,
       keyFingerprints,
-      internalTokenConfigured: Boolean(this.env.liteLlmConfigInternalToken)
+      internalTokenConfigured: Boolean(this.env.liteLlmConfigInternalToken),
+      appliedAt,
+      appliedSource,
+      appliedKeyFingerprints,
+      restartRequired
     };
   }
 
@@ -92,6 +129,9 @@ export class OpenAiKeysSettingsService {
     input: { keys: string[] }
   ): Promise<OpenAiKeysSettingsPublic> {
     const normalized = this.normalizeKeys(input.keys);
+    if (normalized.length > MAX_KEYS) {
+      throw new BadRequestException(`Too many OpenAI API keys (max ${MAX_KEYS})`);
+    }
 
     const encoded: StoredOpenAiKeyEntryV1[] = [];
     for (const key of normalized) {
@@ -149,6 +189,9 @@ export class OpenAiKeysSettingsService {
     const stored = await this.loadStoredSettings();
     const existing = this.resolveKeys(stored?.openaiApiKeys);
     const merged = Array.from(new Set([...existing, ...this.normalizeKeys(input.keys)]));
+    if (merged.length > MAX_KEYS) {
+      throw new BadRequestException(`Too many OpenAI API keys (max ${MAX_KEYS})`);
+    }
     return this.updateSettings(orgId, actorId, { keys: merged });
   }
 
@@ -180,6 +223,36 @@ export class OpenAiKeysSettingsService {
     return this.getPublicSettings();
   }
 
+  async reportAppliedKeyFingerprints(input: { source: "db" | "env" | "none"; keyFingerprints: string[] }) {
+    const normalized = this.normalizeFingerprints(input.keyFingerprints);
+    await this.prisma.systemSetting.upsert({
+      where: { key: APPLIED_STATUS_KEY },
+      update: {
+        value: this.toPrismaJson({
+          source: input.source,
+          keyFingerprints: normalized,
+          appliedAt: new Date().toISOString()
+        } satisfies StoredOpenAiKeysAppliedStatus),
+        updatedById: null,
+        description: APPLIED_STATUS_DESCRIPTION,
+        isPublic: false
+      },
+      create: {
+        key: APPLIED_STATUS_KEY,
+        value: this.toPrismaJson({
+          source: input.source,
+          keyFingerprints: normalized,
+          appliedAt: new Date().toISOString()
+        } satisfies StoredOpenAiKeysAppliedStatus),
+        updatedById: null,
+        description: APPLIED_STATUS_DESCRIPTION,
+        isPublic: false
+      }
+    });
+
+    await this.invalidateAppliedCache();
+  }
+
   private normalizeKeys(raw: unknown): string[] {
     if (!Array.isArray(raw)) {
       return [];
@@ -195,6 +268,29 @@ export class OpenAiKeysSettingsService {
 
   private stripBearerPrefix(value: string) {
     return value.replace(/^bearer\s+/i, "").trim();
+  }
+
+  private normalizeFingerprints(raw: unknown): string[] {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const normalized = raw
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    return Array.from(new Set(normalized));
+  }
+
+  private sameFingerprintSets(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+    const set = new Set(a);
+    if (set.size !== a.length) {
+      // Should not happen, but treat as mismatch.
+      return false;
+    }
+    return b.every((fingerprint) => set.has(fingerprint));
   }
 
   private countStoredKeys(raw: unknown): number {
@@ -329,6 +425,44 @@ export class OpenAiKeysSettingsService {
     return createHash("sha256").update(trimmed).digest("hex");
   }
 
+  private async loadAppliedStatus(): Promise<StoredOpenAiKeysAppliedStatus | null> {
+    let cached: CachedOpenAiKeysAppliedStatus | null = null;
+    try {
+      cached = await this.cache.get<CachedOpenAiKeysAppliedStatus>(APPLIED_CACHE_KEY);
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to read OpenAI keys applied status cache");
+    }
+
+    if (cached) {
+      return cached.exists ? cached.value ?? null : null;
+    }
+
+    const record = await this.prisma.systemSetting.findUnique({
+      where: { key: APPLIED_STATUS_KEY }
+    });
+    const raw = record?.value as unknown;
+    const status = raw && typeof raw === "object" ? (raw as StoredOpenAiKeysAppliedStatus) : null;
+
+    try {
+      await this.cache.set(
+        APPLIED_CACHE_KEY,
+        { exists: Boolean(record), value: status ?? undefined } satisfies CachedOpenAiKeysAppliedStatus,
+        APPLIED_CACHE_TTL_SECONDS
+      );
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to write OpenAI keys applied status cache");
+    }
+
+    return status;
+  }
+
+  private normalizeAppliedSource(raw: unknown): "db" | "env" | "none" | null {
+    if (raw === "db" || raw === "env" || raw === "none") {
+      return raw;
+    }
+    return null;
+  }
+
   private async loadStoredSettings(): Promise<StoredOpenAiKeysSettings | null> {
     let cached: CachedOpenAiKeysSettings | null = null;
     try {
@@ -363,6 +497,14 @@ export class OpenAiKeysSettingsService {
       await this.cache.del(CACHE_KEY);
     } catch (error) {
       this.logger.warn({ err: error }, "Failed to invalidate OpenAI keys settings cache");
+    }
+  }
+
+  private async invalidateAppliedCache() {
+    try {
+      await this.cache.del(APPLIED_CACHE_KEY);
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to invalidate OpenAI keys applied status cache");
     }
   }
 

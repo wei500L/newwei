@@ -13,9 +13,10 @@ import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
   compareGranularity,
   formatGranularityLabel,
+  pickCoarsestGranularity,
   resolveDefaultGranularityForRangePreset,
-  resolveActiveGranularityFromTimestampsMs,
   timeGranularityToUiGranularity,
+  UiTimeGranularity,
   uiGranularityToInterval,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -69,17 +70,12 @@ export function DrilldownChart({
   const isError = Boolean(error);
   const points = data?.getEconomicData ?? [];
 
-  const timestampsMs = useMemo(
-    () =>
-      points
-        .map((point) => dayjs(point.timestamp).valueOf())
-        .filter((value) => Number.isFinite(value)),
-    [points],
-  );
-  const activeUiGranularity = useMemo(
-    () => resolveActiveGranularityFromTimestampsMs(selectedUiGranularity, timestampsMs),
-    [selectedUiGranularity, timestampsMs],
-  );
+  const activeUiGranularity = useMemo(() => {
+    const backend = pickCoarsestGranularity(
+      points.map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
+    );
+    return backend === UiTimeGranularity.Unknown ? selectedUiGranularity : backend;
+  }, [points, selectedUiGranularity]);
   const granularityCompare = compareGranularity(activeUiGranularity, defaultGranularity);
   const granularityColor =
     granularityCompare === "match"

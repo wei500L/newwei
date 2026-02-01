@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
@@ -365,6 +366,9 @@ export function FinancialCandlestick() {
     ? t("dashboard.charts.exporting", { defaultValue: "Exporting..." })
     : t("dashboard.charts.downloadCsv", { defaultValue: "Download CSV" });
 
+  const hasRenderableData = Boolean(data && data.points.length > 0);
+  const showStaleErrorBanner = Boolean(isError && hasRenderableData);
+
   if (sessionStatus === "loading") {
     return (
       <div className="h-[350px] flex items-center transition-all duration-300">
@@ -400,6 +404,15 @@ export function FinancialCandlestick() {
 
   return (
     <div className="relative h-[350px] transition-all duration-300">
+      {showStaleErrorBanner ? (
+        <div className="absolute left-2 right-2 top-2 z-20">
+          <RequestErrorBanner
+            error={error}
+            onRetry={() => void refetch()}
+            showCachedDataHint
+          />
+        </div>
+      ) : null}
       <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
         <Tag color="default" className="text-xs">
           Range: {range}

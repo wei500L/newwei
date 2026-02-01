@@ -1,13 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Drawer, List, Skeleton, Space, Tag, Typography } from "antd";
+import { Drawer, List, Skeleton, Space, Tag, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
@@ -603,7 +604,9 @@ export function SpacetimeGeoHeatmap({
   }, [articlesQuery.data?.updatedAt, locale]);
 
   const geoErrorMessage = getApiErrorMessage(geoQuery.error);
-  const heatErrorMessage = getApiErrorMessage(heatmapQuery.error);
+  const hasHeatmapData = Boolean(heatmapQuery.data);
+  const showHeatmapErrorBanner = Boolean(heatmapQuery.error);
+  const showGeoErrorBanner = Boolean(geoQuery.error && geoQuery.data);
 
   if (geoQuery.isLoading && !geoQuery.data) {
     return (
@@ -666,12 +669,19 @@ export function SpacetimeGeoHeatmap({
           </Typography.Text>
         </div>
 
-        {heatErrorMessage ? (
-          <Alert
-            type="error"
-            showIcon
-            message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-            description={heatErrorMessage}
+        {showGeoErrorBanner && geoQuery.error ? (
+          <RequestErrorBanner
+            error={geoQuery.error}
+            onRetry={() => void geoQuery.refetch()}
+            showCachedDataHint
+          />
+        ) : null}
+
+        {showHeatmapErrorBanner && heatmapQuery.error ? (
+          <RequestErrorBanner
+            error={heatmapQuery.error}
+            onRetry={() => void heatmapQuery.refetch()}
+            showCachedDataHint={hasHeatmapData}
           />
         ) : null}
 
@@ -720,61 +730,88 @@ export function SpacetimeGeoHeatmap({
 
         {articlesQuery.isLoading && !articlesQuery.data ? (
           <Skeleton active paragraph={{ rows: 8 }} />
-        ) : articlesQuery.error ? (
-          <Alert
-            type="error"
-            showIcon
-            message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-            description={getApiErrorMessage(articlesQuery.error) ?? "Request failed"}
-          />
-        ) : !articlesQuery.data || articlesQuery.data.articles.length === 0 ? (
-          <ChartEmptyState
-            title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
-            description={t("dashboard.charts.spacetimeGeoHeatmap.noArticles", { defaultValue: "No articles found for this point." })}
-          />
-        ) : (
-          <>
-            <List
-              dataSource={articlesQuery.data.articles}
-              renderItem={(article) => {
-                const url = safeHttpUrl(article.url);
-                const title = article.title?.trim() ?? "";
-                const ts = article.publishedAt ?? article.ingestedAt ?? article.processedAt ?? null;
-                return (
-                  <List.Item key={article.id}>
-                    <List.Item.Meta
-                      title={
-                        url ? (
-                          <a href={url} target="_blank" rel="noreferrer">
-                            {title || url}
-                          </a>
-                        ) : (
-                          <span>{title || t("common.emptyValue", { defaultValue: "N/A" })}</span>
-                        )
-                      }
-                      description={
-                        <Space size="small" wrap>
-                          {article.sourceLabel ? <Tag color="blue">{article.sourceLabel}</Tag> : null}
-                          {article.sentiment ? <Tag>{article.sentiment}</Tag> : null}
-                          {ts ? (
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {formatDateTime(ts, locale, { dateStyle: "medium", timeStyle: "short" })}
-                            </Typography.Text>
-                          ) : null}
-                        </Space>
-                      }
+        ) : (() => {
+            const payload = articlesQuery.data;
+            const articles = payload?.articles ?? [];
+            const hasArticles = articles.length > 0;
+
+            if (articlesQuery.error && !hasArticles) {
+              return (
+                <RequestErrorBanner
+                  error={articlesQuery.error}
+                  onRetry={() => void articlesQuery.refetch()}
+                  presentation="center"
+                />
+              );
+            }
+
+            if (!hasArticles) {
+              return (
+                <ChartEmptyState
+                  title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+                  description={t("dashboard.charts.spacetimeGeoHeatmap.noArticles", {
+                    defaultValue: "No articles found for this point."
+                  })}
+                />
+              );
+            }
+
+            return (
+              <>
+                {articlesQuery.error ? (
+                  <div className="mb-3">
+                    <RequestErrorBanner
+                      error={articlesQuery.error}
+                      onRetry={() => void articlesQuery.refetch()}
+                      showCachedDataHint
                     />
-                  </List.Item>
-                );
-              }}
-            />
-            {articlesQuery.data.hasMore ? (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t("dashboard.charts.spacetimeGeoHeatmap.moreHint", { defaultValue: "More articles available. Narrow the time range to inspect further." })}
-              </Typography.Text>
-            ) : null}
-          </>
-        )}
+                  </div>
+                ) : null}
+                <List
+                  dataSource={articles}
+                  renderItem={(article) => {
+                    const url = safeHttpUrl(article.url);
+                    const title = article.title?.trim() ?? "";
+                    const ts = article.publishedAt ?? article.ingestedAt ?? article.processedAt ?? null;
+                    return (
+                      <List.Item key={article.id}>
+                        <List.Item.Meta
+                          title={
+                            url ? (
+                              <a href={url} target="_blank" rel="noreferrer">
+                                {title || url}
+                              </a>
+                            ) : (
+                              <span>{title || t("common.emptyValue", { defaultValue: "N/A" })}</span>
+                            )
+                          }
+                          description={
+                            <Space size="small" wrap>
+                              {article.sourceLabel ? <Tag color="blue">{article.sourceLabel}</Tag> : null}
+                              {article.sentiment ? <Tag>{article.sentiment}</Tag> : null}
+                              {ts ? (
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  {formatDateTime(ts, locale, { dateStyle: "medium", timeStyle: "short" })}
+                                </Typography.Text>
+                              ) : null}
+                            </Space>
+                          }
+                        />
+                      </List.Item>
+                    );
+                  }}
+                />
+                {payload?.hasMore ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {t("dashboard.charts.spacetimeGeoHeatmap.moreHint", {
+                      defaultValue:
+                        "More articles available. Narrow the time range to inspect further."
+                    })}
+                  </Typography.Text>
+                ) : null}
+              </>
+            );
+          })()}
       </Drawer>
     </>
   );

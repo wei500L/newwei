@@ -9,13 +9,21 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { captureClientError } from "@/lib/client-telemetry";
 import { normalizeUnit } from "@/lib/economic-units";
 import { formatDateTime, resolveLocale, type SupportedLocale } from "@/lib/i18n";
+import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 
 type NewsIndicatorScopeType = "entity" | "topic";
 type NewsIndicatorFeatureMetric = "volume" | "avg_score" | "negative_ratio";
 type NewsIndicatorBacktestStatus = "pending" | "running" | "completed" | "failed";
+
+interface BacktestSummaryLabels {
+  hitRate: string;
+  avgSignedReturn: string;
+  triggers: string;
+}
 
 interface EconomicDataItem {
   slug: string;
@@ -221,7 +229,7 @@ function formatPercent(value: number | null): string | null {
   return `${Math.round(value * 100)}%`;
 }
 
-function getBacktestSummary(run: BacktestRun | null | undefined) {
+function getBacktestSummary(run: BacktestRun | null | undefined, labels: BacktestSummaryLabels) {
   if (!run?.metrics) {
     return null;
   }
@@ -231,15 +239,51 @@ function getBacktestSummary(run: BacktestRun | null | undefined) {
   const summary: string[] = [];
   const hitRateText = formatPercent(hitRate);
   if (hitRateText) {
-    summary.push(`hitRate=${hitRateText}`);
+    summary.push(`${labels.hitRate} ${hitRateText}`);
   }
   if (avgSignedReturn !== null) {
-    summary.push(`avg=${avgSignedReturn.toFixed(4)}`);
+    summary.push(`${labels.avgSignedReturn} ${avgSignedReturn.toFixed(4)}`);
   }
   if (triggers !== null) {
-    summary.push(`triggers=${Math.round(triggers)}`);
+    summary.push(`${labels.triggers} ${Math.round(triggers)}`);
   }
   return summary.length > 0 ? summary.join(" | ") : null;
+}
+
+function getScopeTypeLabel(t: (key: string, options?: Record<string, unknown>) => string, value: NewsIndicatorScopeType) {
+  if (value === "entity") {
+    return t("pages.newsIndicator.filters.scopeType.entity", { defaultValue: "Entity" });
+  }
+  return t("pages.newsIndicator.filters.scopeType.topic", { defaultValue: "Topic" });
+}
+
+function getFeatureMetricLabel(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  value: NewsIndicatorFeatureMetric
+) {
+  if (value === "volume") {
+    return t("pages.newsIndicator.filters.featureMetric.volume", { defaultValue: "Volume" });
+  }
+  if (value === "avg_score") {
+    return t("pages.newsIndicator.filters.featureMetric.avgScore", { defaultValue: "Avg score" });
+  }
+  return t("pages.newsIndicator.filters.featureMetric.negativeRatio", { defaultValue: "Negative ratio" });
+}
+
+function getBacktestStatusLabel(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  value: NewsIndicatorBacktestStatus
+) {
+  if (value === "pending") {
+    return t("pages.newsIndicator.status.pending", { defaultValue: "Pending" });
+  }
+  if (value === "running") {
+    return t("pages.newsIndicator.status.running", { defaultValue: "Running" });
+  }
+  if (value === "completed") {
+    return t("pages.newsIndicator.status.completed", { defaultValue: "Completed" });
+  }
+  return t("pages.newsIndicator.status.failed", { defaultValue: "Failed" });
 }
 
 export function NewsIndicatorAssociations() {
@@ -258,7 +302,12 @@ export function NewsIndicatorAssociations() {
   const [scopeKey, setScopeKey] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const { data: settingsData, loading: settingsLoading, error: settingsError } = useQuery<{
+  const {
+    data: settingsData,
+    loading: settingsLoading,
+    error: settingsError,
+    refetch: refetchSettings
+  } = useQuery<{
     newsIndicatorSettings: NewsIndicatorSettings;
   }>(NEWS_INDICATOR_SETTINGS_QUERY, { fetchPolicy: "cache-and-network" });
 
@@ -287,8 +336,23 @@ export function NewsIndicatorAssociations() {
   });
 
   const associations = assocData?.newsIndicatorAssociations ?? [];
+  const assocErrorState = assocError
+    ? buildRequestErrorEmptyState({ t, error: assocError, onRetry: () => refetchAssociations() })
+    : null;
+  const hasActiveFilters = Boolean(indicatorSlug || scopeType || featureMetric || scopeKey.trim());
+  const clearFilters = () => {
+    setIndicatorSlug(undefined);
+    setScopeType(undefined);
+    setFeatureMetric(undefined);
+    setScopeKey("");
+  };
 
-  const { data: detailData, loading: detailLoading, error: detailError } = useQuery<{
+  const {
+    data: detailData,
+    loading: detailLoading,
+    error: detailError,
+    refetch: refetchDetail
+  } = useQuery<{
     newsIndicatorAssociation: AssociationDetails | null;
   }>(NEWS_INDICATOR_ASSOCIATION_QUERY, {
     variables: { id: selectedId ?? "", backtestsLimit: 25 },
@@ -300,6 +364,15 @@ export function NewsIndicatorAssociations() {
 
   const [refreshMutation, { loading: refreshing }] = useMutation<{ refreshNewsIndicatorAssociations: boolean }>(
     REFRESH_NEWS_INDICATOR_ASSOCIATIONS_MUTATION
+  );
+
+  const backtestSummaryLabels = useMemo(
+    () => ({
+      hitRate: t("pages.newsIndicator.backtestSummary.hitRate", { defaultValue: "Hit rate" }),
+      avgSignedReturn: t("pages.newsIndicator.backtestSummary.avgSignedReturn", { defaultValue: "Avg" }),
+      triggers: t("pages.newsIndicator.backtestSummary.triggers", { defaultValue: "Triggers" })
+    }),
+    [t]
   );
 
   const handleRefresh = async () => {
@@ -326,7 +399,7 @@ export function NewsIndicatorAssociations() {
         key: "scope",
         render: (_value: unknown, record) => (
           <Space wrap size={[6, 6]}>
-            <Tag color={record.scopeType === "entity" ? "purple" : "blue"}>{record.scopeType}</Tag>
+            <Tag color={record.scopeType === "entity" ? "purple" : "blue"}>{getScopeTypeLabel(t, record.scopeType)}</Tag>
             {record.scopeKeyType ? <Tag>{record.scopeKeyType}</Tag> : null}
             <Typography.Text>{record.scopeKey}</Typography.Text>
           </Space>
@@ -336,7 +409,8 @@ export function NewsIndicatorAssociations() {
         title: t("pages.newsIndicator.columns.feature", { defaultValue: "Feature" }),
         dataIndex: "featureMetric",
         key: "featureMetric",
-        render: (value: unknown) => <Tag>{String(value)}</Tag>
+        render: (value: unknown) =>
+          typeof value === "string" ? <Tag>{getFeatureMetricLabel(t, value as NewsIndicatorFeatureMetric)}</Tag> : <Tag>-</Tag>
       },
       {
         title: t("pages.newsIndicator.columns.indicator", { defaultValue: "Indicator" }),
@@ -393,14 +467,14 @@ export function NewsIndicatorAssociations() {
         key: "latestBacktest",
         render: (_value: unknown, record) => {
           const run = record.latestBacktest;
-          const summary = getBacktestSummary(run);
+          const summary = getBacktestSummary(run, backtestSummaryLabels);
           if (!run) {
             return <Typography.Text type="secondary">-</Typography.Text>;
           }
           return (
             <Space direction="vertical" size={0}>
               <Tag color={run.status === "completed" ? "green" : run.status === "failed" ? "red" : "default"}>
-                {run.status}
+                {getBacktestStatusLabel(t, run.status)}
               </Tag>
               {summary ? (
                 <Tooltip title={summary}>
@@ -434,7 +508,7 @@ export function NewsIndicatorAssociations() {
         )
       }
     ],
-    [locale, t]
+    [backtestSummaryLabels, locale, t]
   );
 
   const scopeTypeOptions = useMemo(
@@ -460,11 +534,21 @@ export function NewsIndicatorAssociations() {
   }
 
   if (settingsError) {
+    const emptyState = buildRequestErrorEmptyState({
+      t,
+      error: settingsError,
+      onRetry: () => refetchSettings()
+    });
     return (
-      <AlertBox
-        title={t("pages.newsIndicator.settingsLoadFailed", { defaultValue: "Failed to load settings." })}
-        description={settingsError.message}
-      />
+      <div className="h-[420px]">
+        <ChartEmptyState
+          variant={emptyState.variant}
+          title={emptyState.title}
+          description={emptyState.description}
+          actionLabel={emptyState.actionLabel}
+          onAction={emptyState.onAction}
+        />
+      </div>
     );
   }
 
@@ -498,11 +582,16 @@ export function NewsIndicatorAssociations() {
       </div>
 
       {!ingestionEnabled ? (
-        <AlertBox
+        <ChartEmptyState
+          className="mb-3"
+          presentation="banner"
+          variant="offline"
           title={t("pages.newsIndicator.ingestionOffTitle", { defaultValue: "Ingestion disabled" })}
           description={t("pages.newsIndicator.ingestionOffDescription", {
             defaultValue: "Scheduled refresh is disabled. You can still click Recompute to run once."
           })}
+          actionLabel={t("pages.newsIndicator.ingestionOffCta", { defaultValue: "Open system settings" })}
+          onAction={() => router.push("/admin/system?tab=newsIndicator")}
         />
       ) : null}
 
@@ -570,40 +659,83 @@ export function NewsIndicatorAssociations() {
             </Space>
           </div>
 
-          {assocError ? (
-            <AlertBox
-              title={t("pages.newsIndicator.loadFailed", { defaultValue: "Failed to load associations." })}
-              description={assocError.message}
+          {assocError && associations.length > 0 ? (
+            <RequestErrorBanner
+              className="mb-3"
+              error={assocError}
+              onRetry={() => void refetchAssociations()}
+              showCachedDataHint
             />
           ) : null}
 
-          {assocLoading && associations.length === 0 ? (
+          {assocErrorState && associations.length === 0 ? (
+            <div className="h-[260px]">
+              <ChartEmptyState
+                className="h-full"
+                variant={assocErrorState.variant}
+                title={assocErrorState.title}
+                description={assocErrorState.description}
+                actionLabel={assocErrorState.actionLabel}
+                onAction={assocErrorState.onAction}
+              />
+            </div>
+          ) : assocLoading && associations.length === 0 ? (
             <Skeleton active paragraph={{ rows: 8 }} />
           ) : associations.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            <ChartEmptyState
+              className="h-[260px]"
+              title={
+                hasIndicatorSlugs
+                  ? t("pages.newsIndicator.empty", { defaultValue: "No associations yet." })
+                  : t("pages.newsIndicator.emptyNoIndicators", {
+                      defaultValue: "No indicator slugs configured yet."
+                    })
+              }
               description={
-                <Space direction="vertical" size={0}>
-                  <Typography.Text>
-                    {hasIndicatorSlugs
-                      ? t("pages.newsIndicator.empty", { defaultValue: "No associations yet." })
-                      : t("pages.newsIndicator.emptyNoIndicators", { defaultValue: "No indicator slugs configured yet." })}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
+                <div className="flex flex-col items-center gap-1">
+                  <span>
                     {t("pages.newsIndicator.dataRequirements", {
                       defaultValue:
                         "Needs ≥ {{minSampleSize}} days of processed news (topics/entities/sentiment) and matching indicator data points (windowDays={{windowDays}}).",
                       minSampleSize,
                       windowDays
                     })}
-                  </Typography.Text>
+                  </span>
+                  {hasActiveFilters ? (
+                    <span className="font-mono text-[10px] opacity-80">
+                      {t("pages.newsIndicator.filters.activeHint", {
+                        defaultValue: "Filters are active; try clearing them to broaden results."
+                      })}
+                    </span>
+                  ) : null}
+                </div>
+              }
+              action={
+                <Space size="small" wrap>
+                  {hasIndicatorSlugs && canRefresh ? (
+                    <Button type="primary" onClick={handleRefresh} loading={refreshing}>
+                      {t("pages.newsIndicator.actions.refresh", { defaultValue: "Recompute" })}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type={hasIndicatorSlugs && canRefresh ? "default" : "primary"}
+                    onClick={() => router.push("/admin/system?tab=newsIndicator")}
+                  >
+                    {t("pages.newsIndicator.emptyCta", { defaultValue: "Open system settings" })}
+                  </Button>
+                  {hasActiveFilters ? (
+                    <Button
+                      onClick={() => {
+                        clearFilters();
+                        void refetchAssociations();
+                      }}
+                    >
+                      {t("pages.newsIndicator.filters.clear", { defaultValue: "Clear filters" })}
+                    </Button>
+                  ) : null}
                 </Space>
               }
-            >
-              <Button type="primary" onClick={() => router.push("/admin/system?tab=newsIndicator")}>
-                {t("pages.newsIndicator.emptyCta", { defaultValue: "Open system settings" })}
-              </Button>
-            </Empty>
+            />
           ) : (
             <Table
               rowKey={(row) => row.id}
@@ -626,9 +758,11 @@ export function NewsIndicatorAssociations() {
         {detailLoading && !detail ? <Skeleton active paragraph={{ rows: 10 }} /> : null}
 
         {detailError ? (
-          <AlertBox
-            title={t("pages.newsIndicator.drawer.loadFailed", { defaultValue: "Failed to load association." })}
-            description={detailError.message}
+          <RequestErrorBanner
+            className="mb-3"
+            error={detailError}
+            onRetry={() => void refetchDetail()}
+            showCachedDataHint={Boolean(detail)}
           />
         ) : null}
 
@@ -640,34 +774,34 @@ export function NewsIndicatorAssociations() {
   );
 }
 
-function AlertBox({ title, description }: { title: string; description: string }) {
-  return (
-    <Card size="small" className="content-card" style={{ borderColor: "var(--border)" }}>
-      <Typography.Text type="danger">{title}</Typography.Text>
-      <div style={{ marginTop: 8 }}>
-        <Typography.Text type="secondary">{description}</Typography.Text>
-      </div>
-    </Card>
-  );
-}
-
 function AssociationDetailsView({ association, locale }: { association: AssociationDetails; locale: SupportedLocale }) {
   const { t } = useTranslation();
 
   const indicator = association.indicator;
-  const signLabel = association.correlation > 0 ? t("common.increase", { defaultValue: "increase" }) : t("common.decrease", { defaultValue: "decrease" });
+  const signLabel =
+    association.correlation > 0
+      ? t("pages.newsIndicator.correlationSign.positive", { defaultValue: "positive" })
+      : t("pages.newsIndicator.correlationSign.negative", { defaultValue: "negative" });
   const backtests = association.backtests ?? [];
+  const backtestSummaryLabels = useMemo(
+    () => ({
+      hitRate: t("pages.newsIndicator.backtestSummary.hitRate", { defaultValue: "Hit rate" }),
+      avgSignedReturn: t("pages.newsIndicator.backtestSummary.avgSignedReturn", { defaultValue: "Avg" }),
+      triggers: t("pages.newsIndicator.backtestSummary.triggers", { defaultValue: "Triggers" })
+    }),
+    [t]
+  );
 
   return (
     <div className="flex flex-col gap-3">
       <Space direction="vertical" size={6}>
         <Space wrap size={[6, 6]}>
-          <Tag color={association.scopeType === "entity" ? "purple" : "blue"}>{association.scopeType}</Tag>
+          <Tag color={association.scopeType === "entity" ? "purple" : "blue"}>{getScopeTypeLabel(t, association.scopeType)}</Tag>
           <Typography.Text strong>{association.scopeKey}</Typography.Text>
           {association.scopeKeyType ? <Tag>{association.scopeKeyType}</Tag> : null}
         </Space>
         <Space wrap size={[6, 6]}>
-          <Tag>{association.featureMetric}</Tag>
+          <Tag>{getFeatureMetricLabel(t, association.featureMetric)}</Tag>
           <Tag color="geekblue">{indicator.slug}</Tag>
           {indicator.defaultUnit ? (
             <Tag>{normalizeUnit(indicator.defaultUnit) ?? indicator.defaultUnit}</Tag>
@@ -713,14 +847,14 @@ function AssociationDetailsView({ association, locale }: { association: Associat
           <List
             dataSource={backtests}
             renderItem={(run) => {
-              const summary = getBacktestSummary(run);
+              const summary = getBacktestSummary(run, backtestSummaryLabels);
               return (
                 <List.Item key={run.id}>
                   <List.Item.Meta
                     title={
                       <Space wrap size={[6, 6]}>
                         <Tag color={run.status === "completed" ? "green" : run.status === "failed" ? "red" : "default"}>
-                          {run.status}
+                          {getBacktestStatusLabel(t, run.status)}
                         </Tag>
                         <Typography.Text type="secondary">
                           {formatDateTime(run.windowStart, locale, { dateStyle: "medium" })} -{" "}

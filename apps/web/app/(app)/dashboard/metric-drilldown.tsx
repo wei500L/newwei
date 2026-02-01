@@ -19,7 +19,7 @@ import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
   compareGranularity,
   formatGranularityLabel,
-  inferGranularityFromTimestampsMs,
+  pickCoarsestGranularity,
   resolveDefaultGranularityForRangePreset,
   timeGranularityToUiGranularity,
   UiTimeGranularity,
@@ -181,12 +181,11 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
 
   const activeUiGranularity = useMemo(() => {
     const requestedUiGranularity = timeGranularityToUiGranularity(requestedGranularity);
-    const timestampsMs = historyData
-      .map((point) => dayjs(point.timestamp).valueOf())
-      .filter((value) => Number.isFinite(value));
-    const inferred = inferGranularityFromTimestampsMs(timestampsMs);
-    return inferred === UiTimeGranularity.Unknown ? requestedUiGranularity : inferred;
-  }, [historyData, requestedGranularity]);
+    const backendGranularity = pickCoarsestGranularity(
+      (data?.history ?? []).map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
+    );
+    return backendGranularity === UiTimeGranularity.Unknown ? requestedUiGranularity : backendGranularity;
+  }, [data?.history, requestedGranularity]);
 
   const activeInterval = useMemo(() => uiGranularityToInterval(activeUiGranularity), [activeUiGranularity]);
   const activeGranularityLabel = formatGranularityLabel(activeUiGranularity);

@@ -1029,9 +1029,60 @@ export class AkshareService implements OnModuleInit {
     throw lastError;
   }
 
+  private granularityRank(granularity: string): number {
+    switch (granularity) {
+      case "realtime":
+        return 0;
+      case "minute":
+        return 1;
+      case "hour":
+        return 2;
+      case "day":
+        return 3;
+      case "week":
+        return 4;
+      case "month":
+        return 5;
+      case "quarter":
+        return 6;
+      case "year":
+        return 7;
+      default:
+        return 99;
+    }
+  }
+
+  private defaultFrequencyToGranularity(frequency: EconomicDataFrequency | null | undefined): string {
+    switch (frequency) {
+      case EconomicDataFrequency.realtime:
+        return "realtime";
+      case EconomicDataFrequency.hourly:
+        return "hour";
+      case EconomicDataFrequency.weekly:
+        return "week";
+      case EconomicDataFrequency.monthly:
+        return "month";
+      case EconomicDataFrequency.daily:
+      default:
+        return "day";
+    }
+  }
+
+  private coarsestGranularity(a: string, b: string): string {
+    return this.granularityRank(a) >= this.granularityRank(b) ? a : b;
+  }
+
   private bucketTimestamp(date: Date, granularity: string) {
     const d = new Date(date);
     switch (granularity) {
+      case "realtime":
+        break;
+      case "minute":
+        d.setUTCSeconds(0, 0);
+        break;
+      case "hour":
+        d.setUTCMinutes(0, 0, 0);
+        break;
       case "year":
         d.setUTCMonth(0, 1);
         d.setUTCHours(0, 0, 0, 0);
@@ -1084,16 +1135,45 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private alignRangeToUtc(start: Date, end: Date) {
-    const normalizedStart = new Date(start);
-    normalizedStart.setUTCHours(0, 0, 0, 0);
-    const normalizedEnd = new Date(end);
-    normalizedEnd.setUTCHours(23, 59, 59, 999);
+  private addGranularityInterval(start: Date, granularity: string): Date {
+    const base = new Date(start);
+    switch (granularity) {
+      case "minute":
+        return new Date(base.getTime() + 60_000);
+      case "hour":
+        return new Date(base.getTime() + 60 * 60_000);
+      case "day":
+        return new Date(base.getTime() + 24 * 60 * 60_000);
+      case "week":
+        return new Date(base.getTime() + 7 * 24 * 60 * 60_000);
+      case "month":
+        base.setUTCMonth(base.getUTCMonth() + 1);
+        return base;
+      case "quarter":
+        base.setUTCMonth(base.getUTCMonth() + 3);
+        return base;
+      case "year":
+        base.setUTCFullYear(base.getUTCFullYear() + 1);
+        return base;
+      default:
+        return base;
+    }
+  }
+
+  private alignRangeToGranularityUtc(start: Date, end: Date, granularity: string) {
+    if (granularity === "realtime") {
+      return { start, end };
+    }
+
+    const normalizedStart = new Date(this.bucketTimestamp(start, granularity));
+    const normalizedEndBucketStart = new Date(this.bucketTimestamp(end, granularity));
+    const nextBucketStart = this.addGranularityInterval(normalizedEndBucketStart, granularity);
+    const normalizedEnd = new Date(nextBucketStart.getTime() - 1);
     return { start: normalizedStart, end: normalizedEnd };
   }
 
   async getDataByCategory(categoryKey: string, start: Date, end: Date, granularity?: string, pagination?: PaginationInput) {
-    const range = granularity ? this.alignRangeToUtc(start, end) : { start, end };
+    const range = granularity ? this.alignRangeToGranularityUtc(start, end, granularity) : { start, end };
     const limit = Math.min(pagination?.limit ?? DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT);
 
     // Build where clause with optional cursor
@@ -1114,7 +1194,9 @@ export class AkshareService implements OnModuleInit {
     };
 
     // Apply cursor-based pagination if cursor provided
-    if (pagination?.cursor) {
+    // Note: when granularity bucketing is requested we fetch the full window so the
+    // aggregated buckets represent the entire range; cursor pagination is therefore ignored.
+    if (pagination?.cursor && !granularity) {
       const decoded = this.decodeCursor(pagination.cursor);
       if (decoded) {
         whereClause.AND = [
@@ -1140,8 +1222,60 @@ export class AkshareService implements OnModuleInit {
         { recordedAt: "asc" },
         { id: "asc" }
       ],
-      take: limit + 1 // Fetch one extra to determine hasMore
+      take: granularity ? undefined : limit + 1 // Fetch one extra to determine hasMore
     });
+
+    if (granularity) {
+      // Apply bucketing for granularity.
+      // Important: bucket per-series (itemId + sourceField) to avoid mixing different indicators
+      // that share the same category.
+      const bucketed = new Map<
+        string,
+        { timestamp: Date; valueSum: number; count: number; sample: typeof points[number] }
+      >();
+      for (const point of points) {
+        const effectiveGranularity = this.coarsestGranularity(
+          granularity,
+          this.defaultFrequencyToGranularity(point.item?.defaultFrequency)
+        );
+        const bucketKey = this.bucketTimestamp(point.recordedAt, effectiveGranularity);
+        const seriesKey = `${point.itemId}::${point.sourceField ?? ""}::${bucketKey}`;
+        const existing = bucketed.get(seriesKey);
+        if (existing) {
+          existing.valueSum += Number(point.value);
+          existing.count += 1;
+        } else {
+          bucketed.set(seriesKey, {
+            timestamp: new Date(bucketKey),
+            valueSum: Number(point.value),
+            count: 1,
+            sample: point
+          });
+        }
+      }
+      const bucketedResults = Array.from(bucketed.values())
+        .map((entry) => {
+          const aggregated = entry.sample;
+          return {
+            ...aggregated,
+            recordedAt: entry.timestamp,
+            value: new Prisma.Decimal(entry.valueSum / entry.count)
+          };
+        })
+        .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
+
+      if (pagination) {
+        return {
+          data: bucketedResults,
+          pagination: {
+            hasMore: false,
+            totalCount: bucketedResults.length
+          }
+        } as PaginatedResult<typeof bucketedResults[number]>;
+      }
+
+      return bucketedResults;
+    }
 
     // Determine if there are more results
     const hasMore = points.length > limit;
@@ -1156,46 +1290,11 @@ export class AkshareService implements OnModuleInit {
         : undefined
     };
 
-    if (!granularity) {
-      // Return paginated result if pagination was requested, otherwise return legacy format
-      if (pagination) {
-        return { data: resultPoints, pagination: paginationMeta } as PaginatedResult<typeof resultPoints[number]>;
-      }
-      return resultPoints;
-    }
-
-    // Apply bucketing for granularity (pagination not supported with granularity)
-    const bucketed = new Map<string, { timestamp: Date; valueSum: number; count: number; sample: typeof points[number] }>();
-    for (const point of resultPoints) {
-      const bucketKey = this.bucketTimestamp(point.recordedAt, granularity);
-      const existing = bucketed.get(bucketKey);
-      if (existing) {
-        existing.valueSum += Number(point.value);
-        existing.count += 1;
-      } else {
-        bucketed.set(bucketKey, {
-          timestamp: new Date(bucketKey),
-          valueSum: Number(point.value),
-          count: 1,
-          sample: point
-        });
-      }
-    }
-    const bucketedResults = Array.from(bucketed.values())
-      .map((entry) => {
-        const aggregated = entry.sample;
-        return {
-          ...aggregated,
-          recordedAt: entry.timestamp,
-          value: new Prisma.Decimal(entry.valueSum / entry.count)
-        };
-      })
-      .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
-
+    // Return paginated result if pagination was requested, otherwise return legacy format
     if (pagination) {
-      return { data: bucketedResults, pagination: paginationMeta } as PaginatedResult<typeof bucketedResults[number]>;
+      return { data: resultPoints, pagination: paginationMeta } as PaginatedResult<typeof resultPoints[number]>;
     }
-    return bucketedResults;
+    return resultPoints;
   }
 
   async listFetchConfigs() {

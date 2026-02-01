@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Divider, Form, Input, Modal, Space, Spin, Switch, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Divider, Form, Input, Modal, Select, Space, Spin, Switch, Table, Tag, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -25,6 +25,38 @@ interface OpenAiKeysSettingsResponse {
   hasKeys: boolean;
   keyFingerprints: string[];
   internalTokenConfigured: boolean;
+  appliedAt: string | null;
+  appliedSource: "db" | "env" | "none" | null;
+  appliedKeyFingerprints: string[];
+  restartRequired: boolean;
+}
+
+interface AssistantSafetyDiagnosticsResponse {
+  checkedAt: string;
+  litellm: {
+    apiBase: string;
+    liveliness: { ok: boolean; status: number | null; error: string | null };
+    models: { ok: boolean; status: number | null; count: number | null; error: string | null };
+    guardrails: {
+      ok: boolean;
+      status: number | null;
+      count: number | null;
+      expected: string[];
+      missing: string[];
+      error: string | null;
+    };
+  };
+  assistantSafety: AssistantSafetySettingsResponse;
+  openaiKeys: OpenAiKeysSettingsResponse;
+}
+
+interface AssistantSafetyMetricsRow {
+  date: string;
+  totalRuns: number;
+  blockedRuns: number;
+  blockedRate: number;
+  guardrails: { name: string; count: number }[];
+  codes: { code: string; count: number }[];
 }
 
 interface AssistantSafetySettingsFormValues {
@@ -48,7 +80,11 @@ const EMPTY_OPENAI_KEYS: OpenAiKeysSettingsResponse = {
   keysCount: 0,
   hasKeys: false,
   keyFingerprints: [],
-  internalTokenConfigured: false
+  internalTokenConfigured: false,
+  appliedAt: null,
+  appliedSource: null,
+  appliedKeyFingerprints: [],
+  restartRequired: false
 };
 
 const parseKeyLines = (value: string): string[] =>
@@ -60,6 +96,9 @@ const parseKeyLines = (value: string): string[] =>
         .filter((entry) => entry.length > 0)
     )
   );
+
+const MAX_OPENAI_KEYS = 100;
+const OPENAI_MODERATION_FREE_CALLS_PER_DAY = 5000;
 
 export function AssistantSafetySettingsPanel() {
   const { t } = useTranslation();
@@ -77,6 +116,11 @@ export function AssistantSafetySettingsPanel() {
   const [removingKey, setRemovingKey] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [keysErrorMessage, setKeysErrorMessage] = useState<string | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<AssistantSafetyDiagnosticsResponse | null>(null);
+  const [metricsDays, setMetricsDays] = useState<number>(14);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsRows, setMetricsRows] = useState<AssistantSafetyMetricsRow[]>([]);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -112,6 +156,47 @@ export function AssistantSafetySettingsPanel() {
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  const loadMetrics = useCallback(async () => {
+    setMetricsLoading(true);
+    try {
+      const response = await apiClient.get<AssistantSafetyMetricsRow[]>("system-settings/assistant-safety/metrics", {
+        params: { days: metricsDays }
+      });
+      setMetricsRows(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      captureClientError("Failed to load assistant safety metrics", error);
+      messageApi.error(
+        extractApiError(error).message ??
+          t("settings.assistantSafety.metrics.errors.loadFailed", { defaultValue: "Failed to load metrics." })
+      );
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, [apiClient, messageApi, metricsDays, t]);
+
+  useEffect(() => {
+    void loadMetrics();
+  }, [loadMetrics]);
+
+  const runDiagnostics = async () => {
+    setDiagnosticsLoading(true);
+    try {
+      const response = await apiClient.get<AssistantSafetyDiagnosticsResponse>("system-settings/assistant-safety/diagnostics");
+      setDiagnostics(response.data ?? null);
+      messageApi.success(
+        t("settings.assistantSafety.diagnostics.messages.done", { defaultValue: "Diagnostics completed." })
+      );
+    } catch (error) {
+      captureClientError("Failed to run assistant safety diagnostics", error);
+      messageApi.error(
+        extractApiError(error).message ??
+          t("settings.assistantSafety.diagnostics.errors.failed", { defaultValue: "Diagnostics failed." })
+      );
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
 
   const handleSave = async (values: AssistantSafetySettingsFormValues) => {
     setSaving(true);
@@ -194,6 +279,28 @@ export function AssistantSafetySettingsPanel() {
 
   const openaiKeysInputValue = Form.useWatch("openaiKeys", openaiForm) ?? "";
   const pendingKeys = useMemo(() => parseKeyLines(openaiKeysInputValue), [openaiKeysInputValue]);
+  const remainingKeySlots = Math.max(0, MAX_OPENAI_KEYS - (openaiKeys.keysCount ?? 0));
+  const willExceedLimit = openaiKeys.keysCount + pendingKeys.length > MAX_OPENAI_KEYS;
+  const callsPerRun = settings.enabled ? (settings.outputModerationEnabled ? 2 : 1) : 0;
+  const estimatedDailyQuota =
+    openaiKeys.keysCount > 0 ? openaiKeys.keysCount * OPENAI_MODERATION_FREE_CALLS_PER_DAY : 0;
+  const lbBuckets = useMemo(() => {
+    const fingerprints = openaiKeys.keyFingerprints ?? [];
+    if (fingerprints.length <= 1) {
+      return [];
+    }
+    return fingerprints.map((fingerprint, index) => {
+      const bucket = index + 1;
+      const pre = bucket === 1 ? "openai-moderation-pre" : `openai-moderation-pre-${bucket}`;
+      const post = bucket === 1 ? "openai-moderation-post" : `openai-moderation-post-${bucket}`;
+      return {
+        bucket,
+        fingerprint,
+        guardrailPre: pre,
+        guardrailPost: settings.outputModerationEnabled ? post : "-"
+      };
+    });
+  }, [openaiKeys.keyFingerprints, settings.outputModerationEnabled]);
 
   const handleAppendOpenAiKeys = async () => {
     const keys = pendingKeys;
@@ -201,6 +308,15 @@ export function AssistantSafetySettingsPanel() {
       messageApi.warning(
         t("settings.assistantSafety.openaiKeys.messages.emptyInput", {
           defaultValue: "Please paste at least one key."
+        })
+      );
+      return;
+    }
+    if (willExceedLimit) {
+      messageApi.warning(
+        t("settings.assistantSafety.openaiKeys.messages.tooManyKeys", {
+          defaultValue: "Too many keys. Max {{max}}.",
+          max: MAX_OPENAI_KEYS
         })
       );
       return;
@@ -231,6 +347,15 @@ export function AssistantSafetySettingsPanel() {
       messageApi.warning(
         t("settings.assistantSafety.openaiKeys.messages.emptyInput", {
           defaultValue: "Please paste at least one key."
+        })
+      );
+      return;
+    }
+    if (keys.length > MAX_OPENAI_KEYS) {
+      messageApi.warning(
+        t("settings.assistantSafety.openaiKeys.messages.tooManyKeys", {
+          defaultValue: "Too many keys. Max {{max}}.",
+          max: MAX_OPENAI_KEYS
         })
       );
       return;
@@ -403,6 +528,234 @@ export function AssistantSafetySettingsPanel() {
             })}
           </Typography.Paragraph>
 
+          <Space wrap>
+            <Button onClick={() => void runDiagnostics()} loading={diagnosticsLoading}>
+              {t("settings.assistantSafety.diagnostics.actions.run", { defaultValue: "Run diagnostics" })}
+            </Button>
+            {diagnostics?.checkedAt ? (
+              <Typography.Text type="secondary">
+                {t("settings.assistantSafety.diagnostics.lastChecked", {
+                  defaultValue: "Last checked: {{time}}",
+                  time: new Date(diagnostics.checkedAt).toLocaleString()
+                })}
+              </Typography.Text>
+            ) : null}
+          </Space>
+
+          {diagnostics ? (
+            <Descriptions size="small" column={1} bordered>
+              <Descriptions.Item
+                label={t("settings.assistantSafety.diagnostics.fields.litellmBase", { defaultValue: "LiteLLM base" })}
+              >
+                {diagnostics.litellm.apiBase}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("settings.assistantSafety.diagnostics.fields.litellmLiveliness", { defaultValue: "Liveliness" })}
+              >
+                {diagnostics.litellm.liveliness.ok ? (
+                  <Tag color="green">{t("common.ok", { defaultValue: "OK" })}</Tag>
+                ) : (
+                  <Tag color="red">{t("common.failed", { defaultValue: "Failed" })}</Tag>
+                )}
+                {diagnostics.litellm.liveliness.status ? ` (HTTP ${diagnostics.litellm.liveliness.status})` : ""}
+                {diagnostics.litellm.liveliness.error ? `: ${diagnostics.litellm.liveliness.error}` : ""}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("settings.assistantSafety.diagnostics.fields.litellmModels", { defaultValue: "Models endpoint" })}
+              >
+                {diagnostics.litellm.models.ok ? (
+                  <Tag color="green">{t("common.ok", { defaultValue: "OK" })}</Tag>
+                ) : (
+                  <Tag color="red">{t("common.failed", { defaultValue: "Failed" })}</Tag>
+                )}
+                {diagnostics.litellm.models.status ? ` (HTTP ${diagnostics.litellm.models.status})` : ""}
+                {typeof diagnostics.litellm.models.count === "number" ? `, ${diagnostics.litellm.models.count} models` : ""}
+                {diagnostics.litellm.models.error ? `: ${diagnostics.litellm.models.error}` : ""}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("settings.assistantSafety.diagnostics.fields.litellmGuardrailsList", {
+                  defaultValue: "Guardrails list"
+                })}
+              >
+                <Space direction="vertical" size={4} style={{ display: "flex" }}>
+                  <Space wrap>
+                    {diagnostics.litellm.guardrails.ok ? (
+                      <Tag color="green">{t("common.ok", { defaultValue: "OK" })}</Tag>
+                    ) : (
+                      <Tag color="red">{t("common.failed", { defaultValue: "Failed" })}</Tag>
+                    )}
+                    {diagnostics.litellm.guardrails.status ? (
+                      <Typography.Text type="secondary">{`HTTP ${diagnostics.litellm.guardrails.status}`}</Typography.Text>
+                    ) : null}
+                    {typeof diagnostics.litellm.guardrails.count === "number" ? (
+                      <Typography.Text type="secondary">
+                        {t("settings.assistantSafety.diagnostics.guardrails.count", {
+                          defaultValue: "{{count}} guardrails",
+                          count: diagnostics.litellm.guardrails.count
+                        })}
+                      </Typography.Text>
+                    ) : null}
+                    {diagnostics.litellm.guardrails.ok && (diagnostics.litellm.guardrails.expected ?? []).length > 0 ? (
+                      diagnostics.litellm.guardrails.missing.length === 0 ? (
+                        <Tag color="green">
+                          {t("settings.assistantSafety.diagnostics.guardrails.allPresent", {
+                            defaultValue: "All expected present"
+                          })}
+                        </Tag>
+                      ) : (
+                        <Tag color="orange">
+                          {t("settings.assistantSafety.diagnostics.guardrails.missingCount", {
+                            defaultValue: "Missing {{count}}",
+                            count: diagnostics.litellm.guardrails.missing.length
+                          })}
+                        </Tag>
+                      )
+                    ) : null}
+                    {diagnostics.litellm.guardrails.error ? (
+                      <Typography.Text type="secondary">{diagnostics.litellm.guardrails.error}</Typography.Text>
+                    ) : null}
+                  </Space>
+
+                  {diagnostics.litellm.guardrails.ok && diagnostics.litellm.guardrails.missing.length > 0 ? (
+                    <Space wrap>
+                      {diagnostics.litellm.guardrails.missing.map((name) => (
+                        <Tag key={name} color="orange">
+                          {name}
+                        </Tag>
+                      ))}
+                    </Space>
+                  ) : null}
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("settings.assistantSafety.diagnostics.fields.guardrails", { defaultValue: "Effective guardrails" })}
+              >
+                {(diagnostics.assistantSafety.guardrails ?? []).length > 0 ? (
+                  <Space wrap>
+                    {diagnostics.assistantSafety.guardrails.map((name) => (
+                      <Tag key={name}>{name}</Tag>
+                    ))}
+                  </Space>
+                ) : (
+                  "-"
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("settings.assistantSafety.diagnostics.fields.openaiKeys", { defaultValue: "OpenAI keys" })}
+              >
+                <Space wrap>
+                  <Tag>{t("settings.assistantSafety.openaiKeys.status.count", { count: diagnostics.openaiKeys.keysCount })}</Tag>
+                  {diagnostics.openaiKeys.restartRequired ? (
+                    <Tag color="orange">
+                      {t("settings.assistantSafety.openaiKeys.status.restartRequired", { defaultValue: "Restart required" })}
+                    </Tag>
+                  ) : diagnostics.openaiKeys.appliedAt ? (
+                    <Tag color="green">
+                      {t("settings.assistantSafety.openaiKeys.status.applied", { defaultValue: "Applied" })}
+                    </Tag>
+                  ) : (
+                    <Tag color="default">
+                      {t("settings.assistantSafety.openaiKeys.status.notApplied", { defaultValue: "Not applied yet" })}
+                    </Tag>
+                  )}
+                </Space>
+              </Descriptions.Item>
+            </Descriptions>
+          ) : null}
+
+          <Divider style={{ margin: "8px 0" }} />
+
+          <Space wrap align="center">
+            <Typography.Text strong>
+              {t("settings.assistantSafety.metrics.title", { defaultValue: "Safety metrics" })}
+            </Typography.Text>
+            <Select
+              style={{ width: 140 }}
+              value={metricsDays}
+              onChange={(value) => setMetricsDays(Number(value))}
+              options={[
+                { value: 7, label: t("settings.assistantSafety.metrics.days", { defaultValue: "Last {{days}} days", days: 7 }) },
+                { value: 14, label: t("settings.assistantSafety.metrics.days", { defaultValue: "Last {{days}} days", days: 14 }) },
+                { value: 30, label: t("settings.assistantSafety.metrics.days", { defaultValue: "Last {{days}} days", days: 30 }) }
+              ]}
+            />
+            <Button onClick={() => void loadMetrics()} loading={metricsLoading}>
+              {t("common.refresh", { defaultValue: "Refresh" })}
+            </Button>
+          </Space>
+
+          <Table<AssistantSafetyMetricsRow>
+            size="small"
+            rowKey="date"
+            loading={metricsLoading}
+            dataSource={metricsRows}
+            pagination={false}
+            columns={[
+              {
+                title: t("settings.assistantSafety.metrics.columns.date", { defaultValue: "Date" }),
+                dataIndex: "date",
+                key: "date",
+                width: 110
+              },
+              {
+                title: t("settings.assistantSafety.metrics.columns.total", { defaultValue: "Total" }),
+                dataIndex: "totalRuns",
+                key: "totalRuns",
+                width: 90
+              },
+              {
+                title: t("settings.assistantSafety.metrics.columns.blocked", { defaultValue: "Blocked" }),
+                dataIndex: "blockedRuns",
+                key: "blockedRuns",
+                width: 100,
+                render: (value: number) => <span style={{ color: value > 0 ? "#cf1322" : undefined }}>{value}</span>
+              },
+              {
+                title: t("settings.assistantSafety.metrics.columns.rate", { defaultValue: "Blocked rate" }),
+                dataIndex: "blockedRate",
+                key: "blockedRate",
+                width: 120,
+                render: (value: number) => `${(Number(value) * 100).toFixed(1)}%`
+              },
+              {
+                title: t("settings.assistantSafety.metrics.columns.moderationCalls", {
+                  defaultValue: "Moderation calls (est.)"
+                }),
+                key: "moderationCalls",
+                width: 170,
+                render: (_value: unknown, row: AssistantSafetyMetricsRow) => row.totalRuns * callsPerRun
+              },
+              {
+                title: t("settings.assistantSafety.metrics.columns.guardrails", { defaultValue: "Guardrails" }),
+                dataIndex: "guardrails",
+                key: "guardrails",
+                render: (value: AssistantSafetyMetricsRow["guardrails"]) => (
+                  <Space wrap>
+                    {(value ?? []).map((entry) => (
+                      <Tag key={entry.name} color="geekblue">
+                        {entry.name} ({entry.count})
+                      </Tag>
+                    ))}
+                  </Space>
+                )
+              },
+              {
+                title: t("settings.assistantSafety.metrics.columns.codes", { defaultValue: "Codes" }),
+                dataIndex: "codes",
+                key: "codes",
+                render: (value: AssistantSafetyMetricsRow["codes"]) => (
+                  <Space wrap>
+                    {(value ?? []).map((entry) => (
+                      <Tag key={entry.code} color="default">
+                        {entry.code} ({entry.count})
+                      </Tag>
+                    ))}
+                  </Space>
+                )
+              }
+            ]}
+          />
+
           <Divider style={{ margin: "8px 0" }} />
 
           <Space direction="vertical" size={8}>
@@ -431,6 +784,29 @@ export function AssistantSafetySettingsPanel() {
                   count: openaiKeys.keysCount
                 })}
               </Tag>
+              <Tag>
+                {t("settings.assistantSafety.openaiKeys.status.remaining", {
+                  defaultValue: "{{count}} slots left",
+                  count: remainingKeySlots
+                })}
+              </Tag>
+              {openaiKeys.restartRequired ? (
+                <Tag color="orange">
+                  {t("settings.assistantSafety.openaiKeys.status.restartRequired", {
+                    defaultValue: "Restart required"
+                  })}
+                </Tag>
+              ) : openaiKeys.hasKeys ? (
+                openaiKeys.appliedAt ? (
+                  <Tag color="green">
+                    {t("settings.assistantSafety.openaiKeys.status.applied", { defaultValue: "Applied" })}
+                  </Tag>
+                ) : (
+                  <Tag color="orange">
+                    {t("settings.assistantSafety.openaiKeys.status.notApplied", { defaultValue: "Not applied yet" })}
+                  </Tag>
+                )
+              ) : null}
               {openaiKeys.internalTokenConfigured ? (
                 <Tag color="green">
                   {t("settings.assistantSafety.openaiKeys.status.tokenOk", {
@@ -462,6 +838,18 @@ export function AssistantSafetySettingsPanel() {
               })}
             </Typography.Paragraph>
 
+            {openaiKeys.keysCount > 0 ? (
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                {t("settings.assistantSafety.openaiKeys.quotaHint", {
+                  defaultValue:
+                    "Estimated free moderation quota: {{quota}} calls/day ({{perKey}} per key). Current assistant settings use {{callsPerRun}} call(s) per run.",
+                  quota: estimatedDailyQuota,
+                  perKey: OPENAI_MODERATION_FREE_CALLS_PER_DAY,
+                  callsPerRun
+                })}
+              </Typography.Paragraph>
+            ) : null}
+
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
               {t("settings.assistantSafety.openaiKeys.compliance", {
                 defaultValue:
@@ -477,6 +865,27 @@ export function AssistantSafetySettingsPanel() {
                   defaultValue:
                     "LITELLM_CONFIG_INTERNAL_TOKEN is not configured. LiteLLM cannot fetch keys from MySQL at startup."
                 })}
+              />
+            ) : null}
+            {openaiKeys.restartRequired ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("settings.assistantSafety.openaiKeys.warnings.restartRequired", {
+                  defaultValue: "Key list changed; restart litellm to apply the new keys."
+                })}
+                description={
+                  <Typography.Paragraph
+                    style={{ marginBottom: 0 }}
+                    copyable={{
+                      text: "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml restart litellm"
+                    }}
+                  >
+                    <Typography.Text code>
+                      docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml restart litellm
+                    </Typography.Text>
+                  </Typography.Paragraph>
+                }
               />
             ) : null}
 
@@ -505,6 +914,16 @@ export function AssistantSafetySettingsPanel() {
                   count: pendingKeys.length
                 })}
               </Typography.Text>
+              {willExceedLimit ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={t("settings.assistantSafety.openaiKeys.warnings.tooManyKeys", {
+                    defaultValue: "This would exceed the max {{max}} keys limit.",
+                    max: MAX_OPENAI_KEYS
+                  })}
+                />
+              ) : null}
 
               <Space wrap>
                 <Button type="primary" onClick={() => void handleAppendOpenAiKeys()} loading={savingKeys}>
@@ -546,6 +965,90 @@ export function AssistantSafetySettingsPanel() {
             ) : (
               <Typography.Text type="secondary">
                 {t("settings.assistantSafety.openaiKeys.list.empty", { defaultValue: "No keys stored." })}
+              </Typography.Text>
+            )}
+
+            {lbBuckets.length > 0 ? (
+              <>
+                <Divider style={{ margin: "8px 0" }} />
+
+                <Typography.Text type="secondary">
+                  {t("settings.assistantSafety.openaiKeys.buckets.title", { defaultValue: "Load balancing buckets" })}
+                </Typography.Text>
+                <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                  {t("settings.assistantSafety.openaiKeys.buckets.hint", {
+                    defaultValue:
+                      "Assistant moderation requests are deterministically assigned to a bucket; each bucket maps to a specific guardrail name and upstream key."
+                  })}
+                </Typography.Paragraph>
+                <Table
+                  size="small"
+                  rowKey="bucket"
+                  pagination={false}
+                  dataSource={lbBuckets}
+                  columns={[
+                    {
+                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.bucket", { defaultValue: "Bucket" }),
+                      dataIndex: "bucket",
+                      key: "bucket",
+                      width: 90
+                    },
+                    {
+                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.fingerprint", {
+                        defaultValue: "Key fingerprint"
+                      }),
+                      dataIndex: "fingerprint",
+                      key: "fingerprint",
+                      render: (value: string) => `${value.slice(0, 8)}…${value.slice(-4)}`
+                    },
+                    {
+                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.pre", { defaultValue: "Pre-call" }),
+                      dataIndex: "guardrailPre",
+                      key: "guardrailPre",
+                      render: (value: string) => <Typography.Text code>{value}</Typography.Text>
+                    },
+                    {
+                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.post", { defaultValue: "Post-call" }),
+                      dataIndex: "guardrailPost",
+                      key: "guardrailPost",
+                      render: (value: string) => <Typography.Text code>{value}</Typography.Text>
+                    }
+                  ]}
+                />
+              </>
+            ) : null}
+
+            <Divider style={{ margin: "8px 0" }} />
+
+            <Typography.Text type="secondary">
+              {t("settings.assistantSafety.openaiKeys.applied.title", { defaultValue: "Applied by LiteLLM" })}
+              {openaiKeys.appliedAt ? (
+                <Typography.Text type="secondary">
+                  {" "}
+                  ({t("settings.assistantSafety.openaiKeys.applied.at", { defaultValue: "at" })}{" "}
+                  {new Date(openaiKeys.appliedAt).toLocaleString()})
+                </Typography.Text>
+              ) : null}
+            </Typography.Text>
+
+            {openaiKeys.appliedSource ? (
+              <Typography.Text type="secondary">
+                {t("settings.assistantSafety.openaiKeys.applied.source", { defaultValue: "Source" })}:{" "}
+                <Tag>{openaiKeys.appliedSource}</Tag>
+              </Typography.Text>
+            ) : null}
+
+            {openaiKeys.appliedKeyFingerprints.length > 0 ? (
+              <Space wrap>
+                {openaiKeys.appliedKeyFingerprints.map((fingerprint) => (
+                  <Tag key={fingerprint} color="blue">
+                    {fingerprint.slice(0, 8)}…{fingerprint.slice(-4)}
+                  </Tag>
+                ))}
+              </Space>
+            ) : (
+              <Typography.Text type="secondary">
+                {t("settings.assistantSafety.openaiKeys.applied.empty", { defaultValue: "No applied keys reported yet." })}
               </Typography.Text>
             )}
           </Space>

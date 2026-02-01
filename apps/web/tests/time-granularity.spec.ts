@@ -4,8 +4,11 @@ import {
   inferGranularityFromTimestampsMs,
   intervalToGranularity,
   parseInterval,
+  pickCoarsestGranularity,
+  pickFinestGranularity,
   resolveActiveGranularityFromTimestampsMs,
   resolveDefaultGranularityForRangePreset,
+  timeGranularityToUiGranularity,
   UiTimeGranularity,
 } from "../lib/time-granularity";
 
@@ -85,5 +88,23 @@ describe("time-granularity helpers", () => {
   it("falls back to requested granularity when data cadence cannot be inferred", () => {
     expect(resolveActiveGranularityFromTimestampsMs(UiTimeGranularity.Month, [])).toBe(UiTimeGranularity.Month);
     expect(resolveActiveGranularityFromTimestampsMs(UiTimeGranularity.Month, [0])).toBe(UiTimeGranularity.Month);
+  });
+
+  it("picks coarsest/finest granularity from mixed inputs", () => {
+    expect(
+      pickCoarsestGranularity([UiTimeGranularity.Day, UiTimeGranularity.Week]),
+    ).toBe(UiTimeGranularity.Week);
+    expect(
+      pickFinestGranularity([UiTimeGranularity.Day, UiTimeGranularity.Week]),
+    ).toBe(UiTimeGranularity.Day);
+    expect(pickCoarsestGranularity([UiTimeGranularity.Unknown, null])).toBe(UiTimeGranularity.Unknown);
+    expect(pickFinestGranularity([UiTimeGranularity.Unknown, undefined])).toBe(UiTimeGranularity.Unknown);
+  });
+
+  it("maps backend time granularity enum values to UI granularity labels", () => {
+    expect(timeGranularityToUiGranularity("realtime")).toBe(UiTimeGranularity.Realtime);
+    expect(timeGranularityToUiGranularity("minute")).toBe(UiTimeGranularity.Minute);
+    expect(timeGranularityToUiGranularity("hour")).toBe(UiTimeGranularity.Hour);
+    expect(timeGranularityToUiGranularity("day")).toBe(UiTimeGranularity.Day);
   });
 });

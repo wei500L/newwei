@@ -11,7 +11,13 @@ import { MetricDrillDown } from "@/app/(app)/dashboard/metric-drilldown";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { TimeGranularity, useDashboardHeroMetricsQuery } from "@/graphql/generated";
-import { resolveDefaultGranularityForRangePreset, UiTimeGranularity } from "@/lib/time-granularity";
+import {
+  pickCoarsestGranularity,
+  pickFinestGranularity,
+  resolveDefaultGranularityForRangePreset,
+  timeGranularityToUiGranularity,
+  UiTimeGranularity,
+} from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 export function MarketOverview() {
@@ -48,6 +54,23 @@ export function MarketOverview() {
     },
     fetchPolicy: "cache-and-network"
   });
+  const appliedHeroGranularityInfo = useMemo(() => {
+    const effective = [
+      ...(heroData?.conflict ?? []),
+      ...(heroData?.market ?? []),
+      ...(heroData?.resource ?? []),
+      ...(heroData?.supply ?? []),
+    ].map((point) => timeGranularityToUiGranularity(point.effectiveGranularity));
+    const coarsest = pickCoarsestGranularity(effective);
+    const finest = pickFinestGranularity(effective);
+    const range =
+      coarsest !== UiTimeGranularity.Unknown &&
+      finest !== UiTimeGranularity.Unknown &&
+      coarsest !== finest
+        ? { finest, coarsest }
+        : null;
+    return { coarsest, range };
+  }, [heroData]);
 
   const heroSeries = [
     heroData?.conflict ?? [],
@@ -68,7 +91,10 @@ export function MarketOverview() {
             defaultValue: "Track macro and market signals across the selected time range."
           })}
         </Typography.Text>
-        <TimeRangeControls />
+        <TimeRangeControls
+          appliedGranularity={appliedHeroGranularityInfo.coarsest}
+          appliedGranularityRange={appliedHeroGranularityInfo.range}
+        />
       </div>
 
       {heroError ? (

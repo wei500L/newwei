@@ -4,6 +4,12 @@ import { useDashboardRangeStore } from "@/store/time-range";
 import type { ChartDataState } from "@/lib/chart-data-state";
 import { deriveUnitFromValueType, normalizeUnit } from "@/lib/economic-units";
 import {
+  pickCoarsestGranularity,
+  pickFinestGranularity,
+  timeGranularityToUiGranularity,
+  UiTimeGranularity,
+} from "@/lib/time-granularity";
+import {
   type EconomicSeriesInsightModel,
   type EconomicDataPointModel,
   EconomicDataValueType,
@@ -160,6 +166,19 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     return latest > 0 ? new Date(latest) : null;
   }, [points]);
 
+  const appliedGranularityInfo = useMemo(() => {
+    const granularities = points.map((point) => timeGranularityToUiGranularity(point.effectiveGranularity));
+    const coarsest = pickCoarsestGranularity(granularities);
+    const finest = pickFinestGranularity(granularities);
+    const range =
+      coarsest !== UiTimeGranularity.Unknown &&
+      finest !== UiTimeGranularity.Unknown &&
+      coarsest !== finest
+        ? { finest, coarsest }
+        : null;
+    return { coarsest, range };
+  }, [points]);
+
   const medianIntervalMs = useMemo(() => {
     const timestamps = Array.from(
       new Set(points.map((point) => new Date(point.timestamp).getTime()))
@@ -234,6 +253,9 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     seriesMap: grouped,
     hasData: points.length > 0,
     latestTimestamp,
+    appliedGranularity:
+      points.length > 0 ? appliedGranularityInfo.coarsest : UiTimeGranularity.Unknown,
+    appliedGranularityRange: points.length > 0 ? appliedGranularityInfo.range : null,
     isDelayed,
     delayMs,
     expectedIntervalMs,

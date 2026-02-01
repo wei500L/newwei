@@ -15,8 +15,9 @@ import { resolveLocale, formatDateTime } from "@/lib/i18n";
 import {
   compareGranularity,
   formatGranularityLabel,
-  inferGranularityFromTimestampsMs,
+  pickCoarsestGranularity,
   resolveDefaultGranularityForRangePreset,
+  timeGranularityToUiGranularity,
   UiTimeGranularity,
   uiGranularityToInterval,
 } from "@/lib/time-granularity";
@@ -104,6 +105,7 @@ interface HeroMetric {
 
 interface DataPoint {
   timestamp: string;
+  effectiveGranularity?: string | null;
   value: number;
   unit?: string | null;
   dataType?: string | null;
@@ -172,7 +174,9 @@ const processSeries = (data: DataPoint[] | undefined) => {
     current === null || previous === null || previous === 0
       ? null
       : ((current - previous) / previous) * 100;
-  const granularity = inferGranularityFromTimestampsMs(normalized.map((point) => point.ts));
+  const granularity = pickCoarsestGranularity(
+    data.map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
+  );
   const unit = (() => {
     for (let i = normalized.length - 1; i >= 0; i -= 1) {
       const candidate = normalized[i]?.unit;
@@ -294,9 +298,9 @@ export function MarketPulse({
     );
   }
 
-  const activeGranularity =
-    metrics.find((metric) => metric.hasData && metric.granularity !== UiTimeGranularity.Unknown)?.granularity ??
-    UiTimeGranularity.Unknown;
+  const activeGranularity = pickCoarsestGranularity(
+    metrics.filter((metric) => metric.hasData).map((metric) => metric.granularity),
+  );
   const granularityLabel = formatGranularityLabel(activeGranularity);
   const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
   const granularityCompare = compareGranularity(activeGranularity, defaultGranularity);
@@ -312,6 +316,13 @@ export function MarketPulse({
     granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
       ? `Aggregation: ${granularityLabel}`
       : `Aggregation: ${granularityLabel} (default ${defaultGranularityLabel})`;
+  const granularityTooltip = (() => {
+    const detailParts = metrics
+      .filter((metric) => metric.hasData && metric.granularity !== UiTimeGranularity.Unknown)
+      .map((metric) => `${metric.title}: ${formatGranularityLabel(metric.granularity)}`);
+    const details = detailParts.length ? ` Per metric: ${detailParts.join(" · ")}.` : "";
+    return `Aggregation is reported by the backend. Displayed value uses the coarsest bucket across hero metrics.${details}`;
+  })();
 
   return (
     <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
@@ -322,7 +333,7 @@ export function MarketPulse({
           {formatDateTime(end, locale, { dateStyle: "medium" })}
         </Typography.Text>
         <Space size={6} wrap>
-          <Tooltip title="Data points are aggregated into time buckets; trend compares the last two buckets.">
+          <Tooltip title={granularityTooltip}>
             <Tag color={granularityColor} className="text-xs">
               {granularityTagText}
             </Tag>

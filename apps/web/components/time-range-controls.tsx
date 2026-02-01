@@ -1,5 +1,6 @@
 "use client";
 
+import { ExclamationCircleOutlined } from "@ant-design/icons";
 import { DatePicker, Segmented, Space, Tag, Tooltip, Typography } from "antd";
 import type { SegmentedValue } from "antd/es/segmented";
 import type { Dayjs } from "dayjs";
@@ -7,8 +8,10 @@ import { useTranslation } from "react-i18next";
 
 import { toDashboardZonedTime } from "@/lib/dashboard-time";
 import {
+  compareGranularity,
   formatGranularityLabel,
   resolveDefaultGranularityForRangePreset,
+  UiTimeGranularity,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore, type DashboardRangePreset } from "@/store/time-range";
 
@@ -22,16 +25,95 @@ const presets: { label: string; value: DashboardRangePreset }[] = [
   { label: "3Y", value: "3Y" }
 ];
 
-export function TimeRangeControls() {
+export interface TimeRangeControlsProps {
+  /**
+   * When provided, the UI will display the observed aggregation bucket size (as reported by the
+   * backend) and warn when it differs from the suggested/default granularity.
+   */
+  appliedGranularity?: UiTimeGranularity | null;
+
+  /**
+   * Optional bounds for backend-reported granularities when a page renders multiple series at
+   * different cadences (e.g. daily + monthly). When provided and the values differ, the UI will
+   * display a "Mixed" aggregation label with the finest/coarsest range.
+   */
+  appliedGranularityRange?: { finest: UiTimeGranularity; coarsest: UiTimeGranularity } | null;
+}
+
+export function TimeRangeControls({ appliedGranularity, appliedGranularityRange }: TimeRangeControlsProps) {
   const { t } = useTranslation();
   const { range, start, end, setRange, setCustomRange } = useDashboardRangeStore();
   const defaultGranularity = resolveDefaultGranularityForRangePreset(range, start, end);
   const defaultGranularityLabel = formatGranularityLabel(defaultGranularity);
-  const defaultGranularityHint =
-    t("dashboard.timeRange.defaultAggregationHint", {
-      defaultValue:
-        "Most charts will aggregate data at this granularity for the selected window; individual charts may differ."
-    });
+  const resolvedAppliedGranularity =
+    appliedGranularity && appliedGranularity !== UiTimeGranularity.Unknown
+      ? appliedGranularity
+      : null;
+
+  const isConcreteGranularity = (value: UiTimeGranularity | null | undefined) =>
+    Boolean(value) && value !== UiTimeGranularity.Unknown && value !== UiTimeGranularity.Window;
+
+  const mixedFinest = appliedGranularityRange?.finest;
+  const mixedCoarsest = appliedGranularityRange?.coarsest;
+  const hasMixedGranularity =
+    isConcreteGranularity(mixedFinest) &&
+    isConcreteGranularity(mixedCoarsest) &&
+    mixedFinest !== mixedCoarsest;
+
+  const appliedGranularityLabel = resolvedAppliedGranularity
+    ? formatGranularityLabel(resolvedAppliedGranularity)
+    : null;
+
+  const appliedGranularityDisplayLabel = hasMixedGranularity
+    ? `${t("dashboard.timeRange.mixed", { defaultValue: "Mixed" })} (${formatGranularityLabel(
+        mixedFinest!,
+      )}-${formatGranularityLabel(mixedCoarsest!)})`
+    : appliedGranularityLabel;
+
+  const granularityCompareTarget = hasMixedGranularity ? mixedCoarsest! : resolvedAppliedGranularity;
+  const granularityCompare = granularityCompareTarget
+    ? compareGranularity(granularityCompareTarget, defaultGranularity)
+    : "unknown";
+  const granularityColor =
+    granularityCompareTarget && granularityCompare !== "unknown"
+      ? granularityCompare === "match"
+        ? "geekblue"
+        : granularityCompare === "coarser"
+          ? "orange"
+          : "cyan"
+      : "geekblue";
+
+  const aggregationLabel = resolvedAppliedGranularity
+    ? t("dashboard.timeRange.aggregation", { defaultValue: "Aggregation" })
+    : t("dashboard.timeRange.defaultAggregation", { defaultValue: "Suggested aggregation" });
+
+  const aggregationText = resolvedAppliedGranularity
+    ? granularityCompare === "match" || defaultGranularity === UiTimeGranularity.Unknown
+      ? `${aggregationLabel}: ${appliedGranularityDisplayLabel}`
+      : `${aggregationLabel}: ${appliedGranularityDisplayLabel} (${t("dashboard.timeRange.defaultAggregationSuffix", { defaultValue: "suggested" })} ${defaultGranularityLabel})`
+    : `${aggregationLabel}: ${defaultGranularityLabel}`;
+
+  const hasMismatch =
+    Boolean(resolvedAppliedGranularity) &&
+    granularityCompare === "coarser" &&
+    defaultGranularity !== UiTimeGranularity.Unknown;
+
+  const aggregationHint = resolvedAppliedGranularity
+    ? hasMismatch
+      ? t("dashboard.timeRange.aggregationMismatchHint", {
+          defaultValue:
+            "Suggested granularity is {{suggested}} but backend applied {{observed}}. Use the applied bucket size when interpreting trends.",
+          suggested: defaultGranularityLabel,
+          observed: appliedGranularityDisplayLabel ?? ""
+        })
+      : t("dashboard.timeRange.aggregationHint", {
+          defaultValue:
+            "Aggregation is reported by the backend and may differ from the suggested granularity."
+        })
+    : t("dashboard.timeRange.defaultAggregationHint", {
+        defaultValue:
+          "Suggested granularity is derived from the selected window; actual buckets may differ depending on data availability."
+      });
 
   const handlePresetChange = (value: SegmentedValue) => {
     setRange(value as DashboardRangePreset);
@@ -69,10 +151,12 @@ export function TimeRangeControls() {
       </Space>
 
       <Space size={8} wrap align="center">
-        <Tooltip title={defaultGranularityHint}>
-          <Tag color="geekblue" className="text-xs">
-            {t("dashboard.timeRange.defaultAggregation", { defaultValue: "Default aggregation" })}:{" "}
-            {defaultGranularityLabel}
+        <Tooltip title={aggregationHint}>
+          <Tag color={granularityColor} className="text-xs">
+            {hasMismatch ? (
+              <ExclamationCircleOutlined style={{ marginRight: 6 }} aria-hidden />
+            ) : null}
+            {aggregationText}
           </Tag>
         </Tooltip>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>

@@ -234,6 +234,7 @@ export class AssistantService {
         record.summary = error.message;
         record.output = {
           blocked: true,
+          code: error.code,
           summary: error.message,
           appliedGuardrails: error.appliedGuardrails,
           upstreamStatus: error.upstreamStatus ?? null

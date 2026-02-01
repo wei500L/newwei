@@ -33,7 +33,8 @@
           "placeholder": "Enter organization slug"
         }
       },
-      "submit": "Sign in"
+      "submit": "Sign in",
+      "required": "Please sign in to view this panel."
     },
     "logoutFailed": "Sign out failed",
     "logoutThisDevice": "Sign out this device",
@@ -327,6 +328,7 @@
     "loadingDelayed": "Data is taking longer than usual. Please hold on or refresh.",
     "loadingDelayedTitle": "Still loading…",
     "requestFailed": "Request failed",
+    "showingCachedData": "Showing cached data.",
     "accessDenied": "Access denied",
     "accessDeniedDescription": "You don't have permission to view this data. Contact an administrator if you need access.",
     "name": "Name",
@@ -345,7 +347,22 @@
     "pause": "Pause",
     "play": "Play",
     "prev": "Prev",
-    "fastForward": "Fast"
+    "fastForward": "Fast",
+    "noData": "No data",
+    "enable": "Enable",
+    "disable": "Disable",
+    "weekday": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
+    "more": "More",
+    "search": "Search",
+    "ok": "OK"
   },
   "orgSwitcher": {
     "error": {
@@ -416,8 +433,13 @@
       "missing": "Latest data time unavailable."
     },
     "timeRange": {
-      "defaultAggregation": "Default aggregation",
-      "defaultAggregationHint": "Most charts will aggregate data at this granularity for the selected window; individual charts may differ.",
+      "aggregation": "Aggregation",
+      "aggregationHint": "Aggregation is reported by the backend and may differ from the suggested granularity.",
+      "aggregationMismatchHint": "Suggested granularity is {{suggested}} but backend applied {{observed}}. Use the applied bucket size when interpreting trends.",
+      "defaultAggregation": "Suggested aggregation",
+      "defaultAggregationHint": "Suggested granularity is derived from the selected window; actual buckets may differ depending on data availability.",
+      "defaultAggregationSuffix": "suggested",
+      "mixed": "Mixed",
       "helperText": "Time range affects chart granularity and tooltips.",
       "title": "Time Range"
     },
@@ -1089,7 +1111,8 @@
       "subscriptionError": "Live updates disconnected",
       "mode": {
         "live": "Live",
-        "polling": "Polling ({{seconds}}s)"
+        "polling": "Polling ({{seconds}}s)",
+        "offline": "Offline"
       },
       "pollFallback": "Switched to polling every {{seconds}}s due to live update errors.",
       "pollFallbackToast": "Live updates disconnected — switched to polling ({{seconds}}s).",
@@ -1300,7 +1323,9 @@
           "volume": "Volume",
           "avgScore": "Avg score",
           "negativeRatio": "Negative ratio"
-        }
+        },
+        "activeHint": "Filters are active; try clearing them to broaden results.",
+        "clear": "Clear filters"
       },
       "columns": {
         "scope": "Scope",
@@ -1313,6 +1338,21 @@
         "backtest": "Backtest",
         "updated": "Updated"
       },
+      "status": {
+        "pending": "Pending",
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed"
+      },
+      "correlationSign": {
+        "positive": "positive",
+        "negative": "negative"
+      },
+      "backtestSummary": {
+        "hitRate": "Hit rate",
+        "avgSignedReturn": "Avg",
+        "triggers": "Triggers"
+      },
       "drawer": {
         "title": "Association details",
         "loadFailed": "Failed to load association.",
@@ -1324,7 +1364,8 @@
         "analyzed": "Analyzed",
         "backtests": "Backtests",
         "backtestsEmpty": "No backtests yet."
-      }
+      },
+      "ingestionOffCta": "Open system settings"
     },
     "assistant": {
       "title": "AI Assistant",
@@ -1454,7 +1495,9 @@
       "nextRun": "Next run",
       "lastRun": "Last run",
       "template": "Template",
-      "lastSuccess": "Last success"
+      "lastSuccess": "Last success",
+      "stats24h": "24h",
+      "latest": "Latest"
     },
     "types": {
       "general": "General",
@@ -1468,7 +1511,13 @@
       "new": "New source",
       "edit": "Edit source",
       "runNow": "Run now",
-      "preview": "Preview"
+      "preview": "Preview",
+      "openTask": "Open task",
+      "viewTasks": "Crawl tasks",
+      "reschedule": "Reschedule",
+      "schedule": "Schedule",
+      "ops": "Ops",
+      "scheduleBatch": "Schedule ({{count}})"
     },
     "fields": {
       "name": "Name",
@@ -1508,7 +1557,16 @@
       "seedDedupeWindowHours": "Dedupe window (hours)",
       "seedCacheTtlSeconds": "Seed cache TTL (seconds)",
       "seedConcurrency": "Preview concurrency",
-      "seedConcurrencyHint": "Used by Preview to fetch metadata; scheduling uses lightweight URL scoring."
+      "seedConcurrencyHint": "Used by Preview to fetch metadata; scheduling uses lightweight URL scoring.",
+      "scheduleMode": "Schedule mode",
+      "cronExpression": "Cron expression",
+      "cronExpressionRequired": "Cron expression is required for cron mode.",
+      "cronTimezone": "Timezone (IANA)",
+      "cronTimezoneHint": "Examples: UTC, Asia/Shanghai, America/New_York.",
+      "cronWindowDays": "Allowed weekdays (optional)",
+      "cronWindowStartHour": "Start hour (0-23)",
+      "cronWindowEndHour": "End hour (1-24)",
+      "nextRunAt": "Next run at"
     },
     "messages": {
       "created": "News source created.",
@@ -1516,7 +1574,22 @@
       "enabled": "Source enabled.",
       "disabled": "Source disabled.",
       "runQueued": "Source queued for crawl.",
-      "deleted": "News source deleted."
+      "deleted": "News source deleted.",
+      "runDeduped": "Already dispatched this minute.",
+      "tryAfter": "Try after {{time}}",
+      "runSkippedInFlight": "Skipped (in-flight {{count}}/{{limit}}).",
+      "nextRunAt": "Next run: {{time}}",
+      "noNewUrls": "No new URLs to schedule.",
+      "runQueuedCount": "Queued {{count}} task(s).",
+      "runSkippedCount": "Skipped {{count}}.",
+      "runEnqueueFailures": "Failed to enqueue {{count}}.",
+      "dispatchInProgress": "Dispatch already in progress. Please wait and refresh.",
+      "batchTogglePartial": "Updated {{ok}}/{{total}} sources.",
+      "enabledBatch": "Enabled {{count}} source(s).",
+      "disabledBatch": "Disabled {{count}} source(s).",
+      "batchDispatch": "Dispatched {{sources}} source(s): queued {{tasks}} task(s), skipped {{skipped}}, enqueue failures {{enqueueFailures}}, conflicts {{conflicts}}, request failures {{failures}}.",
+      "scheduledBatchPartial": "Scheduled {{ok}}/{{total}} sources for {{time}}.",
+      "scheduledBatch": "Scheduled {{count}} source(s) for {{time}}."
     },
     "errors": {
       "loadFailed": "Failed to load news sources.",
@@ -1565,11 +1638,100 @@
     },
     "sections": {
       "seed": "Seed discovery",
-      "seedHint": "Discover article URLs from either a sitemap or an RSS/Atom feed, then schedule up to N fresh URLs per run."
+      "seedHint": "Discover article URLs from either a sitemap or an RSS/Atom feed, then schedule up to N fresh URLs per run.",
+      "schedule": "Schedule",
+      "scheduleHint": "Choose interval scheduling (frequency) or a cron expression with optional time window."
     },
     "seedMode": {
       "sitemap": "Sitemap",
       "rss": "RSS / Atom"
+    },
+    "ops": {
+      "cancelQueued": {
+        "title": "Cancel queued crawls?",
+        "description": "This removes waiting/delayed crawl4ai jobs for this source. Running jobs will not be interrupted.",
+        "ok": "Cancel queued",
+        "done": "Removed {{removed}} job(s) (scanned {{scanned}}).",
+        "failed": "Failed to cancel queued crawls.",
+        "label": "Cancel queued crawls"
+      },
+      "clearInflight": {
+        "title": "Clear in-flight pipeline jobs?",
+        "description": "This marks recent in-flight pipeline jobs as failed to unblock scheduling. Use carefully.",
+        "ok": "Clear in-flight",
+        "done": "Cleared {{count}} job(s).",
+        "failed": "Failed to clear in-flight jobs.",
+        "label": "Clear in-flight jobs"
+      },
+      "retryLatest": {
+        "skipped": "Latest task is not failed (status: {{status}}).",
+        "done": "Retried latest task.",
+        "failed": "Failed to retry latest task.",
+        "label": "Retry latest failed task"
+      }
+    },
+    "schedule": {
+      "validation": {
+        "future": "Next run time must be in the future.",
+        "invalid": "Please choose a valid date/time."
+      },
+      "current": "Current: {{time}}",
+      "none": "No schedule set.",
+      "title": "Schedule crawl",
+      "hintTitle": "Queued via crawl4ai",
+      "description": "Sets the next run time. The scheduler checks every minute and enqueues a CrawlTask; crawl4ai limits concurrency to avoid blocking.",
+      "enablesSource": "This will enable {{count}} source(s).",
+      "presets": {
+        "in5m": "+5m",
+        "in30m": "+30m",
+        "in1h": "+1h",
+        "nextHour": "Next hour",
+        "tomorrow9": "Tomorrow 09:00",
+        "nextInterval": "Next interval"
+      },
+      "selectedCount": "Applies to {{count}} sources.",
+      "frequencyHint": "Frequency: every {{seconds}} seconds."
+    },
+    "queueCounts": {
+      "queued": "Queued: {{count}}",
+      "active": "Active: {{count}}"
+    },
+    "nextRun": {
+      "due": "Due",
+      "backpressureReason": "Backpressure: crawl queue pending {{pendingJobs}} > threshold {{threshold}}.",
+      "backpressureReasonFallback": "Backpressure: crawl queue backlog is high.",
+      "backpressureUntil": "Delayed until {{time}}",
+      "backpressure": "Backpressure"
+    },
+    "stats24h": {
+      "jobs": "{{ok}} ok / {{fail}} fail",
+      "avgDuration": "Avg duration: {{value}}",
+      "backpressure": "Backpressure (24h): {{count}}",
+      "jobsShort": "{{ok}}/{{fail}}"
+    },
+    "latest": {
+      "jobError": "Job failed: {{error}}",
+      "jobId": "Job: {{id}}",
+      "taskError": "Task failed: {{error}}",
+      "taskId": "Task: {{id}}"
+    },
+    "queue": {
+      "title": "Crawl4AI queue",
+      "loadFailed": "Failed to load queue stats",
+      "pending": "Pending",
+      "waiting": "Waiting",
+      "active": "Active",
+      "delayed": "Delayed",
+      "failed": "Failed",
+      "concurrency": "Concurrency",
+      "updatedAt": "Updated {{time}}"
+    },
+    "selection": {
+      "count": "Selected: {{count}}"
+    },
+    "scheduleMode": {
+      "interval": "Interval",
+      "cron": "Cron"
     }
   },
   "finance": {
@@ -2017,19 +2179,36 @@
       "sections": {
         "overrides": "Per-topic overrides",
         "preview": "Effective config",
-        "tester": "Threshold preview"
+        "tester": "Threshold preview",
+        "mode": "Similarity method"
       },
       "fields": {
         "defaultThreshold": "Default threshold",
         "category": "Category/topic",
-        "threshold": "Threshold"
+        "threshold": "Threshold",
+        "useEmbeddings": "Use embeddings",
+        "llmJudgeModel": "LLM judge model (optional)",
+        "llmJudgeMaxComparisons": "Max comparisons",
+        "llmJudgeCandidateChars": "Candidate chars",
+        "llmJudgeInstructions": "LLM judge instructions (optional)",
+        "llmJudgePromptVersion": "Prompt version",
+        "llmJudgeSystemPromptTemplate": "System prompt template",
+        "llmJudgeUserPromptTemplate": "User prompt template"
       },
       "hints": {
         "defaultThreshold": "Used when no category/topics match. Range 0–1 (higher = stricter).",
-        "normalizedCount": "Effective overrides: {{count}}"
+        "normalizedCount": "Effective overrides: {{count}}",
+        "useEmbeddings": "On: compute embeddings vectors for semantic dedupe (fast + scalable, but needs embedding support and storage). Off: use an LLM judge to score similarity (slower + higher cost, but no embeddings storage).",
+        "llmJudgeModel": "Overrides which model is used for LLM-based dedupe. Leave blank to use the pipeline's default completion model.",
+        "llmJudgeMaxComparisons": "Upper bound on LLM judge calls per item (cost/latency control).",
+        "llmJudgeCandidateChars": "Truncation length for each summary sent to the judge.",
+        "llmJudgeInstructions": "Extra system-level instructions appended to the dedupe judge prompt. Keep it short to avoid prompt injection and output-format issues.",
+        "llmJudgePromptVersion": "Saved to metadata for tracking prompt changes.",
+        "llmJudgeSystemPromptTemplate": "Supports placeholders: {{language_hint}}, {{additional_instructions}}. Leave blank to reset to defaults.",
+        "llmJudgeUserPromptTemplate": "Supports placeholders: {{threshold}}, {{title_a_section}}, {{summary_a}}, {{title_b_section}}, {{summary_b}}. Leave blank to reset to defaults."
       },
       "placeholders": {
-        "category": "e.g. finance / 科技 / geopolitics"
+        "category": "e.g. finance / technology / geopolitics"
       },
       "actions": {
         "add": "Add override",
@@ -2068,6 +2247,12 @@
         "required": "Required",
         "category": "Required",
         "threshold": "Required"
+      },
+      "options": {
+        "useEmbeddings": {
+          "on": "Embeddings",
+          "off": "LLM"
+        }
       }
     },
     "newsPrompts": {
@@ -2134,7 +2319,11 @@
           "failed": "Failed to check proxy health",
           "modelInfoFailed": "Failed to load proxy model info",
           "lbTestFailed": "Load balancing test failed"
-        }
+        },
+        "loadBalancing": "Load balancing",
+        "modelGroups": "Model groups",
+        "deployments": "Deployments",
+        "loadBalancedGroups": "Balanced groups"
       },
       "proxyModelInfo": {
         "modal": {
@@ -2146,7 +2335,9 @@
           "model": "Model",
           "deployments": "Deployments",
           "details": "Details"
-        }
+        },
+        "checkedAt": "Checked at: {{time}}",
+        "notChecked": "Deployments not checked yet. Click \"Model info\" to inspect load balancing."
       },
       "proxyLoadBalancing": {
         "modal": {
@@ -2263,7 +2454,8 @@
         "apiBase": "This base URL is used by the API server (not the browser). For Docker Compose, use http://litellm:4000; for local dev, use http://localhost:4001. Accepts either a base URL (e.g. https://api.openai.com) or a full endpoint URL (e.g. https://api.openai.com/v1/chat/completions). We normalize it automatically.",
         "apiKey": "Stored in system settings. Encrypted in MySQL when secret encryption is enabled (System Settings -> Security) and SYSTEM_SETTINGS_ENCRYPTION_KEY is configured; otherwise stored as plaintext. You can paste either sk-... or a full \"Bearer sk-...\" value. If your gateway is a LiteLLM Proxy protected by a master key, paste the master key here; otherwise leave it empty. Upstream provider keys (e.g. OPENAI_API_KEY) must be configured on the LiteLLM Proxy side.",
         "apiKeyEdit": "Provide a new key to rotate it. Use the toggle below to clear.",
-        "fallbackModels": "Used when the primary model request fails."
+        "fallbackModels": "Used when the primary model request fails.",
+        "modelOptional": "Optional: used for chat completion requests. Leave empty when configuring embeddings-only gateway."
       },
       "validation": {
         "nameRequired": "Name is required",
@@ -2310,7 +2502,8 @@
           "prompt": "Prompt",
           "includeEmbeddings": "Test embeddings",
           "embeddingModel": "Embedding model override",
-          "embeddingInput": "Embedding input"
+          "embeddingInput": "Embedding input",
+          "includeCompletion": "Test chat completion"
         },
         "placeholders": {
           "prompt": "Say \"OK\" and nothing else.",
@@ -2318,7 +2511,8 @@
         },
         "hints": {
           "model": "Leave empty to use the profile default + fallback models.",
-          "embeddingModel": "Leave empty to use the profile embedding model."
+          "embeddingModel": "Leave empty to use the profile embedding model.",
+          "includeCompletion": "When disabled, only embeddings are tested."
         },
         "sections": {
           "completion": "Chat completion",
@@ -2355,10 +2549,79 @@
         "modal": {
           "title": "Models (unsaved)"
         }
+      },
+      "embeddingActive": {
+        "messages": {
+          "activated": "Embeddings profile updated."
+        },
+        "errors": {
+          "activateFailed": "Failed to update embeddings profile."
+        },
+        "tag": "Embeddings",
+        "title": "Embeddings gateway",
+        "hint": "Used for embeddings/vectorization requests (can use a different gateway/model from chat completion).",
+        "currentCompletion": "Current chat completion profile",
+        "currentEmbedding": "Current embeddings profile",
+        "default": "Default (config/env)",
+        "defaultTag": "Default",
+        "lockedSame": "Locked (same as chat completion)",
+        "independent": "Independent",
+        "following": "Following chat completion",
+        "inheritEmbeddingModel": "Inherit default embedding model",
+        "missingEmbeddingModel": "Embedding model not configured",
+        "selectLabel": "Switch embeddings gateway",
+        "selectPlaceholder": "Select a gateway profile for embeddings",
+        "followCompletion": "Follow chat completion ({{name}})",
+        "followCompletionEmpty": "Follow chat completion (none active)",
+        "followTag": "Follow",
+        "useDefault": "Use default (config/env)",
+        "missingEmbeddingModelShort": "Missing embedding model",
+        "noEligibleProfiles": "No eligible embeddings profiles. Add an embedding model to a profile and enable it first."
       }
     },
     "assistantSafety": {
       "title": "Assistant safety",
+      "diagnostics": {
+        "actions": {
+          "run": "Run diagnostics"
+        },
+        "lastChecked": "Last checked: {{time}}",
+        "fields": {
+          "litellmBase": "LiteLLM base",
+          "litellmLiveliness": "Liveliness",
+          "litellmModels": "Models endpoint",
+          "litellmGuardrailsList": "Guardrails list",
+          "guardrails": "Effective guardrails",
+          "openaiKeys": "OpenAI keys"
+        },
+        "guardrails": {
+          "count": "{{count}} guardrails",
+          "allPresent": "All expected present",
+          "missingCount": "Missing {{count}}"
+        },
+        "messages": {
+          "done": "Diagnostics completed."
+        },
+        "errors": {
+          "failed": "Diagnostics failed."
+        }
+      },
+      "metrics": {
+        "title": "Safety metrics",
+        "days": "Last {{days}} days",
+        "columns": {
+          "date": "Date",
+          "total": "Total",
+          "blocked": "Blocked",
+          "rate": "Blocked rate",
+          "moderationCalls": "Moderation calls (est.)",
+          "guardrails": "Guardrails",
+          "codes": "Codes"
+        },
+        "errors": {
+          "loadFailed": "Failed to load metrics."
+        }
+      },
       "hint": {
         "title": "Guardrails are enforced via LiteLLM Proxy",
         "body": "Enable/disable moderation guardrails for the AI assistant. Make sure the LiteLLM Proxy config defines the required guardrails."
@@ -2371,18 +2634,25 @@
       "openaiKeys": {
         "title": "OpenAI keys (LiteLLM upstream)",
         "description": "These keys are stored in MySQL and fetched by LiteLLM Proxy at startup (requires LITELLM_CONFIG_INTERNAL_TOKEN), used for OpenAI model calls and omni-moderation guardrails. If you provide multiple keys, assistant moderation calls are spread across them. Restart the litellm service after updating.",
+        "quotaHint": "Estimated free moderation quota: {{quota}} calls/day ({{perKey}} per key). Current assistant settings use {{callsPerRun}} call(s) per run.",
         "compliance": "Please ensure your usage complies with OpenAI's terms. Do not use multiple keys to bypass provider limits or billing policies.",
         "status": {
           "configured": "Configured",
           "empty": "Not configured",
           "count": "{{count}} keys",
+          "remaining": "{{count}} slots left",
+          "applied": "Applied",
+          "notApplied": "Not applied yet",
+          "restartRequired": "Restart required",
           "tokenOk": "Internal token configured",
           "tokenMissing": "Missing internal token",
           "lbOn": "LB on",
           "lbOff": "LB off"
         },
         "warnings": {
-          "tokenMissing": "LITELLM_CONFIG_INTERNAL_TOKEN is not configured. LiteLLM cannot fetch keys from MySQL at startup."
+          "tokenMissing": "LITELLM_CONFIG_INTERNAL_TOKEN is not configured. LiteLLM cannot fetch keys from MySQL at startup.",
+          "restartRequired": "Key list changed; restart litellm to apply the new keys.",
+          "tooManyKeys": "This would exceed the max {{max}} keys limit."
         },
         "fields": {
           "keys": "OpenAI API keys",
@@ -2397,7 +2667,8 @@
         "messages": {
           "saved": "Saved.",
           "appended": "Added.",
-          "emptyInput": "Please paste at least one key."
+          "emptyInput": "Please paste at least one key.",
+          "tooManyKeys": "Too many keys. Max {{max}}."
         },
         "errors": {
           "loadFailed": "Failed to load OpenAI keys configuration.",
@@ -2426,6 +2697,12 @@
           "title": "Stored key fingerprints",
           "empty": "No keys stored."
         },
+        "applied": {
+          "title": "Applied by LiteLLM",
+          "at": "at",
+          "source": "Source",
+          "empty": "No applied keys reported yet."
+        },
         "reset": {
           "action": "Clear keys",
           "modal": {
@@ -2437,6 +2714,16 @@
           },
           "errors": {
             "failed": "Clear failed."
+          }
+        },
+        "buckets": {
+          "title": "Load balancing buckets",
+          "hint": "Assistant moderation requests are deterministically assigned to a bucket; each bucket maps to a specific guardrail name and upstream key.",
+          "columns": {
+            "bucket": "Bucket",
+            "fingerprint": "Key fingerprint",
+            "pre": "Pre-call",
+            "post": "Post-call"
           }
         }
       },
@@ -2999,7 +3286,8 @@
       "emptyDescription": "Run a correlation or anomaly analysis to generate results.",
       "generating": "Generating",
       "pending": "Pending"
-    }
+    },
+    "runPermissionRequired": "You can view results, but you don't have permission to run new analyses."
   },
   "orgAdmin": {
     "loading": "Loading",
@@ -3836,7 +4124,10 @@
       "username": "Username",
       "password": "Password"
     },
-    "title": "Crawl Tasks"
+    "title": "Crawl Tasks",
+    "filter": {
+      "sourceId": "Filtered by NewsSource {{id}}"
+    }
   },
   "errors": {
     "kinds": {
@@ -3920,7 +4211,8 @@
         "embeddingModel": "Embedding model",
         "embeddingDims": "Embedding dims"
       },
-      "keyPointsMore": "+{{count}} more"
+      "keyPointsMore": "+{{count}} more",
+      "processedErrorTitle": "Processing failed"
     },
     "columns": {
       "name": "Title",
@@ -4159,7 +4451,16 @@
       "tag": "Blocked",
       "title": "Blocked by safety checks",
       "description": "Your input was blocked by content safety moderation. Please revise and try again.",
+      "codes": {
+        "GUARDRAIL_MISCONFIG": "Safety checks are misconfigured. Please contact an administrator.",
+        "PROMPT_INJECTION": "Prompt injection/jailbreak detected.",
+        "TRUST_SAFETY_VIOLATION": "Trust & safety violation detected.",
+        "LANGUAGE_POLICY_VIOLATION": "Language policy violation detected.",
+        "MODERATION_BLOCKED": "Blocked by content moderation.",
+        "GUARDRAIL_BLOCKED": "Blocked by content safety guardrails."
+      },
       "details": {
+        "code": "Reason code",
         "guardrails": "Applied guardrails",
         "upstreamStatus": "Upstream status"
       }
@@ -4224,7 +4525,8 @@
       "input": "Input",
       "output": "Output",
       "empty": "Select a run from the list."
-    }
+    },
+    "runPermissionRequired": "You do not have permission to run assistant tasks."
   },
   "situationMonitor": {
     "correlation": {

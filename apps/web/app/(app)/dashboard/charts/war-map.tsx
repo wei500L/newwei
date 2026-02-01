@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
@@ -1059,6 +1060,12 @@ export function WarMap({ className }: WarMapProps = {}) {
     monitorStats.totalVisible;
 
   const hasRenderableData = totalVisiblePoints > 0;
+  const staleDataError =
+    (eventsQuery.isError ? eventsQuery.error : null) ??
+    (newsMarkersQuery.isError ? newsMarkersQuery.error : null) ??
+    (layersQuery.isError ? layersQuery.error : null) ??
+    (geoQuery.isError ? geoQuery.error : null);
+  const showStaleErrorBanner = Boolean(hasRenderableData && staleDataError);
 
   const hasHiddenOverlays =
     layerStats.totalAvailable > layerStats.totalVisible ||
@@ -1364,6 +1371,20 @@ export function WarMap({ className }: WarMapProps = {}) {
 
   return (
     <div ref={containerRef} className={containerClassName}>
+      {showStaleErrorBanner ? (
+        <div className="absolute left-4 right-4 top-4 z-20">
+          <RequestErrorBanner
+            error={staleDataError}
+            showCachedDataHint
+            onRetry={() => {
+              void geoQuery.refetch();
+              void eventsQuery.refetch();
+              void newsMarkersQuery.refetch();
+              void layersQuery.refetch();
+            }}
+          />
+        </div>
+      ) : null}
       <div className="absolute left-4 top-12 z-10 flex flex-col gap-1">
         <Space size={6} wrap>
           <Tag color="default" className="text-xs">

@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
 import { useEntityImpactGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
@@ -634,8 +635,28 @@ export function EntityImpactGraph() {
     );
   }
 
+  const showStaleDataErrorBanner = Boolean(error && hasData);
+  const showStaleSettingsErrorBanner = Boolean(settingsApplied && settingsError);
+
   return (
     <div ref={containerRef} className="relative h-[400px]">
+      {showStaleDataErrorBanner ? (
+        <div className="absolute left-2 right-2 top-2 z-20">
+          <RequestErrorBanner
+            error={error}
+            onRetry={() => void refetch()}
+            showCachedDataHint
+          />
+        </div>
+      ) : showStaleSettingsErrorBanner ? (
+        <div className="absolute left-2 right-2 top-2 z-20">
+          <RequestErrorBanner
+            error={settingsError}
+            onRetry={() => void refetchSettings()}
+            showCachedDataHint
+          />
+        </div>
+      ) : null}
       <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
         <Tag color="default" className="text-xs">
           Range: {range}

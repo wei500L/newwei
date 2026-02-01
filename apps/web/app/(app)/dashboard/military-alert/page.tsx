@@ -47,6 +47,8 @@ export default function MilitaryAlertPage() {
     refetch,
     hasData,
     latestTimestamp,
+    appliedGranularity,
+    appliedGranularityRange,
     delayMs,
     expectedIntervalMs,
     chartState,
@@ -150,7 +152,10 @@ export default function MilitaryAlertPage() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ marginBottom: 16 }}>
         <Typography.Title level={4}>{t("dashboard.militaryAlert.title")}</Typography.Title>
-        <TimeRangeControls />
+        <TimeRangeControls
+          appliedGranularity={appliedGranularity}
+          appliedGranularityRange={appliedGranularityRange}
+        />
       </div>
       <ChartStateBanner
         state={chartState}

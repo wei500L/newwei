@@ -42,6 +42,35 @@ export const compareGranularity = (
   return actualRank < expectedRank ? "finer" : "coarser";
 };
 
+const isConcreteGranularity = (
+  value: UiTimeGranularity | null | undefined,
+): value is UiTimeGranularity =>
+  Boolean(value) && value !== UiTimeGranularity.Unknown && value !== UiTimeGranularity.Window;
+
+export const pickCoarsestGranularity = (
+  granularities: Array<UiTimeGranularity | null | undefined>,
+): UiTimeGranularity => {
+  const candidates = granularities.filter(isConcreteGranularity);
+  if (candidates.length === 0) return UiTimeGranularity.Unknown;
+  return candidates.reduce((coarsest, next) => {
+    const currentRank = GRANULARITY_RANK[coarsest] ?? 99;
+    const nextRank = GRANULARITY_RANK[next] ?? 99;
+    return nextRank > currentRank ? next : coarsest;
+  }, candidates[0]!);
+};
+
+export const pickFinestGranularity = (
+  granularities: Array<UiTimeGranularity | null | undefined>,
+): UiTimeGranularity => {
+  const candidates = granularities.filter(isConcreteGranularity);
+  if (candidates.length === 0) return UiTimeGranularity.Unknown;
+  return candidates.reduce((finest, next) => {
+    const currentRank = GRANULARITY_RANK[finest] ?? 99;
+    const nextRank = GRANULARITY_RANK[next] ?? 99;
+    return nextRank < currentRank ? next : finest;
+  }, candidates[0]!);
+};
+
 export const formatGranularityLabel = (granularity: UiTimeGranularity): string => {
   switch (granularity) {
     case UiTimeGranularity.Realtime:
@@ -173,6 +202,12 @@ export const timeGranularityToUiGranularity = (
   if (!granularity) return UiTimeGranularity.Unknown;
   const normalized = granularity.trim().toLowerCase();
   switch (normalized) {
+    case "realtime":
+      return UiTimeGranularity.Realtime;
+    case "minute":
+      return UiTimeGranularity.Minute;
+    case "hour":
+      return UiTimeGranularity.Hour;
     case "day":
       return UiTimeGranularity.Day;
     case "week":

@@ -30,36 +30,44 @@ const securityMock = {
 
 describe("OpenAiKeysSettingsService", () => {
   let service: OpenAiKeysSettingsService;
-  let cacheState: any;
-  let persistedValue: any;
+  let cacheState: Map<string, any>;
+  let persisted: Record<string, any>;
 
   beforeEach(() => {
     jest.resetAllMocks();
-    cacheState = null;
-    persistedValue = undefined;
+    cacheState = new Map();
+    persisted = {};
 
     securityMock.encodeSecretForStorage = jest.fn(async (plain: string) => plain);
 
-    cacheMock.get = jest.fn(async () => cacheState);
-    cacheMock.set = jest.fn(async (_key: string, value: unknown) => {
-      cacheState = value;
+    cacheMock.get = jest.fn(async (key: string) => cacheState.get(key));
+    cacheMock.set = jest.fn(async (key: string, value: unknown) => {
+      cacheState.set(key, value);
     });
     cacheMock.del = jest.fn(async () => {
-      cacheState = null;
+      cacheState = new Map();
     });
 
-    prismaMock.systemSetting.findUnique = jest.fn(async () => {
-      if (!persistedValue) {
+    prismaMock.systemSetting.findUnique = jest.fn(async (args: any) => {
+      const key = args?.where?.key;
+      if (!key || !(key in persisted)) {
         return null;
       }
-      return { key: "openai_keys", value: persistedValue };
+      return { key, value: persisted[key] };
     });
     prismaMock.systemSetting.upsert = jest.fn(async (args: any) => {
-      persistedValue = args.create?.value ?? args.update?.value;
-      return { key: "openai_keys", value: persistedValue };
+      const key = args?.where?.key;
+      const value = args.create?.value ?? args.update?.value;
+      if (typeof key === "string") {
+        persisted[key] = value;
+      }
+      return { key, value };
     });
-    prismaMock.systemSetting.deleteMany = jest.fn(async () => {
-      persistedValue = undefined;
+    prismaMock.systemSetting.deleteMany = jest.fn(async (args: any) => {
+      const key = args?.where?.key;
+      if (typeof key === "string") {
+        delete persisted[key];
+      }
       return { count: 1 };
     });
     prismaMock.auditLog.create = jest.fn().mockResolvedValue(undefined);
@@ -74,6 +82,10 @@ describe("OpenAiKeysSettingsService", () => {
     expect(response.keysCount).toBe(0);
     expect(response.hasKeys).toBe(false);
     expect(response.keyFingerprints).toEqual([]);
+    expect(response.appliedAt).toBeNull();
+    expect(response.appliedSource).toBeNull();
+    expect(response.appliedKeyFingerprints).toEqual([]);
+    expect(response.restartRequired).toBe(false);
   });
 
   it("stores keys and returns count", async () => {
@@ -87,9 +99,17 @@ describe("OpenAiKeysSettingsService", () => {
       hasKeys: true,
     });
     expect(response.keyFingerprints).toHaveLength(2);
+    expect(response.restartRequired).toBe(true);
 
     const keys = await service.getPlaintextKeys();
     expect(keys).toEqual(["sk-one", "sk-two"]);
+  });
+
+  it("rejects more than 100 keys", async () => {
+    const keys = Array.from({ length: 101 }, (_, i) => `sk-${i}`);
+    await expect(
+      service.updateSettings("org-1", "actor-1", { keys })
+    ).rejects.toThrow("Too many OpenAI API keys");
   });
 
   it("resets stored keys", async () => {
@@ -98,5 +118,6 @@ describe("OpenAiKeysSettingsService", () => {
     expect(response.source).toBe("none");
     expect(response.keysCount).toBe(0);
     expect(response.keyFingerprints).toEqual([]);
+    expect(response.restartRequired).toBe(false);
   });
 });

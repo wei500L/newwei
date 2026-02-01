@@ -741,6 +741,11 @@ type EconomicDataItemModel {
 
 type EconomicDataPointModel {
   dataType: EconomicDataValueType!
+
+  """
+  Effective aggregation granularity negotiated by the backend (may be coarser than the requested granularity).
+  """
+  effectiveGranularity: TimeGranularity
   item: EconomicDataItemModel!
   sourceField: String
   timestamp: DateTime!
@@ -1659,8 +1664,11 @@ type Subscription {
 
 enum TimeGranularity {
   day
+  hour
+  minute
   month
   quarter
+  realtime
   week
   year
 }

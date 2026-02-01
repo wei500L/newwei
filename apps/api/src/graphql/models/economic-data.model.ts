@@ -7,7 +7,10 @@ export enum TimeGranularity {
   quarter = "quarter",
   month = "month",
   week = "week",
-  day = "day"
+  day = "day",
+  hour = "hour",
+  minute = "minute",
+  realtime = "realtime"
 }
 
 registerEnumType(EconomicDataFrequency, {
@@ -46,6 +49,13 @@ export class EconomicDataItemModel {
 export class EconomicDataPointModel {
   @Field(() => GraphQLISODateTime)
   timestamp!: Date;
+
+  @Field(() => TimeGranularity, {
+    nullable: true,
+    description:
+      "Effective aggregation granularity negotiated by the backend (may be coarser than the requested granularity)."
+  })
+  effectiveGranularity?: TimeGranularity | null;
 
   @Field(() => Float)
   value!: number;

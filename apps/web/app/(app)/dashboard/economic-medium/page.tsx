@@ -34,6 +34,8 @@ export default function EconomicMediumPage() {
     refetch,
     hasData,
     latestTimestamp,
+    appliedGranularity,
+    appliedGranularityRange,
     delayMs,
     expectedIntervalMs,
     chartState
@@ -250,7 +252,10 @@ export default function EconomicMediumPage() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ marginBottom: 16 }}>
         <Typography.Title level={4}>{t("dashboard.economicMedium.title")}</Typography.Title>
-        <TimeRangeControls />
+        <TimeRangeControls
+          appliedGranularity={appliedGranularity}
+          appliedGranularityRange={appliedGranularityRange}
+        />
       </div>
       <ChartStateBanner
         state={chartState}
