@@ -5,16 +5,20 @@ import { App, Button, Skeleton, Tag } from "antd";
 import axios from "axios";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
+import { useCsvExport } from "@/hooks/use-csv-export";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
-import dayjs from "@/lib/dayjs";
+import {
+  buildExportBaseName,
+  buildExportFilename,
+  formatDateForFilename
+} from "@/lib/data-export";
 import { formatUpdatedAt, resolveLocale } from "@/lib/i18n";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
@@ -90,58 +94,6 @@ const extractSectorHeatmapFieldMismatch = (error: unknown) => {
   };
 };
 
-const escapeCsvValue = (value: string | number | null | undefined) => {
-  const text = value === null || value === undefined ? "" : String(value);
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
-};
-
-const yieldToMain = () =>
-  new Promise<void>((resolve) => {
-    if (typeof requestIdleCallback === "function") {
-      requestIdleCallback(() => resolve());
-      return;
-    }
-    setTimeout(resolve, 0);
-  });
-
-const buildCsv = async (rows: (string | number | null | undefined)[][]) => {
-  const lines: string[] = [];
-  for (let i = 0; i < rows.length; i += 1) {
-    const row = rows[i];
-    if (!row) {
-      continue;
-    }
-    lines.push(row.map(escapeCsvValue).join(","));
-    if (i > 0 && i % 500 === 0) {
-      await yieldToMain();
-    }
-  }
-  return lines.join("\n");
-};
-
-const downloadCsvFile = (csv: string, filename: string) => {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.rel = "noreferrer";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-};
-
-const sanitizeFilename = (value: string) => {
-  const normalized = value.trim().replace(/[^a-zA-Z0-9-_]+/g, "-");
-  const trimmed = normalized.replace(/^-+|-+$/g, "");
-  return trimmed || "export";
-};
-
-const formatDateForFilename = (date: Date) => {
-  return dayjs.utc(date).format("YYYY-MM-DD");
-};
-
 export function SectorHeatmap() {
   const { t, i18n } = useTranslation();
   const { message } = App.useApp();
@@ -150,14 +102,16 @@ export function SectorHeatmap() {
   const { range, start, end } = useDashboardRangeStore();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const { selectedSector, setSelectedSector } = useDashboardFiltersStore();
-  const [exportingCsv, setExportingCsv] = useState(false);
+  const { exporting: exportingCsv, label: csvLabel, exportCsv } = useCsvExport();
   const emptyTitle = t("dashboard.dataEmpty", { defaultValue: "No data" });
   const emptyHint = t("dashboard.dataEmptyHint", {
     defaultValue: "No data for the selected range. Try expanding the range."
   });
   const valueLabel = t("dashboard.charts.sectorHeatmapValueLabel", { defaultValue: "Value" });
   const changeLabel = t("dashboard.charts.sectorHeatmapChangeLabel", { defaultValue: "Change" });
-  const windowLabel = `${formatDateForFilename(start)} - ${formatDateForFilename(end)}`;
+  const startLabel = formatDateForFilename(start);
+  const endLabel = formatDateForFilename(end);
+  const windowLabel = `${startLabel} - ${endLabel}`;
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -338,49 +292,34 @@ export function SectorHeatmap() {
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.cells.length === 0) return;
-    setExportingCsv(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      const filteredCells = selectedSector
-        ? data.cells.filter((cell) => cell.name === selectedSector)
-        : data.cells;
-      const rows = [
-        ["Sector", "Group", "Row", valueLabel, "Unit", "Source field", changeLabel],
-        ...filteredCells.map((cell) => {
-          const xLabel = data.xLabels[cell.x] ?? String(cell.x);
-          const yLabel = data.yLabels[cell.y] ?? String(cell.y);
-          return [
-            cell.name,
-            xLabel,
-            yLabel,
-            cell.value,
-            cell.unit ?? "",
-            cell.sourceField ?? "",
-            cell.change
-          ];
-        })
-      ];
-      const csv = await buildCsv(rows);
-      const startLabel = formatDateForFilename(start);
-      const endLabel = formatDateForFilename(end);
-      const suffix = selectedSector ? `-${sanitizeFilename(selectedSector)}` : "";
-      const filename = `sector-heatmap${suffix}-${startLabel}-${endLabel}.csv`;
-      downloadCsvFile(csv, filename);
-      toast.success(
-        t("dashboard.charts.downloadSuccess", { defaultValue: "Download completed" })
-      );
-    } catch {
-      toast.error(
-        t("dashboard.charts.downloadFailed", { defaultValue: "Download failed" })
-      );
-    } finally {
-      setExportingCsv(false);
-    }
-  }, [changeLabel, data, end, selectedSector, start, t, valueLabel]);
-
-  const csvLabel = exportingCsv
-    ? t("dashboard.charts.exporting", { defaultValue: "Exporting..." })
-    : t("dashboard.charts.downloadCsv", { defaultValue: "Download CSV" });
+    const filteredCells = selectedSector
+      ? data.cells.filter((cell) => cell.name === selectedSector)
+      : data.cells;
+    const rows = [
+      ["Sector", "Group", "Row", valueLabel, "Unit", "Source field", changeLabel],
+      ...filteredCells.map((cell) => {
+        const xLabel = data.xLabels[cell.x] ?? String(cell.x);
+        const yLabel = data.yLabels[cell.y] ?? String(cell.y);
+        return [
+          cell.name,
+          xLabel,
+          yLabel,
+          cell.value,
+          cell.unit ?? "",
+          cell.sourceField ?? "",
+          cell.change
+        ];
+      })
+    ];
+    const filename = buildExportFilename({
+      base: "sector-heatmap",
+      suffixes: [selectedSector],
+      start: startLabel,
+      end: endLabel,
+      extension: "csv"
+    });
+    await exportCsv({ rows, filename });
+  }, [changeLabel, data, endLabel, exportCsv, selectedSector, startLabel, valueLabel]);
 
   const hasRenderableData = Boolean(data && data.cells.length > 0);
   const showStaleErrorBanner = Boolean(isError && hasRenderableData);
@@ -519,9 +458,13 @@ export function SectorHeatmap() {
         option={option}
         theme={echartsTheme}
         height="100%"
-        exportFilename={`sector-heatmap-${formatDateForFilename(start)}-${formatDateForFilename(
-          end
-        )}`}
+        exportFilename={buildExportBaseName({
+          base: "sector-heatmap",
+          suffixes: [selectedSector],
+          start: startLabel,
+          end: endLabel,
+          fallback: "chart"
+        })}
         showExportImage
         actions={
           <Button

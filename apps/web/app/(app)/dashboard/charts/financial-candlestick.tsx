@@ -4,15 +4,20 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, Skeleton, Space, Tag } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
+import { useCsvExport } from "@/hooks/use-csv-export";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
+import {
+  buildExportBaseName,
+  buildExportFilename,
+  formatDateForFilename
+} from "@/lib/data-export";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, formatUpdatedAt, resolveLocale } from "@/lib/i18n";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
@@ -43,70 +48,20 @@ interface FinancialCandlestickResponse {
   updatedAt?: string;
 }
 
-const escapeCsvValue = (value: string | number | null | undefined) => {
-  const text = value === null || value === undefined ? "" : String(value);
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
-};
-
-const yieldToMain = () =>
-  new Promise<void>((resolve) => {
-    if (typeof requestIdleCallback === "function") {
-      requestIdleCallback(() => resolve());
-      return;
-    }
-    setTimeout(resolve, 0);
-  });
-
-const buildCsv = async (rows: (string | number | null | undefined)[][]) => {
-  const lines: string[] = [];
-  for (let i = 0; i < rows.length; i += 1) {
-    const row = rows[i];
-    if (!row) {
-      continue;
-    }
-    lines.push(row.map(escapeCsvValue).join(","));
-    if (i > 0 && i % 500 === 0) {
-      await yieldToMain();
-    }
-  }
-  return lines.join("\n");
-};
-
-const downloadCsvFile = (csv: string, filename: string) => {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.rel = "noreferrer";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-};
-
-const sanitizeFilename = (value: string) => {
-  const normalized = value.trim().replace(/[^a-zA-Z0-9-_]+/g, "-");
-  const trimmed = normalized.replace(/^-+|-+$/g, "");
-  return trimmed || "export";
-};
-
-const formatDateForFilename = (date: Date) => {
-  return dayjs.utc(date).format("YYYY-MM-DD");
-};
-
 export function FinancialCandlestick() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session, status: sessionStatus } = useSession();
   const { range, start, end } = useDashboardRangeStore();
   const theme = useChartTheme();
-  const [exportingCsv, setExportingCsv] = useState(false);
+  const { exporting: exportingCsv, label: csvLabel, exportCsv } = useCsvExport();
   const emptyTitle = t("dashboard.dataEmpty", { defaultValue: "No data" });
   const emptyHint = t("dashboard.dataEmptyHint", {
     defaultValue: "No data for the selected range. Try expanding the range."
   });
-  const windowLabel = `${formatDateForFilename(start)} - ${formatDateForFilename(end)}`;
+  const startLabel = formatDateForFilename(start);
+  const endLabel = formatDateForFilename(end);
+  const windowLabel = `${startLabel} - ${endLabel}`;
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -316,41 +271,27 @@ export function FinancialCandlestick() {
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.points.length === 0) return;
-    setExportingCsv(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      const rows = [
-        ["Timestamp", "Open", "High", "Low", "Close", "Volume"],
-        ...data.points.map((point) => [
-          point.timestamp,
-          point.open,
-          point.high,
-          point.low,
-          point.close,
-          point.volume ?? ""
-        ])
-      ];
-      const csv = await buildCsv(rows);
-      const startLabel = formatDateForFilename(start);
-      const endLabel = formatDateForFilename(end);
-      const symbolSuffix = data.symbol ? `-${sanitizeFilename(data.symbol)}` : "";
-      const filename = `financial-candlestick${symbolSuffix}-${startLabel}-${endLabel}.csv`;
-      downloadCsvFile(csv, filename);
-      toast.success(
-        t("dashboard.charts.downloadSuccess", { defaultValue: "Download completed" })
-      );
-    } catch {
-      toast.error(
-        t("dashboard.charts.downloadFailed", { defaultValue: "Download failed" })
-      );
-    } finally {
-      setExportingCsv(false);
-    }
-  }, [data, end, start, t]);
-
-  const csvLabel = exportingCsv
-    ? t("dashboard.charts.exporting", { defaultValue: "Exporting..." })
-    : t("dashboard.charts.downloadCsv", { defaultValue: "Download CSV" });
+    const rows = [
+      ["Timestamp", "Open", "High", "Low", "Close", "Volume"],
+      ...data.points.map((point) => [
+        point.timestamp,
+        point.open,
+        point.high,
+        point.low,
+        point.close,
+        point.volume ?? ""
+      ])
+    ];
+    const filename = buildExportFilename({
+      base: "financial-candlestick",
+      suffixes: [data.symbol],
+      start: startLabel,
+      end: endLabel,
+      extension: "csv"
+    });
+    await exportCsv({ rows, filename });
+  }, [data, endLabel, exportCsv, startLabel]);
+  // csvLabel handled by useCsvExport
 
   const hasRenderableData = Boolean(data && data.points.length > 0);
   const showStaleErrorBanner = Boolean(isError && hasRenderableData);
@@ -422,9 +363,13 @@ export function FinancialCandlestick() {
         group="dashboard-charts"
         option={option}
         height="100%"
-        exportFilename={`financial-candlestick-${formatDateForFilename(
-          start
-        )}-${formatDateForFilename(end)}`}
+        exportFilename={buildExportBaseName({
+          base: "financial-candlestick",
+          suffixes: [data.symbol],
+          start: startLabel,
+          end: endLabel,
+          fallback: "chart"
+        })}
         showExportImage
         actions={
           <Space size={8}>

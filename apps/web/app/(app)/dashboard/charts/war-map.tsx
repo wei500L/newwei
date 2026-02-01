@@ -14,6 +14,7 @@ import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
+import { buildExportBaseName, formatDateForFilename } from "@/lib/data-export";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, formatUpdatedAt, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
@@ -177,10 +178,6 @@ const severityLabel = (severity: WarEventSeverity) => {
 };
 
 const isFiniteNumber = (value: number) => Number.isFinite(value);
-
-const formatDateForFilename = (date: Date) => {
-  return dayjs.utc(date).format("YYYY-MM-DD");
-};
 
 const getApiErrorMessage = (error: unknown): string | undefined => {
   if (!error) return undefined;
@@ -1434,9 +1431,12 @@ export function WarMap({ className }: WarMapProps = {}) {
         option={option}
         theme={echartsTheme}
         height="100%"
-        exportFilename={`war-map-${formatDateForFilename(start)}-${formatDateForFilename(
-          end
-        )}`}
+        exportFilename={buildExportBaseName({
+          base: "war-map",
+          start: formatDateForFilename(start),
+          end: formatDateForFilename(end),
+          fallback: "chart"
+        })}
         showExportImage
         actions={
           <Popover

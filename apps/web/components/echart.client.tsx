@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartSkeleton } from "@/components/chart-skeleton";
+import { downloadDataUrlFile, sanitizeFilename, yieldToMain } from "@/lib/data-export";
 
 type Installer = Parameters<typeof echarts.use>[0];
 
@@ -323,12 +324,6 @@ export interface EchartProps {
   exportPixelRatio?: number;
   exportBackgroundColor?: string;
 }
-
-const sanitizeFilename = (value: string) => {
-  const normalized = value.trim().replace(/[^a-zA-Z0-9-_]+/g, "-");
-  const trimmed = normalized.replace(/^-+|-+$/g, "");
-  return trimmed || "chart";
-};
 
 const resolveExportBackground = (
   theme: string | object | undefined,
@@ -712,7 +707,7 @@ export function DashboardChart({
     }
     setExporting(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await yieldToMain();
       const background = resolveExportBackground(theme, exportBackgroundColor);
       const dataUrl =
         renderer === "svg"
@@ -728,13 +723,10 @@ export function DashboardChart({
               pixelRatio: exportPixelRatio,
               backgroundColor: background,
             });
-      const link = document.createElement("a");
-      link.href = dataUrl;
-      link.download = `${sanitizeFilename(exportFilename ?? "chart")}.png`;
-      link.rel = "noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadDataUrlFile(
+        dataUrl,
+        `${sanitizeFilename(exportFilename ?? "chart", "chart")}.png`,
+      );
       toast.success(
         t("dashboard.charts.exportSuccess", { defaultValue: "Export completed" }),
       );
