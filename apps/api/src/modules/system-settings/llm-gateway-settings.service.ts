@@ -214,6 +214,9 @@ export class LlmGatewaySettingsService {
       if (!found.enabled) {
         throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
       }
+      if (!found.embeddingModel) {
+        throw new BadRequestException("Embeddings gateway profile must configure embeddingModel");
+      }
     }
     settings.embeddingActiveId = activeId;
     if (!activeId) {

@@ -291,7 +291,7 @@ export function LlmGatewaySettingsPanel() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
-  const [activating, setActivating] = useState(false);
+  const [activatingProfileId, setActivatingProfileId] = useState<string | null>(null);
   const [embeddingActivating, setEmbeddingActivating] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
@@ -344,6 +344,7 @@ export function LlmGatewaySettingsPanel() {
   const screens = Grid.useBreakpoint();
   const includeCompletion = Form.useWatch("includeCompletion", testForm) ?? true;
   const includeEmbeddings = Form.useWatch("includeEmbeddings", testForm) ?? false;
+  const editClearApiKey = Form.useWatch("clearApiKey", editForm) ?? false;
   const proxyLbOpenaiKeys = Form.useWatch("openaiKeys", proxyLbForm) ?? "";
   const proxyLbAnthropicKeys = Form.useWatch("anthropicKeys", proxyLbForm) ?? "";
   const proxyLbRoutingStrategy = Form.useWatch("routingStrategy", proxyLbForm) ?? "simple-shuffle";
@@ -704,7 +705,8 @@ export function LlmGatewaySettingsPanel() {
       if (statusCode === 400) {
         messageApi.error(extractApiError(error).message ?? t("settings.llmGateway.errors.badRequest"));
       } else {
-        messageApi.error(t("settings.llmGateway.errors.createFailed"));
+        const messageText = formatApiErrorMessage(error);
+        messageApi.error(messageText ? messageText : t("settings.llmGateway.errors.createFailed"));
       }
     } finally {
       setSaving(false);
@@ -752,7 +754,8 @@ export function LlmGatewaySettingsPanel() {
       if (statusCode === 400) {
         messageApi.error(extractApiError(error).message ?? t("settings.llmGateway.errors.badRequest"));
       } else {
-        messageApi.error(t("settings.llmGateway.errors.updateFailed"));
+        const messageText = formatApiErrorMessage(error);
+        messageApi.error(messageText ? messageText : t("settings.llmGateway.errors.updateFailed"));
       }
     } finally {
       setSaving(false);
@@ -760,6 +763,52 @@ export function LlmGatewaySettingsPanel() {
   };
 
   const handleToggle = async (profile: LlmGatewayProfile, nextEnabled: boolean) => {
+    const wasCompletionActive = settings.activeId === profile.id;
+    const wasEmbeddingActive = settings.embeddingActiveId === profile.id;
+    if (!nextEnabled && (wasCompletionActive || wasEmbeddingActive)) {
+      const shouldDisable = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: t("settings.llmGateway.modal.disableTitle", {
+            defaultValue: "确认禁用该 Profile？"
+          }),
+          okButtonProps: { danger: true },
+          okText: t("common.disable", { defaultValue: "禁用" }),
+          cancelText: t("common.cancel"),
+          content: (
+            <Space direction="vertical" size="small" style={{ display: "flex" }}>
+              <Typography.Text>
+                {t("settings.llmGateway.modal.disableContent", {
+                  defaultValue: "即将禁用：{{name}}",
+                  name: profile.name
+                })}
+              </Typography.Text>
+              {wasCompletionActive ? (
+                <Typography.Text type="secondary">
+                  {t("settings.llmGateway.modal.disableActiveHint", {
+                    defaultValue:
+                      "该 Profile 当前为对话/补全的 Active 配置。禁用后将自动取消 Active Profile，并回退到默认配置。"
+                  })}
+                </Typography.Text>
+              ) : null}
+              {wasEmbeddingActive ? (
+                <Typography.Text type="secondary">
+                  {t("settings.llmGateway.modal.disableEmbeddingHint", {
+                    defaultValue:
+                      "该 Profile 当前为 Embeddings 的 Active 配置。禁用后将自动取消 Embeddings Active，并回退到 follow_completion 或默认配置。"
+                  })}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          ),
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false)
+        });
+      });
+      if (!shouldDisable) {
+        return;
+      }
+    }
+
     setToggling(profile.id);
     try {
       await apiClient.put(`system-settings/llm-gateways/${profile.id}`, {
@@ -769,23 +818,25 @@ export function LlmGatewaySettingsPanel() {
       messageApi.success(nextEnabled ? t("common.enabled") : t("common.disabled"));
     } catch (error) {
       captureClientError("Failed to toggle LLM gateway profile", error);
-      messageApi.error(t("settings.llmGateway.errors.toggleFailed"));
+      const messageText = formatApiErrorMessage(error);
+      messageApi.error(messageText ? messageText : t("settings.llmGateway.errors.toggleFailed"));
     } finally {
-      setToggling(null);
+      setToggling((current) => (current === profile.id ? null : current));
     }
   };
 
   const handleActivate = async (profileId: string) => {
-    setActivating(true);
+    setActivatingProfileId(profileId);
     try {
       await apiClient.put("system-settings/llm-gateways/active", { activeId: profileId });
       await loadSettings();
       messageApi.success(t("settings.llmGateway.messages.activated"));
     } catch (error) {
       captureClientError("Failed to activate LLM gateway profile", error);
-      messageApi.error(t("settings.llmGateway.errors.activateFailed"));
+      const messageText = formatApiErrorMessage(error);
+      messageApi.error(messageText ? messageText : t("settings.llmGateway.errors.activateFailed"));
     } finally {
-      setActivating(false);
+      setActivatingProfileId((current) => (current === profileId ? null : current));
     }
   };
 
@@ -812,10 +863,13 @@ export function LlmGatewaySettingsPanel() {
       if (statusCode === 400) {
         messageApi.error(extractApiError(error).message ?? t("settings.llmGateway.errors.badRequest"));
       } else {
+        const messageText = formatApiErrorMessage(error);
         messageApi.error(
-          t("settings.llmGateway.embeddingActive.errors.activateFailed", {
-            defaultValue: "更新 Embeddings 配置失败"
-          })
+          messageText
+            ? messageText
+            : t("settings.llmGateway.embeddingActive.errors.activateFailed", {
+                defaultValue: "更新 Embeddings 配置失败"
+              })
         );
       }
     } finally {
@@ -824,9 +878,25 @@ export function LlmGatewaySettingsPanel() {
   };
 
   const handleDelete = async (profile: LlmGatewayProfile) => {
+    const wasCompletionActive = settings.activeId === profile.id;
+    const wasEmbeddingActive = settings.embeddingActiveId === profile.id;
     Modal.confirm({
       title: t("settings.llmGateway.modal.deleteTitle"),
-      content: t("settings.llmGateway.modal.deleteContent", { name: profile.name }),
+      content: (
+        <Space direction="vertical" size="small" style={{ display: "flex" }}>
+          <Typography.Text>
+            {t("settings.llmGateway.modal.deleteContent", { name: profile.name })}
+          </Typography.Text>
+          {wasCompletionActive || wasEmbeddingActive ? (
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.modal.deleteActiveHint", {
+                defaultValue:
+                  "该 Profile 当前正在使用中（Active）。删除后将取消相应的 Active 配置，并回退到默认策略。"
+              })}
+            </Typography.Text>
+          ) : null}
+        </Space>
+      ),
       okButtonProps: { danger: true },
       okText: t("common.delete"),
       onOk: async () => {
@@ -836,7 +906,8 @@ export function LlmGatewaySettingsPanel() {
           messageApi.success(t("settings.llmGateway.messages.deleted"));
         } catch (error) {
           captureClientError("Failed to delete LLM gateway profile", error);
-          messageApi.error(t("settings.llmGateway.errors.deleteFailed"));
+          const messageText = formatApiErrorMessage(error);
+          messageApi.error(messageText ? messageText : t("settings.llmGateway.errors.deleteFailed"));
         }
       }
     });
@@ -1701,8 +1772,12 @@ export function LlmGatewaySettingsPanel() {
           <Button
             size="small"
             type="primary"
-            disabled={settings.activeId === record.id || !record.enabled}
-            loading={activating}
+            disabled={
+              settings.activeId === record.id ||
+              !record.enabled ||
+              (activatingProfileId !== null && activatingProfileId !== record.id)
+            }
+            loading={activatingProfileId === record.id}
             onClick={() => void handleActivate(record.id)}
           >
             {t("settings.llmGateway.actions.activate")}
@@ -2382,10 +2457,21 @@ export function LlmGatewaySettingsPanel() {
             name="apiKey"
             extra={t("settings.llmGateway.hints.apiKeyEdit")}
           >
-            <Input.Password placeholder={t("settings.llmGateway.placeholders.apiKeyEdit")} />
+            <Input.Password
+              placeholder={t("settings.llmGateway.placeholders.apiKeyEdit")}
+              disabled={Boolean(editClearApiKey)}
+            />
           </Form.Item>
           <Form.Item name="clearApiKey" valuePropName="checked">
-            <Switch checkedChildren={t("settings.llmGateway.actions.clearKey")} unCheckedChildren={t("settings.llmGateway.actions.keepKey")} />
+            <Switch
+              checkedChildren={t("settings.llmGateway.actions.clearKey")}
+              unCheckedChildren={t("settings.llmGateway.actions.keepKey")}
+              onChange={(checked) => {
+                if (checked) {
+                  editForm.setFieldsValue({ apiKey: "" });
+                }
+              }}
+            />
           </Form.Item>
           <Form.Item
             label={t("settings.llmGateway.fields.model")}
