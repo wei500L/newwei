@@ -125,13 +125,68 @@ export class Crawl4aiClient {
         memoryEfficiency: response.data?.memoryEfficiency
       };
     } catch (error) {
-      const axiosError = error as AxiosError<{ message?: string }>;
+      const axiosError = error as AxiosError<unknown>;
       const status = axiosError.response?.status;
-      const message =
-        axiosError.response?.data?.message ||
-        axiosError.message ||
-        "crawl4ai request failed";
-      throw new Crawl4aiRequestException(message, status, error);
+      const responseData = axiosError.response?.data;
+
+      const normalizeMessage = (value: unknown): string | undefined => {
+        if (!value) {
+          return undefined;
+        }
+        if (typeof value === "string") {
+          const trimmed = value.trim();
+          return trimmed.length > 0 ? trimmed : undefined;
+        }
+        if (Array.isArray(value)) {
+          const parts = value
+            .filter((entry): entry is string => typeof entry === "string")
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0);
+          return parts.length > 0 ? parts.join("; ") : undefined;
+        }
+        return undefined;
+      };
+
+      const messageFromPayload = (payload: unknown): string | undefined => {
+        if (!payload) {
+          return undefined;
+        }
+        if (typeof payload === "string") {
+          return normalizeMessage(payload);
+        }
+        if (typeof payload !== "object" || Array.isArray(payload)) {
+          return undefined;
+        }
+        const record = payload as Record<string, unknown>;
+        const message = normalizeMessage(record.message);
+        if (message) {
+          return message;
+        }
+        const detail = normalizeMessage(record.detail);
+        if (detail) {
+          return detail;
+        }
+        const error = normalizeMessage(record.error);
+        if (error) {
+          return error;
+        }
+        return undefined;
+      };
+
+      const payloadMessage = messageFromPayload(responseData);
+      const fallback = normalizeMessage(axiosError.message) ?? "crawl4ai request failed";
+      const normalizedStatus =
+        typeof status === "number" && Number.isFinite(status) ? Math.round(status) : undefined;
+
+      const messageParts = [payloadMessage, fallback].filter(
+        (entry): entry is string => Boolean(entry && entry.length > 0)
+      );
+      const messageWithStatus =
+        normalizedStatus !== undefined
+          ? `${messageParts.join("\n")}\n(status ${normalizedStatus})`
+          : messageParts.join("\n");
+
+      throw new Crawl4aiRequestException(messageWithStatus, status, error);
     }
   }
 

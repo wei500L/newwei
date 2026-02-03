@@ -209,6 +209,14 @@ services:
   crawl4ai:
     image: ${CRAWL4AI_IMAGE:-unclecode/crawl4ai:0}
     restart: unless-stopped
+    working_dir: /app
+    command:
+      - sh
+      - -lc
+      - |
+        Xvfb :99 -screen 0 1920x1080x24 -ac +extension RANDR &
+        export DISPLAY=:99
+        exec supervisord -c supervisord.conf
     ports:
       - "8082:11235"
     healthcheck:

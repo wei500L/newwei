@@ -121,7 +121,7 @@ interface NewsSourcePreviewCandidate {
 }
 
 interface NewsSourcePreviewResponse {
-  mode: "single" | "sitemap" | "rss";
+  mode: "single" | "sitemap" | "rss" | "list";
   sourceId: string;
   url: string;
   name: string;
@@ -144,7 +144,7 @@ interface Crawl4aiQueueStats {
 
 interface NewsSourceDispatchResponse {
   sourceId: string;
-  mode: "single" | "sitemap" | "rss";
+  mode: "single" | "sitemap" | "rss" | "list";
   scheduledFor: string;
   nextRunAt: string;
   scheduledCount: number;
@@ -204,7 +204,7 @@ interface NewsSourceFormValues {
   crawlOptionsJson?: string;
   forceRefresh?: boolean;
   seedEnabled?: boolean;
-  seedMode?: "sitemap" | "rss";
+  seedMode?: "sitemap" | "rss" | "list";
   seedDomain?: string;
   seedPattern?: string;
   seedFeedUrl?: string;
@@ -347,6 +347,20 @@ const hasSeedConfig = (
 
 const isSeedEnabled = (config: unknown) =>
   hasSeedConfig(config) ? config.seed.enabled === true : false;
+
+const getSeedMode = (config: unknown): "sitemap" | "rss" | "list" | null => {
+  if (!hasSeedConfig(config) || config.seed.enabled !== true) {
+    return null;
+  }
+  const rawMode = typeof config.seed.mode === "string" ? config.seed.mode.trim().toLowerCase() : "";
+  if (rawMode === "rss") {
+    return "rss";
+  }
+  if (rawMode === "list") {
+    return "list";
+  }
+  return "sitemap";
+};
 
 const pipelineJobStatusColors: Record<string, string> = {
   pending: "gold",
@@ -924,7 +938,12 @@ export function NewsSourcesContent() {
       typeof seedConfig?.concurrency === "number" && Number.isFinite(seedConfig.concurrency)
         ? seedConfig.concurrency
         : 5;
-    const seedMode = seedConfig?.mode === "rss" ? "rss" : "sitemap";
+    const seedMode =
+      seedConfig?.mode === "rss"
+        ? "rss"
+        : seedConfig?.mode === "list"
+          ? "list"
+          : "sitemap";
 
     const nextFormValues: Partial<NewsSourceFormValues> = {
       ...NEWS_SOURCE_CREATE_INITIAL_VALUES,
@@ -1038,7 +1057,7 @@ export function NewsSourcesContent() {
     const shouldIncludeSeed =
       values.seedEnabled === true || (editingSource?.config && hasSeedConfig(editingSource.config));
     if (shouldIncludeSeed) {
-      const seedMode = values.seedMode === "rss" ? "rss" : "sitemap";
+      const seedMode = values.seedMode === "rss" ? "rss" : values.seedMode === "list" ? "list" : "sitemap";
       const seed: Record<string, unknown> = {
         enabled: values.seedEnabled === true,
         mode: seedMode
@@ -1151,9 +1170,10 @@ export function NewsSourcesContent() {
     } catch (error) {
       captureClientError("Failed to create news source (task drawer)", error);
       messageApi.error(
-        error instanceof Error
-          ? error.message
-          : t("newsSources.errors.saveFailed", { defaultValue: "Failed to save news source." })
+        extractApiErrorMessage(error) ??
+          (error instanceof Error
+            ? error.message
+            : t("newsSources.errors.saveFailed", { defaultValue: "Failed to save news source." }))
       );
     } finally {
       setCreatingFromTaskDrawer(false);
@@ -1192,9 +1212,10 @@ export function NewsSourcesContent() {
     } catch (error) {
       captureClientError("Failed to save news source", error);
       messageApi.error(
-        error instanceof Error
-          ? error.message
-          : t("newsSources.errors.saveFailed", { defaultValue: "Failed to save news source." })
+        extractApiErrorMessage(error) ??
+          (error instanceof Error
+            ? error.message
+            : t("newsSources.errors.saveFailed", { defaultValue: "Failed to save news source." }))
       );
     } finally {
       setSaving(false);
@@ -1809,11 +1830,20 @@ export function NewsSourcesContent() {
         <Space direction="vertical" size={2}>
           <Space size={8} wrap>
             <Typography.Text strong>{record.name}</Typography.Text>
-            {isSeedEnabled(record.config) ? (
-              <Tag color="purple">
-                {t("newsSources.seed.mode", { defaultValue: "Sitemap seed" })}
-              </Tag>
-            ) : null}
+            {(() => {
+              const mode = getSeedMode(record.config);
+              if (!mode) {
+                return null;
+              }
+              const color = mode === "rss" ? "blue" : mode === "list" ? "gold" : "purple";
+              const label =
+                mode === "rss"
+                  ? t("newsSources.seedMode.rss", { defaultValue: "RSS / Atom" })
+                  : mode === "list"
+                    ? t("newsSources.seedMode.list", { defaultValue: "List page" })
+                    : t("newsSources.seedMode.sitemap", { defaultValue: "Sitemap" });
+              return <Tag color={color}>{label}</Tag>;
+            })()}
           </Space>
           <Space size={6} wrap>
             {record.crawlTaskQueuedCount > 0 ? (
@@ -2791,7 +2821,7 @@ export function NewsSourcesContent() {
           <Typography.Text type="secondary">
             {t("newsSources.sections.seedHint", {
               defaultValue:
-                "Discover article URLs from either a sitemap or an RSS/Atom feed, then schedule up to N fresh URLs per run."
+                "Discover article URLs from a sitemap, RSS/Atom feed, or a list page, then schedule up to N fresh URLs per run."
             })}
           </Typography.Text>
 
@@ -2811,7 +2841,9 @@ export function NewsSourcesContent() {
           >
             {({ getFieldValue }) => {
               const seedEnabled = getFieldValue("seedEnabled") === true;
-              const seedMode = getFieldValue("seedMode") === "rss" ? "rss" : "sitemap";
+              const seedModeRaw = getFieldValue("seedMode");
+              const seedMode =
+                seedModeRaw === "rss" ? "rss" : seedModeRaw === "list" ? "list" : "sitemap";
 
               return (
                 <div style={{ display: seedEnabled ? "block" : "none" }}>
@@ -2820,13 +2852,14 @@ export function NewsSourcesContent() {
                     label={t("newsSources.fields.seedMode", { defaultValue: "Seed mode" })}
                     tooltip={t("newsSources.fields.seedModeHint", {
                       defaultValue:
-                        "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from the feed URL."
+                        "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL; List mode extracts links from the source URL."
                     })}
                   >
                     <Select
                       options={[
                         { label: t("newsSources.seedMode.sitemap", { defaultValue: "Sitemap" }), value: "sitemap" },
-                        { label: t("newsSources.seedMode.rss", { defaultValue: "RSS / Atom" }), value: "rss" }
+                        { label: t("newsSources.seedMode.rss", { defaultValue: "RSS / Atom" }), value: "rss" },
+                        { label: t("newsSources.seedMode.list", { defaultValue: "List page" }), value: "list" }
                       ]}
                     />
                   </Form.Item>
@@ -2854,7 +2887,13 @@ export function NewsSourcesContent() {
                       </Form.Item>
                       <Form.Item
                         name="seedPattern"
-                        label={t("newsSources.fields.seedPattern", { defaultValue: "URL pattern (optional)" })}
+                        label={
+                          seedMode === "list"
+                            ? t("newsSources.fields.seedPatternList", {
+                                defaultValue: "Article URL pattern (optional)"
+                              })
+                            : t("newsSources.fields.seedPattern", { defaultValue: "URL pattern (optional)" })
+                        }
                         tooltip={t("newsSources.fields.seedPatternHint", {
                           defaultValue: "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'."
                         })}
@@ -3139,6 +3178,8 @@ export function NewsSourcesContent() {
                     ? "purple"
                     : previewData.mode === "rss"
                       ? "blue"
+                      : previewData.mode === "list"
+                        ? "gold"
                       : "default"
                 }
               >
@@ -3146,6 +3187,8 @@ export function NewsSourcesContent() {
                   ? t("newsSources.preview.modeSitemap", { defaultValue: "Sitemap" })
                   : previewData.mode === "rss"
                     ? t("newsSources.preview.modeRss", { defaultValue: "RSS" })
+                    : previewData.mode === "list"
+                      ? t("newsSources.preview.modeList", { defaultValue: "List page" })
                     : t("newsSources.preview.modeSingle", { defaultValue: "Single" })}
               </Tag>
               <Typography.Text>

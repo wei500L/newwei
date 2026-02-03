@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException
+} from "@nestjs/common";
 import { NewsSourceType, PipelineJobStatus, Prisma } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
@@ -23,7 +28,7 @@ const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
 
 export interface NewsSourceSeedConfig {
   enabled: boolean;
-  mode: "sitemap" | "rss";
+  mode: "sitemap" | "rss" | "list";
   domain?: string;
   pattern?: string;
   feedUrl?: string;
@@ -305,21 +310,29 @@ export class NewsSourceService {
     const isActive = input.isActive ?? true;
     const nextRunAt = isActive ? new Date() : null;
 
-    return this.prisma.newsSource.create({
-      data: {
-        orgId,
-        name,
-        url,
-        siteType: input.siteType ?? NewsSourceType.general,
-        language,
-        crawlTemplateId,
-        frequencySeconds: input.frequencySeconds,
-        priority: input.priority,
-        isActive,
-        config: config ? toPrismaJsonValue(config) : Prisma.DbNull,
-        nextRunAt
+    try {
+      return await this.prisma.newsSource.create({
+        data: {
+          orgId,
+          name,
+          url,
+          siteType: input.siteType ?? NewsSourceType.general,
+          language,
+          crawlTemplateId,
+          frequencySeconds: input.frequencySeconds,
+          priority: input.priority,
+          isActive,
+          config: config ? toPrismaJsonValue(config) : Prisma.DbNull,
+          nextRunAt
+        }
+      });
+    } catch (error) {
+      const conflictMessage = this.resolveUniqueConflictMessage(error);
+      if (conflictMessage) {
+        throw new ConflictException(conflictMessage);
       }
-    });
+      throw error;
+    }
   }
 
   async updateSource(orgId: string, id: string, input: UpdateNewsSourceDto) {
@@ -387,7 +400,15 @@ export class NewsSourceService {
       data.consecutiveFailures = 0;
     }
 
-    return this.prisma.newsSource.update({ where: { id }, data });
+    try {
+      return await this.prisma.newsSource.update({ where: { id }, data });
+    } catch (error) {
+      const conflictMessage = this.resolveUniqueConflictMessage(error);
+      if (conflictMessage) {
+        throw new ConflictException(conflictMessage);
+      }
+      throw error;
+    }
   }
 
   async deleteSource(orgId: string, id: string) {
@@ -485,11 +506,18 @@ export class NewsSourceService {
             feedUrl: seedConfig.feedUrl ?? source.url,
             maxUrls: seedConfig.maxUrls
           })
-        : await this.metadataService.discoverSitemapUrls({
-            domain: seedConfig.domain,
-            pattern: seedConfig.pattern,
-            maxUrls: seedConfig.maxUrls
-          });
+        : seedConfig.mode === "list"
+          ? await this.metadataService.discoverListUrls({
+              url: source.url,
+              domain: seedConfig.domain,
+              pattern: seedConfig.pattern,
+              maxUrls: seedConfig.maxUrls
+            })
+          : await this.metadataService.discoverSitemapUrls({
+              domain: seedConfig.domain,
+              pattern: seedConfig.pattern,
+              maxUrls: seedConfig.maxUrls
+            });
 
     const metadataResults =
       discovery.length > 0
@@ -600,9 +628,13 @@ export class NewsSourceService {
     }
 
     const modeRaw = typeof rawSeed?.mode === "string" ? rawSeed.mode.trim().toLowerCase() : "";
-    const mode: NewsSourceSeedConfig["mode"] = modeRaw === "rss" ? "rss" : "sitemap";
+    const mode: NewsSourceSeedConfig["mode"] =
+      modeRaw === "rss" ? "rss" : modeRaw === "list" ? "list" : "sitemap";
 
-    const domain = mode === "sitemap" ? this.normalizeSeedDomain(rawSeed?.domain, sourceUrl) : undefined;
+    const domain =
+      mode === "sitemap" || mode === "list"
+        ? this.normalizeSeedDomain(rawSeed?.domain, sourceUrl)
+        : undefined;
     const pattern = typeof rawSeed?.pattern === "string" ? rawSeed.pattern.trim() : "";
     const feedUrl = mode === "rss" ? this.normalizeSeedFeedUrl(rawSeed?.feedUrl, sourceUrl) : undefined;
     const query = typeof rawSeed?.query === "string" ? rawSeed.query.trim() : "";
@@ -614,7 +646,7 @@ export class NewsSourceService {
       enabled: true,
       mode,
       domain,
-      pattern: mode === "sitemap" && pattern.length > 0 ? pattern : undefined,
+      pattern: (mode === "sitemap" || mode === "list") && pattern.length > 0 ? pattern : undefined,
       feedUrl,
       maxUrls: this.clampInt(rawSeed?.maxUrls, 1, 200, 20),
       maxNewUrlsPerRun: this.clampInt(rawSeed?.maxNewUrlsPerRun, 1, 50, 10),
@@ -677,6 +709,38 @@ export class NewsSourceService {
       return fallback;
     }
     return Math.min(max, Math.max(min, value));
+  }
+
+  private resolveUniqueConflictMessage(error: unknown): string | null {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      return null;
+    }
+
+    const metaTarget = (error.meta as { target?: unknown } | undefined)?.target;
+    const targetParts = Array.isArray(metaTarget)
+      ? metaTarget.map((entry) => String(entry))
+      : typeof metaTarget === "string"
+        ? [metaTarget]
+        : [];
+
+    const normalized = targetParts.map((entry) => entry.toLowerCase());
+    const hasName =
+      normalized.includes("name") ||
+      (normalized.includes("orgid") && normalized.includes("name")) ||
+      normalized.some((entry) => entry.includes("newssource_orgid_name_key"));
+    if (hasName) {
+      return "News source name already exists";
+    }
+
+    const hasUrl =
+      normalized.includes("url") ||
+      (normalized.includes("orgid") && normalized.includes("url")) ||
+      normalized.some((entry) => entry.includes("newssource_orgid_url_key"));
+    if (hasUrl) {
+      return "News source URL already exists";
+    }
+
+    return "News source already exists";
   }
 
   private async findRecentCrawls(orgId: string, urls: string[], dedupeWindowHours: number) {

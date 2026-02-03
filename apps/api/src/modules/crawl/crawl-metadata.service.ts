@@ -117,6 +117,85 @@ export class CrawlMetadataService {
     return this.extractFromRssPayload(xml, feedUrl).slice(0, maxUrls);
   }
 
+  async discoverListUrls(input: {
+    url?: string;
+    domain?: string;
+    pattern?: string;
+    maxUrls?: number;
+    requestTimeoutMs?: number;
+  }): Promise<string[]> {
+    const seedUrl = this.normalizeUrl(input.url);
+    if (!seedUrl) {
+      return [];
+    }
+
+    const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
+    const requestTimeoutMs =
+      typeof input.requestTimeoutMs === "number" && Number.isFinite(input.requestTimeoutMs)
+        ? Math.max(1000, Math.round(input.requestTimeoutMs))
+        : 15_000;
+
+    const domain = this.normalizeDomain(input.domain);
+    const patternMatcher = this.normalizePattern(input.pattern);
+
+    const html = await this.fetchMaybe(seedUrl, requestTimeoutMs);
+    if (!html) {
+      return [];
+    }
+
+    let baseOrigin: string | undefined;
+    try {
+      baseOrigin = new URL(seedUrl).origin.replace(/\/+$/, "");
+    } catch {
+      baseOrigin = undefined;
+    }
+    const allowedOrigin = domain ?? baseOrigin;
+
+    const $ = load(html);
+    const urls: string[] = [];
+    const seen = new Set<string>();
+
+    $("a[href]").each((_index, element) => {
+      const href = $(element).attr("href");
+      if (!href) {
+        return;
+      }
+      const trimmed = href.trim();
+      if (!trimmed || trimmed === "#" || trimmed.toLowerCase().startsWith("javascript:")) {
+        return;
+      }
+
+      let resolved: URL;
+      try {
+        resolved = new URL(trimmed, seedUrl);
+      } catch {
+        return;
+      }
+
+      if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+        return;
+      }
+
+      resolved.hash = "";
+
+      const absolute = resolved.toString();
+      if (allowedOrigin && !absolute.startsWith(`${allowedOrigin}/`) && absolute !== allowedOrigin) {
+        return;
+      }
+      if (patternMatcher && !patternMatcher(absolute)) {
+        return;
+      }
+      if (seen.has(absolute)) {
+        return;
+      }
+
+      seen.add(absolute);
+      urls.push(absolute);
+    });
+
+    return urls.slice(0, maxUrls);
+  }
+
   private normalizeInput(input: CrawlMetadataExtractionInput): NormalizedMetadataConfig {
     const source: CrawlMetadataSource = input.source === "urls" ? "urls" : "sitemap";
     const domain = this.normalizeDomain(input.domain);

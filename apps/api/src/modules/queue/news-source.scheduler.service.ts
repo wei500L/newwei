@@ -29,7 +29,7 @@ type NewsSourceWithTemplate = Prisma.NewsSourceGetPayload<{
 
 interface SeedConfig {
   enabled: boolean;
-  mode: "sitemap" | "rss";
+  mode: "sitemap" | "rss" | "list";
   domain?: string;
   pattern?: string;
   feedUrl?: string;
@@ -810,7 +810,7 @@ export class NewsSourceSchedulerService {
   private buildPayload(
     source: NewsSourceWithTemplate,
     url: string,
-    seed?: { mode: "single" | "sitemap" | "rss"; parentUrl: string; relevanceScore?: number }
+    seed?: { mode: "single" | "sitemap" | "rss" | "list"; parentUrl: string; relevanceScore?: number }
   ) {
     const config =
       source.config && typeof source.config === "object" && !Array.isArray(source.config)
@@ -866,7 +866,8 @@ export class NewsSourceSchedulerService {
     }
 
     const modeRaw = typeof seed.mode === "string" ? seed.mode.trim().toLowerCase() : "";
-    const mode: SeedConfig["mode"] = modeRaw === "rss" ? "rss" : "sitemap";
+    const mode: SeedConfig["mode"] =
+      modeRaw === "rss" ? "rss" : modeRaw === "list" ? "list" : "sitemap";
 
     const keywords = this.normalizeStringList(config?.keywords);
     const query =
@@ -880,9 +881,14 @@ export class NewsSourceSchedulerService {
     return {
       enabled: true,
       mode,
-      domain: mode === "sitemap" ? this.normalizeSeedDomain(seed.domain, source.url) : undefined,
+      domain:
+        mode === "sitemap" || mode === "list"
+          ? this.normalizeSeedDomain(seed.domain, source.url)
+          : undefined,
       pattern:
-        mode === "sitemap" && typeof seed.pattern === "string" && seed.pattern.trim().length > 0
+        (mode === "sitemap" || mode === "list") &&
+        typeof seed.pattern === "string" &&
+        seed.pattern.trim().length > 0
           ? seed.pattern.trim()
           : undefined,
       feedUrl: mode === "rss" ? this.normalizeSeedFeedUrl(seed.feedUrl, source.url) : undefined,
@@ -970,6 +976,14 @@ export class NewsSourceSchedulerService {
         if (seed.mode === "rss") {
           return this.metadataService.discoverRssUrls({
             feedUrl: seed.feedUrl ?? source.url,
+            maxUrls: seed.maxUrls
+          });
+        }
+        if (seed.mode === "list") {
+          return this.metadataService.discoverListUrls({
+            url: source.url,
+            domain: seed.domain,
+            pattern: seed.pattern,
             maxUrls: seed.maxUrls
           });
         }

@@ -500,7 +500,7 @@ export class CrawlResultService {
     const references =
       this.ensureString(record.references_markdown) ?? this.ensureString(record.referencesMarkdown);
     const fit = this.ensureString(record.fit_markdown) ?? this.ensureString(record.fitMarkdown);
-    const fallback = raw ?? citations ?? fit ?? references ?? this.ensureString(record.text);
+    const fallback = fit ?? raw ?? citations ?? references ?? this.ensureString(record.text);
     return {
       primary: fallback,
       raw: raw ?? fallback,
