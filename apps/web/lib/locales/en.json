@@ -1517,7 +1517,8 @@
       "reschedule": "Reschedule",
       "schedule": "Schedule",
       "ops": "Ops",
-      "scheduleBatch": "Schedule ({{count}})"
+      "scheduleBatch": "Schedule ({{count}})",
+      "useDockerHostProxy": "Use Docker host"
     },
     "fields": {
       "name": "Name",
@@ -1535,18 +1536,29 @@
       "summaryHints": "Summary hints",
       "summaryHintsHint": "One hint per line",
       "metadata": "Metadata (JSON)",
+      "crawlProxyMode": "Proxy",
+      "crawlProxyModeHint": "Auto keeps proxyUrl/proxyConfig from crawlOptions JSON. Enabled overrides crawlOptions with the Proxy URL below. Disabled removes any proxy settings.",
+      "crawlProxyUrl": "Proxy URL",
+      "crawlProxyUrlHint": "Overrides crawlOptions.proxyUrl/proxyConfig. If crawl4ai runs in Docker and your proxy is on this machine, use host.docker.internal instead of localhost/127.0.0.1.",
       "crawlOptions": "Crawl options (JSON)",
+      "crawlOptionsHint": "Advanced Crawl4AI options. Do not set crawl4ai LLM extraction here (extraction_strategy/llm_config); crawl should only store cleaned markdown, and your configured model runs later in the pipeline.",
+      "crawlHeadlessMode": "Browser mode",
+      "crawlHeadlessModeHint": "Auto removes crawlOptions.headless so Crawl4AI can decide. Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch to Headless or enable Xvfb in docker-compose.",
+      "crawlUndetectedMode": "Undetected browser",
+      "crawlUndetectedModeHint": "Auto removes crawlOptions.enableUndetectedBrowser so templates/defaults can apply. Enable/Disable explicitly overrides templates.",
+      "crawlStealthMode": "Stealth mode",
+      "crawlStealthModeHint": "Auto removes crawlOptions.enableStealthMode so templates/defaults can apply. Enable/Disable explicitly overrides templates.",
       "forceRefresh": "Force refresh",
       "template": "Crawl template",
       "seedEnabled": "Enable seed discovery",
       "seedMode": "Seed mode",
-      "seedModeHint": "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from the feed URL.",
+      "seedModeHint": "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL; List mode uses Crawl4AI to extract article links from the source URL (e.g. /latest/) and will crawl each discovered article.",
       "seedFeedUrl": "Feed URL (optional)",
       "seedFeedUrlHint": "If empty, the source URL will be used as the feed URL.",
       "seedDomain": "Seed domain (optional)",
       "seedDomainHint": "Defaults to the source URL origin if empty.",
       "seedPattern": "URL pattern (optional)",
-      "seedPatternHint": "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'.",
+      "seedPatternHint": "Supports '*' and '?' wildcards, e.g. '*/article/*', '*news*' or '*/2026/*'.",
       "seedQuery": "Seed query (optional)",
       "seedQueryHint": "If empty, keywords will be used to score URLs.",
       "seedQueryPlaceholder": "e.g. earnings regulation",
@@ -1567,6 +1579,20 @@
       "cronWindowStartHour": "Start hour (0-23)",
       "cronWindowEndHour": "End hour (1-24)",
       "nextRunAt": "Next run at"
+    },
+    "crawlHeadlessMode": {
+      "auto": "Auto (recommended)",
+      "headless": "Headless",
+      "headed": "Headed (Xvfb)"
+    },
+    "crawlTriState": {
+      "auto": "Auto (inherit)",
+      "enable": "Enabled",
+      "disable": "Disabled"
+    },
+    "presets": {
+      "cloudflare": "Cloudflare preset",
+      "cloudflareHint": "Enables undetected + stealth and switches the browser to headed (Xvfb)."
     },
     "messages": {
       "created": "News source created.",
@@ -1596,7 +1622,9 @@
       "saveFailed": "Failed to save news source.",
       "runFailed": "Failed to schedule source.",
       "deleteFailed": "Failed to delete news source.",
-      "previewFailed": "Failed to preview news source."
+      "previewFailed": "Failed to preview news source.",
+      "proxyUrlRequired": "Proxy URL is required when proxy is enabled.",
+      "crawlOptionsLlmBlocked": "crawlOptions contains crawl4ai LLM extraction settings ({{keys}}{{suffix}}). The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead."
     },
     "delete": {
       "title": "Delete source?",
@@ -1638,13 +1666,14 @@
     },
     "sections": {
       "seed": "Seed discovery",
-      "seedHint": "Discover article URLs from either a sitemap or an RSS/Atom feed, then schedule up to N fresh URLs per run.",
+      "seedHint": "Discover article URLs from a sitemap, RSS/Atom feed, or a list page, then schedule up to N fresh URLs per run.",
       "schedule": "Schedule",
       "scheduleHint": "Choose interval scheduling (frequency) or a cron expression with optional time window."
     },
     "seedMode": {
       "sitemap": "Sitemap",
-      "rss": "RSS / Atom"
+      "rss": "RSS / Atom",
+      "list": "List page"
     },
     "ops": {
       "cancelQueued": {
@@ -3520,7 +3549,18 @@
         "totalRequests": "Total requests",
         "avgLatency": "Avg latency",
         "successRate": "Success rate",
-        "browserMemory": "Pool memory"
+        "browserMemory": "Pool memory",
+        "runtime": "Browser runtime (Xvfb)"
+      },
+      "runtime": {
+        "headedOk": "Headed OK",
+        "headedFailed": "Headed failed",
+        "unavailable": "Runtime probe unavailable",
+        "headless": "Headless (headless=true)",
+        "headed": "Headed (headless=false)",
+        "env": "Env:",
+        "hint": "If headed mode fails with DISPLAY/Xvfb errors, enable Xvfb in docker-compose or switch sources to Headless.",
+        "loading": "Loading..."
       },
       "dashboardHint": {
         "title": "Built-in dashboard",
@@ -3647,7 +3687,8 @@
       },
       "proxy": {
         "direct": "Direct",
-        "dict": "Proxy {{server}} / user {{user}}"
+        "dict": "Proxy {{server}} / user {{user}}",
+        "dockerHint": "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead."
       },
       "markdown": {
         "default": "Default",
@@ -3686,6 +3727,10 @@
         "device": "Device",
         "locale": "Locale"
       },
+      "headless": {
+        "headless": "Headless",
+        "headed": "Headed (Xvfb)"
+      },
       "retryQueued": "Retry queued",
       "retryFailed": "Failed to retry",
       "notFound": "Task not found",
@@ -3716,6 +3761,7 @@
         "runCount": "Run count",
         "scanFullPage": "Scan full page",
         "adjustViewport": "Adjust viewport",
+        "headless": "Headless mode",
         "undetectedBrowser": "Undetected browser",
         "stealthMode": "Stealth mode",
         "managedBrowser": "Managed browser",
@@ -3766,6 +3812,9 @@
         "title": "Results",
         "searchPlaceholder": "Enter Search",
         "empty": "No results",
+        "latest10": "Latest 10",
+        "latest20": "Latest 20",
+        "latest50": "Latest 50",
         "variants": {
           "raw": "Raw",
           "citations": "Citations",
@@ -4016,6 +4065,8 @@
       "extraParamsHint": "Extra params hint"
     },
     "browser": {
+      "headless": "Headless",
+      "headlessHint": "Turn off to use headed mode (headless=false). Headed mode may require Xvfb/DISPLAY inside the crawl4ai container.",
       "undetected": "Undetected",
       "undetectedHint": "Undetected hint",
       "stealth": "Stealth",
@@ -4319,6 +4370,8 @@
       "active": "Active",
       "proxyUrl": "Proxy URL",
       "userAgent": "User Agent",
+      "headless": "Headless mode",
+      "headlessHint": "Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch back to Headless or enable Xvfb in docker-compose.",
       "stealth": "Stealth mode",
       "undetected": "Undetected browser",
       "images": "Include images",
@@ -4326,6 +4379,11 @@
     },
     "sections": {
       "commonOptions": "Common Options"
+    },
+    "headless": {
+      "auto": "Auto",
+      "headless": "Headless",
+      "headed": "Headed (Xvfb)"
     }
   },
   "quality": {

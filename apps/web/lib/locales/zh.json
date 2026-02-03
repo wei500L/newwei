@@ -1520,7 +1520,8 @@
       "reschedule": "重新调度",
       "schedule": "调度",
       "ops": "运维",
-      "scheduleBatch": "调度（{{count}}）"
+      "scheduleBatch": "调度（{{count}}）",
+      "useDockerHostProxy": "使用 Docker 宿主机"
     },
     "fields": {
       "name": "名称",
@@ -1538,18 +1539,29 @@
       "summaryHints": "摘要提示",
       "summaryHintsHint": "每行一个提示",
       "metadata": "元数据（JSON）",
+      "crawlProxyMode": "代理",
+      "crawlProxyModeHint": "Auto 会保留 crawlOptions JSON 中的 proxyUrl/proxyConfig；启用会使用下方的代理 URL 覆盖 crawlOptions；禁用会移除所有代理配置。",
+      "crawlProxyUrl": "代理 URL",
+      "crawlProxyUrlHint": "将覆盖 crawlOptions.proxyUrl/proxyConfig。如果 crawl4ai 在 Docker 中运行且代理在本机，请使用 host.docker.internal 替代 localhost/127.0.0.1。",
       "crawlOptions": "抓取选项（JSON）",
+      "crawlOptionsHint": "Crawl4AI 高级选项。请不要在这里配置 crawl4ai 的 LLM 抽取（extraction_strategy/llm_config）；抓取阶段只存储清理后的 markdown，结构化处理由后续流水线中的模型完成。",
+      "crawlHeadlessMode": "浏览器模式",
+      "crawlHeadlessModeHint": "Auto 会移除 crawlOptions.headless，让 Crawl4AI 自行决定。Headed 模式（headless=false）可能需要在 crawl4ai 容器中配置 Xvfb/DISPLAY；如果看到 'cannot open display'，请切换到 Headless 或在 docker-compose 中启用 Xvfb。",
+      "crawlUndetectedMode": "反检测浏览器",
+      "crawlUndetectedModeHint": "Auto 会移除 crawlOptions.enableUndetectedBrowser，让模板/默认值生效；启用/禁用会显式覆盖模板。",
+      "crawlStealthMode": "隐身模式",
+      "crawlStealthModeHint": "Auto 会移除 crawlOptions.enableStealthMode，让模板/默认值生效；启用/禁用会显式覆盖模板。",
       "forceRefresh": "强制刷新",
       "template": "爬取模板",
       "seedEnabled": "启用种子发现",
       "seedMode": "种子模式",
-      "seedModeHint": "站点地图模式会从 sitemap.xml 发现 URL；RSS 模式会从订阅源地址发现 URL。",
+      "seedModeHint": "站点地图模式会从 sitemap.xml 发现 URL；RSS 模式会从订阅源地址发现 URL；列表页模式会用 Crawl4AI 从新闻源 URL（如 /latest/）提取文章链接，并对每篇文章进行抓取。",
       "seedFeedUrl": "订阅源 URL（可选）",
       "seedFeedUrlHint": "为空时，将使用新闻源 URL 作为订阅源 URL。",
       "seedDomain": "种子域名（可选）",
       "seedDomainHint": "为空时默认使用新闻源 URL 的 origin。",
       "seedPattern": "URL 模式（可选）",
-      "seedPatternHint": "支持 * 和 ? 通配符，例如：*news* 或 */2026/*。",
+      "seedPatternHint": "支持 * 和 ? 通配符，例如：*/article/*、*news* 或 */2026/*。",
       "seedQuery": "种子查询（可选）",
       "seedQueryHint": "为空时，将使用关键词对 URL 进行评分。",
       "seedQueryPlaceholder": "例如：财报 监管",
@@ -1570,6 +1582,20 @@
       "cronWindowStartHour": "开始小时（0-23）",
       "cronWindowEndHour": "结束小时（1-24）",
       "nextRunAt": "下次运行时间"
+    },
+    "crawlHeadlessMode": {
+      "auto": "自动（推荐）",
+      "headless": "Headless",
+      "headed": "Headed（Xvfb）"
+    },
+    "crawlTriState": {
+      "auto": "自动（继承）",
+      "enable": "启用",
+      "disable": "禁用"
+    },
+    "presets": {
+      "cloudflare": "Cloudflare 预设",
+      "cloudflareHint": "一键启用 undetected + stealth，并切换浏览器为 Headed（Xvfb）。"
     },
     "messages": {
       "created": "已创建数据源。",
@@ -1599,7 +1625,9 @@
       "saveFailed": "保存数据源失败。",
       "runFailed": "调度失败。",
       "deleteFailed": "删除数据源失败。",
-      "previewFailed": "预览新闻源失败。"
+      "previewFailed": "预览新闻源失败。",
+      "proxyUrlRequired": "启用代理时必须填写代理 URL。",
+      "crawlOptionsLlmBlocked": "crawlOptions 包含 crawl4ai 的 LLM 抽取配置（{{keys}}{{suffix}}）。抓取阶段只应获取并存储清理后的 markdown；请在后续流水线阶段使用已配置的模型进行结构化处理。"
     },
     "delete": {
       "title": "删除数据源？",
@@ -1641,13 +1669,14 @@
     },
     "sections": {
       "seed": "种子发现",
-      "seedHint": "从站点地图或 RSS/Atom 订阅源发现文章 URL，并在每次运行中最多调度 N 条新的 URL。",
+      "seedHint": "从站点地图、RSS/Atom 订阅源或列表页发现文章 URL，并在每次运行中最多调度 N 条新的 URL。",
       "schedule": "调度",
       "scheduleHint": "可选择按间隔（频率）调度或使用 Cron 表达式，并可选设置时间窗口。"
     },
     "seedMode": {
       "sitemap": "站点地图",
-      "rss": "RSS / Atom"
+      "rss": "RSS / Atom",
+      "list": "列表页"
     },
     "ops": {
       "cancelQueued": {
@@ -3523,7 +3552,18 @@
         "totalRequests": "总请求数",
         "avgLatency": "平均耗时",
         "successRate": "成功率",
-        "browserMemory": "浏览器内存"
+        "browserMemory": "浏览器内存",
+        "runtime": "浏览器运行态（Xvfb）"
+      },
+      "runtime": {
+        "headedOk": "Headed 正常",
+        "headedFailed": "Headed 失败",
+        "unavailable": "运行态探测不可用",
+        "headless": "Headless（headless=true）",
+        "headed": "Headed（headless=false）",
+        "env": "环境变量：",
+        "hint": "如果 Headed 模式因 DISPLAY/Xvfb 报错，请在 docker-compose 中启用 Xvfb，或将新闻源切换为 Headless。",
+        "loading": "加载中..."
       },
       "dashboardHint": {
         "title": "内置仪表盘",
@@ -3650,7 +3690,8 @@
       },
       "proxy": {
         "direct": "直连",
-        "dict": "代理 {{server}} / 用户 {{user}}"
+        "dict": "代理 {{server}} / 用户 {{user}}",
+        "dockerHint": "如果 crawl4ai 在 Docker 中运行，容器内的 localhost/127.0.0.1 无法访问宿主机代理，请改用 host.docker.internal。"
       },
       "markdown": {
         "default": "默认",
@@ -3689,6 +3730,10 @@
         "device": "设备",
         "locale": "区域"
       },
+      "headless": {
+        "headless": "无头",
+        "headed": "有界面（Xvfb）"
+      },
       "retryQueued": "已加入重试队列",
       "retryFailed": "重试失败",
       "notFound": "未找到任务",
@@ -3719,6 +3764,7 @@
         "runCount": "运行数量",
         "scanFullPage": "扫描完整页面",
         "adjustViewport": "调整视口",
+        "headless": "无头模式",
         "undetectedBrowser": "反检测浏览器",
         "stealthMode": "隐身模式",
         "managedBrowser": "托管浏览器",
@@ -3769,6 +3815,9 @@
         "title": "结果",
         "searchPlaceholder": "请输入搜索",
         "empty": "暂无结果",
+        "latest10": "最新 10 条",
+        "latest20": "最新 20 条",
+        "latest50": "最新 50 条",
         "variants": {
           "raw": "原始",
           "citations": "引用",
@@ -4019,6 +4068,8 @@
       "extraParamsHint": "额外参数提示"
     },
     "browser": {
+      "headless": "无头模式",
+      "headlessHint": "关闭后将以有界面模式运行（headless=false）。有界面模式可能需要 crawl4ai 容器内启用 Xvfb/DISPLAY。",
       "undetected": "反检测",
       "undetectedHint": "反检测提示",
       "stealth": "隐身",
@@ -4322,6 +4373,8 @@
       "active": "启用",
       "proxyUrl": "代理 URL",
       "userAgent": "User-Agent",
+      "headless": "无头模式",
+      "headlessHint": "有界面模式（headless=false）可能需要 crawl4ai 容器内启用 Xvfb/DISPLAY；如出现“cannot open display”等错误，请切回无头模式或在 docker-compose 中开启 Xvfb。",
       "stealth": "隐身模式",
       "undetected": "反检测浏览器",
       "images": "包含图片",
@@ -4329,6 +4382,11 @@
     },
     "sections": {
       "commonOptions": "通用选项"
+    },
+    "headless": {
+      "auto": "自动",
+      "headless": "无头",
+      "headed": "有界面（Xvfb）"
     }
   },
   "quality": {

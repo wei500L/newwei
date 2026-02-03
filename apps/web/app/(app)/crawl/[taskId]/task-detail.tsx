@@ -24,7 +24,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -55,10 +55,33 @@ const itemStatusColors: Record<string, string> = {
 };
 
 const limitOptions = [
-  { value: 10, labelKey: "crawl.detail.results.latest10" },
-  { value: 20, labelKey: "crawl.detail.results.latest20" },
-  { value: 50, labelKey: "crawl.detail.results.latest50" }
+  { value: 10, labelKey: "crawl.detail.results.latest10", defaultValue: "Latest 10" },
+  { value: 20, labelKey: "crawl.detail.results.latest20", defaultValue: "Latest 20" },
+  { value: 50, labelKey: "crawl.detail.results.latest50", defaultValue: "Latest 50" }
 ];
+
+const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function isLocalhostProxyUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return LOCAL_PROXY_HOSTS.has(parsed.hostname.toLowerCase());
+  } catch {
+    const lower = trimmed.toLowerCase();
+    return (
+      lower.includes("://localhost") ||
+      lower.includes("://127.0.0.1") ||
+      lower.includes("://[::1]") ||
+      lower.startsWith("localhost:") ||
+      lower.startsWith("127.0.0.1:") ||
+      lower.startsWith("[::1]:")
+    );
+  }
+}
 
 interface CrawlMediaSource {
   src?: string;
@@ -605,7 +628,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
   }, [task?.config]);
 
-  const proxySummary = useMemo(() => {
+  const proxySummary: ReactNode = useMemo(() => {
     if (!config) {
       return t("crawl.detail.proxy.direct");
     }
@@ -614,14 +637,43 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     const proxyConfig = config.proxyConfig as
       | { server?: string; username?: string; password?: string }
       | undefined;
+    const rawServer = proxyConfig?.server ?? proxyUrl ?? null;
     if (proxyConfig?.server) {
-      return t("crawl.detail.proxy.dict", {
+      const label = t("crawl.detail.proxy.dict", {
         server: proxyConfig.server,
         user: proxyConfig.username ?? null
       });
+      if (rawServer && isLocalhostProxyUrl(rawServer)) {
+        return (
+          <Space direction="vertical" size={0}>
+            <Typography.Text>{label}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {t("crawl.detail.proxy.dockerHint", {
+                defaultValue:
+                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead."
+              })}
+            </Typography.Text>
+          </Space>
+        );
+      }
+      return label;
     }
     if (proxyUrl) {
-      return proxyUrl === "[REDACTED]" ? redactedLabel : proxyUrl;
+      const label = proxyUrl === "[REDACTED]" ? redactedLabel : proxyUrl;
+      if (rawServer && isLocalhostProxyUrl(rawServer)) {
+        return (
+          <Space direction="vertical" size={0}>
+            <Typography.Text>{label}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {t("crawl.detail.proxy.dockerHint", {
+                defaultValue:
+                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead."
+              })}
+            </Typography.Text>
+          </Space>
+        );
+      }
+      return label;
     }
     return t("crawl.detail.proxy.direct");
   }, [config, redactedLabel, t]);
@@ -1367,9 +1419,16 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           {config?.scanFullPage
             ? t("crawl.detail.scanFullPageEnabled", { delay: config?.scrollDelayMs ?? 200 })
             : t("common.disabled")}
-        </Descriptions.Item>
-        <Descriptions.Item label={t("crawl.detail.fields.adjustViewport")}>
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.adjustViewport")}>
         {adjustViewportEnabled ? t("common.enabled") : t("common.disabled")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.headless", { defaultValue: "Headless mode" })}>
+        {typeof config?.headless === "boolean"
+          ? config.headless
+            ? t("crawl.detail.headless.headless", { defaultValue: "Headless" })
+            : t("crawl.detail.headless.headed", { defaultValue: "Headed (Xvfb)" })
+          : t("crawl.detail.serverDefault")}
       </Descriptions.Item>
       <Descriptions.Item label={t("crawl.detail.fields.undetectedBrowser")}>
         {config?.enableUndetectedBrowser ? t("common.enabled") : t("common.disabled")}
@@ -1701,7 +1760,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               onChange={setResultLimit}
               options={limitOptions.map((option) => ({
                 value: option.value,
-                label: t(option.labelKey)
+                label: t(option.labelKey, { defaultValue: option.defaultValue })
               }))}
             />
           </Space>

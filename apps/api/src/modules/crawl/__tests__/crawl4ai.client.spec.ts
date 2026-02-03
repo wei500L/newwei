@@ -73,5 +73,44 @@ describe("Crawl4aiClient", () => {
 
     expect(payload.crawler_config.params.link_preview_config.params).not.toHaveProperty("include_social");
   });
+
+  it("applies cleanMarkdown overrides for content selection and thresholds", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        wordCountThreshold: 80,
+        removeOverlayElements: true,
+        cssSelector: "body",
+        excludedTags: ["header"],
+        cleanMarkdown: {
+          cssSelector: ".article__content,article,main",
+          excludedTags: ["nav", "footer", "script", "style"],
+          removeOverlayElements: false,
+          wordCountThreshold: 20
+        }
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.crawler_config.params.word_count_threshold).toBe(20);
+    expect(payload.crawler_config.params.remove_overlay_elements).toBe(false);
+    expect(payload.crawler_config.params.css_selector).toBe(".article__content,article,main");
+    expect(payload.crawler_config.params.excluded_tags).toEqual(["nav", "footer", "script", "style"]);
+  });
+
+  it("enables prefetch mode when requested", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        prefetch: true,
+        extractLinks: true
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.crawler_config.params.prefetch).toBe(true);
+  });
 });
 

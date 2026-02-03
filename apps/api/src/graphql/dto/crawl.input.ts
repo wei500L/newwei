@@ -319,6 +319,9 @@ export class CrawlOptionsInput {
   scrollDelayMs?: number;
 
   @Field(() => Boolean, { nullable: true })
+  headless?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
   enableUndetectedBrowser?: boolean;
 
   @Field(() => Boolean, { nullable: true })

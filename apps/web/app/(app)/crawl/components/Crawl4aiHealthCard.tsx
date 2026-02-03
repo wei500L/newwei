@@ -22,6 +22,17 @@ interface Crawl4aiHealthSnapshot {
   avgLatencyMs?: number;
 }
 
+interface Crawl4aiRuntimeSnapshot {
+  receivedAt: number;
+  headlessOk: boolean;
+  headedOk: boolean;
+  headlessDurationMs?: number;
+  headedDurationMs?: number;
+  headedError?: string;
+  xvfbReason?: string;
+  xvfbSupported?: boolean;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -131,6 +142,20 @@ async function fetchHealth(): Promise<unknown> {
   return text ? (JSON.parse(text) as unknown) : null;
 }
 
+async function fetchRuntime(): Promise<unknown> {
+  const response = await fetch("/api/crawl4ai/runtime", { cache: "no-store" });
+  const text = await response.text();
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json") && text) {
+      const normalized = normalizeMonitorError(text);
+      throw new Error(normalized.message);
+    }
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  return text ? (JSON.parse(text) as unknown) : null;
+}
+
 function parseHealthSnapshot(payload: unknown): Crawl4aiHealthSnapshot | null {
   if (!isRecord(payload)) return null;
   const receivedAt = Date.now();
@@ -167,6 +192,29 @@ function parseHealthSnapshot(payload: unknown): Crawl4aiHealthSnapshot | null {
   };
 }
 
+function parseRuntimeSnapshot(payload: unknown): Crawl4aiRuntimeSnapshot | null {
+  if (!isRecord(payload)) return null;
+  const receivedAt = Date.now();
+  const headlessOk = getBoolean(payload, ["headless", "ok"]) ?? false;
+  const headedOk = getBoolean(payload, ["headed", "ok"]) ?? false;
+  const headlessDurationMs = getNumber(payload, ["headless", "durationMs"]);
+  const headedDurationMs = getNumber(payload, ["headed", "durationMs"]);
+  const headedError = asString(getPath(payload, ["headed", "error"]));
+  const xvfbReason = asString(getPath(payload, ["xvfb", "reason"]));
+  const xvfbSupported = getBoolean(payload, ["xvfb", "supported"]);
+
+  return {
+    receivedAt,
+    headlessOk,
+    headedOk,
+    headlessDurationMs,
+    headedDurationMs,
+    headedError,
+    xvfbReason,
+    xvfbSupported
+  };
+}
+
 export interface Crawl4aiHealthCardProps {
   pollIntervalMs?: number;
   onOpenMonitor?: () => void;
@@ -176,6 +224,8 @@ export function Crawl4aiHealthCard({ pollIntervalMs = 10_000, onOpenMonitor }: C
   const { t } = useTranslation();
   const [status, setStatus] = useState<HealthStatus>("loading");
   const [snapshot, setSnapshot] = useState<Crawl4aiHealthSnapshot | null>(null);
+  const [runtime, setRuntime] = useState<Crawl4aiRuntimeSnapshot | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [failureCount, setFailureCount] = useState(0);
@@ -281,8 +331,13 @@ export function Crawl4aiHealthCard({ pollIntervalMs = 10_000, onOpenMonitor }: C
     inFlightRef.current = true;
     setRefreshing(true);
     try {
-      const payload = await fetchHealth();
-      const parsed = parseHealthSnapshot(payload);
+      const [healthResult, runtimeResult] = await Promise.allSettled([fetchHealth(), fetchRuntime()]);
+
+      if (healthResult.status === "rejected") {
+        throw healthResult.reason;
+      }
+
+      const parsed = parseHealthSnapshot(healthResult.value);
       if (!parsed) {
         throw new Error("Invalid /monitor/health response");
       }
@@ -290,10 +345,26 @@ export function Crawl4aiHealthCard({ pollIntervalMs = 10_000, onOpenMonitor }: C
       setStatus("healthy");
       setError(null);
       setFailureCount(0);
+
+      if (runtimeResult.status === "fulfilled") {
+        const parsedRuntime = parseRuntimeSnapshot(runtimeResult.value);
+        if (!parsedRuntime) {
+          setRuntime(null);
+          setRuntimeError("Invalid /api/crawl4ai/runtime response");
+        } else {
+          setRuntime(parsedRuntime);
+          setRuntimeError(null);
+        }
+      } else {
+        setRuntime(null);
+        setRuntimeError(runtimeResult.reason instanceof Error ? runtimeResult.reason.message : String(runtimeResult.reason));
+      }
     } catch (err) {
       setStatus("unreachable");
       setError(err instanceof Error ? err.message : String(err));
       setFailureCount((prev) => Math.min(prev + 1, 6));
+      setRuntime(null);
+      setRuntimeError(null);
     } finally {
       setRefreshing(false);
       inFlightRef.current = false;
@@ -322,6 +393,13 @@ export function Crawl4aiHealthCard({ pollIntervalMs = 10_000, onOpenMonitor }: C
       <Tag color="blue">{t("common.loading", { defaultValue: "Loading..." })}</Tag>
     );
 
+  const headedTag =
+    runtime?.headedOk === true ? (
+      <Tag color="green">{t("crawl.monitor.runtime.headedOk", { defaultValue: "Headed OK" })}</Tag>
+    ) : runtime?.headedOk === false ? (
+      <Tag color="red">{t("crawl.monitor.runtime.headedFailed", { defaultValue: "Headed failed" })}</Tag>
+    ) : null;
+
   const updatedText =
     snapshot?.receivedAt
       ? t("crawl.monitor.quickStatus.updatedAt", {
@@ -338,6 +416,7 @@ export function Crawl4aiHealthCard({ pollIntervalMs = 10_000, onOpenMonitor }: C
         <Space size={8}>
           <Typography.Text>{t("crawl.monitor.quickStatus.title", { defaultValue: "Crawl4AI status" })}</Typography.Text>
           {statusTag}
+          {headedTag}
           {updatedText ? <Typography.Text type="secondary">{updatedText}</Typography.Text> : null}
         </Space>
       }
@@ -390,6 +469,28 @@ export function Crawl4aiHealthCard({ pollIntervalMs = 10_000, onOpenMonitor }: C
           <Statistic title={t("crawl.monitor.overview.totalRequests", { defaultValue: "Total requests" })} value={snapshot?.totalRequests ?? "-"} />
         </Col>
       </Row>
+
+      {status === "healthy" && runtime ? (
+        <Space direction="vertical" size={4} style={{ marginTop: 12 }}>
+          <Typography.Text type="secondary">
+            {t("crawl.monitor.runtime.summary", {
+              defaultValue: "Runtime: headless={{headless}} · headed={{headed}}",
+              headless: runtime.headlessOk ? "OK" : "FAILED",
+              headed: runtime.headedOk ? "OK" : "FAILED"
+            })}
+            {typeof runtime.headedDurationMs === "number" ? ` (${runtime.headedDurationMs}ms)` : null}
+          </Typography.Text>
+          {!runtime.headedOk && (runtime.xvfbReason || runtime.headedError || runtimeError) ? (
+            <Typography.Text type="secondary" style={{ whiteSpace: "pre-wrap" }}>
+              {runtime.xvfbReason ?? runtime.headedError ?? runtimeError}
+            </Typography.Text>
+          ) : null}
+        </Space>
+      ) : status === "healthy" && runtimeError ? (
+        <Typography.Text type="secondary" style={{ marginTop: 12, display: "block", whiteSpace: "pre-wrap" }}>
+          {runtimeError}
+        </Typography.Text>
+      ) : null}
     </Card>
   );
 }

@@ -210,12 +210,41 @@ services:
     image: ${CRAWL4AI_IMAGE:-unclecode/crawl4ai:0}
     restart: unless-stopped
     working_dir: /app
+    shm_size: 1g
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      CRAWL4AI_XVFB_ENABLED: ${CRAWL4AI_XVFB_ENABLED:-true}
+      CRAWL4AI_XVFB_DISPLAY_NUM: ${CRAWL4AI_XVFB_DISPLAY_NUM:-99}
+      CRAWL4AI_XVFB_SCREEN: ${CRAWL4AI_XVFB_SCREEN:-1920x1080x24}
     command:
       - sh
       - -lc
       - |
-        Xvfb :99 -screen 0 1920x1080x24 -ac +extension RANDR &
-        export DISPLAY=:99
+        if [ "$$CRAWL4AI_XVFB_ENABLED" = "true" ]; then
+          if command -v Xvfb >/dev/null 2>&1; then
+            echo "[crawl4ai] Starting Xvfb on :$$CRAWL4AI_XVFB_DISPLAY_NUM ($$CRAWL4AI_XVFB_SCREEN)"
+            mkdir -p /tmp/.X11-unix
+            rm -f "/tmp/.X$${CRAWL4AI_XVFB_DISPLAY_NUM}-lock" "/tmp/.X11-unix/X$${CRAWL4AI_XVFB_DISPLAY_NUM}" || true
+            Xvfb ":$$CRAWL4AI_XVFB_DISPLAY_NUM" -screen 0 "$$CRAWL4AI_XVFB_SCREEN" -nolisten tcp -ac +extension RANDR &
+            export DISPLAY=":$$CRAWL4AI_XVFB_DISPLAY_NUM"
+            i=0
+            while [ $$i -lt 50 ]; do
+              if [ -e "/tmp/.X11-unix/X$${CRAWL4AI_XVFB_DISPLAY_NUM}" ]; then
+                break
+              fi
+              i=$$((i + 1))
+              sleep 0.1
+            done
+            if [ ! -e "/tmp/.X11-unix/X$${CRAWL4AI_XVFB_DISPLAY_NUM}" ]; then
+              echo "[crawl4ai] Xvfb failed to start; continuing without DISPLAY"
+              unset DISPLAY
+            fi
+          else
+            echo "[crawl4ai] Xvfb is not installed; continuing without DISPLAY"
+            unset DISPLAY
+          fi
+        fi
         exec supervisord -c supervisord.conf
     ports:
       - "8082:11235"

@@ -85,7 +85,10 @@ const createMockPrismaService = () => ({
 });
 
 const createMockEnvService = () => ({
-  crawlTaskConfigEncryptionKey: undefined
+  crawlTaskConfigEncryptionKey: undefined,
+  crawl4aiConfig: {
+    baseUrl: "http://localhost:8082"
+  }
 });
 
 const createMockCrawlClient = () => ({
@@ -417,6 +420,7 @@ describe("CrawlExecutionService", () => {
       expect(result.extractLinks).toBe(false);
       expect(result.cacheMode).toBe("bypass");
       expect(result.scanFullPage).toBe(false);
+      expect(result.headless).toBeUndefined();
       expect(result.enableUndetectedBrowser).toBe(false);
       expect(result.enableStealthMode).toBe(false);
       expect(result.useManagedBrowser).toBe(false);
@@ -428,6 +432,11 @@ describe("CrawlExecutionService", () => {
       expect(result.textMode).toBe(false);
       expect(result.captureScreenshot).toBe(false);
       expect(result.wordCountThreshold).toBe(80);
+    });
+
+    it("keeps headless when provided", () => {
+      expect(service.normalizeOptions({ headless: true }).headless).toBe(true);
+      expect(service.normalizeOptions({ headless: false }).headless).toBe(false);
     });
 
     it("sets includeImages to true when storeMedia is true", () => {

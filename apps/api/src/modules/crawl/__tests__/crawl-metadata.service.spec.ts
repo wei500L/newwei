@@ -128,3 +128,52 @@ describe("CrawlMetadataService sitemap discovery", () => {
     );
   });
 });
+
+describe("CrawlMetadataService list discovery (crawl4ai)", () => {
+  it("extracts and filters urls from crawl4ai link results", async () => {
+    const crawl = jest.fn(async () => ({
+      results: [
+        {
+          success: true,
+          links: {
+            internal: [
+              { href: "/article/one/" },
+              { href: "https://www.politico.eu/article/two/" },
+              { href: "/newsletter/" },
+              { href: "javascript:void(0)" },
+              { href: "#anchor" }
+            ],
+            external: [{ href: "https://twitter.com/politico" }]
+          }
+        }
+      ]
+    }));
+
+    const service = new CrawlMetadataService({ crawl } as any);
+    const fetchSpy = jest.fn();
+    const originalFetch = global.fetch;
+    global.fetch = fetchSpy as any;
+
+    try {
+      const urls = await service.discoverListUrls({
+        url: "https://www.politico.eu/latest/",
+        domain: "https://www.politico.eu",
+        pattern: "https://www.politico.eu/article/*",
+        maxUrls: 10
+      });
+
+      expect(urls).toEqual([
+        "https://www.politico.eu/article/one/",
+        "https://www.politico.eu/article/two/"
+      ]);
+      expect(crawl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: "https://www.politico.eu/latest/"
+        })
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+});

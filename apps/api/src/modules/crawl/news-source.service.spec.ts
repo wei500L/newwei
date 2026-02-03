@@ -31,6 +31,35 @@ describe("NewsSourceService.createSource", () => {
       })
     ).rejects.toBeInstanceOf(ConflictException);
   });
+
+  it("rejects crawlOptions containing crawl4ai LLM extraction config", async () => {
+    const prisma = {
+      newsSource: {
+        create: jest.fn()
+      }
+    } as any;
+    const metadataService = {} as any;
+    const env = {} as any;
+    const cache = {} as any;
+    const service = new NewsSourceService(prisma, metadataService, env, cache);
+
+    await expect(
+      service.createSource("org-1", {
+        name: "Bad Source",
+        url: "https://example.com",
+        siteType: "general" as any,
+        frequencySeconds: 3600,
+        priority: 0,
+        crawlTemplateId: null,
+        config: {
+          crawlOptions: {
+            extraction_strategy: { type: "llm" }
+          }
+        }
+      })
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.newsSource.create).not.toHaveBeenCalled();
+  });
 });
 
 describe("NewsSourceService.updateSource", () => {

@@ -100,6 +100,7 @@ export interface CrawlOptionsFormValues {
     scanFullPage?: boolean;
     adjustViewportToContent?: boolean;
     scrollDelayMs?: number;
+    headless?: boolean;
     enableUndetectedBrowser?: boolean;
     enableStealthMode?: boolean;
     useManagedBrowser?: boolean;
@@ -201,6 +202,7 @@ export interface CrawlOptionsValue {
     scanFullPage?: boolean;
     adjustViewportToContent?: boolean;
     scrollDelayMs?: number;
+    headless?: boolean;
     enableUndetectedBrowser?: boolean;
     enableStealthMode?: boolean;
     useManagedBrowser?: boolean;

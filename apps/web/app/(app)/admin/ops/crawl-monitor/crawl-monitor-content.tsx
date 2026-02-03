@@ -49,6 +49,22 @@ interface MonitorState {
   errors?: unknown;
 }
 
+interface Crawl4aiRuntimeProbeResult {
+  ok: boolean;
+  durationMs: number;
+  status?: number;
+  error?: string;
+}
+
+interface Crawl4aiRuntimeProbeState {
+  checkedAt: string;
+  baseUrl: string;
+  headless: Crawl4aiRuntimeProbeResult;
+  headed: Crawl4aiRuntimeProbeResult;
+  xvfb?: { supported?: boolean; reason?: string };
+  xvfbEnv?: { enabled?: string; displayNum?: string; screen?: string };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -145,6 +161,29 @@ async function postMonitorJson(path: string, body?: unknown) {
     return rawText ? (JSON.parse(rawText) as unknown) : null;
   }
   return rawText;
+}
+
+async function fetchRuntimeProbeJson() {
+  const response = await fetch("/api/crawl4ai/runtime", { cache: "no-store" });
+  const rawText = await response.text();
+  if (!response.ok) {
+    try {
+      const payload = rawText ? (JSON.parse(rawText) as unknown) : null;
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        const error = (payload as { error?: unknown }).error;
+        if (typeof error === "string" && error.trim()) {
+          throw new Error(error.trim());
+        }
+      }
+    } catch {
+      // ignore json parsing errors
+    }
+    throw new Error(rawText || `HTTP ${response.status}`);
+  }
+  if (!rawText) {
+    throw new Error("Empty runtime probe response");
+  }
+  return JSON.parse(rawText) as unknown;
 }
 
 function formatReceivedAt(ts: number): string {
@@ -555,6 +594,8 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
   const [wsError, setWsError] = useState<string | null>(null);
   const [monitor, setMonitor] = useState<MonitorState | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
+  const [runtimeProbe, setRuntimeProbe] = useState<Crawl4aiRuntimeProbeState | null>(null);
+  const [runtimeProbeError, setRuntimeProbeError] = useState<string | null>(null);
   const [completedFilter, setCompletedFilter] = useState<"all" | "success" | "error">("all");
   const [refreshing, setRefreshing] = useState(false);
   const [detailModal, setDetailModal] = useState<{ title: string; payload: unknown } | null>(null);
@@ -690,6 +731,16 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
     if (refreshing) return;
     setRefreshing(true);
     try {
+      const runtimePromise = fetchRuntimeProbeJson()
+        .then((payload) => {
+          setRuntimeProbeError(null);
+          return payload;
+        })
+        .catch((error) => {
+          setRuntimeProbeError(error instanceof Error ? error.message : String(error));
+          return null;
+        });
+
       const [
         health,
         requests,
@@ -732,6 +783,11 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
         errors
       }));
 
+      const runtime = await runtimePromise;
+      if (runtime && isRecord(runtime)) {
+        setRuntimeProbe(runtime as unknown as Crawl4aiRuntimeProbeState);
+      }
+
       messageApi.success(t("crawl.monitor.refresh.success", { defaultValue: "Refreshed." }));
     } catch (error) {
       messageApi.error(
@@ -741,6 +797,22 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    if (!canView) return;
+    if (status !== "authenticated") return;
+
+    fetchRuntimeProbeJson()
+      .then((payload) => {
+        if (isRecord(payload)) {
+          setRuntimeProbe(payload as unknown as Crawl4aiRuntimeProbeState);
+          setRuntimeProbeError(null);
+        }
+      })
+      .catch((error) => {
+        setRuntimeProbeError(error instanceof Error ? error.message : String(error));
+      });
+  }, [canView, status]);
 
   const updateMonitorField = useCallback((field: MonitorField, value: unknown) => {
     setMonitor((prev) => {
@@ -1705,6 +1777,94 @@ export function CrawlMonitorContent({ dashboardUrl }: CrawlMonitorContentProps) 
                       </Card>
                     </Col>
                   </Row>
+
+                  <Card
+                    size="small"
+                    title={t("crawl.monitor.overview.runtime", { defaultValue: "Browser runtime (Xvfb)" })}
+                    extra={
+                      runtimeProbe?.xvfb?.supported === true ? (
+                        <Tag color="green">
+                          {t("crawl.monitor.runtime.headedOk", { defaultValue: "Headed OK" })}
+                        </Tag>
+                      ) : runtimeProbe?.headed ? (
+                        <Tag color="red">
+                          {t("crawl.monitor.runtime.headedFailed", { defaultValue: "Headed failed" })}
+                        </Tag>
+                      ) : null
+                    }
+                  >
+                    {runtimeProbeError ? (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message={t("crawl.monitor.runtime.unavailable", { defaultValue: "Runtime probe unavailable" })}
+                        description={runtimeProbeError}
+                      />
+                    ) : runtimeProbe ? (
+                      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                        <Row gutter={[16, 12]}>
+                          <Col xs={24} md={12}>
+                            <Statistic
+                              title={t("crawl.monitor.runtime.headless", { defaultValue: "Headless (headless=true)" })}
+                              value={runtimeProbe.headless.ok ? "OK" : "FAILED"}
+                              suffix={`${runtimeProbe.headless.durationMs}ms`}
+                            />
+                          </Col>
+                          <Col xs={24} md={12}>
+                            <Statistic
+                              title={t("crawl.monitor.runtime.headed", { defaultValue: "Headed (headless=false)" })}
+                              value={runtimeProbe.headed.ok ? "OK" : "FAILED"}
+                              suffix={
+                                typeof runtimeProbe.headed.durationMs === "number"
+                                  ? `${runtimeProbe.headed.durationMs}ms`
+                                  : undefined
+                              }
+                            />
+                          </Col>
+                        </Row>
+
+                        {runtimeProbe.xvfbEnv?.enabled ? (
+                          <Typography.Text type="secondary">
+                            {t("crawl.monitor.runtime.env", { defaultValue: "Env:" })}{" "}
+                            <Typography.Text code>
+                              CRAWL4AI_XVFB_ENABLED={runtimeProbe.xvfbEnv.enabled}
+                            </Typography.Text>{" "}
+                            {runtimeProbe.xvfbEnv.displayNum ? (
+                              <Typography.Text code>
+                                CRAWL4AI_XVFB_DISPLAY_NUM={runtimeProbe.xvfbEnv.displayNum}
+                              </Typography.Text>
+                            ) : null}{" "}
+                            {runtimeProbe.xvfbEnv.screen ? (
+                              <Typography.Text code>
+                                CRAWL4AI_XVFB_SCREEN={runtimeProbe.xvfbEnv.screen}
+                              </Typography.Text>
+                            ) : null}
+                          </Typography.Text>
+                        ) : null}
+
+                        {!runtimeProbe.headed.ok && runtimeProbe.headed.error ? (
+                          <Typography.Text type="secondary" style={{ whiteSpace: "pre-wrap" }}>
+                            {runtimeProbe.headed.error}
+                          </Typography.Text>
+                        ) : null}
+                        {!runtimeProbe.headed.ok && runtimeProbe.xvfb?.reason ? (
+                          <Typography.Text type="secondary" style={{ whiteSpace: "pre-wrap" }}>
+                            {runtimeProbe.xvfb.reason}
+                          </Typography.Text>
+                        ) : null}
+                        <Typography.Text type="secondary">
+                          {t("crawl.monitor.runtime.hint", {
+                            defaultValue:
+                              "If headed mode fails with DISPLAY/Xvfb errors, enable Xvfb in docker-compose or switch sources to Headless."
+                          })}
+                        </Typography.Text>
+                      </Space>
+                    ) : (
+                      <Typography.Text type="secondary">
+                        {t("crawl.monitor.runtime.loading", { defaultValue: "Loading..." })}
+                      </Typography.Text>
+                    )}
+                  </Card>
 
                   {canManage ? (
                     <Card size="small" title={t("crawl.monitor.actions.title", { defaultValue: "Actions" })}>

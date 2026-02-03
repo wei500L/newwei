@@ -200,6 +200,7 @@ const FOLLOW_COMPLETION_KEY = "__follow_completion__";
 const USE_DEFAULT_KEY = "__use_default__";
 const DEFAULT_LLM_GATEWAY_API_BASE =
   (process.env.NEXT_PUBLIC_LLM_GATEWAY_DEFAULT_API_BASE ?? "").trim() || "http://localhost:4001";
+const MAX_LLM_GATEWAY_OUTPUT_TOKENS = 1_000_000;
 
 function toFallbackModels(input: string | undefined) {
   if (!input) {
@@ -2380,7 +2381,7 @@ export function LlmGatewaySettingsPanel() {
               rules={[{ required: true, message: t("settings.llmGateway.validation.maxOutputTokensRequired") }]}
               style={{ minWidth: 220, flex: 1 }}
             >
-              <InputNumber min={1} max={100_000} step={50} style={{ width: "100%" }} />
+              <InputNumber min={1} max={MAX_LLM_GATEWAY_OUTPUT_TOKENS} step={50} style={{ width: "100%" }} />
             </Form.Item>
           </Space>
 
@@ -2536,7 +2537,7 @@ export function LlmGatewaySettingsPanel() {
               rules={[{ required: true, message: t("settings.llmGateway.validation.maxOutputTokensRequired") }]}
               style={{ minWidth: 220, flex: 1 }}
             >
-              <InputNumber min={1} max={100_000} step={50} style={{ width: "100%" }} />
+              <InputNumber min={1} max={MAX_LLM_GATEWAY_OUTPUT_TOKENS} step={50} style={{ width: "100%" }} />
             </Form.Item>
           </Space>
 

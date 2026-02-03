@@ -25,6 +25,7 @@ import type {
   CrawlVirtualScrollConfig
 } from "./crawl.types";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
+import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
 import { validateJsCodeArray } from "./validators/js-code.validator";
 
 export interface Crawl4aiRequest {
@@ -186,7 +187,31 @@ export class Crawl4aiClient {
           ? `${messageParts.join("\n")}\n(status ${normalizedStatus})`
           : messageParts.join("\n");
 
-      throw new Crawl4aiRequestException(messageWithStatus, status, error);
+      const normalizedMessage = messageWithStatus.toLowerCase();
+      const maybeDisplayIssue =
+        normalizedMessage.includes("cannot open display") ||
+        normalizedMessage.includes("missing x server") ||
+        normalizedMessage.includes("xvfb") ||
+        (normalizedMessage.includes("x11") && normalizedMessage.includes("display"));
+      const maybeProxyIssue =
+        normalizedMessage.includes("err_proxy_connection_failed") ||
+        normalizedMessage.includes("proxy_connection_failed") ||
+        normalizedMessage.includes("proxy connection failed") ||
+        (normalizedMessage.includes("proxy") && normalizedMessage.includes("connection failed"));
+      const hints: string[] = [];
+      if (maybeDisplayIssue) {
+        hints.push(
+          "Hint: crawl4ai may be running with headless=false. Ensure Xvfb/DISPLAY is configured (see infra/docker/docker-compose.yml) or set crawlOptions.headless=true."
+        );
+      }
+      if (maybeProxyIssue) {
+        hints.push(
+          "Hint: crawl4ai failed to connect to the proxy. If your proxy is on the Docker host, use host.docker.internal (e.g. http://host.docker.internal:7890) instead of 127.0.0.1/localhost, or disable proxyUrl."
+        );
+      }
+      const messageWithHint = hints.length > 0 ? `${messageWithStatus}\n${hints.join("\n")}` : messageWithStatus;
+
+      throw new Crawl4aiRequestException(messageWithHint, status, error);
     }
   }
 
@@ -224,7 +249,7 @@ export class Crawl4aiClient {
 
     const scrollDelay = typeof options.scrollDelayMs === "number" ? options.scrollDelayMs / 1000 : undefined;
     const useManagedBrowser = options.useManagedBrowser ?? false;
-    const headless = useManagedBrowser || options.enableUndetectedBrowser || options.enableStealthMode ? false : true;
+    const headless = typeof options.headless === "boolean" ? options.headless : undefined;
     const proxyPayload = this.resolveProxyPayload(options);
     const multiConfigurations = this.buildMultiConfigurations(options);
     const markdownGenerator = this.buildMarkdownGenerator(options);
@@ -271,6 +296,7 @@ export class Crawl4aiClient {
       type: "CrawlerRunConfig",
       params: this.compact({
         cache_mode: options.cacheMode ?? "bypass",
+        prefetch: options.prefetch ? true : undefined,
         scan_full_page: options.scanFullPage ?? false,
         adjust_viewport_to_content: options.adjustViewportToContent ? true : undefined,
         scroll_delay: scrollDelay,
@@ -291,7 +317,6 @@ export class Crawl4aiClient {
         wait_for: this.buildWaitFor(options),
         wait_for_timeout: this.normalizeWaitForTimeout(options.waitForTimeoutMs),
         session_id: options.sessionId,
-        ...(cleanMarkdown ?? {}),
         table_score_threshold: this.normalizeTableScore(options.tableScoreThreshold),
         table_extraction: this.buildTableExtraction(options.tableExtraction),
         word_count_threshold: wordCountThreshold,
@@ -304,7 +329,8 @@ export class Crawl4aiClient {
         wait_for_images: waitForImages ? true : undefined,
         only_text: textMode ? true : undefined,
         screenshot: captureScreenshot ? true : undefined,
-        virtual_scroll_config: virtualScroll
+        virtual_scroll_config: virtualScroll,
+        ...(cleanMarkdown ?? {})
       })
     };
     return {
@@ -327,14 +353,18 @@ export class Crawl4aiClient {
 
   private resolveProxyPayload(options: CrawlTaskOptions) {
     if (options.proxyConfig) {
+      const normalizedServer = translateLocalhostProxyUrlForCrawl4ai(
+        options.proxyConfig.server,
+        this.env.crawl4aiConfig.baseUrl
+      );
       return this.compact({
-        server: options.proxyConfig.server,
+        server: normalizedServer,
         username: options.proxyConfig.username ?? undefined,
         password: options.proxyConfig.password ?? undefined
       });
     }
     if (options.proxyUrl) {
-      return options.proxyUrl;
+      return translateLocalhostProxyUrlForCrawl4ai(options.proxyUrl, this.env.crawl4aiConfig.baseUrl);
     }
     return undefined;
   }

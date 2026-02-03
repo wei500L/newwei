@@ -201,7 +201,12 @@ interface NewsSourceFormValues {
   tags?: string;
   summaryHints?: string;
   metadataJson?: string;
+  crawlProxyMode?: "auto" | "enable" | "disable";
+  crawlProxyUrl?: string;
   crawlOptionsJson?: string;
+  crawlHeadlessMode?: "auto" | "headless" | "headed";
+  crawlUndetectedMode?: "auto" | "enable" | "disable";
+  crawlStealthMode?: "auto" | "enable" | "disable";
   forceRefresh?: boolean;
   seedEnabled?: boolean;
   seedMode?: "sitemap" | "rss" | "list";
@@ -232,6 +237,11 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   seedPattern: "",
   seedFeedUrl: "",
   seedQuery: "",
+  crawlProxyMode: "auto",
+  crawlProxyUrl: "",
+  crawlHeadlessMode: "auto",
+  crawlUndetectedMode: "auto",
+  crawlStealthMode: "auto",
   seedMaxUrls: 20,
   seedMaxNewUrlsPerRun: 10,
   seedScoreThreshold: 0,
@@ -335,6 +345,66 @@ const inferSourceNameFromUrl = (value: string) => {
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const DISALLOWED_CRAWL4AI_LLM_NORMALIZED_KEYS = new Set(["extractionstrategy", "llmconfig"]);
+const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+const normalizeLooseKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const findDisallowedCrawl4aiLlmKeys = (
+  value: unknown,
+  prefix = "",
+  seen = new Set<unknown>()
+): string[] => {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  if (seen.has(value)) {
+    return [];
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) =>
+      findDisallowedCrawl4aiLlmKeys(entry, `${prefix}[${index}]`, seen)
+    );
+  }
+
+  const record = value as Record<string, unknown>;
+  const hits: string[] = [];
+  for (const [key, entry] of Object.entries(record)) {
+    const normalized = normalizeLooseKey(key);
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (DISALLOWED_CRAWL4AI_LLM_NORMALIZED_KEYS.has(normalized)) {
+      hits.push(path);
+    }
+    if (isPlainObject(entry) || Array.isArray(entry)) {
+      hits.push(...findDisallowedCrawl4aiLlmKeys(entry, path, seen));
+    }
+  }
+
+  return hits;
+};
+
+const translateLocalProxyToDockerHost = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    const hostname = parsed.hostname.toLowerCase();
+    if (!LOCAL_PROXY_HOSTS.has(hostname)) {
+      return trimmed;
+    }
+    parsed.hostname = "host.docker.internal";
+    const hadNoPath = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]+$/.test(trimmed);
+    const next = parsed.toString();
+    return hadNoPath && next.endsWith("/") ? next.slice(0, -1) : next;
+  } catch {
+    return trimmed;
+  }
+};
 
 const hasSeedConfig = (
   config: unknown
@@ -944,6 +1014,39 @@ export function NewsSourcesContent() {
         : seedConfig?.mode === "list"
           ? "list"
           : "sitemap";
+    const crawlOptionsConfig =
+      config?.crawlOptions && typeof config.crawlOptions === "object" && !Array.isArray(config.crawlOptions)
+        ? (config.crawlOptions as Record<string, unknown>)
+        : null;
+    const crawlHeadlessMode =
+      typeof crawlOptionsConfig?.headless === "boolean"
+        ? crawlOptionsConfig.headless
+          ? "headless"
+          : "headed"
+        : "auto";
+    const crawlUndetectedMode =
+      typeof crawlOptionsConfig?.enableUndetectedBrowser === "boolean"
+        ? crawlOptionsConfig.enableUndetectedBrowser
+          ? "enable"
+          : "disable"
+        : "auto";
+    const crawlStealthMode =
+      typeof crawlOptionsConfig?.enableStealthMode === "boolean"
+        ? crawlOptionsConfig.enableStealthMode
+          ? "enable"
+          : "disable"
+        : "auto";
+    const proxyConfig =
+      isPlainObject(crawlOptionsConfig?.proxyConfig) ? (crawlOptionsConfig!.proxyConfig as Record<string, unknown>) : null;
+    const proxyConfigServer = typeof proxyConfig?.server === "string" ? proxyConfig.server.trim() : "";
+    const proxyConfigUsername = typeof proxyConfig?.username === "string" ? proxyConfig.username.trim() : "";
+    const proxyConfigPassword = typeof proxyConfig?.password === "string" ? proxyConfig.password.trim() : "";
+    const proxyConfigHasAuth = Boolean(proxyConfigUsername) || Boolean(proxyConfigPassword);
+    const proxyUrlRaw = typeof crawlOptionsConfig?.proxyUrl === "string" ? crawlOptionsConfig.proxyUrl.trim() : "";
+    const crawlProxyMode =
+      proxyUrlRaw.length > 0 ? "enable" : proxyConfigServer.length > 0 && !proxyConfigHasAuth ? "enable" : "auto";
+    const crawlProxyUrl =
+      proxyUrlRaw.length > 0 ? proxyUrlRaw : proxyConfigServer.length > 0 && !proxyConfigHasAuth ? proxyConfigServer : "";
 
     const nextFormValues: Partial<NewsSourceFormValues> = {
       ...NEWS_SOURCE_CREATE_INITIAL_VALUES,
@@ -965,7 +1068,12 @@ export function NewsSourcesContent() {
       tags: formatStringList(config?.tags),
       summaryHints: formatStringList(config?.summaryHints),
       metadataJson: config?.metadata ? JSON.stringify(config.metadata, null, 2) : "",
+      crawlProxyMode,
+      crawlProxyUrl,
       crawlOptionsJson: config?.crawlOptions ? JSON.stringify(config.crawlOptions, null, 2) : "",
+      crawlHeadlessMode,
+      crawlUndetectedMode,
+      crawlStealthMode,
       forceRefresh: config?.forceRefresh === true,
       seedEnabled: seedConfig?.enabled === true,
       seedMode,
@@ -1006,9 +1114,96 @@ export function NewsSourcesContent() {
     if (metadata) {
       config.metadata = metadata;
     }
+    const crawlHeadlessMode =
+      values.crawlHeadlessMode === "headless"
+        ? "headless"
+        : values.crawlHeadlessMode === "headed"
+          ? "headed"
+          : "auto";
+    const crawlUndetectedMode =
+      values.crawlUndetectedMode === "enable"
+        ? "enable"
+        : values.crawlUndetectedMode === "disable"
+          ? "disable"
+          : "auto";
+    const crawlStealthMode =
+      values.crawlStealthMode === "enable"
+        ? "enable"
+        : values.crawlStealthMode === "disable"
+          ? "disable"
+          : "auto";
     const crawlOptions = parseJsonField(values.crawlOptionsJson, "crawlOptions");
-    if (crawlOptions) {
-      config.crawlOptions = crawlOptions;
+    let resolvedCrawlOptions = crawlOptions ? { ...crawlOptions } : null;
+    if (crawlHeadlessMode === "headless" || crawlHeadlessMode === "headed") {
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.headless = crawlHeadlessMode === "headless";
+    } else if (resolvedCrawlOptions && typeof resolvedCrawlOptions.headless === "boolean") {
+      delete resolvedCrawlOptions.headless;
+    }
+
+    if (crawlUndetectedMode === "enable" || crawlUndetectedMode === "disable") {
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.enableUndetectedBrowser = crawlUndetectedMode === "enable";
+    } else if (
+      resolvedCrawlOptions &&
+      typeof resolvedCrawlOptions.enableUndetectedBrowser === "boolean"
+    ) {
+      delete resolvedCrawlOptions.enableUndetectedBrowser;
+    }
+
+    if (crawlStealthMode === "enable" || crawlStealthMode === "disable") {
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.enableStealthMode = crawlStealthMode === "enable";
+    } else if (resolvedCrawlOptions && typeof resolvedCrawlOptions.enableStealthMode === "boolean") {
+      delete resolvedCrawlOptions.enableStealthMode;
+    }
+
+    const crawlProxyMode =
+      values.crawlProxyMode === "enable"
+        ? "enable"
+        : values.crawlProxyMode === "disable"
+          ? "disable"
+          : "auto";
+    const crawlProxyUrl = values.crawlProxyUrl?.trim() ?? "";
+    if (crawlProxyMode === "enable") {
+      if (!crawlProxyUrl) {
+        throw new Error(
+          t("newsSources.errors.proxyUrlRequired", {
+            defaultValue: "Proxy URL is required when proxy is enabled."
+          })
+        );
+      }
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.proxyUrl = crawlProxyUrl;
+      if (typeof resolvedCrawlOptions.proxyConfig === "object") {
+        delete resolvedCrawlOptions.proxyConfig;
+      }
+    } else if (crawlProxyMode === "disable" && resolvedCrawlOptions) {
+      if (typeof resolvedCrawlOptions.proxyUrl === "string") {
+        delete resolvedCrawlOptions.proxyUrl;
+      }
+      if (typeof resolvedCrawlOptions.proxyConfig === "object") {
+        delete resolvedCrawlOptions.proxyConfig;
+      }
+    }
+
+    if (resolvedCrawlOptions) {
+      const blockedKeys = findDisallowedCrawl4aiLlmKeys(resolvedCrawlOptions);
+      if (blockedKeys.length > 0) {
+        const list = blockedKeys.slice(0, 5).join(", ");
+        const suffix = blockedKeys.length > 5 ? ` (+${blockedKeys.length - 5} more)` : "";
+        throw new Error(
+          t("newsSources.errors.crawlOptionsLlmBlocked", {
+            defaultValue:
+              "crawlOptions contains crawl4ai LLM extraction settings ({{keys}}{{suffix}}). The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead.",
+            keys: list,
+            suffix
+          })
+        );
+      }
+    }
+    if (resolvedCrawlOptions && Object.keys(resolvedCrawlOptions).length > 0) {
+      config.crawlOptions = resolvedCrawlOptions;
     }
     if (values.forceRefresh) {
       config.forceRefresh = true;
@@ -2802,11 +2997,218 @@ export function NewsSourcesContent() {
             <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} />
           </Form.Item>
           <Form.Item
+            name="crawlProxyMode"
+            label={t("newsSources.fields.crawlProxyMode", { defaultValue: "Proxy" })}
+            tooltip={t("newsSources.fields.crawlProxyModeHint", {
+              defaultValue:
+                "Auto keeps proxyUrl/proxyConfig from crawlOptions JSON. Enabled overrides crawlOptions with the Proxy URL below. Disabled removes any proxy settings."
+            })}
+          >
+            <Select
+              options={[
+                { label: t("newsSources.crawlTriState.auto", { defaultValue: "Auto (inherit)" }), value: "auto" },
+                { label: t("newsSources.crawlTriState.enable", { defaultValue: "Enabled" }), value: "enable" },
+                { label: t("newsSources.crawlTriState.disable", { defaultValue: "Disabled" }), value: "disable" }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, nextValues) => prevValues.crawlProxyMode !== nextValues.crawlProxyMode}
+          >
+            {({ getFieldValue }) => {
+              const modeRaw = getFieldValue("crawlProxyMode");
+              const mode = modeRaw === "enable" ? "enable" : modeRaw === "disable" ? "disable" : "auto";
+              if (mode !== "enable") {
+                return null;
+              }
+
+              return (
+                <Form.Item
+                  name="crawlProxyUrl"
+                  label={t("newsSources.fields.crawlProxyUrl", { defaultValue: "Proxy URL" })}
+                  tooltip={t("newsSources.fields.crawlProxyUrlHint", {
+                    defaultValue:
+                      "If crawl4ai runs in Docker and your proxy is on this machine, use host.docker.internal instead of localhost/127.0.0.1."
+                  })}
+                  rules={[
+                    {
+                      required: true,
+                      message: t("newsSources.errors.proxyUrlRequired", {
+                        defaultValue: "Proxy URL is required when proxy is enabled."
+                      })
+                    }
+                  ]}
+                >
+                  <Space.Compact style={{ width: "100%" }}>
+                    <Input placeholder="http://host.docker.internal:7890" />
+                    <Button
+                      onClick={() => {
+                        const current = String(form.getFieldValue("crawlProxyUrl") ?? "");
+                        const next = translateLocalProxyToDockerHost(current);
+                        if (next !== current) {
+                          form.setFieldsValue({ crawlProxyUrl: next });
+                        }
+                      }}
+                    >
+                      {t("newsSources.actions.useDockerHostProxy", { defaultValue: "Use Docker host" })}
+                    </Button>
+                    <Button onClick={() => form.setFieldsValue({ crawlProxyMode: "disable", crawlProxyUrl: "" })}>
+                      {t("common.clear", { defaultValue: "Clear" })}
+                    </Button>
+                  </Space.Compact>
+                </Form.Item>
+              );
+            }}
+          </Form.Item>
+          <Form.Item
             name="crawlOptionsJson"
             label={t("newsSources.fields.crawlOptions", { defaultValue: "Crawl options (JSON)" })}
+            tooltip={t("newsSources.fields.crawlOptionsHint", {
+              defaultValue:
+                "Advanced Crawl4AI options. Do not set crawl4ai LLM extraction here (extraction_strategy/llm_config); crawl should only store cleaned markdown, and your configured model runs later in the pipeline."
+            })}
+            validateTrigger="onBlur"
+            rules={[
+              {
+                validator: async (_rule, value) => {
+                  const trimmed = typeof value === "string" ? value.trim() : "";
+                  if (!trimmed) {
+                    return;
+                  }
+                  let parsed: unknown;
+                  try {
+                    parsed = JSON.parse(trimmed);
+                  } catch (error) {
+                    throw new Error(
+                      error instanceof Error ? error.message : "crawlOptions must be a valid JSON object"
+                    );
+                  }
+                  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                    throw new Error("crawlOptions must be a JSON object");
+                  }
+                  const blockedKeys = findDisallowedCrawl4aiLlmKeys(parsed);
+                  if (blockedKeys.length === 0) {
+                    return;
+                  }
+                  const list = blockedKeys.slice(0, 5).join(", ");
+                  const suffix = blockedKeys.length > 5 ? ` (+${blockedKeys.length - 5} more)` : "";
+                  throw new Error(
+                    t("newsSources.errors.crawlOptionsLlmBlocked", {
+                      defaultValue:
+                        "crawlOptions contains crawl4ai LLM extraction settings ({{keys}}{{suffix}}). The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead.",
+                      keys: list,
+                      suffix
+                    })
+                  );
+                }
+              }
+            ]}
           >
             <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} />
           </Form.Item>
+          <Form.Item
+            name="crawlHeadlessMode"
+            label={t("newsSources.fields.crawlHeadlessMode", { defaultValue: "Browser mode" })}
+            tooltip={t("newsSources.fields.crawlHeadlessModeHint", {
+              defaultValue:
+                "Auto removes crawlOptions.headless so Crawl4AI can decide. Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch to Headless or enable Xvfb in docker-compose."
+            })}
+          >
+            <Select
+              options={[
+                {
+                  label: t("newsSources.crawlHeadlessMode.auto", { defaultValue: "Auto (recommended)" }),
+                  value: "auto"
+                },
+                {
+                  label: t("newsSources.crawlHeadlessMode.headless", { defaultValue: "Headless" }),
+                  value: "headless"
+                },
+                {
+                  label: t("newsSources.crawlHeadlessMode.headed", { defaultValue: "Headed (Xvfb)" }),
+                  value: "headed"
+                }
+              ]}
+            />
+          </Form.Item>
+          <Row gutter={[12, 0]}>
+            <Col span={12}>
+              <Form.Item
+                name="crawlUndetectedMode"
+                label={t("newsSources.fields.crawlUndetectedMode", { defaultValue: "Undetected browser" })}
+                tooltip={t("newsSources.fields.crawlUndetectedModeHint", {
+                  defaultValue:
+                    "Auto removes crawlOptions.enableUndetectedBrowser so templates/defaults can apply. Enable/Disable explicitly overrides templates."
+                })}
+              >
+                <Select
+                  options={[
+                    {
+                      label: t("newsSources.crawlTriState.auto", { defaultValue: "Auto (inherit)" }),
+                      value: "auto"
+                    },
+                    {
+                      label: t("newsSources.crawlTriState.enable", { defaultValue: "Enabled" }),
+                      value: "enable"
+                    },
+                    {
+                      label: t("newsSources.crawlTriState.disable", { defaultValue: "Disabled" }),
+                      value: "disable"
+                    }
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="crawlStealthMode"
+                label={t("newsSources.fields.crawlStealthMode", { defaultValue: "Stealth mode" })}
+                tooltip={t("newsSources.fields.crawlStealthModeHint", {
+                  defaultValue:
+                    "Auto removes crawlOptions.enableStealthMode so templates/defaults can apply. Enable/Disable explicitly overrides templates."
+                })}
+              >
+                <Select
+                  options={[
+                    {
+                      label: t("newsSources.crawlTriState.auto", { defaultValue: "Auto (inherit)" }),
+                      value: "auto"
+                    },
+                    {
+                      label: t("newsSources.crawlTriState.enable", { defaultValue: "Enabled" }),
+                      value: "enable"
+                    },
+                    {
+                      label: t("newsSources.crawlTriState.disable", { defaultValue: "Disabled" }),
+                      value: "disable"
+                    }
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Typography.Paragraph style={{ marginBottom: 12 }}>
+            <Space wrap>
+              <Button
+                size="small"
+                onClick={() =>
+                  form.setFieldsValue({
+                    crawlHeadlessMode: "headed",
+                    crawlUndetectedMode: "enable",
+                    crawlStealthMode: "enable"
+                  })
+                }
+              >
+                {t("newsSources.presets.cloudflare", { defaultValue: "Cloudflare preset" })}
+              </Button>
+              <Typography.Text type="secondary">
+                {t("newsSources.presets.cloudflareHint", {
+                  defaultValue: "Enables undetected + stealth and switches the browser to headed (Xvfb)."
+                })}
+              </Typography.Text>
+            </Space>
+          </Typography.Paragraph>
           <Form.Item
             name="forceRefresh"
             label={t("newsSources.fields.forceRefresh", { defaultValue: "Force refresh" })}
@@ -2852,7 +3254,7 @@ export function NewsSourcesContent() {
                     label={t("newsSources.fields.seedMode", { defaultValue: "Seed mode" })}
                     tooltip={t("newsSources.fields.seedModeHint", {
                       defaultValue:
-                        "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL; List mode extracts links from the source URL."
+                        "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL; List mode uses Crawl4AI to extract article links from the source URL (e.g. /latest/) and will crawl each discovered article."
                     })}
                   >
                     <Select
@@ -2895,7 +3297,7 @@ export function NewsSourcesContent() {
                             : t("newsSources.fields.seedPattern", { defaultValue: "URL pattern (optional)" })
                         }
                         tooltip={t("newsSources.fields.seedPatternHint", {
-                          defaultValue: "Supports '*' and '?' wildcards, e.g. '*news*' or '*/2026/*'."
+                          defaultValue: "Supports '*' and '?' wildcards, e.g. '*/article/*', '*news*' or '*/2026/*'."
                         })}
                       >
                         <Input placeholder="*news*" />

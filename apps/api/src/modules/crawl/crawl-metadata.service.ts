@@ -1,14 +1,16 @@
 import { createLogger } from "@modular/utils";
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, Optional } from "@nestjs/common";
 import { load } from "cheerio";
 import { XMLParser } from "fast-xml-parser";
 import { gunzipSync } from "node:zlib";
 
+import { Crawl4aiClient, type Crawl4aiArticle } from "./crawl4ai.client";
 import type {
   CrawlMetadataExtractionInput,
   CrawlMetadataResult,
   CrawlMetadataTag,
-  CrawlMetadataSource
+  CrawlMetadataSource,
+  CrawlTaskOptions
 } from "./crawl.types";
 
 const logger = createLogger({ name: "crawl-metadata" });
@@ -43,6 +45,8 @@ export class CrawlMetadataService {
     allowBooleanAttributes: true,
     trimValues: true
   });
+
+  constructor(@Optional() private readonly crawl4ai?: Crawl4aiClient) {}
 
   async extract(input: CrawlMetadataExtractionInput): Promise<CrawlMetadataResult[]> {
     const config = this.normalizeInput(input);
@@ -123,11 +127,22 @@ export class CrawlMetadataService {
     pattern?: string;
     maxUrls?: number;
     requestTimeoutMs?: number;
+    crawlOptions?: Record<string, unknown>;
   }): Promise<string[]> {
     const seedUrl = this.normalizeUrl(input.url);
     if (!seedUrl) {
       return [];
     }
+
+    const normalizedSeedUrl = (() => {
+      try {
+        const parsed = new URL(seedUrl);
+        parsed.hash = "";
+        return parsed.toString();
+      } catch {
+        return seedUrl;
+      }
+    })();
 
     const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
     const requestTimeoutMs =
@@ -137,6 +152,18 @@ export class CrawlMetadataService {
 
     const domain = this.normalizeDomain(input.domain);
     const patternMatcher = this.normalizePattern(input.pattern);
+    const crawlOptions = this.normalizeCrawlOptions(input.crawlOptions);
+
+    const discoveredViaCrawl4ai = await this.discoverListUrlsViaCrawl4ai({
+      seedUrl,
+      domain,
+      maxUrls,
+      patternMatcher,
+      crawlOptions
+    });
+    if (discoveredViaCrawl4ai.length > 0) {
+      return discoveredViaCrawl4ai;
+    }
 
     const html = await this.fetchMaybe(seedUrl, requestTimeoutMs);
     if (!html) {
@@ -179,6 +206,9 @@ export class CrawlMetadataService {
       resolved.hash = "";
 
       const absolute = resolved.toString();
+      if (absolute === normalizedSeedUrl) {
+        return;
+      }
       if (allowedOrigin && !absolute.startsWith(`${allowedOrigin}/`) && absolute !== allowedOrigin) {
         return;
       }
@@ -194,6 +224,130 @@ export class CrawlMetadataService {
     });
 
     return urls.slice(0, maxUrls);
+  }
+
+  private async discoverListUrlsViaCrawl4ai(input: {
+    seedUrl: string;
+    domain?: string;
+    patternMatcher?: (url: string) => boolean;
+    maxUrls: number;
+    crawlOptions?: CrawlTaskOptions;
+  }): Promise<string[]> {
+    if (!this.crawl4ai) {
+      return [];
+    }
+
+    let allowedOrigin: string | undefined;
+    try {
+      allowedOrigin = (input.domain ?? new URL(input.seedUrl).origin).replace(/\/+$/, "");
+    } catch {
+      allowedOrigin = input.domain?.replace(/\/+$/, "") ?? undefined;
+    }
+
+    const normalizedSeedUrl = (() => {
+      try {
+        const parsed = new URL(input.seedUrl);
+        parsed.hash = "";
+        return parsed.toString();
+      } catch {
+        return input.seedUrl;
+      }
+    })();
+
+    try {
+      const crawlOptions: CrawlTaskOptions | undefined = input.crawlOptions
+        ? { ...input.crawlOptions, extractLinks: true, prefetch: true }
+        : { extractLinks: true, prefetch: true };
+      const response = await this.crawl4ai.crawl({
+        url: input.seedUrl,
+        options: crawlOptions
+      });
+
+      const article = response.results?.[0] as Crawl4aiArticle | undefined;
+      if (!article || article.success !== true) {
+        return [];
+      }
+
+      const linksRecord = this.normalizeLinkRecord(article.links);
+      if (!linksRecord) {
+        return [];
+      }
+
+      const candidates: string[] = [];
+      const seen = new Set<string>();
+      const values = Object.values(linksRecord).flatMap((value) => (Array.isArray(value) ? value : []));
+      for (const entry of values) {
+        if (!this.isPlainObject(entry)) {
+          continue;
+        }
+        const rawHref = typeof entry.href === "string" ? entry.href : typeof entry.url === "string" ? entry.url : "";
+        const trimmed = rawHref.trim();
+        if (!trimmed || trimmed === "#" || trimmed.toLowerCase().startsWith("javascript:")) {
+          continue;
+        }
+
+        let resolved: URL;
+        try {
+          resolved = new URL(trimmed, input.seedUrl);
+        } catch {
+          continue;
+        }
+        if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+          continue;
+        }
+        resolved.hash = "";
+
+        const absolute = resolved.toString();
+        if (absolute === normalizedSeedUrl) {
+          continue;
+        }
+        if (allowedOrigin && !absolute.startsWith(`${allowedOrigin}/`) && absolute !== allowedOrigin) {
+          continue;
+        }
+        if (input.patternMatcher && !input.patternMatcher(absolute)) {
+          continue;
+        }
+        if (seen.has(absolute)) {
+          continue;
+        }
+
+        seen.add(absolute);
+        candidates.push(absolute);
+        if (candidates.length >= input.maxUrls) {
+          break;
+        }
+      }
+
+      return candidates;
+    } catch (error) {
+      logger.warn({ seedUrl: input.seedUrl, error }, "crawl4ai list discovery failed; falling back to raw HTML parsing");
+      return [];
+    }
+  }
+
+  private normalizeLinkRecord(value: unknown): Record<string, unknown[]> | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const normalized: Record<string, unknown[]> = {};
+    for (const [key, entry] of Object.entries(record)) {
+      if (Array.isArray(entry)) {
+        normalized[key] = entry;
+      }
+    }
+    return Object.keys(normalized).length > 0 ? normalized : null;
+  }
+
+  private normalizeCrawlOptions(value: unknown): CrawlTaskOptions | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    return value as CrawlTaskOptions;
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
   }
 
   private normalizeInput(input: CrawlMetadataExtractionInput): NormalizedMetadataConfig {

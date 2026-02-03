@@ -8,6 +8,7 @@ import {
   Grid,
   Input,
   Modal,
+  Select,
   Space,
   Switch,
   Table,
@@ -37,6 +38,7 @@ interface CrawlTemplateFormValues {
   isActive: boolean;
   proxyUrl?: string;
   userAgent?: string;
+  headlessMode?: "auto" | "headless" | "headed";
   enableStealthMode: boolean;
   enableUndetectedBrowser: boolean;
   includeImages: boolean;
@@ -117,6 +119,7 @@ export function CrawlTemplatesContent() {
       editing: null,
       initialValues: {
         isActive: true,
+        headlessMode: "auto",
         enableStealthMode: false,
         enableUndetectedBrowser: false,
         includeImages: true,
@@ -127,6 +130,8 @@ export function CrawlTemplatesContent() {
 
   const openEdit = (template: CrawlTemplateRecord) => {
     const options = normalizeOptions(template.crawlOptions);
+    const headlessMode =
+      typeof options?.headless === "boolean" ? (options.headless ? "headless" : "headed") : "auto";
     setModalState({
       open: true,
       editing: template,
@@ -136,6 +141,7 @@ export function CrawlTemplatesContent() {
         isActive: template.isActive,
         proxyUrl: normalizeString(options?.proxyUrl),
         userAgent: normalizeString(options?.userAgent),
+        headlessMode,
         enableStealthMode: normalizeBoolean(options?.enableStealthMode),
         enableUndetectedBrowser: normalizeBoolean(options?.enableUndetectedBrowser),
         includeImages: options?.includeImages === false ? false : true,
@@ -159,6 +165,14 @@ export function CrawlTemplatesContent() {
       base.userAgent = userAgent;
     } else {
       delete base.userAgent;
+    }
+
+    if (values.headlessMode === "headless") {
+      base.headless = true;
+    } else if (values.headlessMode === "headed") {
+      base.headless = false;
+    } else {
+      delete base.headless;
     }
 
     if (values.enableStealthMode) {
@@ -393,6 +407,22 @@ export function CrawlTemplatesContent() {
             label={t("crawlTemplates.fields.userAgent", { defaultValue: "User Agent" })}
           >
             <Input />
+          </Form.Item>
+          <Form.Item
+            name="headlessMode"
+            label={t("crawlTemplates.fields.headless", { defaultValue: "Headless mode" })}
+            tooltip={t("crawlTemplates.fields.headlessHint", {
+              defaultValue:
+                "Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch back to Headless or enable Xvfb in docker-compose."
+            })}
+          >
+            <Select
+              options={[
+                { value: "auto", label: t("crawlTemplates.headless.auto", { defaultValue: "Auto" }) },
+                { value: "headless", label: t("crawlTemplates.headless.headless", { defaultValue: "Headless" }) },
+                { value: "headed", label: t("crawlTemplates.headless.headed", { defaultValue: "Headed (Xvfb)" }) }
+              ]}
+            />
           </Form.Item>
           <Form.Item
             name="enableStealthMode"

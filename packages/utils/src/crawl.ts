@@ -114,6 +114,7 @@ export interface CrawlOptionsFormValues {
   scanFullPage?: boolean;
   adjustViewportToContent?: boolean;
   scrollDelayMs?: number;
+  headless?: boolean;
   enableUndetectedBrowser?: boolean;
   enableStealthMode?: boolean;
   useManagedBrowser?: boolean;
@@ -223,6 +224,7 @@ export interface CrawlOptionsValue {
   scanFullPage?: boolean;
   adjustViewportToContent?: boolean;
   scrollDelayMs?: number;
+  headless?: boolean;
   enableUndetectedBrowser?: boolean;
   enableStealthMode?: boolean;
   useManagedBrowser?: boolean;
@@ -698,6 +700,7 @@ export const sanitizeCrawlOptions = (
         ? values.adjustViewportToContent
         : undefined,
     scrollDelayMs: values.scrollDelayMs ?? undefined,
+    headless: typeof values.headless === "boolean" ? values.headless : undefined,
     enableUndetectedBrowser: values.enableUndetectedBrowser ?? undefined,
     enableStealthMode: values.enableStealthMode ?? undefined,
     useManagedBrowser:

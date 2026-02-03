@@ -11,6 +11,7 @@ import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
+import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import { CrawlMetadataService } from "./crawl-metadata.service";
 import {
   CreateNewsSourceDto,
@@ -470,6 +471,26 @@ export class NewsSourceService {
       source.config && typeof source.config === "object" && !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
         : null;
+    const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+      Boolean(value) && typeof value === "object" && !Array.isArray(value);
+    const sourceCrawlOptions = isPlainObject(config?.crawlOptions)
+      ? (config!.crawlOptions as Record<string, unknown>)
+      : undefined;
+    const template =
+      source.crawlTemplateId
+        ? await this.prisma.crawlTemplate.findUnique({
+            where: { id: source.crawlTemplateId },
+            select: { isActive: true, crawlOptions: true }
+          })
+        : null;
+    const templateCrawlOptions =
+      template?.isActive && isPlainObject(template.crawlOptions)
+        ? (template.crawlOptions as Record<string, unknown>)
+        : undefined;
+    const crawlOptions =
+      templateCrawlOptions || sourceCrawlOptions
+        ? { ...(templateCrawlOptions ?? {}), ...(sourceCrawlOptions ?? {}) }
+        : undefined;
 
     const seedConfig = this.normalizeSeedConfig(config, source.url);
     const inFlightLimit = seedConfig?.enabled ? seedConfig.maxNewUrlsPerRun : 1;
@@ -511,7 +532,8 @@ export class NewsSourceService {
               url: source.url,
               domain: seedConfig.domain,
               pattern: seedConfig.pattern,
-              maxUrls: seedConfig.maxUrls
+              maxUrls: seedConfig.maxUrls,
+              crawlOptions
             })
           : await this.metadataService.discoverSitemapUrls({
               domain: seedConfig.domain,
@@ -614,6 +636,15 @@ export class NewsSourceService {
     if (typeof config !== "object" || Array.isArray(config)) {
       throw new BadRequestException("config must be an object");
     }
+
+    const crawlOptions = (config as Record<string, unknown>).crawlOptions;
+    if (crawlOptions !== undefined) {
+      if (!crawlOptions || typeof crawlOptions !== "object" || Array.isArray(crawlOptions)) {
+        throw new BadRequestException("crawlOptions must be an object");
+      }
+      assertNoCrawl4aiLlmOptions(crawlOptions as Record<string, unknown>, "crawlOptions");
+    }
+
     return config;
   }
 

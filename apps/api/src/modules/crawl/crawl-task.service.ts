@@ -96,6 +96,7 @@ export class CrawlTaskService {
       scanFullPage: normalizedRawOptions?.scanFullPage,
       adjustViewportToContent: normalizedRawOptions?.adjustViewportToContent,
       scrollDelayMs: normalizedRawOptions?.scrollDelayMs,
+      headless: normalizedRawOptions?.headless,
       enableUndetectedBrowser: normalizedRawOptions?.enableUndetectedBrowser,
       enableStealthMode: normalizedRawOptions?.enableStealthMode,
       useManagedBrowser: normalizedRawOptions?.useManagedBrowser,

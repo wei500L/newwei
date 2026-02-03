@@ -389,6 +389,7 @@ const sanitizeCrawlOptions = (values) => {
             ? values.adjustViewportToContent
             : undefined,
         scrollDelayMs: values.scrollDelayMs ?? undefined,
+        headless: typeof values.headless === "boolean" ? values.headless : undefined,
         enableUndetectedBrowser: values.enableUndetectedBrowser ?? undefined,
         enableStealthMode: values.enableStealthMode ?? undefined,
         useManagedBrowser: typeof values.useManagedBrowser === "boolean"

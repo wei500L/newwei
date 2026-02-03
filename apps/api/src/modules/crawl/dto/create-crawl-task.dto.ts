@@ -324,6 +324,10 @@ export class CrawlOptionsDto {
 
   @IsOptional()
   @IsBoolean()
+  headless?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   enableUndetectedBrowser?: boolean;
 
   @IsOptional()

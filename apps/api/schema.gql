@@ -476,6 +476,7 @@ input CrawlOptionsInput {
   excludeExternalImages: Boolean
   extractLinks: Boolean
   geolocation: CrawlGeolocationInput
+  headless: Boolean
   includeImages: Boolean
   jsCode: [String!]
   jsOnly: Boolean

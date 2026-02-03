@@ -505,6 +505,7 @@ export type CrawlOptionsInput = {
   excludeExternalImages?: InputMaybe<Scalars['Boolean']['input']>;
   extractLinks?: InputMaybe<Scalars['Boolean']['input']>;
   geolocation?: InputMaybe<CrawlGeolocationInput>;
+  headless?: InputMaybe<Scalars['Boolean']['input']>;
   includeImages?: InputMaybe<Scalars['Boolean']['input']>;
   jsCode?: InputMaybe<Array<Scalars['String']['input']>>;
   jsOnly?: InputMaybe<Scalars['Boolean']['input']>;

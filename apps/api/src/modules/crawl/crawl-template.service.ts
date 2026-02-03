@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 
+import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import { CreateCrawlTemplateDto, ListCrawlTemplateDto, UpdateCrawlTemplateDto } from "./dto/crawl-template.dto";
 
 @Injectable()
@@ -101,6 +102,7 @@ export class CrawlTemplateService {
     if (typeof value !== "object" || Array.isArray(value)) {
       throw new BadRequestException("crawlOptions must be an object");
     }
+    assertNoCrawl4aiLlmOptions(value, "crawlOptions");
     return value;
   }
 }

@@ -980,11 +980,20 @@ export class NewsSourceSchedulerService {
           });
         }
         if (seed.mode === "list") {
+          const config =
+            source.config && typeof source.config === "object" && !Array.isArray(source.config)
+              ? (source.config as Record<string, unknown>)
+              : {};
+          const crawlOptions = this.mergeOptions(
+            source.crawlTemplate?.isActive ? this.normalizeOptions(source.crawlTemplate.crawlOptions) : undefined,
+            this.normalizeOptions(config.crawlOptions)
+          );
           return this.metadataService.discoverListUrls({
             url: source.url,
             domain: seed.domain,
             pattern: seed.pattern,
-            maxUrls: seed.maxUrls
+            maxUrls: seed.maxUrls,
+            crawlOptions
           });
         }
         return this.metadataService.discoverSitemapUrls({

@@ -165,6 +165,7 @@ export function CreateCrawlTaskDrawer({
       case "social":
         form.setFieldsValue({
           ingestToItems: false,
+          headless: false,
           enableStealthMode: true,
           enableUndetectedBrowser: true,
           scanFullPage: true,
@@ -1202,6 +1203,17 @@ function BrowserConfigForm({
   const { t } = useTranslation();
   return (
     <>
+      <Form.Item
+        label={t("crawl.browser.headless", { defaultValue: "Headless" })}
+        name="headless"
+        valuePropName="checked"
+        extra={t("crawl.browser.headlessHint", {
+          defaultValue:
+            "Turn off to use headed mode (headless=false). Headed mode may require Xvfb/DISPLAY inside the crawl4ai container."
+        })}
+      >
+        <Switch defaultChecked />
+      </Form.Item>
       <Form.Item
         label={t("crawl.browser.undetected")}
         name="enableUndetectedBrowser"

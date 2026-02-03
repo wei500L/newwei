@@ -19,7 +19,7 @@ const MAX_TEMPERATURE = 2;
 const MIN_TOP_P = 0;
 const MAX_TOP_P = 1;
 const MIN_OUTPUT_TOKENS = 1;
-const MAX_OUTPUT_TOKENS = 100_000;
+const MAX_OUTPUT_TOKENS = 1_000_000;
 
 export class LlmGatewayModelsConfigDto {
   @ApiPropertyOptional({

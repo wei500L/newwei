@@ -17,6 +17,7 @@ import {
 } from "./crawl-config-secrets";
 import { CrawlResultService } from "./crawl-result.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
+import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
 import {
   CrawlExecutionSummary,
   CrawlTaskOptions,
@@ -185,7 +186,20 @@ export class CrawlExecutionService {
       }
 
       if (pipelineJobId && summary.inserted === 0 && summary.skipped === 0) {
-        throw new Error("crawl task produced no results");
+        const firstFailure = failures[0];
+        if (firstFailure) {
+          const statusLabel =
+            typeof firstFailure.statusCode === "number" && Number.isFinite(firstFailure.statusCode)
+              ? `HTTP ${firstFailure.statusCode}`
+              : null;
+          const urlLabel = firstFailure.url ? `${firstFailure.url}: ` : "";
+          const statusPrefix = statusLabel ? `${statusLabel}: ` : "";
+          const failureCountLabel = failures.length === 1 ? "1 failure" : `${failures.length} failures`;
+          throw new Error(
+            `crawl task produced no results (${failureCountLabel}). ${urlLabel}${statusPrefix}${firstFailure.error}`
+          );
+        }
+        throw new Error("crawl task produced no results (0 results returned)");
       }
 
       await this.prisma.crawlTask.update({
@@ -426,10 +440,12 @@ export class CrawlExecutionService {
       onlyMainContent: typeof value.onlyMainContent === "boolean" ? value.onlyMainContent : undefined,
       extractLinks: typeof value.extractLinks === "boolean" ? value.extractLinks : undefined,
       cacheMode: typeof value.cacheMode === "string" ? (value.cacheMode as CrawlTaskOptions["cacheMode"]) : undefined,
+      prefetch: typeof value.prefetch === "boolean" ? value.prefetch : undefined,
       scanFullPage: typeof value.scanFullPage === "boolean" ? value.scanFullPage : undefined,
       adjustViewportToContent:
         typeof value.adjustViewportToContent === "boolean" ? value.adjustViewportToContent : undefined,
       scrollDelayMs: typeof value.scrollDelayMs === "number" ? value.scrollDelayMs : undefined,
+      headless: typeof value.headless === "boolean" ? value.headless : undefined,
       enableUndetectedBrowser:
         typeof value.enableUndetectedBrowser === "boolean" ? value.enableUndetectedBrowser : undefined,
       enableStealthMode: typeof value.enableStealthMode === "boolean" ? value.enableStealthMode : undefined,
@@ -493,6 +509,7 @@ export class CrawlExecutionService {
           ? this.clampScrollDelay(options.scrollDelayMs)
           : 200;
     }
+    const headless = typeof options?.headless === "boolean" ? options.headless : undefined;
     const simulateUser =
       options?.simulateUser ??
       (options?.enableStealthMode ? true : false);
@@ -547,9 +564,11 @@ export class CrawlExecutionService {
       onlyMainContent: options?.onlyMainContent ?? true,
       extractLinks: options?.extractLinks ?? false,
       cacheMode: options?.cacheMode ?? "bypass",
+      prefetch: options?.prefetch ?? false,
       scanFullPage,
       adjustViewportToContent,
       scrollDelayMs,
+      headless,
       enableUndetectedBrowser: options?.enableUndetectedBrowser ?? false,
       enableStealthMode: options?.enableStealthMode ?? false,
       useManagedBrowser,
@@ -609,7 +628,10 @@ export class CrawlExecutionService {
       return undefined;
     }
     const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
+    if (!trimmed) {
+      return undefined;
+    }
+    return translateLocalhostProxyUrlForCrawl4ai(trimmed, this.env.crawl4aiConfig.baseUrl);
   }
 
   private normalizeSessionId(value?: string | null) {
@@ -655,10 +677,11 @@ export class CrawlExecutionService {
     if (!server) {
       return undefined;
     }
+    const normalizedServer = translateLocalhostProxyUrlForCrawl4ai(server, this.env.crawl4aiConfig.baseUrl);
     const username = typeof value.username === "string" ? value.username.trim() : "";
     const password = typeof value.password === "string" ? value.password.trim() : "";
     return {
-      server,
+      server: normalizedServer,
       username: username.length > 0 ? username : undefined,
       password: password.length > 0 ? password : undefined
     };
@@ -1587,8 +1610,13 @@ export class CrawlExecutionService {
   }
 
   private isResultSuccessful(item: Crawl4aiArticle): boolean {
+    const markdownResult = this.resultService.extractMarkdownResult(item.markdown);
+    const markdownPrimary = markdownResult.primary;
+    const hasMarkdown =
+      typeof markdownPrimary === "string" ? markdownPrimary.trim().length > 0 : false;
+
     if (typeof item.success === "boolean") {
-      return item.success;
+      return item.success && hasMarkdown;
     }
     const inlineSuccess = this.pickBoolean(item as Record<string, unknown>, [
       "success",
@@ -1596,7 +1624,7 @@ export class CrawlExecutionService {
       "ok"
     ]);
     if (typeof inlineSuccess === "boolean") {
-      return inlineSuccess;
+      return inlineSuccess && hasMarkdown;
     }
     const metadataSuccess = this.pickBoolean(item.metadata as Record<string, unknown> | undefined, [
       "success",
@@ -1604,20 +1632,26 @@ export class CrawlExecutionService {
       "ok"
     ]);
     if (typeof metadataSuccess === "boolean") {
-      return metadataSuccess;
+      return metadataSuccess && hasMarkdown;
     }
-    const markdownResult = this.resultService.extractMarkdownResult(item.markdown);
-    return Boolean(markdownResult.primary);
+    return hasMarkdown;
   }
 
   private buildFailureDetail(item: Crawl4aiArticle): CrawlFailureDetail {
     const statusCode = this.extractStatusCode(item);
     const errorMessage = this.extractErrorMessage(item);
+    const markdownResult = this.resultService.extractMarkdownResult(item.markdown);
+    const markdownPrimary = markdownResult.primary;
+    const hasMarkdown =
+      typeof markdownPrimary === "string" ? markdownPrimary.trim().length > 0 : false;
+    const fallbackMessage = hasMarkdown
+      ? "Unknown crawl error"
+      : "crawl4ai returned an empty markdown result. Check wordCountThreshold/cssSelector/cleanMarkdown and pruning settings.";
     return {
       url: item.url ?? this.pickString(item.metadata as Record<string, unknown> | undefined, ["url"]),
       statusCode,
-      error: errorMessage ?? "Unknown crawl error",
-      retryable: this.isRetryableStatus(statusCode, errorMessage)
+      error: errorMessage ?? fallbackMessage,
+      retryable: this.isRetryableStatus(statusCode, errorMessage ?? fallbackMessage)
     };
   }
 
