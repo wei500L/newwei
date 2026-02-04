@@ -21,14 +21,14 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CrawlMetadataInput, CrawlTaskStatus } from "@/graphql/generated";
+import type { CrawlMetadataInput, CrawlTaskStatus, CrawlTasksQuery } from "@/graphql/generated";
 import {
   useCreateCrawlTaskMutation,
   useCrawlMetadataLazyQuery,
-  useCrawlTasksQuery,
+  useCrawlTasksLazyQuery,
   useRetryCrawlTaskMutation,
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -73,6 +73,7 @@ export function CrawlTasksView() {
   const screens = Grid.useBreakpoint();
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const appliedSourceFilterRef = useRef<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<CrawlTaskStatus | null>(
     null,
   );
@@ -87,16 +88,24 @@ export function CrawlTasksView() {
   const pageSize = pagination.pageSize ?? 10;
   const current = pagination.current ?? 1;
 
-  const { data, loading, refetch } = useCrawlTasksQuery({
-    variables: {
-      first: pageSize * current,
-      after: null,
-      search: search ? search : null,
-      status: statusFilter ?? null,
-    },
+  type CrawlTaskEdge = CrawlTasksQuery["crawlTasks"]["edges"][number];
+  type CrawlTaskNode = CrawlTaskEdge["node"];
+
+  const [fetchTasks] = useCrawlTasksLazyQuery({
     fetchPolicy: "network-only",
-    skip: !canView,
   });
+
+  const [taskEdges, setTaskEdges] = useState<CrawlTaskEdge[]>([]);
+  const taskEdgesRef = useRef<CrawlTaskEdge[]>([]);
+  const [pageInfo, setPageInfo] = useState<{ hasNextPage: boolean; endCursor: string | null }>({
+    hasNextPage: true,
+    endCursor: null,
+  });
+  const pageInfoRef = useRef(pageInfo);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
+  const ensureLoadingRef = useRef(false);
 
   const [createTask, { loading: creating }] = useCreateCrawlTaskMutation();
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
@@ -104,14 +113,137 @@ export function CrawlTasksView() {
     useCrawlMetadataLazyQuery();
   const metadataResults = metadataData?.crawlMetadata ?? [];
 
-  const totalCount = data?.crawlTasks.totalCount ?? 0;
   const tableData = useMemo(() => {
-    const allNodes = data?.crawlTasks.edges.map((edge) => edge.node) ?? [];
     const start = (current - 1) * pageSize;
-    return allNodes.slice(start, start + pageSize);
-  }, [data?.crawlTasks.edges, current, pageSize]);
+    return taskEdges.map((edge) => edge.node).slice(start, start + pageSize);
+  }, [current, pageSize, taskEdges]);
 
-  const columns: ColumnsType<(typeof tableData)[number]> = [
+  const queryKey = useMemo(
+    () => JSON.stringify({ search, statusFilter, pageSize }),
+    [pageSize, search, statusFilter],
+  );
+
+  useEffect(() => {
+    taskEdgesRef.current = taskEdges;
+  }, [taskEdges]);
+
+  useEffect(() => {
+    pageInfoRef.current = pageInfo;
+  }, [pageInfo]);
+
+  const resetTaskCache = useCallback(() => {
+    taskEdgesRef.current = [];
+    pageInfoRef.current = { hasNextPage: true, endCursor: null };
+    setTaskEdges([]);
+    setPageInfo({ hasNextPage: true, endCursor: null });
+    setTotalCount(0);
+    setTasksError(null);
+  }, []);
+
+  useEffect(() => {
+    if (!canView) {
+      return;
+    }
+
+    // Reset cursor pagination any time the query changes.
+    resetTaskCache();
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  }, [canView, queryKey, resetTaskCache]);
+
+  const ensureTasksLoaded = useCallback(
+    async (targetPage: number) => {
+      if (!canView) {
+        return;
+      }
+
+      const required = Math.max(1, targetPage) * pageSize;
+      if (taskEdgesRef.current.length >= required) {
+        return;
+      }
+
+      // If we already know there is no next page and we have at least one page loaded, stop.
+      if (taskEdgesRef.current.length > 0 && !pageInfoRef.current.hasNextPage) {
+        return;
+      }
+
+      if (ensureLoadingRef.current) {
+        return;
+      }
+
+      ensureLoadingRef.current = true;
+      setTasksLoading(true);
+      setTasksError(null);
+      try {
+        let nextEdges = taskEdgesRef.current;
+        let after = pageInfoRef.current.endCursor;
+        let hasNext = pageInfoRef.current.hasNextPage;
+        let nextTotal = totalCount;
+
+        if (nextEdges.length === 0) {
+          // First page always starts from the beginning (after=null).
+          after = null;
+          hasNext = true;
+        }
+
+        while (nextEdges.length < required && (nextEdges.length === 0 || hasNext)) {
+          const result = await fetchTasks({
+            variables: {
+              first: pageSize,
+              after,
+              search: search ? search : null,
+              status: statusFilter ?? null,
+            },
+          });
+
+          const connection = result.data?.crawlTasks ?? null;
+          if (!connection) {
+            break;
+          }
+
+          // Defensive de-dupe in case of overlapping cursors or non-deterministic ordering.
+          const existingIds = new Set(nextEdges.map((edge) => edge.node.id));
+          const incomingEdges = connection.edges.filter((edge) => !existingIds.has(edge.node.id));
+          nextEdges = nextEdges.concat(incomingEdges);
+
+          after = connection.pageInfo.endCursor ?? null;
+          hasNext = Boolean(connection.pageInfo.hasNextPage);
+          nextTotal = connection.totalCount ?? nextTotal;
+
+          if (!after && hasNext) {
+            // Shouldn't happen, but avoid infinite loops if the server sends an inconsistent pageInfo.
+            break;
+          }
+        }
+
+        taskEdgesRef.current = nextEdges;
+        pageInfoRef.current = { hasNextPage: hasNext, endCursor: after ?? null };
+
+        setTaskEdges(nextEdges);
+        setPageInfo(pageInfoRef.current);
+        setTotalCount(nextTotal);
+      } catch (error: unknown) {
+        setTasksError(
+          (error as Error).message ?? t("common.failed", { defaultValue: "Failed" }),
+        );
+      } finally {
+        ensureLoadingRef.current = false;
+        setTasksLoading(false);
+      }
+    },
+    [canView, fetchTasks, pageSize, search, statusFilter, t, totalCount],
+  );
+
+  useEffect(() => {
+    void ensureTasksLoaded(current);
+  }, [current, ensureTasksLoaded]);
+
+  const reloadTasks = useCallback(async () => {
+    resetTaskCache();
+    setPagination((prev) => ({ ...prev, current: 1 }));
+    await ensureTasksLoaded(1);
+  }, [ensureTasksLoaded, resetTaskCache]);
+
+  const columns: ColumnsType<CrawlTaskNode> = [
     {
       title: t("crawl.columns.task"),
       dataIndex: "displayName",
@@ -248,7 +380,7 @@ export function CrawlTasksView() {
     try {
       await retryTask({ variables: { id } });
       message.success(t("crawl.task.requeued"));
-      await refetch();
+      await reloadTasks();
     } catch (error: unknown) {
       message.error((error as Error).message ?? t("crawl.task.retryFailed"));
     }
@@ -285,7 +417,7 @@ export function CrawlTasksView() {
       message.success(t("crawl.task.queued"));
       form.resetFields();
       setDrawerOpen(false);
-      await refetch();
+      await reloadTasks();
     } catch (error: unknown) {
       message.error((error as Error).message ?? t("crawl.task.createFailed"));
     }
@@ -305,9 +437,16 @@ export function CrawlTasksView() {
       return;
     }
     if (!sourceIdFilter) {
+      if (appliedSourceFilterRef.current) {
+        appliedSourceFilterRef.current = null;
+        setSearchInput("");
+        setSearch("");
+        setPagination((prev) => ({ ...prev, current: 1 }));
+      }
       return;
     }
     const prefix = `NewsSource:${sourceIdFilter}:`;
+    appliedSourceFilterRef.current = sourceIdFilter;
     setSearchInput(prefix);
     setSearch(prefix);
     setPagination((prev) => ({ ...prev, current: 1 }));
@@ -351,13 +490,23 @@ export function CrawlTasksView() {
           }
         />
       ) : null}
+      {tasksError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={t("common.failed", { defaultValue: "Failed" })}
+          description={tasksError}
+        />
+      ) : null}
       <Space style={{ marginBottom: 16 }} wrap>
         <Space.Compact style={{ width: 260 }}>
           <Input
             id="crawl-task-search"
             name="crawlTaskSearch"
             placeholder={t("crawl.search.placeholder")}
-            allowClear
+            allowClear={!sourceIdFilter}
+            disabled={Boolean(sourceIdFilter)}
             value={searchInput}
             onChange={(event) => {
               const value = event.target.value;
@@ -377,6 +526,7 @@ export function CrawlTasksView() {
           <Button
             icon={<SearchOutlined />}
             aria-label={t("crawl.search.placeholder")}
+            disabled={Boolean(sourceIdFilter)}
             onClick={() => {
               const nextValue = searchInput.trim();
               setPagination((prev) => ({ ...prev, current: 1 }));
@@ -422,7 +572,7 @@ export function CrawlTasksView() {
         <List
           itemLayout="vertical"
           dataSource={tableData}
-          loading={loading}
+          loading={tasksLoading}
           pagination={{
             total: totalCount,
             current,
@@ -483,7 +633,7 @@ export function CrawlTasksView() {
       ) : (
         <Table
           rowKey="id"
-          loading={loading}
+          loading={tasksLoading}
           columns={columns}
           dataSource={tableData}
           pagination={{

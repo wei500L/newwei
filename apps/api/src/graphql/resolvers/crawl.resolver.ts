@@ -90,7 +90,9 @@ export class CrawlResolver {
 
     const tasks = await this.prisma.crawlTask.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      // Add a deterministic tie-breaker to keep cursor pagination stable when
+      // multiple rows share the same createdAt (common when batching news-source tasks).
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: take + 1,
       ...(cursorId
         ? {
