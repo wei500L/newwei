@@ -1,0 +1,45 @@
+query NewsEventBrief($eventId: String!, $language: String, $maxSources: Int, $forceRefresh: Boolean) {
+  newsEventBrief(eventId: $eventId, language: $language, maxSources: $maxSources, forceRefresh: $forceRefresh) {
+    version
+    generatedAt
+    language
+    tldr
+    keyPoints {
+      text
+      citations
+    }
+    whyItMatters {
+      text
+      citations
+    }
+    latestUpdate {
+      text
+      citations
+    }
+    whatToWatch {
+      text
+      citations
+    }
+    comparison {
+      consensus {
+        text
+        citations
+      }
+      divergence {
+        text
+        citations
+      }
+    }
+    limitations
+    sources {
+      index
+      url
+      sourceLabel
+      title
+      publishedAt
+      processedItemId
+      processedArticleId
+    }
+  }
+}
+

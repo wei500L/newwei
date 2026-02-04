@@ -5,9 +5,11 @@ import { NewsEventStatus } from "@prisma/client";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { NewsEventBriefService } from "../../modules/news-events/news-event-brief.service";
 import { NewsEventsService } from "../../modules/news-events/news-events.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import type { GqlRequest } from "../graphql.types";
+import { NewsEventBriefModel } from "../models/news-event-brief.model";
 import {
   NewsEventModel,
   NewsEventItemModel,
@@ -17,7 +19,10 @@ import {
 @Resolver(() => NewsEventModel)
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class NewsEventsResolver {
-  constructor(private readonly events: NewsEventsService) {}
+  constructor(
+    private readonly events: NewsEventsService,
+    private readonly briefs: NewsEventBriefService
+  ) {}
 
   @HasPermission("items.read")
   @Query(() => [NewsEventModel])
@@ -49,6 +54,59 @@ export class NewsEventsResolver {
       items: row.items.map((item) => this.toItemModel(item)),
       timeline: row.timeline.map((entry) => this.toTimelineModel(entry))
     });
+  }
+
+  @HasPermission("items.read")
+  @Query(() => NewsEventBriefModel, { nullable: true })
+  async newsEventBrief(
+    @Context("req") req: GqlRequest,
+    @Args("eventId") eventId: string,
+    @Args("language", { nullable: true }) language?: string,
+    @Args("maxSources", { type: () => Int, nullable: true }) maxSources?: number,
+    @Args("forceRefresh", { nullable: true }) forceRefresh?: boolean
+  ): Promise<NewsEventBriefModel | null> {
+    const user = this.requireUser(req);
+    const result = await this.briefs.getBrief(user.orgId, eventId, {
+      language,
+      maxSources,
+      forceRefresh
+    });
+    if (!result) {
+      return null;
+    }
+
+    const toPoint = (point: { text: string; citations: number[] }) => ({
+      text: point.text,
+      citations: point.citations ?? []
+    });
+
+    const payload = result.payload;
+    return {
+      version: 1,
+      generatedAt: result.generatedAt,
+      language: result.language,
+      tldr: payload.tldr,
+      keyPoints: (payload.key_points ?? []).map(toPoint),
+      whyItMatters: (payload.why_it_matters ?? []).map(toPoint),
+      latestUpdate: payload.latest_update ? toPoint(payload.latest_update) : null,
+      whatToWatch: (payload.what_to_watch ?? []).map(toPoint),
+      comparison: payload.comparison
+        ? {
+            consensus: (payload.comparison.consensus ?? []).map(toPoint),
+            divergence: (payload.comparison.divergence ?? []).map(toPoint)
+          }
+        : null,
+      limitations: payload.limitations ?? null,
+      sources: result.sources.map((source) => ({
+        index: source.index,
+        url: source.url,
+        sourceLabel: source.sourceLabel,
+        title: source.title,
+        publishedAt: source.publishedAt,
+        processedItemId: source.processedItemId,
+        processedArticleId: source.processedArticleId
+      }))
+    };
   }
 
   private toModel(

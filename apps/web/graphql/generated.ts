@@ -1465,6 +1465,44 @@ export enum NewsEventAssignmentMethod {
   Vector = 'vector'
 }
 
+export type NewsEventBriefComparisonModel = {
+  __typename?: 'NewsEventBriefComparisonModel';
+  consensus: Array<NewsEventBriefPointModel>;
+  divergence: Array<NewsEventBriefPointModel>;
+};
+
+export type NewsEventBriefModel = {
+  __typename?: 'NewsEventBriefModel';
+  comparison?: Maybe<NewsEventBriefComparisonModel>;
+  generatedAt: Scalars['DateTime']['output'];
+  keyPoints: Array<NewsEventBriefPointModel>;
+  language: Scalars['String']['output'];
+  latestUpdate?: Maybe<NewsEventBriefPointModel>;
+  limitations?: Maybe<Scalars['String']['output']>;
+  sources: Array<NewsEventBriefSourceModel>;
+  tldr: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+  whatToWatch: Array<NewsEventBriefPointModel>;
+  whyItMatters: Array<NewsEventBriefPointModel>;
+};
+
+export type NewsEventBriefPointModel = {
+  __typename?: 'NewsEventBriefPointModel';
+  citations: Array<Scalars['Int']['output']>;
+  text: Scalars['String']['output'];
+};
+
+export type NewsEventBriefSourceModel = {
+  __typename?: 'NewsEventBriefSourceModel';
+  index: Scalars['Int']['output'];
+  processedArticleId?: Maybe<Scalars['String']['output']>;
+  processedItemId?: Maybe<Scalars['String']['output']>;
+  publishedAt?: Maybe<Scalars['DateTime']['output']>;
+  sourceLabel?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+  url: Scalars['String']['output'];
+};
+
 export type NewsEventItemModel = {
   __typename?: 'NewsEventItemModel';
   assignedBy: NewsEventAssignmentMethod;
@@ -1798,6 +1836,7 @@ export type Query = {
   myOrganizations: Array<OrgModel>;
   newsDedupeSettings: NewsDedupeSettingsModel;
   newsEvent?: Maybe<NewsEventModel>;
+  newsEventBrief?: Maybe<NewsEventBriefModel>;
   newsEventSettings: NewsEventSettingsModel;
   newsEvents: Array<NewsEventModel>;
   newsIndicatorAssociation?: Maybe<NewsIndicatorAssociationModel>;
@@ -1972,6 +2011,14 @@ export type QueryNewsEventArgs = {
   id: Scalars['String']['input'];
   itemsLimit?: InputMaybe<Scalars['Int']['input']>;
   timelineLimit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryNewsEventBriefArgs = {
+  eventId: Scalars['String']['input'];
+  forceRefresh?: InputMaybe<Scalars['Boolean']['input']>;
+  language?: InputMaybe<Scalars['String']['input']>;
+  maxSources?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -2674,6 +2721,16 @@ export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
 
 export type MeQuery = { __typename?: 'Query', me: { __typename?: 'UserModel', id: string, email: string, firstName: string, lastName: string, orgId: string, permissions: Array<string> } };
+
+export type NewsEventBriefQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+  language?: InputMaybe<Scalars['String']['input']>;
+  maxSources?: InputMaybe<Scalars['Int']['input']>;
+  forceRefresh?: InputMaybe<Scalars['Boolean']['input']>;
+}>;
+
+
+export type NewsEventBriefQuery = { __typename?: 'Query', newsEventBrief?: { __typename?: 'NewsEventBriefModel', version: number, generatedAt: any, language: string, tldr: string, limitations?: string | null, keyPoints: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, whyItMatters: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, latestUpdate?: { __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> } | null, whatToWatch: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, comparison?: { __typename?: 'NewsEventBriefComparisonModel', consensus: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, divergence: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }> } | null, sources: Array<{ __typename?: 'NewsEventBriefSourceModel', index: number, url: string, sourceLabel?: string | null, title?: string | null, publishedAt?: any | null, processedItemId?: string | null, processedArticleId?: string | null }> } | null };
 
 export type NotificationsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -4991,6 +5048,93 @@ export type MeQueryHookResult = ReturnType<typeof useMeQuery>;
 export type MeLazyQueryHookResult = ReturnType<typeof useMeLazyQuery>;
 export type MeSuspenseQueryHookResult = ReturnType<typeof useMeSuspenseQuery>;
 export type MeQueryResult = Apollo.QueryResult<MeQuery, MeQueryVariables>;
+export const NewsEventBriefDocument = gql`
+    query NewsEventBrief($eventId: String!, $language: String, $maxSources: Int, $forceRefresh: Boolean) {
+  newsEventBrief(
+    eventId: $eventId
+    language: $language
+    maxSources: $maxSources
+    forceRefresh: $forceRefresh
+  ) {
+    version
+    generatedAt
+    language
+    tldr
+    keyPoints {
+      text
+      citations
+    }
+    whyItMatters {
+      text
+      citations
+    }
+    latestUpdate {
+      text
+      citations
+    }
+    whatToWatch {
+      text
+      citations
+    }
+    comparison {
+      consensus {
+        text
+        citations
+      }
+      divergence {
+        text
+        citations
+      }
+    }
+    limitations
+    sources {
+      index
+      url
+      sourceLabel
+      title
+      publishedAt
+      processedItemId
+      processedArticleId
+    }
+  }
+}
+    `;
+
+/**
+ * __useNewsEventBriefQuery__
+ *
+ * To run a query within a React component, call `useNewsEventBriefQuery` and pass it any options that fit your needs.
+ * When your component renders, `useNewsEventBriefQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useNewsEventBriefQuery({
+ *   variables: {
+ *      eventId: // value for 'eventId'
+ *      language: // value for 'language'
+ *      maxSources: // value for 'maxSources'
+ *      forceRefresh: // value for 'forceRefresh'
+ *   },
+ * });
+ */
+export function useNewsEventBriefQuery(baseOptions: Apollo.QueryHookOptions<NewsEventBriefQuery, NewsEventBriefQueryVariables> & ({ variables: NewsEventBriefQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<NewsEventBriefQuery, NewsEventBriefQueryVariables>(NewsEventBriefDocument, options);
+      }
+export function useNewsEventBriefLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<NewsEventBriefQuery, NewsEventBriefQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<NewsEventBriefQuery, NewsEventBriefQueryVariables>(NewsEventBriefDocument, options);
+        }
+export function useNewsEventBriefSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<NewsEventBriefQuery, NewsEventBriefQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<NewsEventBriefQuery, NewsEventBriefQueryVariables>(NewsEventBriefDocument, options);
+        }
+export type NewsEventBriefQueryHookResult = ReturnType<typeof useNewsEventBriefQuery>;
+export type NewsEventBriefLazyQueryHookResult = ReturnType<typeof useNewsEventBriefLazyQuery>;
+export type NewsEventBriefSuspenseQueryHookResult = ReturnType<typeof useNewsEventBriefSuspenseQuery>;
+export type NewsEventBriefQueryResult = Apollo.QueryResult<NewsEventBriefQuery, NewsEventBriefQueryVariables>;
 export const NotificationsDocument = gql`
     query Notifications($limit: Int) {
   notifications(limit: $limit) {

@@ -1238,7 +1238,9 @@
         "archived": "已归档"
       },
       "actions": {
-        "details": "详情"
+        "details": "详情",
+        "open": "打开",
+        "brief": "简报"
       },
       "drawer": {
         "title": "事件详情",
@@ -1246,13 +1248,77 @@
         "notFound": "事件不存在。",
         "items": "条目",
         "references": "引用",
+        "refreshBrief": "刷新简报",
+        "generatedAt": "生成",
+        "briefSources": "来源",
+        "briefLoadFailed": "加载简报失败。",
+        "briefEmpty": "简报暂不可用，可点击刷新生成。",
+        "tldr": "一句话",
+        "keyPoints": "要点",
+        "whyMatters": "为何重要",
+        "latestUpdate": "最新进展",
+        "watch": "后续关注",
+        "consensus": "共识",
+        "divergence": "分歧",
+        "limitations": "局限",
+        "sourcesTitle": "来源",
+        "citedInLabel": "引用于",
+        "citedIn": {
+          "keyPoints": "要点",
+          "whyItMatters": "为何重要",
+          "latestUpdate": "最新进展",
+          "whatToWatch": "后续关注",
+          "consensus": "共识",
+          "divergence": "分歧"
+        },
+        "openLlm": "AI内容",
+        "articleDrawerTitle": "AI内容",
+        "articleLoadFailed": "加载文章失败。",
+        "articleNotFound": "未找到处理结果。",
+        "openItem": "打开条目",
+        "markdownFallback": "Markdown 回退",
+        "articleEmpty": "暂无 AI 内容。",
         "openOriginal": "打开",
         "tabs": {
+          "brief": "简报",
           "timeline": "时间线",
           "articles": "文章"
         },
         "timelineEmpty": "暂无时间线条目。请启用时间线生成并等待定时任务。",
         "itemsEmpty": "该事件暂无文章。"
+      },
+      "detail": {
+        "loadFailed": "加载事件失败。",
+        "notFound": "事件不存在。",
+        "openItem": "打开条目",
+        "tabs": {
+          "brief": "简报",
+          "narrative": "叙事"
+        },
+        "refreshBrief": "刷新简报",
+        "generatedAt": "生成",
+        "briefSources": "来源",
+        "briefLoadFailed": "加载简报失败。",
+        "briefEmpty": "简报暂不可用，可点击刷新生成。",
+        "tldr": "一句话",
+        "keyPoints": "要点",
+        "whyMatters": "为何重要",
+        "latestUpdate": "最新进展",
+        "watch": "后续关注",
+        "consensus": "共识",
+        "divergence": "分歧",
+        "limitations": "局限",
+        "sourcesTitle": "来源",
+        "openLlm": "AI内容",
+        "representativeTitle": "代表性文章（AI）",
+        "noRepresentative": "暂无可用的代表性文章。",
+        "representativeLoadFailed": "加载代表性文章失败。",
+        "representativeMissing": "缺少代表性处理记录 ID。",
+        "representativeEmpty": "暂无代表性叙事内容。",
+        "articleDrawerTitle": "AI内容",
+        "articleLoadFailed": "加载文章失败。",
+        "articleNotFound": "未找到处理结果。",
+        "articleEmpty": "暂无 AI 内容。"
       }
     },
     "digest": {

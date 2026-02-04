@@ -322,8 +322,8 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                       <Button key="open" type="link" onClick={() => router.push(`/events/${event.id}`)}>
                         {t("pages.events.actions.open", { defaultValue: "Open" })}
                       </Button>,
-                      <Button key="preview" type="link" onClick={() => setSelectedEventId(event.id)}>
-                        {t("pages.events.actions.preview", { defaultValue: "Preview" })}
+                      <Button key="brief" type="link" onClick={() => setSelectedEventId(event.id)}>
+                        {t("pages.events.actions.brief", { defaultValue: "Brief" })}
                       </Button>
                     ]}
                   >

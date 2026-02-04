@@ -1217,6 +1217,40 @@ enum NewsEventAssignmentMethod {
   vector
 }
 
+type NewsEventBriefComparisonModel {
+  consensus: [NewsEventBriefPointModel!]!
+  divergence: [NewsEventBriefPointModel!]!
+}
+
+type NewsEventBriefModel {
+  comparison: NewsEventBriefComparisonModel
+  generatedAt: DateTime!
+  keyPoints: [NewsEventBriefPointModel!]!
+  language: String!
+  latestUpdate: NewsEventBriefPointModel
+  limitations: String
+  sources: [NewsEventBriefSourceModel!]!
+  tldr: String!
+  version: Int!
+  whatToWatch: [NewsEventBriefPointModel!]!
+  whyItMatters: [NewsEventBriefPointModel!]!
+}
+
+type NewsEventBriefPointModel {
+  citations: [Int!]!
+  text: String!
+}
+
+type NewsEventBriefSourceModel {
+  index: Int!
+  processedArticleId: String
+  processedItemId: String
+  publishedAt: DateTime
+  sourceLabel: String
+  title: String
+  url: String!
+}
+
 type NewsEventItemModel {
   assignedBy: NewsEventAssignmentMethod!
   createdAt: DateTime!
@@ -1540,6 +1574,7 @@ type Query {
   myOrganizations: [OrgModel!]!
   newsDedupeSettings: NewsDedupeSettingsModel!
   newsEvent(id: String!, itemsLimit: Int, timelineLimit: Int): NewsEventModel
+  newsEventBrief(eventId: String!, forceRefresh: Boolean, language: String, maxSources: Int): NewsEventBriefModel
   newsEventSettings: NewsEventSettingsModel!
   newsEvents(limit: Int, status: NewsEventStatus, windowDays: Int): [NewsEventModel!]!
   newsIndicatorAssociation(backtestsLimit: Int, id: String!): NewsIndicatorAssociationModel

@@ -1235,7 +1235,9 @@
         "archived": "Archived"
       },
       "actions": {
-        "details": "Details"
+        "details": "Details",
+        "open": "Open",
+        "brief": "Brief"
       },
       "drawer": {
         "title": "Event details",
@@ -1243,13 +1245,77 @@
         "notFound": "Event not found.",
         "items": "Items",
         "references": "Refs",
+        "refreshBrief": "Refresh brief",
+        "generatedAt": "Generated",
+        "briefSources": "Sources",
+        "briefLoadFailed": "Failed to load brief.",
+        "briefEmpty": "Brief is not available yet. Click refresh to generate.",
+        "tldr": "TL;DR",
+        "keyPoints": "Key points",
+        "whyMatters": "Why it matters",
+        "latestUpdate": "Latest update",
+        "watch": "What to watch",
+        "consensus": "Consensus",
+        "divergence": "Divergence",
+        "limitations": "Limitations",
+        "sourcesTitle": "Sources",
+        "citedInLabel": "Cited in",
+        "citedIn": {
+          "keyPoints": "Key points",
+          "whyItMatters": "Why it matters",
+          "latestUpdate": "Latest update",
+          "whatToWatch": "What to watch",
+          "consensus": "Consensus",
+          "divergence": "Divergence"
+        },
+        "openLlm": "LLM content",
+        "articleDrawerTitle": "LLM content",
+        "articleLoadFailed": "Failed to load article.",
+        "articleNotFound": "Processed item not found.",
+        "openItem": "Open item",
+        "markdownFallback": "Markdown fallback",
+        "articleEmpty": "No LLM content available.",
         "openOriginal": "Open",
         "tabs": {
+          "brief": "Brief",
           "timeline": "Timeline",
           "articles": "Articles"
         },
         "timelineEmpty": "No timeline entries yet. Enable timeline generation and wait for the scheduled job.",
         "itemsEmpty": "No articles in this event yet."
+      },
+      "detail": {
+        "loadFailed": "Failed to load event.",
+        "notFound": "Event not found.",
+        "openItem": "Open item",
+        "tabs": {
+          "brief": "Brief",
+          "narrative": "Narrative"
+        },
+        "refreshBrief": "Refresh brief",
+        "generatedAt": "Generated",
+        "briefSources": "Sources",
+        "briefLoadFailed": "Failed to load brief.",
+        "briefEmpty": "Brief is not available yet. Click refresh to generate.",
+        "tldr": "TL;DR",
+        "keyPoints": "Key points",
+        "whyMatters": "Why it matters",
+        "latestUpdate": "Latest update",
+        "watch": "What to watch",
+        "consensus": "Consensus",
+        "divergence": "Divergence",
+        "limitations": "Limitations",
+        "sourcesTitle": "Sources",
+        "openLlm": "LLM content",
+        "representativeTitle": "Representative article (LLM)",
+        "noRepresentative": "No representative article is available yet.",
+        "representativeLoadFailed": "Failed to load representative article.",
+        "representativeMissing": "Representative processed item id is missing.",
+        "representativeEmpty": "No representative narrative available.",
+        "articleDrawerTitle": "LLM content",
+        "articleLoadFailed": "Failed to load article.",
+        "articleNotFound": "Processed item not found.",
+        "articleEmpty": "No LLM content available."
       }
     },
     "digest": {
