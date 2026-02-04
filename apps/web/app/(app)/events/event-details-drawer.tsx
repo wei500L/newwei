@@ -1,7 +1,8 @@
 "use client";
 
 import { gql, useQuery } from "@apollo/client";
-import { Alert, Divider, Empty, List, Skeleton, Space, Tag, Tabs, Tooltip, Typography } from "antd";
+import { Alert, Button, Divider, Empty, List, Skeleton, Space, Tag, Tabs, Tooltip, Typography } from "antd";
+import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -135,6 +136,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
   const locale = resolveLocale(i18n.language);
   const timeZone = getDefaultTimeZone();
   const timeZoneLabel = useMemo(() => formatTimeZoneOffsetLabel(new Date(), timeZone), [timeZone]);
+  const router = useRouter();
 
   const { data, loading, error } = useQuery<{ newsEvent: NewsEvent | null }>(NEWS_EVENT_QUERY, {
     variables: { id: eventId, itemsLimit: 80, timelineLimit: 400 },
@@ -200,6 +202,11 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
         <Typography.Title level={5} style={{ marginBottom: 0 }}>
           {title}
         </Typography.Title>
+        <Space wrap size={[8, 6]}>
+          <Button type="link" onClick={() => router.push(`/events/${event.id}`)}>
+            {t("pages.events.actions.open", { defaultValue: "Open" })}
+          </Button>
+        </Space>
         <Space wrap size={[6, 6]}>
           <Tag color={event.status === "active" ? "green" : "default"}>{event.status}</Tag>
           <Tag>{t("pages.events.drawer.items", { defaultValue: "Items" })}: {event.itemCount}</Tag>

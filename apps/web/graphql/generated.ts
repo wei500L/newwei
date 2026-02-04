@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -1804,6 +1806,7 @@ export type Query = {
   newsPromptConfig: NewsPromptConfigModel;
   notifications: Array<NotificationModel>;
   permissions: Array<PermissionModel>;
+  processedItemById?: Maybe<ProcessedItemModelGraph>;
   queueStats: QueueStatsModel;
   rateLimitSettings: RateLimitSettingsModel;
   roles: Array<RoleModel>;
@@ -1996,6 +1999,11 @@ export type QueryNewsIndicatorAssociationsArgs = {
 
 export type QueryNotificationsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryProcessedItemByIdArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -2716,6 +2724,13 @@ export type SetOrgActiveMutationVariables = Exact<{
 
 
 export type SetOrgActiveMutation = { __typename?: 'Mutation', setOrgActive: { __typename?: 'OrgModel', id: string, name: string, slug: string, description?: string | null, isActive: boolean, createdAt: any, updatedAt: any } };
+
+export type ProcessedItemByIdQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type ProcessedItemByIdQuery = { __typename?: 'Query', processedItemById?: { __typename?: 'ProcessedItemModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, resultJson?: any | null, createdAt: any } | null };
 
 export type QueueStatsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -5285,6 +5300,51 @@ export function useSetOrgActiveMutation(baseOptions?: Apollo.MutationHookOptions
 export type SetOrgActiveMutationHookResult = ReturnType<typeof useSetOrgActiveMutation>;
 export type SetOrgActiveMutationResult = Apollo.MutationResult<SetOrgActiveMutation>;
 export type SetOrgActiveMutationOptions = Apollo.BaseMutationOptions<SetOrgActiveMutation, SetOrgActiveMutationVariables>;
+export const ProcessedItemByIdDocument = gql`
+    query ProcessedItemById($id: ID!) {
+  processedItemById(id: $id) {
+    id
+    itemMetaId
+    status
+    tags
+    resultJson
+    createdAt
+  }
+}
+    `;
+
+/**
+ * __useProcessedItemByIdQuery__
+ *
+ * To run a query within a React component, call `useProcessedItemByIdQuery` and pass it any options that fit your needs.
+ * When your component renders, `useProcessedItemByIdQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useProcessedItemByIdQuery({
+ *   variables: {
+ *      id: // value for 'id'
+ *   },
+ * });
+ */
+export function useProcessedItemByIdQuery(baseOptions: Apollo.QueryHookOptions<ProcessedItemByIdQuery, ProcessedItemByIdQueryVariables> & ({ variables: ProcessedItemByIdQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<ProcessedItemByIdQuery, ProcessedItemByIdQueryVariables>(ProcessedItemByIdDocument, options);
+      }
+export function useProcessedItemByIdLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<ProcessedItemByIdQuery, ProcessedItemByIdQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<ProcessedItemByIdQuery, ProcessedItemByIdQueryVariables>(ProcessedItemByIdDocument, options);
+        }
+export function useProcessedItemByIdSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<ProcessedItemByIdQuery, ProcessedItemByIdQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<ProcessedItemByIdQuery, ProcessedItemByIdQueryVariables>(ProcessedItemByIdDocument, options);
+        }
+export type ProcessedItemByIdQueryHookResult = ReturnType<typeof useProcessedItemByIdQuery>;
+export type ProcessedItemByIdLazyQueryHookResult = ReturnType<typeof useProcessedItemByIdLazyQuery>;
+export type ProcessedItemByIdSuspenseQueryHookResult = ReturnType<typeof useProcessedItemByIdSuspenseQuery>;
+export type ProcessedItemByIdQueryResult = Apollo.QueryResult<ProcessedItemByIdQuery, ProcessedItemByIdQueryVariables>;
 export const QueueStatsDocument = gql`
     query QueueStats {
   queueStats {

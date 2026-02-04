@@ -47,6 +47,7 @@ import {
   ItemFacets
 } from "../models/item.model";
 import { PageInfo } from "../models/page-info.model";
+import { normalizeProcessedResult } from "../utils/normalize-processed-result";
 
 interface ItemsCursorPayload {
   id: string;
@@ -88,28 +89,6 @@ function decodeCursor(cursor?: string | null): ItemsCursorPayload | undefined {
   } catch {
     return undefined;
   }
-}
-
-function normalizeProcessedResult(value: unknown): unknown {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    try {
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (typeof parsed === "string") {
-        return normalizeProcessedResult(parsed);
-      }
-      return parsed;
-    } catch {
-      return null;
-    }
-  }
-  return value;
 }
 
 function normalizeIsoDateTimeString(value: unknown): string | null {

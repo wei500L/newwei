@@ -66,6 +66,7 @@ import { DashboardResolver } from "./resolvers/dashboard.resolver";
 import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
 import { EntityImpactGraphResolver } from "./resolvers/entity-impact-graph.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
+import { ProcessedItemResolver } from "./resolvers/processed-item.resolver";
 import { KnowledgeGraphImpactResolver } from "./resolvers/knowledge-graph-impact.resolver";
 import { KnowledgeGraphReviewResolver } from "./resolvers/knowledge-graph-review.resolver";
 import { KnowledgeGraphResolver } from "./resolvers/knowledge-graph.resolver";
@@ -249,6 +250,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
   providers: [
     UsersResolver,
     ItemsResolver,
+    ProcessedItemResolver,
     TopicsResolver,
     NewsEventsResolver,
     NewsIndicatorResolver,

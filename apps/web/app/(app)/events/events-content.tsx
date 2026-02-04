@@ -319,8 +319,11 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                   <List.Item
                     key={event.id}
                     actions={[
-                      <Button key="open" type="link" onClick={() => setSelectedEventId(event.id)}>
-                        {t("pages.events.actions.details", { defaultValue: "Details" })}
+                      <Button key="open" type="link" onClick={() => router.push(`/events/${event.id}`)}>
+                        {t("pages.events.actions.open", { defaultValue: "Open" })}
+                      </Button>,
+                      <Button key="preview" type="link" onClick={() => setSelectedEventId(event.id)}>
+                        {t("pages.events.actions.preview", { defaultValue: "Preview" })}
                       </Button>
                     ]}
                   >

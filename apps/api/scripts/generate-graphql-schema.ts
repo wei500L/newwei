@@ -22,6 +22,7 @@ import { DashboardResolver } from "../src/graphql/resolvers/dashboard.resolver";
 import { EconomicDataResolver } from "../src/graphql/resolvers/economic-data.resolver";
 import { EntityImpactGraphResolver } from "../src/graphql/resolvers/entity-impact-graph.resolver";
 import { ItemsResolver } from "../src/graphql/resolvers/items.resolver";
+import { ProcessedItemResolver } from "../src/graphql/resolvers/processed-item.resolver";
 import { KnowledgeGraphImpactResolver } from "../src/graphql/resolvers/knowledge-graph-impact.resolver";
 import { KnowledgeGraphResolver } from "../src/graphql/resolvers/knowledge-graph.resolver";
 import { KnowledgeGraphReviewResolver } from "../src/graphql/resolvers/knowledge-graph-review.resolver";
@@ -38,6 +39,7 @@ import { UsersResolver } from "../src/graphql/resolvers/user.resolver";
 const resolvers = [
   UsersResolver,
   ItemsResolver,
+  ProcessedItemResolver,
   TopicsResolver,
   NewsEventsResolver,
   NewsIndicatorResolver,

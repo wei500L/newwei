@@ -1,0 +1,11 @@
+query ProcessedItemById($id: ID!) {
+  processedItemById(id: $id) {
+    id
+    itemMetaId
+    status
+    tags
+    resultJson
+    createdAt
+  }
+}
+

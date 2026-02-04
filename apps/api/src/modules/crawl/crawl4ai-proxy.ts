@@ -27,9 +27,13 @@ function crawl4aiLikelyRunsInDocker(baseUrl: string) {
   }
 }
 
-export function translateLocalhostProxyUrlForCrawl4ai(proxyUrl: string, crawl4aiBaseUrl: string) {
+export function translateLocalhostProxyUrlForCrawl4ai(proxyUrl: string, crawl4aiBaseUrl?: string | null) {
   const trimmed = proxyUrl.trim();
   if (!trimmed) {
+    return trimmed;
+  }
+
+  if (typeof crawl4aiBaseUrl !== "string" || !crawl4aiBaseUrl.trim()) {
     return trimmed;
   }
 
@@ -52,4 +56,3 @@ export function translateLocalhostProxyUrlForCrawl4ai(proxyUrl: string, crawl4ai
     return trimmed;
   }
 }
-

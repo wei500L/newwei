@@ -1548,6 +1548,7 @@ type Query {
   newsPromptConfig: NewsPromptConfigModel!
   notifications(limit: Int): [NotificationModel!]!
   permissions: [PermissionModel!]!
+  processedItemById(id: ID!): ProcessedItemModelGraph
   queueStats: QueueStatsModel!
   rateLimitSettings: RateLimitSettingsModel!
   roles(includeSystem: Boolean): [RoleModel!]!
