@@ -19,21 +19,27 @@ import { Tooltip } from "antd";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import type { TFunction } from "i18next";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-interface ActionItem {
+export interface ActionItem {
   key: string;
   icon: React.ReactNode;
   label: string;
   path?: string;
 }
 
-export function ActionRail() {
-  const { t } = useTranslation();
-  const pathname = usePathname();
-  const { data: session } = useSession();
-  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+export interface ActionRailNavConfig {
+  mainNavItems: ActionItem[];
+  adminNavItems: ActionItem[];
+}
+
+// Shared between the desktop ActionRail and the mobile Drawer in TopNav.
+export function buildActionRailNavConfig(
+  t: TFunction,
+  permissions: readonly string[]
+): ActionRailNavConfig {
   const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canUseAssistant = permissions.includes("assistant.read") || permissions.includes("assistant.run");
   const canManageAdmin =
@@ -94,17 +100,19 @@ export function ActionRail() {
       icon: <SearchOutlined />,
       label: t("nav.main.search", { defaultValue: "Search" }),
       path: "/search"
-    },
-    ...(canUseAssistant
-      ? [
-          {
-            key: "/assistant",
-            icon: <RobotOutlined />,
-            label: t("nav.main.assistant", { defaultValue: "Assistant" }),
-            path: "/assistant"
-          } satisfies ActionItem
-        ]
-      : []),
+    }
+  ];
+
+  if (canUseAssistant) {
+    mainNavItems.push({
+      key: "/assistant",
+      icon: <RobotOutlined />,
+      label: t("nav.main.assistant", { defaultValue: "Assistant" }),
+      path: "/assistant"
+    });
+  }
+
+  mainNavItems.push(
     {
       key: "/subscriptions",
       icon: <BellOutlined />,
@@ -117,36 +125,48 @@ export function ActionRail() {
       label: t("nav.main.profile", { defaultValue: "Profile" }),
       path: "/profile"
     }
-  ];
+  );
 
-  const adminNavItems = useMemo<ActionItem[]>(() => {
-    const items: ActionItem[] = [];
-    if (canViewDashboards) {
-      items.push({
-        key: "/dashboard",
-        icon: <DashboardOutlined />,
-        label: t("nav.dashboard", { defaultValue: "Dashboard" }),
-        path: "/dashboard"
-      });
-    }
-    if (canManageCrawl) {
-      items.push({
-        key: "/admin/ops/crawl-tasks",
-        icon: <RadarChartOutlined />,
-        label: t("nav.crawlTasks", { defaultValue: "Crawl Tasks" }),
-        path: "/admin/ops/crawl-tasks"
-      });
-    }
-    if (canManageAdmin) {
-      items.push({
-        key: "/admin",
-        icon: <SettingOutlined />,
-        label: t("nav.admin", { defaultValue: "Admin" }),
-        path: "/admin"
-      });
-    }
-    return items;
-  }, [canManageAdmin, canManageCrawl, canViewDashboards, t]);
+  const adminNavItems: ActionItem[] = [];
+  if (canViewDashboards) {
+    adminNavItems.push({
+      key: "/dashboard",
+      icon: <DashboardOutlined />,
+      label: t("nav.dashboard", { defaultValue: "Dashboard" }),
+      path: "/dashboard"
+    });
+  }
+  if (canManageCrawl) {
+    adminNavItems.push({
+      key: "/admin/ops/crawl-tasks",
+      icon: <RadarChartOutlined />,
+      label: t("nav.crawlTasks", { defaultValue: "Crawl Tasks" }),
+      path: "/admin/ops/crawl-tasks"
+    });
+  }
+  if (canManageAdmin) {
+    adminNavItems.push({
+      key: "/admin",
+      icon: <SettingOutlined />,
+      label: t("nav.admin", { defaultValue: "Admin" }),
+      path: "/admin"
+    });
+  }
+
+  return { mainNavItems, adminNavItems };
+}
+
+export function ActionRail() {
+  const { t } = useTranslation();
+  const pathname = usePathname();
+  const { data: session } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+
+
+  const { mainNavItems, adminNavItems } = useMemo(
+    () => buildActionRailNavConfig(t, permissions),
+    [permissions, t]
+  );
 
   return (
     <aside className="hidden md:flex flex-col justify-center h-full pl-4 pr-2 z-40">
@@ -163,10 +183,12 @@ export function ActionRail() {
               <Tooltip key={item.key} title={item.label} placement="right">
                 <Link
                   href={item.path ?? "#"}
+                  aria-label={item.label}
+                  aria-current={isActive ? "page" : undefined}
                   className={`
                     w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200
-                    ${isActive 
-                      ? "bg-[var(--primary)] text-white shadow-sm" 
+                    ${isActive
+                      ? "bg-[var(--primary)] text-white shadow-sm"
                       : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-50"
                     }
                   `}
@@ -189,10 +211,12 @@ export function ActionRail() {
                 <Tooltip key={item.key} title={item.label} placement="right">
                   <Link
                     href={item.path ?? "#"}
+                    aria-label={item.label}
+                    aria-current={isActive ? "page" : undefined}
                     className={`
                       w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200
-                      ${isActive 
-                        ? "bg-[var(--primary)] text-white shadow-sm" 
+                      ${isActive
+                        ? "bg-[var(--primary)] text-white shadow-sm"
                         : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-50"
                       }
                     `}

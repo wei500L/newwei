@@ -87,7 +87,7 @@ export function CommandBar() {
   };
 
   return (
-    <div className={`relative transition-all duration-300 ease-out z-50 ${focused ? "w-[600px]" : "w-[420px]"}`}>
+    <div className={`relative transition-all duration-300 ease-out z-50 w-full max-w-[420px] md:max-w-[600px] ${focused ? "md:max-w-[600px]" : ""}`}>
       <div
         className={`
         flex items-center h-10 px-4 rounded-lg
@@ -111,6 +111,7 @@ export function CommandBar() {
           id="command-bar-query"
           name="commandBarQuery"
           autoComplete="off"
+          aria-label={t("nav.searchAriaLabel", { defaultValue: "Search news items" })}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("nav.commandPlaceholder", {

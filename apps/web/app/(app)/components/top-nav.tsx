@@ -2,14 +2,18 @@
 
 import {
   LogoutOutlined,
+  MenuOutlined,
   PlusOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Button, Dropdown, Skeleton } from "antd";
-import { useRouter } from "next/navigation";
+import { Button, Drawer, Dropdown, Skeleton } from "antd";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { buildActionRailNavConfig } from "./action-rail";
 
 import { captureClientError } from "@/lib/client-telemetry";
 import { createTraceHeaders } from "@/lib/trace";
@@ -33,9 +37,30 @@ const formatLabel = (value: string): string =>
 export function TopNav() {
   const { t } = useTranslation();
   const router = useRouter();
+  const pathname = usePathname();
   const { data: session, status } = useSession();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isLoadingSession = status === "loading";
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
+
+  // Close drawer when switching to desktop breakpoint
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 768px)");
+    const handleChange = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches) {
+        setMobileNavOpen(false);
+      }
+    };
+    // Check initial state
+    handleChange(mediaQuery);
+    // Listen for changes
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
 
   const handleLogout = useCallback(
     async (logoutAll: boolean) => {
@@ -65,6 +90,12 @@ export function TopNav() {
 
   const user = session?.user;
   const permissions = session?.permissions ?? user?.permissions ?? [];
+
+  const { mainNavItems, adminNavItems } = useMemo(
+    () => buildActionRailNavConfig(t, permissions),
+    [permissions, t]
+  );
+
   const canStartCrawl = permissions.includes("crawl.write");
 
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
@@ -86,9 +117,19 @@ export function TopNav() {
       {/* Main Navbar Layer */}
       <header className="h-16 flex items-center justify-between px-6 border-b border-[var(--border)] shrink-0 glass relative">
         {/* Left: Logo */}
-        <div className="flex items-center gap-8 min-w-[200px]">
+        <div className="flex items-center gap-3 md:gap-8 min-w-0 md:min-w-[200px]">
+          <Button
+            type="text"
+            size="large"
+            icon={<MenuOutlined className="text-lg" aria-hidden />}
+            onClick={() => setMobileNavOpen(true)}
+            className="md:hidden"
+            aria-label={t("nav.openMenu", { defaultValue: "Open navigation menu" })}
+            aria-expanded={mobileNavOpen}
+            aria-controls="mobile-navigation-drawer"
+          />
           <span className="text-[var(--foreground)] font-semibold text-lg tracking-tight whitespace-nowrap font-serif flex items-center gap-2">
-               <div className="w-2 h-2 bg-[var(--primary)] rounded-full" />
+               <span className="w-2 h-2 bg-[var(--primary)] rounded-full" />
                {t("brand.full")}
           </span>
         </div>
@@ -99,7 +140,7 @@ export function TopNav() {
         </div>
 
         {/* Right: Actions + User */}
-        <div className="flex items-center gap-4 min-w-[200px] justify-end">
+        <div className="flex items-center gap-4 min-w-0 md:min-w-[200px] justify-end">
           <SystemDefcon />
           
           <div className="h-6 w-px bg-[var(--border)] mx-2" />
@@ -174,6 +215,76 @@ export function TopNav() {
           )}
         </div>
       </header>
+
+      <Drawer
+        id="mobile-navigation-drawer"
+        title={t("nav.menu", { defaultValue: "Menu" })}
+        placement="left"
+        width={320}
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        destroyOnHidden
+        className="md:hidden"
+      >
+        <nav className="flex flex-col gap-6">
+          <div className="flex flex-col gap-1">
+            {mainNavItems.map((item) => {
+              const isActive = item.path ? pathname.startsWith(item.path) : false;
+              return (
+                <Link
+                  key={item.key}
+                  href={item.path ?? "#"}
+                  onClick={() => setMobileNavOpen(false)}
+                  aria-label={item.label}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`
+                    flex items-center gap-3 rounded-xl px-3 py-2 transition-all duration-200
+                    ${isActive
+                      ? "bg-[var(--primary)] text-white shadow-sm"
+                      : "text-slate-700 hover:text-[var(--primary)] hover:bg-slate-50"
+                    }
+                  `}
+                >
+                  <span className="text-lg">{item.icon}</span>
+                  <span className="font-medium">{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+
+          {adminNavItems.length > 0 ? (
+            <div className="pt-4 border-t border-[var(--border)] flex flex-col gap-2">
+              <span className="px-1 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                {t("nav.adminGroup", { defaultValue: "Admin" })}
+              </span>
+              <div className="flex flex-col gap-1">
+                {adminNavItems.map((item) => {
+                  const isActive = item.path ? pathname.startsWith(item.path) : false;
+                  return (
+                    <Link
+                      key={item.key}
+                      href={item.path ?? "#"}
+                      onClick={() => setMobileNavOpen(false)}
+                      aria-label={item.label}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`
+                        flex items-center gap-3 rounded-xl px-3 py-2 transition-all duration-200
+                        ${isActive
+                          ? "bg-[var(--primary)] text-white shadow-sm"
+                          : "text-slate-700 hover:text-[var(--primary)] hover:bg-slate-50"
+                        }
+                      `}
+                    >
+                      <span className="text-lg">{item.icon}</span>
+                      <span className="font-medium">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </nav>
+      </Drawer>
     </div>
   );
 }

@@ -8,6 +8,10 @@
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
+  /* Layout heights - sync with TickerTape component */
+  --top-nav-height: 4rem; /* h-16 */
+  --ticker-height: 2rem;  /* h-8, TickerTape height */
+
   --background: #f7f6f2;
   --foreground: #1f2933;
 
@@ -139,5 +143,17 @@
   }
   .animate-ticker:hover {
     animation-play-state: paused;
+  }
+
+  /* Respect user's motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-ticker {
+      animation: none;
+    }
+    * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
