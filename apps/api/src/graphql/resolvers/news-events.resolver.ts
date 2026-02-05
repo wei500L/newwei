@@ -34,7 +34,15 @@ export class NewsEventsResolver {
   ): Promise<NewsEventModel[]> {
     const user = this.requireUser(req);
     const rows = await this.events.listEvents(user.orgId, { limit, windowDays, status });
-    return rows.map((row) => this.toModel(row));
+
+    // Get heat map for all events
+    const eventIds = rows.map((row) => row.id);
+    const heatMap = await this.events.getEventHeatMap(user.orgId, eventIds);
+
+    return rows.map((row) => {
+      const heat = heatMap.get(row.id) ?? { breaking: false, heatScore: 0 };
+      return this.toModel(row, undefined, heat);
+    });
   }
 
   @HasPermission("items.read")
@@ -50,10 +58,19 @@ export class NewsEventsResolver {
     if (!row) {
       return null;
     }
-    return this.toModel(row, {
-      items: row.items.map((item) => this.toItemModel(item)),
-      timeline: row.timeline.map((entry) => this.toTimelineModel(entry))
-    });
+
+    // Get heat for single event
+    const heatMap = await this.events.getEventHeatMap(user.orgId, [id]);
+    const heat = heatMap.get(id) ?? { breaking: false, heatScore: 0 };
+
+    return this.toModel(
+      row,
+      {
+        items: row.items.map((item) => this.toItemModel(item)),
+        timeline: row.timeline.map((entry) => this.toTimelineModel(entry))
+      },
+      heat
+    );
   }
 
   @HasPermission("items.read")
@@ -111,7 +128,8 @@ export class NewsEventsResolver {
 
   private toModel(
     row: any,
-    extras?: { items: NewsEventItemModel[]; timeline: NewsEventTimelineEntryModel[] }
+    extras?: { items: NewsEventItemModel[]; timeline: NewsEventTimelineEntryModel[] },
+    heat?: { breaking: boolean; heatScore: number }
   ): NewsEventModel {
     return {
       id: row.id,
@@ -129,7 +147,9 @@ export class NewsEventsResolver {
       metadata: row.metadata ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      ...(extras ? { items: extras.items, timeline: extras.timeline } : {})
+      ...(extras ? { items: extras.items, timeline: extras.timeline } : {}),
+      breaking: heat?.breaking ?? false,
+      heatScore: heat?.heatScore ?? 0
     };
   }
 

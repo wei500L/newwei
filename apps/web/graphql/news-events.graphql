@@ -1,0 +1,78 @@
+query NewsEvents($limit: Int, $windowDays: Int, $status: NewsEventStatus) {
+  newsEvents(limit: $limit, windowDays: $windowDays, status: $status) {
+    id
+    title
+    status
+    language
+    primaryTopic
+    primaryEntity
+    summary
+    startAt
+    lastAt
+    itemCount
+    representativeProcessedArticleId
+    representativeProcessedItemId
+    metadata
+    createdAt
+    updatedAt
+    breaking
+    heatScore
+  }
+}
+
+query NewsEvent($id: String!, $itemsLimit: Int, $timelineLimit: Int) {
+  newsEvent(id: $id, itemsLimit: $itemsLimit, timelineLimit: $timelineLimit) {
+    id
+    title
+    status
+    language
+    primaryTopic
+    primaryEntity
+    summary
+    startAt
+    lastAt
+    itemCount
+    representativeProcessedArticleId
+    representativeProcessedItemId
+    metadata
+    createdAt
+    updatedAt
+    breaking
+    heatScore
+    items {
+      id
+      eventId
+      processedArticleId
+      processedItemId
+      similarity
+      assignedBy
+      createdAt
+      processedArticle {
+        id
+        articleId
+        title
+        summary
+        publishedAt
+        language
+        processedAt
+        article {
+          id
+          url
+          sourceLabel
+          crawlAt
+        }
+      }
+    }
+    timeline {
+      id
+      eventId
+      bucketStart
+      title
+      summary
+      keyPoints
+      referencedArticleIds
+      createdAt
+      updatedAt
+    }
+  }
+}

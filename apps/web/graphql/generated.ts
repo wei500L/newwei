@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -1515,7 +1517,11 @@ export type NewsEventItemModel = {
 
 export type NewsEventModel = {
   __typename?: 'NewsEventModel';
+  /** Whether this event is considered breaking news */
+  breaking: Scalars['Boolean']['output'];
   createdAt: Scalars['DateTime']['output'];
+  /** Heat score indicating event urgency (0-10+) */
+  heatScore: Scalars['Float']['output'];
   id: Scalars['String']['output'];
   itemCount: Scalars['Int']['output'];
   items?: Maybe<Array<NewsEventItemModel>>;
@@ -1757,6 +1763,8 @@ export type ProcessedItemModelGraph = {
   duplicateOf?: Maybe<Scalars['String']['output']>;
   duplicateSimilarity?: Maybe<Scalars['Float']['output']>;
   error?: Maybe<ProcessedItemErrorModelGraph>;
+  /** Associated news event ID */
+  eventId?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   itemMetaId: Scalars['String']['output'];
   llm?: Maybe<ProcessedItemLlmModel>;
@@ -1777,6 +1785,8 @@ export type ProcessedItemPreviewModelGraph = {
   duplicateOf?: Maybe<Scalars['String']['output']>;
   duplicateSimilarity?: Maybe<Scalars['Float']['output']>;
   entities: Array<Scalars['String']['output']>;
+  /** Associated news event ID */
+  eventId?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   itemMetaId: Scalars['String']['output'];
   llm?: Maybe<ProcessedItemLlmModel>;
@@ -1847,6 +1857,7 @@ export type Query = {
   queueStats: QueueStatsModel;
   rateLimitSettings: RateLimitSettingsModel;
   roles: Array<RoleModel>;
+  searchSuggestions: Array<SearchSuggestionModel>;
   topicGroups: Array<TopicGroupModel>;
   topicSentimentSeries: Array<TopicSentimentSnapshotModel>;
   unreadNotificationCount: Scalars['Int']['output'];
@@ -2057,6 +2068,12 @@ export type QueryRolesArgs = {
 };
 
 
+export type QuerySearchSuggestionsArgs = {
+  limit?: InputMaybe<Scalars['Float']['input']>;
+  prefix: Scalars['String']['input'];
+};
+
+
 export type QueryTopicGroupsArgs = {
   itemsPerGroup?: InputMaybe<Scalars['Int']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -2163,6 +2180,20 @@ export type RoleModel = {
   name: Scalars['String']['output'];
   permissions: Array<PermissionModel>;
 };
+
+export type SearchSuggestionModel = {
+  __typename?: 'SearchSuggestionModel';
+  type: SearchSuggestionType;
+  value: Scalars['String']['output'];
+};
+
+/** Type of search suggestion */
+export enum SearchSuggestionType {
+  Region = 'REGION',
+  Sentiment = 'SENTIMENT',
+  Source = 'SOURCE',
+  Topic = 'TOPIC'
+}
 
 export type SeriesPointInput = {
   timestamp: Scalars['String']['input'];
@@ -2675,7 +2706,7 @@ export type ItemsQueryVariables = Exact<{
 }>;
 
 
-export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, publishedAt?: string | null, summary?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
+export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, publishedAt?: string | null, summary?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, eventId?: string | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
 
 export type ItemFacetsQueryVariables = Exact<{
   search?: InputMaybe<Scalars['String']['input']>;
@@ -2729,6 +2760,24 @@ export type NewsEventBriefQueryVariables = Exact<{
 
 
 export type NewsEventBriefQuery = { __typename?: 'Query', newsEventBrief?: { __typename?: 'NewsEventBriefModel', version: number, generatedAt: any, language: string, tldr: string, limitations?: string | null, keyPoints: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, whyItMatters: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, latestUpdate?: { __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> } | null, whatToWatch: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, comparison?: { __typename?: 'NewsEventBriefComparisonModel', consensus: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, divergence: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }> } | null, sources: Array<{ __typename?: 'NewsEventBriefSourceModel', index: number, url: string, sourceLabel?: string | null, title?: string | null, publishedAt?: any | null, processedItemId?: string | null, processedArticleId?: string | null }> } | null };
+
+export type NewsEventsQueryVariables = Exact<{
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+  status?: InputMaybe<NewsEventStatus>;
+}>;
+
+
+export type NewsEventsQuery = { __typename?: 'Query', newsEvents: Array<{ __typename?: 'NewsEventModel', id: string, title?: string | null, status: NewsEventStatus, language?: string | null, primaryTopic?: string | null, primaryEntity?: string | null, summary?: string | null, startAt: any, lastAt: any, itemCount: number, representativeProcessedArticleId?: string | null, representativeProcessedItemId?: string | null, metadata?: any | null, createdAt: any, updatedAt: any, breaking: boolean, heatScore: number }> };
+
+export type NewsEventQueryVariables = Exact<{
+  id: Scalars['String']['input'];
+  itemsLimit?: InputMaybe<Scalars['Int']['input']>;
+  timelineLimit?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type NewsEventQuery = { __typename?: 'Query', newsEvent?: { __typename?: 'NewsEventModel', id: string, title?: string | null, status: NewsEventStatus, language?: string | null, primaryTopic?: string | null, primaryEntity?: string | null, summary?: string | null, startAt: any, lastAt: any, itemCount: number, representativeProcessedArticleId?: string | null, representativeProcessedItemId?: string | null, metadata?: any | null, createdAt: any, updatedAt: any, breaking: boolean, heatScore: number, items?: Array<{ __typename?: 'NewsEventItemModel', id: string, eventId: string, processedArticleId: string, processedItemId?: string | null, similarity?: number | null, assignedBy: NewsEventAssignmentMethod, createdAt: any, processedArticle: { __typename?: 'NewsEventProcessedArticleModel', id: string, articleId: string, title?: string | null, summary?: string | null, publishedAt?: any | null, language?: string | null, processedAt: any, article: { __typename?: 'NewsEventArticleModel', id: string, url: string, sourceLabel?: string | null, crawlAt: any } } }> | null, timeline?: Array<{ __typename?: 'NewsEventTimelineEntryModel', id: string, eventId: string, bucketStart: any, title?: string | null, summary?: string | null, keyPoints?: any | null, referencedArticleIds?: any | null, createdAt: any, updatedAt: any }> | null } | null };
 
 export type NotificationsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -2810,6 +2859,14 @@ export type UpdateRoleMutationVariables = Exact<{
 
 
 export type UpdateRoleMutation = { __typename?: 'Mutation', updateRole: { __typename?: 'RoleModel', id: string, name: string, description?: string | null, isSystem: boolean, permissions: Array<{ __typename?: 'PermissionModel', id: string, name: string, description?: string | null }> } };
+
+export type SearchSuggestionsQueryVariables = Exact<{
+  prefix: Scalars['String']['input'];
+  limit?: InputMaybe<Scalars['Float']['input']>;
+}>;
+
+
+export type SearchSuggestionsQuery = { __typename?: 'Query', searchSuggestions: Array<{ __typename?: 'SearchSuggestionModel', type: SearchSuggestionType, value: string }> };
 
 export type RateLimitSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -4612,6 +4669,7 @@ export const ItemsDocument = gql`
           qualityScore
           location
           createdAt
+          eventId
           llm {
             model
             promptVersion
@@ -5133,6 +5191,157 @@ export type NewsEventBriefQueryHookResult = ReturnType<typeof useNewsEventBriefQ
 export type NewsEventBriefLazyQueryHookResult = ReturnType<typeof useNewsEventBriefLazyQuery>;
 export type NewsEventBriefSuspenseQueryHookResult = ReturnType<typeof useNewsEventBriefSuspenseQuery>;
 export type NewsEventBriefQueryResult = Apollo.QueryResult<NewsEventBriefQuery, NewsEventBriefQueryVariables>;
+export const NewsEventsDocument = gql`
+    query NewsEvents($limit: Int, $windowDays: Int, $status: NewsEventStatus) {
+  newsEvents(limit: $limit, windowDays: $windowDays, status: $status) {
+    id
+    title
+    status
+    language
+    primaryTopic
+    primaryEntity
+    summary
+    startAt
+    lastAt
+    itemCount
+    representativeProcessedArticleId
+    representativeProcessedItemId
+    metadata
+    createdAt
+    updatedAt
+    breaking
+    heatScore
+  }
+}
+    `;
+
+/**
+ * __useNewsEventsQuery__
+ *
+ * To run a query within a React component, call `useNewsEventsQuery` and pass it any options that fit your needs.
+ * When your component renders, `useNewsEventsQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useNewsEventsQuery({
+ *   variables: {
+ *      limit: // value for 'limit'
+ *      windowDays: // value for 'windowDays'
+ *      status: // value for 'status'
+ *   },
+ * });
+ */
+export function useNewsEventsQuery(baseOptions?: Apollo.QueryHookOptions<NewsEventsQuery, NewsEventsQueryVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<NewsEventsQuery, NewsEventsQueryVariables>(NewsEventsDocument, options);
+      }
+export function useNewsEventsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<NewsEventsQuery, NewsEventsQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<NewsEventsQuery, NewsEventsQueryVariables>(NewsEventsDocument, options);
+        }
+export function useNewsEventsSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<NewsEventsQuery, NewsEventsQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<NewsEventsQuery, NewsEventsQueryVariables>(NewsEventsDocument, options);
+        }
+export type NewsEventsQueryHookResult = ReturnType<typeof useNewsEventsQuery>;
+export type NewsEventsLazyQueryHookResult = ReturnType<typeof useNewsEventsLazyQuery>;
+export type NewsEventsSuspenseQueryHookResult = ReturnType<typeof useNewsEventsSuspenseQuery>;
+export type NewsEventsQueryResult = Apollo.QueryResult<NewsEventsQuery, NewsEventsQueryVariables>;
+export const NewsEventDocument = gql`
+    query NewsEvent($id: String!, $itemsLimit: Int, $timelineLimit: Int) {
+  newsEvent(id: $id, itemsLimit: $itemsLimit, timelineLimit: $timelineLimit) {
+    id
+    title
+    status
+    language
+    primaryTopic
+    primaryEntity
+    summary
+    startAt
+    lastAt
+    itemCount
+    representativeProcessedArticleId
+    representativeProcessedItemId
+    metadata
+    createdAt
+    updatedAt
+    breaking
+    heatScore
+    items {
+      id
+      eventId
+      processedArticleId
+      processedItemId
+      similarity
+      assignedBy
+      createdAt
+      processedArticle {
+        id
+        articleId
+        title
+        summary
+        publishedAt
+        language
+        processedAt
+        article {
+          id
+          url
+          sourceLabel
+          crawlAt
+        }
+      }
+    }
+    timeline {
+      id
+      eventId
+      bucketStart
+      title
+      summary
+      keyPoints
+      referencedArticleIds
+      createdAt
+      updatedAt
+    }
+  }
+}
+    `;
+
+/**
+ * __useNewsEventQuery__
+ *
+ * To run a query within a React component, call `useNewsEventQuery` and pass it any options that fit your needs.
+ * When your component renders, `useNewsEventQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useNewsEventQuery({
+ *   variables: {
+ *      id: // value for 'id'
+ *      itemsLimit: // value for 'itemsLimit'
+ *      timelineLimit: // value for 'timelineLimit'
+ *   },
+ * });
+ */
+export function useNewsEventQuery(baseOptions: Apollo.QueryHookOptions<NewsEventQuery, NewsEventQueryVariables> & ({ variables: NewsEventQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<NewsEventQuery, NewsEventQueryVariables>(NewsEventDocument, options);
+      }
+export function useNewsEventLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<NewsEventQuery, NewsEventQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<NewsEventQuery, NewsEventQueryVariables>(NewsEventDocument, options);
+        }
+export function useNewsEventSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<NewsEventQuery, NewsEventQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<NewsEventQuery, NewsEventQueryVariables>(NewsEventDocument, options);
+        }
+export type NewsEventQueryHookResult = ReturnType<typeof useNewsEventQuery>;
+export type NewsEventLazyQueryHookResult = ReturnType<typeof useNewsEventLazyQuery>;
+export type NewsEventSuspenseQueryHookResult = ReturnType<typeof useNewsEventSuspenseQuery>;
+export type NewsEventQueryResult = Apollo.QueryResult<NewsEventQuery, NewsEventQueryVariables>;
 export const NotificationsDocument = gql`
     query Notifications($limit: Int) {
   notifications(limit: $limit) {
@@ -5693,6 +5902,48 @@ export function useUpdateRoleMutation(baseOptions?: Apollo.MutationHookOptions<U
 export type UpdateRoleMutationHookResult = ReturnType<typeof useUpdateRoleMutation>;
 export type UpdateRoleMutationResult = Apollo.MutationResult<UpdateRoleMutation>;
 export type UpdateRoleMutationOptions = Apollo.BaseMutationOptions<UpdateRoleMutation, UpdateRoleMutationVariables>;
+export const SearchSuggestionsDocument = gql`
+    query SearchSuggestions($prefix: String!, $limit: Float) {
+  searchSuggestions(prefix: $prefix, limit: $limit) {
+    type
+    value
+  }
+}
+    `;
+
+/**
+ * __useSearchSuggestionsQuery__
+ *
+ * To run a query within a React component, call `useSearchSuggestionsQuery` and pass it any options that fit your needs.
+ * When your component renders, `useSearchSuggestionsQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useSearchSuggestionsQuery({
+ *   variables: {
+ *      prefix: // value for 'prefix'
+ *      limit: // value for 'limit'
+ *   },
+ * });
+ */
+export function useSearchSuggestionsQuery(baseOptions: Apollo.QueryHookOptions<SearchSuggestionsQuery, SearchSuggestionsQueryVariables> & ({ variables: SearchSuggestionsQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<SearchSuggestionsQuery, SearchSuggestionsQueryVariables>(SearchSuggestionsDocument, options);
+      }
+export function useSearchSuggestionsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<SearchSuggestionsQuery, SearchSuggestionsQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<SearchSuggestionsQuery, SearchSuggestionsQueryVariables>(SearchSuggestionsDocument, options);
+        }
+export function useSearchSuggestionsSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<SearchSuggestionsQuery, SearchSuggestionsQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<SearchSuggestionsQuery, SearchSuggestionsQueryVariables>(SearchSuggestionsDocument, options);
+        }
+export type SearchSuggestionsQueryHookResult = ReturnType<typeof useSearchSuggestionsQuery>;
+export type SearchSuggestionsLazyQueryHookResult = ReturnType<typeof useSearchSuggestionsLazyQuery>;
+export type SearchSuggestionsSuspenseQueryHookResult = ReturnType<typeof useSearchSuggestionsSuspenseQuery>;
+export type SearchSuggestionsQueryResult = Apollo.QueryResult<SearchSuggestionsQuery, SearchSuggestionsQueryVariables>;
 export const RateLimitSettingsDocument = gql`
     query RateLimitSettings {
   rateLimitSettings {

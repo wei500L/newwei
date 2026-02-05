@@ -1263,7 +1263,12 @@ type NewsEventItemModel {
 }
 
 type NewsEventModel {
+  """Whether this event is considered breaking news"""
+  breaking: Boolean!
   createdAt: DateTime!
+
+  """Heat score indicating event urgency (0-10+)"""
+  heatScore: Float!
   id: String!
   itemCount: Int!
   items: [NewsEventItemModel!]
@@ -1493,6 +1498,9 @@ type ProcessedItemModelGraph {
   duplicateOf: String
   duplicateSimilarity: Float
   error: ProcessedItemErrorModelGraph
+
+  """Associated news event ID"""
+  eventId: String
   id: ID!
   itemMetaId: String!
   llm: ProcessedItemLlmModel
@@ -1515,6 +1523,9 @@ type ProcessedItemPreviewModelGraph {
   duplicateOf: String
   duplicateSimilarity: Float
   entities: [String!]!
+
+  """Associated news event ID"""
+  eventId: String
   id: ID!
   itemMetaId: String!
   llm: ProcessedItemLlmModel
@@ -1587,6 +1598,7 @@ type Query {
   queueStats: QueueStatsModel!
   rateLimitSettings: RateLimitSettingsModel!
   roles(includeSystem: Boolean): [RoleModel!]!
+  searchSuggestions(limit: Float, prefix: String!): [SearchSuggestionModel!]!
   topicGroups(itemsPerGroup: Int, limit: Int, windowDays: Int): [TopicGroupModel!]!
   topicSentimentSeries(days: Int, topic: String!): [TopicSentimentSnapshotModel!]!
   unreadNotificationCount: Int!
@@ -1675,6 +1687,19 @@ type RoleModel {
   isSystem: Boolean!
   name: String!
   permissions: [PermissionModel!]!
+}
+
+type SearchSuggestionModel {
+  type: SearchSuggestionType!
+  value: String!
+}
+
+"""Type of search suggestion"""
+enum SearchSuggestionType {
+  REGION
+  SENTIMENT
+  SOURCE
+  TOPIC
 }
 
 input SeriesPointInput {

@@ -1,0 +1,6 @@
+query SearchSuggestions($prefix: String!, $limit: Float) {
+  searchSuggestions(prefix: $prefix, limit: $limit) {
+    type
+    value
+  }
+}

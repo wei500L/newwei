@@ -1,4 +1,344 @@
 
-> @modular/api@0.1.0 typecheck /mnt/d/wei/apps/api
+> @modular/api@0.1.0 typecheck D:\wei\apps\api
 > tsc -p tsconfig.typecheck.json --noEmit
 
+src/common/filters/global-exception.filter.ts(327,8): error TS18046: 'exception' is of type 'unknown'.
+src/common/filters/global-exception.filter.ts(327,38): error TS18046: 'exception' is of type 'unknown'.
+src/graphql/loaders/item-meta.loader.ts(18,38): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/graphql/loaders/processed-item-event-id.loader.ts(50,70): error TS7006: Parameter 'r' implicitly has an 'any' type.
+src/graphql/loaders/processed-item-event-id.loader.ts(59,33): error TS2322: Type 'unknown[]' is not assignable to type 'string[]'.
+  Type 'unknown' is not assignable to type 'string'.
+src/graphql/loaders/role.loader.ts(29,20): error TS7006: Parameter 'role' implicitly has an 'any' type.
+src/graphql/loaders/user.loader.ts(18,38): error TS7006: Parameter 'user' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(29,26): error TS7006: Parameter 'channel' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(49,23): error TS7006: Parameter 'rule' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(67,15): error TS7006: Parameter 'link' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(68,18): error TS7006: Parameter 'channel' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(69,15): error TS7006: Parameter 'channel' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(94,24): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(113,32): error TS7006: Parameter 'delivery' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(178,36): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(200,15): error TS7006: Parameter 'link' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(201,18): error TS7006: Parameter 'channel' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(202,15): error TS7006: Parameter 'channel' implicitly has an 'any' type.
+src/graphql/resolvers/alerts.resolver.ts(318,32): error TS7006: Parameter 'delivery' implicitly has an 'any' type.
+src/graphql/resolvers/crawl.resolver.ts(110,30): error TS7006: Parameter 'task' implicitly has an 'any' type.
+src/graphql/resolvers/dashboard.resolver.ts(30,28): error TS7006: Parameter 'dashboard' implicitly has an 'any' type.
+src/graphql/resolvers/dashboard.resolver.ts(41,33): error TS7006: Parameter 'widget' implicitly has an 'any' type.
+src/graphql/resolvers/dashboard.resolver.ts(82,33): error TS7006: Parameter 'widget' implicitly has an 'any' type.
+src/graphql/resolvers/dashboard.resolver.ts(127,37): error TS7006: Parameter 'log' implicitly has an 'any' type.
+src/graphql/resolvers/economic-data.resolver.ts(171,28): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/graphql/resolvers/economic-data.resolver.ts(194,42): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/graphql/resolvers/economic-data.resolver.ts(205,23): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/graphql/resolvers/economic-data.resolver.ts(252,23): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/graphql/resolvers/economic-data.resolver.ts(339,25): error TS7006: Parameter 'config' implicitly has an 'any' type.
+src/graphql/resolvers/items.resolver.ts(279,44): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/graphql/resolvers/items.resolver.ts(310,42): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/graphql/resolvers/items.resolver.ts(358,5): error TS2322: Type '{ type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string; }[]' is not assignable to type 'SearchSuggestionModel[]'.
+  Type '{ type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string; }' is not assignable to type 'SearchSuggestionModel'.
+    Types of property 'type' are incompatible.
+      Type '"TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"' is not assignable to type 'SearchSuggestionType'.
+        Type '"TOPIC"' is not assignable to type 'SearchSuggestionType'.
+src/graphql/resolvers/knowledge-graph-review.resolver.ts(53,13): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/graphql/resolvers/knowledge-graph.resolver.ts(170,22): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/graphql/resolvers/news-events.resolver.ts(39,32): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/graphql/resolvers/news-events.resolver.ts(42,22): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/graphql/resolvers/news-events.resolver.ts(69,31): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/graphql/resolvers/news-events.resolver.ts(70,37): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/graphql/resolvers/news-indicator.resolver.ts(41,22): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/graphql/resolvers/news-indicator.resolver.ts(59,68): error TS7006: Parameter 'bt' implicitly has an 'any' type.
+src/graphql/resolvers/notification.resolver.ts(30,25): error TS7006: Parameter 'notification' implicitly has an 'any' type.
+src/graphql/resolvers/rbac.resolver.ts(79,22): error TS7006: Parameter 'role' implicitly has an 'any' type.
+src/graphql/resolvers/rbac.resolver.ts(86,22): error TS7006: Parameter 'permission' implicitly has an 'any' type.
+src/graphql/resolvers/rbac.resolver.ts(101,29): error TS7006: Parameter 'membership' implicitly has an 'any' type.
+src/graphql/resolvers/user.resolver.ts(129,23): error TS7006: Parameter 'user' implicitly has an 'any' type.
+src/modules/akshare/akshare.service.ts(247,40): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/akshare/akshare.service.ts(276,65): error TS7006: Parameter 'cat' implicitly has an 'any' type.
+src/modules/akshare/akshare.service.ts(312,56): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/modules/akshare/akshare.service.ts(352,55): error TS2322: Type '{}[]' is not assignable to type '{ id: string; key: string; }[]'.
+  Type '{}' is missing the following properties from type '{ id: string; key: string; }': id, key
+src/modules/akshare/akshare.service.ts(357,39): error TS2339: Property 'sourceFunction' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(357,81): error TS2339: Property 'sourceEndpoint' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(358,94): error TS2339: Property 'metadata' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(374,48): error TS2339: Property 'sourceFunction' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(376,25): error TS2339: Property 'groupLabel' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(379,44): error TS2339: Property 'sourceFunction' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(382,44): error TS2339: Property 'sourceEndpoint' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(385,44): error TS2339: Property 'sourceDocUrl' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(388,44): error TS2339: Property 'valueType' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(391,44): error TS2339: Property 'defaultUnit' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(394,44): error TS2339: Property 'defaultFrequency' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(397,25): error TS2339: Property 'description' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(401,72): error TS2339: Property 'metadata' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(409,45): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(413,57): error TS2339: Property 'categories' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(413,73): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/akshare/akshare.service.ts(415,48): error TS2339: Property 'key' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(417,34): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(418,34): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(424,25): error TS2339: Property 'fetchConfig' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(426,32): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(427,35): error TS2339: Property 'defaultFrequency' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(458,56): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/modules/akshare/akshare.service.ts(467,33): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(473,31): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(581,20): error TS7006: Parameter 'config' implicitly has an 'any' type.
+src/modules/akshare/akshare.service.ts(585,30): error TS2339: Property 'isEnabled' does not exist on type '{}'.
+src/modules/akshare/akshare.service.ts(1095,38): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/modules/akshare/akshare.service.ts(1096,34): error TS7006: Parameter 'coarsest' implicitly has an 'any' type.
+src/modules/akshare/akshare.service.ts(1096,44): error TS7006: Parameter 'next' implicitly has an 'any' type.
+src/modules/alerts/alerts.service.ts(170,16): error TS2339: Property 'alertDelivery' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/alerts/alerts.service.ts(177,16): error TS2339: Property 'alertDelivery' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/alerts/alerts.service.ts(181,16): error TS2339: Property 'alertNotificationChannel' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/alerts/alerts.service.ts(189,34): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/modules/alerts/alerts.service.ts(260,31): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/modules/alerts/alerts.service.ts(266,27): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/modules/alerts/alerts.service.ts(572,32): error TS2339: Property 'alertRule' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/alerts/alerts.service.ts(593,32): error TS2339: Property 'alertRule' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/alerts/alerts.service.ts(597,18): error TS2339: Property 'alertRuleChannel' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/alerts/alerts.service.ts(599,20): error TS2339: Property 'alertRuleChannel' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/alerts/alerts.service.ts(715,13): error TS7006: Parameter 'link' implicitly has an 'any' type.
+src/modules/alerts/alerts.service.ts(716,16): error TS7006: Parameter 'channel' implicitly has an 'any' type.
+src/modules/alerts/alerts.service.ts(719,27): error TS7006: Parameter 'channel' implicitly has an 'any' type.
+src/modules/alerts/alerts.service.ts(915,24): error TS7006: Parameter 'member' implicitly has an 'any' type.
+src/modules/alerts/alerts.service.ts(1271,41): error TS7006: Parameter 'delivery' implicitly has an 'any' type.
+src/modules/alerts/alerts.service.ts(1275,38): error TS7006: Parameter 'delivery' implicitly has an 'any' type.
+src/modules/alerts/providers/entity-association-metric.provider.ts(105,50): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/modules/alerts/providers/entity-association-metric.provider.ts(130,25): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/alerts/providers/entity-association-metric.provider.ts(131,21): error TS2339: Property 'canonicalName' does not exist on type '{}'.
+src/modules/alerts/providers/entity-association-metric.provider.ts(132,21): error TS2339: Property 'type' does not exist on type '{}'.
+src/modules/assistant/assistant.service.ts(638,37): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/modules/assistant/assistant.service.ts(638,100): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/modules/assistant/assistant.service.ts(1116,13): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/assistant/assistant.service.ts(1117,16): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/assistant/assistant.service.ts(1118,14): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/modules/assistant/assistant.service.ts(1118,17): error TS7006: Parameter 'b' implicitly has an 'any' type.
+src/modules/audit/audit-log-outbox.service.ts(150,32): error TS2339: Property 'auditLogOutbox' does not exist on type 'TransactionClient'.
+src/modules/audit/audit-log-outbox.service.ts(171,17): error TS2339: Property 'auditLogOutbox' does not exist on type 'TransactionClient'.
+src/modules/audit/audit-log.writer.ts(73,18): error TS2339: Property 'auditLog' does not exist on type 'PrismaService | TransactionClient'.
+  Property 'auditLog' does not exist on type 'TransactionClient'.
+src/modules/audit/audit-log.writer.ts(91,35): error TS2339: Property 'auditLogOutbox' does not exist on type 'PrismaService | TransactionClient'.
+  Property 'auditLogOutbox' does not exist on type 'TransactionClient'.
+src/modules/auth/auth.service.ts(224,34): error TS2345: Argument of type '{ orgId: string; org?: { isActive: boolean; slug?: string | undefined; } | null | undefined; }' is not assignable to parameter of type 'MembershipRecord'.
+  Types of property 'org' are incompatible.
+    Type '{ isActive: boolean; slug?: string | undefined; } | null | undefined' is not assignable to type '{ planTier?: string | null | undefined; subscriptionStatus?: string | null | undefined; } | null | undefined'.
+      Type '{ isActive: boolean; slug?: string | undefined; }' has no properties in common with type '{ planTier?: string | null | undefined; subscriptionStatus?: string | null | undefined; }'.
+src/modules/auth/auth.service.ts(449,38): error TS2345: Argument of type '{ orgId: string; org?: { isActive: boolean; slug?: string | undefined; } | null | undefined; }' is not assignable to parameter of type 'MembershipRecord'.
+  Types of property 'org' are incompatible.
+    Type '{ isActive: boolean; slug?: string | undefined; } | null | undefined' is not assignable to type '{ planTier?: string | null | undefined; subscriptionStatus?: string | null | undefined; } | null | undefined'.
+      Type '{ isActive: boolean; slug?: string | undefined; }' has no properties in common with type '{ planTier?: string | null | undefined; subscriptionStatus?: string | null | undefined; }'.
+src/modules/auth/auth.service.ts(632,38): error TS2345: Argument of type '{ orgId: string; org?: { isActive: boolean; slug?: string | undefined; } | null | undefined; }' is not assignable to parameter of type 'MembershipRecord'.
+  Types of property 'org' are incompatible.
+    Type '{ isActive: boolean; slug?: string | undefined; } | null | undefined' is not assignable to type '{ planTier?: string | null | undefined; subscriptionStatus?: string | null | undefined; } | null | undefined'.
+      Type '{ isActive: boolean; slug?: string | undefined; }' has no properties in common with type '{ planTier?: string | null | undefined; subscriptionStatus?: string | null | undefined; }'.
+src/modules/crawl/crawl-cleanup-outbox.service.ts(103,32): error TS2339: Property 'mongoOutbox' does not exist on type 'TransactionClient'.
+src/modules/crawl/crawl-cleanup-outbox.service.ts(125,17): error TS2339: Property 'mongoOutbox' does not exist on type 'TransactionClient'.
+src/modules/crawl/crawl-execution.service.ts(1742,33): error TS2339: Property 'newsSource' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/crawl/crawl-execution.service.ts(1795,16): error TS2339: Property 'newsSource' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/crawl/crawl-result.service.ts(161,54): error TS7006: Parameter 'r' implicitly has an 'any' type.
+src/modules/crawl/crawl-result.service.ts(230,54): error TS7006: Parameter 'r' implicitly has an 'any' type.
+src/modules/crawl/crawl-result.service.ts(266,29): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/crawl/crawl-result.service.ts(319,29): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/crawl/crawl-result.service.ts(333,50): error TS7006: Parameter 'r' implicitly has an 'any' type.
+src/modules/crawl/crawl-task.service.ts(201,41): error TS7006: Parameter 'result' implicitly has an 'any' type.
+src/modules/crawl/crawl-task.service.ts(204,16): error TS2339: Property 'crawlResult' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/crawl/crawl-task.service.ts(205,16): error TS2339: Property 'crawlTask' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/crawl/crawl-task.service.ts(206,16): error TS2339: Property 'mongoOutbox' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/crawl/crawl-task.service.ts(268,25): error TS7006: Parameter 'task' implicitly has an 'any' type.
+src/modules/crawl/crawl-task.service.ts(315,57): error TS7006: Parameter 'meta' implicitly has an 'any' type.
+src/modules/crawl/crawl-task.service.ts(320,31): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/crawl/crawl-task.service.ts(321,35): error TS2339: Property 'status' does not exist on type '{}'.
+src/modules/crawl/crawl-task.service.ts(466,35): error TS7006: Parameter 'result' implicitly has an 'any' type.
+src/modules/crawl/crawl-task.service.ts(477,47): error TS7006: Parameter 'meta' implicitly has an 'any' type.
+src/modules/crawl/crawl-task.service.ts(678,35): error TS7006: Parameter 'link' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(109,17): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(110,17): error TS7006: Parameter 'metadata' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(111,20): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(118,35): error TS2322: Type 'unknown[]' is not assignable to type 'string[]'.
+  Type 'unknown' is not assignable to type 'string'.
+src/modules/crawl/news-source.service.ts(130,51): error TS7006: Parameter 'task' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(132,46): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(165,43): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(199,8): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(216,44): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(255,25): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/crawl/news-source.service.ts(746,69): error TS18046: 'error' is of type 'unknown'.
+src/modules/crawl/news-source.service.ts(750,25): error TS18046: 'error' is of type 'unknown'.
+src/modules/dashboard/dashboard-charts.service.ts(717,29): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type 'Record<AlertSeverity, number>'.
+src/modules/dashboard/dashboard-charts.service.ts(1104,17): error TS7006: Parameter 'record' implicitly has an 'any' type.
+src/modules/dashboard/dashboard-charts.service.ts(1105,20): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/modules/dashboard/dashboard-charts.service.ts(2609,26): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/modules/dashboard/dashboard-charts.service.ts(2863,49): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/dashboard/dashboard-charts.service.ts(2863,84): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/modules/dashboard/dashboard-charts.service.ts(2863,87): error TS7006: Parameter 'b' implicitly has an 'any' type.
+src/modules/dashboard/dashboard-charts.service.ts(2869,21): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/modules/dashboard/dashboard-charts.service.ts(2898,28): error TS7053: Element implicitly has an 'any' type because expression of type '"open" | "close" | "high" | "low"' can't be used to index type 'Partial<Record<"open" | "close" | "high" | "low", number>> | {}'.
+  Property 'open' does not exist on type 'Partial<Record<"open" | "close" | "high" | "low", number>> | {}'.
+src/modules/dashboard/dashboard-charts.service.ts(2900,9): error TS7053: Element implicitly has an 'any' type because expression of type '"open" | "close" | "high" | "low"' can't be used to index type '{ timestamp: Date; open?: number | undefined; high?: number | undefined; low?: number | undefined; close?: number | undefined; ranks: Partial<Record<"open" | "close" | "high" | "low", number>>; } | { ...; }'.
+  Property 'open' does not exist on type '{ timestamp: Date; open?: number | undefined; high?: number | undefined; low?: number | undefined; close?: number | undefined; ranks: Partial<Record<"open" | "close" | "high" | "low", number>>; } | { ...; }'.
+src/modules/dashboard/dashboard-charts.service.ts(2901,9): error TS7053: Element implicitly has an 'any' type because expression of type '"open" | "close" | "high" | "low"' can't be used to index type 'Partial<Record<"open" | "close" | "high" | "low", number>> | {}'.
+  Property 'open' does not exist on type 'Partial<Record<"open" | "close" | "high" | "low", number>> | {}'.
+src/modules/dashboard/dashboard.service.ts(65,35): error TS2339: Property 'dashboard' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/dashboard/dashboard.service.ts(75,39): error TS2339: Property 'dashboard' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/dashboard/dashboard.service.ts(90,28): error TS2339: Property 'dashboard' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/dashboard/dashboard.service.ts(96,29): error TS2339: Property 'dashboard' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/dashboard/dashboard.service.ts(123,17): error TS2339: Property 'dashboardWidget' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/dashboard/dashboard.service.ts(162,18): error TS2339: Property 'dashboardWidget' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/dashboard/dashboard.service.ts(172,18): error TS2339: Property 'dashboardWidget' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/items/items.service.ts(193,35): error TS2339: Property 'itemMeta' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/items/items.service.ts(209,18): error TS2339: Property 'itemMeta' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/items/items.service.ts(238,68): error TS18046: 'error' is of type 'unknown'.
+src/modules/items/items.service.ts(421,35): error TS2339: Property 'itemMeta' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/items/items.service.ts(437,18): error TS2339: Property 'itemMeta' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/items/items.service.ts(479,68): error TS18046: 'error' is of type 'unknown'.
+src/modules/items/items.service.ts(884,36): error TS2339: Property 'itemMeta' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/items/items.service.ts(900,18): error TS2339: Property 'itemMeta' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/items/items.service.ts(1757,22): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/modules/items/items.service.ts(1758,27): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/modules/items/items.service.ts(1759,34): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/modules/items/items.service.ts(1760,24): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/modules/items/items.service.ts(1855,24): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/items/items.service.ts(1866,23): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/modules/items/items.service.ts(1920,24): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/items/items.service.ts(1935,24): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph-impact.service.ts(153,52): error TS7006: Parameter 'company' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph-impact.service.ts(161,33): error TS2339: Property 'type' does not exist on type '{}'.
+src/modules/knowledge-graph/knowledge-graph-impact.service.ts(161,81): error TS2339: Property 'id' does not exist on type '{}'.
+src/modules/knowledge-graph/knowledge-graph-impact.service.ts(271,52): error TS7006: Parameter 'company' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph-impact.service.ts(278,33): error TS2339: Property 'type' does not exist on type '{}'.
+src/modules/knowledge-graph/knowledge-graph-impact.service.ts(382,52): error TS7006: Parameter 'company' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph-impact.service.ts(389,33): error TS2339: Property 'type' does not exist on type '{}'.
+src/modules/knowledge-graph/knowledge-graph-impact.service.ts(503,40): error TS7006: Parameter 'entity' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph-impact.service.ts(533,51): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph.service.ts(208,65): error TS7006: Parameter 'candidate' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph.service.ts(215,44): error TS7006: Parameter 'candidate' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph.service.ts(250,31): error TS2339: Property 'articleEntityLink' does not exist on type 'TransactionClient'.
+src/modules/knowledge-graph/knowledge-graph.service.ts(399,13): error TS7006: Parameter 'candidate' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph.service.ts(403,16): error TS7006: Parameter 'candidate' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph.service.ts(428,20): error TS7006: Parameter 'left' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph.service.ts(428,26): error TS7006: Parameter 'right' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph.service.ts(455,26): error TS7006: Parameter 'candidate' implicitly has an 'any' type.
+src/modules/knowledge-graph/knowledge-graph.service.ts(785,29): error TS2339: Property 'knowledgeEntity' does not exist on type 'TransactionClient'.
+src/modules/knowledge-graph/knowledge-graph.service.ts(825,16): error TS2339: Property 'knowledgeEntityAlias' does not exist on type 'TransactionClient'.
+src/modules/knowledge-graph/knowledge-graph.service.ts(868,31): error TS2339: Property 'knowledgeEdge' does not exist on type 'TransactionClient'.
+src/modules/knowledge-graph/knowledge-graph.service.ts(874,17): error TS2339: Property 'knowledgeEdge' does not exist on type 'TransactionClient'.
+src/modules/knowledge-graph/knowledge-graph.service.ts(897,15): error TS2339: Property 'knowledgeEdge' does not exist on type 'TransactionClient'.
+src/modules/knowledge-graph/knowledge-graph.service.ts(935,31): error TS2339: Property 'knowledgeEdgeEvidence' does not exist on type 'TransactionClient'.
+src/modules/knowledge-graph/knowledge-graph.service.ts(953,16): error TS2339: Property 'knowledgeEdgeEvidence' does not exist on type 'TransactionClient'.
+src/modules/knowledge-graph/knowledge-graph.service.ts(966,14): error TS2339: Property 'knowledgeEdgeEvidence' does not exist on type 'TransactionClient'.
+src/modules/news-events/news-events-timeline.service.ts(149,22): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/news-events/news-events.service.ts(124,18): error TS2339: Property 'newsEventItem' does not exist on type 'TransactionClient'.
+src/modules/news-events/news-events.service.ts(142,34): error TS2339: Property 'newsEvent' does not exist on type 'TransactionClient'.
+src/modules/news-events/news-events.service.ts(150,18): error TS2339: Property 'newsEvent' does not exist on type 'TransactionClient'.
+src/modules/news-events/news-events.service.ts(192,17): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/news-events/news-events.service.ts(199,20): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/news-events/news-events.service.ts(222,50): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/modules/news-events/news-events.service.ts(230,90): error TS2339: Property 'language' does not exist on type '{}'.
+src/modules/news-events/news-events.service.ts(328,15): error TS2339: Property 'newsEvent' does not exist on type 'TransactionClient'.
+src/modules/news-events/news-events.service.ts(429,69): error TS18046: 'error' is of type 'unknown'.
+src/modules/news-events/news-events.service.ts(457,21): error TS2365: Operator '<' cannot be applied to types '<T = unknown>(query: any, ...values: any[]) => $Public.PrismaPromise<T>' and '{ eventId: string; itemsLast1h: bigint; itemsLast4h: bigint; uniqueSourcesLast4h: bigint; lastAt: Date; }[]'.
+src/modules/news-events/news-events.service.ts(465,6): error TS2345: Argument of type 'TemplateStringsArray' is not assignable to parameter of type '{ eventId: string; itemsLast1h: bigint; itemsLast4h: bigint; uniqueSourcesLast4h: bigint; lastAt: Date; }'.
+  Type 'TemplateStringsArray' is missing the following properties from type '{ eventId: string; itemsLast1h: bigint; itemsLast4h: bigint; uniqueSourcesLast4h: bigint; lastAt: Date; }': eventId, itemsLast1h, itemsLast4h, uniqueSourcesLast4h, lastAt
+src/modules/news-events/news-events.service.ts(487,23): error TS2488: Type 'boolean' must have a '[Symbol.iterator]()' method that returns an iterator.
+src/modules/news-indicator/news-indicator-association.service.ts(166,59): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/modules/news-indicator/news-indicator-association.service.ts(345,13): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/news-indicator/news-indicator-association.service.ts(349,16): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/news-indicator/news-indicator-association.service.ts(367,13): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/news-indicator/news-indicator-association.service.ts(368,16): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/news-pipeline/news-pipeline.service.ts(1579,37): error TS2339: Property 'processedArticle' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(1587,22): error TS2339: Property 'pipelineJob' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(1596,22): error TS2339: Property 'article' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(1605,20): error TS2339: Property 'mongoOutbox' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(1786,38): error TS2339: Property 'article' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(1810,18): error TS2339: Property 'article' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(1817,18): error TS2339: Property 'pipelineJob' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(1826,16): error TS2339: Property 'processedArticle' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(1912,31): error TS2339: Property 'newsSource' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(2070,32): error TS2339: Property 'mongoOutbox' does not exist on type 'TransactionClient'.
+src/modules/news-pipeline/news-pipeline.service.ts(2092,17): error TS2339: Property 'mongoOutbox' does not exist on type 'TransactionClient'.
+src/modules/notifications/notifications.service.ts(50,25): error TS7006: Parameter 'record' implicitly has an 'any' type.
+src/modules/observability/news-source-quality.service.ts(57,13): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/observability/news-source-quality.service.ts(58,16): error TS7006: Parameter 'sourceId' implicitly has an 'any' type.
+src/modules/observability/news-source-quality.service.ts(76,22): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/observability/news-source-quality.service.ts(79,13): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/observability/news-source-quality.service.ts(100,10): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/observability/pipeline-quality.service.ts(268,42): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/observability/pipeline-quality.service.ts(274,35): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/modules/org/org.service.ts(111,37): error TS2339: Property 'org' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/org/org.service.ts(120,41): error TS2339: Property 'permission' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/org/org.service.ts(121,62): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/org/org.service.ts(122,54): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/modules/org/org.service.ts(126,33): error TS2339: Property 'role' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/org/org.service.ts(151,22): error TS2339: Property 'rolePermission' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/org/org.service.ts(152,40): error TS7006: Parameter 'permissionId' implicitly has an 'any' type.
+src/modules/org/org.service.ts(160,36): error TS2339: Property 'role' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/org/org.service.ts(164,37): error TS2339: Property 'membership' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/org/org.service.ts(172,18): error TS2339: Property 'membershipRole' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(285,42): error TS2339: Property 'pipelineJob' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(307,43): error TS2339: Property 'crawlTask' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(318,44): error TS2339: Property 'crawlTask' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(332,44): error TS2339: Property 'crawlTask' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(348,22): error TS2339: Property 'pipelineJob' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(450,56): error TS7006: Parameter 'task' implicitly has an 'any' type.
+src/modules/queue/news-source.scheduler.service.ts(452,7): error TS2345: Argument of type 'Set<unknown>' is not assignable to parameter of type 'Set<string>'.
+  Type 'unknown' is not assignable to type 'string'.
+src/modules/queue/news-source.scheduler.service.ts(1044,33): error TS7006: Parameter 'record' implicitly has an 'any' type.
+src/modules/queue/news-source.scheduler.service.ts(1060,33): error TS7006: Parameter 'record' implicitly has an 'any' type.
+src/modules/queue/news-source.scheduler.service.ts(1086,47): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/queue/news-source.scheduler.service.ts(1094,35): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/queue/news-source.scheduler.service.ts(1105,35): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/modules/queue/news-source.scheduler.service.ts(1385,42): error TS2339: Property 'pipelineJob' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(1406,43): error TS2339: Property 'crawlTask' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(1417,44): error TS2339: Property 'crawlTask' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(1431,44): error TS2339: Property 'crawlTask' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/news-source.scheduler.service.ts(1447,22): error TS2339: Property 'pipelineJob' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/queue.processor.ts(516,33): error TS2339: Property 'newsSource' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/queue/queue.processor.ts(569,16): error TS2339: Property 'newsSource' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/audit-log-retention.service.ts(50,46): error TS7031: Binding element 'id' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(44,42): error TS7006: Parameter 'link' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(49,22): error TS7006: Parameter 'role' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(49,53): error TS7006: Parameter 'rp' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(86,36): error TS2339: Property 'permission' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(93,9): error TS2345: Argument of type 'Set<unknown>' is not assignable to parameter of type 'Set<string>'.
+  Type 'unknown' is not assignable to type 'string'.
+src/modules/rbac/rbac.service.ts(94,26): error TS7006: Parameter 'permission' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(97,29): error TS2339: Property 'role' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(106,16): error TS2339: Property 'rolePermission' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(107,32): error TS7006: Parameter 'permission' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(113,17): error TS2339: Property 'role' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(140,7): error TS2345: Argument of type 'Set<unknown>' is not assignable to parameter of type 'Set<string>'.
+  Type 'unknown' is not assignable to type 'string'.
+src/modules/rbac/rbac.service.ts(141,29): error TS7006: Parameter 'permission' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(145,43): error TS2339: Property 'membership' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(155,35): error TS2339: Property 'membership' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(172,16): error TS2339: Property 'membershipRole' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(179,17): error TS2339: Property 'membership' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(254,7): error TS2345: Argument of type 'Set<unknown>' is not assignable to parameter of type 'Set<string>'.
+  Type 'unknown' is not assignable to type 'string'.
+src/modules/rbac/rbac.service.ts(255,37): error TS7006: Parameter 'permission' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(265,7): error TS2345: Argument of type 'Set<unknown>' is not assignable to parameter of type 'Set<string>'.
+  Type 'unknown' is not assignable to type 'string'.
+src/modules/rbac/rbac.service.ts(266,24): error TS7006: Parameter 'permission' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(270,16): error TS2339: Property 'rolePermission' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(272,18): error TS2339: Property 'rolePermission' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/rbac/rbac.service.ts(273,34): error TS7006: Parameter 'permission' implicitly has an 'any' type.
+src/modules/rbac/rbac.service.ts(280,17): error TS2339: Property 'role' does not exist on type 'Omit<PrismaClient<PrismaClientOptions, never, $Extensions.DefaultArgs>, runtime.ITXClientDenyList>'.
+src/modules/sentiment/sentiment-snapshot.ingestion.service.ts(70,14): error TS2339: Property 'entitySentimentSnapshot' does not exist on type 'TransactionClient'.
+src/modules/sentiment/sentiment-snapshot.ingestion.service.ts(71,14): error TS2339: Property 'topicSentimentSnapshot' does not exist on type 'TransactionClient'.
+src/modules/sentiment/sentiment-snapshot.ingestion.service.ts(75,20): error TS2339: Property 'entitySentimentSnapshot' does not exist on type 'TransactionClient'.
+src/modules/sentiment/sentiment-snapshot.ingestion.service.ts(93,20): error TS2339: Property 'topicSentimentSnapshot' does not exist on type 'TransactionClient'.
+src/modules/storage/storage-settings.service.ts(220,44): error TS7006: Parameter 'record' implicitly has an 'any' type.
+src/modules/storage/storage-settings.service.ts(230,5): error TS2322: Type 'Map<unknown, unknown>' is not assignable to type 'Map<string, unknown>'.
+  Type 'unknown' is not assignable to type 'string'.
+src/modules/system-settings/rate-limit-config.service.ts(146,44): error TS7006: Parameter 'record' implicitly has an 'any' type.
+src/modules/system-settings/rate-limit-policy.service.ts(51,27): error TS7006: Parameter 'record' implicitly has an 'any' type.
+src/modules/system-settings/rate-limit-policy.service.ts(349,8): error TS18046: 'error' is of type 'unknown'.
+src/modules/system-settings/rate-limit-policy.service.ts(349,34): error TS18046: 'error' is of type 'unknown'.
+src/modules/user-digest/user-digest.service.ts(183,52): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/modules/user-digest/user-digest.service.ts(231,42): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/modules/user-digest/user-digest.service.ts(237,15): error TS2322: Type 'unknown[]' is not assignable to type 'string[]'.
+  Type 'unknown' is not assignable to type 'string'.
+src/modules/user-digest/user-digest.service.ts(367,16): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/modules/user-digest/user-digest.service.ts(367,19): error TS7006: Parameter 'b' implicitly has an 'any' type.
+src/modules/user-digest/user-digest.service.ts(370,26): error TS7006: Parameter 'row' implicitly has an 'any' type.
+ ELIFECYCLE  Command failed with exit code 2.

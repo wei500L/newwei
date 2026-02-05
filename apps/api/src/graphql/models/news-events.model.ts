@@ -156,5 +156,11 @@ export class NewsEventModel {
 
   @Field(() => [NewsEventTimelineEntryModel], { nullable: true })
   timeline?: NewsEventTimelineEntryModel[];
+
+  @Field(() => Boolean, { description: "Whether this event is considered breaking news" })
+  breaking!: boolean;
+
+  @Field(() => Float, { description: "Heat score indicating event urgency (0-10+)" })
+  heatScore!: number;
 }
 

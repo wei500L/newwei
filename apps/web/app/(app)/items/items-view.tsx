@@ -356,6 +356,7 @@ const ITEMS_QUERY = gql`
             qualityScore
             location
             createdAt
+            eventId
             llm {
               model
               promptVersion
@@ -487,6 +488,7 @@ interface ParsedItem {
   };
   url?: string;
   history?: { timestamp: string; value: number }[];
+  eventId?: string | null;
 }
 
 export function ItemsView({
@@ -922,7 +924,8 @@ export function ItemsView({
         duplicateOf: processed?.duplicateOf ?? null,
         llm: processed?.llm ?? undefined,
         url: url ?? undefined,
-        location
+        location,
+        eventId: processed?.eventId ?? null
       } as ParsedItem;
     });
   }, [edges]);

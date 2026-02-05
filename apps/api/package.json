@@ -5,17 +5,17 @@
   "main": "dist/main.js",
   "types": "dist/main.d.ts",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true node --watch -r ts-node/register -r tsconfig-paths/register src/main.ts",
+    "dev": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true NODE_PATH=./node_modules node --watch -r ts-node/register -r tsconfig-paths/register src/main.ts",
     "build": "rimraf dist && tsc -p tsconfig.build.json && pnpm run copy:email-templates",
-    "start": "node dist/main.js",
+    "start": "cross-env NODE_PATH=./node_modules node dist/main.js",
     "lint": "eslint src test --ext .ts",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
-    "test": "jest",
-    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand --detectOpenHandles",
-    "generate:schema": "node -r ts-node/register/transpile-only -r tsconfig-paths/register ./scripts/generate-graphql-schema.ts",
+    "test": "cross-env NODE_PATH=./node_modules jest",
+    "test:e2e": "cross-env NODE_PATH=./node_modules jest --config ./test/jest-e2e.json --runInBand --detectOpenHandles",
+    "generate:schema": "cross-env NODE_PATH=./node_modules node -r ts-node/register/transpile-only -r tsconfig-paths/register ./scripts/generate-graphql-schema.ts",
     "copy:email-templates": "node ./scripts/copy-email-templates.js",
-    "crawl:encrypt-configs": "tsx ./scripts/encrypt-crawl-task-configs.ts",
-    "vector:backfill": "tsx ./scripts/backfill-vector-index.ts"
+    "crawl:encrypt-configs": "cross-env NODE_PATH=./node_modules tsx ./scripts/encrypt-crawl-task-configs.ts",
+    "vector:backfill": "cross-env NODE_PATH=./node_modules tsx ./scripts/backfill-vector-index.ts"
   },
   "dependencies": {
     "@apollo/server": "^4.11.1",

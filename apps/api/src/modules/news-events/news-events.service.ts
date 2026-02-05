@@ -436,4 +436,93 @@ export class NewsEventsService {
   private maxDate(a: Date, b: Date) {
     return a.getTime() >= b.getTime() ? a : b;
   }
+
+  /**
+   * Calculate heat map for a batch of events.
+   * Returns breaking flag and heat score for each event.
+   */
+  async getEventHeatMap(
+    orgId: string,
+    eventIds: string[]
+  ): Promise<Map<string, { breaking: boolean; heatScore: number }>> {
+    if (eventIds.length === 0) {
+      return new Map();
+    }
+
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+
+    // Aggregate metrics for all events in one query
+    const metrics = await this.prisma.$queryRaw<
+      Array<{
+        eventId: string;
+        itemsLast1h: bigint;
+        itemsLast4h: bigint;
+        uniqueSourcesLast4h: bigint;
+        lastAt: Date;
+      }
+    >`
+      SELECT
+        nei."eventId",
+        COUNT(CASE WHEN nei."createdAt" >= ${oneHourAgo} THEN 1 END) as "itemsLast1h",
+        COUNT(CASE WHEN nei."createdAt" >= ${fourHoursAgo} THEN 1 END) as "itemsLast4h",
+        COUNT(
+          DISTINCT CASE
+            WHEN nei."createdAt" >= ${fourHoursAgo} THEN a."sourceId"
+          END
+        ) as "uniqueSourcesLast4h",
+        MAX(ne."lastAt") as "lastAt"
+      FROM "NewsEventItem" nei
+      INNER JOIN "ProcessedArticle" pa ON pa.id = nei."processedArticleId"
+      INNER JOIN "Article" a ON a.id = pa."articleId"
+      INNER JOIN "NewsEvent" ne ON ne.id = nei."eventId"
+      WHERE nei."orgId" = ${orgId}
+        AND nei."eventId" IN (${Prisma.join(eventIds)})
+      GROUP BY nei."eventId"
+    `;
+
+    const result = new Map<string, { breaking: boolean; heatScore: number }>();
+
+    for (const row of metrics) {
+      const itemsLast1h = Number(row.itemsLast1h);
+      const itemsLast4h = Number(row.itemsLast4h);
+      const uniqueSourcesLast4h = Number(row.uniqueSourcesLast4h);
+      const lastAt = row.lastAt;
+
+      // Calculate recency (hours since last update)
+      const recencyHours = (now.getTime() - lastAt.getTime()) / (60 * 60 * 1000);
+      const recency = Math.exp(-recencyHours / 6); // 6-hour half-life
+
+      // Calculate heat score
+      // Formula: recency * (log1p(n) + 1.5*log1p(v) + 0.75*log1p(d))
+      const n = itemsLast4h;
+      const v = itemsLast1h;
+      const d = uniqueSourcesLast4h;
+
+      const heatScore =
+        recency * (Math.log1p(n) + 1.5 * Math.log1p(v) + 0.75 * Math.log1p(d));
+
+      // Breaking criteria:
+      // - Recent (within 4 hours)
+      // - Fast growth + diversity OR high volume + diversity OR high heat score
+      const isRecent = recencyHours <= 4;
+      const hasFastGrowth = v >= 2 && d >= 2;
+      const hasHighVolume = n >= 5 && d >= 3;
+      const hasHighHeat = heatScore >= 1.6;
+
+      const breaking = isRecent && (hasFastGrowth || hasHighVolume || hasHighHeat);
+
+      result.set(row.eventId, { breaking, heatScore: Math.round(heatScore * 100) / 100 });
+    }
+
+    // Fill in defaults for events without metrics
+    for (const eventId of eventIds) {
+      if (!result.has(eventId)) {
+        result.set(eventId, { breaking: false, heatScore: 0 });
+      }
+    }
+
+    return result;
+  }
 }

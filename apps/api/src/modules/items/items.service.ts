@@ -779,6 +779,75 @@ export class ItemsService {
     };
   }
 
+  /**
+   * Search suggestions for auto-complete.
+   * Returns matching topics, regions, sources, and sentiments based on prefix.
+   */
+  async searchSuggestions(
+    orgId: string,
+    prefix: string,
+    limit = 10
+  ): Promise<Array<{ type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string }>> {
+    const normalizedPrefix = prefix.trim().toLowerCase();
+    if (!normalizedPrefix) {
+      return [];
+    }
+
+    const clampedLimit = Math.min(Math.max(limit, 1), 25);
+
+    // Use cache to avoid repeated facet scans
+    const cacheKey = `items:search-suggestions:${orgId}:${normalizedPrefix}:${clampedLimit}`;
+
+    return this.cache.wrap(
+      cacheKey,
+      60, // 60 seconds TTL
+      async () => {
+        // Get facets (scan recent items)
+        const facets = await this.getFacets(orgId);
+
+        const suggestions: Array<{ type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string; count: number }> =
+          [];
+
+        // Add matching topics
+        for (const topic of facets.topics) {
+          if (topic.value.toLowerCase().startsWith(normalizedPrefix)) {
+            suggestions.push({ type: "TOPIC", value: topic.value, count: topic.count });
+          }
+        }
+
+        // Add matching regions
+        for (const region of facets.regions) {
+          if (region.value.toLowerCase().startsWith(normalizedPrefix)) {
+            suggestions.push({ type: "REGION", value: region.value, count: region.count });
+          }
+        }
+
+        // Add matching sentiments (predefined set)
+        const sentiments = ["positive", "neutral", "negative"];
+        for (const sentiment of sentiments) {
+          if (sentiment.startsWith(normalizedPrefix)) {
+            const facetMatch = facets.sentiments.find((s) => s.value.toLowerCase() === sentiment);
+            suggestions.push({ type: "SENTIMENT", value: sentiment, count: facetMatch?.count ?? 0 });
+          }
+        }
+
+        // Sort by count desc, then value asc for stable ordering
+        suggestions.sort((a, b) => {
+          if (b.count !== a.count) return b.count - a.count;
+          return a.value.localeCompare(b.value);
+        });
+
+        // Return limited results without count
+        return suggestions.slice(0, clampedLimit).map(({ type, value }) => ({ type, value }));
+      },
+      {
+        lockTtlMs: 5_000,
+        retryDelayMs: 50,
+        maxWaitMs: 2_000
+      }
+    );
+  }
+
   async get(orgId: string, id: string) {
     const itemMeta = await this.prisma.itemMeta.findFirst({
       where: { id, orgId }

@@ -1,7 +1,7 @@
 "use client";
 
 import { gql, useQuery } from "@apollo/client";
-import { Button, Card, Drawer, Empty, Grid, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, Empty, Grid, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
 
-import { EventDetailsDrawer } from "./event-details-drawer";
+// Event details now use dedicated page at /events/[id]
 
 export interface NewsEventListItem {
   id: string;
@@ -93,7 +93,8 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  // Note: Event details are now displayed on dedicated page /events/[id]
+  // Drawer removed to enable URL sharing and proper back button behavior
 
   const windowDays = useMemo(
     () => parsePositiveInt(searchParams.get("window"), DEFAULT_WINDOW_DAYS),
@@ -163,7 +164,8 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
     });
   }, [resolvedData?.newsEvents]);
 
-  const drawerWidth = screens.lg ? 860 : undefined;
+  // Responsive breakpoints for layout
+  const isLargeScreen = screens.lg;
 
   const windowOptions = useMemo(
     () =>
@@ -322,7 +324,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                       <Button key="open" type="link" onClick={() => router.push(`/events/${event.id}`)}>
                         {t("pages.events.actions.open", { defaultValue: "Open" })}
                       </Button>,
-                      <Button key="brief" type="link" onClick={() => setSelectedEventId(event.id)}>
+                      <Button key="brief" type="link" onClick={() => router.push(`/events/${event.id}?tab=brief`)}>
                         {t("pages.events.actions.brief", { defaultValue: "Brief" })}
                       </Button>
                     ]}
@@ -371,15 +373,6 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
         </div>
       </Card>
 
-      <Drawer
-        open={selectedEventId !== null}
-        width={drawerWidth}
-        destroyOnHidden
-        onClose={() => setSelectedEventId(null)}
-        title={t("pages.events.drawer.title", { defaultValue: "Event details" })}
-      >
-        {selectedEventId ? <EventDetailsDrawer eventId={selectedEventId} /> : null}
-      </Drawer>
     </div>
   );
 }

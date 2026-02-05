@@ -46,6 +46,7 @@ import {
   ProcessedItemPreviewModelGraph,
   ItemFacets
 } from "../models/item.model";
+import { SearchSuggestionModel } from "../models/search-suggestion.model";
 import { PageInfo } from "../models/page-info.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
 
@@ -339,6 +340,25 @@ export class ItemsResolver {
     }
 
     return this.itemsService.getFacets(requester.orgId, args.search, args.filters);
+  }
+
+  @HasPermission("items.read")
+  @Query(() => [SearchSuggestionModel])
+  async searchSuggestions(
+    @Context("req") req: GqlRequest,
+    @Args("prefix") prefix: string,
+    @Args("limit", { nullable: true, type: () => Number }) limit?: number
+  ): Promise<SearchSuggestionModel[]> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+
+    const results = await this.itemsService.searchSuggestions(requester.orgId, prefix, limit);
+    return results.map((r) => ({
+      type: r.type,
+      value: r.value
+    }));
   }
 
   @HasPermission("items.read")

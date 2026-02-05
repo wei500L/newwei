@@ -2,7 +2,8 @@
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Divider, Drawer, Empty, List, Skeleton, Space, Tag, Tabs, Tooltip, Typography } from "antd";
+import { Alert, Breadcrumb, Button, Card, Divider, Drawer, Empty, List, Skeleton, Space, Tag, Tabs, Tooltip, Typography } from "antd";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -409,6 +410,20 @@ export function EventDetail({ eventId }: { eventId: string }) {
   return (
     <div className="flex flex-col gap-4">
       <Space direction="vertical" size={2}>
+        {/* Breadcrumb Navigation */}
+        <Breadcrumb
+          items={[
+            {
+              title: (
+                <Link href="/events">
+                  {t("pages.events.title", { defaultValue: "News Events" })}
+                </Link>
+              )
+            },
+            { title: title }
+          ]}
+        />
+
         <Space align="center" wrap size={[8, 6]}>
           <Button icon={<ArrowLeftOutlined />} type="link" onClick={() => router.push("/events")}>
             {t("common.back", { defaultValue: "Back" })}

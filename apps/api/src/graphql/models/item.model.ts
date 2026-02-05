@@ -144,6 +144,9 @@ export class ProcessedItemModelGraph {
 
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
+
+  @Field(() => String, { nullable: true, description: "Associated news event ID" })
+  eventId?: string | null;
 }
 
 @ObjectType()
@@ -195,6 +198,9 @@ export class ProcessedItemPreviewModelGraph {
 
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
+
+  @Field(() => String, { nullable: true, description: "Associated news event ID" })
+  eventId?: string | null;
 }
 
 @ObjectType()
