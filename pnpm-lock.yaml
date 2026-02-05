@@ -167,6 +167,9 @@ importers:
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
+      express:
+        specifier: ^4.19.2
+        version: 4.21.2
       fast-xml-parser:
         specifier: ^4.4.0
         version: 4.5.3
@@ -241,7 +244,7 @@ importers:
         version: 4.8.1
       swagger-ui-express:
         specifier: ^5.0.0
-        version: 5.0.1(express@5.2.1)
+        version: 5.0.1(express@4.21.2)
       winston:
         specifier: ^3.13.0
         version: 3.18.3
@@ -18473,9 +18476,9 @@ snapshots:
     dependencies:
       '@scarf/scarf': 1.4.0
 
-  swagger-ui-express@5.0.1(express@5.2.1):
+  swagger-ui-express@5.0.1(express@4.21.2):
     dependencies:
-      express: 5.2.1
+      express: 4.21.2
       swagger-ui-dist: 5.30.2
 
   swap-case@2.0.2:

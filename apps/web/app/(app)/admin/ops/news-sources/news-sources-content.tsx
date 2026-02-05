@@ -1,6 +1,5 @@
 "use client";
 
-import axios from "axios";
 import { sanitizeCrawlOptions } from "@modular/utils";
 import {
   Alert,
@@ -29,6 +28,7 @@ import {
   message
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import axios from "axios";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
@@ -266,12 +266,9 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item
 
   await Promise.all(
     Array.from({ length: resolvedLimit }).map(async () => {
-      while (true) {
+      while (nextIndex < items.length) {
         const index = nextIndex;
         nextIndex += 1;
-        if (index >= items.length) {
-          return;
-        }
         results[index] = await worker(items[index] as T);
       }
     })
@@ -415,9 +412,6 @@ const hasSeedConfig = (
   return isPlainObject((config as Record<string, unknown>).seed);
 };
 
-const isSeedEnabled = (config: unknown) =>
-  hasSeedConfig(config) ? config.seed.enabled === true : false;
-
 const getSeedMode = (config: unknown): "sitemap" | "rss" | "list" | null => {
   if (!hasSeedConfig(config) || config.seed.enabled !== true) {
     return null;
@@ -526,7 +520,6 @@ export function NewsSourcesContent() {
   const [liveUpdatesEnabled, setLiveUpdatesEnabled] = useState(true);
   const [liveStatus, setLiveStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected");
   const [liveError, setLiveError] = useState<string | null>(null);
-  const [liveLastEventAt, setLiveLastEventAt] = useState<string | null>(null);
   const [liveLastEvent, setLiveLastEvent] = useState<OpsLiveEvent | null>(null);
   const [liveEventCount, setLiveEventCount] = useState(0);
   const [liveEventCountsBySource, setLiveEventCountsBySource] = useState<Record<LiveEventSource, number>>(() =>
@@ -735,7 +728,6 @@ export function NewsSourcesContent() {
   const resetLiveCounters = useCallback(() => {
     setLiveEventCount(0);
     setLiveEventCountsBySource(createEmptyLiveEventCounts());
-    setLiveLastEventAt(null);
     setLiveLastEvent(null);
   }, []);
 
@@ -788,7 +780,6 @@ export function NewsSourcesContent() {
       const timestamp = typeof record.timestamp === "string" ? record.timestamp : new Date().toISOString();
 
       setLiveLastEvent({ orgId, source, event, jobId, timestamp });
-      setLiveLastEventAt(timestamp);
       setLiveEventCount((prev) => prev + 1);
       setLiveEventCountsBySource((prev) => ({ ...prev, [source]: (prev[source] ?? 0) + 1 }));
 
@@ -2021,6 +2012,7 @@ export function NewsSourcesContent() {
       title: t("newsSources.columns.name", { defaultValue: "Name" }),
       dataIndex: "name",
       key: "name",
+      width: 320,
       render: (_, record) => (
         <Space direction="vertical" size={2}>
           <Space size={8} wrap>
@@ -2075,6 +2067,7 @@ export function NewsSourcesContent() {
       title: t("newsSources.columns.type", { defaultValue: "Type" }),
       dataIndex: "siteType",
       key: "siteType",
+      width: 110,
       render: (value: string) => {
         const label = siteTypeOptions.find((option) => option.value === value)?.label ?? value;
         return <Tag>{label}</Tag>;
@@ -2084,6 +2077,7 @@ export function NewsSourcesContent() {
       title: t("newsSources.columns.template", { defaultValue: "Template" }),
       dataIndex: "crawlTemplateId",
       key: "crawlTemplateId",
+      width: 160,
       render: (value?: string | null) => {
         if (!value) {
           return <Typography.Text type="secondary">-</Typography.Text>;
@@ -2102,17 +2096,20 @@ export function NewsSourcesContent() {
     {
       title: t("newsSources.columns.frequency", { defaultValue: "Frequency (s)" }),
       dataIndex: "frequencySeconds",
-      key: "frequencySeconds"
+      key: "frequencySeconds",
+      width: 120
     },
     {
       title: t("newsSources.columns.priority", { defaultValue: "Priority" }),
       dataIndex: "priority",
-      key: "priority"
+      key: "priority",
+      width: 90
     },
     {
       title: t("newsSources.columns.status", { defaultValue: "Status" }),
       dataIndex: "isActive",
       key: "isActive",
+      width: 170,
       render: (value: boolean, record) => {
         const failureCount = Number(record.consecutiveFailures ?? 0);
         const circuitOpenUntil = record.circuitOpenUntil ? new Date(record.circuitOpenUntil) : null;
@@ -2178,6 +2175,7 @@ export function NewsSourcesContent() {
       title: t("newsSources.columns.nextRun", { defaultValue: "Next run" }),
       dataIndex: "nextRunAt",
       key: "nextRunAt",
+      width: 190,
       render: (value: string | null | undefined, record) => {
         if (!value) {
           return t("common.never");
@@ -2239,6 +2237,7 @@ export function NewsSourcesContent() {
       title: t("newsSources.columns.lastRun", { defaultValue: "Last run" }),
       dataIndex: "lastRunAt",
       key: "lastRunAt",
+      width: 160,
       render: (value?: string | null) =>
         value ? formatDateTime(value, locale, { dateStyle: "medium", timeStyle: "short" }) : t("common.never")
     },
@@ -2246,6 +2245,7 @@ export function NewsSourcesContent() {
       title: t("newsSources.columns.lastSuccess", { defaultValue: "Last success" }),
       dataIndex: "lastSuccessAt",
       key: "lastSuccessAt",
+      width: 160,
       responsive: ["md"],
       render: (value?: string | null) =>
         value ? formatDateTime(value, locale, { dateStyle: "medium", timeStyle: "short" }) : t("common.never")
@@ -2253,6 +2253,7 @@ export function NewsSourcesContent() {
     {
       title: t("newsSources.columns.stats24h", { defaultValue: "24h" }),
       key: "stats24h",
+      width: 110,
       responsive: ["md"],
       render: (_: unknown, record) => {
         const completed = record.stats24h?.completed ?? 0;
@@ -2325,6 +2326,7 @@ export function NewsSourcesContent() {
     {
       title: t("newsSources.columns.latest", { defaultValue: "Latest" }),
       key: "latest",
+      width: 380,
       responsive: ["md"],
       render: (_: unknown, record) => {
         const job = record.latestJob ?? null;
@@ -2400,8 +2402,10 @@ export function NewsSourcesContent() {
     {
       title: t("common.actions"),
       key: "actions",
+      width: 340,
+      fixed: "right",
       render: (_, record) => (
-        <Space>
+        <Space wrap>
           <Button size="small" onClick={() => void handlePreview(record)}>
             {t("newsSources.actions.preview", { defaultValue: "Preview" })}
           </Button>
@@ -2758,8 +2762,10 @@ export function NewsSourcesContent() {
           <Table
             rowKey="id"
             loading={loading}
+            tableLayout="fixed"
             columns={columns}
             dataSource={filteredSources}
+            scroll={{ x: 2400 }}
             rowSelection={
               canManage
                 ? {
