@@ -24,7 +24,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -34,6 +34,7 @@ import {
   useUpdateCrawlTaskIngestToItemsMutation,
   type CrawlTaskStatus
 } from "@/graphql/generated";
+import { createApiClient } from "@/lib/api-client";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const statusColors: Record<CrawlTaskStatus, string> = {
@@ -52,6 +53,29 @@ const itemStatusColors: Record<string, string> = {
   completed: "green",
   failed: "red",
   duplicate: "purple"
+};
+
+type TaskLogStatus = "pending" | "processing" | "completed" | "failed";
+
+interface TaskLogRecord {
+  _id?: string;
+  queue: string;
+  jobId: string;
+  orgId: string;
+  stage: string;
+  status: TaskLogStatus;
+  message?: string | null;
+  data?: unknown;
+  error?: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const taskLogStatusColors: Record<TaskLogStatus, string> = {
+  pending: "gold",
+  processing: "blue",
+  completed: "green",
+  failed: "red"
 };
 
 const limitOptions = [
@@ -591,13 +615,24 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
+  const canViewTaskLogs = permissions.includes("settings.manage");
   const canCreateItem = canView && permissions.includes("items.write");
   const canViewItems = permissions.includes("items.read") || permissions.includes("items.write");
   const redactedLabel = t("common.redacted");
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
   const [resultSearchInput, setResultSearchInput] = useState("");
-  const { data, loading, refetch } = useCrawlTaskQuery({
+
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken: session?.accessToken }),
+    [session?.accessToken]
+  );
+  const taskLogsLoadingRef = useRef(false);
+  const [taskLogs, setTaskLogs] = useState<TaskLogRecord[]>([]);
+  const [taskLogsLoading, setTaskLogsLoading] = useState(false);
+  const [taskLogsError, setTaskLogsError] = useState<string | null>(null);
+
+  const { data, loading, refetch, startPolling, stopPolling } = useCrawlTaskQuery({
     variables: {
       id: taskId,
       resultLimit,
@@ -605,16 +640,91 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     },
     fetchPolicy: "network-only",
     skip: !canView
-	  });
+  });
 
-	  const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
-	  const [updateIngestToItems, { loading: updatingIngest }] = useUpdateCrawlTaskIngestToItemsMutation();
-	  const [ingestCrawlTaskResultsToItems, { loading: backfilling }] =
-	    useIngestCrawlTaskResultsToItemsMutation();
-	  const [ingestingResultId, setIngestingResultId] = useState<string | null>(null);
-	  const [createItemFromCrawlResult, { loading: ingesting }] = useMutation<{
-	    createItemFromCrawlResult: { id: string; title: string; status: string };
-	  }>(CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION);
+  const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
+  const [updateIngestToItems, { loading: updatingIngest }] =
+    useUpdateCrawlTaskIngestToItemsMutation();
+  const [ingestCrawlTaskResultsToItems, { loading: backfilling }] =
+    useIngestCrawlTaskResultsToItemsMutation();
+  const [ingestingResultId, setIngestingResultId] = useState<string | null>(null);
+  const [createItemFromCrawlResult, { loading: ingesting }] = useMutation<{
+    createItemFromCrawlResult: { id: string; title: string; status: string };
+  }>(CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION);
+
+  const loadTaskLogs = useCallback(async (options?: { silent?: boolean }) => {
+    if (!canViewTaskLogs) {
+      return;
+    }
+    if (taskLogsLoadingRef.current) {
+      return;
+    }
+    const silent = options?.silent === true;
+    taskLogsLoadingRef.current = true;
+    if (!silent) {
+      setTaskLogsLoading(true);
+      setTaskLogsError(null);
+    }
+    try {
+      const res = await apiClient.get<TaskLogRecord[]>("admin/quality/task-logs", {
+        params: {
+          queue: "crawl4ai",
+          jobId: taskId,
+          limit: 100
+        }
+      });
+      setTaskLogs(Array.isArray(res.data) ? res.data : []);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      setTaskLogsError(reason);
+      if (!silent) {
+        message.error(reason);
+      }
+    } finally {
+      if (!silent) {
+        setTaskLogsLoading(false);
+      }
+      taskLogsLoadingRef.current = false;
+    }
+  }, [apiClient, canViewTaskLogs, message, taskId]);
+
+  useEffect(() => {
+    if (!canView) {
+      stopPolling();
+      return;
+    }
+    const taskStatus = data?.crawlTask?.status;
+    const shouldPoll =
+      taskStatus === "pending" || taskStatus === "queued" || taskStatus === "running";
+    if (shouldPoll) {
+      startPolling(3000);
+      return;
+    }
+    stopPolling();
+  }, [canView, data?.crawlTask?.status, startPolling, stopPolling]);
+
+  useEffect(() => {
+    if (!canViewTaskLogs || !canView || status !== "authenticated") {
+      return;
+    }
+    void loadTaskLogs();
+  }, [canView, canViewTaskLogs, loadTaskLogs, status]);
+
+  useEffect(() => {
+    if (!canViewTaskLogs || !canView || status !== "authenticated") {
+      return;
+    }
+    const taskStatus = data?.crawlTask?.status;
+    const shouldPoll =
+      taskStatus === "pending" || taskStatus === "queued" || taskStatus === "running";
+    if (!shouldPoll) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      void loadTaskLogs({ silent: true });
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [canView, canViewTaskLogs, data?.crawlTask?.status, loadTaskLogs, status]);
 
   const task = data?.crawlTask ?? null;
   const config = useMemo(() => {
@@ -627,6 +737,100 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return null;
     }
   }, [task?.config]);
+
+  const virtualScrollSummary = useMemo(() => {
+    if (!config || typeof config.virtualScroll !== "object" || !config.virtualScroll) {
+      return null;
+    }
+    const value = config.virtualScroll as Record<string, unknown>;
+    const containerSelector =
+      typeof value.containerSelector === "string" && value.containerSelector.trim().length > 0
+        ? value.containerSelector.trim()
+        : "body";
+    const scrollCount =
+      typeof value.scrollCount === "number" && Number.isFinite(value.scrollCount)
+        ? value.scrollCount
+        : null;
+    const waitAfterScrollMs =
+      typeof value.waitAfterScrollMs === "number" && Number.isFinite(value.waitAfterScrollMs)
+        ? value.waitAfterScrollMs
+        : null;
+    const scrollByRaw = value.scrollBy;
+    const scrollBy =
+      typeof scrollByRaw === "number"
+        ? scrollByRaw
+        : typeof scrollByRaw === "string"
+          ? scrollByRaw === "viewport"
+            ? "page_height"
+            : scrollByRaw
+          : null;
+    return {
+      containerSelector,
+      scrollCount,
+      waitAfterScrollMs,
+      scrollBy
+    };
+  }, [config]);
+
+  const taskLogColumns = useMemo(
+    () => [
+      {
+        title: t("quality.taskLogs.columns.time"),
+        dataIndex: "createdAt",
+        key: "createdAt",
+        width: 170,
+        render: (value: string) =>
+          formatDateTime(value, locale, {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+          })
+      },
+      {
+        title: t("quality.taskLogs.columns.stage"),
+        dataIndex: "stage",
+        key: "stage",
+        width: 140,
+        render: (value: string) => (
+          <Typography.Text style={{ fontFamily: "monospace" }}>{value}</Typography.Text>
+        )
+      },
+      {
+        title: t("quality.taskLogs.columns.status"),
+        dataIndex: "status",
+        key: "status",
+        width: 120,
+        render: (value: TaskLogStatus) => (
+          <Tag color={taskLogStatusColors[value] ?? "default"}>
+            {t(`quality.taskLogs.status.${value}`, { defaultValue: value })}
+          </Tag>
+        )
+      },
+      {
+        title: t("quality.taskLogs.columns.message"),
+        dataIndex: "message",
+        key: "message",
+        render: (value: string | null | undefined, record: TaskLogRecord) => {
+          const errorMessage =
+            record.error && typeof record.error === "object" && !Array.isArray(record.error)
+              ? (() => {
+                  const messageValue = (record.error as { message?: unknown }).message;
+                  return typeof messageValue === "string" && messageValue.trim().length > 0
+                    ? messageValue.trim()
+                    : null;
+                })()
+              : null;
+          return (
+            <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+              {value ?? errorMessage ?? t("common.emptyValue")}
+            </Typography.Text>
+          );
+        }
+      }
+    ],
+    [locale, t]
+  );
 
   const proxySummary: ReactNode = useMemo(() => {
     if (!config) {
@@ -728,6 +932,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           : t("crawl.detail.markdown.renderHtml")
       );
     }
+    if (typeof markdownOptions.citations === "boolean") {
+      parts.push(
+        markdownOptions.citations
+          ? t("crawl.detail.markdown.citationsEnabled")
+          : t("crawl.detail.markdown.citationsDisabled")
+      );
+    }
     if (typeof markdownOptions.bodyWidth === "number") {
       parts.push(t("crawl.detail.markdown.wrap", { width: markdownOptions.bodyWidth }));
     }
@@ -739,6 +950,36 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return t("common.disabled");
     }
     const parts = [markdownFilter.type];
+    if (markdownFilter.type === "bm25") {
+      const queryValue =
+        typeof markdownFilter.userQuery === "string"
+          ? markdownFilter.userQuery
+          : typeof markdownFilter.user_query === "string"
+            ? (markdownFilter.user_query as string)
+            : undefined;
+      if (queryValue && queryValue.trim().length > 0) {
+        parts.push(t("crawl.detail.markdownFilter.query", { query: queryValue }));
+      }
+      const bm25ThresholdValue =
+        typeof markdownFilter.bm25Threshold === "number"
+          ? markdownFilter.bm25Threshold
+          : typeof markdownFilter.bm25_threshold === "number"
+            ? (markdownFilter.bm25_threshold as number)
+            : undefined;
+      if (typeof bm25ThresholdValue === "number") {
+        parts.push(t("crawl.detail.markdownFilter.bm25Threshold", { value: bm25ThresholdValue }));
+      }
+      const languageValue =
+        typeof markdownFilter.language === "string"
+          ? markdownFilter.language
+          : typeof markdownFilter.lang === "string"
+            ? (markdownFilter.lang as string)
+            : undefined;
+      if (languageValue && languageValue.trim().length > 0) {
+        parts.push(t("crawl.detail.markdownFilter.language", { language: languageValue }));
+      }
+      return parts.join(" • ");
+    }
     if (typeof markdownFilter.threshold === "number") {
       parts.push(t("crawl.detail.markdownFilter.threshold", { value: markdownFilter.threshold }));
     }
@@ -1341,6 +1582,19 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           {t("crawl.detail.openSource")}
         </Typography.Link>
       </Space>
+      {task.lastError ? (
+        <Alert
+          type={task.status === "failed" ? "error" : task.status === "completed" ? "success" : "warning"}
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("crawl.detail.latestError", { defaultValue: "Latest error" })}
+          description={
+            <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+              {task.lastError}
+            </Typography.Text>
+          }
+        />
+      ) : null}
       <Descriptions bordered column={1} size="small">
         <Descriptions.Item label={t("crawl.detail.fields.displayName")}>
           {task.displayName ?? task.targetUrl}
@@ -1414,11 +1668,37 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             t("common.emptyValue")
           )}
         </Descriptions.Item>
-        <Descriptions.Item label={t("crawl.detail.fields.runCount")}>{task.runCount}</Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.runCount")}>{task.runCount}</Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.scanFullPage")}>
           {config?.scanFullPage
             ? t("crawl.detail.scanFullPageEnabled", { delay: config?.scrollDelayMs ?? 200 })
             : t("common.disabled")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.virtualScroll")}>
+        {virtualScrollSummary ? (
+          <Space direction="vertical" size={0}>
+            <Typography.Text style={{ fontFamily: "monospace" }}>
+              containerSelector={virtualScrollSummary.containerSelector}
+            </Typography.Text>
+            {virtualScrollSummary.scrollCount != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                scrollCount={virtualScrollSummary.scrollCount}
+              </Typography.Text>
+            ) : null}
+            {virtualScrollSummary.scrollBy ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                scrollBy={virtualScrollSummary.scrollBy}
+              </Typography.Text>
+            ) : null}
+            {virtualScrollSummary.waitAfterScrollMs != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                waitAfterScrollMs={virtualScrollSummary.waitAfterScrollMs}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        ) : (
+          t("common.disabled")
+        )}
       </Descriptions.Item>
       <Descriptions.Item label={t("crawl.detail.fields.adjustViewport")}>
         {adjustViewportEnabled ? t("common.enabled") : t("common.disabled")}
@@ -1579,6 +1859,50 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           )}
         </Descriptions.Item>
       </Descriptions>
+
+      {canViewTaskLogs ? (
+        <Card
+          title={t("quality.taskLogs.title")}
+          size="small"
+          style={{ marginTop: 24 }}
+          extra={
+            <Button size="small" onClick={() => void loadTaskLogs()} loading={taskLogsLoading}>
+              {t("common.refresh")}
+            </Button>
+          }
+        >
+          {taskLogsError ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message={t("common.error.unexpected")}
+              description={<Typography.Text style={{ whiteSpace: "pre-wrap" }}>{taskLogsError}</Typography.Text>}
+            />
+          ) : null}
+          <Table
+            size="small"
+            rowKey={(record) => record._id ?? `${record.stage}-${record.createdAt}`}
+            columns={taskLogColumns}
+            dataSource={taskLogs}
+            pagination={false}
+            loading={taskLogsLoading}
+            locale={{ emptyText: t("common.empty") }}
+            expandable={{
+              rowExpandable: (record) => Boolean(record.data || record.error),
+              expandedRowRender: (record) => (
+                <pre className="markdown-preview" style={{ margin: 0 }}>
+                  {JSON.stringify(
+                    { data: record.data ?? null, error: record.error ?? null },
+                    null,
+                    2
+                  )}
+                </pre>
+              )
+            }}
+          />
+        </Card>
+      ) : null}
 
       {multiConfigs.length ? (
         <Card title={t("crawl.multiUrl.title")} style={{ marginTop: 24 }}>

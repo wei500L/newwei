@@ -97,7 +97,8 @@ const createMockCrawlClient = () => ({
 
 const createMockResultService = () => ({
   persistResults: jest.fn(),
-  extractMarkdownResult: jest.fn()
+  extractMarkdownResult: jest.fn(),
+  isLikelyBotChallengeMarkdown: jest.fn().mockReturnValue(false)
 });
 
 const createMockNotificationsService = () => ({
@@ -288,9 +289,339 @@ describe("CrawlExecutionService", () => {
         })
       );
     });
+
+    it("retries with relaxed markdown options when pipeline job returns empty markdown", async () => {
+      const task = createMockTask({ config: { pipelineJobId: "job-1" } });
+      const emptyResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com",
+            markdown: "",
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+      const fallbackResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com",
+            markdown: "# Fallback Content",
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+      const persistSummary = { inserted: 1, skipped: 0, lastFetchedAt: new Date() };
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl
+        .mockResolvedValueOnce(emptyResponse)
+        .mockResolvedValueOnce(fallbackResponse)
+        .mockResolvedValueOnce(fallbackResponse);
+      mockResultService.persistResults.mockResolvedValue(persistSummary);
+      mockResultService.extractMarkdownResult
+        .mockReturnValueOnce({ primary: "" })
+        .mockReturnValueOnce({ primary: "" })
+        .mockReturnValue({ primary: "# Fallback Content" });
+
+      const result = await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(3);
+      const secondCallPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as any;
+      expect(secondCallPayload?.options).toEqual(
+        expect.objectContaining({
+          onlyMainContent: false,
+          wordCountThreshold: 10,
+          markdownOptions: expect.objectContaining({ contentSource: "raw_html" }),
+        }),
+      );
+      const thirdCallPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[2]?.[0] as any;
+      expect(thirdCallPayload?.options).toEqual(
+        expect.objectContaining({
+          markdownOptions: expect.objectContaining({ contentSource: "cleaned_html" }),
+        }),
+      );
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: "fallback", status: "processing" }),
+      );
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: "fallback", status: "completed" }),
+      );
+      expect(mockResultService.persistResults).toHaveBeenCalledWith(
+        task,
+        expect.any(Array),
+        expect.objectContaining({ onlyMainContent: false }),
+        expect.anything(),
+        expect.anything(),
+        undefined,
+      );
+      expect(result.inserted).toBe(1);
+    });
+
+    it("keeps bm25 fallback profile when empty-markdown failures occur with bm25 filter", async () => {
+      const task = createMockTask({
+        config: {
+          markdownFilter: {
+            type: "bm25",
+            userQuery: "startup",
+            bm25Threshold: 1.1,
+            language: "english"
+          }
+        }
+      });
+      const emptyResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com",
+            markdown: "",
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+      const fallbackResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com",
+            markdown: "# BM25 Content",
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      (revealCrawlTaskConfigForExecution as jest.Mock).mockReturnValue(task.config);
+      mockCrawlClient.crawl
+        .mockResolvedValueOnce(emptyResponse)
+        .mockResolvedValueOnce(fallbackResponse)
+        .mockResolvedValueOnce(fallbackResponse)
+        .mockResolvedValueOnce(fallbackResponse);
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+
+      const result = await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(4);
+      const fallbackPayloads = (mockCrawlClient.crawl as jest.Mock).mock.calls.slice(1).map((entry) => entry[0] as any);
+      expect(
+        fallbackPayloads.some(
+          (payload) =>
+            payload?.options?.markdownFilter?.type === "bm25" &&
+            payload?.options?.markdownFilter?.userQuery === "startup"
+        )
+      ).toBe(true);
+      expect(result.inserted).toBe(1);
+    });
+
+    it("expands list-like markdown results by crawling detail candidates", async () => {
+      const task = createMockTask({
+        targetUrl: "https://jp.reuters.com/world/"
+      });
+
+      const listMarkdown =
+        "# ワールド\n" +
+        Array.from({ length: 18 }, (_, index) =>
+          "- [記事" + index + "](https://jp.reuters.com/world/us/ARTICLE" + index + "-2026-02-06/)"
+        ).join("\n");
+      const detailedMarkdown =
+        "# Detailed Article\n\n" +
+        "This is a richer article paragraph with policy, timeline, and impact context.\n\n".repeat(80);
+
+      const initialResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://jp.reuters.com/world/",
+            markdown: listMarkdown,
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+
+      const expansionResponse = createMockCrawlResponse({
+        runId: "run-expansion",
+        results: [
+          {
+            url: "https://jp.reuters.com/world/us/ARTICLE0-2026-02-06/",
+            markdown: detailedMarkdown,
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl
+        .mockResolvedValueOnce(initialResponse)
+        .mockResolvedValue(expansionResponse);
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+
+      const result = await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThan(1);
+      const expansionPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as any;
+      expect(expansionPayload?.urls?.length).toBeGreaterThan(0);
+      expect(expansionPayload?.options).toEqual(
+        expect.objectContaining({
+          scanFullPage: false,
+          markdownFilter: undefined,
+          extractLinks: false
+        })
+      );
+      expect(mockResultService.persistResults).toHaveBeenCalledWith(
+        task,
+        expect.arrayContaining([
+          expect.objectContaining({
+            url: "https://jp.reuters.com/world/us/ARTICLE0-2026-02-06/"
+          })
+        ]),
+        expect.any(Object),
+        "run-expansion",
+        expect.anything(),
+        undefined
+      );
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: "expansion", status: "processing" })
+      );
+      expect(result.inserted).toBe(1);
+    });
   });
 
+
+
+    it("fails when all crawl markdown is low-signal and no detail candidates are extracted", async () => {
+      const task = createMockTask({
+        targetUrl: "https://jp.reuters.com/world/"
+      });
+
+      const listOnlyMarkdown =
+        "# World\n" +
+        Array.from({ length: 20 }, (_, index) =>
+          "- [Section" + index + "](https://jp.reuters.com/world/us/)"
+        ).join("\n");
+
+      const initialResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://jp.reuters.com/world/",
+            markdown: listOnlyMarkdown,
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl.mockResolvedValue(initialResponse);
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+
+      await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
+        "no detail candidate URLs were extracted"
+      );
+
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(1);
+      expect(mockResultService.persistResults).not.toHaveBeenCalled();
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: "expansion", status: "failed" })
+      );
+    });
+
+    it("fails when detail expansion cannot produce richer content for all-low-signal pages", async () => {
+      const task = createMockTask({
+        targetUrl: "https://jp.reuters.com/world/"
+      });
+
+      const listMarkdown =
+        "# ワールド\n" +
+        Array.from({ length: 14 }, (_, index) =>
+          "- [記事" + index + "](https://jp.reuters.com/world/us/ARTICLE" + index + "-2026-02-06/)"
+        ).join("\n");
+
+      const initialResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://jp.reuters.com/world/",
+            markdown: listMarkdown,
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+
+      const expansionResponse = createMockCrawlResponse({
+        runId: "run-expansion",
+        results: [
+          {
+            url: "https://jp.reuters.com/world/us/ARTICLE0-2026-02-06/",
+            markdown: listMarkdown,
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl
+        .mockResolvedValueOnce(initialResponse)
+        .mockResolvedValue(expansionResponse);
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+
+      await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
+        "detail expansion did not produce richer article content"
+      );
+
+      expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThan(1);
+      expect(mockResultService.persistResults).not.toHaveBeenCalled();
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: "expansion",
+          status: "completed",
+          message: "Detail expansion did not produce richer markdown"
+        })
+      );
+    });
+
   describe("runTask error handling", () => {
+    it("fails fast when task config enables crawl-stage llm extraction", async () => {
+      const config = {
+        markdownStrategy: {
+          type: "LLMExtractionStrategy"
+        }
+      };
+      const task = createMockTask({ config });
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      (revealCrawlTaskConfigForExecution as jest.Mock).mockReturnValue(config);
+
+      await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
+        "crawl stage must only fetch and store cleaned markdown"
+      );
+
+      expect(mockCrawlClient.crawl).not.toHaveBeenCalled();
+      expect(mockPrisma.crawlTask.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "failed" })
+        })
+      );
+    });
+
+
     it("marks CrawlTaskConfigEncryptionRequiredError as non-retryable", async () => {
       const task = createMockTask({ config: { browserCookies: [] } });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
@@ -500,11 +831,13 @@ describe("CrawlExecutionService", () => {
       const result = service.normalizeOptions({
         markdownOptions: {
           contentSource: "cleaned_html",
+          citations: true,
           bodyWidth: 300
         }
       });
 
       expect(result.markdownOptions?.contentSource).toBe("cleaned_html");
+      expect(result.markdownOptions?.citations).toBe(true);
       expect(result.markdownOptions?.bodyWidth).toBe(200); // clamped to max 200
     });
 
@@ -520,6 +853,26 @@ describe("CrawlExecutionService", () => {
       expect(result.markdownFilter?.type).toBe("pruning");
       expect(result.markdownFilter?.threshold).toBe(0.5);
       expect(result.markdownFilter?.thresholdType).toBe("dynamic");
+    });
+
+    it("normalizes markdownFilter with bm25 type", () => {
+      const result = service.normalizeOptions({
+        markdownFilter: {
+          type: "bm25",
+          userQuery: " machine learning ",
+          bm25Threshold: 1.2,
+          language: " english "
+        } as any
+      });
+
+      expect(result.markdownFilter).toEqual(
+        expect.objectContaining({
+          type: "bm25",
+          userQuery: "machine learning",
+          bm25Threshold: 1.2,
+          language: "english"
+        })
+      );
     });
 
     it("deduplicates browserHeaders by name (case-insensitive)", () => {
@@ -559,7 +912,7 @@ describe("CrawlExecutionService", () => {
 
       expect(result.virtualScroll?.containerSelector).toBe(".scroll-container");
       expect(result.virtualScroll?.scrollCount).toBe(10);
-      expect(result.virtualScroll?.scrollBy).toBe("viewport");
+      expect(result.virtualScroll?.scrollBy).toBe("page_height");
       expect(result.virtualScroll?.waitAfterScrollMs).toBe(500);
     });
 
@@ -605,7 +958,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
 
       await service.runTask("task-1", "org-1");
@@ -618,7 +971,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
 
       await service.runTask("task-1", "org-1");
@@ -632,7 +985,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
       (protectCrawlTaskConfigForStorage as jest.Mock).mockReturnValue({
         config: encryptedConfig,
@@ -653,7 +1006,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
 
       await service.runTask("task-1", "org-1");
@@ -667,7 +1020,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
 
       await service.runTask("task-1", "org-1");
@@ -700,6 +1053,74 @@ describe("CrawlExecutionService", () => {
         expect.anything(),
         expect.anything(),
         undefined
+      );
+    });
+
+    it("treats HTTP 4xx with non-empty markdown as failure", async () => {
+      const task = createMockTask();
+      const crawlResponse = createMockCrawlResponse({
+        results: [
+          { url: "https://blocked.com", markdown: "Verification Required", success: true, statusCode: 401 },
+          { url: "https://ok.com", markdown: "# Usable content", success: true, statusCode: 200 }
+        ]
+      });
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+
+      await service.runTask("task-1", "org-1");
+
+      const persisted = (mockResultService.persistResults as jest.Mock).mock.calls[0]?.[1] as any[];
+      expect(persisted).toHaveLength(1);
+      expect(persisted[0]?.url).toBe("https://ok.com");
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: "crawler",
+          message: "crawl4ai partial failures",
+          data: expect.objectContaining({ totalFailures: 1, retryableFailures: 0 })
+        })
+      );
+    });
+
+    it("treats anti-bot challenge markdown as failure even with HTTP 200", async () => {
+      const task = createMockTask();
+      const crawlResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://blocked.com",
+            markdown: "Verification Required\nPlease enable JS and disable any ad blocker",
+            success: true,
+            statusCode: 200
+          },
+          { url: "https://ok.com", markdown: "# Usable content", success: true, statusCode: 200 }
+        ]
+      });
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+      mockResultService.isLikelyBotChallengeMarkdown.mockImplementation((markdown: string) =>
+        markdown.toLowerCase().includes("verification required")
+      );
+
+      await service.runTask("task-1", "org-1");
+
+      const persisted = (mockResultService.persistResults as jest.Mock).mock.calls[0]?.[1] as any[];
+      expect(persisted).toHaveLength(1);
+      expect(persisted[0]?.url).toBe("https://ok.com");
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: "crawler",
+          message: "crawl4ai partial failures",
+          data: expect.objectContaining({ totalFailures: 1, retryableFailures: 0 })
+        })
       );
     });
 
@@ -764,7 +1185,7 @@ describe("CrawlExecutionService", () => {
       mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: undefined });
 
-      await service.runTask("task-1", "org-1");
+      await expect(service.runTask("task-1", "org-1")).rejects.toThrow("crawl task produced no results");
 
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -785,7 +1206,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
 
       await service.runTask("task-1", "org-1");
@@ -803,7 +1224,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
 
       await service.runTask("task-1", "org-1");
@@ -820,7 +1241,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
 
       await service.runTask("task-1", "org-1");
@@ -837,7 +1258,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
       (revealCrawlTaskConfigForExecution as jest.Mock).mockReturnValue({
         additionalUrls: ["https://extra1.com", "https://extra2.com"]
@@ -860,7 +1281,7 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
       (revealCrawlTaskConfigForExecution as jest.Mock).mockReturnValue({
         additionalUrls: ["https://example.com", "https://extra.com"]

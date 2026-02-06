@@ -22,6 +22,7 @@ import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
 import type { CrawlIngestBatchSummary, CrawlMarkdownFilter, CrawlTaskView } from "./crawl.types";
 import { clampResultLimit, coerceDate, normalizeKeywords } from "./crawl.utils";
+import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import { CrawlTaskDetailQueryDto, ListCrawlTaskDto } from "./dto/list-crawl-task.dto";
 
@@ -80,6 +81,7 @@ export class CrawlTaskService {
 
     const rawOptions = dto.options ?? undefined;
     const normalizedRawOptions = await this.normalizeActorOptions(orgId, userId, rawOptions);
+    assertNoCrawl4aiLlmOptions(normalizedRawOptions, "options");
 
     const keywords = normalizeKeywords(dto.keywords);
     const timeRangeFrom = coerceDate(dto.timeRangeFrom);
@@ -89,34 +91,8 @@ export class CrawlTaskService {
     }
 
     const normalizedOptions = this.executionService.normalizeOptions({
-      includeImages: normalizedRawOptions?.includeImages,
-      storeMedia: normalizedRawOptions?.storeMedia,
-      onlyMainContent: normalizedRawOptions?.onlyMainContent,
-      extractLinks: normalizedRawOptions?.extractLinks,
-      scanFullPage: normalizedRawOptions?.scanFullPage,
-      adjustViewportToContent: normalizedRawOptions?.adjustViewportToContent,
-      scrollDelayMs: normalizedRawOptions?.scrollDelayMs,
-      headless: normalizedRawOptions?.headless,
-      enableUndetectedBrowser: normalizedRawOptions?.enableUndetectedBrowser,
-      enableStealthMode: normalizedRawOptions?.enableStealthMode,
-      useManagedBrowser: normalizedRawOptions?.useManagedBrowser,
-      userDataDir: normalizedRawOptions?.userDataDir,
-      simulateUser: normalizedRawOptions?.simulateUser,
-      overrideNavigator: normalizedRawOptions?.overrideNavigator,
-      jsCode: normalizedRawOptions?.jsCode,
-      jsOnly: normalizedRawOptions?.jsOnly,
-      sessionId: normalizedRawOptions?.sessionId,
-      storageState: normalizedRawOptions?.storageState,
-      proxyUrl: normalizedRawOptions?.proxyUrl,
-      proxyConfig: normalizedRawOptions?.proxyConfig,
-      additionalUrls: normalizedRawOptions?.additionalUrls,
-      multiUrlConfigs: normalizedRawOptions?.multiUrlConfigs,
-      markdownOptions: normalizedRawOptions?.markdownOptions,
-      markdownFilter: this.normalizeMarkdownFilter(normalizedRawOptions?.markdownFilter),
-      markdownStrategy: normalizedRawOptions?.markdownStrategy,
-      cleanMarkdown: normalizedRawOptions?.cleanMarkdown,
-      scoreLinks: normalizedRawOptions?.scoreLinks,
-      linkPreview: normalizedRawOptions?.linkPreview
+      ...(normalizedRawOptions as Partial<CreateCrawlTaskDto["options"]>),
+      markdownFilter: this.normalizeMarkdownFilter(normalizedRawOptions?.markdownFilter)
     });
     const configSensitiveFields = collectCrawlTaskConfigSensitiveFields(normalizedOptions as Record<string, unknown>);
 
@@ -699,6 +675,18 @@ export class CrawlTaskService {
   private normalizeMarkdownFilter(value?: CrawlTaskOptionsInput["markdownFilter"]): CrawlMarkdownFilter | undefined {
     if (!value) {
       return undefined;
+    }
+    if (value.type === "bm25") {
+      const query = typeof value.userQuery === "string" ? value.userQuery.trim() : "";
+      if (!query) {
+        return undefined;
+      }
+      return {
+        type: "bm25",
+        userQuery: query,
+        bm25Threshold: typeof value.bm25Threshold === "number" ? value.bm25Threshold : undefined,
+        language: typeof value.language === "string" ? value.language.trim() : undefined
+      };
     }
     return {
       type: "pruning",

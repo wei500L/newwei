@@ -425,14 +425,18 @@ export type CrawlLinkStatsModel = {
 };
 
 export type CrawlMarkdownFilterInput = {
+  bm25Threshold?: InputMaybe<Scalars['Float']['input']>;
+  language?: InputMaybe<Scalars['String']['input']>;
   minWordThreshold?: InputMaybe<Scalars['Int']['input']>;
   threshold?: InputMaybe<Scalars['Float']['input']>;
   thresholdType?: InputMaybe<Scalars['String']['input']>;
   type?: InputMaybe<Scalars['String']['input']>;
+  userQuery?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type CrawlMarkdownOptionsInput = {
   bodyWidth?: InputMaybe<Scalars['Int']['input']>;
+  citations?: InputMaybe<Scalars['Boolean']['input']>;
   contentSource?: InputMaybe<Scalars['String']['input']>;
   escapeHtml?: InputMaybe<Scalars['Boolean']['input']>;
   ignoreLinks?: InputMaybe<Scalars['Boolean']['input']>;
@@ -534,6 +538,7 @@ export type CrawlOptionsInput = {
   userAgentGenerator?: InputMaybe<CrawlUserAgentGeneratorInput>;
   userAgentMode?: InputMaybe<Scalars['String']['input']>;
   userDataDir?: InputMaybe<Scalars['String']['input']>;
+  virtualScroll?: InputMaybe<CrawlVirtualScrollInput>;
   waitForImages?: InputMaybe<Scalars['Boolean']['input']>;
   waitForScript?: InputMaybe<Scalars['String']['input']>;
   waitForSelector?: InputMaybe<Scalars['String']['input']>;
@@ -583,6 +588,7 @@ export type CrawlStrategyOverridesInput = {
   scrollDelayMs?: InputMaybe<Scalars['Int']['input']>;
   simulateUser?: InputMaybe<Scalars['Boolean']['input']>;
   textMode?: InputMaybe<Scalars['Boolean']['input']>;
+  virtualScroll?: InputMaybe<CrawlVirtualScrollInput>;
   waitForImages?: InputMaybe<Scalars['Boolean']['input']>;
   waitForScript?: InputMaybe<Scalars['String']['input']>;
   waitForSelector?: InputMaybe<Scalars['String']['input']>;
@@ -660,6 +666,13 @@ export type CrawlUserAgentGeneratorInput = {
   deviceType?: InputMaybe<Scalars['String']['input']>;
   locale?: InputMaybe<Scalars['String']['input']>;
   platform?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CrawlVirtualScrollInput = {
+  containerSelector?: InputMaybe<Scalars['String']['input']>;
+  scrollBy?: InputMaybe<Scalars['String']['input']>;
+  scrollCount?: InputMaybe<Scalars['Int']['input']>;
+  waitAfterScrollMs?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type CreateCrawlTaskInput = {

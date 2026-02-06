@@ -3514,7 +3514,10 @@
       "requeued": "Requeued",
       "retryFailed": "Failed to retry",
       "queued": "Queued",
-      "createFailed": "Failed to create"
+      "createFailed": "Failed to create",
+      "errors": {
+        "llmOptionsForbidden": "Crawl-stage Crawl4AI LLM extraction settings are not allowed (for example extractionStrategy / llmConfig / LLMExtractionStrategy). Use LLM only in post-crawl pipeline processing."
+      }
     },
     "search": {
       "placeholder": "Enter "
@@ -3763,12 +3766,17 @@
         "keepLinks": "Keep links",
         "escapeHtml": "Escape html",
         "renderHtml": "Render html",
+        "citationsEnabled": "Citations enabled",
+        "citationsDisabled": "Citations disabled",
         "wrap": "Wrap"
       },
       "markdownFilter": {
         "threshold": "Threshold",
         "mode": "Mode",
-        "minWords": "Min words"
+        "minWords": "Min words",
+        "query": "Query",
+        "bm25Threshold": "BM25 threshold",
+        "language": "Language"
       },
       "markdownStrategy": {
         "default": "Default",
@@ -3826,6 +3834,7 @@
         "lastRunResults": "Last run results",
         "runCount": "Run count",
         "scanFullPage": "Scan full page",
+        "virtualScroll": "Virtual scroll",
         "adjustViewport": "Adjust viewport",
         "headless": "Headless mode",
         "undetectedBrowser": "Undetected browser",
@@ -4010,6 +4019,27 @@
       "overrideNavigator": "Override navigator",
       "overrideNavigatorHint": "Override navigator hint"
     },
+    "virtualScroll": {
+      "title": "Virtual scroll",
+      "description": "Bounded scrolling for infinite-scroll or virtualized lists. Use it when content loads as you scroll (feeds, timelines, lazy lists).",
+      "enable": "Enable virtual scroll",
+      "containerSelector": "Container selector",
+      "containerSelectorHint": "CSS selector of the scrollable container. Use \"body\" for full page scrolling.",
+      "scrollCount": "Scroll count",
+      "scrollCountHint": "Maximum number of scroll iterations to perform (bounded).",
+      "scrollBy": "Scroll by",
+      "scrollByHint": "How much to scroll on each iteration.",
+      "scrollByPixels": "Scroll by (px)",
+      "scrollByPixelsHint": "Pixel amount to scroll on each iteration when using pixels mode.",
+      "scrollByOptions": {
+        "pageHeight": "Page height (viewport)",
+        "containerHeight": "Container height",
+        "pixels": "Pixels"
+      },
+      "waitAfterScroll": "Wait after scroll (ms)",
+      "waitAfterScrollHint": "Time to wait after each scroll for content to load.",
+      "scanFullPageHint": "Note: Full-page scanning may conflict with bounded virtual scrolling. Prefer using virtual scroll for infinite-scroll pages."
+    },
     "dynamic": {
       "title": "Dynamic",
       "description": "Dynamic description",
@@ -4043,7 +4073,10 @@
         "filter": "Enter Filter",
         "pruningThreshold": "Enter Pruning threshold",
         "thresholdMode": "Enter Threshold mode",
-        "minWords": "Enter Min words"
+        "minWords": "Enter Min words",
+        "bm25Query": "Enter BM25 query",
+        "bm25Threshold": "Enter BM25 threshold",
+        "bm25Language": "Enter language"
       },
       "source": "Source",
       "sourceHint": "Source hint",
@@ -4056,12 +4089,15 @@
       "ignoreLinksHint": "Ignore links hint",
       "escapeHtml": "Escape html",
       "escapeHtmlHint": "Escape html hint",
+      "citations": "Citations",
+      "citationsHint": "Append reference-style citations and references markdown when supported.",
       "bodyWidth": "Body width",
       "bodyWidthHint": "Body width hint",
       "filter": "Filter",
       "filterHint": "Filter hint",
       "filterOptions": {
-        "pruning": "Pruning"
+        "pruning": "Pruning",
+        "bm25": "BM25"
       },
       "pruningThreshold": "Pruning threshold",
       "pruningThresholdHint": "Pruning threshold hint",
@@ -4073,6 +4109,15 @@
       },
       "minWords": "Min words",
       "minWordsHint": "Min words hint",
+      "bm25Query": "BM25 query",
+      "bm25QueryHint": "Query text used to rank and keep the most relevant content blocks.",
+      "bm25Threshold": "BM25 threshold",
+      "bm25ThresholdHint": "Higher threshold keeps fewer, more relevant chunks.",
+      "bm25Language": "BM25 language",
+      "bm25LanguageHint": "Optional stemming language, for example english.",
+      "validation": {
+        "bm25QueryRequired": "BM25 query is required when BM25 filter is selected."
+      },
       "customStrategy": {
         "title": "Custom strategy",
         "description": "Custom strategy description",
@@ -4085,7 +4130,12 @@
           "params": "Enter Params"
         },
         "params": "Params",
-        "paramsHint": "Params hint"
+        "paramsHint": "Params hint",
+        "validation": {
+          "paramsMustBeJson": "Params must be valid JSON.",
+          "noLlmExtraction": "Crawl-stage LLM extraction is not allowed.",
+          "noLlmExtractionHint": "Do not set extractionStrategy, llmConfig, or LLMExtractionStrategy in crawlOptions. Crawl stage should only fetch and clean content; LLM belongs to post-crawl pipeline processing."
+        }
       },
       "clean": {
         "title": "Clean",

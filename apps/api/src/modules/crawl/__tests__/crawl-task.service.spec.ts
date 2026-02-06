@@ -117,6 +117,53 @@ describe("CrawlTaskService", () => {
     expect(normalizeArg.multiUrlConfigs?.[0]?.options?.jsOnly).toBeUndefined();
   });
 
+  it("rejects crawl options that enable crawl-stage llm extraction", async () => {
+    const prismaMock = {
+      membership: {
+        findUnique: jest.fn().mockResolvedValue({
+          role: { name: "admin" },
+          roles: []
+        })
+      },
+      crawlTask: {
+        create: jest.fn(),
+        update: jest.fn()
+      },
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) }
+    } as any;
+
+    const executionServiceMock = {
+      normalizeOptions: jest.fn().mockReturnValue({})
+    } as any;
+
+    const service = new CrawlTaskService(
+      prismaMock,
+      { crawl4aiConfig: { maxConcurrency: 1 }, crawlTaskConfigEncryptionKey: undefined } as any,
+      executionServiceMock,
+      { enqueueTask: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any,
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any
+    );
+
+    await expect(
+      service.createTask(
+        "org-1",
+        "user-1",
+        {
+          url: "https://example.com",
+          options: {
+            markdownStrategy: {
+              type: "LLMExtractionStrategy"
+            }
+          }
+        } as any
+      )
+    ).rejects.toThrow("crawl stage must only fetch and store cleaned markdown");
+
+    expect(executionServiceMock.normalizeOptions).not.toHaveBeenCalled();
+    expect(prismaMock.crawlTask.create).not.toHaveBeenCalled();
+  });
+
   it("allows jsCode/jsOnly for admin users", async () => {
     const prismaMock = {
       membership: {

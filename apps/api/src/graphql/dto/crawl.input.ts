@@ -19,7 +19,8 @@ import type {
   CrawlMetadataSource,
   CrawlUrlMatchMode,
   CrawlUserAgentGeneratorConfig,
-  CrawlUserAgentMode
+  CrawlUserAgentMode,
+  CrawlVirtualScrollMode
 } from "../../modules/crawl/crawl.types";
 
 @InputType()
@@ -92,6 +93,21 @@ export class CrawlGeolocationInput {
 
   @Field(() => Float, { nullable: true })
   accuracy?: number;
+}
+
+@InputType()
+export class CrawlVirtualScrollInput {
+  @Field({ nullable: true })
+  containerSelector?: string;
+
+  @Field(() => Int, { nullable: true })
+  scrollCount?: number;
+
+  @Field(() => String, { nullable: true })
+  scrollBy?: CrawlVirtualScrollMode;
+
+  @Field(() => Int, { nullable: true })
+  waitAfterScrollMs?: number;
 }
 
 @InputType()
@@ -173,6 +189,9 @@ export class CrawlStrategyOverridesInput {
 
   @Field(() => Boolean, { nullable: true })
   waitForImages?: boolean;
+
+  @Field(() => CrawlVirtualScrollInput, { nullable: true })
+  virtualScroll?: CrawlVirtualScrollInput;
 }
 
 @InputType()
@@ -201,6 +220,9 @@ export class CrawlMarkdownOptionsInput {
   @Field(() => Boolean, { nullable: true })
   escapeHtml?: boolean;
 
+  @Field(() => Boolean, { nullable: true })
+  citations?: boolean;
+
   @Field(() => Int, { nullable: true })
   bodyWidth?: number;
 }
@@ -208,7 +230,7 @@ export class CrawlMarkdownOptionsInput {
 @InputType()
 export class CrawlMarkdownFilterInput {
   @Field(() => String, { nullable: true })
-  type?: "pruning";
+  type?: "pruning" | "bm25";
 
   @Field(() => Float, { nullable: true })
   threshold?: number;
@@ -218,6 +240,15 @@ export class CrawlMarkdownFilterInput {
 
   @Field(() => Int, { nullable: true })
   minWordThreshold?: number;
+
+  @Field(() => String, { nullable: true })
+  userQuery?: string;
+
+  @Field(() => Float, { nullable: true })
+  bm25Threshold?: number;
+
+  @Field(() => String, { nullable: true })
+  language?: string;
 }
 
 @InputType()
@@ -422,6 +453,9 @@ export class CrawlOptionsInput {
 
   @Field(() => Boolean, { nullable: true })
   waitForImages?: boolean;
+
+  @Field(() => CrawlVirtualScrollInput, { nullable: true })
+  virtualScroll?: CrawlVirtualScrollInput;
 }
 
 @InputType()

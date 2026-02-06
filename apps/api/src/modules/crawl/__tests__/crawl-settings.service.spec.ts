@@ -49,14 +49,14 @@ describe("CrawlSettingsService", () => {
       key: "crawl_client_settings",
       value: {
         healthCheckTtlMs: 10_000,
-        requestTimeoutMs: 450_000, // should clamp down
+        requestTimeoutMs: 1_500_000, // should clamp down
         maxRetries: 12, // should clamp down
         retryBackoffMs: 200 // should clamp up
       }
     });
     const settings = await service.getSettings();
     expect(settings.healthCheckTtlMs).toBe(10_000);
-    expect(settings.requestTimeoutMs).toBe(300_000);
+    expect(settings.requestTimeoutMs).toBe(900_000);
     expect(settings.maxRetries).toBe(10);
     expect(settings.retryBackoffMs).toBe(500);
   });

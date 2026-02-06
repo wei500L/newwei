@@ -1,7 +1,11 @@
 "use client";
 
 import { DashboardOutlined, GlobalOutlined, SearchOutlined } from "@ant-design/icons";
-import { sanitizeCrawlOptions } from "@modular/utils";
+import {
+  CRAWL4AI_LLM_OPTION_GUARD_MESSAGE,
+  assertNoCrawl4aiLlmOptions,
+  sanitizeCrawlOptions,
+} from "@modular/utils";
 import {
   App,
   Alert,
@@ -390,8 +394,17 @@ export function CrawlTasksView() {
     let options;
     try {
       options = sanitizeCrawlOptions(values);
+      assertNoCrawl4aiLlmOptions(options, "options");
     } catch (error) {
-      message.error((error as Error).message);
+      const errorMessage = (error as Error).message ?? "";
+      if (
+        errorMessage.includes("crawl4ai LLM extraction settings") ||
+        errorMessage.includes(CRAWL4AI_LLM_OPTION_GUARD_MESSAGE)
+      ) {
+        message.error(t("crawl.task.errors.llmOptionsForbidden"));
+        return;
+      }
+      message.error(errorMessage || t("crawl.task.createFailed"));
       return;
     }
     try {
@@ -419,7 +432,15 @@ export function CrawlTasksView() {
       setDrawerOpen(false);
       await reloadTasks();
     } catch (error: unknown) {
-      message.error((error as Error).message ?? t("crawl.task.createFailed"));
+      const errorMessage = (error as Error).message ?? "";
+      if (
+        errorMessage.includes("crawl4ai LLM extraction settings") ||
+        errorMessage.includes(CRAWL4AI_LLM_OPTION_GUARD_MESSAGE)
+      ) {
+        message.error(t("crawl.task.errors.llmOptionsForbidden"));
+        return;
+      }
+      message.error(errorMessage || t("crawl.task.createFailed"));
     }
   };
 

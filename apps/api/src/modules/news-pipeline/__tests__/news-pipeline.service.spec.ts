@@ -360,6 +360,223 @@ describe("NewsPipelineService", () => {
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects llm extraction settings inside crawl options", () => {
+    expect(() =>
+      (service as any).buildCrawlTaskOptions({
+        url: "https://example.com/story",
+        language: null,
+        sourceName: "Example",
+        keywords: [],
+        tags: [],
+        summaryHints: [],
+        metadata: {},
+        forceRefresh: false,
+        crawlOptions: {
+          markdownStrategy: {
+            type: "LLMExtractionStrategy"
+          }
+        }
+      })
+    ).toThrow("crawl stage must only fetch and store cleaned markdown");
+  });
+
+  it("prefers richer stored markdown when summary markdown is too short", () => {
+    const selected = (service as any).selectBestMarkdownFromContentDoc({
+      markdown: "# Digest\n- one\n- two",
+      rawMarkdown:
+        "# Full article\n\n" +
+        "Detailed paragraph with facts and context.\n".repeat(120),
+      markdownWithCitations: "Verification Required\nPlease enable JS and disable any ad blocker"
+    });
+
+    expect(typeof selected).toBe("string");
+    expect((selected as string).startsWith("# Full article")).toBe(true);
+    expect((selected as string).length).toBeGreaterThan(2000);
+  });
+
+  it("builds LLM markdown with citations and references when available", () => {
+    const prepared = (service as any).buildMarkdownForLlm(
+      {
+        sourceUrl: "https://example.com/story",
+        markdown: "# Story\n\nParagraph one.",
+        markdownWithCitations: "# Story[^1]\n\nParagraph one with citation.",
+        referencesMarkdown: "[^1]: https://example.com/source",
+        metadata: {},
+        publishedAt: null,
+        runId: null,
+        fetchedAt: "2024-01-01T00:00:00.000Z",
+        contentHash: "hash-1"
+      },
+      10_000
+    );
+
+    expect(prepared.source).toBe("citations");
+    expect(prepared.referencesAppended).toBe(true);
+    expect(prepared.markdown).toContain("[^1]: https://example.com/source");
+  });
+
+  it("keeps primary markdown when citations variant is anti-bot challenge", () => {
+    const prepared = (service as any).buildMarkdownForLlm(
+      {
+        sourceUrl: "https://example.com/story",
+        markdown: "# Headline\n\nNormal article body with context.",
+        markdownWithCitations: "Verification Required\nPlease enable JS and disable any ad blocker",
+        referencesMarkdown: null,
+        metadata: {},
+        publishedAt: null,
+        runId: null,
+        fetchedAt: "2024-01-01T00:00:00.000Z",
+        contentHash: "hash-2"
+      },
+      10_000
+    );
+
+    expect(prepared.source).toBe("primary");
+    expect(prepared.markdown).toContain("# Headline");
+  });
+
+  it("prefers raw markdown when fit markdown is over-pruned", () => {
+    const prepared = (service as any).buildMarkdownForLlm(
+      {
+        sourceUrl: "https://example.com/story",
+        markdown: "# Digest\n\nShort summary.",
+        rawMarkdown:
+          "# Full Story\n\n" +
+          "This paragraph carries substantial reporting context.\n".repeat(120),
+        fitMarkdown: "# Fit\n\nTiny fragment.",
+        markdownWithCitations: null,
+        referencesMarkdown: null,
+        metadata: {},
+        publishedAt: null,
+        runId: null,
+        fetchedAt: "2024-01-01T00:00:00.000Z",
+        contentHash: "hash-raw"
+      },
+      12_000
+    );
+
+    expect(prepared.variant).toBe("raw");
+    expect(prepared.markdown.startsWith("# Full Story")).toBe(true);
+    expect(prepared.markdown.length).toBeGreaterThan(3000);
+  });
+
+  it("extracts relative markdown links as detail candidates", () => {
+    const candidates = (service as any).extractDetailLinkCandidates({
+      sourceUrl: "https://jp.reuters.com/world/",
+      markdown:
+        "# world\n" +
+        "- [Detail](/world/us/HR4DZXQ265MXDBOFDVZM3QUIVA-2026-02-06/)\n" +
+        "- [External](https://www.reuters.com/world/us/HR4DZXQ265MXDBOFDVZM3QUIVA-2026-02-06/)\n",
+      markdownWithCitations: null,
+      referencesMarkdown: null,
+      metadata: {},
+      publishedAt: null,
+      runId: null,
+      fetchedAt: "2024-01-01T00:00:00.000Z",
+      contentHash: "hash-relative"
+    });
+
+    expect(candidates).toEqual([
+      "https://jp.reuters.com/world/us/HR4DZXQ265MXDBOFDVZM3QUIVA-2026-02-06/"
+    ]);
+  });
+
+  it("extracts detail article candidates from references markdown", () => {
+    const candidates = (service as any).extractDetailLinkCandidates({
+      sourceUrl: "https://jp.reuters.com/world/",
+      markdown: "# world",
+      markdownWithCitations: null,
+      referencesMarkdown:
+        "## References\n" +
+        "⟨1⟩ https://jp.reuters.com/world/us/: US section\n" +
+        "⟨2⟩ https://jp.reuters.com/world/us/HR4DZXQ265MXDBOFDVZM3QUIVA-2026-02-06/: detail\n" +
+        "⟨3⟩ https://www.reuters.com/resizer/v2/AAABBB.jpg: image\n",
+      metadata: {},
+      publishedAt: null,
+      runId: null,
+      fetchedAt: "2024-01-01T00:00:00.000Z",
+      contentHash: "hash-3"
+    });
+
+    expect(candidates).toEqual([
+      "https://jp.reuters.com/world/us/HR4DZXQ265MXDBOFDVZM3QUIVA-2026-02-06/"
+    ]);
+  });
+
+  it("throws explicit error when list-like markdown has no detail candidates", async () => {
+    await expect(
+      (service as any).expandListLikeArticle({
+        job,
+        payload: {
+          url: "https://jp.reuters.com/world/",
+          language: null,
+          sourceName: null,
+          keywords: [],
+          tags: [],
+          summaryHints: [],
+          metadata: {},
+          forceRefresh: false,
+          crawlOptions: {}
+        },
+        article: {
+          sourceUrl: "https://jp.reuters.com/world/",
+          markdown:
+            "# world\n\n" +
+            "- [US](https://jp.reuters.com/world/us/)\n".repeat(40),
+          markdownWithCitations: null,
+          referencesMarkdown: null,
+          metadata: {},
+          publishedAt: null,
+          runId: null,
+          fetchedAt: "2024-01-01T00:00:00.000Z",
+          contentHash: "hash-4"
+        }
+      })
+    ).rejects.toThrow("no detail candidate URLs were extracted");
+  });
+
+  it("selects non-challenge crawl result when preferred source is blocked", async () => {
+    const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
+      CrawlResultContentModel: { findById: jest.Mock };
+    };
+
+    prisma.crawlResult.findMany = jest.fn().mockResolvedValue([
+      {
+        id: "preferred",
+        sourceUrl: "https://www.reuters.com/world/",
+        markdownRef: "md-blocked"
+      },
+      {
+        id: "alt",
+        sourceUrl: "https://jp.reuters.com/world/",
+        markdownRef: "md-usable"
+      }
+    ]);
+
+    CrawlResultContentModel.findById.mockImplementation((id: string) => ({
+      lean: jest.fn().mockResolvedValue(
+        id === "md-blocked"
+          ? {
+              markdown: "Verification Required\nPlease enable JS and disable any ad blocker"
+            }
+          : {
+              markdown:
+                "# Usable story\n\n" +
+                "Paragraph with meaningful context and facts.\n".repeat(80)
+            }
+      )
+    }));
+
+    const selected = await (service as any).selectBestPipelineCrawlResultId({
+      orgId: "org-1",
+      crawlTaskId: "crawl-task-1",
+      preferredResultId: "preferred",
+      preferredSourceUrl: "https://www.reuters.com/world/"
+    });
+
+    expect(selected).toBe("alt");
+  });
+
   it("falls back to crawled markdown when LLM omits cleaned_markdown", async () => {
     (liteLlm.acompletion as jest.Mock).mockResolvedValueOnce({
       id: "cmpl",

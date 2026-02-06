@@ -482,25 +482,79 @@ export class CrawlResultService {
       return { primary: undefined } as const;
     }
     if (typeof markdown === "string") {
+      const normalized = this.normalizeMarkdownCandidate(markdown);
       return {
-        primary: markdown,
-        raw: markdown
+        primary: normalized,
+        raw: normalized
       } as const;
     }
     if (typeof markdown !== "object") {
       return { primary: undefined } as const;
     }
+
     const record = markdown as Record<string, unknown>;
-    const raw =
+    const raw = this.normalizeMarkdownCandidate(
       this.ensureString(record.raw_markdown) ??
-      this.ensureString(record.rawMarkdown) ??
-      this.ensureString(record.markdown);
-    const citations =
-      this.ensureString(record.markdown_with_citations) ?? this.ensureString(record.markdownWithCitations);
-    const references =
-      this.ensureString(record.references_markdown) ?? this.ensureString(record.referencesMarkdown);
-    const fit = this.ensureString(record.fit_markdown) ?? this.ensureString(record.fitMarkdown);
-    const fallback = fit ?? raw ?? citations ?? references ?? this.ensureString(record.text);
+        this.ensureString(record.rawMarkdown) ??
+        this.ensureString(record.markdown)
+    );
+    const citations = this.normalizeMarkdownCandidate(
+      this.ensureString(record.markdown_with_citations) ?? this.ensureString(record.markdownWithCitations)
+    );
+    const references = this.normalizeMarkdownCandidate(
+      this.ensureString(record.references_markdown) ?? this.ensureString(record.referencesMarkdown)
+    );
+    const fit = this.normalizeMarkdownCandidate(
+      this.ensureString(record.fit_markdown) ?? this.ensureString(record.fitMarkdown)
+    );
+    const textFallback = this.normalizeMarkdownCandidate(this.ensureString(record.text));
+
+    const candidates: {
+      source: "raw" | "citations" | "fit" | "references" | "text";
+      value: string;
+    }[] = [];
+
+    if (citations) {
+      candidates.push({ source: "citations", value: citations });
+    }
+    if (raw) {
+      candidates.push({ source: "raw", value: raw });
+    }
+    if (fit) {
+      candidates.push({ source: "fit", value: fit });
+    }
+    if (references) {
+      candidates.push({ source: "references", value: references });
+    }
+    if (textFallback) {
+      candidates.push({ source: "text", value: textFallback });
+    }
+
+    const maxNonReferenceLength = candidates
+      .filter((candidate) => candidate.source !== "references")
+      .reduce((maxLength, candidate) => Math.max(maxLength, candidate.value.length), 0);
+
+    const scoredCandidates = candidates
+      .map((candidate) => {
+        const markdownForScore =
+          candidate.source === "citations"
+            ? this.stripCitationReferenceSection(candidate.value)
+            : candidate.value;
+        return {
+          ...candidate,
+          score: this.scoreMarkdownCandidate(markdownForScore, candidate.source, maxNonReferenceLength)
+        };
+      })
+      .sort((left, right) => right.score - left.score || right.value.length - left.value.length);
+
+    let bestCandidate = scoredCandidates[0];
+    const richerCandidate = this.selectRicherPrimaryCandidate(scoredCandidates);
+    if (bestCandidate && richerCandidate && this.shouldPreferRicherCandidate(bestCandidate, richerCandidate)) {
+      bestCandidate = richerCandidate;
+    }
+
+    const fallback = bestCandidate?.value ?? citations ?? raw ?? fit ?? references ?? textFallback;
+
     return {
       primary: fallback,
       raw: raw ?? fallback,
@@ -510,7 +564,251 @@ export class CrawlResultService {
     } as const;
   }
 
+  private scoreMarkdownCandidate(
+    markdown: string,
+    source: "raw" | "citations" | "fit" | "references" | "text",
+    maxCandidateLength: number
+  ): number {
+    const trimmed = markdown.trim();
+    if (!trimmed) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    if (this.isLikelyBotChallengeMarkdown(trimmed)) {
+      return -5000;
+    }
+
+    const carriageReturn = String.fromCharCode(13);
+    const newLine = String.fromCharCode(10);
+    const tab = String.fromCharCode(9);
+    const paragraphSeparator = newLine + newLine;
+
+    const normalizedSpaces = trimmed
+      .replaceAll(carriageReturn, " ")
+      .replaceAll(newLine, " ")
+      .replaceAll(tab, " ");
+
+    const wordCount = normalizedSpaces
+      .split(" ")
+      .map((word) => word.trim())
+      .filter((word) => word.length > 0).length;
+
+    const headingCount = trimmed
+      .split(newLine)
+      .map((line) => line.trimStart())
+      .filter((line) => line.startsWith("#")).length;
+
+    const citationCount = this.countOccurrences(trimmed, "[^");
+    const markdownLinkCount = this.countOccurrences(trimmed, "](");
+    const paragraphCount = trimmed
+      .split(paragraphSeparator)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0).length;
+
+    let score =
+      Math.min(wordCount, 12000) +
+      headingCount * 8 +
+      citationCount * 3 +
+      Math.min(paragraphCount, 160) * 2 -
+      markdownLinkCount * 3;
+
+    score -= this.estimateNavigationNoisePenalty(trimmed);
+
+    const coverageRatio =
+      maxCandidateLength > 0 ? Math.min(2, trimmed.length / maxCandidateLength) : 1;
+
+    if (source === "citations") {
+      score += 30;
+    }
+    if (source === "fit") {
+      score -= 60;
+      if (maxCandidateLength >= 1200 && coverageRatio < 0.45) {
+        score -= 260;
+      }
+    }
+    if (source === "references") {
+      score -= 140;
+    }
+    if (source === "text") {
+      score -= 20;
+    }
+    if ((source === "raw" || source === "citations") && coverageRatio >= 0.45) {
+      score += Math.round(Math.min((coverageRatio - 0.45) * 180, 120));
+    }
+
+    return score;
+  }
+
+  private selectRicherPrimaryCandidate(
+    candidates: {
+      source: "raw" | "citations" | "fit" | "references" | "text";
+      value: string;
+      score: number;
+    }[]
+  ) {
+    const richerCandidates = candidates.filter(
+      (candidate) =>
+        (candidate.source === "citations" || candidate.source === "raw") &&
+        !this.isLikelyBotChallengeMarkdown(candidate.value)
+    );
+
+    if (richerCandidates.length === 0) {
+      return undefined;
+    }
+
+    return richerCandidates.sort((left, right) => right.value.length - left.value.length || right.score - left.score)[0];
+  }
+
+  private shouldPreferRicherCandidate(
+    current: {
+      source: "raw" | "citations" | "fit" | "references" | "text";
+      value: string;
+      score: number;
+    },
+    richer: {
+      source: "raw" | "citations" | "fit" | "references" | "text";
+      value: string;
+      score: number;
+    }
+  ) {
+    const currentTrimmed = current.value.trim();
+    const richerTrimmed = richer.value.trim();
+    if (!currentTrimmed || !richerTrimmed) {
+      return false;
+    }
+
+    const currentIsChallenge = this.isLikelyBotChallengeMarkdown(currentTrimmed);
+    const richerIsChallenge = this.isLikelyBotChallengeMarkdown(richerTrimmed);
+    if (currentIsChallenge && !richerIsChallenge) {
+      return true;
+    }
+
+    const currentLength = currentTrimmed.length;
+    const richerLength = richerTrimmed.length;
+
+    if (current.source === "fit" && richerLength >= 1600 && currentLength <= 800) {
+      return true;
+    }
+
+    if (richerLength >= 1200 && currentLength < richerLength * 0.33 && current.score - richer.score <= 420) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private stripCitationReferenceSection(markdown: string): string {
+    const newLine = String.fromCharCode(10);
+    const lines = markdown.split(newLine);
+    const referenceStartIndex = lines.findIndex((line) => /^[^[^]]+]:/.test(line.trim()));
+    if (referenceStartIndex <= 0) {
+      return markdown;
+    }
+    const body = lines.slice(0, referenceStartIndex).join(newLine).trim();
+    return body.length > 0 ? body : markdown;
+  }
+
+  private estimateNavigationNoisePenalty(markdown: string): number {
+    const newLine = String.fromCharCode(10);
+    const lines = markdown
+      .split(newLine)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length < 10) {
+      return 0;
+    }
+
+    const noiseLikeLines = lines.filter((line) => {
+      if (line.length > 80) {
+        return false;
+      }
+      const hasSentencePunctuation = [".", "!", "?", "。", "！", "？"].some((token) => line.includes(token));
+      if (hasSentencePunctuation) {
+        return false;
+      }
+      return (
+        line.startsWith("- ") ||
+        line.startsWith("* ") ||
+        line.startsWith("• ") ||
+        line.includes("|") ||
+        line.includes("›") ||
+        line.includes("»") ||
+        line.includes("⟨") ||
+        line.includes("https://") ||
+        line.includes("http://")
+      );
+    }).length;
+
+    const ratio = noiseLikeLines / lines.length;
+    if (ratio < 0.35) {
+      return 0;
+    }
+
+    return Math.round(ratio * 1200);
+  }
+
+  private countOccurrences(value: string, needle: string): number {
+    if (!value || !needle) {
+      return 0;
+    }
+    let count = 0;
+    let fromIndex = 0;
+    while (fromIndex < value.length) {
+      const next = value.indexOf(needle, fromIndex);
+      if (next === -1) {
+        break;
+      }
+      count += 1;
+      fromIndex = next + needle.length;
+    }
+    return count;
+  }
+
+  public isLikelyBotChallengeMarkdown(markdown: string): boolean {
+    const normalized = markdown.toLowerCase();
+
+    const strongIndicators = [
+      "verification required",
+      "please enable js and disable any ad blocker",
+      "please enable javascript",
+      "checking your browser before accessing",
+      "you are being rate limited"
+    ];
+
+    if (strongIndicators.some((indicator) => normalized.includes(indicator))) {
+      return true;
+    }
+
+    const weakIndicators = [
+      "captcha",
+      "cloudflare",
+      "datadome",
+      "are you human",
+      "access denied",
+      "security check",
+      "automated requests",
+      "bot detection"
+    ];
+
+    const weakHits = weakIndicators.reduce(
+      (total, indicator) => total + (normalized.includes(indicator) ? 1 : 0),
+      0
+    );
+
+    return weakHits >= 2 && normalized.length < 12000;
+  }
+
+  private normalizeMarkdownCandidate(value: string | undefined): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
   extractLinkAnalysisFromResult(item: Crawl4aiArticle): CrawlLinkAnalysis | undefined {
+
     const direct = buildLinkAnalysis(item.links);
     if (direct) {
       return direct;

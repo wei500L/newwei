@@ -212,7 +212,7 @@ model CrawlTask {
   lastSuccessAt  DateTime?
   lastResultAt   DateTime?
   lastCursor     String?
-  lastError      String?
+  lastError      String?          @db.Text
   runCount       Int              @default(0)
   lastServerMemoryMb    Float?
   lastPeakMemoryMb      Float?
@@ -351,7 +351,7 @@ model PipelineJob {
   startedAt    DateTime?
   completedAt  DateTime?
   attempts     Int               @default(0)
-  error        String?
+  error        String?           @db.Text
   crawlRunId   String?
   article      Article?          @relation(fields: [articleId], references: [id])
   articleId    String?

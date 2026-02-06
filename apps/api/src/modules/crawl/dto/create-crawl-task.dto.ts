@@ -121,6 +121,10 @@ export class CrawlMarkdownOptionsDto {
   escapeHtml?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  citations?: boolean;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(40)
@@ -130,8 +134,8 @@ export class CrawlMarkdownOptionsDto {
 
 export class CrawlMarkdownFilterDto {
   @IsOptional()
-  @IsIn(["pruning"])
-  type?: "pruning";
+  @IsIn(["pruning", "bm25"])
+  type?: "pruning" | "bm25";
 
   @IsOptional()
   @Type(() => Number)
@@ -150,6 +154,23 @@ export class CrawlMarkdownFilterDto {
   @Min(0)
   @Max(500)
   minWordThreshold?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  userQuery?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: "bm25Threshold must be a number" })
+  @Min(0)
+  @Max(20)
+  bm25Threshold?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  language?: string;
 }
 
 export class CrawlMarkdownStrategyDto {
@@ -182,18 +203,25 @@ export class CrawlVirtualScrollConfigDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(200)
+  @Max(1000)
   scrollCount?: number;
 
   @IsOptional()
-  @IsIn(["container_height", "viewport", "pixels"])
-  scrollBy?: "container_height" | "viewport" | "pixels";
+  @IsIn(["container_height", "page_height", "viewport", "pixels"])
+  scrollBy?: "container_height" | "page_height" | "viewport" | "pixels";
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20000)
+  scrollByPixels?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(10000)
+  @Max(60000)
   waitAfterScrollMs?: number;
 }
 
@@ -515,6 +543,10 @@ export class CrawlOptionsDto {
   @IsOptional()
   @IsBoolean()
   excludeExternalImages?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  waitForImages?: boolean;
 
   @IsOptional()
   @IsBoolean()

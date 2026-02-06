@@ -3517,7 +3517,10 @@
       "requeued": "已重新入队",
       "retryFailed": "重试失败",
       "queued": "已排队",
-      "createFailed": "创建失败"
+      "createFailed": "创建失败",
+      "errors": {
+        "llmOptionsForbidden": "爬取阶段禁止使用 Crawl4AI 的 LLM 提取配置（例如 extractionStrategy / llmConfig / LLMExtractionStrategy）。请仅在后处理流水线中使用 LLM。"
+      }
     },
     "search": {
       "placeholder": "请输入"
@@ -3766,12 +3769,17 @@
         "keepLinks": "保留链接",
         "escapeHtml": "转义 HTML",
         "renderHtml": "渲染 HTML",
+        "citationsEnabled": "已启用引用",
+        "citationsDisabled": "未启用引用",
         "wrap": "自动换行"
       },
       "markdownFilter": {
         "threshold": "阈值",
         "mode": "模式",
-        "minWords": "最小字数"
+        "minWords": "最小字数",
+        "query": "查询",
+        "bm25Threshold": "BM25 阈值",
+        "language": "语言"
       },
       "markdownStrategy": {
         "default": "默认",
@@ -3829,6 +3837,7 @@
         "lastRunResults": "上次运行结果",
         "runCount": "运行数量",
         "scanFullPage": "扫描完整页面",
+        "virtualScroll": "虚拟滚动",
         "adjustViewport": "调整视口",
         "headless": "无头模式",
         "undetectedBrowser": "反检测浏览器",
@@ -4013,6 +4022,27 @@
       "overrideNavigator": "覆盖 Navigator",
       "overrideNavigatorHint": "覆盖 Navigator 提示"
     },
+    "virtualScroll": {
+      "title": "虚拟滚动",
+      "description": "用于无限滚动或虚拟列表的有界滚动配置（Feed/时间线/懒加载列表）。",
+      "enable": "启用虚拟滚动",
+      "containerSelector": "容器选择器",
+      "containerSelectorHint": "可滚动容器的 CSS 选择器；全页滚动可使用 \"body\"。",
+      "scrollCount": "滚动次数",
+      "scrollCountHint": "最多滚动多少次（有上限）。",
+      "scrollBy": "每次滚动距离",
+      "scrollByHint": "每次滚动多少。",
+      "scrollByPixels": "每次滚动距离（像素）",
+      "scrollByPixelsHint": "选择“像素”模式时，每次滚动的像素值。",
+      "scrollByOptions": {
+        "pageHeight": "页面高度（视口）",
+        "containerHeight": "容器高度",
+        "pixels": "像素"
+      },
+      "waitAfterScroll": "滚动后等待（毫秒）",
+      "waitAfterScrollHint": "每次滚动后等待内容加载的时间。",
+      "scanFullPageHint": "提示：全页扫描可能与有界虚拟滚动冲突；无限滚动页面建议优先使用虚拟滚动。"
+    },
     "dynamic": {
       "title": "动态",
       "description": "动态说明",
@@ -4046,7 +4076,10 @@
         "filter": "请输入过滤",
         "pruningThreshold": "请输入剪枝阈值",
         "thresholdMode": "请输入阈值模式",
-        "minWords": "请输入最小字数"
+        "minWords": "请输入最小字数",
+        "bm25Query": "请输入 BM25 查询",
+        "bm25Threshold": "请输入 BM25 阈值",
+        "bm25Language": "请输入语言"
       },
       "source": "来源",
       "sourceHint": "来源提示",
@@ -4059,12 +4092,15 @@
       "ignoreLinksHint": "忽略链接提示",
       "escapeHtml": "转义 HTML",
       "escapeHtmlHint": "转义 HTML 提示",
+      "citations": "引用",
+      "citationsHint": "在支持时附加引用标记与参考文献 markdown。",
       "bodyWidth": "正文宽度",
       "bodyWidthHint": "正文宽度提示",
       "filter": "过滤",
       "filterHint": "过滤提示",
       "filterOptions": {
-        "pruning": "剪枝"
+        "pruning": "剪枝",
+        "bm25": "BM25"
       },
       "pruningThreshold": "剪枝阈值",
       "pruningThresholdHint": "剪枝阈值提示",
@@ -4076,6 +4112,15 @@
       },
       "minWords": "最小字数",
       "minWordsHint": "最小字数提示",
+      "bm25Query": "BM25 查询",
+      "bm25QueryHint": "用于排序并保留最相关内容块的查询语句。",
+      "bm25Threshold": "BM25 阈值",
+      "bm25ThresholdHint": "阈值越高，保留的内容越少但相关性更高。",
+      "bm25Language": "BM25 语言",
+      "bm25LanguageHint": "可选词干化语言，例如 english。",
+      "validation": {
+        "bm25QueryRequired": "选择 BM25 过滤器时必须填写 BM25 查询。"
+      },
       "customStrategy": {
         "title": "自定义策略",
         "description": "自定义策略说明",
@@ -4088,7 +4133,12 @@
           "params": "请输入参数"
         },
         "params": "参数",
-        "paramsHint": "参数提示"
+        "paramsHint": "参数提示",
+        "validation": {
+          "paramsMustBeJson": "参数必须是合法 JSON。",
+          "noLlmExtraction": "爬取阶段禁止使用 LLM 提取策略。",
+          "noLlmExtractionHint": "请勿在 crawlOptions 中设置 extractionStrategy、llmConfig 或 LLMExtractionStrategy。爬取阶段只负责抓取与清洗，LLM 应在后处理流水线执行。"
+        }
       },
       "clean": {
         "title": "清理",

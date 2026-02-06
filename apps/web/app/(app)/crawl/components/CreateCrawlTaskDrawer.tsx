@@ -9,6 +9,7 @@ import {
   TeamOutlined,
 } from "@ant-design/icons";
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -72,6 +73,75 @@ const TEMPLATES = [
   },
 ];
 
+const normalizeOptionGuardKey = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const hasBlockedCrawlLlmType = (value?: string) => {
+  if (!value) {
+    return false;
+  }
+  const normalized = normalizeOptionGuardKey(value);
+  if (!normalized.includes("llm")) {
+    return false;
+  }
+  return (
+    normalized.includes("strategy") ||
+    normalized.includes("extraction") ||
+    normalized.includes("llm")
+  );
+};
+
+const hasBlockedCrawlLlmParams = (rawText?: string) => {
+  if (!rawText || !rawText.trim()) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(rawText);
+    const visited = new Set<unknown>();
+    const walk = (value: unknown, prefix = ""): boolean => {
+      if (!value || typeof value !== "object") {
+        return false;
+      }
+      if (visited.has(value)) {
+        return false;
+      }
+      visited.add(value);
+
+      if (Array.isArray(value)) {
+        return value.some((entry, index) => walk(entry, prefix + "[" + index + "]"));
+      }
+
+      for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+        const normalizedKey = normalizeOptionGuardKey(key);
+        const path = prefix ? prefix + "." + key : key;
+
+        if (normalizedKey === "extractionstrategy" || normalizedKey === "llmconfig") {
+          return true;
+        }
+
+        if (
+          normalizedKey === "type" &&
+          typeof entry === "string" &&
+          hasBlockedCrawlLlmType(entry) &&
+          /strategy|extraction/i.test(path)
+        ) {
+          return true;
+        }
+
+        if (walk(entry, path)) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    return walk(parsed);
+  } catch {
+    return false;
+  }
+};
+
 export function CreateCrawlTaskDrawer({
   form,
   open,
@@ -131,7 +201,7 @@ export function CreateCrawlTaskDrawer({
           ingestToItems: canWriteItems ? true : false,
           onlyMainContent: true,
           extractLinks: false,
-          scanFullPage: true,
+          scanFullPage: false,
           adjustViewportToContent: true,
           scrollDelayMs: 200,
           includeImages: true,
@@ -324,6 +394,20 @@ function CrawlSettingsForm({
   canWriteItems,
 }: CrawlSettingsFormProps) {
   const { t } = useTranslation();
+  const form = Form.useFormInstance<CreateCrawlTaskFormValues>();
+  const virtualScrollEnabled = Boolean(Form.useWatch(["virtualScroll", "enabled"], form));
+  const virtualScrollScrollByValue = Form.useWatch(["virtualScroll", "scrollBy"], form);
+  const markdownStrategyTypeValue = Form.useWatch(["markdownStrategy", "type"], form);
+  const markdownStrategyParamsValue = Form.useWatch(["markdownStrategy", "params"], form);
+  const markdownStrategyHasLlmConfig =
+    hasBlockedCrawlLlmType(
+      typeof markdownStrategyTypeValue === "string" ? markdownStrategyTypeValue : undefined,
+    ) ||
+    hasBlockedCrawlLlmParams(
+      typeof markdownStrategyParamsValue === "string"
+        ? markdownStrategyParamsValue
+        : undefined,
+    );
   const ingestHint = canWriteItems
     ? t("crawl.settings.ingestToItemsHint", {
         defaultValue: "New crawl results will be converted into Items and queued for LLM processing."
@@ -410,7 +494,7 @@ function CrawlSettingsForm({
         name="scanFullPage"
         valuePropName="checked"
       >
-        <Switch />
+        <Switch disabled={virtualScrollEnabled} />
       </Form.Item>
       <Form.Item label={t("crawl.settings.scrollDelay")} name="scrollDelayMs">
         <InputNumber
@@ -418,9 +502,126 @@ function CrawlSettingsForm({
           max={5000}
           style={{ width: "100%" }}
           placeholder={t("crawl.settings.placeholders.scrollDelay")}
-          disabled={!scanFullPage}
+          disabled={!scanFullPage || virtualScrollEnabled}
         />
       </Form.Item>
+      <Card
+        title={t("crawl.virtualScroll.title")}
+        size="small"
+        style={{ marginBottom: 16 }}
+        extra={
+          <Typography.Link
+            href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/advanced/virtual-scroll.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t("common.docs")}
+          </Typography.Link>
+        }
+      >
+        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+          {t("crawl.virtualScroll.description")}
+        </Typography.Paragraph>
+        <Form.Item
+          label={t("crawl.virtualScroll.enable")}
+          name={["virtualScroll", "enabled"]}
+          valuePropName="checked"
+        >
+          <Switch
+            onChange={(enabled) => {
+              if (!enabled) {
+                form.setFields([{ name: ["virtualScroll"], value: undefined }]);
+                return;
+              }
+              const current = (form.getFieldValue(["virtualScroll"]) ?? {}) as Record<
+                string,
+                unknown
+              >;
+              const containerSelector =
+                typeof current.containerSelector === "string" && current.containerSelector.trim().length
+                  ? current.containerSelector
+                  : "body";
+              const scrollCount =
+                typeof current.scrollCount === "number" && Number.isFinite(current.scrollCount)
+                  ? current.scrollCount
+                  : 10;
+              const scrollBy =
+                typeof current.scrollBy === "string" && current.scrollBy.length ? current.scrollBy : "page_height";
+              const scrollByPixels =
+                typeof current.scrollByPixels === "number" && Number.isFinite(current.scrollByPixels)
+                  ? current.scrollByPixels
+                  : 500;
+              const waitAfterScrollMs =
+                typeof current.waitAfterScrollMs === "number" && Number.isFinite(current.waitAfterScrollMs)
+                  ? current.waitAfterScrollMs
+                  : 600;
+              form.setFields([
+                { name: ["scanFullPage"], value: false },
+                { name: ["scrollDelayMs"], value: undefined },
+                { name: ["virtualScroll", "enabled"], value: true },
+                { name: ["virtualScroll", "containerSelector"], value: containerSelector },
+                { name: ["virtualScroll", "scrollCount"], value: scrollCount },
+                { name: ["virtualScroll", "scrollBy"], value: scrollBy },
+                { name: ["virtualScroll", "scrollByPixels"], value: scrollByPixels },
+                { name: ["virtualScroll", "waitAfterScrollMs"], value: waitAfterScrollMs }
+              ]);
+            }}
+          />
+        </Form.Item>
+        {virtualScrollEnabled ? (
+          <>
+            <Form.Item
+              label={t("crawl.virtualScroll.containerSelector")}
+              name={["virtualScroll", "containerSelector"]}
+              extra={t("crawl.virtualScroll.containerSelectorHint")}
+            >
+              <Input placeholder="body" />
+            </Form.Item>
+            <Form.Item
+              label={t("crawl.virtualScroll.scrollCount")}
+              name={["virtualScroll", "scrollCount"]}
+              extra={t("crawl.virtualScroll.scrollCountHint")}
+            >
+              <InputNumber min={1} max={1000} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("crawl.virtualScroll.scrollBy")}
+              name={["virtualScroll", "scrollBy"]}
+              extra={t("crawl.virtualScroll.scrollByHint")}
+            >
+              <Select
+                allowClear
+                options={[
+                  { value: "page_height", label: t("crawl.virtualScroll.scrollByOptions.pageHeight") },
+                  { value: "container_height", label: t("crawl.virtualScroll.scrollByOptions.containerHeight") },
+                  { value: "pixels", label: t("crawl.virtualScroll.scrollByOptions.pixels") }
+                ]}
+              />
+            </Form.Item>
+            {virtualScrollScrollByValue === "pixels" ? (
+              <Form.Item
+                label={t("crawl.virtualScroll.scrollByPixels")}
+                name={["virtualScroll", "scrollByPixels"]}
+                extra={t("crawl.virtualScroll.scrollByPixelsHint")}
+              >
+                <InputNumber min={1} max={20000} step={50} style={{ width: "100%" }} />
+              </Form.Item>
+            ) : null}
+            <Form.Item
+              label={t("crawl.virtualScroll.waitAfterScroll")}
+              name={["virtualScroll", "waitAfterScrollMs"]}
+              extra={t("crawl.virtualScroll.waitAfterScrollHint")}
+            >
+              <InputNumber min={0} max={60000} step={100} style={{ width: "100%" }} />
+            </Form.Item>
+            {scanFullPage ? (
+              <Typography.Text type="secondary" style={{ display: "block" }}>
+                {t("crawl.virtualScroll.scanFullPageHint")}
+              </Typography.Text>
+            ) : null}
+          </>
+        ) : null}
+      </Card>
       <Form.Item
         label={t("crawl.settings.adjustViewport")}
         name="adjustViewportToContent"
@@ -593,6 +794,14 @@ function CrawlSettingsForm({
         <Switch />
       </Form.Item>
       <Form.Item
+        label={t("crawl.markdown.citations")}
+        name={["markdownOptions", "citations"]}
+        valuePropName="checked"
+        extra={t("crawl.markdown.citationsHint")}
+      >
+        <Switch />
+      </Form.Item>
+      <Form.Item
         label={t("crawl.markdown.bodyWidth")}
         name={["markdownOptions", "bodyWidth"]}
         extra={t("crawl.markdown.bodyWidthHint")}
@@ -612,7 +821,10 @@ function CrawlSettingsForm({
         <Select
           allowClear
           placeholder={t("crawl.markdown.placeholders.filter")}
-          options={[{ value: "pruning", label: t("crawl.markdown.filterOptions.pruning") }]}
+          options={[
+            { value: "pruning", label: t("crawl.markdown.filterOptions.pruning") },
+            { value: "bm25", label: t("crawl.markdown.filterOptions.bm25") },
+          ]}
         />
       </Form.Item>
       <Form.Item
@@ -658,6 +870,47 @@ function CrawlSettingsForm({
           placeholder={t("crawl.markdown.placeholders.minWords")}
         />
       </Form.Item>
+      <Form.Item
+        label={t("crawl.markdown.bm25Query")}
+        name={["markdownFilter", "userQuery"]}
+        hidden={markdownFilterType !== "bm25"}
+        extra={t("crawl.markdown.bm25QueryHint")}
+        rules={
+          markdownFilterType === "bm25"
+            ? [
+                {
+                  required: true,
+                  whitespace: true,
+                  message: t("crawl.markdown.validation.bm25QueryRequired"),
+                },
+              ]
+            : undefined
+        }
+      >
+        <Input placeholder={t("crawl.markdown.placeholders.bm25Query")} maxLength={240} />
+      </Form.Item>
+      <Form.Item
+        label={t("crawl.markdown.bm25Threshold")}
+        name={["markdownFilter", "bm25Threshold"]}
+        hidden={markdownFilterType !== "bm25"}
+        extra={t("crawl.markdown.bm25ThresholdHint")}
+      >
+        <InputNumber
+          min={0}
+          max={20}
+          step={0.1}
+          style={{ width: "100%" }}
+          placeholder={t("crawl.markdown.placeholders.bm25Threshold")}
+        />
+      </Form.Item>
+      <Form.Item
+        label={t("crawl.markdown.bm25Language")}
+        name={["markdownFilter", "language"]}
+        hidden={markdownFilterType !== "bm25"}
+        extra={t("crawl.markdown.bm25LanguageHint")}
+      >
+        <Input placeholder={t("crawl.markdown.placeholders.bm25Language")} maxLength={32} />
+      </Form.Item>
       <Typography.Title level={5} style={{ marginTop: 24 }}>
         {t("crawl.markdown.customStrategy.title")}
       </Typography.Title>
@@ -672,10 +925,33 @@ function CrawlSettingsForm({
         </Typography.Link>
         {t("crawl.markdown.customStrategy.trailing")}
       </Typography.Paragraph>
+      {markdownStrategyHasLlmConfig ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={t("crawl.markdown.customStrategy.validation.noLlmExtraction")}
+          description={t("crawl.markdown.customStrategy.validation.noLlmExtractionHint")}
+        />
+      ) : null}
       <Form.Item
         label={t("crawl.markdown.customStrategy.type")}
         name={["markdownStrategy", "type"]}
         extra={t("crawl.markdown.customStrategy.typeHint")}
+        rules={[
+          {
+            validator: async (_, value) => {
+              if (typeof value !== "string" || value.trim().length === 0) {
+                return;
+              }
+              if (hasBlockedCrawlLlmType(value)) {
+                throw new Error(
+                  t("crawl.markdown.customStrategy.validation.noLlmExtraction"),
+                );
+              }
+            },
+          },
+        ]}
       >
         <Input placeholder={t("crawl.markdown.customStrategy.placeholders.type")} maxLength={128} />
       </Form.Item>
@@ -683,6 +959,27 @@ function CrawlSettingsForm({
         label={t("crawl.markdown.customStrategy.params")}
         name={["markdownStrategy", "params"]}
         extra={t("crawl.markdown.customStrategy.paramsHint")}
+        rules={[
+          {
+            validator: async (_, value) => {
+              if (typeof value !== "string" || value.trim().length === 0) {
+                return;
+              }
+              try {
+                JSON.parse(value);
+              } catch {
+                throw new Error(
+                  t("crawl.markdown.customStrategy.validation.paramsMustBeJson"),
+                );
+              }
+              if (hasBlockedCrawlLlmParams(value)) {
+                throw new Error(
+                  t("crawl.markdown.customStrategy.validation.noLlmExtraction"),
+                );
+              }
+            },
+          },
+        ]}
       >
         <Input.TextArea
           rows={4}
@@ -1070,6 +1367,151 @@ function CrawlSettingsForm({
                     style={{ width: "100%" }}
                     placeholder={t("crawl.settings.placeholders.scrollDelay")}
                   />
+                </Form.Item>
+                <Typography.Text strong style={{ marginBottom: 8, display: "block" }}>
+                  {t("crawl.virtualScroll.title")}
+                </Typography.Text>
+                <Form.Item
+                  label={t("crawl.virtualScroll.enable")}
+                  name={[field.name, "options", "virtualScroll", "enabled"]}
+                  valuePropName="checked"
+                >
+	                  <Switch
+	                    onChange={(enabled) => {
+	                      const basePath = ["multiUrlConfigs", field.name, "options", "virtualScroll"] as (string | number)[];
+	                      if (!enabled) {
+	                        form.setFields([{ name: basePath as any, value: undefined }]);
+	                        return;
+	                      }
+	                      const current = (form.getFieldValue(basePath as any) ?? {}) as Record<string, unknown>;
+                      const containerSelector =
+                        typeof current.containerSelector === "string" &&
+                        current.containerSelector.trim().length
+                          ? current.containerSelector
+                          : "body";
+                      const scrollCount =
+                        typeof current.scrollCount === "number" && Number.isFinite(current.scrollCount)
+                          ? current.scrollCount
+                          : 10;
+                      const scrollBy =
+                        typeof current.scrollBy === "string" && current.scrollBy.length
+                          ? current.scrollBy
+                          : "page_height";
+                      const scrollByPixels =
+                        typeof current.scrollByPixels === "number" && Number.isFinite(current.scrollByPixels)
+                          ? current.scrollByPixels
+                          : 500;
+                      const waitAfterScrollMs =
+                        typeof current.waitAfterScrollMs === "number" &&
+                        Number.isFinite(current.waitAfterScrollMs)
+                          ? current.waitAfterScrollMs
+                          : 600;
+	                      form.setFields([
+	                        { name: ["multiUrlConfigs", field.name, "options", "scanFullPage"], value: false },
+	                        { name: ["multiUrlConfigs", field.name, "options", "scrollDelayMs"], value: undefined },
+	                        { name: [...basePath, "enabled"] as any, value: true },
+	                        { name: [...basePath, "containerSelector"] as any, value: containerSelector },
+	                        { name: [...basePath, "scrollCount"] as any, value: scrollCount },
+	                        { name: [...basePath, "scrollBy"] as any, value: scrollBy },
+	                        { name: [...basePath, "scrollByPixels"] as any, value: scrollByPixels },
+	                        { name: [...basePath, "waitAfterScrollMs"] as any, value: waitAfterScrollMs }
+	                      ]);
+	                    }}
+	                  />
+                </Form.Item>
+                <Form.Item
+                  noStyle
+                  shouldUpdate={(prev, next) => {
+                    const prevEnabled = prev?.multiUrlConfigs?.[field.name]?.options?.virtualScroll?.enabled;
+                    const nextEnabled = next?.multiUrlConfigs?.[field.name]?.options?.virtualScroll?.enabled;
+                    return prevEnabled !== nextEnabled;
+                  }}
+                >
+                  {() => {
+                    const enabled = Boolean(
+                      form.getFieldValue([
+                        "multiUrlConfigs",
+                        field.name,
+                        "options",
+                        "virtualScroll",
+                        "enabled"
+                      ])
+                    );
+                    if (!enabled) {
+                      return null;
+                    }
+                    return (
+                      <>
+                        <Form.Item
+                          label={t("crawl.virtualScroll.containerSelector")}
+                          name={[field.name, "options", "virtualScroll", "containerSelector"]}
+                          extra={t("crawl.virtualScroll.containerSelectorHint")}
+                        >
+                          <Input placeholder="body" />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("crawl.virtualScroll.scrollCount")}
+                          name={[field.name, "options", "virtualScroll", "scrollCount"]}
+                          extra={t("crawl.virtualScroll.scrollCountHint")}
+                        >
+                          <InputNumber min={1} max={1000} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("crawl.virtualScroll.scrollBy")}
+                          name={[field.name, "options", "virtualScroll", "scrollBy"]}
+                          extra={t("crawl.virtualScroll.scrollByHint")}
+                        >
+                          <Select
+                            allowClear
+                            options={[
+                              { value: "page_height", label: t("crawl.virtualScroll.scrollByOptions.pageHeight") },
+                              { value: "container_height", label: t("crawl.virtualScroll.scrollByOptions.containerHeight") },
+                              { value: "pixels", label: t("crawl.virtualScroll.scrollByOptions.pixels") }
+                            ]}
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          noStyle
+                          shouldUpdate={(prev, next) => {
+                            const prevValue =
+                              prev?.multiUrlConfigs?.[field.name]?.options?.virtualScroll?.scrollBy;
+                            const nextValue =
+                              next?.multiUrlConfigs?.[field.name]?.options?.virtualScroll?.scrollBy;
+                            return prevValue !== nextValue;
+                          }}
+                        >
+                          {() => {
+                            const scrollBy = form.getFieldValue([
+                              "multiUrlConfigs",
+                              field.name,
+                              "options",
+                              "virtualScroll",
+                              "scrollBy",
+                            ]);
+                            if (scrollBy !== "pixels") {
+                              return null;
+                            }
+                            return (
+                              <Form.Item
+                                label={t("crawl.virtualScroll.scrollByPixels")}
+                                name={[field.name, "options", "virtualScroll", "scrollByPixels"]}
+                                extra={t("crawl.virtualScroll.scrollByPixelsHint")}
+                              >
+                                <InputNumber min={1} max={20000} step={50} style={{ width: "100%" }} />
+                              </Form.Item>
+                            );
+                          }}
+                        </Form.Item>
+                        <Form.Item
+                          label={t("crawl.virtualScroll.waitAfterScroll")}
+                          name={[field.name, "options", "virtualScroll", "waitAfterScrollMs"]}
+                          extra={t("crawl.virtualScroll.waitAfterScrollHint")}
+                        >
+                          <InputNumber min={0} max={60000} step={100} style={{ width: "100%" }} />
+                        </Form.Item>
+                      </>
+                    );
+                  }}
                 </Form.Item>
                 <Form.Item
                   label={t("crawl.settings.adjustViewport")}

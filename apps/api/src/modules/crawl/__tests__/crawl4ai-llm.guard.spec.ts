@@ -39,5 +39,27 @@ describe("assertNoCrawl4aiLlmOptions", () => {
       })
     ).toThrow(BadRequestException);
   });
-});
 
+  it("blocks strategy types that explicitly enable llm extraction", () => {
+    expect(() =>
+      assertNoCrawl4aiLlmOptions({
+        markdownStrategy: {
+          type: "LLMExtractionStrategy"
+        }
+      })
+    ).toThrow(BadRequestException);
+  });
+
+  it("allows non-llm strategy types", () => {
+    expect(() =>
+      assertNoCrawl4aiLlmOptions({
+        markdownStrategy: {
+          type: "default"
+        },
+        tableExtraction: {
+          type: "TableExtractionStrategy"
+        }
+      })
+    ).not.toThrow();
+  });
+});

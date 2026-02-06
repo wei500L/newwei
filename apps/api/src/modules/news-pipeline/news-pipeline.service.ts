@@ -26,6 +26,7 @@ import { ItemStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 import { CrawlExecutionService } from "../crawl/crawl-execution.service";
+import { assertNoCrawl4aiLlmOptions } from "../crawl/crawl4ai-llm.guard";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { LiteLlmService } from "./litellm.service";
@@ -141,6 +142,8 @@ interface CrawledArticle {
   markdown: string;
   markdownWithCitations?: string;
   referencesMarkdown?: string;
+  rawMarkdown?: string;
+  fitMarkdown?: string;
   metadata: Record<string, unknown>;
   publishedAt: string | null;
   runId: string | null;
@@ -200,13 +203,15 @@ export class NewsPipelineService implements OnModuleDestroy {
 
   private buildCrawlTaskOptions(payload: NormalizedNewsPayload): Record<string, unknown> {
     const cfg = this.configService.config.crawl4ai;
-    return {
+    const options = {
       ...cfg.crawlerDefaults,
       cleanMarkdown: cfg.cleanMarkdown ?? cfg.crawlerDefaults.cleanMarkdown,
       markdownOptions: cfg.markdown ?? cfg.crawlerDefaults.markdownOptions,
       ...payload.crawlOptions,
       userAgent: payload.crawlOptions?.userAgent ?? cfg.crawlerDefaults.userAgent ?? cfg.userAgent,
     };
+    assertNoCrawl4aiLlmOptions(options, "newsPipeline.crawlOptions");
+    return options;
   }
 
   private async resolveCrawlActorId(orgId: string): Promise<string | null> {
@@ -313,7 +318,7 @@ export class NewsPipelineService implements OnModuleDestroy {
 
     await this.crawlExecution.runTask(crawlTaskId, options.orgId);
 
-    const crawlResult =
+    const preferredResult =
       (await this.prisma.crawlResult.findFirst({
         where: { taskId: crawlTaskId, sourceUrl: options.url },
         orderBy: { fetchedAt: "desc" },
@@ -325,11 +330,145 @@ export class NewsPipelineService implements OnModuleDestroy {
         select: { id: true },
       }));
 
-    if (!crawlResult) {
+    if (!preferredResult) {
       throw new Error("crawl task produced no results");
     }
 
-    return { crawlResultId: crawlResult.id, crawlTaskId };
+    const crawlResultId = await this.selectBestPipelineCrawlResultId({
+      orgId: options.orgId,
+      crawlTaskId,
+      preferredResultId: preferredResult.id,
+      preferredSourceUrl: options.url,
+    });
+
+    return { crawlResultId, crawlTaskId };
+  }
+
+  private async selectBestPipelineCrawlResultId(options: {
+    orgId: string;
+    crawlTaskId: string;
+    preferredResultId: string;
+    preferredSourceUrl: string;
+  }): Promise<string> {
+    const findMany = (this.prisma.crawlResult as { findMany?: (args: unknown) => Promise<unknown> }).findMany;
+    if (typeof findMany !== "function") {
+      return options.preferredResultId;
+    }
+
+    const rows = (await findMany({
+      where: {
+        taskId: options.crawlTaskId,
+        task: { orgId: options.orgId },
+      },
+      orderBy: { fetchedAt: "desc" },
+      take: 12,
+      select: {
+        id: true,
+        sourceUrl: true,
+        markdownRef: true,
+      },
+    })) as
+      | {
+          id?: unknown;
+          sourceUrl?: unknown;
+          markdownRef?: unknown;
+        }[]
+      | null;
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return options.preferredResultId;
+    }
+
+    let bestId = options.preferredResultId;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (const row of rows) {
+      const candidateId = typeof row.id === "string" ? row.id : "";
+      if (!candidateId) {
+        continue;
+      }
+      const candidateSourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl : "";
+      const candidateMarkdownRef =
+        typeof row.markdownRef === "string" && row.markdownRef.trim().length > 0
+          ? row.markdownRef.trim()
+          : "";
+
+      const score = await this.scorePipelineCrawlResultCandidate({
+        sourceUrl: candidateSourceUrl,
+        markdownRef: candidateMarkdownRef,
+        preferredSourceUrl: options.preferredSourceUrl,
+      });
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = candidateId;
+      }
+    }
+
+    if (bestId !== options.preferredResultId) {
+      await TaskLogModel.create({
+        queue: "news_pipeline",
+        jobId: options.crawlTaskId,
+        orgId: options.orgId,
+        stage: "crawl",
+        status: "completed",
+        message: "Selected alternative crawl result for higher content quality",
+        data: {
+          preferredResultId: options.preferredResultId,
+          selectedResultId: bestId,
+          preferredSourceUrl: options.preferredSourceUrl,
+        },
+      });
+    }
+
+    return bestId;
+  }
+
+  private async scorePipelineCrawlResultCandidate(options: {
+    sourceUrl: string;
+    markdownRef: string;
+    preferredSourceUrl: string;
+  }): Promise<number> {
+    if (!options.markdownRef) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    const doc = await CrawlResultContentModel.findById(options.markdownRef).lean();
+    if (!doc || typeof doc !== "object") {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    const selectedMarkdown = this.selectBestMarkdownFromContentDoc(doc as Record<string, unknown>);
+    if (!selectedMarkdown) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    const normalized = selectedMarkdown.trim();
+    if (!normalized) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    const words = normalized.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const paragraphs = normalized
+      .split(/\n\s*\n/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0).length;
+    const isChallenge = this.isLikelyBotChallengeMarkdown(normalized);
+
+    let score =
+      Math.min(normalized.length, 24_000) +
+      Math.min(words, 12_000) +
+      Math.min(paragraphs, 200) * 4;
+
+    if (options.sourceUrl === options.preferredSourceUrl) {
+      score += 120;
+    }
+
+    if (isChallenge) {
+      score -= 16_000;
+    }
+
+    return score;
   }
 
   /**
@@ -552,10 +691,12 @@ export class NewsPipelineService implements OnModuleDestroy {
       if (crawlResultId) {
         try {
           const stored = await this.fetchStoredCrawlResult(job.orgId, crawlResultId);
-          return {
-            ...stored,
+          return this.expandListLikeArticleIfNeeded({
+            job,
+            payload,
+            article: stored,
             fromCache: true,
-          };
+          });
         } catch (error) {
           this.logger.warn(
             { error, orgId: job.orgId, crawlResultId, url: payload.url },
@@ -575,10 +716,12 @@ export class NewsPipelineService implements OnModuleDestroy {
         if (recentResultId) {
           const stored = await this.fetchStoredCrawlResult(job.orgId, recentResultId);
           payload.metadata.crawlResultId = recentResultId;
-          return {
-            ...stored,
+          return this.expandListLikeArticleIfNeeded({
+            job,
+            payload,
+            article: stored,
             fromCache: true,
-          };
+          });
         }
       } catch (error) {
         this.logger.warn(
@@ -597,10 +740,352 @@ export class NewsPipelineService implements OnModuleDestroy {
     const stored = await this.fetchStoredCrawlResult(job.orgId, created.crawlResultId);
     payload.metadata.crawlResultId = created.crawlResultId;
     payload.metadata.crawlTaskId = created.crawlTaskId;
+    return this.expandListLikeArticleIfNeeded({
+      job,
+      payload,
+      article: stored,
+      fromCache: false,
+    });
+  }
+
+
+  private async expandListLikeArticleIfNeeded(options: {
+    job: PipelineJobContext;
+    payload: NormalizedNewsPayload;
+    article: CrawledArticle;
+    fromCache: boolean;
+  }): Promise<CrawledArticle & { fromCache: boolean }> {
+    const expanded = await this.expandListLikeArticle({
+      job: options.job,
+      payload: options.payload,
+      article: options.article,
+    });
+
+    if (!expanded) {
+      return {
+        ...options.article,
+        fromCache: options.fromCache,
+      };
+    }
+
+    options.payload.metadata.crawlResultId = expanded.crawlResultId;
+    options.payload.metadata.crawlTaskId = expanded.crawlTaskId;
+    options.payload.metadata.expandedFromUrl = options.article.sourceUrl;
+
     return {
-      ...stored,
+      ...expanded.article,
       fromCache: false,
     };
+  }
+
+  private async expandListLikeArticle(options: {
+    job: PipelineJobContext;
+    payload: NormalizedNewsPayload;
+    article: CrawledArticle;
+  }): Promise<{ article: CrawledArticle; crawlResultId: string; crawlTaskId: string } | null> {
+    const baseQuality = this.assessPipelineMarkdownQuality(this.buildPipelineQualityMarkdown(options.article));
+    const shouldExpand =
+      !baseQuality.isChallenge &&
+      (baseQuality.isListLike || (baseQuality.linkCount >= 12 && baseQuality.words < 360));
+
+    if (!shouldExpand) {
+      return null;
+    }
+
+    const candidates = this.extractDetailLinkCandidates(options.article);
+    if (candidates.length === 0) {
+      if (baseQuality.isListLike && baseQuality.words < 260) {
+        throw new Error(
+          `crawl markdown is list-like and low-signal (words=${baseQuality.words}, links=${baseQuality.linkCount}), and no detail candidate URLs were extracted`
+        );
+      }
+      return null;
+    }
+
+    const maxCandidates = Math.min(candidates.length, 5);
+    let best: {
+      article: CrawledArticle;
+      crawlResultId: string;
+      crawlTaskId: string;
+      score: number;
+      words: number;
+    } | null = null;
+
+    for (let index = 0; index < maxCandidates; index += 1) {
+      const candidateUrl = candidates[index]!;
+      try {
+        const created = await this.crawlViaCrawlTask({
+          orgId: options.job.orgId,
+          url: candidateUrl,
+          payload: options.payload,
+        });
+        const stored = await this.fetchStoredCrawlResult(options.job.orgId, created.crawlResultId);
+        const quality = this.assessPipelineMarkdownQuality(stored.markdown);
+        if (quality.isChallenge) {
+          continue;
+        }
+
+        const passesMinimum = quality.words >= Math.max(baseQuality.words + 80, 160);
+        if (!passesMinimum) {
+          continue;
+        }
+
+        if (!best || quality.score > best.score) {
+          best = {
+            article: stored,
+            crawlResultId: created.crawlResultId,
+            crawlTaskId: created.crawlTaskId,
+            score: quality.score,
+            words: quality.words,
+          };
+        }
+      } catch (error) {
+        this.logger.warn(
+          { error, jobId: options.job.jobId, candidateUrl },
+          "Failed to expand list-like crawl page via detail candidate",
+        );
+      }
+    }
+
+    if (!best) {
+      if (baseQuality.isListLike && baseQuality.words < 260) {
+        throw new Error(
+          `crawl markdown is list-like and low-signal (words=${baseQuality.words}, links=${baseQuality.linkCount}), and detail crawling failed for all candidates`
+        );
+      }
+      return null;
+    }
+
+    const significantImprovement =
+      best.score >= baseQuality.score + 220 || best.words >= baseQuality.words + 120;
+
+    if (!significantImprovement) {
+      return null;
+    }
+
+    return {
+      article: best.article,
+      crawlResultId: best.crawlResultId,
+      crawlTaskId: best.crawlTaskId,
+    };
+  }
+
+  private buildPipelineQualityMarkdown(article: CrawledArticle) {
+    const candidates = [
+      article.markdown,
+      article.markdownWithCitations,
+      article.rawMarkdown,
+      article.fitMarkdown,
+    ]
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      .map((entry) => entry.trim());
+
+    if (candidates.length === 0) {
+      return "";
+    }
+
+    const scored = candidates
+      .map((value) => ({
+        value,
+        quality: this.assessPipelineMarkdownQuality(value),
+      }))
+      .sort((left, right) => {
+        if (right.quality.score !== left.quality.score) {
+          return right.quality.score - left.quality.score;
+        }
+        return right.value.length - left.value.length;
+      });
+
+    const best = scored[0];
+    return best ? best.value : candidates[0]!;
+  }
+
+  private assessPipelineMarkdownQuality(markdown: string) {
+    const normalized = markdown.trim();
+    if (!normalized) {
+      return {
+        words: 0,
+        paragraphs: 0,
+        headingCount: 0,
+        linkCount: 0,
+        bulletLines: 0,
+        score: Number.NEGATIVE_INFINITY,
+        isChallenge: false,
+        isListLike: false,
+      };
+    }
+
+    const words = normalized.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const paragraphs = normalized
+      .split(/\n\s*\n/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0).length;
+    const headingCount = (normalized.match(/^#{1,6}\s+/gm) ?? []).length;
+    const linkCount = (normalized.match(/\]\((https?:\/\/|\/)/g) ?? []).length;
+    const bulletLines = normalized
+      .split(/\n/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.startsWith('- ') || entry.startsWith('* ') || entry.startsWith('• ')).length;
+
+    const isChallenge = this.isLikelyBotChallengeMarkdown(normalized);
+    const linkDensity = words > 0 ? linkCount / words : linkCount;
+    const isListLike =
+      (linkCount >= 16 && words <= 900) ||
+      (bulletLines >= 10 && linkCount >= 10) ||
+      (linkDensity >= 0.09 && words <= 600);
+
+    const score =
+      Math.min(words, 12_000) +
+      Math.min(paragraphs, 220) * 6 +
+      headingCount * 3 -
+      linkCount * 6 -
+      bulletLines * 2;
+
+    return {
+      words,
+      paragraphs,
+      headingCount,
+      linkCount,
+      bulletLines,
+      score,
+      isChallenge,
+      isListLike,
+    };
+  }
+
+  private extractDetailLinkCandidates(article: CrawledArticle) {
+    const fragments = [
+      article.referencesMarkdown,
+      article.markdownWithCitations,
+      article.rawMarkdown,
+      article.markdown,
+      article.fitMarkdown,
+    ]
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      .join("\n");
+
+    if (!fragments) {
+      return [];
+    }
+
+    const seedUrls: string[] = [];
+
+    const absoluteMatches = fragments.match(/https?:\/\/[^\s)\]"'<>]+/g) ?? [];
+    seedUrls.push(...absoluteMatches);
+
+    const inlineMarkdownLinks = Array.from(
+      fragments.matchAll(/\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)
+    ).map((match) => match[1]);
+    seedUrls.push(...inlineMarkdownLinks);
+
+    const referenceDefinitions = Array.from(
+      fragments.matchAll(/^\s*\[[^\]]+\]:\s*(\S+)/gm)
+    ).map((match) => match[1]);
+    seedUrls.push(...referenceDefinitions);
+
+    const baseUrl = article.sourceUrl;
+    const seen = new Set<string>();
+    const candidates: string[] = [];
+
+    for (const seedUrl of seedUrls) {
+      const normalized = this.normalizeDetailCandidateUrl(seedUrl, baseUrl);
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      if (!this.isLikelyDetailArticleUrl(normalized, baseUrl)) {
+        continue;
+      }
+      seen.add(normalized);
+      candidates.push(normalized);
+      if (candidates.length >= 20) {
+        break;
+      }
+    }
+
+    return candidates;
+  }
+
+  private normalizeDetailCandidateUrl(rawUrl: string, baseUrl: string) {
+    const trimmed = rawUrl
+      .trim()
+      .replace(/^<+|>+$/g, "")
+      .replace(/[,:;]+$/g, "");
+    if (!trimmed) {
+      return undefined;
+    }
+
+    try {
+      const parsed = new URL(trimmed, baseUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return undefined;
+      }
+      parsed.hash = "";
+      const pathnameLower = parsed.pathname.toLowerCase();
+      if (/\.(jpg|jpeg|png|gif|webp|svg|mp4|webm|pdf)$/i.test(pathnameLower)) {
+        return undefined;
+      }
+      return parsed.toString();
+    } catch {
+      return undefined;
+    }
+  }
+
+  private isLikelyDetailArticleUrl(url: string, baseUrl: string) {
+    try {
+      const parsed = new URL(url);
+      const base = new URL(baseUrl);
+
+      if (parsed.hostname !== base.hostname) {
+        return false;
+      }
+
+      const normalizedPath = parsed.pathname.replace(/\/+$/, "");
+      const segments = normalizedPath.split("/").filter((entry) => entry.length > 0);
+      if (segments.length < 2) {
+        return false;
+      }
+
+      const lastSegment = segments[segments.length - 1]!;
+      const articleDateSuffixPattern = /-\d{4}-\d{2}-\d{2}$/;
+      if (articleDateSuffixPattern.test(lastSegment)) {
+        return true;
+      }
+
+      if (/^\d{4}\/\d{2}\/\d{2}/.test(segments.slice(-3).join("/"))) {
+        return true;
+      }
+
+      if (segments.some((segment) => segment === "article" || segment === "articles")) {
+        return true;
+      }
+
+      if (lastSegment.length >= 24 && lastSegment.includes("-") && segments.length >= 3) {
+        return true;
+      }
+
+      const likelySectionTail = new Set([
+        "world",
+        "business",
+        "markets",
+        "technology",
+        "tech",
+        "opinion",
+        "sport",
+        "sports",
+        "news",
+      ]);
+      if (segments.length <= 2 && likelySectionTail.has(lastSegment.toLowerCase())) {
+        return false;
+      }
+
+      if (segments.length >= 4 && lastSegment.length >= 14 && /[a-z0-9]-[a-z0-9]/i.test(lastSegment)) {
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
   }
 
   private extractCrawlResultId(payload: NormalizedNewsPayload): string | null {
@@ -640,11 +1125,12 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
 
     const doc = await CrawlResultContentModel.findById(markdownRef).lean();
-    if (!doc) {
+    if (!doc || typeof doc !== "object") {
       throw new Error("crawl result content not found");
     }
 
-    const markdown = typeof (doc as { markdown?: unknown }).markdown === "string" ? (doc as { markdown: string }).markdown : "";
+    const docRecord = doc as Record<string, unknown>;
+    const markdown = this.selectBestMarkdownFromContentDoc(docRecord);
     if (!markdown) {
       throw new Error("crawl result markdown missing");
     }
@@ -654,8 +1140,8 @@ export class NewsPipelineService implements OnModuleDestroy {
         ? (crawlResult.metadata as Record<string, unknown>)
         : {};
     const mongoMetadata =
-      doc && typeof (doc as { metadata?: unknown }).metadata === "object" && !Array.isArray((doc as { metadata?: unknown }).metadata)
-        ? ((doc as { metadata: Record<string, unknown> }).metadata ?? {})
+      docRecord.metadata && typeof docRecord.metadata === "object" && !Array.isArray(docRecord.metadata)
+        ? ((docRecord.metadata as Record<string, unknown>) ?? {})
         : {};
 
     const metadata: Record<string, unknown> = {
@@ -669,17 +1155,25 @@ export class NewsPipelineService implements OnModuleDestroy {
         ? crawlResult.contentHash
         : this.hashContent(markdown);
 
-    const markdownWithCitationsRaw = (doc as { markdownWithCitations?: unknown }).markdownWithCitations;
-    const markdownWithCitations =
-      typeof markdownWithCitationsRaw === "string" ? markdownWithCitationsRaw : undefined;
+    const markdownWithCitations = this.normalizeMarkdownCandidate(
+      this.readMarkdownField(docRecord, ["markdownWithCitations", "markdown_with_citations"])
+    );
 
-    const referencesMarkdownRaw = (doc as { referencesMarkdown?: unknown }).referencesMarkdown;
-    const referencesMarkdown =
-      typeof referencesMarkdownRaw === "string" ? referencesMarkdownRaw : undefined;
+    const rawMarkdown = this.normalizeMarkdownCandidate(
+      this.readMarkdownField(docRecord, ["rawMarkdown", "raw_markdown"])
+    );
+
+    const fitMarkdown = this.normalizeMarkdownCandidate(
+      this.readMarkdownField(docRecord, ["fitMarkdown", "fit_markdown"])
+    );
+
+    const referencesMarkdown = this.normalizeMarkdownCandidate(
+      this.readMarkdownField(docRecord, ["referencesMarkdown", "references_markdown"])
+    );
 
     const crawlRunId =
-      typeof (doc as { crawlRunId?: unknown }).crawlRunId === "string"
-        ? ((doc as { crawlRunId?: string }).crawlRunId ?? null)
+      typeof docRecord.crawlRunId === "string"
+        ? (docRecord.crawlRunId as string)
         : null;
 
     const fetchedAt = crawlResult.fetchedAt ? crawlResult.fetchedAt.toISOString() : new Date().toISOString();
@@ -689,12 +1183,246 @@ export class NewsPipelineService implements OnModuleDestroy {
       markdown,
       markdownWithCitations,
       referencesMarkdown,
+      rawMarkdown,
+      fitMarkdown,
       metadata,
       publishedAt: fetchedAt,
       runId: crawlRunId,
       fetchedAt,
       contentHash,
     };
+  }
+
+  private readMarkdownField(record: Record<string, unknown>, keys: string[]): string | undefined {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "string") {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
+  private normalizeMarkdownCandidate(value: string | undefined): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private selectBestMarkdownFromContentDoc(record: Record<string, unknown>): string | undefined {
+    const primary = this.normalizeMarkdownCandidate(this.readMarkdownField(record, ["markdown"]));
+    const citations = this.normalizeMarkdownCandidate(
+      this.readMarkdownField(record, ["markdownWithCitations", "markdown_with_citations"])
+    );
+    const raw = this.normalizeMarkdownCandidate(this.readMarkdownField(record, ["rawMarkdown", "raw_markdown"]));
+    const fit = this.normalizeMarkdownCandidate(this.readMarkdownField(record, ["fitMarkdown", "fit_markdown"]));
+
+    let current = primary ?? citations ?? raw ?? fit;
+    if (!current) {
+      return undefined;
+    }
+
+    const richerCandidates = [citations, raw]
+      .filter((entry): entry is string => Boolean(entry))
+      .sort((left, right) => right.length - left.length);
+    const richer = richerCandidates[0];
+
+    if (!richer || richer === current) {
+      return current;
+    }
+
+    const currentChallenge = this.isLikelyBotChallengeMarkdown(current);
+    const richerChallenge = this.isLikelyBotChallengeMarkdown(richer);
+    if (currentChallenge && !richerChallenge) {
+      return richer;
+    }
+
+    if (current === fit && richer.length >= 1600 && current.length <= 800) {
+      return richer;
+    }
+
+    if (richer.length >= 1200 && current.length < richer.length * 0.33) {
+      return richer;
+    }
+
+    if (current.length < 320 && richer.length >= 1000) {
+      return richer;
+    }
+
+    return current;
+  }
+
+  private isLikelyBotChallengeMarkdown(markdown: string): boolean {
+    const normalized = markdown.toLowerCase();
+
+    const strongIndicators = [
+      "verification required",
+      "please enable js and disable any ad blocker",
+      "please enable javascript",
+      "checking your browser before accessing",
+      "you are being rate limited",
+      "verify you are human",
+      "verifying the device",
+    ];
+
+    if (strongIndicators.some((indicator) => normalized.includes(indicator))) {
+      return true;
+    }
+
+    const weakIndicators = [
+      "captcha",
+      "cloudflare",
+      "datadome",
+      "are you human",
+      "access denied",
+      "security check",
+      "automated requests",
+      "bot detection",
+    ];
+
+    const weakHits = weakIndicators.reduce(
+      (total, indicator) => total + (normalized.includes(indicator) ? 1 : 0),
+      0,
+    );
+
+    return weakHits >= 2 && normalized.length < 12000;
+  }
+
+  private buildMarkdownForLlm(article: CrawledArticle, maxInputChars: number): {
+    markdown: string;
+    source: "primary" | "citations";
+    variant: "primary" | "citations" | "raw" | "fit";
+    referencesAppended: boolean;
+  } {
+    const normalize = (value?: string) =>
+      typeof value === "string" ? value.trim() : "";
+
+    const primary = normalize(article.markdown);
+    const citations = normalize(article.markdownWithCitations);
+    const raw = normalize(article.rawMarkdown);
+    const fit = normalize(article.fitMarkdown);
+    const references = normalize(article.referencesMarkdown);
+
+    const candidates: {
+      source: "primary" | "citations" | "raw" | "fit";
+      value: string;
+    }[] = [];
+
+    if (primary) {
+      candidates.push({ source: "primary", value: primary });
+    }
+    if (citations) {
+      candidates.push({ source: "citations", value: citations });
+    }
+    if (raw) {
+      candidates.push({ source: "raw", value: raw });
+    }
+    if (fit) {
+      candidates.push({ source: "fit", value: fit });
+    }
+
+    const fallback = primary || citations || raw || fit;
+    if (!fallback) {
+      return {
+        markdown: "",
+        source: "primary",
+        variant: "primary",
+        referencesAppended: false,
+      };
+    }
+
+    const scored = [...candidates].sort(
+      (left, right) =>
+        this.scoreMarkdownForLlmCandidate(right) -
+        this.scoreMarkdownForLlmCandidate(left),
+    );
+
+    let selected = scored[0] ?? { source: "primary" as const, value: fallback };
+
+    if (this.isLikelyBotChallengeMarkdown(selected.value)) {
+      const nonChallenge = scored.find((candidate) => !this.isLikelyBotChallengeMarkdown(candidate.value));
+      if (nonChallenge) {
+        selected = nonChallenge;
+      }
+    }
+
+    if (selected.source === "fit" && raw && !this.isLikelyBotChallengeMarkdown(raw)) {
+      if (raw.length >= 1600 && selected.value.length < raw.length * 0.45) {
+        selected = { source: "raw", value: raw };
+      }
+    }
+
+    let merged = selected.value;
+    let referencesAppended = false;
+
+    if (
+      references &&
+      this.hasCitationMarkers(merged) &&
+      !this.hasCitationReferenceDefinitions(merged)
+    ) {
+      const separator = merged.endsWith("\n") ? "\n" : "\n\n";
+      merged = merged + separator + references;
+      referencesAppended = true;
+    }
+
+    return {
+      markdown: merged.slice(0, maxInputChars),
+      source: selected.source === "citations" ? "citations" : "primary",
+      variant: selected.source,
+      referencesAppended,
+    };
+  }
+
+  private scoreMarkdownForLlmCandidate(candidate: {
+    source: "primary" | "citations" | "raw" | "fit";
+    value: string;
+  }) {
+    const trimmed = candidate.value.trim();
+    if (!trimmed) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    if (this.isLikelyBotChallengeMarkdown(trimmed)) {
+      return -5000;
+    }
+
+    const words = trimmed.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const headings = (trimmed.match(/^#{1,6}\s+/gm) ?? []).length;
+    const paragraphs = trimmed
+      .split(/\n\s*\n/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0).length;
+    const markdownLinks = (trimmed.match(/\]\((https?:\/\/|\/)/g) ?? []).length;
+    const citations = (trimmed.match(/\[\^[^\]]+\]/g) ?? []).length;
+
+    let score =
+      Math.min(words, 12000) +
+      headings * 8 +
+      Math.min(paragraphs, 200) * 3 +
+      citations * 2 -
+      markdownLinks * 2;
+
+    if (candidate.source === "citations") {
+      score += 30;
+    }
+    if (candidate.source === "fit") {
+      score -= 80;
+    }
+    if (candidate.source === "raw") {
+      score += 12;
+    }
+
+    return score;
+  }
+
+  private hasCitationMarkers(markdown: string) {
+    return /\[\^[^\]]+\]/.test(markdown);
+  }
+
+  private hasCitationReferenceDefinitions(markdown: string) {
+    return /^\[\^[^\]]+\]:\s+/m.test(markdown);
   }
 
   private async cleanArticle(
@@ -727,7 +1455,8 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
 
     const pipelineCfg = this.configService.config.pipeline;
-    const truncated = article.markdown.slice(0, pipelineCfg.maxInputChars);
+    const markdownForPrompt = this.buildMarkdownForLlm(article, pipelineCfg.maxInputChars);
+    const truncated = markdownForPrompt.markdown;
     const promptConfig = await this.promptConfig.getConfig();
     const completionTimeoutMs = Math.max(
       await this.liteLlm.getCompletionTimeoutMs(),
@@ -755,6 +1484,9 @@ export class NewsPipelineService implements OnModuleDestroy {
               ...payload.metadata,
               publishedAt: article.publishedAt,
               sourceName: payload.sourceName,
+              markdownSource: markdownForPrompt.source,
+              markdownVariant: markdownForPrompt.variant,
+              markdownReferencesAppended: markdownForPrompt.referencesAppended,
             },
             keywords: payload.keywords,
             summaryHints: payload.summaryHints,

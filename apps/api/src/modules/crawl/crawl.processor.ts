@@ -13,6 +13,16 @@ import { Crawl4aiRequestException } from "./crawl4ai.exception";
 
 const logger = createLogger({ name: "crawl-queue" });
 const RETRYABLE_STATUS_CODES = new Set([408, 423, 425, 429, 500, 502, 503, 504]);
+const MAX_ERROR_TEXT = 4000;
+const MYSQL_VARCHAR_191 = 191;
+
+function truncateText(value: string, maxLength: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
+}
 
 function resolveBackoffDelayMs(backoff: number | BackoffOptions | undefined, attempt: number): number | null {
   if (!backoff) {
@@ -145,17 +155,47 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
           logger.warn({ jobId, failedReason }, "Crawl failed event missing job data");
           return;
         }
-        await this.prisma.crawlTask.updateMany({
-          where: {
-            id: job.data.taskId,
-            orgId: job.data.orgId,
-            status: { in: ["queued", "running"] }
-          },
-          data: {
-            status: "failed",
-            lastError: failedReason || "crawl job failed"
-          }
-        });
+        const normalizedReason =
+          typeof failedReason === "string" && failedReason.trim().length > 0
+            ? truncateText(failedReason, MAX_ERROR_TEXT)
+            : "crawl job failed";
+        try {
+          await this.prisma.crawlTask.updateMany({
+            where: {
+              id: job.data.taskId,
+              orgId: job.data.orgId,
+              status: { in: ["queued", "running"] }
+            },
+            data: {
+              status: "failed",
+              lastError: normalizedReason
+            }
+          });
+        } catch (error) {
+          const fallbackMessage =
+            normalizedReason.length <= MYSQL_VARCHAR_191
+              ? normalizedReason
+              : truncateText(normalizedReason, MYSQL_VARCHAR_191);
+          logger.warn({ err: error, jobId, taskId: job.data.taskId }, "Failed to persist crawl failure reason; truncating");
+          await this.prisma.crawlTask
+            .updateMany({
+              where: {
+                id: job.data.taskId,
+                orgId: job.data.orgId,
+                status: { in: ["queued", "running"] }
+              },
+              data: {
+                status: "failed",
+                lastError: fallbackMessage
+              }
+            })
+            .catch((fallbackError) => {
+              logger.error(
+                { err: fallbackError, jobId, taskId: job.data.taskId },
+                "Failed to persist crawl failure reason after truncation"
+              );
+            });
+        }
       } catch (error) {
         logger.error({ jobId, err: error }, "Failed to handle crawl failed event");
       }

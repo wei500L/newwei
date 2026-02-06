@@ -1,7 +1,7 @@
 import { HttpService } from "@nestjs/axios";
 import { Injectable, Logger } from "@nestjs/common";
 import type { AxiosError } from "axios";
-import { lastValueFrom } from "rxjs";
+import { lastValueFrom, TimeoutError, timeout } from "rxjs";
 
 import { validateSsrfUrl } from "../../common/validators/ssrf-url.validator";
 import { EnvService } from "../config/config.service";
@@ -107,26 +107,44 @@ export class Crawl4aiClient {
     const settings = await this.crawlSettings.getSettings();
     await this.ensureHealthy(settings);
     const payload = this.toHttpPayload(request);
+
     try {
-      const response = await lastValueFrom(
-        this.http.post<Crawl4aiResponse>("/crawl", payload, {
-          headers: {
-            "content-type": "application/json"
-          },
-          timeout: settings.requestTimeoutMs
-        })
-      );
-      return {
-        results: response.data?.results ?? [],
-        nextCursor: response.data?.nextCursor ?? null,
-        runId: response.data?.runId ?? null,
-        warnings: response.data?.warnings ?? [],
-        serverMemoryMb: response.data?.serverMemoryMb,
-        peakMemoryMb: response.data?.peakMemoryMb,
-        memoryEfficiency: response.data?.memoryEfficiency
-      };
+      return await this.sendCrawlRequest(payload, settings.requestTimeoutMs);
     } catch (error) {
-      const axiosError = error as AxiosError<unknown>;
+      let resolvedError: unknown = error;
+      const compatibilityPayload = this.buildPrefetchCompatibilityFallbackPayload(payload, error);
+      if (compatibilityPayload) {
+        this.logger.warn(
+          "crawl4ai server rejected prefetch; retrying without prefetch for compatibility"
+        );
+        try {
+          return await this.sendCrawlRequest(compatibilityPayload, settings.requestTimeoutMs);
+        } catch (retryError) {
+          resolvedError = retryError;
+        }
+      }
+
+      if (resolvedError instanceof TimeoutError) {
+        const requestUrl = (request.urls?.[0] ?? request.url ?? "").trim();
+        const timeoutMessage = `crawl4ai request timed out after ${settings.requestTimeoutMs}ms`;
+        const hints: string[] = [];
+        if (request.options?.scanFullPage) {
+          hints.push(
+            "Hint: scanFullPage can hang on infinite-scroll pages. Consider disabling scanFullPage or switching to virtualScroll (bounded scrollCount)."
+          );
+        }
+        if (request.options?.waitForImages || request.options?.includeImages || request.options?.storeMedia) {
+          hints.push(
+            "Hint: images/media extraction can slow down crawling. Consider disabling waitForImages/includeImages/storeMedia or increasing CRAWL4AI_TIMEOUT_MS."
+          );
+        }
+        const prefix = requestUrl ? `${requestUrl}: ` : "";
+        const messageWithHint =
+          hints.length > 0 ? `${prefix}${timeoutMessage}\n${hints.join("\n")}` : `${prefix}${timeoutMessage}`;
+        throw new Crawl4aiRequestException(messageWithHint, 408, resolvedError);
+      }
+
+      const axiosError = resolvedError as AxiosError<unknown>;
       const status = axiosError.response?.status;
       const responseData = axiosError.response?.data;
 
@@ -148,17 +166,17 @@ export class Crawl4aiClient {
         return undefined;
       };
 
-      const messageFromPayload = (payload: unknown): string | undefined => {
-        if (!payload) {
+      const messageFromPayload = (payloadValue: unknown): string | undefined => {
+        if (!payloadValue) {
           return undefined;
         }
-        if (typeof payload === "string") {
-          return normalizeMessage(payload);
+        if (typeof payloadValue === "string") {
+          return normalizeMessage(payloadValue);
         }
-        if (typeof payload !== "object" || Array.isArray(payload)) {
+        if (typeof payloadValue !== "object" || Array.isArray(payloadValue)) {
           return undefined;
         }
-        const record = payload as Record<string, unknown>;
+        const record = payloadValue as Record<string, unknown>;
         const message = normalizeMessage(record.message);
         if (message) {
           return message;
@@ -167,9 +185,9 @@ export class Crawl4aiClient {
         if (detail) {
           return detail;
         }
-        const error = normalizeMessage(record.error);
-        if (error) {
-          return error;
+        const inlineError = normalizeMessage(record.error);
+        if (inlineError) {
+          return inlineError;
         }
         return undefined;
       };
@@ -211,8 +229,119 @@ export class Crawl4aiClient {
       }
       const messageWithHint = hints.length > 0 ? `${messageWithStatus}\n${hints.join("\n")}` : messageWithStatus;
 
-      throw new Crawl4aiRequestException(messageWithHint, status, error);
+      throw new Crawl4aiRequestException(messageWithHint, status, resolvedError);
     }
+  }
+
+  private async sendCrawlRequest(payload: Crawl4aiHttpPayload, requestTimeoutMs: number): Promise<Crawl4aiResponse> {
+    const response = await lastValueFrom(
+      this.http
+        .post<Crawl4aiResponse>("/crawl", payload, {
+          headers: {
+            "content-type": "application/json"
+          },
+          timeout: requestTimeoutMs
+        })
+        .pipe(timeout(requestTimeoutMs))
+    );
+
+    return this.normalizeCrawlResponse(response.data);
+  }
+
+  private normalizeCrawlResponse(data?: Crawl4aiResponse): Crawl4aiResponse {
+    return {
+      results: data?.results ?? [],
+      nextCursor: data?.nextCursor ?? null,
+      runId: data?.runId ?? null,
+      warnings: data?.warnings ?? [],
+      serverMemoryMb: data?.serverMemoryMb,
+      peakMemoryMb: data?.peakMemoryMb,
+      memoryEfficiency: data?.memoryEfficiency
+    };
+  }
+
+  private buildPrefetchCompatibilityFallbackPayload(
+    payload: Crawl4aiHttpPayload,
+    error: unknown
+  ): Crawl4aiHttpPayload | null {
+    if (!this.isPrefetchFallbackCandidateError(error)) {
+      return null;
+    }
+
+    const hasPrimaryPrefetch = Object.prototype.hasOwnProperty.call(payload.crawler_config.params, "prefetch");
+    const hasMultiPrefetch =
+      payload.crawler_configurations?.some((entry) =>
+        Object.prototype.hasOwnProperty.call(entry.params ?? {}, "prefetch")
+      ) ?? false;
+
+    if (!hasPrimaryPrefetch && !hasMultiPrefetch) {
+      return null;
+    }
+
+    const clonedPayload: Crawl4aiHttpPayload = {
+      ...payload,
+      crawler_config: {
+        ...payload.crawler_config,
+        params: { ...payload.crawler_config.params }
+      },
+      crawler_configurations: payload.crawler_configurations
+        ? payload.crawler_configurations.map((entry) => ({
+            ...entry,
+            params: { ...entry.params }
+          }))
+        : undefined
+    };
+
+    delete (clonedPayload.crawler_config.params as Record<string, unknown>).prefetch;
+    if (clonedPayload.crawler_configurations) {
+      for (const entry of clonedPayload.crawler_configurations) {
+        delete (entry.params as Record<string, unknown>).prefetch;
+      }
+    }
+
+    return clonedPayload;
+  }
+
+  private isPrefetchFallbackCandidateError(error: unknown): boolean {
+    if (this.isPrefetchCompatibilityError(error)) {
+      return true;
+    }
+
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+
+    const axiosError = error as AxiosError<unknown>;
+    return axiosError.response?.status === 500;
+  }
+
+  private isPrefetchCompatibilityError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+
+    const axiosError = error as AxiosError<unknown>;
+    const messageParts: string[] = [];
+
+    if (typeof axiosError.message === "string" && axiosError.message.trim().length > 0) {
+      messageParts.push(axiosError.message.trim());
+    }
+
+    const responseData = axiosError.response?.data;
+    if (typeof responseData === "string" && responseData.trim().length > 0) {
+      messageParts.push(responseData.trim());
+    } else if (responseData && typeof responseData === "object" && !Array.isArray(responseData)) {
+      const record = responseData as Record<string, unknown>;
+      for (const key of ["message", "detail", "error"]) {
+        const value = record[key];
+        if (typeof value === "string" && value.trim().length > 0) {
+          messageParts.push(value.trim());
+        }
+      }
+    }
+
+    const normalized = messageParts.join("\n").toLowerCase();
+    return normalized.includes("unexpected keyword argument") && normalized.includes("prefetch");
   }
 
   private async ensureHealthy(settings: CrawlClientSettings) {
@@ -222,9 +351,11 @@ export class Crawl4aiClient {
     }
     try {
       await lastValueFrom(
-        this.http.get("/health", {
-          timeout: settings.requestTimeoutMs
-        })
+        this.http
+          .get("/health", {
+            timeout: settings.requestTimeoutMs
+          })
+          .pipe(timeout(settings.requestTimeoutMs))
       );
       this.lastHealthCheck = now;
     } catch (error) {
@@ -247,7 +378,6 @@ export class Crawl4aiClient {
       }
     }
 
-    const scrollDelay = typeof options.scrollDelayMs === "number" ? options.scrollDelayMs / 1000 : undefined;
     const useManagedBrowser = options.useManagedBrowser ?? false;
     const headless = typeof options.headless === "boolean" ? options.headless : undefined;
     const proxyPayload = this.resolveProxyPayload(options);
@@ -262,6 +392,11 @@ export class Crawl4aiClient {
     const userAgentGenerator = this.buildUserAgentGenerator(options.userAgentGenerator);
     const geolocation = this.buildGeolocation(options.geolocation);
     const virtualScroll = this.buildVirtualScrollConfig(options.virtualScroll);
+    const scanFullPage = virtualScroll ? false : (options.scanFullPage ?? false);
+    const scrollDelay =
+      scanFullPage && typeof options.scrollDelayMs === "number"
+        ? options.scrollDelayMs / 1000
+        : undefined;
     const wordCountThreshold = this.normalizeWordCountThreshold(options.wordCountThreshold ?? 80);
     const excludeExternalLinks = options.excludeExternalLinks ?? true;
     const removeOverlayElements = options.removeOverlayElements ?? true;
@@ -297,7 +432,7 @@ export class Crawl4aiClient {
       params: this.compact({
         cache_mode: options.cacheMode ?? "bypass",
         prefetch: options.prefetch ? true : undefined,
-        scan_full_page: options.scanFullPage ?? false,
+        scan_full_page: scanFullPage,
         adjust_viewport_to_content: options.adjustViewportToContent ? true : undefined,
         scroll_delay: scrollDelay,
         simulate_user: options.simulateUser ?? undefined,
@@ -431,6 +566,7 @@ export class Crawl4aiClient {
     const payload = this.compact({
       ignore_links: markdownOptions.ignoreLinks,
       escape_html: markdownOptions.escapeHtml,
+      citations: markdownOptions.citations,
       body_width: markdownOptions.bodyWidth
     });
     return Object.keys(payload).length > 0 ? payload : undefined;
@@ -469,7 +605,7 @@ export class Crawl4aiClient {
       container_selector: this.normalizeCssSelector(config.containerSelector),
       scroll_count:
         typeof config.scrollCount === "number" && Number.isFinite(config.scrollCount)
-          ? Math.max(1, Math.min(200, Math.round(config.scrollCount)))
+          ? Math.max(1, Math.min(1000, Math.round(config.scrollCount)))
           : undefined,
       scroll_by: this.normalizeScrollBy(config.scrollBy),
       wait_after_scroll: this.normalizeWaitAfterScroll(config.waitAfterScrollMs)
@@ -646,9 +782,27 @@ export class Crawl4aiClient {
     return clamped;
   }
 
-  private normalizeScrollBy(value?: string) {
-    if (value === "container_height" || value === "viewport" || value === "pixels") {
+  private normalizeScrollBy(value?: unknown) {
+    if (value === "container_height" || value === "page_height") {
       return value;
+    }
+    if (value === "viewport") {
+      return "page_height";
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.max(1, Math.min(20000, Math.round(value)));
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return undefined;
+      }
+      if (/^\d+$/.test(trimmed)) {
+        const parsed = Number.parseInt(trimmed, 10);
+        if (Number.isFinite(parsed)) {
+          return Math.max(1, Math.min(20000, parsed));
+        }
+      }
     }
     return undefined;
   }
@@ -657,7 +811,7 @@ export class Crawl4aiClient {
     if (typeof value !== "number" || Number.isNaN(value)) {
       return undefined;
     }
-    const clamped = Math.max(0, Math.min(10000, value));
+    const clamped = Math.max(0, Math.min(60000, value));
     return Number((clamped / 1000).toFixed(2));
   }
 
@@ -683,6 +837,20 @@ export class Crawl4aiClient {
         })
       });
     }
+    if (filter.type === "bm25") {
+      const query = typeof filter.userQuery === "string" ? filter.userQuery.trim() : "";
+      if (!query) {
+        return undefined;
+      }
+      return this.compact({
+        type: "BM25ContentFilter",
+        params: this.compact({
+          user_query: query,
+          bm25_threshold: filter.bm25Threshold,
+          language: filter.language
+        })
+      });
+    }
     return undefined;
   }
 
@@ -699,14 +867,17 @@ export class Crawl4aiClient {
         const cssSelector = this.normalizeCssSelector(overrides?.cssSelector);
         const excludedTags = this.normalizeSelectorList(overrides?.excludedTags);
         const virtualScroll = this.buildVirtualScrollConfig(overrides?.virtualScroll);
+        const scanFullPage = virtualScroll ? false : overrides?.scanFullPage;
         const params = this.compact({
           url_matcher: matcher?.pattern,
           match_mode: matcher?.matchMode,
           cache_mode: overrides?.cacheMode,
-          scan_full_page: overrides?.scanFullPage,
+          scan_full_page: scanFullPage,
           adjust_viewport_to_content: overrides?.adjustViewportToContent ? true : undefined,
           scroll_delay:
-            typeof overrides?.scrollDelayMs === "number" ? overrides.scrollDelayMs / 1000 : undefined,
+            scanFullPage && typeof overrides?.scrollDelayMs === "number"
+              ? overrides.scrollDelayMs / 1000
+              : undefined,
           simulate_user: overrides?.simulateUser,
           override_navigator: overrides?.overrideNavigator,
           js_code: this.normalizeJsCode(overrides?.jsCode),

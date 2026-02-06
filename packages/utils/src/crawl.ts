@@ -23,6 +23,7 @@ export interface CrawlStrategyOverridesFormValue {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  virtualScroll?: CrawlVirtualScrollConfigFormValue;
 }
 
 export interface CrawlMultiUrlStrategyFormValue {
@@ -36,14 +37,18 @@ export interface MarkdownOptionsFormValue {
   contentSource?: string;
   ignoreLinks?: boolean;
   escapeHtml?: boolean;
+  citations?: boolean;
   bodyWidth?: number;
 }
 
 export interface MarkdownFilterFormValue {
-  type?: string;
+  type?: "pruning" | "bm25";
   threshold?: number;
   thresholdType?: "fixed" | "dynamic";
   minWordThreshold?: number;
+  userQuery?: string;
+  bm25Threshold?: number;
+  language?: string;
 }
 
 export interface MarkdownStrategyFormValue {
@@ -105,6 +110,21 @@ export interface GeolocationFormValue {
   accuracy?: number;
 }
 
+export type CrawlVirtualScrollModeFormValue =
+  | "container_height"
+  | "page_height"
+  | "viewport"
+  | "pixels";
+
+export interface CrawlVirtualScrollConfigFormValue {
+  enabled?: boolean;
+  containerSelector?: string;
+  scrollCount?: number;
+  scrollBy?: CrawlVirtualScrollModeFormValue;
+  scrollByPixels?: number;
+  waitAfterScrollMs?: number;
+}
+
 export interface CrawlOptionsFormValues {
   includeImages?: boolean;
   storeMedia?: boolean;
@@ -149,6 +169,7 @@ export interface CrawlOptionsFormValues {
   locale?: string;
   timezoneId?: string;
   geolocation?: GeolocationFormValue;
+  virtualScroll?: CrawlVirtualScrollConfigFormValue;
 }
 
 export interface CrawlStrategyOverridesValue {
@@ -165,6 +186,7 @@ export interface CrawlStrategyOverridesValue {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  virtualScroll?: CrawlVirtualScrollConfigValue;
 }
 
 export interface CrawlMultiUrlStrategyValue {
@@ -213,6 +235,16 @@ export interface CrawlGeolocationValue {
   latitude: number;
   longitude: number;
   accuracy?: number;
+}
+
+export type CrawlVirtualScrollModeValue = "container_height" | "page_height";
+export type CrawlVirtualScrollByValue = CrawlVirtualScrollModeValue | string;
+
+export interface CrawlVirtualScrollConfigValue {
+  containerSelector: string;
+  scrollCount?: number;
+  scrollBy?: CrawlVirtualScrollByValue;
+  waitAfterScrollMs?: number;
 }
 
 export interface CrawlOptionsValue {
@@ -268,6 +300,7 @@ export interface CrawlOptionsValue {
   locale?: string;
   timezoneId?: string;
   geolocation?: CrawlGeolocationValue;
+  virtualScroll?: CrawlVirtualScrollConfigValue;
 }
 
 export const sanitizeStringList = (list?: string[]) =>
@@ -279,6 +312,93 @@ export const sanitizeJsCodeList = (list?: string[]) => {
   const sanitized = sanitizeStringList(list);
   return sanitized && sanitized.length ? sanitized.slice(0, 10) : undefined;
 };
+
+export const CRAWL4AI_LLM_OPTION_GUARD_MESSAGE =
+  "The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead.";
+
+const CRAWL4AI_DISALLOWED_NORMALIZED_KEYS = new Set([
+  "extractionstrategy",
+  "llmconfig",
+]);
+
+const normalizeOptionGuardKey = (key: string) =>
+  key.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const isDisallowedStrategyType = (path: string, value: string) => {
+  const normalizedPath = normalizeOptionGuardKey(path);
+  const normalizedValue = normalizeOptionGuardKey(value);
+  if (!normalizedValue.includes("llm")) {
+    return false;
+  }
+  return (
+    normalizedPath.includes("strategy") || normalizedPath.includes("extraction")
+  );
+};
+
+const findDisallowedCrawl4aiLlmKeys = (
+  value: unknown,
+  prefix = "",
+  seen = new Set<unknown>(),
+): string[] => {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  if (seen.has(value)) {
+    return [];
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) =>
+      findDisallowedCrawl4aiLlmKeys(entry, `${prefix}[${index}]`, seen),
+    );
+  }
+
+  const record = value as Record<string, unknown>;
+  const hits: string[] = [];
+
+  for (const [key, entry] of Object.entries(record)) {
+    const normalized = normalizeOptionGuardKey(key);
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (CRAWL4AI_DISALLOWED_NORMALIZED_KEYS.has(normalized)) {
+      hits.push(path);
+    }
+
+    if (
+      normalized === "type" &&
+      typeof entry === "string" &&
+      isDisallowedStrategyType(path, entry)
+    ) {
+      hits.push(path);
+    }
+
+    if (isPlainRecord(entry) || Array.isArray(entry)) {
+      hits.push(...findDisallowedCrawl4aiLlmKeys(entry, path, seen));
+    }
+  }
+
+  return hits;
+};
+
+export const assertNoCrawl4aiLlmOptions = (
+  options: unknown,
+  label = "crawlOptions",
+) => {
+  const blocked = findDisallowedCrawl4aiLlmKeys(options);
+  if (blocked.length === 0) {
+    return;
+  }
+  const keys = blocked.slice(0, 5).join(", ");
+  const suffix = blocked.length > 5 ? ` (+${blocked.length - 5} more)` : "";
+  throw new Error(
+    `${label} contains crawl4ai LLM extraction settings (${keys}${suffix}). ${CRAWL4AI_LLM_OPTION_GUARD_MESSAGE}`,
+  );
+};
+
 
 export const sanitizeStrategyOptions = (
   options?: CrawlStrategyOverridesFormValue,
@@ -328,6 +448,10 @@ export const sanitizeStrategyOptions = (
   }
   if (typeof options.waitForTimeoutMs === "number") {
     cleaned.waitForTimeoutMs = options.waitForTimeoutMs;
+  }
+  const virtualScroll = sanitizeVirtualScrollConfig(options.virtualScroll);
+  if (virtualScroll) {
+    cleaned.virtualScroll = virtualScroll;
   }
   return Object.keys(cleaned).length ? cleaned : undefined;
 };
@@ -379,6 +503,9 @@ export const sanitizeMarkdownOptions = (options?: MarkdownOptionsFormValue) => {
   if (typeof options.escapeHtml === "boolean") {
     payload.escapeHtml = options.escapeHtml;
   }
+  if (typeof options.citations === "boolean") {
+    payload.citations = options.citations;
+  }
   if (typeof options.bodyWidth === "number") {
     payload.bodyWidth = options.bodyWidth;
   }
@@ -389,17 +516,33 @@ export const sanitizeMarkdownFilter = (filter?: MarkdownFilterFormValue) => {
   if (!filter?.type) {
     return undefined;
   }
-  const payload: Record<string, unknown> = { type: filter.type };
-  if (typeof filter.threshold === "number") {
-    payload.threshold = filter.threshold;
+  if (filter.type === "pruning") {
+    const payload: Record<string, unknown> = { type: "pruning" };
+    if (typeof filter.threshold === "number") {
+      payload.threshold = filter.threshold;
+    }
+    if (filter.thresholdType === "fixed" || filter.thresholdType === "dynamic") {
+      payload.thresholdType = filter.thresholdType;
+    }
+    if (typeof filter.minWordThreshold === "number") {
+      payload.minWordThreshold = filter.minWordThreshold;
+    }
+    return payload;
   }
-  if (filter.thresholdType === "fixed" || filter.thresholdType === "dynamic") {
-    payload.thresholdType = filter.thresholdType;
+  if (filter.type === "bm25") {
+    const payload: Record<string, unknown> = { type: "bm25" };
+    if (typeof filter.userQuery === "string" && filter.userQuery.trim().length > 0) {
+      payload.userQuery = filter.userQuery.trim();
+    }
+    if (typeof filter.bm25Threshold === "number") {
+      payload.bm25Threshold = filter.bm25Threshold;
+    }
+    if (typeof filter.language === "string" && filter.language.trim().length > 0) {
+      payload.language = filter.language.trim();
+    }
+    return payload;
   }
-  if (typeof filter.minWordThreshold === "number") {
-    payload.minWordThreshold = filter.minWordThreshold;
-  }
-  return payload;
+  return undefined;
 };
 
 export const sanitizeMarkdownStrategy = (
@@ -641,6 +784,73 @@ export const sanitizeGeolocation = (
   return normalized;
 };
 
+export const sanitizeVirtualScrollConfig = (
+  config?: CrawlVirtualScrollConfigFormValue,
+): CrawlVirtualScrollConfigValue | undefined => {
+  if (!config) {
+    return undefined;
+  }
+
+  const enabled = config.enabled === true;
+  const containerSelectorRaw = config.containerSelector?.trim();
+  const scrollCount =
+    typeof config.scrollCount === "number" && Number.isFinite(config.scrollCount)
+      ? Math.max(1, Math.min(1000, Math.round(config.scrollCount)))
+      : undefined;
+  const waitAfterScrollMs =
+    typeof config.waitAfterScrollMs === "number" &&
+    Number.isFinite(config.waitAfterScrollMs)
+      ? Math.max(0, Math.min(60000, Math.round(config.waitAfterScrollMs)))
+      : undefined;
+  const scrollByPixels =
+    typeof config.scrollByPixels === "number" && Number.isFinite(config.scrollByPixels)
+      ? Math.max(1, Math.min(20000, Math.round(config.scrollByPixels)))
+      : undefined;
+
+  const scrollByRaw = config.scrollBy;
+  const scrollBy =
+    scrollByRaw === "container_height"
+      ? "container_height"
+      : scrollByRaw === "page_height"
+        ? "page_height"
+        : scrollByRaw === "viewport"
+          ? "page_height"
+          : scrollByRaw === "pixels" && typeof scrollByPixels === "number"
+            ? String(scrollByPixels)
+          : undefined;
+
+  const hasValue =
+    enabled ||
+    Boolean(containerSelectorRaw) ||
+    typeof scrollCount === "number" ||
+    typeof waitAfterScrollMs === "number" ||
+    typeof scrollByPixels === "number" ||
+    Boolean(scrollBy);
+  if (!hasValue) {
+    return undefined;
+  }
+
+  const containerSelector =
+    containerSelectorRaw && containerSelectorRaw.length
+      ? containerSelectorRaw.slice(0, 512)
+      : "body";
+
+  const payload: CrawlVirtualScrollConfigValue = {
+    containerSelector
+  };
+  if (typeof scrollCount === "number") {
+    payload.scrollCount = scrollCount;
+  }
+  if (scrollBy) {
+    payload.scrollBy = scrollBy;
+  }
+  if (typeof waitAfterScrollMs === "number") {
+    payload.waitAfterScrollMs = waitAfterScrollMs;
+  }
+
+  return payload;
+};
+
 export const sanitizeCrawlOptions = (
   values: CrawlOptionsFormValues,
 ): CrawlOptionsValue => {
@@ -679,6 +889,7 @@ export const sanitizeCrawlOptions = (
   const locale = values.locale?.trim();
   const timezoneId = values.timezoneId?.trim();
   const geolocation = sanitizeGeolocation(values.geolocation);
+  const virtualScroll = sanitizeVirtualScrollConfig(values.virtualScroll);
   const tableScoreThreshold =
     typeof values.tableScoreThreshold === "number"
       ? Number(Math.max(0, Math.min(10, values.tableScoreThreshold)).toFixed(2))
@@ -744,9 +955,14 @@ export const sanitizeCrawlOptions = (
     locale: locale?.length ? locale : undefined,
     timezoneId: timezoneId?.length ? timezoneId : undefined,
     geolocation: geolocation ?? undefined,
+    virtualScroll: virtualScroll ?? undefined,
   };
 
-  return Object.fromEntries(
+  const normalizedOptions = Object.fromEntries(
     Object.entries(options).filter(([, value]) => value !== undefined),
   ) as CrawlOptionsValue;
+
+  assertNoCrawl4aiLlmOptions(normalizedOptions, "crawlOptions");
+
+  return normalizedOptions;
 };

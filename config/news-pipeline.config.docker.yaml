@@ -21,13 +21,14 @@ crawl4ai_config:
   timeout_ms: 120000
   keyword_match_threshold: 0.55
   markdown:
-    content_source: cleaned_html
+    content_source: raw_html
     escape_html: true
+    citations: true
     body_width: 80
   clean_markdown:
     css_selector: "article,main,.article-body"
     remove_overlay_elements: true
-    word_count_threshold: 120
+    word_count_threshold: 60
     excluded_tags:
       - nav
       - footer
@@ -47,7 +48,7 @@ crawl4ai_config:
     enabled: true
     container_selector: "body"
     scroll_count: 4
-    scroll_by: viewport
+    scroll_by: page_height
     wait_after_scroll_ms: 600
 
 pipeline:

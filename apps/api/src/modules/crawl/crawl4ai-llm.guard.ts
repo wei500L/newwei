@@ -10,6 +10,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function isDisallowedStrategyType(path: string, value: string): boolean {
+  const normalizedPath = normalizeKey(path);
+  const normalizedValue = normalizeKey(value);
+  if (!normalizedValue.includes("llm")) {
+    return false;
+  }
+  return normalizedPath.includes("strategy") || normalizedPath.includes("extraction");
+}
+
 function findDisallowedKeys(value: unknown, prefix = "", seen = new Set<unknown>()): string[] {
   if (!value || typeof value !== "object") {
     return [];
@@ -20,9 +29,7 @@ function findDisallowedKeys(value: unknown, prefix = "", seen = new Set<unknown>
   seen.add(value);
 
   if (Array.isArray(value)) {
-    return value.flatMap((entry, index) =>
-      findDisallowedKeys(entry, `${prefix}[${index}]`, seen)
-    );
+    return value.flatMap((entry, index) => findDisallowedKeys(entry, `${prefix}[${index}]`, seen));
   }
 
   const record = value as Record<string, unknown>;
@@ -33,6 +40,9 @@ function findDisallowedKeys(value: unknown, prefix = "", seen = new Set<unknown>
     if (DISALLOWED_NORMALIZED_KEYS.has(normalized)) {
       hits.push(path);
     }
+    if (normalized === "type" && typeof entry === "string" && isDisallowedStrategyType(path, entry)) {
+      hits.push(path);
+    }
     if (isPlainObject(entry) || Array.isArray(entry)) {
       hits.push(...findDisallowedKeys(entry, path, seen));
     }
@@ -40,7 +50,7 @@ function findDisallowedKeys(value: unknown, prefix = "", seen = new Set<unknown>
   return hits;
 }
 
-export function assertNoCrawl4aiLlmOptions(options: Record<string, unknown>, label = "crawlOptions") {
+export function assertNoCrawl4aiLlmOptions(options: unknown, label = "crawlOptions") {
   const blocked = findDisallowedKeys(options);
   if (blocked.length === 0) {
     return;
@@ -52,4 +62,3 @@ export function assertNoCrawl4aiLlmOptions(options: Record<string, unknown>, lab
       "The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead."
   );
 }
-

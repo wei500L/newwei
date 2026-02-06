@@ -399,14 +399,18 @@ type CrawlLinkStatsModel {
 }
 
 input CrawlMarkdownFilterInput {
+  bm25Threshold: Float
+  language: String
   minWordThreshold: Int
   threshold: Float
   thresholdType: String
   type: String
+  userQuery: String
 }
 
 input CrawlMarkdownOptionsInput {
   bodyWidth: Int
+  citations: Boolean
   contentSource: String
   escapeHtml: Boolean
   ignoreLinks: Boolean
@@ -505,6 +509,7 @@ input CrawlOptionsInput {
   userAgentGenerator: CrawlUserAgentGeneratorInput
   userAgentMode: String
   userDataDir: String
+  virtualScroll: CrawlVirtualScrollInput
   waitForImages: Boolean
   waitForScript: String
   waitForSelector: String
@@ -553,6 +558,7 @@ input CrawlStrategyOverridesInput {
   scrollDelayMs: Int
   simulateUser: Boolean
   textMode: Boolean
+  virtualScroll: CrawlVirtualScrollInput
   waitForImages: Boolean
   waitForScript: String
   waitForSelector: String
@@ -627,6 +633,13 @@ input CrawlUserAgentGeneratorInput {
   deviceType: String
   locale: String
   platform: String
+}
+
+input CrawlVirtualScrollInput {
+  containerSelector: String
+  scrollBy: String
+  scrollCount: Int
+  waitAfterScrollMs: Int
 }
 
 input CreateCrawlTaskInput {

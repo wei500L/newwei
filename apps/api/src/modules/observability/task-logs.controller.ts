@@ -79,6 +79,7 @@ export class TaskLogsController {
   async list(
     @CurrentUser() user: AuthenticatedUser,
     @Query("queue") queue?: string,
+    @Query("jobId") jobId?: string,
     @Query("stage") stage?: string,
     @Query("status") status?: string,
     @Query("limit") limit?: string,
@@ -99,6 +100,10 @@ export class TaskLogsController {
     const normalizedQueue = typeof queue === "string" ? queue.trim() : "";
     if (normalizedQueue) {
       where.queue = normalizedQueue;
+    }
+    const normalizedJobId = typeof jobId === "string" ? jobId.trim() : "";
+    if (normalizedJobId) {
+      where.jobId = normalizedJobId;
     }
     const normalizedStage = typeof stage === "string" ? stage.trim() : "";
     if (normalizedStage) {

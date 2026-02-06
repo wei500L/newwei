@@ -18,6 +18,7 @@ import {
 import { CrawlResultService } from "./crawl-result.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
+import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import {
   CrawlExecutionSummary,
   CrawlTaskOptions,
@@ -40,7 +41,7 @@ import {
   CrawlTableExtractionStrategy,
   CrawlVirtualScrollConfig
 } from "./crawl.types";
-import { Crawl4aiClient, Crawl4aiArticle, Crawl4aiRequest, Crawl4aiResponse } from "./crawl4ai.client";
+import { Crawl4aiClient, Crawl4aiArticle, Crawl4aiLink, Crawl4aiRequest, Crawl4aiResponse } from "./crawl4ai.client";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
 
 
@@ -128,13 +129,180 @@ export class CrawlExecutionService {
         ? revealCrawlTaskConfigForExecution(configRecord, encryptionKey)
         : null;
       const options = this.extractOptions(decryptedConfig as Prisma.JsonValue | null);
+      assertNoCrawl4aiLlmOptions(options, "task.config.options");
       const ingestToItems =
         decryptedConfig && typeof decryptedConfig === "object" && !Array.isArray(decryptedConfig)
           ? (decryptedConfig as Record<string, unknown>).ingestToItems === true
           : false;
-      const payload = this.buildRequestPayload(task, options);
-      const response = await this.crawlClient.crawl(payload);
-      const { successes, failures } = this.partitionCrawlerResults(response.results);
+      let effectiveOptions = options;
+      const payload = this.buildRequestPayload(task, effectiveOptions);
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: taskId,
+        orgId,
+        stage: "crawler",
+        status: "processing",
+        message: "crawl4ai request started",
+        data: {
+          urls: payload.urls?.length ?? 0,
+          scanFullPage: effectiveOptions.scanFullPage ?? false,
+          scrollDelayMs: effectiveOptions.scrollDelayMs ?? null,
+          virtualScroll: effectiveOptions.virtualScroll
+            ? {
+                containerSelector: effectiveOptions.virtualScroll.containerSelector ?? "body",
+                scrollCount: effectiveOptions.virtualScroll.scrollCount ?? null,
+                scrollBy: effectiveOptions.virtualScroll.scrollBy ?? null,
+                waitAfterScrollMs: effectiveOptions.virtualScroll.waitAfterScrollMs ?? null,
+              }
+            : null,
+          onlyMainContent: effectiveOptions.onlyMainContent ?? null,
+          wordCountThreshold: effectiveOptions.wordCountThreshold ?? null,
+          includeImages: effectiveOptions.includeImages ?? null,
+          storeMedia: effectiveOptions.storeMedia ?? null,
+          waitForImages: effectiveOptions.waitForImages ?? null,
+        },
+      });
+      let response = await this.crawlClient.crawl(payload);
+      let { successes, failures } = this.partitionCrawlerResults(response.results);
+
+      if (this.shouldAttemptEmptyMarkdownFallback(successes, failures)) {
+        const fallbackProfiles = this.buildEmptyMarkdownFallbackProfiles(effectiveOptions);
+        const fallbackCandidates: {
+          label: string;
+          options: CrawlTaskOptions;
+          response: Crawl4aiResponse;
+          successes: Crawl4aiArticle[];
+          failures: CrawlFailureDetail[];
+          qualityScore: number;
+        }[] = [];
+
+        for (const profile of fallbackProfiles) {
+          await TaskLogModel.create({
+            queue: CRAWL_QUEUE_NAME,
+            jobId: taskId,
+            orgId,
+            stage: "fallback",
+            status: "processing",
+            message: `Retrying crawl4ai with markdown fallback profile: ${profile.label}`,
+            data: {
+              profile: profile.label,
+              fallback: profile.summary
+            }
+          });
+
+          try {
+            const fallbackPayload = this.buildRequestPayload(task, profile.options);
+            const fallbackResponse = await this.crawlClient.crawl(fallbackPayload);
+            const fallbackPartition = this.partitionCrawlerResults(fallbackResponse.results);
+            const qualityScore = this.scoreMarkdownQuality(fallbackPartition.successes);
+
+            if (fallbackPartition.successes.length > 0) {
+              fallbackCandidates.push({
+                label: profile.label,
+                options: profile.options,
+                response: fallbackResponse,
+                successes: fallbackPartition.successes,
+                failures: fallbackPartition.failures,
+                qualityScore
+              });
+            }
+
+            await TaskLogModel.create({
+              queue: CRAWL_QUEUE_NAME,
+              jobId: taskId,
+              orgId,
+              stage: "fallback",
+              status: "completed",
+              message:
+                fallbackPartition.successes.length > 0
+                  ? `Fallback profile ${profile.label} produced crawl results`
+                  : `Fallback profile ${profile.label} did not produce markdown`,
+              data: {
+                profile: profile.label,
+                successes: fallbackPartition.successes.length,
+                failures: fallbackPartition.failures.length,
+                qualityScore,
+                failureSamples: fallbackPartition.failures.slice(0, 5)
+              }
+            });
+          } catch (fallbackError) {
+            await TaskLogModel.create({
+              queue: CRAWL_QUEUE_NAME,
+              jobId: taskId,
+              orgId,
+              stage: "fallback",
+              status: "failed",
+              message: `Fallback profile ${profile.label} failed`,
+              error: sanitizeError(fallbackError, {
+                redactSensitive: true
+              }),
+              data: {
+                profile: profile.label
+              }
+            });
+          }
+        }
+
+        const bestFallback = fallbackCandidates.sort((left, right) => right.qualityScore - left.qualityScore)[0];
+        if (bestFallback) {
+          response = bestFallback.response;
+          successes = bestFallback.successes;
+          failures = bestFallback.failures;
+          effectiveOptions = bestFallback.options;
+
+          await TaskLogModel.create({
+            queue: CRAWL_QUEUE_NAME,
+            jobId: taskId,
+            orgId,
+            stage: "fallback",
+            status: "completed",
+            message: `Selected markdown fallback profile: ${bestFallback.label}`,
+            data: {
+              profile: bestFallback.label,
+              qualityScore: bestFallback.qualityScore,
+              successes: bestFallback.successes.length,
+              failures: bestFallback.failures.length
+            }
+          });
+        }
+      }
+
+      const expansionResult = await this.expandListLikeResultsIfNeeded({
+        task,
+        orgId,
+        taskId,
+        keywords: payload.keywords ?? [],
+        crawlOptions: effectiveOptions,
+        successes
+      });
+      if (expansionResult) {
+        successes = expansionResult.successes;
+        if (expansionResult.failures.length > 0) {
+          failures = [...failures, ...expansionResult.failures];
+        }
+        if (expansionResult.runId) {
+          response = {
+            ...response,
+            runId: expansionResult.runId
+          };
+        }
+      }
+
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: taskId,
+        orgId,
+        stage: "crawler",
+        status: "completed",
+        data: {
+          runId: response.runId ?? null,
+          nextCursor: response.nextCursor ?? null,
+          totalResults: response.results?.length ?? 0,
+          successes: successes.length,
+          failures: failures.length,
+        },
+      });
+
       let failureRetryableCount = 0;
 
       if (response.warnings && response.warnings.length > 0) {
@@ -169,7 +337,7 @@ export class CrawlExecutionService {
       const summary = await this.resultService.persistResults(
         task,
         successes,
-        options,
+        effectiveOptions,
         response.runId ?? undefined,
         this.extractMemoryStats(response),
         ingestToItems
@@ -185,7 +353,7 @@ export class CrawlExecutionService {
         summary.retryableFailures = failureRetryableCount;
       }
 
-      if (pipelineJobId && summary.inserted === 0 && summary.skipped === 0) {
+      if (summary.inserted === 0 && summary.skipped === 0) {
         const firstFailure = failures[0];
         if (firstFailure) {
           const statusLabel =
@@ -240,6 +408,15 @@ export class CrawlExecutionService {
             : error instanceof Error
               ? error.message
               : "crawl job failed";
+      const normalizedMessage = (() => {
+        const trimmed = message.trim();
+        const fallback = trimmed.length > 0 ? trimmed : "crawl job failed";
+        const maxLength = 4000;
+        if (fallback.length <= maxLength) {
+          return fallback;
+        }
+        return `${fallback.slice(0, maxLength - 1).trimEnd()}…`;
+      })();
 
       const attempt = retryContext?.attempt;
       const maxAttempts = retryContext?.maxAttempts;
@@ -262,13 +439,40 @@ export class CrawlExecutionService {
           ? new Date(Date.now() + Math.max(0, Math.round(backoffDelayMs)))
           : null;
 
-      await this.prisma.crawlTask.update({
-        where: { id: task.id },
-        data: {
-          status: shouldRetry ? "queued" : "failed",
-          lastError: message
-        }
-      });
+      const crawlTaskStatus = shouldRetry ? "queued" : "failed";
+      try {
+        await this.prisma.crawlTask.update({
+          where: { id: task.id },
+          data: {
+            status: crawlTaskStatus,
+            lastError: normalizedMessage
+          }
+        });
+      } catch (updateError) {
+        const maxVarchar191 = 191;
+        const fallbackMessage =
+          normalizedMessage.length <= maxVarchar191
+            ? normalizedMessage
+            : `${normalizedMessage.slice(0, maxVarchar191 - 1).trimEnd()}…`;
+        logger.warn(
+          { err: updateError, taskId: task.id, orgId },
+          "Failed to persist crawl task error; retrying with truncated message"
+        );
+        await this.prisma.crawlTask
+          .update({
+            where: { id: task.id },
+            data: {
+              status: crawlTaskStatus,
+              lastError: fallbackMessage
+            }
+          })
+          .catch((fallbackError) => {
+            logger.error(
+              { err: fallbackError, taskId: task.id, orgId },
+              "Failed to persist crawl task error after truncation"
+            );
+          });
+      }
       await TaskLogModel.create({
         queue: CRAWL_QUEUE_NAME,
         jobId: taskId,
@@ -295,7 +499,7 @@ export class CrawlExecutionService {
             data: {
               status: shouldRetry ? PipelineJobStatus.delayed : PipelineJobStatus.failed,
               completedAt: shouldRetry ? null : new Date(),
-              error: message,
+              error: normalizedMessage,
               attempts: typeof attempt === "number" && Number.isFinite(attempt) ? Math.max(0, attempt) : 0,
             }
           });
@@ -327,11 +531,1075 @@ export class CrawlExecutionService {
           { inserted: 0, skipped: 0 },
           triggeredById,
           "failed",
-          message
+          normalizedMessage
         );
       }
       throw error;
     }
+  }
+
+  private isEmptyMarkdownFailure(failure: CrawlFailureDetail): boolean {
+    const normalizedError =
+      typeof failure.error === "string" ? failure.error.toLowerCase() : "";
+    return (
+      (failure.statusCode === undefined || failure.statusCode === 200) &&
+      normalizedError.includes("empty markdown")
+    );
+  }
+
+  private shouldAttemptEmptyMarkdownFallback(successes: Crawl4aiArticle[], failures: CrawlFailureDetail[]) {
+    return (
+      successes.length === 0 &&
+      failures.length > 0 &&
+      failures.every((failure) => this.isEmptyMarkdownFailure(failure))
+    );
+  }
+
+  private buildEmptyMarkdownFallbackProfiles(options: CrawlTaskOptions): {
+    label: string;
+    options: CrawlTaskOptions;
+    summary: Record<string, unknown>;
+  }[] {
+    const cleanMarkdown = options.cleanMarkdown;
+    const relaxedCleanMarkdown =
+      cleanMarkdown && typeof cleanMarkdown === "object"
+        ? {
+            excludedTags: cleanMarkdown.excludedTags,
+            targetElements: cleanMarkdown.targetElements,
+            removeOverlayElements: cleanMarkdown.removeOverlayElements ?? true,
+            wordCountThreshold: 0
+          }
+        : {
+            removeOverlayElements: true,
+            wordCountThreshold: 0
+          };
+
+    const ensureCitations = options.markdownOptions?.citations ?? true;
+
+    const rawRelaxedOptions = this.normalizeOptions({
+      ...options,
+      onlyMainContent: false,
+      markdownFilter: undefined,
+      markdownOptions: {
+        ...(options.markdownOptions ?? {}),
+        contentSource: "raw_html",
+        citations: ensureCitations
+      },
+      cleanMarkdown: relaxedCleanMarkdown,
+      cssSelector: undefined,
+      wordCountThreshold: 10
+    });
+
+    const cleanedBalancedOptions = this.normalizeOptions({
+      ...options,
+      onlyMainContent: false,
+      markdownFilter: {
+        type: "pruning",
+        thresholdType: "dynamic",
+        threshold: 0.2,
+        minWordThreshold: 5
+      },
+      markdownOptions: {
+        ...(options.markdownOptions ?? {}),
+        contentSource: "cleaned_html",
+        citations: ensureCitations
+      },
+      cleanMarkdown: {
+        ...(cleanMarkdown ?? {}),
+        removeOverlayElements: cleanMarkdown?.removeOverlayElements ?? true,
+        wordCountThreshold:
+          typeof cleanMarkdown?.wordCountThreshold === "number"
+            ? Math.min(cleanMarkdown.wordCountThreshold, 40)
+            : 20
+      },
+      cssSelector: undefined,
+      wordCountThreshold: Math.min(options.wordCountThreshold ?? 80, 40)
+    });
+
+    const profiles: {
+      label: string;
+      options: CrawlTaskOptions;
+      summary: Record<string, unknown>;
+    }[] = [
+      {
+        label: "raw_relaxed",
+        options: rawRelaxedOptions,
+        summary: {
+          contentSource: rawRelaxedOptions.markdownOptions?.contentSource ?? null,
+          markdownFilter: rawRelaxedOptions.markdownFilter?.type ?? null,
+          wordCountThreshold: rawRelaxedOptions.wordCountThreshold ?? null,
+          cleanMarkdownWordCountThreshold: rawRelaxedOptions.cleanMarkdown?.wordCountThreshold ?? null
+        }
+      },
+      {
+        label: "cleaned_balanced",
+        options: cleanedBalancedOptions,
+        summary: {
+          contentSource: cleanedBalancedOptions.markdownOptions?.contentSource ?? null,
+          markdownFilter: cleanedBalancedOptions.markdownFilter?.type ?? null,
+          wordCountThreshold: cleanedBalancedOptions.wordCountThreshold ?? null,
+          cleanMarkdownWordCountThreshold: cleanedBalancedOptions.cleanMarkdown?.wordCountThreshold ?? null
+        }
+      }
+    ];
+
+    const sourceFilter = options.markdownFilter;
+    if (sourceFilter?.type === "bm25" && typeof sourceFilter.userQuery === "string" && sourceFilter.userQuery.trim().length > 0) {
+      const bm25FocusedOptions = this.normalizeOptions({
+        ...options,
+        onlyMainContent: false,
+        markdownFilter: {
+          type: "bm25",
+          userQuery: sourceFilter.userQuery,
+          bm25Threshold: sourceFilter.bm25Threshold ?? 0.6,
+          language: sourceFilter.language
+        },
+        markdownOptions: {
+          ...(options.markdownOptions ?? {}),
+          contentSource: "cleaned_html",
+          citations: ensureCitations
+        },
+        cleanMarkdown: relaxedCleanMarkdown,
+        cssSelector: undefined,
+        wordCountThreshold: Math.min(options.wordCountThreshold ?? 80, 30)
+      });
+      profiles.push({
+        label: "bm25_focus",
+        options: bm25FocusedOptions,
+        summary: {
+          contentSource: bm25FocusedOptions.markdownOptions?.contentSource ?? null,
+          markdownFilter: bm25FocusedOptions.markdownFilter?.type ?? null,
+          wordCountThreshold: bm25FocusedOptions.wordCountThreshold ?? null,
+          cleanMarkdownWordCountThreshold: bm25FocusedOptions.cleanMarkdown?.wordCountThreshold ?? null
+        }
+      });
+    }
+
+    return profiles;
+  }
+
+  private scoreMarkdownQuality(successes: Crawl4aiArticle[]): number {
+    if (successes.length === 0) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    return successes.reduce((total, item) => total + this.scoreSingleMarkdownQuality(item), 0);
+  }
+
+  private scoreSingleMarkdownQuality(item: Crawl4aiArticle): number {
+    const markdownResult = this.resultService.extractMarkdownResult(item.markdown);
+    const primary = typeof markdownResult.primary === "string" ? markdownResult.primary.trim() : "";
+    if (!primary) {
+      return -1000;
+    }
+
+    const words = primary.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const headings = (primary.match(/^#{1,6}\s+/gm) ?? []).length;
+    const markdownLinks = (primary.match(/\]\((https?:\/\/|\/)/g) ?? []).length;
+    const rawUrls = (primary.match(/https?:\/\/\S+/g) ?? []).length;
+    const codeFenceMarkers = (primary.match(/```/g) ?? []).length;
+    const codeBlocks = Math.floor(codeFenceMarkers / 2);
+    const citationMarks = (primary.match(/\[\^\d+\]/g) ?? []).length;
+
+    const score =
+      Math.min(words, 6000) + headings * 8 + citationMarks * 2 - (markdownLinks + rawUrls) * 4 - codeBlocks * 3;
+    return Number.isFinite(score) ? score : 0;
+  }
+
+  private async expandListLikeResultsIfNeeded(options: {
+    task: CrawlTask;
+    orgId: string;
+    taskId: string;
+    keywords: string[];
+    crawlOptions: CrawlTaskOptions;
+    successes: Crawl4aiArticle[];
+  }): Promise<
+    | {
+        successes: Crawl4aiArticle[];
+        failures: CrawlFailureDetail[];
+        runId: string | null;
+      }
+    | null
+  > {
+    if (options.successes.length === 0) {
+      return null
+    }
+
+    const assessments = options.successes.map((article, index) => {
+      const quality = this.assessArticleMarkdownSignal(article)
+      return {
+        index,
+        article,
+        quality,
+        linkInventory: this.countArticleLinkInventory(article)
+      }
+    })
+
+    const lowSignalAssessments = assessments.filter((entry) => {
+      const quality = entry.quality
+      if (quality.isListLike) {
+        return true
+      }
+      if (quality.linkDensity >= 0.14 && quality.wordCount <= 1600) {
+        return true
+      }
+      if (quality.linkCount >= 12 && quality.wordCount <= 520) {
+        return true
+      }
+      return entry.linkInventory >= 40 && quality.wordCount <= 900
+    })
+    if (lowSignalAssessments.length === 0) {
+      return null
+    }
+
+    const allLowSignal = lowSignalAssessments.length === assessments.length
+    const maxLowSignalWords = lowSignalAssessments.reduce(
+      (maxWords, entry) => Math.max(maxWords, entry.quality.wordCount),
+      0
+    )
+    const minLowSignalWords = lowSignalAssessments.reduce(
+      (minWords, entry) => Math.min(minWords, entry.quality.wordCount),
+      Number.POSITIVE_INFINITY
+    )
+    const meanLowSignalWords =
+      lowSignalAssessments.reduce((total, entry) => total + entry.quality.wordCount, 0) /
+      lowSignalAssessments.length
+    const bestLowSignalScore = lowSignalAssessments.reduce(
+      (maxScore, entry) => Math.max(maxScore, entry.quality.score),
+      Number.NEGATIVE_INFINITY
+    )
+    const maxLowSignalLinkDensity = lowSignalAssessments.reduce(
+      (maxDensity, entry) => Math.max(maxDensity, entry.quality.linkDensity),
+      0
+    )
+    const meanLowSignalLinkDensity =
+      lowSignalAssessments.reduce((total, entry) => total + entry.quality.linkDensity, 0) /
+      lowSignalAssessments.length
+
+    await TaskLogModel.create({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: options.taskId,
+      orgId: options.orgId,
+      stage: 'expansion',
+      status: 'processing',
+      message: 'Detected low-signal crawl markdown; evaluating detail expansion candidates',
+      data: {
+        totalSuccesses: assessments.length,
+        lowSignalResults: lowSignalAssessments.length,
+        allLowSignal,
+        lowSignalWords: {
+          min: Number.isFinite(minLowSignalWords) ? minLowSignalWords : 0,
+          max: maxLowSignalWords,
+          avg: Number.isFinite(meanLowSignalWords) ? Number(meanLowSignalWords.toFixed(1)) : 0
+        },
+        lowSignalLinkDensity: {
+          max: Number(maxLowSignalLinkDensity.toFixed(3)),
+          avg: Number(meanLowSignalLinkDensity.toFixed(3))
+        },
+        qualitySamples: lowSignalAssessments.slice(0, 5).map((entry) => ({
+          url: entry.article.url ?? null,
+          wordCount: entry.quality.wordCount,
+          linkCount: entry.quality.linkCount,
+          linkDensity: Number(entry.quality.linkDensity.toFixed(3)),
+          bulletLines: entry.quality.bulletLines,
+          score: Number(entry.quality.score.toFixed(2)),
+          linkInventory: entry.linkInventory
+        }))
+      }
+    })
+
+    const existingUrls = new Set(
+      options.successes
+        .map((entry) => this.normalizeComparableUrl(entry.url))
+        .filter((entry): entry is string => Boolean(entry))
+    )
+
+    const candidateScoreMap = new Map<string, number>()
+    for (const entry of lowSignalAssessments) {
+      const baseUrl = this.resolveArticleBaseUrl(entry.article) ?? options.task.targetUrl
+      const candidates = this.extractDetailLinkCandidatesFromArticle(entry.article)
+      for (const candidate of candidates) {
+        if (existingUrls.has(candidate)) {
+          continue
+        }
+        const nextScore = this.scoreDetailCandidateUrl(candidate, baseUrl)
+        const currentScore = candidateScoreMap.get(candidate)
+        if (currentScore === undefined || nextScore > currentScore) {
+          candidateScoreMap.set(candidate, nextScore)
+        }
+      }
+    }
+
+    const candidateLimit = allLowSignal ? 14 : 8
+    const candidateUrls = Array.from(candidateScoreMap.entries())
+      .filter((entry) => Number.isFinite(entry[1]))
+      .sort((left, right) => right[1] - left[1])
+      .map((entry) => entry[0])
+      .slice(0, candidateLimit)
+
+    if (candidateUrls.length === 0) {
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: options.taskId,
+        orgId: options.orgId,
+        stage: 'expansion',
+        status: 'failed',
+        message: 'Low-signal markdown detected but no detail candidate URLs were extracted',
+        data: {
+          allLowSignal,
+          lowSignalResults: lowSignalAssessments.length,
+          lowSignalWords: {
+            min: Number.isFinite(minLowSignalWords) ? minLowSignalWords : 0,
+            max: maxLowSignalWords,
+            avg: Number.isFinite(meanLowSignalWords) ? Number(meanLowSignalWords.toFixed(1)) : 0
+          },
+          maxLowSignalLinkDensity: Number(maxLowSignalLinkDensity.toFixed(3))
+        }
+      })
+
+      if (allLowSignal) {
+        throw new Error(
+          'crawl markdown is low-signal/list-like and no detail candidate URLs were extracted from the page content'
+        )
+      }
+      return null
+    }
+
+    const detailOptions = this.buildDetailExpansionOptions(options.crawlOptions)
+    const candidateBatchSize = 3
+    const candidateBatches = Array.from({ length: Math.ceil(candidateUrls.length / candidateBatchSize) }, (_, index) =>
+      candidateUrls.slice(index * candidateBatchSize, (index + 1) * candidateBatchSize)
+    )
+
+    const expansionSuccesses: Crawl4aiArticle[] = []
+    const expansionFailures: CrawlFailureDetail[] = []
+    let expansionRunId: string | null = null
+
+    for (let index = 0; index < candidateBatches.length; index += 1) {
+      const batchUrls = candidateBatches[index] ?? []
+      if (batchUrls.length === 0) {
+        continue
+      }
+
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: options.taskId,
+        orgId: options.orgId,
+        stage: 'expansion',
+        status: 'processing',
+        message: `Detail expansion batch ${index + 1}/${candidateBatches.length} started`,
+        data: {
+          batchIndex: index + 1,
+          batchCount: candidateBatches.length,
+          urls: batchUrls
+        }
+      })
+
+      try {
+        const batchResponse = await this.crawlClient.crawl({
+          url: options.task.targetUrl,
+          urls: batchUrls,
+          keywords: options.keywords,
+          options: detailOptions
+        })
+        const partition = this.partitionCrawlerResults(batchResponse.results)
+        expansionRunId = expansionRunId ?? batchResponse.runId ?? null
+        expansionSuccesses.push(...partition.successes)
+        if (partition.failures.length > 0) {
+          expansionFailures.push(...partition.failures)
+        }
+
+        await TaskLogModel.create({
+          queue: CRAWL_QUEUE_NAME,
+          jobId: options.taskId,
+          orgId: options.orgId,
+          stage: 'expansion',
+          status: 'completed',
+          message: `Detail expansion batch ${index + 1}/${candidateBatches.length} finished`,
+          data: {
+            batchIndex: index + 1,
+            batchCount: candidateBatches.length,
+            urls: batchUrls,
+            successes: partition.successes.length,
+            failures: partition.failures.length,
+            failureSamples: partition.failures.slice(0, 3)
+          }
+        })
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message.trim()
+            : 'detail expansion batch failed'
+        for (const candidateUrl of batchUrls) {
+          expansionFailures.push({
+            url: candidateUrl,
+            error: errorMessage,
+            retryable: this.isRetryableStatus(undefined, errorMessage)
+          })
+        }
+
+        await TaskLogModel.create({
+          queue: CRAWL_QUEUE_NAME,
+          jobId: options.taskId,
+          orgId: options.orgId,
+          stage: 'expansion',
+          status: 'failed',
+          message: `Detail expansion batch ${index + 1}/${candidateBatches.length} failed`,
+          error: sanitizeError(error, {
+            redactSensitive: true
+          }),
+          data: {
+            batchIndex: index + 1,
+            batchCount: candidateBatches.length,
+            urls: batchUrls
+          }
+        })
+      }
+    }
+
+    const improvedByUrl = new Map<
+      string,
+      {
+        article: Crawl4aiArticle;
+        quality: ReturnType<CrawlExecutionService['assessArticleMarkdownSignal']>;
+      }
+    >()
+
+    for (const article of expansionSuccesses) {
+      const quality = this.assessArticleMarkdownSignal(article)
+      const isImproved = this.isSignificantDetailImprovement(
+        quality,
+        bestLowSignalScore,
+        maxLowSignalWords,
+        maxLowSignalLinkDensity
+      )
+      if (!isImproved) {
+        continue
+      }
+
+      const comparableUrl = this.normalizeComparableUrl(article.url) ?? article.url ?? `__missing_url_${improvedByUrl.size}`
+      const current = improvedByUrl.get(comparableUrl)
+      if (!current || quality.score > current.quality.score) {
+        improvedByUrl.set(comparableUrl, {
+          article,
+          quality
+        })
+      }
+    }
+
+    const improvedEntries = Array.from(improvedByUrl.values()).sort(
+      (left, right) =>
+        right.quality.score - left.quality.score ||
+        right.quality.wordCount - left.quality.wordCount ||
+        left.quality.linkDensity - right.quality.linkDensity
+    )
+
+    const preferredPathSegment = this.extractPrimaryPathSegment(options.task.targetUrl)
+    const rankedImprovedEntries = (() => {
+      if (!preferredPathSegment) {
+        return improvedEntries
+      }
+
+      const preferredEntries = improvedEntries.filter((entry) =>
+        this.urlMatchesPrimaryPathSegment(entry.article.url, preferredPathSegment)
+      )
+      if (preferredEntries.length === 0) {
+        return improvedEntries
+      }
+
+      if (preferredEntries.length >= Math.min(3, improvedEntries.length)) {
+        return preferredEntries
+      }
+
+      const nonPreferredEntries = improvedEntries.filter(
+        (entry) => !this.urlMatchesPrimaryPathSegment(entry.article.url, preferredPathSegment)
+      )
+      return [...preferredEntries, ...nonPreferredEntries]
+    })()
+
+    const maxImprovedResults = allLowSignal ? 8 : 5
+    const improvedSuccesses = rankedImprovedEntries.slice(0, maxImprovedResults).map((entry) => entry.article)
+
+    await TaskLogModel.create({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: options.taskId,
+      orgId: options.orgId,
+      stage: 'expansion',
+      status: 'completed',
+      message:
+        improvedSuccesses.length > 0
+          ? `Detail expansion selected ${improvedSuccesses.length} richer article result(s)`
+          : 'Detail expansion did not produce richer markdown',
+      data: {
+        allLowSignal,
+        candidateCount: candidateUrls.length,
+        batchCount: candidateBatches.length,
+        expansionSuccesses: expansionSuccesses.length,
+        expansionFailures: expansionFailures.length,
+        improvedSuccesses: improvedSuccesses.length,
+        preferredPathSegment: preferredPathSegment ?? null,
+        improvedSamples: rankedImprovedEntries.slice(0, 5).map((entry) => ({
+          url: entry.article.url ?? null,
+          wordCount: entry.quality.wordCount,
+          linkCount: entry.quality.linkCount,
+          linkDensity: Number(entry.quality.linkDensity.toFixed(3)),
+          score: Number(entry.quality.score.toFixed(2)),
+          isListLike: entry.quality.isListLike
+        })),
+        failureSamples: expansionFailures.slice(0, 5)
+      }
+    })
+
+    if (improvedSuccesses.length === 0) {
+      if (allLowSignal) {
+        throw new Error(
+          `crawl markdown is low-signal/list-like and detail expansion did not produce richer article content (candidates=${candidateUrls.length}, expansionSuccesses=${expansionSuccesses.length}, expansionFailures=${expansionFailures.length})`
+        )
+      }
+      return null
+    }
+
+    const lowSignalIndexes = new Set(lowSignalAssessments.map((entry) => entry.index))
+    const retainedSuccesses = options.successes.filter((_, index) => !lowSignalIndexes.has(index))
+    const retainedUrlSet = new Set(
+      retainedSuccesses
+        .map((entry) => this.normalizeComparableUrl(entry.url))
+        .filter((entry): entry is string => Boolean(entry))
+    )
+
+    const dedupedImprovedSuccesses = improvedSuccesses.filter((entry) => {
+      const comparable = this.normalizeComparableUrl(entry.url)
+      if (!comparable) {
+        return true
+      }
+      if (retainedUrlSet.has(comparable)) {
+        return false
+      }
+      retainedUrlSet.add(comparable)
+      return true
+    })
+
+    return {
+      successes: [...retainedSuccesses, ...dedupedImprovedSuccesses],
+      failures: expansionFailures,
+      runId: expansionRunId
+    }
+  }
+
+  private extractPrimaryPathSegment(url: string): string | undefined {
+    try {
+      const parsed = new URL(url)
+      const segments = parsed.pathname
+        .replace(/\/+$/, '')
+        .split('/')
+        .filter((entry) => entry.length > 0)
+      return segments[0]?.toLowerCase()
+    } catch {
+      return undefined
+    }
+  }
+
+  private urlMatchesPrimaryPathSegment(url: string | undefined, segment: string): boolean {
+    if (!url) {
+      return false
+    }
+    try {
+      const parsed = new URL(url)
+      const segments = parsed.pathname
+        .replace(/\/+$/, '')
+        .split('/')
+        .filter((entry) => entry.length > 0)
+      return segments[0]?.toLowerCase() === segment
+    } catch {
+      return false
+    }
+  }
+
+  private countArticleLinkInventory(article: Crawl4aiArticle): number {
+    if (!article.links || typeof article.links !== 'object' || Array.isArray(article.links)) {
+      return 0
+    }
+
+    const collections = Object.values(article.links as Record<string, unknown>)
+    let total = 0
+    for (const collection of collections) {
+      if (Array.isArray(collection)) {
+        total += collection.length
+      }
+    }
+    return total
+  }
+
+  private assessArticleMarkdownSignal(article: Crawl4aiArticle) {
+    const markdownResult = this.resultService.extractMarkdownResult(article.markdown)
+    const markdown = typeof markdownResult.primary === 'string' ? markdownResult.primary.trim() : ''
+    if (!markdown) {
+      return {
+        wordCount: 0,
+        paragraphCount: 0,
+        headingCount: 0,
+        linkCount: 0,
+        linkDensity: 0,
+        bulletLines: 0,
+        score: Number.NEGATIVE_INFINITY,
+        isListLike: false
+      }
+    }
+
+    const { scoreWordCount, densityWordCount } = this.estimateMarkdownWordUnits(markdown)
+    const wordCount = densityWordCount
+    const paragraphCount = markdown
+      .split(/\n\s*\n/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0).length
+    const headingCount = (markdown.match(/^#{1,6}\s+/gm) ?? []).length
+    const markdownLinkCount = (markdown.match(/\]\((https?:\/\/|\/)/g) ?? []).length
+    const rawUrlCount = (markdown.match(/https?:\/\/\S+/g) ?? []).length
+    const linkCount = markdownLinkCount + rawUrlCount
+    const bulletLines = markdown
+      .split(/\n/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.startsWith('- ') || entry.startsWith('* ') || entry.startsWith('• ')).length
+    const linkDensity = wordCount > 0 ? linkCount / wordCount : linkCount
+
+    const isListLike =
+      (linkCount >= 16 && wordCount <= 1500) ||
+      (bulletLines >= 10 && linkCount >= 10) ||
+      (linkDensity >= 0.09 && wordCount <= 1200)
+
+    const score =
+      Math.min(scoreWordCount, 12_000) +
+      Math.min(paragraphCount, 220) * 6 +
+      headingCount * 3 -
+      linkCount * 6 -
+      bulletLines * 2
+
+    return {
+      wordCount,
+      paragraphCount,
+      headingCount,
+      linkCount,
+      linkDensity,
+      bulletLines,
+      score,
+      isListLike
+    }
+  }
+
+  private estimateMarkdownWordUnits(markdown: string): { scoreWordCount: number; densityWordCount: number } {
+    const whitespaceWords = markdown.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const cjkChars = markdown.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu);
+    const cjkCount = cjkChars ? cjkChars.length : 0;
+
+    return {
+      scoreWordCount: whitespaceWords + Math.round(cjkCount / 2),
+      densityWordCount: whitespaceWords + Math.round(cjkCount / 6)
+    };
+  }
+
+  private isSignificantDetailImprovement(
+    quality: {
+      wordCount: number;
+      paragraphCount: number;
+      headingCount: number;
+      linkCount: number;
+      linkDensity: number;
+      score: number;
+      isListLike: boolean;
+    },
+    baseScore: number,
+    baseWords: number,
+    baseLinkDensity: number
+  ): boolean {
+    if (quality.wordCount <= 0) {
+      return false
+    }
+
+    const densityTarget = Math.max(baseLinkDensity * 0.65, 0.08)
+    if (
+      quality.isListLike &&
+      quality.wordCount < Math.max(baseWords + 80, 180) &&
+      quality.linkDensity >= Math.max(densityTarget * 0.9, 0.12)
+    ) {
+      return false
+    }
+
+    if (
+      !quality.isListLike &&
+      quality.paragraphCount >= 3 &&
+      quality.wordCount >= 120 &&
+      quality.linkDensity <= densityTarget
+    ) {
+      return true
+    }
+
+    if (quality.score >= baseScore + 120 && quality.linkDensity <= Math.max(baseLinkDensity * 0.8, 0.2)) {
+      return true
+    }
+
+    if (quality.wordCount >= baseWords + 100 && quality.linkDensity <= Math.max(baseLinkDensity * 0.85, 0.22)) {
+      return true
+    }
+
+    if (
+      !quality.isListLike &&
+      quality.wordCount >= Math.max(Math.floor(baseWords * 0.6), 140) &&
+      quality.linkCount <= Math.max(Math.floor(quality.wordCount * 0.12), 35)
+    ) {
+      return true
+    }
+
+    return !quality.isListLike && quality.wordCount >= 180 && quality.headingCount >= 1 && quality.linkDensity <= 0.12
+  }
+
+  private buildDetailExpansionOptions(options: CrawlTaskOptions): CrawlTaskOptions {
+    const cleanMarkdown = options.cleanMarkdown;
+    return this.normalizeOptions({
+      ...options,
+      additionalUrls: undefined,
+      multiUrlConfigs: undefined,
+      scanFullPage: false,
+      scrollDelayMs: undefined,
+      virtualScroll: undefined,
+      markdownFilter: undefined,
+      extractLinks: false,
+      wordCountThreshold: Math.min(options.wordCountThreshold ?? 80, 40),
+      markdownOptions: {
+        ...(options.markdownOptions ?? {}),
+        contentSource: options.markdownOptions?.contentSource ?? "raw_html",
+        citations: options.markdownOptions?.citations ?? true
+      },
+      cleanMarkdown: cleanMarkdown
+        ? {
+            ...cleanMarkdown,
+            wordCountThreshold:
+              typeof cleanMarkdown.wordCountThreshold === "number"
+                ? Math.min(cleanMarkdown.wordCountThreshold, 40)
+                : 20
+          }
+        : {
+            removeOverlayElements: true,
+            wordCountThreshold: 20
+          }
+    });
+  }
+
+  private extractDetailLinkCandidatesFromArticle(article: Crawl4aiArticle): string[] {
+    const baseUrl = this.resolveArticleBaseUrl(article);
+    if (!baseUrl) {
+      return [];
+    }
+
+    const markdownResult = this.resultService.extractMarkdownResult(article.markdown);
+    const fragments = [
+      markdownResult.references,
+      markdownResult.citations,
+      markdownResult.raw,
+      markdownResult.fit,
+      markdownResult.primary
+    ]
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      .join("\n");
+
+    const seedUrls: string[] = [];
+    if (fragments) {
+      const absoluteMatches = fragments.match(/https?:\/\/[^\s)\]"'<>]+/g) ?? [];
+      seedUrls.push(...absoluteMatches);
+
+      const inlineMarkdownLinks = Array.from(
+        fragments.matchAll(/\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)
+      ).map((match) => match[1]);
+      seedUrls.push(...inlineMarkdownLinks);
+
+      const referenceDefinitions = Array.from(fragments.matchAll(/^\s*\[[^\]]+\]:\s*(\S+)/gm)).map(
+        (match) => match[1]
+      );
+      seedUrls.push(...referenceDefinitions);
+    }
+
+    if (article.links && typeof article.links === "object" && !Array.isArray(article.links)) {
+      const linkCollections = Object.values(article.links as Record<string, Crawl4aiLink[] | unknown>);
+      for (const collection of linkCollections) {
+        if (!Array.isArray(collection)) {
+          continue;
+        }
+        for (const link of collection) {
+          if (!link || typeof link !== "object") {
+            continue;
+          }
+          const record = link as Crawl4aiLink;
+          if (typeof record.url === "string" && record.url.trim().length > 0) {
+            seedUrls.push(record.url);
+          }
+          if (typeof record.href === "string" && record.href.trim().length > 0) {
+            seedUrls.push(record.href);
+          }
+        }
+      }
+    }
+
+    const seen = new Set<string>();
+    const scored: { url: string; score: number }[] = [];
+    for (const seedUrl of seedUrls) {
+      const normalized = this.normalizeDetailCandidateUrl(seedUrl, baseUrl);
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      if (!this.isLikelyDetailArticleUrl(normalized, baseUrl)) {
+        continue;
+      }
+      seen.add(normalized);
+      scored.push({
+        url: normalized,
+        score: this.scoreDetailCandidateUrl(normalized, baseUrl)
+      });
+      if (scored.length >= 30) {
+        break;
+      }
+    }
+
+    return scored.sort((left, right) => right.score - left.score).map((entry) => entry.url);
+  }
+
+  private resolveArticleBaseUrl(article: Crawl4aiArticle): string | undefined {
+    if (typeof article.url === "string" && article.url.trim().length > 0) {
+      return article.url.trim();
+    }
+    const metadataUrl = this.pickString(article.metadata as Record<string, unknown> | undefined, [
+      "url",
+      "sourceUrl",
+      "source_url"
+    ]);
+    return metadataUrl?.trim() || undefined;
+  }
+
+  private normalizeDetailCandidateUrl(rawUrl: string, baseUrl: string): string | undefined {
+    const trimmed = rawUrl
+      .trim()
+      .replace(/^<+|>+$/g, "")
+      .replace(/[),.:;!?]+$/g, "");
+    if (!trimmed) {
+      return undefined;
+    }
+
+    try {
+      const parsed = new URL(trimmed, baseUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return undefined;
+      }
+      parsed.hash = "";
+      const paramsToDrop = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "gclid", "fbclid"];
+      for (const key of paramsToDrop) {
+        parsed.searchParams.delete(key);
+      }
+      const pathnameLower = parsed.pathname.toLowerCase();
+      if (/\.(jpg|jpeg|png|gif|webp|svg|mp4|webm|pdf)$/i.test(pathnameLower)) {
+        return undefined;
+      }
+      return this.normalizeComparableUrl(parsed.toString());
+    } catch {
+      return undefined;
+    }
+  }
+
+  private isLikelyDetailArticleUrl(url: string, baseUrl: string): boolean {
+    try {
+      const parsed = new URL(url)
+      const base = new URL(baseUrl)
+      if (this.getRootDomain(parsed.hostname) !== this.getRootDomain(base.hostname)) {
+        return false
+      }
+
+      const pathname = parsed.pathname.replace(/\/+/g, '/').replace(/\/+$/, '')
+      const segments = pathname.split('/').filter((entry) => entry.length > 0)
+      if (segments.length < 2) {
+        return false
+      }
+
+      const joined = segments.join('/').toLowerCase()
+      if (/\b(video|videos|photo|photos|pictures|gallery|podcast|graphics)\b/.test(joined)) {
+        return false
+      }
+      if (/\b(tag|tags|topic|topics|section|sections|author|authors|archive|latest|live)\b/.test(joined)) {
+        return false
+      }
+
+      const lastSegment = segments[segments.length - 1]!
+      const lastSegmentLower = lastSegment.toLowerCase()
+      const articleDateSuffixPattern = /-\d{4}-\d{2}-\d{2}$/
+      const reutersStyleIdPattern = /[A-Z0-9]{8,}-\d{4}-\d{2}-\d{2}$/
+      const reutersWireIdPattern = /(?:^|-)id[a-z0-9]{7,}$/i
+
+      if (
+        articleDateSuffixPattern.test(lastSegment) ||
+        reutersStyleIdPattern.test(lastSegment) ||
+        reutersWireIdPattern.test(lastSegment)
+      ) {
+        return true
+      }
+
+      if (/^\d{4}\/\d{2}\/\d{2}/.test(segments.slice(-3).join('/'))) {
+        return true
+      }
+
+      if (segments.some((segment) => segment === 'article' || segment === 'articles')) {
+        return true
+      }
+
+      if (segments.length >= 4 && lastSegment.length >= 14 && /[a-z0-9]-[a-z0-9]/i.test(lastSegment)) {
+        return true
+      }
+
+      if (segments.length >= 3 && lastSegment.length >= 24 && /[a-z0-9]/i.test(lastSegment)) {
+        return true
+      }
+
+      const likelySectionTail = new Set([
+        'world',
+        'business',
+        'markets',
+        'technology',
+        'tech',
+        'opinion',
+        'sport',
+        'sports',
+        'news',
+        'japan',
+        'us',
+        'china',
+        'europe',
+        'ukraine',
+        'russia',
+        'latest',
+        'archive'
+      ])
+      if (segments.length <= 3 && likelySectionTail.has(lastSegmentLower)) {
+        return false
+      }
+
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  private scoreDetailCandidateUrl(url: string, baseUrl?: string): number {
+    try {
+      const parsed = new URL(url)
+      const pathname = parsed.pathname.replace(/\/+$/, '')
+      const segments = pathname.split('/').filter((entry) => entry.length > 0)
+      const segmentsLower = segments.map((entry) => entry.toLowerCase())
+      const lastSegment = segments[segments.length - 1] ?? ''
+      const lastSegmentLower = lastSegment.toLowerCase()
+
+      let score = 0
+      if (/-\d{4}-\d{2}-\d{2}$/.test(lastSegment)) {
+        score += 220
+      }
+      if (/[A-Z0-9]{8,}-\d{4}-\d{2}-\d{2}$/.test(lastSegment)) {
+        score += 150
+      }
+      if (/(?:^|-)id[a-z0-9]{7,}$/i.test(lastSegment)) {
+        score += 130
+      }
+      if (segments.some((segment) => segment === 'article' || segment === 'articles')) {
+        score += 100
+      }
+      if (segments.length >= 4 && /[a-z0-9]-[a-z0-9]/i.test(lastSegment)) {
+        score += 80
+      }
+      if (segments.length >= 3) {
+        score += 18
+      }
+      if (parsed.pathname.toLowerCase().includes('/world/')) {
+        score += 16
+      }
+
+      if (baseUrl) {
+        try {
+          const base = new URL(baseUrl)
+          const baseSegments = base.pathname
+            .replace(/\/+$/, '')
+            .split('/')
+            .filter((entry) => entry.length > 0)
+            .map((entry) => entry.toLowerCase())
+          if (baseSegments[0]) {
+            if (baseSegments[0] === segmentsLower[0]) {
+              score += 120
+            } else {
+              score -= 90
+            }
+          }
+          if (baseSegments[1] && baseSegments[1] === segmentsLower[1]) {
+            score += 30
+          }
+        } catch {
+          // Ignore scoring hints when base URL is malformed
+        }
+      }
+
+      const likelySectionTail = new Set([
+        'world',
+        'business',
+        'markets',
+        'technology',
+        'tech',
+        'opinion',
+        'sport',
+        'sports',
+        'news',
+        'japan',
+        'us',
+        'china',
+        'europe',
+        'ukraine',
+        'russia',
+        'latest',
+        'archive'
+      ])
+      if (segments.length <= 3 && likelySectionTail.has(lastSegmentLower)) {
+        score -= 180
+      }
+
+      if (
+        segmentsLower.some((segment) =>
+          ['video', 'videos', 'photos', 'photo', 'gallery', 'graphics', 'podcast', 'tag', 'tags', 'topic', 'topics', 'section', 'sections', 'authors', 'author'].includes(segment)
+        )
+      ) {
+        score -= 150
+      }
+
+      if (parsed.search.length > 0) {
+        score -= 12
+      }
+      return score
+    } catch {
+      return Number.NEGATIVE_INFINITY
+    }
+  }
+
+  private normalizeComparableUrl(url?: string): string | undefined {
+    if (!url) {
+      return undefined;
+    }
+    try {
+      const parsed = new URL(url);
+      parsed.hash = "";
+      if (parsed.pathname.endsWith("/") && parsed.pathname !== "/") {
+        parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+      }
+      return parsed.toString();
+    } catch {
+      return undefined;
+    }
+  }
+
+  private getRootDomain(hostname: string): string {
+    const normalized = hostname.trim().toLowerCase();
+    const parts = normalized.split(".").filter((entry) => entry.length > 0);
+    if (parts.length <= 2) {
+      return normalized;
+    }
+    return parts.slice(-2).join(".");
   }
 
   private async safeNotifyCrawl(
@@ -341,18 +1609,35 @@ export class CrawlExecutionService {
     status: "completed" | "failed",
     errorMessage?: string
   ) {
+    const truncateVarchar191 = (value: string) => {
+      const trimmed = value.trim();
+      if (trimmed.length <= 191) {
+        return trimmed;
+      }
+      return `${trimmed.slice(0, 190).trimEnd()}…`;
+    };
+
     const lastResultAt = summary.lastFetchedAt ? summary.lastFetchedAt.toISOString() : null;
+    const title = truncateVarchar191(
+      `${status === "completed" ? "Crawl completed" : "Crawl failed"}: ${task.displayName ?? task.targetUrl}`
+    );
+    const body =
+      status === "completed"
+        ? truncateVarchar191(
+            `Inserted ${summary.inserted}, skipped ${summary.skipped}${
+              summary.retryableFailures ? `, retryable ${summary.retryableFailures}` : ""
+            }`
+          )
+        : errorMessage
+          ? truncateVarchar191(errorMessage)
+          : "Crawl task failed";
+
     const payload = {
       orgId: task.orgId,
       userId: triggeredById,
       type: status === "completed" ? NotificationType.crawl_completed : NotificationType.crawl_failed,
-      title: `${status === "completed" ? "Crawl completed" : "Crawl failed"}: ${task.displayName ?? task.targetUrl}`,
-      body:
-        status === "completed"
-          ? `Inserted ${summary.inserted}, skipped ${summary.skipped}${
-              summary.retryableFailures ? `, retryable ${summary.retryableFailures}` : ""
-            }`
-          : errorMessage ?? "Crawl task failed",
+      title,
+      body,
       data: {
         taskId: task.id,
         status,
@@ -500,7 +1785,8 @@ export class CrawlExecutionService {
 
   public normalizeOptions(options?: Partial<CrawlTaskOptions>): CrawlTaskOptions {
     const includeImages = options?.includeImages ?? (options?.storeMedia ? true : false);
-    const scanFullPage = options?.scanFullPage ?? false;
+    const virtualScroll = this.normalizeVirtualScrollConfig(options?.virtualScroll);
+    const scanFullPage = virtualScroll ? false : (options?.scanFullPage ?? false);
     const adjustViewportToContent = options?.adjustViewportToContent ?? false;
     let scrollDelayMs: number | undefined;
     if (scanFullPage) {
@@ -555,7 +1841,6 @@ export class CrawlExecutionService {
     const captureScreenshot = options?.captureScreenshot ?? false;
     const cssSelector = this.normalizeCssSelector(options?.cssSelector);
     const excludedTags = this.normalizeSelectorList(options?.excludedTags);
-    const virtualScroll = this.normalizeVirtualScrollConfig(options?.virtualScroll);
     const waitForImages = options?.waitForImages ?? (options?.storeMedia ? true : false);
 
     return {
@@ -785,7 +2070,7 @@ export class CrawlExecutionService {
     if (typeof overrides.adjustViewportToContent === "boolean") {
       normalized.adjustViewportToContent = overrides.adjustViewportToContent;
     }
-    if (typeof overrides.scrollDelayMs === "number") {
+    if (typeof overrides.scrollDelayMs === "number" && overrides.scanFullPage === true) {
       normalized.scrollDelayMs = this.clampScrollDelay(overrides.scrollDelayMs);
     }
     if (typeof overrides.simulateUser === "boolean") {
@@ -849,6 +2134,10 @@ export class CrawlExecutionService {
     const virtualScroll = this.normalizeVirtualScrollConfig(overrides.virtualScroll);
     if (virtualScroll) {
       normalized.virtualScroll = virtualScroll;
+      if (normalized.scanFullPage === true) {
+        normalized.scanFullPage = false;
+        delete normalized.scrollDelayMs;
+      }
     }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
@@ -887,6 +2176,9 @@ export class CrawlExecutionService {
     }
     if (typeof options.escapeHtml === "boolean") {
       normalized.escapeHtml = options.escapeHtml;
+    }
+    if (typeof options.citations === "boolean") {
+      normalized.citations = options.citations;
     }
     if (typeof options.bodyWidth === "number" && Number.isFinite(options.bodyWidth)) {
       const clamped = Math.max(40, Math.min(200, Math.round(options.bodyWidth)));
@@ -966,29 +2258,65 @@ export class CrawlExecutionService {
     if (!config || typeof config !== "object") {
       return undefined;
     }
-    const containerSelector = this.normalizeCssSelector(config.containerSelector);
+    const containerSelectorInput =
+      (config as Record<string, unknown>).containerSelector ?? config.containerSelector;
+    const containerSelector = this.normalizeCssSelector(
+      typeof containerSelectorInput === "string" ? containerSelectorInput : undefined
+    );
     const scrollCount =
       typeof config.scrollCount === "number" && Number.isFinite(config.scrollCount)
-        ? Math.max(1, Math.min(200, Math.round(config.scrollCount)))
+        ? Math.max(1, Math.min(1000, Math.round(config.scrollCount)))
         : undefined;
-    const scrollBy =
-      config.scrollBy === "container_height" || config.scrollBy === "viewport" || config.scrollBy === "pixels"
-        ? config.scrollBy
-        : undefined;
+    const scrollByRaw = (config as Record<string, unknown>).scrollBy ?? config.scrollBy;
+    const scrollByPixelsRaw = (config as Record<string, unknown>).scrollByPixels;
+    const scrollBy = (() => {
+      if (scrollByRaw === "container_height") {
+        return "container_height";
+      }
+      if (scrollByRaw === "page_height") {
+        return "page_height";
+      }
+      if (scrollByRaw === "viewport") {
+        return "page_height";
+      }
+      if (scrollByRaw === "pixels") {
+        const pixels =
+          typeof scrollByPixelsRaw === "number" && Number.isFinite(scrollByPixelsRaw)
+            ? Math.max(1, Math.min(20000, Math.round(scrollByPixelsRaw)))
+            : 500;
+        return pixels;
+      }
+      if (typeof scrollByRaw === "number" && Number.isFinite(scrollByRaw)) {
+        return Math.max(1, Math.min(20000, Math.round(scrollByRaw)));
+      }
+      if (typeof scrollByRaw === "string") {
+        const trimmed = scrollByRaw.trim();
+        if (!trimmed) {
+          return undefined;
+        }
+        if (/^\d+$/.test(trimmed)) {
+          const parsed = Number.parseInt(trimmed, 10);
+          if (Number.isFinite(parsed)) {
+            return Math.max(1, Math.min(20000, parsed));
+          }
+        }
+      }
+      return undefined;
+    })();
     const waitAfterScrollMs =
       typeof config.waitAfterScrollMs === "number" && Number.isFinite(config.waitAfterScrollMs)
-        ? Math.max(0, Math.min(10000, Math.round(config.waitAfterScrollMs)))
+        ? Math.max(0, Math.min(60000, Math.round(config.waitAfterScrollMs)))
         : undefined;
     const hasValue =
       Boolean(containerSelector) ||
       typeof scrollCount === "number" ||
       typeof waitAfterScrollMs === "number" ||
-      Boolean(scrollBy);
+      scrollBy !== undefined;
     if (!hasValue) {
       return undefined;
     }
     return {
-      containerSelector,
+      containerSelector: containerSelector ?? "body",
       scrollCount,
       scrollBy,
       waitAfterScrollMs
@@ -996,21 +2324,46 @@ export class CrawlExecutionService {
   }
 
   private normalizeMarkdownFilter(filter?: CrawlMarkdownFilter | null): CrawlMarkdownFilter | undefined {
-    if (!filter || filter.type !== "pruning") {
+    if (!filter) {
       return undefined;
     }
-    const normalized: CrawlMarkdownFilter = { type: "pruning" };
-    if (typeof filter.threshold === "number" && Number.isFinite(filter.threshold)) {
-      normalized.threshold = Math.max(0, Math.min(1, filter.threshold));
+    if (filter.type === "pruning") {
+      const normalized: CrawlMarkdownFilter = { type: "pruning" };
+      if (typeof filter.threshold === "number" && Number.isFinite(filter.threshold)) {
+        normalized.threshold = Math.max(0, Math.min(1, filter.threshold));
+      }
+      if (filter.thresholdType === "fixed" || filter.thresholdType === "dynamic") {
+        normalized.thresholdType = filter.thresholdType;
+      }
+      if (typeof filter.minWordThreshold === "number" && Number.isFinite(filter.minWordThreshold)) {
+        const clamped = Math.max(0, Math.min(500, Math.round(filter.minWordThreshold)));
+        normalized.minWordThreshold = clamped;
+      }
+      return normalized;
     }
-    if (filter.thresholdType === "fixed" || filter.thresholdType === "dynamic") {
-      normalized.thresholdType = filter.thresholdType;
+    if (filter.type === "bm25") {
+      const normalized: CrawlMarkdownFilter = { type: "bm25" };
+      if (typeof filter.userQuery === "string") {
+        const trimmed = filter.userQuery.trim();
+        if (trimmed.length > 0) {
+          normalized.userQuery = trimmed.slice(0, 240);
+        }
+      }
+      if (typeof filter.bm25Threshold === "number" && Number.isFinite(filter.bm25Threshold)) {
+        normalized.bm25Threshold = Number(Math.max(0, Math.min(20, filter.bm25Threshold)).toFixed(2));
+      }
+      if (typeof filter.language === "string") {
+        const trimmed = filter.language.trim();
+        if (trimmed.length > 0) {
+          normalized.language = trimmed.slice(0, 32);
+        }
+      }
+      if (!normalized.userQuery) {
+        return undefined;
+      }
+      return normalized;
     }
-    if (typeof filter.minWordThreshold === "number" && Number.isFinite(filter.minWordThreshold)) {
-      const clamped = Math.max(0, Math.min(500, Math.round(filter.minWordThreshold)));
-      normalized.minWordThreshold = clamped;
-    }
-    return normalized;
+    return undefined;
   }
 
   private normalizeMarkdownStrategy(
@@ -1119,13 +2472,19 @@ export class CrawlExecutionService {
       return undefined;
     }
     const record = value as Record<string, unknown>;
-    const scrollBy = typeof record.scrollBy === "string" ? record.scrollBy : undefined;
+    const scrollBy =
+      typeof record.scrollBy === "string" || typeof record.scrollBy === "number"
+        ? record.scrollBy
+        : undefined;
+    const scrollByPixels =
+      typeof record.scrollByPixels === "number" ? record.scrollByPixels : undefined;
     return this.normalizeVirtualScrollConfig({
       containerSelector: typeof record.containerSelector === "string" ? record.containerSelector : undefined,
       scrollCount: typeof record.scrollCount === "number" ? record.scrollCount : undefined,
       scrollBy: scrollBy as CrawlVirtualScrollConfig["scrollBy"],
+      scrollByPixels,
       waitAfterScrollMs: typeof record.waitAfterScrollMs === "number" ? record.waitAfterScrollMs : undefined
-    });
+    } as CrawlVirtualScrollConfig & { scrollByPixels?: number });
   }
 
   private normalizeLinkPreviewOptions(
@@ -1403,6 +2762,7 @@ export class CrawlExecutionService {
       contentSource: typeof record.contentSource === "string" ? (record.contentSource as CrawlMarkdownContentSource) : undefined,
       ignoreLinks: typeof record.ignoreLinks === "boolean" ? record.ignoreLinks : undefined,
       escapeHtml: typeof record.escapeHtml === "boolean" ? record.escapeHtml : undefined,
+      citations: typeof record.citations === "boolean" ? record.citations : undefined,
       bodyWidth: typeof record.bodyWidth === "number" ? record.bodyWidth : undefined
     });
   }
@@ -1412,9 +2772,35 @@ export class CrawlExecutionService {
       return undefined;
     }
     const record = value as Record<string, unknown>;
-    const type = typeof record.type === "string" ? record.type : undefined;
-    if (type !== "pruning") {
+    const rawType = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
+    if (rawType !== "pruning" && rawType !== "bm25") {
       return undefined;
+    }
+    if (rawType === "bm25") {
+      const rawUserQuery =
+        typeof record.userQuery === "string"
+          ? record.userQuery
+          : typeof record.user_query === "string"
+            ? (record.user_query as string)
+            : undefined;
+      const rawThreshold =
+        typeof record.bm25Threshold === "number"
+          ? record.bm25Threshold
+          : typeof record.bm25_threshold === "number"
+            ? (record.bm25_threshold as number)
+            : undefined;
+      const rawLanguage =
+        typeof record.language === "string"
+          ? record.language
+          : typeof record.lang === "string"
+            ? (record.lang as string)
+            : undefined;
+      return this.normalizeMarkdownFilter({
+        type: "bm25",
+        userQuery: rawUserQuery,
+        bm25Threshold: rawThreshold,
+        language: rawLanguage
+      });
     }
     const rawThresholdType =
       typeof record.thresholdType === "string"
@@ -1614,6 +3000,17 @@ export class CrawlExecutionService {
     const markdownPrimary = markdownResult.primary;
     const hasMarkdown =
       typeof markdownPrimary === "string" ? markdownPrimary.trim().length > 0 : false;
+    const statusCode = this.extractStatusCode(item);
+    const isChallengePage =
+      typeof markdownPrimary === "string" && this.resultService.isLikelyBotChallengeMarkdown(markdownPrimary);
+
+    if (typeof statusCode === "number" && Number.isFinite(statusCode) && statusCode >= 400) {
+      return false;
+    }
+
+    if (isChallengePage) {
+      return false;
+    }
 
     if (typeof item.success === "boolean") {
       return item.success && hasMarkdown;
@@ -1644,15 +3041,41 @@ export class CrawlExecutionService {
     const markdownPrimary = markdownResult.primary;
     const hasMarkdown =
       typeof markdownPrimary === "string" ? markdownPrimary.trim().length > 0 : false;
-    const fallbackMessage = hasMarkdown
-      ? "Unknown crawl error"
-      : "crawl4ai returned an empty markdown result. Check wordCountThreshold/cssSelector/cleanMarkdown and pruning settings.";
+    const isChallengePage =
+      typeof markdownPrimary === "string" && this.resultService.isLikelyBotChallengeMarkdown(markdownPrimary);
+    const fallbackMessage = this.buildDefaultFailureMessage(hasMarkdown, statusCode, isChallengePage);
     return {
       url: item.url ?? this.pickString(item.metadata as Record<string, unknown> | undefined, ["url"]),
       statusCode,
       error: errorMessage ?? fallbackMessage,
       retryable: this.isRetryableStatus(statusCode, errorMessage ?? fallbackMessage)
     };
+  }
+
+  private buildDefaultFailureMessage(
+    hasMarkdown: boolean,
+    statusCode?: number,
+    isChallengePage = false
+  ): string {
+    if (isChallengePage) {
+      if (typeof statusCode === "number" && Number.isFinite(statusCode)) {
+        return `crawl4ai received HTTP ${statusCode} and captured an anti-bot verification page instead of article content.`;
+      }
+      return "crawl4ai captured an anti-bot verification page instead of article content.";
+    }
+
+    if (typeof statusCode === "number" && Number.isFinite(statusCode) && statusCode >= 400) {
+      if (statusCode === 401 || statusCode === 403) {
+        return `crawl4ai received HTTP ${statusCode}; target may be blocked by anti-bot or require verification/login.`;
+      }
+      return `crawl4ai received HTTP ${statusCode} from target URL.`;
+    }
+
+    if (hasMarkdown) {
+      return "Unknown crawl error";
+    }
+
+    return "crawl4ai returned an empty markdown result. Check wordCountThreshold/cssSelector/cleanMarkdown and pruning settings.";
   }
 
   private extractStatusCode(item: Crawl4aiArticle): number | undefined {

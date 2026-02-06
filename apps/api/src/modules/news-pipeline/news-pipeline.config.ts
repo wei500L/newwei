@@ -83,7 +83,7 @@ interface Crawl4aiFileConfig {
   crawler_defaults?: CrawlTaskOptions;
   virtual_scroll?: CrawlVirtualScrollConfig & {
     enabled?: boolean;
-    scroll_by?: CrawlVirtualScrollMode;
+    scroll_by?: CrawlVirtualScrollMode | number;
   };
 }
 
@@ -239,7 +239,10 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
         : (raw?.fallback_models?.filter(
             (entry) => typeof entry === "string" && entry.length > 0,
           ) ?? []);
-    const apiBase = raw?.api_url ?? raw?.api_base ?? envConfig.apiBase;
+    const envApiBase = (process.env.LITELLM_API_URL ?? process.env.LITELLM_API_BASE ?? "").trim();
+    const fileApiBaseRaw = raw?.api_url ?? raw?.api_base;
+    const fileApiBase = typeof fileApiBaseRaw === "string" ? fileApiBaseRaw.trim() : "";
+    const apiBase = envApiBase || fileApiBase || envConfig.apiBase;
     const maxTokens = raw?.max_tokens ?? raw?.max_output_tokens;
     const retryAttempts = raw?.retry_attempts ?? raw?.max_retries;
     return {
@@ -269,8 +272,8 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
     raw?: Crawl4aiFileConfig,
   ): Crawl4aiPipelineConfig {
     const crawlEnv = this.env.crawl4aiConfig;
-    const markdown = raw?.markdown;
-    const cleanMarkdown = raw?.clean_markdown;
+    const markdown = this.normalizeMarkdownOptions(raw?.markdown);
+    const cleanMarkdown = this.normalizeCleanMarkdownOptions(raw?.clean_markdown);
     const crawlerDefaults = {
       scanFullPage: raw?.crawler_defaults?.scanFullPage ?? true,
       adjustViewportToContent:
@@ -315,17 +318,140 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
   }
 
   private normalizeVirtualScroll(
-    config: CrawlVirtualScrollConfig & { scroll_by?: CrawlVirtualScrollMode },
+    config: CrawlVirtualScrollConfig & { scroll_by?: CrawlVirtualScrollMode | number },
   ) {
+    const scrollByRaw = config.scroll_by ?? config.scrollBy;
+    const scrollBy = (() => {
+      if (scrollByRaw === "container_height") {
+        return "container_height";
+      }
+      if (scrollByRaw === "page_height") {
+        return "page_height";
+      }
+      if (scrollByRaw === "viewport") {
+        return "page_height";
+      }
+      if (typeof scrollByRaw === "number" && Number.isFinite(scrollByRaw)) {
+        return Math.max(1, Math.min(20000, Math.round(scrollByRaw)));
+      }
+      if (typeof scrollByRaw === "string") {
+        const trimmed = scrollByRaw.trim();
+        if (/^\d+$/.test(trimmed)) {
+          const parsed = Number.parseInt(trimmed, 10);
+          if (Number.isFinite(parsed)) {
+            return Math.max(1, Math.min(20000, parsed));
+          }
+        }
+      }
+      return undefined;
+    })();
     return {
       containerSelector: config.containerSelector ?? "body",
       scrollCount: this.ensurePositiveInt(config.scrollCount, 3),
-      scrollBy:
-        config.scroll_by ??
-        config.scrollBy ??
-        ("viewport" as CrawlVirtualScrollMode),
+      scrollBy: scrollBy ?? ("page_height" as CrawlVirtualScrollMode),
       waitAfterScrollMs: this.ensurePositive(config.waitAfterScrollMs, 600),
     };
+  }
+
+  private normalizeMarkdownOptions(raw?: CrawlMarkdownOptions) {
+    if (!raw || typeof raw !== "object") {
+      return undefined;
+    }
+    const record = raw as Record<string, unknown>;
+    const contentSourceRaw =
+      typeof record.contentSource === "string"
+        ? record.contentSource
+        : typeof record.content_source === "string"
+          ? (record.content_source as string)
+          : undefined;
+    const contentSource =
+      contentSourceRaw === "raw_html" ||
+      contentSourceRaw === "cleaned_html" ||
+      contentSourceRaw === "fit_html"
+        ? contentSourceRaw
+        : undefined;
+    const ignoreLinks =
+      typeof record.ignoreLinks === "boolean"
+        ? record.ignoreLinks
+        : typeof record.ignore_links === "boolean"
+          ? (record.ignore_links as boolean)
+          : undefined;
+    const escapeHtml =
+      typeof record.escapeHtml === "boolean"
+        ? record.escapeHtml
+        : typeof record.escape_html === "boolean"
+          ? (record.escape_html as boolean)
+          : undefined;
+    const citations =
+      typeof record.citations === "boolean" ? record.citations : undefined;
+    const bodyWidthRaw =
+      typeof record.bodyWidth === "number"
+        ? record.bodyWidth
+        : typeof record.body_width === "number"
+          ? (record.body_width as number)
+          : undefined;
+    const bodyWidth =
+      typeof bodyWidthRaw === "number" && Number.isFinite(bodyWidthRaw)
+        ? Math.max(40, Math.min(200, Math.round(bodyWidthRaw)))
+        : undefined;
+    const normalized: CrawlMarkdownOptions = {
+      ...(contentSource ? { contentSource } : {}),
+      ...(typeof ignoreLinks === "boolean" ? { ignoreLinks } : {}),
+      ...(typeof escapeHtml === "boolean" ? { escapeHtml } : {}),
+      ...(typeof citations === "boolean" ? { citations } : {}),
+      ...(typeof bodyWidth === "number" ? { bodyWidth } : {})
+    };
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private normalizeCleanMarkdownOptions(raw?: CrawlCleanMarkdownOptions) {
+    if (!raw || typeof raw !== "object") {
+      return undefined;
+    }
+    const record = raw as Record<string, unknown>;
+    const cssSelectorRaw =
+      typeof record.cssSelector === "string"
+        ? record.cssSelector
+        : typeof record.css_selector === "string"
+          ? (record.css_selector as string)
+          : undefined;
+    const cssSelector = typeof cssSelectorRaw === "string" ? cssSelectorRaw.trim() : "";
+    const coerceStringArray = (value: unknown) => {
+      if (!Array.isArray(value)) {
+        return undefined;
+      }
+      const normalized = value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0)
+        .slice(0, 10);
+      return normalized.length > 0 ? Array.from(new Set(normalized)) : undefined;
+    };
+    const targetElements = coerceStringArray(record.targetElements ?? record.target_elements);
+    const excludedTags = coerceStringArray(record.excludedTags ?? record.excluded_tags);
+    const removeOverlayElements =
+      typeof record.removeOverlayElements === "boolean"
+        ? record.removeOverlayElements
+        : typeof record.remove_overlay_elements === "boolean"
+          ? (record.remove_overlay_elements as boolean)
+          : undefined;
+    const wordCountThresholdRaw =
+      typeof record.wordCountThreshold === "number"
+        ? record.wordCountThreshold
+        : typeof record.word_count_threshold === "number"
+          ? (record.word_count_threshold as number)
+          : undefined;
+    const wordCountThreshold =
+      typeof wordCountThresholdRaw === "number" && Number.isFinite(wordCountThresholdRaw)
+        ? Math.max(0, Math.min(2000, Math.round(wordCountThresholdRaw)))
+        : undefined;
+    const normalized: CrawlCleanMarkdownOptions = {
+      ...(cssSelector.length > 0 ? { cssSelector } : {}),
+      ...(targetElements ? { targetElements } : {}),
+      ...(excludedTags ? { excludedTags } : {}),
+      ...(typeof removeOverlayElements === "boolean" ? { removeOverlayElements } : {}),
+      ...(typeof wordCountThreshold === "number" ? { wordCountThreshold } : {})
+    };
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
   private normalizePipelineConfig(

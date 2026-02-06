@@ -119,15 +119,25 @@ export interface CrawlMarkdownOptions {
   contentSource?: CrawlMarkdownContentSource;
   ignoreLinks?: boolean;
   escapeHtml?: boolean;
+  citations?: boolean;
   bodyWidth?: number;
 }
 
-export interface CrawlMarkdownFilter {
+export interface CrawlPruningMarkdownFilter {
   type: "pruning";
   threshold?: number;
   thresholdType?: "fixed" | "dynamic";
   minWordThreshold?: number;
 }
+
+export interface CrawlBm25MarkdownFilter {
+  type: "bm25";
+  userQuery?: string;
+  bm25Threshold?: number;
+  language?: string;
+}
+
+export type CrawlMarkdownFilter = CrawlPruningMarkdownFilter | CrawlBm25MarkdownFilter;
 
 export interface CrawlMarkdownStrategy {
   type: string;
@@ -139,12 +149,13 @@ export interface CrawlTableExtractionStrategy {
   params?: Record<string, unknown>;
 }
 
-export type CrawlVirtualScrollMode = "container_height" | "viewport" | "pixels";
+export type CrawlVirtualScrollMode = "container_height" | "page_height" | "viewport";
+export type CrawlVirtualScrollBy = CrawlVirtualScrollMode | number;
 
 export interface CrawlVirtualScrollConfig {
   containerSelector?: string;
   scrollCount?: number;
-  scrollBy?: CrawlVirtualScrollMode;
+  scrollBy?: CrawlVirtualScrollBy;
   waitAfterScrollMs?: number;
 }
 
