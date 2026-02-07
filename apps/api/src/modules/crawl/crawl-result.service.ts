@@ -501,6 +501,7 @@ export class CrawlResultService {
     const citations = this.normalizeMarkdownCandidate(
       this.ensureString(record.markdown_with_citations) ?? this.ensureString(record.markdownWithCitations)
     );
+    const citationsBody = citations ? this.stripCitationReferenceSection(citations) : undefined;
     const references = this.normalizeMarkdownCandidate(
       this.ensureString(record.references_markdown) ?? this.ensureString(record.referencesMarkdown)
     );
@@ -514,8 +515,8 @@ export class CrawlResultService {
       value: string;
     }[] = [];
 
-    if (citations) {
-      candidates.push({ source: "citations", value: citations });
+    if (citationsBody) {
+      candidates.push({ source: "citations", value: citationsBody });
     }
     if (raw) {
       candidates.push({ source: "raw", value: raw });
@@ -536,13 +537,9 @@ export class CrawlResultService {
 
     const scoredCandidates = candidates
       .map((candidate) => {
-        const markdownForScore =
-          candidate.source === "citations"
-            ? this.stripCitationReferenceSection(candidate.value)
-            : candidate.value;
         return {
           ...candidate,
-          score: this.scoreMarkdownCandidate(markdownForScore, candidate.source, maxNonReferenceLength)
+          score: this.scoreMarkdownCandidate(candidate.value, candidate.source, maxNonReferenceLength)
         };
       })
       .sort((left, right) => right.score - left.score || right.value.length - left.value.length);
@@ -553,7 +550,7 @@ export class CrawlResultService {
       bestCandidate = richerCandidate;
     }
 
-    const fallback = bestCandidate?.value ?? citations ?? raw ?? fit ?? references ?? textFallback;
+    const fallback = bestCandidate?.value ?? citationsBody ?? raw ?? fit ?? references ?? textFallback;
 
     return {
       primary: fallback,
@@ -700,7 +697,7 @@ export class CrawlResultService {
   private stripCitationReferenceSection(markdown: string): string {
     const newLine = String.fromCharCode(10);
     const lines = markdown.split(newLine);
-    const referenceStartIndex = lines.findIndex((line) => /^[^[^]]+]:/.test(line.trim()));
+    const referenceStartIndex = lines.findIndex((line) => /^\[\^[^\]]+\]:/.test(line.trim()));
     if (referenceStartIndex <= 0) {
       return markdown;
     }

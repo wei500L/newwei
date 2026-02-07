@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -504,6 +506,7 @@ export type CrawlOptionsInput = {
   browserCookies?: InputMaybe<Array<CrawlBrowserCookieInput>>;
   browserHeaders?: InputMaybe<Array<CrawlBrowserHeaderInput>>;
   cleanMarkdown?: InputMaybe<CrawlCleanMarkdownInput>;
+  delayBeforeReturnHtmlMs?: InputMaybe<Scalars['Int']['input']>;
   enableStealthMode?: InputMaybe<Scalars['Boolean']['input']>;
   enableUndetectedBrowser?: InputMaybe<Scalars['Boolean']['input']>;
   excludeExternalImages?: InputMaybe<Scalars['Boolean']['input']>;
@@ -518,14 +521,19 @@ export type CrawlOptionsInput = {
   markdownFilter?: InputMaybe<CrawlMarkdownFilterInput>;
   markdownOptions?: InputMaybe<CrawlMarkdownOptionsInput>;
   markdownStrategy?: InputMaybe<CrawlMarkdownStrategyInput>;
+  maxDelayRangeMs?: InputMaybe<Scalars['Int']['input']>;
+  meanDelayMs?: InputMaybe<Scalars['Int']['input']>;
   multiUrlConfigs?: InputMaybe<Array<CrawlMultiUrlStrategyInput>>;
   onlyMainContent?: InputMaybe<Scalars['Boolean']['input']>;
   overrideNavigator?: InputMaybe<Scalars['Boolean']['input']>;
+  pageTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
   proxyConfig?: InputMaybe<CrawlProxyConfigInput>;
   proxyUrl?: InputMaybe<Scalars['String']['input']>;
+  removeForms?: InputMaybe<Scalars['Boolean']['input']>;
   scanFullPage?: InputMaybe<Scalars['Boolean']['input']>;
   scoreLinks?: InputMaybe<Scalars['Boolean']['input']>;
   scrollDelayMs?: InputMaybe<Scalars['Int']['input']>;
+  semaphoreCount?: InputMaybe<Scalars['Int']['input']>;
   sessionId?: InputMaybe<Scalars['String']['input']>;
   simulateUser?: InputMaybe<Scalars['Boolean']['input']>;
   storageState?: InputMaybe<Scalars['String']['input']>;
@@ -543,6 +551,7 @@ export type CrawlOptionsInput = {
   waitForScript?: InputMaybe<Scalars['String']['input']>;
   waitForSelector?: InputMaybe<Scalars['String']['input']>;
   waitForTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
+  waitUntil?: InputMaybe<CrawlWaitUntil>;
 };
 
 export type CrawlProxyConfigInput = {
@@ -574,18 +583,24 @@ export type CrawlStrategyOverridesInput = {
   cacheMode?: InputMaybe<Scalars['String']['input']>;
   captureScreenshot?: InputMaybe<Scalars['Boolean']['input']>;
   cssSelector?: InputMaybe<Scalars['String']['input']>;
+  delayBeforeReturnHtmlMs?: InputMaybe<Scalars['Int']['input']>;
   excludeExternalImages?: InputMaybe<Scalars['Boolean']['input']>;
   excludeExternalLinks?: InputMaybe<Scalars['Boolean']['input']>;
   excludedTags?: InputMaybe<Array<Scalars['String']['input']>>;
   extractLinks?: InputMaybe<Scalars['Boolean']['input']>;
   jsCode?: InputMaybe<Array<Scalars['String']['input']>>;
   jsOnly?: InputMaybe<Scalars['Boolean']['input']>;
+  maxDelayRangeMs?: InputMaybe<Scalars['Int']['input']>;
+  meanDelayMs?: InputMaybe<Scalars['Int']['input']>;
   onlyMainContent?: InputMaybe<Scalars['Boolean']['input']>;
   overrideNavigator?: InputMaybe<Scalars['Boolean']['input']>;
+  pageTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
   processIframes?: InputMaybe<Scalars['Boolean']['input']>;
+  removeForms?: InputMaybe<Scalars['Boolean']['input']>;
   removeOverlayElements?: InputMaybe<Scalars['Boolean']['input']>;
   scanFullPage?: InputMaybe<Scalars['Boolean']['input']>;
   scrollDelayMs?: InputMaybe<Scalars['Int']['input']>;
+  semaphoreCount?: InputMaybe<Scalars['Int']['input']>;
   simulateUser?: InputMaybe<Scalars['Boolean']['input']>;
   textMode?: InputMaybe<Scalars['Boolean']['input']>;
   virtualScroll?: InputMaybe<CrawlVirtualScrollInput>;
@@ -593,6 +608,7 @@ export type CrawlStrategyOverridesInput = {
   waitForScript?: InputMaybe<Scalars['String']['input']>;
   waitForSelector?: InputMaybe<Scalars['String']['input']>;
   waitForTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
+  waitUntil?: InputMaybe<CrawlWaitUntil>;
   wordCountThreshold?: InputMaybe<Scalars['Int']['input']>;
 };
 
@@ -674,6 +690,13 @@ export type CrawlVirtualScrollInput = {
   scrollCount?: InputMaybe<Scalars['Int']['input']>;
   waitAfterScrollMs?: InputMaybe<Scalars['Int']['input']>;
 };
+
+export enum CrawlWaitUntil {
+  Commit = 'COMMIT',
+  Domcontentloaded = 'DOMCONTENTLOADED',
+  Load = 'LOAD',
+  Networkidle = 'NETWORKIDLE'
+}
 
 export type CreateCrawlTaskInput = {
   concurrency?: InputMaybe<Scalars['Int']['input']>;

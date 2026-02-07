@@ -63,6 +63,8 @@ export interface CrawlBrowserCookie {
 
 export type CrawlUserAgentMode = "random";
 
+export type CrawlWaitUntil = "domcontentloaded" | "load" | "networkidle" | "commit";
+
 export interface CrawlUserAgentGeneratorConfig {
   platform?: "windows" | "macos" | "linux" | "android" | "ios";
   browser?: "chrome" | "firefox" | "safari" | "edge";
@@ -95,6 +97,13 @@ export interface CrawlStrategyOverrides {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  waitUntil?: CrawlWaitUntil;
+  pageTimeoutMs?: number;
+  delayBeforeReturnHtmlMs?: number;
+  meanDelayMs?: number;
+  maxDelayRangeMs?: number;
+  semaphoreCount?: number;
+  removeForms?: boolean;
   wordCountThreshold?: number;
   excludeExternalLinks?: boolean;
   excludeExternalImages?: boolean;
@@ -317,6 +326,13 @@ export interface CrawlTaskOptions {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  waitUntil?: CrawlWaitUntil;
+  pageTimeoutMs?: number;
+  delayBeforeReturnHtmlMs?: number;
+  meanDelayMs?: number;
+  maxDelayRangeMs?: number;
+  semaphoreCount?: number;
+  removeForms?: boolean;
   proxyUrl?: string;
   proxyConfig?: CrawlProxyConfig;
   additionalUrls?: string[];

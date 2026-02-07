@@ -8,13 +8,6 @@ import { toPrismaJsonValue } from "../../common/prisma-json";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
-
-import {
-  CrawlTaskConfigEncryptionRequiredError,
-  decodeCrawlTaskConfigKey,
-  protectCrawlTaskConfigForStorage,
-  revealCrawlTaskConfigForExecution
-} from "./crawl-config-secrets";
 import { CrawlResultService } from "./crawl-result.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
@@ -105,38 +98,19 @@ export class CrawlExecutionService {
         attempt: retryContext?.attempt ?? null,
         maxAttempts: retryContext?.maxAttempts ?? null
       }
-    });
+	    });
 
-    try {
-      const encryptionKeyRaw = this.env.crawlTaskConfigEncryptionKey;
-      const encryptionKey = encryptionKeyRaw ? decodeCrawlTaskConfigKey(encryptionKeyRaw) : undefined;
-      const configRecord =
-        task.config && typeof task.config === "object" && !Array.isArray(task.config)
-          ? (task.config as Record<string, unknown>)
-          : null;
-
-      if (configRecord) {
-        const protectedResult = protectCrawlTaskConfigForStorage(configRecord, encryptionKey);
-        if (protectedResult.didEncrypt && protectedResult.config) {
-          await this.prisma.crawlTask.update({
-            where: { id: task.id },
-            data: { config: toPrismaJsonValue(protectedResult.config) }
-          });
-        }
-      }
-
-      const decryptedConfig = configRecord
-        ? revealCrawlTaskConfigForExecution(configRecord, encryptionKey)
-        : null;
-      const options = this.extractOptions(decryptedConfig as Prisma.JsonValue | null);
-      assertNoCrawl4aiLlmOptions(options, "task.config.options");
-      const ingestToItems =
-        decryptedConfig && typeof decryptedConfig === "object" && !Array.isArray(decryptedConfig)
-          ? (decryptedConfig as Record<string, unknown>).ingestToItems === true
-          : false;
-      let effectiveOptions = options;
-      const payload = this.buildRequestPayload(task, effectiveOptions);
-      await TaskLogModel.create({
+	    try {
+	      const configRecord =
+	        task.config && typeof task.config === "object" && !Array.isArray(task.config)
+	          ? (task.config as Record<string, unknown>)
+	          : null;
+	      const options = this.extractOptions(configRecord as Prisma.JsonValue | null);
+	      assertNoCrawl4aiLlmOptions(options, "task.config.options");
+	      const ingestToItems = configRecord?.ingestToItems === true;
+	      let effectiveOptions = options;
+	      const payload = this.buildRequestPayload(task, effectiveOptions);
+	      await TaskLogModel.create({
         queue: CRAWL_QUEUE_NAME,
         jobId: taskId,
         orgId,
@@ -400,14 +374,12 @@ export class CrawlExecutionService {
 
       return summary;
     } catch (error) {
-      const message =
-        error instanceof CrawlTaskConfigEncryptionRequiredError
-          ? error.message
-          : error instanceof Crawl4aiRequestException
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : "crawl job failed";
+	      const message =
+	        error instanceof Crawl4aiRequestException
+	          ? error.message
+	          : error instanceof Error
+	            ? error.message
+	            : "crawl job failed";
       const normalizedMessage = (() => {
         const trimmed = message.trim();
         const fallback = trimmed.length > 0 ? trimmed : "crawl job failed";
@@ -421,12 +393,10 @@ export class CrawlExecutionService {
       const attempt = retryContext?.attempt;
       const maxAttempts = retryContext?.maxAttempts;
       const backoffDelayMs = retryContext?.backoffDelayMs;
-      const retryable =
-        error instanceof CrawlTaskConfigEncryptionRequiredError
-          ? false
-          : error instanceof Crawl4aiRequestException
-            ? this.isRetryableStatus(error.status, error.message)
-            : this.isRetryableStatus(undefined, message);
+	      const retryable =
+	        error instanceof Crawl4aiRequestException
+	          ? this.isRetryableStatus(error.status, error.message)
+	          : this.isRetryableStatus(undefined, message);
       const shouldRetry =
         retryable &&
         typeof attempt === "number" &&
@@ -1161,10 +1131,12 @@ export class CrawlExecutionService {
       .filter((entry) => entry.startsWith('- ') || entry.startsWith('* ') || entry.startsWith('• ')).length
     const linkDensity = wordCount > 0 ? linkCount / wordCount : linkCount
 
-    const isListLike =
+    const listLikeSignals =
       (linkCount >= 16 && wordCount <= 1500) ||
       (bulletLines >= 10 && linkCount >= 10) ||
       (linkDensity >= 0.09 && wordCount <= 1200)
+    const hasArticleLikeBody = paragraphCount >= 8 && wordCount >= 260 && linkDensity <= 0.22
+    const isListLike = listLikeSignals && !hasArticleLikeBody
 
     const score =
       Math.min(scoreWordCount, 12_000) +
@@ -1745,6 +1717,12 @@ export class CrawlExecutionService {
       waitForSelector: typeof value.waitForSelector === "string" ? value.waitForSelector : undefined,
       waitForScript: typeof value.waitForScript === "string" ? value.waitForScript : undefined,
       waitForTimeoutMs: typeof value.waitForTimeoutMs === "number" ? value.waitForTimeoutMs : undefined,
+      waitUntil: this.parseWaitUntil(value.waitUntil),
+      pageTimeoutMs: this.parseOptionalNumber(value.pageTimeoutMs),
+      delayBeforeReturnHtmlMs: this.parseOptionalNumber(value.delayBeforeReturnHtmlMs),
+      meanDelayMs: this.parseOptionalNumber(value.meanDelayMs),
+      maxDelayRangeMs: this.parseOptionalNumber(value.maxDelayRangeMs),
+      semaphoreCount: this.parseOptionalNumber(value.semaphoreCount),
       proxyUrl: typeof value.proxyUrl === "string" ? value.proxyUrl : undefined,
       proxyConfig: this.parseProxyConfig(value.proxyConfig),
       additionalUrls: this.parseUrlArray(value.additionalUrls),
@@ -1779,7 +1757,8 @@ export class CrawlExecutionService {
       textMode: typeof value.textMode === "boolean" ? value.textMode : undefined,
       captureScreenshot: typeof value.captureScreenshot === "boolean" ? value.captureScreenshot : undefined,
       virtualScroll: this.parseVirtualScrollConfig(value.virtualScroll),
-      waitForImages: typeof value.waitForImages === "boolean" ? value.waitForImages : undefined
+      waitForImages: typeof value.waitForImages === "boolean" ? value.waitForImages : undefined,
+      removeForms: typeof value.removeForms === "boolean" ? value.removeForms : undefined
     });
   }
 
@@ -1820,6 +1799,16 @@ export class CrawlExecutionService {
     const waitForSelector = this.normalizeWaitForSelector(options?.waitForSelector);
     const waitForScript = this.normalizeWaitForScript(options?.waitForScript);
     const waitForTimeoutMs = this.normalizeWaitForTimeout(options?.waitForTimeoutMs);
+    const waitUntil = this.normalizeWaitUntil(options?.waitUntil);
+    const normalizedWaitForTimeoutMs =
+      waitUntil === "networkidle" && typeof waitForTimeoutMs === "number"
+        ? Math.max(5000, waitForTimeoutMs)
+        : waitForTimeoutMs;
+    const pageTimeoutMs = this.normalizePageTimeoutMs(options?.pageTimeoutMs);
+    const delayBeforeReturnHtmlMs = this.normalizeDelayBeforeReturnHtmlMs(options?.delayBeforeReturnHtmlMs);
+    const meanDelayMs = this.normalizeDelayJitterMs(options?.meanDelayMs);
+    const maxDelayRangeMs = this.normalizeDelayJitterMs(options?.maxDelayRangeMs);
+    const semaphoreCount = this.normalizeSemaphoreCount(options?.semaphoreCount);
     const sessionId = this.normalizeSessionId(options?.sessionId);
     const storageState = this.normalizeStorageState(options?.storageState);
     const browserHeaders = this.normalizeBrowserHeaders(options?.browserHeaders);
@@ -1842,6 +1831,7 @@ export class CrawlExecutionService {
     const cssSelector = this.normalizeCssSelector(options?.cssSelector);
     const excludedTags = this.normalizeSelectorList(options?.excludedTags);
     const waitForImages = options?.waitForImages ?? (options?.storeMedia ? true : false);
+    const removeForms = options?.removeForms ?? false;
 
     return {
       includeImages,
@@ -1864,7 +1854,13 @@ export class CrawlExecutionService {
       jsOnly: options?.jsOnly ?? false,
       waitForSelector,
       waitForScript,
-      waitForTimeoutMs,
+      waitForTimeoutMs: normalizedWaitForTimeoutMs,
+      waitUntil,
+      pageTimeoutMs,
+      delayBeforeReturnHtmlMs,
+      meanDelayMs,
+      maxDelayRangeMs,
+      semaphoreCount,
       proxyConfig,
       proxyUrl,
       additionalUrls,
@@ -1897,7 +1893,8 @@ export class CrawlExecutionService {
       excludedTags,
       virtualScroll,
       excludeExternalImages,
-      waitForImages
+      waitForImages,
+      removeForms
     };
   }
 
@@ -2094,9 +2091,37 @@ export class CrawlExecutionService {
     if (waitForScript) {
       normalized.waitForScript = waitForScript;
     }
+    const waitUntil = this.normalizeWaitUntil(overrides.waitUntil);
+    if (waitUntil) {
+      normalized.waitUntil = waitUntil;
+    }
     const waitForTimeoutMs = this.normalizeWaitForTimeout(overrides.waitForTimeoutMs);
-    if (waitForTimeoutMs) {
-      normalized.waitForTimeoutMs = waitForTimeoutMs;
+    if (waitForTimeoutMs !== undefined) {
+      normalized.waitForTimeoutMs =
+        waitUntil === "networkidle" ? Math.max(5000, waitForTimeoutMs) : waitForTimeoutMs;
+    }
+    const pageTimeoutMs = this.normalizePageTimeoutMs(overrides.pageTimeoutMs);
+    if (pageTimeoutMs !== undefined) {
+      normalized.pageTimeoutMs = pageTimeoutMs;
+    }
+    const delayBeforeReturnHtmlMs = this.normalizeDelayBeforeReturnHtmlMs(overrides.delayBeforeReturnHtmlMs);
+    if (delayBeforeReturnHtmlMs !== undefined) {
+      normalized.delayBeforeReturnHtmlMs = delayBeforeReturnHtmlMs;
+    }
+    const meanDelayMs = this.normalizeDelayJitterMs(overrides.meanDelayMs);
+    if (meanDelayMs !== undefined) {
+      normalized.meanDelayMs = meanDelayMs;
+    }
+    const maxDelayRangeMs = this.normalizeDelayJitterMs(overrides.maxDelayRangeMs);
+    if (maxDelayRangeMs !== undefined) {
+      normalized.maxDelayRangeMs = maxDelayRangeMs;
+    }
+    const semaphoreCount = this.normalizeSemaphoreCount(overrides.semaphoreCount);
+    if (semaphoreCount !== undefined) {
+      normalized.semaphoreCount = semaphoreCount;
+    }
+    if (typeof overrides.removeForms === "boolean") {
+      normalized.removeForms = overrides.removeForms;
     }
     const wordCountThreshold = this.normalizeWordCountThreshold(overrides.wordCountThreshold);
     if (wordCountThreshold !== undefined) {
@@ -2727,6 +2752,20 @@ export class CrawlExecutionService {
     );
   }
 
+  private parseWaitUntil(value: unknown): CrawlTaskOptions["waitUntil"] {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    return this.normalizeWaitUntil(value);
+  }
+
+  private parseOptionalNumber(value: unknown): number | undefined {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    return value;
+  }
+
   private coerceStringArray(value: unknown): string[] | undefined {
     if (typeof value === "string") {
       const trimmed = value.trim();
@@ -2921,6 +2960,45 @@ export class CrawlExecutionService {
       return undefined;
     }
     return Math.max(500, Math.min(60000, Math.round(value)));
+  }
+
+  private normalizeWaitUntil(value?: string | null): CrawlTaskOptions["waitUntil"] {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === "domcontentloaded" || trimmed === "load" || trimmed === "networkidle" || trimmed === "commit") {
+      return trimmed;
+    }
+    return undefined;
+  }
+
+  private normalizePageTimeoutMs(value?: number | null): number | undefined {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    return Math.max(1000, Math.min(180000, Math.round(value)));
+  }
+
+  private normalizeDelayBeforeReturnHtmlMs(value?: number | null): number | undefined {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    return Math.max(0, Math.min(30000, Math.round(value)));
+  }
+
+  private normalizeDelayJitterMs(value?: number | null): number | undefined {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    return Math.max(0, Math.min(10000, Math.round(value)));
+  }
+
+  private normalizeSemaphoreCount(value?: number | null): number | undefined {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return undefined;
+    }
+    return Math.max(1, Math.min(50, Math.round(value)));
   }
 
   private parseLinkPreviewOptions(value: unknown): CrawlLinkPreviewOptions | undefined {

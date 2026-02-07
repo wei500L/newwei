@@ -158,12 +158,24 @@ export function CreateCrawlTaskDrawer({
   const [selectedTemplate, setSelectedTemplate] = useState("general");
 
   const scanFullPage = Form.useWatch("scanFullPage", form);
+  const waitUntilValue = Form.useWatch("waitUntil", form);
   const proxyUrlValue = Form.useWatch("proxyUrl", form);
   const proxyConfigValue = Form.useWatch("proxyConfig", form);
   const markdownFilterType = Form.useWatch(["markdownFilter", "type"], form);
   const scoreLinksValue = Form.useWatch("scoreLinks", form);
   const userAgentModeValue = Form.useWatch("userAgentMode", form);
   const useManagedBrowserValue = Form.useWatch("useManagedBrowser", form);
+
+  useEffect(() => {
+    if (waitUntilValue !== "networkidle") {
+      return;
+    }
+    const currentTimeout = form.getFieldValue("waitForTimeoutMs");
+    if (typeof currentTimeout === "number" && currentTimeout >= 5000) {
+      return;
+    }
+    form.setFields([{ name: "waitForTimeoutMs", value: 5000 }]);
+  }, [form, waitUntilValue]);
 
   const proxyUrlActive = Boolean(proxyUrlValue?.trim().length);
   const proxyObjectActive = Boolean(proxyConfigValue?.server?.trim().length);
@@ -209,6 +221,13 @@ export function CreateCrawlTaskDrawer({
           waitForImages: true,
           simulateUser: true,
           overrideNavigator: true,
+          waitUntil: "networkidle",
+          pageTimeoutMs: 45000,
+          delayBeforeReturnHtmlMs: 800,
+          meanDelayMs: 800,
+          maxDelayRangeMs: 250,
+          semaphoreCount: 5,
+          removeForms: true,
           markdownOptions: {
             contentSource: "cleaned_html",
             escapeHtml: true,
@@ -344,6 +363,7 @@ export function CreateCrawlTaskDrawer({
         <div style={{ display: currentStep === 2 ? "block" : "none" }}>
           <CrawlSettingsForm
             scanFullPage={scanFullPage}
+            waitUntilValue={waitUntilValue}
             markdownFilterType={markdownFilterType}
             linkPreviewDisabled={linkPreviewDisabled}
             canWriteItems={canWriteItems}
@@ -382,6 +402,7 @@ export function CreateCrawlTaskDrawer({
 
 interface CrawlSettingsFormProps {
   scanFullPage?: boolean;
+  waitUntilValue?: string;
   markdownFilterType?: string;
   linkPreviewDisabled: boolean;
   canWriteItems: boolean;
@@ -389,6 +410,7 @@ interface CrawlSettingsFormProps {
 
 function CrawlSettingsForm({
   scanFullPage,
+  waitUntilValue,
   markdownFilterType,
   linkPreviewDisabled,
   canWriteItems,
@@ -659,6 +681,70 @@ function CrawlSettingsForm({
         <Switch />
       </Form.Item>
       <Card
+        title={t("crawl.settings.politeness.title", { defaultValue: "Politeness & stability" })}
+        size="small"
+        style={{ marginBottom: 16 }}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+          {t("crawl.settings.politeness.description", {
+            defaultValue:
+              "Use conservative delays and concurrency settings to improve crawl stability across news sites."
+          })}
+        </Typography.Paragraph>
+        <Form.Item
+          label={t("crawl.settings.politeness.meanDelay", { defaultValue: "Mean delay (ms)" })}
+          name="meanDelayMs"
+          extra={t("crawl.settings.politeness.meanDelayHint", {
+            defaultValue: "Average randomized pause between requests in batch crawling."
+          })}
+        >
+          <InputNumber
+            min={0}
+            max={10000}
+            step={50}
+            style={{ width: "100%" }}
+            placeholder={t("crawl.settings.politeness.placeholders.meanDelay", {
+              defaultValue: "Enter mean delay"
+            })}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("crawl.settings.politeness.maxRange", { defaultValue: "Delay jitter (ms)" })}
+          name="maxDelayRangeMs"
+          extra={t("crawl.settings.politeness.maxRangeHint", {
+            defaultValue: "Random delay range added around the mean delay."
+          })}
+        >
+          <InputNumber
+            min={0}
+            max={10000}
+            step={50}
+            style={{ width: "100%" }}
+            placeholder={t("crawl.settings.politeness.placeholders.maxRange", {
+              defaultValue: "Enter jitter range"
+            })}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("crawl.settings.politeness.semaphoreCount", {
+            defaultValue: "Internal semaphore"
+          })}
+          name="semaphoreCount"
+          extra={t("crawl.settings.politeness.semaphoreCountHint", {
+            defaultValue: "Max parallel internal operations within a crawl run."
+          })}
+        >
+          <InputNumber
+            min={1}
+            max={50}
+            style={{ width: "100%" }}
+            placeholder={t("crawl.settings.politeness.placeholders.semaphoreCount", {
+              defaultValue: "Enter semaphore count"
+            })}
+          />
+        </Form.Item>
+      </Card>
+      <Card
         title={t("crawl.dynamic.title")}
         size="small"
         style={{ marginBottom: 16 }}
@@ -748,6 +834,90 @@ function CrawlSettingsForm({
             style={{ width: "100%" }}
             placeholder={t("crawl.dynamic.placeholders.waitTimeout")}
           />
+        </Form.Item>
+        <Form.Item
+          label={t("crawl.dynamic.waitUntil", { defaultValue: "Navigation wait condition" })}
+          name="waitUntil"
+          extra={t("crawl.dynamic.waitUntilHint", {
+            defaultValue:
+              "Choose when Crawl4AI treats navigation as finished. For JS-heavy pages, networkidle is usually safer."
+          })}
+        >
+          <Select
+            allowClear
+            placeholder={t("crawl.dynamic.placeholders.waitUntil", {
+              defaultValue: "Select wait condition"
+            })}
+            options={[
+              {
+                value: "domcontentloaded",
+                label: t("crawl.dynamic.waitUntilOptions.domcontentloaded", {
+                  defaultValue: "DOMContentLoaded"
+                })
+              },
+              {
+                value: "load",
+                label: t("crawl.dynamic.waitUntilOptions.load", { defaultValue: "Load" })
+              },
+              {
+                value: "networkidle",
+                label: t("crawl.dynamic.waitUntilOptions.networkidle", {
+                  defaultValue: "Network idle"
+                })
+              },
+              {
+                value: "commit",
+                label: t("crawl.dynamic.waitUntilOptions.commit", { defaultValue: "Commit" })
+              }
+            ]}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("crawl.dynamic.pageTimeout", { defaultValue: "Page timeout (ms)" })}
+          name="pageTimeoutMs"
+          extra={t("crawl.dynamic.pageTimeoutHint", {
+            defaultValue: "Hard limit for page loading and JS execution in milliseconds."
+          })}
+        >
+          <InputNumber
+            min={1000}
+            max={180000}
+            style={{ width: "100%" }}
+            placeholder={t("crawl.dynamic.placeholders.pageTimeout", {
+              defaultValue: "Enter page timeout"
+            })}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("crawl.dynamic.delayBeforeReturnHtml", {
+            defaultValue: "Post-load delay (ms)"
+          })}
+          name="delayBeforeReturnHtmlMs"
+          extra={t("crawl.dynamic.delayBeforeReturnHtmlHint", {
+            defaultValue:
+              "Extra wait before returning HTML, useful for late-rendered article bodies."
+          })}
+        >
+          <InputNumber
+            min={0}
+            max={30000}
+            step={100}
+            style={{ width: "100%" }}
+            placeholder={t("crawl.dynamic.placeholders.delayBeforeReturnHtml", {
+              defaultValue: "Enter post-load delay"
+            })}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("crawl.dynamic.removeForms", { defaultValue: "Remove forms" })}
+          name="removeForms"
+          valuePropName="checked"
+          extra={t("crawl.dynamic.removeFormsHint", {
+            defaultValue:
+              "Strip form elements before markdown conversion to reduce newsletter/login noise."
+          })}
+        >
+          <Switch />
         </Form.Item>
       </Card>
       <Form.Item
@@ -1619,6 +1789,128 @@ function CrawlSettingsForm({
                     style={{ width: "100%" }}
                     placeholder={t("crawl.dynamic.placeholders.waitTimeout")}
                   />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.dynamic.waitUntil", {
+                    defaultValue: "Navigation wait condition"
+                  })}
+                  name={[field.name, "options", "waitUntil"]}
+                >
+                  <Select
+                    allowClear
+                    placeholder={t("crawl.dynamic.placeholders.waitUntil", {
+                      defaultValue: "Select wait condition"
+                    })}
+                    options={[
+                      {
+                        value: "domcontentloaded",
+                        label: t("crawl.dynamic.waitUntilOptions.domcontentloaded", {
+                          defaultValue: "DOMContentLoaded"
+                        })
+                      },
+                      {
+                        value: "load",
+                        label: t("crawl.dynamic.waitUntilOptions.load", {
+                          defaultValue: "Load"
+                        })
+                      },
+                      {
+                        value: "networkidle",
+                        label: t("crawl.dynamic.waitUntilOptions.networkidle", {
+                          defaultValue: "Network idle"
+                        })
+                      },
+                      {
+                        value: "commit",
+                        label: t("crawl.dynamic.waitUntilOptions.commit", {
+                          defaultValue: "Commit"
+                        })
+                      }
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.dynamic.pageTimeout", { defaultValue: "Page timeout (ms)" })}
+                  name={[field.name, "options", "pageTimeoutMs"]}
+                >
+                  <InputNumber
+                    min={1000}
+                    max={180000}
+                    style={{ width: "100%" }}
+                    placeholder={t("crawl.dynamic.placeholders.pageTimeout", {
+                      defaultValue: "Enter page timeout"
+                    })}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.dynamic.delayBeforeReturnHtml", {
+                    defaultValue: "Post-load delay (ms)"
+                  })}
+                  name={[field.name, "options", "delayBeforeReturnHtmlMs"]}
+                >
+                  <InputNumber
+                    min={0}
+                    max={30000}
+                    step={100}
+                    style={{ width: "100%" }}
+                    placeholder={t("crawl.dynamic.placeholders.delayBeforeReturnHtml", {
+                      defaultValue: "Enter post-load delay"
+                    })}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.settings.politeness.meanDelay", {
+                    defaultValue: "Mean delay (ms)"
+                  })}
+                  name={[field.name, "options", "meanDelayMs"]}
+                >
+                  <InputNumber
+                    min={0}
+                    max={10000}
+                    step={50}
+                    style={{ width: "100%" }}
+                    placeholder={t("crawl.settings.politeness.placeholders.meanDelay", {
+                      defaultValue: "Enter mean delay"
+                    })}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.settings.politeness.maxRange", {
+                    defaultValue: "Delay jitter (ms)"
+                  })}
+                  name={[field.name, "options", "maxDelayRangeMs"]}
+                >
+                  <InputNumber
+                    min={0}
+                    max={10000}
+                    step={50}
+                    style={{ width: "100%" }}
+                    placeholder={t("crawl.settings.politeness.placeholders.maxRange", {
+                      defaultValue: "Enter jitter range"
+                    })}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.settings.politeness.semaphoreCount", {
+                    defaultValue: "Internal semaphore"
+                  })}
+                  name={[field.name, "options", "semaphoreCount"]}
+                >
+                  <InputNumber
+                    min={1}
+                    max={50}
+                    style={{ width: "100%" }}
+                    placeholder={t("crawl.settings.politeness.placeholders.semaphoreCount", {
+                      defaultValue: "Enter semaphore count"
+                    })}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.dynamic.removeForms", { defaultValue: "Remove forms" })}
+                  name={[field.name, "options", "removeForms"]}
+                  valuePropName="checked"
+                >
+                  <Switch />
                 </Form.Item>
               </Card>
             ))}

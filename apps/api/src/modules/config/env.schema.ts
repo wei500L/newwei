@@ -69,7 +69,6 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CRAWL4AI_JSCODE_AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
   CRAWL4AI_JSCODE_MAX_LENGTH: z.coerce.number().int().positive().default(2000),
   CRAWL4AI_JSCODE_MAX_SCRIPTS: z.coerce.number().int().positive().default(5),
-  CRAWL_TASK_CONFIG_ENCRYPTION_KEY: z.string().optional(),
   CRAWL_TASK_JANITOR_ENABLED: envBoolean.default(true),
   CRAWL_TASK_RUNNING_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
   CRAWL_TASK_QUEUED_TIMEOUT_MS: z.coerce.number().int().positive().default(43_200_000),

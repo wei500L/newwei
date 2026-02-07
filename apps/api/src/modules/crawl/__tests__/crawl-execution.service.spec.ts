@@ -16,24 +16,8 @@ jest.mock("@modular/mongo", () => ({
   }
 }));
 
-jest.mock("../crawl-config-secrets", () => ({
-  decodeCrawlTaskConfigKey: jest.fn(),
-  protectCrawlTaskConfigForStorage: jest.fn(),
-  revealCrawlTaskConfigForExecution: jest.fn(),
-  CrawlTaskConfigEncryptionRequiredError: class CrawlTaskConfigEncryptionRequiredError extends Error {
-    override name = "CrawlTaskConfigEncryptionRequiredError";
-  }
-}));
-
 import { TaskLogModel } from "@modular/mongo";
 import { NotificationType } from "@prisma/client";
-
-import {
-  decodeCrawlTaskConfigKey,
-  protectCrawlTaskConfigForStorage,
-  revealCrawlTaskConfigForExecution,
-  CrawlTaskConfigEncryptionRequiredError
-} from "../crawl-config-secrets";
 import { CrawlExecutionService } from "../crawl-execution.service";
 import { Crawl4aiRequestException } from "../crawl4ai.exception";
 
@@ -85,7 +69,6 @@ const createMockPrismaService = () => ({
 });
 
 const createMockEnvService = () => ({
-  crawlTaskConfigEncryptionKey: undefined,
   crawl4aiConfig: {
     baseUrl: "http://localhost:8082"
   }
@@ -130,11 +113,6 @@ describe("CrawlExecutionService", () => {
       mockResultService as any,
       mockNotifications as any
     );
-
-    // Default mock implementations
-    (decodeCrawlTaskConfigKey as jest.Mock).mockReturnValue(Buffer.alloc(32));
-    (protectCrawlTaskConfigForStorage as jest.Mock).mockReturnValue({ config: null, didEncrypt: false });
-    (revealCrawlTaskConfigForExecution as jest.Mock).mockReturnValue(null);
     (TaskLogModel.create as jest.Mock).mockResolvedValue(undefined);
   });
 
@@ -394,7 +372,6 @@ describe("CrawlExecutionService", () => {
 
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      (revealCrawlTaskConfigForExecution as jest.Mock).mockReturnValue(task.config);
       mockCrawlClient.crawl
         .mockResolvedValueOnce(emptyResponse)
         .mockResolvedValueOnce(fallbackResponse)
@@ -607,33 +584,12 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask({ config });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      (revealCrawlTaskConfigForExecution as jest.Mock).mockReturnValue(config);
 
       await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
         "crawl stage must only fetch and store cleaned markdown"
       );
 
       expect(mockCrawlClient.crawl).not.toHaveBeenCalled();
-      expect(mockPrisma.crawlTask.update).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ status: "failed" })
-        })
-      );
-    });
-
-
-    it("marks CrawlTaskConfigEncryptionRequiredError as non-retryable", async () => {
-      const task = createMockTask({ config: { browserCookies: [] } });
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      (protectCrawlTaskConfigForStorage as jest.Mock).mockImplementation(() => {
-        throw new CrawlTaskConfigEncryptionRequiredError("Encryption key required");
-      });
-
-      await expect(
-        service.runTask("task-1", "org-1", undefined, { attempt: 1, maxAttempts: 3 })
-      ).rejects.toThrow(CrawlTaskConfigEncryptionRequiredError);
-
       expect(mockPrisma.crawlTask.update).toHaveBeenLastCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: "failed" })
@@ -940,6 +896,58 @@ describe("CrawlExecutionService", () => {
       expect(service.normalizeOptions({ waitForTimeoutMs: 5000 }).waitForTimeoutMs).toBe(5000);
     });
 
+    it("normalizes waitUntil/pageTimeout and politeness controls", () => {
+      const result = service.normalizeOptions({
+        waitUntil: "networkidle",
+        waitForTimeoutMs: 600,
+        pageTimeoutMs: 999999,
+        delayBeforeReturnHtmlMs: 35000,
+        meanDelayMs: -100,
+        maxDelayRangeMs: 13000,
+        semaphoreCount: 999,
+        removeForms: true
+      });
+
+      expect(result.waitUntil).toBe("networkidle");
+      expect(result.waitForTimeoutMs).toBe(5000);
+      expect(result.pageTimeoutMs).toBe(180000);
+      expect(result.delayBeforeReturnHtmlMs).toBe(30000);
+      expect(result.meanDelayMs).toBe(0);
+      expect(result.maxDelayRangeMs).toBe(10000);
+      expect(result.semaphoreCount).toBe(50);
+      expect(result.removeForms).toBe(true);
+    });
+
+    it("normalizes politeness controls in multiUrl strategy overrides", () => {
+      const result = service.normalizeOptions({
+        multiUrlConfigs: [
+          {
+            matcher: { patterns: ["https://example.com/world/*"], matchMode: "glob" },
+            options: {
+              waitUntil: "networkidle",
+              waitForTimeoutMs: 800,
+              pageTimeoutMs: 999999,
+              delayBeforeReturnHtmlMs: 35000,
+              meanDelayMs: -100,
+              maxDelayRangeMs: 13000,
+              semaphoreCount: 999,
+              removeForms: true
+            }
+          }
+        ]
+      });
+
+      const overrides = result.multiUrlConfigs?.[0]?.options;
+      expect(overrides?.waitUntil).toBe("networkidle");
+      expect(overrides?.waitForTimeoutMs).toBe(5000);
+      expect(overrides?.pageTimeoutMs).toBe(180000);
+      expect(overrides?.delayBeforeReturnHtmlMs).toBe(30000);
+      expect(overrides?.meanDelayMs).toBe(0);
+      expect(overrides?.maxDelayRangeMs).toBe(10000);
+      expect(overrides?.semaphoreCount).toBe(50);
+      expect(overrides?.removeForms).toBe(true);
+    });
+
     it("sets excludeExternalImages to false when storeMedia is true", () => {
       const result = service.normalizeOptions({ storeMedia: true });
       expect(result.excludeExternalImages).toBe(false);
@@ -948,84 +956,6 @@ describe("CrawlExecutionService", () => {
     it("sets waitForImages to true when storeMedia is true", () => {
       const result = service.normalizeOptions({ storeMedia: true });
       expect(result.waitForImages).toBe(true);
-    });
-  });
-
-  describe("config encryption flow", () => {
-    it("calls decodeCrawlTaskConfigKey with env encryption key", async () => {
-      const task = createMockTask({ config: { includeImages: true } });
-      mockEnv.crawlTaskConfigEncryptionKey = "test-key-base64";
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
-
-      await service.runTask("task-1", "org-1");
-
-      expect(decodeCrawlTaskConfigKey).toHaveBeenCalledWith("test-key-base64");
-    });
-
-    it("calls protectCrawlTaskConfigForStorage when config exists", async () => {
-      const task = createMockTask({ config: { includeImages: true } });
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
-
-      await service.runTask("task-1", "org-1");
-
-      expect(protectCrawlTaskConfigForStorage).toHaveBeenCalled();
-    });
-
-    it("updates task config when didEncrypt is true", async () => {
-      const task = createMockTask({ config: { browserCookies: [{ name: "test", value: "val", domain: "example.com" }] } });
-      const encryptedConfig = { browserCookies: { __enc: "crawl-task-config:v1" } };
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
-      (protectCrawlTaskConfigForStorage as jest.Mock).mockReturnValue({
-        config: encryptedConfig,
-        didEncrypt: true
-      });
-
-      await service.runTask("task-1", "org-1");
-
-      expect(mockPrisma.crawlTask.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ config: expect.anything() })
-        })
-      );
-    });
-
-    it("skips encryption flow when config is null", async () => {
-      const task = createMockTask({ config: null });
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
-
-      await service.runTask("task-1", "org-1");
-
-      expect(protectCrawlTaskConfigForStorage).not.toHaveBeenCalled();
-      expect(revealCrawlTaskConfigForExecution).not.toHaveBeenCalled();
-    });
-
-    it("skips encryption flow when config is array (invalid)", async () => {
-      const task = createMockTask({ config: ["invalid", "array"] });
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
-
-      await service.runTask("task-1", "org-1");
-
-      expect(protectCrawlTaskConfigForStorage).not.toHaveBeenCalled();
     });
   });
 
@@ -1254,15 +1184,12 @@ describe("CrawlExecutionService", () => {
     });
 
     it("includes additionalUrls in URL list", async () => {
-      const task = createMockTask({ config: { additionalUrls: ["https://extra1.com", "https://extra2.com"] } });
+    const task = createMockTask({ config: { additionalUrls: ["https://extra1.com", "https://extra2.com"] } });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
       mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
-      (revealCrawlTaskConfigForExecution as jest.Mock).mockReturnValue({
-        additionalUrls: ["https://extra1.com", "https://extra2.com"]
-      });
 
       await service.runTask("task-1", "org-1");
 
@@ -1283,9 +1210,6 @@ describe("CrawlExecutionService", () => {
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
       mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
-      (revealCrawlTaskConfigForExecution as jest.Mock).mockReturnValue({
-        additionalUrls: ["https://example.com", "https://extra.com"]
-      });
 
       await service.runTask("task-1", "org-1");
 

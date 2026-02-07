@@ -84,7 +84,7 @@ describe("CrawlTaskService", () => {
 
     const service = new CrawlTaskService(
       prismaMock,
-      { crawl4aiConfig: { maxConcurrency: 1 }, crawlTaskConfigEncryptionKey: undefined } as any,
+      { crawl4aiConfig: { maxConcurrency: 1 } } as any,
       executionServiceMock,
       queueServiceMock,
       {} as any,
@@ -138,7 +138,7 @@ describe("CrawlTaskService", () => {
 
     const service = new CrawlTaskService(
       prismaMock,
-      { crawl4aiConfig: { maxConcurrency: 1 }, crawlTaskConfigEncryptionKey: undefined } as any,
+      { crawl4aiConfig: { maxConcurrency: 1 } } as any,
       executionServiceMock,
       { enqueueTask: jest.fn().mockResolvedValue(undefined) } as any,
       {} as any,
@@ -189,7 +189,7 @@ describe("CrawlTaskService", () => {
 
     const service = new CrawlTaskService(
       prismaMock,
-      { crawl4aiConfig: { maxConcurrency: 1 }, crawlTaskConfigEncryptionKey: undefined } as any,
+      { crawl4aiConfig: { maxConcurrency: 1 } } as any,
       executionServiceMock,
       queueServiceMock,
       {} as any,

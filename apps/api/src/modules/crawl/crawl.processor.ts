@@ -5,7 +5,6 @@ import { Queue, QueueEvents, Worker, UnrecoverableError, type BackoffOptions } f
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
-import { CrawlTaskConfigEncryptionRequiredError } from "./crawl-config-secrets";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import type { CrawlJobData } from "./crawl.types";
@@ -44,9 +43,6 @@ function resolveBackoffDelayMs(backoff: number | BackoffOptions | undefined, att
 }
 
 function isRetryableError(error: unknown): boolean {
-  if (error instanceof CrawlTaskConfigEncryptionRequiredError) {
-    return false;
-  }
   if (error instanceof Crawl4aiRequestException) {
     if (error.status && RETRYABLE_STATUS_CODES.has(error.status)) {
       return true;

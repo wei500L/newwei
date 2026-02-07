@@ -263,7 +263,7 @@ export class CrawlMetadataService {
         options: crawlOptions
       });
 
-      const article = response.results?.[0] as Crawl4aiArticle | undefined;
+      const article = this.selectDiscoveryResultArticle(response.results, normalizedSeedUrl);
       if (!article || article.success !== true) {
         return [];
       }
@@ -339,11 +339,66 @@ export class CrawlMetadataService {
     return Object.keys(normalized).length > 0 ? normalized : null;
   }
 
+  private selectDiscoveryResultArticle(results: Crawl4aiArticle[] | undefined, normalizedSeedUrl: string) {
+    if (!results || results.length === 0) {
+      return undefined;
+    }
+    const successful = results.filter((entry) => entry.success === true);
+    const matched = successful.find((entry) => this.normalizeUrlForComparison(entry.url) === normalizedSeedUrl);
+    return matched ?? successful[0] ?? results[0];
+  }
+
+  private normalizeUrlForComparison(value?: string) {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    try {
+      const parsed = new URL(trimmed);
+      parsed.hash = "";
+      return parsed.toString();
+    } catch {
+      return undefined;
+    }
+  }
+
   private normalizeCrawlOptions(value: unknown): CrawlTaskOptions | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return undefined;
     }
-    return value as CrawlTaskOptions;
+
+    const options = value as CrawlTaskOptions;
+    const waitUntil =
+      options.waitUntil === "domcontentloaded" ||
+      options.waitUntil === "load" ||
+      options.waitUntil === "networkidle" ||
+      options.waitUntil === "commit"
+        ? options.waitUntil
+        : undefined;
+    const waitForTimeoutMsRaw =
+      typeof options.waitForTimeoutMs === "number" && Number.isFinite(options.waitForTimeoutMs)
+        ? Math.max(500, Math.min(60000, Math.round(options.waitForTimeoutMs)))
+        : undefined;
+    const waitForTimeoutMs =
+      waitUntil === "networkidle" && typeof waitForTimeoutMsRaw === "number"
+        ? Math.max(5000, waitForTimeoutMsRaw)
+        : waitForTimeoutMsRaw;
+    const pageTimeoutMs =
+      typeof options.pageTimeoutMs === "number" && Number.isFinite(options.pageTimeoutMs)
+        ? Math.max(1000, Math.min(180000, Math.round(options.pageTimeoutMs)))
+        : undefined;
+
+    return {
+      ...options,
+      additionalUrls: undefined,
+      multiUrlConfigs: undefined,
+      waitUntil,
+      waitForTimeoutMs,
+      pageTimeoutMs
+    };
   }
 
   private isPlainObject(value: unknown): value is Record<string, unknown> {

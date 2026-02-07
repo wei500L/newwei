@@ -475,6 +475,7 @@ input CrawlOptionsInput {
   browserCookies: [CrawlBrowserCookieInput!]
   browserHeaders: [CrawlBrowserHeaderInput!]
   cleanMarkdown: CrawlCleanMarkdownInput
+  delayBeforeReturnHtmlMs: Int
   enableStealthMode: Boolean
   enableUndetectedBrowser: Boolean
   excludeExternalImages: Boolean
@@ -489,14 +490,19 @@ input CrawlOptionsInput {
   markdownFilter: CrawlMarkdownFilterInput
   markdownOptions: CrawlMarkdownOptionsInput
   markdownStrategy: CrawlMarkdownStrategyInput
+  maxDelayRangeMs: Int
+  meanDelayMs: Int
   multiUrlConfigs: [CrawlMultiUrlStrategyInput!]
   onlyMainContent: Boolean
   overrideNavigator: Boolean
+  pageTimeoutMs: Int
   proxyConfig: CrawlProxyConfigInput
   proxyUrl: String
+  removeForms: Boolean
   scanFullPage: Boolean
   scoreLinks: Boolean
   scrollDelayMs: Int
+  semaphoreCount: Int
   sessionId: String
   simulateUser: Boolean
   storageState: String
@@ -514,6 +520,7 @@ input CrawlOptionsInput {
   waitForScript: String
   waitForSelector: String
   waitForTimeoutMs: Int
+  waitUntil: CrawlWaitUntil
 }
 
 input CrawlProxyConfigInput {
@@ -544,18 +551,24 @@ input CrawlStrategyOverridesInput {
   cacheMode: String
   captureScreenshot: Boolean
   cssSelector: String
+  delayBeforeReturnHtmlMs: Int
   excludeExternalImages: Boolean
   excludeExternalLinks: Boolean
   excludedTags: [String!]
   extractLinks: Boolean
   jsCode: [String!]
   jsOnly: Boolean
+  maxDelayRangeMs: Int
+  meanDelayMs: Int
   onlyMainContent: Boolean
   overrideNavigator: Boolean
+  pageTimeoutMs: Int
   processIframes: Boolean
+  removeForms: Boolean
   removeOverlayElements: Boolean
   scanFullPage: Boolean
   scrollDelayMs: Int
+  semaphoreCount: Int
   simulateUser: Boolean
   textMode: Boolean
   virtualScroll: CrawlVirtualScrollInput
@@ -563,6 +576,7 @@ input CrawlStrategyOverridesInput {
   waitForScript: String
   waitForSelector: String
   waitForTimeoutMs: Int
+  waitUntil: CrawlWaitUntil
   wordCountThreshold: Int
 }
 
@@ -640,6 +654,13 @@ input CrawlVirtualScrollInput {
   scrollBy: String
   scrollCount: Int
   waitAfterScrollMs: Int
+}
+
+enum CrawlWaitUntil {
+  COMMIT
+  DOMCONTENTLOADED
+  LOAD
+  NETWORKIDLE
 }
 
 input CreateCrawlTaskInput {

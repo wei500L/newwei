@@ -270,4 +270,129 @@ describe("Crawl4aiClient", () => {
       })
     ).rejects.toBeInstanceOf(Crawl4aiRequestException);
   });
+
+  it("maps advanced timing and politeness options into crawler_config", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        waitUntil: "networkidle",
+        pageTimeoutMs: 45000,
+        delayBeforeReturnHtmlMs: 800,
+        meanDelayMs: 1200,
+        maxDelayRangeMs: 350,
+        semaphoreCount: 7,
+        removeForms: true
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.crawler_config.params.wait_until).toBe("networkidle");
+    expect(payload.crawler_config.params.page_timeout).toBe(45000);
+    expect(payload.crawler_config.params.delay_before_return_html).toBeCloseTo(0.8);
+    expect(payload.crawler_config.params.mean_delay).toBeCloseTo(1.2);
+    expect(payload.crawler_config.params.max_range).toBeCloseTo(0.35);
+    expect(payload.crawler_config.params.semaphore_count).toBe(7);
+    expect(payload.crawler_config.params.check_robots_txt).toBe(false);
+    expect(payload.crawler_config.params.remove_forms).toBe(true);
+  });
+
+  it("prefers proxy_config over proxy url", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        proxyUrl: "http://proxy-url.example:8080",
+        proxyConfig: {
+          server: "http://proxy-config.example:8080",
+          username: "user",
+          password: "pass"
+        }
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.browser_config.params).toHaveProperty("proxy_config");
+    expect(payload.browser_config.params.proxy_config).toEqual(
+      expect.objectContaining({
+        server: "http://proxy-config.example:8080",
+        username: "user",
+        password: "pass"
+      })
+    );
+    expect(payload.browser_config.params).not.toHaveProperty("proxy");
+  });
+
+  it("maps advanced overrides in multiUrlConfigs", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        multiUrlConfigs: [
+          {
+            matcher: { matchMode: "prefix", patterns: ["https://example.com/world/"] },
+            options: {
+              waitUntil: "load",
+              pageTimeoutMs: 30000,
+              delayBeforeReturnHtmlMs: 1000,
+              meanDelayMs: 500,
+              maxDelayRangeMs: 200,
+              semaphoreCount: 4,
+              removeForms: true
+            }
+          }
+        ]
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    const config = payload.crawler_configurations?.[0]?.params;
+    expect(config.wait_until).toBe("load");
+    expect(config.page_timeout).toBe(30000);
+    expect(config.delay_before_return_html).toBeCloseTo(1);
+    expect(config.mean_delay).toBeCloseTo(0.5);
+    expect(config.max_range).toBeCloseTo(0.2);
+    expect(config.semaphore_count).toBe(4);
+    expect(config.check_robots_txt).toBe(false);
+    expect(config.remove_forms).toBe(true);
+  });
+
+
+  it("enforces networkidle minimum wait_for_timeout", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        waitUntil: "networkidle",
+        waitForTimeoutMs: 600,
+        multiUrlConfigs: [
+          {
+            matcher: { matchMode: "prefix", patterns: ["https://example.com/world/"] },
+            options: {
+              waitUntil: "networkidle",
+              waitForTimeoutMs: 1200
+            }
+          }
+        ]
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.crawler_config.params.wait_for_timeout).toBe(5000);
+    expect(payload.crawler_configurations?.[0]?.params?.wait_for_timeout).toBe(5000);
+  });
+
+  it("clamps wait_for_timeout for non-networkidle waits", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        waitUntil: "load",
+        waitForTimeoutMs: 100
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.crawler_config.params.wait_for_timeout).toBe(500);
+  });
 });

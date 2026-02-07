@@ -258,6 +258,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     payload: NormalizedNewsPayload;
   }): Promise<{ crawlResultId: string; crawlTaskId: string }> {
     const crawlOptions = this.buildCrawlTaskOptions(options.payload);
+    const crawlTaskConfig = crawlOptions;
     const displayNameLabel = options.payload.sourceName?.trim()
       ? options.payload.sourceName.trim()
       : (() => {
@@ -290,7 +291,7 @@ export class NewsPipelineService implements OnModuleDestroy {
         data: {
           displayName,
           keywords: toPrismaJsonValue(options.payload.keywords),
-          config: toPrismaJsonValue(crawlOptions),
+          config: toPrismaJsonValue(crawlTaskConfig),
         },
         select: { id: true },
       });
@@ -309,7 +310,7 @@ export class NewsPipelineService implements OnModuleDestroy {
           status: "pending",
           concurrency: 1,
           keywords: toPrismaJsonValue(options.payload.keywords),
-          config: toPrismaJsonValue(crawlOptions),
+          config: toPrismaJsonValue(crawlTaskConfig),
         },
         select: { id: true },
       });

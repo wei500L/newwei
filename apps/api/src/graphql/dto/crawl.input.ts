@@ -1,3 +1,4 @@
+import { Type } from "class-transformer";
 import { ArgsType, Field, ID, InputType, Int, Float, registerEnumType } from "@nestjs/graphql";
 import { CrawlTaskStatus } from "@prisma/client";
 import {
@@ -9,6 +10,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Max,
   Min
 } from "class-validator";
 import GraphQLJSONScalar from "graphql-type-json";
@@ -22,6 +24,13 @@ import type {
   CrawlUserAgentMode,
   CrawlVirtualScrollMode
 } from "../../modules/crawl/crawl.types";
+
+export enum CrawlWaitUntilInputEnum {
+  DOMCONTENTLOADED = "domcontentloaded",
+  LOAD = "load",
+  NETWORKIDLE = "networkidle",
+  COMMIT = "commit"
+}
 
 @InputType()
 export class CrawlTimeRangeInput {
@@ -155,7 +164,61 @@ export class CrawlStrategyOverridesInput {
   waitForScript?: string;
 
   @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(500)
+  @Max(60000)
   waitForTimeoutMs?: number;
+
+  @Field(() => CrawlWaitUntilInputEnum, { nullable: true })
+  @IsOptional()
+  @IsEnum(CrawlWaitUntilInputEnum)
+  waitUntil?: CrawlWaitUntilInputEnum;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  @Max(180000)
+  pageTimeoutMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(30000)
+  delayBeforeReturnHtmlMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  meanDelayMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  maxDelayRangeMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  semaphoreCount?: number;
+
+
+  @Field(() => Boolean, { nullable: true })
+  removeForms?: boolean;
 
   @Field(() => String, { nullable: true })
   cacheMode?: CrawlCacheMode;
@@ -383,7 +446,60 @@ export class CrawlOptionsInput {
   waitForScript?: string;
 
   @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(500)
+  @Max(60000)
   waitForTimeoutMs?: number;
+
+  @Field(() => CrawlWaitUntilInputEnum, { nullable: true })
+  @IsOptional()
+  @IsEnum(CrawlWaitUntilInputEnum)
+  waitUntil?: CrawlWaitUntilInputEnum;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  @Max(180000)
+  pageTimeoutMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(30000)
+  delayBeforeReturnHtmlMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  meanDelayMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  maxDelayRangeMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  semaphoreCount?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  removeForms?: boolean;
 
   @Field({ nullable: true })
   proxyUrl?: string;
@@ -601,4 +717,8 @@ export class CrawlTaskDetailArgs {
 
 registerEnumType(CrawlTaskStatus, {
   name: "CrawlTaskStatus"
+});
+
+registerEnumType(CrawlWaitUntilInputEnum, {
+  name: "CrawlWaitUntil"
 });

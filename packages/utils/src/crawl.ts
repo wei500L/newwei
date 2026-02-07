@@ -23,6 +23,13 @@ export interface CrawlStrategyOverridesFormValue {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  waitUntil?: string;
+  pageTimeoutMs?: number;
+  delayBeforeReturnHtmlMs?: number;
+  meanDelayMs?: number;
+  maxDelayRangeMs?: number;
+  semaphoreCount?: number;
+  removeForms?: boolean;
   virtualScroll?: CrawlVirtualScrollConfigFormValue;
 }
 
@@ -146,6 +153,13 @@ export interface CrawlOptionsFormValues {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  waitUntil?: string;
+  pageTimeoutMs?: number;
+  delayBeforeReturnHtmlMs?: number;
+  meanDelayMs?: number;
+  maxDelayRangeMs?: number;
+  semaphoreCount?: number;
+  removeForms?: boolean;
   waitForImages?: boolean;
   sessionId?: string;
   storageState?: string;
@@ -186,6 +200,13 @@ export interface CrawlStrategyOverridesValue {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  waitUntil?: "domcontentloaded" | "load" | "networkidle" | "commit";
+  pageTimeoutMs?: number;
+  delayBeforeReturnHtmlMs?: number;
+  meanDelayMs?: number;
+  maxDelayRangeMs?: number;
+  semaphoreCount?: number;
+  removeForms?: boolean;
   virtualScroll?: CrawlVirtualScrollConfigValue;
 }
 
@@ -268,6 +289,13 @@ export interface CrawlOptionsValue {
   waitForSelector?: string;
   waitForScript?: string;
   waitForTimeoutMs?: number;
+  waitUntil?: "domcontentloaded" | "load" | "networkidle" | "commit";
+  pageTimeoutMs?: number;
+  delayBeforeReturnHtmlMs?: number;
+  meanDelayMs?: number;
+  maxDelayRangeMs?: number;
+  semaphoreCount?: number;
+  removeForms?: boolean;
   waitForImages?: boolean;
   sessionId?: string;
   storageState?: string;
@@ -446,8 +474,41 @@ export const sanitizeStrategyOptions = (
   if (waitForScript) {
     cleaned.waitForScript = waitForScript;
   }
-  if (typeof options.waitForTimeoutMs === "number") {
-    cleaned.waitForTimeoutMs = options.waitForTimeoutMs;
+  const waitForTimeoutMs =
+    typeof options.waitForTimeoutMs === "number"
+      ? Math.max(500, Math.min(60000, Math.round(options.waitForTimeoutMs)))
+      : undefined;
+  if (waitForTimeoutMs !== undefined) {
+    cleaned.waitForTimeoutMs = waitForTimeoutMs;
+  }
+  if (
+    options.waitUntil === "domcontentloaded" ||
+    options.waitUntil === "load" ||
+    options.waitUntil === "networkidle" ||
+    options.waitUntil === "commit"
+  ) {
+    cleaned.waitUntil = options.waitUntil;
+    if (cleaned.waitUntil === "networkidle" && typeof cleaned.waitForTimeoutMs === "number") {
+      cleaned.waitForTimeoutMs = Math.max(5000, cleaned.waitForTimeoutMs);
+    }
+  }
+  if (typeof options.pageTimeoutMs === "number") {
+    cleaned.pageTimeoutMs = Math.max(1000, Math.min(180000, Math.round(options.pageTimeoutMs)));
+  }
+  if (typeof options.delayBeforeReturnHtmlMs === "number") {
+    cleaned.delayBeforeReturnHtmlMs = Math.max(0, Math.min(30000, Math.round(options.delayBeforeReturnHtmlMs)));
+  }
+  if (typeof options.meanDelayMs === "number") {
+    cleaned.meanDelayMs = Math.max(0, Math.min(10000, Math.round(options.meanDelayMs)));
+  }
+  if (typeof options.maxDelayRangeMs === "number") {
+    cleaned.maxDelayRangeMs = Math.max(0, Math.min(10000, Math.round(options.maxDelayRangeMs)));
+  }
+  if (typeof options.semaphoreCount === "number") {
+    cleaned.semaphoreCount = Math.max(1, Math.min(50, Math.round(options.semaphoreCount)));
+  }
+  if (typeof options.removeForms === "boolean") {
+    cleaned.removeForms = options.removeForms;
   }
   const virtualScroll = sanitizeVirtualScrollConfig(options.virtualScroll);
   if (virtualScroll) {
@@ -875,6 +936,22 @@ export const sanitizeCrawlOptions = (
   const jsCode = sanitizeJsCodeList(values.jsCode);
   const waitForSelector = values.waitForSelector?.trim();
   const waitForScript = values.waitForScript?.trim();
+  const waitUntilRaw = values.waitUntil?.trim().toLowerCase();
+  const waitUntil =
+    waitUntilRaw === "domcontentloaded" ||
+    waitUntilRaw === "load" ||
+    waitUntilRaw === "networkidle" ||
+    waitUntilRaw === "commit"
+      ? waitUntilRaw
+      : undefined;
+  const waitForTimeoutMsRaw =
+    typeof values.waitForTimeoutMs === "number"
+      ? Math.max(500, Math.min(60000, Math.round(values.waitForTimeoutMs)))
+      : undefined;
+  const waitForTimeoutMs =
+    waitUntil === "networkidle" && typeof waitForTimeoutMsRaw === "number"
+      ? Math.max(5000, waitForTimeoutMsRaw)
+      : waitForTimeoutMsRaw;
   const sessionId = values.sessionId?.trim();
   const storageState = values.storageState?.trim();
   const userDataDir = values.userDataDir?.trim();
@@ -925,7 +1002,32 @@ export const sanitizeCrawlOptions = (
     jsOnly: typeof values.jsOnly === "boolean" ? values.jsOnly : undefined,
     waitForSelector: waitForSelector ? waitForSelector : undefined,
     waitForScript: waitForScript ? waitForScript : undefined,
-    waitForTimeoutMs: values.waitForTimeoutMs ?? undefined,
+    waitForTimeoutMs: waitForTimeoutMs ?? undefined,
+    waitUntil: waitUntil ?? undefined,
+    pageTimeoutMs:
+      typeof values.pageTimeoutMs === "number"
+        ? Math.max(1000, Math.min(180000, Math.round(values.pageTimeoutMs)))
+        : undefined,
+    delayBeforeReturnHtmlMs:
+      typeof values.delayBeforeReturnHtmlMs === "number"
+        ? Math.max(0, Math.min(30000, Math.round(values.delayBeforeReturnHtmlMs)))
+        : undefined,
+    meanDelayMs:
+      typeof values.meanDelayMs === "number"
+        ? Math.max(0, Math.min(10000, Math.round(values.meanDelayMs)))
+        : undefined,
+    maxDelayRangeMs:
+      typeof values.maxDelayRangeMs === "number"
+        ? Math.max(0, Math.min(10000, Math.round(values.maxDelayRangeMs)))
+        : undefined,
+    semaphoreCount:
+      typeof values.semaphoreCount === "number"
+        ? Math.max(1, Math.min(50, Math.round(values.semaphoreCount)))
+        : undefined,
+    removeForms:
+      typeof values.removeForms === "boolean"
+        ? values.removeForms
+        : undefined,
     waitForImages:
       typeof values.waitForImages === "boolean"
         ? values.waitForImages

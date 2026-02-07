@@ -298,4 +298,5 @@ describe("NewsSourceSchedulerService", () => {
     expect(crawlQueue.enqueueTask).not.toHaveBeenCalled();
     expect(prisma.newsSource.update).not.toHaveBeenCalled();
   });
+
 });

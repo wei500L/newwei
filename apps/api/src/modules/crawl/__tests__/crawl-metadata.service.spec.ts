@@ -176,4 +176,83 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
       global.fetch = originalFetch;
     }
   });
+
+  it("sanitizes list discovery crawl options before calling crawl4ai", async () => {
+    const crawl = jest.fn(async () => ({
+      results: [
+        {
+          success: true,
+          url: "https://www.politico.eu/latest/",
+          links: {
+            internal: [{ href: "/article/one/" }]
+          }
+        }
+      ]
+    }));
+
+    const service = new CrawlMetadataService({ crawl } as any);
+    const urls = await service.discoverListUrls({
+      url: "https://www.politico.eu/latest/",
+      domain: "https://www.politico.eu",
+      pattern: "https://www.politico.eu/article/*",
+      maxUrls: 10,
+      crawlOptions: {
+        waitUntil: "networkidle",
+        waitForTimeoutMs: 1200,
+        pageTimeoutMs: 999999,
+        additionalUrls: ["https://www.politico.eu/extra/"],
+        multiUrlConfigs: [
+          {
+            name: "override",
+            urls: ["https://www.politico.eu/other/"]
+          }
+        ]
+      }
+    });
+
+    expect(urls).toEqual(["https://www.politico.eu/article/one/"]);
+    const payload = crawl.mock.calls[0]?.[0] as { options?: Record<string, unknown> };
+    expect(payload.options).toEqual(
+      expect.objectContaining({
+        extractLinks: true,
+        prefetch: true,
+        waitUntil: "networkidle",
+        waitForTimeoutMs: 5000,
+        pageTimeoutMs: 180000
+      })
+    );
+    expect(payload.options?.additionalUrls).toBeUndefined();
+    expect(payload.options?.multiUrlConfigs).toBeUndefined();
+  });
+
+  it("prefers the successful seed-url result when crawl4ai returns multiple results", async () => {
+    const crawl = jest.fn(async () => ({
+      results: [
+        {
+          success: true,
+          url: "https://www.politico.eu/other/",
+          links: {
+            internal: [{ href: "/article/wrong/" }]
+          }
+        },
+        {
+          success: true,
+          url: "https://www.politico.eu/latest/",
+          links: {
+            internal: [{ href: "/article/right/" }]
+          }
+        }
+      ]
+    }));
+
+    const service = new CrawlMetadataService({ crawl } as any);
+    const urls = await service.discoverListUrls({
+      url: "https://www.politico.eu/latest/",
+      domain: "https://www.politico.eu",
+      pattern: "https://www.politico.eu/article/*",
+      maxUrls: 10
+    });
+
+    expect(urls).toEqual(["https://www.politico.eu/article/right/"]);
+  });
 });

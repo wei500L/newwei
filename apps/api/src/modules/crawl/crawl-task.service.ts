@@ -9,14 +9,6 @@ import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ItemsService } from "../items/items.service";
-
-import {
-  collectCrawlTaskConfigSensitiveFields,
-  CrawlTaskConfigEncryptionRequiredError,
-  decodeCrawlTaskConfigKey,
-  protectCrawlTaskConfigForStorage,
-  redactCrawlTaskConfigForView
-} from "./crawl-config-secrets";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
@@ -94,28 +86,12 @@ export class CrawlTaskService {
       ...(normalizedRawOptions as Partial<CreateCrawlTaskDto["options"]>),
       markdownFilter: this.normalizeMarkdownFilter(normalizedRawOptions?.markdownFilter)
     });
-    const configSensitiveFields = collectCrawlTaskConfigSensitiveFields(normalizedOptions as Record<string, unknown>);
 
     const defaultConcurrency = this.env.crawl4aiConfig.maxConcurrency;
     const concurrency = Math.min(dto.concurrency ?? defaultConcurrency, defaultConcurrency);
-    const encryptionKeyRaw = this.env.crawlTaskConfigEncryptionKey;
-    const encryptionKey = encryptionKeyRaw ? decodeCrawlTaskConfigKey(encryptionKeyRaw) : undefined;
     const baseConfig = normalizedOptions as Record<string, unknown>;
     const configToStore =
       dto.ingestToItems === true ? { ...baseConfig, ingestToItems: true } : baseConfig;
-
-    let protectedConfig: Record<string, unknown> | null = configToStore;
-    try {
-      protectedConfig = protectCrawlTaskConfigForStorage(
-        configToStore,
-        encryptionKey
-      ).config;
-    } catch (error) {
-      if (error instanceof CrawlTaskConfigEncryptionRequiredError) {
-        throw new BadRequestException(error.message);
-      }
-      throw error;
-    }
 
     const created = await this.prisma.crawlTask.create({
       data: {
@@ -128,7 +104,7 @@ export class CrawlTaskService {
         keywords,
         timeRangeFrom,
         timeRangeTo,
-        ...(protectedConfig ? { config: toPrismaJsonValue(protectedConfig) } : {}),
+        ...(configToStore ? { config: toPrismaJsonValue(configToStore) } : {}),
         runCount: 0
       },
       include: { _count: { select: { results: true } } }
@@ -140,9 +116,6 @@ export class CrawlTaskService {
       concurrency,
       ingestToItems: dto.ingestToItems === true
     };
-    if (configSensitiveFields.length > 0) {
-      auditMetadata.configSensitiveFields = configSensitiveFields;
-    }
 
     await writeAuditLogBestEffort(
       this.prisma,
@@ -353,22 +326,10 @@ export class CrawlTaskService {
       }
     }
 
-    const encryptionKeyRaw = this.env.crawlTaskConfigEncryptionKey;
-    const encryptionKey = encryptionKeyRaw ? decodeCrawlTaskConfigKey(encryptionKeyRaw) : undefined;
-    let protectedConfig: Record<string, unknown> | null = nextConfig;
-    try {
-      protectedConfig = protectCrawlTaskConfigForStorage(nextConfig, encryptionKey).config;
-    } catch (error) {
-      if (error instanceof CrawlTaskConfigEncryptionRequiredError) {
-        throw new BadRequestException(error.message);
-      }
-      throw error;
-    }
-
     const updated = await this.prisma.crawlTask.update({
       where: { id: taskId },
       data: {
-        config: protectedConfig ? toPrismaJsonValue(protectedConfig) : Prisma.DbNull
+        config: nextConfig ? toPrismaJsonValue(nextConfig) : Prisma.DbNull
       },
       include: { _count: { select: { results: true } } }
     });
@@ -545,6 +506,10 @@ export class CrawlTaskService {
   }
 
   public toView(task: CrawlTaskRecord): CrawlTaskView {
+    const config =
+      task.config && typeof task.config === "object" && !Array.isArray(task.config)
+        ? (task.config as Record<string, unknown>)
+        : null;
     return {
       id: task.id,
       targetUrl: task.targetUrl,
@@ -563,7 +528,7 @@ export class CrawlTaskService {
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       resultCount: task._count.results,
-      config: redactCrawlTaskConfigForView((task.config as Record<string, unknown> | null) ?? null),
+      config,
       memoryStats: undefined,
       lastRunSummary: undefined,
       lastServerMemoryMb: task.lastServerMemoryMb ?? null,

@@ -78,6 +78,20 @@ describe("CrawlResultService", () => {
     expect((result.primary ?? "").length).toBeGreaterThan((result.fit ?? "").length);
   });
 
+  it("removes citation reference list from primary markdown body", () => {
+    const service = createService(128);
+
+    const result = service.extractMarkdownResult({
+      markdown_with_citations:
+        "# Headline[^1]\n\nBody paragraph with context and details.[^2]\n\n[^1]: https://example.com/a\n[^2]: https://example.com/b",
+      references_markdown: "[^1]: https://example.com/a\n[^2]: https://example.com/b"
+    });
+
+    expect(result.primary).toContain("Body paragraph with context and details.");
+    expect(result.primary).not.toContain("[^1]: https://example.com/a");
+    expect(result.citations).toContain("[^1]: https://example.com/a");
+  });
+
   it("does not let references-heavy citations force a short fit markdown", () => {
     const service = createService(128);
 

@@ -618,7 +618,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const canViewTaskLogs = permissions.includes("settings.manage");
   const canCreateItem = canView && permissions.includes("items.write");
   const canViewItems = permissions.includes("items.read") || permissions.includes("items.write");
-  const redactedLabel = t("common.redacted");
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
   const [resultSearchInput, setResultSearchInput] = useState("");
@@ -863,7 +862,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return label;
     }
     if (proxyUrl) {
-      const label = proxyUrl === "[REDACTED]" ? redactedLabel : proxyUrl;
+      const label = proxyUrl;
       if (rawServer && isLocalhostProxyUrl(rawServer)) {
         return (
           <Space direction="vertical" size={0}>
@@ -880,7 +879,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return label;
     }
     return t("crawl.detail.proxy.direct");
-  }, [config, redactedLabel, t]);
+  }, [config, t]);
 
   const markdownOptions = useMemo(() => {
     if (!config || typeof config.markdownOptions !== "object") {
@@ -1077,9 +1076,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   }, [config]);
 
   const browserCookies = useMemo(() => {
-    if (typeof config?.browserCookies === "string") {
-      return config.browserCookies === "[REDACTED]" ? [redactedLabel] : [];
-    }
     if (!Array.isArray(config?.browserCookies)) {
       return [] as string[];
     }
@@ -1096,7 +1092,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         return `${name}=${value} @ ${target}`;
       })
       .filter((entry): entry is string => Boolean(entry));
-  }, [config, redactedLabel]);
+  }, [config]);
 
   const managedBrowserProfile = useMemo(() => {
     if (!config || typeof config.userDataDir !== "string") {
@@ -1202,7 +1198,52 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     return null;
   }, [config]);
 
+  const waitUntilValue = useMemo(() => {
+    if (!config || typeof config.waitUntil !== "string") {
+      return null;
+    }
+    const normalized = config.waitUntil.trim().toLowerCase();
+    if (
+      normalized === "domcontentloaded" ||
+      normalized === "load" ||
+      normalized === "networkidle" ||
+      normalized === "commit"
+    ) {
+      return normalized;
+    }
+    return null;
+  }, [config]);
+  const waitUntilSummary = useMemo(() => {
+    if (!waitUntilValue) {
+      return null;
+    }
+    if (waitUntilValue === "domcontentloaded") {
+      return t("crawl.dynamic.waitUntilOptions.domcontentloaded", {
+        defaultValue: "DOMContentLoaded"
+      });
+    }
+    if (waitUntilValue === "networkidle") {
+      return t("crawl.dynamic.waitUntilOptions.networkidle", {
+        defaultValue: "Network idle"
+      });
+    }
+    if (waitUntilValue === "commit") {
+      return t("crawl.dynamic.waitUntilOptions.commit", {
+        defaultValue: "Commit"
+      });
+    }
+    return t("crawl.dynamic.waitUntilOptions.load", { defaultValue: "Load" });
+  }, [t, waitUntilValue]);
+
   const waitTimeoutMs = typeof config?.waitForTimeoutMs === "number" ? config.waitForTimeoutMs : null;
+  const pageTimeoutMs = typeof config?.pageTimeoutMs === "number" ? config.pageTimeoutMs : null;
+  const delayBeforeReturnHtmlMs =
+    typeof config?.delayBeforeReturnHtmlMs === "number" ? config.delayBeforeReturnHtmlMs : null;
+  const meanDelayMs = typeof config?.meanDelayMs === "number" ? config.meanDelayMs : null;
+  const maxDelayRangeMs =
+    typeof config?.maxDelayRangeMs === "number" ? config.maxDelayRangeMs : null;
+  const semaphoreCount = typeof config?.semaphoreCount === "number" ? config.semaphoreCount : null;
+  const removeFormsEnabled = typeof config?.removeForms === "boolean" ? config.removeForms : null;
   const sessionIdentifier = useMemo(() => {
     if (!config) {
       return null;
@@ -1215,11 +1256,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return null;
     }
     const raw = typeof config.storageState === "string" ? config.storageState.trim() : "";
-    if (raw === "[REDACTED]") {
-      return redactedLabel;
-    }
     return raw.length ? shortenScript(raw) : null;
-  }, [config, redactedLabel]);
+  }, [config]);
   const jsOnlyMode = Boolean(config?.jsOnly);
 
   const linkOverview = useMemo(() => {
@@ -1347,6 +1385,69 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       (entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null
     );
   }, [config]);
+
+  const formatMultiUrlOverrides = useCallback(
+    (options?: Record<string, unknown>) => {
+      if (!options) {
+        return null;
+      }
+      const entries = Object.entries(options).filter(([, value]) => value !== undefined && value !== null);
+      if (!entries.length) {
+        return null;
+      }
+      const preferredKeys = [
+        "cacheMode",
+        "waitUntil",
+        "waitForTimeoutMs",
+        "pageTimeoutMs",
+        "delayBeforeReturnHtmlMs",
+        "meanDelayMs",
+        "maxDelayRangeMs",
+        "semaphoreCount",
+        "removeForms",
+        "scanFullPage",
+        "simulateUser",
+        "overrideNavigator"
+      ];
+      const formatValue = (value: unknown) => {
+        if (typeof value === "string") {
+          return value.length > 80 ? shortenScript(value) : value;
+        }
+        if (typeof value === "number" || typeof value === "boolean") {
+          return String(value);
+        }
+        if (Array.isArray(value)) {
+          if (value.length <= 3) {
+            return value.map((entry) => String(entry)).join(", ");
+          }
+          return `${value
+            .slice(0, 3)
+            .map((entry) => String(entry))
+            .join(", ")}…`;
+        }
+        if (value && typeof value === "object") {
+          const serialized = JSON.stringify(value);
+          return serialized.length > 120 ? `${serialized.slice(0, 117)}…` : serialized;
+        }
+        return String(value);
+      };
+      const prioritized = preferredKeys
+        .filter((key) => key in options)
+        .map((key) => `${key}=${formatValue(options[key])}`);
+      const preferredKeySet = new Set(preferredKeys);
+      const remainingCount = entries.filter(([key]) => !preferredKeySet.has(key)).length;
+      if (remainingCount > 0) {
+        prioritized.push(
+          t("crawl.detail.multiUrl.additionalOverrides", {
+            defaultValue: "+{{count}} other overrides",
+            count: remainingCount
+          })
+        );
+      }
+      return prioritized.join(" • ");
+    },
+    [t]
+  );
 
   const handleRetry = async () => {
     if (!task) return;
@@ -1802,6 +1903,40 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       <Descriptions.Item label={t("crawl.detail.fields.waitTimeout")}>
         {waitTimeoutMs ? t("crawl.detail.waitTimeoutValue", { value: waitTimeoutMs }) : t("crawl.detail.default")}
       </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.waitUntil", { defaultValue: "Navigation wait" })}>
+        {waitUntilSummary ?? t("crawl.detail.default")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.pageTimeout", { defaultValue: "Page timeout" })}>
+        {pageTimeoutMs != null ? `${Math.round(pageTimeoutMs)} ms` : t("crawl.detail.default")}
+      </Descriptions.Item>
+      <Descriptions.Item
+        label={t("crawl.detail.fields.delayBeforeReturnHtml", { defaultValue: "Post-load delay" })}
+      >
+        {delayBeforeReturnHtmlMs != null
+          ? `${Math.round(delayBeforeReturnHtmlMs)} ms`
+          : t("crawl.detail.default")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.meanDelay", { defaultValue: "Mean delay" })}>
+        {meanDelayMs != null ? `${Math.round(meanDelayMs)} ms` : t("crawl.detail.default")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.maxDelayRange", { defaultValue: "Delay jitter" })}>
+        {maxDelayRangeMs != null ? `${Math.round(maxDelayRangeMs)} ms` : t("crawl.detail.default")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.semaphoreCount", { defaultValue: "Internal semaphore" })}>
+        {semaphoreCount != null ? semaphoreCount : t("crawl.detail.default")}
+      </Descriptions.Item>
+      <Descriptions.Item
+        label={t("crawl.detail.fields.robotsPolicy", { defaultValue: "robots.txt policy" })}
+      >
+        {t("crawl.detail.robotsPolicy.ignore", { defaultValue: "Ignore (always)" })}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.removeForms", { defaultValue: "Remove forms" })}>
+        {removeFormsEnabled == null
+          ? t("crawl.detail.default")
+          : removeFormsEnabled
+            ? t("common.enabled")
+            : t("common.disabled")}
+      </Descriptions.Item>
       <Descriptions.Item label={t("crawl.detail.fields.proxyRoute")}>{proxySummary}</Descriptions.Item>
       <Descriptions.Item label={t("crawl.detail.fields.additionalUrls")}>
         {additionalUrls.length ? (
@@ -1882,7 +2017,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           ) : null}
           <Table
             size="small"
-            rowKey={(record) => record._id ?? `${record.stage}-${record.createdAt}`}
+            rowKey={(record) =>
+              record._id ??
+              `${record.queue}-${record.jobId}-${record.stage}-${record.createdAt}-${record.updatedAt}`
+            }
             columns={taskLogColumns}
             dataSource={taskLogs}
             pagination={false}
@@ -1912,6 +2050,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               const matcher = item?.matcher;
               const urls = Array.isArray(item?.urls) ? item.urls : [];
               const options = item?.options ?? {};
+              const overridesSummary = formatMultiUrlOverrides(options);
               return (
                 <List.Item key={item?.name ?? `strategy-${index}`}>
                   <Space direction="vertical" style={{ width: "100%" }}>
@@ -1935,12 +2074,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                         ))}
                       </Space>
                     ) : null}
-                    {Object.keys(options).length ? (
+                    {Object.keys(options).length && overridesSummary ? (
                       <Typography.Text>
                         {t("crawl.detail.multiUrl.overrides", {
-                          overrides: Object.entries(options)
-                            .map(([key, value]) => `${key}=${String(value)}`)
-                            .join(", ")
+                          overrides: overridesSummary
                         })}
                       </Typography.Text>
                     ) : null}

@@ -303,6 +303,7 @@ export class NewsSourceSchedulerService {
             });
 
             crawlTaskConfig.pipelineJobId = pipelineJob.id;
+            const crawlTaskConfigForStorage = crawlTaskConfig;
 
             const existingTask = await tx.crawlTask.findFirst({
               where: {
@@ -322,7 +323,7 @@ export class NewsSourceSchedulerService {
                   status: "pending",
                   concurrency: 1,
                   keywords: payload.keywords,
-                  config: toPrismaJsonValue(crawlTaskConfig),
+                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
                   lastError: null,
                 },
                 select: { id: true },
@@ -338,7 +339,7 @@ export class NewsSourceSchedulerService {
                   status: "pending",
                   concurrency: 1,
                   keywords: payload.keywords,
-                  config: toPrismaJsonValue(crawlTaskConfig),
+                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
                 },
                 select: { id: true },
               });
@@ -1402,6 +1403,7 @@ export class NewsSourceSchedulerService {
             });
 
             crawlTaskConfig.pipelineJobId = pipelineJob.id;
+            const crawlTaskConfigForStorage = crawlTaskConfig;
 
             const existingTask = await tx.crawlTask.findFirst({
               where: {
@@ -1421,7 +1423,7 @@ export class NewsSourceSchedulerService {
                   status: "pending",
                   concurrency: 1,
                   keywords: payload.keywords,
-                  config: toPrismaJsonValue(crawlTaskConfig),
+                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
                   lastError: null,
                 },
                 select: { id: true },
@@ -1437,7 +1439,7 @@ export class NewsSourceSchedulerService {
                   status: "pending",
                   concurrency: 1,
                   keywords: payload.keywords,
-                  config: toPrismaJsonValue(crawlTaskConfig),
+                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
                 },
                 select: { id: true },
               });

@@ -28,8 +28,14 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CrawlMetadataInput, CrawlTaskStatus, CrawlTasksQuery } from "@/graphql/generated";
+import type {
+  CrawlMetadataInput,
+  CrawlOptionsInput,
+  CrawlTaskStatus,
+  CrawlTasksQuery,
+} from "@/graphql/generated";
 import {
+  CrawlWaitUntil,
   useCreateCrawlTaskMutation,
   useCrawlMetadataLazyQuery,
   useCrawlTasksLazyQuery,
@@ -60,6 +66,38 @@ function safeParseJson<T>(input?: string | null): T | null {
   } catch {
     return null;
   }
+}
+
+function toCrawlWaitUntilInput(value?: string | null): CrawlWaitUntil | undefined {
+  if (value === "domcontentloaded") {
+    return CrawlWaitUntil.Domcontentloaded;
+  }
+  if (value === "load") {
+    return CrawlWaitUntil.Load;
+  }
+  if (value === "networkidle") {
+    return CrawlWaitUntil.Networkidle;
+  }
+  if (value === "commit") {
+    return CrawlWaitUntil.Commit;
+  }
+  return undefined;
+}
+
+function toGraphqlCrawlOptionsInput(options: ReturnType<typeof sanitizeCrawlOptions>): CrawlOptionsInput {
+  return {
+    ...options,
+    waitUntil: toCrawlWaitUntilInput(options.waitUntil),
+    multiUrlConfigs: options.multiUrlConfigs?.map((config) => ({
+      ...config,
+      options: config.options
+        ? {
+            ...config.options,
+            waitUntil: toCrawlWaitUntilInput(config.options.waitUntil),
+          }
+        : config.options,
+    })),
+  };
 }
 
 export function CrawlTasksView() {
@@ -391,10 +429,11 @@ export function CrawlTasksView() {
   };
   const handleCreate = async (values: CreateCrawlTaskFormValues) => {
     const [from, to] = values.timeRange ?? [];
-    let options;
+    let options: CrawlOptionsInput;
     try {
-      options = sanitizeCrawlOptions(values);
-      assertNoCrawl4aiLlmOptions(options, "options");
+      const sanitizedOptions = sanitizeCrawlOptions(values);
+      assertNoCrawl4aiLlmOptions(sanitizedOptions, "options");
+      options = toGraphqlCrawlOptionsInput(sanitizedOptions);
     } catch (error) {
       const errorMessage = (error as Error).message ?? "";
       if (

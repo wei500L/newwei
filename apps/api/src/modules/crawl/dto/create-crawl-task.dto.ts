@@ -19,7 +19,7 @@ import {
 } from "class-validator";
 
 import { IsSafeUrl } from "../../../common/validators/is-safe-url.decorator";
-import { CrawlUrlMatchMode } from "../crawl.types";
+import { CrawlUrlMatchMode, CrawlWaitUntil } from "../crawl.types";
 import { IsAllowedJsCode } from "../validators/is-allowed-js-code.decorator";
 
 export class CrawlProxyConfigDto {
@@ -409,6 +409,50 @@ export class CrawlOptionsDto {
   waitForTimeoutMs?: number;
 
   @IsOptional()
+  @IsIn(["domcontentloaded", "load", "networkidle", "commit"])
+  waitUntil?: CrawlWaitUntil;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  @Max(180000)
+  pageTimeoutMs?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(30000)
+  delayBeforeReturnHtmlMs?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  meanDelayMs?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  maxDelayRangeMs?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  semaphoreCount?: number;
+
+
+  @IsOptional()
+  @IsBoolean()
+  removeForms?: boolean;
+
+  @IsOptional()
   @IsString()
   @MaxLength(512)
   proxyUrl?: string;
@@ -648,6 +692,50 @@ export class CrawlStrategyOverridesDto {
   @Min(500)
   @Max(60000)
   waitForTimeoutMs?: number;
+
+  @IsOptional()
+  @IsIn(["domcontentloaded", "load", "networkidle", "commit"])
+  waitUntil?: CrawlWaitUntil;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  @Max(180000)
+  pageTimeoutMs?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(30000)
+  delayBeforeReturnHtmlMs?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  meanDelayMs?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  maxDelayRangeMs?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  semaphoreCount?: number;
+
+
+  @IsOptional()
+  @IsBoolean()
+  removeForms?: boolean;
 
   @IsOptional()
   @IsIn(["bypass", "prefer_cache", "force_cache"])

@@ -3857,6 +3857,14 @@
         "jsSteps": "JS steps",
         "waitCondition": "Wait condition",
         "waitTimeout": "Wait timeout",
+        "waitUntil": "Navigation wait",
+        "pageTimeout": "Page timeout",
+        "delayBeforeReturnHtml": "Post-load delay",
+        "meanDelay": "Mean delay",
+        "maxDelayRange": "Delay jitter",
+        "semaphoreCount": "Internal semaphore",
+        "robotsPolicy": "Robots policy",
+        "removeForms": "Remove forms",
         "proxyRoute": "Proxy route",
         "additionalUrls": "Additional urls",
         "markdownGenerator": "Markdown generator",
@@ -3879,9 +3887,13 @@
       "default": "Default",
       "memoryValue": "Memory value",
       "percentValue": "Percent value",
+      "robotsPolicy": {
+        "ignore": "Ignore (always)"
+      },
       "multiUrl": {
         "patterns": "Patterns",
-        "overrides": "Overrides"
+        "overrides": "Overrides",
+        "additionalOverrides": "+{{count}} other overrides"
       },
       "results": {
         "title": "Results",
@@ -4017,7 +4029,22 @@
       "simulateUser": "Simulate user",
       "simulateUserHint": "Simulate user hint",
       "overrideNavigator": "Override navigator",
-      "overrideNavigatorHint": "Override navigator hint"
+      "overrideNavigatorHint": "Override navigator hint",
+      "politeness": {
+        "title": "Politeness & stability",
+        "description": "Use conservative delays and concurrency settings to improve crawl stability across news sites.",
+        "meanDelay": "Mean delay (ms)",
+        "meanDelayHint": "Average randomized pause between requests in batch crawling.",
+        "maxRange": "Delay jitter (ms)",
+        "maxRangeHint": "Random delay range added around the mean delay.",
+        "semaphoreCount": "Internal semaphore",
+        "semaphoreCountHint": "Max parallel internal operations within a crawl run.",
+        "placeholders": {
+          "meanDelay": "Enter mean delay",
+          "maxRange": "Enter jitter range",
+          "semaphoreCount": "Enter semaphore count"
+        }
+      }
     },
     "virtualScroll": {
       "title": "Virtual scroll",
@@ -4051,7 +4078,10 @@
         "script": "Enter Script",
         "waitTimeout": "Enter Wait timeout",
         "selectorAlt": "Enter Selector alt",
-        "scriptAlt": "Enter Script alt"
+        "scriptAlt": "Enter Script alt",
+        "waitUntil": "Select wait condition",
+        "pageTimeout": "Enter page timeout",
+        "delayBeforeReturnHtml": "Enter post-load delay"
       },
       "addJsStep": "Add JS step",
       "jsOnly": "JS only",
@@ -4061,7 +4091,21 @@
       "waitForScript": "Wait for script",
       "waitForScriptHint": "Wait for script hint",
       "waitTimeout": "Wait timeout",
-      "waitTimeoutHint": "Wait timeout hint"
+      "waitTimeoutHint": "Wait timeout hint",
+      "waitUntil": "Navigation wait condition",
+      "waitUntilHint": "Choose when Crawl4AI treats navigation as finished. For JS-heavy pages, networkidle is usually safer.",
+      "waitUntilOptions": {
+        "domcontentloaded": "DOMContentLoaded",
+        "load": "Load",
+        "networkidle": "Network idle",
+        "commit": "Commit"
+      },
+      "pageTimeout": "Page timeout (ms)",
+      "pageTimeoutHint": "Hard limit for page loading and JS execution in milliseconds.",
+      "delayBeforeReturnHtml": "Post-load delay (ms)",
+      "delayBeforeReturnHtmlHint": "Extra wait before returning HTML, useful for late-rendered article bodies.",
+      "removeForms": "Remove forms",
+      "removeFormsHint": "Strip form elements before markdown conversion to reduce newsletter/login noise."
     },
     "markdown": {
       "additionalUrls": "Additional urls",
