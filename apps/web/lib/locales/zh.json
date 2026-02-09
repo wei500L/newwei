@@ -1564,6 +1564,8 @@
       "nextRun": "下次运行",
       "lastRun": "上次运行",
       "template": "模板",
+      "strategy": "策略",
+      "strategyEmpty": "默认",
       "lastSuccess": "最近成功",
       "stats24h": "24h",
       "latest": "最新"
@@ -1609,6 +1611,24 @@
       "crawlProxyModeHint": "Auto 会保留 crawlOptions JSON 中的 proxyUrl/proxyConfig；启用会使用下方的代理 URL 覆盖 crawlOptions；禁用会移除所有代理配置。",
       "crawlProxyUrl": "代理 URL",
       "crawlProxyUrlHint": "将覆盖 crawlOptions.proxyUrl/proxyConfig。如果 crawl4ai 在 Docker 中运行且代理在本机，请使用 host.docker.internal 替代 localhost/127.0.0.1。",
+      "crawlScanMode": "扫描模式",
+      "crawlScanModeHint": "整页扫描会模拟滚动加载动态内容；虚拟滚动适合无限流页面，可精细控制容器与滚动节奏。",
+      "crawlScrollDelayMs": "滚动延迟（毫秒）",
+      "crawlVirtualScrollContainerSelector": "滚动容器选择器",
+      "crawlVirtualScrollScrollCount": "滚动次数",
+      "crawlVirtualScrollScrollBy": "滚动步长",
+      "crawlVirtualScrollScrollByPixels": "滚动像素",
+      "crawlVirtualScrollWaitAfterScrollMs": "每次滚动后等待（毫秒）",
+      "crawlQualityProfile": "质量档位",
+      "crawlPageTypeHint": "页面类型提示",
+      "crawlAutoExpandDetails": "自动展开详情页",
+      "crawlDetailMaxUrls": "最大详情 URL 数",
+      "crawlDetailMinRelevanceScore": "最低相关度分数",
+      "crawlDetailRequireSameDomain": "仅限同域",
+      "crawlDetailAllowExternalLinks": "允许外域链接",
+      "crawlMarkdownContentSource": "Markdown 内容来源",
+      "crawlMarkdownEscapeHtmlMode": "HTML 转义",
+      "crawlMarkdownCitationsMode": "引用标注",
       "crawlOptions": "抓取选项（JSON）",
       "crawlOptionsHint": "Crawl4AI 高级选项。请不要在这里配置 crawl4ai 的 LLM 抽取（extraction_strategy/llm_config）；抓取阶段只存储清理后的 markdown，结构化处理由后续流水线中的模型完成。",
       "crawlHeadlessMode": "浏览器模式",
@@ -1658,6 +1678,11 @@
       "auto": "自动（继承）",
       "enable": "启用",
       "disable": "禁用"
+    },
+    "scanMode": {
+      "default": "默认",
+      "fullPage": "整页扫描",
+      "virtualScroll": "虚拟滚动"
     },
     "presets": {
       "cloudflare": "Cloudflare 预设",
@@ -1725,7 +1750,9 @@
       "title": "新闻源预览",
       "modeSitemap": "站点地图",
       "modeRss": "RSS",
+      "modeList": "列表页",
       "modeSingle": "单条",
+      "strategy": "策略",
       "scheduleCount": "将调度：{{count}}",
       "availableToSchedule": "可调度：{{count}}",
       "skippedCount": "已跳过：{{count}}",
@@ -1737,7 +1764,20 @@
       "seed": "种子发现",
       "seedHint": "从站点地图、RSS/Atom 订阅源或列表页发现文章 URL，并在每次运行中最多调度 N 条新的 URL。",
       "schedule": "调度",
-      "scheduleHint": "可选择按间隔（频率）调度或使用 Cron 表达式，并可选设置时间窗口。"
+      "scheduleHint": "可选择按间隔（频率）调度或使用 Cron 表达式，并可选设置时间窗口。",
+      "crawlStrategy": "抓取策略",
+      "crawlStrategyHint": "在不使用 LLM 抽取的前提下，配置整页扫描、列表/详情扩展与质量档位。",
+      "crawlMarkdown": "RAG Markdown",
+      "crawlMarkdownHint": "Crawl4AI 会将网页转换为干净的 Markdown，请根据检索链路选择合适的内容来源与转义策略。",
+      "crawlOptionsPreview": "解析后的 crawlOptions 预览",
+      "crawlOptionsPreviewHint": "展示结构化表单与高级 JSON 合并后的最终 crawlOptions 载荷。"
+    },
+    "hints": {
+      "noLlmTitle": "抓取阶段不使用 LLM",
+      "noLlmDescription": "Crawl4AI 抓取阶段仅负责获取与清洗内容；总结与分析应在后续流水线阶段完成。",
+      "ragReadyTitle": "RAG 友好 Markdown",
+      "ragReadyDescription": "推荐使用 cleaned_html 产出，以获得更稳定的向量化与检索索引效果。",
+      "crawlOptionsPreviewError": "无法构建 crawlOptions 预览。"
     },
     "seedMode": {
       "sitemap": "站点地图",
@@ -3838,6 +3878,11 @@
         "runCount": "运行数量",
         "scanFullPage": "扫描完整页面",
         "virtualScroll": "虚拟滚动",
+        "qualityProfile": "质量档位",
+        "pageTypeHint": "页面类型提示",
+        "autoExpandDetails": "自动展开详情",
+        "detailExpansion": "详情扩展策略",
+        "expansionMetrics": "扩展指标",
         "adjustViewport": "调整视口",
         "headless": "无头模式",
         "undetectedBrowser": "反检测浏览器",
@@ -3884,6 +3929,7 @@
         "lastError": "上次错误",
         "configuration": "配置"
       },
+      "latestError": "最近错误",
       "scanFullPageEnabled": "扫描完整页面已启用",
       "serverDefault": "服务器默认",
       "waitTimeoutValue": "等待超时值",
@@ -3892,6 +3938,10 @@
       "percentValue": "百分比值",
       "robotsPolicy": {
         "ignore": "始终忽略"
+      },
+      "strategy": {
+        "title": "抓取策略",
+        "noLlmHint": "抓取阶段保持确定性（仅抓取 + 清洗 Markdown），LLM 摘要与分析请在下游流水线执行。"
       },
       "multiUrl": {
         "patterns": "模式",
@@ -4006,7 +4056,9 @@
         "url": "请输入 URL",
         "keywords": "请输入关键词",
         "concurrency": "请输入并发",
-        "scrollDelay": "请输入滚动延迟"
+        "scrollDelay": "请输入滚动延迟",
+        "qualityProfile": "请选择质量档位",
+        "pageTypeHint": "请选择页面类型"
       },
       "targetUrl": "目标 URL",
       "ingestToItems": "自动发送到 Items",
@@ -4025,7 +4077,32 @@
       "waitForImages": "等待图片",
       "waitForImagesHint": "等待图片提示",
       "scanFullPage": "扫描完整页面",
+      "scanFullPageHint": "模拟整页滚动以加载并捕获动态内容，适合“追加式”无限滚动页面。",
       "scrollDelay": "滚动延迟",
+      "qualityProfile": "质量档位",
+      "qualityProfileHint": "控制 Crawl4AI 的提取默认策略，平衡 Markdown 清洁度与抓取稳定性。",
+      "qualityProfileOptions": {
+        "qualityFirst": "质量优先（RAG）",
+        "balanced": "均衡",
+        "speedFirst": "速度优先"
+      },
+      "pageTypeHint": "页面类型提示",
+      "pageTypeHintHint": "提示 Crawl4AI 当前 URL 更偏向列表页还是详情页。",
+      "pageTypeHintOptions": {
+        "auto": "自动识别",
+        "list": "列表页",
+        "detail": "详情页"
+      },
+      "autoExpandDetails": "自动展开详情",
+      "autoExpandDetailsHint": "在列表页自动跟进相关详情链接（抓取阶段仍不使用 LLM）。",
+      "scanModes": {
+        "fullPageTitle": "扫描模式：全页扫描",
+        "fullPageDescription": "适用于追加式无限滚动页面。Crawl4AI 会模拟滚动并捕获延迟加载内容。",
+        "virtualScrollTitle": "扫描模式：有界虚拟滚动",
+        "virtualScrollDescription": "适用于替换式/虚拟列表流，使用有界滚动次数可获得更稳定抓取。",
+        "defaultTitle": "扫描模式：标准抓取",
+        "defaultDescription": "静态页面建议使用标准抓取。仅在存在动态加载时启用全页扫描或虚拟滚动。"
+      },
       "adjustViewport": "调整视口",
       "adjustViewportHint": "调整视口提示",
       "adjustViewportLink": "调整视口链接",
@@ -4049,6 +4126,23 @@
         }
       }
     },
+    "optimization": {
+      "title": "抓取优化",
+      "description": "在不使用 LLM 抓取的前提下，优化发现链路与 Markdown 质量。",
+      "noLlmTitle": "抓取阶段不使用 LLM",
+      "noLlmDescription": "抓取阶段仅负责确定性的拉取与清洗；摘要与分析请在后续流水线阶段调用 LLM。"
+    },
+    "detailExpansion": {
+      "title": "详情扩展",
+      "maxDetailUrls": "详情链接上限",
+      "maxDetailUrlsHint": "从列表页最多跟进多少个详情链接。",
+      "minRelevanceScore": "最小相关度",
+      "minRelevanceScoreHint": "仅跟进高于该相关度阈值（0~1）的详情链接。",
+      "requireSameDomain": "限制同域名",
+      "requireSameDomainHint": "仅自动展开同一域名下的详情链接。",
+      "allowExternalLinks": "允许外域链接",
+      "allowExternalLinksHint": "在相关度足够时，允许详情扩展跟进跨域链接。"
+    },
     "virtualScroll": {
       "title": "虚拟滚动",
       "description": "用于无限滚动或虚拟列表的有界滚动配置（Feed/时间线/懒加载列表）。",
@@ -4068,7 +4162,7 @@
       },
       "waitAfterScroll": "滚动后等待（毫秒）",
       "waitAfterScrollHint": "每次滚动后等待内容加载的时间。",
-      "scanFullPageHint": "提示：全页扫描可能与有界虚拟滚动冲突；无限滚动页面建议优先使用虚拟滚动。"
+      "scanFullPageHint": "提示：追加式无限滚动优先使用全页扫描；替换式/虚拟列表更适合有界虚拟滚动。"
     },
     "dynamic": {
       "title": "动态",
@@ -4113,6 +4207,8 @@
     "markdown": {
       "additionalUrls": "额外 URL",
       "additionalUrlsHint": "额外 URL 提示",
+      "ragReadyTitle": "RAG 就绪 Markdown 输出",
+      "ragReadyHint": "Crawl4AI 会将网页转换为适合检索的干净 Markdown。抓取阶段保持确定性，不在此处使用 LLM 提取。",
       "placeholders": {
         "additionalUrls": "请输入额外 URL",
         "source": "请输入来源",
@@ -4520,6 +4616,8 @@
     "title": "爬取模板",
     "columns": {
       "name": "名称",
+      "strategy": "策略",
+      "strategyEmpty": "默认",
       "status": "状态"
     },
     "actions": {
@@ -4538,10 +4636,18 @@
       "stealth": "隐身模式",
       "undetected": "反检测浏览器",
       "images": "包含图片",
+      "qualityProfile": "质量档位",
+      "pageTypeHint": "页面类型提示",
+      "autoExpandDetails": "自动展开详情",
+      "allowExternalLinks": "允许外域链接",
       "advancedJson": "高级爬取选项（JSON）"
     },
     "sections": {
       "commonOptions": "通用选项"
+    },
+    "hints": {
+      "noLlmTitle": "抓取阶段不使用 LLM",
+      "noLlmDescription": "抓取阶段只应获取并存储清理后的 markdown；结构化总结与分析请放到后续流水线阶段。"
     },
     "headless": {
       "auto": "自动",

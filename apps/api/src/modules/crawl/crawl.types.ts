@@ -39,6 +39,17 @@ export interface CrawlFailureDetail {
 
 export type CrawlCacheMode = "bypass" | "prefer_cache" | "force_cache";
 
+export type CrawlPageTypeHint = "auto" | "list" | "detail";
+
+export type CrawlQualityProfile = "balanced" | "quality_first" | "speed_first";
+
+export interface CrawlDetailExpansionOptions {
+  maxDetailUrls?: number;
+  minRelevanceScore?: number;
+  requireSameDomain?: boolean;
+  allowExternalLinks?: boolean;
+}
+
 export type CrawlUrlMatchMode = "glob" | "regex" | "substring" | "prefix";
 
 export type CrawlMarkdownContentSource = "raw_html" | "cleaned_html" | "fit_html";
@@ -115,6 +126,10 @@ export interface CrawlStrategyOverrides {
   waitForImages?: boolean;
   captureScreenshot?: boolean;
   virtualScroll?: CrawlVirtualScrollConfig;
+  pageTypeHint?: CrawlPageTypeHint;
+  autoExpandDetails?: boolean;
+  detailExpansion?: CrawlDetailExpansionOptions;
+  qualityProfile?: CrawlQualityProfile;
 }
 
 export interface CrawlMultiUrlConfig {
@@ -364,6 +379,10 @@ export interface CrawlTaskOptions {
   virtualScroll?: CrawlVirtualScrollConfig;
   excludeExternalImages?: boolean;
   waitForImages?: boolean;
+  pageTypeHint?: CrawlPageTypeHint;
+  autoExpandDetails?: boolean;
+  detailExpansion?: CrawlDetailExpansionOptions;
+  qualityProfile?: CrawlQualityProfile;
 }
 
 export interface CrawlMemoryStats {

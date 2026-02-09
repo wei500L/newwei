@@ -324,6 +324,13 @@ type CrawlClientSettingsModel {
   retryBackoffMs: Int!
 }
 
+input CrawlDetailExpansionOptionsInput {
+  allowExternalLinks: Boolean
+  maxDetailUrls: Int
+  minRelevanceScore: Float
+  requireSameDomain: Boolean
+}
+
 type CrawlExecutionSummaryModel {
   inserted: Float!
   itemsQueueFailed: Float
@@ -472,10 +479,12 @@ input CrawlMultiUrlStrategyInput {
 input CrawlOptionsInput {
   additionalUrls: [String!]
   adjustViewportToContent: Boolean
+  autoExpandDetails: Boolean
   browserCookies: [CrawlBrowserCookieInput!]
   browserHeaders: [CrawlBrowserHeaderInput!]
   cleanMarkdown: CrawlCleanMarkdownInput
   delayBeforeReturnHtmlMs: Int
+  detailExpansion: CrawlDetailExpansionOptionsInput
   enableStealthMode: Boolean
   enableUndetectedBrowser: Boolean
   excludeExternalImages: Boolean
@@ -496,8 +505,10 @@ input CrawlOptionsInput {
   onlyMainContent: Boolean
   overrideNavigator: Boolean
   pageTimeoutMs: Int
+  pageTypeHint: String
   proxyConfig: CrawlProxyConfigInput
   proxyUrl: String
+  qualityProfile: String
   removeForms: Boolean
   scanFullPage: Boolean
   scoreLinks: Boolean
@@ -548,10 +559,12 @@ type CrawlResultModel {
 
 input CrawlStrategyOverridesInput {
   adjustViewportToContent: Boolean
+  autoExpandDetails: Boolean
   cacheMode: String
   captureScreenshot: Boolean
   cssSelector: String
   delayBeforeReturnHtmlMs: Int
+  detailExpansion: CrawlDetailExpansionOptionsInput
   excludeExternalImages: Boolean
   excludeExternalLinks: Boolean
   excludedTags: [String!]
@@ -563,7 +576,9 @@ input CrawlStrategyOverridesInput {
   onlyMainContent: Boolean
   overrideNavigator: Boolean
   pageTimeoutMs: Int
+  pageTypeHint: String
   processIframes: Boolean
+  qualityProfile: String
   removeForms: Boolean
   removeOverlayElements: Boolean
   scanFullPage: Boolean

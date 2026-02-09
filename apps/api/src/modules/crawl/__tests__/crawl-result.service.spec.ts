@@ -137,5 +137,100 @@ describe("CrawlResultService", () => {
 
     expect(result.primary).toContain("Legitimate content");
   });
-});
 
+  it("flags references-only markdown as low-signal", () => {
+    const service = createService(128);
+
+    expect(service.isLowSignalMarkdown("## References")).toBe(true);
+    expect(
+      service.isLowSignalMarkdown(
+        "## References\n\n[^1]: https://example.com/a\n[^2]: https://example.com/b"
+      )
+    ).toBe(true);
+  });
+
+  it("does not flag normal article markdown as low-signal", () => {
+    const service = createService(128);
+
+    const markdown =
+      "# Headline\n\n" +
+      "This is the first article paragraph with context and implications.\n\n" +
+      "This is the second paragraph with additional reporting details and quotes.";
+
+    expect(service.isLowSignalMarkdown(markdown)).toBe(false);
+  });
+
+  it("normalizes markdown text for RAG-friendly structure", () => {
+    const service = createService(128);
+
+    const raw =
+      "# Title\r\n\r\nParagraph one.   \r\n\r\n\r\n\u200BMenu\nMenu\nMenu\n\nParagraph two.\r\n";
+
+    const result = service.extractMarkdownResult(raw);
+
+    expect(result.primary).toBe("# Title\n\nParagraph one.\n\nMenu\nMenu\n\nParagraph two.");
+  });
+
+  it("removes common ad and subscription noise while preserving article body", () => {
+    const service = createService(128);
+
+    const raw =
+      "Advertisement\n" +
+      "# Headline\n\n" +
+      "Free article usually reserved for subscribers\n" +
+      "Listen\n" +
+      "AI generated Text-to-speech\n" +
+      "\n" +
+      "Paragraph one with policy context and details.\n\n" +
+      "Advertisement\n" +
+      "Paragraph two with background and quotes.";
+
+    const result = service.extractMarkdownResult(raw);
+
+    expect(result.primary).toContain("# Headline");
+    expect(result.primary).toContain("Paragraph one with policy context and details.");
+    expect(result.primary).toContain("Paragraph two with background and quotes.");
+    expect(result.primary).not.toContain("Advertisement");
+    expect(result.primary).not.toContain("Free article usually reserved for subscribers");
+    expect(result.primary).not.toContain("AI generated Text-to-speech");
+  });
+
+  it("drops navigation-heavy preamble before headline", () => {
+    const service = createService(128);
+
+    const raw =
+      "[Skip to main content](https://example.com/#main)\n" +
+      "[ ](https://example.com)\n" +
+      "Menu\n" +
+      "[ POLITICO Pro ](https://example.com/pro/)\n" +
+      "[ Log In ](https://example.com/login/)\n" +
+      "# Headline\n\n" +
+      "Paragraph one with article context.\n\n" +
+      "Paragraph two with background.";
+
+    const result = service.extractMarkdownResult(raw);
+
+    expect(result.primary).toContain("# Headline");
+    expect(result.primary).toContain("Paragraph one with article context.");
+    expect(result.primary).toContain("Paragraph two with background.");
+    expect(result.primary).not.toContain("Skip to main content");
+    expect(result.primary).not.toContain("POLITICO Pro");
+    expect(result.primary).not.toContain("Log In");
+  });
+
+  it("keeps content when aggressive noise filtering would over-truncate", () => {
+    const service = createService(128);
+
+    const raw =
+      "Advertisement\n" +
+      "Subscribe\n" +
+      "Cookie policy\n" +
+      "Terms of Service\n" +
+      "Quick update on markets.";
+
+    const result = service.extractMarkdownResult(raw);
+
+    expect(result.primary).toContain("Quick update on markets.");
+  });
+
+});

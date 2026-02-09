@@ -17,8 +17,11 @@ import GraphQLJSONScalar from "graphql-type-json";
 
 import type {
   CrawlCacheMode,
+  CrawlDetailExpansionOptions,
   CrawlMarkdownContentSource,
   CrawlMetadataSource,
+  CrawlPageTypeHint,
+  CrawlQualityProfile,
   CrawlUrlMatchMode,
   CrawlUserAgentGeneratorConfig,
   CrawlUserAgentMode,
@@ -126,6 +129,21 @@ export class CrawlUrlMatcherInput {
 
   @Field(() => [String], { nullable: true })
   patterns?: string[];
+}
+
+@InputType()
+export class CrawlDetailExpansionOptionsInput {
+  @Field(() => Int, { nullable: true })
+  maxDetailUrls?: CrawlDetailExpansionOptions["maxDetailUrls"];
+
+  @Field(() => Float, { nullable: true })
+  minRelevanceScore?: CrawlDetailExpansionOptions["minRelevanceScore"];
+
+  @Field(() => Boolean, { nullable: true })
+  requireSameDomain?: CrawlDetailExpansionOptions["requireSameDomain"];
+
+  @Field(() => Boolean, { nullable: true })
+  allowExternalLinks?: CrawlDetailExpansionOptions["allowExternalLinks"];
 }
 
 @InputType()
@@ -255,6 +273,18 @@ export class CrawlStrategyOverridesInput {
 
   @Field(() => CrawlVirtualScrollInput, { nullable: true })
   virtualScroll?: CrawlVirtualScrollInput;
+
+  @Field(() => String, { nullable: true })
+  pageTypeHint?: CrawlPageTypeHint;
+
+  @Field(() => Boolean, { nullable: true })
+  autoExpandDetails?: boolean;
+
+  @Field(() => CrawlDetailExpansionOptionsInput, { nullable: true })
+  detailExpansion?: CrawlDetailExpansionOptionsInput;
+
+  @Field(() => String, { nullable: true })
+  qualityProfile?: CrawlQualityProfile;
 }
 
 @InputType()
@@ -572,6 +602,18 @@ export class CrawlOptionsInput {
 
   @Field(() => CrawlVirtualScrollInput, { nullable: true })
   virtualScroll?: CrawlVirtualScrollInput;
+
+  @Field(() => String, { nullable: true })
+  pageTypeHint?: CrawlPageTypeHint;
+
+  @Field(() => Boolean, { nullable: true })
+  autoExpandDetails?: boolean;
+
+  @Field(() => CrawlDetailExpansionOptionsInput, { nullable: true })
+  detailExpansion?: CrawlDetailExpansionOptionsInput;
+
+  @Field(() => String, { nullable: true })
+  qualityProfile?: CrawlQualityProfile;
 }
 
 @InputType()

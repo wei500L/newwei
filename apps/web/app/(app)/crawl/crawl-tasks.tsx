@@ -26,6 +26,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -97,6 +98,59 @@ function toGraphqlCrawlOptionsInput(options: ReturnType<typeof sanitizeCrawlOpti
           }
         : config.options,
     })),
+  };
+}
+
+type CrawlTaskQualityProfile = "quality_first" | "balanced" | "speed_first";
+type CrawlTaskPageTypeHint = "auto" | "list" | "detail";
+
+interface CrawlTaskConfigSummary {
+  ingestToItems: boolean;
+  scanFullPage: boolean;
+  hasVirtualScroll: boolean;
+  qualityProfile: CrawlTaskQualityProfile | null;
+  pageTypeHint: CrawlTaskPageTypeHint | null;
+  autoExpandDetails: boolean;
+}
+
+function parseCrawlTaskConfigSummary(rawConfig?: string | null): CrawlTaskConfigSummary | null {
+  const config = safeParseJson<Record<string, unknown>>(rawConfig);
+  if (!config) {
+    return null;
+  }
+  const qualityProfileRaw =
+    typeof config.qualityProfile === "string"
+      ? config.qualityProfile.trim().toLowerCase()
+      : "";
+  const qualityProfile: CrawlTaskQualityProfile | null =
+    qualityProfileRaw === "quality_first" ||
+    qualityProfileRaw === "balanced" ||
+    qualityProfileRaw === "speed_first"
+      ? qualityProfileRaw
+      : null;
+
+  const pageTypeHintRaw =
+    typeof config.pageTypeHint === "string"
+      ? config.pageTypeHint.trim().toLowerCase()
+      : "";
+  const pageTypeHint: CrawlTaskPageTypeHint | null =
+    pageTypeHintRaw === "auto" ||
+    pageTypeHintRaw === "list" ||
+    pageTypeHintRaw === "detail"
+      ? pageTypeHintRaw
+      : null;
+
+  return {
+    ingestToItems: Boolean(config.ingestToItems),
+    scanFullPage: Boolean(config.scanFullPage),
+    hasVirtualScroll: Boolean(
+      config.virtualScroll &&
+      typeof config.virtualScroll === "object" &&
+      !Array.isArray(config.virtualScroll),
+    ),
+    qualityProfile,
+    pageTypeHint,
+    autoExpandDetails: Boolean(config.autoExpandDetails),
   };
 }
 
@@ -285,33 +339,98 @@ export function CrawlTasksView() {
     await ensureTasksLoaded(1);
   }, [ensureTasksLoaded, resetTaskCache]);
 
+  const buildTaskConfigTags = (record: CrawlTaskNode): ReactNode[] => {
+    const summary = parseCrawlTaskConfigSummary(record.config);
+    if (!summary) {
+      return [];
+    }
+
+    const qualityProfileLabel =
+      summary.qualityProfile === "quality_first"
+        ? t("crawl.settings.qualityProfileOptions.qualityFirst")
+        : summary.qualityProfile === "speed_first"
+          ? t("crawl.settings.qualityProfileOptions.speedFirst")
+          : summary.qualityProfile === "balanced"
+            ? t("crawl.settings.qualityProfileOptions.balanced")
+            : null;
+
+    const pageTypeHintLabel =
+      summary.pageTypeHint === "list"
+        ? t("crawl.settings.pageTypeHintOptions.list")
+        : summary.pageTypeHint === "detail"
+          ? t("crawl.settings.pageTypeHintOptions.detail")
+          : summary.pageTypeHint === "auto"
+            ? t("crawl.settings.pageTypeHintOptions.auto")
+            : null;
+
+    const tags: ReactNode[] = [];
+    if (summary.ingestToItems) {
+      tags.push(
+        <Tag key="ingest" color="geekblue">
+          {t("crawl.settings.ingestToItems", { defaultValue: "Auto send to Items" })}
+        </Tag>,
+      );
+    }
+    if (summary.scanFullPage) {
+      tags.push(
+        <Tag key="scanFullPage" color="blue">
+          {t("crawl.settings.scanFullPage")}
+        </Tag>,
+      );
+    }
+    if (summary.hasVirtualScroll) {
+      tags.push(
+        <Tag key="virtualScroll" color="cyan">
+          {t("crawl.virtualScroll.title")}
+        </Tag>,
+      );
+    }
+    if (qualityProfileLabel) {
+      tags.push(
+        <Tag key="qualityProfile" color="purple">
+          {qualityProfileLabel}
+        </Tag>,
+      );
+    }
+    if (pageTypeHintLabel) {
+      tags.push(
+        <Tag key="pageTypeHint" color="magenta">
+          {pageTypeHintLabel}
+        </Tag>,
+      );
+    }
+    if (summary.autoExpandDetails) {
+      tags.push(
+        <Tag key="autoExpandDetails" color="green">
+          {t("crawl.settings.autoExpandDetails")}
+        </Tag>,
+      );
+    }
+
+    return tags;
+  };
+
   const columns: ColumnsType<CrawlTaskNode> = [
     {
       title: t("crawl.columns.task"),
       dataIndex: "displayName",
       key: "displayName",
-      render: (_: unknown, record) => (
-        <div>
-          <div style={{ fontWeight: 600 }}>
-            {record.displayName ?? record.targetUrl}
-            {(() => {
-              const config = safeParseJson<{ ingestToItems?: boolean }>(record.config);
-              return config?.ingestToItems ? (
-                <Tag color="geekblue" style={{ marginLeft: 8 }}>
-                  {t("crawl.settings.ingestToItems", { defaultValue: "Auto send to Items" })}
-                </Tag>
-              ) : null;
-            })()}
+      render: (_: unknown, record) => {
+        const configTags = buildTaskConfigTags(record);
+        return (
+          <div>
+            <div style={{ fontWeight: 600 }}>{record.displayName ?? record.targetUrl}</div>
+            {configTags.length ? <Space wrap size={[4, 4]} style={{ marginTop: 4 }}>{configTags}</Space> : null}
+            <Typography.Link
+              href={record.targetUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {record.targetUrl}
+            </Typography.Link>
           </div>
-          <Typography.Link
-            href={record.targetUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {record.targetUrl}
-          </Typography.Link>
-        </div>
-      ),
+        );
+      },
     },
     {
       title: t("crawl.columns.status"),
@@ -642,7 +761,9 @@ export function CrawlTasksView() {
               setPagination({ current: page, pageSize: size });
             },
           }}
-          renderItem={(record) => (
+          renderItem={(record) => {
+            const configTags = buildTaskConfigTags(record);
+            return (
             <List.Item
               actions={[
                 <Link key="view" href={`/admin/ops/crawl-tasks/${record.id}`}>
@@ -678,17 +799,19 @@ export function CrawlTasksView() {
                   </div>
                 }
                 description={
-                  <Space className="mt-2">
+                  <Space className="mt-2" wrap>
                     <Tag color={statusColors[record.status]}>
                       {t(`crawl.status.${record.status}`, {
                         defaultValue: record.status,
                       })}
                     </Tag>
+                    {configTags}
                   </Space>
                 }
               />
             </List.Item>
-          )}
+          );
+          }}
         />
       ) : (
         <Table

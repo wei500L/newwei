@@ -206,6 +206,10 @@ export function CreateCrawlTaskDrawer({
           onlyMainContent: true,
           scanFullPage: false,
           extractLinks: false,
+          qualityProfile: "quality_first",
+          pageTypeHint: "auto",
+          autoExpandDetails: false,
+          detailExpansion: undefined,
         });
         break;
       case "news":
@@ -228,6 +232,10 @@ export function CreateCrawlTaskDrawer({
           maxDelayRangeMs: 250,
           semaphoreCount: 5,
           removeForms: true,
+          qualityProfile: "quality_first",
+          pageTypeHint: "detail",
+          autoExpandDetails: false,
+          detailExpansion: undefined,
           markdownOptions: {
             contentSource: "cleaned_html",
             escapeHtml: true,
@@ -249,6 +257,15 @@ export function CreateCrawlTaskDrawer({
           scanFullPage: true,
           extractLinks: false,
           scrollDelayMs: 1000,
+          qualityProfile: "balanced",
+          pageTypeHint: "list",
+          autoExpandDetails: true,
+          detailExpansion: {
+            maxDetailUrls: 12,
+            minRelevanceScore: 0.25,
+            requireSameDomain: true,
+            allowExternalLinks: true,
+          },
         });
         break;
       case "social":
@@ -262,6 +279,10 @@ export function CreateCrawlTaskDrawer({
           waitForTimeoutMs: 5000,
           scrollDelayMs: 2000,
           userAgentMode: "random",
+          qualityProfile: "speed_first",
+          pageTypeHint: "list",
+          autoExpandDetails: false,
+          detailExpansion: undefined,
         });
         break;
     }
@@ -284,6 +305,24 @@ export function CreateCrawlTaskDrawer({
     }
     handleTemplateSelect(normalizedKey);
   }, [defaultTemplateKey, handleTemplateSelect, open, selectedTemplate]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const hasUrl =
+      typeof form.getFieldValue("url") === "string" &&
+      form.getFieldValue("url")?.trim()?.length > 0;
+    if (hasUrl || form.isFieldsTouched(true)) {
+      return;
+    }
+    const normalizedKey = defaultTemplateKey?.trim();
+    if (normalizedKey && TEMPLATES.some((template) => template.key === normalizedKey)) {
+      handleTemplateSelect(normalizedKey);
+      return;
+    }
+    handleTemplateSelect(selectedTemplate);
+  }, [defaultTemplateKey, form, handleTemplateSelect, open, selectedTemplate]);
 
   const resetAndClose = () => {
     setCurrentStep(0);
@@ -418,6 +457,7 @@ function CrawlSettingsForm({
   const { t } = useTranslation();
   const form = Form.useFormInstance<CreateCrawlTaskFormValues>();
   const virtualScrollEnabled = Boolean(Form.useWatch(["virtualScroll", "enabled"], form));
+  const autoExpandDetailsEnabled = Boolean(Form.useWatch("autoExpandDetails", form));
   const virtualScrollScrollByValue = Form.useWatch(["virtualScroll", "scrollBy"], form);
   const markdownStrategyTypeValue = Form.useWatch(["markdownStrategy", "type"], form);
   const markdownStrategyParamsValue = Form.useWatch(["markdownStrategy", "params"], form);
@@ -430,6 +470,11 @@ function CrawlSettingsForm({
         ? markdownStrategyParamsValue
         : undefined,
     );
+  const scanStrategyMode = virtualScrollEnabled
+    ? "virtual_scroll"
+    : scanFullPage
+      ? "full_page"
+      : "default";
   const ingestHint = canWriteItems
     ? t("crawl.settings.ingestToItemsHint", {
         defaultValue: "New crawl results will be converted into Items and queued for LLM processing."
@@ -515,6 +560,7 @@ function CrawlSettingsForm({
         label={t("crawl.settings.scanFullPage")}
         name="scanFullPage"
         valuePropName="checked"
+        extra={t("crawl.settings.scanFullPageHint")}
       >
         <Switch disabled={virtualScrollEnabled} />
       </Form.Item>
@@ -641,6 +687,162 @@ function CrawlSettingsForm({
                 {t("crawl.virtualScroll.scanFullPageHint")}
               </Typography.Text>
             ) : null}
+          </>
+        ) : null}
+      </Card>
+      <Alert
+        style={{ marginBottom: 16 }}
+        showIcon
+        type={
+          scanStrategyMode === "full_page"
+            ? "success"
+            : scanStrategyMode === "virtual_scroll"
+              ? "info"
+              : "warning"
+        }
+        message={
+          scanStrategyMode === "full_page"
+            ? t("crawl.settings.scanModes.fullPageTitle")
+            : scanStrategyMode === "virtual_scroll"
+              ? t("crawl.settings.scanModes.virtualScrollTitle")
+              : t("crawl.settings.scanModes.defaultTitle")
+        }
+        description={
+          scanStrategyMode === "full_page"
+            ? t("crawl.settings.scanModes.fullPageDescription")
+            : scanStrategyMode === "virtual_scroll"
+              ? t("crawl.settings.scanModes.virtualScrollDescription")
+              : t("crawl.settings.scanModes.defaultDescription")
+        }
+      />
+      <Card
+        title={t("crawl.optimization.title", { defaultValue: "Crawl optimization" })}
+        size="small"
+        style={{ marginBottom: 16 }}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+          {t("crawl.optimization.description", {
+            defaultValue:
+              "Tune discovery and markdown quality without using LLMs during crawling."
+          })}
+        </Typography.Paragraph>
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={t("crawl.optimization.noLlmTitle", {
+            defaultValue: "No LLM in crawl stage"
+          })}
+          description={t("crawl.optimization.noLlmDescription", {
+            defaultValue:
+              "Use Crawl4AI for deterministic fetch + cleaning only. Run LLM summarization or analysis in downstream pipeline stages."
+          })}
+        />
+        <Form.Item
+          label={t("crawl.settings.qualityProfile")}
+          name="qualityProfile"
+          extra={t("crawl.settings.qualityProfileHint")}
+        >
+          <Select
+            allowClear
+            placeholder={t("crawl.settings.placeholders.qualityProfile")}
+            options={[
+              {
+                value: "quality_first",
+                label: t("crawl.settings.qualityProfileOptions.qualityFirst")
+              },
+              {
+                value: "balanced",
+                label: t("crawl.settings.qualityProfileOptions.balanced")
+              },
+              {
+                value: "speed_first",
+                label: t("crawl.settings.qualityProfileOptions.speedFirst")
+              }
+            ]}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("crawl.settings.pageTypeHint")}
+          name="pageTypeHint"
+          extra={t("crawl.settings.pageTypeHintHint")}
+        >
+          <Select
+            allowClear
+            placeholder={t("crawl.settings.placeholders.pageTypeHint")}
+            options={[
+              { value: "auto", label: t("crawl.settings.pageTypeHintOptions.auto") },
+              { value: "list", label: t("crawl.settings.pageTypeHintOptions.list") },
+              { value: "detail", label: t("crawl.settings.pageTypeHintOptions.detail") }
+            ]}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("crawl.settings.autoExpandDetails")}
+          name="autoExpandDetails"
+          valuePropName="checked"
+          extra={t("crawl.settings.autoExpandDetailsHint")}
+        >
+          <Switch
+            onChange={(enabled) => {
+              if (!enabled) {
+                form.setFields([{ name: ["detailExpansion"], value: undefined }]);
+                return;
+              }
+              const current = (form.getFieldValue(["detailExpansion"]) ?? {}) as Record<string, unknown>;
+              form.setFields([
+                { name: ["detailExpansion", "maxDetailUrls"], value: typeof current.maxDetailUrls === "number" ? current.maxDetailUrls : 8 },
+                {
+                  name: ["detailExpansion", "minRelevanceScore"],
+                  value: typeof current.minRelevanceScore === "number" ? current.minRelevanceScore : 0.2
+                },
+                {
+                  name: ["detailExpansion", "requireSameDomain"],
+                  value: typeof current.requireSameDomain === "boolean" ? current.requireSameDomain : true
+                },
+                {
+                  name: ["detailExpansion", "allowExternalLinks"],
+                  value:
+                    typeof current.allowExternalLinks === "boolean"
+                      ? current.allowExternalLinks
+                      : true
+                }
+              ]);
+            }}
+          />
+        </Form.Item>
+        {autoExpandDetailsEnabled ? (
+          <>
+            <Form.Item
+              label={t("crawl.detailExpansion.maxDetailUrls")}
+              name={["detailExpansion", "maxDetailUrls"]}
+              extra={t("crawl.detailExpansion.maxDetailUrlsHint")}
+            >
+              <InputNumber min={1} max={30} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("crawl.detailExpansion.minRelevanceScore")}
+              name={["detailExpansion", "minRelevanceScore"]}
+              extra={t("crawl.detailExpansion.minRelevanceScoreHint")}
+            >
+              <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("crawl.detailExpansion.requireSameDomain")}
+              name={["detailExpansion", "requireSameDomain"]}
+              valuePropName="checked"
+              extra={t("crawl.detailExpansion.requireSameDomainHint")}
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              label={t("crawl.detailExpansion.allowExternalLinks")}
+              name={["detailExpansion", "allowExternalLinks"]}
+              valuePropName="checked"
+              extra={t("crawl.detailExpansion.allowExternalLinksHint")}
+            >
+              <Switch />
+            </Form.Item>
           </>
         ) : null}
       </Card>
@@ -920,6 +1122,13 @@ function CrawlSettingsForm({
           <Switch />
         </Form.Item>
       </Card>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message={t("crawl.markdown.ragReadyTitle")}
+        description={t("crawl.markdown.ragReadyHint")}
+      />
       <Form.Item
         label={t("crawl.markdown.additionalUrls")}
         name="additionalUrls"
@@ -1519,6 +1728,119 @@ function CrawlSettingsForm({
                       { value: "force_cache", label: t("crawl.multiUrl.cacheModes.force") },
                     ]}
                   />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.settings.qualityProfile")}
+                  name={[field.name, "options", "qualityProfile"]}
+                >
+                  <Select
+                    allowClear
+                    placeholder={t("crawl.settings.placeholders.qualityProfile")}
+                    options={[
+                      {
+                        value: "quality_first",
+                        label: t("crawl.settings.qualityProfileOptions.qualityFirst")
+                      },
+                      {
+                        value: "balanced",
+                        label: t("crawl.settings.qualityProfileOptions.balanced")
+                      },
+                      {
+                        value: "speed_first",
+                        label: t("crawl.settings.qualityProfileOptions.speedFirst")
+                      }
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.settings.pageTypeHint")}
+                  name={[field.name, "options", "pageTypeHint"]}
+                >
+                  <Select
+                    allowClear
+                    placeholder={t("crawl.settings.placeholders.pageTypeHint")}
+                    options={[
+                      { value: "auto", label: t("crawl.settings.pageTypeHintOptions.auto") },
+                      { value: "list", label: t("crawl.settings.pageTypeHintOptions.list") },
+                      { value: "detail", label: t("crawl.settings.pageTypeHintOptions.detail") }
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t("crawl.settings.autoExpandDetails")}
+                  name={[field.name, "options", "autoExpandDetails"]}
+                  valuePropName="checked"
+                >
+                  <Switch
+                    onChange={(enabled) => {
+                      if (!enabled) {
+                        form.setFields([
+                          {
+                            name: ["multiUrlConfigs", field.name, "options", "detailExpansion"],
+                            value: undefined
+                          }
+                        ]);
+                      }
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item
+                  noStyle
+                  shouldUpdate={(prev, next) => {
+                    const prevEnabled =
+                      prev?.multiUrlConfigs?.[field.name]?.options?.autoExpandDetails;
+                    const nextEnabled =
+                      next?.multiUrlConfigs?.[field.name]?.options?.autoExpandDetails;
+                    return prevEnabled !== nextEnabled;
+                  }}
+                >
+                  {() => {
+                    const enabled = Boolean(
+                      form.getFieldValue([
+                        "multiUrlConfigs",
+                        field.name,
+                        "options",
+                        "autoExpandDetails"
+                      ])
+                    );
+                    if (!enabled) {
+                      return null;
+                    }
+                    return (
+                      <>
+                        <Form.Item
+                          label={t("crawl.detailExpansion.maxDetailUrls")}
+                          name={[field.name, "options", "detailExpansion", "maxDetailUrls"]}
+                          extra={t("crawl.detailExpansion.maxDetailUrlsHint")}
+                        >
+                          <InputNumber min={1} max={30} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("crawl.detailExpansion.minRelevanceScore")}
+                          name={[field.name, "options", "detailExpansion", "minRelevanceScore"]}
+                          extra={t("crawl.detailExpansion.minRelevanceScoreHint")}
+                        >
+                          <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("crawl.detailExpansion.requireSameDomain")}
+                          name={[field.name, "options", "detailExpansion", "requireSameDomain"]}
+                          valuePropName="checked"
+                          extra={t("crawl.detailExpansion.requireSameDomainHint")}
+                        >
+                          <Switch />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("crawl.detailExpansion.allowExternalLinks")}
+                          name={[field.name, "options", "detailExpansion", "allowExternalLinks"]}
+                          valuePropName="checked"
+                          extra={t("crawl.detailExpansion.allowExternalLinksHint")}
+                        >
+                          <Switch />
+                        </Form.Item>
+                      </>
+                    );
+                  }}
                 </Form.Item>
                 <Form.Item
                   label={t("crawl.settings.scanFullPage")}

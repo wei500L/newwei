@@ -71,6 +71,18 @@ interface TaskLogRecord {
   updatedAt: string;
 }
 
+interface ExpansionQualitySummary {
+  candidateCount: number;
+  batchCount: number;
+  improvedSuccesses: number;
+  primaryCandidatePool?: number;
+  fallbackCandidatePool?: number;
+  minimumCandidateCount?: number;
+  strictCandidateCount?: number;
+  relaxedCandidateCount?: number;
+  linkFallbackCandidateCount?: number;
+}
+
 const taskLogStatusColors: Record<TaskLogStatus, string> = {
   pending: "gold",
   processing: "blue",
@@ -771,6 +783,141 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     };
   }, [config]);
 
+  const qualityProfileValue = useMemo(() => {
+    if (!config || typeof config.qualityProfile !== "string") {
+      return null;
+    }
+    const normalized = config.qualityProfile.trim().toLowerCase();
+    if (
+      normalized === "quality_first" ||
+      normalized === "balanced" ||
+      normalized === "speed_first"
+    ) {
+      return normalized;
+    }
+    return null;
+  }, [config]);
+
+  const qualityProfileSummary = useMemo(() => {
+    if (!qualityProfileValue) {
+      return null;
+    }
+    if (qualityProfileValue === "quality_first") {
+      return t("crawl.settings.qualityProfileOptions.qualityFirst");
+    }
+    if (qualityProfileValue === "speed_first") {
+      return t("crawl.settings.qualityProfileOptions.speedFirst");
+    }
+    return t("crawl.settings.qualityProfileOptions.balanced");
+  }, [qualityProfileValue, t]);
+
+  const pageTypeHintValue = useMemo(() => {
+    if (!config || typeof config.pageTypeHint !== "string") {
+      return null;
+    }
+    const normalized = config.pageTypeHint.trim().toLowerCase();
+    if (normalized === "auto" || normalized === "list" || normalized === "detail") {
+      return normalized;
+    }
+    return null;
+  }, [config]);
+
+  const pageTypeHintSummary = useMemo(() => {
+    if (!pageTypeHintValue) {
+      return null;
+    }
+    if (pageTypeHintValue === "list") {
+      return t("crawl.settings.pageTypeHintOptions.list");
+    }
+    if (pageTypeHintValue === "detail") {
+      return t("crawl.settings.pageTypeHintOptions.detail");
+    }
+    return t("crawl.settings.pageTypeHintOptions.auto");
+  }, [pageTypeHintValue, t]);
+
+  const autoExpandDetailsValue =
+    typeof config?.autoExpandDetails === "boolean" ? config.autoExpandDetails : null;
+
+  const detailExpansionSummary = useMemo(() => {
+    if (!config || typeof config.detailExpansion !== "object" || !config.detailExpansion) {
+      return null;
+    }
+    const value = config.detailExpansion as Record<string, unknown>;
+    const maxDetailUrls =
+      typeof value.maxDetailUrls === "number" && Number.isFinite(value.maxDetailUrls)
+        ? value.maxDetailUrls
+        : null;
+    const minRelevanceScore =
+      typeof value.minRelevanceScore === "number" && Number.isFinite(value.minRelevanceScore)
+        ? value.minRelevanceScore
+        : null;
+    const requireSameDomain =
+      typeof value.requireSameDomain === "boolean" ? value.requireSameDomain : null;
+    const allowExternalLinks =
+      typeof value.allowExternalLinks === "boolean" ? value.allowExternalLinks : null;
+    if (
+      maxDetailUrls == null &&
+      minRelevanceScore == null &&
+      requireSameDomain == null &&
+      allowExternalLinks == null
+    ) {
+      return null;
+    }
+    return {
+      maxDetailUrls,
+      minRelevanceScore,
+      requireSameDomain,
+      allowExternalLinks
+    };
+  }, [config]);
+
+  const crawlStrategyTags = useMemo(() => {
+    const tags: ReactNode[] = [];
+    if (config?.scanFullPage) {
+      tags.push(
+        <Tag key="scanFullPage" color="blue">
+          {t("crawl.settings.scanFullPage")}
+        </Tag>,
+      );
+    }
+    if (virtualScrollSummary) {
+      tags.push(
+        <Tag key="virtualScroll" color="cyan">
+          {t("crawl.virtualScroll.title")}
+        </Tag>,
+      );
+    }
+    if (qualityProfileSummary) {
+      tags.push(
+        <Tag key="qualityProfile" color="purple">
+          {qualityProfileSummary}
+        </Tag>,
+      );
+    }
+    if (pageTypeHintSummary) {
+      tags.push(
+        <Tag key="pageTypeHint" color="magenta">
+          {pageTypeHintSummary}
+        </Tag>,
+      );
+    }
+    if (autoExpandDetailsValue) {
+      tags.push(
+        <Tag key="autoExpandDetails" color="green">
+          {t("crawl.settings.autoExpandDetails")}
+        </Tag>,
+      );
+    }
+    return tags;
+  }, [
+    autoExpandDetailsValue,
+    config?.scanFullPage,
+    pageTypeHintSummary,
+    qualityProfileSummary,
+    t,
+    virtualScrollSummary
+  ]);
+
   const taskLogColumns = useMemo(
     () => [
       {
@@ -830,6 +977,54 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     ],
     [locale, t]
   );
+
+  const expansionSummary = useMemo<ExpansionQualitySummary | null>(() => {
+    for (const log of taskLogs) {
+      if (log.stage !== "expansion") {
+        continue;
+      }
+      if (!log.data || typeof log.data !== "object" || Array.isArray(log.data)) {
+        continue;
+      }
+
+      const data = log.data as Record<string, unknown>;
+      const candidateCount =
+        typeof data.candidateCount === "number" && Number.isFinite(data.candidateCount)
+          ? data.candidateCount
+          : null;
+      const batchCount =
+        typeof data.batchCount === "number" && Number.isFinite(data.batchCount)
+          ? data.batchCount
+          : null;
+      const improvedSuccesses =
+        typeof data.improvedSuccesses === "number" && Number.isFinite(data.improvedSuccesses)
+          ? data.improvedSuccesses
+          : null;
+
+      if (candidateCount == null || batchCount == null || improvedSuccesses == null) {
+        continue;
+      }
+
+      const getOptionalNumber = (key: string) => {
+        const value = data[key];
+        return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+      };
+
+      return {
+        candidateCount,
+        batchCount,
+        improvedSuccesses,
+        primaryCandidatePool: getOptionalNumber("primaryCandidatePool"),
+        fallbackCandidatePool: getOptionalNumber("fallbackCandidatePool"),
+        minimumCandidateCount: getOptionalNumber("minimumCandidateCount"),
+        strictCandidateCount: getOptionalNumber("strictCandidateCount"),
+        relaxedCandidateCount: getOptionalNumber("relaxedCandidateCount"),
+        linkFallbackCandidateCount: getOptionalNumber("linkFallbackCandidateCount")
+      };
+    }
+
+    return null;
+  }, [taskLogs]);
 
   const proxySummary: ReactNode = useMemo(() => {
     if (!config) {
@@ -1696,6 +1891,23 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           }
         />
       ) : null}
+      {crawlStrategyTags.length ? (
+        <Card
+          size="small"
+          style={{ marginBottom: 16 }}
+          title={t("crawl.detail.strategy.title", { defaultValue: "Crawl strategy" })}
+        >
+          <Space wrap size={[4, 6]}>
+            {crawlStrategyTags}
+          </Space>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 8 }}>
+            {t("crawl.detail.strategy.noLlmHint", {
+              defaultValue:
+                "Crawl stage is deterministic (fetch + clean markdown only). Run LLM summarization and analysis in downstream pipelines."
+            })}
+          </Typography.Paragraph>
+        </Card>
+      ) : null}
       <Descriptions bordered column={1} size="small">
         <Descriptions.Item label={t("crawl.detail.fields.displayName")}>
           {task.displayName ?? task.targetUrl}
@@ -1799,6 +2011,96 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           </Space>
         ) : (
           t("common.disabled")
+        )}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.qualityProfile")}>
+        {qualityProfileSummary ?? t("crawl.detail.serverDefault")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.pageTypeHint")}>
+        {pageTypeHintSummary ?? t("crawl.detail.serverDefault")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.autoExpandDetails")}>
+        {typeof autoExpandDetailsValue === "boolean"
+          ? autoExpandDetailsValue
+            ? t("common.enabled")
+            : t("common.disabled")
+          : t("crawl.detail.serverDefault")}
+      </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.detailExpansion")}>
+        {detailExpansionSummary ? (
+          <Space direction="vertical" size={0}>
+            {detailExpansionSummary.maxDetailUrls != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                maxDetailUrls={detailExpansionSummary.maxDetailUrls}
+              </Typography.Text>
+            ) : null}
+            {detailExpansionSummary.minRelevanceScore != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                minRelevanceScore={detailExpansionSummary.minRelevanceScore}
+              </Typography.Text>
+            ) : null}
+            {detailExpansionSummary.requireSameDomain != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                requireSameDomain={detailExpansionSummary.requireSameDomain ? "true" : "false"}
+              </Typography.Text>
+            ) : null}
+            {detailExpansionSummary.allowExternalLinks != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                allowExternalLinks={detailExpansionSummary.allowExternalLinks ? "true" : "false"}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        ) : (
+          t("common.emptyValue")
+        )}
+      </Descriptions.Item>
+      <Descriptions.Item
+        label={t("crawl.detail.fields.expansionMetrics", { defaultValue: "Expansion metrics" })}
+      >
+        {expansionSummary ? (
+          <Space direction="vertical" size={0}>
+            <Typography.Text style={{ fontFamily: "monospace" }}>
+              candidateCount={expansionSummary.candidateCount}
+            </Typography.Text>
+            <Typography.Text style={{ fontFamily: "monospace" }}>
+              batchCount={expansionSummary.batchCount}
+            </Typography.Text>
+            <Typography.Text style={{ fontFamily: "monospace" }}>
+              improvedSuccesses={expansionSummary.improvedSuccesses}
+            </Typography.Text>
+            {expansionSummary.primaryCandidatePool != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                primaryCandidatePool={expansionSummary.primaryCandidatePool}
+              </Typography.Text>
+            ) : null}
+            {expansionSummary.fallbackCandidatePool != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                fallbackCandidatePool={expansionSummary.fallbackCandidatePool}
+              </Typography.Text>
+            ) : null}
+            {expansionSummary.minimumCandidateCount != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                minimumCandidateCount={expansionSummary.minimumCandidateCount}
+              </Typography.Text>
+            ) : null}
+            {expansionSummary.strictCandidateCount != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                strictCandidateCount={expansionSummary.strictCandidateCount}
+              </Typography.Text>
+            ) : null}
+            {expansionSummary.relaxedCandidateCount != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                relaxedCandidateCount={expansionSummary.relaxedCandidateCount}
+              </Typography.Text>
+            ) : null}
+            {expansionSummary.linkFallbackCandidateCount != null ? (
+              <Typography.Text style={{ fontFamily: "monospace" }}>
+                linkFallbackCandidateCount={expansionSummary.linkFallbackCandidateCount}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        ) : (
+          t("common.emptyValue")
         )}
       </Descriptions.Item>
       <Descriptions.Item label={t("crawl.detail.fields.adjustViewport")}>

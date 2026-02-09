@@ -1,12 +1,17 @@
 "use client";
 
 import {
+  CRAWL4AI_LLM_OPTION_GUARD_MESSAGE,
+  assertNoCrawl4aiLlmOptions
+} from "@modular/utils";
+import {
   Alert,
   Button,
   Card,
   Form,
   Grid,
   Input,
+  InputNumber,
   Modal,
   Select,
   Space,
@@ -18,7 +23,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
@@ -42,6 +47,13 @@ interface CrawlTemplateFormValues {
   enableStealthMode: boolean;
   enableUndetectedBrowser: boolean;
   includeImages: boolean;
+  qualityProfile?: "balanced" | "quality_first" | "speed_first";
+  pageTypeHint?: "auto" | "list" | "detail";
+  autoExpandDetails: boolean;
+  maxDetailUrls?: number;
+  minRelevanceScore?: number;
+  requireSameDomain: boolean;
+  allowExternalLinks: boolean;
   crawlOptionsJson?: string;
 }
 
@@ -123,6 +135,11 @@ export function CrawlTemplatesContent() {
         enableStealthMode: false,
         enableUndetectedBrowser: false,
         includeImages: true,
+        qualityProfile: "quality_first",
+        pageTypeHint: "auto",
+        autoExpandDetails: false,
+        requireSameDomain: true,
+        allowExternalLinks: true,
         crawlOptionsJson: "{}"
       }
     });
@@ -132,6 +149,18 @@ export function CrawlTemplatesContent() {
     const options = normalizeOptions(template.crawlOptions);
     const headlessMode =
       typeof options?.headless === "boolean" ? (options.headless ? "headless" : "headed") : "auto";
+    const detailExpansionOptions =
+      options?.detailExpansion && typeof options.detailExpansion === "object" && !Array.isArray(options.detailExpansion)
+        ? (options.detailExpansion as Record<string, unknown>)
+        : null;
+    const maxDetailUrls =
+      typeof detailExpansionOptions?.maxDetailUrls === "number" && Number.isFinite(detailExpansionOptions.maxDetailUrls)
+        ? detailExpansionOptions.maxDetailUrls
+        : undefined;
+    const minRelevanceScore =
+      typeof detailExpansionOptions?.minRelevanceScore === "number" && Number.isFinite(detailExpansionOptions.minRelevanceScore)
+        ? detailExpansionOptions.minRelevanceScore
+        : undefined;
     setModalState({
       open: true,
       editing: template,
@@ -145,6 +174,27 @@ export function CrawlTemplatesContent() {
         enableStealthMode: normalizeBoolean(options?.enableStealthMode),
         enableUndetectedBrowser: normalizeBoolean(options?.enableUndetectedBrowser),
         includeImages: options?.includeImages === false ? false : true,
+        qualityProfile:
+          options?.qualityProfile === "quality_first" ||
+          options?.qualityProfile === "balanced" ||
+          options?.qualityProfile === "speed_first"
+            ? options.qualityProfile
+            : "quality_first",
+        pageTypeHint:
+          options?.pageTypeHint === "auto" || options?.pageTypeHint === "list" || options?.pageTypeHint === "detail"
+            ? options.pageTypeHint
+            : "auto",
+        autoExpandDetails: normalizeBoolean(options?.autoExpandDetails),
+        maxDetailUrls,
+        minRelevanceScore,
+        requireSameDomain:
+          typeof detailExpansionOptions?.requireSameDomain === "boolean"
+            ? detailExpansionOptions.requireSameDomain
+            : true,
+        allowExternalLinks:
+          typeof detailExpansionOptions?.allowExternalLinks === "boolean"
+            ? detailExpansionOptions.allowExternalLinks
+            : true,
         crawlOptionsJson: options ? JSON.stringify(options, null, 2) : "{}"
       }
     });
@@ -152,6 +202,7 @@ export function CrawlTemplatesContent() {
 
   const buildCrawlOptions = (values: CrawlTemplateFormValues) => {
     const base = parseJsonField(values.crawlOptionsJson, "crawlOptions") ?? {};
+    assertNoCrawl4aiLlmOptions(base, "crawlOptions");
 
     const proxyUrl = values.proxyUrl?.trim() ?? "";
     if (proxyUrl) {
@@ -192,6 +243,53 @@ export function CrawlTemplatesContent() {
     } else {
       delete base.includeImages;
     }
+
+    if (
+      values.qualityProfile === "quality_first" ||
+      values.qualityProfile === "balanced" ||
+      values.qualityProfile === "speed_first"
+    ) {
+      base.qualityProfile = values.qualityProfile;
+    } else {
+      delete base.qualityProfile;
+    }
+
+    if (
+      values.pageTypeHint === "auto" ||
+      values.pageTypeHint === "list" ||
+      values.pageTypeHint === "detail"
+    ) {
+      base.pageTypeHint = values.pageTypeHint;
+    } else {
+      delete base.pageTypeHint;
+    }
+
+    if (values.autoExpandDetails) {
+      base.autoExpandDetails = true;
+      const detailExpansion: Record<string, unknown> = {};
+      if (typeof values.maxDetailUrls === "number" && Number.isFinite(values.maxDetailUrls)) {
+        detailExpansion.maxDetailUrls = Math.max(1, Math.min(30, Math.round(values.maxDetailUrls)));
+      }
+      if (typeof values.minRelevanceScore === "number" && Number.isFinite(values.minRelevanceScore)) {
+        detailExpansion.minRelevanceScore = Number(Math.max(0, Math.min(1, values.minRelevanceScore)).toFixed(3));
+      }
+      if (typeof values.requireSameDomain === "boolean") {
+        detailExpansion.requireSameDomain = values.requireSameDomain;
+      }
+      if (typeof values.allowExternalLinks === "boolean") {
+        detailExpansion.allowExternalLinks = values.allowExternalLinks;
+      }
+      if (Object.keys(detailExpansion).length > 0) {
+        base.detailExpansion = detailExpansion;
+      } else {
+        delete base.detailExpansion;
+      }
+    } else {
+      delete base.autoExpandDetails;
+      delete base.detailExpansion;
+    }
+
+    assertNoCrawl4aiLlmOptions(base, "crawlOptions");
 
     return Object.keys(base).length ? base : null;
   };
@@ -271,6 +369,105 @@ export function CrawlTemplatesContent() {
     );
   }
 
+  const renderTemplateStrategy = (record: CrawlTemplateRecord): ReactNode => {
+    const options = normalizeOptions(record.crawlOptions);
+    if (!options) {
+      return <Typography.Text type="secondary">{t("common.emptyValue")}</Typography.Text>;
+    }
+
+    const tags: ReactNode[] = [];
+
+    if (options.scanFullPage === true) {
+      tags.push(
+        <Tag key="scanFullPage" color="blue">
+          {t("crawl.settings.scanFullPage")}
+        </Tag>,
+      );
+    }
+
+    if (
+      options.virtualScroll &&
+      typeof options.virtualScroll === "object" &&
+      !Array.isArray(options.virtualScroll)
+    ) {
+      tags.push(
+        <Tag key="virtualScroll" color="cyan">
+          {t("crawl.virtualScroll.title")}
+        </Tag>,
+      );
+    }
+
+    if (options.qualityProfile === "quality_first") {
+      tags.push(
+        <Tag key="qualityProfile" color="purple">
+          {t("crawl.settings.qualityProfileOptions.qualityFirst")}
+        </Tag>,
+      );
+    } else if (options.qualityProfile === "balanced") {
+      tags.push(
+        <Tag key="qualityProfile" color="purple">
+          {t("crawl.settings.qualityProfileOptions.balanced")}
+        </Tag>,
+      );
+    } else if (options.qualityProfile === "speed_first") {
+      tags.push(
+        <Tag key="qualityProfile" color="purple">
+          {t("crawl.settings.qualityProfileOptions.speedFirst")}
+        </Tag>,
+      );
+    }
+
+    if (options.pageTypeHint === "auto") {
+      tags.push(
+        <Tag key="pageTypeHint" color="magenta">
+          {t("crawl.settings.pageTypeHintOptions.auto")}
+        </Tag>,
+      );
+    } else if (options.pageTypeHint === "list") {
+      tags.push(
+        <Tag key="pageTypeHint" color="magenta">
+          {t("crawl.settings.pageTypeHintOptions.list")}
+        </Tag>,
+      );
+    } else if (options.pageTypeHint === "detail") {
+      tags.push(
+        <Tag key="pageTypeHint" color="magenta">
+          {t("crawl.settings.pageTypeHintOptions.detail")}
+        </Tag>,
+      );
+    }
+
+    if (options.autoExpandDetails === true) {
+      tags.push(
+        <Tag key="autoExpandDetails" color="green">
+          {t("crawl.settings.autoExpandDetails")}
+        </Tag>,
+      );
+    }
+
+    const markdownOptions =
+      options.markdownOptions &&
+      typeof options.markdownOptions === "object" &&
+      !Array.isArray(options.markdownOptions)
+        ? (options.markdownOptions as Record<string, unknown>)
+        : null;
+    if (markdownOptions?.contentSource === "cleaned_html") {
+      tags.push(
+        <Tag key="ragReady" color="geekblue">
+          {t("crawl.markdown.ragReadyTitle")}
+        </Tag>,
+      );
+    }
+
+    return tags.length ? (
+      <Space wrap size={[4, 4]}>
+        {tags}
+      </Space>
+    ) : (
+      <Typography.Text type="secondary">{t("crawlTemplates.columns.strategyEmpty", { defaultValue: "Default" })}</Typography.Text>
+    );
+  };
+
   const columns: ColumnsType<CrawlTemplateRecord> = [
     {
       title: t("crawlTemplates.columns.name", { defaultValue: "Name" }),
@@ -286,6 +483,11 @@ export function CrawlTemplatesContent() {
           ) : null}
         </Space>
       )
+    },
+    {
+      title: t("crawlTemplates.columns.strategy", { defaultValue: "Strategy" }),
+      key: "strategy",
+      render: (_: unknown, record) => renderTemplateStrategy(record)
     },
     {
       title: t("crawlTemplates.columns.status", { defaultValue: "Status" }),
@@ -445,10 +647,139 @@ export function CrawlTemplatesContent() {
           >
             <Switch />
           </Form.Item>
+          <Form.Item
+            name="qualityProfile"
+            label={t("crawlTemplates.fields.qualityProfile", { defaultValue: "Quality profile" })}
+          >
+            <Select
+              options={[
+                {
+                  value: "quality_first",
+                  label: t("crawl.settings.qualityProfileOptions.qualityFirst", {
+                    defaultValue: "Quality first (RAG)"
+                  })
+                },
+                {
+                  value: "balanced",
+                  label: t("crawl.settings.qualityProfileOptions.balanced", {
+                    defaultValue: "Balanced"
+                  })
+                },
+                {
+                  value: "speed_first",
+                  label: t("crawl.settings.qualityProfileOptions.speedFirst", {
+                    defaultValue: "Speed first"
+                  })
+                }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="pageTypeHint"
+            label={t("crawlTemplates.fields.pageTypeHint", { defaultValue: "Page type hint" })}
+          >
+            <Select
+              options={[
+                {
+                  value: "auto",
+                  label: t("crawl.settings.pageTypeHintOptions.auto", { defaultValue: "Auto detect" })
+                },
+                {
+                  value: "list",
+                  label: t("crawl.settings.pageTypeHintOptions.list", { defaultValue: "List page" })
+                },
+                {
+                  value: "detail",
+                  label: t("crawl.settings.pageTypeHintOptions.detail", {
+                    defaultValue: "Detail page"
+                  })
+                }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="autoExpandDetails"
+            label={t("crawlTemplates.fields.autoExpandDetails", { defaultValue: "Auto expand details" })}
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, next) => prev.autoExpandDetails !== next.autoExpandDetails}>
+            {({ getFieldValue }) =>
+              getFieldValue("autoExpandDetails") ? (
+                <>
+                  <Form.Item
+                    name="maxDetailUrls"
+                    label={t("crawl.detailExpansion.maxDetailUrls", { defaultValue: "Max detail URLs" })}
+                  >
+                    <InputNumber min={1} max={30} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="minRelevanceScore"
+                    label={t("crawl.detailExpansion.minRelevanceScore", {
+                      defaultValue: "Min relevance score"
+                    })}
+                  >
+                    <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="requireSameDomain"
+                    label={t("crawl.detailExpansion.requireSameDomain", {
+                      defaultValue: "Require same domain"
+                    })}
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item
+                    name="allowExternalLinks"
+                    label={t("crawl.detailExpansion.allowExternalLinks", {
+                      defaultValue: "Allow external links"
+                    })}
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+                </>
+              ) : null
+            }
+          </Form.Item>
 
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={t("crawlTemplates.hints.noLlmTitle", { defaultValue: "No LLM in crawl stage" })}
+            description={t("crawlTemplates.hints.noLlmDescription", {
+              defaultValue: CRAWL4AI_LLM_OPTION_GUARD_MESSAGE
+            })}
+          />
           <Form.Item
             name="crawlOptionsJson"
             label={t("crawlTemplates.fields.advancedJson", { defaultValue: "Advanced crawl options (JSON)" })}
+            validateTrigger="onBlur"
+            rules={[
+              {
+                validator: async (_rule, value) => {
+                  const trimmed = typeof value === "string" ? value.trim() : "";
+                  if (!trimmed) {
+                    return;
+                  }
+                  let parsed: unknown;
+                  try {
+                    parsed = JSON.parse(trimmed);
+                  } catch (error) {
+                    throw new Error(
+                      error instanceof Error ? error.message : "crawlOptions must be a valid JSON object"
+                    );
+                  }
+                  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                    throw new Error("crawlOptions must be a JSON object");
+                  }
+                  assertNoCrawl4aiLlmOptions(parsed, "crawlOptions");
+                }
+              }
+            ]}
           >
             <Input.TextArea autoSize={{ minRows: 4, maxRows: 12 }} />
           </Form.Item>

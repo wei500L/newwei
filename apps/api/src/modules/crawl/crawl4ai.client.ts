@@ -92,6 +92,20 @@ interface Crawl4aiHttpPayload {
   }[];
 }
 
+interface CrawlScanProfile {
+  scanFullPage?: boolean;
+  virtualScroll?: {
+    type: string;
+    params: Record<string, unknown>;
+  };
+  scrollDelaySeconds?: number;
+  delayBeforeReturnHtmlMs?: number;
+  waitForTimeoutMs?: number;
+  waitUntil?: 'domcontentloaded' | 'load' | 'networkidle' | 'commit';
+  pageTimeoutMs?: number;
+  adjustViewportToContent?: boolean;
+}
+
 @Injectable()
 export class Crawl4aiClient {
   private readonly logger = new Logger(Crawl4aiClient.name);
@@ -112,6 +126,7 @@ export class Crawl4aiClient {
       return await this.sendCrawlRequest(payload, settings.requestTimeoutMs);
     } catch (error) {
       let resolvedError: unknown = error;
+      let resolvedPayload: Crawl4aiHttpPayload = payload;
       const compatibilityPayload = this.buildPrefetchCompatibilityFallbackPayload(payload, error);
       if (compatibilityPayload) {
         this.logger.warn(
@@ -121,6 +136,19 @@ export class Crawl4aiClient {
           return await this.sendCrawlRequest(compatibilityPayload, settings.requestTimeoutMs);
         } catch (retryError) {
           resolvedError = retryError;
+          resolvedPayload = compatibilityPayload;
+        }
+      }
+
+      const scanFallbackPayload = this.buildScanFullPageFallbackPayload(request, resolvedPayload, resolvedError);
+      if (scanFallbackPayload) {
+        this.logger.warn(
+          "scanFullPage failed or timed out; retrying crawl4ai with bounded virtualScroll fallback"
+        );
+        try {
+          return await this.sendCrawlRequest(scanFallbackPayload, settings.requestTimeoutMs);
+        } catch (fallbackError) {
+          resolvedError = fallbackError;
         }
       }
 
@@ -278,7 +306,116 @@ export class Crawl4aiClient {
       return null;
     }
 
-    const clonedPayload: Crawl4aiHttpPayload = {
+    const clonedPayload = this.clonePayload(payload);
+
+    delete (clonedPayload.crawler_config.params as Record<string, unknown>).prefetch;
+    if (clonedPayload.crawler_configurations) {
+      for (const entry of clonedPayload.crawler_configurations) {
+        delete (entry.params as Record<string, unknown>).prefetch;
+      }
+    }
+
+    return clonedPayload;
+  }
+
+  private buildScanFullPageFallbackPayload(
+    request: Crawl4aiRequest,
+    payload: Crawl4aiHttpPayload,
+    error: unknown
+  ): Crawl4aiHttpPayload | null {
+    if (!this.isScanFullPageFallbackCandidate(request, payload, error)) {
+      return null;
+    }
+
+    const clonedPayload = this.clonePayload(payload);
+    const crawlerParams = clonedPayload.crawler_config.params as Record<string, unknown>;
+
+    const sourceScrollDelay =
+      typeof crawlerParams.scroll_delay === "number" && Number.isFinite(crawlerParams.scroll_delay)
+        ? crawlerParams.scroll_delay
+        : 0.35;
+    const fallbackWaitAfterScroll = Number(Math.max(0.2, Math.min(2.5, sourceScrollDelay + 0.15)).toFixed(2));
+    const fallbackScrollCount =
+      typeof request.options?.virtualScroll?.scrollCount === "number" &&
+      Number.isFinite(request.options.virtualScroll.scrollCount)
+        ? Math.max(4, Math.min(60, Math.round(request.options.virtualScroll.scrollCount)))
+        : 24;
+
+    crawlerParams.scan_full_page = false;
+    delete crawlerParams.scroll_delay;
+    crawlerParams.virtual_scroll_config = {
+      type: "VirtualScrollConfig",
+      params: this.compact({
+        container_selector: "body",
+        scroll_count: fallbackScrollCount,
+        scroll_by: "page_height",
+        wait_after_scroll: fallbackWaitAfterScroll
+      })
+    };
+
+    if (typeof crawlerParams.adjust_viewport_to_content !== "boolean") {
+      crawlerParams.adjust_viewport_to_content = true;
+    }
+
+    if (typeof crawlerParams.wait_until !== "string" || crawlerParams.wait_until === "networkidle") {
+      crawlerParams.wait_until = "domcontentloaded";
+    }
+
+    const waitForTimeout = crawlerParams.wait_for_timeout;
+    if (typeof waitForTimeout !== "number" || !Number.isFinite(waitForTimeout)) {
+      crawlerParams.wait_for_timeout = 8000;
+    } else {
+      crawlerParams.wait_for_timeout = Math.max(3000, Math.min(12000, Math.round(waitForTimeout)));
+    }
+
+    const pageTimeout = crawlerParams.page_timeout;
+    if (typeof pageTimeout !== "number" || !Number.isFinite(pageTimeout)) {
+      crawlerParams.page_timeout = 45000;
+    } else {
+      crawlerParams.page_timeout = Math.max(15000, Math.min(90000, Math.round(pageTimeout)));
+    }
+
+    return clonedPayload;
+  }
+
+  private isScanFullPageFallbackCandidate(
+    request: Crawl4aiRequest,
+    payload: Crawl4aiHttpPayload,
+    error: unknown
+  ): boolean {
+    if (request.options?.scanFullPage !== true || request.options?.virtualScroll) {
+      return false;
+    }
+
+    const crawlerParams = payload.crawler_config?.params;
+    if (!crawlerParams || typeof crawlerParams !== "object") {
+      return false;
+    }
+
+    const params = crawlerParams as Record<string, unknown>;
+    if (params.scan_full_page !== true) {
+      return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(params, "virtual_scroll_config")) {
+      return false;
+    }
+
+    if (error instanceof TimeoutError) {
+      return true;
+    }
+
+    const normalizedMessage = this.extractErrorText(error);
+    return (
+      normalizedMessage.includes("timeout") ||
+      normalizedMessage.includes("timed out") ||
+      (normalizedMessage.includes("navigation") && normalizedMessage.includes("timeout")) ||
+      normalizedMessage.includes("execution context was destroyed") ||
+      normalizedMessage.includes("target closed")
+    );
+  }
+
+  private clonePayload(payload: Crawl4aiHttpPayload): Crawl4aiHttpPayload {
+    return {
       ...payload,
       crawler_config: {
         ...payload.crawler_config,
@@ -291,15 +428,42 @@ export class Crawl4aiClient {
           }))
         : undefined
     };
+  }
 
-    delete (clonedPayload.crawler_config.params as Record<string, unknown>).prefetch;
-    if (clonedPayload.crawler_configurations) {
-      for (const entry of clonedPayload.crawler_configurations) {
-        delete (entry.params as Record<string, unknown>).prefetch;
+  private extractErrorText(error: unknown): string {
+    if (!error) {
+      return "";
+    }
+    if (typeof error === "string") {
+      return error.toLowerCase();
+    }
+
+    const parts: string[] = [];
+
+    if (error instanceof Error && error.message.trim().length > 0) {
+      parts.push(error.message.trim());
+    }
+
+    if (typeof error === "object") {
+      const axiosError = error as AxiosError<unknown>;
+      if (typeof axiosError.message === "string" && axiosError.message.trim().length > 0) {
+        parts.push(axiosError.message.trim());
+      }
+      const responseData = axiosError.response?.data;
+      if (typeof responseData === "string" && responseData.trim().length > 0) {
+        parts.push(responseData.trim());
+      } else if (responseData && typeof responseData === "object" && !Array.isArray(responseData)) {
+        const record = responseData as Record<string, unknown>;
+        for (const key of ["message", "detail", "error"]) {
+          const value = record[key];
+          if (typeof value === "string" && value.trim().length > 0) {
+            parts.push(value.trim());
+          }
+        }
       }
     }
 
-    return clonedPayload;
+    return parts.join("\n").toLowerCase();
   }
 
   private isPrefetchFallbackCandidateError(error: unknown): boolean {
@@ -363,6 +527,99 @@ export class Crawl4aiClient {
     }
   }
 
+  private resolveScanProfile(
+    options:
+      | Pick<
+          CrawlTaskOptions,
+          | "virtualScroll"
+          | "scanFullPage"
+          | "scrollDelayMs"
+          | "waitUntil"
+          | "waitForTimeoutMs"
+          | "pageTimeoutMs"
+          | "delayBeforeReturnHtmlMs"
+          | "adjustViewportToContent"
+        >
+      | CrawlStrategyOverrides
+      | undefined,
+    mode: "primary" | "override"
+  ): CrawlScanProfile {
+    if (!options) {
+      return mode === "primary"
+        ? {
+            scanFullPage: false,
+            adjustViewportToContent: false
+          }
+        : {};
+    }
+
+    const virtualScroll = this.buildVirtualScrollConfig(options.virtualScroll);
+    const explicitScanFullPage =
+      typeof options.scanFullPage === "boolean" ? options.scanFullPage : undefined;
+    const scanFullPage = virtualScroll
+      ? false
+      : explicitScanFullPage ?? (mode === "primary" ? false : undefined);
+
+    const waitUntil =
+      options.waitUntil === "domcontentloaded" ||
+      options.waitUntil === "load" ||
+      options.waitUntil === "networkidle" ||
+      options.waitUntil === "commit"
+        ? options.waitUntil
+        : undefined;
+
+    if (scanFullPage !== true) {
+      return {
+        scanFullPage,
+        virtualScroll,
+        waitUntil,
+        waitForTimeoutMs: options.waitForTimeoutMs,
+        pageTimeoutMs: options.pageTimeoutMs,
+        delayBeforeReturnHtmlMs: options.delayBeforeReturnHtmlMs,
+        adjustViewportToContent:
+          typeof options.adjustViewportToContent === "boolean"
+            ? options.adjustViewportToContent
+            : mode === "primary"
+              ? false
+              : undefined
+      };
+    }
+
+    const scrollDelayMs =
+      typeof options.scrollDelayMs === "number" && Number.isFinite(options.scrollDelayMs)
+        ? Math.max(50, Math.min(5000, Math.round(options.scrollDelayMs)))
+        : 350;
+    const resolvedWaitUntil = waitUntil ?? "domcontentloaded";
+    const waitForTimeoutMs =
+      typeof options.waitForTimeoutMs === "number" && Number.isFinite(options.waitForTimeoutMs)
+        ? Math.max(
+            resolvedWaitUntil === "networkidle" ? 5000 : 1000,
+            Math.min(60000, Math.round(options.waitForTimeoutMs))
+          )
+        : resolvedWaitUntil === "networkidle"
+          ? 9000
+          : 8000;
+    const pageTimeoutMs =
+      typeof options.pageTimeoutMs === "number" && Number.isFinite(options.pageTimeoutMs)
+        ? Math.max(1000, Math.min(180000, Math.round(options.pageTimeoutMs)))
+        : 45000;
+    const delayBeforeReturnHtmlMs =
+      typeof options.delayBeforeReturnHtmlMs === "number" && Number.isFinite(options.delayBeforeReturnHtmlMs)
+        ? Math.max(0, Math.min(30000, Math.round(options.delayBeforeReturnHtmlMs)))
+        : 600;
+
+    return {
+      scanFullPage,
+      virtualScroll,
+      scrollDelaySeconds: Number((scrollDelayMs / 1000).toFixed(2)),
+      waitUntil: resolvedWaitUntil,
+      waitForTimeoutMs,
+      pageTimeoutMs,
+      delayBeforeReturnHtmlMs,
+      adjustViewportToContent: options.adjustViewportToContent ?? true
+    };
+  }
+
   private toHttpPayload(request: Crawl4aiRequest): Crawl4aiHttpPayload {
     const options = request.options ?? {};
     const urls = (request.urls && request.urls.length > 0 ? request.urls : [request.url]).map((entry) =>
@@ -392,15 +649,13 @@ export class Crawl4aiClient {
     const userAgent = this.normalizeUserAgent(options.userAgent);
     const userAgentGenerator = this.buildUserAgentGenerator(options.userAgentGenerator);
     const geolocation = this.buildGeolocation(options.geolocation);
-    const virtualScroll = this.buildVirtualScrollConfig(options.virtualScroll);
-    const scanFullPage = virtualScroll ? false : (options.scanFullPage ?? false);
-    const scrollDelay =
-      scanFullPage && typeof options.scrollDelayMs === "number"
-        ? options.scrollDelayMs / 1000
-        : undefined;
+    const scanProfile = this.resolveScanProfile(options, "primary");
+    const virtualScroll = scanProfile.virtualScroll;
+    const scanFullPage = scanProfile.scanFullPage ?? false;
+    const scrollDelay = scanProfile.scrollDelaySeconds;
     const delayBeforeReturnHtml =
-      typeof options.delayBeforeReturnHtmlMs === "number"
-        ? Number((Math.max(0, Math.min(30000, options.delayBeforeReturnHtmlMs)) / 1000).toFixed(2))
+      typeof scanProfile.delayBeforeReturnHtmlMs === "number"
+        ? Number((Math.max(0, Math.min(30000, scanProfile.delayBeforeReturnHtmlMs)) / 1000).toFixed(2))
         : undefined;
     const meanDelay =
       typeof options.meanDelayMs === "number"
@@ -415,16 +670,10 @@ export class Crawl4aiClient {
         ? Math.max(1, Math.min(50, Math.round(options.semaphoreCount)))
         : undefined;
     const pageTimeout =
-      typeof options.pageTimeoutMs === "number" && Number.isFinite(options.pageTimeoutMs)
-        ? Math.max(1000, Math.min(180000, Math.round(options.pageTimeoutMs)))
+      typeof scanProfile.pageTimeoutMs === "number" && Number.isFinite(scanProfile.pageTimeoutMs)
+        ? Math.max(1000, Math.min(180000, Math.round(scanProfile.pageTimeoutMs)))
         : undefined;
-    const waitUntil =
-      options.waitUntil === "domcontentloaded" ||
-      options.waitUntil === "load" ||
-      options.waitUntil === "networkidle" ||
-      options.waitUntil === "commit"
-        ? options.waitUntil
-        : undefined;
+    const waitUntil = scanProfile.waitUntil;
     const wordCountThreshold = this.normalizeWordCountThreshold(options.wordCountThreshold ?? 80);
     const excludeExternalLinks = options.excludeExternalLinks ?? true;
     const removeOverlayElements = options.removeOverlayElements ?? true;
@@ -462,7 +711,7 @@ export class Crawl4aiClient {
         cache_mode: options.cacheMode ?? "bypass",
         prefetch: options.prefetch ? true : undefined,
         scan_full_page: scanFullPage,
-        adjust_viewport_to_content: options.adjustViewportToContent ? true : undefined,
+        adjust_viewport_to_content: scanProfile.adjustViewportToContent ? true : undefined,
         scroll_delay: scrollDelay,
         simulate_user: options.simulateUser ?? undefined,
         override_navigator: options.overrideNavigator ?? undefined,
@@ -479,7 +728,7 @@ export class Crawl4aiClient {
         js_code: this.normalizeJsCode(options.jsCode),
         js_only: options.jsOnly ? true : undefined,
         wait_for: this.buildWaitFor(options),
-        wait_for_timeout: this.normalizeWaitForTimeout(options.waitForTimeoutMs, waitUntil),
+        wait_for_timeout: this.normalizeWaitForTimeout(scanProfile.waitForTimeoutMs, waitUntil),
         wait_until: waitUntil,
         page_timeout: pageTimeout,
         delay_before_return_html: delayBeforeReturnHtml,
@@ -917,23 +1166,18 @@ export class Crawl4aiClient {
         const wordCount = this.normalizeWordCountThreshold(overrides?.wordCountThreshold);
         const cssSelector = this.normalizeCssSelector(overrides?.cssSelector);
         const excludedTags = this.normalizeSelectorList(overrides?.excludedTags);
-        const virtualScroll = this.buildVirtualScrollConfig(overrides?.virtualScroll);
-        const scanFullPage = virtualScroll ? false : overrides?.scanFullPage;
+        const scanProfile = this.resolveScanProfile(overrides, "override");
+        const virtualScroll = scanProfile.virtualScroll;
+        const scanFullPage = scanProfile.scanFullPage;
         const delayBeforeReturnHtml =
-          typeof overrides?.delayBeforeReturnHtmlMs === "number"
-            ? Number((Math.max(0, Math.min(30000, overrides.delayBeforeReturnHtmlMs)) / 1000).toFixed(2))
+          typeof scanProfile.delayBeforeReturnHtmlMs === "number"
+            ? Number((Math.max(0, Math.min(30000, scanProfile.delayBeforeReturnHtmlMs)) / 1000).toFixed(2))
             : undefined;
         const pageTimeout =
-          typeof overrides?.pageTimeoutMs === "number" && Number.isFinite(overrides.pageTimeoutMs)
-            ? Math.max(1000, Math.min(180000, Math.round(overrides.pageTimeoutMs)))
+          typeof scanProfile.pageTimeoutMs === "number" && Number.isFinite(scanProfile.pageTimeoutMs)
+            ? Math.max(1000, Math.min(180000, Math.round(scanProfile.pageTimeoutMs)))
             : undefined;
-        const waitUntil =
-          overrides?.waitUntil === "domcontentloaded" ||
-          overrides?.waitUntil === "load" ||
-          overrides?.waitUntil === "networkidle" ||
-          overrides?.waitUntil === "commit"
-            ? overrides.waitUntil
-            : undefined;
+        const waitUntil = scanProfile.waitUntil;
         const meanDelay =
           typeof overrides?.meanDelayMs === "number"
             ? Number((Math.max(0, Math.min(10000, overrides.meanDelayMs)) / 1000).toFixed(2))
@@ -951,17 +1195,14 @@ export class Crawl4aiClient {
           match_mode: matcher?.matchMode,
           cache_mode: overrides?.cacheMode,
           scan_full_page: scanFullPage,
-          adjust_viewport_to_content: overrides?.adjustViewportToContent ? true : undefined,
-          scroll_delay:
-            scanFullPage && typeof overrides?.scrollDelayMs === "number"
-              ? overrides.scrollDelayMs / 1000
-              : undefined,
+          adjust_viewport_to_content: scanProfile.adjustViewportToContent ? true : undefined,
+          scroll_delay: scanProfile.scrollDelaySeconds,
           simulate_user: overrides?.simulateUser,
           override_navigator: overrides?.overrideNavigator,
           js_code: this.normalizeJsCode(overrides?.jsCode),
           js_only: overrides?.jsOnly ? true : undefined,
           wait_for: this.buildWaitFor(overrides),
-          wait_for_timeout: this.normalizeWaitForTimeout(overrides?.waitForTimeoutMs, waitUntil),
+          wait_for_timeout: this.normalizeWaitForTimeout(scanProfile.waitForTimeoutMs, waitUntil),
           wait_until: waitUntil,
           page_timeout: pageTimeout,
           delay_before_return_html: delayBeforeReturnHtml,

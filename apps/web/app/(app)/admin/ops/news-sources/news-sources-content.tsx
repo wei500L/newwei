@@ -142,6 +142,27 @@ interface Crawl4aiQueueStats {
   maxConcurrency?: number;
 }
 
+interface Crawl4aiQualitySourceMetric {
+  sourceId: string;
+  taskCount: number;
+  lowSignalRatio: number;
+  expansionSuccessRate: number;
+  avgMarkdownChars: number;
+}
+
+interface Crawl4aiQualitySnapshot {
+  orgId: string;
+  from: string;
+  to: string;
+  taskCount: number;
+  lowSignalRatio: number;
+  emptyMarkdownRate: number;
+  expansionTriggerRate: number;
+  expansionSuccessRate: number;
+  avgMarkdownChars: number;
+  groupedBySource: Crawl4aiQualitySourceMetric[];
+}
+
 interface NewsSourceDispatchResponse {
   sourceId: string;
   mode: "single" | "sitemap" | "rss" | "list";
@@ -203,6 +224,23 @@ interface NewsSourceFormValues {
   metadataJson?: string;
   crawlProxyMode?: "auto" | "enable" | "disable";
   crawlProxyUrl?: string;
+  crawlScanMode?: "default" | "full_page" | "virtual_scroll";
+  crawlScrollDelayMs?: number;
+  crawlVirtualScrollContainerSelector?: string;
+  crawlVirtualScrollScrollCount?: number;
+  crawlVirtualScrollScrollBy?: "page_height" | "container_height" | "pixels";
+  crawlVirtualScrollScrollByPixels?: number;
+  crawlVirtualScrollWaitAfterScrollMs?: number;
+  crawlQualityProfile?: "quality_first" | "balanced" | "speed_first";
+  crawlPageTypeHint?: "auto" | "list" | "detail";
+  crawlAutoExpandDetails?: boolean;
+  crawlDetailMaxUrls?: number;
+  crawlDetailMinRelevanceScore?: number;
+  crawlDetailRequireSameDomain?: boolean;
+  crawlDetailAllowExternalLinks?: boolean;
+  crawlMarkdownContentSource?: "cleaned_html" | "raw_html" | "fit_html";
+  crawlMarkdownEscapeHtmlMode?: "auto" | "enable" | "disable";
+  crawlMarkdownCitationsMode?: "auto" | "enable" | "disable";
   crawlOptionsJson?: string;
   crawlHeadlessMode?: "auto" | "headless" | "headed";
   crawlUndetectedMode?: "auto" | "enable" | "disable";
@@ -239,6 +277,23 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   seedQuery: "",
   crawlProxyMode: "auto",
   crawlProxyUrl: "",
+  crawlScanMode: "default",
+  crawlScrollDelayMs: undefined,
+  crawlVirtualScrollContainerSelector: "",
+  crawlVirtualScrollScrollCount: 10,
+  crawlVirtualScrollScrollBy: "page_height",
+  crawlVirtualScrollScrollByPixels: 500,
+  crawlVirtualScrollWaitAfterScrollMs: 600,
+  crawlQualityProfile: undefined,
+  crawlPageTypeHint: undefined,
+  crawlAutoExpandDetails: false,
+  crawlDetailMaxUrls: 8,
+  crawlDetailMinRelevanceScore: 0.2,
+  crawlDetailRequireSameDomain: true,
+  crawlDetailAllowExternalLinks: true,
+  crawlMarkdownContentSource: "cleaned_html",
+  crawlMarkdownEscapeHtmlMode: "auto",
+  crawlMarkdownCitationsMode: "auto",
   crawlHeadlessMode: "auto",
   crawlUndetectedMode: "auto",
   crawlStealthMode: "auto",
@@ -426,6 +481,107 @@ const getSeedMode = (config: unknown): "sitemap" | "rss" | "list" | null => {
   return "sitemap";
 };
 
+interface CrawlStrategyTagDescriptor {
+  key: string;
+  color: string;
+  label: string;
+}
+
+const getCrawlStrategyTags = (
+  config: unknown,
+  t: (key: string, options?: Record<string, unknown>) => string
+): CrawlStrategyTagDescriptor[] => {
+  if (!isPlainObject(config) || !isPlainObject(config.crawlOptions)) {
+    return [];
+  }
+  const crawlOptions = config.crawlOptions as Record<string, unknown>;
+  const tags: CrawlStrategyTagDescriptor[] = [];
+
+  const hasVirtualScroll =
+    crawlOptions.virtualScroll &&
+    typeof crawlOptions.virtualScroll === "object" &&
+    !Array.isArray(crawlOptions.virtualScroll);
+  if (hasVirtualScroll) {
+    tags.push({
+      key: "scanMode",
+      color: "cyan",
+      label: t("newsSources.scanMode.virtualScroll", { defaultValue: "Virtual scroll" })
+    });
+  } else if (crawlOptions.scanFullPage === true) {
+    tags.push({
+      key: "scanMode",
+      color: "blue",
+      label: t("newsSources.scanMode.fullPage", { defaultValue: "Full-page scanning" })
+    });
+  }
+
+  const qualityProfile =
+    typeof crawlOptions.qualityProfile === "string"
+      ? crawlOptions.qualityProfile.trim().toLowerCase()
+      : "";
+  if (qualityProfile === "quality_first") {
+    tags.push({
+      key: "qualityProfile",
+      color: "purple",
+      label: t("crawl.settings.qualityProfileOptions.qualityFirst")
+    });
+  } else if (qualityProfile === "balanced") {
+    tags.push({
+      key: "qualityProfile",
+      color: "purple",
+      label: t("crawl.settings.qualityProfileOptions.balanced")
+    });
+  } else if (qualityProfile === "speed_first") {
+    tags.push({
+      key: "qualityProfile",
+      color: "purple",
+      label: t("crawl.settings.qualityProfileOptions.speedFirst")
+    });
+  }
+
+  const pageTypeHint =
+    typeof crawlOptions.pageTypeHint === "string"
+      ? crawlOptions.pageTypeHint.trim().toLowerCase()
+      : "";
+  if (pageTypeHint === "list") {
+    tags.push({
+      key: "pageTypeHint",
+      color: "magenta",
+      label: t("crawl.settings.pageTypeHintOptions.list")
+    });
+  } else if (pageTypeHint === "detail") {
+    tags.push({
+      key: "pageTypeHint",
+      color: "magenta",
+      label: t("crawl.settings.pageTypeHintOptions.detail")
+    });
+  }
+
+  if (crawlOptions.autoExpandDetails === true) {
+    tags.push({
+      key: "autoExpandDetails",
+      color: "green",
+      label: t("crawl.settings.autoExpandDetails")
+    });
+  }
+
+  const markdownOptions =
+    crawlOptions.markdownOptions &&
+    typeof crawlOptions.markdownOptions === "object" &&
+    !Array.isArray(crawlOptions.markdownOptions)
+      ? (crawlOptions.markdownOptions as Record<string, unknown>)
+      : null;
+  if (markdownOptions?.contentSource === "cleaned_html") {
+    tags.push({
+      key: "ragReady",
+      color: "geekblue",
+      label: t("crawl.markdown.ragReadyTitle")
+    });
+  }
+
+  return tags;
+};
+
 const pipelineJobStatusColors: Record<string, string> = {
   pending: "gold",
   queued: "cyan",
@@ -507,6 +663,9 @@ export function NewsSourcesContent() {
   const [crawlQueueStats, setCrawlQueueStats] = useState<Crawl4aiQueueStats | null>(null);
   const [crawlQueueLoading, setCrawlQueueLoading] = useState(false);
   const [crawlQueueError, setCrawlQueueError] = useState<string | null>(null);
+  const [crawlQualityStats, setCrawlQualityStats] = useState<Crawl4aiQualitySnapshot | null>(null);
+  const [crawlQualityLoading, setCrawlQualityLoading] = useState(false);
+  const [crawlQualityError, setCrawlQualityError] = useState<string | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleTargets, setScheduleTargets] = useState<NewsSourceRecord[]>([]);
@@ -614,6 +773,34 @@ export function NewsSourcesContent() {
     [apiClient]
   );
 
+  const loadCrawlQualityStats = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
+      if (!silent) {
+        setCrawlQualityLoading(true);
+      }
+      setCrawlQualityError(null);
+      try {
+        const response = await apiClient.get<Crawl4aiQualitySnapshot>("admin/crawl4ai/quality");
+        setCrawlQualityStats(response.data ?? null);
+      } catch (error) {
+        captureClientError("Failed to load crawl quality stats", error);
+        setCrawlQualityError(
+          extractApiErrorMessage(error) ??
+            (error instanceof Error ? error.message : "Failed to load crawl quality stats.")
+        );
+        if (!silent) {
+          setCrawlQualityStats(null);
+        }
+      } finally {
+        if (!silent) {
+          setCrawlQualityLoading(false);
+        }
+      }
+    },
+    [apiClient]
+  );
+
   const refreshAll = useCallback(
     async (options?: { silent?: boolean }) => {
       if (refreshRef.current) {
@@ -624,7 +811,8 @@ export function NewsSourcesContent() {
       try {
         const [sourcesOk] = await Promise.all([
           loadSources({ silent }),
-          loadCrawlQueueStats({ silent })
+          loadCrawlQueueStats({ silent }),
+          loadCrawlQualityStats({ silent })
         ]);
         if (sourcesOk) {
           setLastUpdatedAt(new Date().toISOString());
@@ -633,7 +821,7 @@ export function NewsSourcesContent() {
         refreshRef.current = false;
       }
     },
-    [loadCrawlQueueStats, loadSources]
+    [loadCrawlQualityStats, loadCrawlQueueStats, loadSources]
   );
 
   useEffect(() => {
@@ -1038,6 +1226,104 @@ export function NewsSourcesContent() {
       proxyUrlRaw.length > 0 ? "enable" : proxyConfigServer.length > 0 && !proxyConfigHasAuth ? "enable" : "auto";
     const crawlProxyUrl =
       proxyUrlRaw.length > 0 ? proxyUrlRaw : proxyConfigServer.length > 0 && !proxyConfigHasAuth ? proxyConfigServer : "";
+    const virtualScrollConfig =
+      crawlOptionsConfig?.virtualScroll &&
+      typeof crawlOptionsConfig.virtualScroll === "object" &&
+      !Array.isArray(crawlOptionsConfig.virtualScroll)
+        ? (crawlOptionsConfig.virtualScroll as Record<string, unknown>)
+        : null;
+    const crawlScanMode =
+      virtualScrollConfig !== null
+        ? "virtual_scroll"
+        : crawlOptionsConfig?.scanFullPage === true
+          ? "full_page"
+          : "default";
+    const crawlScrollDelayMs =
+      typeof crawlOptionsConfig?.scrollDelayMs === "number" && Number.isFinite(crawlOptionsConfig.scrollDelayMs)
+        ? crawlOptionsConfig.scrollDelayMs
+        : undefined;
+    const crawlVirtualScrollContainerSelector =
+      typeof virtualScrollConfig?.containerSelector === "string" ? virtualScrollConfig.containerSelector : "";
+    const crawlVirtualScrollScrollCount =
+      typeof virtualScrollConfig?.scrollCount === "number" && Number.isFinite(virtualScrollConfig.scrollCount)
+        ? virtualScrollConfig.scrollCount
+        : 10;
+    const crawlVirtualScrollScrollBy =
+      virtualScrollConfig?.scrollBy === "container_height" ||
+      virtualScrollConfig?.scrollBy === "page_height" ||
+      virtualScrollConfig?.scrollBy === "pixels"
+        ? (virtualScrollConfig.scrollBy as "container_height" | "page_height" | "pixels")
+        : "page_height";
+    const crawlVirtualScrollScrollByPixels =
+      typeof virtualScrollConfig?.scrollByPixels === "number" && Number.isFinite(virtualScrollConfig.scrollByPixels)
+        ? virtualScrollConfig.scrollByPixels
+        : 500;
+    const crawlVirtualScrollWaitAfterScrollMs =
+      typeof virtualScrollConfig?.waitAfterScrollMs === "number" &&
+      Number.isFinite(virtualScrollConfig.waitAfterScrollMs)
+        ? virtualScrollConfig.waitAfterScrollMs
+        : 600;
+    const crawlQualityProfileRaw =
+      typeof crawlOptionsConfig?.qualityProfile === "string" ? crawlOptionsConfig.qualityProfile.trim().toLowerCase() : "";
+    const crawlQualityProfile =
+      crawlQualityProfileRaw === "quality_first" ||
+      crawlQualityProfileRaw === "balanced" ||
+      crawlQualityProfileRaw === "speed_first"
+        ? (crawlQualityProfileRaw as "quality_first" | "balanced" | "speed_first")
+        : undefined;
+    const crawlPageTypeHintRaw =
+      typeof crawlOptionsConfig?.pageTypeHint === "string" ? crawlOptionsConfig.pageTypeHint.trim().toLowerCase() : "";
+    const crawlPageTypeHint =
+      crawlPageTypeHintRaw === "auto" || crawlPageTypeHintRaw === "list" || crawlPageTypeHintRaw === "detail"
+        ? (crawlPageTypeHintRaw as "auto" | "list" | "detail")
+        : undefined;
+    const detailExpansionConfig =
+      crawlOptionsConfig?.detailExpansion &&
+      typeof crawlOptionsConfig.detailExpansion === "object" &&
+      !Array.isArray(crawlOptionsConfig.detailExpansion)
+        ? (crawlOptionsConfig.detailExpansion as Record<string, unknown>)
+        : null;
+    const crawlAutoExpandDetails = crawlOptionsConfig?.autoExpandDetails === true;
+    const crawlDetailMaxUrls =
+      typeof detailExpansionConfig?.maxDetailUrls === "number" && Number.isFinite(detailExpansionConfig.maxDetailUrls)
+        ? detailExpansionConfig.maxDetailUrls
+        : 8;
+    const crawlDetailMinRelevanceScore =
+      typeof detailExpansionConfig?.minRelevanceScore === "number" && Number.isFinite(detailExpansionConfig.minRelevanceScore)
+        ? Number(Math.max(0, Math.min(1, detailExpansionConfig.minRelevanceScore)).toFixed(3))
+        : 0.2;
+    const crawlDetailRequireSameDomain =
+      typeof detailExpansionConfig?.requireSameDomain === "boolean"
+        ? detailExpansionConfig.requireSameDomain
+        : true;
+    const crawlDetailAllowExternalLinks =
+      typeof detailExpansionConfig?.allowExternalLinks === "boolean"
+        ? detailExpansionConfig.allowExternalLinks
+        : true;
+    const markdownOptionsConfig =
+      crawlOptionsConfig?.markdownOptions &&
+      typeof crawlOptionsConfig.markdownOptions === "object" &&
+      !Array.isArray(crawlOptionsConfig.markdownOptions)
+        ? (crawlOptionsConfig.markdownOptions as Record<string, unknown>)
+        : null;
+    const crawlMarkdownContentSource =
+      markdownOptionsConfig?.contentSource === "cleaned_html" ||
+      markdownOptionsConfig?.contentSource === "raw_html" ||
+      markdownOptionsConfig?.contentSource === "fit_html"
+        ? (markdownOptionsConfig.contentSource as "cleaned_html" | "raw_html" | "fit_html")
+        : "cleaned_html";
+    const crawlMarkdownEscapeHtmlMode =
+      typeof markdownOptionsConfig?.escapeHtml === "boolean"
+        ? markdownOptionsConfig.escapeHtml
+          ? "enable"
+          : "disable"
+        : "auto";
+    const crawlMarkdownCitationsMode =
+      typeof markdownOptionsConfig?.citations === "boolean"
+        ? markdownOptionsConfig.citations
+          ? "enable"
+          : "disable"
+        : "auto";
 
     const nextFormValues: Partial<NewsSourceFormValues> = {
       ...NEWS_SOURCE_CREATE_INITIAL_VALUES,
@@ -1061,6 +1347,23 @@ export function NewsSourcesContent() {
       metadataJson: config?.metadata ? JSON.stringify(config.metadata, null, 2) : "",
       crawlProxyMode,
       crawlProxyUrl,
+      crawlScanMode,
+      crawlScrollDelayMs,
+      crawlVirtualScrollContainerSelector,
+      crawlVirtualScrollScrollCount,
+      crawlVirtualScrollScrollBy,
+      crawlVirtualScrollScrollByPixels,
+      crawlVirtualScrollWaitAfterScrollMs,
+      crawlQualityProfile,
+      crawlPageTypeHint,
+      crawlAutoExpandDetails,
+      crawlDetailMaxUrls,
+      crawlDetailMinRelevanceScore,
+      crawlDetailRequireSameDomain,
+      crawlDetailAllowExternalLinks,
+      crawlMarkdownContentSource,
+      crawlMarkdownEscapeHtmlMode,
+      crawlMarkdownCitationsMode,
       crawlOptionsJson: config?.crawlOptions ? JSON.stringify(config.crawlOptions, null, 2) : "",
       crawlHeadlessMode,
       crawlUndetectedMode,
@@ -1175,6 +1478,151 @@ export function NewsSourcesContent() {
       }
       if (typeof resolvedCrawlOptions.proxyConfig === "object") {
         delete resolvedCrawlOptions.proxyConfig;
+      }
+    }
+
+    const crawlScanMode =
+      values.crawlScanMode === "full_page"
+        ? "full_page"
+        : values.crawlScanMode === "virtual_scroll"
+          ? "virtual_scroll"
+          : "default";
+
+    if (crawlScanMode === "full_page") {
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.scanFullPage = true;
+      delete resolvedCrawlOptions.virtualScroll;
+      if (typeof values.crawlScrollDelayMs === "number" && Number.isFinite(values.crawlScrollDelayMs)) {
+        resolvedCrawlOptions.scrollDelayMs = Math.max(0, Math.min(5000, Math.round(values.crawlScrollDelayMs)));
+      } else {
+        delete resolvedCrawlOptions.scrollDelayMs;
+      }
+    } else if (crawlScanMode === "virtual_scroll") {
+      const scrollBy =
+        values.crawlVirtualScrollScrollBy === "container_height" ||
+        values.crawlVirtualScrollScrollBy === "pixels"
+          ? values.crawlVirtualScrollScrollBy
+          : "page_height";
+      const virtualScroll: Record<string, unknown> = {
+        containerSelector:
+          values.crawlVirtualScrollContainerSelector?.trim() && values.crawlVirtualScrollContainerSelector.trim().length > 0
+            ? values.crawlVirtualScrollContainerSelector.trim()
+            : "body",
+        scrollCount:
+          typeof values.crawlVirtualScrollScrollCount === "number" && Number.isFinite(values.crawlVirtualScrollScrollCount)
+            ? Math.max(1, Math.min(1000, Math.round(values.crawlVirtualScrollScrollCount)))
+            : 10,
+        scrollBy,
+        waitAfterScrollMs:
+          typeof values.crawlVirtualScrollWaitAfterScrollMs === "number" &&
+          Number.isFinite(values.crawlVirtualScrollWaitAfterScrollMs)
+            ? Math.max(0, Math.min(60000, Math.round(values.crawlVirtualScrollWaitAfterScrollMs)))
+            : 600
+      };
+      if (scrollBy === "pixels") {
+        virtualScroll.scrollByPixels =
+          typeof values.crawlVirtualScrollScrollByPixels === "number" &&
+          Number.isFinite(values.crawlVirtualScrollScrollByPixels)
+            ? Math.max(1, Math.min(20000, Math.round(values.crawlVirtualScrollScrollByPixels)))
+            : 500;
+      }
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.scanFullPage = false;
+      resolvedCrawlOptions.virtualScroll = virtualScroll;
+      delete resolvedCrawlOptions.scrollDelayMs;
+    } else if (resolvedCrawlOptions) {
+      delete resolvedCrawlOptions.scanFullPage;
+      delete resolvedCrawlOptions.scrollDelayMs;
+      delete resolvedCrawlOptions.virtualScroll;
+    }
+
+    if (
+      values.crawlQualityProfile === "quality_first" ||
+      values.crawlQualityProfile === "balanced" ||
+      values.crawlQualityProfile === "speed_first"
+    ) {
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.qualityProfile = values.crawlQualityProfile;
+    } else if (resolvedCrawlOptions && typeof resolvedCrawlOptions.qualityProfile === "string") {
+      delete resolvedCrawlOptions.qualityProfile;
+    }
+
+    if (
+      values.crawlPageTypeHint === "auto" ||
+      values.crawlPageTypeHint === "list" ||
+      values.crawlPageTypeHint === "detail"
+    ) {
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.pageTypeHint = values.crawlPageTypeHint;
+    } else if (resolvedCrawlOptions && typeof resolvedCrawlOptions.pageTypeHint === "string") {
+      delete resolvedCrawlOptions.pageTypeHint;
+    }
+
+    if (values.crawlAutoExpandDetails) {
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.autoExpandDetails = true;
+      const detailExpansion: Record<string, unknown> = {};
+      if (typeof values.crawlDetailMaxUrls === "number" && Number.isFinite(values.crawlDetailMaxUrls)) {
+        detailExpansion.maxDetailUrls = Math.max(1, Math.min(30, Math.round(values.crawlDetailMaxUrls)));
+      }
+      if (
+        typeof values.crawlDetailMinRelevanceScore === "number" &&
+        Number.isFinite(values.crawlDetailMinRelevanceScore)
+      ) {
+        detailExpansion.minRelevanceScore = Number(
+          Math.max(0, Math.min(1, values.crawlDetailMinRelevanceScore)).toFixed(3)
+        );
+      }
+      if (typeof values.crawlDetailRequireSameDomain === "boolean") {
+        detailExpansion.requireSameDomain = values.crawlDetailRequireSameDomain;
+      }
+      if (typeof values.crawlDetailAllowExternalLinks === "boolean") {
+        detailExpansion.allowExternalLinks = values.crawlDetailAllowExternalLinks;
+      }
+      if (Object.keys(detailExpansion).length > 0) {
+        resolvedCrawlOptions.detailExpansion = detailExpansion;
+      } else {
+        delete resolvedCrawlOptions.detailExpansion;
+      }
+    } else if (resolvedCrawlOptions) {
+      delete resolvedCrawlOptions.autoExpandDetails;
+      delete resolvedCrawlOptions.detailExpansion;
+    }
+
+    if (
+      values.crawlMarkdownContentSource === "cleaned_html" ||
+      values.crawlMarkdownContentSource === "raw_html" ||
+      values.crawlMarkdownContentSource === "fit_html"
+    ) {
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      const markdownOptions =
+        typeof resolvedCrawlOptions.markdownOptions === "object" &&
+        resolvedCrawlOptions.markdownOptions &&
+        !Array.isArray(resolvedCrawlOptions.markdownOptions)
+          ? { ...(resolvedCrawlOptions.markdownOptions as Record<string, unknown>) }
+          : {};
+      markdownOptions.contentSource = values.crawlMarkdownContentSource;
+
+      if (values.crawlMarkdownEscapeHtmlMode === "enable") {
+        markdownOptions.escapeHtml = true;
+      } else if (values.crawlMarkdownEscapeHtmlMode === "disable") {
+        markdownOptions.escapeHtml = false;
+      } else {
+        delete markdownOptions.escapeHtml;
+      }
+
+      if (values.crawlMarkdownCitationsMode === "enable") {
+        markdownOptions.citations = true;
+      } else if (values.crawlMarkdownCitationsMode === "disable") {
+        markdownOptions.citations = false;
+      } else {
+        delete markdownOptions.citations;
+      }
+
+      if (Object.keys(markdownOptions).length > 0) {
+        resolvedCrawlOptions.markdownOptions = markdownOptions;
+      } else {
+        delete resolvedCrawlOptions.markdownOptions;
       }
     }
 
@@ -2094,6 +2542,30 @@ export function NewsSourcesContent() {
       }
     },
     {
+      title: t("newsSources.columns.strategy", { defaultValue: "Strategy" }),
+      key: "strategy",
+      width: 300,
+      render: (_: unknown, record) => {
+        const strategyTags = getCrawlStrategyTags(record.config, t);
+        if (!strategyTags.length) {
+          return (
+            <Typography.Text type="secondary">
+              {t("newsSources.columns.strategyEmpty", { defaultValue: "Default" })}
+            </Typography.Text>
+          );
+        }
+        return (
+          <Space wrap size={[4, 4]}>
+            {strategyTags.map((tag) => (
+              <Tag key={tag.key} color={tag.color}>
+                {tag.label}
+              </Tag>
+            ))}
+          </Space>
+        );
+      }
+    },
+    {
       title: t("newsSources.columns.frequency", { defaultValue: "Frequency (s)" }),
       dataIndex: "frequencySeconds",
       key: "frequencySeconds",
@@ -2712,6 +3184,91 @@ export function NewsSourcesContent() {
             )}
           </Card>
 
+          <Card
+            size="small"
+            title={t("newsSources.quality.title", { defaultValue: "Crawl quality" })}
+            extra={
+              <Button size="small" onClick={() => void loadCrawlQualityStats()} loading={crawlQualityLoading}>
+                {t("common.refresh", { defaultValue: "Refresh" })}
+              </Button>
+            }
+          >
+            {crawlQualityError ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("newsSources.quality.loadFailed", { defaultValue: "Failed to load quality stats" })}
+                description={crawlQualityError}
+                style={{ marginBottom: 12 }}
+              />
+            ) : null}
+            {crawlQualityStats ? (
+              <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                <Row gutter={[16, 12]}>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.quality.taskCount", { defaultValue: "Tasks" })}
+                      value={crawlQualityStats.taskCount}
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.quality.lowSignal", { defaultValue: "Low signal" })}
+                      value={Number((crawlQualityStats.lowSignalRatio * 100).toFixed(1))}
+                      suffix="%"
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.quality.emptyMarkdown", { defaultValue: "Empty markdown" })}
+                      value={Number((crawlQualityStats.emptyMarkdownRate * 100).toFixed(1))}
+                      suffix="%"
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.quality.expansionTrigger", { defaultValue: "Expansion trigger" })}
+                      value={Number((crawlQualityStats.expansionTriggerRate * 100).toFixed(1))}
+                      suffix="%"
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.quality.expansionSuccess", { defaultValue: "Expansion success" })}
+                      value={Number((crawlQualityStats.expansionSuccessRate * 100).toFixed(1))}
+                      suffix="%"
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.quality.avgMarkdownChars", { defaultValue: "Avg markdown chars" })}
+                      value={crawlQualityStats.avgMarkdownChars}
+                    />
+                  </Col>
+                </Row>
+                <Typography.Text type="secondary">
+                  {t("newsSources.quality.updatedAt", {
+                    defaultValue: "Window {{from}} - {{to}}",
+                    from: formatDateTime(crawlQualityStats.from, locale, {
+                      dateStyle: "medium",
+                      timeStyle: "short"
+                    }),
+                    to: formatDateTime(crawlQualityStats.to, locale, {
+                      dateStyle: "medium",
+                      timeStyle: "short"
+                    })
+                  })}
+                </Typography.Text>
+              </Space>
+            ) : (
+              <Typography.Text type="secondary">
+                {crawlQualityLoading
+                  ? t("common.loading", { defaultValue: "Loading..." })
+                  : t("common.noData", { defaultValue: "No data" })}
+              </Typography.Text>
+            )}
+          </Card>
+
           {lastUpdatedAt ? (
             <Typography.Text type="secondary">
               {t("newsSources.autoRefresh.updatedAt", {
@@ -3067,6 +3624,390 @@ export function NewsSourcesContent() {
               );
             }}
           </Form.Item>
+
+          <Typography.Title level={5} style={{ marginBottom: 0 }}>
+            {t("newsSources.sections.crawlStrategy", { defaultValue: "Crawl strategy" })}
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            {t("newsSources.sections.crawlStrategyHint", {
+              defaultValue:
+                "Tune full-page scanning, list/detail expansion, and quality defaults without using LLM extraction during crawl."
+            })}
+          </Typography.Text>
+          <Alert
+            style={{ marginBottom: 12, marginTop: 8 }}
+            showIcon
+            type="info"
+            message={t("newsSources.hints.noLlmTitle", { defaultValue: "No LLM in crawl stage" })}
+            description={t("newsSources.hints.noLlmDescription", {
+              defaultValue:
+                "Crawl4AI stage should only fetch and clean content. Run summarization and analysis in downstream pipeline tasks."
+            })}
+          />
+          <Form.Item
+            name="crawlScanMode"
+            label={t("newsSources.fields.crawlScanMode", { defaultValue: "Scan mode" })}
+            tooltip={t("newsSources.fields.crawlScanModeHint", {
+              defaultValue:
+                "Full page simulates scrolling for dynamic pages. Virtual scroll lets you control container and scroll cadence for infinite feeds."
+            })}
+          >
+            <Select
+              options={[
+                {
+                  value: "default",
+                  label: t("newsSources.scanMode.default", { defaultValue: "Default" })
+                },
+                {
+                  value: "full_page",
+                  label: t("newsSources.scanMode.fullPage", { defaultValue: "Full-page scanning" })
+                },
+                {
+                  value: "virtual_scroll",
+                  label: t("newsSources.scanMode.virtualScroll", { defaultValue: "Virtual scroll" })
+                }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, nextValues) => prevValues.crawlScanMode !== nextValues.crawlScanMode}
+          >
+            {({ getFieldValue }) => {
+              const scanMode =
+                getFieldValue("crawlScanMode") === "full_page"
+                  ? "full_page"
+                  : getFieldValue("crawlScanMode") === "virtual_scroll"
+                    ? "virtual_scroll"
+                    : "default";
+
+              return (
+                <>
+                  <Alert
+                    style={{ marginBottom: 12 }}
+                    showIcon
+                    type={
+                      scanMode === "full_page"
+                        ? "success"
+                        : scanMode === "virtual_scroll"
+                          ? "warning"
+                          : "info"
+                    }
+                    message={
+                      scanMode === "full_page"
+                        ? t("crawl.settings.scanModes.fullPageTitle")
+                        : scanMode === "virtual_scroll"
+                          ? t("crawl.settings.scanModes.virtualScrollTitle")
+                          : t("crawl.settings.scanModes.defaultTitle")
+                    }
+                    description={
+                      scanMode === "full_page"
+                        ? t("crawl.settings.scanModes.fullPageDescription")
+                        : scanMode === "virtual_scroll"
+                          ? t("crawl.settings.scanModes.virtualScrollDescription")
+                          : t("crawl.settings.scanModes.defaultDescription")
+                    }
+                  />
+                  {scanMode === "full_page" ? (
+                    <Form.Item
+                      name="crawlScrollDelayMs"
+                      label={t("newsSources.fields.crawlScrollDelayMs", { defaultValue: "Scroll delay (ms)" })}
+                    >
+                      <InputNumber min={0} max={5000} step={100} style={{ width: "100%" }} />
+                    </Form.Item>
+                  ) : null}
+                  {scanMode === "virtual_scroll" ? (
+                    <>
+                      <Form.Item
+                        name="crawlVirtualScrollContainerSelector"
+                        label={t("newsSources.fields.crawlVirtualScrollContainerSelector", {
+                          defaultValue: "Scroll container selector"
+                        })}
+                      >
+                        <Input placeholder="body" />
+                      </Form.Item>
+                      <Form.Item
+                        name="crawlVirtualScrollScrollCount"
+                        label={t("newsSources.fields.crawlVirtualScrollScrollCount", {
+                          defaultValue: "Scroll count"
+                        })}
+                      >
+                        <InputNumber min={1} max={1000} style={{ width: "100%" }} />
+                      </Form.Item>
+                      <Form.Item
+                        name="crawlVirtualScrollScrollBy"
+                        label={t("newsSources.fields.crawlVirtualScrollScrollBy", {
+                          defaultValue: "Scroll step"
+                        })}
+                      >
+                        <Select
+                          options={[
+                            {
+                              value: "page_height",
+                              label: t("crawl.virtualScroll.scrollByOptions.pageHeight")
+                            },
+                            {
+                              value: "container_height",
+                              label: t("crawl.virtualScroll.scrollByOptions.containerHeight")
+                            },
+                            {
+                              value: "pixels",
+                              label: t("crawl.virtualScroll.scrollByOptions.pixels")
+                            }
+                          ]}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        noStyle
+                        shouldUpdate={(prevValues, nextValues) =>
+                          prevValues.crawlVirtualScrollScrollBy !== nextValues.crawlVirtualScrollScrollBy
+                        }
+                      >
+                        {({ getFieldValue: getScrollBy }) =>
+                          getScrollBy("crawlVirtualScrollScrollBy") === "pixels" ? (
+                            <Form.Item
+                              name="crawlVirtualScrollScrollByPixels"
+                              label={t("newsSources.fields.crawlVirtualScrollScrollByPixels", {
+                                defaultValue: "Scroll pixels"
+                              })}
+                            >
+                              <InputNumber min={1} max={20000} step={50} style={{ width: "100%" }} />
+                            </Form.Item>
+                          ) : null
+                        }
+                      </Form.Item>
+                      <Form.Item
+                        name="crawlVirtualScrollWaitAfterScrollMs"
+                        label={t("newsSources.fields.crawlVirtualScrollWaitAfterScrollMs", {
+                          defaultValue: "Wait after scroll (ms)"
+                        })}
+                      >
+                        <InputNumber min={0} max={60000} step={100} style={{ width: "100%" }} />
+                      </Form.Item>
+                    </>
+                  ) : null}
+                </>
+              );
+            }}
+          </Form.Item>
+
+          <Form.Item
+            name="crawlQualityProfile"
+            label={t("newsSources.fields.crawlQualityProfile", { defaultValue: "Quality profile" })}
+            tooltip={t("crawl.settings.qualityProfileHint")}
+          >
+            <Select
+              allowClear
+              options={[
+                {
+                  value: "quality_first",
+                  label: t("crawl.settings.qualityProfileOptions.qualityFirst")
+                },
+                {
+                  value: "balanced",
+                  label: t("crawl.settings.qualityProfileOptions.balanced")
+                },
+                {
+                  value: "speed_first",
+                  label: t("crawl.settings.qualityProfileOptions.speedFirst")
+                }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="crawlPageTypeHint"
+            label={t("newsSources.fields.crawlPageTypeHint", { defaultValue: "Page type hint" })}
+            tooltip={t("crawl.settings.pageTypeHintHint")}
+          >
+            <Select
+              allowClear
+              options={[
+                { value: "auto", label: t("crawl.settings.pageTypeHintOptions.auto") },
+                { value: "list", label: t("crawl.settings.pageTypeHintOptions.list") },
+                { value: "detail", label: t("crawl.settings.pageTypeHintOptions.detail") }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="crawlAutoExpandDetails"
+            label={t("newsSources.fields.crawlAutoExpandDetails", { defaultValue: "Auto expand details" })}
+            tooltip={t("crawl.settings.autoExpandDetailsHint")}
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, nextValues) =>
+              prevValues.crawlAutoExpandDetails !== nextValues.crawlAutoExpandDetails
+            }
+          >
+            {({ getFieldValue }) => {
+              if (getFieldValue("crawlAutoExpandDetails") !== true) {
+                return null;
+              }
+              return (
+                <>
+                  <Form.Item
+                    name="crawlDetailMaxUrls"
+                    label={t("newsSources.fields.crawlDetailMaxUrls", { defaultValue: "Max detail URLs" })}
+                    extra={t("crawl.detailExpansion.maxDetailUrlsHint")}
+                  >
+                    <InputNumber min={1} max={30} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="crawlDetailMinRelevanceScore"
+                    label={t("newsSources.fields.crawlDetailMinRelevanceScore", {
+                      defaultValue: "Min relevance score"
+                    })}
+                    extra={t("crawl.detailExpansion.minRelevanceScoreHint")}
+                  >
+                    <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="crawlDetailRequireSameDomain"
+                    label={t("newsSources.fields.crawlDetailRequireSameDomain", {
+                      defaultValue: "Require same domain"
+                    })}
+                    extra={t("crawl.detailExpansion.requireSameDomainHint")}
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item
+                    name="crawlDetailAllowExternalLinks"
+                    label={t("newsSources.fields.crawlDetailAllowExternalLinks", {
+                      defaultValue: "Allow external links"
+                    })}
+                    extra={t("crawl.detailExpansion.allowExternalLinksHint")}
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+                </>
+              );
+            }}
+          </Form.Item>
+
+          <Typography.Title level={5} style={{ marginBottom: 0 }}>
+            {t("newsSources.sections.crawlMarkdown", { defaultValue: "RAG markdown" })}
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            {t("newsSources.sections.crawlMarkdownHint", {
+              defaultValue:
+                "Crawl4AI turns crawled pages into clean markdown. Keep content source and escaping aligned with your retrieval pipeline."
+            })}
+          </Typography.Text>
+          <Alert
+            style={{ marginBottom: 12, marginTop: 8 }}
+            showIcon
+            type="success"
+            message={t("newsSources.hints.ragReadyTitle", { defaultValue: "RAG-ready markdown" })}
+            description={t("newsSources.hints.ragReadyDescription", {
+              defaultValue:
+                "Prefer cleaned_html output for stable embeddings and downstream search indexing."
+            })}
+          />
+          <Form.Item
+            name="crawlMarkdownContentSource"
+            label={t("newsSources.fields.crawlMarkdownContentSource", { defaultValue: "Markdown content source" })}
+          >
+            <Select
+              options={[
+                { value: "cleaned_html", label: t("crawl.markdown.sourceOptions.cleaned") },
+                { value: "raw_html", label: t("crawl.markdown.sourceOptions.raw") },
+                { value: "fit_html", label: t("crawl.markdown.sourceOptions.fit") }
+              ]}
+            />
+          </Form.Item>
+          <Row gutter={[12, 0]}>
+            <Col span={12}>
+              <Form.Item
+                name="crawlMarkdownEscapeHtmlMode"
+                label={t("newsSources.fields.crawlMarkdownEscapeHtmlMode", {
+                  defaultValue: "Escape HTML"
+                })}
+              >
+                <Select
+                  options={[
+                    { value: "auto", label: t("newsSources.crawlTriState.auto", { defaultValue: "Auto (inherit)" }) },
+                    { value: "enable", label: t("newsSources.crawlTriState.enable", { defaultValue: "Enabled" }) },
+                    { value: "disable", label: t("newsSources.crawlTriState.disable", { defaultValue: "Disabled" }) }
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="crawlMarkdownCitationsMode"
+                label={t("newsSources.fields.crawlMarkdownCitationsMode", {
+                  defaultValue: "Citations"
+                })}
+              >
+                <Select
+                  options={[
+                    { value: "auto", label: t("newsSources.crawlTriState.auto", { defaultValue: "Auto (inherit)" }) },
+                    { value: "enable", label: t("newsSources.crawlTriState.enable", { defaultValue: "Enabled" }) },
+                    { value: "disable", label: t("newsSources.crawlTriState.disable", { defaultValue: "Disabled" }) }
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item noStyle shouldUpdate>
+            {({ getFieldsValue }) => {
+              const values = getFieldsValue(true) as NewsSourceFormValues;
+              const previewValues: NewsSourceFormValues = {
+                ...values,
+                metadataJson: undefined,
+                keywords: undefined,
+                tags: undefined,
+                summaryHints: undefined
+              };
+
+              let crawlOptionsPreview = "{}";
+              let previewError: string | null = null;
+
+              try {
+                const previewConfig = buildConfig(previewValues);
+                const previewOptions =
+                  previewConfig && isPlainObject(previewConfig.crawlOptions)
+                    ? (previewConfig.crawlOptions as Record<string, unknown>)
+                    : null;
+                crawlOptionsPreview = previewOptions ? JSON.stringify(previewOptions, null, 2) : "{}";
+              } catch (error) {
+                previewError =
+                  error instanceof Error
+                    ? error.message
+                    : t("newsSources.hints.crawlOptionsPreviewError", {
+                        defaultValue: "Unable to build crawl options preview."
+                      });
+              }
+
+              return (
+                <Card
+                  size="small"
+                  title={t("newsSources.sections.crawlOptionsPreview", {
+                    defaultValue: "Resolved crawlOptions preview"
+                  })}
+                  style={{ marginBottom: 12 }}
+                >
+                  <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+                    {t("newsSources.sections.crawlOptionsPreviewHint", {
+                      defaultValue:
+                        "Shows the final crawlOptions payload after merging structured controls with advanced JSON."
+                    })}
+                  </Typography.Paragraph>
+                  {previewError ? (
+                    <Alert type="warning" showIcon message={previewError} style={{ marginBottom: 8 }} />
+                  ) : null}
+                  <Input.TextArea value={crawlOptionsPreview} autoSize={{ minRows: 4, maxRows: 10 }} readOnly />
+                </Card>
+              );
+            }}
+          </Form.Item>
+
           <Form.Item
             name="crawlOptionsJson"
             label={t("newsSources.fields.crawlOptions", { defaultValue: "Crawl options (JSON)" })}
@@ -3579,6 +4520,24 @@ export function NewsSourcesContent() {
       >
         {previewData ? (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            {previewSource ? (() => {
+              const strategyTags = getCrawlStrategyTags(previewSource.config, t);
+              if (!strategyTags.length) {
+                return null;
+              }
+              return (
+                <Space wrap>
+                  <Typography.Text type="secondary">
+                    {t("newsSources.preview.strategy", { defaultValue: "Strategy" })}:
+                  </Typography.Text>
+                  {strategyTags.map((tag) => (
+                    <Tag key={"preview-" + tag.key} color={tag.color}>
+                      {tag.label}
+                    </Tag>
+                  ))}
+                </Space>
+              );
+            })() : null}
             <Space wrap>
               <Tag
                 color={

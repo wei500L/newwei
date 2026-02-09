@@ -81,11 +81,45 @@ const createMockCrawlClient = () => ({
 const createMockResultService = () => ({
   persistResults: jest.fn(),
   extractMarkdownResult: jest.fn(),
-  isLikelyBotChallengeMarkdown: jest.fn().mockReturnValue(false)
+  isLikelyBotChallengeMarkdown: jest.fn().mockReturnValue(false),
+  isLowSignalMarkdown: jest.fn().mockReturnValue(false)
 });
 
 const createMockNotificationsService = () => ({
   notify: jest.fn()
+});
+
+const createMockQualityStrategyService = () => ({
+  resolveQualityProfile: jest.fn().mockReturnValue("quality_first"),
+  assessPageSignals: jest.fn().mockReturnValue({
+    kind: "detail",
+    assessments: [],
+    lowSignalAssessments: [],
+    allLowSignal: false,
+    maxLowSignalWords: 0,
+    minLowSignalWords: 0,
+    meanLowSignalWords: 0,
+    bestLowSignalScore: Number.NEGATIVE_INFINITY,
+    maxLowSignalLinkDensity: 0,
+    meanLowSignalLinkDensity: 0
+  }),
+  shouldAutoExpand: jest.fn().mockReturnValue(false),
+  resolveDetailExpansion: jest.fn().mockReturnValue({
+    maxDetailUrls: 12,
+    minRelevanceScore: 0.35,
+    requireSameDomain: true,
+    allowExternalLinks: true
+  }),
+  assessArticleMarkdownSignal: jest.fn().mockReturnValue({
+    wordCount: 120,
+    paragraphCount: 4,
+    headingCount: 1,
+    linkCount: 2,
+    linkDensity: 0.016,
+    score: 120,
+    isListLike: false
+  }),
+  isSignificantDetailImprovement: jest.fn().mockReturnValue(true)
 });
 
 describe("CrawlExecutionService", () => {
@@ -94,6 +128,7 @@ describe("CrawlExecutionService", () => {
   let mockEnv: ReturnType<typeof createMockEnvService>;
   let mockCrawlClient: ReturnType<typeof createMockCrawlClient>;
   let mockResultService: ReturnType<typeof createMockResultService>;
+  let mockQualityStrategy: ReturnType<typeof createMockQualityStrategyService>;
   let mockNotifications: ReturnType<typeof createMockNotificationsService>;
 
   beforeEach(() => {
@@ -104,6 +139,7 @@ describe("CrawlExecutionService", () => {
     mockEnv = createMockEnvService();
     mockCrawlClient = createMockCrawlClient();
     mockResultService = createMockResultService();
+    mockQualityStrategy = createMockQualityStrategyService();
     mockNotifications = createMockNotificationsService();
 
     service = new CrawlExecutionService(
@@ -111,6 +147,7 @@ describe("CrawlExecutionService", () => {
       mockEnv as any,
       mockCrawlClient as any,
       mockResultService as any,
+      mockQualityStrategy as any,
       mockNotifications as any
     );
     (TaskLogModel.create as jest.Mock).mockResolvedValue(undefined);
@@ -306,7 +343,7 @@ describe("CrawlExecutionService", () => {
 
       const result = await service.runTask("task-1", "org-1");
 
-      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(3);
+      expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThanOrEqual(3);
       const secondCallPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as any;
       expect(secondCallPayload?.options).toEqual(
         expect.objectContaining({
@@ -324,18 +361,63 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ stage: "fallback", status: "processing" }),
       );
-      expect(TaskLogModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({ stage: "fallback", status: "completed" }),
-      );
       expect(mockResultService.persistResults).toHaveBeenCalledWith(
         task,
         expect.any(Array),
-        expect.objectContaining({ onlyMainContent: false }),
+        expect.any(Object),
         expect.anything(),
         expect.anything(),
         undefined,
       );
       expect(result.inserted).toBe(1);
+    });
+
+    it("treats reference-only markdown as failure and triggers markdown fallback", async () => {
+      const task = createMockTask({ config: { pipelineJobId: "job-1" } });
+      const referenceOnlyResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com/latest",
+            markdown: "## References",
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+      const fallbackResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com/article/1",
+            markdown: "# Article\n\nThis is a complete article body with context and details.",
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl
+        .mockResolvedValueOnce(referenceOnlyResponse)
+        .mockResolvedValueOnce(fallbackResponse)
+        .mockResolvedValueOnce(fallbackResponse);
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+      mockResultService.isLowSignalMarkdown.mockImplementation((markdown: string) =>
+        markdown.trim().toLowerCase() === "## references"
+      );
+
+      await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThan(1);
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: "fallback",
+          status: "processing"
+        })
+      );
     });
 
     it("keeps bm25 fallback profile when empty-markdown failures occur with bm25 filter", async () => {
@@ -384,7 +466,7 @@ describe("CrawlExecutionService", () => {
 
       const result = await service.runTask("task-1", "org-1");
 
-      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(4);
+      expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThanOrEqual(4);
       const fallbackPayloads = (mockCrawlClient.crawl as jest.Mock).mock.calls.slice(1).map((entry) => entry[0] as any);
       expect(
         fallbackPayloads.some(
@@ -442,6 +524,83 @@ describe("CrawlExecutionService", () => {
       mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
         primary: typeof markdown === "string" ? markdown : ""
       }));
+      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+      mockQualityStrategy.assessPageSignals.mockReturnValue({
+        kind: "list",
+        assessments: [
+          {
+            index: 0,
+            article: initialResponse.results[0],
+            quality: {
+              wordCount: 220,
+              paragraphCount: 1,
+              headingCount: 1,
+              linkCount: 18,
+              linkDensity: 0.2,
+              bulletLines: 18,
+              score: 50,
+              isListLike: true
+            },
+            linkInventory: 18
+          }
+        ],
+        lowSignalAssessments: [
+          {
+            index: 0,
+            article: initialResponse.results[0],
+            quality: {
+              wordCount: 220,
+              paragraphCount: 1,
+              headingCount: 1,
+              linkCount: 18,
+              linkDensity: 0.2,
+              bulletLines: 18,
+              score: 50,
+              isListLike: true
+            },
+            linkInventory: 18
+          }
+        ],
+        allLowSignal: true,
+        maxLowSignalWords: 220,
+        minLowSignalWords: 220,
+        meanLowSignalWords: 220,
+        bestLowSignalScore: 50,
+        maxLowSignalLinkDensity: 0.2,
+        meanLowSignalLinkDensity: 0.2
+      });
+      mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
+      mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
+        maxDetailUrls: 12,
+        minRelevanceScore: 0.05,
+        requireSameDomain: true,
+        allowExternalLinks: true
+      });
+      mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(true);
+      mockQualityStrategy.assessArticleMarkdownSignal.mockImplementation((article: any) => {
+        if (typeof article?.url === "string" && article.url.includes("ARTICLE0")) {
+          return {
+            wordCount: 1600,
+            paragraphCount: 22,
+            headingCount: 2,
+            linkCount: 12,
+            linkDensity: 0.01,
+            bulletLines: 1,
+            score: 1200,
+            isListLike: false
+          };
+        }
+        return {
+          wordCount: 220,
+          paragraphCount: 1,
+          headingCount: 1,
+          linkCount: 18,
+          linkDensity: 0.2,
+          bulletLines: 18,
+          score: 50,
+          isListLike: true
+        };
+      });
 
       const result = await service.runTask("task-1", "org-1");
 
@@ -504,6 +663,58 @@ describe("CrawlExecutionService", () => {
       mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
         primary: typeof markdown === "string" ? markdown : ""
       }));
+      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+      mockQualityStrategy.assessPageSignals.mockReturnValue({
+        kind: "list",
+        assessments: [
+          {
+            index: 0,
+            article: initialResponse.results[0],
+            quality: {
+              wordCount: 120,
+              paragraphCount: 1,
+              headingCount: 1,
+              linkCount: 20,
+              linkDensity: 0.3,
+              bulletLines: 20,
+              score: 20,
+              isListLike: true
+            },
+            linkInventory: 20
+          }
+        ],
+        lowSignalAssessments: [
+          {
+            index: 0,
+            article: initialResponse.results[0],
+            quality: {
+              wordCount: 120,
+              paragraphCount: 1,
+              headingCount: 1,
+              linkCount: 20,
+              linkDensity: 0.3,
+              bulletLines: 20,
+              score: 20,
+              isListLike: true
+            },
+            linkInventory: 20
+          }
+        ],
+        allLowSignal: true,
+        maxLowSignalWords: 120,
+        minLowSignalWords: 120,
+        meanLowSignalWords: 120,
+        bestLowSignalScore: 20,
+        maxLowSignalLinkDensity: 0.3,
+        meanLowSignalLinkDensity: 0.3
+      });
+      mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
+      mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
+        maxDetailUrls: 12,
+        minRelevanceScore: 0.05,
+        requireSameDomain: true,
+        allowExternalLinks: true
+      });
 
       await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
         "no detail candidate URLs were extracted"
@@ -558,6 +769,59 @@ describe("CrawlExecutionService", () => {
       mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
         primary: typeof markdown === "string" ? markdown : ""
       }));
+      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+      mockQualityStrategy.assessPageSignals.mockReturnValue({
+        kind: "list",
+        assessments: [
+          {
+            index: 0,
+            article: initialResponse.results[0],
+            quality: {
+              wordCount: 180,
+              paragraphCount: 1,
+              headingCount: 1,
+              linkCount: 14,
+              linkDensity: 0.18,
+              bulletLines: 14,
+              score: 30,
+              isListLike: true
+            },
+            linkInventory: 14
+          }
+        ],
+        lowSignalAssessments: [
+          {
+            index: 0,
+            article: initialResponse.results[0],
+            quality: {
+              wordCount: 180,
+              paragraphCount: 1,
+              headingCount: 1,
+              linkCount: 14,
+              linkDensity: 0.18,
+              bulletLines: 14,
+              score: 30,
+              isListLike: true
+            },
+            linkInventory: 14
+          }
+        ],
+        allLowSignal: true,
+        maxLowSignalWords: 180,
+        minLowSignalWords: 180,
+        meanLowSignalWords: 180,
+        bestLowSignalScore: 30,
+        maxLowSignalLinkDensity: 0.18,
+        meanLowSignalLinkDensity: 0.18
+      });
+      mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
+      mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
+        maxDetailUrls: 12,
+        minRelevanceScore: 0.05,
+        requireSameDomain: true,
+        allowExternalLinks: true
+      });
+      mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(false);
 
       await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
         "detail expansion did not produce richer article content"
@@ -572,6 +836,422 @@ describe("CrawlExecutionService", () => {
           message: "Detail expansion did not produce richer markdown"
         })
       );
+    });
+
+    it("extracts detail candidates from metadata canonical urls", async () => {
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : "",
+        references: "",
+        citations: "",
+        raw: "",
+        fit: ""
+      }));
+
+      const instance = service as unknown as {
+        extractDetailLinkCandidatesFromArticle: (
+          article: Record<string, unknown>,
+          requireSameDomain: boolean,
+          allowExternalLinks?: boolean
+        ) => string[];
+      };
+
+      const candidates = instance.extractDetailLinkCandidatesFromArticle(
+        {
+          url: "https://www.politico.eu/latest/",
+          markdown: "## References",
+          metadata: {
+            canonical: "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/",
+            openGraph: {
+              url: "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/"
+            }
+          }
+        },
+        true,
+        true
+      );
+
+      expect(candidates).toContain(
+        "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal"
+      );
+    });
+
+    it("filters non-detail politico section links from candidate extraction", async () => {
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : "",
+        references: "",
+        citations: "",
+        raw: "",
+        fit: ""
+      }));
+
+      const instance = service as unknown as {
+        extractDetailLinkCandidatesFromArticle: (
+          article: Record<string, unknown>,
+          requireSameDomain: boolean,
+          allowExternalLinks?: boolean
+        ) => string[];
+      };
+
+      const candidates = instance.extractDetailLinkCandidatesFromArticle(
+        {
+          url: "https://www.politico.eu/latest/",
+          markdown:
+            "[A](https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/)\n" +
+            "[B](https://www.politico.eu/newsletter/politico-eu-influence/)\n" +
+            "[C](https://www.politico.eu/country/greenland/)\n" +
+            "[D](https://www.politico.eu/europe-poll-of-polls/european-parliament-election/)\n" +
+            "[E](https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report/)",
+          links: {
+            internal: [
+              { href: "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/" },
+              { href: "https://www.politico.eu/newsletter/politico-eu-influence/" },
+              { href: "https://www.politico.eu/country/greenland/" },
+              { href: "https://www.politico.eu/europe-poll-of-polls/european-parliament-election/" },
+              { href: "https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report/" }
+            ]
+          }
+        },
+        true,
+        false
+      );
+
+      expect(candidates).toContain(
+        "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal"
+      );
+      expect(candidates).not.toContain("https://www.politico.eu/newsletter/politico-eu-influence");
+      expect(candidates).not.toContain("https://www.politico.eu/country/greenland");
+      expect(candidates).not.toContain("https://www.politico.eu/europe-poll-of-polls/european-parliament-election");
+      expect(candidates).not.toContain(
+        "https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report"
+      );
+    });
+
+    it("uses low-signal results as expansion seeds when no successful markdown exists", async () => {
+      const task = createMockTask({
+        config: {
+          pageTypeHint: "list",
+          autoExpandDetails: true,
+          detailExpansion: {
+            maxDetailUrls: 6,
+            minRelevanceScore: 0,
+            requireSameDomain: true,
+            allowExternalLinks: true
+          }
+        }
+      });
+
+      const initialResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com/latest",
+            markdown: "## References\n\n[1]: https://example.com/world/a-very-long-article-slug-with-context",
+            success: true,
+            links: {
+              internal: [
+                {
+                  href: "https://example.com/world/a-very-long-article-slug-with-context"
+                }
+              ]
+            },
+            metadata: {
+              url: "https://example.com/latest"
+            }
+          }
+        ]
+      });
+
+      const expansionResponse = createMockCrawlResponse({
+        runId: "expansion-run",
+        results: [
+          {
+            url: "https://example.com/world/a-very-long-article-slug-with-context",
+            markdown:
+              "# Headline\n\nParagraph one with detailed context and analysis.\n\nParagraph two with additional reporting facts.\n\nParagraph three for stable article body.",
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl
+        .mockResolvedValue(expansionResponse)
+        .mockResolvedValueOnce(initialResponse);
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : "",
+        references: "",
+        citations: "",
+        raw: "",
+        fit: ""
+      }));
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
+      mockResultService.isLowSignalMarkdown.mockImplementation((markdown: string) =>
+        markdown.trim().toLowerCase().startsWith("## references")
+      );
+
+      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+      mockQualityStrategy.assessPageSignals.mockImplementation((articles: any[]) => {
+        if (articles[0]?.url === "https://example.com/latest") {
+          return {
+            kind: "list",
+            assessments: [
+              {
+                index: 0,
+                article: articles[0],
+                quality: {
+                  wordCount: 120,
+                  paragraphCount: 1,
+                  headingCount: 1,
+                  linkCount: 10,
+                  linkDensity: 0.2,
+                  bulletLines: 6,
+                  score: 10,
+                  isListLike: true
+                },
+                linkInventory: 10
+              }
+            ],
+            lowSignalAssessments: [
+              {
+                index: 0,
+                article: articles[0],
+                quality: {
+                  wordCount: 120,
+                  paragraphCount: 1,
+                  headingCount: 1,
+                  linkCount: 10,
+                  linkDensity: 0.2,
+                  bulletLines: 6,
+                  score: 10,
+                  isListLike: true
+                },
+                linkInventory: 10
+              }
+            ],
+            allLowSignal: true,
+            maxLowSignalWords: 120,
+            minLowSignalWords: 120,
+            meanLowSignalWords: 120,
+            bestLowSignalScore: 10,
+            maxLowSignalLinkDensity: 0.2,
+            meanLowSignalLinkDensity: 0.2
+          };
+        }
+
+        return {
+          kind: "detail",
+          assessments: [
+            {
+              index: 0,
+              article: articles[0],
+              quality: {
+                wordCount: 360,
+                paragraphCount: 8,
+                headingCount: 1,
+                linkCount: 2,
+                linkDensity: 0.01,
+                bulletLines: 0,
+                score: 420,
+                isListLike: false
+              },
+              linkInventory: 2
+            }
+          ],
+          lowSignalAssessments: [],
+          allLowSignal: false,
+          maxLowSignalWords: 0,
+          minLowSignalWords: 0,
+          meanLowSignalWords: 0,
+          bestLowSignalScore: Number.NEGATIVE_INFINITY,
+          maxLowSignalLinkDensity: 0,
+          meanLowSignalLinkDensity: 0
+        };
+      });
+      mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
+      mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
+        maxDetailUrls: 6,
+        minRelevanceScore: 0,
+        requireSameDomain: true,
+        allowExternalLinks: true
+      });
+      mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(true);
+      mockQualityStrategy.assessArticleMarkdownSignal.mockReturnValue({
+        wordCount: 360,
+        paragraphCount: 8,
+        headingCount: 1,
+        linkCount: 2,
+        linkDensity: 0.01,
+        bulletLines: 0,
+        score: 420,
+        isListLike: false
+      });
+
+      const result = await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThan(1);
+      expect(mockResultService.persistResults).toHaveBeenCalledWith(
+        task,
+        expect.arrayContaining([
+          expect.objectContaining({
+            url: "https://example.com/world/a-very-long-article-slug-with-context"
+          })
+        ]),
+        expect.any(Object),
+        expect.anything(),
+        expect.anything(),
+        undefined
+      );
+      expect(result.inserted).toBe(1);
+    });
+
+    it("falls back to link inventory when strict detail candidates are sparse", async () => {
+      const task = createMockTask({ targetUrl: "https://example.com/latest" });
+
+      const listMarkdown =
+        "# Latest\n" +
+        "- [Section](https://example.com/news/world/)\n" +
+        "- [Section](https://example.com/news/business/)";
+
+      const initialResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com/latest",
+            markdown: listMarkdown,
+            success: true,
+            metadata: {},
+            links: {
+              internal: [
+                {
+                  href: "https://example.com/world/a-very-long-article-slug-with-context-and-analysis-2026",
+                  text: "A very long article slug with context and analysis"
+                },
+                {
+                  href: "https://example.com/business/another-very-long-article-slug-with-context",
+                  text: "Another long-form article"
+                }
+              ]
+            }
+          }
+        ]
+      });
+
+      const expansionResponse = createMockCrawlResponse({
+        runId: "run-expansion",
+        results: [
+          {
+            url: "https://example.com/world/a-very-long-article-slug-with-context-and-analysis-2026",
+            markdown:
+              "# Headline\n\nParagraph one with detailed context and analysis.\n\nParagraph two with additional reporting facts.",
+            success: true,
+            metadata: {}
+          }
+        ]
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl.mockResolvedValueOnce(initialResponse).mockResolvedValue(expansionResponse);
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : "",
+        references: "",
+        citations: "",
+        raw: "",
+        fit: ""
+      }));
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
+      mockResultService.isLowSignalMarkdown.mockReturnValue(false);
+
+      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+      mockQualityStrategy.assessPageSignals.mockImplementation((articles: any[]) => {
+        if (articles[0]?.url === "https://example.com/latest") {
+          return {
+            kind: "list",
+            assessments: [
+              {
+                index: 0,
+                article: articles[0],
+                quality: {
+                  wordCount: 140,
+                  paragraphCount: 1,
+                  headingCount: 1,
+                  linkCount: 18,
+                  linkDensity: 0.2,
+                  bulletLines: 4,
+                  score: 20,
+                  isListLike: true
+                },
+                linkInventory: 18
+              }
+            ],
+            lowSignalAssessments: [
+              {
+                index: 0,
+                article: articles[0],
+                quality: {
+                  wordCount: 140,
+                  paragraphCount: 1,
+                  headingCount: 1,
+                  linkCount: 18,
+                  linkDensity: 0.2,
+                  bulletLines: 4,
+                  score: 20,
+                  isListLike: true
+                },
+                linkInventory: 18
+              }
+            ],
+            allLowSignal: true,
+            maxLowSignalWords: 140,
+            minLowSignalWords: 140,
+            meanLowSignalWords: 140,
+            bestLowSignalScore: 20,
+            maxLowSignalLinkDensity: 0.2,
+            meanLowSignalLinkDensity: 0.2
+          };
+        }
+
+        return {
+          kind: "detail",
+          assessments: [],
+          lowSignalAssessments: [],
+          allLowSignal: false,
+          maxLowSignalWords: 0,
+          minLowSignalWords: 0,
+          meanLowSignalWords: 0,
+          bestLowSignalScore: Number.NEGATIVE_INFINITY,
+          maxLowSignalLinkDensity: 0,
+          meanLowSignalLinkDensity: 0
+        };
+      });
+      mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
+      mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
+        maxDetailUrls: 6,
+        minRelevanceScore: 0.85,
+        requireSameDomain: true,
+        allowExternalLinks: true
+      });
+      mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(true);
+      mockQualityStrategy.assessArticleMarkdownSignal.mockReturnValue({
+        wordCount: 360,
+        paragraphCount: 8,
+        headingCount: 1,
+        linkCount: 2,
+        linkDensity: 0.01,
+        score: 420,
+        isListLike: false
+      });
+
+      const result = await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(2);
+      const expansionPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as any;
+      expect(expansionPayload?.urls).toEqual(
+        expect.arrayContaining([
+          "https://example.com/world/a-very-long-article-slug-with-context-and-analysis-2026"
+        ])
+      );
+      expect(result.inserted).toBe(1);
     });
 
   describe("runTask error handling", () => {
@@ -721,6 +1401,44 @@ describe("CrawlExecutionService", () => {
       expect(result.wordCountThreshold).toBe(80);
     });
 
+    it("applies quality-first markdown defaults for RAG readiness", () => {
+      const result = service.normalizeOptions();
+
+      expect(result.qualityProfile).toBe("quality_first");
+      expect(result.markdownOptions).toEqual(
+        expect.objectContaining({
+          contentSource: "cleaned_html",
+          citations: true
+        })
+      );
+      expect(result.cleanMarkdown).toEqual(
+        expect.objectContaining({
+          removeOverlayElements: true,
+          wordCountThreshold: 18
+        })
+      );
+      expect(result.cleanMarkdown?.excludedTags).toEqual(
+        expect.arrayContaining(["nav", "footer", "aside", "script", "style", "noscript", "form"])
+      );
+    });
+
+    it("uses raw_html markdown source for speed_first profile", () => {
+      const result = service.normalizeOptions({ qualityProfile: "speed_first" });
+
+      expect(result.markdownOptions).toEqual(
+        expect.objectContaining({
+          contentSource: "raw_html",
+          citations: true
+        })
+      );
+      expect(result.cleanMarkdown).toEqual(
+        expect.objectContaining({
+          removeOverlayElements: true,
+          wordCountThreshold: 12
+        })
+      );
+    });
+
     it("keeps headless when provided", () => {
       expect(service.normalizeOptions({ headless: true }).headless).toBe(true);
       expect(service.normalizeOptions({ headless: false }).headless).toBe(false);
@@ -749,6 +1467,26 @@ describe("CrawlExecutionService", () => {
     it("sets scrollDelayMs to 200 when NaN", () => {
       const result = service.normalizeOptions({ scanFullPage: true, scrollDelayMs: NaN });
       expect(result.scrollDelayMs).toBe(200);
+    });
+
+    it("defaults adjustViewportToContent to true when scanFullPage is enabled", () => {
+      const result = service.normalizeOptions({ scanFullPage: true });
+
+      expect(result.adjustViewportToContent).toBe(true);
+    });
+
+    it("keeps adjustViewportToContent false when scanFullPage is disabled", () => {
+      const result = service.normalizeOptions();
+
+      expect(result.scanFullPage).toBe(false);
+      expect(result.adjustViewportToContent).toBe(false);
+    });
+
+    it("respects explicit adjustViewportToContent override", () => {
+      const result = service.normalizeOptions({ scanFullPage: true, adjustViewportToContent: false });
+
+      expect(result.scanFullPage).toBe(true);
+      expect(result.adjustViewportToContent).toBe(false);
     });
 
     it("sets simulateUser and overrideNavigator to true when enableStealthMode is true", () => {

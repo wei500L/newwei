@@ -66,8 +66,26 @@ export class NewsSourceSchedulerService {
     private readonly cache: CacheService,
     private readonly env: EnvService,
     private readonly crawlTaskService: CrawlTaskService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationsService
   ) {}
+
+  private getEnvValue<T>(
+    key: string,
+    fallback: T,
+    normalize?: (value: unknown) => T | undefined
+  ): T {
+    if (typeof this.env.get === "function") {
+      const value = this.env.get<unknown>(key, { infer: true });
+      if (value !== undefined && value !== null) {
+        const normalized = normalize ? normalize(value) : (value as T);
+        if (normalized !== undefined) {
+          return normalized;
+        }
+      }
+    }
+
+    return fallback;
+  }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async scheduleCron() {
@@ -590,6 +608,72 @@ export class NewsSourceSchedulerService {
     return { ...base, ...override };
   }
 
+  private withAutoCrawlQualityDefaults(
+    options: Record<string, unknown> | undefined,
+    seedMode?: SeedConfig["mode"]
+  ): Record<string, unknown> {
+    const current = options ? { ...options } : {};
+    if (typeof current.pageTypeHint !== "string") {
+      current.pageTypeHint = "auto";
+    }
+    if (typeof current.autoExpandDetails !== "boolean") {
+      current.autoExpandDetails = this.getEnvValue(
+        "NEWS_SOURCE_CRAWL_AUTO_EXPAND_DETAILS",
+        true,
+        (value) => (typeof value === "boolean" ? value : undefined)
+      );
+    }
+    if (typeof current.qualityProfile !== "string") {
+      current.qualityProfile = this.getEnvValue(
+        "NEWS_SOURCE_CRAWL_QUALITY_PROFILE",
+        "quality_first",
+        (value) => (typeof value === "string" ? value : undefined)
+      );
+    }
+
+    const currentDetailExpansion =
+      current.detailExpansion && typeof current.detailExpansion === "object" && !Array.isArray(current.detailExpansion)
+        ? (current.detailExpansion as Record<string, unknown>)
+        : {};
+    current.detailExpansion = {
+      maxDetailUrls:
+        typeof currentDetailExpansion.maxDetailUrls === "number"
+          ? currentDetailExpansion.maxDetailUrls
+          : this.getEnvValue(
+              "NEWS_SOURCE_CRAWL_DETAIL_MAX_URLS",
+              12,
+              (value) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
+            ),
+      minRelevanceScore:
+        typeof currentDetailExpansion.minRelevanceScore === "number"
+          ? currentDetailExpansion.minRelevanceScore
+          : this.getEnvValue(
+              "NEWS_SOURCE_CRAWL_DETAIL_MIN_RELEVANCE_SCORE",
+              0.35,
+              (value) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
+            ),
+      requireSameDomain:
+        typeof currentDetailExpansion.requireSameDomain === "boolean"
+          ? currentDetailExpansion.requireSameDomain
+          : this.getEnvValue(
+              "NEWS_SOURCE_CRAWL_DETAIL_REQUIRE_SAME_DOMAIN",
+              true,
+              (value) => (typeof value === "boolean" ? value : undefined)
+            )
+    };
+
+    if (seedMode === "list") {
+      if (typeof current.extractLinks !== "boolean") {
+        current.extractLinks = true;
+      }
+      if (typeof current.prefetch !== "boolean") {
+        current.prefetch = true;
+      }
+    }
+
+    return current;
+  }
+
   private toBullmqPriority(priority: number) {
     const normalized = Number.isFinite(priority) ? Math.round(priority) : 0;
     const clamped = Math.max(this.sourcePriorityMin, Math.min(this.sourcePriorityMax, normalized));
@@ -843,11 +927,14 @@ export class NewsSourceSchedulerService {
           : {}),
         ...metadata,
       },
-      crawlOptions: this.mergeOptions(
-        source.crawlTemplate?.isActive
-          ? this.normalizeOptions(source.crawlTemplate.crawlOptions)
-          : undefined,
-        this.normalizeOptions(config.crawlOptions)
+      crawlOptions: this.withAutoCrawlQualityDefaults(
+        this.mergeOptions(
+          source.crawlTemplate?.isActive
+            ? this.normalizeOptions(source.crawlTemplate.crawlOptions)
+            : undefined,
+          this.normalizeOptions(config.crawlOptions)
+        ),
+        seed?.mode
       ),
       forceRefresh: Boolean(config.forceRefresh),
     };
@@ -989,12 +1076,13 @@ export class NewsSourceSchedulerService {
             source.crawlTemplate?.isActive ? this.normalizeOptions(source.crawlTemplate.crawlOptions) : undefined,
             this.normalizeOptions(config.crawlOptions)
           );
+          const crawlOptionsWithDefaults = this.withAutoCrawlQualityDefaults(crawlOptions, "list");
           return this.metadataService.discoverListUrls({
             url: source.url,
             domain: seed.domain,
             pattern: seed.pattern,
             maxUrls: seed.maxUrls,
-            crawlOptions
+            crawlOptions: crawlOptionsWithDefaults
           });
         }
         return this.metadataService.discoverSitemapUrls({

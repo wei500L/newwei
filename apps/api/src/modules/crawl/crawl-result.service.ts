@@ -231,23 +231,26 @@ export class CrawlResultService {
 
       logger.debug({ newCount: newRecordsData.length, createdCount: createdRecords.length }, "persistResults batch create complete");
 
-      // Phase 5: Batch create MongoDB content documents
-      const contentDocsData: {
-        taskId: string;
-        resultId: string;
-        markdown: string;
-        rawMarkdown: string;
-        markdownWithCitations?: string;
-        referencesMarkdown?: string;
-        fitMarkdown?: string;
-        metadata: Record<string, unknown>;
-        sourceUrl: string;
-        crawlRunId?: string;
-        linkAnalysis?: CrawlLinkAnalysis;
-        tables: CrawlResultTable[] | null;
-        media?: CrawlMediaCollection | null;
-        mediaAssets?: CrawlStoredMediaAsset[] | null;
-      }[] = [];
+      // Phase 5: Batch upsert MongoDB content documents (idempotent by resultId)
+      const contentDocsByResultId = new Map<
+        string,
+        {
+          taskId: string;
+          resultId: string;
+          markdown: string;
+          rawMarkdown: string;
+          markdownWithCitations?: string;
+          referencesMarkdown?: string;
+          fitMarkdown?: string;
+          metadata: Record<string, unknown>;
+          sourceUrl: string;
+          crawlRunId?: string;
+          linkAnalysis?: CrawlLinkAnalysis;
+          tables: CrawlResultTable[] | null;
+          media?: CrawlMediaCollection | null;
+          mediaAssets?: CrawlStoredMediaAsset[] | null;
+        }
+      >();
 
       for (const recordData of newRecordsData) {
         const created = createdMap.get(recordData.contentHash);
@@ -261,7 +264,7 @@ export class CrawlResultService {
         const mediaAssets = shouldStoreMedia ? await this.collectMediaAssets(media) : undefined;
         const tables = this.normalizeTablesFromResult(entry.item);
 
-        contentDocsData.push({
+        const nextDoc = {
           taskId: task.id,
           resultId: created.id,
           markdown: entry.markdown,
@@ -280,19 +283,61 @@ export class CrawlResultService {
                 mediaAssets: mediaAssets ?? null
               }
             : {})
-        });
+        };
+
+        const existingDoc = contentDocsByResultId.get(created.id);
+        if (!existingDoc || (nextDoc.markdown?.length ?? 0) > (existingDoc.markdown?.length ?? 0)) {
+          contentDocsByResultId.set(created.id, nextDoc);
+        }
       }
 
-      // Batch insert MongoDB documents
-      const insertedDocs = await CrawlResultContentModel.insertMany(contentDocsData);
+      const contentDocsData = Array.from(contentDocsByResultId.values());
+      const markdownRefByResultId = new Map<string, string>();
 
-      logger.debug({ docCount: insertedDocs.length }, "persistResults batch MongoDB insert complete");
+      if (contentDocsData.length > 0) {
+        await CrawlResultContentModel.bulkWrite(
+          contentDocsData.map((doc) => ({
+            updateOne: {
+              filter: { resultId: doc.resultId },
+              update: { $setOnInsert: doc },
+              upsert: true
+            }
+          })),
+          { ordered: false }
+        );
+
+        const persistedDocs = await CrawlResultContentModel.find(
+          { resultId: { $in: contentDocsData.map((entry) => entry.resultId) } },
+          { resultId: 1 }
+        )
+          .lean()
+          .exec();
+
+        for (const doc of persistedDocs) {
+          const resultId = typeof doc.resultId === "string" ? doc.resultId : undefined;
+          const markdownRef = doc._id ? String(doc._id) : "";
+          if (!resultId || !markdownRef) {
+            continue;
+          }
+          markdownRefByResultId.set(resultId, markdownRef);
+        }
+      }
+
+      logger.debug(
+        {
+          docCount: contentDocsData.length,
+          markdownRefs: markdownRefByResultId.size
+        },
+        "persistResults batch MongoDB upsert complete"
+      );
 
       // Phase 6: Batch update markdownRef references
-      const markdownRefUpdates = contentDocsData.map((doc, index) => ({
-        resultId: doc.resultId,
-        markdownRef: insertedDocs[index]?._id?.toString() ?? ""
-      }));
+      const markdownRefUpdates = contentDocsData
+        .map((doc) => ({
+          resultId: doc.resultId,
+          markdownRef: markdownRefByResultId.get(doc.resultId) ?? ""
+        }))
+        .filter((entry) => entry.markdownRef.length > 0);
 
       if (markdownRefUpdates.length > 0) {
         await this.prisma.$transaction(
@@ -796,12 +841,265 @@ export class CrawlResultService {
     return weakHits >= 2 && normalized.length < 12000;
   }
 
+  public isLowSignalMarkdown(markdown: string): boolean {
+    const normalized = this.normalizeMarkdownCandidate(markdown);
+    if (!normalized) {
+      return true;
+    }
+
+    if (this.isReferenceOnlyMarkdown(normalized)) {
+      return true;
+    }
+
+    const words = normalized.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const lines = normalized
+      .split(/\n/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    const meaningfulLines = lines.filter((line) => !this.isReferenceLine(line));
+    const sentenceLikeLines = meaningfulLines.filter((line) => /[.!?。！？]/.test(line));
+
+    if (words <= 8 && meaningfulLines.length <= 2) {
+      return true;
+    }
+
+    if (words <= 16 && sentenceLikeLines.length === 0 && meaningfulLines.length <= 3) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private isReferenceOnlyMarkdown(markdown: string): boolean {
+    const lines = markdown
+      .split(/\n/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (lines.length === 0) {
+      return true;
+    }
+
+    const headingOnly = lines.every((line) => this.isReferenceLine(line));
+    if (!headingOnly) {
+      return false;
+    }
+
+    return lines.some((line) => /^#{1,6}\s*references\b/i.test(line) || /^references\b/i.test(line));
+  }
+
+  private isReferenceLine(line: string): boolean {
+    if (line.length === 0) {
+      return true;
+    }
+
+    if (/^#{1,6}\s*references\b/i.test(line) || /^references\b/i.test(line)) {
+      return true;
+    }
+    if (/^\[[^\]]+\]:\s*\S+/i.test(line)) {
+      return true;
+    }
+    if (/^\[\^[^\]]+\]:\s*\S+/i.test(line)) {
+      return true;
+    }
+    if (/^[-*]\s*\[[^\]]+\]\(\S+\)/.test(line)) {
+      return true;
+    }
+    if (/^https?:\/\/\S+$/i.test(line)) {
+      return true;
+    }
+    return false;
+  }
+
   private normalizeMarkdownCandidate(value: string | undefined): string | undefined {
     if (typeof value !== "string") {
       return undefined;
     }
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
+
+    const withoutControlChars = value
+      .replace(/\r\n?/g, "\n")
+      .replace(/[\u0000\u200B-\u200D\uFEFF]/g, "");
+
+    const lines = withoutControlChars.split("\n").map((line) => line.replace(/[ \t]+$/g, ""));
+    const dedupedLines: string[] = [];
+    let previousCompact = "";
+    let repeatedCount = 0;
+
+    for (const line of lines) {
+      const compact = line.trim();
+      if (compact.length > 0 && compact === previousCompact && compact.length <= 80) {
+        repeatedCount += 1;
+        if (repeatedCount >= 2) {
+          continue;
+        }
+      } else {
+        previousCompact = compact;
+        repeatedCount = 0;
+      }
+      dedupedLines.push(line);
+    }
+
+    const cleanedLines = this.dropLowValueNoiseLines(dedupedLines);
+
+    const normalized = cleanedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private dropLowValueNoiseLines(lines: string[]): string[] {
+    if (lines.length === 0) {
+      return lines;
+    }
+
+    const kept: string[] = [];
+    let removedCount = 0;
+    const firstHeadingIndex = lines.findIndex((line) => /^#{1,6}\s+/.test(line.trim()));
+
+    for (const [index, line] of lines.entries()) {
+      const compact = line.trim();
+      if (!compact) {
+        kept.push(line);
+        continue;
+      }
+
+      if (firstHeadingIndex >= 0 && index < firstHeadingIndex && this.isLikelyPreambleNoiseLine(compact)) {
+        removedCount += 1;
+        continue;
+      }
+
+      if (this.isLikelyNoiseLine(compact)) {
+        removedCount += 1;
+        continue;
+      }
+
+      kept.push(line);
+    }
+
+    const denseLines = lines.filter((line) => line.trim().length > 0).length;
+    if (denseLines <= 0) {
+      return kept;
+    }
+
+    const removalRatio = removedCount / denseLines;
+    const keptDenseLines = kept.filter((line) => line.trim().length > 0).length;
+    const keptBodyLines = kept.filter((line) => {
+      const compact = line.trim();
+      return compact.length > 0 && !/^#{1,6}\s+/.test(compact);
+    }).length;
+
+    if (keptDenseLines === 0 || keptBodyLines === 0) {
+      return lines;
+    }
+
+    if (keptDenseLines <= 2 && removalRatio > 0.75) {
+      return lines;
+    }
+
+    return kept;
+  }
+
+  private isLikelyPreambleNoiseLine(compact: string): boolean {
+    const normalized = compact.toLowerCase().replace(/\s+/g, " ");
+
+    if (/^(?:[⟨<]\d+[⟩>]\s*)+$/.test(compact)) {
+      return true;
+    }
+
+    if (normalized === "menu") {
+      return true;
+    }
+
+    if (normalized === "politico pro" || /^politico pro\s*[⟨<]\d+[⟩>]$/i.test(compact)) {
+      return true;
+    }
+
+    if (this.isLikelyNavigationLinkLine(compact)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private isLikelyNavigationLinkLine(compact: string): boolean {
+    if (!/^(?:\[[^\]]+\]\(\S+\)\s*)+$/.test(compact)) {
+      return false;
+    }
+
+    const visible = compact
+      .replace(/\[([^\]]+)\]\(\S+\)/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+    if (!visible) {
+      return true;
+    }
+
+    return /(skip to (main )?content|menu|log in|sign in|subscribe|politico pro|my account|account|home|search)/.test(
+      visible
+    );
+  }
+
+  private isLikelyNoiseLine(compact: string): boolean {
+    const lower = compact.toLowerCase();
+    const normalized = lower.replace(/\s+/g, " ");
+
+    if (/^\s*skip to (main )?content\s*(?:[⟨<]\d+[⟩>])?\s*$/i.test(compact)) {
+      return true;
+    }
+
+    if (/^\s*menu\s*(?:[⟨<]\d+[⟩>])\s*$/i.test(compact)) {
+      return true;
+    }
+
+    if (/^\s*politico pro\s*(?:[⟨<]\d+[⟩>])?\s*$/i.test(compact) && lower !== "politico pro") {
+      return true;
+    }
+
+    if (/^\s*by\s+.+[⟨<]\d+[⟩>]\s*$/i.test(compact)) {
+      return true;
+    }
+
+    if (/^\s*\[\s*\]\(https?:\/\/[^)]+\)\s*$/.test(compact) || this.isLikelyNavigationLinkLine(compact)) {
+      return true;
+    }
+
+    if (/^advertisement$/i.test(compact) || /^sponsored$/i.test(compact)) {
+      return true;
+    }
+
+    if (normalized.startsWith("free article usually reserved for subscribers")) {
+      return true;
+    }
+
+    if (
+      normalized === "listen" ||
+      normalized === "ai generated text-to-speech" ||
+      normalized === "ai-generated text-to-speech"
+    ) {
+      return true;
+    }
+
+    if (
+      compact.length <= 80 &&
+      /^(subscribe|sign in|log in|get unlimited access|already a subscriber|create an account)/i.test(compact)
+    ) {
+      return true;
+    }
+
+    if (
+      compact.length <= 120 &&
+      /^(accept|agree|manage)( all)? (cookies|privacy|consent)/i.test(compact)
+    ) {
+      return true;
+    }
+
+    if (
+      compact.length <= 140 &&
+      /^(privacy policy|cookie policy|terms of service|terms & conditions|all rights reserved)$/i.test(compact)
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
   extractLinkAnalysisFromResult(item: Crawl4aiArticle): CrawlLinkAnalysis | undefined {

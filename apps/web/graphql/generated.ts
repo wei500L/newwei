@@ -15,9 +15,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
-  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -346,6 +344,13 @@ export type CrawlClientSettingsModel = {
   retryBackoffMs: Scalars['Int']['output'];
 };
 
+export type CrawlDetailExpansionOptionsInput = {
+  allowExternalLinks?: InputMaybe<Scalars['Boolean']['input']>;
+  maxDetailUrls?: InputMaybe<Scalars['Int']['input']>;
+  minRelevanceScore?: InputMaybe<Scalars['Float']['input']>;
+  requireSameDomain?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
 export type CrawlExecutionSummaryModel = {
   __typename?: 'CrawlExecutionSummaryModel';
   inserted: Scalars['Float']['output'];
@@ -503,10 +508,12 @@ export type CrawlMultiUrlStrategyInput = {
 export type CrawlOptionsInput = {
   additionalUrls?: InputMaybe<Array<Scalars['String']['input']>>;
   adjustViewportToContent?: InputMaybe<Scalars['Boolean']['input']>;
+  autoExpandDetails?: InputMaybe<Scalars['Boolean']['input']>;
   browserCookies?: InputMaybe<Array<CrawlBrowserCookieInput>>;
   browserHeaders?: InputMaybe<Array<CrawlBrowserHeaderInput>>;
   cleanMarkdown?: InputMaybe<CrawlCleanMarkdownInput>;
   delayBeforeReturnHtmlMs?: InputMaybe<Scalars['Int']['input']>;
+  detailExpansion?: InputMaybe<CrawlDetailExpansionOptionsInput>;
   enableStealthMode?: InputMaybe<Scalars['Boolean']['input']>;
   enableUndetectedBrowser?: InputMaybe<Scalars['Boolean']['input']>;
   excludeExternalImages?: InputMaybe<Scalars['Boolean']['input']>;
@@ -527,8 +534,10 @@ export type CrawlOptionsInput = {
   onlyMainContent?: InputMaybe<Scalars['Boolean']['input']>;
   overrideNavigator?: InputMaybe<Scalars['Boolean']['input']>;
   pageTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
+  pageTypeHint?: InputMaybe<Scalars['String']['input']>;
   proxyConfig?: InputMaybe<CrawlProxyConfigInput>;
   proxyUrl?: InputMaybe<Scalars['String']['input']>;
+  qualityProfile?: InputMaybe<Scalars['String']['input']>;
   removeForms?: InputMaybe<Scalars['Boolean']['input']>;
   scanFullPage?: InputMaybe<Scalars['Boolean']['input']>;
   scoreLinks?: InputMaybe<Scalars['Boolean']['input']>;
@@ -580,10 +589,12 @@ export type CrawlResultModel = {
 
 export type CrawlStrategyOverridesInput = {
   adjustViewportToContent?: InputMaybe<Scalars['Boolean']['input']>;
+  autoExpandDetails?: InputMaybe<Scalars['Boolean']['input']>;
   cacheMode?: InputMaybe<Scalars['String']['input']>;
   captureScreenshot?: InputMaybe<Scalars['Boolean']['input']>;
   cssSelector?: InputMaybe<Scalars['String']['input']>;
   delayBeforeReturnHtmlMs?: InputMaybe<Scalars['Int']['input']>;
+  detailExpansion?: InputMaybe<CrawlDetailExpansionOptionsInput>;
   excludeExternalImages?: InputMaybe<Scalars['Boolean']['input']>;
   excludeExternalLinks?: InputMaybe<Scalars['Boolean']['input']>;
   excludedTags?: InputMaybe<Array<Scalars['String']['input']>>;
@@ -595,7 +606,9 @@ export type CrawlStrategyOverridesInput = {
   onlyMainContent?: InputMaybe<Scalars['Boolean']['input']>;
   overrideNavigator?: InputMaybe<Scalars['Boolean']['input']>;
   pageTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
+  pageTypeHint?: InputMaybe<Scalars['String']['input']>;
   processIframes?: InputMaybe<Scalars['Boolean']['input']>;
+  qualityProfile?: InputMaybe<Scalars['String']['input']>;
   removeForms?: InputMaybe<Scalars['Boolean']['input']>;
   removeOverlayElements?: InputMaybe<Scalars['Boolean']['input']>;
   scanFullPage?: InputMaybe<Scalars['Boolean']['input']>;

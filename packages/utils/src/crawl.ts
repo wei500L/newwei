@@ -9,6 +9,27 @@ export interface CrawlUrlMatcherFormValue {
   patterns?: string[];
 }
 
+export type CrawlPageTypeHintValue = "auto" | "list" | "detail";
+
+export type CrawlQualityProfileValue =
+  | "balanced"
+  | "quality_first"
+  | "speed_first";
+
+export interface CrawlDetailExpansionOptionsFormValue {
+  maxDetailUrls?: number;
+  minRelevanceScore?: number;
+  requireSameDomain?: boolean;
+  allowExternalLinks?: boolean;
+}
+
+export interface CrawlDetailExpansionOptionsValue {
+  maxDetailUrls?: number;
+  minRelevanceScore?: number;
+  requireSameDomain?: boolean;
+  allowExternalLinks?: boolean;
+}
+
 export interface CrawlStrategyOverridesFormValue {
   cacheMode?: string;
   scanFullPage?: boolean;
@@ -31,6 +52,10 @@ export interface CrawlStrategyOverridesFormValue {
   semaphoreCount?: number;
   removeForms?: boolean;
   virtualScroll?: CrawlVirtualScrollConfigFormValue;
+  pageTypeHint?: CrawlPageTypeHintValue;
+  autoExpandDetails?: boolean;
+  detailExpansion?: CrawlDetailExpansionOptionsFormValue;
+  qualityProfile?: CrawlQualityProfileValue;
 }
 
 export interface CrawlMultiUrlStrategyFormValue {
@@ -183,6 +208,10 @@ export interface CrawlOptionsFormValues {
   locale?: string;
   timezoneId?: string;
   geolocation?: GeolocationFormValue;
+  pageTypeHint?: CrawlPageTypeHintValue;
+  autoExpandDetails?: boolean;
+  detailExpansion?: CrawlDetailExpansionOptionsFormValue;
+  qualityProfile?: CrawlQualityProfileValue;
   virtualScroll?: CrawlVirtualScrollConfigFormValue;
 }
 
@@ -208,6 +237,10 @@ export interface CrawlStrategyOverridesValue {
   semaphoreCount?: number;
   removeForms?: boolean;
   virtualScroll?: CrawlVirtualScrollConfigValue;
+  pageTypeHint?: CrawlPageTypeHintValue;
+  autoExpandDetails?: boolean;
+  detailExpansion?: CrawlDetailExpansionOptionsValue;
+  qualityProfile?: CrawlQualityProfileValue;
 }
 
 export interface CrawlMultiUrlStrategyValue {
@@ -328,6 +361,10 @@ export interface CrawlOptionsValue {
   locale?: string;
   timezoneId?: string;
   geolocation?: CrawlGeolocationValue;
+  pageTypeHint?: CrawlPageTypeHintValue;
+  autoExpandDetails?: boolean;
+  detailExpansion?: CrawlDetailExpansionOptionsValue;
+  qualityProfile?: CrawlQualityProfileValue;
   virtualScroll?: CrawlVirtualScrollConfigValue;
 }
 
@@ -509,6 +546,21 @@ export const sanitizeStrategyOptions = (
   }
   if (typeof options.removeForms === "boolean") {
     cleaned.removeForms = options.removeForms;
+  }
+  const pageTypeHint = sanitizePageTypeHint(options.pageTypeHint);
+  if (pageTypeHint) {
+    cleaned.pageTypeHint = pageTypeHint;
+  }
+  if (typeof options.autoExpandDetails === "boolean") {
+    cleaned.autoExpandDetails = options.autoExpandDetails;
+  }
+  const detailExpansion = sanitizeDetailExpansionOptions(options.detailExpansion);
+  if (detailExpansion) {
+    cleaned.detailExpansion = detailExpansion;
+  }
+  const qualityProfile = sanitizeQualityProfile(options.qualityProfile);
+  if (qualityProfile) {
+    cleaned.qualityProfile = qualityProfile;
   }
   const virtualScroll = sanitizeVirtualScrollConfig(options.virtualScroll);
   if (virtualScroll) {
@@ -845,6 +897,64 @@ export const sanitizeGeolocation = (
   return normalized;
 };
 
+const sanitizePageTypeHint = (
+  value?: string,
+): CrawlPageTypeHintValue | undefined => {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "auto" || normalized === "list" || normalized === "detail") {
+    return normalized;
+  }
+  return undefined;
+};
+
+const sanitizeQualityProfile = (
+  value?: string,
+): CrawlQualityProfileValue | undefined => {
+  const normalized = value?.trim().toLowerCase();
+  if (
+    normalized === "balanced" ||
+    normalized === "quality_first" ||
+    normalized === "speed_first"
+  ) {
+    return normalized;
+  }
+  return undefined;
+};
+
+const sanitizeDetailExpansionOptions = (
+  value?: CrawlDetailExpansionOptionsFormValue,
+): CrawlDetailExpansionOptionsValue | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const maxDetailUrls =
+    typeof value.maxDetailUrls === "number" && Number.isFinite(value.maxDetailUrls)
+      ? Math.max(1, Math.min(30, Math.round(value.maxDetailUrls)))
+      : undefined;
+  const minRelevanceScore =
+    typeof value.minRelevanceScore === "number" && Number.isFinite(value.minRelevanceScore)
+      ? Number(Math.max(0, Math.min(1, value.minRelevanceScore)).toFixed(3))
+      : undefined;
+  const requireSameDomain =
+    typeof value.requireSameDomain === "boolean" ? value.requireSameDomain : undefined;
+  const allowExternalLinks =
+    typeof value.allowExternalLinks === "boolean" ? value.allowExternalLinks : undefined;
+  if (
+    maxDetailUrls === undefined &&
+    minRelevanceScore === undefined &&
+    requireSameDomain === undefined &&
+    allowExternalLinks === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    maxDetailUrls,
+    minRelevanceScore,
+    requireSameDomain,
+    allowExternalLinks,
+  };
+};
+
 export const sanitizeVirtualScrollConfig = (
   config?: CrawlVirtualScrollConfigFormValue,
 ): CrawlVirtualScrollConfigValue | undefined => {
@@ -966,6 +1076,13 @@ export const sanitizeCrawlOptions = (
   const locale = values.locale?.trim();
   const timezoneId = values.timezoneId?.trim();
   const geolocation = sanitizeGeolocation(values.geolocation);
+  const pageTypeHint = sanitizePageTypeHint(values.pageTypeHint);
+  const autoExpandDetails =
+    typeof values.autoExpandDetails === "boolean"
+      ? values.autoExpandDetails
+      : undefined;
+  const detailExpansion = sanitizeDetailExpansionOptions(values.detailExpansion);
+  const qualityProfile = sanitizeQualityProfile(values.qualityProfile);
   const virtualScroll = sanitizeVirtualScrollConfig(values.virtualScroll);
   const tableScoreThreshold =
     typeof values.tableScoreThreshold === "number"
@@ -1057,6 +1174,10 @@ export const sanitizeCrawlOptions = (
     locale: locale?.length ? locale : undefined,
     timezoneId: timezoneId?.length ? timezoneId : undefined,
     geolocation: geolocation ?? undefined,
+    pageTypeHint: pageTypeHint ?? undefined,
+    autoExpandDetails,
+    detailExpansion: detailExpansion ?? undefined,
+    qualityProfile: qualityProfile ?? undefined,
     virtualScroll: virtualScroll ?? undefined,
   };
 

@@ -8,12 +8,16 @@ import { toPrismaJsonValue } from "../../common/prisma-json";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import {
+  CrawlQualityStrategyService
+} from "./crawl-quality.strategy";
 import { CrawlResultService } from "./crawl-result.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import {
   CrawlExecutionSummary,
+  CrawlDetailExpansionOptions,
   CrawlTaskOptions,
   CrawlMemoryStats,
   CrawlProxyConfig,
@@ -30,6 +34,8 @@ import {
   CrawlMarkdownOptions,
   CrawlMarkdownFilter,
   CrawlMarkdownContentSource,
+  CrawlPageTypeHint,
+  CrawlQualityProfile,
   CrawlMarkdownStrategy,
   CrawlTableExtractionStrategy,
   CrawlVirtualScrollConfig
@@ -50,12 +56,44 @@ export interface CrawlExecutionRetryContext {
 export class CrawlExecutionService {
   private readonly retryableStatusCodes = new Set([408, 423, 425, 429, 500, 502, 503, 504]);
   private readonly pipelineJobIdMaxLength = 128;
+  private readonly blockedDetailPathSegments = new Set([
+    "video",
+    "videos",
+    "photo",
+    "photos",
+    "pictures",
+    "gallery",
+    "graphics",
+    "podcast",
+    "podcasts",
+    "tag",
+    "tags",
+    "topic",
+    "topics",
+    "section",
+    "sections",
+    "author",
+    "authors",
+    "archive",
+    "latest",
+    "live",
+    "newsletter",
+    "newsletters",
+    "country",
+    "countries",
+    "special-report",
+    "special-reports",
+    "europe-poll-of-polls",
+    "poll-of-polls"
+  ]);
+  private readonly articleLeadPathSegments = new Set(["article", "articles", "news", "story", "stories"]);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
     private readonly crawlClient: Crawl4aiClient,
     private readonly resultService: CrawlResultService,
+    private readonly qualityStrategy: CrawlQualityStrategyService,
     private readonly notifications: NotificationsService
   ) {}
 
@@ -137,7 +175,7 @@ export class CrawlExecutionService {
         },
       });
       let response = await this.crawlClient.crawl(payload);
-      let { successes, failures } = this.partitionCrawlerResults(response.results);
+      let { successes, failures, lowSignalCandidates } = this.partitionCrawlerResults(response.results);
 
       if (this.shouldAttemptEmptyMarkdownFallback(successes, failures)) {
         const fallbackProfiles = this.buildEmptyMarkdownFallbackProfiles(effectiveOptions);
@@ -147,6 +185,7 @@ export class CrawlExecutionService {
           response: Crawl4aiResponse;
           successes: Crawl4aiArticle[];
           failures: CrawlFailureDetail[];
+          lowSignalCandidates: Crawl4aiArticle[];
           qualityScore: number;
         }[] = [];
 
@@ -177,8 +216,14 @@ export class CrawlExecutionService {
                 response: fallbackResponse,
                 successes: fallbackPartition.successes,
                 failures: fallbackPartition.failures,
+                lowSignalCandidates: fallbackPartition.lowSignalCandidates,
                 qualityScore
               });
+            } else if (fallbackPartition.lowSignalCandidates.length > 0) {
+              response = fallbackResponse;
+              failures = fallbackPartition.failures;
+              lowSignalCandidates = fallbackPartition.lowSignalCandidates;
+              effectiveOptions = profile.options;
             }
 
             await TaskLogModel.create({
@@ -222,6 +267,7 @@ export class CrawlExecutionService {
           response = bestFallback.response;
           successes = bestFallback.successes;
           failures = bestFallback.failures;
+          lowSignalCandidates = bestFallback.lowSignalCandidates;
           effectiveOptions = bestFallback.options;
 
           await TaskLogModel.create({
@@ -241,13 +287,16 @@ export class CrawlExecutionService {
         }
       }
 
+      const expansionSeedCandidates = this.buildExpansionSeedCandidates(successes, lowSignalCandidates);
+      const seededFromLowSignal = successes.length === 0 && expansionSeedCandidates.length > 0;
       const expansionResult = await this.expandListLikeResultsIfNeeded({
         task,
         orgId,
         taskId,
         keywords: payload.keywords ?? [],
         crawlOptions: effectiveOptions,
-        successes
+        successes: expansionSeedCandidates,
+        seededFromLowSignal
       });
       if (expansionResult) {
         successes = expansionResult.successes;
@@ -511,9 +560,15 @@ export class CrawlExecutionService {
   private isEmptyMarkdownFailure(failure: CrawlFailureDetail): boolean {
     const normalizedError =
       typeof failure.error === "string" ? failure.error.toLowerCase() : "";
+
+    const isLowSignalFailure =
+      normalizedError.includes("low-signal markdown") ||
+      normalizedError.includes("reference-only") ||
+      normalizedError.includes("placeholder content");
+
     return (
       (failure.statusCode === undefined || failure.statusCode === 200) &&
-      normalizedError.includes("empty markdown")
+      (normalizedError.includes("empty markdown") || isLowSignalFailure)
     );
   }
 
@@ -563,6 +618,7 @@ export class CrawlExecutionService {
     const cleanedBalancedOptions = this.normalizeOptions({
       ...options,
       onlyMainContent: false,
+      extractLinks: true,
       markdownFilter: {
         type: "pruning",
         thresholdType: "dynamic",
@@ -610,6 +666,34 @@ export class CrawlExecutionService {
           wordCountThreshold: cleanedBalancedOptions.wordCountThreshold ?? null,
           cleanMarkdownWordCountThreshold: cleanedBalancedOptions.cleanMarkdown?.wordCountThreshold ?? null
         }
+      },
+      {
+        label: "raw_relaxed_linkscan",
+        options: this.normalizeOptions({
+          ...rawRelaxedOptions,
+          extractLinks: true,
+          onlyMainContent: false,
+          cleanMarkdown: {
+            ...(rawRelaxedOptions.cleanMarkdown ?? {}),
+            removeOverlayElements: false,
+            wordCountThreshold: 0
+          },
+          excludeExternalLinks: false,
+          markdownOptions: {
+            ...(rawRelaxedOptions.markdownOptions ?? {}),
+            contentSource: "raw_html",
+            citations: ensureCitations
+          }
+        }),
+        summary: {
+          contentSource: "raw_html",
+          markdownFilter: null,
+          extractLinks: true,
+          onlyMainContent: false,
+          cleanMarkdownWordCountThreshold: 0,
+          removeOverlayElements: false,
+          excludeExternalLinks: false
+        }
       }
     ];
 
@@ -649,30 +733,7 @@ export class CrawlExecutionService {
   }
 
   private scoreMarkdownQuality(successes: Crawl4aiArticle[]): number {
-    if (successes.length === 0) {
-      return Number.NEGATIVE_INFINITY;
-    }
-    return successes.reduce((total, item) => total + this.scoreSingleMarkdownQuality(item), 0);
-  }
-
-  private scoreSingleMarkdownQuality(item: Crawl4aiArticle): number {
-    const markdownResult = this.resultService.extractMarkdownResult(item.markdown);
-    const primary = typeof markdownResult.primary === "string" ? markdownResult.primary.trim() : "";
-    if (!primary) {
-      return -1000;
-    }
-
-    const words = primary.split(/\s+/).filter((entry) => entry.length > 0).length;
-    const headings = (primary.match(/^#{1,6}\s+/gm) ?? []).length;
-    const markdownLinks = (primary.match(/\]\((https?:\/\/|\/)/g) ?? []).length;
-    const rawUrls = (primary.match(/https?:\/\/\S+/g) ?? []).length;
-    const codeFenceMarkers = (primary.match(/```/g) ?? []).length;
-    const codeBlocks = Math.floor(codeFenceMarkers / 2);
-    const citationMarks = (primary.match(/\[\^\d+\]/g) ?? []).length;
-
-    const score =
-      Math.min(words, 6000) + headings * 8 + citationMarks * 2 - (markdownLinks + rawUrls) * 4 - codeBlocks * 3;
-    return Number.isFinite(score) ? score : 0;
+    return this.qualityStrategy.scoreMarkdownQuality(successes);
   }
 
   private async expandListLikeResultsIfNeeded(options: {
@@ -682,6 +743,7 @@ export class CrawlExecutionService {
     keywords: string[];
     crawlOptions: CrawlTaskOptions;
     successes: Crawl4aiArticle[];
+    seededFromLowSignal?: boolean;
   }): Promise<
     | {
         successes: Crawl4aiArticle[];
@@ -694,56 +756,33 @@ export class CrawlExecutionService {
       return null
     }
 
-    const assessments = options.successes.map((article, index) => {
-      const quality = this.assessArticleMarkdownSignal(article)
-      return {
-        index,
-        article,
-        quality,
-        linkInventory: this.countArticleLinkInventory(article)
-      }
-    })
+    const pageTypeHint = options.crawlOptions.pageTypeHint ?? "auto";
+    const qualityProfile = this.qualityStrategy.resolveQualityProfile(options.crawlOptions.qualityProfile);
+    const pageAssessment = this.qualityStrategy.assessPageSignals(options.successes, pageTypeHint);
+    const {
+      assessments,
+      lowSignalAssessments,
+      maxLowSignalWords,
+      minLowSignalWords,
+      meanLowSignalWords,
+      bestLowSignalScore,
+      maxLowSignalLinkDensity,
+      meanLowSignalLinkDensity,
+      kind: pageKind
+    } = pageAssessment;
 
-    const lowSignalAssessments = assessments.filter((entry) => {
-      const quality = entry.quality
-      if (quality.isListLike) {
-        return true
-      }
-      if (quality.linkDensity >= 0.14 && quality.wordCount <= 1600) {
-        return true
-      }
-      if (quality.linkCount >= 12 && quality.wordCount <= 520) {
-        return true
-      }
-      return entry.linkInventory >= 40 && quality.wordCount <= 900
-    })
-    if (lowSignalAssessments.length === 0) {
+    const shouldAutoExpand = this.qualityStrategy.shouldAutoExpand(options.crawlOptions, pageAssessment);
+    const shouldForceExpandFromLowSignalSeed =
+      options.seededFromLowSignal === true &&
+      options.crawlOptions.autoExpandDetails !== false &&
+      pageTypeHint !== "detail";
+    if (!shouldAutoExpand && !shouldForceExpandFromLowSignalSeed) {
       return null
     }
-
-    const allLowSignal = lowSignalAssessments.length === assessments.length
-    const maxLowSignalWords = lowSignalAssessments.reduce(
-      (maxWords, entry) => Math.max(maxWords, entry.quality.wordCount),
-      0
-    )
-    const minLowSignalWords = lowSignalAssessments.reduce(
-      (minWords, entry) => Math.min(minWords, entry.quality.wordCount),
-      Number.POSITIVE_INFINITY
-    )
-    const meanLowSignalWords =
-      lowSignalAssessments.reduce((total, entry) => total + entry.quality.wordCount, 0) /
-      lowSignalAssessments.length
-    const bestLowSignalScore = lowSignalAssessments.reduce(
-      (maxScore, entry) => Math.max(maxScore, entry.quality.score),
-      Number.NEGATIVE_INFINITY
-    )
-    const maxLowSignalLinkDensity = lowSignalAssessments.reduce(
-      (maxDensity, entry) => Math.max(maxDensity, entry.quality.linkDensity),
-      0
-    )
-    const meanLowSignalLinkDensity =
-      lowSignalAssessments.reduce((total, entry) => total + entry.quality.linkDensity, 0) /
-      lowSignalAssessments.length
+    const effectiveLowSignalAssessments =
+      lowSignalAssessments.length > 0 ? lowSignalAssessments : shouldForceExpandFromLowSignalSeed ? assessments : [];
+    const effectiveAllLowSignal =
+      effectiveLowSignalAssessments.length > 0 && effectiveLowSignalAssessments.length === assessments.length;
 
     await TaskLogModel.create({
       queue: CRAWL_QUEUE_NAME,
@@ -753,9 +792,13 @@ export class CrawlExecutionService {
       status: 'processing',
       message: 'Detected low-signal crawl markdown; evaluating detail expansion candidates',
       data: {
+        qualityProfile,
+        pageTypeHint,
+        pageKind,
+        forcedByLowSignalSeed: shouldForceExpandFromLowSignalSeed,
         totalSuccesses: assessments.length,
-        lowSignalResults: lowSignalAssessments.length,
-        allLowSignal,
+        lowSignalResults: effectiveLowSignalAssessments.length,
+        allLowSignal: effectiveAllLowSignal,
         lowSignalWords: {
           min: Number.isFinite(minLowSignalWords) ? minLowSignalWords : 0,
           max: maxLowSignalWords,
@@ -765,7 +808,7 @@ export class CrawlExecutionService {
           max: Number(maxLowSignalLinkDensity.toFixed(3)),
           avg: Number(meanLowSignalLinkDensity.toFixed(3))
         },
-        qualitySamples: lowSignalAssessments.slice(0, 5).map((entry) => ({
+        qualitySamples: effectiveLowSignalAssessments.slice(0, 5).map((entry) => ({
           url: entry.article.url ?? null,
           wordCount: entry.quality.wordCount,
           linkCount: entry.quality.linkCount,
@@ -784,9 +827,15 @@ export class CrawlExecutionService {
     )
 
     const candidateScoreMap = new Map<string, number>()
-    for (const entry of lowSignalAssessments) {
+    const fallbackCandidateScoreMap = new Map<string, number>()
+    const detailExpansion = this.qualityStrategy.resolveDetailExpansion(options.crawlOptions)
+    for (const entry of effectiveLowSignalAssessments) {
       const baseUrl = this.resolveArticleBaseUrl(entry.article) ?? options.task.targetUrl
-      const candidates = this.extractDetailLinkCandidatesFromArticle(entry.article)
+      const candidates = this.extractDetailLinkCandidatesFromArticle(
+        entry.article,
+        detailExpansion.requireSameDomain,
+        detailExpansion.allowExternalLinks
+      )
       for (const candidate of candidates) {
         if (existingUrls.has(candidate)) {
           continue
@@ -797,14 +846,103 @@ export class CrawlExecutionService {
           candidateScoreMap.set(candidate, nextScore)
         }
       }
+
+      const fallbackCandidates = this.extractFallbackDetailLinkCandidatesFromArticle(
+        entry.article,
+        detailExpansion.requireSameDomain,
+        detailExpansion.allowExternalLinks
+      )
+      for (const candidate of fallbackCandidates) {
+        if (existingUrls.has(candidate)) {
+          continue
+        }
+        const nextScore = this.scoreDetailCandidateUrl(candidate, baseUrl) - 120
+        const currentScore = fallbackCandidateScoreMap.get(candidate)
+        if (currentScore === undefined || nextScore > currentScore) {
+          fallbackCandidateScoreMap.set(candidate, nextScore)
+        }
+      }
     }
 
-    const candidateLimit = allLowSignal ? 14 : 8
-    const candidateUrls = Array.from(candidateScoreMap.entries())
+    await TaskLogModel.create({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: options.taskId,
+      orgId: options.orgId,
+      stage: "expansion",
+      status: "processing",
+      message: "Resolved detail expansion policy",
+      data: {
+        qualityProfile,
+        detailExpansion,
+        pageTypeHint,
+        pageKind,
+        primaryCandidatePool: candidateScoreMap.size,
+        fallbackCandidatePool: fallbackCandidateScoreMap.size
+      }
+    });
+
+    const profileCandidateMultiplier =
+      qualityProfile === "quality_first" ? 1.25 : qualityProfile === "speed_first" ? 0.8 : 1
+    const baseCandidateLimit =
+      effectiveAllLowSignal ? detailExpansion.maxDetailUrls + 2 : detailExpansion.maxDetailUrls
+    const candidateLimit = Math.max(
+      1,
+      Math.min(30, Math.round(baseCandidateLimit * profileCandidateMultiplier))
+    )
+    const minCandidateScore = this.detailRelevanceToScore(detailExpansion.minRelevanceScore)
+    const candidateEntries = Array.from(candidateScoreMap.entries())
       .filter((entry) => Number.isFinite(entry[1]))
       .sort((left, right) => right[1] - left[1])
-      .map((entry) => entry[0])
-      .slice(0, candidateLimit)
+    const fallbackCandidateEntries = Array.from(fallbackCandidateScoreMap.entries())
+      .filter((entry) => Number.isFinite(entry[1]))
+      .sort((left, right) => right[1] - left[1])
+    const minimumCandidateCount = this.resolveMinimumDetailExpansionCandidates(
+      detailExpansion.maxDetailUrls,
+      candidateLimit,
+      effectiveAllLowSignal,
+      qualityProfile
+    )
+    const strictThreshold = minCandidateScore
+    const relaxedThreshold = minCandidateScore - 80
+    const fallbackThreshold = minCandidateScore - 140
+    const selectedCandidateSet = new Set<string>()
+    const pushCandidates = (
+      entries: [string, number][],
+      threshold: number,
+      targetSize: number
+    ): number => {
+      if (targetSize <= 0) {
+        return 0
+      }
+      let added = 0
+      for (const [candidateUrl, score] of entries) {
+        if (!Number.isFinite(score) || score < threshold || selectedCandidateSet.has(candidateUrl)) {
+          continue
+        }
+        selectedCandidateSet.add(candidateUrl)
+        added += 1
+        if (selectedCandidateSet.size >= targetSize) {
+          break
+        }
+      }
+      return added
+    }
+
+    const strictCandidateCount = pushCandidates(candidateEntries, strictThreshold, candidateLimit)
+    const relaxedCandidateCount =
+      selectedCandidateSet.size < minimumCandidateCount
+        ? pushCandidates(candidateEntries, relaxedThreshold, minimumCandidateCount)
+        : 0
+    const linkFallbackCandidateCount =
+      selectedCandidateSet.size < minimumCandidateCount
+        ? pushCandidates(fallbackCandidateEntries, fallbackThreshold, minimumCandidateCount)
+        : 0
+
+    if (selectedCandidateSet.size === 0 && effectiveAllLowSignal && fallbackCandidateEntries.length > 0) {
+      pushCandidates(fallbackCandidateEntries, Number.NEGATIVE_INFINITY, 1)
+    }
+
+    const candidateUrls = Array.from(selectedCandidateSet).slice(0, candidateLimit)
 
     if (candidateUrls.length === 0) {
       await TaskLogModel.create({
@@ -814,11 +952,21 @@ export class CrawlExecutionService {
         stage: 'expansion',
         status: 'failed',
         message: 'Low-signal markdown detected but no detail candidate URLs were extracted',
-        data: {
-          allLowSignal,
-          lowSignalResults: lowSignalAssessments.length,
-          lowSignalWords: {
-            min: Number.isFinite(minLowSignalWords) ? minLowSignalWords : 0,
+      data: {
+        qualityProfile,
+        pageTypeHint,
+        pageKind,
+        detailExpansion,
+        allLowSignal: effectiveAllLowSignal,
+        minimumCandidateCount,
+        primaryCandidatePool: candidateEntries.length,
+        fallbackCandidatePool: fallbackCandidateEntries.length,
+        strictCandidateCount,
+        relaxedCandidateCount,
+        linkFallbackCandidateCount,
+        lowSignalResults: effectiveLowSignalAssessments.length,
+        lowSignalWords: {
+          min: Number.isFinite(minLowSignalWords) ? minLowSignalWords : 0,
             max: maxLowSignalWords,
             avg: Number.isFinite(meanLowSignalWords) ? Number(meanLowSignalWords.toFixed(1)) : 0
           },
@@ -826,7 +974,7 @@ export class CrawlExecutionService {
         }
       })
 
-      if (allLowSignal) {
+      if (effectiveAllLowSignal) {
         throw new Error(
           'crawl markdown is low-signal/list-like and no detail candidate URLs were extracted from the page content'
         )
@@ -834,8 +982,9 @@ export class CrawlExecutionService {
       return null
     }
 
-    const detailOptions = this.buildDetailExpansionOptions(options.crawlOptions)
-    const candidateBatchSize = 3
+    const detailOptions = this.buildDetailExpansionOptions(options.crawlOptions, qualityProfile)
+    const candidateBatchSize =
+      qualityProfile === "quality_first" ? 2 : qualityProfile === "speed_first" ? 4 : 3
     const candidateBatches = Array.from({ length: Math.ceil(candidateUrls.length / candidateBatchSize) }, (_, index) =>
       candidateUrls.slice(index * candidateBatchSize, (index + 1) * candidateBatchSize)
     )
@@ -936,6 +1085,17 @@ export class CrawlExecutionService {
 
     for (const article of expansionSuccesses) {
       const quality = this.assessArticleMarkdownSignal(article)
+      const articleUrl = article.url ?? ""
+      if (
+        !this.isLikelyDetailArticleUrl(
+          articleUrl,
+          options.task.targetUrl,
+          detailExpansion.requireSameDomain,
+          detailExpansion.allowExternalLinks
+        )
+      ) {
+        continue
+      }
       const isImproved = this.isSignificantDetailImprovement(
         quality,
         bestLowSignalScore,
@@ -943,6 +1103,14 @@ export class CrawlExecutionService {
         maxLowSignalLinkDensity
       )
       if (!isImproved) {
+        continue
+      }
+
+      const normalizedArticleUrl = this.normalizeComparableUrl(article.url)
+      const selectedByExpansionCandidates =
+        normalizedArticleUrl ? selectedCandidateSet.has(normalizedArticleUrl) : false
+      const detailScore = this.scoreDetailCandidateUrl(article.url ?? "", options.task.targetUrl)
+      if (!selectedByExpansionCandidates && Number.isFinite(detailScore) && detailScore < minCandidateScore) {
         continue
       }
 
@@ -986,7 +1154,12 @@ export class CrawlExecutionService {
       return [...preferredEntries, ...nonPreferredEntries]
     })()
 
-    const maxImprovedResults = allLowSignal ? 8 : 5
+    const profileImprovedBoost = qualityProfile === "quality_first" ? 2 : qualityProfile === "speed_first" ? -1 : 0
+    const baseImprovedResults = effectiveAllLowSignal ? 8 : 5
+    const maxImprovedResults = Math.max(
+      1,
+      Math.min(detailExpansion.maxDetailUrls, baseImprovedResults + profileImprovedBoost)
+    )
     const improvedSuccesses = rankedImprovedEntries.slice(0, maxImprovedResults).map((entry) => entry.article)
 
     await TaskLogModel.create({
@@ -1000,7 +1173,17 @@ export class CrawlExecutionService {
           ? `Detail expansion selected ${improvedSuccesses.length} richer article result(s)`
           : 'Detail expansion did not produce richer markdown',
       data: {
-        allLowSignal,
+        qualityProfile,
+        pageTypeHint,
+        pageKind,
+        detailExpansion,
+        allLowSignal: effectiveAllLowSignal,
+        minimumCandidateCount,
+        primaryCandidatePool: candidateEntries.length,
+        fallbackCandidatePool: fallbackCandidateEntries.length,
+        strictCandidateCount,
+        relaxedCandidateCount,
+        linkFallbackCandidateCount,
         candidateCount: candidateUrls.length,
         batchCount: candidateBatches.length,
         expansionSuccesses: expansionSuccesses.length,
@@ -1020,7 +1203,7 @@ export class CrawlExecutionService {
     })
 
     if (improvedSuccesses.length === 0) {
-      if (allLowSignal) {
+      if (effectiveAllLowSignal) {
         throw new Error(
           `crawl markdown is low-signal/list-like and detail expansion did not produce richer article content (candidates=${candidateUrls.length}, expansionSuccesses=${expansionSuccesses.length}, expansionFailures=${expansionFailures.length})`
         )
@@ -1028,7 +1211,7 @@ export class CrawlExecutionService {
       return null
     }
 
-    const lowSignalIndexes = new Set(lowSignalAssessments.map((entry) => entry.index))
+    const lowSignalIndexes = new Set(effectiveLowSignalAssessments.map((entry) => entry.index))
     const retainedSuccesses = options.successes.filter((_, index) => !lowSignalIndexes.has(index))
     const retainedUrlSet = new Set(
       retainedSuccesses
@@ -1084,88 +1267,8 @@ export class CrawlExecutionService {
     }
   }
 
-  private countArticleLinkInventory(article: Crawl4aiArticle): number {
-    if (!article.links || typeof article.links !== 'object' || Array.isArray(article.links)) {
-      return 0
-    }
-
-    const collections = Object.values(article.links as Record<string, unknown>)
-    let total = 0
-    for (const collection of collections) {
-      if (Array.isArray(collection)) {
-        total += collection.length
-      }
-    }
-    return total
-  }
-
   private assessArticleMarkdownSignal(article: Crawl4aiArticle) {
-    const markdownResult = this.resultService.extractMarkdownResult(article.markdown)
-    const markdown = typeof markdownResult.primary === 'string' ? markdownResult.primary.trim() : ''
-    if (!markdown) {
-      return {
-        wordCount: 0,
-        paragraphCount: 0,
-        headingCount: 0,
-        linkCount: 0,
-        linkDensity: 0,
-        bulletLines: 0,
-        score: Number.NEGATIVE_INFINITY,
-        isListLike: false
-      }
-    }
-
-    const { scoreWordCount, densityWordCount } = this.estimateMarkdownWordUnits(markdown)
-    const wordCount = densityWordCount
-    const paragraphCount = markdown
-      .split(/\n\s*\n/g)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0).length
-    const headingCount = (markdown.match(/^#{1,6}\s+/gm) ?? []).length
-    const markdownLinkCount = (markdown.match(/\]\((https?:\/\/|\/)/g) ?? []).length
-    const rawUrlCount = (markdown.match(/https?:\/\/\S+/g) ?? []).length
-    const linkCount = markdownLinkCount + rawUrlCount
-    const bulletLines = markdown
-      .split(/\n/g)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.startsWith('- ') || entry.startsWith('* ') || entry.startsWith('• ')).length
-    const linkDensity = wordCount > 0 ? linkCount / wordCount : linkCount
-
-    const listLikeSignals =
-      (linkCount >= 16 && wordCount <= 1500) ||
-      (bulletLines >= 10 && linkCount >= 10) ||
-      (linkDensity >= 0.09 && wordCount <= 1200)
-    const hasArticleLikeBody = paragraphCount >= 8 && wordCount >= 260 && linkDensity <= 0.22
-    const isListLike = listLikeSignals && !hasArticleLikeBody
-
-    const score =
-      Math.min(scoreWordCount, 12_000) +
-      Math.min(paragraphCount, 220) * 6 +
-      headingCount * 3 -
-      linkCount * 6 -
-      bulletLines * 2
-
-    return {
-      wordCount,
-      paragraphCount,
-      headingCount,
-      linkCount,
-      linkDensity,
-      bulletLines,
-      score,
-      isListLike
-    }
-  }
-
-  private estimateMarkdownWordUnits(markdown: string): { scoreWordCount: number; densityWordCount: number } {
-    const whitespaceWords = markdown.split(/\s+/).filter((entry) => entry.length > 0).length;
-    const cjkChars = markdown.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu);
-    const cjkCount = cjkChars ? cjkChars.length : 0;
-
-    return {
-      scoreWordCount: whitespaceWords + Math.round(cjkCount / 2),
-      densityWordCount: whitespaceWords + Math.round(cjkCount / 6)
-    };
+    return this.qualityStrategy.assessArticleMarkdownSignal(article);
   }
 
   private isSignificantDetailImprovement(
@@ -1182,49 +1285,30 @@ export class CrawlExecutionService {
     baseWords: number,
     baseLinkDensity: number
   ): boolean {
-    if (quality.wordCount <= 0) {
-      return false
-    }
-
-    const densityTarget = Math.max(baseLinkDensity * 0.65, 0.08)
-    if (
-      quality.isListLike &&
-      quality.wordCount < Math.max(baseWords + 80, 180) &&
-      quality.linkDensity >= Math.max(densityTarget * 0.9, 0.12)
-    ) {
-      return false
-    }
-
-    if (
-      !quality.isListLike &&
-      quality.paragraphCount >= 3 &&
-      quality.wordCount >= 120 &&
-      quality.linkDensity <= densityTarget
-    ) {
-      return true
-    }
-
-    if (quality.score >= baseScore + 120 && quality.linkDensity <= Math.max(baseLinkDensity * 0.8, 0.2)) {
-      return true
-    }
-
-    if (quality.wordCount >= baseWords + 100 && quality.linkDensity <= Math.max(baseLinkDensity * 0.85, 0.22)) {
-      return true
-    }
-
-    if (
-      !quality.isListLike &&
-      quality.wordCount >= Math.max(Math.floor(baseWords * 0.6), 140) &&
-      quality.linkCount <= Math.max(Math.floor(quality.wordCount * 0.12), 35)
-    ) {
-      return true
-    }
-
-    return !quality.isListLike && quality.wordCount >= 180 && quality.headingCount >= 1 && quality.linkDensity <= 0.12
+    return this.qualityStrategy.isSignificantDetailImprovement(
+      quality,
+      baseScore,
+      baseWords,
+      baseLinkDensity
+    );
   }
 
-  private buildDetailExpansionOptions(options: CrawlTaskOptions): CrawlTaskOptions {
+  private buildDetailExpansionOptions(
+    options: CrawlTaskOptions,
+    qualityProfile: CrawlQualityProfile
+  ): CrawlTaskOptions {
     const cleanMarkdown = options.cleanMarkdown;
+    const qualityWordCountThreshold =
+      qualityProfile === "quality_first"
+        ? Math.min(options.wordCountThreshold ?? 80, 30)
+        : qualityProfile === "speed_first"
+          ? Math.min(options.wordCountThreshold ?? 80, 50)
+          : Math.min(options.wordCountThreshold ?? 80, 40);
+    const contentSource: CrawlMarkdownContentSource =
+      qualityProfile === "quality_first"
+        ? "cleaned_html"
+        : options.markdownOptions?.contentSource ?? "raw_html";
+
     return this.normalizeOptions({
       ...options,
       additionalUrls: undefined,
@@ -1234,10 +1318,10 @@ export class CrawlExecutionService {
       virtualScroll: undefined,
       markdownFilter: undefined,
       extractLinks: false,
-      wordCountThreshold: Math.min(options.wordCountThreshold ?? 80, 40),
+      wordCountThreshold: qualityWordCountThreshold,
       markdownOptions: {
         ...(options.markdownOptions ?? {}),
-        contentSource: options.markdownOptions?.contentSource ?? "raw_html",
+        contentSource,
         citations: options.markdownOptions?.citations ?? true
       },
       cleanMarkdown: cleanMarkdown
@@ -1251,11 +1335,17 @@ export class CrawlExecutionService {
         : {
             removeOverlayElements: true,
             wordCountThreshold: 20
-          }
+          },
+      detailExpansion: undefined,
+      autoExpandDetails: false
     });
   }
 
-  private extractDetailLinkCandidatesFromArticle(article: Crawl4aiArticle): string[] {
+  private extractDetailLinkCandidatesFromArticle(
+    article: Crawl4aiArticle,
+    requireSameDomain: boolean,
+    allowExternalLinks?: boolean
+  ): string[] {
     const baseUrl = this.resolveArticleBaseUrl(article);
     if (!baseUrl) {
       return [];
@@ -1309,6 +1399,34 @@ export class CrawlExecutionService {
       }
     }
 
+    if (article.metadata && typeof article.metadata === "object" && !Array.isArray(article.metadata)) {
+      const metadata = article.metadata as Record<string, unknown>;
+      const metadataCandidates = [
+        this.pickString(metadata, ["url", "sourceUrl", "source_url", "canonical", "canonicalUrl", "canonical_url"]),
+        this.pickString(metadata, ["og:url", "ogUrl", "openGraphUrl", "open_graph_url"])
+      ];
+
+      const nestedRecords: Record<string, unknown>[] = [];
+      for (const key of ["openGraph", "open_graph", "meta", "metadata"]) {
+        const value = metadata[key];
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          nestedRecords.push(value as Record<string, unknown>);
+        }
+      }
+
+      for (const record of nestedRecords) {
+        metadataCandidates.push(
+          this.pickString(record, ["url", "canonical", "canonicalUrl", "canonical_url", "og:url", "ogUrl"])
+        );
+      }
+
+      for (const candidate of metadataCandidates) {
+        if (typeof candidate === "string" && candidate.trim().length > 0) {
+          seedUrls.push(candidate);
+        }
+      }
+    }
+
     const seen = new Set<string>();
     const scored: { url: string; score: number }[] = [];
     for (const seedUrl of seedUrls) {
@@ -1316,7 +1434,7 @@ export class CrawlExecutionService {
       if (!normalized || seen.has(normalized)) {
         continue;
       }
-      if (!this.isLikelyDetailArticleUrl(normalized, baseUrl)) {
+      if (!this.isLikelyDetailArticleUrl(normalized, baseUrl, requireSameDomain, allowExternalLinks)) {
         continue;
       }
       seen.add(normalized);
@@ -1330,6 +1448,169 @@ export class CrawlExecutionService {
     }
 
     return scored.sort((left, right) => right.score - left.score).map((entry) => entry.url);
+  }
+
+  private extractFallbackDetailLinkCandidatesFromArticle(
+    article: Crawl4aiArticle,
+    requireSameDomain: boolean,
+    allowExternalLinks?: boolean
+  ): string[] {
+    const baseUrl = this.resolveArticleBaseUrl(article);
+    if (!baseUrl) {
+      return [];
+    }
+
+    if (!article.links || typeof article.links !== "object" || Array.isArray(article.links)) {
+      return [];
+    }
+
+    const scoreByUrl = new Map<string, number>();
+    const linkCollections = Object.values(article.links as Record<string, Crawl4aiLink[] | unknown>);
+
+    for (const collection of linkCollections) {
+      if (!Array.isArray(collection)) {
+        continue;
+      }
+      for (const link of collection) {
+        if (!link || typeof link !== "object") {
+          continue;
+        }
+
+        const record = link as Crawl4aiLink;
+        const rawCandidate =
+          (typeof record.url === "string" && record.url.trim().length > 0 ? record.url : undefined) ??
+          (typeof record.href === "string" && record.href.trim().length > 0 ? record.href : undefined);
+        if (!rawCandidate) {
+          continue;
+        }
+
+        const normalized = this.normalizeDetailCandidateUrl(rawCandidate, baseUrl);
+        if (!normalized) {
+          continue;
+        }
+        if (
+          !this.isLikelyFallbackDetailArticleUrl(
+            normalized,
+            baseUrl,
+            requireSameDomain,
+            allowExternalLinks
+          )
+        ) {
+          continue;
+        }
+
+        const linkText = this.pickString(record, ["text", "title"]);
+        const textBonus = this.scoreFallbackLinkText(linkText);
+        const score = this.scoreDetailCandidateUrl(normalized, baseUrl) + textBonus;
+        const current = scoreByUrl.get(normalized);
+        if (current === undefined || score > current) {
+          scoreByUrl.set(normalized, score);
+        }
+      }
+    }
+
+    return Array.from(scoreByUrl.entries())
+      .sort((left, right) => right[1] - left[1])
+      .map((entry) => entry[0])
+      .slice(0, 40);
+  }
+
+  private isLikelyFallbackDetailArticleUrl(
+    url: string,
+    baseUrl: string,
+    requireSameDomain: boolean,
+    allowExternalLinks?: boolean
+  ): boolean {
+    if (this.isLikelyDetailArticleUrl(url, baseUrl, requireSameDomain, allowExternalLinks)) {
+      return true;
+    }
+
+    try {
+      const parsed = new URL(url);
+      const base = new URL(baseUrl);
+      const sameRootDomain = this.getRootDomain(parsed.hostname) === this.getRootDomain(base.hostname);
+      if (requireSameDomain && !sameRootDomain) {
+        return false;
+      }
+      if (allowExternalLinks === false && !sameRootDomain) {
+        return false;
+      }
+
+      const segments = parsed.pathname
+        .replace(/\/+$/, "")
+        .split("/")
+        .filter((entry) => entry.length > 0);
+      if (segments.length < 2) {
+        return false;
+      }
+
+      const segmentsLower = segments.map((entry) => entry.toLowerCase());
+      if (this.hasBlockedDetailPathSegments(segmentsLower)) {
+        return false;
+      }
+
+      const joined = segments.join("/").toLowerCase();
+      if (/(^|\/)(video|videos|photo|photos|gallery|podcast|tag|tags|topic|topics|section|sections|author|authors|archive|latest|live|newsletter|country|special-report|poll-of-polls)(\/|$)/.test(joined)) {
+        return false;
+      }
+
+      const lastSegment = segments[segments.length - 1] ?? "";
+      const lastSegmentLower = lastSegment.toLowerCase();
+      if (
+        lastSegment.length >= 16 &&
+        /[a-z0-9]-[a-z0-9]/i.test(lastSegment) &&
+        !this.isLikelyPathCategoryToken(lastSegmentLower)
+      ) {
+        return true;
+      }
+      if (
+        segments.length >= 2 &&
+        lastSegment.length >= 12 &&
+        /[a-z0-9]-[a-z0-9]/i.test(lastSegment) &&
+        !this.isLikelyPathCategoryToken(lastSegmentLower)
+      ) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  private scoreFallbackLinkText(value?: string): number {
+    if (!value) {
+      return 0;
+    }
+
+    const compact = value.replace(/\s+/g, " ").trim();
+    if (!compact) {
+      return 0;
+    }
+
+    const lowered = compact.toLowerCase();
+    if (/(read more|continue reading|view all|latest news|all stories|newsletter|subscribe|commentary)/.test(lowered)) {
+      return -40;
+    }
+    if (compact.length >= 24) {
+      return 24;
+    }
+    if (compact.length >= 12) {
+      return 12;
+    }
+    return 0;
+  }
+
+  private resolveMinimumDetailExpansionCandidates(
+    maxDetailUrls: number,
+    candidateLimit: number,
+    allLowSignal: boolean,
+    qualityProfile: CrawlQualityProfile
+  ): number {
+    const profileBoost = qualityProfile === "quality_first" ? 2 : qualityProfile === "balanced" ? 1 : 0;
+    const baseMinimum = allLowSignal ? 3 : 2;
+    const desired = baseMinimum + profileBoost;
+
+    return Math.max(1, Math.min(maxDetailUrls, candidateLimit, desired));
   }
 
   private resolveArticleBaseUrl(article: Crawl4aiArticle): string | undefined {
@@ -1373,11 +1654,20 @@ export class CrawlExecutionService {
     }
   }
 
-  private isLikelyDetailArticleUrl(url: string, baseUrl: string): boolean {
+  private isLikelyDetailArticleUrl(
+    url: string,
+    baseUrl: string,
+    requireSameDomain: boolean,
+    allowExternalLinks?: boolean
+  ): boolean {
     try {
       const parsed = new URL(url)
       const base = new URL(baseUrl)
-      if (this.getRootDomain(parsed.hostname) !== this.getRootDomain(base.hostname)) {
+      const sameRootDomain = this.getRootDomain(parsed.hostname) === this.getRootDomain(base.hostname)
+      if (requireSameDomain && !sameRootDomain) {
+        return false
+      }
+      if (allowExternalLinks === false && !sameRootDomain) {
         return false
       }
 
@@ -1386,8 +1676,13 @@ export class CrawlExecutionService {
       if (segments.length < 2) {
         return false
       }
+      const segmentsLower = segments.map((entry) => entry.toLowerCase())
 
-      const joined = segments.join('/').toLowerCase()
+      if (this.hasBlockedDetailPathSegments(segmentsLower)) {
+        return false
+      }
+
+      const joined = segmentsLower.join('/')
       if (/\b(video|videos|photo|photos|pictures|gallery|podcast|graphics)\b/.test(joined)) {
         return false
       }
@@ -1397,6 +1692,25 @@ export class CrawlExecutionService {
 
       const lastSegment = segments[segments.length - 1]!
       const lastSegmentLower = lastSegment.toLowerCase()
+      const likelySectionTail = new Set([
+        'world',
+        'business',
+        'markets',
+        'technology',
+        'tech',
+        'opinion',
+        'sport',
+        'sports',
+        'news',
+        'japan',
+        'us',
+        'china',
+        'europe',
+        'ukraine',
+        'russia',
+        'latest',
+        'archive'
+      ])
       const articleDateSuffixPattern = /-\d{4}-\d{2}-\d{2}$/
       const reutersStyleIdPattern = /[A-Z0-9]{8,}-\d{4}-\d{2}-\d{2}$/
       const reutersWireIdPattern = /(?:^|-)id[a-z0-9]{7,}$/i
@@ -1421,29 +1735,38 @@ export class CrawlExecutionService {
         return true
       }
 
-      if (segments.length >= 3 && lastSegment.length >= 24 && /[a-z0-9]/i.test(lastSegment)) {
+      if (
+        segments.length >= 2 &&
+        lastSegment.length >= 18 &&
+        /[a-z0-9]-[a-z0-9]/i.test(lastSegment) &&
+        !this.isLikelyPathCategoryToken(lastSegmentLower)
+      ) {
         return true
       }
 
-      const likelySectionTail = new Set([
-        'world',
-        'business',
-        'markets',
-        'technology',
-        'tech',
-        'opinion',
-        'sport',
-        'sports',
-        'news',
-        'japan',
-        'us',
-        'china',
-        'europe',
-        'ukraine',
-        'russia',
-        'latest',
-        'archive'
-      ])
+      if (segments.length >= 2 && /^\d{7,}$/.test(lastSegment)) {
+        return true
+      }
+
+      if (
+        segments.length >= 2 &&
+        /^[a-z0-9]{8,}$/.test(lastSegmentLower) &&
+        !likelySectionTail.has(lastSegmentLower) &&
+        !/^\d+$/.test(lastSegmentLower) &&
+        !this.isLikelyPathCategoryToken(lastSegmentLower)
+      ) {
+        return true
+      }
+
+      if (
+        segments.length >= 3 &&
+        lastSegment.length >= 24 &&
+        /[a-z0-9]/i.test(lastSegment) &&
+        !this.isLikelyPathCategoryToken(lastSegmentLower)
+      ) {
+        return true
+      }
+
       if (segments.length <= 3 && likelySectionTail.has(lastSegmentLower)) {
         return false
       }
@@ -1454,6 +1777,13 @@ export class CrawlExecutionService {
     }
   }
 
+  private detailRelevanceToScore(minRelevanceScore: number): number {
+    if (minRelevanceScore <= 0) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    return minRelevanceScore * 300 - 120;
+  }
+
   private scoreDetailCandidateUrl(url: string, baseUrl?: string): number {
     try {
       const parsed = new URL(url)
@@ -1462,8 +1792,12 @@ export class CrawlExecutionService {
       const segmentsLower = segments.map((entry) => entry.toLowerCase())
       const lastSegment = segments[segments.length - 1] ?? ''
       const lastSegmentLower = lastSegment.toLowerCase()
+      const hasArticleLeadSegment = this.hasArticleLeadPathSegment(segmentsLower)
 
       let score = 0
+      if (this.hasBlockedDetailPathSegments(segmentsLower)) {
+        score -= 400
+      }
       if (/-\d{4}-\d{2}-\d{2}$/.test(lastSegment)) {
         score += 220
       }
@@ -1476,8 +1810,29 @@ export class CrawlExecutionService {
       if (segments.some((segment) => segment === 'article' || segment === 'articles')) {
         score += 100
       }
+      if (hasArticleLeadSegment) {
+        score += 30
+      }
       if (segments.length >= 4 && /[a-z0-9]-[a-z0-9]/i.test(lastSegment)) {
         score += 80
+      }
+      if (
+        segments.length >= 2 &&
+        lastSegment.length >= 18 &&
+        /[a-z0-9]-[a-z0-9]/i.test(lastSegment) &&
+        !this.isLikelyPathCategoryToken(lastSegmentLower)
+      ) {
+        score += 65
+      }
+      if (segments.length >= 2 && /^\d{7,}$/.test(lastSegment)) {
+        score += 95
+      }
+      if (
+        segments.length >= 2 &&
+        /^[a-z0-9]{8,}$/.test(lastSegmentLower) &&
+        !this.isLikelyPathCategoryToken(lastSegmentLower)
+      ) {
+        score += 35
       }
       if (segments.length >= 3) {
         score += 18
@@ -1547,6 +1902,51 @@ export class CrawlExecutionService {
     } catch {
       return Number.NEGATIVE_INFINITY
     }
+  }
+
+  private hasArticleLeadPathSegment(segmentsLower: string[]): boolean {
+    if (segmentsLower.length === 0) {
+      return false;
+    }
+    return this.articleLeadPathSegments.has(segmentsLower[0] ?? "");
+  }
+
+  private hasBlockedDetailPathSegments(segmentsLower: string[]): boolean {
+    return segmentsLower.some((segment) => this.isBlockedDetailPathSegment(segment));
+  }
+
+  private isBlockedDetailPathSegment(segment: string): boolean {
+    if (!segment) {
+      return false;
+    }
+    if (this.blockedDetailPathSegments.has(segment)) {
+      return true;
+    }
+
+    return (
+      segment.endsWith("-newsletter") ||
+      segment.endsWith("-newsletters") ||
+      segment.endsWith("-special-report") ||
+      segment.endsWith("-poll-of-polls") ||
+      segment.startsWith("newsletter-") ||
+      segment.startsWith("country-")
+    );
+  }
+
+  private isLikelyPathCategoryToken(value: string): boolean {
+    const compact = value.trim().toLowerCase();
+    if (!compact) {
+      return false;
+    }
+
+    return (
+      this.blockedDetailPathSegments.has(compact) ||
+      compact === "overview" ||
+      compact === "all" ||
+      compact === "index" ||
+      compact.endsWith("-index") ||
+      compact.endsWith("-overview")
+    );
   }
 
   private normalizeComparableUrl(url?: string): string | undefined {
@@ -1758,7 +2158,12 @@ export class CrawlExecutionService {
       captureScreenshot: typeof value.captureScreenshot === "boolean" ? value.captureScreenshot : undefined,
       virtualScroll: this.parseVirtualScrollConfig(value.virtualScroll),
       waitForImages: typeof value.waitForImages === "boolean" ? value.waitForImages : undefined,
-      removeForms: typeof value.removeForms === "boolean" ? value.removeForms : undefined
+      removeForms: typeof value.removeForms === "boolean" ? value.removeForms : undefined,
+      pageTypeHint: this.parsePageTypeHint(value.pageTypeHint),
+      autoExpandDetails:
+        typeof value.autoExpandDetails === "boolean" ? value.autoExpandDetails : undefined,
+      detailExpansion: this.parseDetailExpansionOptions(value.detailExpansion),
+      qualityProfile: this.parseQualityProfile(value.qualityProfile)
     });
   }
 
@@ -1766,7 +2171,10 @@ export class CrawlExecutionService {
     const includeImages = options?.includeImages ?? (options?.storeMedia ? true : false);
     const virtualScroll = this.normalizeVirtualScrollConfig(options?.virtualScroll);
     const scanFullPage = virtualScroll ? false : (options?.scanFullPage ?? false);
-    const adjustViewportToContent = options?.adjustViewportToContent ?? false;
+    const adjustViewportToContent =
+      typeof options?.adjustViewportToContent === "boolean"
+        ? options.adjustViewportToContent
+        : scanFullPage;
     let scrollDelayMs: number | undefined;
     if (scanFullPage) {
       scrollDelayMs =
@@ -1787,12 +2195,36 @@ export class CrawlExecutionService {
     const proxyUrl = proxyConfig ? undefined : this.normalizeProxyUrl(options?.proxyUrl);
     const additionalUrls = this.normalizeUrlList(options?.additionalUrls);
     const multiUrlConfigs = this.normalizeMultiUrlConfigs(options?.multiUrlConfigs);
-    const markdownOptions = this.normalizeMarkdownOptions(options?.markdownOptions);
+    const qualityProfile = this.parseQualityProfile(options?.qualityProfile) ?? "quality_first";
+    const markdownOptionsInput = this.normalizeMarkdownOptions(options?.markdownOptions);
+    const markdownOptions = this.normalizeMarkdownOptions({
+      ...(markdownOptionsInput ?? {}),
+      contentSource:
+        markdownOptionsInput?.contentSource ??
+        (qualityProfile === "speed_first" ? "raw_html" : "cleaned_html"),
+      citations: markdownOptionsInput?.citations ?? true
+    });
     const markdownFilter = this.normalizeMarkdownFilter(options?.markdownFilter);
     const markdownStrategy = this.normalizeMarkdownStrategy(options?.markdownStrategy);
     const tableScoreThreshold = this.normalizeTableScore(options?.tableScoreThreshold);
     const tableExtraction = this.normalizeTableExtraction(options?.tableExtraction);
-    const cleanMarkdown = this.normalizeCleanMarkdownOptions(options?.cleanMarkdown);
+    const cleanMarkdownInput = this.normalizeCleanMarkdownOptions(options?.cleanMarkdown);
+    const cleanMarkdown = this.normalizeCleanMarkdownOptions({
+      ...(cleanMarkdownInput ?? {}),
+      excludedTags: this.mergeSelectorValues(
+        cleanMarkdownInput?.excludedTags,
+        qualityProfile === "quality_first"
+          ? ["nav", "footer", "aside", "script", "style", "noscript", "form"]
+          : ["script", "style", "noscript"]
+      ),
+      removeOverlayElements: cleanMarkdownInput?.removeOverlayElements ?? true,
+      wordCountThreshold:
+        typeof cleanMarkdownInput?.wordCountThreshold === "number"
+          ? cleanMarkdownInput.wordCountThreshold
+          : qualityProfile === "quality_first"
+            ? 18
+            : 12
+    });
     const linkPreview = this.normalizeLinkPreviewOptions(options?.linkPreview);
     const scoreLinks = options?.scoreLinks ?? Boolean(linkPreview);
     const jsCode = this.normalizeScriptList(options?.jsCode);
@@ -1832,6 +2264,10 @@ export class CrawlExecutionService {
     const excludedTags = this.normalizeSelectorList(options?.excludedTags);
     const waitForImages = options?.waitForImages ?? (options?.storeMedia ? true : false);
     const removeForms = options?.removeForms ?? false;
+    const pageTypeHint = this.parsePageTypeHint(options?.pageTypeHint);
+    const autoExpandDetails =
+      typeof options?.autoExpandDetails === "boolean" ? options.autoExpandDetails : true;
+    const detailExpansion = this.normalizeDetailExpansionOptions(options?.detailExpansion);
 
     return {
       includeImages,
@@ -1894,7 +2330,78 @@ export class CrawlExecutionService {
       virtualScroll,
       excludeExternalImages,
       waitForImages,
-      removeForms
+      removeForms,
+      pageTypeHint,
+      autoExpandDetails,
+      detailExpansion,
+      qualityProfile
+    };
+  }
+
+  private parsePageTypeHint(value: unknown): CrawlPageTypeHint | undefined {
+    if (value === "auto" || value === "list" || value === "detail") {
+      return value;
+    }
+    return undefined;
+  }
+
+  private parseQualityProfile(value: unknown): CrawlQualityProfile | undefined {
+    if (value === "balanced" || value === "quality_first" || value === "speed_first") {
+      return value;
+    }
+    return undefined;
+  }
+
+  private parseDetailExpansionOptions(value: unknown): CrawlDetailExpansionOptions | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    return this.normalizeDetailExpansionOptions({
+      maxDetailUrls:
+        typeof record.maxDetailUrls === "number" ? Math.round(record.maxDetailUrls) : undefined,
+      minRelevanceScore:
+        typeof record.minRelevanceScore === "number" ? record.minRelevanceScore : undefined,
+      requireSameDomain:
+        typeof record.requireSameDomain === "boolean" ? record.requireSameDomain : undefined,
+      allowExternalLinks:
+        typeof record.allowExternalLinks === "boolean" ? record.allowExternalLinks : undefined
+    });
+  }
+
+  private normalizeDetailExpansionOptions(
+    value?: CrawlDetailExpansionOptions
+  ): CrawlDetailExpansionOptions | undefined {
+    if (!value) {
+      return undefined;
+    }
+    const maxDetailUrls =
+      typeof value.maxDetailUrls === "number" && Number.isFinite(value.maxDetailUrls)
+        ? Math.max(1, Math.min(30, Math.round(value.maxDetailUrls)))
+        : undefined;
+    const minRelevanceScore =
+      typeof value.minRelevanceScore === "number" && Number.isFinite(value.minRelevanceScore)
+        ? Math.max(0, Math.min(1, Number(value.minRelevanceScore.toFixed(3))))
+        : undefined;
+    const requireSameDomain =
+      typeof value.requireSameDomain === "boolean" ? value.requireSameDomain : undefined;
+    const allowExternalLinks =
+      typeof value.allowExternalLinks === "boolean" ? value.allowExternalLinks : undefined;
+
+    if (
+      maxDetailUrls === undefined &&
+      minRelevanceScore === undefined &&
+      requireSameDomain === undefined &&
+      allowExternalLinks === undefined
+    ) {
+      return undefined;
+    }
+
+    return {
+      maxDetailUrls,
+      minRelevanceScore,
+      requireSameDomain,
+      allowExternalLinks
     };
   }
 
@@ -2164,6 +2671,21 @@ export class CrawlExecutionService {
         delete normalized.scrollDelayMs;
       }
     }
+    const pageTypeHint = this.parsePageTypeHint(overrides.pageTypeHint);
+    if (pageTypeHint) {
+      normalized.pageTypeHint = pageTypeHint;
+    }
+    if (typeof overrides.autoExpandDetails === "boolean") {
+      normalized.autoExpandDetails = overrides.autoExpandDetails;
+    }
+    const detailExpansion = this.normalizeDetailExpansionOptions(overrides.detailExpansion);
+    if (detailExpansion) {
+      normalized.detailExpansion = detailExpansion;
+    }
+    const qualityProfile = this.parseQualityProfile(overrides.qualityProfile);
+    if (qualityProfile) {
+      normalized.qualityProfile = qualityProfile;
+    }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
@@ -2241,6 +2763,11 @@ export class CrawlExecutionService {
       normalized.wordCountThreshold = clamped;
     }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private mergeSelectorValues(primary?: string[] | null, fallback?: string[]): string[] | undefined {
+    const merged = [...(primary ?? []), ...(fallback ?? [])];
+    return this.normalizeSelectorList(merged);
   }
 
   private normalizeSelectorList(values?: string[] | null): string[] | undefined {
@@ -3057,41 +3584,83 @@ export class CrawlExecutionService {
   private partitionCrawlerResults(items?: Crawl4aiArticle[]) {
     const successes: Crawl4aiArticle[] = [];
     const failures: CrawlFailureDetail[] = [];
+    const lowSignalCandidates: Crawl4aiArticle[] = [];
 
     if (!items || items.length === 0) {
-      return { successes, failures };
+      return { successes, failures, lowSignalCandidates };
     }
 
     for (const item of items) {
-      if (this.isResultSuccessful(item)) {
+      const resultStatus = this.classifyResult(item);
+      if (resultStatus.kind === "success") {
         successes.push(item);
+      } else if (resultStatus.kind === "low_signal") {
+        lowSignalCandidates.push(item);
+        failures.push(this.buildFailureDetail(item, resultStatus));
       } else {
-        failures.push(this.buildFailureDetail(item));
+        failures.push(this.buildFailureDetail(item, resultStatus));
       }
     }
 
-    return { successes, failures };
+    return { successes, failures, lowSignalCandidates };
   }
 
-  private isResultSuccessful(item: Crawl4aiArticle): boolean {
+  private classifyResult(item: Crawl4aiArticle): {
+    kind: "success" | "failure" | "low_signal";
+    hasMarkdown: boolean;
+    lowSignalMarkdown: boolean;
+    isChallengePage: boolean;
+    statusCode?: number;
+  } {
     const markdownResult = this.resultService.extractMarkdownResult(item.markdown);
     const markdownPrimary = markdownResult.primary;
-    const hasMarkdown =
-      typeof markdownPrimary === "string" ? markdownPrimary.trim().length > 0 : false;
+    const markdownText = typeof markdownPrimary === "string" ? markdownPrimary.trim() : "";
+    const hasMarkdown = markdownText.length > 0;
+    const lowSignalMarkdown = hasMarkdown
+      ? this.resultService.isLowSignalMarkdown(markdownText)
+      : true;
     const statusCode = this.extractStatusCode(item);
     const isChallengePage =
       typeof markdownPrimary === "string" && this.resultService.isLikelyBotChallengeMarkdown(markdownPrimary);
 
     if (typeof statusCode === "number" && Number.isFinite(statusCode) && statusCode >= 400) {
-      return false;
+      return {
+        kind: "failure",
+        hasMarkdown,
+        lowSignalMarkdown,
+        isChallengePage,
+        statusCode
+      };
     }
 
     if (isChallengePage) {
-      return false;
+      return {
+        kind: "failure",
+        hasMarkdown,
+        lowSignalMarkdown,
+        isChallengePage,
+        statusCode
+      };
+    }
+
+    if (lowSignalMarkdown) {
+      return {
+        kind: "low_signal",
+        hasMarkdown,
+        lowSignalMarkdown,
+        isChallengePage,
+        statusCode
+      };
     }
 
     if (typeof item.success === "boolean") {
-      return item.success && hasMarkdown;
+      return {
+        kind: item.success && hasMarkdown ? "success" : "failure",
+        hasMarkdown,
+        lowSignalMarkdown,
+        isChallengePage,
+        statusCode
+      };
     }
     const inlineSuccess = this.pickBoolean(item as Record<string, unknown>, [
       "success",
@@ -3099,7 +3668,13 @@ export class CrawlExecutionService {
       "ok"
     ]);
     if (typeof inlineSuccess === "boolean") {
-      return inlineSuccess && hasMarkdown;
+      return {
+        kind: inlineSuccess && hasMarkdown ? "success" : "failure",
+        hasMarkdown,
+        lowSignalMarkdown,
+        isChallengePage,
+        statusCode
+      };
     }
     const metadataSuccess = this.pickBoolean(item.metadata as Record<string, unknown> | undefined, [
       "success",
@@ -3107,21 +3682,36 @@ export class CrawlExecutionService {
       "ok"
     ]);
     if (typeof metadataSuccess === "boolean") {
-      return metadataSuccess && hasMarkdown;
+      return {
+        kind: metadataSuccess && hasMarkdown ? "success" : "failure",
+        hasMarkdown,
+        lowSignalMarkdown,
+        isChallengePage,
+        statusCode
+      };
     }
-    return hasMarkdown;
+    return {
+      kind: hasMarkdown ? "success" : "failure",
+      hasMarkdown,
+      lowSignalMarkdown,
+      isChallengePage,
+      statusCode
+    };
   }
 
-  private buildFailureDetail(item: Crawl4aiArticle): CrawlFailureDetail {
-    const statusCode = this.extractStatusCode(item);
+  private buildFailureDetail(
+    item: Crawl4aiArticle,
+    classified?: ReturnType<CrawlExecutionService["classifyResult"]>
+  ): CrawlFailureDetail {
+    const classification = classified ?? this.classifyResult(item);
+    const statusCode = classification.statusCode;
     const errorMessage = this.extractErrorMessage(item);
-    const markdownResult = this.resultService.extractMarkdownResult(item.markdown);
-    const markdownPrimary = markdownResult.primary;
-    const hasMarkdown =
-      typeof markdownPrimary === "string" ? markdownPrimary.trim().length > 0 : false;
-    const isChallengePage =
-      typeof markdownPrimary === "string" && this.resultService.isLikelyBotChallengeMarkdown(markdownPrimary);
-    const fallbackMessage = this.buildDefaultFailureMessage(hasMarkdown, statusCode, isChallengePage);
+    const fallbackMessage = this.buildDefaultFailureMessage(
+      classification.hasMarkdown,
+      statusCode,
+      classification.isChallengePage,
+      classification.lowSignalMarkdown
+    );
     return {
       url: item.url ?? this.pickString(item.metadata as Record<string, unknown> | undefined, ["url"]),
       statusCode,
@@ -3130,10 +3720,21 @@ export class CrawlExecutionService {
     };
   }
 
+  private buildExpansionSeedCandidates(
+    successes: Crawl4aiArticle[],
+    lowSignalCandidates: Crawl4aiArticle[]
+  ): Crawl4aiArticle[] {
+    if (successes.length > 0) {
+      return successes;
+    }
+    return lowSignalCandidates;
+  }
+
   private buildDefaultFailureMessage(
     hasMarkdown: boolean,
     statusCode?: number,
-    isChallengePage = false
+    isChallengePage = false,
+    isLowSignalMarkdown = false
   ): string {
     if (isChallengePage) {
       if (typeof statusCode === "number" && Number.isFinite(statusCode)) {
@@ -3150,6 +3751,9 @@ export class CrawlExecutionService {
     }
 
     if (hasMarkdown) {
+      if (isLowSignalMarkdown) {
+        return "crawl4ai returned low-signal markdown (reference-only/placeholder content). Triggering fallback and detail expansion.";
+      }
       return "Unknown crawl error";
     }
 

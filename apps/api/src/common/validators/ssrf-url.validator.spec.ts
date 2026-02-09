@@ -123,6 +123,11 @@ describe("SSRF URL Validator", () => {
         expect(isPrivateIP("ff00::1")).toBe(true);
         expect(isPrivateIP("ff02::1")).toBe(true);
       });
+
+      it("should allow public 2001 global unicast IPv6", () => {
+        expect(isPrivateIP("2001:4860:4860::8888")).toBe(false); // Google DNS
+        expect(isPrivateIP("2001:db8::1")).toBe(true); // Documentation prefix remains blocked
+      });
     });
 
     describe("invalid IPs", () => {

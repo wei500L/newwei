@@ -22,6 +22,30 @@ import { IsSafeUrl } from "../../../common/validators/is-safe-url.decorator";
 import { CrawlUrlMatchMode, CrawlWaitUntil } from "../crawl.types";
 import { IsAllowedJsCode } from "../validators/is-allowed-js-code.decorator";
 
+export class CrawlDetailExpansionOptionsDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  maxDetailUrls?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: "minRelevanceScore must be a number" })
+  @Min(0)
+  @Max(1)
+  minRelevanceScore?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  requireSameDomain?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  allowExternalLinks?: boolean;
+}
+
 export class CrawlProxyConfigDto {
   @IsString()
   @MaxLength(512)
@@ -593,6 +617,23 @@ export class CrawlOptionsDto {
   waitForImages?: boolean;
 
   @IsOptional()
+  @IsIn(["auto", "list", "detail"])
+  pageTypeHint?: "auto" | "list" | "detail";
+
+  @IsOptional()
+  @IsBoolean()
+  autoExpandDetails?: boolean;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlDetailExpansionOptionsDto)
+  detailExpansion?: CrawlDetailExpansionOptionsDto;
+
+  @IsOptional()
+  @IsIn(["balanced", "quality_first", "speed_first"])
+  qualityProfile?: "balanced" | "quality_first" | "speed_first";
+
+  @IsOptional()
   @IsBoolean()
   removeOverlayElements?: boolean;
 
@@ -797,6 +838,23 @@ export class CrawlStrategyOverridesDto {
   @IsOptional()
   @IsBoolean()
   waitForImages?: boolean;
+
+  @IsOptional()
+  @IsIn(["auto", "list", "detail"])
+  pageTypeHint?: "auto" | "list" | "detail";
+
+  @IsOptional()
+  @IsBoolean()
+  autoExpandDetails?: boolean;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CrawlDetailExpansionOptionsDto)
+  detailExpansion?: CrawlDetailExpansionOptionsDto;
+
+  @IsOptional()
+  @IsIn(["balanced", "quality_first", "speed_first"])
+  qualityProfile?: "balanced" | "quality_first" | "speed_first";
 }
 
 export class CrawlMultiUrlConfigDto {

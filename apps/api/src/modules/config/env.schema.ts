@@ -173,6 +173,13 @@ export const apiEnvSchema = baseEnvSchema.extend({
   NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS: z.coerce.number().int().positive().default(3_600_000),
   NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS: z.coerce.number().int().positive().default(86_400_000),
   NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD: z.coerce.number().int().nonnegative().default(0),
+  NEWS_SOURCE_CRAWL_QUALITY_PROFILE: z
+    .enum(["balanced", "quality_first", "speed_first"])
+    .default("quality_first"),
+  NEWS_SOURCE_CRAWL_AUTO_EXPAND_DETAILS: envBoolean.default(true),
+  NEWS_SOURCE_CRAWL_DETAIL_MAX_URLS: z.coerce.number().int().positive().default(12),
+  NEWS_SOURCE_CRAWL_DETAIL_MIN_RELEVANCE_SCORE: z.coerce.number().min(0).max(1).default(0.35),
+  NEWS_SOURCE_CRAWL_DETAIL_REQUIRE_SAME_DOMAIN: envBoolean.default(true),
   ALERT_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(4),
   ALERT_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   ALERT_MAX_RETRIES: z.coerce.number().int().positive().default(3),

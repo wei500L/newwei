@@ -9,6 +9,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlMetadataService } from "./crawl-metadata.service";
+import { CrawlQualityStrategyService } from "./crawl-quality.strategy";
 import { CrawlQueueCleanupService } from "./crawl-queue-cleanup.service";
 import { CrawlQueueEventPublisher } from "./crawl-queue-event.publisher";
 import { CrawlQueueService } from "./crawl-queue.service";
@@ -22,10 +23,12 @@ import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.const
 import { CrawlController } from "./crawl.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
 import type { CrawlJobData } from "./crawl.types";
+import { Crawl4aiQualityController } from "./crawl4ai-quality.controller";
 import { Crawl4aiQueueController } from "./crawl4ai-queue.controller";
 import { Crawl4aiClient } from "./crawl4ai.client";
 import { NewsSourceController } from "./news-source.controller";
 import { NewsSourceService } from "./news-source.service";
+import { CrawlQualityMetricsService } from "./crawl-quality-metrics.service";
 import { JsCodeAuditService } from "./services/js-code-audit.service";
 
 
@@ -48,7 +51,13 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       }
     })
   ],
-  controllers: [CrawlController, NewsSourceController, CrawlTemplateController, Crawl4aiQueueController],
+  controllers: [
+    CrawlController,
+    NewsSourceController,
+    CrawlTemplateController,
+    Crawl4aiQueueController,
+    Crawl4aiQualityController
+  ],
   providers: [
     CrawlSettingsService,
     CrawlTaskService,
@@ -56,6 +65,8 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlExecutionService,
     CrawlQueueService,
     CrawlResultService,
+    CrawlQualityMetricsService,
+    CrawlQualityStrategyService,
     NewsSourceService,
     CrawlTemplateService,
     CrawlCleanupOutboxService,

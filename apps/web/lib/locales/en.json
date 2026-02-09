@@ -1561,6 +1561,8 @@
       "nextRun": "Next run",
       "lastRun": "Last run",
       "template": "Template",
+      "strategy": "Strategy",
+      "strategyEmpty": "Default",
       "lastSuccess": "Last success",
       "stats24h": "24h",
       "latest": "Latest"
@@ -1606,6 +1608,24 @@
       "crawlProxyModeHint": "Auto keeps proxyUrl/proxyConfig from crawlOptions JSON. Enabled overrides crawlOptions with the Proxy URL below. Disabled removes any proxy settings.",
       "crawlProxyUrl": "Proxy URL",
       "crawlProxyUrlHint": "Overrides crawlOptions.proxyUrl/proxyConfig. If crawl4ai runs in Docker and your proxy is on this machine, use host.docker.internal instead of localhost/127.0.0.1.",
+      "crawlScanMode": "Scan mode",
+      "crawlScanModeHint": "Full page simulates scrolling for dynamic pages. Virtual scroll lets you control container and scroll cadence for infinite feeds.",
+      "crawlScrollDelayMs": "Scroll delay (ms)",
+      "crawlVirtualScrollContainerSelector": "Scroll container selector",
+      "crawlVirtualScrollScrollCount": "Scroll count",
+      "crawlVirtualScrollScrollBy": "Scroll step",
+      "crawlVirtualScrollScrollByPixels": "Scroll pixels",
+      "crawlVirtualScrollWaitAfterScrollMs": "Wait after scroll (ms)",
+      "crawlQualityProfile": "Quality profile",
+      "crawlPageTypeHint": "Page type hint",
+      "crawlAutoExpandDetails": "Auto expand details",
+      "crawlDetailMaxUrls": "Max detail URLs",
+      "crawlDetailMinRelevanceScore": "Min relevance score",
+      "crawlDetailRequireSameDomain": "Require same domain",
+      "crawlDetailAllowExternalLinks": "Allow external links",
+      "crawlMarkdownContentSource": "Markdown content source",
+      "crawlMarkdownEscapeHtmlMode": "Escape HTML",
+      "crawlMarkdownCitationsMode": "Citations",
       "crawlOptions": "Crawl options (JSON)",
       "crawlOptionsHint": "Advanced Crawl4AI options. Do not set crawl4ai LLM extraction here (extraction_strategy/llm_config); crawl should only store cleaned markdown, and your configured model runs later in the pipeline.",
       "crawlHeadlessMode": "Browser mode",
@@ -1655,6 +1675,11 @@
       "auto": "Auto (inherit)",
       "enable": "Enabled",
       "disable": "Disabled"
+    },
+    "scanMode": {
+      "default": "Default",
+      "fullPage": "Full-page scanning",
+      "virtualScroll": "Virtual scroll"
     },
     "presets": {
       "cloudflare": "Cloudflare preset",
@@ -1722,7 +1747,9 @@
       "title": "News source preview",
       "modeSitemap": "Sitemap",
       "modeRss": "RSS",
+      "modeList": "List page",
       "modeSingle": "Single",
+      "strategy": "Strategy",
       "scheduleCount": "Would schedule: {{count}}",
       "availableToSchedule": "Available: {{count}}",
       "skippedCount": "Skipped: {{count}}",
@@ -1734,7 +1761,20 @@
       "seed": "Seed discovery",
       "seedHint": "Discover article URLs from a sitemap, RSS/Atom feed, or a list page, then schedule up to N fresh URLs per run.",
       "schedule": "Schedule",
-      "scheduleHint": "Choose interval scheduling (frequency) or a cron expression with optional time window."
+      "scheduleHint": "Choose interval scheduling (frequency) or a cron expression with optional time window.",
+      "crawlStrategy": "Crawl strategy",
+      "crawlStrategyHint": "Tune full-page scanning, list/detail expansion, and quality defaults without using LLM extraction during crawl.",
+      "crawlMarkdown": "RAG markdown",
+      "crawlMarkdownHint": "Crawl4AI turns crawled pages into clean markdown. Keep content source and escaping aligned with your retrieval pipeline.",
+      "crawlOptionsPreview": "Resolved crawlOptions preview",
+      "crawlOptionsPreviewHint": "Shows the final crawlOptions payload after merging structured controls with advanced JSON."
+    },
+    "hints": {
+      "noLlmTitle": "No LLM in crawl stage",
+      "noLlmDescription": "Crawl4AI stage should only fetch and clean content. Run summarization and analysis in downstream pipeline tasks.",
+      "ragReadyTitle": "RAG-ready markdown",
+      "ragReadyDescription": "Prefer cleaned_html output for stable embeddings and downstream search indexing.",
+      "crawlOptionsPreviewError": "Unable to build crawl options preview."
     },
     "seedMode": {
       "sitemap": "Sitemap",
@@ -3835,6 +3875,11 @@
         "runCount": "Run count",
         "scanFullPage": "Scan full page",
         "virtualScroll": "Virtual scroll",
+        "qualityProfile": "Quality profile",
+        "pageTypeHint": "Page type hint",
+        "autoExpandDetails": "Auto expand details",
+        "detailExpansion": "Detail expansion",
+        "expansionMetrics": "Expansion metrics",
         "adjustViewport": "Adjust viewport",
         "headless": "Headless mode",
         "undetectedBrowser": "Undetected browser",
@@ -3881,6 +3926,7 @@
         "lastError": "Last error",
         "configuration": "Configuration"
       },
+      "latestError": "Latest error",
       "scanFullPageEnabled": "Scan full page enabled",
       "serverDefault": "Server default",
       "waitTimeoutValue": "Wait timeout value",
@@ -3889,6 +3935,10 @@
       "percentValue": "Percent value",
       "robotsPolicy": {
         "ignore": "Ignore (always)"
+      },
+      "strategy": {
+        "title": "Crawl strategy",
+        "noLlmHint": "Crawl stage is deterministic (fetch + clean markdown only). Run LLM summarization and analysis in downstream pipelines."
       },
       "multiUrl": {
         "patterns": "Patterns",
@@ -4003,7 +4053,9 @@
         "url": "Enter URL",
         "keywords": "Enter Keywords",
         "concurrency": "Enter Concurrency",
-        "scrollDelay": "Enter Scroll delay"
+        "scrollDelay": "Enter Scroll delay",
+        "qualityProfile": "Select quality profile",
+        "pageTypeHint": "Select page type"
       },
       "targetUrl": "Target URL",
       "ingestToItems": "Auto send to Items",
@@ -4022,7 +4074,32 @@
       "waitForImages": "Wait for images",
       "waitForImagesHint": "Wait for images hint",
       "scanFullPage": "Scan full page",
+      "scanFullPageHint": "Simulates full-page scrolling to load and capture dynamic content. Best for append-style infinite scroll pages.",
       "scrollDelay": "Scroll delay",
+      "qualityProfile": "Quality profile",
+      "qualityProfileHint": "Controls Crawl4AI extraction defaults for markdown cleanliness and crawl stability.",
+      "qualityProfileOptions": {
+        "qualityFirst": "Quality first (RAG)",
+        "balanced": "Balanced",
+        "speedFirst": "Speed first"
+      },
+      "pageTypeHint": "Page type hint",
+      "pageTypeHintHint": "Hint Crawl4AI whether this URL is a list page or a detail page.",
+      "pageTypeHintOptions": {
+        "auto": "Auto detect",
+        "list": "List page",
+        "detail": "Detail page"
+      },
+      "autoExpandDetails": "Auto expand details",
+      "autoExpandDetailsHint": "Auto-follow related detail links discovered on list pages (still no LLM in crawl stage).",
+      "scanModes": {
+        "fullPageTitle": "Scan mode: Full-page scanning",
+        "fullPageDescription": "Best for append-style infinite scroll pages. Crawl4AI simulates scrolling and captures late-loaded content.",
+        "virtualScrollTitle": "Scan mode: Bounded virtual scroll",
+        "virtualScrollDescription": "Best for replacement/virtualized feeds. Use bounded scroll iterations for stable capture.",
+        "defaultTitle": "Scan mode: Standard fetch",
+        "defaultDescription": "Use default page fetch for static pages. Enable full-page or virtual scroll only when dynamic loading is required."
+      },
       "adjustViewport": "Adjust viewport",
       "adjustViewportHint": "Adjust viewport hint",
       "adjustViewportLink": "Adjust viewport link",
@@ -4046,6 +4123,23 @@
         }
       }
     },
+    "optimization": {
+      "title": "Crawl optimization",
+      "description": "Tune discovery and markdown quality without using LLMs during crawling.",
+      "noLlmTitle": "No LLM in crawl stage",
+      "noLlmDescription": "Use Crawl4AI for deterministic fetch + cleaning only. Run LLM summarization or analysis in downstream pipeline stages."
+    },
+    "detailExpansion": {
+      "title": "Detail expansion",
+      "maxDetailUrls": "Max detail URLs",
+      "maxDetailUrlsHint": "Upper bound of detail links to follow from a list page.",
+      "minRelevanceScore": "Min relevance score",
+      "minRelevanceScoreHint": "Only follow detail links above this relevance score (0~1).",
+      "requireSameDomain": "Require same domain",
+      "requireSameDomainHint": "Restrict auto-expanded detail links to the same domain.",
+      "allowExternalLinks": "Allow external links",
+      "allowExternalLinksHint": "Permit detail expansion to follow cross-domain links when they appear relevant."
+    },
     "virtualScroll": {
       "title": "Virtual scroll",
       "description": "Bounded scrolling for infinite-scroll or virtualized lists. Use it when content loads as you scroll (feeds, timelines, lazy lists).",
@@ -4065,7 +4159,7 @@
       },
       "waitAfterScroll": "Wait after scroll (ms)",
       "waitAfterScrollHint": "Time to wait after each scroll for content to load.",
-      "scanFullPageHint": "Note: Full-page scanning may conflict with bounded virtual scrolling. Prefer using virtual scroll for infinite-scroll pages."
+      "scanFullPageHint": "Tip: For append-style infinite scroll, enable full-page scanning first. For replacement/virtualized feeds, prefer bounded virtual scroll."
     },
     "dynamic": {
       "title": "Dynamic",
@@ -4110,6 +4204,8 @@
     "markdown": {
       "additionalUrls": "Additional urls",
       "additionalUrlsHint": "Additional urls hint",
+      "ragReadyTitle": "RAG-ready markdown output",
+      "ragReadyHint": "Crawl4AI converts pages into clean, LLM-ready markdown for retrieval. Keep crawl stage deterministic and do not use LLM extraction here.",
       "placeholders": {
         "additionalUrls": "Enter Additional urls",
         "source": "Enter Source",
@@ -4517,6 +4613,8 @@
     "title": "Crawl Templates",
     "columns": {
       "name": "Name",
+      "strategy": "Strategy",
+      "strategyEmpty": "Default",
       "status": "Status"
     },
     "actions": {
@@ -4535,10 +4633,18 @@
       "stealth": "Stealth mode",
       "undetected": "Undetected browser",
       "images": "Include images",
+      "qualityProfile": "Quality profile",
+      "pageTypeHint": "Page type hint",
+      "autoExpandDetails": "Auto expand details",
+      "allowExternalLinks": "Allow external links",
       "advancedJson": "Advanced crawl options (JSON)"
     },
     "sections": {
       "commonOptions": "Common Options"
+    },
+    "hints": {
+      "noLlmTitle": "No LLM in crawl stage",
+      "noLlmDescription": "The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead."
     },
     "headless": {
       "auto": "Auto",

@@ -147,12 +147,6 @@ function isPrivateIPv6(ip: string): boolean {
   // 2001:db8::/32 - Documentation
   if (normalized.startsWith("2001:db8:")) return true;
 
-  // 2001::/32 - Teredo tunneling
-  if (normalized.startsWith("2001:") && !normalized.startsWith("2001:db8:")) {
-    const secondPart = normalized.split(":")[1];
-    if (secondPart === "" || secondPart === "0") return true;
-  }
-
   return false;
 }
 

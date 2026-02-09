@@ -1,4 +1,4 @@
-import { NEVER, of, throwError } from "rxjs";
+import { NEVER, of, throwError, TimeoutError } from "rxjs";
 
 import { Crawl4aiClient } from "../crawl4ai.client";
 import { Crawl4aiRequestException } from "../crawl4ai.exception";
@@ -251,6 +251,67 @@ describe("Crawl4aiClient", () => {
     expect(payload.crawler_config.params.virtual_scroll_config).toEqual(
       expect.objectContaining({
         type: "VirtualScrollConfig"
+      })
+    );
+  });
+
+  it("applies adaptive defaults for scan_full_page dynamic pages", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        scanFullPage: true
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.crawler_config.params.scan_full_page).toBe(true);
+    expect(payload.crawler_config.params.scroll_delay).toBeCloseTo(0.35);
+    expect(payload.crawler_config.params.wait_until).toBe("domcontentloaded");
+    expect(payload.crawler_config.params.wait_for_timeout).toBe(8000);
+    expect(payload.crawler_config.params.page_timeout).toBe(45000);
+    expect(payload.crawler_config.params.delay_before_return_html).toBeCloseTo(0.6);
+    expect(payload.crawler_config.params.adjust_viewport_to_content).toBe(true);
+  });
+
+  it("falls back to bounded virtual scroll when scan_full_page times out", async () => {
+    httpMock.post = jest
+      .fn()
+      .mockReturnValueOnce(throwError(() => new TimeoutError()))
+      .mockReturnValueOnce(
+        of({
+          data: {
+            results: [{ url: "https://example.com", markdown: "# recovered", success: true }]
+          }
+        })
+      );
+
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    const response = await client.crawl({
+      url: "https://example.com/",
+      options: {
+        scanFullPage: true,
+        scrollDelayMs: 400
+      } as any
+    });
+
+    expect(response.results).toHaveLength(1);
+    expect(httpMock.post).toHaveBeenCalledTimes(2);
+
+    const firstPayload = httpMock.post.mock.calls[0]?.[1];
+    const secondPayload = httpMock.post.mock.calls[1]?.[1];
+
+    expect(firstPayload.crawler_config.params.scan_full_page).toBe(true);
+    expect(secondPayload.crawler_config.params.scan_full_page).toBe(false);
+    expect(secondPayload.crawler_config.params).not.toHaveProperty("scroll_delay");
+    expect(secondPayload.crawler_config.params.virtual_scroll_config).toEqual(
+      expect.objectContaining({
+        type: "VirtualScrollConfig",
+        params: expect.objectContaining({
+          container_selector: "body",
+          scroll_count: 24,
+          scroll_by: "page_height"
+        })
       })
     );
   });
