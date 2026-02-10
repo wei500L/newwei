@@ -216,9 +216,18 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
       expect.objectContaining({
         extractLinks: true,
         prefetch: true,
+        headless: false,
+        enableUndetectedBrowser: true,
+        enableStealthMode: true,
+        simulateUser: true,
+        overrideNavigator: true,
+        userAgentMode: "random",
         waitUntil: "networkidle",
         waitForTimeoutMs: 5000,
-        pageTimeoutMs: 180000
+        pageTimeoutMs: 180000,
+        delayBeforeReturnHtmlMs: 2000,
+        meanDelayMs: 1000,
+        maxDelayRangeMs: 2000
       })
     );
     expect(payload.options?.additionalUrls).toBeUndefined();
@@ -254,5 +263,87 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
     });
 
     expect(urls).toEqual(["https://www.politico.eu/article/right/"]);
+  });
+
+  it("follows pagination links and aggregates article URLs from multiple list pages", async () => {
+    const crawl = jest
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          {
+            success: true,
+            url: "https://www.politico.eu/latest/",
+            links: {
+              internal: [
+                { href: "/article/one/" },
+                { href: "/latest/?page=2", text: "Next" }
+              ]
+            }
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            success: true,
+            url: "https://www.politico.eu/latest/?page=2",
+            links: {
+              internal: [{ href: "/article/two/" }]
+            }
+          }
+        ]
+      });
+
+    const service = new CrawlMetadataService({ crawl } as any);
+    const urls = await service.discoverListUrls({
+      url: "https://www.politico.eu/latest/",
+      domain: "https://www.politico.eu",
+      pattern: "https://www.politico.eu/article/*",
+      maxUrls: 10,
+      listMaxPages: 3,
+      listPageConcurrency: 1,
+      followPagination: true
+    });
+
+    expect(urls).toEqual([
+      "https://www.politico.eu/article/one/",
+      "https://www.politico.eu/article/two/"
+    ]);
+    expect(crawl).toHaveBeenCalledTimes(2);
+    expect(crawl).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ url: "https://www.politico.eu/latest/?page=2" })
+    );
+  });
+
+  it("does not follow pagination links when followPagination is false", async () => {
+    const crawl = jest.fn(async () => ({
+      results: [
+        {
+          success: true,
+          url: "https://www.politico.eu/latest/",
+          links: {
+            internal: [
+              { href: "/article/one/" },
+              { href: "/latest/?page=2", text: "Next" }
+            ]
+          }
+        }
+      ]
+    }));
+
+    const service = new CrawlMetadataService({ crawl } as any);
+    const urls = await service.discoverListUrls({
+      url: "https://www.politico.eu/latest/",
+      domain: "https://www.politico.eu",
+      pattern: "https://www.politico.eu/article/*",
+      maxUrls: 10,
+      listMaxPages: 3,
+      listPageConcurrency: 1,
+      followPagination: false
+    });
+
+    expect(urls).toEqual(["https://www.politico.eu/article/one/"]);
+    expect(crawl).toHaveBeenCalledTimes(1);
   });
 });

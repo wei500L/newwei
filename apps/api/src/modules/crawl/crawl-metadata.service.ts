@@ -126,6 +126,9 @@ export class CrawlMetadataService {
     domain?: string;
     pattern?: string;
     maxUrls?: number;
+    listMaxPages?: number;
+    listPageConcurrency?: number;
+    followPagination?: boolean;
     requestTimeoutMs?: number;
     crawlOptions?: Record<string, unknown>;
   }): Promise<string[]> {
@@ -144,7 +147,10 @@ export class CrawlMetadataService {
       }
     })();
 
-    const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
+    const maxUrls = this.clampNumber(input.maxUrls, 1, 2_000, 200);
+    const listMaxPages = this.clampNumber(input.listMaxPages, 1, 20, 6);
+    const listPageConcurrency = this.clampNumber(input.listPageConcurrency, 1, 5, 2);
+    const followPagination = input.followPagination !== false;
     const requestTimeoutMs =
       typeof input.requestTimeoutMs === "number" && Number.isFinite(input.requestTimeoutMs)
         ? Math.max(1000, Math.round(input.requestTimeoutMs))
@@ -158,6 +164,9 @@ export class CrawlMetadataService {
       seedUrl,
       domain,
       maxUrls,
+      listMaxPages,
+      listPageConcurrency,
+      followPagination,
       patternMatcher,
       crawlOptions
     });
@@ -231,6 +240,9 @@ export class CrawlMetadataService {
     domain?: string;
     patternMatcher?: (url: string) => boolean;
     maxUrls: number;
+    listMaxPages: number;
+    listPageConcurrency: number;
+    followPagination: boolean;
     crawlOptions?: CrawlTaskOptions;
   }): Promise<string[]> {
     if (!this.crawl4ai) {
@@ -244,85 +256,236 @@ export class CrawlMetadataService {
       allowedOrigin = input.domain?.replace(/\/+$/, "") ?? undefined;
     }
 
-    const normalizedSeedUrl = (() => {
-      try {
-        const parsed = new URL(input.seedUrl);
-        parsed.hash = "";
-        return parsed.toString();
-      } catch {
-        return input.seedUrl;
-      }
-    })();
+    const normalizedSeedUrl = this.normalizeUrlForComparison(input.seedUrl) ?? input.seedUrl;
 
     try {
-      const crawlOptions: CrawlTaskOptions | undefined = input.crawlOptions
-        ? { ...input.crawlOptions, extractLinks: true, prefetch: true }
-        : { extractLinks: true, prefetch: true };
-      const response = await this.crawl4ai.crawl({
-        url: input.seedUrl,
-        options: crawlOptions
-      });
+      const crawlOptions: CrawlTaskOptions = {
+        ...(input.crawlOptions ?? {}),
+        extractLinks: true,
+        prefetch: true
+      };
+      const pendingListPages: string[] = [input.seedUrl];
+      const pendingListPageSet = new Set<string>([normalizedSeedUrl]);
+      const visitedListPages = new Set<string>();
+      const discoveredArticleUrls: string[] = [];
+      const discoveredArticleSet = new Set<string>();
 
-      const article = this.selectDiscoveryResultArticle(response.results, normalizedSeedUrl);
-      if (!article || article.success !== true) {
-        return [];
+      while (
+        pendingListPages.length > 0 &&
+        visitedListPages.size < input.listMaxPages &&
+        discoveredArticleUrls.length < input.maxUrls
+      ) {
+        const availableSlots = input.listMaxPages - visitedListPages.size;
+        const batchSize = Math.max(1, Math.min(input.listPageConcurrency, pendingListPages.length, availableSlots));
+        const batch = pendingListPages.splice(0, batchSize);
+        for (const pageUrl of batch) {
+          const normalized = this.normalizeUrlForComparison(pageUrl) ?? pageUrl;
+          pendingListPageSet.delete(normalized);
+        }
+
+        const batchResults = await this.mapWithConcurrency(batch, batchSize, async (listPageUrl) => {
+          const normalizedListPageUrl = this.normalizeUrlForComparison(listPageUrl) ?? listPageUrl;
+          const response = await this.crawl4ai!.crawl({
+            url: listPageUrl,
+            options: crawlOptions
+          });
+
+          const article = this.selectDiscoveryResultArticle(response.results, normalizedListPageUrl);
+          if (!article || article.success !== true) {
+            return {
+              listPageUrl,
+              normalizedListPageUrl,
+              articleUrls: [] as string[],
+              paginationUrls: [] as string[]
+            };
+          }
+
+          const linksRecord = this.normalizeLinkRecord(article.links);
+          if (!linksRecord) {
+            return {
+              listPageUrl,
+              normalizedListPageUrl,
+              articleUrls: [] as string[],
+              paginationUrls: [] as string[]
+            };
+          }
+
+          const articleUrls: string[] = [];
+          const paginationUrls: string[] = [];
+          const seenArticleUrls = new Set<string>();
+          const seenPaginationUrls = new Set<string>();
+          const values = Object.values(linksRecord).flatMap((value) => (Array.isArray(value) ? value : []));
+
+          for (const entry of values) {
+            if (!this.isPlainObject(entry)) {
+              continue;
+            }
+
+            const rawHref =
+              typeof entry.href === "string"
+                ? entry.href
+                : typeof entry.url === "string"
+                  ? entry.url
+                  : "";
+            const trimmedHref = rawHref.trim();
+            if (!trimmedHref || trimmedHref === "#" || trimmedHref.toLowerCase().startsWith("javascript:")) {
+              continue;
+            }
+
+            let resolved: URL;
+            try {
+              resolved = new URL(trimmedHref, listPageUrl);
+            } catch {
+              continue;
+            }
+            if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+              continue;
+            }
+            resolved.hash = "";
+
+            const absolute = resolved.toString();
+            if (absolute === normalizedListPageUrl || absolute === normalizedSeedUrl) {
+              continue;
+            }
+            if (allowedOrigin && !absolute.startsWith(`${allowedOrigin}/`) && absolute !== allowedOrigin) {
+              continue;
+            }
+
+            const anchorText =
+              typeof entry.text === "string"
+                ? entry.text
+                : typeof entry.title === "string"
+                  ? entry.title
+                  : "";
+            const rel = typeof entry.rel === "string" ? entry.rel : "";
+
+            const matchesPattern = input.patternMatcher ? input.patternMatcher(absolute) : true;
+            const isPagination = this.isLikelyPaginationLink({
+              candidateUrl: absolute,
+              currentPageUrl: listPageUrl,
+              anchorText,
+              rel
+            });
+
+            if (matchesPattern && (!isPagination || !input.followPagination)) {
+              if (!seenArticleUrls.has(absolute)) {
+                seenArticleUrls.add(absolute);
+                articleUrls.push(absolute);
+              }
+              continue;
+            }
+
+            if (!input.patternMatcher && !isPagination) {
+              if (!seenArticleUrls.has(absolute)) {
+                seenArticleUrls.add(absolute);
+                articleUrls.push(absolute);
+              }
+              continue;
+            }
+
+            if (input.followPagination && isPagination && !seenPaginationUrls.has(absolute)) {
+              seenPaginationUrls.add(absolute);
+              paginationUrls.push(absolute);
+            }
+          }
+
+          return {
+            listPageUrl,
+            normalizedListPageUrl,
+            articleUrls,
+            paginationUrls
+          };
+        });
+
+        for (const result of batchResults) {
+          visitedListPages.add(result.normalizedListPageUrl);
+
+          for (const articleUrl of result.articleUrls) {
+            if (discoveredArticleSet.has(articleUrl)) {
+              continue;
+            }
+            discoveredArticleSet.add(articleUrl);
+            discoveredArticleUrls.push(articleUrl);
+            if (discoveredArticleUrls.length >= input.maxUrls) {
+              break;
+            }
+          }
+          if (discoveredArticleUrls.length >= input.maxUrls) {
+            break;
+          }
+
+          if (!input.followPagination) {
+            continue;
+          }
+
+          for (const paginationUrl of result.paginationUrls) {
+            if (visitedListPages.size + pendingListPages.length >= input.listMaxPages) {
+              break;
+            }
+            const normalizedPaginationUrl = this.normalizeUrlForComparison(paginationUrl) ?? paginationUrl;
+            if (visitedListPages.has(normalizedPaginationUrl) || pendingListPageSet.has(normalizedPaginationUrl)) {
+              continue;
+            }
+            pendingListPageSet.add(normalizedPaginationUrl);
+            pendingListPages.push(paginationUrl);
+          }
+        }
       }
 
-      const linksRecord = this.normalizeLinkRecord(article.links);
-      if (!linksRecord) {
-        return [];
-      }
-
-      const candidates: string[] = [];
-      const seen = new Set<string>();
-      const values = Object.values(linksRecord).flatMap((value) => (Array.isArray(value) ? value : []));
-      for (const entry of values) {
-        if (!this.isPlainObject(entry)) {
-          continue;
-        }
-        const rawHref = typeof entry.href === "string" ? entry.href : typeof entry.url === "string" ? entry.url : "";
-        const trimmed = rawHref.trim();
-        if (!trimmed || trimmed === "#" || trimmed.toLowerCase().startsWith("javascript:")) {
-          continue;
-        }
-
-        let resolved: URL;
-        try {
-          resolved = new URL(trimmed, input.seedUrl);
-        } catch {
-          continue;
-        }
-        if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
-          continue;
-        }
-        resolved.hash = "";
-
-        const absolute = resolved.toString();
-        if (absolute === normalizedSeedUrl) {
-          continue;
-        }
-        if (allowedOrigin && !absolute.startsWith(`${allowedOrigin}/`) && absolute !== allowedOrigin) {
-          continue;
-        }
-        if (input.patternMatcher && !input.patternMatcher(absolute)) {
-          continue;
-        }
-        if (seen.has(absolute)) {
-          continue;
-        }
-
-        seen.add(absolute);
-        candidates.push(absolute);
-        if (candidates.length >= input.maxUrls) {
-          break;
-        }
-      }
-
-      return candidates;
+      return discoveredArticleUrls.slice(0, input.maxUrls);
     } catch (error) {
       logger.warn({ seedUrl: input.seedUrl, error }, "crawl4ai list discovery failed; falling back to raw HTML parsing");
       return [];
     }
+  }
+
+  private isLikelyPaginationLink(input: {
+    candidateUrl: string;
+    currentPageUrl: string;
+    anchorText?: string;
+    rel?: string;
+  }) {
+    const normalizedText = (input.anchorText ?? "").trim().toLowerCase();
+    const normalizedRel = (input.rel ?? "").trim().toLowerCase();
+
+    if (normalizedRel.includes("next") || normalizedRel.includes("prev")) {
+      return true;
+    }
+
+    if (/^(next|older|more|load\s*more|next\s*page|previous|prev|newer)\b/.test(normalizedText)) {
+      return true;
+    }
+
+    let candidate: URL;
+    let current: URL;
+    try {
+      candidate = new URL(input.candidateUrl);
+      current = new URL(input.currentPageUrl);
+    } catch {
+      return false;
+    }
+
+    if (candidate.origin !== current.origin) {
+      return false;
+    }
+
+    if (candidate.pathname === current.pathname && candidate.search === current.search) {
+      return false;
+    }
+
+    const combined = `${candidate.pathname.toLowerCase()}${candidate.search.toLowerCase()}`;
+    if (
+      /(?:^|\/)page(?:\/|=|\?|$)/.test(combined) ||
+      /(?:[?&])(page|p|pg|offset|start|cursor)=/.test(combined)
+    ) {
+      return true;
+    }
+
+    if (/\/latest(?:\/|$)/.test(candidate.pathname.toLowerCase()) && candidate.search.length > 0) {
+      return true;
+    }
+
+    return false;
   }
 
   private normalizeLinkRecord(value: unknown): Record<string, unknown[]> | null {
@@ -366,22 +529,20 @@ export class CrawlMetadataService {
   }
 
   private normalizeCrawlOptions(value: unknown): CrawlTaskOptions | undefined {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return undefined;
-    }
-
-    const options = value as CrawlTaskOptions;
+    const options = value && typeof value === "object" && !Array.isArray(value)
+      ? (value as CrawlTaskOptions)
+      : {};
     const waitUntil =
       options.waitUntil === "domcontentloaded" ||
       options.waitUntil === "load" ||
       options.waitUntil === "networkidle" ||
       options.waitUntil === "commit"
         ? options.waitUntil
-        : undefined;
+        : "networkidle";
     const waitForTimeoutMsRaw =
       typeof options.waitForTimeoutMs === "number" && Number.isFinite(options.waitForTimeoutMs)
         ? Math.max(500, Math.min(60000, Math.round(options.waitForTimeoutMs)))
-        : undefined;
+        : 12_000;
     const waitForTimeoutMs =
       waitUntil === "networkidle" && typeof waitForTimeoutMsRaw === "number"
         ? Math.max(5000, waitForTimeoutMsRaw)
@@ -389,15 +550,53 @@ export class CrawlMetadataService {
     const pageTimeoutMs =
       typeof options.pageTimeoutMs === "number" && Number.isFinite(options.pageTimeoutMs)
         ? Math.max(1000, Math.min(180000, Math.round(options.pageTimeoutMs)))
-        : undefined;
+        : 90_000;
+    const delayBeforeReturnHtmlMs =
+      typeof options.delayBeforeReturnHtmlMs === "number" && Number.isFinite(options.delayBeforeReturnHtmlMs)
+        ? Math.max(0, Math.min(30000, Math.round(options.delayBeforeReturnHtmlMs)))
+        : 2_000;
+    const meanDelayMs =
+      typeof options.meanDelayMs === "number" && Number.isFinite(options.meanDelayMs)
+        ? Math.max(0, Math.min(10_000, Math.round(options.meanDelayMs)))
+        : 1_000;
+    const maxDelayRangeMs =
+      typeof options.maxDelayRangeMs === "number" && Number.isFinite(options.maxDelayRangeMs)
+        ? Math.max(0, Math.min(10_000, Math.round(options.maxDelayRangeMs)))
+        : 2_000;
+    const scanVirtualScroll =
+      options.virtualScroll && typeof options.virtualScroll === "object"
+        ? options.virtualScroll
+        : {
+            containerSelector: "body",
+            scrollCount: 8,
+            scrollBy: "page_height" as const,
+            waitAfterScrollMs: 700
+          };
 
     return {
       ...options,
       additionalUrls: undefined,
       multiUrlConfigs: undefined,
+      extractLinks: true,
+      prefetch: true,
+      headless: typeof options.headless === "boolean" ? options.headless : false,
+      enableUndetectedBrowser:
+        typeof options.enableUndetectedBrowser === "boolean" ? options.enableUndetectedBrowser : true,
+      enableStealthMode: typeof options.enableStealthMode === "boolean" ? options.enableStealthMode : true,
+      simulateUser: typeof options.simulateUser === "boolean" ? options.simulateUser : true,
+      overrideNavigator: typeof options.overrideNavigator === "boolean" ? options.overrideNavigator : true,
+      userAgentMode: options.userAgentMode === "random" ? "random" : "random",
       waitUntil,
       waitForTimeoutMs,
-      pageTimeoutMs
+      pageTimeoutMs,
+      delayBeforeReturnHtmlMs,
+      meanDelayMs,
+      maxDelayRangeMs,
+      removeOverlayElements:
+        typeof options.removeOverlayElements === "boolean" ? options.removeOverlayElements : true,
+      processIframes: typeof options.processIframes === "boolean" ? options.processIframes : true,
+      scanFullPage: scanVirtualScroll ? false : options.scanFullPage,
+      virtualScroll: scanVirtualScroll
     };
   }
 

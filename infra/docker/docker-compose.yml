@@ -217,10 +217,52 @@ services:
       CRAWL4AI_XVFB_ENABLED: ${CRAWL4AI_XVFB_ENABLED:-true}
       CRAWL4AI_XVFB_DISPLAY_NUM: ${CRAWL4AI_XVFB_DISPLAY_NUM:-99}
       CRAWL4AI_XVFB_SCREEN: ${CRAWL4AI_XVFB_SCREEN:-1920x1080x24}
+      CRAWL4AI_HTTP_PROXY: ${CRAWL4AI_HTTP_PROXY:-}
+      CRAWL4AI_HTTPS_PROXY: ${CRAWL4AI_HTTPS_PROXY:-}
+      CRAWL4AI_NO_PROXY: ${CRAWL4AI_NO_PROXY:-localhost,127.0.0.1,crawl4ai,api,web,db,redis,host.docker.internal}
+      HTTP_PROXY: ${CRAWL4AI_HTTP_PROXY:-}
+      HTTPS_PROXY: ${CRAWL4AI_HTTPS_PROXY:-}
+      NO_PROXY: ${CRAWL4AI_NO_PROXY:-localhost,127.0.0.1,crawl4ai,api,web,db,redis,host.docker.internal}
+      http_proxy: ${CRAWL4AI_HTTP_PROXY:-}
+      https_proxy: ${CRAWL4AI_HTTPS_PROXY:-}
+      no_proxy: ${CRAWL4AI_NO_PROXY:-localhost,127.0.0.1,crawl4ai,api,web,db,redis,host.docker.internal}
     command:
       - sh
       - -lc
       - |
+        if [ -f /app/server.py ]; then
+          python - <<'PY'
+        import pathlib
+        import re
+        
+        version = "unknown"
+        try:
+            import crawl4ai.__version__ as version_module
+        
+            version = (
+                getattr(version_module, "__version__", None)
+                or getattr(version_module, "VERSION", None)
+                or "unknown"
+            )
+        except Exception:
+            version = "unknown"
+        
+        if isinstance(version, str) and version.strip() and version != "unknown":
+            server_path = pathlib.Path("/app/server.py")
+            content = server_path.read_text(encoding="utf-8")
+            updated, count = re.subn(
+                r'^__version__\s*=\s*["\'][^"\']*["\']',
+                f'__version__ = "{version.strip()}"',
+                content,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            if count > 0:
+                server_path.write_text(updated, encoding="utf-8")
+                print(f"[crawl4ai] /health version patched to {version.strip()}")
+        PY
+        fi
+
         if [ "$$CRAWL4AI_XVFB_ENABLED" = "true" ]; then
           if command -v Xvfb >/dev/null 2>&1; then
             echo "[crawl4ai] Starting Xvfb on :$$CRAWL4AI_XVFB_DISPLAY_NUM ($$CRAWL4AI_XVFB_SCREEN)"

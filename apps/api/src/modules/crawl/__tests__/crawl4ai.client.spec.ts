@@ -384,6 +384,63 @@ describe("Crawl4aiClient", () => {
     expect(payload.browser_config.params).not.toHaveProperty("proxy");
   });
 
+  it("wraps geolocation as GeolocationConfig params", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        locale: "en-US",
+        timezoneId: "America/New_York",
+        geolocation: {
+          latitude: 40.7128,
+          longitude: -74.006,
+          accuracy: 120
+        }
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.crawler_config.params.locale).toBe("en-US");
+    expect(payload.crawler_config.params.timezone_id).toBe("America/New_York");
+    expect(payload.crawler_config.params.geolocation).toEqual(
+      expect.objectContaining({
+        type: "GeolocationConfig",
+        params: expect.objectContaining({
+          latitude: 40.7128,
+          longitude: -74.006,
+          accuracy: 120
+        })
+      })
+    );
+  });
+
+  it("maps userAgentGenerator into crawl4ai-compatible generator keys", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        userAgentMode: "random",
+        userAgentGenerator: {
+          platform: "windows",
+          browser: "chrome",
+          deviceType: "desktop",
+          locale: "en-US"
+        }
+      } as any
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.browser_config.params.user_agent_generator_config).toEqual({
+      browsers: ["Chrome"],
+      os: ["Windows"],
+      platforms: ["desktop"]
+    });
+    expect(payload.browser_config.params.user_agent_generator_config).not.toHaveProperty("locale");
+    expect(payload.browser_config.params.user_agent_generator_config).not.toHaveProperty("browser");
+    expect(payload.browser_config.params.user_agent_generator_config).not.toHaveProperty("platform");
+    expect(payload.browser_config.params.user_agent_generator_config).not.toHaveProperty("device_type");
+  });
+
   it("maps advanced overrides in multiUrlConfigs", async () => {
     const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
     await client.crawl({

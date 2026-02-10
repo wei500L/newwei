@@ -1424,13 +1424,58 @@ export class Crawl4aiClient {
     if (!config) {
       return undefined;
     }
+    const browser = this.normalizeUserAgentGeneratorBrowser(config.browser);
+    const operatingSystem = this.normalizeUserAgentGeneratorOs(config.platform);
+    const devicePlatform = this.normalizeUserAgentGeneratorPlatform(config.deviceType);
     const payload = this.compact({
-      platform: config.platform,
-      browser: config.browser,
-      device_type: config.deviceType,
-      locale: config.locale
+      browsers: browser ? [browser] : undefined,
+      os: operatingSystem ? [operatingSystem] : undefined,
+      platforms: devicePlatform ? [devicePlatform] : undefined
     });
     return Object.keys(payload).length > 0 ? payload : undefined;
+  }
+
+  private normalizeUserAgentGeneratorBrowser(
+    value?: CrawlUserAgentGeneratorConfig["browser"]
+  ) {
+    if (!value) {
+      return undefined;
+    }
+    const browserMap: Record<NonNullable<CrawlUserAgentGeneratorConfig["browser"]>, string> = {
+      chrome: "Chrome",
+      firefox: "Firefox",
+      safari: "Safari",
+      edge: "Edge"
+    };
+    return browserMap[value];
+  }
+
+  private normalizeUserAgentGeneratorOs(
+    value?: CrawlUserAgentGeneratorConfig["platform"]
+  ) {
+    if (!value) {
+      return undefined;
+    }
+    const platformMap: Record<NonNullable<CrawlUserAgentGeneratorConfig["platform"]>, string> = {
+      windows: "Windows",
+      macos: "Mac OS X",
+      linux: "Linux",
+      android: "Android",
+      ios: "iOS"
+    };
+    return platformMap[value];
+  }
+
+  private normalizeUserAgentGeneratorPlatform(
+    value?: CrawlUserAgentGeneratorConfig["deviceType"]
+  ) {
+    if (!value) {
+      return undefined;
+    }
+    if (value === "desktop" || value === "mobile" || value === "tablet") {
+      return value;
+    }
+    return undefined;
   }
 
   private buildGeolocation(config?: CrawlGeolocationConfig) {
@@ -1442,7 +1487,13 @@ export class Crawl4aiClient {
       longitude: config.longitude,
       accuracy: config.accuracy
     });
-    return Object.keys(payload).length > 0 ? payload : undefined;
+    if (Object.keys(payload).length === 0) {
+      return undefined;
+    }
+    return {
+      type: "GeolocationConfig",
+      params: payload
+    };
   }
 }
 export interface Crawl4aiLink {

@@ -35,6 +35,9 @@ export interface NewsSourceSeedConfig {
   feedUrl?: string;
   maxUrls: number;
   maxNewUrlsPerRun: number;
+  listMaxPages: number;
+  listPageConcurrency: number;
+  followPagination: boolean;
   query?: string;
   scoreThreshold: number;
   concurrency: number;
@@ -533,6 +536,9 @@ export class NewsSourceService {
               domain: seedConfig.domain,
               pattern: seedConfig.pattern,
               maxUrls: seedConfig.maxUrls,
+              listMaxPages: seedConfig.listMaxPages,
+              listPageConcurrency: seedConfig.listPageConcurrency,
+              followPagination: seedConfig.followPagination,
               crawlOptions
             })
           : await this.metadataService.discoverSitemapUrls({
@@ -679,8 +685,11 @@ export class NewsSourceService {
       domain,
       pattern: (mode === "sitemap" || mode === "list") && pattern.length > 0 ? pattern : undefined,
       feedUrl,
-      maxUrls: this.clampInt(rawSeed?.maxUrls, 1, 200, 20),
-      maxNewUrlsPerRun: this.clampInt(rawSeed?.maxNewUrlsPerRun, 1, 50, 10),
+      maxUrls: this.clampInt(rawSeed?.maxUrls, 1, 2_000, 200),
+      maxNewUrlsPerRun: this.clampInt(rawSeed?.maxNewUrlsPerRun, 1, 500, 80),
+      listMaxPages: this.clampInt(rawSeed?.listMaxPages, 1, 20, 6),
+      listPageConcurrency: this.clampInt(rawSeed?.listPageConcurrency, 1, 5, 2),
+      followPagination: rawSeed?.followPagination !== false,
       query: effectiveQuery,
       scoreThreshold: this.clampFloat(rawSeed?.scoreThreshold, 0, 1, 0),
       concurrency: this.clampInt(rawSeed?.concurrency, 1, 10, 5),

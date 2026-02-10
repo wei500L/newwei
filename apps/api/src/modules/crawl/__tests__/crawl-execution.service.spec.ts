@@ -1767,9 +1767,13 @@ describe("CrawlExecutionService", () => {
           { url: "https://ok.com", markdown: "# Usable content", success: true, statusCode: 200 }
         ]
       });
+      const retryResponse = createMockCrawlResponse({
+        runId: "run-retry",
+        results: [{ url: "https://ok.com", markdown: "# Usable content", success: true, statusCode: 200 }]
+      });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
+      mockCrawlClient.crawl.mockResolvedValueOnce(crawlResponse).mockResolvedValueOnce(retryResponse);
       mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
         primary: typeof markdown === "string" ? markdown : ""
@@ -1780,16 +1784,39 @@ describe("CrawlExecutionService", () => {
 
       await service.runTask("task-1", "org-1");
 
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(2);
+      const retryPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as {
+        options?: Record<string, unknown>;
+      };
+      expect(retryPayload.options).toEqual(
+        expect.objectContaining({
+          headless: false,
+          enableUndetectedBrowser: true,
+          enableStealthMode: true,
+          simulateUser: true,
+          overrideNavigator: true,
+          userAgentMode: "random",
+          waitUntil: "networkidle"
+        })
+      );
+
       const persisted = (mockResultService.persistResults as jest.Mock).mock.calls[0]?.[1] as any[];
       expect(persisted).toHaveLength(1);
       expect(persisted[0]?.url).toBe("https://ok.com");
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          stage: "crawler",
-          message: "crawl4ai partial failures",
-          data: expect.objectContaining({ totalFailures: 1, retryableFailures: 0 })
+          stage: "anti_bot_retry",
+          status: "processing",
+          message: "Detected anti-bot challenge; retrying with hardened stealth profile"
         })
       );
+      const hasPartialFailureLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
+        ([entry]) =>
+          Boolean(entry) &&
+          (entry as { stage?: string }).stage === "crawler" &&
+          (entry as { message?: string }).message === "crawl4ai partial failures"
+      );
+      expect(hasPartialFailureLog).toBe(false);
     });
 
     it("logs warnings when present in response", async () => {

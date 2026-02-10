@@ -299,4 +299,76 @@ describe("NewsSourceSchedulerService", () => {
     expect(prisma.newsSource.update).not.toHaveBeenCalled();
   });
 
+  it("injects hardened anti-bot defaults for list crawl options", () => {
+    const { service } = createService();
+
+    const options = (service as any).withAutoCrawlQualityDefaults(undefined, "list") as Record<string, unknown>;
+
+    expect(options).toEqual(
+      expect.objectContaining({
+        headless: false,
+        enableUndetectedBrowser: true,
+        enableStealthMode: true,
+        simulateUser: true,
+        overrideNavigator: true,
+        userAgentMode: "random",
+        waitUntil: "networkidle",
+        waitForTimeoutMs: 12_000,
+        delayBeforeReturnHtmlMs: 2_000,
+        meanDelayMs: 900,
+        maxDelayRangeMs: 1_600,
+        extractLinks: true,
+        prefetch: true,
+        scanFullPage: false,
+      })
+    );
+    expect(options.virtualScroll).toEqual(
+      expect.objectContaining({
+        containerSelector: "body",
+        scrollCount: 8,
+        scrollBy: "page_height",
+        waitAfterScrollMs: 700,
+      })
+    );
+    expect(options.cleanMarkdown).toEqual(
+      expect.objectContaining({
+        removeOverlayElements: true,
+        wordCountThreshold: 20,
+      })
+    );
+    expect((options.cleanMarkdown as Record<string, unknown>).excludedTags).toEqual(
+      expect.arrayContaining(["nav", "footer", "script", "style"])
+    );
+  });
+
+  it("normalizes list seed pagination settings and expanded caps", () => {
+    const { service } = createService();
+
+    const seedConfig = (service as any).normalizeSeedConfig({
+      url: "https://example.com/latest/",
+      config: {
+        seed: {
+          enabled: true,
+          mode: "list",
+          maxUrls: 5000,
+          maxNewUrlsPerRun: 900,
+          listMaxPages: 99,
+          listPageConcurrency: 99,
+          followPagination: false,
+        }
+      }
+    });
+
+    expect(seedConfig).toEqual(
+      expect.objectContaining({
+        mode: "list",
+        maxUrls: 2000,
+        maxNewUrlsPerRun: 500,
+        listMaxPages: 20,
+        listPageConcurrency: 5,
+        followPagination: false,
+      })
+    );
+  });
+
 });

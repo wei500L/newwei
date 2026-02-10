@@ -35,6 +35,9 @@ interface SeedConfig {
   feedUrl?: string;
   maxUrls: number;
   maxNewUrlsPerRun: number;
+  listMaxPages: number;
+  listPageConcurrency: number;
+  followPagination: boolean;
   queryTokens?: string[];
   scoreThreshold: number;
   dedupeWindowHours: number;
@@ -613,6 +616,79 @@ export class NewsSourceSchedulerService {
     seedMode?: SeedConfig["mode"]
   ): Record<string, unknown> {
     const current = options ? { ...options } : {};
+
+    if (typeof current.headless !== "boolean") {
+      current.headless = false;
+    }
+    if (typeof current.enableUndetectedBrowser !== "boolean") {
+      current.enableUndetectedBrowser = true;
+    }
+    if (typeof current.enableStealthMode !== "boolean") {
+      current.enableStealthMode = true;
+    }
+    if (typeof current.simulateUser !== "boolean") {
+      current.simulateUser = true;
+    }
+    if (typeof current.overrideNavigator !== "boolean") {
+      current.overrideNavigator = true;
+    }
+    if (typeof current.userAgentMode !== "string") {
+      current.userAgentMode = "random";
+    }
+    if (typeof current.waitUntil !== "string") {
+      current.waitUntil = "networkidle";
+    }
+    if (typeof current.waitForTimeoutMs !== "number" || !Number.isFinite(current.waitForTimeoutMs)) {
+      current.waitForTimeoutMs = 12_000;
+    }
+    if (
+      typeof current.delayBeforeReturnHtmlMs !== "number" ||
+      !Number.isFinite(current.delayBeforeReturnHtmlMs)
+    ) {
+      current.delayBeforeReturnHtmlMs = 2_000;
+    }
+    if (typeof current.meanDelayMs !== "number" || !Number.isFinite(current.meanDelayMs)) {
+      current.meanDelayMs = 900;
+    }
+    if (typeof current.maxDelayRangeMs !== "number" || !Number.isFinite(current.maxDelayRangeMs)) {
+      current.maxDelayRangeMs = 1_600;
+    }
+
+    const markdownOptions =
+      current.markdownOptions && typeof current.markdownOptions === "object" && !Array.isArray(current.markdownOptions)
+        ? ({ ...current.markdownOptions } as Record<string, unknown>)
+        : {};
+    if (typeof markdownOptions.contentSource !== "string") {
+      markdownOptions.contentSource = "cleaned_html";
+    }
+    if (typeof markdownOptions.citations !== "boolean") {
+      markdownOptions.citations = true;
+    }
+    current.markdownOptions = markdownOptions;
+
+    const cleanMarkdown =
+      current.cleanMarkdown && typeof current.cleanMarkdown === "object" && !Array.isArray(current.cleanMarkdown)
+        ? ({ ...current.cleanMarkdown } as Record<string, unknown>)
+        : {};
+    if (typeof cleanMarkdown.removeOverlayElements !== "boolean") {
+      cleanMarkdown.removeOverlayElements = true;
+    }
+    if (typeof cleanMarkdown.wordCountThreshold !== "number" || !Number.isFinite(cleanMarkdown.wordCountThreshold)) {
+      cleanMarkdown.wordCountThreshold = 20;
+    }
+    const excludedTags = Array.isArray(cleanMarkdown.excludedTags)
+      ? (cleanMarkdown.excludedTags as unknown[])
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter((entry) => entry.length > 0)
+      : [];
+    cleanMarkdown.excludedTags = Array.from(
+      new Set(["nav", "footer", "aside", "script", "style", "noscript", "form", ...excludedTags])
+    ).slice(0, 12);
+    if (!("cssSelector" in cleanMarkdown)) {
+      cleanMarkdown.cssSelector = undefined;
+    }
+    current.cleanMarkdown = cleanMarkdown;
+
     if (typeof current.pageTypeHint !== "string") {
       current.pageTypeHint = "auto";
     }
@@ -668,6 +744,17 @@ export class NewsSourceSchedulerService {
       }
       if (typeof current.prefetch !== "boolean") {
         current.prefetch = true;
+      }
+      if (typeof current.scanFullPage !== "boolean") {
+        current.scanFullPage = false;
+      }
+      if (!current.virtualScroll || typeof current.virtualScroll !== "object" || Array.isArray(current.virtualScroll)) {
+        current.virtualScroll = {
+          containerSelector: "body",
+          scrollCount: 8,
+          scrollBy: "page_height",
+          waitAfterScrollMs: 700
+        };
       }
     }
 
@@ -980,8 +1067,11 @@ export class NewsSourceSchedulerService {
           ? seed.pattern.trim()
           : undefined,
       feedUrl: mode === "rss" ? this.normalizeSeedFeedUrl(seed.feedUrl, source.url) : undefined,
-      maxUrls: this.clampInt(seed.maxUrls, 1, 200, 20),
-      maxNewUrlsPerRun: this.clampInt(seed.maxNewUrlsPerRun, 1, 50, 10),
+      maxUrls: this.clampInt(seed.maxUrls, 1, 2_000, 200),
+      maxNewUrlsPerRun: this.clampInt(seed.maxNewUrlsPerRun, 1, 500, 80),
+      listMaxPages: this.clampInt(seed.listMaxPages, 1, 20, 6),
+      listPageConcurrency: this.clampInt(seed.listPageConcurrency, 1, 5, 2),
+      followPagination: seed.followPagination !== false,
       queryTokens,
       scoreThreshold: this.clampFloat(seed.scoreThreshold, 0, 1, 0),
       dedupeWindowHours: this.clampInt(seed.dedupeWindowHours, 0, 24 * 30, 24),
@@ -1082,6 +1172,9 @@ export class NewsSourceSchedulerService {
             domain: seed.domain,
             pattern: seed.pattern,
             maxUrls: seed.maxUrls,
+            listMaxPages: seed.listMaxPages,
+            listPageConcurrency: seed.listPageConcurrency,
+            followPagination: seed.followPagination,
             crawlOptions: crawlOptionsWithDefaults
           });
         }

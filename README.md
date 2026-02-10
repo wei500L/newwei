@@ -201,6 +201,7 @@ infra/
 - Crawl 结果页支持一键 “Send to Items”：将某条 `CrawlResult` 作为 `Item` 输入，交给新闻管道执行 LLM 清洗/结构化与去重，随后在 `Items / Today / Topics` 等阅读页中展示。
 - `.env` / `infra/docker/.env` 新增下列配置：
   - `CRAWL4AI_BASE_URL`：指向容器或远程 crawl4ai 服务的 HTTP 地址。
+  - `CRAWL4AI_HTTP_PROXY` / `CRAWL4AI_HTTPS_PROXY` / `CRAWL4AI_NO_PROXY`：可选，给 crawl4ai 容器注入代理环境变量；若代理跑在宿主机本地 7890，请用 `http://host.docker.internal:7890`（不要用容器内的 `127.0.0.1`）。
   - `CRAWL4AI_DASHBOARD_URL`：可选，控制台嵌入 Crawl4AI `/dashboard/` 时使用（Docker 默认建议设为 `http://localhost:8082/dashboard/`；不填则从 `CRAWL4AI_BASE_URL` 推导）。
   - `CRAWL4AI_API_KEY`：可选 API Key，若服务启用鉴权可在 Header 传递。
   - `CRAWL4AI_TIMEOUT_MS` / `CRAWL4AI_MAX_CONCURRENCY` / `CRAWL4AI_MAX_RETRIES`：用于 BullMQ 任务的超时、并发与重试上限。

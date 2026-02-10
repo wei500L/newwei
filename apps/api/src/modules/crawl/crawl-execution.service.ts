@@ -177,6 +177,22 @@ export class CrawlExecutionService {
       let response = await this.crawlClient.crawl(payload);
       let { successes, failures, lowSignalCandidates } = this.partitionCrawlerResults(response.results);
 
+      const challengeRetryResult = await this.retryForBotChallengeIfNeeded({
+        task,
+        taskId,
+        orgId,
+        options: effectiveOptions,
+        response,
+        failures
+      });
+      if (challengeRetryResult) {
+        response = challengeRetryResult.response;
+        successes = challengeRetryResult.successes;
+        failures = challengeRetryResult.failures;
+        lowSignalCandidates = challengeRetryResult.lowSignalCandidates;
+        effectiveOptions = challengeRetryResult.options;
+      }
+
       if (this.shouldAttemptEmptyMarkdownFallback(successes, failures)) {
         const fallbackProfiles = this.buildEmptyMarkdownFallbackProfiles(effectiveOptions);
         const fallbackCandidates: {
@@ -577,6 +593,134 @@ export class CrawlExecutionService {
       successes.length === 0 &&
       failures.length > 0 &&
       failures.every((failure) => this.isEmptyMarkdownFailure(failure))
+    );
+  }
+
+  private async retryForBotChallengeIfNeeded(options: {
+    task: CrawlTask;
+    taskId: string;
+    orgId: string;
+    options: CrawlTaskOptions;
+    response: Crawl4aiResponse;
+    failures: CrawlFailureDetail[];
+  }): Promise<
+    | {
+        response: Crawl4aiResponse;
+        successes: Crawl4aiArticle[];
+        failures: CrawlFailureDetail[];
+        lowSignalCandidates: Crawl4aiArticle[];
+        options: CrawlTaskOptions;
+      }
+    | null
+  > {
+    if (options.failures.length === 0) {
+      return null;
+    }
+
+    const shouldRetry = options.failures.some((failure) => this.isBotChallengeFailure(failure));
+    if (!shouldRetry) {
+      return null;
+    }
+
+    const retryOptions = this.normalizeOptions({
+      ...options.options,
+      headless: false,
+      enableUndetectedBrowser: true,
+      enableStealthMode: true,
+      simulateUser: true,
+      overrideNavigator: true,
+      userAgentMode: "random",
+      waitUntil: "networkidle",
+      waitForTimeoutMs: Math.max(options.options.waitForTimeoutMs ?? 0, 12_000),
+      pageTimeoutMs: Math.max(options.options.pageTimeoutMs ?? 0, 90_000),
+      delayBeforeReturnHtmlMs: Math.max(options.options.delayBeforeReturnHtmlMs ?? 0, 2_000),
+      meanDelayMs: Math.max(options.options.meanDelayMs ?? 0, 900),
+      maxDelayRangeMs: Math.max(options.options.maxDelayRangeMs ?? 0, 1_600),
+      scanFullPage: false,
+      virtualScroll: options.options.virtualScroll ?? {
+        containerSelector: "body",
+        scrollCount: 8,
+        scrollBy: "page_height",
+        waitAfterScrollMs: 700
+      }
+    });
+
+    await TaskLogModel.create({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: options.taskId,
+      orgId: options.orgId,
+      stage: "anti_bot_retry",
+      status: "processing",
+      message: "Detected anti-bot challenge; retrying with hardened stealth profile",
+      data: {
+        waitUntil: retryOptions.waitUntil ?? null,
+        waitForTimeoutMs: retryOptions.waitForTimeoutMs ?? null,
+        pageTimeoutMs: retryOptions.pageTimeoutMs ?? null,
+        delayBeforeReturnHtmlMs: retryOptions.delayBeforeReturnHtmlMs ?? null,
+        headless: retryOptions.headless ?? null,
+        enableUndetectedBrowser: retryOptions.enableUndetectedBrowser ?? null,
+        enableStealthMode: retryOptions.enableStealthMode ?? null,
+        simulateUser: retryOptions.simulateUser ?? null,
+        overrideNavigator: retryOptions.overrideNavigator ?? null,
+        userAgentMode: retryOptions.userAgentMode ?? null
+      }
+    });
+
+    try {
+      const retryPayload = this.buildRequestPayload(options.task, retryOptions);
+      const retryResponse = await this.crawlClient.crawl(retryPayload);
+      const partition = this.partitionCrawlerResults(retryResponse.results);
+
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: options.taskId,
+        orgId: options.orgId,
+        stage: "anti_bot_retry",
+        status: "completed",
+        message: "Anti-bot retry completed",
+        data: {
+          successes: partition.successes.length,
+          failures: partition.failures.length,
+          lowSignalCandidates: partition.lowSignalCandidates.length,
+          runId: retryResponse.runId ?? null
+        }
+      });
+
+      return {
+        response: retryResponse,
+        successes: partition.successes,
+        failures: partition.failures,
+        lowSignalCandidates: partition.lowSignalCandidates,
+        options: retryOptions
+      };
+    } catch (error) {
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: options.taskId,
+        orgId: options.orgId,
+        stage: "anti_bot_retry",
+        status: "failed",
+        message: "Anti-bot retry failed",
+        error: sanitizeError(error, {
+          redactSensitive: true
+        })
+      });
+      return null;
+    }
+  }
+
+  private isBotChallengeFailure(failure: CrawlFailureDetail) {
+    const normalizedError = typeof failure.error === "string" ? failure.error.toLowerCase() : "";
+    if (failure.statusCode === 401 || failure.statusCode === 403 || failure.statusCode === 429) {
+      return true;
+    }
+    return (
+      normalizedError.includes("anti-bot") ||
+      normalizedError.includes("verification page") ||
+      normalizedError.includes("cloudflare") ||
+      normalizedError.includes("captcha") ||
+      normalizedError.includes("access denied") ||
+      normalizedError.includes("bot detection")
     );
   }
 
@@ -2211,6 +2355,7 @@ export class CrawlExecutionService {
     const cleanMarkdownInput = this.normalizeCleanMarkdownOptions(options?.cleanMarkdown);
     const cleanMarkdown = this.normalizeCleanMarkdownOptions({
       ...(cleanMarkdownInput ?? {}),
+      cssSelector: undefined,
       excludedTags: this.mergeSelectorValues(
         cleanMarkdownInput?.excludedTags,
         qualityProfile === "quality_first"

@@ -44,6 +44,11 @@ import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import {
+  buildSeedConfigFromFormValues,
+  DEFAULT_SEED_FORM_VALUES,
+  readSeedFormValuesFromConfig
+} from "@/lib/news-source-seed";
 
 interface NewsSourceRecord {
   id: string;
@@ -258,6 +263,9 @@ interface NewsSourceFormValues {
   seedDedupeWindowHours?: number;
   seedCacheTtlSeconds?: number;
   seedConcurrency?: number;
+  seedListMaxPages?: number;
+  seedListPageConcurrency?: number;
+  seedFollowPagination?: boolean;
 }
 
 const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
@@ -294,15 +302,18 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   crawlMarkdownContentSource: "cleaned_html",
   crawlMarkdownEscapeHtmlMode: "auto",
   crawlMarkdownCitationsMode: "auto",
-  crawlHeadlessMode: "auto",
-  crawlUndetectedMode: "auto",
-  crawlStealthMode: "auto",
-  seedMaxUrls: 20,
-  seedMaxNewUrlsPerRun: 10,
-  seedScoreThreshold: 0,
-  seedDedupeWindowHours: 24,
-  seedCacheTtlSeconds: 600,
-  seedConcurrency: 5
+  crawlHeadlessMode: "headed",
+  crawlUndetectedMode: "enable",
+  crawlStealthMode: "enable",
+  seedMaxUrls: DEFAULT_SEED_FORM_VALUES.seedMaxUrls,
+  seedMaxNewUrlsPerRun: DEFAULT_SEED_FORM_VALUES.seedMaxNewUrlsPerRun,
+  seedScoreThreshold: DEFAULT_SEED_FORM_VALUES.seedScoreThreshold,
+  seedDedupeWindowHours: DEFAULT_SEED_FORM_VALUES.seedDedupeWindowHours,
+  seedCacheTtlSeconds: DEFAULT_SEED_FORM_VALUES.seedCacheTtlSeconds,
+  seedConcurrency: DEFAULT_SEED_FORM_VALUES.seedConcurrency,
+  seedListMaxPages: DEFAULT_SEED_FORM_VALUES.seedListMaxPages,
+  seedListPageConcurrency: DEFAULT_SEED_FORM_VALUES.seedListPageConcurrency,
+  seedFollowPagination: DEFAULT_SEED_FORM_VALUES.seedFollowPagination
 };
 
 const parseStringList = (value?: string) =>
@@ -1163,30 +1174,7 @@ export function NewsSourcesContent() {
       config?.seed && typeof config.seed === "object" && !Array.isArray(config.seed)
         ? (config.seed as Record<string, unknown>)
         : null;
-    const seedMaxUrls =
-      typeof seedConfig?.maxUrls === "number" && Number.isFinite(seedConfig.maxUrls)
-        ? seedConfig.maxUrls
-        : 20;
-    const seedMaxNewUrlsPerRun =
-      typeof seedConfig?.maxNewUrlsPerRun === "number" && Number.isFinite(seedConfig.maxNewUrlsPerRun)
-        ? seedConfig.maxNewUrlsPerRun
-        : 10;
-    const seedScoreThreshold =
-      typeof seedConfig?.scoreThreshold === "number" && Number.isFinite(seedConfig.scoreThreshold)
-        ? seedConfig.scoreThreshold
-        : 0;
-    const seedDedupeWindowHours =
-      typeof seedConfig?.dedupeWindowHours === "number" && Number.isFinite(seedConfig.dedupeWindowHours)
-        ? seedConfig.dedupeWindowHours
-        : 24;
-    const seedCacheTtlSeconds =
-      typeof seedConfig?.cacheTtlSeconds === "number" && Number.isFinite(seedConfig.cacheTtlSeconds)
-        ? seedConfig.cacheTtlSeconds
-        : 600;
-    const seedConcurrency =
-      typeof seedConfig?.concurrency === "number" && Number.isFinite(seedConfig.concurrency)
-        ? seedConfig.concurrency
-        : 5;
+    const seedFormValues = readSeedFormValuesFromConfig(config);
     const seedMode =
       seedConfig?.mode === "rss"
         ? "rss"
@@ -1371,16 +1359,7 @@ export function NewsSourcesContent() {
       forceRefresh: config?.forceRefresh === true,
       seedEnabled: seedConfig?.enabled === true,
       seedMode,
-      seedDomain: typeof seedConfig?.domain === "string" ? seedConfig.domain : "",
-      seedPattern: typeof seedConfig?.pattern === "string" ? seedConfig.pattern : "",
-      seedFeedUrl: typeof seedConfig?.feedUrl === "string" ? seedConfig.feedUrl : "",
-      seedQuery: typeof seedConfig?.query === "string" ? seedConfig.query : "",
-      seedMaxUrls,
-      seedMaxNewUrlsPerRun,
-      seedScoreThreshold,
-      seedDedupeWindowHours,
-      seedCacheTtlSeconds,
-      seedConcurrency
+      ...seedFormValues
     };
 
     setEditingSource(source);
@@ -1688,66 +1667,9 @@ export function NewsSourcesContent() {
       }
     }
 
-    const shouldIncludeSeed =
-      values.seedEnabled === true || (editingSource?.config && hasSeedConfig(editingSource.config));
-    if (shouldIncludeSeed) {
-      const seedMode = values.seedMode === "rss" ? "rss" : values.seedMode === "list" ? "list" : "sitemap";
-      const seed: Record<string, unknown> = {
-        enabled: values.seedEnabled === true,
-        mode: seedMode
-      };
-
-      if (seedMode === "rss") {
-        const feedUrl = values.seedFeedUrl?.trim();
-        if (feedUrl) {
-          seed.feedUrl = feedUrl;
-        }
-      } else {
-        const seedDomain = values.seedDomain?.trim();
-        if (seedDomain) {
-          seed.domain = seedDomain;
-        }
-
-        const seedPattern = values.seedPattern?.trim();
-        if (seedPattern) {
-          seed.pattern = seedPattern;
-        }
-      }
-
-      const seedQuery = values.seedQuery?.trim();
-      if (seedQuery) {
-        seed.query = seedQuery;
-      }
-
-      if (typeof values.seedMaxUrls === "number" && Number.isFinite(values.seedMaxUrls)) {
-        seed.maxUrls = values.seedMaxUrls;
-      }
-      if (
-        typeof values.seedMaxNewUrlsPerRun === "number" &&
-        Number.isFinite(values.seedMaxNewUrlsPerRun)
-      ) {
-        seed.maxNewUrlsPerRun = values.seedMaxNewUrlsPerRun;
-      }
-      if (typeof values.seedScoreThreshold === "number" && Number.isFinite(values.seedScoreThreshold)) {
-        seed.scoreThreshold = values.seedScoreThreshold;
-      }
-      if (
-        typeof values.seedDedupeWindowHours === "number" &&
-        Number.isFinite(values.seedDedupeWindowHours)
-      ) {
-        seed.dedupeWindowHours = values.seedDedupeWindowHours;
-      }
-      if (
-        typeof values.seedCacheTtlSeconds === "number" &&
-        Number.isFinite(values.seedCacheTtlSeconds)
-      ) {
-        seed.cacheTtlSeconds = values.seedCacheTtlSeconds;
-      }
-      if (typeof values.seedConcurrency === "number" && Number.isFinite(values.seedConcurrency)) {
-        seed.concurrency = values.seedConcurrency;
-      }
-
-      config.seed = seed;
+    const configWithSeed = buildSeedConfigFromFormValues(values, config);
+    if (configWithSeed) {
+      Object.assign(config, configWithSeed);
     }
 
     return Object.keys(config).length ? config : null;
@@ -4154,6 +4076,12 @@ export function NewsSourcesContent() {
                   defaultValue: "Enables undetected + stealth and switches the browser to headed (Xvfb)."
                 })}
               </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("newsSources.presets.cloudflareDefaultHint", {
+                  defaultValue:
+                    "This is now the default for new sources; use Auto/Disable only for low-friction sites."
+                })}
+              </Typography.Text>
             </Space>
           </Typography.Paragraph>
           <Form.Item
@@ -4268,13 +4196,13 @@ export function NewsSourcesContent() {
                     name="seedMaxUrls"
                     label={t("newsSources.fields.seedMaxUrls", { defaultValue: "Max discovered URLs" })}
                   >
-                    <InputNumber min={1} max={200} style={{ width: "100%" }} />
+                    <InputNumber min={1} max={2000} style={{ width: "100%" }} />
                   </Form.Item>
                   <Form.Item
                     name="seedMaxNewUrlsPerRun"
                     label={t("newsSources.fields.seedMaxNewUrlsPerRun", { defaultValue: "Max new URLs per run" })}
                   >
-                    <InputNumber min={1} max={50} style={{ width: "100%" }} />
+                    <InputNumber min={1} max={500} style={{ width: "100%" }} />
                   </Form.Item>
                   <Form.Item
                     name="seedScoreThreshold"
@@ -4307,6 +4235,41 @@ export function NewsSourcesContent() {
                   >
                     <InputNumber min={1} max={10} style={{ width: "100%" }} />
                   </Form.Item>
+                  {seedMode === "list" ? (
+                    <>
+                      <Form.Item
+                        name="seedListMaxPages"
+                        label={t("newsSources.fields.seedListMaxPages", { defaultValue: "List pages per discovery" })}
+                        tooltip={t("newsSources.fields.seedListMaxPagesHint", {
+                          defaultValue:
+                            "For List mode, crawl up to N paginated listing pages before scheduling article detail URLs."
+                        })}
+                      >
+                        <InputNumber min={1} max={20} style={{ width: "100%" }} />
+                      </Form.Item>
+                      <Form.Item
+                        name="seedListPageConcurrency"
+                        label={t("newsSources.fields.seedListPageConcurrency", { defaultValue: "List page concurrency" })}
+                        tooltip={t("newsSources.fields.seedListPageConcurrencyHint", {
+                          defaultValue:
+                            "How many listing pages to crawl in parallel during list discovery."
+                        })}
+                      >
+                        <InputNumber min={1} max={5} style={{ width: "100%" }} />
+                      </Form.Item>
+                      <Form.Item
+                        name="seedFollowPagination"
+                        label={t("newsSources.fields.seedFollowPagination", { defaultValue: "Follow pagination" })}
+                        valuePropName="checked"
+                        tooltip={t("newsSources.fields.seedFollowPaginationHint", {
+                          defaultValue:
+                            "Enable this to follow next/older/load-more list links and discover more article events."
+                        })}
+                      >
+                        <Switch />
+                      </Form.Item>
+                    </>
+                  ) : null}
                 </div>
               );
             }}
