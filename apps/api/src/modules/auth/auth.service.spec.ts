@@ -271,7 +271,7 @@ describe("AuthService", () => {
     expect(user.permissions).toContain("items.read");
   });
 
-  it("requires an organization when validating credentials for multi-org users", async () => {
+  it("defaults to the earliest active organization for multi-org login", async () => {
     const password = await bcrypt.hash("password", 10);
     prismaMock.user.findUnique = jest.fn().mockResolvedValue({
       id: "user-1",
@@ -300,9 +300,10 @@ describe("AuthService", () => {
       ]
     });
 
-    await expect(service.validateUser("test@example.com", "password")).rejects.toThrow(
-      BadRequestException
-    );
+    const user = await service.validateUser("test@example.com", "password");
+    expect(user.orgId).toBe("org-1");
+    expect(user.permissions).toContain("items.read");
+    expect(user.roleIds).toEqual(["role-1"]);
   });
 
   it("defaults to the only active organization when others are disabled", async () => {

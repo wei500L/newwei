@@ -62,6 +62,10 @@ interface MembershipRecord {
   org?: { planTier?: string | null; subscriptionStatus?: string | null } | null;
 }
 
+interface MembershipPickOptions {
+  requireExplicitOrg?: boolean;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -87,7 +91,7 @@ export class AuthService {
 
   private pickMembership<
     T extends { orgId: string; org?: { isActive: boolean; slug?: string } | null }
-  >(memberships: T[], orgIdOrSlug?: string): T {
+  >(memberships: T[], orgIdOrSlug?: string, options?: MembershipPickOptions): T {
     if (memberships.length === 0) {
       throw new UnauthorizedException("User is not assigned to an organization");
     }
@@ -104,6 +108,10 @@ export class AuthService {
 
       if (activeMemberships.length === 0) {
         throw new UnauthorizedException("Organization disabled");
+      }
+
+      if (options?.requireExplicitOrg === false) {
+        return activeMemberships[0]!;
       }
 
       throw new BadRequestException(
@@ -215,7 +223,9 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const primaryMembership = this.pickMembership(user.memberships, orgId);
+    const primaryMembership = this.pickMembership(user.memberships, orgId, {
+      requireExplicitOrg: false
+    });
     if (!primaryMembership.org?.isActive) {
       throw new UnauthorizedException("Organization disabled");
     }
