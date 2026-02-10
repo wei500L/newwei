@@ -17,6 +17,7 @@ import GraphQLJSONScalar from "graphql-type-json";
 
 import type {
   CrawlCacheMode,
+  CrawlAntiBotMode,
   CrawlDetailExpansionOptions,
   CrawlMarkdownContentSource,
   CrawlMetadataSource,
@@ -33,6 +34,12 @@ export enum CrawlWaitUntilInputEnum {
   LOAD = "load",
   NETWORKIDLE = "networkidle",
   COMMIT = "commit"
+}
+
+export enum CrawlAntiBotModeInputEnum {
+  AUTO = "auto",
+  ENABLED = "enabled",
+  DISABLED = "disabled"
 }
 
 @InputType()
@@ -451,6 +458,11 @@ export class CrawlOptionsInput {
   @Field(() => Boolean, { nullable: true })
   enableStealthMode?: boolean;
 
+  @Field(() => CrawlAntiBotModeInputEnum, { nullable: true })
+  @IsOptional()
+  @IsEnum(CrawlAntiBotModeInputEnum)
+  antiBotMode?: CrawlAntiBotMode;
+
   @Field(() => Boolean, { nullable: true })
   useManagedBrowser?: boolean;
 
@@ -763,4 +775,8 @@ registerEnumType(CrawlTaskStatus, {
 
 registerEnumType(CrawlWaitUntilInputEnum, {
   name: "CrawlWaitUntil"
+});
+
+registerEnumType(CrawlAntiBotModeInputEnum, {
+  name: "CrawlAntiBotMode"
 });

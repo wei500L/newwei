@@ -44,6 +44,7 @@ interface CrawlTemplateFormValues {
   proxyUrl?: string;
   userAgent?: string;
   headlessMode?: "auto" | "headless" | "headed";
+  antiBotMode?: "auto" | "enabled" | "disabled";
   enableStealthMode: boolean;
   enableUndetectedBrowser: boolean;
   includeImages: boolean;
@@ -132,6 +133,7 @@ export function CrawlTemplatesContent() {
       initialValues: {
         isActive: true,
         headlessMode: "auto",
+        antiBotMode: "auto",
         enableStealthMode: false,
         enableUndetectedBrowser: false,
         includeImages: true,
@@ -149,6 +151,11 @@ export function CrawlTemplatesContent() {
     const options = normalizeOptions(template.crawlOptions);
     const headlessMode =
       typeof options?.headless === "boolean" ? (options.headless ? "headless" : "headed") : "auto";
+    const antiBotModeRaw = typeof options?.antiBotMode === "string" ? options.antiBotMode.trim().toLowerCase() : "";
+    const antiBotMode =
+      antiBotModeRaw === "enabled" || antiBotModeRaw === "disabled" || antiBotModeRaw === "auto"
+        ? (antiBotModeRaw as "auto" | "enabled" | "disabled")
+        : "auto";
     const detailExpansionOptions =
       options?.detailExpansion && typeof options.detailExpansion === "object" && !Array.isArray(options.detailExpansion)
         ? (options.detailExpansion as Record<string, unknown>)
@@ -171,6 +178,7 @@ export function CrawlTemplatesContent() {
         proxyUrl: normalizeString(options?.proxyUrl),
         userAgent: normalizeString(options?.userAgent),
         headlessMode,
+        antiBotMode,
         enableStealthMode: normalizeBoolean(options?.enableStealthMode),
         enableUndetectedBrowser: normalizeBoolean(options?.enableUndetectedBrowser),
         includeImages: options?.includeImages === false ? false : true,
@@ -236,6 +244,12 @@ export function CrawlTemplatesContent() {
       base.enableUndetectedBrowser = true;
     } else {
       delete base.enableUndetectedBrowser;
+    }
+
+    if (values.antiBotMode === "enabled" || values.antiBotMode === "disabled") {
+      base.antiBotMode = values.antiBotMode;
+    } else {
+      delete base.antiBotMode;
     }
 
     if (values.includeImages === false) {
@@ -381,6 +395,20 @@ export function CrawlTemplatesContent() {
       tags.push(
         <Tag key="scanFullPage" color="blue">
           {t("crawl.settings.scanFullPage")}
+        </Tag>,
+      );
+    }
+
+    if (options.antiBotMode === "enabled") {
+      tags.push(
+        <Tag key="antiBotMode" color="volcano">
+          {t("crawlTemplates.fields.antiBotModeEnabled", { defaultValue: "Anti-bot retry: Enabled" })}
+        </Tag>,
+      );
+    } else if (options.antiBotMode === "disabled") {
+      tags.push(
+        <Tag key="antiBotMode" color="default">
+          {t("crawlTemplates.fields.antiBotModeDisabled", { defaultValue: "Anti-bot retry: Disabled" })}
         </Tag>,
       );
     }
@@ -639,6 +667,22 @@ export function CrawlTemplatesContent() {
             valuePropName="checked"
           >
             <Switch />
+          </Form.Item>
+          <Form.Item
+            name="antiBotMode"
+            label={t("crawlTemplates.fields.antiBotMode", { defaultValue: "Anti-bot retry mode" })}
+            tooltip={t("crawlTemplates.fields.antiBotModeHint", {
+              defaultValue:
+                "Auto removes crawlOptions.antiBotMode. Enabled/Disabled explicitly control anti-bot retry when failures occur."
+            })}
+          >
+            <Select
+              options={[
+                { value: "auto", label: t("crawlTemplates.triState.auto", { defaultValue: "Auto (inherit)" }) },
+                { value: "enabled", label: t("crawlTemplates.triState.enable", { defaultValue: "Enabled" }) },
+                { value: "disabled", label: t("crawlTemplates.triState.disable", { defaultValue: "Disabled" }) }
+              ]}
+            />
           </Form.Item>
           <Form.Item
             name="includeImages"

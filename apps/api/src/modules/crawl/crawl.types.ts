@@ -43,6 +43,8 @@ export type CrawlPageTypeHint = "auto" | "list" | "detail";
 
 export type CrawlQualityProfile = "balanced" | "quality_first" | "speed_first";
 
+export type CrawlAntiBotMode = "auto" | "enabled" | "disabled";
+
 export interface CrawlDetailExpansionOptions {
   maxDetailUrls?: number;
   minRelevanceScore?: number;
@@ -332,6 +334,7 @@ export interface CrawlTaskOptions {
   headless?: boolean;
   enableUndetectedBrowser?: boolean;
   enableStealthMode?: boolean;
+  antiBotMode?: CrawlAntiBotMode;
   useManagedBrowser?: boolean;
   userDataDir?: string;
   simulateUser?: boolean;

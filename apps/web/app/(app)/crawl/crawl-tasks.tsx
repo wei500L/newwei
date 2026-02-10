@@ -36,6 +36,7 @@ import type {
   CrawlTasksQuery,
 } from "@/graphql/generated";
 import {
+  CrawlAntiBotMode,
   CrawlWaitUntil,
   useCreateCrawlTaskMutation,
   useCrawlMetadataLazyQuery,
@@ -85,9 +86,23 @@ function toCrawlWaitUntilInput(value?: string | null): CrawlWaitUntil | undefine
   return undefined;
 }
 
+function toCrawlAntiBotModeInput(value?: string | null): CrawlAntiBotMode | undefined {
+  if (value === "auto") {
+    return CrawlAntiBotMode.Auto;
+  }
+  if (value === "enabled") {
+    return CrawlAntiBotMode.Enabled;
+  }
+  if (value === "disabled") {
+    return CrawlAntiBotMode.Disabled;
+  }
+  return undefined;
+}
+
 function toGraphqlCrawlOptionsInput(options: ReturnType<typeof sanitizeCrawlOptions>): CrawlOptionsInput {
   return {
     ...options,
+    antiBotMode: toCrawlAntiBotModeInput(options.antiBotMode),
     waitUntil: toCrawlWaitUntilInput(options.waitUntil),
     multiUrlConfigs: options.multiUrlConfigs?.map((config) => ({
       ...config,
@@ -103,6 +118,7 @@ function toGraphqlCrawlOptionsInput(options: ReturnType<typeof sanitizeCrawlOpti
 
 type CrawlTaskQualityProfile = "quality_first" | "balanced" | "speed_first";
 type CrawlTaskPageTypeHint = "auto" | "list" | "detail";
+type CrawlTaskAntiBotMode = "auto" | "enabled" | "disabled";
 
 interface CrawlTaskConfigSummary {
   ingestToItems: boolean;
@@ -110,6 +126,7 @@ interface CrawlTaskConfigSummary {
   hasVirtualScroll: boolean;
   qualityProfile: CrawlTaskQualityProfile | null;
   pageTypeHint: CrawlTaskPageTypeHint | null;
+  antiBotMode: CrawlTaskAntiBotMode | null;
   autoExpandDetails: boolean;
 }
 
@@ -140,6 +157,17 @@ function parseCrawlTaskConfigSummary(rawConfig?: string | null): CrawlTaskConfig
       ? pageTypeHintRaw
       : null;
 
+  const antiBotModeRaw =
+    typeof config.antiBotMode === "string"
+      ? config.antiBotMode.trim().toLowerCase()
+      : "";
+  const antiBotMode: CrawlTaskAntiBotMode | null =
+    antiBotModeRaw === "auto" ||
+    antiBotModeRaw === "enabled" ||
+    antiBotModeRaw === "disabled"
+      ? antiBotModeRaw
+      : null;
+
   return {
     ingestToItems: Boolean(config.ingestToItems),
     scanFullPage: Boolean(config.scanFullPage),
@@ -150,6 +178,7 @@ function parseCrawlTaskConfigSummary(rawConfig?: string | null): CrawlTaskConfig
     ),
     qualityProfile,
     pageTypeHint,
+    antiBotMode,
     autoExpandDetails: Boolean(config.autoExpandDetails),
   };
 }
@@ -396,6 +425,19 @@ export function CrawlTasksView() {
       tags.push(
         <Tag key="pageTypeHint" color="magenta">
           {pageTypeHintLabel}
+        </Tag>,
+      );
+    }
+    if (summary.antiBotMode === "enabled") {
+      tags.push(
+        <Tag key="antiBotMode" color="volcano">
+          {t("crawl.browser.antiBotModes.enabled", { defaultValue: "Anti-bot enabled" })}
+        </Tag>,
+      );
+    } else if (summary.antiBotMode === "disabled") {
+      tags.push(
+        <Tag key="antiBotMode" color="default">
+          {t("crawl.browser.antiBotModes.disabled", { defaultValue: "Anti-bot disabled" })}
         </Tag>,
       );
     }

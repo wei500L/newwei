@@ -487,6 +487,7 @@ input CrawlOptionsInput {
   detailExpansion: CrawlDetailExpansionOptionsInput
   enableStealthMode: Boolean
   enableUndetectedBrowser: Boolean
+  antiBotMode: CrawlAntiBotMode
   excludeExternalImages: Boolean
   extractLinks: Boolean
   geolocation: CrawlGeolocationInput
@@ -669,6 +670,12 @@ input CrawlVirtualScrollInput {
   scrollBy: String
   scrollCount: Int
   waitAfterScrollMs: Int
+}
+
+enum CrawlAntiBotMode {
+  AUTO
+  DISABLED
+  ENABLED
 }
 
 enum CrawlWaitUntil {

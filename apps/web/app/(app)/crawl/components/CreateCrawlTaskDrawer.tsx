@@ -30,6 +30,12 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import {
+  CRAWL_TASK_TEMPLATE_DESCRIPTORS,
+  buildCrawlTaskTemplateValues,
+  resolveCrawlTaskTemplateKey,
+  type CrawlTaskTemplateKey
+} from "@/lib/crawl-presets";
 import dayjs from "@/lib/dayjs";
 
 import type { CreateCrawlTaskFormValues } from "../types";
@@ -46,32 +52,18 @@ interface CreateCrawlTaskDrawerProps {
   onSubmit: (values: CreateCrawlTaskFormValues) => void | Promise<void>;
 }
 
-const TEMPLATES = [
-  {
-    key: "general",
-    icon: <GlobalOutlined />,
-    label: "crawl.templates.general",
-    description: "crawl.templates.generalDesc",
-  },
-  {
-    key: "news",
-    icon: <ReadOutlined />,
-    label: "crawl.templates.news",
-    description: "crawl.templates.newsDesc",
-  },
-  {
-    key: "forum",
-    icon: <TeamOutlined />,
-    label: "crawl.templates.forum",
-    description: "crawl.templates.forumDesc",
-  },
-  {
-    key: "social",
-    icon: <RobotOutlined />,
-    label: "crawl.templates.social",
-    description: "crawl.templates.socialDesc",
-  },
-];
+const TEMPLATE_ICONS: Record<CrawlTaskTemplateKey, ReactNode> = {
+  general: <GlobalOutlined />,
+  news: <ReadOutlined />,
+  reuters_cf: <RobotOutlined />,
+  forum: <TeamOutlined />,
+  social: <RobotOutlined />
+};
+
+const TEMPLATES = CRAWL_TASK_TEMPLATE_DESCRIPTORS.map((template) => ({
+  ...template,
+  icon: TEMPLATE_ICONS[template.key]
+}));
 
 const normalizeOptionGuardKey = (value: string) =>
   value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -198,94 +190,9 @@ export function CreateCrawlTaskDrawer({
 
   const handleTemplateSelect = useCallback((templateKey: string) => {
     setSelectedTemplate(templateKey);
-    // Set default values based on template
-    switch (templateKey) {
-      case "general":
-        form.setFieldsValue({
-          ingestToItems: false,
-          onlyMainContent: true,
-          scanFullPage: false,
-          extractLinks: false,
-          qualityProfile: "quality_first",
-          pageTypeHint: "auto",
-          autoExpandDetails: false,
-          detailExpansion: undefined,
-        });
-        break;
-      case "news":
-        form.setFieldsValue({
-          ingestToItems: canWriteItems ? true : false,
-          onlyMainContent: true,
-          extractLinks: false,
-          scanFullPage: false,
-          adjustViewportToContent: true,
-          scrollDelayMs: 200,
-          includeImages: true,
-          excludeExternalImages: false,
-          waitForImages: true,
-          simulateUser: true,
-          overrideNavigator: true,
-          waitUntil: "networkidle",
-          pageTimeoutMs: 45000,
-          delayBeforeReturnHtmlMs: 800,
-          meanDelayMs: 800,
-          maxDelayRangeMs: 250,
-          semaphoreCount: 5,
-          removeForms: true,
-          qualityProfile: "quality_first",
-          pageTypeHint: "detail",
-          autoExpandDetails: false,
-          detailExpansion: undefined,
-          markdownOptions: {
-            contentSource: "cleaned_html",
-            escapeHtml: true,
-            bodyWidth: 80,
-          },
-          markdownFilter: { type: "pruning", thresholdType: "dynamic", minWordThreshold: 80 },
-          cleanMarkdown: {
-            cssSelector: "article,main,.article-body",
-            removeOverlayElements: true,
-            wordCountThreshold: 120,
-            excludedTags: ["nav", "footer", "script", "style"],
-          },
-        });
-        break;
-      case "forum":
-        form.setFieldsValue({
-          ingestToItems: false,
-          onlyMainContent: false,
-          scanFullPage: true,
-          extractLinks: false,
-          scrollDelayMs: 1000,
-          qualityProfile: "balanced",
-          pageTypeHint: "list",
-          autoExpandDetails: true,
-          detailExpansion: {
-            maxDetailUrls: 12,
-            minRelevanceScore: 0.25,
-            requireSameDomain: true,
-            allowExternalLinks: true,
-          },
-        });
-        break;
-      case "social":
-        form.setFieldsValue({
-          ingestToItems: false,
-          headless: false,
-          enableStealthMode: true,
-          enableUndetectedBrowser: true,
-          scanFullPage: true,
-          onlyMainContent: false,
-          waitForTimeoutMs: 5000,
-          scrollDelayMs: 2000,
-          userAgentMode: "random",
-          qualityProfile: "speed_first",
-          pageTypeHint: "list",
-          autoExpandDetails: false,
-          detailExpansion: undefined,
-        });
-        break;
-    }
+    const resolvedKey = resolveCrawlTaskTemplateKey(templateKey) ?? "general";
+    const nextValues = buildCrawlTaskTemplateValues(resolvedKey, { canWriteItems });
+    form.setFieldsValue(nextValues as Partial<CreateCrawlTaskFormValues>);
   }, [canWriteItems, form]);
 
   useEffect(() => {
@@ -371,9 +278,9 @@ export function CreateCrawlTaskDrawer({
                 >
                   <Space direction="vertical" align="center" style={{ width: "100%" }}>
                     <div style={{ fontSize: 24, color: "#1677ff" }}>{template.icon}</div>
-                    <Typography.Text strong>{t(template.label)}</Typography.Text>
+                    <Typography.Text strong>{t(template.label, { defaultValue: template.defaultLabel })}</Typography.Text>
                     <Typography.Text type="secondary" style={{ fontSize: 12, textAlign: 'center' }}>
-                      {t(template.description)}
+                      {t(template.description, { defaultValue: template.defaultDescription })}
                     </Typography.Text>
                   </Space>
                 </Card>
@@ -2285,6 +2192,31 @@ function BrowserConfigForm({
         extra={t("crawl.browser.stealthHint")}
       >
         <Switch />
+      </Form.Item>
+      <Form.Item
+        label={t("crawl.browser.antiBotMode", { defaultValue: "Anti-bot retry mode" })}
+        name="antiBotMode"
+        extra={t("crawl.browser.antiBotModeHint", {
+          defaultValue:
+            "Auto retries when challenge pages are detected. Enabled forces anti-bot retry when crawl failures exist; Disabled skips this pipeline."
+        })}
+      >
+        <Select
+          options={[
+            {
+              value: "auto",
+              label: t("crawl.browser.antiBotModes.auto", { defaultValue: "Auto (recommended)" })
+            },
+            {
+              value: "enabled",
+              label: t("crawl.browser.antiBotModes.enabled", { defaultValue: "Enabled" })
+            },
+            {
+              value: "disabled",
+              label: t("crawl.browser.antiBotModes.disabled", { defaultValue: "Disabled" })
+            }
+          ]}
+        />
       </Form.Item>
       <Form.Item
         label={t("crawl.browser.managed")}

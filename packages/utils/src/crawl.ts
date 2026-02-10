@@ -157,6 +157,8 @@ export interface CrawlVirtualScrollConfigFormValue {
   waitAfterScrollMs?: number;
 }
 
+export type CrawlAntiBotModeValue = "auto" | "enabled" | "disabled";
+
 export interface CrawlOptionsFormValues {
   includeImages?: boolean;
   storeMedia?: boolean;
@@ -169,6 +171,7 @@ export interface CrawlOptionsFormValues {
   headless?: boolean;
   enableUndetectedBrowser?: boolean;
   enableStealthMode?: boolean;
+  antiBotMode?: CrawlAntiBotModeValue;
   useManagedBrowser?: boolean;
   userDataDir?: string;
   simulateUser?: boolean;
@@ -313,6 +316,7 @@ export interface CrawlOptionsValue {
   headless?: boolean;
   enableUndetectedBrowser?: boolean;
   enableStealthMode?: boolean;
+  antiBotMode?: CrawlAntiBotModeValue;
   useManagedBrowser?: boolean;
   userDataDir?: string;
   simulateUser?: boolean;
@@ -1084,6 +1088,12 @@ export const sanitizeCrawlOptions = (
   const detailExpansion = sanitizeDetailExpansionOptions(values.detailExpansion);
   const qualityProfile = sanitizeQualityProfile(values.qualityProfile);
   const virtualScroll = sanitizeVirtualScrollConfig(values.virtualScroll);
+  const antiBotModeRaw =
+    typeof values.antiBotMode === "string" ? values.antiBotMode.trim().toLowerCase() : undefined;
+  const antiBotMode =
+    antiBotModeRaw === "auto" || antiBotModeRaw === "enabled" || antiBotModeRaw === "disabled"
+      ? (antiBotModeRaw as CrawlAntiBotModeValue)
+      : undefined;
   const tableScoreThreshold =
     typeof values.tableScoreThreshold === "number"
       ? Number(Math.max(0, Math.min(10, values.tableScoreThreshold)).toFixed(2))
@@ -1108,6 +1118,7 @@ export const sanitizeCrawlOptions = (
     headless: typeof values.headless === "boolean" ? values.headless : undefined,
     enableUndetectedBrowser: values.enableUndetectedBrowser ?? undefined,
     enableStealthMode: values.enableStealthMode ?? undefined,
+    antiBotMode,
     useManagedBrowser:
       typeof values.useManagedBrowser === "boolean"
         ? values.useManagedBrowser

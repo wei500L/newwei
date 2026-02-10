@@ -34,6 +34,7 @@ import {
   CrawlMarkdownOptions,
   CrawlMarkdownFilter,
   CrawlMarkdownContentSource,
+  CrawlAntiBotMode,
   CrawlPageTypeHint,
   CrawlQualityProfile,
   CrawlMarkdownStrategy,
@@ -52,10 +53,26 @@ export interface CrawlExecutionRetryContext {
   backoffDelayMs?: number | null;
 }
 
+interface CrawlRetryResult {
+  response: Crawl4aiResponse;
+  successes: Crawl4aiArticle[];
+  failures: CrawlFailureDetail[];
+  lowSignalCandidates: Crawl4aiArticle[];
+  options: CrawlTaskOptions;
+}
+
+interface CrawlRetryCandidate extends CrawlRetryResult {
+  fromRetry: boolean;
+  qualityScore: number;
+  challengeFailureCount: number;
+}
+
 @Injectable()
 export class CrawlExecutionService {
   private readonly retryableStatusCodes = new Set([408, 423, 425, 429, 500, 502, 503, 504]);
   private readonly pipelineJobIdMaxLength = 128;
+  private readonly antiBotRetryAttempts = 3;
+  private readonly antiBotWarmupUrlLimit = 4;
   private readonly blockedDetailPathSegments = new Set([
     "video",
     "videos",
@@ -183,7 +200,9 @@ export class CrawlExecutionService {
         orgId,
         options: effectiveOptions,
         response,
-        failures
+        successes,
+        failures,
+        lowSignalCandidates
       });
       if (challengeRetryResult) {
         response = challengeRetryResult.response;
@@ -602,47 +621,282 @@ export class CrawlExecutionService {
     orgId: string;
     options: CrawlTaskOptions;
     response: Crawl4aiResponse;
+    successes: Crawl4aiArticle[];
     failures: CrawlFailureDetail[];
-  }): Promise<
-    | {
-        response: Crawl4aiResponse;
-        successes: Crawl4aiArticle[];
-        failures: CrawlFailureDetail[];
-        lowSignalCandidates: Crawl4aiArticle[];
-        options: CrawlTaskOptions;
-      }
-    | null
-  > {
+    lowSignalCandidates: Crawl4aiArticle[];
+  }): Promise<CrawlRetryResult | null> {
     if (options.failures.length === 0) {
       return null;
     }
 
-    const shouldRetry = options.failures.some((failure) => this.isBotChallengeFailure(failure));
-    if (!shouldRetry) {
+    const antiBotMode = options.options.antiBotMode ?? "auto";
+    if (antiBotMode === "disabled") {
       return null;
     }
 
-    const retryOptions = this.normalizeOptions({
-      ...options.options,
+    const initialChallengeFailureCount = this.countBotChallengeFailures(options.failures);
+    const forceRetryByMode = antiBotMode === "enabled";
+    if (!forceRetryByMode && initialChallengeFailureCount === 0) {
+      return null;
+    }
+
+    const retryStartReason =
+      forceRetryByMode && initialChallengeFailureCount === 0
+        ? "anti_bot_mode_enabled"
+        : "challenge_detected";
+    const retryStartMessage =
+      retryStartReason === "anti_bot_mode_enabled"
+        ? "Anti-bot mode enabled; retrying with hardened stealth profile"
+        : "Detected anti-bot challenge; retrying with hardened stealth profile";
+
+    const baseRetryOptions = this.buildHardenedAntiBotOptions(options.options, options.task.targetUrl);
+    const warmedRetryOptions = await this.runAntiBotWarmupIfNeeded({
+      task: options.task,
+      taskId: options.taskId,
+      orgId: options.orgId,
+      options: baseRetryOptions
+    });
+
+    const retryCandidates: CrawlRetryCandidate[] = [];
+    const maxAttempts = this.antiBotRetryAttempts;
+
+    await TaskLogModel.create({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: options.taskId,
+      orgId: options.orgId,
+      stage: "anti_bot_retry",
+      status: "processing",
+      message: retryStartMessage,
+      data: {
+        phase: "retry_start",
+        reason: retryStartReason,
+        initialFailures: options.failures.length,
+        initialChallengeFailures: initialChallengeFailureCount,
+        attempts: maxAttempts,
+        ...this.summarizeAntiBotOptions(warmedRetryOptions)
+      }
+    });
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const attemptOptions = this.buildAntiBotAttemptOptions(
+        warmedRetryOptions,
+        options.task.targetUrl,
+        attempt
+      );
+
+      await TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: options.taskId,
+        orgId: options.orgId,
+        stage: "anti_bot_retry",
+        status: "processing",
+        message: `Anti-bot retry attempt ${attempt}/${maxAttempts}`,
+        data: {
+          phase: "retry",
+          attempt,
+          maxAttempts,
+          ...this.summarizeAntiBotOptions(attemptOptions)
+        }
+      });
+
+      try {
+        const retryPayload = this.buildRequestPayload(options.task, attemptOptions);
+        const retryResponse = await this.crawlClient.crawl(retryPayload);
+        const partition = this.partitionCrawlerResults(retryResponse.results);
+        const challengeFailureCount = this.countBotChallengeFailures(partition.failures);
+
+        const candidate: CrawlRetryCandidate = {
+          fromRetry: true,
+          response: retryResponse,
+          successes: partition.successes,
+          failures: partition.failures,
+          lowSignalCandidates: partition.lowSignalCandidates,
+          options: attemptOptions,
+          qualityScore: this.scoreMarkdownQuality(partition.successes),
+          challengeFailureCount
+        };
+        retryCandidates.push(candidate);
+
+        await TaskLogModel.create({
+          queue: CRAWL_QUEUE_NAME,
+          jobId: options.taskId,
+          orgId: options.orgId,
+          stage: "anti_bot_retry",
+          status: "completed",
+          message: `Anti-bot retry attempt ${attempt}/${maxAttempts} completed`,
+          data: {
+            phase: "retry",
+            attempt,
+            maxAttempts,
+            successes: partition.successes.length,
+            failures: partition.failures.length,
+            lowSignalCandidates: partition.lowSignalCandidates.length,
+            challengeFailures: challengeFailureCount,
+            qualityScore: Number(candidate.qualityScore.toFixed(3)),
+            runId: retryResponse.runId ?? null
+          }
+        });
+
+        if (partition.successes.length > 0 && challengeFailureCount === 0) {
+          break;
+        }
+
+        if (attempt < maxAttempts && challengeFailureCount > 0) {
+          const delayMs = this.resolveAntiBotAttemptDelayMs(attempt);
+          await TaskLogModel.create({
+            queue: CRAWL_QUEUE_NAME,
+            jobId: options.taskId,
+            orgId: options.orgId,
+            stage: "anti_bot_retry",
+            status: "processing",
+            message: `Anti-bot challenge persisted; backing off before retry ${attempt + 1}/${maxAttempts}`,
+            data: {
+              phase: "retry_backoff",
+              attempt,
+              nextAttempt: attempt + 1,
+              maxAttempts,
+              delayMs
+            }
+          });
+          await this.sleep(delayMs);
+        }
+      } catch (error) {
+        await TaskLogModel.create({
+          queue: CRAWL_QUEUE_NAME,
+          jobId: options.taskId,
+          orgId: options.orgId,
+          stage: "anti_bot_retry",
+          status: "failed",
+          message: `Anti-bot retry attempt ${attempt}/${maxAttempts} failed`,
+          error: sanitizeError(error, {
+            redactSensitive: true
+          })
+        });
+        if (attempt < maxAttempts) {
+          await this.sleep(this.resolveAntiBotAttemptDelayMs(attempt));
+        }
+      }
+    }
+
+    const baselineCandidate: CrawlRetryCandidate = {
+      fromRetry: false,
+      response: options.response,
+      successes: options.successes,
+      failures: options.failures,
+      lowSignalCandidates: options.lowSignalCandidates,
+      options: options.options,
+      qualityScore: this.scoreMarkdownQuality(options.successes),
+      challengeFailureCount: initialChallengeFailureCount
+    };
+    const selected = this.selectBestAntiBotRetryCandidate([baselineCandidate, ...retryCandidates]);
+    if (!selected || !selected.fromRetry) {
+      return null;
+    }
+
+    await TaskLogModel.create({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: options.taskId,
+      orgId: options.orgId,
+      stage: "anti_bot_retry",
+      status: "completed",
+      message: "Selected anti-bot retry candidate",
+      data: {
+        phase: "selection",
+        selectedFromRetry: selected.fromRetry,
+        selectedSuccesses: selected.successes.length,
+        selectedFailures: selected.failures.length,
+        selectedChallengeFailures: selected.challengeFailureCount,
+        selectedQualityScore: Number(selected.qualityScore.toFixed(3)),
+        baselineSuccesses: baselineCandidate.successes.length,
+        baselineFailures: baselineCandidate.failures.length,
+        baselineChallengeFailures: baselineCandidate.challengeFailureCount,
+        baselineQualityScore: Number(baselineCandidate.qualityScore.toFixed(3)),
+        retryCandidates: retryCandidates.length
+      }
+    });
+
+    return {
+      response: selected.response,
+      successes: selected.successes,
+      failures: selected.failures,
+      lowSignalCandidates: selected.lowSignalCandidates,
+      options: selected.options
+    };
+  }
+
+  private buildHardenedAntiBotOptions(options: CrawlTaskOptions, targetUrl: string): CrawlTaskOptions {
+    const recommendedWaitFor = this.resolveAntiBotWaitForSelector(targetUrl, options.pageTypeHint);
+    const sessionId =
+      options.sessionId ?? this.buildAntiBotSessionId(targetUrl);
+
+    return this.normalizeOptions({
+      ...options,
+      sessionId,
       headless: false,
       enableUndetectedBrowser: true,
       enableStealthMode: true,
       simulateUser: true,
       overrideNavigator: true,
       userAgentMode: "random",
-      waitUntil: "networkidle",
-      waitForTimeoutMs: Math.max(options.options.waitForTimeoutMs ?? 0, 12_000),
-      pageTimeoutMs: Math.max(options.options.pageTimeoutMs ?? 0, 90_000),
-      delayBeforeReturnHtmlMs: Math.max(options.options.delayBeforeReturnHtmlMs ?? 0, 2_000),
-      meanDelayMs: Math.max(options.options.meanDelayMs ?? 0, 900),
-      maxDelayRangeMs: Math.max(options.options.maxDelayRangeMs ?? 0, 1_600),
+      waitUntil: options.waitUntil ?? "domcontentloaded",
+      waitForSelector:
+        options.waitForScript || options.waitForSelector
+          ? options.waitForSelector
+          : recommendedWaitFor,
+      waitForTimeoutMs: Math.max(options.waitForTimeoutMs ?? 0, 10_000),
+      pageTimeoutMs: Math.max(options.pageTimeoutMs ?? 0, 120_000),
+      delayBeforeReturnHtmlMs: Math.max(options.delayBeforeReturnHtmlMs ?? 0, 2_000),
+      meanDelayMs: Math.max(options.meanDelayMs ?? 0, 700),
+      maxDelayRangeMs: Math.max(options.maxDelayRangeMs ?? 0, 1_400),
       scanFullPage: false,
-      virtualScroll: options.options.virtualScroll ?? {
+      virtualScroll: options.virtualScroll ?? {
         containerSelector: "body",
         scrollCount: 8,
         scrollBy: "page_height",
         waitAfterScrollMs: 700
       }
+    });
+  }
+
+  private buildAntiBotAttemptOptions(options: CrawlTaskOptions, targetUrl: string, attempt: number): CrawlTaskOptions {
+    const clampedAttempt = Math.max(1, Math.min(6, attempt));
+    const waitForSelector =
+      options.waitForScript
+        ? undefined
+        : clampedAttempt >= 3
+          ? undefined
+          : options.waitForSelector ?? this.resolveAntiBotWaitForSelector(targetUrl, options.pageTypeHint);
+    const waitUntil = clampedAttempt >= 2 ? "load" : options.waitUntil ?? "domcontentloaded";
+
+    return this.normalizeOptions({
+      ...options,
+      waitUntil,
+      waitForSelector,
+      waitForTimeoutMs: Math.max(options.waitForTimeoutMs ?? 0, 10_000 + (clampedAttempt - 1) * 4_000),
+      pageTimeoutMs: Math.max(options.pageTimeoutMs ?? 0, 120_000 + (clampedAttempt - 1) * 10_000),
+      delayBeforeReturnHtmlMs: Math.max(options.delayBeforeReturnHtmlMs ?? 0, 2_000 + (clampedAttempt - 1) * 350),
+      meanDelayMs: Math.max(options.meanDelayMs ?? 0, 700 + (clampedAttempt - 1) * 120),
+      maxDelayRangeMs: Math.max(options.maxDelayRangeMs ?? 0, 1_400 + (clampedAttempt - 1) * 140)
+    });
+  }
+
+  private async runAntiBotWarmupIfNeeded(options: {
+    task: CrawlTask;
+    taskId: string;
+    orgId: string;
+    options: CrawlTaskOptions;
+  }): Promise<CrawlTaskOptions> {
+    const warmupUrls = this.buildAntiBotWarmupUrls(options.task.targetUrl);
+    if (warmupUrls.length === 0) {
+      return options.options;
+    }
+
+    const warmupOptions = this.normalizeOptions({
+      ...options.options,
+      cacheMode: "bypass",
+      waitForScript: undefined,
+      waitForSelector: "main",
+      pageTypeHint: "list"
     });
 
     await TaskLogModel.create({
@@ -651,25 +905,20 @@ export class CrawlExecutionService {
       orgId: options.orgId,
       stage: "anti_bot_retry",
       status: "processing",
-      message: "Detected anti-bot challenge; retrying with hardened stealth profile",
+      message: "Priming anti-bot session with warmup URLs",
       data: {
-        waitUntil: retryOptions.waitUntil ?? null,
-        waitForTimeoutMs: retryOptions.waitForTimeoutMs ?? null,
-        pageTimeoutMs: retryOptions.pageTimeoutMs ?? null,
-        delayBeforeReturnHtmlMs: retryOptions.delayBeforeReturnHtmlMs ?? null,
-        headless: retryOptions.headless ?? null,
-        enableUndetectedBrowser: retryOptions.enableUndetectedBrowser ?? null,
-        enableStealthMode: retryOptions.enableStealthMode ?? null,
-        simulateUser: retryOptions.simulateUser ?? null,
-        overrideNavigator: retryOptions.overrideNavigator ?? null,
-        userAgentMode: retryOptions.userAgentMode ?? null
+        phase: "warmup",
+        warmupUrls,
+        count: warmupUrls.length,
+        sessionId: warmupOptions.sessionId ?? null
       }
     });
 
     try {
-      const retryPayload = this.buildRequestPayload(options.task, retryOptions);
-      const retryResponse = await this.crawlClient.crawl(retryPayload);
-      const partition = this.partitionCrawlerResults(retryResponse.results);
+      const warmupPayload = this.buildRequestPayloadWithUrls(options.task, warmupOptions, warmupUrls);
+      const warmupResponse = await this.crawlClient.crawl(warmupPayload);
+      const partition = this.partitionCrawlerResults(warmupResponse.results);
+      const challengeFailures = this.countBotChallengeFailures(partition.failures);
 
       await TaskLogModel.create({
         queue: CRAWL_QUEUE_NAME,
@@ -677,22 +926,15 @@ export class CrawlExecutionService {
         orgId: options.orgId,
         stage: "anti_bot_retry",
         status: "completed",
-        message: "Anti-bot retry completed",
+        message: "Anti-bot warmup completed",
         data: {
+          phase: "warmup",
+          runId: warmupResponse.runId ?? null,
           successes: partition.successes.length,
           failures: partition.failures.length,
-          lowSignalCandidates: partition.lowSignalCandidates.length,
-          runId: retryResponse.runId ?? null
+          challengeFailures
         }
       });
-
-      return {
-        response: retryResponse,
-        successes: partition.successes,
-        failures: partition.failures,
-        lowSignalCandidates: partition.lowSignalCandidates,
-        options: retryOptions
-      };
     } catch (error) {
       await TaskLogModel.create({
         queue: CRAWL_QUEUE_NAME,
@@ -700,13 +942,174 @@ export class CrawlExecutionService {
         orgId: options.orgId,
         stage: "anti_bot_retry",
         status: "failed",
-        message: "Anti-bot retry failed",
+        message: "Anti-bot warmup failed; continuing with hardened retry",
         error: sanitizeError(error, {
           redactSensitive: true
         })
       });
+    }
+
+    return options.options;
+  }
+
+  private resolveAntiBotAttemptDelayMs(attempt: number): number {
+    const clampedAttempt = Math.max(1, Math.min(6, attempt));
+    return Math.min(4_000, 900 + (clampedAttempt - 1) * 850);
+  }
+
+  private countBotChallengeFailures(failures: CrawlFailureDetail[]): number {
+    return failures.filter((failure) => this.isBotChallengeFailure(failure)).length;
+  }
+
+  private summarizeAntiBotOptions(options: CrawlTaskOptions): Record<string, unknown> {
+    return {
+      sessionId: options.sessionId ?? null,
+      antiBotMode: options.antiBotMode ?? null,
+      headless: options.headless ?? null,
+      enableUndetectedBrowser: options.enableUndetectedBrowser ?? null,
+      enableStealthMode: options.enableStealthMode ?? null,
+      simulateUser: options.simulateUser ?? null,
+      overrideNavigator: options.overrideNavigator ?? null,
+      userAgentMode: options.userAgentMode ?? null,
+      waitUntil: options.waitUntil ?? null,
+      waitForSelector: options.waitForSelector ?? null,
+      waitForTimeoutMs: options.waitForTimeoutMs ?? null,
+      pageTimeoutMs: options.pageTimeoutMs ?? null,
+      delayBeforeReturnHtmlMs: options.delayBeforeReturnHtmlMs ?? null
+    };
+  }
+
+  private selectBestAntiBotRetryCandidate(candidates: CrawlRetryCandidate[]): CrawlRetryCandidate | null {
+    if (candidates.length === 0) {
       return null;
     }
+
+    return [...candidates].sort((left, right) => {
+      if (left.challengeFailureCount !== right.challengeFailureCount) {
+        return left.challengeFailureCount - right.challengeFailureCount;
+      }
+      if (left.successes.length !== right.successes.length) {
+        return right.successes.length - left.successes.length;
+      }
+      if (left.qualityScore !== right.qualityScore) {
+        return right.qualityScore - left.qualityScore;
+      }
+      if (left.failures.length !== right.failures.length) {
+        return left.failures.length - right.failures.length;
+      }
+      if (left.fromRetry !== right.fromRetry) {
+        return left.fromRetry ? -1 : 1;
+      }
+      return 0;
+    })[0] ?? null;
+  }
+
+  private resolveAntiBotWaitForSelector(targetUrl: string, hint?: CrawlPageTypeHint): string {
+    if (hint === "detail") {
+      return "article";
+    }
+    if (hint === "list") {
+      return "main";
+    }
+    const normalizedTarget = this.normalizeComparableUrl(targetUrl) ?? targetUrl;
+    if (this.isLikelyDetailArticleUrl(normalizedTarget, normalizedTarget, false, true)) {
+      return "article";
+    }
+    return "main";
+  }
+
+  private buildAntiBotSessionId(targetUrl: string): string {
+    try {
+      const parsed = new URL(targetUrl);
+      const host = parsed.hostname.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const firstSegment = parsed.pathname
+        .split("/")
+        .filter((entry) => entry.length > 0)[0]
+        ?.toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-");
+      const seed = `${host || "site"}-${firstSegment || "root"}`;
+      return this.normalizeSessionId(`antibot-${seed}`) ?? "antibot-session";
+    } catch {
+      return this.normalizeSessionId("antibot-session") ?? "antibot-session";
+    }
+  }
+
+  private buildAntiBotWarmupUrls(targetUrl: string): string[] {
+    try {
+      const parsed = new URL(targetUrl);
+      const targetNormalized = this.normalizeComparableUrl(parsed.toString());
+      const segments = parsed.pathname
+        .replace(/\/+$/, "")
+        .split("/")
+        .filter((entry) => entry.length > 0);
+      const candidates: string[] = [];
+      const addCandidate = (value: string) => {
+        const normalized = this.normalizeComparableUrl(value);
+        if (!normalized) {
+          return;
+        }
+        if (targetNormalized && normalized === targetNormalized) {
+          return;
+        }
+        if (!candidates.includes(normalized)) {
+          candidates.push(normalized);
+        }
+      };
+
+      addCandidate(`${parsed.origin}/`);
+
+      if (segments.length > 0) {
+        addCandidate(`${parsed.origin}/${segments[0]}/`);
+      }
+
+      if (segments.length > 1 && this.isLikelyWarmupSectionSegment(segments[1])) {
+        addCandidate(`${parsed.origin}/${segments[0]}/${segments[1]}/`);
+      }
+
+      if (
+        segments.length > 2 &&
+        this.isLikelyWarmupSectionSegment(segments[1]) &&
+        this.isLikelyWarmupSectionSegment(segments[2])
+      ) {
+        addCandidate(`${parsed.origin}/${segments[0]}/${segments[1]}/${segments[2]}/`);
+      }
+
+      return candidates.slice(0, this.antiBotWarmupUrlLimit);
+    } catch {
+      return [];
+    }
+  }
+
+  private isLikelyWarmupSectionSegment(value: string): boolean {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    if (this.blockedDetailPathSegments.has(normalized)) {
+      return false;
+    }
+    if (normalized.length > 24) {
+      return false;
+    }
+    if (/\d/.test(normalized)) {
+      return false;
+    }
+    const hyphenParts = normalized.split("-").filter((entry) => entry.length > 0);
+    if (hyphenParts.length >= 4) {
+      return false;
+    }
+    return true;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    if (ms <= 0 || process.env.NODE_ENV === "test") {
+      return Promise.resolve();
+    }
+    const maybeMockedTimer = setTimeout as unknown as { _isMockFunction?: boolean };
+    if (maybeMockedTimer._isMockFunction) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private isBotChallengeFailure(failure: CrawlFailureDetail) {
@@ -719,6 +1122,10 @@ export class CrawlExecutionService {
       normalizedError.includes("verification page") ||
       normalizedError.includes("cloudflare") ||
       normalizedError.includes("captcha") ||
+      normalizedError.includes("datadome") ||
+      normalizedError.includes("verifying the device") ||
+      normalizedError.includes("please enable js and disable any ad blocker") ||
+      normalizedError.includes("デバイスの確認") ||
       normalizedError.includes("access denied") ||
       normalizedError.includes("bot detection")
     );
@@ -2230,6 +2637,20 @@ export class CrawlExecutionService {
     };
   }
 
+  private buildRequestPayloadWithUrls(
+    task: CrawlTask,
+    providedOptions: CrawlTaskOptions,
+    urls: string[]
+  ): Crawl4aiRequest {
+    const keywords = this.fromJsonArray(task.keywords);
+    return {
+      url: task.targetUrl,
+      urls,
+      keywords,
+      options: providedOptions
+    };
+  }
+
   private extractOptions(config: Prisma.JsonValue | null): CrawlTaskOptions {
     if (!config || typeof config !== "object" || Array.isArray(config)) {
       return this.normalizeOptions();
@@ -2249,6 +2670,7 @@ export class CrawlExecutionService {
       headless: typeof value.headless === "boolean" ? value.headless : undefined,
       enableUndetectedBrowser:
         typeof value.enableUndetectedBrowser === "boolean" ? value.enableUndetectedBrowser : undefined,
+      antiBotMode: this.parseAntiBotMode(value.antiBotMode),
       enableStealthMode: typeof value.enableStealthMode === "boolean" ? value.enableStealthMode : undefined,
       useManagedBrowser: typeof value.useManagedBrowser === "boolean" ? value.useManagedBrowser : undefined,
       userDataDir: typeof value.userDataDir === "string" ? value.userDataDir : undefined,
@@ -2327,6 +2749,7 @@ export class CrawlExecutionService {
           : 200;
     }
     const headless = typeof options?.headless === "boolean" ? options.headless : undefined;
+    const antiBotMode = this.parseAntiBotMode(options?.antiBotMode) ?? "auto";
     const simulateUser =
       options?.simulateUser ??
       (options?.enableStealthMode ? true : false);
@@ -2426,6 +2849,7 @@ export class CrawlExecutionService {
       scrollDelayMs,
       headless,
       enableUndetectedBrowser: options?.enableUndetectedBrowser ?? false,
+      antiBotMode,
       enableStealthMode: options?.enableStealthMode ?? false,
       useManagedBrowser,
       userDataDir,
@@ -2485,6 +2909,13 @@ export class CrawlExecutionService {
 
   private parsePageTypeHint(value: unknown): CrawlPageTypeHint | undefined {
     if (value === "auto" || value === "list" || value === "detail") {
+      return value;
+    }
+    return undefined;
+  }
+
+  private parseAntiBotMode(value: unknown): CrawlAntiBotMode | undefined {
+    if (value === "auto" || value === "enabled" || value === "disabled") {
       return value;
     }
     return undefined;

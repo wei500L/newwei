@@ -41,6 +41,10 @@ import { Crawl4aiHealthCard } from "@/app/(app)/crawl/components/Crawl4aiHealthC
 import { CreateCrawlTaskDrawer } from "@/app/(app)/crawl/components/CreateCrawlTaskDrawer";
 import type { CreateCrawlTaskFormValues } from "@/app/(app)/crawl/types";
 import { createApiClient } from "@/lib/api-client";
+import {
+  buildNewsSourceCloudflarePresetValues,
+  buildNewsSourceReutersCfPresetValues
+} from "@/lib/crawl-presets";
 import { captureClientError } from "@/lib/client-telemetry";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -250,6 +254,7 @@ interface NewsSourceFormValues {
   crawlHeadlessMode?: "auto" | "headless" | "headed";
   crawlUndetectedMode?: "auto" | "enable" | "disable";
   crawlStealthMode?: "auto" | "enable" | "disable";
+  crawlAntiBotMode?: "auto" | "enable" | "disable";
   forceRefresh?: boolean;
   seedEnabled?: boolean;
   seedMode?: "sitemap" | "rss" | "list";
@@ -302,9 +307,8 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   crawlMarkdownContentSource: "cleaned_html",
   crawlMarkdownEscapeHtmlMode: "auto",
   crawlMarkdownCitationsMode: "auto",
-  crawlHeadlessMode: "headed",
-  crawlUndetectedMode: "enable",
-  crawlStealthMode: "enable",
+  ...buildNewsSourceCloudflarePresetValues(),
+  crawlAntiBotMode: "auto",
   seedMaxUrls: DEFAULT_SEED_FORM_VALUES.seedMaxUrls,
   seedMaxNewUrlsPerRun: DEFAULT_SEED_FORM_VALUES.seedMaxNewUrlsPerRun,
   seedScoreThreshold: DEFAULT_SEED_FORM_VALUES.seedScoreThreshold,
@@ -573,6 +577,22 @@ const getCrawlStrategyTags = (
       key: "autoExpandDetails",
       color: "green",
       label: t("crawl.settings.autoExpandDetails")
+    });
+  }
+
+  const antiBotMode =
+    typeof crawlOptions.antiBotMode === "string" ? crawlOptions.antiBotMode.trim().toLowerCase() : "";
+  if (antiBotMode === "enabled") {
+    tags.push({
+      key: "antiBotMode",
+      color: "volcano",
+      label: t("newsSources.tags.antiBotEnabled", { defaultValue: "Anti-bot retry enabled" })
+    });
+  } else if (antiBotMode === "disabled") {
+    tags.push({
+      key: "antiBotMode",
+      color: "default",
+      label: t("newsSources.tags.antiBotDisabled", { defaultValue: "Anti-bot retry disabled" })
     });
   }
 
@@ -1203,6 +1223,14 @@ export function NewsSourcesContent() {
           ? "enable"
           : "disable"
         : "auto";
+    const crawlAntiBotModeRaw =
+      typeof crawlOptionsConfig?.antiBotMode === "string" ? crawlOptionsConfig.antiBotMode.trim().toLowerCase() : "";
+    const crawlAntiBotMode =
+      crawlAntiBotModeRaw === "enabled"
+        ? "enable"
+        : crawlAntiBotModeRaw === "disabled"
+          ? "disable"
+          : "auto";
     const proxyConfig =
       isPlainObject(crawlOptionsConfig?.proxyConfig) ? (crawlOptionsConfig!.proxyConfig as Record<string, unknown>) : null;
     const proxyConfigServer = typeof proxyConfig?.server === "string" ? proxyConfig.server.trim() : "";
@@ -1356,6 +1384,7 @@ export function NewsSourcesContent() {
       crawlHeadlessMode,
       crawlUndetectedMode,
       crawlStealthMode,
+      crawlAntiBotMode,
       forceRefresh: config?.forceRefresh === true,
       seedEnabled: seedConfig?.enabled === true,
       seedMode,
@@ -1405,6 +1434,12 @@ export function NewsSourcesContent() {
         : values.crawlStealthMode === "disable"
           ? "disable"
           : "auto";
+    const crawlAntiBotMode =
+      values.crawlAntiBotMode === "enable"
+        ? "enable"
+        : values.crawlAntiBotMode === "disable"
+          ? "disable"
+          : "auto";
     const crawlOptions = parseJsonField(values.crawlOptionsJson, "crawlOptions");
     let resolvedCrawlOptions = crawlOptions ? { ...crawlOptions } : null;
     if (crawlHeadlessMode === "headless" || crawlHeadlessMode === "headed") {
@@ -1429,6 +1464,16 @@ export function NewsSourcesContent() {
       resolvedCrawlOptions.enableStealthMode = crawlStealthMode === "enable";
     } else if (resolvedCrawlOptions && typeof resolvedCrawlOptions.enableStealthMode === "boolean") {
       delete resolvedCrawlOptions.enableStealthMode;
+    }
+
+    if (crawlAntiBotMode === "enable" || crawlAntiBotMode === "disable") {
+      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
+      resolvedCrawlOptions.antiBotMode = crawlAntiBotMode === "enable" ? "enabled" : "disabled";
+    } else if (
+      resolvedCrawlOptions &&
+      typeof resolvedCrawlOptions.antiBotMode === "string"
+    ) {
+      delete resolvedCrawlOptions.antiBotMode;
     }
 
     const crawlProxyMode =
@@ -4002,7 +4047,7 @@ export function NewsSourcesContent() {
             />
           </Form.Item>
           <Row gutter={[12, 0]}>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item
                 name="crawlUndetectedMode"
                 label={t("newsSources.fields.crawlUndetectedMode", { defaultValue: "Undetected browser" })}
@@ -4029,7 +4074,7 @@ export function NewsSourcesContent() {
                 />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item
                 name="crawlStealthMode"
                 label={t("newsSources.fields.crawlStealthMode", { defaultValue: "Stealth mode" })}
@@ -4056,20 +4101,51 @@ export function NewsSourcesContent() {
                 />
               </Form.Item>
             </Col>
+            <Col span={8}>
+              <Form.Item
+                name="crawlAntiBotMode"
+                label={t("newsSources.fields.crawlAntiBotMode", { defaultValue: "Anti-bot retry" })}
+                tooltip={t("newsSources.fields.crawlAntiBotModeHint", {
+                  defaultValue:
+                    "Auto removes crawlOptions.antiBotMode so templates/defaults can apply. Enable/Disable explicitly controls anti-bot retry when failures occur."
+                })}
+              >
+                <Select
+                  options={[
+                    {
+                      label: t("newsSources.crawlTriState.auto", { defaultValue: "Auto (inherit)" }),
+                      value: "auto"
+                    },
+                    {
+                      label: t("newsSources.crawlTriState.enable", { defaultValue: "Enabled" }),
+                      value: "enable"
+                    },
+                    {
+                      label: t("newsSources.crawlTriState.disable", { defaultValue: "Disabled" }),
+                      value: "disable"
+                    }
+                  ]}
+                />
+              </Form.Item>
+            </Col>
           </Row>
           <Typography.Paragraph style={{ marginBottom: 12 }}>
             <Space wrap>
               <Button
                 size="small"
                 onClick={() =>
-                  form.setFieldsValue({
-                    crawlHeadlessMode: "headed",
-                    crawlUndetectedMode: "enable",
-                    crawlStealthMode: "enable"
-                  })
+                  form.setFieldsValue(buildNewsSourceCloudflarePresetValues())
                 }
               >
                 {t("newsSources.presets.cloudflare", { defaultValue: "Cloudflare preset" })}
+              </Button>
+              <Button
+                size="small"
+                onClick={() =>
+                  form.setFieldsValue(buildNewsSourceReutersCfPresetValues())
+                }
+              >
+                {t("newsSources.presets.reutersCf", { defaultValue: "Reuters + CF preset" })}
               </Button>
               <Typography.Text type="secondary">
                 {t("newsSources.presets.cloudflareHint", {
@@ -4077,9 +4153,21 @@ export function NewsSourcesContent() {
                 })}
               </Typography.Text>
               <Typography.Text type="secondary">
+                {t("newsSources.presets.reutersCfHint", {
+                  defaultValue:
+                    "Adds Reuters-oriented article defaults (detail page hint + quality-first + cleaned markdown)."
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
                 {t("newsSources.presets.cloudflareDefaultHint", {
                   defaultValue:
                     "This is now the default for new sources; use Auto/Disable only for low-friction sites."
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("newsSources.presets.cloudflareRuntimeHint", {
+                  defaultValue:
+                    "When challenge pages are detected, API now auto-primes a same-site warmup session and retries with incremental anti-bot backoff."
                 })}
               </Typography.Text>
             </Space>

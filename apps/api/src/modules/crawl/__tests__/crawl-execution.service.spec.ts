@@ -119,7 +119,10 @@ const createMockQualityStrategyService = () => ({
     score: 120,
     isListLike: false
   }),
-  isSignificantDetailImprovement: jest.fn().mockReturnValue(true)
+  isSignificantDetailImprovement: jest.fn().mockReturnValue(true),
+  scoreMarkdownQuality: jest.fn().mockImplementation((items: unknown[]) =>
+    Array.isArray(items) ? items.length * 100 : 0
+  )
 });
 
 describe("CrawlExecutionService", () => {
@@ -1390,6 +1393,7 @@ describe("CrawlExecutionService", () => {
       expect(result.headless).toBeUndefined();
       expect(result.enableUndetectedBrowser).toBe(false);
       expect(result.enableStealthMode).toBe(false);
+      expect(result.antiBotMode).toBe("auto");
       expect(result.useManagedBrowser).toBe(false);
       expect(result.simulateUser).toBe(false);
       expect(result.overrideNavigator).toBe(false);
@@ -1442,6 +1446,12 @@ describe("CrawlExecutionService", () => {
     it("keeps headless when provided", () => {
       expect(service.normalizeOptions({ headless: true }).headless).toBe(true);
       expect(service.normalizeOptions({ headless: false }).headless).toBe(false);
+    });
+
+    it("normalizes antiBotMode and defaults to auto for invalid values", () => {
+      expect(service.normalizeOptions({ antiBotMode: "enabled" as any }).antiBotMode).toBe("enabled");
+      expect(service.normalizeOptions({ antiBotMode: "disabled" as any }).antiBotMode).toBe("disabled");
+      expect(service.normalizeOptions({ antiBotMode: "unexpected" as any }).antiBotMode).toBe("auto");
     });
 
     it("sets includeImages to true when storeMedia is true", () => {
@@ -1754,8 +1764,153 @@ describe("CrawlExecutionService", () => {
       );
     });
 
-    it("treats anti-bot challenge markdown as failure even with HTTP 200", async () => {
-      const task = createMockTask();
+    it("does not trigger anti-bot retry in auto mode when no challenge is detected", async () => {
+      const task = createMockTask({ targetUrl: "https://example.com/world/" });
+      const crawlResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com/world/",
+            markdown: "# Partial content",
+            success: true,
+            statusCode: 200
+          },
+          {
+            url: "https://example.com/world/failure",
+            success: false,
+            statusCode: 500,
+            error: "Upstream timeout"
+          }
+        ]
+      });
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+
+      await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(1);
+      const hasAntiBotRetryLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
+        ([entry]) =>
+          Boolean(entry) &&
+          (entry as { stage?: string }).stage === "anti_bot_retry"
+      );
+      expect(hasAntiBotRetryLog).toBe(false);
+    });
+
+    it("skips anti-bot retry chain when antiBotMode is disabled", async () => {
+      const task = createMockTask({
+        targetUrl: "https://example.com/world/",
+        config: {
+          antiBotMode: "disabled"
+        }
+      });
+      const crawlResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://blocked.com",
+            markdown: "Verification Required",
+            success: true,
+            statusCode: 401
+          },
+          {
+            url: "https://ok.com/article",
+            markdown: "# Valid content",
+            success: true,
+            statusCode: 200
+          }
+        ]
+      });
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+      mockResultService.isLikelyBotChallengeMarkdown.mockImplementation((markdown: string) =>
+        markdown.toLowerCase().includes("verification")
+      );
+
+      await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(1);
+      const hasAntiBotRetryLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
+        ([entry]) =>
+          Boolean(entry) &&
+          (entry as { stage?: string }).stage === "anti_bot_retry"
+      );
+      expect(hasAntiBotRetryLog).toBe(false);
+    });
+
+    it("forces anti-bot retry flow when antiBotMode is enabled and failures exist", async () => {
+      const task = createMockTask({
+        targetUrl: "https://example.com/world/",
+        config: {
+          antiBotMode: "enabled"
+        }
+      });
+      const initialResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://example.com/world/",
+            markdown: "# Partial content",
+            success: true,
+            statusCode: 200
+          },
+          {
+            url: "https://example.com/world/failure",
+            success: false,
+            statusCode: 500,
+            error: "Upstream timeout"
+          }
+        ]
+      });
+      const warmupResponse = createMockCrawlResponse({
+        runId: "run-warmup-enabled",
+        results: [{ url: "https://example.com/", markdown: "# Home", success: true, statusCode: 200 }]
+      });
+      const retryResponse = createMockCrawlResponse({
+        runId: "run-retry-enabled",
+        results: [
+          {
+            url: "https://example.com/world/article",
+            markdown: "# Full article\n\nRecovered content after retry.",
+            success: true,
+            statusCode: 200
+          }
+        ]
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl
+        .mockResolvedValueOnce(initialResponse)
+        .mockResolvedValueOnce(warmupResponse)
+        .mockResolvedValueOnce(retryResponse);
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+
+      await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(3);
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: "anti_bot_retry",
+          status: "processing",
+          message: "Anti-bot mode enabled; retrying with hardened stealth profile",
+          data: expect.objectContaining({ reason: "anti_bot_mode_enabled" })
+        })
+      );
+    });
+
+    it("runs warmup + anti-bot retries and picks improved candidate", async () => {
+      const task = createMockTask({ targetUrl: "https://example.com/world/" });
       const crawlResponse = createMockCrawlResponse({
         results: [
           {
@@ -1767,13 +1922,20 @@ describe("CrawlExecutionService", () => {
           { url: "https://ok.com", markdown: "# Usable content", success: true, statusCode: 200 }
         ]
       });
+      const warmupResponse = createMockCrawlResponse({
+        runId: "run-warmup",
+        results: [{ url: "https://example.com/world/", markdown: "# World", success: true, statusCode: 200 }]
+      });
       const retryResponse = createMockCrawlResponse({
         runId: "run-retry",
         results: [{ url: "https://ok.com", markdown: "# Usable content", success: true, statusCode: 200 }]
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockResolvedValueOnce(crawlResponse).mockResolvedValueOnce(retryResponse);
+      mockCrawlClient.crawl
+        .mockResolvedValueOnce(crawlResponse)
+        .mockResolvedValueOnce(warmupResponse)
+        .mockResolvedValueOnce(retryResponse);
       mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
       mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
         primary: typeof markdown === "string" ? markdown : ""
@@ -1784,8 +1946,21 @@ describe("CrawlExecutionService", () => {
 
       await service.runTask("task-1", "org-1");
 
-      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(2);
-      const retryPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as {
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(3);
+
+      const warmupPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as {
+        urls?: string[];
+        options?: Record<string, unknown>;
+      };
+      expect(warmupPayload.urls).toEqual(expect.arrayContaining(["https://example.com/"]));
+      expect(warmupPayload.options).toEqual(
+        expect.objectContaining({
+          pageTypeHint: "list",
+          waitForSelector: "main"
+        })
+      );
+
+      const retryPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[2]?.[0] as {
         options?: Record<string, unknown>;
       };
       expect(retryPayload.options).toEqual(
@@ -1796,9 +1971,11 @@ describe("CrawlExecutionService", () => {
           simulateUser: true,
           overrideNavigator: true,
           userAgentMode: "random",
-          waitUntil: "networkidle"
+          waitUntil: "domcontentloaded",
+          waitForSelector: "main"
         })
       );
+      expect(typeof retryPayload.options?.sessionId).toBe("string");
 
       const persisted = (mockResultService.persistResults as jest.Mock).mock.calls[0]?.[1] as any[];
       expect(persisted).toHaveLength(1);
@@ -1810,6 +1987,13 @@ describe("CrawlExecutionService", () => {
           message: "Detected anti-bot challenge; retrying with hardened stealth profile"
         })
       );
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: "anti_bot_retry",
+          status: "processing",
+          message: "Priming anti-bot session with warmup URLs"
+        })
+      );
       const hasPartialFailureLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
         ([entry]) =>
           Boolean(entry) &&
@@ -1817,6 +2001,105 @@ describe("CrawlExecutionService", () => {
           (entry as { message?: string }).message === "crawl4ai partial failures"
       );
       expect(hasPartialFailureLog).toBe(false);
+    });
+
+    it("retries multiple anti-bot attempts and falls back to the best successful candidate", async () => {
+      const task = createMockTask({ targetUrl: "https://example.com/world/some-article-2026-02-10/" });
+      const crawlResponse = createMockCrawlResponse({
+        results: [
+          {
+            url: "https://blocked.com",
+            markdown: "Verification Required\nPlease enable JS and disable any ad blocker",
+            success: true,
+            statusCode: 401
+          }
+        ]
+      });
+      const warmupResponse = createMockCrawlResponse({
+        runId: "run-warmup",
+        results: [{ url: "https://example.com/world/", markdown: "# World", success: true, statusCode: 200 }]
+      });
+      const retryResponseAttempt1 = createMockCrawlResponse({
+        runId: "run-retry-1",
+        results: [
+          {
+            url: "https://blocked.com",
+            markdown: "Verifying the device",
+            success: true,
+            statusCode: 401
+          }
+        ]
+      });
+      const retryResponseAttempt2 = createMockCrawlResponse({
+        runId: "run-retry-2",
+        results: [
+          {
+            url: "https://ok.com/article",
+            markdown: "# Better\n\nThis is valid article body with enough text.",
+            success: true,
+            statusCode: 200
+          }
+        ]
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl
+        .mockResolvedValueOnce(crawlResponse)
+        .mockResolvedValueOnce(warmupResponse)
+        .mockResolvedValueOnce(retryResponseAttempt1)
+        .mockResolvedValueOnce(retryResponseAttempt2);
+      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
+      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : ""
+      }));
+      mockResultService.isLikelyBotChallengeMarkdown.mockImplementation((markdown: string) => {
+        const normalized = markdown.toLowerCase();
+        return normalized.includes("verification") || normalized.includes("verifying the device");
+      });
+
+      await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(4);
+
+      const retryPayloadAttempt1 = (mockCrawlClient.crawl as jest.Mock).mock.calls[2]?.[0] as {
+        options?: Record<string, unknown>;
+      };
+      const retryPayloadAttempt2 = (mockCrawlClient.crawl as jest.Mock).mock.calls[3]?.[0] as {
+        options?: Record<string, unknown>;
+      };
+      expect(retryPayloadAttempt1.options).toEqual(
+        expect.objectContaining({
+          waitUntil: "domcontentloaded",
+          waitForSelector: "article"
+        })
+      );
+      expect(retryPayloadAttempt2.options).toEqual(
+        expect.objectContaining({
+          waitUntil: "load",
+          waitForSelector: "article"
+        })
+      );
+
+      const hasBackoffLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
+        ([entry]) =>
+          Boolean(entry) &&
+          (entry as { stage?: string }).stage === "anti_bot_retry" &&
+          (entry as { message?: string }).message?.includes("backing off before retry 2/3")
+      );
+      expect(hasBackoffLog).toBe(true);
+
+      expect(TaskLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: "anti_bot_retry",
+          status: "completed",
+          message: "Selected anti-bot retry candidate"
+        })
+      );
+
+      const persisted = (mockResultService.persistResults as jest.Mock).mock.calls[0]?.[1] as any[];
+      expect(persisted).toHaveLength(1);
+      expect(persisted[0]?.url).toBe("https://ok.com/article");
     });
 
     it("logs warnings when present in response", async () => {

@@ -2119,6 +2119,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       <Descriptions.Item label={t("crawl.detail.fields.stealthMode")}>
         {config?.enableStealthMode ? t("common.enabled") : t("common.disabled")}
       </Descriptions.Item>
+      <Descriptions.Item label={t("crawl.detail.fields.antiBotMode", { defaultValue: "Anti-bot retry" })}>
+        {config?.antiBotMode === "enabled"
+          ? t("crawl.detail.antiBotMode.enabled", { defaultValue: "Enabled" })
+          : config?.antiBotMode === "disabled"
+            ? t("crawl.detail.antiBotMode.disabled", { defaultValue: "Disabled" })
+            : t("crawl.detail.antiBotMode.auto", { defaultValue: "Auto" })}
+      </Descriptions.Item>
       <Descriptions.Item label={t("crawl.detail.fields.managedBrowser")}>
         {managedBrowserEnabled ? t("common.enabled") : t("common.disabled")}
       </Descriptions.Item>

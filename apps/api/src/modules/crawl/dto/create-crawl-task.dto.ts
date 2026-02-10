@@ -19,7 +19,7 @@ import {
 } from "class-validator";
 
 import { IsSafeUrl } from "../../../common/validators/is-safe-url.decorator";
-import { CrawlUrlMatchMode, CrawlWaitUntil } from "../crawl.types";
+import { CrawlAntiBotMode, CrawlUrlMatchMode, CrawlWaitUntil } from "../crawl.types";
 import { IsAllowedJsCode } from "../validators/is-allowed-js-code.decorator";
 
 export class CrawlDetailExpansionOptionsDto {
@@ -385,6 +385,10 @@ export class CrawlOptionsDto {
   @IsOptional()
   @IsBoolean()
   enableStealthMode?: boolean;
+
+  @IsOptional()
+  @IsIn(["auto", "enabled", "disabled"])
+  antiBotMode?: CrawlAntiBotMode;
 
   @IsOptional()
   @IsBoolean()
