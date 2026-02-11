@@ -105,6 +105,22 @@ export class CreateLlmGatewayDto {
   @Max(MAX_RPM)
   requestsPerMinute?: number;
 
+  @ApiPropertyOptional({
+    description: "When false, the API runtime will not send metadata to upstream model requests."
+  })
+  @IsOptional()
+  @IsBoolean()
+  sendMetadata?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "How to shape response_format for compatibility: json_schema (default), json_object, or none.",
+    enum: ["json_schema", "json_object", "none"]
+  })
+  @IsOptional()
+  @IsIn(["json_schema", "json_object", "none"])
+  responseFormatMode?: "json_schema" | "json_object" | "none";
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
@@ -188,6 +204,22 @@ export class UpdateLlmGatewayDto {
   @Min(MIN_RPM)
   @Max(MAX_RPM)
   requestsPerMinute?: number;
+
+  @ApiPropertyOptional({
+    description: "When false, the API runtime will not send metadata to upstream model requests."
+  })
+  @IsOptional()
+  @IsBoolean()
+  sendMetadata?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "How to shape response_format for compatibility: json_schema (default), json_object, or none.",
+    enum: ["json_schema", "json_object", "none"]
+  })
+  @IsOptional()
+  @IsIn(["json_schema", "json_object", "none"])
+  responseFormatMode?: "json_schema" | "json_object" | "none";
 
   @ApiPropertyOptional()
   @IsOptional()

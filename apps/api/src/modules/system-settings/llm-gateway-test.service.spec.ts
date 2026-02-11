@@ -7,13 +7,13 @@ const mockAxiosPost = jest.fn();
 const mockAxiosGet = jest.fn();
 const mockAxiosCreate = jest.fn(() => ({
   post: mockAxiosPost,
-  get: mockAxiosGet
+  get: mockAxiosGet,
 }));
 
 jest.mock("axios", () => ({
   ...jest.requireActual("axios"),
   create: (...args: unknown[]) => mockAxiosCreate(...args),
-  AxiosError: jest.requireActual("axios").AxiosError
+  AxiosError: jest.requireActual("axios").AxiosError,
 }));
 
 jest.mock("@modular/utils", () => ({
@@ -21,13 +21,18 @@ jest.mock("@modular/utils", () => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
-    debug: jest.fn()
-  })
+    debug: jest.fn(),
+  }),
 }));
 
 describe("LlmGatewayTestService", () => {
   const settingsMock = {
-    getProfileConfig: jest.fn()
+    getProfileConfig: jest.fn(),
+  } as any;
+  const cacheMock = {
+    get: jest.fn(),
+    set: jest.fn(),
+    del: jest.fn(),
   } as any;
 
   let service: LlmGatewayTestService;
@@ -43,48 +48,57 @@ describe("LlmGatewayTestService", () => {
     maxOutputTokens: 1_200,
     maxRetries: 3,
     fallbackModels: ["openai/gpt-4o-mini"],
-    requestsPerMinute: 60
+    requestsPerMinute: 60,
+    sendMetadata: true,
+    responseFormatMode: "json_schema",
   };
 
   const mockCompletionResponse: AxiosResponse = {
     data: {
       model: "openai/gpt-4o-mini",
       choices: [{ message: { content: "OK" }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 }
+      usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
     },
     status: 200,
     statusText: "OK",
     headers: {
       "x-litellm-response-cost": "0.0001",
-      "x-litellm-key-spend": "0.05"
+      "x-litellm-key-spend": "0.05",
     },
-    config: { headers: new AxiosHeaders() }
+    config: { headers: new AxiosHeaders() },
   };
 
   const mockEmbeddingResponse: AxiosResponse = {
     data: {
       model: "openai/text-embedding-3-small",
       data: [{ index: 0, embedding: [0.1, 0.2, 0.3] }],
-      usage: { prompt_tokens: 3, total_tokens: 3 }
+      usage: { prompt_tokens: 3, total_tokens: 3 },
     },
     status: 200,
     statusText: "OK",
     headers: {
-      "x-litellm-response-cost": "0.00001"
+      "x-litellm-response-cost": "0.00001",
     },
-    config: { headers: new AxiosHeaders() }
+    config: { headers: new AxiosHeaders() },
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     settingsMock.getProfileConfig.mockResolvedValue(config);
-    service = new LlmGatewayTestService(settingsMock);
+    cacheMock.get.mockResolvedValue(null);
+    cacheMock.set.mockResolvedValue(undefined);
+    cacheMock.del.mockResolvedValue(undefined);
+    service = new LlmGatewayTestService(settingsMock, cacheMock);
   });
 
   it("tests completion and embeddings", async () => {
-    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse).mockResolvedValueOnce(mockEmbeddingResponse);
+    mockAxiosPost
+      .mockResolvedValueOnce(mockCompletionResponse)
+      .mockResolvedValueOnce(mockEmbeddingResponse);
 
-    const result = await service.testProfile("profile-1", { includeEmbeddings: true });
+    const result = await service.testProfile("profile-1", {
+      includeEmbeddings: true,
+    });
 
     expect(result.apiBase).toBe("http://localhost:4001");
     expect(result.completion.content).toBe("OK");
@@ -96,9 +110,9 @@ describe("LlmGatewayTestService", () => {
       expect.objectContaining({
         baseURL: "http://localhost:4001",
         headers: expect.objectContaining({
-          Authorization: "Bearer sk-test"
-        })
-      })
+          Authorization: "Bearer sk-test",
+        }),
+      }),
     );
 
     expect(mockAxiosPost).toHaveBeenCalledTimes(2);
@@ -106,28 +120,38 @@ describe("LlmGatewayTestService", () => {
       1,
       "/v1/chat/completions",
       expect.objectContaining({ model: "openai/gpt-4o-mini" }),
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(mockAxiosPost).toHaveBeenNthCalledWith(
       2,
       "/v1/embeddings",
       expect.objectContaining({ model: "openai/text-embedding-3-small" }),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("falls back to /chat/completions on 404", async () => {
-    const error404 = new AxiosError("Not found", "ERR_BAD_REQUEST", undefined, undefined, {
-      status: 404,
-      data: {},
-      statusText: "Not Found",
-      headers: {},
-      config: { headers: new AxiosHeaders() }
+    const error404 = new AxiosError(
+      "Not found",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 404,
+        data: {},
+        statusText: "Not Found",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
+
+    mockAxiosPost
+      .mockRejectedValueOnce(error404)
+      .mockResolvedValueOnce(mockCompletionResponse);
+
+    const result = await service.testProfile("profile-1", {
+      includeEmbeddings: false,
     });
-
-    mockAxiosPost.mockRejectedValueOnce(error404).mockResolvedValueOnce(mockCompletionResponse);
-
-    const result = await service.testProfile("profile-1", { includeEmbeddings: false });
 
     expect(result.completion.content).toBe("OK");
     expect(mockAxiosPost).toHaveBeenCalledTimes(2);
@@ -135,13 +159,54 @@ describe("LlmGatewayTestService", () => {
       1,
       "/v1/chat/completions",
       expect.any(Object),
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(mockAxiosPost).toHaveBeenNthCalledWith(
       2,
       "/chat/completions",
       expect.any(Object),
-      expect.any(Object)
+      expect.any(Object),
+    );
+  });
+
+  it("falls back to /chat/completions on 405", async () => {
+    const error405 = new AxiosError(
+      "Method not allowed",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 405,
+        data: {
+          error: { message: "Method not allowed for /v1/chat/completions" },
+        },
+        statusText: "Method Not Allowed",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
+
+    mockAxiosPost
+      .mockRejectedValueOnce(error405)
+      .mockResolvedValueOnce(mockCompletionResponse);
+
+    const result = await service.testProfile("profile-1", {
+      includeEmbeddings: false,
+    });
+
+    expect(result.completion.content).toBe("OK");
+    expect(mockAxiosPost).toHaveBeenCalledTimes(2);
+    expect(mockAxiosPost).toHaveBeenNthCalledWith(
+      1,
+      "/v1/chat/completions",
+      expect.any(Object),
+      expect.any(Object),
+    );
+    expect(mockAxiosPost).toHaveBeenNthCalledWith(
+      2,
+      "/chat/completions",
+      expect.any(Object),
+      expect.any(Object),
     );
   });
 
@@ -152,38 +217,50 @@ describe("LlmGatewayTestService", () => {
         choices: [
           {
             message: {
-              content: [{ type: "text", text: "OK" }]
+              content: [{ type: "text", text: "OK" }],
             },
-            finish_reason: "stop"
-          }
+            finish_reason: "stop",
+          },
         ],
-        usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 }
+        usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
       },
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
 
     mockAxiosPost.mockResolvedValueOnce(response);
 
-    const result = await service.testProfile("profile-1", { includeEmbeddings: false });
+    const result = await service.testProfile("profile-1", {
+      includeEmbeddings: false,
+    });
 
     expect(result.completion.content).toBe("OK");
   });
 
   it("returns embeddingError when embeddings test fails", async () => {
-    const error400 = new AxiosError("Bad request", "ERR_BAD_REQUEST", undefined, undefined, {
-      status: 400,
-      data: {},
-      statusText: "Bad Request",
-      headers: {},
-      config: { headers: new AxiosHeaders() }
+    const error400 = new AxiosError(
+      "Bad request",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 400,
+        data: {},
+        statusText: "Bad Request",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
+
+    mockAxiosPost
+      .mockResolvedValueOnce(mockCompletionResponse)
+      .mockRejectedValueOnce(error400);
+
+    const result = await service.testProfile("profile-1", {
+      includeEmbeddings: true,
     });
-
-    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse).mockRejectedValueOnce(error400);
-
-    const result = await service.testProfile("profile-1", { includeEmbeddings: true });
 
     expect(result.completion.content).toBe("OK");
     expect(result.embedding).toBeUndefined();
@@ -196,26 +273,35 @@ describe("LlmGatewayTestService", () => {
       data: {
         model: "openai/text-embedding-3-small",
         data: [{ index: 0 }],
-        usage: { prompt_tokens: 3, total_tokens: 3 }
+        usage: { prompt_tokens: 3, total_tokens: 3 },
       },
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
 
-    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse).mockResolvedValueOnce(embeddingResponseMissing);
+    mockAxiosPost
+      .mockResolvedValueOnce(mockCompletionResponse)
+      .mockResolvedValueOnce(embeddingResponseMissing);
 
-    const result = await service.testProfile("profile-1", { includeEmbeddings: true });
+    const result = await service.testProfile("profile-1", {
+      includeEmbeddings: true,
+    });
 
     expect(result.embedding).toBeUndefined();
-    expect(result.embeddingError?.message).toContain("Embedding response did not include an embedding vector");
+    expect(result.embeddingError?.message).toContain(
+      "Embedding response did not include an embedding vector",
+    );
   });
 
   it("skips completion when includeCompletion is false", async () => {
     mockAxiosPost.mockResolvedValueOnce(mockEmbeddingResponse);
 
-    const result = await service.testProfile("profile-1", { includeCompletion: false, includeEmbeddings: true });
+    const result = await service.testProfile("profile-1", {
+      includeCompletion: false,
+      includeEmbeddings: true,
+    });
 
     expect(result.completion).toBeUndefined();
     expect(result.completionError).toBeUndefined();
@@ -225,26 +311,29 @@ describe("LlmGatewayTestService", () => {
     expect(mockAxiosPost).toHaveBeenCalledWith(
       "/v1/embeddings",
       expect.objectContaining({ model: "openai/text-embedding-3-small" }),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("lists models via /v1/models", async () => {
     const response: AxiosResponse = {
       data: {
-        data: [{ id: "openai/gpt-4o-mini" }, { id: "claude-3-opus-20240229" }]
+        data: [{ id: "openai/gpt-4o-mini" }, { id: "claude-3-opus-20240229" }],
       },
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
 
     mockAxiosGet.mockResolvedValueOnce(response);
 
     const result = await service.listModels("profile-1");
     expect(result.apiBase).toBe("http://localhost:4001");
-    expect(result.models).toEqual(["openai/gpt-4o-mini", "claude-3-opus-20240229"]);
+    expect(result.models).toEqual([
+      "openai/gpt-4o-mini",
+      "claude-3-opus-20240229",
+    ]);
     expect(mockAxiosGet).toHaveBeenCalledWith("/v1/models", expect.any(Object));
   });
 
@@ -254,17 +343,19 @@ describe("LlmGatewayTestService", () => {
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
     const readinessResponse: AxiosResponse = {
       data: { status: "ok" },
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
 
-    mockAxiosGet.mockResolvedValueOnce(livelinessResponse).mockResolvedValueOnce(readinessResponse);
+    mockAxiosGet
+      .mockResolvedValueOnce(livelinessResponse)
+      .mockResolvedValueOnce(readinessResponse);
 
     const result = await service.checkProxyHealth("profile-1");
 
@@ -279,13 +370,17 @@ describe("LlmGatewayTestService", () => {
         baseURL: "http://localhost:4001",
         timeout: 10_000,
         headers: expect.objectContaining({
-          Authorization: "Bearer sk-test"
-        })
-      })
+          Authorization: "Bearer sk-test",
+        }),
+      }),
     );
 
-    expect(mockAxiosGet).toHaveBeenNthCalledWith(1, "/health/liveliness", { timeout: 10_000 });
-    expect(mockAxiosGet).toHaveBeenNthCalledWith(2, "/health/readiness", { timeout: 10_000 });
+    expect(mockAxiosGet).toHaveBeenNthCalledWith(1, "/health/liveliness", {
+      timeout: 10_000,
+    });
+    expect(mockAxiosGet).toHaveBeenNthCalledWith(2, "/health/readiness", {
+      timeout: 10_000,
+    });
   });
 
   it("fetches proxy model info", async () => {
@@ -297,15 +392,15 @@ describe("LlmGatewayTestService", () => {
             litellm_params: {
               model: "openai/gpt-4o-mini",
               api_key: "sk-super-secret",
-              rpm: 60
-            }
-          }
-        ]
+              rpm: 60,
+            },
+          },
+        ],
       },
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
 
     mockAxiosGet.mockResolvedValueOnce(modelInfoResponse);
@@ -318,32 +413,42 @@ describe("LlmGatewayTestService", () => {
     expect(result.models[0]?.litellmParams).toEqual(
       expect.objectContaining({
         model: "openai/gpt-4o-mini",
-        rpm: 60
-      })
+        rpm: 60,
+      }),
     );
     expect(result.models[0]?.litellmParams).not.toHaveProperty("api_key");
 
-    expect(mockAxiosGet).toHaveBeenCalledWith("/v1/model/info", { timeout: 60_000 });
+    expect(mockAxiosGet).toHaveBeenCalledWith("/v1/model/info", {
+      timeout: 60_000,
+    });
   });
 
   it("returns failed check results when proxy endpoints error", async () => {
-    const error404 = new AxiosError("Not found", "ERR_BAD_REQUEST", undefined, undefined, {
-      status: 404,
-      data: {},
-      statusText: "Not Found",
-      headers: {},
-      config: { headers: new AxiosHeaders() }
-    });
+    const error404 = new AxiosError(
+      "Not found",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 404,
+        data: {},
+        statusText: "Not Found",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
 
     const readinessResponse: AxiosResponse = {
       data: { status: "ok" },
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
 
-    mockAxiosGet.mockRejectedValueOnce(error404).mockResolvedValueOnce(readinessResponse);
+    mockAxiosGet
+      .mockRejectedValueOnce(error404)
+      .mockResolvedValueOnce(readinessResponse);
 
     const result = await service.checkProxyHealth("profile-1");
 
@@ -360,9 +465,9 @@ describe("LlmGatewayTestService", () => {
       status: 200,
       statusText: "OK",
       headers: {
-        "content-type": "text/html; charset=utf-8"
+        "content-type": "text/html; charset=utf-8",
       },
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
 
     const readinessResponse: AxiosResponse = {
@@ -370,10 +475,12 @@ describe("LlmGatewayTestService", () => {
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
 
-    mockAxiosGet.mockResolvedValueOnce(htmlResponse).mockResolvedValueOnce(readinessResponse);
+    mockAxiosGet
+      .mockResolvedValueOnce(htmlResponse)
+      .mockResolvedValueOnce(readinessResponse);
 
     const result = await service.checkProxyHealth("profile-1");
 
@@ -385,13 +492,19 @@ describe("LlmGatewayTestService", () => {
   });
 
   it("surfaces upstream error details instead of Axios codes", async () => {
-    const error401 = new AxiosError("Unauthorized", "ERR_BAD_REQUEST", undefined, undefined, {
-      status: 401,
-      data: { error: { message: "Incorrect API key provided." } },
-      statusText: "Unauthorized",
-      headers: {},
-      config: { headers: new AxiosHeaders() }
-    });
+    const error401 = new AxiosError(
+      "Unauthorized",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 401,
+        data: { error: { message: "Incorrect API key provided." } },
+        statusText: "Unauthorized",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
 
     mockAxiosGet.mockRejectedValueOnce(error401);
 
@@ -400,7 +513,9 @@ describe("LlmGatewayTestService", () => {
       throw new Error("Expected listModels to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(BadRequestException);
-      const response = (error as BadRequestException).getResponse() as { message?: unknown };
+      const response = (error as BadRequestException).getResponse() as {
+        message?: unknown;
+      };
       expect(response.message).toContain("HTTP 401");
       expect(response.message).toContain("Incorrect API key provided.");
       expect(response.message).not.toContain("ERR_BAD_REQUEST");
@@ -418,8 +533,8 @@ describe("LlmGatewayTestService", () => {
         data: { message: "ERR_BAD_REQUEST" },
         statusText: "",
         headers: {},
-        config: { headers: new AxiosHeaders() }
-      }
+        config: { headers: new AxiosHeaders() },
+      },
     );
 
     mockAxiosGet.mockRejectedValueOnce(error401);
@@ -429,7 +544,9 @@ describe("LlmGatewayTestService", () => {
       throw new Error("Expected listModels to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(BadRequestException);
-      const response = (error as BadRequestException).getResponse() as { message?: unknown };
+      const response = (error as BadRequestException).getResponse() as {
+        message?: unknown;
+      };
       expect(response.message).toContain("HTTP 401");
       expect(response.message).toContain("Unauthorized");
       expect(response.message).toContain("apiKey");
@@ -438,55 +555,249 @@ describe("LlmGatewayTestService", () => {
   });
 
   it("falls back to /models on 404", async () => {
-    const error404 = new AxiosError("Not found", "ERR_BAD_REQUEST", undefined, undefined, {
-      status: 404,
-      data: {},
-      statusText: "Not Found",
-      headers: {},
-      config: { headers: new AxiosHeaders() }
-    });
+    const error404 = new AxiosError(
+      "Not found",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 404,
+        data: {},
+        statusText: "Not Found",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
 
     const response: AxiosResponse = {
       data: {
-        data: [{ id: "gpt-4" }]
+        data: [{ id: "gpt-4" }],
       },
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
 
-    mockAxiosGet.mockRejectedValueOnce(error404).mockResolvedValueOnce(response);
+    mockAxiosGet
+      .mockRejectedValueOnce(error404)
+      .mockResolvedValueOnce(response);
 
     const result = await service.listModels("profile-1");
     expect(result.models).toEqual(["gpt-4"]);
-    expect(mockAxiosGet).toHaveBeenNthCalledWith(1, "/v1/models", expect.any(Object));
-    expect(mockAxiosGet).toHaveBeenNthCalledWith(2, "/models", expect.any(Object));
+    expect(mockAxiosGet).toHaveBeenNthCalledWith(
+      1,
+      "/v1/models",
+      expect.any(Object),
+    );
+    expect(mockAxiosGet).toHaveBeenNthCalledWith(
+      2,
+      "/models",
+      expect.any(Object),
+    );
+  });
+
+  it("falls back to /models on 405", async () => {
+    const error405 = new AxiosError(
+      "Method not allowed",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 405,
+        data: { error: { message: "Method not allowed for /v1/models" } },
+        statusText: "Method Not Allowed",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
+
+    const response: AxiosResponse = {
+      data: {
+        data: [{ id: "gpt-4" }],
+      },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    };
+
+    mockAxiosGet
+      .mockRejectedValueOnce(error405)
+      .mockResolvedValueOnce(response);
+
+    const result = await service.listModels("profile-1");
+    expect(result.models).toEqual(["gpt-4"]);
+    expect(mockAxiosGet).toHaveBeenNthCalledWith(
+      1,
+      "/v1/models",
+      expect.any(Object),
+    );
+    expect(mockAxiosGet).toHaveBeenNthCalledWith(
+      2,
+      "/models",
+      expect.any(Object),
+    );
   });
 
   it("supports overriding completion + embedding models", async () => {
-    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse).mockResolvedValueOnce(mockEmbeddingResponse);
+    mockAxiosPost
+      .mockResolvedValueOnce(mockCompletionResponse)
+      .mockResolvedValueOnce(mockEmbeddingResponse);
 
     await service.testProfile("profile-1", {
       model: "openrouter/gpt-4o",
       includeEmbeddings: true,
-      embeddingModel: "openai/text-embedding-3-small"
+      embeddingModel: "openai/text-embedding-3-small",
     });
 
     expect(mockAxiosPost).toHaveBeenCalledWith(
       "/v1/chat/completions",
       expect.objectContaining({ model: "openrouter/gpt-4o" }),
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(mockAxiosPost).toHaveBeenCalledWith(
       "/v1/embeddings",
       expect.objectContaining({ model: "openai/text-embedding-3-small" }),
-      expect.any(Object)
+      expect.any(Object),
+    );
+  });
+
+  it("supports responses API surface in profile tests", async () => {
+    const responsesResult: AxiosResponse = {
+      data: {
+        id: "resp_123",
+        model: "openai/gpt-4o-mini",
+        output_text: "OK",
+      },
+      status: 200,
+      statusText: "OK",
+      headers: {
+        "x-litellm-response-cost": "0.0002",
+      },
+      config: { headers: new AxiosHeaders() },
+    };
+
+    mockAxiosPost.mockResolvedValueOnce(responsesResult);
+
+    const result = await service.testProfile("profile-1", {
+      includeCompletion: true,
+      includeEmbeddings: false,
+      apiSurface: "responses",
+    });
+
+    expect(result.apiSurfaceUsed).toBe("responses");
+    expect(result.completion?.content).toBe("OK");
+    expect(mockAxiosPost).toHaveBeenCalledWith(
+      "/v1/responses",
+      expect.objectContaining({ input: expect.any(String) }),
+      expect.any(Object),
+    );
+  });
+
+  it("inherits profile compatibility defaults for profile tests", async () => {
+    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse);
+
+    await service.testProfile("profile-1", {
+      includeCompletion: true,
+      includeEmbeddings: false,
+    });
+
+    expect(mockAxiosPost).toHaveBeenCalledWith(
+      "/v1/chat/completions",
+      expect.objectContaining({
+        response_format: expect.objectContaining({ type: "json_schema" }),
+        metadata: { source: "gateway-test" },
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("respects profile compatibility settings when probes are omitted", async () => {
+    settingsMock.getProfileConfig.mockResolvedValueOnce({
+      ...config,
+      sendMetadata: false,
+      responseFormatMode: "none",
+    });
+    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse);
+
+    await service.testProfile("profile-1", {
+      includeCompletion: true,
+      includeEmbeddings: false,
+    });
+
+    const payload = mockAxiosPost.mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(payload).toBeDefined();
+    expect(payload).not.toHaveProperty("metadata");
+    expect(payload).not.toHaveProperty("response_format");
+  });
+
+
+  it("returns compatibilityError when metadata is unsupported", async () => {
+    const error400 = new AxiosError(
+      "Bad request",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 400,
+        data: {
+          error: {
+            message:
+              "Unrecognized request argument supplied: metadata Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz0123456789",
+          },
+        },
+        statusText: "Bad Request",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
+
+    mockAxiosPost.mockRejectedValue(error400);
+
+    const result = await service.testProfile("profile-1", {
+      includeCompletion: true,
+      includeEmbeddings: false,
+      includeMetadataProbe: true,
+    });
+
+    expect(result.completion).toBeUndefined();
+    expect(result.completionError?.compatibilityError?.code).toBe(
+      "UNSUPPORTED_METADATA",
+    );
+    expect(result.compatibilityError?.code).toBe("UNSUPPORTED_METADATA");
+    expect(
+      result.completionError?.compatibilityError?.upstreamMessage,
+    ).toContain("Bearer [REDACTED]");
+    expect(
+      result.completionError?.compatibilityError?.upstreamMessage,
+    ).not.toContain("sk-abcdefghijklmnopqrstuvwxyz0123456789");
+  });
+
+  it("passes response_format probe for completion tests", async () => {
+    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse);
+
+    await service.testProfile("profile-1", {
+      includeCompletion: true,
+      includeEmbeddings: false,
+      responseFormatMode: "json_object",
+    });
+
+    expect(mockAxiosPost).toHaveBeenCalledWith(
+      "/v1/chat/completions",
+      expect.objectContaining({
+        response_format: { type: "json_object" },
+      }),
+      expect.any(Object),
     );
   });
 
   it("tests an unsaved config payload", async () => {
-    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse).mockResolvedValueOnce(mockEmbeddingResponse);
+    mockAxiosPost
+      .mockResolvedValueOnce(mockCompletionResponse)
+      .mockResolvedValueOnce(mockEmbeddingResponse);
 
     const result = await service.testConfig({
       apiBase: config.apiBase,
@@ -498,7 +809,7 @@ describe("LlmGatewayTestService", () => {
       topP: config.topP,
       maxOutputTokens: config.maxOutputTokens,
       fallbackModels: config.fallbackModels,
-      includeEmbeddings: true
+      includeEmbeddings: true,
     });
 
     expect(result.apiBase).toBe("http://localhost:4001");
@@ -514,16 +825,16 @@ describe("LlmGatewayTestService", () => {
       profileId: "profile-1",
       apiBase: config.apiBase,
       model: config.model,
-      includeEmbeddings: false
+      includeEmbeddings: false,
     });
 
     expect(settingsMock.getProfileConfig).toHaveBeenCalledWith("profile-1");
     expect(mockAxiosCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         headers: expect.objectContaining({
-          Authorization: "Bearer sk-test"
-        })
-      })
+          Authorization: "Bearer sk-test",
+        }),
+      }),
     );
   });
 
@@ -535,7 +846,7 @@ describe("LlmGatewayTestService", () => {
       apiBase: config.apiBase,
       apiKey: "",
       model: config.model,
-      includeEmbeddings: false
+      includeEmbeddings: false,
     });
 
     expect(settingsMock.getProfileConfig).toHaveBeenCalledWith("profile-1");
@@ -547,18 +858,18 @@ describe("LlmGatewayTestService", () => {
   it("lists models for an unsaved config payload", async () => {
     const response: AxiosResponse = {
       data: {
-        data: [{ id: "openai/gpt-4o-mini" }]
+        data: [{ id: "openai/gpt-4o-mini" }],
       },
       status: 200,
       statusText: "OK",
       headers: {},
-      config: { headers: new AxiosHeaders() }
+      config: { headers: new AxiosHeaders() },
     };
     mockAxiosGet.mockResolvedValueOnce(response);
 
     const result = await service.listModelsConfig({
       apiBase: config.apiBase,
-      apiKey: config.apiKey
+      apiKey: config.apiKey,
     });
 
     expect(result.apiBase).toBe("http://localhost:4001");
@@ -572,14 +883,14 @@ describe("LlmGatewayTestService", () => {
     await service.testConfig({
       profileId: "profile-1",
       apiBase: config.apiBase,
-      includeEmbeddings: false
+      includeEmbeddings: false,
     });
 
     expect(settingsMock.getProfileConfig).toHaveBeenCalledWith("profile-1");
     expect(mockAxiosPost).toHaveBeenCalledWith(
       "/v1/chat/completions",
       expect.objectContaining({ model: config.model }),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -591,7 +902,7 @@ describe("LlmGatewayTestService", () => {
       apiKey: config.apiKey,
       embeddingModel: config.embeddingModel ?? undefined,
       includeCompletion: false,
-      includeEmbeddings: true
+      includeEmbeddings: true,
     });
 
     expect(result.completion).toBeUndefined();
@@ -600,7 +911,7 @@ describe("LlmGatewayTestService", () => {
     expect(mockAxiosPost).toHaveBeenCalledWith(
       "/v1/embeddings",
       expect.objectContaining({ model: "openai/text-embedding-3-small" }),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 });

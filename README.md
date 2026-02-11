@@ -248,6 +248,8 @@ infra/
 - LiteLLM 与 Crawl4AI 的高级参数集中在 `config/news-pipeline.config.yaml`。文件按照 `litellm_config` 与 `crawl4ai_config` 分区，支持模型 fallback、RPM 限流、virtual scroll、cleanMarkdown CSS 选择器等，修改后会被 `NewsPipelineConfigService` 热加载。若需多环境覆盖，可通过 `NEWS_PIPELINE_CONFIG_PATH` 指向自定义文件。
 - 新增环境变量：`LITELLM_MODEL`、`LITELLM_API_URL`、`LITELLM_API_KEY`、`LITELLM_TIMEOUT_MS`、`LITELLM_TEMPERATURE`、`LITELLM_TOP_P`、`LITELLM_MAX_TOKENS`、`LITELLM_RETRY_ATTEMPTS`、`LITELLM_FALLBACK_MODELS`、`LITELLM_REQUESTS_PER_MINUTE`、`NEWS_PIPELINE_CACHE_TTL_SECONDS`、`NEWS_PIPELINE_MAX_INPUT_CHARS`、`NEWS_PIPELINE_CONFIG_PATH`、`NEWS_CRAWL_QUEUE_CONCURRENCY`、`NEWS_PROCESS_QUEUE_CONCURRENCY`、`NEWS_CRAWL_QUEUE_RATE_LIMIT`、`NEWS_PROCESS_QUEUE_RATE_LIMIT`。`pnpm --filter infra-scripts run env:check` 会同时校验。
 - LiteLLM 调用走统一的 `LiteLlmService.acompletion`，包含 Redis RPM 限流、指数退避重试与模型级 fallback。模型输出由新版 `CleanedNewsSchema` 验证，字段涵盖标题、副标题、分类、主题、200~300 字摘要、要点、实体、噪声类型与质量分；同时以 [LiteLLM 成本追踪回调](https://docs.litellm.ai/docs/observability/custom_callback) 为参考记录 token 使用量、`costUsd` 与 `latencyMs`（相关缺陷修复见 [v1.74.0 release notes](https://docs.litellm.ai/release_notes/v1-74-0-stable)），方便后续预算/Guardrail。
+- 网关参数兼容现已启用**严格模式**：当上游不支持 `metadata`、`response_format` 或 `json_schema` 时，不再静默删字段重试，而是直接抛出结构化兼容错误（`LLM compatibility error`）并返回修复提示，便于排障。
+- `LiteLlmService` 额外支持 `aresponse`（`/v1/responses`，404 自动回退 `/responses`），用于接入外部 OpenAI-compatible 网关的 Responses API。
 - Crawl4AI 结果默认缓存到 Redis（TTL 由 `NEWS_PIPELINE_CACHE_TTL_SECONDS` 控制），重复 URL 不会再次耗费 Token。若在 payload 中设置 `forceRefresh: true` 可强制重新抓取；LiteLLM 解析失败时队列会抛错并写入 `TaskLogModel`，方便追踪问题。
 
 ### LiteLLM 部署指南
@@ -296,7 +298,57 @@ infra/
    curl http://localhost:4001/v1/models -H "Authorization: Bearer ${LITELLM_MASTER_KEY}"
    ```
 
-4. **本机模式（可选）**
+   可选：验证 Responses API（如网关支持）
+
+   ```bash
+   curl http://localhost:4001/v1/responses \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+     -d '{"model":"openai/gpt-4o-mini","input":"hi"}'
+   ```
+
+4. **系统设置中的网关兼容控制与测试（新增）**
+
+   在 `Settings -> LLM gateway` 的 Profile 创建/编辑页可直接配置运行时兼容策略：
+
+   - `response_format mode`: `json_schema` / `json_object` / `none`
+   - `send metadata`: 开关（关闭后运行时不再发送 `metadata` 字段）
+
+   在 `Test` 弹窗中也可测试：
+
+   - `API surface`: `chat_completions` / `responses`
+   - `response_format probe`: 默认继承 Profile，可按次覆盖
+   - `include metadata probe`: 默认继承 Profile，可按次覆盖
+
+   网关参数兼容采用**配置化严格模式**：不会再静默删字段重试；若上游不支持会直接返回结构化兼容诊断（code / field / hint / upstream message），便于快速排障。
+
+   推荐 Profile 模板（外部 OpenAI-compatible）：
+
+   - `OpenAI (Official)`
+     - `apiBase`: `https://api.openai.com/v1`
+     - `response_format mode`: `json_schema`
+     - `send metadata`: `true`
+   - `OpenRouter (Compatible)`
+     - `apiBase`: `https://openrouter.ai/api/v1`
+     - `response_format mode`: `json_object`
+     - `send metadata`: `false`
+   - `External Gateway (Conservative)`（第三方兼容不明确时优先）
+     - `apiBase`: `https://your-openai-compatible-gateway.example.com/v1`
+     - `response_format mode`: `none`
+     - `send metadata`: `false`
+
+   `apiBase` 输入框支持按域名自动推荐模板：前端会从后端接口拉取“域名 → 模板”映射配置（含默认兜底策略），失焦时按该配置匹配并在未手动修改相关字段时自动填充 `preset`、`response_format mode`、`send metadata`。为避免误覆盖，只有当 `apiBase` 相比当前表单初始值发生变化时才会应用推荐。
+
+   你也可以在面板中开关：
+
+   - `按场景自动推荐兼容模板`
+   - `自动切换后显示提示`
+
+   并且可在 `编辑推荐映射` 中维护域名规则（默认模板 / 本地域名 / 域名规则），保存后会持久化到 system settings 并即时生效。
+
+   在 `Test` 弹窗里新增了 `按推荐策略重测`，可一键把 `response_format probe` + `include metadata probe` 切到推荐值并立即发起测试。
+
+5. **本机模式（可选）**
 
    不使用 docker-compose 时，可按 LiteLLM 官方方式启动代理（示例）：
 

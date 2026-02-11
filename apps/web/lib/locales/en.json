@@ -2546,10 +2546,43 @@
         "clearKey": "Clear key",
         "keepKey": "Keep key"
       },
+      "autoRecommend": {
+        "fields": {
+          "enabled": "Auto-recommend compatibility template by API base domain",
+          "noticeEnabled": "Show info message after auto-switch",
+          "defaultPresetKey": "Default preset",
+          "localGatewayHosts": "Local gateway hostnames",
+          "domainRules": "Domain mapping rules"
+        },
+        "actions": {
+          "editConfig": "Edit recommendation mapping",
+          "addRule": "Add rule"
+        },
+        "modal": {
+          "title": "Edit auto recommendation mapping"
+        },
+        "hints": {
+          "localGatewayHosts": "These hostnames are always mapped to LiteLLM Local preset.",
+          "domainRules": "Rules match by hostname; default preset is used when no rule matches."
+        },
+        "placeholders": {
+          "localGatewayHosts": "e.g. localhost, host.docker.internal",
+          "ruleHostname": "e.g. api.openai.com"
+        },
+        "validation": {
+          "hostname": "Hostname is required and cannot contain spaces",
+          "defaultPresetKey": "Select a default preset",
+          "hostnameRequired": "Hostname is required",
+          "presetKey": "Select a preset"
+        }
+      },
       "columns": {
         "name": "Name",
         "model": "Model",
         "embeddingModel": "Embedding model",
+        "compatibility": "Compatibility",
+        "metadataOn": "metadata:on",
+        "metadataOff": "metadata:off",
         "rpm": "RPM",
         "status": "Status",
         "apiKey": "API key"
@@ -2568,6 +2601,8 @@
         "maxRetries": "Max retries",
         "requestsPerMinute": "Requests per minute",
         "fallbackModels": "Fallback models",
+        "sendMetadata": "Send metadata",
+        "responseFormatMode": "response_format mode",
         "enabled": "Enabled"
       },
       "placeholders": {
@@ -2578,6 +2613,9 @@
         "fallbackModels": "comma-separated, e.g. openai/gpt-4o-mini,anthropic/claude-3-haiku"
       },
       "presets": {
+        "openaiOfficial": "OpenAI (Official)",
+        "openrouter": "OpenRouter (Compatible)",
+        "externalConservative": "External Gateway (Conservative)",
         "litellmDocker": "LiteLLM (Docker Compose)",
         "litellmLocal": "LiteLLM (Local)",
         "glm": "GLM (Zhipu)",
@@ -2590,7 +2628,9 @@
         "apiKey": "Stored in system settings. Encrypted in MySQL when secret encryption is enabled (System Settings -> Security) and SYSTEM_SETTINGS_ENCRYPTION_KEY is configured; otherwise stored as plaintext. You can paste either sk-... or a full \"Bearer sk-...\" value. If your gateway is a LiteLLM Proxy protected by a master key, paste the master key here; otherwise leave it empty. Upstream provider keys (e.g. OPENAI_API_KEY) must be configured on the LiteLLM Proxy side.",
         "apiKeyEdit": "Provide a new key to rotate it. Use the toggle below to clear.",
         "fallbackModels": "Used when the primary model request fails.",
-        "modelOptional": "Optional: used for chat completion requests. Leave empty when configuring embeddings-only gateway."
+        "modelOptional": "Optional: used for chat completion requests. Leave empty when configuring embeddings-only gateway.",
+        "sendMetadata": "When disabled, runtime requests omit metadata for better compatibility.",
+        "responseFormatMode": "Select how response_format is sent upstream: json_schema, json_object, or none."
       },
       "validation": {
         "nameRequired": "Name is required",
@@ -2614,7 +2654,10 @@
         "created": "Created",
         "updated": "Updated",
         "deleted": "Deleted",
-        "activated": "Activated"
+        "activated": "Activated",
+        "autoRecommended": "Detected API base domain {{domain}} and auto-applied compatibility template: {{name}}",
+        "recommendedTestStrategyApplied": "Applied recommended strategy for {{domain}}: {{name}}",
+        "recommendationConfigUpdated": "Auto recommendation mapping saved"
       },
       "errors": {
         "loadFailed": "Failed to load LLM gateway profiles",
@@ -2623,14 +2666,16 @@
         "deleteFailed": "Failed to delete LLM gateway profile",
         "toggleFailed": "Failed to update profile status",
         "activateFailed": "Failed to activate profile",
-        "badRequest": "Invalid input"
+        "badRequest": "Invalid input",
+        "recommendationConfigSaveFailed": "Failed to save recommendation mapping"
       },
       "test": {
         "modal": {
           "title": "Test {{name}}"
         },
         "actions": {
-          "run": "Run test"
+          "run": "Run test",
+          "applyRecommendedAndRun": "Apply recommended strategy and re-test"
         },
         "fields": {
           "model": "Model override",
@@ -2638,7 +2683,10 @@
           "includeEmbeddings": "Test embeddings",
           "embeddingModel": "Embedding model override",
           "embeddingInput": "Embedding input",
-          "includeCompletion": "Test chat completion"
+          "includeCompletion": "Test chat completion",
+          "apiSurface": "API surface",
+          "responseFormatMode": "response_format probe",
+          "includeMetadataProbe": "Include metadata probe"
         },
         "placeholders": {
           "prompt": "Say \"OK\" and nothing else.",
@@ -2647,7 +2695,8 @@
         "hints": {
           "model": "Leave empty to use the profile default + fallback models.",
           "embeddingModel": "Leave empty to use the profile embedding model.",
-          "includeCompletion": "When disabled, only embeddings are tested."
+          "includeCompletion": "When disabled, only embeddings are tested.",
+          "recommendedStrategy": "Detected domain {{domain}}, recommended template: {{name}}"
         },
         "sections": {
           "completion": "Chat completion",
@@ -2658,6 +2707,11 @@
         "cost": "$ {{cost}}",
         "errors": {
           "failed": "Test failed"
+        },
+        "labels": {
+          "apiSurface": "API surface",
+          "compatibility": "Compatibility",
+          "field": "field"
         }
       },
       "testUnsaved": {

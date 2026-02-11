@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -109,4 +110,25 @@ export class LlmGatewayTestConfigDto extends LlmGatewayModelsConfigDto {
   @IsOptional()
   @IsString()
   embeddingInput?: string;
+
+  @ApiPropertyOptional({
+    description: "API surface for completion test: chat_completions (default) or responses."
+  })
+  @IsOptional()
+  @IsIn(["chat_completions", "responses"])
+  apiSurface?: "chat_completions" | "responses";
+
+  @ApiPropertyOptional({
+    description: "Optional response_format compatibility probe for completion tests."
+  })
+  @IsOptional()
+  @IsIn(["none", "json_object", "json_schema"])
+  responseFormatMode?: "none" | "json_object" | "json_schema";
+
+  @ApiPropertyOptional({
+    description: "When true, include metadata payload in completion test to verify gateway support."
+  })
+  @IsOptional()
+  @IsBoolean()
+  includeMetadataProbe?: boolean;
 }

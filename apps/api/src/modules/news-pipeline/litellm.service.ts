@@ -10,9 +10,19 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import {
+  detectOpenAiCompatibilityIssue,
+  LlmCompatibilityError,
+  normalizeOpenAiApiBase,
+  normalizeOpenAiApiKey,
+  sanitizeUpstreamErrorText,
+} from "../../common/llm-openai-compat";
 import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
 import { RateLimiterService } from "../cache/rate-limiter.service";
-import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
+import {
+  LlmGatewaySettingsService,
+  type LlmGatewayResponseFormatMode,
+} from "../system-settings/llm-gateway-settings.service";
 
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
@@ -97,10 +107,26 @@ export interface LiteLlmStreamChunk {
   finishReason?: string;
 }
 
-interface GatewayCompatibilityFlags {
-  supportsMetadata: boolean;
-  supportsResponseFormat: boolean;
-  supportsJsonSchema: boolean;
+export interface LiteLlmResponsesParams {
+  model?: string;
+  input: string;
+  temperature?: number;
+  top_p?: number;
+  max_output_tokens?: number;
+  metadata?: Record<string, unknown>;
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
+export interface LiteLlmResponsesResponse {
+  id?: string;
+  model?: string;
+  output_text?: string;
+  response_cost?: number;
+  costUsd?: number;
+  keySpendUsd?: number;
+  latencyMs?: number;
+  [key: string]: unknown;
 }
 
 export type LiteLlmGuardrailViolationCode =
@@ -136,11 +162,14 @@ export class LiteLlmGuardrailViolationError extends Error {
   }
 }
 
+const DEFAULT_SEND_METADATA = true;
+const DEFAULT_RESPONSE_FORMAT_MODE: LlmGatewayResponseFormatMode =
+  "json_schema";
+
 @Injectable()
 export class LiteLlmService {
   private readonly clients = new Map<string, AxiosInstance>();
   private readonly logger = createLogger({ name: "litellm-service" });
-  private readonly compatibility = new Map<string, GatewayCompatibilityFlags>();
 
   constructor(
     private readonly configService: NewsPipelineConfigService,
@@ -156,7 +185,8 @@ export class LiteLlmService {
   async getCompletionModels(): Promise<string[]> {
     const cfg = await this.resolveCompletionConfig();
     const models = [cfg.model, ...cfg.fallbackModels].filter(
-      (model): model is string => typeof model === "string" && model.trim().length > 0,
+      (model): model is string =>
+        typeof model === "string" && model.trim().length > 0,
     );
     return Array.from(new Set(models.map((model) => model.trim())));
   }
@@ -169,7 +199,7 @@ export class LiteLlmService {
   async acompletion(
     params: LiteLlmCompletionParams,
   ): Promise<LiteLlmCompletionResponse> {
-    const { cfg, client, baseUrl, apiKeyConfigured } =
+    const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("completion");
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
@@ -182,7 +212,6 @@ export class LiteLlmService {
       try {
         return await this.executeWithRetry(
           client,
-          baseUrl,
           cfg,
           apiKeyConfigured,
           model,
@@ -190,6 +219,9 @@ export class LiteLlmService {
         );
       } catch (error) {
         if (error instanceof LiteLlmGuardrailViolationError) {
+          throw error;
+        }
+        if (error instanceof LlmCompatibilityError) {
           throw error;
         }
         lastError = error;
@@ -210,7 +242,7 @@ export class LiteLlmService {
   async embedding(
     params: LiteLlmEmbeddingParams,
   ): Promise<LiteLlmEmbeddingResponse> {
-    const { cfg, client, baseUrl, apiKeyConfigured } =
+    const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("embedding");
     const model = params.model ?? cfg.embeddingModel ?? cfg.model;
     if (!model) {
@@ -218,7 +250,6 @@ export class LiteLlmService {
     }
     return this.executeEmbeddingWithRetry(
       client,
-      baseUrl,
       cfg,
       apiKeyConfigured,
       model,
@@ -226,12 +257,16 @@ export class LiteLlmService {
     );
   }
 
-  async *stream(params: LiteLlmCompletionParams): AsyncGenerator<LiteLlmStreamChunk> {
-    const { cfg, client, baseUrl, apiKeyConfigured } =
+  async *stream(
+    params: LiteLlmCompletionParams,
+  ): AsyncGenerator<LiteLlmStreamChunk> {
+    const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("completion");
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
-      new Set(models.filter((model) => typeof model === "string" && model.length > 0)),
+      new Set(
+        models.filter((model) => typeof model === "string" && model.length > 0),
+      ),
     );
 
     let lastError: unknown;
@@ -240,7 +275,6 @@ export class LiteLlmService {
       try {
         for await (const chunk of this.executeStream(
           client,
-          baseUrl,
           cfg,
           apiKeyConfigured,
           model,
@@ -252,6 +286,9 @@ export class LiteLlmService {
         return;
       } catch (error) {
         if (error instanceof LiteLlmGuardrailViolationError) {
+          throw error;
+        }
+        if (error instanceof LlmCompatibilityError) {
           throw error;
         }
         if (started) {
@@ -268,13 +305,102 @@ export class LiteLlmService {
       }
     }
 
-    throw lastError instanceof Error ? lastError : new Error("LiteLLM stream failed");
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("LiteLLM stream failed");
+  }
+
+  async aresponse(
+    params: LiteLlmResponsesParams,
+  ): Promise<LiteLlmResponsesResponse> {
+    const { cfg, client, apiKeyConfigured } =
+      await this.prepareRequest("completion");
+    const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
+    const uniqueModels = Array.from(
+      new Set(
+        models.filter((model) => typeof model === "string" && model.length > 0),
+      ),
+    );
+
+    const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
+
+    let lastError: unknown;
+    for (const model of uniqueModels) {
+      let attempt = 0;
+      let delayMs = 1_000;
+      while (attempt < maxAttempts) {
+        try {
+          const payload = {
+            model,
+            input: params.input,
+            temperature: params.temperature ?? cfg.temperature,
+            top_p: params.top_p ?? cfg.topP,
+            max_output_tokens: params.max_output_tokens ?? cfg.maxOutputTokens,
+            metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
+          };
+          const start = Date.now();
+          const response =
+            await this.postWithFallback<LiteLlmResponsesResponse>(
+              client,
+              "/v1/responses",
+              "/responses",
+              payload,
+              { timeout: params.timeoutMs ?? cfg.timeoutMs },
+            );
+          const latencyMs = Date.now() - start;
+          const headerCost = this.extractHeaderCost(
+            response.headers?.["x-litellm-response-cost"] ??
+              response.headers?.["x-litellm-cost"] ??
+              response.headers?.["litellm-cost"],
+          );
+          const keySpendUsd = this.extractHeaderCost(
+            response.headers?.["x-litellm-key-spend"],
+          );
+          const payloadCost = this.extractHeaderCost(
+            (response.data as Record<string, unknown>).response_cost,
+          );
+          const costUsd = headerCost ?? payloadCost;
+          return {
+            ...response.data,
+            ...(typeof costUsd === "number" ? { costUsd } : {}),
+            ...(typeof keySpendUsd === "number" ? { keySpendUsd } : {}),
+            latencyMs,
+          };
+        } catch (error) {
+          if (error instanceof LlmCompatibilityError) {
+            throw error;
+          }
+          this.decorateAxiosError(error, {
+            apiKeyConfigured,
+            apiSurface: "responses",
+          });
+          lastError = error;
+          attempt += 1;
+          if (attempt >= maxAttempts || !this.isRetryable(error)) {
+            throw error;
+          }
+          await sleep(delayMs);
+          delayMs = Math.min(delayMs * 2, 10_000);
+        }
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("LiteLLM responses request failed");
   }
 
   private async executeWithRetry(
     client: AxiosInstance,
-    baseUrl: string,
-    cfg: { timeoutMs: number; temperature: number; topP: number; maxOutputTokens: number; maxRetries: number },
+    cfg: {
+      timeoutMs: number;
+      temperature: number;
+      topP: number;
+      maxOutputTokens: number;
+      maxRetries: number;
+      sendMetadata: boolean;
+      responseFormatMode: LlmGatewayResponseFormatMode;
+    },
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
@@ -286,7 +412,6 @@ export class LiteLlmService {
 
     while (attempt < maxAttempts) {
       try {
-        const compatibility = this.getCompatibilityFlags(baseUrl);
         const guardrails = this.normalizeGuardrails(params.guardrails);
         const payload = {
           model,
@@ -294,15 +419,17 @@ export class LiteLlmService {
           temperature: params.temperature ?? cfg.temperature,
           top_p: params.top_p ?? cfg.topP,
           max_tokens: params.max_tokens ?? cfg.maxOutputTokens,
-          response_format: this.resolveResponseFormat(params.response_format, compatibility),
+          response_format: this.resolveResponseFormat(
+            params.response_format,
+            cfg.responseFormatMode,
+          ),
           stream: false,
           guardrails: guardrails.length > 0 ? guardrails : undefined,
-          metadata: compatibility.supportsMetadata ? params.metadata : undefined,
+          metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
         };
         const start = Date.now();
-        const response = await this.postWithCompatibilityFallback<LiteLlmCompletionResponse>(
+        const response = await this.postWithFallback<LiteLlmCompletionResponse>(
           client,
-          baseUrl,
           "/v1/chat/completions",
           "/chat/completions",
           payload,
@@ -323,7 +450,8 @@ export class LiteLlmService {
         );
         const usageCost = this.extractHeaderCost(
           response.data.usage
-            ? (response.data.usage as unknown as Record<string, unknown>).response_cost
+            ? (response.data.usage as unknown as Record<string, unknown>)
+                .response_cost
             : undefined,
         );
         const costUsd = headerCost ?? payloadCost ?? usageCost;
@@ -336,12 +464,16 @@ export class LiteLlmService {
         } satisfies LiteLlmCompletionResponse;
       } catch (error) {
         if (error instanceof AxiosError) {
-          const guardrailError = this.maybeConvertAxiosErrorToGuardrailViolation(error);
+          const guardrailError =
+            this.maybeConvertAxiosErrorToGuardrailViolation(error);
           if (guardrailError) {
             throw guardrailError;
           }
         }
-        this.decorateAxiosError(error, { apiKeyConfigured });
+        this.decorateAxiosError(error, {
+          apiKeyConfigured,
+          apiSurface: "chat_completions",
+        });
         lastError = error;
         attempt += 1;
         if (attempt >= maxAttempts || !this.isRetryable(error)) {
@@ -359,13 +491,18 @@ export class LiteLlmService {
 
   private async *executeStream(
     client: AxiosInstance,
-    baseUrl: string,
-    cfg: { timeoutMs: number; temperature: number; topP: number; maxOutputTokens: number },
+    cfg: {
+      timeoutMs: number;
+      temperature: number;
+      topP: number;
+      maxOutputTokens: number;
+      sendMetadata: boolean;
+      responseFormatMode: LlmGatewayResponseFormatMode;
+    },
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
   ): AsyncGenerator<LiteLlmStreamChunk> {
-    const compatibility = this.getCompatibilityFlags(baseUrl);
     const guardrails = this.normalizeGuardrails(params.guardrails);
     const payload = {
       model,
@@ -373,17 +510,19 @@ export class LiteLlmService {
       temperature: params.temperature ?? cfg.temperature,
       top_p: params.top_p ?? cfg.topP,
       max_tokens: params.max_tokens ?? cfg.maxOutputTokens,
-      response_format: this.resolveResponseFormat(params.response_format, compatibility),
+      response_format: this.resolveResponseFormat(
+        params.response_format,
+        cfg.responseFormatMode,
+      ),
       stream: true,
       guardrails: guardrails.length > 0 ? guardrails : undefined,
-      metadata: compatibility.supportsMetadata ? params.metadata : undefined,
+      metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
     };
 
     let response: AxiosResponse;
     try {
-      response = await this.postWithCompatibilityFallback(
+      response = await this.postWithFallback(
         client,
-        baseUrl,
         "/v1/chat/completions",
         "/chat/completions",
         payload,
@@ -395,30 +534,39 @@ export class LiteLlmService {
       );
     } catch (error) {
       if (error instanceof AxiosError) {
-        const guardrailError = this.maybeConvertAxiosErrorToGuardrailViolation(error);
+        const guardrailError =
+          this.maybeConvertAxiosErrorToGuardrailViolation(error);
         if (guardrailError) {
           throw guardrailError;
         }
       }
-      this.decorateAxiosError(error, { apiKeyConfigured });
+      this.decorateAxiosError(error, {
+        apiKeyConfigured,
+        apiSurface: "chat_completions",
+      });
       throw error;
     }
     const stream = response.data as Readable;
     const contentTypeRaw = response.headers?.["content-type"];
-    const contentType = typeof contentTypeRaw === "string" ? contentTypeRaw.toLowerCase() : "";
+    const contentType =
+      typeof contentTypeRaw === "string" ? contentTypeRaw.toLowerCase() : "";
     if (contentType && !contentType.includes("text/event-stream")) {
       const bodyText = await this.readReadableToString(stream, 128 * 1024);
       try {
         const parsed = JSON.parse(bodyText) as unknown;
         const message = this.extractGuardrailBlockedMessage(parsed);
         if (message) {
-          const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(response.headers);
+          const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(
+            response.headers,
+          );
           const normalized = this.buildUserFacingGuardrailMessage(message);
           throw new LiteLlmGuardrailViolationError(normalized.message, {
             code: normalized.code,
             appliedGuardrails,
             upstreamStatus: response.status,
-            detail: typeof bodyText === "string" ? bodyText.slice(0, 500) : undefined,
+            detail:
+              sanitizeUpstreamErrorText(bodyText, { maxLength: 500 }) ||
+              undefined,
           });
         }
       } catch (error) {
@@ -440,12 +588,18 @@ export class LiteLlmService {
       if (data.trim() === "[DONE]") {
         return;
       }
-      let parsed:
-        | { choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[] }
-        | null = null;
+      let parsed: {
+        choices?: {
+          delta?: { content?: string | null };
+          finish_reason?: string | null;
+        }[];
+      } | null = null;
       try {
         parsed = JSON.parse(data) as {
-          choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[];
+          choices?: {
+            delta?: { content?: string | null };
+            finish_reason?: string | null;
+          }[];
         };
       } catch {
         continue;
@@ -453,7 +607,10 @@ export class LiteLlmService {
 
       const choice = parsed?.choices?.[0];
       const delta = choice?.delta?.content;
-      const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined;
+      const finishReason =
+        typeof choice?.finish_reason === "string"
+          ? choice.finish_reason
+          : undefined;
       if (typeof delta === "string" && delta.length > 0) {
         yield { model, raw: parsed, delta, finishReason };
       } else if (typeof finishReason === "string" && finishReason.length > 0) {
@@ -473,7 +630,9 @@ export class LiteLlmService {
           ? (choice as unknown as Record<string, unknown>).message
           : undefined;
       const role =
-        rawMessage && typeof rawMessage === "object" && typeof (rawMessage as Record<string, unknown>).role === "string"
+        rawMessage &&
+        typeof rawMessage === "object" &&
+        typeof (rawMessage as Record<string, unknown>).role === "string"
           ? ((rawMessage as Record<string, unknown>).role as string)
           : "assistant";
 
@@ -500,8 +659,7 @@ export class LiteLlmService {
 
   private async executeEmbeddingWithRetry(
     client: AxiosInstance,
-    baseUrl: string,
-    cfg: { timeoutMs: number; maxRetries: number },
+    cfg: { timeoutMs: number; maxRetries: number; sendMetadata: boolean },
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmEmbeddingParams,
@@ -513,16 +671,14 @@ export class LiteLlmService {
 
     while (attempt < maxAttempts) {
       try {
-        const compatibility = this.getCompatibilityFlags(baseUrl);
         const payload = {
           model,
           input: params.input,
-          metadata: compatibility.supportsMetadata ? params.metadata : undefined,
+          metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
         };
         const start = Date.now();
-        const response = await this.postWithCompatibilityFallback<LiteLlmEmbeddingResponse>(
+        const response = await this.postWithFallback<LiteLlmEmbeddingResponse>(
           client,
-          baseUrl,
           "/v1/embeddings",
           "/embeddings",
           payload,
@@ -542,7 +698,8 @@ export class LiteLlmService {
         );
         const usageCost = this.extractHeaderCost(
           response.data.usage
-            ? (response.data.usage as unknown as Record<string, unknown>).response_cost
+            ? (response.data.usage as unknown as Record<string, unknown>)
+                .response_cost
             : undefined,
         );
         const costUsd = headerCost ?? payloadCost ?? usageCost;
@@ -553,7 +710,10 @@ export class LiteLlmService {
           latencyMs,
         } satisfies LiteLlmEmbeddingResponse;
       } catch (error) {
-        this.decorateAxiosError(error, { apiKeyConfigured });
+        this.decorateAxiosError(error, {
+          apiKeyConfigured,
+          apiSurface: "embeddings",
+        });
         lastError = error;
         attempt += 1;
         if (attempt >= maxAttempts || !this.isRetryable(error)) {
@@ -583,212 +743,15 @@ export class LiteLlmService {
     try {
       return await client.post<T>(primaryPath, payload, config);
     } catch (error) {
-      if (error instanceof AxiosError && error.response?.status === 404) {
+      if (
+        error instanceof AxiosError &&
+        typeof error.response?.status === "number" &&
+        [404, 405].includes(error.response.status)
+      ) {
         return client.post<T>(fallbackPath, payload, config);
       }
       throw error;
     }
-  }
-
-  private async postWithCompatibilityFallback<T = unknown>(
-    client: AxiosInstance,
-    baseUrl: string,
-    primaryPath: string,
-    fallbackPath: string,
-    payload: Record<string, unknown>,
-    config?: AxiosRequestConfig,
-  ): Promise<AxiosResponse<T>> {
-    try {
-      return await this.postWithFallback<T>(client, primaryPath, fallbackPath, payload, config);
-    } catch (error) {
-      if (!(error instanceof AxiosError)) {
-        throw error;
-      }
-      const status = error.response?.status;
-      if (!status || ![400, 422].includes(status)) {
-        throw error;
-      }
-
-      const errorText = this.extractAxiosErrorText(error).toLowerCase();
-      const mentionsMetadata = errorText.includes("metadata");
-      const mentionsResponseFormat =
-        errorText.includes("response_format") ||
-        errorText.includes("response format") ||
-        errorText.includes("json_schema") ||
-        errorText.includes("json schema") ||
-        errorText.includes("structured output") ||
-        errorText.includes("structured outputs");
-
-      if (!mentionsMetadata && !mentionsResponseFormat) {
-        throw error;
-      }
-
-      const candidates = this.buildCompatibilityPayloadCandidates(payload, {
-        dropMetadata: mentionsMetadata,
-        adjustResponseFormat: mentionsResponseFormat,
-      });
-
-      if (candidates.length === 0) {
-        throw error;
-      }
-
-      let lastError: unknown = error;
-      for (const candidate of candidates) {
-        try {
-          const response = await this.postWithFallback<T>(
-            client,
-            primaryPath,
-            fallbackPath,
-            candidate.payload,
-            config,
-          );
-          this.applyCompatibilityUpdate(baseUrl, candidate.update);
-          return response;
-        } catch (candidateError) {
-          lastError = candidateError;
-        }
-      }
-      throw lastError;
-    }
-  }
-
-  private buildCompatibilityPayloadCandidates(
-    payload: Record<string, unknown>,
-    options: { dropMetadata: boolean; adjustResponseFormat: boolean },
-  ) {
-    const candidates: { payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }[] = [];
-
-    const hasMetadata = "metadata" in payload && payload.metadata !== undefined;
-    const hasResponseFormat = "response_format" in payload && payload.response_format !== undefined;
-    const responseFormatType =
-      hasResponseFormat &&
-      payload.response_format &&
-      typeof payload.response_format === "object" &&
-      "type" in (payload.response_format as Record<string, unknown>)
-        ? (payload.response_format as { type?: unknown }).type
-        : undefined;
-    const hasJsonSchema = responseFormatType === "json_schema";
-
-    const stripMetadata = (input: Record<string, unknown>) => {
-      const next = { ...input };
-      delete next.metadata;
-      return next;
-    };
-
-    const stripResponseFormat = (input: Record<string, unknown>) => {
-      const next = { ...input };
-      delete next.response_format;
-      return next;
-    };
-
-    const downgradeJsonSchema = (input: Record<string, unknown>) => ({
-      ...input,
-      response_format: { type: "json_object" },
-    });
-
-    if (options.dropMetadata && hasMetadata && options.adjustResponseFormat && hasResponseFormat) {
-      if (hasJsonSchema) {
-        candidates.push({
-          payload: stripMetadata(downgradeJsonSchema(payload)),
-          update: { supportsMetadata: false, supportsJsonSchema: false },
-        });
-      }
-      candidates.push({
-        payload: stripMetadata(stripResponseFormat(payload)),
-        update: { supportsMetadata: false, supportsResponseFormat: false, supportsJsonSchema: false },
-      });
-    }
-
-    if (options.dropMetadata && hasMetadata) {
-      candidates.push({
-        payload: stripMetadata(payload),
-        update: { supportsMetadata: false },
-      });
-    }
-
-    if (options.adjustResponseFormat && hasResponseFormat) {
-      if (hasJsonSchema) {
-        candidates.push({
-          payload: downgradeJsonSchema(payload),
-          update: { supportsJsonSchema: false },
-        });
-      }
-      candidates.push({
-        payload: stripResponseFormat(payload),
-        update: { supportsResponseFormat: false, supportsJsonSchema: false },
-      });
-    }
-
-    return this.dedupePayloadCandidates(candidates);
-  }
-
-  private dedupePayloadCandidates(
-    candidates: { payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }[],
-  ) {
-    const seen = new Set<string>();
-    const unique: { payload: Record<string, unknown>; update: Partial<GatewayCompatibilityFlags> }[] = [];
-    for (const candidate of candidates) {
-      let key: string;
-      try {
-        key = JSON.stringify(candidate.payload);
-      } catch {
-        key = String(unique.length);
-      }
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      unique.push(candidate);
-    }
-    return unique;
-  }
-
-  private applyCompatibilityUpdate(
-    baseUrl: string,
-    update: Partial<GatewayCompatibilityFlags>,
-  ) {
-    if (!update || Object.keys(update).length === 0) {
-      return;
-    }
-    const flags = this.getCompatibilityFlags(baseUrl);
-    this.compatibility.set(baseUrl, { ...flags, ...update });
-  }
-
-  private getCompatibilityFlags(baseUrl: string): GatewayCompatibilityFlags {
-    const existing = this.compatibility.get(baseUrl);
-    if (existing) {
-      return existing;
-    }
-    const initial: GatewayCompatibilityFlags = {
-      supportsMetadata: true,
-      supportsResponseFormat: true,
-      supportsJsonSchema: true,
-    };
-    this.compatibility.set(baseUrl, initial);
-    return initial;
-  }
-
-  private resolveResponseFormat(
-    responseFormat: LiteLlmCompletionParams["response_format"],
-    compatibility: GatewayCompatibilityFlags,
-  ) {
-    if (!responseFormat || !compatibility.supportsResponseFormat) {
-      return undefined;
-    }
-
-    if (!compatibility.supportsJsonSchema) {
-      const type =
-        responseFormat &&
-        typeof responseFormat === "object" &&
-        "type" in (responseFormat as Record<string, unknown>)
-          ? (responseFormat as { type?: unknown }).type
-          : undefined;
-      if (type === "json_schema") {
-        return { type: "json_object" };
-      }
-    }
-
-    return responseFormat;
   }
 
   private extractAxiosErrorText(error: AxiosError) {
@@ -841,6 +804,7 @@ export class LiteLlmService {
     error: unknown,
     context: {
       apiKeyConfigured: boolean;
+      apiSurface?: "chat_completions" | "embeddings" | "responses";
     },
   ) {
     if (!(error instanceof AxiosError)) {
@@ -851,22 +815,36 @@ export class LiteLlmService {
       return;
     }
 
-    let detail = this.extractAxiosErrorText(error);
-    detail = typeof detail === "string" ? detail.trim() : "";
+    let detail = sanitizeUpstreamErrorText(this.extractAxiosErrorText(error), {
+      maxLength: 500,
+    });
+
+    const compatibilityIssue = detectOpenAiCompatibilityIssue({
+      status,
+      errorText: detail,
+      apiSurface: context.apiSurface,
+    });
+    if (compatibilityIssue) {
+      throw new LlmCompatibilityError(compatibilityIssue, { cause: error });
+    }
 
     const lowerDetail = detail.toLowerCase();
     if (status === 401 || status === 403) {
       const authHint = this.buildAuthHint(status, context.apiKeyConfigured);
-      if (!detail || lowerDetail === "unauthorized" || lowerDetail === "forbidden") {
+      if (
+        !detail ||
+        lowerDetail === "unauthorized" ||
+        lowerDetail === "forbidden"
+      ) {
         detail = authHint;
-      } else if (!lowerDetail.includes("apikey") && !lowerDetail.includes("api key")) {
+      } else if (
+        !lowerDetail.includes("apikey") &&
+        !lowerDetail.includes("api key")
+      ) {
         detail = `${detail} (${authHint})`;
       }
     }
-
-    if (detail.length > 500) {
-      detail = `${detail.slice(0, 500)}…`;
-    }
+    detail = sanitizeUpstreamErrorText(detail, { maxLength: 500 });
 
     error.message = `LiteLLM request failed (HTTP ${status})${detail ? `: ${detail}` : ""}`;
   }
@@ -897,9 +875,13 @@ export class LiteLlmService {
     return `${baseUrl}::${digest}`;
   }
 
-  private getClient(cfg: { apiBase: string; apiKey?: string; timeoutMs: number }) {
-    const baseUrl = normalizeApiBase(cfg.apiBase);
-    const apiKey = normalizeApiKey(cfg.apiKey);
+  private getClient(cfg: {
+    apiBase: string;
+    apiKey?: string;
+    timeoutMs: number;
+  }) {
+    const baseUrl = normalizeOpenAiApiBase(cfg.apiBase);
+    const apiKey = normalizeOpenAiApiKey(cfg.apiKey);
     const apiKeyConfigured = Boolean(apiKey);
     const key = this.buildClientKey(baseUrl, apiKey);
     const existing = this.clients.get(key);
@@ -943,20 +925,34 @@ export class LiteLlmService {
   private async resolveCompletionConfig() {
     const pipelineCfg = this.configService.config;
     const overrides = await this.llmGatewaySettings.getActiveConfig();
-    return overrides ? { ...pipelineCfg.litellm, ...overrides } : pipelineCfg.litellm;
+    const merged = overrides
+      ? { ...pipelineCfg.litellm, ...overrides }
+      : { ...pipelineCfg.litellm };
+    return {
+      ...merged,
+      sendMetadata: this.resolveSendMetadata(overrides?.sendMetadata),
+      responseFormatMode: this.resolveResponseFormatMode(
+        overrides?.responseFormatMode,
+      ),
+    };
   }
 
   private async resolveEmbeddingConfig() {
     const pipelineCfg = this.configService.config;
     const overrides = await this.llmGatewaySettings.getActiveEmbeddingConfig();
-    if (!overrides) {
-      return pipelineCfg.litellm;
-    }
-    const merged = { ...pipelineCfg.litellm, ...overrides };
-    if (overrides.embeddingModel === undefined) {
+    const merged = overrides
+      ? { ...pipelineCfg.litellm, ...overrides }
+      : { ...pipelineCfg.litellm };
+    if (overrides && overrides.embeddingModel === undefined) {
       merged.embeddingModel = pipelineCfg.litellm.embeddingModel;
     }
-    return merged;
+    return {
+      ...merged,
+      sendMetadata: this.resolveSendMetadata(overrides?.sendMetadata),
+      responseFormatMode: this.resolveResponseFormatMode(
+        overrides?.responseFormatMode,
+      ),
+    };
   }
 
   private extractHeaderCost(value: unknown) {
@@ -968,6 +964,45 @@ export class LiteLlmService {
       return value;
     }
     return undefined;
+  }
+
+  private resolveSendMetadata(value: unknown): boolean {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    return DEFAULT_SEND_METADATA;
+  }
+
+  private resolveResponseFormatMode(
+    value: unknown,
+  ): LlmGatewayResponseFormatMode {
+    if (value === "none" || value === "json_object" || value === "json_schema") {
+      return value;
+    }
+    return DEFAULT_RESPONSE_FORMAT_MODE;
+  }
+
+  private resolveMetadata(
+    metadata: Record<string, unknown> | undefined,
+    sendMetadata: boolean,
+  ): Record<string, unknown> | undefined {
+    if (!sendMetadata) {
+      return undefined;
+    }
+    return metadata;
+  }
+
+  private resolveResponseFormat(
+    responseFormat: JsonSchemaResponseFormat | Record<string, unknown> | undefined,
+    mode: LlmGatewayResponseFormatMode,
+  ): JsonSchemaResponseFormat | Record<string, unknown> | undefined {
+    if (mode === "none") {
+      return undefined;
+    }
+    if (mode === "json_object") {
+      return { type: "json_object" };
+    }
+    return responseFormat;
   }
 
   private normalizeGuardrails(raw: unknown): string[] {
@@ -997,7 +1032,11 @@ export class LiteLlmService {
       const flat = value
         .filter((entry): entry is string => typeof entry === "string")
         .flatMap((entry) => entry.split(","));
-      return Array.from(new Set(flat.map((entry) => entry.trim()).filter((entry) => entry.length > 0)));
+      return Array.from(
+        new Set(
+          flat.map((entry) => entry.trim()).filter((entry) => entry.length > 0),
+        ),
+      );
     }
     if (typeof value !== "string") {
       return [];
@@ -1041,7 +1080,9 @@ export class LiteLlmService {
     if (!rawMessage) {
       return;
     }
-    const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(response.headers);
+    const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(
+      response.headers,
+    );
     const normalized = this.buildUserFacingGuardrailMessage(rawMessage);
     throw new LiteLlmGuardrailViolationError(normalized.message, {
       code: normalized.code,
@@ -1050,20 +1091,30 @@ export class LiteLlmService {
     });
   }
 
-  private maybeConvertAxiosErrorToGuardrailViolation(error: AxiosError): LiteLlmGuardrailViolationError | null {
+  private maybeConvertAxiosErrorToGuardrailViolation(
+    error: AxiosError,
+  ): LiteLlmGuardrailViolationError | null {
     const status = error.response?.status;
     if (typeof status !== "number") {
       return null;
     }
 
-    const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(error.response?.headers);
-    const detail = this.extractAxiosErrorText(error).trim();
+    const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(
+      error.response?.headers,
+    );
+    const detail = sanitizeUpstreamErrorText(
+      this.extractAxiosErrorText(error),
+      { maxLength: 500 },
+    );
     const lower = detail.toLowerCase();
 
     const isDefiniteGuardrail =
       lower.includes("violated guardrail") ||
       lower.includes("guardrail_intervened") ||
-      (lower.includes("guardrail") && (lower.includes("policy") || lower.includes("blocked") || lower.includes("reject")));
+      (lower.includes("guardrail") &&
+        (lower.includes("policy") ||
+          lower.includes("blocked") ||
+          lower.includes("reject")));
 
     const isInjection =
       lower.includes("prompt injection") ||
@@ -1071,15 +1122,22 @@ export class LiteLlmService {
       lower.includes("jailbreak");
 
     const isTrustSafety =
-      (lower.includes("trust") && lower.includes("safety") && lower.includes("violation")) ||
+      (lower.includes("trust") &&
+        lower.includes("safety") &&
+        lower.includes("violation")) ||
       lower.includes("trust & safety violation");
 
     const isModeration =
-      lower.includes("moderation") && (lower.includes("flag") || lower.includes("blocked") || lower.includes("violate"));
+      lower.includes("moderation") &&
+      (lower.includes("flag") ||
+        lower.includes("blocked") ||
+        lower.includes("violate"));
 
-    const looksLikeGuardrail = isDefiniteGuardrail || isInjection || isTrustSafety || isModeration;
+    const looksLikeGuardrail =
+      isDefiniteGuardrail || isInjection || isTrustSafety || isModeration;
     const shouldConvert =
-      looksLikeGuardrail || (appliedGuardrails.length > 0 && [400, 403, 422].includes(status));
+      looksLikeGuardrail ||
+      (appliedGuardrails.length > 0 && [400, 403, 422].includes(status));
 
     if (!shouldConvert) {
       return null;
@@ -1095,52 +1153,74 @@ export class LiteLlmService {
     });
   }
 
-  private buildUserFacingGuardrailMessage(detail: string): { message: string; code: LiteLlmGuardrailViolationCode } {
+  private buildUserFacingGuardrailMessage(detail: string): {
+    message: string;
+    code: LiteLlmGuardrailViolationCode;
+  } {
     const raw = typeof detail === "string" ? detail.trim() : "";
     const lower = raw.toLowerCase();
-    if (lower.includes("guardrail") && (lower.includes("not found") || lower.includes("unknown"))) {
+    if (
+      lower.includes("guardrail") &&
+      (lower.includes("not found") || lower.includes("unknown"))
+    ) {
       return {
-        message: "AI safety checks are misconfigured (guardrail not found). Please contact an administrator.",
-        code: "GUARDRAIL_MISCONFIG"
+        message:
+          "AI safety checks are misconfigured (guardrail not found). Please contact an administrator.",
+        code: "GUARDRAIL_MISCONFIG",
       };
     }
-    if (lower.includes("prompt injection") || lower.includes("promptinjection") || lower.includes("jailbreak")) {
+    if (
+      lower.includes("prompt injection") ||
+      lower.includes("promptinjection") ||
+      lower.includes("jailbreak")
+    ) {
       return {
-        message: "Unable to complete request: prompt injection/jailbreak detected.",
-        code: "PROMPT_INJECTION"
+        message:
+          "Unable to complete request: prompt injection/jailbreak detected.",
+        code: "PROMPT_INJECTION",
       };
     }
-    if (lower.includes("trust") && lower.includes("safety") && lower.includes("violation")) {
+    if (
+      lower.includes("trust") &&
+      lower.includes("safety") &&
+      lower.includes("violation")
+    ) {
       return {
-        message: "Unable to complete request: trust & safety violation detected.",
-        code: "TRUST_SAFETY_VIOLATION"
+        message:
+          "Unable to complete request: trust & safety violation detected.",
+        code: "TRUST_SAFETY_VIOLATION",
       };
     }
     if (lower.includes("language") && lower.includes("violation")) {
       return {
-        message: "Unable to complete request: language policy violation detected.",
-        code: "LANGUAGE_POLICY_VIOLATION"
+        message:
+          "Unable to complete request: language policy violation detected.",
+        code: "LANGUAGE_POLICY_VIOLATION",
       };
     }
     if (lower.includes("moderation")) {
       return {
         message: "Unable to complete request: blocked by content moderation.",
-        code: "MODERATION_BLOCKED"
+        code: "MODERATION_BLOCKED",
       };
     }
     if (lower.includes("guardrail")) {
       return {
-        message: "Unable to complete request: blocked by content safety guardrails.",
-        code: "GUARDRAIL_BLOCKED"
+        message:
+          "Unable to complete request: blocked by content safety guardrails.",
+        code: "GUARDRAIL_BLOCKED",
       };
     }
     return {
       message: "Unable to complete request: blocked by content safety policy.",
-      code: "GUARDRAIL_BLOCKED"
+      code: "GUARDRAIL_BLOCKED",
     };
   }
 
-  private async readReadableToString(stream: Readable, maxBytes: number): Promise<string> {
+  private async readReadableToString(
+    stream: Readable,
+    maxBytes: number,
+  ): Promise<string> {
     const chunks: Buffer[] = [];
     let total = 0;
 
@@ -1148,7 +1228,9 @@ export class LiteLlmService {
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
       total += buf.length;
       if (total > maxBytes) {
-        chunks.push(buf.subarray(0, Math.max(0, maxBytes - (total - buf.length))));
+        chunks.push(
+          buf.subarray(0, Math.max(0, maxBytes - (total - buf.length))),
+        );
         break;
       }
       chunks.push(buf);
@@ -1156,47 +1238,4 @@ export class LiteLlmService {
 
     return Buffer.concat(chunks).toString("utf8");
   }
-}
-
-function normalizeApiBase(raw: string) {
-  let base = raw.trim();
-  if (base.length === 0) {
-    return base;
-  }
-
-  base = base.replace(/\/+$/, "");
-
-  const lower = base.toLowerCase();
-  const stripSuffixes = [
-    "/v1/chat/completions",
-    "/chat/completions",
-    "/v1/embeddings",
-    "/embeddings",
-    "/v1/models",
-    "/models",
-  ];
-
-  const matchedSuffix = stripSuffixes.find((suffix) => lower.endsWith(suffix));
-  if (matchedSuffix) {
-    base = base.slice(0, -matchedSuffix.length);
-    base = base.replace(/\/+$/, "");
-  }
-
-  if (base.toLowerCase().endsWith("/v1")) {
-    base = base.slice(0, -"/v1".length);
-  }
-
-  return base.replace(/\/+$/, "");
-}
-
-function normalizeApiKey(raw: unknown): string | undefined {
-  if (typeof raw !== "string") {
-    return undefined;
-  }
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  const normalized = trimmed.replace(/^bearer\s+/i, "").trim();
-  return normalized ? normalized : undefined;
 }
