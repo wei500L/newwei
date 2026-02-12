@@ -9,6 +9,7 @@ node_modules
 .next
 .next-docker
 .next.bak-*
+.next-check
 out
 dist
 build
