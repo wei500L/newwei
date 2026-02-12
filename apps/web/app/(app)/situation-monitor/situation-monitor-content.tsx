@@ -551,6 +551,86 @@ function buildPackedResponsiveLayout(base: Layout[], cols: number): Layout[] {
   });
 }
 
+function projectLayoutToLg(nextLayout: Layout[], fromCols: number): Layout[] {
+  const lgCols = GRID_COLS.lg;
+  if (fromCols >= lgCols) {
+    return nextLayout.map((item) => ({
+      i: item.i,
+      x: typeof item.x === "number" ? item.x : 0,
+      y: typeof item.y === "number" ? item.y : 0,
+      w: typeof item.w === "number" ? item.w : 1,
+      h: typeof item.h === "number" ? item.h : 1,
+    }));
+  }
+
+  const scale = lgCols / fromCols;
+  return nextLayout.map((item) => {
+    const rawW = Math.max(1, Math.round((typeof item.w === "number" ? item.w : 1) * scale));
+    const w = Math.min(lgCols, rawW);
+    const rawX = Math.max(0, Math.round((typeof item.x === "number" ? item.x : 0) * scale));
+    const x = Math.min(Math.max(0, lgCols - w), rawX);
+    return {
+      i: item.i,
+      x,
+      y: typeof item.y === "number" ? item.y : 0,
+      w,
+      h: typeof item.h === "number" ? item.h : 1,
+    };
+  });
+}
+
+function spansOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
+  return startA < endB && startB < endA;
+}
+
+function stretchCorrelationToMonitorArea(layout: Layout[]): Layout[] {
+  const correlation = layout.find((item) => item.i === "correlation");
+  const monitors = layout.find((item) => item.i === "monitors");
+  if (!correlation || !monitors) {
+    return layout;
+  }
+
+  const correlationX = typeof correlation.x === "number" ? correlation.x : 0;
+  const correlationY = typeof correlation.y === "number" ? correlation.y : 0;
+  const correlationW = typeof correlation.w === "number" ? correlation.w : 0;
+  const correlationH = typeof correlation.h === "number" ? correlation.h : 0;
+
+  const monitorsX = typeof monitors.x === "number" ? monitors.x : 0;
+  const monitorsY = typeof monitors.y === "number" ? monitors.y : 0;
+  const monitorsW = typeof monitors.w === "number" ? monitors.w : 0;
+
+  if (!spansOverlap(correlationX, correlationX + correlationW, monitorsX, monitorsX + monitorsW)) {
+    return layout;
+  }
+  if (monitorsY <= correlationY) {
+    return layout;
+  }
+
+  let boundaryY = monitorsY;
+  for (const item of layout) {
+    if (item.i === "correlation" || item.i === "monitors") {
+      continue;
+    }
+    const x = typeof item.x === "number" ? item.x : 0;
+    const y = typeof item.y === "number" ? item.y : 0;
+    const w = typeof item.w === "number" ? item.w : 0;
+    if (y <= correlationY) {
+      continue;
+    }
+    if (!spansOverlap(correlationX, correlationX + correlationW, x, x + w)) {
+      continue;
+    }
+    boundaryY = Math.min(boundaryY, y);
+  }
+
+  const desiredHeight = Math.max(1, boundaryY - correlationY);
+  if (!Number.isFinite(desiredHeight) || desiredHeight <= correlationH) {
+    return layout;
+  }
+
+  return layout.map((item) => (item.i === "correlation" ? { ...item, h: desiredHeight } : item));
+}
+
 function isVisibilityMatchingPreset(
   visibility: Record<SituationMonitorPanelId, boolean>,
   panels: SituationMonitorPanelId[]
@@ -1846,7 +1926,7 @@ export function SituationMonitorContent() {
   );
 
   const visibleLayout = useMemo(
-    () => layout.filter((item) => visibility[item.i as SituationMonitorPanelId]),
+    () => stretchCorrelationToMonitorArea(layout.filter((item) => visibility[item.i as SituationMonitorPanelId])),
     [layout, visibility],
   );
 
@@ -1862,7 +1942,7 @@ export function SituationMonitorContent() {
     }
   }, []);
 
-  const canEditLayout = gridBreakpoint === "lg";
+  const canEditLayout = gridBreakpoint === "lg" || gridBreakpoint === "md";
 
   const gridLayouts = useMemo(
     () => ({
@@ -1877,9 +1957,11 @@ export function SituationMonitorContent() {
 
   const handleLayoutChange = useCallback(
     (nextLayout: Layout[]) => {
-      setLayout(mergePanelLayouts(layout, nextLayout));
+      const cols = GRID_COLS[gridBreakpoint] ?? GRID_COLS.lg;
+      const normalized = projectLayoutToLg(nextLayout, cols);
+      setLayout(mergePanelLayouts(layout, normalized));
     },
-    [layout, setLayout],
+    [gridBreakpoint, layout, setLayout],
   );
 
   const initialLoading = loading && !data;
@@ -2221,7 +2303,7 @@ export function SituationMonitorContent() {
         !marketsSnapshot.hasFinnhubApiKey ? (
           <Typography.Text type="secondary">
             {t("situationMonitor.markets.hint", {
-              defaultValue: "Set SITUATION_MONITOR_FINNHUB_API_KEY to enable indices/sectors/commodities.",
+              defaultValue: "Configure Finnhub API key in Admin Settings > System Settings > Situation Monitor.",
             })}
           </Typography.Text>
         ) : (
@@ -2369,7 +2451,7 @@ export function SituationMonitorContent() {
           {!fedSnapshot.hasFredApiKey ? (
             <Typography.Text type="secondary">
               {t("situationMonitor.fed.hint", {
-                defaultValue: "Set SITUATION_MONITOR_FRED_API_KEY to enable indicators and money printer.",
+                defaultValue: "Configure FRED API key in Admin Settings > System Settings > Situation Monitor.",
               })}
             </Typography.Text>
           ) : fedSnapshot.indicators?.length ? (
@@ -2535,12 +2617,13 @@ export function SituationMonitorContent() {
               const first = Array.isArray(value) ? value[0] : undefined;
               const href = first?.link ? safeHttpUrl(first.link) : null;
               if (!first) return <Typography.Text type="secondary">—</Typography.Text>;
+              const title = translateToZh ? first.titleZh ?? first.title : first.title;
               return href ? (
                 <Typography.Link href={href} target="_blank" rel="noreferrer">
-                  {first.title}
+                  {title}
                 </Typography.Link>
               ) : (
-                <Typography.Text>{first.title}</Typography.Text>
+                <Typography.Text>{title}</Typography.Text>
               );
             },
           },
@@ -2643,7 +2726,7 @@ export function SituationMonitorContent() {
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       styles={{ body: { padding: 0, overflow: "hidden" } }}
     >
-      <WarMap className="h-full" />
+      <WarMap className="h-full" translateTarget={translateToZh ? "zh-CN" : undefined} />
     </Card>
   );
 
@@ -3044,9 +3127,13 @@ export function SituationMonitorContent() {
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Text type="secondary">
-            {t("situationMonitor.panels.hint", {
-              defaultValue: "Drag cards by their headers to rearrange the dashboard.",
-            })}
+            {canEditLayout
+              ? t("situationMonitor.panels.hint", {
+                  defaultValue: "Drag cards by their headers to rearrange the dashboard.",
+                })
+              : t("situationMonitor.panels.hintReadonly", {
+                  defaultValue: "Panel reordering is available on wider screens.",
+                })}
           </Typography.Text>
           <Divider style={{ margin: "12px 0" }} />
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
@@ -3454,7 +3541,7 @@ export function SituationMonitorContent() {
               !marketsSnapshot.hasFinnhubApiKey ? (
                 <Typography.Text type="secondary">
                   {t("situationMonitor.markets.hint", {
-                    defaultValue: "Set SITUATION_MONITOR_FINNHUB_API_KEY to enable indices/sectors/commodities.",
+                    defaultValue: "Configure Finnhub API key in Admin Settings > System Settings > Situation Monitor.",
                   })}
                 </Typography.Text>
               ) : (
@@ -3598,7 +3685,7 @@ export function SituationMonitorContent() {
                 {!fedSnapshot.hasFredApiKey ? (
                   <Typography.Text type="secondary">
                     {t("situationMonitor.fed.hint", {
-                      defaultValue: "Set SITUATION_MONITOR_FRED_API_KEY to enable indicators and money printer.",
+                      defaultValue: "Configure FRED API key in Admin Settings > System Settings > Situation Monitor.",
                     })}
                   </Typography.Text>
                 ) : fedSnapshot.indicators?.length ? (
@@ -3755,12 +3842,13 @@ export function SituationMonitorContent() {
                     const first = Array.isArray(value) ? value[0] : undefined;
                     const href = first?.link ? safeHttpUrl(first.link) : null;
                     if (!first) return <Typography.Text type="secondary">—</Typography.Text>;
+                    const title = translateToZh ? first.titleZh ?? first.title : first.title;
                     return href ? (
                       <Typography.Link href={href} target="_blank" rel="noreferrer">
-                        {first.title}
+                        {title}
                       </Typography.Link>
                     ) : (
-                      <Typography.Text>{first.title}</Typography.Text>
+                      <Typography.Text>{title}</Typography.Text>
                     );
                   },
                 },

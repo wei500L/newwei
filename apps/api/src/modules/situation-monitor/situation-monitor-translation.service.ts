@@ -1,53 +1,26 @@
+import axios from "axios";
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { z } from "zod";
-import { zodToJsonSchema, type JsonSchema7Type } from "zod-to-json-schema";
 
-import { safeJsonParseFromText } from "../../common/llm-json";
 import { CacheService } from "../cache/cache.service";
-import { LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
-import type { JsonSchemaResponseFormat } from "../news-pipeline/news-prompt.builder";
-import { SituationMonitorSettingsService } from "../system-settings/situation-monitor-settings.service";
+import {
+  SituationMonitorSettingsService,
+  type SituationMonitorTranslationRuntimeConfig,
+} from "../system-settings/situation-monitor-settings.service";
 
 import type { SituationMonitorInsightsResponse } from "./situation-monitor.service";
 import type { SituationMonitorHeadline, SituationMonitorFedNewsItem } from "./situation-monitor.types";
 
 const logger = createLogger({ name: "situation-monitor-translation" });
 
-const TRANSLATION_CACHE_KEY_PREFIX = "situation-monitor:translation:v1:zh-cn";
+const TRANSLATION_CACHE_KEY_PREFIX = "situation-monitor:translation:v3:zh-cn:multi";
 const TRANSLATION_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30;
-const TRANSLATION_BATCH_MAX_CHARS = 3_000;
 const DEFAULT_TRANSLATION_MAX_CONCURRENCY = 2;
-
-const TranslationItemSchema = z.object({
-  id: z.string().min(1),
-  text: z.string(),
-});
-
-const TranslationResponseSchema = z.object({
-  translations: z.array(
-    z.object({
-      id: z.string().min(1),
-      zh: z.string(),
-    }),
-  ),
-});
-
-type TranslationResponse = z.infer<typeof TranslationResponseSchema>;
-
-const TRANSLATION_JSON_SCHEMA: JsonSchema7Type = zodToJsonSchema(
-  TranslationResponseSchema,
-  { $refStrategy: "none" },
-);
-
-const TRANSLATION_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
-  type: "json_schema",
-  json_schema: {
-    name: "situation_monitor_translation",
-    schema: TRANSLATION_JSON_SCHEMA,
-  },
-};
+const DEFAULT_TRANSLATION_TIMEOUT_MS = 15_000;
+const DEFAULT_TRANSLATION_MAX_RETRIES = 2;
+const RETRY_BACKOFF_BASE_MS = 300;
+type FallbackSourceLang = "zh-CN" | "en" | "ja" | "ko" | "fr" | "de";
 
 function normalizeText(value: unknown): string {
   if (typeof value !== "string") {
@@ -56,31 +29,12 @@ function normalizeText(value: unknown): string {
   return value.trim();
 }
 
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function chunkByChars<T extends { text: string }>(items: T[], maxChars: number): T[][] {
-  const chunks: T[][] = [];
-  let current: T[] = [];
-  let currentChars = 0;
-
-  for (const item of items) {
-    const nextChars = item.text.length + 50;
-    if (current.length > 0 && currentChars + nextChars > maxChars) {
-      chunks.push(current);
-      current = [];
-      currentChars = 0;
-    }
-    current.push(item);
-    currentChars += nextChars;
-  }
-
-  if (current.length > 0) {
-    chunks.push(current);
-  }
-
-  return chunks;
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 class AsyncSemaphore {
@@ -139,7 +93,6 @@ export class SituationMonitorTranslationService {
 
   constructor(
     private readonly cache: CacheService,
-    private readonly llm: LiteLlmService,
     private readonly settings: SituationMonitorSettingsService,
   ) {}
 
@@ -152,10 +105,11 @@ export class SituationMonitorTranslationService {
     }
 
     try {
-      const maxConcurrency = await this.settings.getTranslationMaxConcurrency();
-      this.semaphore.setLimit(maxConcurrency);
+      const runtime = await this.settings.getTranslationRuntimeConfig();
+      this.semaphore.setLimit(runtime.maxConcurrency);
+      this.assertRuntimeConfig(runtime);
 
-      const translated = await this.translateHashesToZh(targets);
+      const translated = await this.translateHashesToZh(targets, runtime);
       this.applyTranslationMap(insights, translated);
       return { applied: true };
     } catch (error) {
@@ -168,8 +122,49 @@ export class SituationMonitorTranslationService {
       );
       return {
         applied: false,
-        error: error instanceof Error ? error.message : "Failed to translate via LLM gateway.",
+        error: error instanceof Error ? error.message : "Failed to translate via translation APIs.",
       };
+    }
+  }
+
+  async translateTextsToZhBestEffort(texts: Iterable<string>): Promise<Map<string, string>> {
+    const targets = new Map<string, string>();
+    for (const text of texts) {
+      const normalized = normalizeText(text);
+      if (!normalized) {
+        continue;
+      }
+      targets.set(sha256(normalized), normalized);
+    }
+
+    if (targets.size === 0) {
+      return new Map();
+    }
+
+    try {
+      const runtime = await this.settings.getTranslationRuntimeConfig();
+      this.semaphore.setLimit(runtime.maxConcurrency);
+      this.assertRuntimeConfig(runtime);
+
+      const translatedByHash = await this.translateHashesToZh(targets, runtime);
+      const translatedByText = new Map<string, string>();
+      for (const [hash, original] of targets.entries()) {
+        const translated = translatedByHash.get(hash);
+        if (translated) {
+          translatedByText.set(original, translated);
+        }
+      }
+      return translatedByText;
+    } catch (error) {
+      logger.warn(
+        {
+          error,
+          count: targets.size,
+          message: error instanceof Error ? error.message : "unknown error",
+        },
+        "Failed to translate texts to zh-CN for situation monitor (best-effort)",
+      );
+      return new Map();
     }
   }
 
@@ -298,7 +293,10 @@ export class SituationMonitorTranslationService {
     return targets;
   }
 
-  private async translateHashesToZh(targets: Map<string, string>): Promise<Map<string, string>> {
+  private async translateHashesToZh(
+    targets: Map<string, string>,
+    runtime: SituationMonitorTranslationRuntimeConfig,
+  ): Promise<Map<string, string>> {
     const translated = new Map<string, string>();
     const missing: { id: string; text: string }[] = [];
 
@@ -315,69 +313,419 @@ export class SituationMonitorTranslationService {
       return translated;
     }
 
-    const chunks = chunkByChars(missing, TRANSLATION_BATCH_MAX_CHARS);
-    const tasks = chunks.map((chunk) =>
+    const tasks = missing.map((entry) =>
       this.semaphore.withPermit(async () => {
-        const response = await this.requestZhTranslations(chunk);
-        for (const entry of response.translations) {
-          const hash = entry.id;
-          const zh = normalizeText(entry.zh);
-          if (!targets.has(hash) || !zh) {
-            continue;
-          }
-          translated.set(hash, zh);
-          await this.cache.set(this.translationCacheKey(hash), zh, TRANSLATION_CACHE_TTL_SECONDS);
+        const zh = await this.requestZhTranslation(entry.text, runtime);
+        if (!zh || !targets.has(entry.id)) {
+          return;
         }
+        translated.set(entry.id, zh);
+        await this.cache.set(this.translationCacheKey(entry.id), zh, TRANSLATION_CACHE_TTL_SECONDS);
       }),
     );
 
     const results = await Promise.allSettled(tasks);
     const failed = results.find((result) => result.status === "rejected") as PromiseRejectedResult | undefined;
     if (failed) {
-      throw failed.reason instanceof Error ? failed.reason : new Error("Failed to translate via LLM gateway");
+      throw failed.reason instanceof Error ? failed.reason : new Error("Failed to translate via translation APIs");
     }
 
     return translated;
   }
 
-  private async requestZhTranslations(items: z.infer<typeof TranslationItemSchema>[]): Promise<TranslationResponse> {
-    const safeItems = TranslationItemSchema.array().parse(items);
-    const systemPrompt = [
-      "You are a professional translator.",
-      "Translate each provided text into Simplified Chinese (zh-CN).",
-      "Be objective and faithful: do not add, remove, or infer any information.",
-      "Preserve names, proper nouns, abbreviations, numbers, dates, units, and punctuation.",
-      "Do not translate URLs.",
-      "If the input text is already Simplified Chinese, return it unchanged.",
-      "Return ONLY valid JSON matching the provided schema.",
-    ].join("\n");
-
-    const userPrompt = [
-      "Translate the following items.",
-      "",
-      JSON.stringify({ items: safeItems }, null, 2),
-    ].join("\n");
-
-    const messages: LiteLlmMessage[] = [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ];
-
-    const completion = await this.llm.acompletion({
-      messages,
-      temperature: 0,
-      response_format: TRANSLATION_RESPONSE_FORMAT,
-      metadata: { feature: "situation-monitor", action: "translate", target: "zh-CN" },
-      timeoutMs: 120_000,
-      max_tokens: 2_000,
-    });
-
-    const content = completion.choices?.[0]?.message?.content ?? "";
-    const parsed = safeJsonParseFromText<unknown>(content);
-    if (!parsed) {
-      throw new Error("LiteLLM return was not valid JSON");
+  private assertRuntimeConfig(runtime: SituationMonitorTranslationRuntimeConfig) {
+    if (!runtime.enabled && !runtime.fallbackEnabled) {
+      throw new Error("Translation APIs are disabled");
     }
-    return TranslationResponseSchema.parse(parsed);
+
+    const deepLxReady = this.canUseDeepLx(runtime);
+    const fallbackReady = this.canUseFallback(runtime);
+    if (deepLxReady || fallbackReady) {
+      return;
+    }
+
+    const deepLxConfigError = this.buildDeepLxConfigError(runtime);
+    const fallbackConfigError = this.buildFallbackConfigError(runtime);
+    if (deepLxConfigError && fallbackConfigError) {
+      throw new Error(`${deepLxConfigError}; ${fallbackConfigError}`);
+    }
+    throw new Error(deepLxConfigError ?? fallbackConfigError ?? "No translation API is available");
+  }
+
+  private async requestZhTranslation(
+    text: string,
+    runtime: SituationMonitorTranslationRuntimeConfig,
+  ): Promise<string> {
+    let deepLxErrorMessage: string | undefined;
+    if (this.canUseDeepLx(runtime)) {
+      try {
+        return await this.requestViaDeepLx(text, runtime);
+      } catch (error) {
+        deepLxErrorMessage = this.toNetworkErrorMessage(error, "DeepLX");
+      }
+    } else {
+      deepLxErrorMessage = this.buildDeepLxConfigError(runtime);
+    }
+
+    if (!this.canUseFallback(runtime)) {
+      throw new Error(deepLxErrorMessage ?? this.buildFallbackConfigError(runtime) ?? "No translation API is available");
+    }
+
+    const sourceLang = this.detectFallbackSourceLang(text);
+    if (sourceLang === "zh-CN") {
+      return text;
+    }
+    if (!sourceLang) {
+      const fallbackSkipped = "Fallback translation API skipped: unsupported source language";
+      if (deepLxErrorMessage) {
+        throw new Error(`${deepLxErrorMessage}; ${fallbackSkipped}`);
+      }
+      throw new Error(fallbackSkipped);
+    }
+
+    try {
+      return await this.requestViaFallbackApi(text, sourceLang, runtime);
+    } catch (error) {
+      const fallbackErrorMessage = this.toNetworkErrorMessage(error, "Fallback translation API");
+      if (deepLxErrorMessage) {
+        throw new Error(`${deepLxErrorMessage}; ${fallbackErrorMessage}`);
+      }
+      throw new Error(fallbackErrorMessage);
+    }
+  }
+
+  private async requestViaDeepLx(
+    text: string,
+    runtime: SituationMonitorTranslationRuntimeConfig,
+  ): Promise<string> {
+    const apiKey = normalizeText(runtime.apiKey);
+    const baseUrl = normalizeText(runtime.baseUrl).replace(/\/+$/, "");
+    if (!apiKey) {
+      throw new Error("DeepLX translation API key is not configured");
+    }
+    if (!baseUrl) {
+      throw new Error("DeepLX translation API base URL is not configured");
+    }
+
+    const timeoutMs = Math.max(1_000, Math.trunc(runtime.timeoutMs ?? DEFAULT_TRANSLATION_TIMEOUT_MS));
+    const maxRetries = Math.max(0, Math.trunc(runtime.maxRetries ?? DEFAULT_TRANSLATION_MAX_RETRIES));
+    const maxAttempts = maxRetries + 1;
+    const url = this.buildDeepLxTranslateUrl(baseUrl, apiKey);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await axios.post(
+          url,
+          { text, source_lang: "auto", target_lang: "ZH" },
+          {
+            timeout: timeoutMs,
+            headers: { "content-type": "application/json" },
+            validateStatus: () => true,
+          },
+        );
+
+        if (response.status < 200 || response.status >= 300) {
+          const message = this.buildHttpErrorMessage("DeepLX", response.status, response.data);
+          if (attempt < maxAttempts && this.canRetryStatus(response.status)) {
+            await sleep(RETRY_BACKOFF_BASE_MS * attempt);
+            continue;
+          }
+          throw new Error(message);
+        }
+
+        const code = this.extractNumericCode(response.data);
+        if (typeof code === "number" && code !== 200) {
+          const message = this.buildCodeErrorMessage("DeepLX", code, response.data);
+          if (attempt < maxAttempts && this.canRetryStatus(code)) {
+            await sleep(RETRY_BACKOFF_BASE_MS * attempt);
+            continue;
+          }
+          throw new Error(message);
+        }
+
+        const translated = this.extractDeepLxTranslatedText(response.data);
+        if (!translated) {
+          throw new Error("DeepLX response missing translated text");
+        }
+        return translated;
+      } catch (error) {
+        const message = this.toNetworkErrorMessage(error, "DeepLX");
+        if (attempt < maxAttempts && this.isRetryableNetworkError(error)) {
+          await sleep(RETRY_BACKOFF_BASE_MS * attempt);
+          continue;
+        }
+        throw new Error(message);
+      }
+    }
+
+    throw new Error("DeepLX request failed");
+  }
+
+  private async requestViaFallbackApi(
+    text: string,
+    sourceLang: Exclude<FallbackSourceLang, "zh-CN">,
+    runtime: SituationMonitorTranslationRuntimeConfig,
+  ): Promise<string> {
+    const baseUrl = normalizeText(runtime.fallbackBaseUrl).replace(/\/+$/, "");
+    if (!baseUrl) {
+      throw new Error("Fallback translation API base URL is not configured");
+    }
+
+    const timeoutMs = Math.max(1_000, Math.trunc(runtime.timeoutMs ?? DEFAULT_TRANSLATION_TIMEOUT_MS));
+    const maxRetries = Math.max(0, Math.trunc(runtime.maxRetries ?? DEFAULT_TRANSLATION_MAX_RETRIES));
+    const maxAttempts = maxRetries + 1;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await axios.post(
+          baseUrl,
+          { source_lang: sourceLang, target_lang: "zh-CN", text_list: [text] },
+          {
+            timeout: timeoutMs,
+            headers: { "content-type": "application/json" },
+            validateStatus: () => true,
+          },
+        );
+
+        if (response.status < 200 || response.status >= 300) {
+          const message = this.buildHttpErrorMessage("Fallback translation API", response.status, response.data);
+          if (attempt < maxAttempts && this.canRetryStatus(response.status)) {
+            await sleep(RETRY_BACKOFF_BASE_MS * attempt);
+            continue;
+          }
+          throw new Error(message);
+        }
+
+        const translated = this.extractFallbackTranslatedText(response.data);
+        if (!translated) {
+          throw new Error("Fallback translation API response missing translated text");
+        }
+        return translated;
+      } catch (error) {
+        const message = this.toNetworkErrorMessage(error, "Fallback translation API");
+        if (attempt < maxAttempts && this.isRetryableNetworkError(error)) {
+          await sleep(RETRY_BACKOFF_BASE_MS * attempt);
+          continue;
+        }
+        throw new Error(message);
+      }
+    }
+
+    throw new Error("Fallback translation API request failed");
+  }
+
+  private canUseDeepLx(runtime: SituationMonitorTranslationRuntimeConfig): boolean {
+    return runtime.enabled && Boolean(normalizeText(runtime.baseUrl)) && Boolean(normalizeText(runtime.apiKey));
+  }
+
+  private canUseFallback(runtime: SituationMonitorTranslationRuntimeConfig): boolean {
+    return runtime.fallbackEnabled && Boolean(normalizeText(runtime.fallbackBaseUrl));
+  }
+
+  private buildDeepLxConfigError(runtime: SituationMonitorTranslationRuntimeConfig): string | undefined {
+    if (!runtime.enabled) {
+      return "DeepLX translation API is disabled";
+    }
+    if (!normalizeText(runtime.baseUrl)) {
+      return "DeepLX translation API base URL is not configured";
+    }
+    if (!normalizeText(runtime.apiKey)) {
+      return "DeepLX translation API key is not configured";
+    }
+    return undefined;
+  }
+
+  private buildFallbackConfigError(runtime: SituationMonitorTranslationRuntimeConfig): string | undefined {
+    if (!runtime.fallbackEnabled) {
+      return "Fallback translation API is disabled";
+    }
+    if (!normalizeText(runtime.fallbackBaseUrl)) {
+      return "Fallback translation API base URL is not configured";
+    }
+    return undefined;
+  }
+
+  private detectFallbackSourceLang(text: string): FallbackSourceLang | null {
+    const normalized = normalizeText(text);
+    if (!normalized) {
+      return null;
+    }
+
+    if (/[\u3040-\u30ff]/u.test(normalized)) {
+      return "ja";
+    }
+    if (/[\uac00-\ud7af\u1100-\u11ff]/u.test(normalized)) {
+      return "ko";
+    }
+    if (/[\u4e00-\u9fff]/u.test(normalized)) {
+      return "zh-CN";
+    }
+
+    const lower = normalized.toLowerCase();
+    if (
+      /[àâçéèêëîïôûùüÿœæ]/i.test(normalized)
+      || /\b(le|la|les|des|du|de|une|un|bonjour|merci|avec|pour|dans|est|sont)\b/u.test(lower)
+    ) {
+      return "fr";
+    }
+
+    if (
+      /[äöüß]/i.test(normalized)
+      || /\b(der|die|das|und|ist|mit|nicht|ein|eine|für|auf|von|den)\b/u.test(lower)
+    ) {
+      return "de";
+    }
+
+    if (/[a-z]/i.test(normalized)) {
+      return "en";
+    }
+
+    return null;
+  }
+
+  private buildDeepLxTranslateUrl(baseUrl: string, apiKey: string): string {
+    return `${baseUrl}/${encodeURIComponent(apiKey)}/translate`;
+  }
+
+  private extractNumericCode(payload: unknown): number | undefined {
+    if (!payload || typeof payload !== "object") {
+      return undefined;
+    }
+    const rawCode = (payload as Record<string, unknown>).code;
+    if (typeof rawCode !== "number" || !Number.isFinite(rawCode)) {
+      return undefined;
+    }
+    return Math.trunc(rawCode);
+  }
+
+  private extractDeepLxTranslatedText(payload: unknown): string {
+    if (typeof payload === "string") {
+      return normalizeText(payload);
+    }
+    if (!payload || typeof payload !== "object") {
+      return "";
+    }
+    const record = payload as Record<string, unknown>;
+    const primary = normalizeText(record.data);
+    if (primary) {
+      return primary;
+    }
+    const fallback = normalizeText(record.translation);
+    if (fallback) {
+      return fallback;
+    }
+    if (Array.isArray(record.alternatives)) {
+      for (const entry of record.alternatives) {
+        const alternative = normalizeText(entry);
+        if (alternative) {
+          return alternative;
+        }
+      }
+    }
+    return "";
+  }
+
+  private extractFallbackTranslatedText(payload: unknown): string {
+    if (!payload || typeof payload !== "object") {
+      return "";
+    }
+    const translations = (payload as Record<string, unknown>).translations;
+    if (!Array.isArray(translations)) {
+      return "";
+    }
+    for (const entry of translations) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const text = normalizeText((entry as Record<string, unknown>).text);
+      if (text) {
+        return text;
+      }
+    }
+    return "";
+  }
+
+  private canRetryStatus(status: number): boolean {
+    return status === 408 || status === 429 || status >= 500;
+  }
+
+  private buildHttpErrorMessage(provider: string, status: number, payload: unknown): string {
+    const detail = this.extractErrorDetail(payload);
+    return detail
+      ? `${provider} request failed (HTTP ${status}): ${detail}`
+      : `${provider} request failed (HTTP ${status})`;
+  }
+
+  private buildCodeErrorMessage(provider: string, code: number, payload: unknown): string {
+    const detail = this.extractErrorDetail(payload);
+    return detail
+      ? `${provider} request failed (code ${code}): ${detail}`
+      : `${provider} request failed (code ${code})`;
+  }
+
+  private extractErrorDetail(payload: unknown): string | undefined {
+    if (typeof payload === "string") {
+      const message = normalizeText(payload);
+      return message ? this.truncateMessage(message) : undefined;
+    }
+    if (!payload || typeof payload !== "object") {
+      return undefined;
+    }
+    const record = payload as Record<string, unknown>;
+    const candidates = [record.message, record.error, record.msg, record.detail];
+    for (const entry of candidates) {
+      const message = normalizeText(entry);
+      if (message) {
+        return this.truncateMessage(message);
+      }
+    }
+    return undefined;
+  }
+
+  private toNetworkErrorMessage(error: unknown, provider: string): string {
+    if (error instanceof Error && error.message.startsWith(provider)) {
+      return error.message;
+    }
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status) {
+        return this.buildHttpErrorMessage(provider, error.response.status, error.response.data);
+      }
+      if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") {
+        return `${provider} request timed out`;
+      }
+      const message = normalizeText(error.message);
+      return message
+        ? `${provider} request failed: ${this.truncateMessage(message)}`
+        : `${provider} request failed`;
+    }
+    if (error instanceof Error) {
+      return normalizeText(error.message) || `${provider} request failed`;
+    }
+    return `${provider} request failed`;
+  }
+
+  private isRetryableNetworkError(error: unknown): boolean {
+    if (!axios.isAxiosError(error)) {
+      return false;
+    }
+    const status = error.response?.status;
+    if (typeof status === "number") {
+      return this.canRetryStatus(status);
+    }
+    if (!error.code) {
+      return true;
+    }
+    const code = error.code.toUpperCase();
+    return code === "ECONNABORTED"
+      || code === "ETIMEDOUT"
+      || code === "ECONNRESET"
+      || code === "EAI_AGAIN"
+      || code === "ENOTFOUND"
+      || code === "ERR_NETWORK";
+  }
+
+  private truncateMessage(message: string): string {
+    return message.length > 200 ? `${message.slice(0, 200)}...` : message;
   }
 
   private applyTranslationMap(insights: SituationMonitorInsightsResponse, translated: Map<string, string>) {
