@@ -18,6 +18,7 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardService } from "./dashboard.service";
 import {
+  DashboardWarMapNewsMarkersQueryDto,
   DashboardSpacetimeGeoHeatmapArticlesQueryDto,
   DashboardSpacetimeGeoHeatmapQueryDto,
   DashboardSpacetimePropagationArticlesQueryDto,
@@ -34,6 +35,19 @@ function readEnvInt(key: string, fallback: number): number {
 
 function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+type DashboardTranslateTarget = "zh-CN";
+
+function parseTranslateTarget(value: unknown): DashboardTranslateTarget | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "zh-cn" || normalized === "zh") {
+    return "zh-CN";
+  }
+  return undefined;
 }
 
 @ApiTags("dashboard")
@@ -88,10 +102,12 @@ export class DashboardController {
   @Get("war-map/news-markers")
   async warMapNewsMarkers(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardTimeRangeQueryDto
+    @Query() query: DashboardWarMapNewsMarkersQueryDto
   ) {
     const range = this.chartsService.resolveRange(query);
-    return this.chartsService.getWarMapNewsMarkers(range, user.orgId);
+    return this.chartsService.getWarMapNewsMarkers(range, user.orgId, {
+      translateTarget: parseTranslateTarget(query.translate)
+    });
   }
 
   @Permissions("dashboards.read")

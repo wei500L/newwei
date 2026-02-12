@@ -85,6 +85,7 @@ type WarMapNewsGeoSource = "geocoded" | "fallback-country";
 interface WarMapNewsMarker {
   id: string;
   title: string;
+  titleZh?: string;
   url?: string | null;
   location: string;
   lat: number;
@@ -148,6 +149,7 @@ interface WarMapScatterPoint {
   alertCount?: number;
   newsCount?: number;
   title?: string;
+  titleZh?: string;
   location?: string;
   url?: string | null;
   publishedAt?: string;
@@ -207,9 +209,10 @@ const getApiErrorMessage = (error: unknown): string | undefined => {
 
 export interface WarMapProps {
   className?: string;
+  translateTarget?: "zh-CN";
 }
 
-export function WarMap({ className }: WarMapProps = {}) {
+export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
@@ -301,7 +304,8 @@ export function WarMap({ className }: WarMapProps = {}) {
       "war-map",
       "news-markers",
       start.toISOString(),
-      end.toISOString()
+      end.toISOString(),
+      translateTarget ?? null
     ],
     queryFn: async () => {
       const response = await apiClient.get<WarMapNewsMarkersResponse>(
@@ -309,7 +313,8 @@ export function WarMap({ className }: WarMapProps = {}) {
         {
           params: {
             start: start.toISOString(),
-            end: end.toISOString()
+            end: end.toISOString(),
+            translate: translateTarget
           }
         }
       );
@@ -450,6 +455,7 @@ export function WarMap({ className }: WarMapProps = {}) {
           kind: "news",
           name: marker.location,
           title: marker.title,
+          titleZh: marker.titleZh,
           location: marker.location,
           url: marker.url ?? null,
           publishedAt: marker.publishedAt,
@@ -712,7 +718,14 @@ export function WarMap({ className }: WarMapProps = {}) {
               typeof data.ingestedAt === "string"
                 ? formatDateTime(data.ingestedAt, locale, { dateStyle: "medium", timeStyle: "short" })
                 : "N/A";
-            const title = typeof data.title === "string" ? data.title : payload.name ?? "News";
+            const title =
+              translateTarget === "zh-CN" &&
+              typeof data.titleZh === "string" &&
+              data.titleZh.trim().length > 0
+                ? data.titleZh
+                : typeof data.title === "string"
+                  ? data.title
+                  : payload.name ?? "News";
             const location = typeof data.location === "string" ? data.location : payload.name ?? "N/A";
             const geoLabel = typeof data.geoSource === "string" ? data.geoSource : undefined;
 
@@ -860,6 +873,7 @@ export function WarMap({ className }: WarMapProps = {}) {
     newsMarkersQuery.data,
     start,
     end,
+    translateTarget,
     t
   ]);
 

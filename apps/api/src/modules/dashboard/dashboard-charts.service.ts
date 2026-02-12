@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { GeocodingService } from "../geo/geocoding.service";
+import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
 
 import worldGeoJson from "./assets/world.geo.json";
 import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
@@ -292,6 +293,7 @@ type WarMapNewsGeoSource = "geocoded" | "fallback-country";
 interface WarMapNewsMarker {
   id: string;
   title: string;
+  titleZh?: string;
   url?: string | null;
   location: string;
   lat: number;
@@ -305,6 +307,10 @@ interface WarMapNewsMarker {
 export interface WarMapNewsMarkersResponse {
   markers: WarMapNewsMarker[];
   updatedAt?: string;
+}
+
+interface WarMapNewsMarkersOptions {
+  translateTarget?: "zh-CN";
 }
 
 export type SpacetimeSentimentLabel = "positive" | "neutral" | "negative" | "unknown";
@@ -534,7 +540,8 @@ export class DashboardChartsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly geocoding: GeocodingService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly translation?: SituationMonitorTranslationService
   ) {}
 
   private geoHeatmapSnapshotCacheKey(orgId: string, snapshotId: string) {
@@ -796,7 +803,8 @@ export class DashboardChartsService {
 
   async getWarMapNewsMarkers(
     range: DateRange,
-    orgId: string
+    orgId: string,
+    options: WarMapNewsMarkersOptions = {}
   ): Promise<WarMapNewsMarkersResponse> {
     const geoIndex = this.getGeoIndex();
     const records = await this.prisma.processedArticle.findMany({
@@ -1028,6 +1036,18 @@ export class DashboardChartsService {
 
       if (latestAt && (!updatedAt || latestAt > updatedAt)) {
         updatedAt = latestAt;
+      }
+    }
+
+    if (options.translateTarget === "zh-CN" && this.translation && markers.length > 0) {
+      const translatedByText = await this.translation.translateTextsToZhBestEffort(
+        markers.map((marker) => marker.title)
+      );
+      for (const marker of markers) {
+        const titleZh = translatedByText.get(marker.title);
+        if (titleZh) {
+          marker.titleZh = titleZh;
+        }
       }
     }
 

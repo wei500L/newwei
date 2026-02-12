@@ -13,6 +13,16 @@ export class DashboardTimeRangeQueryDto {
   end?: string;
 }
 
+export class DashboardWarMapNewsMarkersQueryDto extends DashboardTimeRangeQueryDto {
+  @ApiPropertyOptional({
+    description: "Optional translation target. Supported: zh-CN",
+    example: "zh-CN"
+  })
+  @IsOptional()
+  @IsString()
+  translate?: string;
+}
+
 export class DashboardSpacetimeGeoHeatmapQueryDto extends DashboardTimeRangeQueryDto {
   @ApiPropertyOptional()
   @IsOptional()

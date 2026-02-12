@@ -106,6 +106,64 @@ describe("DashboardChartsService", () => {
     );
   });
 
+  it("uses situation monitor translation service for war map marker titles when zh-CN translation is requested", async () => {
+    const prisma = {
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "marker-1",
+            title: "Example headline",
+            location: "San Francisco",
+            publishedAt: new Date("2026-01-01T12:00:00.000Z"),
+            processedAt: new Date("2026-01-01T12:05:00.000Z"),
+            entities: [],
+            article: {
+              url: "https://example.com/news/1",
+              crawlAt: new Date("2026-01-01T12:01:00.000Z"),
+              titleGuess: null
+            }
+          }
+        ])
+      }
+    };
+    const geocoding = {
+      resolveCandidates: jest.fn().mockResolvedValue({
+        lat: 37.7749,
+        lng: -122.4194,
+        displayName: "San Francisco, United States"
+      })
+    };
+    const translation = {
+      translateTextsToZhBestEffort: jest
+        .fn()
+        .mockResolvedValue(new Map([["Example headline", "示例标题"]]))
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+      translation as any
+    );
+
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z")
+    };
+
+    const result = await service.getWarMapNewsMarkers(range, "org-1", {
+      translateTarget: "zh-CN"
+    });
+
+    expect(translation.translateTextsToZhBestEffort).toHaveBeenCalledTimes(1);
+    expect(result.markers[0]).toEqual(
+      expect.objectContaining({
+        id: "marker-1",
+        title: "Example headline",
+        titleZh: "示例标题"
+      })
+    );
+  });
+
   it("selects sector heatmap sourceField from item metadata preference (supports label->field mapping)", async () => {
     const prisma = {
       economicDataItem: {
