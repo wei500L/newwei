@@ -51,12 +51,14 @@ export interface LlmGatewayAutoRecommendationConfig {
 export type LlmGatewayResolvedConfig = LiteLlmEnvConfig &
   LlmGatewayCompatibilityOptions & {
     apiKey?: string;
+    assistantModel?: string;
   };
 
 export type LlmGatewayProfilePublic = Omit<LiteLlmEnvConfig, "apiKey"> &
   LlmGatewayCompatibilityOptions & {
     id: string;
     name: string;
+    assistantModel?: string;
     enabled: boolean;
     hasApiKey: boolean;
     createdAt: string;
@@ -77,6 +79,7 @@ export type LlmGatewayProfileInput =
       enabled?: boolean;
       apiKey?: string | null;
       embeddingModel?: string | null;
+      assistantModel?: string | null;
     };
 
 interface StoredProfile
@@ -85,6 +88,7 @@ interface StoredProfile
   id: string;
   name: string;
   apiKey?: unknown;
+  assistantModel?: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -246,6 +250,7 @@ export class LlmGatewaySettingsService {
       name: profile.name,
       apiBase: profile.apiBase,
       model: profile.model,
+      assistantModel: profile.assistantModel,
       enabled: profile.enabled,
       hasApiKey: this.hasApiKey(profile),
       sendMetadata: profile.sendMetadata,
@@ -288,6 +293,7 @@ export class LlmGatewaySettingsService {
       name: updated.name,
       apiBase: updated.apiBase,
       model: updated.model,
+      assistantModel: updated.assistantModel,
       enabled: updated.enabled,
       hasApiKey: this.hasApiKey(updated),
       sendMetadata: updated.sendMetadata,
@@ -386,6 +392,7 @@ export class LlmGatewaySettingsService {
     return {
       model: profile.model,
       embeddingModel: profile.embeddingModel,
+      ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
       apiBase: profile.apiBase,
       apiKey,
       timeoutMs: profile.timeoutMs,
@@ -418,6 +425,7 @@ export class LlmGatewaySettingsService {
     return {
       model: profile.model,
       embeddingModel: profile.embeddingModel,
+      ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
       apiBase: profile.apiBase,
       apiKey,
       timeoutMs: profile.timeoutMs,
@@ -443,6 +451,7 @@ export class LlmGatewaySettingsService {
     return {
       model: profile.model,
       embeddingModel: profile.embeddingModel,
+      ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
       apiBase: profile.apiBase,
       apiKey,
       timeoutMs: profile.timeoutMs,
@@ -591,6 +600,7 @@ export class LlmGatewaySettingsService {
       apiKey: record.apiKey,
       model,
       embeddingModel: this.normalizeOptionalString(record.embeddingModel),
+      assistantModel: this.normalizeOptionalString(record.assistantModel),
       timeoutMs: this.asPositiveInt(record.timeoutMs, fallback.timeoutMs),
       temperature: this.clampNumber(record.temperature, fallback.temperature, 0, 2),
       topP: this.clampNumber(record.topP, fallback.topP, 0, 1),
@@ -638,6 +648,10 @@ export class LlmGatewaySettingsService {
         input.embeddingModel !== undefined
           ? this.normalizeOptionalString(input.embeddingModel)
           : base.embeddingModel ?? (fallback as StoredProfile).embeddingModel,
+      assistantModel:
+        input.assistantModel !== undefined
+          ? this.normalizeOptionalString(input.assistantModel)
+          : base.assistantModel ?? (fallback as Partial<StoredProfile>).assistantModel,
       timeoutMs:
         input.timeoutMs !== undefined
           ? this.asPositiveInt(input.timeoutMs, fallback.timeoutMs)
@@ -740,6 +754,7 @@ export class LlmGatewaySettingsService {
       name: profile.name,
       model: profile.model,
       embeddingModel: profile.embeddingModel,
+      ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
       apiBase: profile.apiBase,
       timeoutMs: profile.timeoutMs,
       temperature: profile.temperature,

@@ -58,6 +58,14 @@ export class CreateLlmGatewayDto {
   @IsString()
   embeddingModel?: string | null;
 
+  @ApiPropertyOptional({
+    description:
+      "Optional assistant-only chat model override. Used by /assistant calls only and does not affect news pipelines."
+  })
+  @IsOptional()
+  @IsString()
+  assistantModel?: string | null;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()
@@ -157,6 +165,14 @@ export class UpdateLlmGatewayDto {
   @IsOptional()
   @IsString()
   embeddingModel?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Optional assistant-only chat model override. Used by /assistant calls only and does not affect news pipelines."
+  })
+  @IsOptional()
+  @IsString()
+  assistantModel?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

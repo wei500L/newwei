@@ -178,6 +178,28 @@ describe("LlmGatewaySettingsService", () => {
     expect(listed.profiles).toHaveLength(1);
   });
 
+  it("stores assistant-only model override on profile and exposes it in active config", async () => {
+    const created = await service.createProfile("org-1", "actor-1", {
+      name: "LiteLLM Local",
+      apiBase: "http://localhost:4001/v1",
+      model: "openai/gpt-4o-mini",
+      assistantModel: "openai/gpt-4.1-mini",
+      enabled: true
+    });
+
+    expect(created.assistantModel).toBe("openai/gpt-4.1-mini");
+
+    const active = await service.getActiveConfig();
+    expect(active?.assistantModel).toBe("openai/gpt-4.1-mini");
+
+    await service.updateProfile("org-1", "actor-1", created.id, {
+      assistantModel: null
+    });
+
+    const listed = await service.list();
+    expect(listed.profiles[0]?.assistantModel).toBeUndefined();
+  });
+
   it("uses active profile for embeddings when embeddingActiveId is unset", async () => {
     const first = await service.createProfile("org-1", "actor-1", {
       name: "Gateway A",

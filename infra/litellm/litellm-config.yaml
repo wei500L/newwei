@@ -2,9 +2,10 @@
 # - This is a base config for LiteLLM Proxy.
 # - In docker-compose, the `litellm` service generates an effective config at startup via
 #   infra/litellm/generate-litellm-config.py:
-#   - It can fetch OpenAI keys from the API (stored in MySQL) if `LITELLM_CONFIG_API_BASE` +
-#     `LITELLM_CONFIG_INTERNAL_TOKEN` are set.
-#   - It also supports `OPENAI_API_KEYS` / `ANTHROPIC_API_KEYS` (comma-separated) env vars.
+#   - Preferred: fetch DB-managed proxy load balancing settings from API if
+#     `LITELLM_CONFIG_API_BASE` + `LITELLM_CONFIG_INTERNAL_TOKEN` are set.
+#   - When API has Nest global prefix, use `LITELLM_CONFIG_API_BASE=http://api:4000/api`.
+#   - Fallback: env-based `OPENAI_API_KEYS` / `ANTHROPIC_API_KEYS` and router settings.
 #   - When multiple keys are provided, entries that use `os.environ/OPENAI_API_KEY` /
 #     `os.environ/ANTHROPIC_API_KEY` are expanded into multiple deployments/guardrails for load balancing.
 

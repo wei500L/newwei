@@ -18,6 +18,7 @@ import { GeoNominatimTestController } from "./geo-nominatim-test.controller";
 import { LlmGatewaySettingsController } from "./llm-gateway-settings.controller";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
+import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import { ModelServiceSettingsController } from "./model-service-settings.controller";
 import { ModelServiceSettingsService } from "./model-service-settings.service";
 import { OpenAiKeysInternalController } from "./openai-keys-internal.controller";
@@ -52,7 +53,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     SystemSecuritySettingsController,
     ModelServiceSettingsController,
     SituationMonitorSettingsController,
-    VectorServiceSettingsController
+    VectorServiceSettingsController,
   ],
   providers: [
     RateLimitConfigService,
@@ -61,6 +62,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     GeoNominatimSettingsService,
     LlmGatewaySettingsService,
     LlmGatewayTestService,
+    LiteLlmProxyLoadBalancingSettingsService,
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
@@ -69,7 +71,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     AssistantSafetySettingsService,
     AssistantSafetyDiagnosticsService,
     AssistantSafetyMetricsService,
-    OpenAiKeysSettingsService
+    OpenAiKeysSettingsService,
   ],
   exports: [
     RateLimitConfigService,
@@ -77,13 +79,14 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     AuditLogSettingsService,
     GeoNominatimSettingsService,
     LlmGatewaySettingsService,
+    LiteLlmProxyLoadBalancingSettingsService,
     AssistantSafetySettingsService,
     OpenAiKeysSettingsService,
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
     SituationMonitorSettingsService,
-    VectorServiceSettingsService
-  ]
+    VectorServiceSettingsService,
+  ],
 })
 export class SystemSettingsModule {}

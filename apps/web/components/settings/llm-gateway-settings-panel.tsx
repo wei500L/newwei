@@ -11,6 +11,7 @@ import {
   InputNumber,
   Modal,
   Select,
+  Spin,
   Space,
   Switch,
   Table,
@@ -43,6 +44,7 @@ interface LlmGatewayProfile {
   name: string;
   apiBase: string;
   model: string;
+  assistantModel?: string | null;
   embeddingModel?: string | null;
   timeoutMs: number;
   temperature: number;
@@ -208,6 +210,7 @@ interface LlmGatewayFormValues {
   apiBase: string;
   apiKey?: string;
   model?: string;
+  assistantModel?: string;
   embeddingModel?: string;
   timeoutMs: number;
   temperature: number;
@@ -243,14 +246,42 @@ interface LlmGatewayRecommendationConfigFormValues {
 }
 
 interface LiteLlmProxyLbFormValues {
+  enabled: boolean;
   openaiKeys?: string;
   anthropicKeys?: string;
+  clearAnthropicKeys?: boolean;
   routingStrategy?: string;
   redisHost?: string;
   redisPort?: number;
   redisPassword?: string;
   deploymentRpm?: number;
   deploymentTpm?: number;
+}
+
+interface OpenAiKeysSettingsResponse {
+  source: "none" | "db";
+  keysCount: number;
+  hasKeys: boolean;
+  keyFingerprints: string[];
+  internalTokenConfigured: boolean;
+  appliedAt: string | null;
+  appliedSource: "db" | "env" | "none" | null;
+  appliedKeyFingerprints: string[];
+  restartRequired: boolean;
+}
+
+interface LiteLlmProxyLoadBalancingSettingsResponse {
+  source: "none" | "db";
+  enabled: boolean;
+  openai: OpenAiKeysSettingsResponse;
+  anthropicKeysCount: number;
+  anthropicKeyFingerprints: string[];
+  routingStrategy: string;
+  redisHost: string;
+  redisPort: number;
+  hasRedisPassword: boolean;
+  deploymentRpm: number | null;
+  deploymentTpm: number | null;
 }
 
 const EMPTY_SETTINGS: LlmGatewaySettingsResponse = {
@@ -368,31 +399,12 @@ function normalizeCommaOrLineSeparatedTokens(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
-function buildLiteLlmProxyLbEnvSnippet(input: {
-  openaiKeys: string[];
-  anthropicKeys: string[];
-  routingStrategy: string;
-  redisHost: string;
-  redisPort: number;
-  redisPassword: string;
-  deploymentRpm?: number;
-  deploymentTpm?: number;
-}) {
-  const lines: string[] = [];
-  lines.push("# LiteLLM Proxy multi-deployment load balancing");
-  lines.push(
-    `OPENAI_API_KEYS=${input.openaiKeys.length > 0 ? input.openaiKeys.join(",") : ""}`,
-  );
-  lines.push(
-    `ANTHROPIC_API_KEYS=${input.anthropicKeys.length > 0 ? input.anthropicKeys.join(",") : ""}`,
-  );
-  lines.push(`LITELLM_ROUTING_STRATEGY=${input.routingStrategy}`);
-  lines.push(`LITELLM_REDIS_HOST=${input.redisHost}`);
-  lines.push(`LITELLM_REDIS_PORT=${input.redisPort}`);
-  lines.push(`LITELLM_REDIS_PASSWORD=${input.redisPassword}`);
-  lines.push(`LITELLM_DEPLOYMENT_RPM=${input.deploymentRpm ?? ""}`);
-  lines.push(`LITELLM_DEPLOYMENT_TPM=${input.deploymentTpm ?? ""}`);
-  return lines.join("\n");
+function shortenFingerprint(value: string) {
+  const normalized = value.trim();
+  if (normalized.length <= 12) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 6)}...${normalized.slice(-6)}`;
 }
 
 export function LlmGatewaySettingsPanel() {
@@ -487,23 +499,20 @@ export function LlmGatewaySettingsPanel() {
   } | null>(null);
   const [proxyLbOpen, setProxyLbOpen] = useState(false);
   const [proxyLbForm] = Form.useForm<LiteLlmProxyLbFormValues>();
+  const [proxyLbSettings, setProxyLbSettings] =
+    useState<LiteLlmProxyLoadBalancingSettingsResponse | null>(null);
+  const [proxyLbLoading, setProxyLbLoading] = useState(false);
+  const [proxyLbSaving, setProxyLbSaving] = useState(false);
+  const [proxyLbResetting, setProxyLbResetting] = useState(false);
+  const [proxyLbErrorMessage, setProxyLbErrorMessage] = useState<string | null>(
+    null,
+  );
   const screens = Grid.useBreakpoint();
   const includeCompletion =
     Form.useWatch("includeCompletion", testForm) ?? true;
   const includeEmbeddings =
     Form.useWatch("includeEmbeddings", testForm) ?? false;
   const editClearApiKey = Form.useWatch("clearApiKey", editForm) ?? false;
-  const proxyLbOpenaiKeys = Form.useWatch("openaiKeys", proxyLbForm) ?? "";
-  const proxyLbAnthropicKeys =
-    Form.useWatch("anthropicKeys", proxyLbForm) ?? "";
-  const proxyLbRoutingStrategy =
-    Form.useWatch("routingStrategy", proxyLbForm) ?? "simple-shuffle";
-  const proxyLbRedisHost = Form.useWatch("redisHost", proxyLbForm) ?? "redis";
-  const proxyLbRedisPort = Form.useWatch("redisPort", proxyLbForm) ?? 6379;
-  const proxyLbRedisPassword =
-    Form.useWatch("redisPassword", proxyLbForm) ?? "";
-  const proxyLbDeploymentRpm = Form.useWatch("deploymentRpm", proxyLbForm);
-  const proxyLbDeploymentTpm = Form.useWatch("deploymentTpm", proxyLbForm);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -610,37 +619,6 @@ export function LlmGatewaySettingsPanel() {
     },
     [apiClient, messageApi, t],
   );
-
-  const proxyLbEnvSnippet = useMemo(() => {
-    const openaiKeys = normalizeCommaOrLineSeparatedTokens(proxyLbOpenaiKeys);
-    const anthropicKeys =
-      normalizeCommaOrLineSeparatedTokens(proxyLbAnthropicKeys);
-    return buildLiteLlmProxyLbEnvSnippet({
-      openaiKeys,
-      anthropicKeys,
-      routingStrategy: String(proxyLbRoutingStrategy || "simple-shuffle"),
-      redisHost: String(proxyLbRedisHost || "redis"),
-      redisPort: Number(proxyLbRedisPort || 6379),
-      redisPassword: String(proxyLbRedisPassword || ""),
-      deploymentRpm:
-        typeof proxyLbDeploymentRpm === "number"
-          ? proxyLbDeploymentRpm
-          : undefined,
-      deploymentTpm:
-        typeof proxyLbDeploymentTpm === "number"
-          ? proxyLbDeploymentTpm
-          : undefined,
-    });
-  }, [
-    proxyLbAnthropicKeys,
-    proxyLbDeploymentRpm,
-    proxyLbDeploymentTpm,
-    proxyLbOpenaiKeys,
-    proxyLbRedisHost,
-    proxyLbRedisPassword,
-    proxyLbRedisPort,
-    proxyLbRoutingStrategy,
-  ]);
 
   const statusProfile = useMemo(() => {
     if (settings.activeId) {
@@ -966,6 +944,7 @@ export function LlmGatewaySettingsPanel() {
       name: editing.name,
       apiBase: editing.apiBase,
       model: editing.model,
+      assistantModel: editing.assistantModel ?? undefined,
       embeddingModel: editing.embeddingModel ?? undefined,
       timeoutMs: editing.timeoutMs,
       temperature: editing.temperature,
@@ -997,6 +976,7 @@ export function LlmGatewaySettingsPanel() {
       name: "",
       apiBase: initialApiBase,
       model: template?.model ?? "openai/gpt-4o-mini",
+      assistantModel: template?.assistantModel ?? "",
       embeddingModel: template?.embeddingModel ?? "",
       timeoutMs: template?.timeoutMs ?? 60_000,
       temperature: template?.temperature ?? 0.2,
@@ -1013,19 +993,217 @@ export function LlmGatewaySettingsPanel() {
     setCreateOpen(true);
   };
 
+  const loadProxyLbSettings = useCallback(async () => {
+    setProxyLbLoading(true);
+    setProxyLbErrorMessage(null);
+    try {
+      const response =
+        await apiClient.get<LiteLlmProxyLoadBalancingSettingsResponse>(
+          "system-settings/llm-gateways/proxy-load-balancing",
+        );
+      const data = response.data ?? null;
+      setProxyLbSettings(data);
+      proxyLbForm.setFieldsValue({
+        enabled: data?.enabled ?? false,
+        openaiKeys: "",
+        anthropicKeys: "",
+        clearAnthropicKeys: false,
+        routingStrategy: data?.routingStrategy ?? "simple-shuffle",
+        redisHost: data?.redisHost ?? "redis",
+        redisPort: data?.redisPort ?? 6379,
+        redisPassword: "",
+        deploymentRpm:
+          typeof data?.deploymentRpm === "number"
+            ? data.deploymentRpm
+            : undefined,
+        deploymentTpm:
+          typeof data?.deploymentTpm === "number"
+            ? data.deploymentTpm
+            : undefined,
+      });
+    } catch (error) {
+      captureClientError(
+        "Failed to load LiteLLM proxy load balancing settings",
+        error,
+      );
+      const messageText = formatApiErrorMessage(error);
+      setProxyLbErrorMessage(
+        messageText
+          ? messageText
+          : t("settings.llmGateway.proxyLoadBalancing.errors.loadFailed", {
+              defaultValue: "Failed to load balancing settings",
+            }),
+      );
+    } finally {
+      setProxyLbLoading(false);
+    }
+  }, [apiClient, proxyLbForm, t]);
+
   const openProxyLbWizard = useCallback(() => {
-    proxyLbForm.setFieldsValue({
-      openaiKeys: "",
-      anthropicKeys: "",
-      routingStrategy: "simple-shuffle",
-      redisHost: "redis",
-      redisPort: 6379,
-      redisPassword: "",
-      deploymentRpm: undefined,
-      deploymentTpm: undefined,
-    });
     setProxyLbOpen(true);
-  }, [proxyLbForm]);
+    void loadProxyLbSettings();
+  }, [loadProxyLbSettings]);
+
+  const saveProxyLbSettings = useCallback(
+    async (values: LiteLlmProxyLbFormValues) => {
+      setProxyLbSaving(true);
+      setProxyLbErrorMessage(null);
+      try {
+        const openaiKeys = normalizeCommaOrLineSeparatedTokens(
+          values.openaiKeys,
+        );
+        if (openaiKeys.length > 0) {
+          await apiClient.put("system-settings/openai-keys", {
+            keys: openaiKeys,
+          });
+        }
+
+        const anthropicKeys = normalizeCommaOrLineSeparatedTokens(
+          values.anthropicKeys,
+        );
+        const payload: Record<string, unknown> = {
+          enabled: Boolean(values.enabled),
+          routingStrategy: String(values.routingStrategy || "simple-shuffle"),
+          redisHost: String(values.redisHost || "redis").trim(),
+          redisPort: Number(values.redisPort || 6379),
+          deploymentRpm:
+            typeof values.deploymentRpm === "number"
+              ? values.deploymentRpm
+              : null,
+          deploymentTpm:
+            typeof values.deploymentTpm === "number"
+              ? values.deploymentTpm
+              : null,
+        };
+
+        if (proxyLbForm.isFieldTouched("redisPassword")) {
+          payload.redisPassword = String(values.redisPassword ?? "");
+        }
+
+        if (anthropicKeys.length > 0) {
+          payload.anthropicApiKeys = anthropicKeys;
+        } else if (values.clearAnthropicKeys) {
+          payload.clearAnthropicApiKeys = true;
+        }
+
+        const response =
+          await apiClient.put<LiteLlmProxyLoadBalancingSettingsResponse>(
+            "system-settings/llm-gateways/proxy-load-balancing",
+            payload,
+          );
+
+        const data = response.data ?? null;
+        setProxyLbSettings(data);
+        proxyLbForm.setFieldsValue({
+          enabled: data?.enabled ?? false,
+          openaiKeys: "",
+          anthropicKeys: "",
+          clearAnthropicKeys: false,
+          routingStrategy: data?.routingStrategy ?? "simple-shuffle",
+          redisHost: data?.redisHost ?? "redis",
+          redisPort: data?.redisPort ?? 6379,
+          redisPassword: "",
+          deploymentRpm:
+            typeof data?.deploymentRpm === "number"
+              ? data.deploymentRpm
+              : undefined,
+          deploymentTpm:
+            typeof data?.deploymentTpm === "number"
+              ? data.deploymentTpm
+              : undefined,
+        });
+        messageApi.success(
+          t("settings.llmGateway.proxyLoadBalancing.messages.saved", {
+            defaultValue: "Load balancing settings saved",
+          }),
+        );
+      } catch (error) {
+        captureClientError(
+          "Failed to save LiteLLM proxy load balancing settings",
+          error,
+        );
+        const messageText = formatApiErrorMessage(error);
+        setProxyLbErrorMessage(
+          messageText
+            ? messageText
+            : t("settings.llmGateway.proxyLoadBalancing.errors.saveFailed", {
+                defaultValue: "Failed to save load balancing settings",
+              }),
+        );
+      } finally {
+        setProxyLbSaving(false);
+      }
+    },
+    [apiClient, messageApi, proxyLbForm, t],
+  );
+
+  const resetProxyLbSettings = useCallback(() => {
+    Modal.confirm({
+      title: t("settings.llmGateway.proxyLoadBalancing.reset.modal.title", {
+        defaultValue: "Reset load balancing settings?",
+      }),
+      content: t("settings.llmGateway.proxyLoadBalancing.reset.modal.content", {
+        defaultValue:
+          "This removes DB-managed load balancing config. LiteLLM startup will keep load balancing disabled until you save settings again.",
+      }),
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setProxyLbResetting(true);
+        setProxyLbErrorMessage(null);
+        try {
+          const response =
+            await apiClient.delete<LiteLlmProxyLoadBalancingSettingsResponse>(
+              "system-settings/llm-gateways/proxy-load-balancing",
+            );
+          const data = response.data ?? null;
+          setProxyLbSettings(data);
+          proxyLbForm.setFieldsValue({
+            enabled: data?.enabled ?? false,
+            openaiKeys: "",
+            anthropicKeys: "",
+            clearAnthropicKeys: false,
+            routingStrategy: data?.routingStrategy ?? "simple-shuffle",
+            redisHost: data?.redisHost ?? "redis",
+            redisPort: data?.redisPort ?? 6379,
+            redisPassword: "",
+            deploymentRpm:
+              typeof data?.deploymentRpm === "number"
+                ? data.deploymentRpm
+                : undefined,
+            deploymentTpm:
+              typeof data?.deploymentTpm === "number"
+                ? data.deploymentTpm
+                : undefined,
+          });
+          messageApi.success(
+            t("settings.llmGateway.proxyLoadBalancing.reset.messages.done", {
+              defaultValue: "Load balancing settings reset",
+            }),
+          );
+        } catch (error) {
+          captureClientError(
+            "Failed to reset LiteLLM proxy load balancing settings",
+            error,
+          );
+          const messageText = formatApiErrorMessage(error);
+          setProxyLbErrorMessage(
+            messageText
+              ? messageText
+              : t(
+                  "settings.llmGateway.proxyLoadBalancing.reset.errors.failed",
+                  {
+                    defaultValue: "Failed to reset load balancing settings",
+                  },
+                ),
+          );
+        } finally {
+          setProxyLbResetting(false);
+        }
+      },
+    });
+  }, [apiClient, messageApi, proxyLbForm, t]);
 
   const openProxyLbTest = useCallback(
     (profile: LlmGatewayProfile) => {
@@ -1125,6 +1303,9 @@ export function LlmGatewaySettingsPanel() {
         apiBase: values.apiBase.trim(),
         apiKey: values.apiKey?.trim() ? values.apiKey.trim() : undefined,
         ...(values.model?.trim() ? { model: values.model.trim() } : {}),
+        assistantModel: values.assistantModel?.trim()
+          ? values.assistantModel.trim()
+          : null,
         embeddingModel: values.embeddingModel?.trim()
           ? values.embeddingModel.trim()
           : null,
@@ -1179,6 +1360,9 @@ export function LlmGatewaySettingsPanel() {
         name: values.name.trim(),
         apiBase: values.apiBase.trim(),
         ...(values.model?.trim() ? { model: values.model.trim() } : {}),
+        assistantModel: values.assistantModel?.trim()
+          ? values.assistantModel.trim()
+          : null,
         embeddingModel: values.embeddingModel?.trim()
           ? values.embeddingModel.trim()
           : null,
@@ -2457,6 +2641,22 @@ export function LlmGatewaySettingsPanel() {
       ),
     },
     {
+      title: t("settings.llmGateway.columns.assistantModel", {
+        defaultValue: "Assistant model",
+      }),
+      dataIndex: "assistantModel",
+      key: "assistantModel",
+      responsive: ["xl"],
+      render: (value?: string | null) =>
+        value ? (
+          <Typography.Text code copyable>
+            {value}
+          </Typography.Text>
+        ) : (
+          <Typography.Text type="secondary">-</Typography.Text>
+        ),
+    },
+    {
       title: t("settings.llmGateway.columns.embeddingModel"),
       dataIndex: "embeddingModel",
       key: "embeddingModel",
@@ -3553,6 +3753,18 @@ export function LlmGatewaySettingsPanel() {
             <Input allowClear placeholder="openai/gpt-4o-mini" />
           </Form.Item>
           <Form.Item
+            label={t("settings.llmGateway.fields.assistantModel", {
+              defaultValue: "Assistant model",
+            })}
+            name="assistantModel"
+            extra={t("settings.llmGateway.hints.assistantModel", {
+              defaultValue:
+                "Optional: used only by AI Assistant (/assistant), and does not affect news pipeline model routing.",
+            })}
+          >
+            <Input allowClear placeholder="openai/gpt-4.1-mini" />
+          </Form.Item>
+          <Form.Item
             label={t("settings.llmGateway.fields.embeddingModel")}
             name="embeddingModel"
           >
@@ -3701,7 +3913,9 @@ export function LlmGatewaySettingsPanel() {
                       "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。",
                   })}
                 >
-                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                  <QuestionCircleOutlined
+                    style={{ marginLeft: 8, color: "#999" }}
+                  />
                 </Tooltip>
               </span>
             }
@@ -3734,7 +3948,9 @@ export function LlmGatewaySettingsPanel() {
                       "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
                   })}
                 >
-                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                  <QuestionCircleOutlined
+                    style={{ marginLeft: 8, color: "#999" }}
+                  />
                 </Tooltip>
               </span>
             }
@@ -3864,6 +4080,18 @@ export function LlmGatewaySettingsPanel() {
             extra={t("settings.llmGateway.hints.modelOptional", {
               defaultValue:
                 "可选：仅用于对话/补全请求；只配置 Embeddings 网关时可以留空。",
+            })}
+          >
+            <Input allowClear />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.llmGateway.fields.assistantModel", {
+              defaultValue: "Assistant model",
+            })}
+            name="assistantModel"
+            extra={t("settings.llmGateway.hints.assistantModel", {
+              defaultValue:
+                "Optional: used only by AI Assistant (/assistant), and does not affect news pipeline model routing.",
             })}
           >
             <Input allowClear />
@@ -4015,7 +4243,9 @@ export function LlmGatewaySettingsPanel() {
                       "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。",
                   })}
                 >
-                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                  <QuestionCircleOutlined
+                    style={{ marginLeft: 8, color: "#999" }}
+                  />
                 </Tooltip>
               </span>
             }
@@ -4048,7 +4278,9 @@ export function LlmGatewaySettingsPanel() {
                       "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
                   })}
                 >
-                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                  <QuestionCircleOutlined
+                    style={{ marginLeft: 8, color: "#999" }}
+                  />
                 </Tooltip>
               </span>
             }
@@ -4238,7 +4470,9 @@ export function LlmGatewaySettingsPanel() {
                       "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。",
                   })}
                 >
-                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                  <QuestionCircleOutlined
+                    style={{ marginLeft: 8, color: "#999" }}
+                  />
                 </Tooltip>
               </span>
             }
@@ -4266,7 +4500,9 @@ export function LlmGatewaySettingsPanel() {
                       "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
                   })}
                 >
-                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                  <QuestionCircleOutlined
+                    style={{ marginLeft: 8, color: "#999" }}
+                  />
                 </Tooltip>
               </span>
             }
@@ -4450,190 +4686,474 @@ export function LlmGatewaySettingsPanel() {
           defaultValue: "LiteLLM Proxy 负载均衡配置",
         })}
         open={proxyLbOpen}
-        onCancel={() => setProxyLbOpen(false)}
+        onCancel={() => {
+          setProxyLbOpen(false);
+          setProxyLbErrorMessage(null);
+        }}
         width={screens.md ? 720 : "100%"}
         footer={[
           <Button key="close" onClick={() => setProxyLbOpen(false)}>
             {t("common.close")}
           </Button>,
           <Button
-            key="copy"
-            type="primary"
-            onClick={() => {
-              void navigator.clipboard.writeText(proxyLbEnvSnippet);
-              messageApi.success(
-                t("common.copied", { defaultValue: "已复制" }),
-              );
-            }}
+            key="refresh"
+            onClick={() => void loadProxyLbSettings()}
+            loading={proxyLbLoading}
           >
-            {t("common.copy", { defaultValue: "复制" })}
+            {t("common.refresh", { defaultValue: "刷新" })}
+          </Button>,
+          <Button
+            key="reset"
+            danger
+            onClick={resetProxyLbSettings}
+            loading={proxyLbResetting}
+            disabled={proxyLbSaving}
+          >
+            {t("common.reset", { defaultValue: "重置" })}
+          </Button>,
+          <Button
+            key="save"
+            type="primary"
+            onClick={() => proxyLbForm.submit()}
+            loading={proxyLbSaving}
+            disabled={proxyLbLoading || proxyLbResetting}
+          >
+            {t("common.save")}
           </Button>,
         ]}
       >
-        <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-          <Typography.Text type="secondary">
-            {t("settings.llmGateway.proxyLoadBalancing.hint", {
-              defaultValue:
-                "填写多 Key 与路由策略后，将下方片段写入 infra/docker/.env，然后重启 litellm 服务即可启用同一模型多部署自动分流。",
-            })}
-          </Typography.Text>
-
-          <Form form={proxyLbForm} layout="vertical">
-            <Form.Item
-              label={t(
-                "settings.llmGateway.proxyLoadBalancing.fields.openaiKeys",
-                {
-                  defaultValue: "OPENAI_API_KEYS",
-                },
-              )}
-              name="openaiKeys"
-              extra={t("settings.llmGateway.proxyLoadBalancing.hints.keys", {
-                defaultValue: "逗号或换行分隔；为空则不启用 OpenAI 多 Key。",
+        <Spin spinning={proxyLbLoading}>
+          <Space direction="vertical" size="middle" style={{ display: "flex" }}>
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.proxyLoadBalancing.hint", {
+                defaultValue:
+                  "Store load-balancing settings in MySQL. Restart the litellm service after saving to apply changes.",
               })}
-            >
-              <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
-            </Form.Item>
+            </Typography.Text>
 
-            <Form.Item
-              label={t(
-                "settings.llmGateway.proxyLoadBalancing.fields.anthropicKeys",
-                {
-                  defaultValue: "ANTHROPIC_API_KEYS",
-                },
-              )}
-              name="anthropicKeys"
-              extra={t("settings.llmGateway.proxyLoadBalancing.hints.keys", {
-                defaultValue: "逗号或换行分隔；为空则不启用 Anthropic 多 Key。",
-              })}
-            >
-              <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
-            </Form.Item>
+            {proxyLbSettings ? (
+              <Alert
+                type={proxyLbSettings.enabled ? "success" : "warning"}
+                showIcon
+                message={
+                  proxyLbSettings.enabled
+                    ? t(
+                        "settings.llmGateway.proxyLoadBalancing.status.enabled",
+                        {
+                          defaultValue: "DB-managed load balancing enabled",
+                        },
+                      )
+                    : t(
+                        "settings.llmGateway.proxyLoadBalancing.status.disabled",
+                        {
+                          defaultValue: "DB-managed load balancing disabled",
+                        },
+                      )
+                }
+                description={
+                  <Space wrap>
+                    <Tag>
+                      {t(
+                        "settings.llmGateway.proxyLoadBalancing.status.openaiKeys",
+                        {
+                          defaultValue: "OpenAI keys: {{count}}",
+                          count: proxyLbSettings.openai.keysCount,
+                        },
+                      )}
+                    </Tag>
+                    <Tag>
+                      {t(
+                        "settings.llmGateway.proxyLoadBalancing.status.anthropicKeys",
+                        {
+                          defaultValue: "Anthropic keys: {{count}}",
+                          count: proxyLbSettings.anthropicKeysCount,
+                        },
+                      )}
+                    </Tag>
+                    {proxyLbSettings.openai.restartRequired ? (
+                      <Tag color="orange">
+                        {t(
+                          "settings.llmGateway.proxyLoadBalancing.status.restartRequired",
+                          {
+                            defaultValue: "Restart required",
+                          },
+                        )}
+                      </Tag>
+                    ) : null}
+                  </Space>
+                }
+              />
+            ) : null}
 
-            <Space wrap style={{ display: "flex" }}>
-              <Form.Item
-                label={t(
-                  "settings.llmGateway.proxyLoadBalancing.fields.routingStrategy",
-                  {
-                    defaultValue: "routing_strategy",
-                  },
-                )}
-                name="routingStrategy"
-                style={{ minWidth: 240, flex: 1 }}
-              >
-                <Select
-                  options={[
-                    { value: "simple-shuffle", label: "simple-shuffle" },
-                    { value: "least-busy", label: "least-busy" },
-                    {
-                      value: "usage-based-routing",
-                      label: "usage-based-routing",
-                    },
-                    {
-                      value: "latency-based-routing",
-                      label: "latency-based-routing",
-                    },
-                  ]}
-                />
-              </Form.Item>
-              <Form.Item
-                label={t(
-                  "settings.llmGateway.proxyLoadBalancing.fields.deploymentRpm",
-                  {
-                    defaultValue: "LITELLM_DEPLOYMENT_RPM",
-                  },
-                )}
-                name="deploymentRpm"
-                style={{ minWidth: 220, flex: 1 }}
-              >
-                <InputNumber
-                  min={1}
-                  max={1_000_000}
-                  step={1}
-                  style={{ width: "100%" }}
-                />
-              </Form.Item>
-              <Form.Item
-                label={t(
-                  "settings.llmGateway.proxyLoadBalancing.fields.deploymentTpm",
-                  {
-                    defaultValue: "LITELLM_DEPLOYMENT_TPM",
-                  },
-                )}
-                name="deploymentTpm"
-                style={{ minWidth: 220, flex: 1 }}
-              >
-                <InputNumber
-                  min={1}
-                  max={10_000_000}
-                  step={1}
-                  style={{ width: "100%" }}
-                />
-              </Form.Item>
-            </Space>
+            {proxyLbErrorMessage ? (
+              <Alert type="error" showIcon message={proxyLbErrorMessage} />
+            ) : null}
 
-            <Space wrap style={{ display: "flex" }}>
-              <Form.Item
-                label={t(
-                  "settings.llmGateway.proxyLoadBalancing.fields.redisHost",
-                  {
-                    defaultValue: "LITELLM_REDIS_HOST",
-                  },
-                )}
-                name="redisHost"
-                style={{ minWidth: 240, flex: 1 }}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                label={t(
-                  "settings.llmGateway.proxyLoadBalancing.fields.redisPort",
-                  {
-                    defaultValue: "LITELLM_REDIS_PORT",
-                  },
-                )}
-                name="redisPort"
-                style={{ minWidth: 200, flex: 1 }}
-              >
-                <InputNumber
-                  min={1}
-                  max={65535}
-                  step={1}
-                  style={{ width: "100%" }}
-                />
-              </Form.Item>
-              <Form.Item
-                label={t(
-                  "settings.llmGateway.proxyLoadBalancing.fields.redisPassword",
-                  {
-                    defaultValue: "LITELLM_REDIS_PASSWORD",
-                  },
-                )}
-                name="redisPassword"
-                style={{ minWidth: 240, flex: 1 }}
-              >
-                <Input.Password />
-              </Form.Item>
-            </Space>
-          </Form>
-
-          <Typography.Paragraph
-            copyable={{ text: proxyLbEnvSnippet }}
-            style={{ marginBottom: 0 }}
-          >
-            <pre
-              style={{
-                margin: 0,
-                padding: 12,
-                borderRadius: 8,
-                border: "1px solid #f0f0f0",
-                background: "#fafafa",
-                overflow: "auto",
+            <Form
+              form={proxyLbForm}
+              layout="vertical"
+              onFinish={(values) => {
+                void saveProxyLbSettings(values);
               }}
             >
-              {proxyLbEnvSnippet}
-            </pre>
-          </Typography.Paragraph>
-        </Space>
+              <Form.Item
+                name="enabled"
+                valuePropName="checked"
+                label={
+                  <span>
+                    {t(
+                      "settings.llmGateway.proxyLoadBalancing.fields.enabled",
+                      {
+                        defaultValue: "Enable DB load balancing",
+                      },
+                    )}
+                    <Tooltip
+                      title={t(
+                        "settings.llmGateway.proxyLoadBalancing.tooltips.enabled",
+                        {
+                          defaultValue:
+                            "When enabled, LiteLLM startup reads and applies load-balancing settings from MySQL.",
+                        },
+                      )}
+                    >
+                      <QuestionCircleOutlined
+                        style={{ marginLeft: 8, color: "#999" }}
+                      />
+                    </Tooltip>
+                  </span>
+                }
+              >
+                <Switch />
+              </Form.Item>
+
+              <Form.Item
+                label={
+                  <span>
+                    {t(
+                      "settings.llmGateway.proxyLoadBalancing.fields.openaiKeys",
+                      {
+                        defaultValue: "OPENAI_API_KEYS",
+                      },
+                    )}
+                    <Tooltip
+                      title={t(
+                        "settings.llmGateway.proxyLoadBalancing.tooltips.openaiKeys",
+                        {
+                          defaultValue:
+                            "OpenAI upstream keys stored in MySQL. Leave empty to keep existing keys. Inputting values replaces the stored list.",
+                        },
+                      )}
+                    >
+                      <QuestionCircleOutlined
+                        style={{ marginLeft: 8, color: "#999" }}
+                      />
+                    </Tooltip>
+                  </span>
+                }
+                name="openaiKeys"
+                extra={t(
+                  "settings.llmGateway.proxyLoadBalancing.hints.openaiKeys",
+                  {
+                    defaultValue:
+                      "Comma/newline separated. Leave empty to keep existing OpenAI keys. Manage fingerprints in Assistant Safety panel.",
+                  },
+                )}
+              >
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
+              </Form.Item>
+
+              {proxyLbSettings?.openai?.keyFingerprints?.length ? (
+                <Space wrap style={{ marginBottom: 12 }}>
+                  {proxyLbSettings.openai.keyFingerprints.map((fingerprint) => (
+                    <Tag key={fingerprint} color="blue">
+                      {shortenFingerprint(fingerprint)}
+                    </Tag>
+                  ))}
+                </Space>
+              ) : null}
+
+              <Form.Item
+                label={
+                  <span>
+                    {t(
+                      "settings.llmGateway.proxyLoadBalancing.fields.anthropicKeys",
+                      {
+                        defaultValue: "ANTHROPIC_API_KEYS",
+                      },
+                    )}
+                    <Tooltip
+                      title={t(
+                        "settings.llmGateway.proxyLoadBalancing.tooltips.anthropicKeys",
+                        {
+                          defaultValue:
+                            "Anthropic upstream keys stored in MySQL. Input values to replace. Use clear switch below to remove all stored Anthropic keys.",
+                        },
+                      )}
+                    >
+                      <QuestionCircleOutlined
+                        style={{ marginLeft: 8, color: "#999" }}
+                      />
+                    </Tooltip>
+                  </span>
+                }
+                name="anthropicKeys"
+                extra={t(
+                  "settings.llmGateway.proxyLoadBalancing.hints.anthropicKeys",
+                  {
+                    defaultValue:
+                      "Comma/newline separated. Leave empty to keep current Anthropic keys.",
+                  },
+                )}
+              >
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
+              </Form.Item>
+
+              <Form.Item
+                name="clearAnthropicKeys"
+                valuePropName="checked"
+                label={t(
+                  "settings.llmGateway.proxyLoadBalancing.fields.clearAnthropicKeys",
+                  {
+                    defaultValue: "Clear stored Anthropic keys",
+                  },
+                )}
+              >
+                <Switch />
+              </Form.Item>
+
+              {proxyLbSettings?.anthropicKeyFingerprints?.length ? (
+                <Space wrap style={{ marginBottom: 12 }}>
+                  {proxyLbSettings.anthropicKeyFingerprints.map(
+                    (fingerprint) => (
+                      <Tag key={fingerprint} color="purple">
+                        {shortenFingerprint(fingerprint)}
+                      </Tag>
+                    ),
+                  )}
+                </Space>
+              ) : null}
+
+              <Space wrap style={{ display: "flex" }}>
+                <Form.Item
+                  label={
+                    <span>
+                      {t(
+                        "settings.llmGateway.proxyLoadBalancing.fields.routingStrategy",
+                        {
+                          defaultValue: "routing_strategy",
+                        },
+                      )}
+                      <Tooltip
+                        title={t(
+                          "settings.llmGateway.proxyLoadBalancing.tooltips.routingStrategy",
+                          {
+                            defaultValue:
+                              "simple-shuffle randomizes deployments. least-busy prefers lower in-flight load. usage-based-routing balances by token usage. latency-based-routing prefers lower-latency deployments.",
+                          },
+                        )}
+                      >
+                        <QuestionCircleOutlined
+                          style={{ marginLeft: 8, color: "#999" }}
+                        />
+                      </Tooltip>
+                    </span>
+                  }
+                  name="routingStrategy"
+                  style={{ minWidth: 240, flex: 1 }}
+                >
+                  <Select
+                    options={[
+                      { value: "simple-shuffle", label: "simple-shuffle" },
+                      { value: "least-busy", label: "least-busy" },
+                      {
+                        value: "usage-based-routing",
+                        label: "usage-based-routing",
+                      },
+                      {
+                        value: "latency-based-routing",
+                        label: "latency-based-routing",
+                      },
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={
+                    <span>
+                      {t(
+                        "settings.llmGateway.proxyLoadBalancing.fields.deploymentRpm",
+                        {
+                          defaultValue: "LITELLM_DEPLOYMENT_RPM",
+                        },
+                      )}
+                      <Tooltip
+                        title={t(
+                          "settings.llmGateway.proxyLoadBalancing.tooltips.deploymentRpm",
+                          {
+                            defaultValue:
+                              "Default per-deployment RPM injected into generated config when deployment-level rpm is not set.",
+                          },
+                        )}
+                      >
+                        <QuestionCircleOutlined
+                          style={{ marginLeft: 8, color: "#999" }}
+                        />
+                      </Tooltip>
+                    </span>
+                  }
+                  name="deploymentRpm"
+                  style={{ minWidth: 220, flex: 1 }}
+                >
+                  <InputNumber
+                    min={1}
+                    max={1_000_000}
+                    step={1}
+                    style={{ width: "100%" }}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={
+                    <span>
+                      {t(
+                        "settings.llmGateway.proxyLoadBalancing.fields.deploymentTpm",
+                        {
+                          defaultValue: "LITELLM_DEPLOYMENT_TPM",
+                        },
+                      )}
+                      <Tooltip
+                        title={t(
+                          "settings.llmGateway.proxyLoadBalancing.tooltips.deploymentTpm",
+                          {
+                            defaultValue:
+                              "Default per-deployment TPM injected into generated config when deployment-level tpm is not set.",
+                          },
+                        )}
+                      >
+                        <QuestionCircleOutlined
+                          style={{ marginLeft: 8, color: "#999" }}
+                        />
+                      </Tooltip>
+                    </span>
+                  }
+                  name="deploymentTpm"
+                  style={{ minWidth: 220, flex: 1 }}
+                >
+                  <InputNumber
+                    min={1}
+                    max={10_000_000}
+                    step={1}
+                    style={{ width: "100%" }}
+                  />
+                </Form.Item>
+              </Space>
+
+              <Space wrap style={{ display: "flex" }}>
+                <Form.Item
+                  label={
+                    <span>
+                      {t(
+                        "settings.llmGateway.proxyLoadBalancing.fields.redisHost",
+                        {
+                          defaultValue: "LITELLM_REDIS_HOST",
+                        },
+                      )}
+                      <Tooltip
+                        title={t(
+                          "settings.llmGateway.proxyLoadBalancing.tooltips.redisHost",
+                          {
+                            defaultValue:
+                              "Redis host used by LiteLLM router to share runtime state across workers/instances.",
+                          },
+                        )}
+                      >
+                        <QuestionCircleOutlined
+                          style={{ marginLeft: 8, color: "#999" }}
+                        />
+                      </Tooltip>
+                    </span>
+                  }
+                  name="redisHost"
+                  style={{ minWidth: 240, flex: 1 }}
+                  rules={[
+                    {
+                      required: true,
+                      message: t(
+                        "settings.llmGateway.proxyLoadBalancing.validation.redisHost",
+                        {
+                          defaultValue: "Redis host is required",
+                        },
+                      ),
+                    },
+                  ]}
+                >
+                  <Input />
+                </Form.Item>
+                <Form.Item
+                  label={
+                    <span>
+                      {t(
+                        "settings.llmGateway.proxyLoadBalancing.fields.redisPort",
+                        {
+                          defaultValue: "LITELLM_REDIS_PORT",
+                        },
+                      )}
+                      <Tooltip
+                        title={t(
+                          "settings.llmGateway.proxyLoadBalancing.tooltips.redisPort",
+                          {
+                            defaultValue:
+                              "Redis TCP port used by LiteLLM router.",
+                          },
+                        )}
+                      >
+                        <QuestionCircleOutlined
+                          style={{ marginLeft: 8, color: "#999" }}
+                        />
+                      </Tooltip>
+                    </span>
+                  }
+                  name="redisPort"
+                  style={{ minWidth: 200, flex: 1 }}
+                >
+                  <InputNumber
+                    min={1}
+                    max={65535}
+                    step={1}
+                    style={{ width: "100%" }}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={
+                    <span>
+                      {t(
+                        "settings.llmGateway.proxyLoadBalancing.fields.redisPassword",
+                        {
+                          defaultValue: "LITELLM_REDIS_PASSWORD",
+                        },
+                      )}
+                      <Tooltip
+                        title={t(
+                          "settings.llmGateway.proxyLoadBalancing.tooltips.redisPassword",
+                          {
+                            defaultValue:
+                              "Redis password stored in MySQL. Leave empty to clear or keep unchanged depending on current value and your save action.",
+                          },
+                        )}
+                      >
+                        <QuestionCircleOutlined
+                          style={{ marginLeft: 8, color: "#999" }}
+                        />
+                      </Tooltip>
+                    </span>
+                  }
+                  name="redisPassword"
+                  style={{ minWidth: 240, flex: 1 }}
+                >
+                  <Input.Password />
+                </Form.Item>
+              </Space>
+            </Form>
+          </Space>
+        </Spin>
       </Modal>
     </>
   );

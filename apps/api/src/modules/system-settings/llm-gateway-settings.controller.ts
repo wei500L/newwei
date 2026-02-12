@@ -1,19 +1,33 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
-import { LlmGatewayModelsConfigDto, LlmGatewayTestConfigDto } from "./dto/llm-gateway-test-config.dto";
+import {
+  LlmGatewayModelsConfigDto,
+  LlmGatewayTestConfigDto,
+} from "./dto/llm-gateway-test-config.dto";
+import { UpdateLlmGatewayProxyLoadBalancingSettingsDto } from "./dto/llm-gateway-proxy-lb-settings.dto";
 import { UpdateLlmGatewayRecommendationConfigDto } from "./dto/llm-gateway-recommendation-config.dto";
 import { LlmGatewayTestDto } from "./dto/llm-gateway-test.dto";
 import { LlmGatewayProxyLoadBalancingTestDto } from "./dto/llm-gateway-proxy-lb-test.dto";
+import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import {
   CreateLlmGatewayDto,
   SetEmbeddingActiveLlmGatewayDto,
   SetActiveLlmGatewayDto,
-  UpdateLlmGatewayDto
+  UpdateLlmGatewayDto,
 } from "./dto/llm-gateway.dto";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
@@ -24,7 +38,8 @@ import { LlmGatewayTestService } from "./llm-gateway-test.service";
 export class LlmGatewaySettingsController {
   constructor(
     private readonly settings: LlmGatewaySettingsService,
-    private readonly tester: LlmGatewayTestService
+    private readonly tester: LlmGatewayTestService,
+    private readonly proxyLoadBalancing: LiteLlmProxyLoadBalancingSettingsService,
   ) {}
 
   @Get()
@@ -43,35 +58,72 @@ export class LlmGatewaySettingsController {
   @Permissions("settings.manage")
   async updateRecommendationConfig(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: UpdateLlmGatewayRecommendationConfigDto
+    @Body() body: UpdateLlmGatewayRecommendationConfigDto,
   ) {
-    return this.settings.updateAutoRecommendationConfig(user.orgId, user.id, body);
+    return this.settings.updateAutoRecommendationConfig(
+      user.orgId,
+      user.id,
+      body,
+    );
   }
 
   @Post()
   @Permissions("settings.manage")
-  async create(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateLlmGatewayDto) {
+  async create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: CreateLlmGatewayDto,
+  ) {
     return this.settings.createProfile(user.orgId, user.id, body);
   }
 
   @Put("active")
   @Permissions("settings.manage")
-  async setActive(@CurrentUser() user: AuthenticatedUser, @Body() body: SetActiveLlmGatewayDto) {
-    return this.settings.setActiveProfile(user.orgId, user.id, body.activeId ?? null);
+  async setActive(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: SetActiveLlmGatewayDto,
+  ) {
+    return this.settings.setActiveProfile(
+      user.orgId,
+      user.id,
+      body.activeId ?? null,
+    );
   }
 
   @Put("embedding-active")
   @Permissions("settings.manage")
   async setEmbeddingActive(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: SetEmbeddingActiveLlmGatewayDto
+    @Body() body: SetEmbeddingActiveLlmGatewayDto,
   ) {
     return this.settings.setEmbeddingActiveProfile(
       user.orgId,
       user.id,
       body.activeId ?? null,
-      body.mode
+      body.mode,
     );
+  }
+
+  @Get("proxy-load-balancing")
+  @Permissions("settings.manage")
+  async getProxyLoadBalancingSettings() {
+    return this.proxyLoadBalancing.getPublicSettings();
+  }
+
+  @Put("proxy-load-balancing")
+  @Permissions("settings.manage")
+  async updateProxyLoadBalancingSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: UpdateLlmGatewayProxyLoadBalancingSettingsDto,
+  ) {
+    return this.proxyLoadBalancing.updateSettings(user.orgId, user.id, body);
+  }
+
+  @Delete("proxy-load-balancing")
+  @Permissions("settings.manage")
+  async resetProxyLoadBalancingSettings(
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.proxyLoadBalancing.resetToDisabled(user.orgId, user.id);
   }
 
   @Put(":id")
@@ -79,14 +131,17 @@ export class LlmGatewaySettingsController {
   async update(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
-    @Body() body: UpdateLlmGatewayDto
+    @Body() body: UpdateLlmGatewayDto,
   ) {
     return this.settings.updateProfile(user.orgId, user.id, id, body);
   }
 
   @Delete(":id")
   @Permissions("settings.manage")
-  async remove(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+  async remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
     await this.settings.deleteProfile(user.orgId, user.id, id);
     return { ok: true };
   }
@@ -117,15 +172,20 @@ export class LlmGatewaySettingsController {
 
   @Get(":id/proxy-model-info")
   @Permissions("settings.manage")
-  async proxyModelInfo(@Param("id") id: string, @Query("force") force?: string) {
-    return this.tester.getProxyModelInfo(id, { force: force === "1" || force === "true" });
+  async proxyModelInfo(
+    @Param("id") id: string,
+    @Query("force") force?: string,
+  ) {
+    return this.tester.getProxyModelInfo(id, {
+      force: force === "1" || force === "true",
+    });
   }
 
   @Post(":id/proxy-lb-test")
   @Permissions("settings.manage")
   async proxyLoadBalancingTest(
     @Param("id") id: string,
-    @Body() body: LlmGatewayProxyLoadBalancingTestDto
+    @Body() body: LlmGatewayProxyLoadBalancingTestDto,
   ) {
     return this.tester.testProxyLoadBalancing(id, body);
   }

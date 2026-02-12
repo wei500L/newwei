@@ -118,6 +118,15 @@ export interface ModelServiceConfig {
   maxRetries: number;
 }
 
+export interface SituationMonitorTranslationConfig {
+  enabled: boolean;
+  baseUrl: string;
+  timeoutMs: number;
+  maxRetries: number;
+  fallbackEnabled: boolean;
+  fallbackBaseUrl?: string;
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -296,6 +305,27 @@ export class EnvService extends ConfigService<ApiEnv> {
       internalToken: this.get<string | undefined>("MODEL_SERVICE_INTERNAL_TOKEN", { infer: true }),
       timeoutMs: this.get<number>("MODEL_SERVICE_TIMEOUT_MS", { infer: true }) ?? 15_000,
       maxRetries: this.get<number>("MODEL_SERVICE_MAX_RETRIES", { infer: true }) ?? 2
+    };
+  }
+
+  get situationMonitorTranslationConfig(): SituationMonitorTranslationConfig {
+    const rawBaseUrl =
+      this.get<string>("SITUATION_MONITOR_TRANSLATION_API_BASE_URL", { infer: true }) ??
+      "https://api.deeplx.org";
+    const baseUrl = rawBaseUrl.trim().replace(/\/+$/, "");
+    const rawFallbackBaseUrl = this.get<string | undefined>("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL");
+    const fallbackBaseUrl = typeof rawFallbackBaseUrl === "string"
+      ? rawFallbackBaseUrl.trim().replace(/\/+$/, "")
+      : undefined;
+
+    return {
+      enabled: this.get<boolean>("SITUATION_MONITOR_TRANSLATION_API_ENABLED", { infer: true }) ?? true,
+      baseUrl,
+      timeoutMs: this.get<number>("SITUATION_MONITOR_TRANSLATION_TIMEOUT_MS", { infer: true }) ?? 15_000,
+      maxRetries: this.get<number>("SITUATION_MONITOR_TRANSLATION_MAX_RETRIES", { infer: true }) ?? 2,
+      fallbackEnabled:
+        this.get<boolean>("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_ENABLED", { infer: true }) ?? false,
+      fallbackBaseUrl: fallbackBaseUrl && fallbackBaseUrl.length > 0 ? fallbackBaseUrl : undefined
     };
   }
 

@@ -178,7 +178,7 @@ services:
         exec litellm --config /app/config.yaml --detailed_debug
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
-      LITELLM_CONFIG_API_BASE: ${LITELLM_CONFIG_API_BASE:-http://api:4000}
+      LITELLM_CONFIG_API_BASE: ${LITELLM_CONFIG_API_BASE:-http://api:4000/api}
       LITELLM_CONFIG_INTERNAL_TOKEN: ${LITELLM_CONFIG_INTERNAL_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_API_KEYS: ${OPENAI_API_KEYS:-}

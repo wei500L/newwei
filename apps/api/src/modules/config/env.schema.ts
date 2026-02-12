@@ -133,13 +133,14 @@ export const apiEnvSchema = baseEnvSchema.extend({
   AKSHARE_ADMIN_TOKEN: z.string().optional(),
   AKSHARE_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
   SITUATION_MONITOR_GDELT_ENABLED: envBoolean.default(true),
-  SITUATION_MONITOR_FINNHUB_API_KEY: z.preprocess(
+  SITUATION_MONITOR_TRANSLATION_API_ENABLED: envBoolean.default(true),
+  SITUATION_MONITOR_TRANSLATION_API_BASE_URL: z.string().url().default("https://api.deeplx.org"),
+  SITUATION_MONITOR_TRANSLATION_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  SITUATION_MONITOR_TRANSLATION_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
+  SITUATION_MONITOR_TRANSLATION_FALLBACK_API_ENABLED: envBoolean.default(false),
+  SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().min(1).optional()
-  ),
-  SITUATION_MONITOR_FRED_API_KEY: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().min(1).optional()
+    z.string().url().optional()
   ),
   NEWS_PIPELINE_CACHE_TTL_SECONDS: z.coerce
     .number()
