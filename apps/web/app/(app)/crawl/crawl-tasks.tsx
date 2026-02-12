@@ -1,6 +1,10 @@
 "use client";
 
-import { DashboardOutlined, GlobalOutlined, SearchOutlined } from "@ant-design/icons";
+import {
+  DashboardOutlined,
+  GlobalOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
 import {
   CRAWL4AI_LLM_OPTION_GUARD_MESSAGE,
   assertNoCrawl4aiLlmOptions,
@@ -43,6 +47,7 @@ import {
   useCrawlTasksLazyQuery,
   useRetryCrawlTaskMutation,
 } from "@/graphql/generated";
+import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import { Crawl4aiHealthCard } from "./components/Crawl4aiHealthCard";
@@ -70,7 +75,9 @@ function safeParseJson<T>(input?: string | null): T | null {
   }
 }
 
-function toCrawlWaitUntilInput(value?: string | null): CrawlWaitUntil | undefined {
+function toCrawlWaitUntilInput(
+  value?: string | null,
+): CrawlWaitUntil | undefined {
   if (value === "domcontentloaded") {
     return CrawlWaitUntil.Domcontentloaded;
   }
@@ -86,7 +93,9 @@ function toCrawlWaitUntilInput(value?: string | null): CrawlWaitUntil | undefine
   return undefined;
 }
 
-function toCrawlAntiBotModeInput(value?: string | null): CrawlAntiBotMode | undefined {
+function toCrawlAntiBotModeInput(
+  value?: string | null,
+): CrawlAntiBotMode | undefined {
   if (value === "auto") {
     return CrawlAntiBotMode.Auto;
   }
@@ -99,7 +108,9 @@ function toCrawlAntiBotModeInput(value?: string | null): CrawlAntiBotMode | unde
   return undefined;
 }
 
-function toGraphqlCrawlOptionsInput(options: ReturnType<typeof sanitizeCrawlOptions>): CrawlOptionsInput {
+function toGraphqlCrawlOptionsInput(
+  options: ReturnType<typeof sanitizeCrawlOptions>,
+): CrawlOptionsInput {
   return {
     ...options,
     antiBotMode: toCrawlAntiBotModeInput(options.antiBotMode),
@@ -116,6 +127,12 @@ function toGraphqlCrawlOptionsInput(options: ReturnType<typeof sanitizeCrawlOpti
   };
 }
 
+function normalizeCreateFormValues(
+  values: CreateCrawlTaskFormValues,
+): CreateCrawlTaskFormValues {
+  return normalizeHeadlessModeFormValues(values);
+}
+
 type CrawlTaskQualityProfile = "quality_first" | "balanced" | "speed_first";
 type CrawlTaskPageTypeHint = "auto" | "list" | "detail";
 type CrawlTaskAntiBotMode = "auto" | "enabled" | "disabled";
@@ -130,7 +147,9 @@ interface CrawlTaskConfigSummary {
   autoExpandDetails: boolean;
 }
 
-function parseCrawlTaskConfigSummary(rawConfig?: string | null): CrawlTaskConfigSummary | null {
+function parseCrawlTaskConfigSummary(
+  rawConfig?: string | null,
+): CrawlTaskConfigSummary | null {
   const config = safeParseJson<Record<string, unknown>>(rawConfig);
   if (!config) {
     return null;
@@ -173,8 +192,8 @@ function parseCrawlTaskConfigSummary(rawConfig?: string | null): CrawlTaskConfig
     scanFullPage: Boolean(config.scanFullPage),
     hasVirtualScroll: Boolean(
       config.virtualScroll &&
-      typeof config.virtualScroll === "object" &&
-      !Array.isArray(config.virtualScroll),
+        typeof config.virtualScroll === "object" &&
+        !Array.isArray(config.virtualScroll),
     ),
     qualityProfile,
     pageTypeHint,
@@ -192,7 +211,8 @@ export function CrawlTasksView() {
   const sourceIdFilter = (searchParams.get("sourceId") ?? "").trim();
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const canView =
+    permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
   const canWriteItems = permissions.includes("items.write");
   const screens = Grid.useBreakpoint();
@@ -222,7 +242,10 @@ export function CrawlTasksView() {
 
   const [taskEdges, setTaskEdges] = useState<CrawlTaskEdge[]>([]);
   const taskEdgesRef = useRef<CrawlTaskEdge[]>([]);
-  const [pageInfo, setPageInfo] = useState<{ hasNextPage: boolean; endCursor: string | null }>({
+  const [pageInfo, setPageInfo] = useState<{
+    hasNextPage: boolean;
+    endCursor: string | null;
+  }>({
     hasNextPage: true,
     endCursor: null,
   });
@@ -310,7 +333,10 @@ export function CrawlTasksView() {
           hasNext = true;
         }
 
-        while (nextEdges.length < required && (nextEdges.length === 0 || hasNext)) {
+        while (
+          nextEdges.length < required &&
+          (nextEdges.length === 0 || hasNext)
+        ) {
           const result = await fetchTasks({
             variables: {
               first: pageSize,
@@ -327,7 +353,9 @@ export function CrawlTasksView() {
 
           // Defensive de-dupe in case of overlapping cursors or non-deterministic ordering.
           const existingIds = new Set(nextEdges.map((edge) => edge.node.id));
-          const incomingEdges = connection.edges.filter((edge) => !existingIds.has(edge.node.id));
+          const incomingEdges = connection.edges.filter(
+            (edge) => !existingIds.has(edge.node.id),
+          );
           nextEdges = nextEdges.concat(incomingEdges);
 
           after = connection.pageInfo.endCursor ?? null;
@@ -341,14 +369,18 @@ export function CrawlTasksView() {
         }
 
         taskEdgesRef.current = nextEdges;
-        pageInfoRef.current = { hasNextPage: hasNext, endCursor: after ?? null };
+        pageInfoRef.current = {
+          hasNextPage: hasNext,
+          endCursor: after ?? null,
+        };
 
         setTaskEdges(nextEdges);
         setPageInfo(pageInfoRef.current);
         setTotalCount(nextTotal);
       } catch (error: unknown) {
         setTasksError(
-          (error as Error).message ?? t("common.failed", { defaultValue: "Failed" }),
+          (error as Error).message ??
+            t("common.failed", { defaultValue: "Failed" }),
         );
       } finally {
         ensureLoadingRef.current = false;
@@ -396,7 +428,9 @@ export function CrawlTasksView() {
     if (summary.ingestToItems) {
       tags.push(
         <Tag key="ingest" color="geekblue">
-          {t("crawl.settings.ingestToItems", { defaultValue: "Auto send to Items" })}
+          {t("crawl.settings.ingestToItems", {
+            defaultValue: "Auto send to Items",
+          })}
         </Tag>,
       );
     }
@@ -431,13 +465,17 @@ export function CrawlTasksView() {
     if (summary.antiBotMode === "enabled") {
       tags.push(
         <Tag key="antiBotMode" color="volcano">
-          {t("crawl.browser.antiBotModes.enabled", { defaultValue: "Anti-bot enabled" })}
+          {t("crawl.browser.antiBotModes.enabled", {
+            defaultValue: "Anti-bot enabled",
+          })}
         </Tag>,
       );
     } else if (summary.antiBotMode === "disabled") {
       tags.push(
         <Tag key="antiBotMode" color="default">
-          {t("crawl.browser.antiBotModes.disabled", { defaultValue: "Anti-bot disabled" })}
+          {t("crawl.browser.antiBotModes.disabled", {
+            defaultValue: "Anti-bot disabled",
+          })}
         </Tag>,
       );
     }
@@ -461,8 +499,14 @@ export function CrawlTasksView() {
         const configTags = buildTaskConfigTags(record);
         return (
           <div>
-            <div style={{ fontWeight: 600 }}>{record.displayName ?? record.targetUrl}</div>
-            {configTags.length ? <Space wrap size={[4, 4]} style={{ marginTop: 4 }}>{configTags}</Space> : null}
+            <div style={{ fontWeight: 600 }}>
+              {record.displayName ?? record.targetUrl}
+            </div>
+            {configTags.length ? (
+              <Space wrap size={[4, 4]} style={{ marginTop: 4 }}>
+                {configTags}
+              </Space>
+            ) : null}
             <Typography.Link
               href={record.targetUrl}
               target="_blank"
@@ -525,7 +569,9 @@ export function CrawlTasksView() {
       key: "actions",
       render: (_, record) => (
         <Space>
-          <Link href={`/admin/ops/crawl-tasks/${record.id}`}>{t("common.view")}</Link>
+          <Link href={`/admin/ops/crawl-tasks/${record.id}`}>
+            {t("common.view")}
+          </Link>
           {canManage ? (
             <Button
               size="small"
@@ -589,10 +635,11 @@ export function CrawlTasksView() {
     }
   };
   const handleCreate = async (values: CreateCrawlTaskFormValues) => {
+    const normalizedValues = normalizeCreateFormValues(values);
     const [from, to] = values.timeRange ?? [];
     let options: CrawlOptionsInput;
     try {
-      const sanitizedOptions = sanitizeCrawlOptions(values);
+      const sanitizedOptions = sanitizeCrawlOptions(normalizedValues);
       assertNoCrawl4aiLlmOptions(sanitizedOptions, "options");
       options = toGraphqlCrawlOptionsInput(sanitizedOptions);
     } catch (error) {
@@ -675,15 +722,22 @@ export function CrawlTasksView() {
 
   if (status === "loading") {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
-        <Typography.Text type="secondary">{t("common.loading", { defaultValue: "Loading..." })}</Typography.Text>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+      >
+        <Typography.Text type="secondary">
+          {t("common.loading", { defaultValue: "Loading..." })}
+        </Typography.Text>
       </div>
     );
   }
 
   if (!canView) {
     return (
-      <Card className="content-card" title={t("crawl.title", { defaultValue: "Crawl Tasks" })}>
+      <Card
+        className="content-card"
+        title={t("crawl.title", { defaultValue: "Crawl Tasks" })}
+      >
         <Alert
           type="warning"
           message={t("settings.adminOnly.title")}
@@ -702,10 +756,13 @@ export function CrawlTasksView() {
           style={{ marginBottom: 12 }}
           message={t("crawl.filter.sourceId", {
             defaultValue: "Filtered by NewsSource {{id}}",
-            id: sourceIdFilter
+            id: sourceIdFilter,
           })}
           action={
-            <Button size="small" onClick={() => router.push("/admin/ops/crawl-tasks")}>
+            <Button
+              size="small"
+              onClick={() => router.push("/admin/ops/crawl-tasks")}
+            >
               {t("common.clear", { defaultValue: "Clear" })}
             </Button>
           }
@@ -774,10 +831,16 @@ export function CrawlTasksView() {
             setPagination((prev) => ({ ...prev, current: 1 }));
           }}
         />
-        <Button icon={<DashboardOutlined />} onClick={() => router.push("/admin/ops/crawl-monitor")}>
+        <Button
+          icon={<DashboardOutlined />}
+          onClick={() => router.push("/admin/ops/crawl-monitor")}
+        >
           {t("crawl.monitor.open", { defaultValue: "Monitor" })}
         </Button>
-        <Button icon={<GlobalOutlined />} onClick={() => router.push("/admin/ops/news-sources")}>
+        <Button
+          icon={<GlobalOutlined />}
+          onClick={() => router.push("/admin/ops/news-sources")}
+        >
           {t("newsSources.title", { defaultValue: "News Sources" })}
         </Button>
         {canManage ? (
@@ -787,7 +850,9 @@ export function CrawlTasksView() {
         ) : null}
       </Space>
 
-      <Crawl4aiHealthCard onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")} />
+      <Crawl4aiHealthCard
+        onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")}
+      />
 
       {!screens.md ? (
         <List
@@ -806,53 +871,53 @@ export function CrawlTasksView() {
           renderItem={(record) => {
             const configTags = buildTaskConfigTags(record);
             return (
-            <List.Item
-              actions={[
-                <Link key="view" href={`/admin/ops/crawl-tasks/${record.id}`}>
-                  {t("common.view")}
-                </Link>,
-                canManage ? (
-                  <Button
-                    key="retry"
-                    size="small"
-                    type="link"
-                    onClick={() => handleRetry(record.id)}
-                    loading={retrying}
-                  >
-                    {t("common.retry")}
-                  </Button>
-                ) : null,
-              ].filter(Boolean)}
-            >
-              <List.Item.Meta
-                title={
-                  <div>
-                    <div style={{ fontWeight: 600 }}>
-                      {record.displayName ?? record.targetUrl}
-                    </div>
-                    <Typography.Link
-                      href={record.targetUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs text-gray-400 break-all"
+              <List.Item
+                actions={[
+                  <Link key="view" href={`/admin/ops/crawl-tasks/${record.id}`}>
+                    {t("common.view")}
+                  </Link>,
+                  canManage ? (
+                    <Button
+                      key="retry"
+                      size="small"
+                      type="link"
+                      onClick={() => handleRetry(record.id)}
+                      loading={retrying}
                     >
-                      {record.targetUrl}
-                    </Typography.Link>
-                  </div>
-                }
-                description={
-                  <Space className="mt-2" wrap>
-                    <Tag color={statusColors[record.status]}>
-                      {t(`crawl.status.${record.status}`, {
-                        defaultValue: record.status,
-                      })}
-                    </Tag>
-                    {configTags}
-                  </Space>
-                }
-              />
-            </List.Item>
-          );
+                      {t("common.retry")}
+                    </Button>
+                  ) : null,
+                ].filter(Boolean)}
+              >
+                <List.Item.Meta
+                  title={
+                    <div>
+                      <div style={{ fontWeight: 600 }}>
+                        {record.displayName ?? record.targetUrl}
+                      </div>
+                      <Typography.Link
+                        href={record.targetUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-gray-400 break-all"
+                      >
+                        {record.targetUrl}
+                      </Typography.Link>
+                    </div>
+                  }
+                  description={
+                    <Space className="mt-2" wrap>
+                      <Tag color={statusColors[record.status]}>
+                        {t(`crawl.status.${record.status}`, {
+                          defaultValue: record.status,
+                        })}
+                      </Tag>
+                      {configTags}
+                    </Space>
+                  }
+                />
+              </List.Item>
+            );
           }}
         />
       ) : (

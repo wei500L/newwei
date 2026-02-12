@@ -31,10 +31,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  buildAutoBrowserHeadersForCrawlOptions,
+  mergeBrowserHeaders,
+  normalizeBrowserHeaders,
+} from "@/lib/crawl-browser-headers";
+import {
   CRAWL_TASK_TEMPLATE_DESCRIPTORS,
   buildCrawlTaskTemplateValues,
   resolveCrawlTaskTemplateKey,
-  type CrawlTaskTemplateKey
+  type CrawlTaskTemplateKey,
 } from "@/lib/crawl-presets";
 import dayjs from "@/lib/dayjs";
 
@@ -57,12 +62,12 @@ const TEMPLATE_ICONS: Record<CrawlTaskTemplateKey, ReactNode> = {
   news: <ReadOutlined />,
   reuters_cf: <RobotOutlined />,
   forum: <TeamOutlined />,
-  social: <RobotOutlined />
+  social: <RobotOutlined />,
 };
 
 const TEMPLATES = CRAWL_TASK_TEMPLATE_DESCRIPTORS.map((template) => ({
   ...template,
-  icon: TEMPLATE_ICONS[template.key]
+  icon: TEMPLATE_ICONS[template.key],
 }));
 
 const normalizeOptionGuardKey = (value: string) =>
@@ -100,14 +105,21 @@ const hasBlockedCrawlLlmParams = (rawText?: string) => {
       visited.add(value);
 
       if (Array.isArray(value)) {
-        return value.some((entry, index) => walk(entry, prefix + "[" + index + "]"));
+        return value.some((entry, index) =>
+          walk(entry, prefix + "[" + index + "]"),
+        );
       }
 
-      for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      for (const [key, entry] of Object.entries(
+        value as Record<string, unknown>,
+      )) {
         const normalizedKey = normalizeOptionGuardKey(key);
         const path = prefix ? prefix + "." + key : key;
 
-        if (normalizedKey === "extractionstrategy" || normalizedKey === "llmconfig") {
+        if (
+          normalizedKey === "extractionstrategy" ||
+          normalizedKey === "llmconfig"
+        ) {
           return true;
         }
 
@@ -188,12 +200,32 @@ export function CreateCrawlTaskDrawer({
     setCurrentStep(currentStep - 1);
   };
 
-  const handleTemplateSelect = useCallback((templateKey: string) => {
-    setSelectedTemplate(templateKey);
-    const resolvedKey = resolveCrawlTaskTemplateKey(templateKey) ?? "general";
-    const nextValues = buildCrawlTaskTemplateValues(resolvedKey, { canWriteItems });
-    form.setFieldsValue(nextValues as Partial<CreateCrawlTaskFormValues>);
-  }, [canWriteItems, form]);
+  const handleTemplateSelect = useCallback(
+    (templateKey: string) => {
+      setSelectedTemplate(templateKey);
+      const resolvedKey = resolveCrawlTaskTemplateKey(templateKey) ?? "general";
+      const templateValues = buildCrawlTaskTemplateValues(resolvedKey, {
+        canWriteItems,
+      });
+      const nextValues: Partial<CreateCrawlTaskFormValues> = {
+        ...templateValues,
+        headlessMode:
+          typeof templateValues.headless === "boolean"
+            ? templateValues.headless
+              ? "headless"
+              : "headed"
+            : "auto",
+        userAgentMode: templateValues.userAgentMode ?? "random",
+        enableStealthMode: templateValues.enableStealthMode ?? true,
+        simulateUser: templateValues.simulateUser ?? true,
+        overrideNavigator: templateValues.overrideNavigator ?? true,
+        headless: undefined,
+      };
+      form.setFieldsValue(nextValues);
+      form.setFields([{ name: "headless", value: undefined }]);
+    },
+    [canWriteItems, form],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -224,7 +256,10 @@ export function CreateCrawlTaskDrawer({
       return;
     }
     const normalizedKey = defaultTemplateKey?.trim();
-    if (normalizedKey && TEMPLATES.some((template) => template.key === normalizedKey)) {
+    if (
+      normalizedKey &&
+      TEMPLATES.some((template) => template.key === normalizedKey)
+    ) {
       handleTemplateSelect(normalizedKey);
       return;
     }
@@ -262,25 +297,45 @@ export function CreateCrawlTaskDrawer({
 
       <Form layout="vertical" form={form} onFinish={onSubmit}>
         <div style={{ display: currentStep === 0 ? "block" : "none" }}>
-          <Typography.Title level={5}>{t("crawl.templates.selectTitle")}</Typography.Title>
+          <Typography.Title level={5}>
+            {t("crawl.templates.selectTitle")}
+          </Typography.Title>
           <Row gutter={[16, 16]}>
             {TEMPLATES.map((template) => (
               <Col span={12} key={template.key}>
                 <Card
                   hoverable
                   onClick={() => handleTemplateSelect(template.key)}
-                  className={selectedTemplate === template.key ? "border-primary" : ""}
+                  className={
+                    selectedTemplate === template.key ? "border-primary" : ""
+                  }
                   style={{
-                    borderColor: selectedTemplate === template.key ? "#1677ff" : undefined,
+                    borderColor:
+                      selectedTemplate === template.key ? "#1677ff" : undefined,
                     borderWidth: selectedTemplate === template.key ? 2 : 1,
                     height: "100%",
                   }}
                 >
-                  <Space direction="vertical" align="center" style={{ width: "100%" }}>
-                    <div style={{ fontSize: 24, color: "#1677ff" }}>{template.icon}</div>
-                    <Typography.Text strong>{t(template.label, { defaultValue: template.defaultLabel })}</Typography.Text>
-                    <Typography.Text type="secondary" style={{ fontSize: 12, textAlign: 'center' }}>
-                      {t(template.description, { defaultValue: template.defaultDescription })}
+                  <Space
+                    direction="vertical"
+                    align="center"
+                    style={{ width: "100%" }}
+                  >
+                    <div style={{ fontSize: 24, color: "#1677ff" }}>
+                      {template.icon}
+                    </div>
+                    <Typography.Text strong>
+                      {t(template.label, {
+                        defaultValue: template.defaultLabel,
+                      })}
+                    </Typography.Text>
+                    <Typography.Text
+                      type="secondary"
+                      style={{ fontSize: 12, textAlign: "center" }}
+                    >
+                      {t(template.description, {
+                        defaultValue: template.defaultDescription,
+                      })}
                     </Typography.Text>
                   </Space>
                 </Card>
@@ -293,14 +348,26 @@ export function CreateCrawlTaskDrawer({
           <Form.Item
             label={t("crawl.settings.displayName")}
             name="displayName"
-            rules={[{ max: 80, message: t("crawl.settings.validation.displayNameMax", { count: 80 }) }]}
+            rules={[
+              {
+                max: 80,
+                message: t("crawl.settings.validation.displayNameMax", {
+                  count: 80,
+                }),
+              },
+            ]}
           >
             <Input placeholder={t("crawl.settings.placeholders.displayName")} />
           </Form.Item>
           <Form.Item
             label={t("crawl.settings.targetUrl")}
             name="url"
-            rules={[{ required: true, message: t("crawl.settings.validation.urlRequired") }]}
+            rules={[
+              {
+                required: true,
+                message: t("crawl.settings.validation.urlRequired"),
+              },
+            ]}
           >
             <Input placeholder={t("crawl.settings.placeholders.url")} />
           </Form.Item>
@@ -309,7 +376,6 @@ export function CreateCrawlTaskDrawer({
         <div style={{ display: currentStep === 2 ? "block" : "none" }}>
           <CrawlSettingsForm
             scanFullPage={scanFullPage}
-            waitUntilValue={waitUntilValue}
             markdownFilterType={markdownFilterType}
             linkPreviewDisabled={linkPreviewDisabled}
             canWriteItems={canWriteItems}
@@ -322,14 +388,18 @@ export function CreateCrawlTaskDrawer({
           />
         </div>
 
-        <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between" }}>
+        <div
+          style={{
+            marginTop: 24,
+            display: "flex",
+            justifyContent: "space-between",
+          }}
+        >
           {currentStep > 0 && (
-            <Button onClick={handlePrev}>
-              {t("common.previous")}
-            </Button>
+            <Button onClick={handlePrev}>{t("common.previous")}</Button>
           )}
           <div style={{ marginLeft: "auto" }}>
-             {currentStep < 2 && (
+            {currentStep < 2 && (
               <Button type="primary" onClick={handleNext}>
                 {t("common.next")}
               </Button>
@@ -348,7 +418,6 @@ export function CreateCrawlTaskDrawer({
 
 interface CrawlSettingsFormProps {
   scanFullPage?: boolean;
-  waitUntilValue?: string;
   markdownFilterType?: string;
   linkPreviewDisabled: boolean;
   canWriteItems: boolean;
@@ -356,21 +425,35 @@ interface CrawlSettingsFormProps {
 
 function CrawlSettingsForm({
   scanFullPage,
-  waitUntilValue,
   markdownFilterType,
   linkPreviewDisabled,
   canWriteItems,
 }: CrawlSettingsFormProps) {
   const { t } = useTranslation();
   const form = Form.useFormInstance<CreateCrawlTaskFormValues>();
-  const virtualScrollEnabled = Boolean(Form.useWatch(["virtualScroll", "enabled"], form));
-  const autoExpandDetailsEnabled = Boolean(Form.useWatch("autoExpandDetails", form));
-  const virtualScrollScrollByValue = Form.useWatch(["virtualScroll", "scrollBy"], form);
-  const markdownStrategyTypeValue = Form.useWatch(["markdownStrategy", "type"], form);
-  const markdownStrategyParamsValue = Form.useWatch(["markdownStrategy", "params"], form);
+  const virtualScrollEnabled = Boolean(
+    Form.useWatch(["virtualScroll", "enabled"], form),
+  );
+  const autoExpandDetailsEnabled = Boolean(
+    Form.useWatch("autoExpandDetails", form),
+  );
+  const virtualScrollScrollByValue = Form.useWatch(
+    ["virtualScroll", "scrollBy"],
+    form,
+  );
+  const markdownStrategyTypeValue = Form.useWatch(
+    ["markdownStrategy", "type"],
+    form,
+  );
+  const markdownStrategyParamsValue = Form.useWatch(
+    ["markdownStrategy", "params"],
+    form,
+  );
   const markdownStrategyHasLlmConfig =
     hasBlockedCrawlLlmType(
-      typeof markdownStrategyTypeValue === "string" ? markdownStrategyTypeValue : undefined,
+      typeof markdownStrategyTypeValue === "string"
+        ? markdownStrategyTypeValue
+        : undefined,
     ) ||
     hasBlockedCrawlLlmParams(
       typeof markdownStrategyParamsValue === "string"
@@ -384,15 +467,20 @@ function CrawlSettingsForm({
       : "default";
   const ingestHint = canWriteItems
     ? t("crawl.settings.ingestToItemsHint", {
-        defaultValue: "New crawl results will be converted into Items and queued for LLM processing."
+        defaultValue:
+          "New crawl results will be converted into Items and queued for LLM processing.",
       })
-    : t("crawl.settings.ingestToItemsNoPermission", { defaultValue: "Requires items.write permission." });
+    : t("crawl.settings.ingestToItemsNoPermission", {
+        defaultValue: "Requires items.write permission.",
+      });
   return (
     <>
       {/* Moved displayName and url to Step 1 */}
-      
+
       <Form.Item
-        label={t("crawl.settings.ingestToItems", { defaultValue: "Auto send to Items" })}
+        label={t("crawl.settings.ingestToItems", {
+          defaultValue: "Auto send to Items",
+        })}
         name="ingestToItems"
         valuePropName="checked"
         extra={ingestHint}
@@ -400,7 +488,10 @@ function CrawlSettingsForm({
         <Switch disabled={!canWriteItems} />
       </Form.Item>
       <Form.Item label={t("crawl.settings.keywords")} name="keywords">
-        <Select mode="tags" placeholder={t("crawl.settings.placeholders.keywords")} />
+        <Select
+          mode="tags"
+          placeholder={t("crawl.settings.placeholders.keywords")}
+        />
       </Form.Item>
       <Form.Item label={t("crawl.settings.timeRange")} name="timeRange">
         <DatePicker.RangePicker
@@ -508,37 +599,50 @@ function CrawlSettingsForm({
                 form.setFields([{ name: ["virtualScroll"], value: undefined }]);
                 return;
               }
-              const current = (form.getFieldValue(["virtualScroll"]) ?? {}) as Record<
-                string,
-                unknown
-              >;
+              const current = (form.getFieldValue(["virtualScroll"]) ??
+                {}) as Record<string, unknown>;
               const containerSelector =
-                typeof current.containerSelector === "string" && current.containerSelector.trim().length
+                typeof current.containerSelector === "string" &&
+                current.containerSelector.trim().length
                   ? current.containerSelector
                   : "body";
               const scrollCount =
-                typeof current.scrollCount === "number" && Number.isFinite(current.scrollCount)
+                typeof current.scrollCount === "number" &&
+                Number.isFinite(current.scrollCount)
                   ? current.scrollCount
                   : 10;
               const scrollBy =
-                typeof current.scrollBy === "string" && current.scrollBy.length ? current.scrollBy : "page_height";
+                typeof current.scrollBy === "string" && current.scrollBy.length
+                  ? current.scrollBy
+                  : "page_height";
               const scrollByPixels =
-                typeof current.scrollByPixels === "number" && Number.isFinite(current.scrollByPixels)
+                typeof current.scrollByPixels === "number" &&
+                Number.isFinite(current.scrollByPixels)
                   ? current.scrollByPixels
                   : 500;
               const waitAfterScrollMs =
-                typeof current.waitAfterScrollMs === "number" && Number.isFinite(current.waitAfterScrollMs)
+                typeof current.waitAfterScrollMs === "number" &&
+                Number.isFinite(current.waitAfterScrollMs)
                   ? current.waitAfterScrollMs
                   : 600;
               form.setFields([
                 { name: ["scanFullPage"], value: false },
                 { name: ["scrollDelayMs"], value: undefined },
                 { name: ["virtualScroll", "enabled"], value: true },
-                { name: ["virtualScroll", "containerSelector"], value: containerSelector },
+                {
+                  name: ["virtualScroll", "containerSelector"],
+                  value: containerSelector,
+                },
                 { name: ["virtualScroll", "scrollCount"], value: scrollCount },
                 { name: ["virtualScroll", "scrollBy"], value: scrollBy },
-                { name: ["virtualScroll", "scrollByPixels"], value: scrollByPixels },
-                { name: ["virtualScroll", "waitAfterScrollMs"], value: waitAfterScrollMs }
+                {
+                  name: ["virtualScroll", "scrollByPixels"],
+                  value: scrollByPixels,
+                },
+                {
+                  name: ["virtualScroll", "waitAfterScrollMs"],
+                  value: waitAfterScrollMs,
+                },
               ]);
             }}
           />
@@ -567,9 +671,20 @@ function CrawlSettingsForm({
               <Select
                 allowClear
                 options={[
-                  { value: "page_height", label: t("crawl.virtualScroll.scrollByOptions.pageHeight") },
-                  { value: "container_height", label: t("crawl.virtualScroll.scrollByOptions.containerHeight") },
-                  { value: "pixels", label: t("crawl.virtualScroll.scrollByOptions.pixels") }
+                  {
+                    value: "page_height",
+                    label: t("crawl.virtualScroll.scrollByOptions.pageHeight"),
+                  },
+                  {
+                    value: "container_height",
+                    label: t(
+                      "crawl.virtualScroll.scrollByOptions.containerHeight",
+                    ),
+                  },
+                  {
+                    value: "pixels",
+                    label: t("crawl.virtualScroll.scrollByOptions.pixels"),
+                  },
                 ]}
               />
             </Form.Item>
@@ -579,7 +694,12 @@ function CrawlSettingsForm({
                 name={["virtualScroll", "scrollByPixels"]}
                 extra={t("crawl.virtualScroll.scrollByPixelsHint")}
               >
-                <InputNumber min={1} max={20000} step={50} style={{ width: "100%" }} />
+                <InputNumber
+                  min={1}
+                  max={20000}
+                  step={50}
+                  style={{ width: "100%" }}
+                />
               </Form.Item>
             ) : null}
             <Form.Item
@@ -587,7 +707,12 @@ function CrawlSettingsForm({
               name={["virtualScroll", "waitAfterScrollMs"]}
               extra={t("crawl.virtualScroll.waitAfterScrollHint")}
             >
-              <InputNumber min={0} max={60000} step={100} style={{ width: "100%" }} />
+              <InputNumber
+                min={0}
+                max={60000}
+                step={100}
+                style={{ width: "100%" }}
+              />
             </Form.Item>
             {scanFullPage ? (
               <Typography.Text type="secondary" style={{ display: "block" }}>
@@ -623,14 +748,16 @@ function CrawlSettingsForm({
         }
       />
       <Card
-        title={t("crawl.optimization.title", { defaultValue: "Crawl optimization" })}
+        title={t("crawl.optimization.title", {
+          defaultValue: "Crawl optimization",
+        })}
         size="small"
         style={{ marginBottom: 16 }}
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
           {t("crawl.optimization.description", {
             defaultValue:
-              "Tune discovery and markdown quality without using LLMs during crawling."
+              "Tune discovery and markdown quality without using LLMs during crawling.",
           })}
         </Typography.Paragraph>
         <Alert
@@ -638,11 +765,11 @@ function CrawlSettingsForm({
           showIcon
           style={{ marginBottom: 12 }}
           message={t("crawl.optimization.noLlmTitle", {
-            defaultValue: "No LLM in crawl stage"
+            defaultValue: "No LLM in crawl stage",
           })}
           description={t("crawl.optimization.noLlmDescription", {
             defaultValue:
-              "Use Crawl4AI for deterministic fetch + cleaning only. Run LLM summarization or analysis in downstream pipeline stages."
+              "Use Crawl4AI for deterministic fetch + cleaning only. Run LLM summarization or analysis in downstream pipeline stages.",
           })}
         />
         <Form.Item
@@ -656,16 +783,16 @@ function CrawlSettingsForm({
             options={[
               {
                 value: "quality_first",
-                label: t("crawl.settings.qualityProfileOptions.qualityFirst")
+                label: t("crawl.settings.qualityProfileOptions.qualityFirst"),
               },
               {
                 value: "balanced",
-                label: t("crawl.settings.qualityProfileOptions.balanced")
+                label: t("crawl.settings.qualityProfileOptions.balanced"),
               },
               {
                 value: "speed_first",
-                label: t("crawl.settings.qualityProfileOptions.speedFirst")
-              }
+                label: t("crawl.settings.qualityProfileOptions.speedFirst"),
+              },
             ]}
           />
         </Form.Item>
@@ -678,9 +805,18 @@ function CrawlSettingsForm({
             allowClear
             placeholder={t("crawl.settings.placeholders.pageTypeHint")}
             options={[
-              { value: "auto", label: t("crawl.settings.pageTypeHintOptions.auto") },
-              { value: "list", label: t("crawl.settings.pageTypeHintOptions.list") },
-              { value: "detail", label: t("crawl.settings.pageTypeHintOptions.detail") }
+              {
+                value: "auto",
+                label: t("crawl.settings.pageTypeHintOptions.auto"),
+              },
+              {
+                value: "list",
+                label: t("crawl.settings.pageTypeHintOptions.list"),
+              },
+              {
+                value: "detail",
+                label: t("crawl.settings.pageTypeHintOptions.detail"),
+              },
             ]}
           />
         </Form.Item>
@@ -693,27 +829,42 @@ function CrawlSettingsForm({
           <Switch
             onChange={(enabled) => {
               if (!enabled) {
-                form.setFields([{ name: ["detailExpansion"], value: undefined }]);
+                form.setFields([
+                  { name: ["detailExpansion"], value: undefined },
+                ]);
                 return;
               }
-              const current = (form.getFieldValue(["detailExpansion"]) ?? {}) as Record<string, unknown>;
+              const current = (form.getFieldValue(["detailExpansion"]) ??
+                {}) as Record<string, unknown>;
               form.setFields([
-                { name: ["detailExpansion", "maxDetailUrls"], value: typeof current.maxDetailUrls === "number" ? current.maxDetailUrls : 8 },
+                {
+                  name: ["detailExpansion", "maxDetailUrls"],
+                  value:
+                    typeof current.maxDetailUrls === "number"
+                      ? current.maxDetailUrls
+                      : 8,
+                },
                 {
                   name: ["detailExpansion", "minRelevanceScore"],
-                  value: typeof current.minRelevanceScore === "number" ? current.minRelevanceScore : 0.2
+                  value:
+                    typeof current.minRelevanceScore === "number"
+                      ? current.minRelevanceScore
+                      : 0.2,
                 },
                 {
                   name: ["detailExpansion", "requireSameDomain"],
-                  value: typeof current.requireSameDomain === "boolean" ? current.requireSameDomain : true
+                  value:
+                    typeof current.requireSameDomain === "boolean"
+                      ? current.requireSameDomain
+                      : true,
                 },
                 {
                   name: ["detailExpansion", "allowExternalLinks"],
                   value:
                     typeof current.allowExternalLinks === "boolean"
                       ? current.allowExternalLinks
-                      : true
-                }
+                      : true,
+                },
               ]);
             }}
           />
@@ -732,7 +883,12 @@ function CrawlSettingsForm({
               name={["detailExpansion", "minRelevanceScore"]}
               extra={t("crawl.detailExpansion.minRelevanceScoreHint")}
             >
-              <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+              <InputNumber
+                min={0}
+                max={1}
+                step={0.01}
+                style={{ width: "100%" }}
+              />
             </Form.Item>
             <Form.Item
               label={t("crawl.detailExpansion.requireSameDomain")}
@@ -790,21 +946,26 @@ function CrawlSettingsForm({
         <Switch />
       </Form.Item>
       <Card
-        title={t("crawl.settings.politeness.title", { defaultValue: "Politeness & stability" })}
+        title={t("crawl.settings.politeness.title", {
+          defaultValue: "Politeness & stability",
+        })}
         size="small"
         style={{ marginBottom: 16 }}
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
           {t("crawl.settings.politeness.description", {
             defaultValue:
-              "Use conservative delays and concurrency settings to improve crawl stability across news sites."
+              "Use conservative delays and concurrency settings to improve crawl stability across news sites.",
           })}
         </Typography.Paragraph>
         <Form.Item
-          label={t("crawl.settings.politeness.meanDelay", { defaultValue: "Mean delay (ms)" })}
+          label={t("crawl.settings.politeness.meanDelay", {
+            defaultValue: "Mean delay (ms)",
+          })}
           name="meanDelayMs"
           extra={t("crawl.settings.politeness.meanDelayHint", {
-            defaultValue: "Average randomized pause between requests in batch crawling."
+            defaultValue:
+              "Average randomized pause between requests in batch crawling.",
           })}
         >
           <InputNumber
@@ -813,15 +974,17 @@ function CrawlSettingsForm({
             step={50}
             style={{ width: "100%" }}
             placeholder={t("crawl.settings.politeness.placeholders.meanDelay", {
-              defaultValue: "Enter mean delay"
+              defaultValue: "Enter mean delay",
             })}
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.settings.politeness.maxRange", { defaultValue: "Delay jitter (ms)" })}
+          label={t("crawl.settings.politeness.maxRange", {
+            defaultValue: "Delay jitter (ms)",
+          })}
           name="maxDelayRangeMs"
           extra={t("crawl.settings.politeness.maxRangeHint", {
-            defaultValue: "Random delay range added around the mean delay."
+            defaultValue: "Random delay range added around the mean delay.",
           })}
         >
           <InputNumber
@@ -830,26 +993,30 @@ function CrawlSettingsForm({
             step={50}
             style={{ width: "100%" }}
             placeholder={t("crawl.settings.politeness.placeholders.maxRange", {
-              defaultValue: "Enter jitter range"
+              defaultValue: "Enter jitter range",
             })}
           />
         </Form.Item>
         <Form.Item
           label={t("crawl.settings.politeness.semaphoreCount", {
-            defaultValue: "Internal semaphore"
+            defaultValue: "Internal semaphore",
           })}
           name="semaphoreCount"
           extra={t("crawl.settings.politeness.semaphoreCountHint", {
-            defaultValue: "Max parallel internal operations within a crawl run."
+            defaultValue:
+              "Max parallel internal operations within a crawl run.",
           })}
         >
           <InputNumber
             min={1}
             max={50}
             style={{ width: "100%" }}
-            placeholder={t("crawl.settings.politeness.placeholders.semaphoreCount", {
-              defaultValue: "Enter semaphore count"
-            })}
+            placeholder={t(
+              "crawl.settings.politeness.placeholders.semaphoreCount",
+              {
+                defaultValue: "Enter semaphore count",
+              },
+            )}
           />
         </Form.Item>
       </Card>
@@ -880,7 +1047,10 @@ function CrawlSettingsForm({
                     label={t("crawl.dynamic.jsStep", { index: index + 1 })}
                     style={{ flex: 1 }}
                     rules={[
-                      { required: true, message: t("crawl.dynamic.jsRequired") },
+                      {
+                        required: true,
+                        message: t("crawl.dynamic.jsRequired"),
+                      },
                     ]}
                   >
                     <Input.TextArea
@@ -945,47 +1115,56 @@ function CrawlSettingsForm({
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.dynamic.waitUntil", { defaultValue: "Navigation wait condition" })}
+          label={t("crawl.dynamic.waitUntil", {
+            defaultValue: "Navigation wait condition",
+          })}
           name="waitUntil"
           extra={t("crawl.dynamic.waitUntilHint", {
             defaultValue:
-              "Choose when Crawl4AI treats navigation as finished. For JS-heavy pages, networkidle is usually safer."
+              "Choose when Crawl4AI treats navigation as finished. For JS-heavy pages, networkidle is usually safer.",
           })}
         >
           <Select
             allowClear
             placeholder={t("crawl.dynamic.placeholders.waitUntil", {
-              defaultValue: "Select wait condition"
+              defaultValue: "Select wait condition",
             })}
             options={[
               {
                 value: "domcontentloaded",
                 label: t("crawl.dynamic.waitUntilOptions.domcontentloaded", {
-                  defaultValue: "DOMContentLoaded"
-                })
+                  defaultValue: "DOMContentLoaded",
+                }),
               },
               {
                 value: "load",
-                label: t("crawl.dynamic.waitUntilOptions.load", { defaultValue: "Load" })
+                label: t("crawl.dynamic.waitUntilOptions.load", {
+                  defaultValue: "Load",
+                }),
               },
               {
                 value: "networkidle",
                 label: t("crawl.dynamic.waitUntilOptions.networkidle", {
-                  defaultValue: "Network idle"
-                })
+                  defaultValue: "Network idle",
+                }),
               },
               {
                 value: "commit",
-                label: t("crawl.dynamic.waitUntilOptions.commit", { defaultValue: "Commit" })
-              }
+                label: t("crawl.dynamic.waitUntilOptions.commit", {
+                  defaultValue: "Commit",
+                }),
+              },
             ]}
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.dynamic.pageTimeout", { defaultValue: "Page timeout (ms)" })}
+          label={t("crawl.dynamic.pageTimeout", {
+            defaultValue: "Page timeout (ms)",
+          })}
           name="pageTimeoutMs"
           extra={t("crawl.dynamic.pageTimeoutHint", {
-            defaultValue: "Hard limit for page loading and JS execution in milliseconds."
+            defaultValue:
+              "Hard limit for page loading and JS execution in milliseconds.",
           })}
         >
           <InputNumber
@@ -993,18 +1172,18 @@ function CrawlSettingsForm({
             max={180000}
             style={{ width: "100%" }}
             placeholder={t("crawl.dynamic.placeholders.pageTimeout", {
-              defaultValue: "Enter page timeout"
+              defaultValue: "Enter page timeout",
             })}
           />
         </Form.Item>
         <Form.Item
           label={t("crawl.dynamic.delayBeforeReturnHtml", {
-            defaultValue: "Post-load delay (ms)"
+            defaultValue: "Post-load delay (ms)",
           })}
           name="delayBeforeReturnHtmlMs"
           extra={t("crawl.dynamic.delayBeforeReturnHtmlHint", {
             defaultValue:
-              "Extra wait before returning HTML, useful for late-rendered article bodies."
+              "Extra wait before returning HTML, useful for late-rendered article bodies.",
           })}
         >
           <InputNumber
@@ -1013,17 +1192,19 @@ function CrawlSettingsForm({
             step={100}
             style={{ width: "100%" }}
             placeholder={t("crawl.dynamic.placeholders.delayBeforeReturnHtml", {
-              defaultValue: "Enter post-load delay"
+              defaultValue: "Enter post-load delay",
             })}
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.dynamic.removeForms", { defaultValue: "Remove forms" })}
+          label={t("crawl.dynamic.removeForms", {
+            defaultValue: "Remove forms",
+          })}
           name="removeForms"
           valuePropName="checked"
           extra={t("crawl.dynamic.removeFormsHint", {
             defaultValue:
-              "Strip form elements before markdown conversion to reduce newsletter/login noise."
+              "Strip form elements before markdown conversion to reduce newsletter/login noise.",
           })}
         >
           <Switch />
@@ -1057,7 +1238,10 @@ function CrawlSettingsForm({
           allowClear
           placeholder={t("crawl.markdown.placeholders.source")}
           options={[
-            { value: "cleaned_html", label: t("crawl.markdown.sourceOptions.cleaned") },
+            {
+              value: "cleaned_html",
+              label: t("crawl.markdown.sourceOptions.cleaned"),
+            },
             { value: "raw_html", label: t("crawl.markdown.sourceOptions.raw") },
             { value: "fit_html", label: t("crawl.markdown.sourceOptions.fit") },
           ]}
@@ -1108,7 +1292,10 @@ function CrawlSettingsForm({
           allowClear
           placeholder={t("crawl.markdown.placeholders.filter")}
           options={[
-            { value: "pruning", label: t("crawl.markdown.filterOptions.pruning") },
+            {
+              value: "pruning",
+              label: t("crawl.markdown.filterOptions.pruning"),
+            },
             { value: "bm25", label: t("crawl.markdown.filterOptions.bm25") },
           ]}
         />
@@ -1137,8 +1324,14 @@ function CrawlSettingsForm({
           allowClear
           placeholder={t("crawl.markdown.placeholders.thresholdMode")}
           options={[
-            { value: "dynamic", label: t("crawl.markdown.thresholdModeOptions.dynamic") },
-            { value: "fixed", label: t("crawl.markdown.thresholdModeOptions.fixed") },
+            {
+              value: "dynamic",
+              label: t("crawl.markdown.thresholdModeOptions.dynamic"),
+            },
+            {
+              value: "fixed",
+              label: t("crawl.markdown.thresholdModeOptions.fixed"),
+            },
           ]}
         />
       </Form.Item>
@@ -1173,7 +1366,10 @@ function CrawlSettingsForm({
             : undefined
         }
       >
-        <Input placeholder={t("crawl.markdown.placeholders.bm25Query")} maxLength={240} />
+        <Input
+          placeholder={t("crawl.markdown.placeholders.bm25Query")}
+          maxLength={240}
+        />
       </Form.Item>
       <Form.Item
         label={t("crawl.markdown.bm25Threshold")}
@@ -1195,7 +1391,10 @@ function CrawlSettingsForm({
         hidden={markdownFilterType !== "bm25"}
         extra={t("crawl.markdown.bm25LanguageHint")}
       >
-        <Input placeholder={t("crawl.markdown.placeholders.bm25Language")} maxLength={32} />
+        <Input
+          placeholder={t("crawl.markdown.placeholders.bm25Language")}
+          maxLength={32}
+        />
       </Form.Item>
       <Typography.Title level={5} style={{ marginTop: 24 }}>
         {t("crawl.markdown.customStrategy.title")}
@@ -1216,8 +1415,12 @@ function CrawlSettingsForm({
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
-          message={t("crawl.markdown.customStrategy.validation.noLlmExtraction")}
-          description={t("crawl.markdown.customStrategy.validation.noLlmExtractionHint")}
+          message={t(
+            "crawl.markdown.customStrategy.validation.noLlmExtraction",
+          )}
+          description={t(
+            "crawl.markdown.customStrategy.validation.noLlmExtractionHint",
+          )}
         />
       ) : null}
       <Form.Item
@@ -1239,7 +1442,10 @@ function CrawlSettingsForm({
           },
         ]}
       >
-        <Input placeholder={t("crawl.markdown.customStrategy.placeholders.type")} maxLength={128} />
+        <Input
+          placeholder={t("crawl.markdown.customStrategy.placeholders.type")}
+          maxLength={128}
+        />
       </Form.Item>
       <Form.Item
         label={t("crawl.markdown.customStrategy.params")}
@@ -1255,7 +1461,9 @@ function CrawlSettingsForm({
                 JSON.parse(value);
               } catch {
                 throw new Error(
-                  t("crawl.markdown.customStrategy.validation.paramsMustBeJson"),
+                  t(
+                    "crawl.markdown.customStrategy.validation.paramsMustBeJson",
+                  ),
                 );
               }
               if (hasBlockedCrawlLlmParams(value)) {
@@ -1302,7 +1510,10 @@ function CrawlSettingsForm({
           name={["cleanMarkdown", "cssSelector"]}
           extra={t("crawl.markdown.clean.cssSelectorHint")}
         >
-          <Input placeholder={t("crawl.markdown.clean.placeholders.cssSelector")} maxLength={512} />
+          <Input
+            placeholder={t("crawl.markdown.clean.placeholders.cssSelector")}
+            maxLength={512}
+          />
         </Form.Item>
         <Form.Item
           label={t("crawl.markdown.clean.targetElements")}
@@ -1383,7 +1594,10 @@ function CrawlSettingsForm({
           name={["tableExtraction", "type"]}
           extra={t("crawl.tables.strategyTypeHint")}
         >
-          <Input placeholder={t("crawl.tables.placeholders.strategyType")} maxLength={128} />
+          <Input
+            placeholder={t("crawl.tables.placeholders.strategyType")}
+            maxLength={128}
+          />
         </Form.Item>
         <Form.Item
           label={t("crawl.tables.minRows")}
@@ -1420,7 +1634,11 @@ function CrawlSettingsForm({
           />
         </Form.Item>
       </Card>
-      <Card size="small" title={t("crawl.links.title")} style={{ marginBottom: 16 }}>
+      <Card
+        size="small"
+        title={t("crawl.links.title")}
+        style={{ marginBottom: 16 }}
+      >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
           {t("crawl.links.description")}
         </Typography.Paragraph>
@@ -1453,7 +1671,10 @@ function CrawlSettingsForm({
         >
           <Switch disabled={linkPreviewDisabled} />
         </Form.Item>
-        <Form.Item label={t("crawl.links.maxLinks")} name={["linkPreview", "maxLinks"]}>
+        <Form.Item
+          label={t("crawl.links.maxLinks")}
+          name={["linkPreview", "maxLinks"]}
+        >
           <InputNumber
             min={1}
             max={500}
@@ -1462,7 +1683,10 @@ function CrawlSettingsForm({
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
-        <Form.Item label={t("crawl.links.concurrency")} name={["linkPreview", "concurrency"]}>
+        <Form.Item
+          label={t("crawl.links.concurrency")}
+          name={["linkPreview", "concurrency"]}
+        >
           <InputNumber
             min={1}
             max={50}
@@ -1471,7 +1695,10 @@ function CrawlSettingsForm({
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
-        <Form.Item label={t("crawl.links.timeout")} name={["linkPreview", "timeoutSeconds"]}>
+        <Form.Item
+          label={t("crawl.links.timeout")}
+          name={["linkPreview", "timeoutSeconds"]}
+        >
           <InputNumber
             min={1}
             max={60}
@@ -1480,7 +1707,10 @@ function CrawlSettingsForm({
             disabled={linkPreviewDisabled}
           />
         </Form.Item>
-        <Form.Item label={t("crawl.links.contextQuery")} name={["linkPreview", "query"]}>
+        <Form.Item
+          label={t("crawl.links.contextQuery")}
+          name={["linkPreview", "query"]}
+        >
           <Input
             placeholder={t("crawl.links.placeholders.contextQuery")}
             disabled={linkPreviewDisabled}
@@ -1539,7 +1769,9 @@ function CrawlSettingsForm({
                 alignItems: "center",
               }}
             >
-              <Typography.Text strong>{t("crawl.multiUrl.title")}</Typography.Text>
+              <Typography.Text strong>
+                {t("crawl.multiUrl.title")}
+              </Typography.Text>
               <Button
                 type="dashed"
                 icon={<PlusOutlined />}
@@ -1570,7 +1802,10 @@ function CrawlSettingsForm({
                   </Button>
                 }
               >
-                <Form.Item label={t("crawl.multiUrl.fields.label")} name={[field.name, "name"]}>
+                <Form.Item
+                  label={t("crawl.multiUrl.fields.label")}
+                  name={[field.name, "name"]}
+                >
                   <Input placeholder={t("crawl.multiUrl.placeholders.label")} />
                 </Form.Item>
                 <Form.Item
@@ -1582,10 +1817,22 @@ function CrawlSettingsForm({
                     allowClear
                     placeholder={t("crawl.multiUrl.placeholders.matchMode")}
                     options={[
-                      { value: "glob", label: t("crawl.multiUrl.matchModeOptions.glob") },
-                      { value: "regex", label: t("crawl.multiUrl.matchModeOptions.regex") },
-                      { value: "substring", label: t("crawl.multiUrl.matchModeOptions.substring") },
-                      { value: "prefix", label: t("crawl.multiUrl.matchModeOptions.prefix") },
+                      {
+                        value: "glob",
+                        label: t("crawl.multiUrl.matchModeOptions.glob"),
+                      },
+                      {
+                        value: "regex",
+                        label: t("crawl.multiUrl.matchModeOptions.regex"),
+                      },
+                      {
+                        value: "substring",
+                        label: t("crawl.multiUrl.matchModeOptions.substring"),
+                      },
+                      {
+                        value: "prefix",
+                        label: t("crawl.multiUrl.matchModeOptions.prefix"),
+                      },
                     ]}
                   />
                 </Form.Item>
@@ -1630,9 +1877,18 @@ function CrawlSettingsForm({
                     allowClear
                     placeholder={t("crawl.multiUrl.placeholders.cacheMode")}
                     options={[
-                      { value: "bypass", label: t("crawl.multiUrl.cacheModes.bypass") },
-                      { value: "prefer_cache", label: t("crawl.multiUrl.cacheModes.prefer") },
-                      { value: "force_cache", label: t("crawl.multiUrl.cacheModes.force") },
+                      {
+                        value: "bypass",
+                        label: t("crawl.multiUrl.cacheModes.bypass"),
+                      },
+                      {
+                        value: "prefer_cache",
+                        label: t("crawl.multiUrl.cacheModes.prefer"),
+                      },
+                      {
+                        value: "force_cache",
+                        label: t("crawl.multiUrl.cacheModes.force"),
+                      },
                     ]}
                   />
                 </Form.Item>
@@ -1642,20 +1898,28 @@ function CrawlSettingsForm({
                 >
                   <Select
                     allowClear
-                    placeholder={t("crawl.settings.placeholders.qualityProfile")}
+                    placeholder={t(
+                      "crawl.settings.placeholders.qualityProfile",
+                    )}
                     options={[
                       {
                         value: "quality_first",
-                        label: t("crawl.settings.qualityProfileOptions.qualityFirst")
+                        label: t(
+                          "crawl.settings.qualityProfileOptions.qualityFirst",
+                        ),
                       },
                       {
                         value: "balanced",
-                        label: t("crawl.settings.qualityProfileOptions.balanced")
+                        label: t(
+                          "crawl.settings.qualityProfileOptions.balanced",
+                        ),
                       },
                       {
                         value: "speed_first",
-                        label: t("crawl.settings.qualityProfileOptions.speedFirst")
-                      }
+                        label: t(
+                          "crawl.settings.qualityProfileOptions.speedFirst",
+                        ),
+                      },
                     ]}
                   />
                 </Form.Item>
@@ -1667,9 +1931,18 @@ function CrawlSettingsForm({
                     allowClear
                     placeholder={t("crawl.settings.placeholders.pageTypeHint")}
                     options={[
-                      { value: "auto", label: t("crawl.settings.pageTypeHintOptions.auto") },
-                      { value: "list", label: t("crawl.settings.pageTypeHintOptions.list") },
-                      { value: "detail", label: t("crawl.settings.pageTypeHintOptions.detail") }
+                      {
+                        value: "auto",
+                        label: t("crawl.settings.pageTypeHintOptions.auto"),
+                      },
+                      {
+                        value: "list",
+                        label: t("crawl.settings.pageTypeHintOptions.list"),
+                      },
+                      {
+                        value: "detail",
+                        label: t("crawl.settings.pageTypeHintOptions.detail"),
+                      },
                     ]}
                   />
                 </Form.Item>
@@ -1683,9 +1956,14 @@ function CrawlSettingsForm({
                       if (!enabled) {
                         form.setFields([
                           {
-                            name: ["multiUrlConfigs", field.name, "options", "detailExpansion"],
-                            value: undefined
-                          }
+                            name: [
+                              "multiUrlConfigs",
+                              field.name,
+                              "options",
+                              "detailExpansion",
+                            ],
+                            value: undefined,
+                          },
                         ]);
                       }
                     }}
@@ -1695,9 +1973,11 @@ function CrawlSettingsForm({
                   noStyle
                   shouldUpdate={(prev, next) => {
                     const prevEnabled =
-                      prev?.multiUrlConfigs?.[field.name]?.options?.autoExpandDetails;
+                      prev?.multiUrlConfigs?.[field.name]?.options
+                        ?.autoExpandDetails;
                     const nextEnabled =
-                      next?.multiUrlConfigs?.[field.name]?.options?.autoExpandDetails;
+                      next?.multiUrlConfigs?.[field.name]?.options
+                        ?.autoExpandDetails;
                     return prevEnabled !== nextEnabled;
                   }}
                 >
@@ -1707,8 +1987,8 @@ function CrawlSettingsForm({
                         "multiUrlConfigs",
                         field.name,
                         "options",
-                        "autoExpandDetails"
-                      ])
+                        "autoExpandDetails",
+                      ]),
                     );
                     if (!enabled) {
                       return null;
@@ -1717,31 +1997,66 @@ function CrawlSettingsForm({
                       <>
                         <Form.Item
                           label={t("crawl.detailExpansion.maxDetailUrls")}
-                          name={[field.name, "options", "detailExpansion", "maxDetailUrls"]}
+                          name={[
+                            field.name,
+                            "options",
+                            "detailExpansion",
+                            "maxDetailUrls",
+                          ]}
                           extra={t("crawl.detailExpansion.maxDetailUrlsHint")}
                         >
-                          <InputNumber min={1} max={30} style={{ width: "100%" }} />
+                          <InputNumber
+                            min={1}
+                            max={30}
+                            style={{ width: "100%" }}
+                          />
                         </Form.Item>
                         <Form.Item
                           label={t("crawl.detailExpansion.minRelevanceScore")}
-                          name={[field.name, "options", "detailExpansion", "minRelevanceScore"]}
-                          extra={t("crawl.detailExpansion.minRelevanceScoreHint")}
+                          name={[
+                            field.name,
+                            "options",
+                            "detailExpansion",
+                            "minRelevanceScore",
+                          ]}
+                          extra={t(
+                            "crawl.detailExpansion.minRelevanceScoreHint",
+                          )}
                         >
-                          <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+                          <InputNumber
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            style={{ width: "100%" }}
+                          />
                         </Form.Item>
                         <Form.Item
                           label={t("crawl.detailExpansion.requireSameDomain")}
-                          name={[field.name, "options", "detailExpansion", "requireSameDomain"]}
+                          name={[
+                            field.name,
+                            "options",
+                            "detailExpansion",
+                            "requireSameDomain",
+                          ]}
                           valuePropName="checked"
-                          extra={t("crawl.detailExpansion.requireSameDomainHint")}
+                          extra={t(
+                            "crawl.detailExpansion.requireSameDomainHint",
+                          )}
                         >
                           <Switch />
                         </Form.Item>
                         <Form.Item
                           label={t("crawl.detailExpansion.allowExternalLinks")}
-                          name={[field.name, "options", "detailExpansion", "allowExternalLinks"]}
+                          name={[
+                            field.name,
+                            "options",
+                            "detailExpansion",
+                            "allowExternalLinks",
+                          ]}
                           valuePropName="checked"
-                          extra={t("crawl.detailExpansion.allowExternalLinksHint")}
+                          extra={t(
+                            "crawl.detailExpansion.allowExternalLinksHint",
+                          )}
                         >
                           <Switch />
                         </Form.Item>
@@ -1767,7 +2082,10 @@ function CrawlSettingsForm({
                     placeholder={t("crawl.settings.placeholders.scrollDelay")}
                   />
                 </Form.Item>
-                <Typography.Text strong style={{ marginBottom: 8, display: "block" }}>
+                <Typography.Text
+                  strong
+                  style={{ marginBottom: 8, display: "block" }}
+                >
                   {t("crawl.virtualScroll.title")}
                 </Typography.Text>
                 <Form.Item
@@ -1775,29 +2093,40 @@ function CrawlSettingsForm({
                   name={[field.name, "options", "virtualScroll", "enabled"]}
                   valuePropName="checked"
                 >
-	                  <Switch
-	                    onChange={(enabled) => {
-	                      const basePath = ["multiUrlConfigs", field.name, "options", "virtualScroll"] as (string | number)[];
-	                      if (!enabled) {
-	                        form.setFields([{ name: basePath as any, value: undefined }]);
-	                        return;
-	                      }
-	                      const current = (form.getFieldValue(basePath as any) ?? {}) as Record<string, unknown>;
+                  <Switch
+                    onChange={(enabled) => {
+                      const basePath = [
+                        "multiUrlConfigs",
+                        field.name,
+                        "options",
+                        "virtualScroll",
+                      ] as (string | number)[];
+                      if (!enabled) {
+                        form.setFields([
+                          { name: basePath as any, value: undefined },
+                        ]);
+                        return;
+                      }
+                      const current = (form.getFieldValue(basePath as any) ??
+                        {}) as Record<string, unknown>;
                       const containerSelector =
                         typeof current.containerSelector === "string" &&
                         current.containerSelector.trim().length
                           ? current.containerSelector
                           : "body";
                       const scrollCount =
-                        typeof current.scrollCount === "number" && Number.isFinite(current.scrollCount)
+                        typeof current.scrollCount === "number" &&
+                        Number.isFinite(current.scrollCount)
                           ? current.scrollCount
                           : 10;
                       const scrollBy =
-                        typeof current.scrollBy === "string" && current.scrollBy.length
+                        typeof current.scrollBy === "string" &&
+                        current.scrollBy.length
                           ? current.scrollBy
                           : "page_height";
                       const scrollByPixels =
-                        typeof current.scrollByPixels === "number" && Number.isFinite(current.scrollByPixels)
+                        typeof current.scrollByPixels === "number" &&
+                        Number.isFinite(current.scrollByPixels)
                           ? current.scrollByPixels
                           : 500;
                       const waitAfterScrollMs =
@@ -1805,24 +2134,59 @@ function CrawlSettingsForm({
                         Number.isFinite(current.waitAfterScrollMs)
                           ? current.waitAfterScrollMs
                           : 600;
-	                      form.setFields([
-	                        { name: ["multiUrlConfigs", field.name, "options", "scanFullPage"], value: false },
-	                        { name: ["multiUrlConfigs", field.name, "options", "scrollDelayMs"], value: undefined },
-	                        { name: [...basePath, "enabled"] as any, value: true },
-	                        { name: [...basePath, "containerSelector"] as any, value: containerSelector },
-	                        { name: [...basePath, "scrollCount"] as any, value: scrollCount },
-	                        { name: [...basePath, "scrollBy"] as any, value: scrollBy },
-	                        { name: [...basePath, "scrollByPixels"] as any, value: scrollByPixels },
-	                        { name: [...basePath, "waitAfterScrollMs"] as any, value: waitAfterScrollMs }
-	                      ]);
-	                    }}
-	                  />
+                      form.setFields([
+                        {
+                          name: [
+                            "multiUrlConfigs",
+                            field.name,
+                            "options",
+                            "scanFullPage",
+                          ],
+                          value: false,
+                        },
+                        {
+                          name: [
+                            "multiUrlConfigs",
+                            field.name,
+                            "options",
+                            "scrollDelayMs",
+                          ],
+                          value: undefined,
+                        },
+                        { name: [...basePath, "enabled"] as any, value: true },
+                        {
+                          name: [...basePath, "containerSelector"] as any,
+                          value: containerSelector,
+                        },
+                        {
+                          name: [...basePath, "scrollCount"] as any,
+                          value: scrollCount,
+                        },
+                        {
+                          name: [...basePath, "scrollBy"] as any,
+                          value: scrollBy,
+                        },
+                        {
+                          name: [...basePath, "scrollByPixels"] as any,
+                          value: scrollByPixels,
+                        },
+                        {
+                          name: [...basePath, "waitAfterScrollMs"] as any,
+                          value: waitAfterScrollMs,
+                        },
+                      ]);
+                    }}
+                  />
                 </Form.Item>
                 <Form.Item
                   noStyle
                   shouldUpdate={(prev, next) => {
-                    const prevEnabled = prev?.multiUrlConfigs?.[field.name]?.options?.virtualScroll?.enabled;
-                    const nextEnabled = next?.multiUrlConfigs?.[field.name]?.options?.virtualScroll?.enabled;
+                    const prevEnabled =
+                      prev?.multiUrlConfigs?.[field.name]?.options
+                        ?.virtualScroll?.enabled;
+                    const nextEnabled =
+                      next?.multiUrlConfigs?.[field.name]?.options
+                        ?.virtualScroll?.enabled;
                     return prevEnabled !== nextEnabled;
                   }}
                 >
@@ -1833,8 +2197,8 @@ function CrawlSettingsForm({
                         field.name,
                         "options",
                         "virtualScroll",
-                        "enabled"
-                      ])
+                        "enabled",
+                      ]),
                     );
                     if (!enabled) {
                       return null;
@@ -1843,29 +2207,63 @@ function CrawlSettingsForm({
                       <>
                         <Form.Item
                           label={t("crawl.virtualScroll.containerSelector")}
-                          name={[field.name, "options", "virtualScroll", "containerSelector"]}
+                          name={[
+                            field.name,
+                            "options",
+                            "virtualScroll",
+                            "containerSelector",
+                          ]}
                           extra={t("crawl.virtualScroll.containerSelectorHint")}
                         >
                           <Input placeholder="body" />
                         </Form.Item>
                         <Form.Item
                           label={t("crawl.virtualScroll.scrollCount")}
-                          name={[field.name, "options", "virtualScroll", "scrollCount"]}
+                          name={[
+                            field.name,
+                            "options",
+                            "virtualScroll",
+                            "scrollCount",
+                          ]}
                           extra={t("crawl.virtualScroll.scrollCountHint")}
                         >
-                          <InputNumber min={1} max={1000} style={{ width: "100%" }} />
+                          <InputNumber
+                            min={1}
+                            max={1000}
+                            style={{ width: "100%" }}
+                          />
                         </Form.Item>
                         <Form.Item
                           label={t("crawl.virtualScroll.scrollBy")}
-                          name={[field.name, "options", "virtualScroll", "scrollBy"]}
+                          name={[
+                            field.name,
+                            "options",
+                            "virtualScroll",
+                            "scrollBy",
+                          ]}
                           extra={t("crawl.virtualScroll.scrollByHint")}
                         >
                           <Select
                             allowClear
                             options={[
-                              { value: "page_height", label: t("crawl.virtualScroll.scrollByOptions.pageHeight") },
-                              { value: "container_height", label: t("crawl.virtualScroll.scrollByOptions.containerHeight") },
-                              { value: "pixels", label: t("crawl.virtualScroll.scrollByOptions.pixels") }
+                              {
+                                value: "page_height",
+                                label: t(
+                                  "crawl.virtualScroll.scrollByOptions.pageHeight",
+                                ),
+                              },
+                              {
+                                value: "container_height",
+                                label: t(
+                                  "crawl.virtualScroll.scrollByOptions.containerHeight",
+                                ),
+                              },
+                              {
+                                value: "pixels",
+                                label: t(
+                                  "crawl.virtualScroll.scrollByOptions.pixels",
+                                ),
+                              },
                             ]}
                           />
                         </Form.Item>
@@ -1873,9 +2271,11 @@ function CrawlSettingsForm({
                           noStyle
                           shouldUpdate={(prev, next) => {
                             const prevValue =
-                              prev?.multiUrlConfigs?.[field.name]?.options?.virtualScroll?.scrollBy;
+                              prev?.multiUrlConfigs?.[field.name]?.options
+                                ?.virtualScroll?.scrollBy;
                             const nextValue =
-                              next?.multiUrlConfigs?.[field.name]?.options?.virtualScroll?.scrollBy;
+                              next?.multiUrlConfigs?.[field.name]?.options
+                                ?.virtualScroll?.scrollBy;
                             return prevValue !== nextValue;
                           }}
                         >
@@ -1893,20 +2293,42 @@ function CrawlSettingsForm({
                             return (
                               <Form.Item
                                 label={t("crawl.virtualScroll.scrollByPixels")}
-                                name={[field.name, "options", "virtualScroll", "scrollByPixels"]}
-                                extra={t("crawl.virtualScroll.scrollByPixelsHint")}
+                                name={[
+                                  field.name,
+                                  "options",
+                                  "virtualScroll",
+                                  "scrollByPixels",
+                                ]}
+                                extra={t(
+                                  "crawl.virtualScroll.scrollByPixelsHint",
+                                )}
                               >
-                                <InputNumber min={1} max={20000} step={50} style={{ width: "100%" }} />
+                                <InputNumber
+                                  min={1}
+                                  max={20000}
+                                  step={50}
+                                  style={{ width: "100%" }}
+                                />
                               </Form.Item>
                             );
                           }}
                         </Form.Item>
                         <Form.Item
                           label={t("crawl.virtualScroll.waitAfterScroll")}
-                          name={[field.name, "options", "virtualScroll", "waitAfterScrollMs"]}
+                          name={[
+                            field.name,
+                            "options",
+                            "virtualScroll",
+                            "waitAfterScrollMs",
+                          ]}
                           extra={t("crawl.virtualScroll.waitAfterScrollHint")}
                         >
-                          <InputNumber min={0} max={60000} step={100} style={{ width: "100%" }} />
+                          <InputNumber
+                            min={0}
+                            max={60000}
+                            step={100}
+                            style={{ width: "100%" }}
+                          />
                         </Form.Item>
                       </>
                     );
@@ -1960,12 +2382,16 @@ function CrawlSettingsForm({
                         <Space key={jsField.key} align="start">
                           <Form.Item
                             {...jsField}
-                            label={t("crawl.dynamic.jsStep", { index: jsIndex + 1 })}
+                            label={t("crawl.dynamic.jsStep", {
+                              index: jsIndex + 1,
+                            })}
                             style={{ flex: 1 }}
                           >
                             <Input.TextArea
                               rows={2}
-                              placeholder={t("crawl.dynamic.placeholders.jsSnippet")}
+                              placeholder={t(
+                                "crawl.dynamic.placeholders.jsSnippet",
+                              )}
                             />
                           </Form.Item>
                           <Button
@@ -1997,7 +2423,9 @@ function CrawlSettingsForm({
                   label={t("crawl.dynamic.waitForSelector")}
                   name={[field.name, "options", "waitForSelector"]}
                 >
-                  <Input placeholder={t("crawl.dynamic.placeholders.selectorAlt")} />
+                  <Input
+                    placeholder={t("crawl.dynamic.placeholders.selectorAlt")}
+                  />
                 </Form.Item>
                 <Form.Item
                   label={t("crawl.dynamic.waitForScript")}
@@ -2021,45 +2449,50 @@ function CrawlSettingsForm({
                 </Form.Item>
                 <Form.Item
                   label={t("crawl.dynamic.waitUntil", {
-                    defaultValue: "Navigation wait condition"
+                    defaultValue: "Navigation wait condition",
                   })}
                   name={[field.name, "options", "waitUntil"]}
                 >
                   <Select
                     allowClear
                     placeholder={t("crawl.dynamic.placeholders.waitUntil", {
-                      defaultValue: "Select wait condition"
+                      defaultValue: "Select wait condition",
                     })}
                     options={[
                       {
                         value: "domcontentloaded",
-                        label: t("crawl.dynamic.waitUntilOptions.domcontentloaded", {
-                          defaultValue: "DOMContentLoaded"
-                        })
+                        label: t(
+                          "crawl.dynamic.waitUntilOptions.domcontentloaded",
+                          {
+                            defaultValue: "DOMContentLoaded",
+                          },
+                        ),
                       },
                       {
                         value: "load",
                         label: t("crawl.dynamic.waitUntilOptions.load", {
-                          defaultValue: "Load"
-                        })
+                          defaultValue: "Load",
+                        }),
                       },
                       {
                         value: "networkidle",
                         label: t("crawl.dynamic.waitUntilOptions.networkidle", {
-                          defaultValue: "Network idle"
-                        })
+                          defaultValue: "Network idle",
+                        }),
                       },
                       {
                         value: "commit",
                         label: t("crawl.dynamic.waitUntilOptions.commit", {
-                          defaultValue: "Commit"
-                        })
-                      }
+                          defaultValue: "Commit",
+                        }),
+                      },
                     ]}
                   />
                 </Form.Item>
                 <Form.Item
-                  label={t("crawl.dynamic.pageTimeout", { defaultValue: "Page timeout (ms)" })}
+                  label={t("crawl.dynamic.pageTimeout", {
+                    defaultValue: "Page timeout (ms)",
+                  })}
                   name={[field.name, "options", "pageTimeoutMs"]}
                 >
                   <InputNumber
@@ -2067,13 +2500,13 @@ function CrawlSettingsForm({
                     max={180000}
                     style={{ width: "100%" }}
                     placeholder={t("crawl.dynamic.placeholders.pageTimeout", {
-                      defaultValue: "Enter page timeout"
+                      defaultValue: "Enter page timeout",
                     })}
                   />
                 </Form.Item>
                 <Form.Item
                   label={t("crawl.dynamic.delayBeforeReturnHtml", {
-                    defaultValue: "Post-load delay (ms)"
+                    defaultValue: "Post-load delay (ms)",
                   })}
                   name={[field.name, "options", "delayBeforeReturnHtmlMs"]}
                 >
@@ -2082,14 +2515,17 @@ function CrawlSettingsForm({
                     max={30000}
                     step={100}
                     style={{ width: "100%" }}
-                    placeholder={t("crawl.dynamic.placeholders.delayBeforeReturnHtml", {
-                      defaultValue: "Enter post-load delay"
-                    })}
+                    placeholder={t(
+                      "crawl.dynamic.placeholders.delayBeforeReturnHtml",
+                      {
+                        defaultValue: "Enter post-load delay",
+                      },
+                    )}
                   />
                 </Form.Item>
                 <Form.Item
                   label={t("crawl.settings.politeness.meanDelay", {
-                    defaultValue: "Mean delay (ms)"
+                    defaultValue: "Mean delay (ms)",
                   })}
                   name={[field.name, "options", "meanDelayMs"]}
                 >
@@ -2098,14 +2534,17 @@ function CrawlSettingsForm({
                     max={10000}
                     step={50}
                     style={{ width: "100%" }}
-                    placeholder={t("crawl.settings.politeness.placeholders.meanDelay", {
-                      defaultValue: "Enter mean delay"
-                    })}
+                    placeholder={t(
+                      "crawl.settings.politeness.placeholders.meanDelay",
+                      {
+                        defaultValue: "Enter mean delay",
+                      },
+                    )}
                   />
                 </Form.Item>
                 <Form.Item
                   label={t("crawl.settings.politeness.maxRange", {
-                    defaultValue: "Delay jitter (ms)"
+                    defaultValue: "Delay jitter (ms)",
                   })}
                   name={[field.name, "options", "maxDelayRangeMs"]}
                 >
@@ -2114,14 +2553,17 @@ function CrawlSettingsForm({
                     max={10000}
                     step={50}
                     style={{ width: "100%" }}
-                    placeholder={t("crawl.settings.politeness.placeholders.maxRange", {
-                      defaultValue: "Enter jitter range"
-                    })}
+                    placeholder={t(
+                      "crawl.settings.politeness.placeholders.maxRange",
+                      {
+                        defaultValue: "Enter jitter range",
+                      },
+                    )}
                   />
                 </Form.Item>
                 <Form.Item
                   label={t("crawl.settings.politeness.semaphoreCount", {
-                    defaultValue: "Internal semaphore"
+                    defaultValue: "Internal semaphore",
                   })}
                   name={[field.name, "options", "semaphoreCount"]}
                 >
@@ -2129,13 +2571,18 @@ function CrawlSettingsForm({
                     min={1}
                     max={50}
                     style={{ width: "100%" }}
-                    placeholder={t("crawl.settings.politeness.placeholders.semaphoreCount", {
-                      defaultValue: "Enter semaphore count"
-                    })}
+                    placeholder={t(
+                      "crawl.settings.politeness.placeholders.semaphoreCount",
+                      {
+                        defaultValue: "Enter semaphore count",
+                      },
+                    )}
                   />
                 </Form.Item>
                 <Form.Item
-                  label={t("crawl.dynamic.removeForms", { defaultValue: "Remove forms" })}
+                  label={t("crawl.dynamic.removeForms", {
+                    defaultValue: "Remove forms",
+                  })}
                   name={[field.name, "options", "removeForms"]}
                   valuePropName="checked"
                 >
@@ -2164,19 +2611,117 @@ function BrowserConfigForm({
   proxyObjectActive,
 }: BrowserConfigFormProps) {
   const { t } = useTranslation();
+  const form = Form.useFormInstance<CreateCrawlTaskFormValues>();
+  const headlessModeValue = Form.useWatch("headlessMode", form);
+
+  const applyAutoBrowserHeaders = useCallback(() => {
+    const currentValues = form.getFieldsValue(
+      true,
+    ) as Partial<CreateCrawlTaskFormValues>;
+    const autoHeaders = buildAutoBrowserHeadersForCrawlOptions(
+      currentValues as Record<string, unknown>,
+    );
+    const currentHeaders = normalizeBrowserHeaders(
+      form.getFieldValue("browserHeaders"),
+    );
+    const mergedHeaders = mergeBrowserHeaders(currentHeaders, autoHeaders);
+
+    form.setFields([
+      {
+        name: "browserHeaders",
+        value: mergedHeaders,
+      },
+    ]);
+  }, [form]);
+
   return (
     <>
       <Form.Item
-        label={t("crawl.browser.headless", { defaultValue: "Headless" })}
-        name="headless"
-        valuePropName="checked"
+        label={t("crawl.browser.headless", { defaultValue: "Headless mode" })}
+        name="headlessMode"
         extra={t("crawl.browser.headlessHint", {
           defaultValue:
-            "Turn off to use headed mode (headless=false). Headed mode may require Xvfb/DISPLAY inside the crawl4ai container."
+            "Auto lets defaults decide. Headed mode (headless=false) may require Xvfb/DISPLAY inside the crawl4ai container.",
         })}
       >
-        <Switch defaultChecked />
+        <Select
+          options={[
+            {
+              value: "auto",
+              label: t("crawl.browser.headlessModes.auto", {
+                defaultValue: "Auto",
+              }),
+            },
+            {
+              value: "headless",
+              label: t("crawl.browser.headlessModes.headless", {
+                defaultValue: "Headless",
+              }),
+            },
+            {
+              value: "headed",
+              label: t("crawl.browser.headlessModes.headed", {
+                defaultValue: "Headed (Xvfb)",
+              }),
+            },
+          ]}
+        />
       </Form.Item>
+      {headlessModeValue === "headed" ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("crawl.browser.headedWarningTitle", {
+            defaultValue: "Headed mode requires Xvfb",
+          })}
+          description={
+            <Space direction="vertical" size={2}>
+              <Typography.Text>
+                {t("crawl.browser.headedWarning", {
+                  defaultValue:
+                    "If crawl4ai logs contain 'cannot open display', switch back to Headless or enable Xvfb/DISPLAY in your crawl4ai container.",
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("crawl.runtimeGuide.noAutoBootstrap", {
+                  defaultValue:
+                    "This console only provides guidance and does not auto-start Xvfb for you.",
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("crawl.runtimeGuide.principleBody", {
+                  defaultValue:
+                    "When headless=false, Chromium needs a display server. Xvfb provides a virtual X11 display (for example :99) so headed rendering can run in containers without a physical monitor.",
+                })}
+              </Typography.Text>
+              <Typography.Text strong>
+                {t("crawl.runtimeGuide.stepsTitle", {
+                  defaultValue: "Recommended checks",
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {`1. ${t("crawl.runtimeGuide.step1", {
+                  defaultValue:
+                    "Prefer Headless for routine crawls, and use Headed only when anti-bot scenarios need it.",
+                })}`}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {`2. ${t("crawl.runtimeGuide.step2", {
+                  defaultValue:
+                    "When using Headed, ensure Xvfb/DISPLAY are configured in the crawl4ai container.",
+                })}`}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {`3. ${t("crawl.runtimeGuide.step3", {
+                  defaultValue:
+                    "If display errors persist, switch this task back to Headless first, then verify container env settings.",
+                })}`}
+              </Typography.Text>
+            </Space>
+          }
+        />
+      ) : null}
       <Form.Item
         label={t("crawl.browser.undetected")}
         name="enableUndetectedBrowser"
@@ -2186,35 +2731,48 @@ function BrowserConfigForm({
         <Switch />
       </Form.Item>
       <Form.Item
-        label={t("crawl.browser.stealth")}
+        label={t("crawl.browser.magicMode", {
+          defaultValue: "Stealth (Magic) mode",
+        })}
         name="enableStealthMode"
         valuePropName="checked"
-        extra={t("crawl.browser.stealthHint")}
+        extra={t("crawl.browser.magicModeHint", {
+          defaultValue:
+            "Maps to crawl4ai magic=true for anti-detection behavior.",
+        })}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label={t("crawl.browser.antiBotMode", { defaultValue: "Anti-bot retry mode" })}
+        label={t("crawl.browser.antiBotMode", {
+          defaultValue: "Anti-bot retry mode",
+        })}
         name="antiBotMode"
         extra={t("crawl.browser.antiBotModeHint", {
           defaultValue:
-            "Auto retries when challenge pages are detected. Enabled forces anti-bot retry when crawl failures exist; Disabled skips this pipeline."
+            "Auto retries when challenge pages are detected. Enabled forces anti-bot retry when crawl failures exist; Disabled skips this pipeline.",
         })}
       >
         <Select
           options={[
             {
               value: "auto",
-              label: t("crawl.browser.antiBotModes.auto", { defaultValue: "Auto (recommended)" })
+              label: t("crawl.browser.antiBotModes.auto", {
+                defaultValue: "Auto (recommended)",
+              }),
             },
             {
               value: "enabled",
-              label: t("crawl.browser.antiBotModes.enabled", { defaultValue: "Enabled" })
+              label: t("crawl.browser.antiBotModes.enabled", {
+                defaultValue: "Enabled",
+              }),
             },
             {
               value: "disabled",
-              label: t("crawl.browser.antiBotModes.disabled", { defaultValue: "Disabled" })
-            }
+              label: t("crawl.browser.antiBotModes.disabled", {
+                defaultValue: "Disabled",
+              }),
+            },
           ]}
         />
       </Form.Item>
@@ -2271,7 +2829,10 @@ function BrowserConfigForm({
           name="userAgent"
           extra={t("crawl.browser.identity.customUserAgentHint")}
         >
-          <Input placeholder={t("crawl.browser.identity.placeholders.userAgent")} maxLength={768} />
+          <Input
+            placeholder={t("crawl.browser.identity.placeholders.userAgent")}
+            maxLength={768}
+          />
         </Form.Item>
         <Form.Item
           label={t("crawl.browser.identity.userAgentMode")}
@@ -2281,7 +2842,12 @@ function BrowserConfigForm({
           <Select
             allowClear
             placeholder={t("crawl.browser.identity.placeholders.userAgentMode")}
-            options={[{ value: "random", label: t("crawl.browser.identity.userAgentModeRandom") }]}
+            options={[
+              {
+                value: "random",
+                label: t("crawl.browser.identity.userAgentModeRandom"),
+              },
+            ]}
           />
         </Form.Item>
         <Form.Item
@@ -2293,11 +2859,26 @@ function BrowserConfigForm({
             placeholder={t("crawl.browser.identity.placeholders.platform")}
             disabled={userAgentModeValue !== "random"}
             options={[
-              { value: "windows", label: t("crawl.browser.identity.platforms.windows") },
-              { value: "macos", label: t("crawl.browser.identity.platforms.macos") },
-              { value: "linux", label: t("crawl.browser.identity.platforms.linux") },
-              { value: "android", label: t("crawl.browser.identity.platforms.android") },
-              { value: "ios", label: t("crawl.browser.identity.platforms.ios") },
+              {
+                value: "windows",
+                label: t("crawl.browser.identity.platforms.windows"),
+              },
+              {
+                value: "macos",
+                label: t("crawl.browser.identity.platforms.macos"),
+              },
+              {
+                value: "linux",
+                label: t("crawl.browser.identity.platforms.linux"),
+              },
+              {
+                value: "android",
+                label: t("crawl.browser.identity.platforms.android"),
+              },
+              {
+                value: "ios",
+                label: t("crawl.browser.identity.platforms.ios"),
+              },
             ]}
           />
         </Form.Item>
@@ -2310,10 +2891,22 @@ function BrowserConfigForm({
             placeholder={t("crawl.browser.identity.placeholders.browser")}
             disabled={userAgentModeValue !== "random"}
             options={[
-              { value: "chrome", label: t("crawl.browser.identity.browsers.chrome") },
-              { value: "firefox", label: t("crawl.browser.identity.browsers.firefox") },
-              { value: "safari", label: t("crawl.browser.identity.browsers.safari") },
-              { value: "edge", label: t("crawl.browser.identity.browsers.edge") },
+              {
+                value: "chrome",
+                label: t("crawl.browser.identity.browsers.chrome"),
+              },
+              {
+                value: "firefox",
+                label: t("crawl.browser.identity.browsers.firefox"),
+              },
+              {
+                value: "safari",
+                label: t("crawl.browser.identity.browsers.safari"),
+              },
+              {
+                value: "edge",
+                label: t("crawl.browser.identity.browsers.edge"),
+              },
             ]}
           />
         </Form.Item>
@@ -2326,9 +2919,18 @@ function BrowserConfigForm({
             placeholder={t("crawl.browser.identity.placeholders.device")}
             disabled={userAgentModeValue !== "random"}
             options={[
-              { value: "desktop", label: t("crawl.browser.identity.devices.desktop") },
-              { value: "mobile", label: t("crawl.browser.identity.devices.mobile") },
-              { value: "tablet", label: t("crawl.browser.identity.devices.tablet") },
+              {
+                value: "desktop",
+                label: t("crawl.browser.identity.devices.desktop"),
+              },
+              {
+                value: "mobile",
+                label: t("crawl.browser.identity.devices.mobile"),
+              },
+              {
+                value: "tablet",
+                label: t("crawl.browser.identity.devices.tablet"),
+              },
             ]}
           />
         </Form.Item>
@@ -2348,14 +2950,20 @@ function BrowserConfigForm({
           name="locale"
           extra={t("crawl.browser.identity.browserLocaleHint")}
         >
-          <Input placeholder={t("crawl.browser.identity.placeholders.locale")} maxLength={16} />
+          <Input
+            placeholder={t("crawl.browser.identity.placeholders.locale")}
+            maxLength={16}
+          />
         </Form.Item>
         <Form.Item
           label={t("crawl.browser.identity.timezoneId")}
           name="timezoneId"
           extra={t("crawl.browser.identity.timezoneHint")}
         >
-          <Input placeholder={t("crawl.browser.identity.placeholders.timezone")} maxLength={64} />
+          <Input
+            placeholder={t("crawl.browser.identity.placeholders.timezone")}
+            maxLength={64}
+          />
         </Form.Item>
         <Form.Item
           label={t("crawl.browser.identity.geolocation")}
@@ -2394,6 +3002,19 @@ function BrowserConfigForm({
         <Typography.Title level={5} style={{ marginTop: 16 }}>
           {t("crawl.browser.headers.title")}
         </Typography.Title>
+        <Space style={{ marginBottom: 8 }}>
+          <Button size="small" onClick={applyAutoBrowserHeaders}>
+            {t("crawl.browser.headers.autoFillSecCh", {
+              defaultValue: "Auto-fill Sec-CH headers",
+            })}
+          </Button>
+          <Typography.Text type="secondary">
+            {t("crawl.browser.headers.autoFillSecChHint", {
+              defaultValue:
+                "Adds sec-fetch defaults and, when User-Agent is deterministic Chromium, matching sec-ch headers if missing.",
+            })}
+          </Typography.Text>
+        </Space>
         <Form.List name="browserHeaders">
           {(fields, { add, remove }) => (
             <Space direction="vertical" style={{ width: "100%" }}>
@@ -2404,10 +3025,16 @@ function BrowserConfigForm({
                   style={{ width: "100%" }}
                 >
                   <Form.Item name={[field.name, "name"]} style={{ flex: 1 }}>
-                    <Input placeholder={t("crawl.browser.headers.placeholders.name")} />
+                    <Input
+                      placeholder={t("crawl.browser.headers.placeholders.name")}
+                    />
                   </Form.Item>
                   <Form.Item name={[field.name, "value"]} style={{ flex: 2 }}>
-                    <Input placeholder={t("crawl.browser.headers.placeholders.value")} />
+                    <Input
+                      placeholder={t(
+                        "crawl.browser.headers.placeholders.value",
+                      )}
+                    />
                   </Form.Item>
                   <Button
                     type="text"
@@ -2441,19 +3068,31 @@ function BrowserConfigForm({
                   style={{ width: "100%" }}
                 >
                   <Form.Item name={[field.name, "name"]} style={{ flex: 1 }}>
-                    <Input placeholder={t("crawl.browser.cookies.placeholders.name")} />
+                    <Input
+                      placeholder={t("crawl.browser.cookies.placeholders.name")}
+                    />
                   </Form.Item>
                   <Form.Item name={[field.name, "value"]} style={{ flex: 2 }}>
-                    <Input placeholder={t("crawl.browser.cookies.placeholders.value")} />
+                    <Input
+                      placeholder={t(
+                        "crawl.browser.cookies.placeholders.value",
+                      )}
+                    />
                   </Form.Item>
                   <Form.Item
                     name={[field.name, "domain"]}
                     style={{ flex: 1.3 }}
                   >
-                    <Input placeholder={t("crawl.browser.cookies.placeholders.domain")} />
+                    <Input
+                      placeholder={t(
+                        "crawl.browser.cookies.placeholders.domain",
+                      )}
+                    />
                   </Form.Item>
                   <Form.Item name={[field.name, "path"]} style={{ flex: 1 }}>
-                    <Input placeholder={t("crawl.browser.cookies.placeholders.path")} />
+                    <Input
+                      placeholder={t("crawl.browser.cookies.placeholders.path")}
+                    />
                   </Form.Item>
                   <Button
                     type="text"
@@ -2497,7 +3136,10 @@ function BrowserConfigForm({
           name="sessionId"
           extra={t("crawl.session.sessionIdHint")}
         >
-          <Input placeholder={t("crawl.session.placeholders.sessionId")} maxLength={160} />
+          <Input
+            placeholder={t("crawl.session.placeholders.sessionId")}
+            maxLength={160}
+          />
         </Form.Item>
         <Form.Item
           label={t("crawl.session.storageState")}
@@ -2511,7 +3153,11 @@ function BrowserConfigForm({
           />
         </Form.Item>
       </Card>
-      <Card title={t("crawl.proxy.title")} size="small" style={{ marginBottom: 16 }}>
+      <Card
+        title={t("crawl.proxy.title")}
+        size="small"
+        style={{ marginBottom: 16 }}
+      >
         <Form.Item
           label={t("crawl.proxy.url")}
           name="proxyUrl"
@@ -2532,10 +3178,19 @@ function BrowserConfigForm({
             disabled={proxyUrlActive}
           />
         </Form.Item>
-        <Form.Item label={t("crawl.proxy.username")} name={["proxyConfig", "username"]}>
-          <Input placeholder={t("crawl.proxy.placeholders.username")} disabled={proxyUrlActive} />
+        <Form.Item
+          label={t("crawl.proxy.username")}
+          name={["proxyConfig", "username"]}
+        >
+          <Input
+            placeholder={t("crawl.proxy.placeholders.username")}
+            disabled={proxyUrlActive}
+          />
         </Form.Item>
-        <Form.Item label={t("crawl.proxy.password")} name={["proxyConfig", "password"]}>
+        <Form.Item
+          label={t("crawl.proxy.password")}
+          name={["proxyConfig", "password"]}
+        >
           <Input.Password
             placeholder={t("crawl.proxy.placeholders.password")}
             disabled={proxyUrlActive}

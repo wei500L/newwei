@@ -10,7 +10,7 @@ import type {
   CrawlMetadataResult,
   CrawlMetadataTag,
   CrawlMetadataSource,
-  CrawlTaskOptions
+  CrawlTaskOptions,
 } from "./crawl.types";
 
 const logger = createLogger({ name: "crawl-metadata" });
@@ -43,25 +43,32 @@ export class CrawlMetadataService {
     ignoreAttributes: false,
     attributeNamePrefix: "",
     allowBooleanAttributes: true,
-    trimValues: true
+    trimValues: true,
   });
 
   constructor(@Optional() private readonly crawl4ai?: Crawl4aiClient) {}
 
-  async extract(input: CrawlMetadataExtractionInput): Promise<CrawlMetadataResult[]> {
+  async extract(
+    input: CrawlMetadataExtractionInput,
+  ): Promise<CrawlMetadataResult[]> {
     const config = this.normalizeInput(input);
     const urls = await this.resolveUrls(config);
     if (urls.length === 0) {
       return [];
     }
 
-    const results = await this.mapWithConcurrency(urls, config.concurrency, (url) =>
-      this.fetchMetadata(url, config)
+    const results = await this.mapWithConcurrency(
+      urls,
+      config.concurrency,
+      (url) => this.fetchMetadata(url, config),
     );
 
-    const filtered = config.scoreThreshold > 0
-      ? results.filter((result) => (result.relevanceScore ?? 0) >= config.scoreThreshold)
-      : results;
+    const filtered =
+      config.scoreThreshold > 0
+        ? results.filter(
+            (result) => (result.relevanceScore ?? 0) >= config.scoreThreshold,
+          )
+        : results;
 
     return filtered.slice(0, config.maxUrls);
   }
@@ -79,7 +86,8 @@ export class CrawlMetadataService {
     const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
     const patternMatcher = this.normalizePattern(input.pattern);
     const requestTimeoutMs =
-      typeof input.requestTimeoutMs === "number" && Number.isFinite(input.requestTimeoutMs)
+      typeof input.requestTimeoutMs === "number" &&
+      Number.isFinite(input.requestTimeoutMs)
         ? Math.max(1000, Math.round(input.requestTimeoutMs))
         : 15_000;
 
@@ -93,7 +101,7 @@ export class CrawlMetadataService {
       includeMeta: false,
       concurrency: 1,
       scoreThreshold: 0,
-      requestTimeoutMs
+      requestTimeoutMs,
     });
   }
 
@@ -109,7 +117,8 @@ export class CrawlMetadataService {
 
     const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
     const requestTimeoutMs =
-      typeof input.requestTimeoutMs === "number" && Number.isFinite(input.requestTimeoutMs)
+      typeof input.requestTimeoutMs === "number" &&
+      Number.isFinite(input.requestTimeoutMs)
         ? Math.max(1000, Math.round(input.requestTimeoutMs))
         : 15_000;
 
@@ -149,10 +158,16 @@ export class CrawlMetadataService {
 
     const maxUrls = this.clampNumber(input.maxUrls, 1, 2_000, 200);
     const listMaxPages = this.clampNumber(input.listMaxPages, 1, 20, 6);
-    const listPageConcurrency = this.clampNumber(input.listPageConcurrency, 1, 5, 2);
+    const listPageConcurrency = this.clampNumber(
+      input.listPageConcurrency,
+      1,
+      5,
+      2,
+    );
     const followPagination = input.followPagination !== false;
     const requestTimeoutMs =
-      typeof input.requestTimeoutMs === "number" && Number.isFinite(input.requestTimeoutMs)
+      typeof input.requestTimeoutMs === "number" &&
+      Number.isFinite(input.requestTimeoutMs)
         ? Math.max(1000, Math.round(input.requestTimeoutMs))
         : 15_000;
 
@@ -168,7 +183,7 @@ export class CrawlMetadataService {
       listPageConcurrency,
       followPagination,
       patternMatcher,
-      crawlOptions
+      crawlOptions,
     });
     if (discoveredViaCrawl4ai.length > 0) {
       return discoveredViaCrawl4ai;
@@ -197,7 +212,11 @@ export class CrawlMetadataService {
         return;
       }
       const trimmed = href.trim();
-      if (!trimmed || trimmed === "#" || trimmed.toLowerCase().startsWith("javascript:")) {
+      if (
+        !trimmed ||
+        trimmed === "#" ||
+        trimmed.toLowerCase().startsWith("javascript:")
+      ) {
         return;
       }
 
@@ -218,7 +237,11 @@ export class CrawlMetadataService {
       if (absolute === normalizedSeedUrl) {
         return;
       }
-      if (allowedOrigin && !absolute.startsWith(`${allowedOrigin}/`) && absolute !== allowedOrigin) {
+      if (
+        allowedOrigin &&
+        !absolute.startsWith(`${allowedOrigin}/`) &&
+        absolute !== allowedOrigin
+      ) {
         return;
       }
       if (patternMatcher && !patternMatcher(absolute)) {
@@ -251,18 +274,22 @@ export class CrawlMetadataService {
 
     let allowedOrigin: string | undefined;
     try {
-      allowedOrigin = (input.domain ?? new URL(input.seedUrl).origin).replace(/\/+$/, "");
+      allowedOrigin = (input.domain ?? new URL(input.seedUrl).origin).replace(
+        /\/+$/,
+        "",
+      );
     } catch {
       allowedOrigin = input.domain?.replace(/\/+$/, "") ?? undefined;
     }
 
-    const normalizedSeedUrl = this.normalizeUrlForComparison(input.seedUrl) ?? input.seedUrl;
+    const normalizedSeedUrl =
+      this.normalizeUrlForComparison(input.seedUrl) ?? input.seedUrl;
 
     try {
       const crawlOptions: CrawlTaskOptions = {
         ...(input.crawlOptions ?? {}),
         extractLinks: true,
-        prefetch: true
+        prefetch: true,
       };
       const pendingListPages: string[] = [input.seedUrl];
       const pendingListPageSet = new Set<string>([normalizedSeedUrl]);
@@ -276,126 +303,166 @@ export class CrawlMetadataService {
         discoveredArticleUrls.length < input.maxUrls
       ) {
         const availableSlots = input.listMaxPages - visitedListPages.size;
-        const batchSize = Math.max(1, Math.min(input.listPageConcurrency, pendingListPages.length, availableSlots));
+        const batchSize = Math.max(
+          1,
+          Math.min(
+            input.listPageConcurrency,
+            pendingListPages.length,
+            availableSlots,
+          ),
+        );
         const batch = pendingListPages.splice(0, batchSize);
         for (const pageUrl of batch) {
           const normalized = this.normalizeUrlForComparison(pageUrl) ?? pageUrl;
           pendingListPageSet.delete(normalized);
         }
 
-        const batchResults = await this.mapWithConcurrency(batch, batchSize, async (listPageUrl) => {
-          const normalizedListPageUrl = this.normalizeUrlForComparison(listPageUrl) ?? listPageUrl;
-          const response = await this.crawl4ai!.crawl({
-            url: listPageUrl,
-            options: crawlOptions
-          });
-
-          const article = this.selectDiscoveryResultArticle(response.results, normalizedListPageUrl);
-          if (!article || article.success !== true) {
-            return {
-              listPageUrl,
-              normalizedListPageUrl,
-              articleUrls: [] as string[],
-              paginationUrls: [] as string[]
-            };
-          }
-
-          const linksRecord = this.normalizeLinkRecord(article.links);
-          if (!linksRecord) {
-            return {
-              listPageUrl,
-              normalizedListPageUrl,
-              articleUrls: [] as string[],
-              paginationUrls: [] as string[]
-            };
-          }
-
-          const articleUrls: string[] = [];
-          const paginationUrls: string[] = [];
-          const seenArticleUrls = new Set<string>();
-          const seenPaginationUrls = new Set<string>();
-          const values = Object.values(linksRecord).flatMap((value) => (Array.isArray(value) ? value : []));
-
-          for (const entry of values) {
-            if (!this.isPlainObject(entry)) {
-              continue;
-            }
-
-            const rawHref =
-              typeof entry.href === "string"
-                ? entry.href
-                : typeof entry.url === "string"
-                  ? entry.url
-                  : "";
-            const trimmedHref = rawHref.trim();
-            if (!trimmedHref || trimmedHref === "#" || trimmedHref.toLowerCase().startsWith("javascript:")) {
-              continue;
-            }
-
-            let resolved: URL;
-            try {
-              resolved = new URL(trimmedHref, listPageUrl);
-            } catch {
-              continue;
-            }
-            if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
-              continue;
-            }
-            resolved.hash = "";
-
-            const absolute = resolved.toString();
-            if (absolute === normalizedListPageUrl || absolute === normalizedSeedUrl) {
-              continue;
-            }
-            if (allowedOrigin && !absolute.startsWith(`${allowedOrigin}/`) && absolute !== allowedOrigin) {
-              continue;
-            }
-
-            const anchorText =
-              typeof entry.text === "string"
-                ? entry.text
-                : typeof entry.title === "string"
-                  ? entry.title
-                  : "";
-            const rel = typeof entry.rel === "string" ? entry.rel : "";
-
-            const matchesPattern = input.patternMatcher ? input.patternMatcher(absolute) : true;
-            const isPagination = this.isLikelyPaginationLink({
-              candidateUrl: absolute,
-              currentPageUrl: listPageUrl,
-              anchorText,
-              rel
+        const batchResults = await this.mapWithConcurrency(
+          batch,
+          batchSize,
+          async (listPageUrl) => {
+            const normalizedListPageUrl =
+              this.normalizeUrlForComparison(listPageUrl) ?? listPageUrl;
+            const response = await this.crawl4ai!.crawl({
+              url: listPageUrl,
+              options: crawlOptions,
             });
 
-            if (matchesPattern && (!isPagination || !input.followPagination)) {
-              if (!seenArticleUrls.has(absolute)) {
-                seenArticleUrls.add(absolute);
-                articleUrls.push(absolute);
+            const article = this.selectDiscoveryResultArticle(
+              response.results,
+              normalizedListPageUrl,
+            );
+            if (!article || article.success !== true) {
+              return {
+                listPageUrl,
+                normalizedListPageUrl,
+                articleUrls: [] as string[],
+                paginationUrls: [] as string[],
+              };
+            }
+
+            const linksRecord = this.normalizeLinkRecord(article.links);
+            if (!linksRecord) {
+              return {
+                listPageUrl,
+                normalizedListPageUrl,
+                articleUrls: [] as string[],
+                paginationUrls: [] as string[],
+              };
+            }
+
+            const articleUrls: string[] = [];
+            const paginationUrls: string[] = [];
+            const seenArticleUrls = new Set<string>();
+            const seenPaginationUrls = new Set<string>();
+            const values = Object.values(linksRecord).flatMap((value) =>
+              Array.isArray(value) ? value : [],
+            );
+
+            for (const entry of values) {
+              if (!this.isPlainObject(entry)) {
+                continue;
               }
-              continue;
-            }
 
-            if (!input.patternMatcher && !isPagination) {
-              if (!seenArticleUrls.has(absolute)) {
-                seenArticleUrls.add(absolute);
-                articleUrls.push(absolute);
+              const rawHref =
+                typeof entry.href === "string"
+                  ? entry.href
+                  : typeof entry.url === "string"
+                    ? entry.url
+                    : "";
+              const trimmedHref = rawHref.trim();
+              if (
+                !trimmedHref ||
+                trimmedHref === "#" ||
+                trimmedHref.toLowerCase().startsWith("javascript:")
+              ) {
+                continue;
               }
-              continue;
+
+              let resolved: URL;
+              try {
+                resolved = new URL(trimmedHref, listPageUrl);
+              } catch {
+                continue;
+              }
+              if (
+                resolved.protocol !== "http:" &&
+                resolved.protocol !== "https:"
+              ) {
+                continue;
+              }
+              resolved.hash = "";
+
+              const absolute = resolved.toString();
+              if (
+                absolute === normalizedListPageUrl ||
+                absolute === normalizedSeedUrl
+              ) {
+                continue;
+              }
+              if (
+                allowedOrigin &&
+                !absolute.startsWith(`${allowedOrigin}/`) &&
+                absolute !== allowedOrigin
+              ) {
+                continue;
+              }
+
+              const anchorText =
+                typeof entry.text === "string"
+                  ? entry.text
+                  : typeof entry.title === "string"
+                    ? entry.title
+                    : "";
+              const rel = typeof entry.rel === "string" ? entry.rel : "";
+
+              const matchesPattern = input.patternMatcher
+                ? input.patternMatcher(absolute)
+                : true;
+              const isPagination = this.isLikelyPaginationLink({
+                candidateUrl: absolute,
+                currentPageUrl: listPageUrl,
+                anchorText,
+                rel,
+              });
+
+              if (
+                matchesPattern &&
+                (!isPagination || !input.followPagination)
+              ) {
+                if (!seenArticleUrls.has(absolute)) {
+                  seenArticleUrls.add(absolute);
+                  articleUrls.push(absolute);
+                }
+                continue;
+              }
+
+              if (!input.patternMatcher && !isPagination) {
+                if (!seenArticleUrls.has(absolute)) {
+                  seenArticleUrls.add(absolute);
+                  articleUrls.push(absolute);
+                }
+                continue;
+              }
+
+              if (
+                input.followPagination &&
+                isPagination &&
+                !seenPaginationUrls.has(absolute)
+              ) {
+                seenPaginationUrls.add(absolute);
+                paginationUrls.push(absolute);
+              }
             }
 
-            if (input.followPagination && isPagination && !seenPaginationUrls.has(absolute)) {
-              seenPaginationUrls.add(absolute);
-              paginationUrls.push(absolute);
-            }
-          }
-
-          return {
-            listPageUrl,
-            normalizedListPageUrl,
-            articleUrls,
-            paginationUrls
-          };
-        });
+            return {
+              listPageUrl,
+              normalizedListPageUrl,
+              articleUrls,
+              paginationUrls,
+            };
+          },
+        );
 
         for (const result of batchResults) {
           visitedListPages.add(result.normalizedListPageUrl);
@@ -419,11 +486,18 @@ export class CrawlMetadataService {
           }
 
           for (const paginationUrl of result.paginationUrls) {
-            if (visitedListPages.size + pendingListPages.length >= input.listMaxPages) {
+            if (
+              visitedListPages.size + pendingListPages.length >=
+              input.listMaxPages
+            ) {
               break;
             }
-            const normalizedPaginationUrl = this.normalizeUrlForComparison(paginationUrl) ?? paginationUrl;
-            if (visitedListPages.has(normalizedPaginationUrl) || pendingListPageSet.has(normalizedPaginationUrl)) {
+            const normalizedPaginationUrl =
+              this.normalizeUrlForComparison(paginationUrl) ?? paginationUrl;
+            if (
+              visitedListPages.has(normalizedPaginationUrl) ||
+              pendingListPageSet.has(normalizedPaginationUrl)
+            ) {
               continue;
             }
             pendingListPageSet.add(normalizedPaginationUrl);
@@ -434,7 +508,10 @@ export class CrawlMetadataService {
 
       return discoveredArticleUrls.slice(0, input.maxUrls);
     } catch (error) {
-      logger.warn({ seedUrl: input.seedUrl, error }, "crawl4ai list discovery failed; falling back to raw HTML parsing");
+      logger.warn(
+        { seedUrl: input.seedUrl, error },
+        "crawl4ai list discovery failed; falling back to raw HTML parsing",
+      );
       return [];
     }
   }
@@ -452,7 +529,11 @@ export class CrawlMetadataService {
       return true;
     }
 
-    if (/^(next|older|more|load\s*more|next\s*page|previous|prev|newer)\b/.test(normalizedText)) {
+    if (
+      /^(next|older|more|load\s*more|next\s*page|previous|prev|newer)\b/.test(
+        normalizedText,
+      )
+    ) {
       return true;
     }
 
@@ -469,7 +550,10 @@ export class CrawlMetadataService {
       return false;
     }
 
-    if (candidate.pathname === current.pathname && candidate.search === current.search) {
+    if (
+      candidate.pathname === current.pathname &&
+      candidate.search === current.search
+    ) {
       return false;
     }
 
@@ -481,14 +565,19 @@ export class CrawlMetadataService {
       return true;
     }
 
-    if (/\/latest(?:\/|$)/.test(candidate.pathname.toLowerCase()) && candidate.search.length > 0) {
+    if (
+      /\/latest(?:\/|$)/.test(candidate.pathname.toLowerCase()) &&
+      candidate.search.length > 0
+    ) {
       return true;
     }
 
     return false;
   }
 
-  private normalizeLinkRecord(value: unknown): Record<string, unknown[]> | null {
+  private normalizeLinkRecord(
+    value: unknown,
+  ): Record<string, unknown[]> | null {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
     }
@@ -502,12 +591,18 @@ export class CrawlMetadataService {
     return Object.keys(normalized).length > 0 ? normalized : null;
   }
 
-  private selectDiscoveryResultArticle(results: Crawl4aiArticle[] | undefined, normalizedSeedUrl: string) {
+  private selectDiscoveryResultArticle(
+    results: Crawl4aiArticle[] | undefined,
+    normalizedSeedUrl: string,
+  ) {
     if (!results || results.length === 0) {
       return undefined;
     }
     const successful = results.filter((entry) => entry.success === true);
-    const matched = successful.find((entry) => this.normalizeUrlForComparison(entry.url) === normalizedSeedUrl);
+    const matched = successful.find(
+      (entry) =>
+        this.normalizeUrlForComparison(entry.url) === normalizedSeedUrl,
+    );
     return matched ?? successful[0] ?? results[0];
   }
 
@@ -529,9 +624,10 @@ export class CrawlMetadataService {
   }
 
   private normalizeCrawlOptions(value: unknown): CrawlTaskOptions | undefined {
-    const options = value && typeof value === "object" && !Array.isArray(value)
-      ? (value as CrawlTaskOptions)
-      : {};
+    const options =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as CrawlTaskOptions)
+        : {};
     const waitUntil =
       options.waitUntil === "domcontentloaded" ||
       options.waitUntil === "load" ||
@@ -540,7 +636,8 @@ export class CrawlMetadataService {
         ? options.waitUntil
         : "networkidle";
     const waitForTimeoutMsRaw =
-      typeof options.waitForTimeoutMs === "number" && Number.isFinite(options.waitForTimeoutMs)
+      typeof options.waitForTimeoutMs === "number" &&
+      Number.isFinite(options.waitForTimeoutMs)
         ? Math.max(500, Math.min(60000, Math.round(options.waitForTimeoutMs)))
         : 12_000;
     const waitForTimeoutMs =
@@ -548,19 +645,26 @@ export class CrawlMetadataService {
         ? Math.max(5000, waitForTimeoutMsRaw)
         : waitForTimeoutMsRaw;
     const pageTimeoutMs =
-      typeof options.pageTimeoutMs === "number" && Number.isFinite(options.pageTimeoutMs)
+      typeof options.pageTimeoutMs === "number" &&
+      Number.isFinite(options.pageTimeoutMs)
         ? Math.max(1000, Math.min(180000, Math.round(options.pageTimeoutMs)))
         : 90_000;
     const delayBeforeReturnHtmlMs =
-      typeof options.delayBeforeReturnHtmlMs === "number" && Number.isFinite(options.delayBeforeReturnHtmlMs)
-        ? Math.max(0, Math.min(30000, Math.round(options.delayBeforeReturnHtmlMs)))
+      typeof options.delayBeforeReturnHtmlMs === "number" &&
+      Number.isFinite(options.delayBeforeReturnHtmlMs)
+        ? Math.max(
+            0,
+            Math.min(30000, Math.round(options.delayBeforeReturnHtmlMs)),
+          )
         : 2_000;
     const meanDelayMs =
-      typeof options.meanDelayMs === "number" && Number.isFinite(options.meanDelayMs)
+      typeof options.meanDelayMs === "number" &&
+      Number.isFinite(options.meanDelayMs)
         ? Math.max(0, Math.min(10_000, Math.round(options.meanDelayMs)))
         : 1_000;
     const maxDelayRangeMs =
-      typeof options.maxDelayRangeMs === "number" && Number.isFinite(options.maxDelayRangeMs)
+      typeof options.maxDelayRangeMs === "number" &&
+      Number.isFinite(options.maxDelayRangeMs)
         ? Math.max(0, Math.min(10_000, Math.round(options.maxDelayRangeMs)))
         : 2_000;
     const scanVirtualScroll =
@@ -570,8 +674,30 @@ export class CrawlMetadataService {
             containerSelector: "body",
             scrollCount: 8,
             scrollBy: "page_height" as const,
-            waitAfterScrollMs: 700
+            waitAfterScrollMs: 700,
           };
+    const normalizedUserAgent =
+      typeof options.userAgent === "string" &&
+      options.userAgent.trim().length > 0
+        ? options.userAgent.trim()
+        : undefined;
+    const enableStealthMode =
+      typeof options.enableStealthMode === "boolean"
+        ? options.enableStealthMode
+        : false;
+    const simulateUser =
+      typeof options.simulateUser === "boolean"
+        ? options.simulateUser
+        : enableStealthMode;
+    const overrideNavigator =
+      typeof options.overrideNavigator === "boolean"
+        ? options.overrideNavigator
+        : enableStealthMode;
+    const userAgentMode = normalizedUserAgent
+      ? undefined
+      : options.userAgentMode === "random"
+        ? "random"
+        : undefined;
 
     return {
       ...options,
@@ -579,13 +705,17 @@ export class CrawlMetadataService {
       multiUrlConfigs: undefined,
       extractLinks: true,
       prefetch: true,
-      headless: typeof options.headless === "boolean" ? options.headless : false,
+      headless:
+        typeof options.headless === "boolean" ? options.headless : undefined,
       enableUndetectedBrowser:
-        typeof options.enableUndetectedBrowser === "boolean" ? options.enableUndetectedBrowser : true,
-      enableStealthMode: typeof options.enableStealthMode === "boolean" ? options.enableStealthMode : true,
-      simulateUser: typeof options.simulateUser === "boolean" ? options.simulateUser : true,
-      overrideNavigator: typeof options.overrideNavigator === "boolean" ? options.overrideNavigator : true,
-      userAgentMode: options.userAgentMode === "random" ? "random" : "random",
+        typeof options.enableUndetectedBrowser === "boolean"
+          ? options.enableUndetectedBrowser
+          : false,
+      enableStealthMode,
+      simulateUser,
+      overrideNavigator,
+      userAgent: normalizedUserAgent,
+      userAgentMode,
       waitUntil,
       waitForTimeoutMs,
       pageTimeoutMs,
@@ -593,10 +723,15 @@ export class CrawlMetadataService {
       meanDelayMs,
       maxDelayRangeMs,
       removeOverlayElements:
-        typeof options.removeOverlayElements === "boolean" ? options.removeOverlayElements : true,
-      processIframes: typeof options.processIframes === "boolean" ? options.processIframes : true,
+        typeof options.removeOverlayElements === "boolean"
+          ? options.removeOverlayElements
+          : true,
+      processIframes:
+        typeof options.processIframes === "boolean"
+          ? options.processIframes
+          : true,
       scanFullPage: scanVirtualScroll ? false : options.scanFullPage,
-      virtualScroll: scanVirtualScroll
+      virtualScroll: scanVirtualScroll,
     };
   }
 
@@ -604,8 +739,11 @@ export class CrawlMetadataService {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
   }
 
-  private normalizeInput(input: CrawlMetadataExtractionInput): NormalizedMetadataConfig {
-    const source: CrawlMetadataSource = input.source === "urls" ? "urls" : "sitemap";
+  private normalizeInput(
+    input: CrawlMetadataExtractionInput,
+  ): NormalizedMetadataConfig {
+    const source: CrawlMetadataSource =
+      input.source === "urls" ? "urls" : "sitemap";
     const domain = this.normalizeDomain(input.domain);
     const urls = this.normalizeUrlList(input.urls);
     const patternMatcher = this.normalizePattern(input.pattern);
@@ -616,12 +754,15 @@ export class CrawlMetadataService {
     const concurrency = this.clampNumber(input.concurrency, 1, 10, 5);
     const queryTokens = this.tokenizeQuery(input.query);
     const scoreThreshold =
-      typeof input.scoreThreshold === "number" && Number.isFinite(input.scoreThreshold)
+      typeof input.scoreThreshold === "number" &&
+      Number.isFinite(input.scoreThreshold)
         ? Math.max(0, Math.min(1, Number(input.scoreThreshold.toFixed(3))))
         : 0;
 
     if (source === "sitemap" && !domain) {
-      throw new BadRequestException("domain is required when source is sitemap");
+      throw new BadRequestException(
+        "domain is required when source is sitemap",
+      );
     }
     if (source === "urls" && (!urls || urls.length === 0)) {
       throw new BadRequestException("urls are required when source is urls");
@@ -639,7 +780,7 @@ export class CrawlMetadataService {
       concurrency,
       queryTokens,
       scoreThreshold,
-      requestTimeoutMs: 15_000
+      requestTimeoutMs: 15_000,
     };
   }
 
@@ -657,7 +798,10 @@ export class CrawlMetadataService {
       const parsed = new URL(candidate);
       return parsed.origin.replace(/\/+$/, "");
     } catch (error) {
-      logger.warn({ domain: value, error }, "Failed to normalize metadata domain");
+      logger.warn(
+        { domain: value, error },
+        "Failed to normalize metadata domain",
+      );
       return undefined;
     }
   }
@@ -673,7 +817,9 @@ export class CrawlMetadataService {
     try {
       return new URL(trimmed).toString();
     } catch {
-      const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+      const withProtocol = /^https?:\/\//i.test(trimmed)
+        ? trimmed
+        : `https://${trimmed}`;
       try {
         return new URL(withProtocol).toString();
       } catch (error) {
@@ -716,7 +862,7 @@ export class CrawlMetadataService {
     if (trimmed.length > CrawlMetadataService.MAX_PATTERN_LENGTH) {
       logger.warn(
         { patternLength: trimmed.length },
-        "Rejected metadata pattern: exceeds max length"
+        "Rejected metadata pattern: exceeds max length",
       );
       return undefined;
     }
@@ -725,13 +871,14 @@ export class CrawlMetadataService {
     if (wildcardCount > CrawlMetadataService.MAX_WILDCARDS) {
       logger.warn(
         { wildcardCount },
-        "Rejected metadata pattern: exceeds max wildcard count"
+        "Rejected metadata pattern: exceeds max wildcard count",
       );
       return undefined;
     }
 
     const normalizedPattern = trimmed.toLowerCase();
-    return (url: string) => this.wildcardMatch(normalizedPattern, url.toLowerCase());
+    return (url: string) =>
+      this.wildcardMatch(normalizedPattern, url.toLowerCase());
   }
 
   private wildcardMatch(pattern: string, input: string) {
@@ -741,7 +888,8 @@ export class CrawlMetadataService {
     let matchIndex = 0;
 
     while (inputIndex < input.length) {
-      const patternChar = patternIndex < pattern.length ? pattern[patternIndex] : undefined;
+      const patternChar =
+        patternIndex < pattern.length ? pattern[patternIndex] : undefined;
 
       if (patternChar === "?" || patternChar === input[inputIndex]) {
         patternIndex += 1;
@@ -773,7 +921,12 @@ export class CrawlMetadataService {
     return patternIndex === pattern.length;
   }
 
-  private clampNumber(value: number | undefined, min: number, max: number, fallback: number) {
+  private clampNumber(
+    value: number | undefined,
+    min: number,
+    max: number,
+    fallback: number,
+  ) {
     if (typeof value !== "number" || Number.isNaN(value)) {
       return fallback;
     }
@@ -827,7 +980,7 @@ export class CrawlMetadataService {
   private async extractFromSitemapPayload(
     xml: string,
     config: NormalizedMetadataConfig,
-    collected: Set<string>
+    collected: Set<string>,
   ) {
     let parsed: Record<string, unknown> | null = null;
     try {
@@ -839,28 +992,47 @@ export class CrawlMetadataService {
     if (parsed?.urlset) {
       const urlset = parsed.urlset as { url?: unknown } | undefined;
       const urlEntries = urlset?.url;
-      const urls = Array.isArray(urlEntries) ? urlEntries : urlEntries ? [urlEntries] : [];
+      const urls = Array.isArray(urlEntries)
+        ? urlEntries
+        : urlEntries
+          ? [urlEntries]
+          : [];
       for (const entry of urls) {
-        const record = entry && typeof entry === "object" ? (entry as { loc?: unknown }) : null;
+        const record =
+          entry && typeof entry === "object"
+            ? (entry as { loc?: unknown })
+            : null;
         if (!record) {
           continue;
         }
-        const loc = typeof record.loc === "string" ? record.loc.trim() : undefined;
+        const loc =
+          typeof record.loc === "string" ? record.loc.trim() : undefined;
         if (!loc) {
           continue;
         }
-        if (this.shouldIncludeUrl(loc, config.patternMatcher) && collected.size < config.maxUrls) {
+        if (
+          this.shouldIncludeUrl(loc, config.patternMatcher) &&
+          collected.size < config.maxUrls
+        ) {
           collected.add(loc);
         }
       }
     }
-    const sitemapindex = parsed.sitemapindex as { sitemap?: unknown } | undefined;
+    const sitemapindex = parsed.sitemapindex as
+      | { sitemap?: unknown }
+      | undefined;
     const sitemapEntries = sitemapindex?.sitemap;
     if (sitemapEntries) {
-      const sites = Array.isArray(sitemapEntries) ? sitemapEntries : sitemapEntries ? [sitemapEntries] : [];
+      const sites = Array.isArray(sitemapEntries)
+        ? sitemapEntries
+        : sitemapEntries
+          ? [sitemapEntries]
+          : [];
       for (const site of sites.slice(0, 5)) {
-        const record = site && typeof site === "object" ? (site as { loc?: unknown }) : null;
-        const loc = typeof record?.loc === "string" ? record.loc.trim() : undefined;
+        const record =
+          site && typeof site === "object" ? (site as { loc?: unknown }) : null;
+        const loc =
+          typeof record?.loc === "string" ? record.loc.trim() : undefined;
         if (!loc) {
           continue;
         }
@@ -947,10 +1119,17 @@ export class CrawlMetadataService {
 
     // RSS 2.0: rss.channel.item[]
     const rss = parsed.rss as Record<string, unknown> | undefined;
-    const channel = (rss?.channel as Record<string, unknown> | undefined) ?? undefined;
+    const channel =
+      (rss?.channel as Record<string, unknown> | undefined) ?? undefined;
     const rssItems = toArray(
-      (channel?.item as Record<string, unknown>[] | Record<string, unknown> | undefined) ??
-        (rss?.item as Record<string, unknown>[] | Record<string, unknown> | undefined)
+      (channel?.item as
+        | Record<string, unknown>[]
+        | Record<string, unknown>
+        | undefined) ??
+        (rss?.item as
+          | Record<string, unknown>[]
+          | Record<string, unknown>
+          | undefined),
     );
 
     for (const item of rssItems) {
@@ -969,13 +1148,21 @@ export class CrawlMetadataService {
     // Atom: feed.entry[].link[@href]
     const feed = parsed.feed as Record<string, unknown> | undefined;
     const entries = toArray(
-      (feed?.entry as Record<string, unknown>[] | Record<string, unknown> | undefined) ?? undefined
+      (feed?.entry as
+        | Record<string, unknown>[]
+        | Record<string, unknown>
+        | undefined) ?? undefined,
     );
 
     for (const entry of entries) {
       const record = entry as Record<string, unknown>;
       const links = toArray(
-        record.link as Record<string, unknown>[] | Record<string, unknown> | string[] | string | undefined
+        record.link as
+          | Record<string, unknown>[]
+          | Record<string, unknown>
+          | string[]
+          | string
+          | undefined,
       );
 
       let picked: string | undefined;
@@ -988,7 +1175,8 @@ export class CrawlMetadataService {
           continue;
         }
         const linkRecord = link as Record<string, unknown>;
-        const rel = typeof linkRecord.rel === "string" ? linkRecord.rel.trim() : "";
+        const rel =
+          typeof linkRecord.rel === "string" ? linkRecord.rel.trim() : "";
         const href = extractText(linkRecord);
         if (!href) {
           continue;
@@ -1005,7 +1193,10 @@ export class CrawlMetadataService {
     return collected;
   }
 
-  private shouldIncludeUrl(url: string, patternMatcher?: (url: string) => boolean) {
+  private shouldIncludeUrl(
+    url: string,
+    patternMatcher?: (url: string) => boolean,
+  ) {
     if (!patternMatcher) {
       return true;
     }
@@ -1016,11 +1207,18 @@ export class CrawlMetadataService {
     return `${origin.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
   }
 
-  private async fetchMetadata(url: string, config: NormalizedMetadataConfig): Promise<CrawlMetadataResult> {
+  private async fetchMetadata(
+    url: string,
+    config: NormalizedMetadataConfig,
+  ): Promise<CrawlMetadataResult> {
     try {
       const response = await this.fetchWithStatus(url, config.requestTimeoutMs);
       const parsed = this.parseMetadata(response.body, config);
-      const relevanceScore = this.computeRelevance(url, parsed, config.queryTokens);
+      const relevanceScore = this.computeRelevance(
+        url,
+        parsed,
+        config.queryTokens,
+      );
       return {
         url,
         status: "success",
@@ -1033,17 +1231,18 @@ export class CrawlMetadataService {
         metaTags: parsed.metaTags,
         openGraph: parsed.openGraph,
         jsonLd: parsed.jsonLd,
-        relevanceScore
+        relevanceScore,
       };
     } catch (error) {
       logger.warn({ url, error }, "Metadata extraction failed");
       return {
         url,
         status: "failed",
-        error: error instanceof Error ? error.message : "metadata extraction failed",
+        error:
+          error instanceof Error ? error.message : "metadata extraction failed",
         metaTags: [],
         openGraph: [],
-        jsonLd: []
+        jsonLd: [],
       };
     }
   }
@@ -1114,11 +1313,14 @@ export class CrawlMetadataService {
       author,
       metaTags: metaTags.slice(0, 25),
       openGraph: openGraph.slice(0, 25),
-      jsonLd
+      jsonLd,
     };
   }
 
-  private async fetchWithStatus(url: string, timeoutMs: number): Promise<FetchResponse> {
+  private async fetchWithStatus(
+    url: string,
+    timeoutMs: number,
+  ): Promise<FetchResponse> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -1127,21 +1329,28 @@ export class CrawlMetadataService {
         redirect: "follow",
         headers: {
           "user-agent":
-            "MetadataBot/1.0 (+https://github.com/unclecode/crawl4ai) crawl-metadata-service"
+            "MetadataBot/1.0 (+https://github.com/unclecode/crawl4ai) crawl-metadata-service",
         },
-        signal: controller.signal
+        signal: controller.signal,
       });
       const buffer = Buffer.from(await response.arrayBuffer());
       const shouldGunzip =
         url.toLowerCase().endsWith(".gz") ||
-        (response.headers.get("content-encoding")?.toLowerCase().includes("gzip") ?? false) ||
-        (response.headers.get("content-type")?.toLowerCase().includes("gzip") ?? false);
+        (response.headers
+          .get("content-encoding")
+          ?.toLowerCase()
+          .includes("gzip") ??
+          false) ||
+        (response.headers.get("content-type")?.toLowerCase().includes("gzip") ??
+          false);
 
       const body = shouldGunzip
         ? this.decodePossiblyGzippedPayload(buffer)
         : buffer.toString("utf8");
       if (!response.ok) {
-        throw new Error(`Metadata request failed with status ${response.status}`);
+        throw new Error(
+          `Metadata request failed with status ${response.status}`,
+        );
       }
       return { status: response.status, body };
     } finally {
@@ -1170,12 +1379,14 @@ export class CrawlMetadataService {
   private computeRelevance(
     url: string,
     parsed: ReturnType<typeof this.parseMetadata>,
-    tokens?: string[]
+    tokens?: string[],
   ) {
     if (!tokens || tokens.length === 0) {
       return undefined;
     }
-    const haystack = [url, parsed.title ?? "", parsed.description ?? ""].join(" ").toLowerCase();
+    const haystack = [url, parsed.title ?? "", parsed.description ?? ""]
+      .join(" ")
+      .toLowerCase();
     if (!haystack.trim()) {
       return 0;
     }
@@ -1186,7 +1397,7 @@ export class CrawlMetadataService {
   private async mapWithConcurrency<T, R>(
     items: T[],
     concurrency: number,
-    worker: (item: T, index: number) => Promise<R>
+    worker: (item: T, index: number) => Promise<R>,
   ): Promise<R[]> {
     if (items.length === 0) {
       return [];

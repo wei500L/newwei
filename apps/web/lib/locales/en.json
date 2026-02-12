@@ -3825,6 +3825,19 @@
         "description": "Raw monitoring payload for debugging (best-effort normalization)."
       }
     },
+    "runtimeGuide": {
+      "title": "Headed mode and Xvfb",
+      "noAutoBootstrap": "This console only provides guidance and does not auto-start Xvfb for you.",
+      "principleBody": "When headless=false, Chromium needs a display server. Xvfb provides a virtual X11 display (for example :99) so headed rendering can run in containers without a physical monitor.",
+      "stepsTitle": "Recommended checks",
+      "step1": "Prefer Headless for routine crawls, and use Headed only when anti-bot scenarios need it.",
+      "step2": "When using Headed, ensure Xvfb/DISPLAY are configured in the crawl4ai container.",
+      "step3": "If display errors persist, switch this task back to Headless first, then verify container env settings.",
+      "displayIssueTitle": "Detected DISPLAY/Xvfb dependency issue",
+      "displayIssueHint": "Headed runtime failed because DISPLAY/Xvfb is unavailable. Enable Xvfb in crawl4ai or switch this task to Headless.",
+      "timeoutIssueTitle": "Headed runtime timed out",
+      "timeoutIssueHint": "Display may be ready, but browser startup/navigation timed out. Check crawl4ai load and task timeout settings."
+    },
     "detail": {
       "media": {
         "title": "Media",
@@ -4377,10 +4390,19 @@
     "browser": {
       "headless": "Headless",
       "headlessHint": "Turn off to use headed mode (headless=false). Headed mode may require Xvfb/DISPLAY inside the crawl4ai container.",
+      "headlessModes": {
+        "auto": "Auto",
+        "headless": "Headless",
+        "headed": "Headed (Xvfb)"
+      },
+      "headedWarningTitle": "Headed mode requires Xvfb",
+      "headedWarning": "If crawl4ai logs contain 'cannot open display', switch back to Headless or enable Xvfb/DISPLAY in your crawl4ai container.",
       "undetected": "Undetected",
       "undetectedHint": "Undetected hint",
       "stealth": "Stealth",
       "stealthHint": "Stealth hint",
+      "magicMode": "Stealth (Magic) mode",
+      "magicModeHint": "Maps to crawl4ai magic=true for anti-detection behavior.",
       "managed": "Managed",
       "managedHint": "Managed hint",
       "managedLink": "Managed link",
@@ -4445,7 +4467,9 @@
           "name": "Enter Name",
           "value": "Enter Value"
         },
-        "add": "Add"
+        "add": "Add",
+        "autoFillSecCh": "Auto-fill Sec-CH headers",
+        "autoFillSecChHint": "Adds sec-fetch defaults and, when User-Agent is deterministic Chromium, matching sec-ch headers if missing."
       },
       "cookies": {
         "title": "Cookies",

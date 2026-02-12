@@ -6,24 +6,24 @@ import { Crawl4aiRequestException } from "../crawl4ai.exception";
 describe("Crawl4aiClient", () => {
   const httpMock = {
     get: jest.fn(),
-    post: jest.fn()
+    post: jest.fn(),
   } as any;
 
   const crawlSettingsMock = {
-    getSettings: jest.fn()
+    getSettings: jest.fn(),
   } as any;
 
   const envMock = {
     crawl4aiConfig: {
-      jsCodeEnabled: true
-    }
+      jsCodeEnabled: true,
+    },
   } as any;
 
   beforeEach(() => {
     jest.resetAllMocks();
     crawlSettingsMock.getSettings = jest.fn().mockResolvedValue({
       healthCheckTtlMs: 0,
-      requestTimeoutMs: 1000
+      requestTimeoutMs: 1000,
     });
     httpMock.get = jest.fn().mockReturnValue(of({ data: {} }));
     httpMock.post = jest.fn().mockReturnValue(of({ data: { results: [] } }));
@@ -38,7 +38,7 @@ describe("Crawl4aiClient", () => {
         onlyMainContent: true,
         textMode: true,
         wordCountThreshold: 80,
-        storageState: "{\"cookies\":[]}",
+        storageState: '{"cookies":[]}',
         linkPreview: {
           includeInternal: true,
           includeExternal: false,
@@ -46,9 +46,9 @@ describe("Crawl4aiClient", () => {
           maxLinks: 5,
           concurrency: 2,
           timeoutSeconds: 3,
-          verbose: false
-        }
-      } as any
+          verbose: false,
+        },
+      } as any,
     });
 
     expect(httpMock.post).toHaveBeenCalled();
@@ -59,20 +59,25 @@ describe("Crawl4aiClient", () => {
     expect(payload.browser_config.params).not.toHaveProperty("disable_images");
 
     expect(payload.crawler_config.params).toHaveProperty("only_text", true);
-    expect(payload.crawler_config.params).not.toHaveProperty("only_main_content");
+    expect(payload.crawler_config.params).not.toHaveProperty(
+      "only_main_content",
+    );
     expect(payload.crawler_config.params).not.toHaveProperty("extract_links");
     expect(payload.crawler_config.params).not.toHaveProperty("storage_state");
 
     expect(payload.crawler_config.params.markdown_generator).toEqual(
       expect.objectContaining({
-        type: "DefaultMarkdownGenerator"
-      })
+        type: "DefaultMarkdownGenerator",
+      }),
     );
-    expect(payload.crawler_config.params.markdown_generator.params.content_filter.type).toBe(
-      "PruningContentFilter"
-    );
+    expect(
+      payload.crawler_config.params.markdown_generator.params.content_filter
+        .type,
+    ).toBe("PruningContentFilter");
 
-    expect(payload.crawler_config.params.link_preview_config.params).not.toHaveProperty("include_social");
+    expect(
+      payload.crawler_config.params.link_preview_config.params,
+    ).not.toHaveProperty("include_social");
   });
 
   it("applies cleanMarkdown overrides for content selection and thresholds", async () => {
@@ -88,16 +93,23 @@ describe("Crawl4aiClient", () => {
           cssSelector: ".article__content,article,main",
           excludedTags: ["nav", "footer", "script", "style"],
           removeOverlayElements: false,
-          wordCountThreshold: 20
-        }
-      } as any
+          wordCountThreshold: 20,
+        },
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
     expect(payload.crawler_config.params.word_count_threshold).toBe(20);
     expect(payload.crawler_config.params.remove_overlay_elements).toBe(false);
-    expect(payload.crawler_config.params.css_selector).toBe(".article__content,article,main");
-    expect(payload.crawler_config.params.excluded_tags).toEqual(["nav", "footer", "script", "style"]);
+    expect(payload.crawler_config.params.css_selector).toBe(
+      ".article__content,article,main",
+    );
+    expect(payload.crawler_config.params.excluded_tags).toEqual([
+      "nav",
+      "footer",
+      "script",
+      "style",
+    ]);
   });
 
   it("forwards markdown citations option and BM25 filter payload", async () => {
@@ -107,15 +119,15 @@ describe("Crawl4aiClient", () => {
       options: {
         markdownOptions: {
           citations: true,
-          contentSource: "cleaned_html"
+          contentSource: "cleaned_html",
         },
         markdownFilter: {
           type: "bm25",
           userQuery: "startup fundraising tips",
           bm25Threshold: 1.2,
-          language: "english"
-        }
-      } as any
+          language: "english",
+        },
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
@@ -124,17 +136,25 @@ describe("Crawl4aiClient", () => {
         type: "DefaultMarkdownGenerator",
         params: expect.objectContaining({
           options: expect.objectContaining({
-            citations: true
+            citations: true,
           }),
           content_filter: expect.objectContaining({
             type: "BM25ContentFilter",
-            params: expect.objectContaining({ user_query: "startup fundraising tips" })
-          })
-        })
-      })
+            params: expect.objectContaining({
+              user_query: "startup fundraising tips",
+            }),
+          }),
+        }),
+      }),
     );
-    expect(payload.crawler_config.params.markdown_generator.params.content_filter.params.bm25_threshold).toBeCloseTo(1.2);
-    expect(payload.crawler_config.params.markdown_generator.params.content_filter.params.language).toBe("english");
+    expect(
+      payload.crawler_config.params.markdown_generator.params.content_filter
+        .params.bm25_threshold,
+    ).toBeCloseTo(1.2);
+    expect(
+      payload.crawler_config.params.markdown_generator.params.content_filter
+        .params.language,
+    ).toBe("english");
   });
 
   it("enables prefetch mode when requested", async () => {
@@ -143,8 +163,8 @@ describe("Crawl4aiClient", () => {
       url: "https://example.com/",
       options: {
         prefetch: true,
-        extractLinks: true
-      } as any
+        extractLinks: true,
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
@@ -157,9 +177,10 @@ describe("Crawl4aiClient", () => {
       response: {
         status: 500,
         data: {
-          detail: "CrawlerRunConfig.__init__() got an unexpected keyword argument 'prefetch'"
-        }
-      }
+          detail:
+            "CrawlerRunConfig.__init__() got an unexpected keyword argument 'prefetch'",
+        },
+      },
     };
 
     httpMock.post = jest
@@ -168,9 +189,11 @@ describe("Crawl4aiClient", () => {
       .mockReturnValueOnce(
         of({
           data: {
-            results: [{ url: "https://example.com", markdown: "# ok", success: true }]
-          }
-        })
+            results: [
+              { url: "https://example.com", markdown: "# ok", success: true },
+            ],
+          },
+        }),
       );
 
     const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
@@ -178,8 +201,8 @@ describe("Crawl4aiClient", () => {
       url: "https://example.com/",
       options: {
         prefetch: true,
-        extractLinks: true
-      } as any
+        extractLinks: true,
+      } as any,
     });
 
     expect(httpMock.post).toHaveBeenCalledTimes(2);
@@ -196,8 +219,8 @@ describe("Crawl4aiClient", () => {
       message: "Request failed with status code 500",
       response: {
         status: 500,
-        data: "Internal Server Error"
-      }
+        data: "Internal Server Error",
+      },
     };
 
     httpMock.post = jest
@@ -206,9 +229,11 @@ describe("Crawl4aiClient", () => {
       .mockReturnValueOnce(
         of({
           data: {
-            results: [{ url: "https://example.com", markdown: "# ok", success: true }]
-          }
-        })
+            results: [
+              { url: "https://example.com", markdown: "# ok", success: true },
+            ],
+          },
+        }),
       );
 
     const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
@@ -216,8 +241,8 @@ describe("Crawl4aiClient", () => {
       url: "https://example.com/",
       options: {
         prefetch: true,
-        extractLinks: true
-      } as any
+        extractLinks: true,
+      } as any,
     });
 
     expect(httpMock.post).toHaveBeenCalledTimes(2);
@@ -240,9 +265,9 @@ describe("Crawl4aiClient", () => {
           containerSelector: "body",
           scrollCount: 3,
           scrollBy: "page_height",
-          waitAfterScrollMs: 500
-        }
-      } as any
+          waitAfterScrollMs: 500,
+        },
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
@@ -250,8 +275,8 @@ describe("Crawl4aiClient", () => {
     expect(payload.crawler_config.params).not.toHaveProperty("scroll_delay");
     expect(payload.crawler_config.params.virtual_scroll_config).toEqual(
       expect.objectContaining({
-        type: "VirtualScrollConfig"
-      })
+        type: "VirtualScrollConfig",
+      }),
     );
   });
 
@@ -260,8 +285,8 @@ describe("Crawl4aiClient", () => {
     await client.crawl({
       url: "https://example.com/",
       options: {
-        scanFullPage: true
-      } as any
+        scanFullPage: true,
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
@@ -270,7 +295,9 @@ describe("Crawl4aiClient", () => {
     expect(payload.crawler_config.params.wait_until).toBe("domcontentloaded");
     expect(payload.crawler_config.params.wait_for_timeout).toBe(8000);
     expect(payload.crawler_config.params.page_timeout).toBe(45000);
-    expect(payload.crawler_config.params.delay_before_return_html).toBeCloseTo(0.6);
+    expect(payload.crawler_config.params.delay_before_return_html).toBeCloseTo(
+      0.6,
+    );
     expect(payload.crawler_config.params.adjust_viewport_to_content).toBe(true);
   });
 
@@ -281,9 +308,15 @@ describe("Crawl4aiClient", () => {
       .mockReturnValueOnce(
         of({
           data: {
-            results: [{ url: "https://example.com", markdown: "# recovered", success: true }]
-          }
-        })
+            results: [
+              {
+                url: "https://example.com",
+                markdown: "# recovered",
+                success: true,
+              },
+            ],
+          },
+        }),
       );
 
     const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
@@ -291,8 +324,8 @@ describe("Crawl4aiClient", () => {
       url: "https://example.com/",
       options: {
         scanFullPage: true,
-        scrollDelayMs: 400
-      } as any
+        scrollDelayMs: 400,
+      } as any,
     });
 
     expect(response.results).toHaveLength(1);
@@ -303,23 +336,25 @@ describe("Crawl4aiClient", () => {
 
     expect(firstPayload.crawler_config.params.scan_full_page).toBe(true);
     expect(secondPayload.crawler_config.params.scan_full_page).toBe(false);
-    expect(secondPayload.crawler_config.params).not.toHaveProperty("scroll_delay");
+    expect(secondPayload.crawler_config.params).not.toHaveProperty(
+      "scroll_delay",
+    );
     expect(secondPayload.crawler_config.params.virtual_scroll_config).toEqual(
       expect.objectContaining({
         type: "VirtualScrollConfig",
         params: expect.objectContaining({
           container_selector: "body",
           scroll_count: 24,
-          scroll_by: "page_height"
-        })
-      })
+          scroll_by: "page_height",
+        }),
+      }),
     );
   });
 
   it("enforces a hard timeout even if the request observable never completes", async () => {
     crawlSettingsMock.getSettings = jest.fn().mockResolvedValue({
       healthCheckTtlMs: 0,
-      requestTimeoutMs: 50
+      requestTimeoutMs: 50,
     });
     httpMock.post = jest.fn().mockReturnValue(NEVER);
 
@@ -327,8 +362,8 @@ describe("Crawl4aiClient", () => {
     await expect(
       client.crawl({
         url: "https://example.com/",
-        options: { scanFullPage: true } as any
-      })
+        options: { scanFullPage: true } as any,
+      }),
     ).rejects.toBeInstanceOf(Crawl4aiRequestException);
   });
 
@@ -343,14 +378,16 @@ describe("Crawl4aiClient", () => {
         meanDelayMs: 1200,
         maxDelayRangeMs: 350,
         semaphoreCount: 7,
-        removeForms: true
-      } as any
+        removeForms: true,
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
     expect(payload.crawler_config.params.wait_until).toBe("networkidle");
     expect(payload.crawler_config.params.page_timeout).toBe(45000);
-    expect(payload.crawler_config.params.delay_before_return_html).toBeCloseTo(0.8);
+    expect(payload.crawler_config.params.delay_before_return_html).toBeCloseTo(
+      0.8,
+    );
     expect(payload.crawler_config.params.mean_delay).toBeCloseTo(1.2);
     expect(payload.crawler_config.params.max_range).toBeCloseTo(0.35);
     expect(payload.crawler_config.params.semaphore_count).toBe(7);
@@ -367,9 +404,9 @@ describe("Crawl4aiClient", () => {
         proxyConfig: {
           server: "http://proxy-config.example:8080",
           username: "user",
-          password: "pass"
-        }
-      } as any
+          password: "pass",
+        },
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
@@ -378,8 +415,8 @@ describe("Crawl4aiClient", () => {
       expect.objectContaining({
         server: "http://proxy-config.example:8080",
         username: "user",
-        password: "pass"
-      })
+        password: "pass",
+      }),
     );
     expect(payload.browser_config.params).not.toHaveProperty("proxy");
   });
@@ -394,9 +431,9 @@ describe("Crawl4aiClient", () => {
         geolocation: {
           latitude: 40.7128,
           longitude: -74.006,
-          accuracy: 120
-        }
-      } as any
+          accuracy: 120,
+        },
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
@@ -408,9 +445,9 @@ describe("Crawl4aiClient", () => {
         params: expect.objectContaining({
           latitude: 40.7128,
           longitude: -74.006,
-          accuracy: 120
-        })
-      })
+          accuracy: 120,
+        }),
+      }),
     );
   });
 
@@ -424,21 +461,176 @@ describe("Crawl4aiClient", () => {
           platform: "windows",
           browser: "chrome",
           deviceType: "desktop",
-          locale: "en-US"
-        }
-      } as any
+          locale: "en-US",
+        },
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
     expect(payload.browser_config.params.user_agent_generator_config).toEqual({
       browsers: ["Chrome"],
       os: ["Windows"],
-      platforms: ["desktop"]
+      platforms: ["desktop"],
     });
-    expect(payload.browser_config.params.user_agent_generator_config).not.toHaveProperty("locale");
-    expect(payload.browser_config.params.user_agent_generator_config).not.toHaveProperty("browser");
-    expect(payload.browser_config.params.user_agent_generator_config).not.toHaveProperty("platform");
-    expect(payload.browser_config.params.user_agent_generator_config).not.toHaveProperty("device_type");
+    expect(
+      payload.browser_config.params.user_agent_generator_config,
+    ).not.toHaveProperty("locale");
+    expect(
+      payload.browser_config.params.user_agent_generator_config,
+    ).not.toHaveProperty("browser");
+    expect(
+      payload.browser_config.params.user_agent_generator_config,
+    ).not.toHaveProperty("platform");
+    expect(
+      payload.browser_config.params.user_agent_generator_config,
+    ).not.toHaveProperty("device_type");
+  });
+
+  it("injects default sec-fetch headers when UA is random", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {} as any,
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.browser_config.params.headers).toEqual(
+      expect.objectContaining({
+        "sec-fetch-site": "none",
+        "sec-fetch-mode": "navigate",
+      }),
+    );
+    expect(payload.browser_config.params.headers).not.toHaveProperty(
+      "sec-ch-ua",
+    );
+    expect(payload.browser_config.params.headers).not.toHaveProperty(
+      "sec-ch-ua-mobile",
+    );
+    expect(payload.browser_config.params.headers).not.toHaveProperty(
+      "sec-ch-ua-platform",
+    );
+  });
+
+  it("injects chromium sec-ch defaults when a deterministic chrome UA is provided", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      } as any,
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.browser_config.params.headers).toEqual(
+      expect.objectContaining({
+        "sec-ch-ua": expect.stringContaining('"Google Chrome";v="126"'),
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-site": "none",
+        "sec-fetch-mode": "navigate",
+      }),
+    );
+  });
+
+  it("uses Microsoft Edge brand when the user agent is edge", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0",
+      } as any,
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.browser_config.params.headers["sec-ch-ua"]).toContain(
+      '"Microsoft Edge";v="126"',
+    );
+  });
+
+  it("skips sec-ch defaults for non-chromium custom user agent", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15",
+      } as any,
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.browser_config.params.headers).toEqual(
+      expect.objectContaining({
+        "sec-fetch-site": "none",
+        "sec-fetch-mode": "navigate",
+      }),
+    );
+    expect(payload.browser_config.params.headers).not.toHaveProperty(
+      "sec-ch-ua",
+    );
+    expect(payload.browser_config.params.headers).not.toHaveProperty(
+      "sec-ch-ua-mobile",
+    );
+    expect(payload.browser_config.params.headers).not.toHaveProperty(
+      "sec-ch-ua-platform",
+    );
+  });
+
+  it("keeps user-provided sec-ch headers without overriding values", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        browserHeaders: [
+          { name: "sec-ch-ua-platform", value: '"Linux"' },
+          { name: "X-Test", value: "abc" },
+        ],
+      } as any,
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.browser_config.params.headers["sec-ch-ua-platform"]).toBe(
+      '"Linux"',
+    );
+    expect(payload.browser_config.params.headers["X-Test"]).toBe("abc");
+    expect(payload.browser_config.params.headers).toEqual(
+      expect.objectContaining({
+        "sec-ch-ua": expect.stringContaining('"Google Chrome";v="126"'),
+        "sec-ch-ua-mobile": "?0",
+        "sec-fetch-site": "none",
+        "sec-fetch-mode": "navigate",
+      }),
+    );
+  });
+
+  it("rejects unsafe header names and values containing control characters", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        browserHeaders: [
+          { name: "X-Good", value: "ok" },
+          { name: "X-Bad\r\nInjected", value: "value" },
+          { name: "X-Bad", value: "value\r\nInjected" },
+        ],
+      } as any,
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.browser_config.params.headers).toEqual(
+      expect.objectContaining({
+        "X-Good": "ok",
+        "sec-fetch-site": "none",
+        "sec-fetch-mode": "navigate",
+      }),
+    );
+    expect(payload.browser_config.params.headers).not.toHaveProperty(
+      "X-Bad\r\nInjected",
+    );
+    expect(payload.browser_config.params.headers).not.toHaveProperty("X-Bad");
   });
 
   it("maps advanced overrides in multiUrlConfigs", async () => {
@@ -448,7 +640,10 @@ describe("Crawl4aiClient", () => {
       options: {
         multiUrlConfigs: [
           {
-            matcher: { matchMode: "prefix", patterns: ["https://example.com/world/"] },
+            matcher: {
+              matchMode: "prefix",
+              patterns: ["https://example.com/world/"],
+            },
             options: {
               waitUntil: "load",
               pageTimeoutMs: 30000,
@@ -456,11 +651,11 @@ describe("Crawl4aiClient", () => {
               meanDelayMs: 500,
               maxDelayRangeMs: 200,
               semaphoreCount: 4,
-              removeForms: true
-            }
-          }
-        ]
-      } as any
+              removeForms: true,
+            },
+          },
+        ],
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
@@ -475,7 +670,6 @@ describe("Crawl4aiClient", () => {
     expect(config.remove_forms).toBe(true);
   });
 
-
   it("enforces networkidle minimum wait_for_timeout", async () => {
     const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
     await client.crawl({
@@ -485,19 +679,24 @@ describe("Crawl4aiClient", () => {
         waitForTimeoutMs: 600,
         multiUrlConfigs: [
           {
-            matcher: { matchMode: "prefix", patterns: ["https://example.com/world/"] },
+            matcher: {
+              matchMode: "prefix",
+              patterns: ["https://example.com/world/"],
+            },
             options: {
               waitUntil: "networkidle",
-              waitForTimeoutMs: 1200
-            }
-          }
-        ]
-      } as any
+              waitForTimeoutMs: 1200,
+            },
+          },
+        ],
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
     expect(payload.crawler_config.params.wait_for_timeout).toBe(5000);
-    expect(payload.crawler_configurations?.[0]?.params?.wait_for_timeout).toBe(5000);
+    expect(payload.crawler_configurations?.[0]?.params?.wait_for_timeout).toBe(
+      5000,
+    );
   });
 
   it("clamps wait_for_timeout for non-networkidle waits", async () => {
@@ -506,8 +705,8 @@ describe("Crawl4aiClient", () => {
       url: "https://example.com/",
       options: {
         waitUntil: "load",
-        waitForTimeoutMs: 100
-      } as any
+        waitForTimeoutMs: 100,
+      } as any,
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];

@@ -1,14 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 
-import { auth } from '@/lib/auth';
+import { auth } from "@/lib/auth";
+import { isDisplayDependencyError } from "@/lib/crawl-runtime";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 const PROBE_TIMEOUT_MS = 15_000;
 const PROBE_CACHE_TTL_MS = 30_000;
-const PROBE_URL = 'https://example.com/';
+const PROBE_URL = "https://example.com/";
 
-type Permission = 'crawl.read' | 'crawl.write';
+type Permission = "crawl.read" | "crawl.write";
 
 interface ProbeResult {
   ok: boolean;
@@ -33,57 +34,52 @@ interface RuntimeProbeResponse {
   };
 }
 
-let cached:
-  | {
-      checkedAt: number;
-      payload: RuntimeProbeResponse;
-    }
-  | null = null;
+let cached: {
+  checkedAt: number;
+  payload: RuntimeProbeResponse;
+} | null = null;
 
-function hasAnyPermission(permissions: string[], required: Permission[]): boolean {
+function hasAnyPermission(
+  permissions: string[],
+  required: Permission[],
+): boolean {
   return required.some((perm) => permissions.includes(perm));
 }
 
 function normalizeErrorMessage(value: unknown): string | undefined {
   if (!value) return undefined;
-  if (typeof value === 'string' && value.trim()) return value.trim();
-  if (value instanceof Error && value.message.trim()) return value.message.trim();
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (value instanceof Error && value.message.trim())
+    return value.message.trim();
   return undefined;
 }
 
-function looksLikeDisplayError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes('cannot open display') ||
-    lower.includes('missing x server') ||
-    lower.includes('xvfb') ||
-    (lower.includes('x11') && lower.includes('display'))
-  );
-}
-
-async function runProbe(baseUrl: string, headless: boolean): Promise<ProbeResult> {
+async function runProbe(
+  baseUrl: string,
+  headless: boolean,
+): Promise<ProbeResult> {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
 
   try {
-    const url = new URL('/crawl', baseUrl);
+    const url = new URL("/crawl", baseUrl);
     const headers = new Headers();
-    headers.set('accept', 'application/json');
-    headers.set('content-type', 'application/json');
+    headers.set("accept", "application/json");
+    headers.set("content-type", "application/json");
 
     const apiKey = process.env.CRAWL4AI_API_KEY?.trim();
     if (apiKey) {
-      headers.set('x-api-key', apiKey);
+      headers.set("x-api-key", apiKey);
     }
 
     const payload = {
       urls: [PROBE_URL],
-      browser_config: { type: 'BrowserConfig', params: { headless } },
+      browser_config: { type: "BrowserConfig", params: { headless } },
       crawler_config: {
-        type: 'CrawlerRunConfig',
+        type: "CrawlerRunConfig",
         params: {
-          cache_mode: 'bypass',
+          cache_mode: "bypass",
           only_text: true,
           word_count_threshold: 5,
           exclude_external_links: true,
@@ -94,11 +90,11 @@ async function runProbe(baseUrl: string, headless: boolean): Promise<ProbeResult
     };
 
     const response = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify(payload),
       signal: controller.signal,
-      cache: 'no-store',
+      cache: "no-store",
     });
 
     let data: unknown = null;
@@ -108,21 +104,29 @@ async function runProbe(baseUrl: string, headless: boolean): Promise<ProbeResult
       data = null;
     }
 
-    const record = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
-    const results = record && Array.isArray(record.results) ? (record.results as unknown[]) : [];
+    const record =
+      data && typeof data === "object" && !Array.isArray(data)
+        ? (data as Record<string, unknown>)
+        : null;
+    const results =
+      record && Array.isArray(record.results)
+        ? (record.results as unknown[])
+        : [];
     const first =
-      results.length > 0 && results[0] && typeof results[0] === 'object' && !Array.isArray(results[0])
+      results.length > 0 &&
+      results[0] &&
+      typeof results[0] === "object" &&
+      !Array.isArray(results[0])
         ? (results[0] as Record<string, unknown>)
         : null;
     const ok = response.ok && first?.success === true;
-    const error =
-      ok
-        ? undefined
-        : normalizeErrorMessage(first?.error_message) ??
-          normalizeErrorMessage(first?.errorMessage) ??
-          normalizeErrorMessage(first?.error) ??
-          normalizeErrorMessage(record?.error) ??
-          (response.ok ? 'crawl failed' : `HTTP ${response.status}`);
+    const error = ok
+      ? undefined
+      : (normalizeErrorMessage(first?.error_message) ??
+        normalizeErrorMessage(first?.errorMessage) ??
+        normalizeErrorMessage(first?.error) ??
+        normalizeErrorMessage(record?.error) ??
+        (response.ok ? "crawl failed" : `HTTP ${response.status}`));
 
     return {
       ok,
@@ -131,11 +135,13 @@ async function runProbe(baseUrl: string, headless: boolean): Promise<ProbeResult
       error,
     };
   } catch (error) {
-    const isAbortError = error instanceof Error && error.name === 'AbortError';
+    const isAbortError = error instanceof Error && error.name === "AbortError";
     return {
       ok: false,
       durationMs: Date.now() - startedAt,
-      error: isAbortError ? 'probe timed out' : normalizeErrorMessage(error) ?? 'probe failed',
+      error: isAbortError
+        ? "probe timed out"
+        : (normalizeErrorMessage(error) ?? "probe failed"),
     };
   } finally {
     clearTimeout(timeoutId);
@@ -145,12 +151,12 @@ async function runProbe(baseUrl: string, headless: boolean): Promise<ProbeResult
 export async function GET() {
   const session = await auth();
   if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const permissions = session.permissions ?? session.user?.permissions ?? [];
-  if (!hasAnyPermission(permissions, ['crawl.read', 'crawl.write'])) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!hasAnyPermission(permissions, ["crawl.read", "crawl.write"])) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const now = Date.now();
@@ -160,14 +166,26 @@ export async function GET() {
 
   const baseUrl = process.env.CRAWL4AI_BASE_URL?.trim();
   if (!baseUrl) {
-    return NextResponse.json({ error: 'CRAWL4AI_BASE_URL is not configured' }, { status: 500 });
+    return NextResponse.json(
+      { error: "CRAWL4AI_BASE_URL is not configured" },
+      { status: 500 },
+    );
   }
 
-  const [headless, headed] = await Promise.all([runProbe(baseUrl, true), runProbe(baseUrl, false)]);
-  const displayIssue = headed.error ? looksLikeDisplayError(headed.error) : false;
+  const [headless, headed] = await Promise.all([
+    runProbe(baseUrl, true),
+    runProbe(baseUrl, false),
+  ]);
+  const displayIssue = headed.error
+    ? isDisplayDependencyError(headed.error)
+    : false;
   const xvfb = {
     supported: headed.ok,
-    reason: headed.ok ? undefined : displayIssue ? 'DISPLAY/Xvfb not available for headless=false' : headed.error,
+    reason: headed.ok
+      ? undefined
+      : displayIssue
+        ? "DISPLAY/Xvfb not available for headless=false"
+        : headed.error,
   };
 
   const payload: RuntimeProbeResponse = {
@@ -186,4 +204,3 @@ export async function GET() {
   cached = { checkedAt: now, payload };
   return NextResponse.json(payload, { status: 200 });
 }
-

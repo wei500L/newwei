@@ -2,7 +2,7 @@
 
 import {
   CRAWL4AI_LLM_OPTION_GUARD_MESSAGE,
-  assertNoCrawl4aiLlmOptions
+  assertNoCrawl4aiLlmOptions,
 } from "@modular/utils";
 import {
   Alert,
@@ -19,15 +19,26 @@ import {
   Table,
   Tag,
   Typography,
-  message
+  message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import { applyAutoBrowserHeadersToCrawlOptions } from "@/lib/crawl-browser-headers";
+import {
+  applyHeadlessModeToCrawlOptions,
+  resolveHeadlessModeFromHeadlessValue,
+} from "@/lib/crawl-headless-mode";
 
 interface CrawlTemplateRecord {
   id: string;
@@ -70,22 +81,31 @@ const parseJsonField = (value: string | undefined, label: string) => {
     }
     return parsed as Record<string, unknown>;
   } catch (error) {
-    throw new Error(error instanceof Error ? error.message : `${label} must be a valid JSON object`);
+    throw new Error(
+      error instanceof Error
+        ? error.message
+        : `${label} must be a valid JSON object`,
+    );
   }
 };
 
-const normalizeString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const normalizeString = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
 
-const normalizeBoolean = (value: unknown) => (typeof value === "boolean" ? value : false);
+const normalizeBoolean = (value: unknown) =>
+  typeof value === "boolean" ? value : false;
 
 const normalizeOptions = (value: unknown) =>
-  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 
 export function CrawlTemplatesContent() {
   const { t } = useTranslation();
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const canView =
+    permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
   const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(false);
@@ -102,19 +122,26 @@ export function CrawlTemplatesContent() {
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
-    [session?.accessToken]
+    [session?.accessToken],
   );
 
   const loadTemplates = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get<CrawlTemplateRecord[]>("admin/crawl-templates", {
-        params: { search: search.trim() || undefined }
-      });
+      const response = await apiClient.get<CrawlTemplateRecord[]>(
+        "admin/crawl-templates",
+        {
+          params: { search: search.trim() || undefined },
+        },
+      );
       setTemplates(response.data ?? []);
     } catch (error) {
       captureClientError("Failed to load crawl templates", error);
-      messageApi.error(t("crawlTemplates.errors.loadFailed", { defaultValue: "Failed to load crawl templates." }));
+      messageApi.error(
+        t("crawlTemplates.errors.loadFailed", {
+          defaultValue: "Failed to load crawl templates.",
+        }),
+      );
     } finally {
       setLoading(false);
     }
@@ -142,30 +169,40 @@ export function CrawlTemplatesContent() {
         autoExpandDetails: false,
         requireSameDomain: true,
         allowExternalLinks: true,
-        crawlOptionsJson: "{}"
-      }
+        crawlOptionsJson: "{}",
+      },
     });
   };
 
   const openEdit = (template: CrawlTemplateRecord) => {
     const options = normalizeOptions(template.crawlOptions);
-    const headlessMode =
-      typeof options?.headless === "boolean" ? (options.headless ? "headless" : "headed") : "auto";
-    const antiBotModeRaw = typeof options?.antiBotMode === "string" ? options.antiBotMode.trim().toLowerCase() : "";
+    const headlessMode = resolveHeadlessModeFromHeadlessValue(
+      options?.headless,
+    );
+    const antiBotModeRaw =
+      typeof options?.antiBotMode === "string"
+        ? options.antiBotMode.trim().toLowerCase()
+        : "";
     const antiBotMode =
-      antiBotModeRaw === "enabled" || antiBotModeRaw === "disabled" || antiBotModeRaw === "auto"
+      antiBotModeRaw === "enabled" ||
+      antiBotModeRaw === "disabled" ||
+      antiBotModeRaw === "auto"
         ? (antiBotModeRaw as "auto" | "enabled" | "disabled")
         : "auto";
     const detailExpansionOptions =
-      options?.detailExpansion && typeof options.detailExpansion === "object" && !Array.isArray(options.detailExpansion)
+      options?.detailExpansion &&
+      typeof options.detailExpansion === "object" &&
+      !Array.isArray(options.detailExpansion)
         ? (options.detailExpansion as Record<string, unknown>)
         : null;
     const maxDetailUrls =
-      typeof detailExpansionOptions?.maxDetailUrls === "number" && Number.isFinite(detailExpansionOptions.maxDetailUrls)
+      typeof detailExpansionOptions?.maxDetailUrls === "number" &&
+      Number.isFinite(detailExpansionOptions.maxDetailUrls)
         ? detailExpansionOptions.maxDetailUrls
         : undefined;
     const minRelevanceScore =
-      typeof detailExpansionOptions?.minRelevanceScore === "number" && Number.isFinite(detailExpansionOptions.minRelevanceScore)
+      typeof detailExpansionOptions?.minRelevanceScore === "number" &&
+      Number.isFinite(detailExpansionOptions.minRelevanceScore)
         ? detailExpansionOptions.minRelevanceScore
         : undefined;
     setModalState({
@@ -180,7 +217,9 @@ export function CrawlTemplatesContent() {
         headlessMode,
         antiBotMode,
         enableStealthMode: normalizeBoolean(options?.enableStealthMode),
-        enableUndetectedBrowser: normalizeBoolean(options?.enableUndetectedBrowser),
+        enableUndetectedBrowser: normalizeBoolean(
+          options?.enableUndetectedBrowser,
+        ),
         includeImages: options?.includeImages === false ? false : true,
         qualityProfile:
           options?.qualityProfile === "quality_first" ||
@@ -189,7 +228,9 @@ export function CrawlTemplatesContent() {
             ? options.qualityProfile
             : "quality_first",
         pageTypeHint:
-          options?.pageTypeHint === "auto" || options?.pageTypeHint === "list" || options?.pageTypeHint === "detail"
+          options?.pageTypeHint === "auto" ||
+          options?.pageTypeHint === "list" ||
+          options?.pageTypeHint === "detail"
             ? options.pageTypeHint
             : "auto",
         autoExpandDetails: normalizeBoolean(options?.autoExpandDetails),
@@ -203,8 +244,8 @@ export function CrawlTemplatesContent() {
           typeof detailExpansionOptions?.allowExternalLinks === "boolean"
             ? detailExpansionOptions.allowExternalLinks
             : true,
-        crawlOptionsJson: options ? JSON.stringify(options, null, 2) : "{}"
-      }
+        crawlOptionsJson: options ? JSON.stringify(options, null, 2) : "{}",
+      },
     });
   };
 
@@ -226,13 +267,7 @@ export function CrawlTemplatesContent() {
       delete base.userAgent;
     }
 
-    if (values.headlessMode === "headless") {
-      base.headless = true;
-    } else if (values.headlessMode === "headed") {
-      base.headless = false;
-    } else {
-      delete base.headless;
-    }
+    applyHeadlessModeToCrawlOptions(base, values.headlessMode);
 
     if (values.enableStealthMode) {
       base.enableStealthMode = true;
@@ -281,11 +316,22 @@ export function CrawlTemplatesContent() {
     if (values.autoExpandDetails) {
       base.autoExpandDetails = true;
       const detailExpansion: Record<string, unknown> = {};
-      if (typeof values.maxDetailUrls === "number" && Number.isFinite(values.maxDetailUrls)) {
-        detailExpansion.maxDetailUrls = Math.max(1, Math.min(30, Math.round(values.maxDetailUrls)));
+      if (
+        typeof values.maxDetailUrls === "number" &&
+        Number.isFinite(values.maxDetailUrls)
+      ) {
+        detailExpansion.maxDetailUrls = Math.max(
+          1,
+          Math.min(30, Math.round(values.maxDetailUrls)),
+        );
       }
-      if (typeof values.minRelevanceScore === "number" && Number.isFinite(values.minRelevanceScore)) {
-        detailExpansion.minRelevanceScore = Number(Math.max(0, Math.min(1, values.minRelevanceScore)).toFixed(3));
+      if (
+        typeof values.minRelevanceScore === "number" &&
+        Number.isFinite(values.minRelevanceScore)
+      ) {
+        detailExpansion.minRelevanceScore = Number(
+          Math.max(0, Math.min(1, values.minRelevanceScore)).toFixed(3),
+        );
       }
       if (typeof values.requireSameDomain === "boolean") {
         detailExpansion.requireSameDomain = values.requireSameDomain;
@@ -316,18 +362,25 @@ export function CrawlTemplatesContent() {
         name: values.name,
         description: values.description?.trim() ?? "",
         isActive: values.isActive,
-        crawlOptions
+        crawlOptions,
       };
       const currentEditing = modalState.editing;
       if (currentEditing) {
-        await apiClient.patch(`admin/crawl-templates/${currentEditing.id}`, payload);
+        await apiClient.patch(
+          `admin/crawl-templates/${currentEditing.id}`,
+          payload,
+        );
       } else {
         await apiClient.post("admin/crawl-templates", payload);
       }
       messageApi.success(
         currentEditing
-          ? t("crawlTemplates.messages.updated", { defaultValue: "Template updated." })
-          : t("crawlTemplates.messages.created", { defaultValue: "Template created." })
+          ? t("crawlTemplates.messages.updated", {
+              defaultValue: "Template updated.",
+            })
+          : t("crawlTemplates.messages.created", {
+              defaultValue: "Template created.",
+            }),
       );
       setModalState({ open: false, editing: null, initialValues: {} });
       await loadTemplates();
@@ -336,7 +389,9 @@ export function CrawlTemplatesContent() {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("crawlTemplates.errors.saveFailed", { defaultValue: "Failed to save crawl template." })
+          : t("crawlTemplates.errors.saveFailed", {
+              defaultValue: "Failed to save crawl template.",
+            }),
       );
     } finally {
       setSaving(false);
@@ -345,35 +400,52 @@ export function CrawlTemplatesContent() {
 
   const handleDelete = (template: CrawlTemplateRecord) => {
     Modal.confirm({
-      title: t("crawlTemplates.delete.title", { defaultValue: "Delete template?" }),
+      title: t("crawlTemplates.delete.title", {
+        defaultValue: "Delete template?",
+      }),
       content: t("crawlTemplates.delete.description", {
-        defaultValue: "News sources using this template will stop applying it."
+        defaultValue: "News sources using this template will stop applying it.",
       }),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await apiClient.delete(`admin/crawl-templates/${template.id}`);
           await loadTemplates();
-          messageApi.success(t("crawlTemplates.messages.deleted", { defaultValue: "Template deleted." }));
+          messageApi.success(
+            t("crawlTemplates.messages.deleted", {
+              defaultValue: "Template deleted.",
+            }),
+          );
         } catch (error) {
           captureClientError("Failed to delete crawl template", error);
-          messageApi.error(t("crawlTemplates.errors.deleteFailed", { defaultValue: "Failed to delete template." }));
+          messageApi.error(
+            t("crawlTemplates.errors.deleteFailed", {
+              defaultValue: "Failed to delete template.",
+            }),
+          );
         }
-      }
+      },
     });
   };
 
   if (status === "loading") {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
-        <Typography.Text type="secondary">{t("common.loading", { defaultValue: "Loading..." })}</Typography.Text>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+      >
+        <Typography.Text type="secondary">
+          {t("common.loading", { defaultValue: "Loading..." })}
+        </Typography.Text>
       </div>
     );
   }
 
   if (!canView) {
     return (
-      <Card className="content-card" title={t("crawlTemplates.title", { defaultValue: "Crawl Templates" })}>
+      <Card
+        className="content-card"
+        title={t("crawlTemplates.title", { defaultValue: "Crawl Templates" })}
+      >
         <Alert
           type="warning"
           message={t("settings.adminOnly.title")}
@@ -386,7 +458,11 @@ export function CrawlTemplatesContent() {
   const renderTemplateStrategy = (record: CrawlTemplateRecord): ReactNode => {
     const options = normalizeOptions(record.crawlOptions);
     if (!options) {
-      return <Typography.Text type="secondary">{t("common.emptyValue")}</Typography.Text>;
+      return (
+        <Typography.Text type="secondary">
+          {t("common.emptyValue")}
+        </Typography.Text>
+      );
     }
 
     const tags: ReactNode[] = [];
@@ -402,13 +478,17 @@ export function CrawlTemplatesContent() {
     if (options.antiBotMode === "enabled") {
       tags.push(
         <Tag key="antiBotMode" color="volcano">
-          {t("crawlTemplates.fields.antiBotModeEnabled", { defaultValue: "Anti-bot retry: Enabled" })}
+          {t("crawlTemplates.fields.antiBotModeEnabled", {
+            defaultValue: "Anti-bot retry: Enabled",
+          })}
         </Tag>,
       );
     } else if (options.antiBotMode === "disabled") {
       tags.push(
         <Tag key="antiBotMode" color="default">
-          {t("crawlTemplates.fields.antiBotModeDisabled", { defaultValue: "Anti-bot retry: Disabled" })}
+          {t("crawlTemplates.fields.antiBotModeDisabled", {
+            defaultValue: "Anti-bot retry: Disabled",
+          })}
         </Tag>,
       );
     }
@@ -492,7 +572,9 @@ export function CrawlTemplatesContent() {
         {tags}
       </Space>
     ) : (
-      <Typography.Text type="secondary">{t("crawlTemplates.columns.strategyEmpty", { defaultValue: "Default" })}</Typography.Text>
+      <Typography.Text type="secondary">
+        {t("crawlTemplates.columns.strategyEmpty", { defaultValue: "Default" })}
+      </Typography.Text>
     );
   };
 
@@ -505,17 +587,20 @@ export function CrawlTemplatesContent() {
         <Space direction="vertical" size={2}>
           <Typography.Text strong>{value}</Typography.Text>
           {record.description ? (
-            <Typography.Text type="secondary" ellipsis={{ tooltip: record.description }}>
+            <Typography.Text
+              type="secondary"
+              ellipsis={{ tooltip: record.description }}
+            >
               {record.description}
             </Typography.Text>
           ) : null}
         </Space>
-      )
+      ),
     },
     {
       title: t("crawlTemplates.columns.strategy", { defaultValue: "Strategy" }),
       key: "strategy",
-      render: (_: unknown, record) => renderTemplateStrategy(record)
+      render: (_: unknown, record) => renderTemplateStrategy(record),
     },
     {
       title: t("crawlTemplates.columns.status", { defaultValue: "Status" }),
@@ -523,9 +608,11 @@ export function CrawlTemplatesContent() {
       key: "isActive",
       render: (value: boolean) => (
         <Tag color={value ? "green" : "default"}>
-          {value ? t("common.enabled", { defaultValue: "Enabled" }) : t("common.disabled", { defaultValue: "Disabled" })}
+          {value
+            ? t("common.enabled", { defaultValue: "Enabled" })
+            : t("common.disabled", { defaultValue: "Disabled" })}
         </Tag>
-      )
+      ),
     },
     {
       title: t("common.actions", { defaultValue: "Actions" }),
@@ -543,8 +630,8 @@ export function CrawlTemplatesContent() {
             </Button>
           ) : null}
         </Space>
-      )
-    }
+      ),
+    },
   ];
 
   return (
@@ -556,7 +643,9 @@ export function CrawlTemplatesContent() {
         extra={
           canManage ? (
             <Button type="primary" onClick={openCreate}>
-              {t("crawlTemplates.actions.new", { defaultValue: "New template" })}
+              {t("crawlTemplates.actions.new", {
+                defaultValue: "New template",
+              })}
             </Button>
           ) : null
         }
@@ -565,7 +654,9 @@ export function CrawlTemplatesContent() {
           <Input
             id="crawl-templates-search"
             name="crawlTemplatesSearch"
-            placeholder={t("crawlTemplates.searchPlaceholder", { defaultValue: "Search templates" })}
+            placeholder={t("crawlTemplates.searchPlaceholder", {
+              defaultValue: "Search templates",
+            })}
             allowClear
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -576,7 +667,10 @@ export function CrawlTemplatesContent() {
             loading={loading}
             columns={columns}
             dataSource={templates}
-            pagination={{ pageSize: screens.md ? 10 : 5, showSizeChanger: screens.md }}
+            pagination={{
+              pageSize: screens.md ? 10 : 5,
+              showSizeChanger: screens.md,
+            }}
           />
         </Space>
       </Card>
@@ -585,7 +679,9 @@ export function CrawlTemplatesContent() {
         open={modalState.open}
         title={
           modalState.editing
-            ? t("crawlTemplates.actions.edit", { defaultValue: "Edit template" })
+            ? t("crawlTemplates.actions.edit", {
+                defaultValue: "Edit template",
+              })
             : t("crawlTemplates.actions.new", { defaultValue: "New template" })
         }
         onCancel={() => {
@@ -595,7 +691,9 @@ export function CrawlTemplatesContent() {
         destroyOnHidden
       >
         <Form
-          key={modalState.open ? (modalState.editing?.id ?? "create") : "closed"}
+          key={
+            modalState.open ? (modalState.editing?.id ?? "create") : "closed"
+          }
           id={formId}
           layout="vertical"
           initialValues={modalState.initialValues}
@@ -610,166 +708,241 @@ export function CrawlTemplatesContent() {
           </Form.Item>
           <Form.Item
             name="description"
-            label={t("crawlTemplates.fields.description", { defaultValue: "Description" })}
+            label={t("crawlTemplates.fields.description", {
+              defaultValue: "Description",
+            })}
           >
             <Input />
           </Form.Item>
           <Form.Item
             name="isActive"
-            label={t("crawlTemplates.fields.active", { defaultValue: "Active" })}
+            label={t("crawlTemplates.fields.active", {
+              defaultValue: "Active",
+            })}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
 
           <Typography.Title level={5} style={{ marginBottom: 0 }}>
-            {t("crawlTemplates.sections.commonOptions", { defaultValue: "Common Options" })}
+            {t("crawlTemplates.sections.commonOptions", {
+              defaultValue: "Common Options",
+            })}
           </Typography.Title>
 
           <Form.Item
             name="proxyUrl"
-            label={t("crawlTemplates.fields.proxyUrl", { defaultValue: "Proxy URL" })}
+            label={t("crawlTemplates.fields.proxyUrl", {
+              defaultValue: "Proxy URL",
+            })}
           >
             <Input placeholder="http(s)://user:pass@host:port" />
           </Form.Item>
           <Form.Item
             name="userAgent"
-            label={t("crawlTemplates.fields.userAgent", { defaultValue: "User Agent" })}
+            label={t("crawlTemplates.fields.userAgent", {
+              defaultValue: "User Agent",
+            })}
           >
             <Input />
           </Form.Item>
           <Form.Item
             name="headlessMode"
-            label={t("crawlTemplates.fields.headless", { defaultValue: "Headless mode" })}
+            label={t("crawlTemplates.fields.headless", {
+              defaultValue: "Headless mode",
+            })}
             tooltip={t("crawlTemplates.fields.headlessHint", {
               defaultValue:
-                "Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch back to Headless or enable Xvfb in docker-compose."
+                "Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch back to Headless or enable Xvfb in docker-compose.",
             })}
           >
             <Select
               options={[
-                { value: "auto", label: t("crawlTemplates.headless.auto", { defaultValue: "Auto" }) },
-                { value: "headless", label: t("crawlTemplates.headless.headless", { defaultValue: "Headless" }) },
-                { value: "headed", label: t("crawlTemplates.headless.headed", { defaultValue: "Headed (Xvfb)" }) }
+                {
+                  value: "auto",
+                  label: t("crawlTemplates.headless.auto", {
+                    defaultValue: "Auto",
+                  }),
+                },
+                {
+                  value: "headless",
+                  label: t("crawlTemplates.headless.headless", {
+                    defaultValue: "Headless",
+                  }),
+                },
+                {
+                  value: "headed",
+                  label: t("crawlTemplates.headless.headed", {
+                    defaultValue: "Headed (Xvfb)",
+                  }),
+                },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="enableStealthMode"
-            label={t("crawlTemplates.fields.stealth", { defaultValue: "Stealth mode" })}
+            label={t("crawlTemplates.fields.stealth", {
+              defaultValue: "Stealth mode",
+            })}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
           <Form.Item
             name="enableUndetectedBrowser"
-            label={t("crawlTemplates.fields.undetected", { defaultValue: "Undetected browser" })}
+            label={t("crawlTemplates.fields.undetected", {
+              defaultValue: "Undetected browser",
+            })}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
           <Form.Item
             name="antiBotMode"
-            label={t("crawlTemplates.fields.antiBotMode", { defaultValue: "Anti-bot retry mode" })}
+            label={t("crawlTemplates.fields.antiBotMode", {
+              defaultValue: "Anti-bot retry mode",
+            })}
             tooltip={t("crawlTemplates.fields.antiBotModeHint", {
               defaultValue:
-                "Auto removes crawlOptions.antiBotMode. Enabled/Disabled explicitly control anti-bot retry when failures occur."
+                "Auto removes crawlOptions.antiBotMode. Enabled/Disabled explicitly control anti-bot retry when failures occur.",
             })}
           >
             <Select
               options={[
-                { value: "auto", label: t("crawlTemplates.triState.auto", { defaultValue: "Auto (inherit)" }) },
-                { value: "enabled", label: t("crawlTemplates.triState.enable", { defaultValue: "Enabled" }) },
-                { value: "disabled", label: t("crawlTemplates.triState.disable", { defaultValue: "Disabled" }) }
+                {
+                  value: "auto",
+                  label: t("crawlTemplates.triState.auto", {
+                    defaultValue: "Auto (inherit)",
+                  }),
+                },
+                {
+                  value: "enabled",
+                  label: t("crawlTemplates.triState.enable", {
+                    defaultValue: "Enabled",
+                  }),
+                },
+                {
+                  value: "disabled",
+                  label: t("crawlTemplates.triState.disable", {
+                    defaultValue: "Disabled",
+                  }),
+                },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="includeImages"
-            label={t("crawlTemplates.fields.images", { defaultValue: "Include images" })}
+            label={t("crawlTemplates.fields.images", {
+              defaultValue: "Include images",
+            })}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
           <Form.Item
             name="qualityProfile"
-            label={t("crawlTemplates.fields.qualityProfile", { defaultValue: "Quality profile" })}
+            label={t("crawlTemplates.fields.qualityProfile", {
+              defaultValue: "Quality profile",
+            })}
           >
             <Select
               options={[
                 {
                   value: "quality_first",
-                  label: t("crawl.settings.qualityProfileOptions.qualityFirst", {
-                    defaultValue: "Quality first (RAG)"
-                  })
+                  label: t(
+                    "crawl.settings.qualityProfileOptions.qualityFirst",
+                    {
+                      defaultValue: "Quality first (RAG)",
+                    },
+                  ),
                 },
                 {
                   value: "balanced",
                   label: t("crawl.settings.qualityProfileOptions.balanced", {
-                    defaultValue: "Balanced"
-                  })
+                    defaultValue: "Balanced",
+                  }),
                 },
                 {
                   value: "speed_first",
                   label: t("crawl.settings.qualityProfileOptions.speedFirst", {
-                    defaultValue: "Speed first"
-                  })
-                }
+                    defaultValue: "Speed first",
+                  }),
+                },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="pageTypeHint"
-            label={t("crawlTemplates.fields.pageTypeHint", { defaultValue: "Page type hint" })}
+            label={t("crawlTemplates.fields.pageTypeHint", {
+              defaultValue: "Page type hint",
+            })}
           >
             <Select
               options={[
                 {
                   value: "auto",
-                  label: t("crawl.settings.pageTypeHintOptions.auto", { defaultValue: "Auto detect" })
+                  label: t("crawl.settings.pageTypeHintOptions.auto", {
+                    defaultValue: "Auto detect",
+                  }),
                 },
                 {
                   value: "list",
-                  label: t("crawl.settings.pageTypeHintOptions.list", { defaultValue: "List page" })
+                  label: t("crawl.settings.pageTypeHintOptions.list", {
+                    defaultValue: "List page",
+                  }),
                 },
                 {
                   value: "detail",
                   label: t("crawl.settings.pageTypeHintOptions.detail", {
-                    defaultValue: "Detail page"
-                  })
-                }
+                    defaultValue: "Detail page",
+                  }),
+                },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="autoExpandDetails"
-            label={t("crawlTemplates.fields.autoExpandDetails", { defaultValue: "Auto expand details" })}
+            label={t("crawlTemplates.fields.autoExpandDetails", {
+              defaultValue: "Auto expand details",
+            })}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
-          <Form.Item noStyle shouldUpdate={(prev, next) => prev.autoExpandDetails !== next.autoExpandDetails}>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, next) =>
+              prev.autoExpandDetails !== next.autoExpandDetails
+            }
+          >
             {({ getFieldValue }) =>
               getFieldValue("autoExpandDetails") ? (
                 <>
                   <Form.Item
                     name="maxDetailUrls"
-                    label={t("crawl.detailExpansion.maxDetailUrls", { defaultValue: "Max detail URLs" })}
+                    label={t("crawl.detailExpansion.maxDetailUrls", {
+                      defaultValue: "Max detail URLs",
+                    })}
                   >
                     <InputNumber min={1} max={30} style={{ width: "100%" }} />
                   </Form.Item>
                   <Form.Item
                     name="minRelevanceScore"
                     label={t("crawl.detailExpansion.minRelevanceScore", {
-                      defaultValue: "Min relevance score"
+                      defaultValue: "Min relevance score",
                     })}
                   >
-                    <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+                    <InputNumber
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      style={{ width: "100%" }}
+                    />
                   </Form.Item>
                   <Form.Item
                     name="requireSameDomain"
                     label={t("crawl.detailExpansion.requireSameDomain", {
-                      defaultValue: "Require same domain"
+                      defaultValue: "Require same domain",
                     })}
                     valuePropName="checked"
                   >
@@ -778,7 +951,7 @@ export function CrawlTemplatesContent() {
                   <Form.Item
                     name="allowExternalLinks"
                     label={t("crawl.detailExpansion.allowExternalLinks", {
-                      defaultValue: "Allow external links"
+                      defaultValue: "Allow external links",
                     })}
                     valuePropName="checked"
                   >
@@ -793,14 +966,70 @@ export function CrawlTemplatesContent() {
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message={t("crawlTemplates.hints.noLlmTitle", { defaultValue: "No LLM in crawl stage" })}
+            message={t("crawlTemplates.hints.noLlmTitle", {
+              defaultValue: "No LLM in crawl stage",
+            })}
             description={t("crawlTemplates.hints.noLlmDescription", {
-              defaultValue: CRAWL4AI_LLM_OPTION_GUARD_MESSAGE
+              defaultValue: CRAWL4AI_LLM_OPTION_GUARD_MESSAGE,
             })}
           />
+          <Form.Item noStyle shouldUpdate>
+            {({ getFieldValue, setFieldsValue }) => (
+              <Space style={{ marginBottom: 8 }}>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    try {
+                      const currentRaw = getFieldValue("crawlOptionsJson") as
+                        | string
+                        | undefined;
+                      const current =
+                        parseJsonField(currentRaw, "crawlOptions") ?? {};
+                      const explicitUserAgent = normalizeString(
+                        getFieldValue("userAgent"),
+                      );
+                      const sourceOptions: Record<string, unknown> = {
+                        ...current,
+                      };
+                      if (explicitUserAgent) {
+                        sourceOptions.userAgent = explicitUserAgent;
+                      } else {
+                        delete sourceOptions.userAgent;
+                      }
+                      const next =
+                        applyAutoBrowserHeadersToCrawlOptions(sourceOptions);
+                      setFieldsValue({
+                        crawlOptionsJson: JSON.stringify(next, null, 2),
+                      });
+                    } catch (error) {
+                      messageApi.error(
+                        error instanceof Error
+                          ? error.message
+                          : t("common.operationFailed", {
+                              defaultValue: "Operation failed.",
+                            }),
+                      );
+                    }
+                  }}
+                >
+                  {t("crawl.browser.headers.autoFillSecCh", {
+                    defaultValue: "Auto-fill Sec-CH headers",
+                  })}
+                </Button>
+                <Typography.Text type="secondary">
+                  {t("crawl.browser.headers.autoFillSecChHint", {
+                    defaultValue:
+                      "Adds sec-fetch defaults and, when User-Agent is deterministic Chromium, matching sec-ch headers if missing.",
+                  })}
+                </Typography.Text>
+              </Space>
+            )}
+          </Form.Item>
           <Form.Item
             name="crawlOptionsJson"
-            label={t("crawlTemplates.fields.advancedJson", { defaultValue: "Advanced crawl options (JSON)" })}
+            label={t("crawlTemplates.fields.advancedJson", {
+              defaultValue: "Advanced crawl options (JSON)",
+            })}
             validateTrigger="onBlur"
             rules={[
               {
@@ -814,15 +1043,21 @@ export function CrawlTemplatesContent() {
                     parsed = JSON.parse(trimmed);
                   } catch (error) {
                     throw new Error(
-                      error instanceof Error ? error.message : "crawlOptions must be a valid JSON object"
+                      error instanceof Error
+                        ? error.message
+                        : "crawlOptions must be a valid JSON object",
                     );
                   }
-                  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                  if (
+                    !parsed ||
+                    typeof parsed !== "object" ||
+                    Array.isArray(parsed)
+                  ) {
                     throw new Error("crawlOptions must be a JSON object");
                   }
                   assertNoCrawl4aiLlmOptions(parsed, "crawlOptions");
-                }
-              }
+                },
+              },
             ]}
           >
             <Input.TextArea autoSize={{ minRows: 4, maxRows: 12 }} />

@@ -17,6 +17,7 @@ import type { Dayjs } from "dayjs";
 export interface CreateCrawlTaskFormValues extends CrawlOptionsFormValues {
   url: string;
   displayName?: string;
+  headlessMode?: "auto" | "headless" | "headed";
   ingestToItems?: boolean;
   keywords?: string[];
   timeRange?: Dayjs[];

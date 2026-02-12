@@ -1,12 +1,20 @@
 import { HttpService } from "@nestjs/axios";
 import { Injectable, Logger } from "@nestjs/common";
+import {
+  buildAutoBrowserHeadersForCrawlOptions,
+  mergeBrowserHeaders,
+  normalizeBrowserHeaders,
+} from "@modular/utils";
 import type { AxiosError } from "axios";
 import { lastValueFrom, TimeoutError, timeout } from "rxjs";
 
 import { validateSsrfUrl } from "../../common/validators/ssrf-url.validator";
 import { EnvService } from "../config/config.service";
 
-import { CrawlSettingsService, type CrawlClientSettings } from "./crawl-settings.service";
+import {
+  CrawlSettingsService,
+  type CrawlClientSettings,
+} from "./crawl-settings.service";
 import type {
   CrawlTaskOptions,
   CrawlMultiUrlConfig,
@@ -22,7 +30,7 @@ import type {
   CrawlCleanMarkdownOptions,
   CrawlTableExtractionStrategy,
   Crawl4aiTablePayload,
-  CrawlVirtualScrollConfig
+  CrawlVirtualScrollConfig,
 } from "./crawl.types";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
@@ -101,7 +109,7 @@ interface CrawlScanProfile {
   scrollDelaySeconds?: number;
   delayBeforeReturnHtmlMs?: number;
   waitForTimeoutMs?: number;
-  waitUntil?: 'domcontentloaded' | 'load' | 'networkidle' | 'commit';
+  waitUntil?: "domcontentloaded" | "load" | "networkidle" | "commit";
   pageTimeoutMs?: number;
   adjustViewportToContent?: boolean;
 }
@@ -114,7 +122,7 @@ export class Crawl4aiClient {
   constructor(
     private readonly http: HttpService,
     private readonly crawlSettings: CrawlSettingsService,
-    private readonly env: EnvService
+    private readonly env: EnvService,
   ) {}
 
   async crawl(request: Crawl4aiRequest): Promise<Crawl4aiResponse> {
@@ -127,26 +135,37 @@ export class Crawl4aiClient {
     } catch (error) {
       let resolvedError: unknown = error;
       let resolvedPayload: Crawl4aiHttpPayload = payload;
-      const compatibilityPayload = this.buildPrefetchCompatibilityFallbackPayload(payload, error);
+      const compatibilityPayload =
+        this.buildPrefetchCompatibilityFallbackPayload(payload, error);
       if (compatibilityPayload) {
         this.logger.warn(
-          "crawl4ai server rejected prefetch; retrying without prefetch for compatibility"
+          "crawl4ai server rejected prefetch; retrying without prefetch for compatibility",
         );
         try {
-          return await this.sendCrawlRequest(compatibilityPayload, settings.requestTimeoutMs);
+          return await this.sendCrawlRequest(
+            compatibilityPayload,
+            settings.requestTimeoutMs,
+          );
         } catch (retryError) {
           resolvedError = retryError;
           resolvedPayload = compatibilityPayload;
         }
       }
 
-      const scanFallbackPayload = this.buildScanFullPageFallbackPayload(request, resolvedPayload, resolvedError);
+      const scanFallbackPayload = this.buildScanFullPageFallbackPayload(
+        request,
+        resolvedPayload,
+        resolvedError,
+      );
       if (scanFallbackPayload) {
         this.logger.warn(
-          "scanFullPage failed or timed out; retrying crawl4ai with bounded virtualScroll fallback"
+          "scanFullPage failed or timed out; retrying crawl4ai with bounded virtualScroll fallback",
         );
         try {
-          return await this.sendCrawlRequest(scanFallbackPayload, settings.requestTimeoutMs);
+          return await this.sendCrawlRequest(
+            scanFallbackPayload,
+            settings.requestTimeoutMs,
+          );
         } catch (fallbackError) {
           resolvedError = fallbackError;
         }
@@ -158,17 +177,23 @@ export class Crawl4aiClient {
         const hints: string[] = [];
         if (request.options?.scanFullPage) {
           hints.push(
-            "Hint: scanFullPage can hang on infinite-scroll pages. Consider disabling scanFullPage or switching to virtualScroll (bounded scrollCount)."
+            "Hint: scanFullPage can hang on infinite-scroll pages. Consider disabling scanFullPage or switching to virtualScroll (bounded scrollCount).",
           );
         }
-        if (request.options?.waitForImages || request.options?.includeImages || request.options?.storeMedia) {
+        if (
+          request.options?.waitForImages ||
+          request.options?.includeImages ||
+          request.options?.storeMedia
+        ) {
           hints.push(
-            "Hint: images/media extraction can slow down crawling. Consider disabling waitForImages/includeImages/storeMedia or increasing CRAWL4AI_TIMEOUT_MS."
+            "Hint: images/media extraction can slow down crawling. Consider disabling waitForImages/includeImages/storeMedia or increasing CRAWL4AI_TIMEOUT_MS.",
           );
         }
         const prefix = requestUrl ? `${requestUrl}: ` : "";
         const messageWithHint =
-          hints.length > 0 ? `${prefix}${timeoutMessage}\n${hints.join("\n")}` : `${prefix}${timeoutMessage}`;
+          hints.length > 0
+            ? `${prefix}${timeoutMessage}\n${hints.join("\n")}`
+            : `${prefix}${timeoutMessage}`;
         throw new Crawl4aiRequestException(messageWithHint, 408, resolvedError);
       }
 
@@ -194,7 +219,9 @@ export class Crawl4aiClient {
         return undefined;
       };
 
-      const messageFromPayload = (payloadValue: unknown): string | undefined => {
+      const messageFromPayload = (
+        payloadValue: unknown,
+      ): string | undefined => {
         if (!payloadValue) {
           return undefined;
         }
@@ -221,12 +248,15 @@ export class Crawl4aiClient {
       };
 
       const payloadMessage = messageFromPayload(responseData);
-      const fallback = normalizeMessage(axiosError.message) ?? "crawl4ai request failed";
+      const fallback =
+        normalizeMessage(axiosError.message) ?? "crawl4ai request failed";
       const normalizedStatus =
-        typeof status === "number" && Number.isFinite(status) ? Math.round(status) : undefined;
+        typeof status === "number" && Number.isFinite(status)
+          ? Math.round(status)
+          : undefined;
 
       const messageParts = [payloadMessage, fallback].filter(
-        (entry): entry is string => Boolean(entry && entry.length > 0)
+        (entry): entry is string => Boolean(entry && entry.length > 0),
       );
       const messageWithStatus =
         normalizedStatus !== undefined
@@ -238,39 +268,51 @@ export class Crawl4aiClient {
         normalizedMessage.includes("cannot open display") ||
         normalizedMessage.includes("missing x server") ||
         normalizedMessage.includes("xvfb") ||
-        (normalizedMessage.includes("x11") && normalizedMessage.includes("display"));
+        (normalizedMessage.includes("x11") &&
+          normalizedMessage.includes("display"));
       const maybeProxyIssue =
         normalizedMessage.includes("err_proxy_connection_failed") ||
         normalizedMessage.includes("proxy_connection_failed") ||
         normalizedMessage.includes("proxy connection failed") ||
-        (normalizedMessage.includes("proxy") && normalizedMessage.includes("connection failed"));
+        (normalizedMessage.includes("proxy") &&
+          normalizedMessage.includes("connection failed"));
       const hints: string[] = [];
       if (maybeDisplayIssue) {
         hints.push(
-          "Hint: crawl4ai may be running with headless=false. Ensure Xvfb/DISPLAY is configured (see infra/docker/docker-compose.yml) or set crawlOptions.headless=true."
+          "Hint: crawl4ai may be running with headless=false. Ensure Xvfb/DISPLAY is configured (see infra/docker/docker-compose.yml) or set crawlOptions.headless=true.",
         );
       }
       if (maybeProxyIssue) {
         hints.push(
-          "Hint: crawl4ai failed to connect to the proxy. If your proxy is on the Docker host, use host.docker.internal (e.g. http://host.docker.internal:7890) instead of 127.0.0.1/localhost, or disable proxyUrl."
+          "Hint: crawl4ai failed to connect to the proxy. If your proxy is on the Docker host, use host.docker.internal (e.g. http://host.docker.internal:7890) instead of 127.0.0.1/localhost, or disable proxyUrl.",
         );
       }
-      const messageWithHint = hints.length > 0 ? `${messageWithStatus}\n${hints.join("\n")}` : messageWithStatus;
+      const messageWithHint =
+        hints.length > 0
+          ? `${messageWithStatus}\n${hints.join("\n")}`
+          : messageWithStatus;
 
-      throw new Crawl4aiRequestException(messageWithHint, status, resolvedError);
+      throw new Crawl4aiRequestException(
+        messageWithHint,
+        status,
+        resolvedError,
+      );
     }
   }
 
-  private async sendCrawlRequest(payload: Crawl4aiHttpPayload, requestTimeoutMs: number): Promise<Crawl4aiResponse> {
+  private async sendCrawlRequest(
+    payload: Crawl4aiHttpPayload,
+    requestTimeoutMs: number,
+  ): Promise<Crawl4aiResponse> {
     const response = await lastValueFrom(
       this.http
         .post<Crawl4aiResponse>("/crawl", payload, {
           headers: {
-            "content-type": "application/json"
+            "content-type": "application/json",
           },
-          timeout: requestTimeoutMs
+          timeout: requestTimeoutMs,
         })
-        .pipe(timeout(requestTimeoutMs))
+        .pipe(timeout(requestTimeoutMs)),
     );
 
     return this.normalizeCrawlResponse(response.data);
@@ -284,22 +326,25 @@ export class Crawl4aiClient {
       warnings: data?.warnings ?? [],
       serverMemoryMb: data?.serverMemoryMb,
       peakMemoryMb: data?.peakMemoryMb,
-      memoryEfficiency: data?.memoryEfficiency
+      memoryEfficiency: data?.memoryEfficiency,
     };
   }
 
   private buildPrefetchCompatibilityFallbackPayload(
     payload: Crawl4aiHttpPayload,
-    error: unknown
+    error: unknown,
   ): Crawl4aiHttpPayload | null {
     if (!this.isPrefetchFallbackCandidateError(error)) {
       return null;
     }
 
-    const hasPrimaryPrefetch = Object.prototype.hasOwnProperty.call(payload.crawler_config.params, "prefetch");
+    const hasPrimaryPrefetch = Object.prototype.hasOwnProperty.call(
+      payload.crawler_config.params,
+      "prefetch",
+    );
     const hasMultiPrefetch =
       payload.crawler_configurations?.some((entry) =>
-        Object.prototype.hasOwnProperty.call(entry.params ?? {}, "prefetch")
+        Object.prototype.hasOwnProperty.call(entry.params ?? {}, "prefetch"),
       ) ?? false;
 
     if (!hasPrimaryPrefetch && !hasMultiPrefetch) {
@@ -308,7 +353,8 @@ export class Crawl4aiClient {
 
     const clonedPayload = this.clonePayload(payload);
 
-    delete (clonedPayload.crawler_config.params as Record<string, unknown>).prefetch;
+    delete (clonedPayload.crawler_config.params as Record<string, unknown>)
+      .prefetch;
     if (clonedPayload.crawler_configurations) {
       for (const entry of clonedPayload.crawler_configurations) {
         delete (entry.params as Record<string, unknown>).prefetch;
@@ -321,24 +367,33 @@ export class Crawl4aiClient {
   private buildScanFullPageFallbackPayload(
     request: Crawl4aiRequest,
     payload: Crawl4aiHttpPayload,
-    error: unknown
+    error: unknown,
   ): Crawl4aiHttpPayload | null {
     if (!this.isScanFullPageFallbackCandidate(request, payload, error)) {
       return null;
     }
 
     const clonedPayload = this.clonePayload(payload);
-    const crawlerParams = clonedPayload.crawler_config.params as Record<string, unknown>;
+    const crawlerParams = clonedPayload.crawler_config.params as Record<
+      string,
+      unknown
+    >;
 
     const sourceScrollDelay =
-      typeof crawlerParams.scroll_delay === "number" && Number.isFinite(crawlerParams.scroll_delay)
+      typeof crawlerParams.scroll_delay === "number" &&
+      Number.isFinite(crawlerParams.scroll_delay)
         ? crawlerParams.scroll_delay
         : 0.35;
-    const fallbackWaitAfterScroll = Number(Math.max(0.2, Math.min(2.5, sourceScrollDelay + 0.15)).toFixed(2));
+    const fallbackWaitAfterScroll = Number(
+      Math.max(0.2, Math.min(2.5, sourceScrollDelay + 0.15)).toFixed(2),
+    );
     const fallbackScrollCount =
       typeof request.options?.virtualScroll?.scrollCount === "number" &&
       Number.isFinite(request.options.virtualScroll.scrollCount)
-        ? Math.max(4, Math.min(60, Math.round(request.options.virtualScroll.scrollCount)))
+        ? Math.max(
+            4,
+            Math.min(60, Math.round(request.options.virtualScroll.scrollCount)),
+          )
         : 24;
 
     crawlerParams.scan_full_page = false;
@@ -349,30 +404,42 @@ export class Crawl4aiClient {
         container_selector: "body",
         scroll_count: fallbackScrollCount,
         scroll_by: "page_height",
-        wait_after_scroll: fallbackWaitAfterScroll
-      })
+        wait_after_scroll: fallbackWaitAfterScroll,
+      }),
     };
 
     if (typeof crawlerParams.adjust_viewport_to_content !== "boolean") {
       crawlerParams.adjust_viewport_to_content = true;
     }
 
-    if (typeof crawlerParams.wait_until !== "string" || crawlerParams.wait_until === "networkidle") {
+    if (
+      typeof crawlerParams.wait_until !== "string" ||
+      crawlerParams.wait_until === "networkidle"
+    ) {
       crawlerParams.wait_until = "domcontentloaded";
     }
 
     const waitForTimeout = crawlerParams.wait_for_timeout;
-    if (typeof waitForTimeout !== "number" || !Number.isFinite(waitForTimeout)) {
+    if (
+      typeof waitForTimeout !== "number" ||
+      !Number.isFinite(waitForTimeout)
+    ) {
       crawlerParams.wait_for_timeout = 8000;
     } else {
-      crawlerParams.wait_for_timeout = Math.max(3000, Math.min(12000, Math.round(waitForTimeout)));
+      crawlerParams.wait_for_timeout = Math.max(
+        3000,
+        Math.min(12000, Math.round(waitForTimeout)),
+      );
     }
 
     const pageTimeout = crawlerParams.page_timeout;
     if (typeof pageTimeout !== "number" || !Number.isFinite(pageTimeout)) {
       crawlerParams.page_timeout = 45000;
     } else {
-      crawlerParams.page_timeout = Math.max(15000, Math.min(90000, Math.round(pageTimeout)));
+      crawlerParams.page_timeout = Math.max(
+        15000,
+        Math.min(90000, Math.round(pageTimeout)),
+      );
     }
 
     return clonedPayload;
@@ -381,9 +448,12 @@ export class Crawl4aiClient {
   private isScanFullPageFallbackCandidate(
     request: Crawl4aiRequest,
     payload: Crawl4aiHttpPayload,
-    error: unknown
+    error: unknown,
   ): boolean {
-    if (request.options?.scanFullPage !== true || request.options?.virtualScroll) {
+    if (
+      request.options?.scanFullPage !== true ||
+      request.options?.virtualScroll
+    ) {
       return false;
     }
 
@@ -408,7 +478,8 @@ export class Crawl4aiClient {
     return (
       normalizedMessage.includes("timeout") ||
       normalizedMessage.includes("timed out") ||
-      (normalizedMessage.includes("navigation") && normalizedMessage.includes("timeout")) ||
+      (normalizedMessage.includes("navigation") &&
+        normalizedMessage.includes("timeout")) ||
       normalizedMessage.includes("execution context was destroyed") ||
       normalizedMessage.includes("target closed")
     );
@@ -419,14 +490,14 @@ export class Crawl4aiClient {
       ...payload,
       crawler_config: {
         ...payload.crawler_config,
-        params: { ...payload.crawler_config.params }
+        params: { ...payload.crawler_config.params },
       },
       crawler_configurations: payload.crawler_configurations
         ? payload.crawler_configurations.map((entry) => ({
             ...entry,
-            params: { ...entry.params }
+            params: { ...entry.params },
           }))
-        : undefined
+        : undefined,
     };
   }
 
@@ -446,13 +517,20 @@ export class Crawl4aiClient {
 
     if (typeof error === "object") {
       const axiosError = error as AxiosError<unknown>;
-      if (typeof axiosError.message === "string" && axiosError.message.trim().length > 0) {
+      if (
+        typeof axiosError.message === "string" &&
+        axiosError.message.trim().length > 0
+      ) {
         parts.push(axiosError.message.trim());
       }
       const responseData = axiosError.response?.data;
       if (typeof responseData === "string" && responseData.trim().length > 0) {
         parts.push(responseData.trim());
-      } else if (responseData && typeof responseData === "object" && !Array.isArray(responseData)) {
+      } else if (
+        responseData &&
+        typeof responseData === "object" &&
+        !Array.isArray(responseData)
+      ) {
         const record = responseData as Record<string, unknown>;
         for (const key of ["message", "detail", "error"]) {
           const value = record[key];
@@ -487,14 +565,21 @@ export class Crawl4aiClient {
     const axiosError = error as AxiosError<unknown>;
     const messageParts: string[] = [];
 
-    if (typeof axiosError.message === "string" && axiosError.message.trim().length > 0) {
+    if (
+      typeof axiosError.message === "string" &&
+      axiosError.message.trim().length > 0
+    ) {
       messageParts.push(axiosError.message.trim());
     }
 
     const responseData = axiosError.response?.data;
     if (typeof responseData === "string" && responseData.trim().length > 0) {
       messageParts.push(responseData.trim());
-    } else if (responseData && typeof responseData === "object" && !Array.isArray(responseData)) {
+    } else if (
+      responseData &&
+      typeof responseData === "object" &&
+      !Array.isArray(responseData)
+    ) {
       const record = responseData as Record<string, unknown>;
       for (const key of ["message", "detail", "error"]) {
         const value = record[key];
@@ -505,7 +590,10 @@ export class Crawl4aiClient {
     }
 
     const normalized = messageParts.join("\n").toLowerCase();
-    return normalized.includes("unexpected keyword argument") && normalized.includes("prefetch");
+    return (
+      normalized.includes("unexpected keyword argument") &&
+      normalized.includes("prefetch")
+    );
   }
 
   private async ensureHealthy(settings: CrawlClientSettings) {
@@ -517,13 +605,17 @@ export class Crawl4aiClient {
       await lastValueFrom(
         this.http
           .get("/health", {
-            timeout: settings.requestTimeoutMs
+            timeout: settings.requestTimeoutMs,
           })
-          .pipe(timeout(settings.requestTimeoutMs))
+          .pipe(timeout(settings.requestTimeoutMs)),
       );
       this.lastHealthCheck = now;
     } catch (error) {
-      throw new Crawl4aiRequestException("crawl4ai health check failed", undefined, error);
+      throw new Crawl4aiRequestException(
+        "crawl4ai health check failed",
+        undefined,
+        error,
+      );
     }
   }
 
@@ -542,23 +634,25 @@ export class Crawl4aiClient {
         >
       | CrawlStrategyOverrides
       | undefined,
-    mode: "primary" | "override"
+    mode: "primary" | "override",
   ): CrawlScanProfile {
     if (!options) {
       return mode === "primary"
         ? {
             scanFullPage: false,
-            adjustViewportToContent: false
+            adjustViewportToContent: false,
           }
         : {};
     }
 
     const virtualScroll = this.buildVirtualScrollConfig(options.virtualScroll);
     const explicitScanFullPage =
-      typeof options.scanFullPage === "boolean" ? options.scanFullPage : undefined;
+      typeof options.scanFullPage === "boolean"
+        ? options.scanFullPage
+        : undefined;
     const scanFullPage = virtualScroll
       ? false
-      : explicitScanFullPage ?? (mode === "primary" ? false : undefined);
+      : (explicitScanFullPage ?? (mode === "primary" ? false : undefined));
 
     const waitUntil =
       options.waitUntil === "domcontentloaded" ||
@@ -581,31 +675,38 @@ export class Crawl4aiClient {
             ? options.adjustViewportToContent
             : mode === "primary"
               ? false
-              : undefined
+              : undefined,
       };
     }
 
     const scrollDelayMs =
-      typeof options.scrollDelayMs === "number" && Number.isFinite(options.scrollDelayMs)
+      typeof options.scrollDelayMs === "number" &&
+      Number.isFinite(options.scrollDelayMs)
         ? Math.max(50, Math.min(5000, Math.round(options.scrollDelayMs)))
         : 350;
     const resolvedWaitUntil = waitUntil ?? "domcontentloaded";
     const waitForTimeoutMs =
-      typeof options.waitForTimeoutMs === "number" && Number.isFinite(options.waitForTimeoutMs)
+      typeof options.waitForTimeoutMs === "number" &&
+      Number.isFinite(options.waitForTimeoutMs)
         ? Math.max(
             resolvedWaitUntil === "networkidle" ? 5000 : 1000,
-            Math.min(60000, Math.round(options.waitForTimeoutMs))
+            Math.min(60000, Math.round(options.waitForTimeoutMs)),
           )
         : resolvedWaitUntil === "networkidle"
           ? 9000
           : 8000;
     const pageTimeoutMs =
-      typeof options.pageTimeoutMs === "number" && Number.isFinite(options.pageTimeoutMs)
+      typeof options.pageTimeoutMs === "number" &&
+      Number.isFinite(options.pageTimeoutMs)
         ? Math.max(1000, Math.min(180000, Math.round(options.pageTimeoutMs)))
         : 45000;
     const delayBeforeReturnHtmlMs =
-      typeof options.delayBeforeReturnHtmlMs === "number" && Number.isFinite(options.delayBeforeReturnHtmlMs)
-        ? Math.max(0, Math.min(30000, Math.round(options.delayBeforeReturnHtmlMs)))
+      typeof options.delayBeforeReturnHtmlMs === "number" &&
+      Number.isFinite(options.delayBeforeReturnHtmlMs)
+        ? Math.max(
+            0,
+            Math.min(30000, Math.round(options.delayBeforeReturnHtmlMs)),
+          )
         : 600;
 
     return {
@@ -616,27 +717,31 @@ export class Crawl4aiClient {
       waitForTimeoutMs,
       pageTimeoutMs,
       delayBeforeReturnHtmlMs,
-      adjustViewportToContent: options.adjustViewportToContent ?? true
+      adjustViewportToContent: options.adjustViewportToContent ?? true,
     };
   }
 
   private toHttpPayload(request: Crawl4aiRequest): Crawl4aiHttpPayload {
     const options = request.options ?? {};
-    const urls = (request.urls && request.urls.length > 0 ? request.urls : [request.url]).map((entry) =>
-      entry.trim()
-    );
+    const urls = (
+      request.urls && request.urls.length > 0 ? request.urls : [request.url]
+    ).map((entry) => entry.trim());
 
     // Defense-in-depth: Runtime SSRF validation
     for (const url of urls) {
       const result = validateSsrfUrl(url);
       if (!result.valid) {
         this.logger.warn(`SSRF blocked: ${url} - ${result.reason}`);
-        throw new Crawl4aiRequestException(`URL blocked by SSRF protection: ${result.reason}`, 400);
+        throw new Crawl4aiRequestException(
+          `URL blocked by SSRF protection: ${result.reason}`,
+          400,
+        );
       }
     }
 
     const useManagedBrowser = options.useManagedBrowser ?? false;
-    const headless = typeof options.headless === "boolean" ? options.headless : undefined;
+    const headless =
+      typeof options.headless === "boolean" ? options.headless : undefined;
     const proxyConfig = this.resolveProxyConfig(options);
     const proxy = this.resolveProxyUrl(options);
     const multiConfigurations = this.buildMultiConfigurations(options);
@@ -644,10 +749,12 @@ export class Crawl4aiClient {
     const cleanMarkdown = this.buildCleanMarkdownOptions(options.cleanMarkdown);
     const linkPreviewConfig = this.buildLinkPreviewConfig(options);
     const shouldScoreLinks = options.scoreLinks ?? Boolean(linkPreviewConfig);
-    const headers = this.buildHeaderMap(options.browserHeaders);
+    const headers = this.buildHeaderMap(options.browserHeaders, options);
     const cookies = this.buildCookieList(options.browserCookies);
     const userAgent = this.normalizeUserAgent(options.userAgent);
-    const userAgentGenerator = this.buildUserAgentGenerator(options.userAgentGenerator);
+    const userAgentGenerator = this.buildUserAgentGenerator(
+      options.userAgentGenerator,
+    );
     const geolocation = this.buildGeolocation(options.geolocation);
     const scanProfile = this.resolveScanProfile(options, "primary");
     const virtualScroll = scanProfile.virtualScroll;
@@ -655,26 +762,48 @@ export class Crawl4aiClient {
     const scrollDelay = scanProfile.scrollDelaySeconds;
     const delayBeforeReturnHtml =
       typeof scanProfile.delayBeforeReturnHtmlMs === "number"
-        ? Number((Math.max(0, Math.min(30000, scanProfile.delayBeforeReturnHtmlMs)) / 1000).toFixed(2))
+        ? Number(
+            (
+              Math.max(
+                0,
+                Math.min(30000, scanProfile.delayBeforeReturnHtmlMs),
+              ) / 1000
+            ).toFixed(2),
+          )
         : undefined;
     const meanDelay =
       typeof options.meanDelayMs === "number"
-        ? Number((Math.max(0, Math.min(10000, options.meanDelayMs)) / 1000).toFixed(2))
+        ? Number(
+            (Math.max(0, Math.min(10000, options.meanDelayMs)) / 1000).toFixed(
+              2,
+            ),
+          )
         : undefined;
     const maxRange =
       typeof options.maxDelayRangeMs === "number"
-        ? Number((Math.max(0, Math.min(10000, options.maxDelayRangeMs)) / 1000).toFixed(2))
+        ? Number(
+            (
+              Math.max(0, Math.min(10000, options.maxDelayRangeMs)) / 1000
+            ).toFixed(2),
+          )
         : undefined;
     const semaphoreCount =
-      typeof options.semaphoreCount === "number" && Number.isFinite(options.semaphoreCount)
+      typeof options.semaphoreCount === "number" &&
+      Number.isFinite(options.semaphoreCount)
         ? Math.max(1, Math.min(50, Math.round(options.semaphoreCount)))
         : undefined;
     const pageTimeout =
-      typeof scanProfile.pageTimeoutMs === "number" && Number.isFinite(scanProfile.pageTimeoutMs)
-        ? Math.max(1000, Math.min(180000, Math.round(scanProfile.pageTimeoutMs)))
+      typeof scanProfile.pageTimeoutMs === "number" &&
+      Number.isFinite(scanProfile.pageTimeoutMs)
+        ? Math.max(
+            1000,
+            Math.min(180000, Math.round(scanProfile.pageTimeoutMs)),
+          )
         : undefined;
     const waitUntil = scanProfile.waitUntil;
-    const wordCountThreshold = this.normalizeWordCountThreshold(options.wordCountThreshold ?? 80);
+    const wordCountThreshold = this.normalizeWordCountThreshold(
+      options.wordCountThreshold ?? 80,
+    );
     const excludeExternalLinks = options.excludeExternalLinks ?? true;
     const removeOverlayElements = options.removeOverlayElements ?? true;
     const processIframes = options.processIframes ?? true;
@@ -684,13 +813,16 @@ export class Crawl4aiClient {
     const captureScreenshot = options.captureScreenshot ?? false;
     const waitForImages = options.waitForImages ?? false;
     const excludeExternalImages = options.excludeExternalImages ?? false;
-    const usePersistentContext = useManagedBrowser || Boolean(options.userDataDir);
+    const usePersistentContext =
+      useManagedBrowser || Boolean(options.userDataDir);
     const browserConfig = {
       type: "BrowserConfig",
       params: this.compact({
         headless,
         enable_stealth: options.enableStealthMode ?? undefined,
-        browser_type: options.enableUndetectedBrowser ? "undetected" : undefined,
+        browser_type: options.enableUndetectedBrowser
+          ? "undetected"
+          : undefined,
         light_mode: options.includeImages === false ? true : undefined,
         use_managed_browser: useManagedBrowser ? true : undefined,
         use_persistent_context: usePersistentContext ? true : undefined,
@@ -702,8 +834,8 @@ export class Crawl4aiClient {
         user_agent: userAgent,
         user_agent_mode: options.userAgentMode,
         user_agent_generator_config: userAgentGenerator,
-        storage_state: this.buildStorageState(options.storageState)
-      })
+        storage_state: this.buildStorageState(options.storageState),
+      }),
     };
     const crawlerConfig = {
       type: "CrawlerRunConfig",
@@ -711,7 +843,9 @@ export class Crawl4aiClient {
         cache_mode: options.cacheMode ?? "bypass",
         prefetch: options.prefetch ? true : undefined,
         scan_full_page: scanFullPage,
-        adjust_viewport_to_content: scanProfile.adjustViewportToContent ? true : undefined,
+        adjust_viewport_to_content: scanProfile.adjustViewportToContent
+          ? true
+          : undefined,
         scroll_delay: scrollDelay,
         simulate_user: options.simulateUser ?? undefined,
         override_navigator: options.overrideNavigator ?? undefined,
@@ -728,7 +862,10 @@ export class Crawl4aiClient {
         js_code: this.normalizeJsCode(options.jsCode),
         js_only: options.jsOnly ? true : undefined,
         wait_for: this.buildWaitFor(options),
-        wait_for_timeout: this.normalizeWaitForTimeout(scanProfile.waitForTimeoutMs, waitUntil),
+        wait_for_timeout: this.normalizeWaitForTimeout(
+          scanProfile.waitForTimeoutMs,
+          waitUntil,
+        ),
         wait_until: waitUntil,
         page_timeout: pageTimeout,
         delay_before_return_html: delayBeforeReturnHtml,
@@ -738,7 +875,9 @@ export class Crawl4aiClient {
         check_robots_txt: false,
         remove_forms: options.removeForms ? true : undefined,
         session_id: options.sessionId,
-        table_score_threshold: this.normalizeTableScore(options.tableScoreThreshold),
+        table_score_threshold: this.normalizeTableScore(
+          options.tableScoreThreshold,
+        ),
         table_extraction: this.buildTableExtraction(options.tableExtraction),
         word_count_threshold: wordCountThreshold,
         exclude_external_links: excludeExternalLinks,
@@ -751,25 +890,34 @@ export class Crawl4aiClient {
         only_text: textMode ? true : undefined,
         screenshot: captureScreenshot ? true : undefined,
         virtual_scroll_config: virtualScroll,
-        ...(cleanMarkdown ?? {})
-      })
+        ...(cleanMarkdown ?? {}),
+      }),
     };
     return {
       urls,
-      keywords: request.keywords && request.keywords.length > 0 ? request.keywords : undefined,
+      keywords:
+        request.keywords && request.keywords.length > 0
+          ? request.keywords
+          : undefined,
       browser_config: browserConfig,
       crawler_config: crawlerConfig,
-      crawler_configurations: multiConfigurations && multiConfigurations.length > 0 ? multiConfigurations : undefined
+      crawler_configurations:
+        multiConfigurations && multiConfigurations.length > 0
+          ? multiConfigurations
+          : undefined,
     };
   }
 
   private compact(record: Record<string, unknown>) {
-    return Object.entries(record).reduce<Record<string, unknown>>((acc, [key, value]) => {
-      if (value !== undefined) {
-        acc[key] = value;
-      }
-      return acc;
-    }, {});
+    return Object.entries(record).reduce<Record<string, unknown>>(
+      (acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      },
+      {},
+    );
   }
 
   private resolveProxyConfig(options: CrawlTaskOptions) {
@@ -778,12 +926,12 @@ export class Crawl4aiClient {
     }
     const normalizedServer = translateLocalhostProxyUrlForCrawl4ai(
       options.proxyConfig.server,
-      this.env.crawl4aiConfig.baseUrl
+      this.env.crawl4aiConfig.baseUrl,
     );
     return this.compact({
       server: normalizedServer,
       username: options.proxyConfig.username ?? undefined,
-      password: options.proxyConfig.password ?? undefined
+      password: options.proxyConfig.password ?? undefined,
     });
   }
 
@@ -794,7 +942,10 @@ export class Crawl4aiClient {
     if (!options.proxyUrl) {
       return undefined;
     }
-    return translateLocalhostProxyUrlForCrawl4ai(options.proxyUrl, this.env.crawl4aiConfig.baseUrl);
+    return translateLocalhostProxyUrlForCrawl4ai(
+      options.proxyUrl,
+      this.env.crawl4aiConfig.baseUrl,
+    );
   }
 
   private buildMarkdownGenerator(options: CrawlTaskOptions) {
@@ -804,10 +955,10 @@ export class Crawl4aiClient {
       return params && Object.keys(params).length > 0
         ? {
             type: customStrategy.type,
-            params
+            params,
           }
         : {
-            type: customStrategy.type
+            type: customStrategy.type,
           };
     }
     const contentFilter: CrawlMarkdownFilter | undefined =
@@ -817,18 +968,20 @@ export class Crawl4aiClient {
             type: "pruning",
             thresholdType: "dynamic",
             minWordThreshold:
-              typeof options.wordCountThreshold === "number" ? options.wordCountThreshold : undefined
+              typeof options.wordCountThreshold === "number"
+                ? options.wordCountThreshold
+                : undefined,
           }
         : undefined);
     const params = this.compact({
       content_source: options.markdownOptions?.contentSource,
       options: this.buildMarkdownOptionsPayload(options.markdownOptions),
-      content_filter: this.buildContentFilterPayload(contentFilter)
+      content_filter: this.buildContentFilterPayload(contentFilter),
     });
     return Object.keys(params).length > 0
       ? {
           type: "DefaultMarkdownGenerator",
-          params
+          params,
         }
       : undefined;
   }
@@ -845,10 +998,10 @@ export class Crawl4aiClient {
     return params && Object.keys(params).length > 0
       ? {
           type: trimmed,
-          params
+          params,
         }
       : {
-          type: trimmed
+          type: trimmed,
         };
   }
 
@@ -860,7 +1013,7 @@ export class Crawl4aiClient {
       ignore_links: markdownOptions.ignoreLinks,
       escape_html: markdownOptions.escapeHtml,
       citations: markdownOptions.citations,
-      body_width: markdownOptions.bodyWidth
+      body_width: markdownOptions.bodyWidth,
     });
     return Object.keys(payload).length > 0 ? payload : undefined;
   }
@@ -882,10 +1035,16 @@ export class Crawl4aiClient {
     }
     const payload = this.compact({
       css_selector: options.cssSelector,
-      target_elements: options.targetElements && options.targetElements.length > 0 ? options.targetElements : undefined,
-      excluded_tags: options.excludedTags && options.excludedTags.length > 0 ? options.excludedTags : undefined,
+      target_elements:
+        options.targetElements && options.targetElements.length > 0
+          ? options.targetElements
+          : undefined,
+      excluded_tags:
+        options.excludedTags && options.excludedTags.length > 0
+          ? options.excludedTags
+          : undefined,
       remove_overlay_elements: options.removeOverlayElements,
-      word_count_threshold: options.wordCountThreshold
+      word_count_threshold: options.wordCountThreshold,
     });
     return Object.keys(payload).length > 0 ? payload : undefined;
   }
@@ -897,16 +1056,19 @@ export class Crawl4aiClient {
     const params = this.compact({
       container_selector: this.normalizeCssSelector(config.containerSelector),
       scroll_count:
-        typeof config.scrollCount === "number" && Number.isFinite(config.scrollCount)
+        typeof config.scrollCount === "number" &&
+        Number.isFinite(config.scrollCount)
           ? Math.max(1, Math.min(1000, Math.round(config.scrollCount)))
           : undefined,
       scroll_by: this.normalizeScrollBy(config.scrollBy),
-      wait_after_scroll: this.normalizeWaitAfterScroll(config.waitAfterScrollMs)
+      wait_after_scroll: this.normalizeWaitAfterScroll(
+        config.waitAfterScrollMs,
+      ),
     });
     return Object.keys(params).length > 0
       ? {
           type: "VirtualScrollConfig",
-          params
+          params,
         }
       : undefined;
   }
@@ -923,17 +1085,20 @@ export class Crawl4aiClient {
       concurrency: config.concurrency,
       timeout: config.timeoutSeconds,
       query: this.normalizeQuery(config.query),
-      score_threshold: typeof config.scoreThreshold === "number" ? parseFloat(config.scoreThreshold.toFixed(3)) : undefined,
+      score_threshold:
+        typeof config.scoreThreshold === "number"
+          ? parseFloat(config.scoreThreshold.toFixed(3))
+          : undefined,
       verbose: config.verbose,
       include_patterns: this.normalizePatternList(config.includePatterns),
-      exclude_patterns: this.normalizePatternList(config.excludePatterns)
+      exclude_patterns: this.normalizePatternList(config.excludePatterns),
     });
     if (Object.keys(params).length === 0) {
       return undefined;
     }
     return {
       type: "LinkPreviewConfig",
-      params
+      params,
     };
   }
 
@@ -958,17 +1123,21 @@ export class Crawl4aiClient {
     // Defense-in-depth: Runtime jsCode validation
     const validationResult = validateJsCodeArray(normalized);
     if (!validationResult.valid) {
-      const blockedPatterns = validationResult.blockedPatterns.slice(0, 5).join("; ");
+      const blockedPatterns = validationResult.blockedPatterns
+        .slice(0, 5)
+        .join("; ");
       this.logger.warn(`jsCode blocked: ${blockedPatterns}`);
       throw new Crawl4aiRequestException(
         `jsCode contains blocked patterns: ${blockedPatterns}. Only safe DOM operations are allowed.`,
-        400
+        400,
       );
     }
 
     // Log warnings if any
     if (validationResult.warnings.length > 0) {
-      this.logger.warn(`jsCode warnings: ${validationResult.warnings.join("; ")}`);
+      this.logger.warn(
+        `jsCode warnings: ${validationResult.warnings.join("; ")}`,
+      );
     }
 
     return normalized.length === 1 ? normalized[0] : normalized;
@@ -996,16 +1165,22 @@ export class Crawl4aiClient {
     source?: {
       waitForScript?: string;
       waitForSelector?: string;
-    } | null
+    } | null,
   ) {
     if (!source) {
       return undefined;
     }
-    const script = typeof source.waitForScript === "string" ? source.waitForScript.trim() : "";
+    const script =
+      typeof source.waitForScript === "string"
+        ? source.waitForScript.trim()
+        : "";
     if (script.length > 0) {
       return script.startsWith("js:") ? script : `js:${script}`;
     }
-    const selector = typeof source.waitForSelector === "string" ? source.waitForSelector.trim() : "";
+    const selector =
+      typeof source.waitForSelector === "string"
+        ? source.waitForSelector.trim()
+        : "";
     if (selector.length > 0) {
       if (
         selector.startsWith("css:") ||
@@ -1021,7 +1196,7 @@ export class Crawl4aiClient {
 
   private normalizeWaitForTimeout(
     value?: number,
-    waitUntil?: "domcontentloaded" | "load" | "networkidle" | "commit"
+    waitUntil?: "domcontentloaded" | "load" | "networkidle" | "commit",
   ) {
     if (typeof value !== "number" || Number.isNaN(value)) {
       return undefined;
@@ -1133,12 +1308,13 @@ export class Crawl4aiClient {
         params: this.compact({
           threshold: filter.threshold,
           threshold_type: filter.thresholdType,
-          min_word_threshold: filter.minWordThreshold
-        })
+          min_word_threshold: filter.minWordThreshold,
+        }),
       });
     }
     if (filter.type === "bm25") {
-      const query = typeof filter.userQuery === "string" ? filter.userQuery.trim() : "";
+      const query =
+        typeof filter.userQuery === "string" ? filter.userQuery.trim() : "";
       if (!query) {
         return undefined;
       }
@@ -1147,8 +1323,8 @@ export class Crawl4aiClient {
         params: this.compact({
           user_query: query,
           bm25_threshold: filter.bm25Threshold,
-          language: filter.language
-        })
+          language: filter.language,
+        }),
       });
     }
     return undefined;
@@ -1163,31 +1339,55 @@ export class Crawl4aiClient {
       .map((config) => {
         const matcher = this.normalizeMatcher(config.matcher);
         const overrides = this.normalizeStrategyOverrides(config.options);
-        const wordCount = this.normalizeWordCountThreshold(overrides?.wordCountThreshold);
+        const wordCount = this.normalizeWordCountThreshold(
+          overrides?.wordCountThreshold,
+        );
         const cssSelector = this.normalizeCssSelector(overrides?.cssSelector);
-        const excludedTags = this.normalizeSelectorList(overrides?.excludedTags);
+        const excludedTags = this.normalizeSelectorList(
+          overrides?.excludedTags,
+        );
         const scanProfile = this.resolveScanProfile(overrides, "override");
         const virtualScroll = scanProfile.virtualScroll;
         const scanFullPage = scanProfile.scanFullPage;
         const delayBeforeReturnHtml =
           typeof scanProfile.delayBeforeReturnHtmlMs === "number"
-            ? Number((Math.max(0, Math.min(30000, scanProfile.delayBeforeReturnHtmlMs)) / 1000).toFixed(2))
+            ? Number(
+                (
+                  Math.max(
+                    0,
+                    Math.min(30000, scanProfile.delayBeforeReturnHtmlMs),
+                  ) / 1000
+                ).toFixed(2),
+              )
             : undefined;
         const pageTimeout =
-          typeof scanProfile.pageTimeoutMs === "number" && Number.isFinite(scanProfile.pageTimeoutMs)
-            ? Math.max(1000, Math.min(180000, Math.round(scanProfile.pageTimeoutMs)))
+          typeof scanProfile.pageTimeoutMs === "number" &&
+          Number.isFinite(scanProfile.pageTimeoutMs)
+            ? Math.max(
+                1000,
+                Math.min(180000, Math.round(scanProfile.pageTimeoutMs)),
+              )
             : undefined;
         const waitUntil = scanProfile.waitUntil;
         const meanDelay =
           typeof overrides?.meanDelayMs === "number"
-            ? Number((Math.max(0, Math.min(10000, overrides.meanDelayMs)) / 1000).toFixed(2))
+            ? Number(
+                (
+                  Math.max(0, Math.min(10000, overrides.meanDelayMs)) / 1000
+                ).toFixed(2),
+              )
             : undefined;
         const maxRange =
           typeof overrides?.maxDelayRangeMs === "number"
-            ? Number((Math.max(0, Math.min(10000, overrides.maxDelayRangeMs)) / 1000).toFixed(2))
+            ? Number(
+                (
+                  Math.max(0, Math.min(10000, overrides.maxDelayRangeMs)) / 1000
+                ).toFixed(2),
+              )
             : undefined;
         const semaphoreCount =
-          typeof overrides?.semaphoreCount === "number" && Number.isFinite(overrides.semaphoreCount)
+          typeof overrides?.semaphoreCount === "number" &&
+          Number.isFinite(overrides.semaphoreCount)
             ? Math.max(1, Math.min(50, Math.round(overrides.semaphoreCount)))
             : undefined;
         const params = this.compact({
@@ -1195,14 +1395,19 @@ export class Crawl4aiClient {
           match_mode: matcher?.matchMode,
           cache_mode: overrides?.cacheMode,
           scan_full_page: scanFullPage,
-          adjust_viewport_to_content: scanProfile.adjustViewportToContent ? true : undefined,
+          adjust_viewport_to_content: scanProfile.adjustViewportToContent
+            ? true
+            : undefined,
           scroll_delay: scanProfile.scrollDelaySeconds,
           simulate_user: overrides?.simulateUser,
           override_navigator: overrides?.overrideNavigator,
           js_code: this.normalizeJsCode(overrides?.jsCode),
           js_only: overrides?.jsOnly ? true : undefined,
           wait_for: this.buildWaitFor(overrides),
-          wait_for_timeout: this.normalizeWaitForTimeout(scanProfile.waitForTimeoutMs, waitUntil),
+          wait_for_timeout: this.normalizeWaitForTimeout(
+            scanProfile.waitForTimeoutMs,
+            waitUntil,
+          ),
           wait_until: waitUntil,
           page_timeout: pageTimeout,
           delay_before_return_html: delayBeforeReturnHtml,
@@ -1221,17 +1426,20 @@ export class Crawl4aiClient {
           wait_for_images: overrides?.waitForImages ? true : undefined,
           only_text: overrides?.textMode ? true : undefined,
           screenshot: overrides?.captureScreenshot ? true : undefined,
-          virtual_scroll_config: virtualScroll
+          virtual_scroll_config: virtualScroll,
         });
         if (Object.keys(params).length === 0) {
           return undefined;
         }
         return {
           type: "CrawlerRunConfig",
-          params
+          params,
         };
       })
-      .filter((entry): entry is { type: string; params: Record<string, unknown> } => Boolean(entry));
+      .filter(
+        (entry): entry is { type: string; params: Record<string, unknown> } =>
+          Boolean(entry),
+      );
     return configurations.length > 0 ? configurations : undefined;
   }
 
@@ -1247,11 +1455,13 @@ export class Crawl4aiClient {
     }
     return {
       pattern: patterns.length === 1 ? patterns[0] : patterns,
-      matchMode: matcher.matchMode
+      matchMode: matcher.matchMode,
     };
   }
 
-  private normalizeStrategyOverrides(options?: CrawlStrategyOverrides): CrawlStrategyOverrides | undefined {
+  private normalizeStrategyOverrides(
+    options?: CrawlStrategyOverrides,
+  ): CrawlStrategyOverrides | undefined {
     if (!options) {
       return undefined;
     }
@@ -1302,7 +1512,9 @@ export class Crawl4aiClient {
       }
     }
     if (typeof options.wordCountThreshold === "number") {
-      const wordCount = this.normalizeWordCountThreshold(options.wordCountThreshold);
+      const wordCount = this.normalizeWordCountThreshold(
+        options.wordCountThreshold,
+      );
       if (wordCount !== undefined) {
         normalized.wordCountThreshold = wordCount;
       }
@@ -1335,28 +1547,55 @@ export class Crawl4aiClient {
     }
     const waitForTimeoutMs = this.normalizeWaitForTimeout(
       options.waitForTimeoutMs,
-      normalized.waitUntil
+      normalized.waitUntil,
     );
     if (waitForTimeoutMs !== undefined) {
       normalized.waitForTimeoutMs = waitForTimeoutMs;
     }
-    if (typeof options.pageTimeoutMs === "number" && Number.isFinite(options.pageTimeoutMs)) {
-      normalized.pageTimeoutMs = Math.max(1000, Math.min(180000, Math.round(options.pageTimeoutMs)));
+    if (
+      typeof options.pageTimeoutMs === "number" &&
+      Number.isFinite(options.pageTimeoutMs)
+    ) {
+      normalized.pageTimeoutMs = Math.max(
+        1000,
+        Math.min(180000, Math.round(options.pageTimeoutMs)),
+      );
     }
     if (
       typeof options.delayBeforeReturnHtmlMs === "number" &&
       Number.isFinite(options.delayBeforeReturnHtmlMs)
     ) {
-      normalized.delayBeforeReturnHtmlMs = Math.max(0, Math.min(30000, Math.round(options.delayBeforeReturnHtmlMs)));
+      normalized.delayBeforeReturnHtmlMs = Math.max(
+        0,
+        Math.min(30000, Math.round(options.delayBeforeReturnHtmlMs)),
+      );
     }
-    if (typeof options.meanDelayMs === "number" && Number.isFinite(options.meanDelayMs)) {
-      normalized.meanDelayMs = Math.max(0, Math.min(10000, Math.round(options.meanDelayMs)));
+    if (
+      typeof options.meanDelayMs === "number" &&
+      Number.isFinite(options.meanDelayMs)
+    ) {
+      normalized.meanDelayMs = Math.max(
+        0,
+        Math.min(10000, Math.round(options.meanDelayMs)),
+      );
     }
-    if (typeof options.maxDelayRangeMs === "number" && Number.isFinite(options.maxDelayRangeMs)) {
-      normalized.maxDelayRangeMs = Math.max(0, Math.min(10000, Math.round(options.maxDelayRangeMs)));
+    if (
+      typeof options.maxDelayRangeMs === "number" &&
+      Number.isFinite(options.maxDelayRangeMs)
+    ) {
+      normalized.maxDelayRangeMs = Math.max(
+        0,
+        Math.min(10000, Math.round(options.maxDelayRangeMs)),
+      );
     }
-    if (typeof options.semaphoreCount === "number" && Number.isFinite(options.semaphoreCount)) {
-      normalized.semaphoreCount = Math.max(1, Math.min(50, Math.round(options.semaphoreCount)));
+    if (
+      typeof options.semaphoreCount === "number" &&
+      Number.isFinite(options.semaphoreCount)
+    ) {
+      normalized.semaphoreCount = Math.max(
+        1,
+        Math.min(50, Math.round(options.semaphoreCount)),
+      );
     }
     if (typeof options.removeForms === "boolean") {
       normalized.removeForms = options.removeForms;
@@ -1375,7 +1614,9 @@ export class Crawl4aiClient {
       normalized.excludedTags = excludedTags;
     }
     if (options.virtualScroll) {
-      const virtualScroll = this.buildVirtualScrollConfig(options.virtualScroll);
+      const virtualScroll = this.buildVirtualScrollConfig(
+        options.virtualScroll,
+      );
       if (virtualScroll) {
         normalized.virtualScroll = options.virtualScroll;
       }
@@ -1383,14 +1624,30 @@ export class Crawl4aiClient {
     return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
-  private buildHeaderMap(headers?: CrawlBrowserHeader[]) {
-    if (!headers || headers.length === 0) {
+  private buildHeaderMap(
+    headers?: CrawlBrowserHeader[],
+    options?: CrawlTaskOptions,
+  ) {
+    const normalizedInputHeaders = normalizeBrowserHeaders(
+      (headers ?? []).map((header) => ({
+        name: header?.name,
+        value: header?.value,
+      })),
+    );
+    const autoHeaders = buildAutoBrowserHeadersForCrawlOptions({
+      userAgent: options?.userAgent,
+      userAgentMode: options?.userAgentMode,
+      userAgentGenerator: options?.userAgentGenerator,
+    });
+    const mergedHeaders = mergeBrowserHeaders(
+      normalizedInputHeaders,
+      autoHeaders,
+    );
+    if (mergedHeaders.length === 0) {
       return undefined;
     }
-    return headers.reduce<Record<string, string>>((acc, header) => {
-      if (header.name && header.value) {
-        acc[header.name] = header.value;
-      }
+    return mergedHeaders.reduce<Record<string, string>>((acc, header) => {
+      acc[header.name] = header.value;
       return acc;
     }, {});
   }
@@ -1405,8 +1662,8 @@ export class Crawl4aiClient {
           name: cookie.name,
           value: cookie.value,
           domain: cookie.domain,
-          path: cookie.path
-        })
+          path: cookie.path,
+        }),
       )
       .filter((entry) => entry.name && entry.value && entry.domain);
     return payload.length > 0 ? payload : undefined;
@@ -1426,48 +1683,56 @@ export class Crawl4aiClient {
     }
     const browser = this.normalizeUserAgentGeneratorBrowser(config.browser);
     const operatingSystem = this.normalizeUserAgentGeneratorOs(config.platform);
-    const devicePlatform = this.normalizeUserAgentGeneratorPlatform(config.deviceType);
+    const devicePlatform = this.normalizeUserAgentGeneratorPlatform(
+      config.deviceType,
+    );
     const payload = this.compact({
       browsers: browser ? [browser] : undefined,
       os: operatingSystem ? [operatingSystem] : undefined,
-      platforms: devicePlatform ? [devicePlatform] : undefined
+      platforms: devicePlatform ? [devicePlatform] : undefined,
     });
     return Object.keys(payload).length > 0 ? payload : undefined;
   }
 
   private normalizeUserAgentGeneratorBrowser(
-    value?: CrawlUserAgentGeneratorConfig["browser"]
+    value?: CrawlUserAgentGeneratorConfig["browser"],
   ) {
     if (!value) {
       return undefined;
     }
-    const browserMap: Record<NonNullable<CrawlUserAgentGeneratorConfig["browser"]>, string> = {
+    const browserMap: Record<
+      NonNullable<CrawlUserAgentGeneratorConfig["browser"]>,
+      string
+    > = {
       chrome: "Chrome",
       firefox: "Firefox",
       safari: "Safari",
-      edge: "Edge"
+      edge: "Edge",
     };
     return browserMap[value];
   }
 
   private normalizeUserAgentGeneratorOs(
-    value?: CrawlUserAgentGeneratorConfig["platform"]
+    value?: CrawlUserAgentGeneratorConfig["platform"],
   ) {
     if (!value) {
       return undefined;
     }
-    const platformMap: Record<NonNullable<CrawlUserAgentGeneratorConfig["platform"]>, string> = {
+    const platformMap: Record<
+      NonNullable<CrawlUserAgentGeneratorConfig["platform"]>,
+      string
+    > = {
       windows: "Windows",
       macos: "Mac OS X",
       linux: "Linux",
       android: "Android",
-      ios: "iOS"
+      ios: "iOS",
     };
     return platformMap[value];
   }
 
   private normalizeUserAgentGeneratorPlatform(
-    value?: CrawlUserAgentGeneratorConfig["deviceType"]
+    value?: CrawlUserAgentGeneratorConfig["deviceType"],
   ) {
     if (!value) {
       return undefined;
@@ -1485,14 +1750,14 @@ export class Crawl4aiClient {
     const payload = this.compact({
       latitude: config.latitude,
       longitude: config.longitude,
-      accuracy: config.accuracy
+      accuracy: config.accuracy,
     });
     if (Object.keys(payload).length === 0) {
       return undefined;
     }
     return {
       type: "GeolocationConfig",
-      params: payload
+      params: payload,
     };
   }
 }

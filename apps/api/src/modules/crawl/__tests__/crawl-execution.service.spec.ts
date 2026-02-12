@@ -3,17 +3,44 @@ jest.mock("@modular/utils", () => ({
     warn: jest.fn(),
     error: jest.fn(),
     info: jest.fn(),
-    debug: jest.fn()
+    debug: jest.fn(),
   }),
+  normalizeBrowserHeaders: (input: unknown) => {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+    const controlChar = /[\u0000-\u001f\u007f]/;
+    const headerNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    return input
+      .map((entry) => {
+        const record = entry as { name?: unknown; value?: unknown };
+        const name = typeof record?.name === "string" ? record.name.trim() : "";
+        const value =
+          typeof record?.value === "string" ? record.value.trim() : "";
+        if (!name || !value) {
+          return null;
+        }
+        if (!headerNamePattern.test(name)) {
+          return null;
+        }
+        if (controlChar.test(name) || controlChar.test(value)) {
+          return null;
+        }
+        return { name, value };
+      })
+      .filter((entry): entry is { name: string; value: string } =>
+        Boolean(entry),
+      );
+  },
   sanitizeError: (error: unknown) => ({
-    message: error instanceof Error ? error.message : String(error)
-  })
+    message: error instanceof Error ? error.message : String(error),
+  }),
 }));
 
 jest.mock("@modular/mongo", () => ({
   TaskLogModel: {
-    create: jest.fn()
-  }
+    create: jest.fn(),
+  },
 }));
 
 import { TaskLogModel } from "@modular/mongo";
@@ -40,7 +67,7 @@ const createMockTask = (overrides: Record<string, unknown> = {}) => ({
   lastPeakMemoryMb: null,
   lastMemoryEfficiency: null,
   createdById: "user-1",
-  ...overrides
+  ...overrides,
 });
 
 const createMockCrawlResponse = (overrides: Record<string, unknown> = {}) => ({
@@ -52,41 +79,41 @@ const createMockCrawlResponse = (overrides: Record<string, unknown> = {}) => ({
       url: "https://example.com",
       markdown: "# Test Content",
       success: true,
-      metadata: {}
-    }
+      metadata: {},
+    },
   ],
   serverMemoryMb: 512,
   peakMemoryMb: 768,
   memoryEfficiency: 85,
-  ...overrides
+  ...overrides,
 });
 
 const createMockPrismaService = () => ({
   crawlTask: {
     findFirst: jest.fn(),
-    update: jest.fn()
-  }
+    update: jest.fn(),
+  },
 });
 
 const createMockEnvService = () => ({
   crawl4aiConfig: {
-    baseUrl: "http://localhost:8082"
-  }
+    baseUrl: "http://localhost:8082",
+  },
 });
 
 const createMockCrawlClient = () => ({
-  crawl: jest.fn()
+  crawl: jest.fn(),
 });
 
 const createMockResultService = () => ({
   persistResults: jest.fn(),
   extractMarkdownResult: jest.fn(),
   isLikelyBotChallengeMarkdown: jest.fn().mockReturnValue(false),
-  isLowSignalMarkdown: jest.fn().mockReturnValue(false)
+  isLowSignalMarkdown: jest.fn().mockReturnValue(false),
 });
 
 const createMockNotificationsService = () => ({
-  notify: jest.fn()
+  notify: jest.fn(),
 });
 
 const createMockQualityStrategyService = () => ({
@@ -101,14 +128,14 @@ const createMockQualityStrategyService = () => ({
     meanLowSignalWords: 0,
     bestLowSignalScore: Number.NEGATIVE_INFINITY,
     maxLowSignalLinkDensity: 0,
-    meanLowSignalLinkDensity: 0
+    meanLowSignalLinkDensity: 0,
   }),
   shouldAutoExpand: jest.fn().mockReturnValue(false),
   resolveDetailExpansion: jest.fn().mockReturnValue({
     maxDetailUrls: 12,
     minRelevanceScore: 0.35,
     requireSameDomain: true,
-    allowExternalLinks: true
+    allowExternalLinks: true,
   }),
   assessArticleMarkdownSignal: jest.fn().mockReturnValue({
     wordCount: 120,
@@ -117,12 +144,14 @@ const createMockQualityStrategyService = () => ({
     linkCount: 2,
     linkDensity: 0.016,
     score: 120,
-    isListLike: false
+    isListLike: false,
   }),
   isSignificantDetailImprovement: jest.fn().mockReturnValue(true),
-  scoreMarkdownQuality: jest.fn().mockImplementation((items: unknown[]) =>
-    Array.isArray(items) ? items.length * 100 : 0
-  )
+  scoreMarkdownQuality: jest
+    .fn()
+    .mockImplementation((items: unknown[]) =>
+      Array.isArray(items) ? items.length * 100 : 0,
+    ),
 });
 
 describe("CrawlExecutionService", () => {
@@ -151,7 +180,7 @@ describe("CrawlExecutionService", () => {
       mockCrawlClient as any,
       mockResultService as any,
       mockQualityStrategy as any,
-      mockNotifications as any
+      mockNotifications as any,
     );
     (TaskLogModel.create as jest.Mock).mockResolvedValue(undefined);
   });
@@ -170,7 +199,12 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       const summary = { inserted: 1, skipped: 2, lastFetchedAt: new Date() };
 
-      const promise = (service as any).safeNotifyCrawl(task, summary, "user-1", "completed");
+      const promise = (service as any).safeNotifyCrawl(
+        task,
+        summary,
+        "user-1",
+        "completed",
+      );
       await jest.runAllTimersAsync();
       await promise;
 
@@ -179,8 +213,8 @@ describe("CrawlExecutionService", () => {
         expect.objectContaining({
           orgId: "org-1",
           userId: "user-1",
-          type: NotificationType.crawl_completed
-        })
+          type: NotificationType.crawl_completed,
+        }),
       );
       expect(TaskLogModel.create).not.toHaveBeenCalled();
     });
@@ -191,7 +225,13 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       const summary = { inserted: 0, skipped: 0, lastFetchedAt: null };
 
-      const promise = (service as any).safeNotifyCrawl(task, summary, "user-1", "failed", "boom");
+      const promise = (service as any).safeNotifyCrawl(
+        task,
+        summary,
+        "user-1",
+        "failed",
+        "boom",
+      );
       await jest.runAllTimersAsync();
       await promise;
 
@@ -206,9 +246,9 @@ describe("CrawlExecutionService", () => {
           data: expect.objectContaining({
             taskId: "task-1",
             status: "failed",
-            notificationType: NotificationType.crawl_failed
-          })
-        })
+            notificationType: NotificationType.crawl_failed,
+          }),
+        }),
       );
     });
   });
@@ -226,31 +266,99 @@ describe("CrawlExecutionService", () => {
     it("executes full task flow successfully", async () => {
       const task = createMockTask();
       const crawlResponse = createMockCrawlResponse();
-      const persistSummary = { inserted: 1, skipped: 0, lastFetchedAt: new Date() };
+      const persistSummary = {
+        inserted: 1,
+        skipped: 0,
+        lastFetchedAt: new Date(),
+      };
 
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
       mockResultService.persistResults.mockResolvedValue(persistSummary);
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
 
       const result = await service.runTask("task-1", "org-1");
 
       expect(mockPrisma.crawlTask.findFirst).toHaveBeenCalledWith({
-        where: { id: "task-1", orgId: "org-1" }
+        where: { id: "task-1", orgId: "org-1" },
       });
       expect(mockPrisma.crawlTask.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: "task-1" },
-          data: expect.objectContaining({ status: "running" })
-        })
+          data: expect.objectContaining({ status: "running" }),
+        }),
       );
       expect(TaskLogModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({ stage: "start", status: "processing" })
+        expect.objectContaining({ stage: "start", status: "processing" }),
       );
       expect(mockCrawlClient.crawl).toHaveBeenCalled();
       expect(mockResultService.persistResults).toHaveBeenCalled();
       expect(result.inserted).toBe(1);
+    });
+
+    it("retries with headless=true when headed crawl fails due to display dependency", async () => {
+      const task = createMockTask({
+        config: {
+          headless: false,
+        },
+      });
+      const crawlResponse = createMockCrawlResponse();
+      const persistSummary = {
+        inserted: 1,
+        skipped: 0,
+        lastFetchedAt: new Date(),
+      };
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl
+        .mockRejectedValueOnce(
+          new Crawl4aiRequestException("cannot open display :99", 500),
+        )
+        .mockResolvedValueOnce(crawlResponse);
+      mockResultService.persistResults.mockResolvedValue(persistSummary);
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
+
+      const result = await service.runTask("task-1", "org-1");
+
+      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(2);
+      const firstPayload = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[0]?.[0] as {
+        options?: { headless?: boolean };
+      };
+      const secondPayload = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[1]?.[0] as {
+        options?: { headless?: boolean };
+      };
+      expect(firstPayload.options?.headless).toBe(false);
+      expect(secondPayload.options?.headless).toBe(true);
+      expect(result.inserted).toBe(1);
+    });
+
+    it("injects task-scoped sessionId when task config does not provide one", async () => {
+      const task = createMockTask({ id: "task-1", config: null });
+      const crawlResponse = createMockCrawlResponse();
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
+
+      await service.runTask("task-1", "org-1");
+
+      const payload = mockCrawlClient.crawl.mock.calls[0]?.[0];
+      expect(payload?.options?.sessionId).toBe("task-task-1");
     });
 
     it("sends notification when triggeredById is provided", async () => {
@@ -262,7 +370,9 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
       mockResultService.persistResults.mockResolvedValue(persistSummary);
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
       mockNotifications.notify.mockResolvedValue(undefined);
 
       const promise = service.runTask("task-1", "org-1", "user-1");
@@ -272,8 +382,8 @@ describe("CrawlExecutionService", () => {
       expect(mockNotifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
           type: NotificationType.crawl_completed,
-          userId: "user-1"
-        })
+          userId: "user-1",
+        }),
       );
     });
 
@@ -284,14 +394,20 @@ describe("CrawlExecutionService", () => {
         inserted: 1,
         skipped: 0,
         lastFetchedAt: new Date(),
-        memory: { serverMemoryMb: 512, peakMemoryMb: 768, efficiencyPercent: 85 }
+        memory: {
+          serverMemoryMb: 512,
+          peakMemoryMb: 768,
+          efficiencyPercent: 85,
+        },
       };
 
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
       mockResultService.persistResults.mockResolvedValue(persistSummary);
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
 
       await service.runTask("task-1", "org-1");
 
@@ -302,9 +418,9 @@ describe("CrawlExecutionService", () => {
             runCount: { increment: 1 },
             lastServerMemoryMb: 512,
             lastPeakMemoryMb: 768,
-            lastMemoryEfficiency: 85
-          })
-        })
+            lastMemoryEfficiency: 85,
+          }),
+        }),
       );
     });
 
@@ -316,9 +432,9 @@ describe("CrawlExecutionService", () => {
             url: "https://example.com",
             markdown: "",
             success: true,
-            metadata: {}
-          }
-        ]
+            metadata: {},
+          },
+        ],
       });
       const fallbackResponse = createMockCrawlResponse({
         results: [
@@ -326,11 +442,15 @@ describe("CrawlExecutionService", () => {
             url: "https://example.com",
             markdown: "# Fallback Content",
             success: true,
-            metadata: {}
-          }
-        ]
+            metadata: {},
+          },
+        ],
       });
-      const persistSummary = { inserted: 1, skipped: 0, lastFetchedAt: new Date() };
+      const persistSummary = {
+        inserted: 1,
+        skipped: 0,
+        lastFetchedAt: new Date(),
+      };
 
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
@@ -347,18 +467,24 @@ describe("CrawlExecutionService", () => {
       const result = await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThanOrEqual(3);
-      const secondCallPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as any;
+      const secondCallPayload = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[1]?.[0] as any;
       expect(secondCallPayload?.options).toEqual(
         expect.objectContaining({
           onlyMainContent: false,
           wordCountThreshold: 10,
-          markdownOptions: expect.objectContaining({ contentSource: "raw_html" }),
+          markdownOptions: expect.objectContaining({
+            contentSource: "raw_html",
+          }),
         }),
       );
-      const thirdCallPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[2]?.[0] as any;
+      const thirdCallPayload = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[2]?.[0] as any;
       expect(thirdCallPayload?.options).toEqual(
         expect.objectContaining({
-          markdownOptions: expect.objectContaining({ contentSource: "cleaned_html" }),
+          markdownOptions: expect.objectContaining({
+            contentSource: "cleaned_html",
+          }),
         }),
       );
       expect(TaskLogModel.create).toHaveBeenCalledWith(
@@ -383,19 +509,20 @@ describe("CrawlExecutionService", () => {
             url: "https://example.com/latest",
             markdown: "## References",
             success: true,
-            metadata: {}
-          }
-        ]
+            metadata: {},
+          },
+        ],
       });
       const fallbackResponse = createMockCrawlResponse({
         results: [
           {
             url: "https://example.com/article/1",
-            markdown: "# Article\n\nThis is a complete article body with context and details.",
+            markdown:
+              "# Article\n\nThis is a complete article body with context and details.",
             success: true,
-            metadata: {}
-          }
-        ]
+            metadata: {},
+          },
+        ],
       });
 
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
@@ -404,12 +531,18 @@ describe("CrawlExecutionService", () => {
         .mockResolvedValueOnce(referenceOnlyResponse)
         .mockResolvedValueOnce(fallbackResponse)
         .mockResolvedValueOnce(fallbackResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
-      mockResultService.isLowSignalMarkdown.mockImplementation((markdown: string) =>
-        markdown.trim().toLowerCase() === "## references"
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+        lastFetchedAt: new Date(),
+      });
+      mockResultService.extractMarkdownResult.mockImplementation(
+        (markdown: unknown) => ({
+          primary: typeof markdown === "string" ? markdown : "",
+        }),
+      );
+      mockResultService.isLowSignalMarkdown.mockImplementation(
+        (markdown: string) => markdown.trim().toLowerCase() === "## references",
       );
 
       await service.runTask("task-1", "org-1");
@@ -418,8 +551,8 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "fallback",
-          status: "processing"
-        })
+          status: "processing",
+        }),
       );
     });
 
@@ -430,9 +563,9 @@ describe("CrawlExecutionService", () => {
             type: "bm25",
             userQuery: "startup",
             bm25Threshold: 1.1,
-            language: "english"
-          }
-        }
+            language: "english",
+          },
+        },
       });
       const emptyResponse = createMockCrawlResponse({
         results: [
@@ -440,9 +573,9 @@ describe("CrawlExecutionService", () => {
             url: "https://example.com",
             markdown: "",
             success: true,
-            metadata: {}
-          }
-        ]
+            metadata: {},
+          },
+        ],
       });
       const fallbackResponse = createMockCrawlResponse({
         results: [
@@ -450,9 +583,9 @@ describe("CrawlExecutionService", () => {
             url: "https://example.com",
             markdown: "# BM25 Content",
             success: true,
-            metadata: {}
-          }
-        ]
+            metadata: {},
+          },
+        ],
       });
 
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
@@ -462,38 +595,54 @@ describe("CrawlExecutionService", () => {
         .mockResolvedValueOnce(fallbackResponse)
         .mockResolvedValueOnce(fallbackResponse)
         .mockResolvedValueOnce(fallbackResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+        lastFetchedAt: new Date(),
+      });
+      mockResultService.extractMarkdownResult.mockImplementation(
+        (markdown: unknown) => ({
+          primary: typeof markdown === "string" ? markdown : "",
+        }),
+      );
 
       const result = await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThanOrEqual(4);
-      const fallbackPayloads = (mockCrawlClient.crawl as jest.Mock).mock.calls.slice(1).map((entry) => entry[0] as any);
+      const fallbackPayloads = (mockCrawlClient.crawl as jest.Mock).mock.calls
+        .slice(1)
+        .map((entry) => entry[0] as any);
       expect(
         fallbackPayloads.some(
           (payload) =>
             payload?.options?.markdownFilter?.type === "bm25" &&
-            payload?.options?.markdownFilter?.userQuery === "startup"
-        )
+            payload?.options?.markdownFilter?.userQuery === "startup",
+        ),
       ).toBe(true);
       expect(result.inserted).toBe(1);
     });
 
     it("expands list-like markdown results by crawling detail candidates", async () => {
       const task = createMockTask({
-        targetUrl: "https://jp.reuters.com/world/"
+        targetUrl: "https://jp.reuters.com/world/",
       });
 
       const listMarkdown =
         "# ワールド\n" +
-        Array.from({ length: 18 }, (_, index) =>
-          "- [記事" + index + "](https://jp.reuters.com/world/us/ARTICLE" + index + "-2026-02-06/)"
+        Array.from(
+          { length: 18 },
+          (_, index) =>
+            "- [記事" +
+            index +
+            "](https://jp.reuters.com/world/us/ARTICLE" +
+            index +
+            "-2026-02-06/)",
         ).join("\n");
       const detailedMarkdown =
         "# Detailed Article\n\n" +
-        "This is a richer article paragraph with policy, timeline, and impact context.\n\n".repeat(80);
+        "This is a richer article paragraph with policy, timeline, and impact context.\n\n".repeat(
+          80,
+        );
 
       const initialResponse = createMockCrawlResponse({
         results: [
@@ -501,9 +650,9 @@ describe("CrawlExecutionService", () => {
             url: "https://jp.reuters.com/world/",
             markdown: listMarkdown,
             success: true,
-            metadata: {}
-          }
-        ]
+            metadata: {},
+          },
+        ],
       });
 
       const expansionResponse = createMockCrawlResponse({
@@ -513,9 +662,9 @@ describe("CrawlExecutionService", () => {
             url: "https://jp.reuters.com/world/us/ARTICLE0-2026-02-06/",
             markdown: detailedMarkdown,
             success: true,
-            metadata: {}
-          }
-        ]
+            metadata: {},
+          },
+        ],
       });
 
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
@@ -523,11 +672,19 @@ describe("CrawlExecutionService", () => {
       mockCrawlClient.crawl
         .mockResolvedValueOnce(initialResponse)
         .mockResolvedValue(expansionResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
-      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+        lastFetchedAt: new Date(),
+      });
+      mockResultService.extractMarkdownResult.mockImplementation(
+        (markdown: unknown) => ({
+          primary: typeof markdown === "string" ? markdown : "",
+        }),
+      );
+      mockQualityStrategy.resolveQualityProfile.mockReturnValue(
+        "quality_first",
+      );
       mockQualityStrategy.assessPageSignals.mockReturnValue({
         kind: "list",
         assessments: [
@@ -542,10 +699,10 @@ describe("CrawlExecutionService", () => {
               linkDensity: 0.2,
               bulletLines: 18,
               score: 50,
-              isListLike: true
+              isListLike: true,
             },
-            linkInventory: 18
-          }
+            linkInventory: 18,
+          },
         ],
         lowSignalAssessments: [
           {
@@ -559,10 +716,10 @@ describe("CrawlExecutionService", () => {
               linkDensity: 0.2,
               bulletLines: 18,
               score: 50,
-              isListLike: true
+              isListLike: true,
             },
-            linkInventory: 18
-          }
+            linkInventory: 18,
+          },
         ],
         allLowSignal: true,
         maxLowSignalWords: 220,
@@ -570,431 +727,476 @@ describe("CrawlExecutionService", () => {
         meanLowSignalWords: 220,
         bestLowSignalScore: 50,
         maxLowSignalLinkDensity: 0.2,
-        meanLowSignalLinkDensity: 0.2
+        meanLowSignalLinkDensity: 0.2,
       });
       mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
       mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
         maxDetailUrls: 12,
         minRelevanceScore: 0.05,
         requireSameDomain: true,
-        allowExternalLinks: true
+        allowExternalLinks: true,
       });
       mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(true);
-      mockQualityStrategy.assessArticleMarkdownSignal.mockImplementation((article: any) => {
-        if (typeof article?.url === "string" && article.url.includes("ARTICLE0")) {
+      mockQualityStrategy.assessArticleMarkdownSignal.mockImplementation(
+        (article: any) => {
+          if (
+            typeof article?.url === "string" &&
+            article.url.includes("ARTICLE0")
+          ) {
+            return {
+              wordCount: 1600,
+              paragraphCount: 22,
+              headingCount: 2,
+              linkCount: 12,
+              linkDensity: 0.01,
+              bulletLines: 1,
+              score: 1200,
+              isListLike: false,
+            };
+          }
           return {
-            wordCount: 1600,
-            paragraphCount: 22,
-            headingCount: 2,
-            linkCount: 12,
-            linkDensity: 0.01,
-            bulletLines: 1,
-            score: 1200,
-            isListLike: false
+            wordCount: 220,
+            paragraphCount: 1,
+            headingCount: 1,
+            linkCount: 18,
+            linkDensity: 0.2,
+            bulletLines: 18,
+            score: 50,
+            isListLike: true,
           };
-        }
-        return {
-          wordCount: 220,
-          paragraphCount: 1,
-          headingCount: 1,
-          linkCount: 18,
-          linkDensity: 0.2,
-          bulletLines: 18,
-          score: 50,
-          isListLike: true
-        };
-      });
+        },
+      );
 
       const result = await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThan(1);
-      const expansionPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as any;
+      const expansionPayload = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[1]?.[0] as any;
       expect(expansionPayload?.urls?.length).toBeGreaterThan(0);
       expect(expansionPayload?.options).toEqual(
         expect.objectContaining({
           scanFullPage: false,
           markdownFilter: undefined,
-          extractLinks: false
-        })
+          extractLinks: false,
+        }),
       );
+      expect(expansionPayload?.options?.sessionId).toBe("task-task-1");
       expect(mockResultService.persistResults).toHaveBeenCalledWith(
         task,
         expect.arrayContaining([
           expect.objectContaining({
-            url: "https://jp.reuters.com/world/us/ARTICLE0-2026-02-06/"
-          })
+            url: "https://jp.reuters.com/world/us/ARTICLE0-2026-02-06/",
+          }),
         ]),
         expect.any(Object),
         "run-expansion",
         expect.anything(),
-        undefined
+        undefined,
       );
       expect(TaskLogModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({ stage: "expansion", status: "processing" })
+        expect.objectContaining({ stage: "expansion", status: "processing" }),
       );
       expect(result.inserted).toBe(1);
     });
   });
 
-
-
-    it("fails when all crawl markdown is low-signal and no detail candidates are extracted", async () => {
-      const task = createMockTask({
-        targetUrl: "https://jp.reuters.com/world/"
-      });
-
-      const listOnlyMarkdown =
-        "# World\n" +
-        Array.from({ length: 20 }, (_, index) =>
-          "- [Section" + index + "](https://jp.reuters.com/world/us/)"
-        ).join("\n");
-
-      const initialResponse = createMockCrawlResponse({
-        results: [
-          {
-            url: "https://jp.reuters.com/world/",
-            markdown: listOnlyMarkdown,
-            success: true,
-            metadata: {}
-          }
-        ]
-      });
-
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockResolvedValue(initialResponse);
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
-      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
-      mockQualityStrategy.assessPageSignals.mockReturnValue({
-        kind: "list",
-        assessments: [
-          {
-            index: 0,
-            article: initialResponse.results[0],
-            quality: {
-              wordCount: 120,
-              paragraphCount: 1,
-              headingCount: 1,
-              linkCount: 20,
-              linkDensity: 0.3,
-              bulletLines: 20,
-              score: 20,
-              isListLike: true
-            },
-            linkInventory: 20
-          }
-        ],
-        lowSignalAssessments: [
-          {
-            index: 0,
-            article: initialResponse.results[0],
-            quality: {
-              wordCount: 120,
-              paragraphCount: 1,
-              headingCount: 1,
-              linkCount: 20,
-              linkDensity: 0.3,
-              bulletLines: 20,
-              score: 20,
-              isListLike: true
-            },
-            linkInventory: 20
-          }
-        ],
-        allLowSignal: true,
-        maxLowSignalWords: 120,
-        minLowSignalWords: 120,
-        meanLowSignalWords: 120,
-        bestLowSignalScore: 20,
-        maxLowSignalLinkDensity: 0.3,
-        meanLowSignalLinkDensity: 0.3
-      });
-      mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
-      mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
-        maxDetailUrls: 12,
-        minRelevanceScore: 0.05,
-        requireSameDomain: true,
-        allowExternalLinks: true
-      });
-
-      await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
-        "no detail candidate URLs were extracted"
-      );
-
-      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(1);
-      expect(mockResultService.persistResults).not.toHaveBeenCalled();
-      expect(TaskLogModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({ stage: "expansion", status: "failed" })
-      );
+  it("fails when all crawl markdown is low-signal and no detail candidates are extracted", async () => {
+    const task = createMockTask({
+      targetUrl: "https://jp.reuters.com/world/",
     });
 
-    it("fails when detail expansion cannot produce richer content for all-low-signal pages", async () => {
-      const task = createMockTask({
-        targetUrl: "https://jp.reuters.com/world/"
-      });
+    const listOnlyMarkdown =
+      "# World\n" +
+      Array.from(
+        { length: 20 },
+        (_, index) =>
+          "- [Section" + index + "](https://jp.reuters.com/world/us/)",
+      ).join("\n");
 
-      const listMarkdown =
-        "# ワールド\n" +
-        Array.from({ length: 14 }, (_, index) =>
-          "- [記事" + index + "](https://jp.reuters.com/world/us/ARTICLE" + index + "-2026-02-06/)"
-        ).join("\n");
-
-      const initialResponse = createMockCrawlResponse({
-        results: [
-          {
-            url: "https://jp.reuters.com/world/",
-            markdown: listMarkdown,
-            success: true,
-            metadata: {}
-          }
-        ]
-      });
-
-      const expansionResponse = createMockCrawlResponse({
-        runId: "run-expansion",
-        results: [
-          {
-            url: "https://jp.reuters.com/world/us/ARTICLE0-2026-02-06/",
-            markdown: listMarkdown,
-            success: true,
-            metadata: {}
-          }
-        ]
-      });
-
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl
-        .mockResolvedValueOnce(initialResponse)
-        .mockResolvedValue(expansionResponse);
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
-      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
-      mockQualityStrategy.assessPageSignals.mockReturnValue({
-        kind: "list",
-        assessments: [
-          {
-            index: 0,
-            article: initialResponse.results[0],
-            quality: {
-              wordCount: 180,
-              paragraphCount: 1,
-              headingCount: 1,
-              linkCount: 14,
-              linkDensity: 0.18,
-              bulletLines: 14,
-              score: 30,
-              isListLike: true
-            },
-            linkInventory: 14
-          }
-        ],
-        lowSignalAssessments: [
-          {
-            index: 0,
-            article: initialResponse.results[0],
-            quality: {
-              wordCount: 180,
-              paragraphCount: 1,
-              headingCount: 1,
-              linkCount: 14,
-              linkDensity: 0.18,
-              bulletLines: 14,
-              score: 30,
-              isListLike: true
-            },
-            linkInventory: 14
-          }
-        ],
-        allLowSignal: true,
-        maxLowSignalWords: 180,
-        minLowSignalWords: 180,
-        meanLowSignalWords: 180,
-        bestLowSignalScore: 30,
-        maxLowSignalLinkDensity: 0.18,
-        meanLowSignalLinkDensity: 0.18
-      });
-      mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
-      mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
-        maxDetailUrls: 12,
-        minRelevanceScore: 0.05,
-        requireSameDomain: true,
-        allowExternalLinks: true
-      });
-      mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(false);
-
-      await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
-        "detail expansion did not produce richer article content"
-      );
-
-      expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThan(1);
-      expect(mockResultService.persistResults).not.toHaveBeenCalled();
-      expect(TaskLogModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          stage: "expansion",
-          status: "completed",
-          message: "Detail expansion did not produce richer markdown"
-        })
-      );
-    });
-
-    it("extracts detail candidates from metadata canonical urls", async () => {
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : "",
-        references: "",
-        citations: "",
-        raw: "",
-        fit: ""
-      }));
-
-      const instance = service as unknown as {
-        extractDetailLinkCandidatesFromArticle: (
-          article: Record<string, unknown>,
-          requireSameDomain: boolean,
-          allowExternalLinks?: boolean
-        ) => string[];
-      };
-
-      const candidates = instance.extractDetailLinkCandidatesFromArticle(
+    const initialResponse = createMockCrawlResponse({
+      results: [
         {
-          url: "https://www.politico.eu/latest/",
-          markdown: "## References",
-          metadata: {
-            canonical: "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/",
-            openGraph: {
-              url: "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/"
-            }
-          }
+          url: "https://jp.reuters.com/world/",
+          markdown: listOnlyMarkdown,
+          success: true,
+          metadata: {},
         },
-        true,
-        true
-      );
-
-      expect(candidates).toContain(
-        "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal"
-      );
+      ],
     });
 
-    it("filters non-detail politico section links from candidate extraction", async () => {
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+    mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+    mockPrisma.crawlTask.update.mockResolvedValue(task);
+    mockCrawlClient.crawl.mockResolvedValue(initialResponse);
+    mockResultService.extractMarkdownResult.mockImplementation(
+      (markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : "",
+      }),
+    );
+    mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+    mockQualityStrategy.assessPageSignals.mockReturnValue({
+      kind: "list",
+      assessments: [
+        {
+          index: 0,
+          article: initialResponse.results[0],
+          quality: {
+            wordCount: 120,
+            paragraphCount: 1,
+            headingCount: 1,
+            linkCount: 20,
+            linkDensity: 0.3,
+            bulletLines: 20,
+            score: 20,
+            isListLike: true,
+          },
+          linkInventory: 20,
+        },
+      ],
+      lowSignalAssessments: [
+        {
+          index: 0,
+          article: initialResponse.results[0],
+          quality: {
+            wordCount: 120,
+            paragraphCount: 1,
+            headingCount: 1,
+            linkCount: 20,
+            linkDensity: 0.3,
+            bulletLines: 20,
+            score: 20,
+            isListLike: true,
+          },
+          linkInventory: 20,
+        },
+      ],
+      allLowSignal: true,
+      maxLowSignalWords: 120,
+      minLowSignalWords: 120,
+      meanLowSignalWords: 120,
+      bestLowSignalScore: 20,
+      maxLowSignalLinkDensity: 0.3,
+      meanLowSignalLinkDensity: 0.3,
+    });
+    mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
+    mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
+      maxDetailUrls: 12,
+      minRelevanceScore: 0.05,
+      requireSameDomain: true,
+      allowExternalLinks: true,
+    });
+
+    await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
+      "no detail candidate URLs were extracted",
+    );
+
+    expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(1);
+    expect(mockResultService.persistResults).not.toHaveBeenCalled();
+    expect(TaskLogModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "expansion", status: "failed" }),
+    );
+  });
+
+  it("fails when detail expansion cannot produce richer content for all-low-signal pages", async () => {
+    const task = createMockTask({
+      targetUrl: "https://jp.reuters.com/world/",
+    });
+
+    const listMarkdown =
+      "# ワールド\n" +
+      Array.from(
+        { length: 14 },
+        (_, index) =>
+          "- [記事" +
+          index +
+          "](https://jp.reuters.com/world/us/ARTICLE" +
+          index +
+          "-2026-02-06/)",
+      ).join("\n");
+
+    const initialResponse = createMockCrawlResponse({
+      results: [
+        {
+          url: "https://jp.reuters.com/world/",
+          markdown: listMarkdown,
+          success: true,
+          metadata: {},
+        },
+      ],
+    });
+
+    const expansionResponse = createMockCrawlResponse({
+      runId: "run-expansion",
+      results: [
+        {
+          url: "https://jp.reuters.com/world/us/ARTICLE0-2026-02-06/",
+          markdown: listMarkdown,
+          success: true,
+          metadata: {},
+        },
+      ],
+    });
+
+    mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+    mockPrisma.crawlTask.update.mockResolvedValue(task);
+    mockCrawlClient.crawl
+      .mockResolvedValueOnce(initialResponse)
+      .mockResolvedValue(expansionResponse);
+    mockResultService.extractMarkdownResult.mockImplementation(
+      (markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : "",
+      }),
+    );
+    mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+    mockQualityStrategy.assessPageSignals.mockReturnValue({
+      kind: "list",
+      assessments: [
+        {
+          index: 0,
+          article: initialResponse.results[0],
+          quality: {
+            wordCount: 180,
+            paragraphCount: 1,
+            headingCount: 1,
+            linkCount: 14,
+            linkDensity: 0.18,
+            bulletLines: 14,
+            score: 30,
+            isListLike: true,
+          },
+          linkInventory: 14,
+        },
+      ],
+      lowSignalAssessments: [
+        {
+          index: 0,
+          article: initialResponse.results[0],
+          quality: {
+            wordCount: 180,
+            paragraphCount: 1,
+            headingCount: 1,
+            linkCount: 14,
+            linkDensity: 0.18,
+            bulletLines: 14,
+            score: 30,
+            isListLike: true,
+          },
+          linkInventory: 14,
+        },
+      ],
+      allLowSignal: true,
+      maxLowSignalWords: 180,
+      minLowSignalWords: 180,
+      meanLowSignalWords: 180,
+      bestLowSignalScore: 30,
+      maxLowSignalLinkDensity: 0.18,
+      meanLowSignalLinkDensity: 0.18,
+    });
+    mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
+    mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
+      maxDetailUrls: 12,
+      minRelevanceScore: 0.05,
+      requireSameDomain: true,
+      allowExternalLinks: true,
+    });
+    mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(false);
+
+    await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
+      "detail expansion did not produce richer article content",
+    );
+
+    expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThan(1);
+    expect(mockResultService.persistResults).not.toHaveBeenCalled();
+    expect(TaskLogModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: "expansion",
+        status: "completed",
+        message: "Detail expansion did not produce richer markdown",
+      }),
+    );
+  });
+
+  it("extracts detail candidates from metadata canonical urls", async () => {
+    mockResultService.extractMarkdownResult.mockImplementation(
+      (markdown: unknown) => ({
         primary: typeof markdown === "string" ? markdown : "",
         references: "",
         citations: "",
         raw: "",
-        fit: ""
-      }));
+        fit: "",
+      }),
+    );
 
-      const instance = service as unknown as {
-        extractDetailLinkCandidatesFromArticle: (
-          article: Record<string, unknown>,
-          requireSameDomain: boolean,
-          allowExternalLinks?: boolean
-        ) => string[];
-      };
+    const instance = service as unknown as {
+      extractDetailLinkCandidatesFromArticle: (
+        article: Record<string, unknown>,
+        requireSameDomain: boolean,
+        allowExternalLinks?: boolean,
+      ) => string[];
+    };
 
-      const candidates = instance.extractDetailLinkCandidatesFromArticle(
+    const candidates = instance.extractDetailLinkCandidatesFromArticle(
+      {
+        url: "https://www.politico.eu/latest/",
+        markdown: "## References",
+        metadata: {
+          canonical:
+            "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/",
+          openGraph: {
+            url: "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/",
+          },
+        },
+      },
+      true,
+      true,
+    );
+
+    expect(candidates).toContain(
+      "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal",
+    );
+  });
+
+  it("filters non-detail politico section links from candidate extraction", async () => {
+    mockResultService.extractMarkdownResult.mockImplementation(
+      (markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : "",
+        references: "",
+        citations: "",
+        raw: "",
+        fit: "",
+      }),
+    );
+
+    const instance = service as unknown as {
+      extractDetailLinkCandidatesFromArticle: (
+        article: Record<string, unknown>,
+        requireSameDomain: boolean,
+        allowExternalLinks?: boolean,
+      ) => string[];
+    };
+
+    const candidates = instance.extractDetailLinkCandidatesFromArticle(
+      {
+        url: "https://www.politico.eu/latest/",
+        markdown:
+          "[A](https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/)\n" +
+          "[B](https://www.politico.eu/newsletter/politico-eu-influence/)\n" +
+          "[C](https://www.politico.eu/country/greenland/)\n" +
+          "[D](https://www.politico.eu/europe-poll-of-polls/european-parliament-election/)\n" +
+          "[E](https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report/)",
+        links: {
+          internal: [
+            {
+              href: "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/",
+            },
+            {
+              href: "https://www.politico.eu/newsletter/politico-eu-influence/",
+            },
+            { href: "https://www.politico.eu/country/greenland/" },
+            {
+              href: "https://www.politico.eu/europe-poll-of-polls/european-parliament-election/",
+            },
+            {
+              href: "https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report/",
+            },
+          ],
+        },
+      },
+      true,
+      false,
+    );
+
+    expect(candidates).toContain(
+      "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal",
+    );
+    expect(candidates).not.toContain(
+      "https://www.politico.eu/newsletter/politico-eu-influence",
+    );
+    expect(candidates).not.toContain(
+      "https://www.politico.eu/country/greenland",
+    );
+    expect(candidates).not.toContain(
+      "https://www.politico.eu/europe-poll-of-polls/european-parliament-election",
+    );
+    expect(candidates).not.toContain(
+      "https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report",
+    );
+  });
+
+  it("uses low-signal results as expansion seeds when no successful markdown exists", async () => {
+    const task = createMockTask({
+      config: {
+        pageTypeHint: "list",
+        autoExpandDetails: true,
+        detailExpansion: {
+          maxDetailUrls: 6,
+          minRelevanceScore: 0,
+          requireSameDomain: true,
+          allowExternalLinks: true,
+        },
+      },
+    });
+
+    const initialResponse = createMockCrawlResponse({
+      results: [
         {
-          url: "https://www.politico.eu/latest/",
+          url: "https://example.com/latest",
           markdown:
-            "[A](https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/)\n" +
-            "[B](https://www.politico.eu/newsletter/politico-eu-influence/)\n" +
-            "[C](https://www.politico.eu/country/greenland/)\n" +
-            "[D](https://www.politico.eu/europe-poll-of-polls/european-parliament-election/)\n" +
-            "[E](https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report/)",
+            "## References\n\n[1]: https://example.com/world/a-very-long-article-slug-with-context",
+          success: true,
           links: {
             internal: [
-              { href: "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal/" },
-              { href: "https://www.politico.eu/newsletter/politico-eu-influence/" },
-              { href: "https://www.politico.eu/country/greenland/" },
-              { href: "https://www.politico.eu/europe-poll-of-polls/european-parliament-election/" },
-              { href: "https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report/" }
-            ]
-          }
+              {
+                href: "https://example.com/world/a-very-long-article-slug-with-context",
+              },
+            ],
+          },
+          metadata: {
+            url: "https://example.com/latest",
+          },
         },
-        true,
-        false
-      );
-
-      expect(candidates).toContain(
-        "https://www.politico.eu/article/top-starmer-aide-morgan-mcsweeney-resigns-over-peter-mandelson-scandal"
-      );
-      expect(candidates).not.toContain("https://www.politico.eu/newsletter/politico-eu-influence");
-      expect(candidates).not.toContain("https://www.politico.eu/country/greenland");
-      expect(candidates).not.toContain("https://www.politico.eu/europe-poll-of-polls/european-parliament-election");
-      expect(candidates).not.toContain(
-        "https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report"
-      );
+      ],
     });
 
-    it("uses low-signal results as expansion seeds when no successful markdown exists", async () => {
-      const task = createMockTask({
-        config: {
-          pageTypeHint: "list",
-          autoExpandDetails: true,
-          detailExpansion: {
-            maxDetailUrls: 6,
-            minRelevanceScore: 0,
-            requireSameDomain: true,
-            allowExternalLinks: true
-          }
-        }
-      });
+    const expansionResponse = createMockCrawlResponse({
+      runId: "expansion-run",
+      results: [
+        {
+          url: "https://example.com/world/a-very-long-article-slug-with-context",
+          markdown:
+            "# Headline\n\nParagraph one with detailed context and analysis.\n\nParagraph two with additional reporting facts.\n\nParagraph three for stable article body.",
+          success: true,
+          metadata: {},
+        },
+      ],
+    });
 
-      const initialResponse = createMockCrawlResponse({
-        results: [
-          {
-            url: "https://example.com/latest",
-            markdown: "## References\n\n[1]: https://example.com/world/a-very-long-article-slug-with-context",
-            success: true,
-            links: {
-              internal: [
-                {
-                  href: "https://example.com/world/a-very-long-article-slug-with-context"
-                }
-              ]
-            },
-            metadata: {
-              url: "https://example.com/latest"
-            }
-          }
-        ]
-      });
-
-      const expansionResponse = createMockCrawlResponse({
-        runId: "expansion-run",
-        results: [
-          {
-            url: "https://example.com/world/a-very-long-article-slug-with-context",
-            markdown:
-              "# Headline\n\nParagraph one with detailed context and analysis.\n\nParagraph two with additional reporting facts.\n\nParagraph three for stable article body.",
-            success: true,
-            metadata: {}
-          }
-        ]
-      });
-
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl
-        .mockResolvedValue(expansionResponse)
-        .mockResolvedValueOnce(initialResponse);
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+    mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+    mockPrisma.crawlTask.update.mockResolvedValue(task);
+    mockCrawlClient.crawl
+      .mockResolvedValue(expansionResponse)
+      .mockResolvedValueOnce(initialResponse);
+    mockResultService.extractMarkdownResult.mockImplementation(
+      (markdown: unknown) => ({
         primary: typeof markdown === "string" ? markdown : "",
         references: "",
         citations: "",
         raw: "",
-        fit: ""
-      }));
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
-      mockResultService.isLowSignalMarkdown.mockImplementation((markdown: string) =>
-        markdown.trim().toLowerCase().startsWith("## references")
-      );
+        fit: "",
+      }),
+    );
+    mockResultService.persistResults.mockResolvedValue({
+      inserted: 1,
+      skipped: 0,
+      lastFetchedAt: new Date(),
+    });
+    mockResultService.isLowSignalMarkdown.mockImplementation(
+      (markdown: string) =>
+        markdown.trim().toLowerCase().startsWith("## references"),
+    );
 
-      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
-      mockQualityStrategy.assessPageSignals.mockImplementation((articles: any[]) => {
+    mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+    mockQualityStrategy.assessPageSignals.mockImplementation(
+      (articles: any[]) => {
         if (articles[0]?.url === "https://example.com/latest") {
           return {
             kind: "list",
@@ -1010,10 +1212,10 @@ describe("CrawlExecutionService", () => {
                   linkDensity: 0.2,
                   bulletLines: 6,
                   score: 10,
-                  isListLike: true
+                  isListLike: true,
                 },
-                linkInventory: 10
-              }
+                linkInventory: 10,
+              },
             ],
             lowSignalAssessments: [
               {
@@ -1027,10 +1229,10 @@ describe("CrawlExecutionService", () => {
                   linkDensity: 0.2,
                   bulletLines: 6,
                   score: 10,
-                  isListLike: true
+                  isListLike: true,
                 },
-                linkInventory: 10
-              }
+                linkInventory: 10,
+              },
             ],
             allLowSignal: true,
             maxLowSignalWords: 120,
@@ -1038,7 +1240,7 @@ describe("CrawlExecutionService", () => {
             meanLowSignalWords: 120,
             bestLowSignalScore: 10,
             maxLowSignalLinkDensity: 0.2,
-            meanLowSignalLinkDensity: 0.2
+            meanLowSignalLinkDensity: 0.2,
           };
         }
 
@@ -1056,10 +1258,10 @@ describe("CrawlExecutionService", () => {
                 linkDensity: 0.01,
                 bulletLines: 0,
                 score: 420,
-                isListLike: false
+                isListLike: false,
               },
-              linkInventory: 2
-            }
+              linkInventory: 2,
+            },
           ],
           lowSignalAssessments: [],
           allLowSignal: false,
@@ -1068,105 +1270,115 @@ describe("CrawlExecutionService", () => {
           meanLowSignalWords: 0,
           bestLowSignalScore: Number.NEGATIVE_INFINITY,
           maxLowSignalLinkDensity: 0,
-          meanLowSignalLinkDensity: 0
+          meanLowSignalLinkDensity: 0,
         };
-      });
-      mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
-      mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
-        maxDetailUrls: 6,
-        minRelevanceScore: 0,
-        requireSameDomain: true,
-        allowExternalLinks: true
-      });
-      mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(true);
-      mockQualityStrategy.assessArticleMarkdownSignal.mockReturnValue({
-        wordCount: 360,
-        paragraphCount: 8,
-        headingCount: 1,
-        linkCount: 2,
-        linkDensity: 0.01,
-        bulletLines: 0,
-        score: 420,
-        isListLike: false
-      });
-
-      const result = await service.runTask("task-1", "org-1");
-
-      expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThan(1);
-      expect(mockResultService.persistResults).toHaveBeenCalledWith(
-        task,
-        expect.arrayContaining([
-          expect.objectContaining({
-            url: "https://example.com/world/a-very-long-article-slug-with-context"
-          })
-        ]),
-        expect.any(Object),
-        expect.anything(),
-        expect.anything(),
-        undefined
-      );
-      expect(result.inserted).toBe(1);
+      },
+    );
+    mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
+    mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
+      maxDetailUrls: 6,
+      minRelevanceScore: 0,
+      requireSameDomain: true,
+      allowExternalLinks: true,
+    });
+    mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(true);
+    mockQualityStrategy.assessArticleMarkdownSignal.mockReturnValue({
+      wordCount: 360,
+      paragraphCount: 8,
+      headingCount: 1,
+      linkCount: 2,
+      linkDensity: 0.01,
+      bulletLines: 0,
+      score: 420,
+      isListLike: false,
     });
 
-    it("falls back to link inventory when strict detail candidates are sparse", async () => {
-      const task = createMockTask({ targetUrl: "https://example.com/latest" });
+    const result = await service.runTask("task-1", "org-1");
 
-      const listMarkdown =
-        "# Latest\n" +
-        "- [Section](https://example.com/news/world/)\n" +
-        "- [Section](https://example.com/news/business/)";
+    expect(mockCrawlClient.crawl.mock.calls.length).toBeGreaterThan(1);
+    expect(mockResultService.persistResults).toHaveBeenCalledWith(
+      task,
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: "https://example.com/world/a-very-long-article-slug-with-context",
+        }),
+      ]),
+      expect.any(Object),
+      expect.anything(),
+      expect.anything(),
+      undefined,
+    );
+    expect(result.inserted).toBe(1);
+  });
 
-      const initialResponse = createMockCrawlResponse({
-        results: [
-          {
-            url: "https://example.com/latest",
-            markdown: listMarkdown,
-            success: true,
-            metadata: {},
-            links: {
-              internal: [
-                {
-                  href: "https://example.com/world/a-very-long-article-slug-with-context-and-analysis-2026",
-                  text: "A very long article slug with context and analysis"
-                },
-                {
-                  href: "https://example.com/business/another-very-long-article-slug-with-context",
-                  text: "Another long-form article"
-                }
-              ]
-            }
-          }
-        ]
-      });
+  it("falls back to link inventory when strict detail candidates are sparse", async () => {
+    const task = createMockTask({ targetUrl: "https://example.com/latest" });
 
-      const expansionResponse = createMockCrawlResponse({
-        runId: "run-expansion",
-        results: [
-          {
-            url: "https://example.com/world/a-very-long-article-slug-with-context-and-analysis-2026",
-            markdown:
-              "# Headline\n\nParagraph one with detailed context and analysis.\n\nParagraph two with additional reporting facts.",
-            success: true,
-            metadata: {}
-          }
-        ]
-      });
+    const listMarkdown =
+      "# Latest\n" +
+      "- [Section](https://example.com/news/world/)\n" +
+      "- [Section](https://example.com/news/business/)";
 
-      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
-      mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockResolvedValueOnce(initialResponse).mockResolvedValue(expansionResponse);
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
+    const initialResponse = createMockCrawlResponse({
+      results: [
+        {
+          url: "https://example.com/latest",
+          markdown: listMarkdown,
+          success: true,
+          metadata: {},
+          links: {
+            internal: [
+              {
+                href: "https://example.com/world/a-very-long-article-slug-with-context-and-analysis-2026",
+                text: "A very long article slug with context and analysis",
+              },
+              {
+                href: "https://example.com/business/another-very-long-article-slug-with-context",
+                text: "Another long-form article",
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const expansionResponse = createMockCrawlResponse({
+      runId: "run-expansion",
+      results: [
+        {
+          url: "https://example.com/world/a-very-long-article-slug-with-context-and-analysis-2026",
+          markdown:
+            "# Headline\n\nParagraph one with detailed context and analysis.\n\nParagraph two with additional reporting facts.",
+          success: true,
+          metadata: {},
+        },
+      ],
+    });
+
+    mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+    mockPrisma.crawlTask.update.mockResolvedValue(task);
+    mockCrawlClient.crawl
+      .mockResolvedValueOnce(initialResponse)
+      .mockResolvedValue(expansionResponse);
+    mockResultService.extractMarkdownResult.mockImplementation(
+      (markdown: unknown) => ({
         primary: typeof markdown === "string" ? markdown : "",
         references: "",
         citations: "",
         raw: "",
-        fit: ""
-      }));
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0, lastFetchedAt: new Date() });
-      mockResultService.isLowSignalMarkdown.mockReturnValue(false);
+        fit: "",
+      }),
+    );
+    mockResultService.persistResults.mockResolvedValue({
+      inserted: 1,
+      skipped: 0,
+      lastFetchedAt: new Date(),
+    });
+    mockResultService.isLowSignalMarkdown.mockReturnValue(false);
 
-      mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
-      mockQualityStrategy.assessPageSignals.mockImplementation((articles: any[]) => {
+    mockQualityStrategy.resolveQualityProfile.mockReturnValue("quality_first");
+    mockQualityStrategy.assessPageSignals.mockImplementation(
+      (articles: any[]) => {
         if (articles[0]?.url === "https://example.com/latest") {
           return {
             kind: "list",
@@ -1182,10 +1394,10 @@ describe("CrawlExecutionService", () => {
                   linkDensity: 0.2,
                   bulletLines: 4,
                   score: 20,
-                  isListLike: true
+                  isListLike: true,
                 },
-                linkInventory: 18
-              }
+                linkInventory: 18,
+              },
             ],
             lowSignalAssessments: [
               {
@@ -1199,10 +1411,10 @@ describe("CrawlExecutionService", () => {
                   linkDensity: 0.2,
                   bulletLines: 4,
                   score: 20,
-                  isListLike: true
+                  isListLike: true,
                 },
-                linkInventory: 18
-              }
+                linkInventory: 18,
+              },
             ],
             allLowSignal: true,
             maxLowSignalWords: 140,
@@ -1210,7 +1422,7 @@ describe("CrawlExecutionService", () => {
             meanLowSignalWords: 140,
             bestLowSignalScore: 20,
             maxLowSignalLinkDensity: 0.2,
-            meanLowSignalLinkDensity: 0.2
+            meanLowSignalLinkDensity: 0.2,
           };
         }
 
@@ -1224,59 +1436,61 @@ describe("CrawlExecutionService", () => {
           meanLowSignalWords: 0,
           bestLowSignalScore: Number.NEGATIVE_INFINITY,
           maxLowSignalLinkDensity: 0,
-          meanLowSignalLinkDensity: 0
+          meanLowSignalLinkDensity: 0,
         };
-      });
-      mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
-      mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
-        maxDetailUrls: 6,
-        minRelevanceScore: 0.85,
-        requireSameDomain: true,
-        allowExternalLinks: true
-      });
-      mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(true);
-      mockQualityStrategy.assessArticleMarkdownSignal.mockReturnValue({
-        wordCount: 360,
-        paragraphCount: 8,
-        headingCount: 1,
-        linkCount: 2,
-        linkDensity: 0.01,
-        score: 420,
-        isListLike: false
-      });
-
-      const result = await service.runTask("task-1", "org-1");
-
-      expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(2);
-      const expansionPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as any;
-      expect(expansionPayload?.urls).toEqual(
-        expect.arrayContaining([
-          "https://example.com/world/a-very-long-article-slug-with-context-and-analysis-2026"
-        ])
-      );
-      expect(result.inserted).toBe(1);
+      },
+    );
+    mockQualityStrategy.shouldAutoExpand.mockReturnValue(true);
+    mockQualityStrategy.resolveDetailExpansion.mockReturnValue({
+      maxDetailUrls: 6,
+      minRelevanceScore: 0.85,
+      requireSameDomain: true,
+      allowExternalLinks: true,
     });
+    mockQualityStrategy.isSignificantDetailImprovement.mockReturnValue(true);
+    mockQualityStrategy.assessArticleMarkdownSignal.mockReturnValue({
+      wordCount: 360,
+      paragraphCount: 8,
+      headingCount: 1,
+      linkCount: 2,
+      linkDensity: 0.01,
+      score: 420,
+      isListLike: false,
+    });
+
+    const result = await service.runTask("task-1", "org-1");
+
+    expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(2);
+    const expansionPayload = (mockCrawlClient.crawl as jest.Mock).mock
+      .calls[1]?.[0] as any;
+    expect(expansionPayload?.urls).toEqual(
+      expect.arrayContaining([
+        "https://example.com/world/a-very-long-article-slug-with-context-and-analysis-2026",
+      ]),
+    );
+    expect(result.inserted).toBe(1);
+  });
 
   describe("runTask error handling", () => {
     it("fails fast when task config enables crawl-stage llm extraction", async () => {
       const config = {
         markdownStrategy: {
-          type: "LLMExtractionStrategy"
-        }
+          type: "LLMExtractionStrategy",
+        },
       };
       const task = createMockTask({ config });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
 
       await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
-        "crawl stage must only fetch and store cleaned markdown"
+        "crawl stage must only fetch and store cleaned markdown",
       );
 
       expect(mockCrawlClient.crawl).not.toHaveBeenCalled();
       expect(mockPrisma.crawlTask.update).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ status: "failed" })
-        })
+          data: expect.objectContaining({ status: "failed" }),
+        }),
       );
     });
 
@@ -1284,16 +1498,22 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockRejectedValue(new Crawl4aiRequestException("Rate limited", 429));
+      mockCrawlClient.crawl.mockRejectedValue(
+        new Crawl4aiRequestException("Rate limited", 429),
+      );
 
       await expect(
-        service.runTask("task-1", "org-1", undefined, { attempt: 1, maxAttempts: 3, backoffDelayMs: 1000 })
+        service.runTask("task-1", "org-1", undefined, {
+          attempt: 1,
+          maxAttempts: 3,
+          backoffDelayMs: 1000,
+        }),
       ).rejects.toThrow(Crawl4aiRequestException);
 
       expect(mockPrisma.crawlTask.update).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ status: "queued" })
-        })
+          data: expect.objectContaining({ status: "queued" }),
+        }),
       );
     });
 
@@ -1301,16 +1521,22 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockRejectedValue(new Crawl4aiRequestException("Server error", 500));
+      mockCrawlClient.crawl.mockRejectedValue(
+        new Crawl4aiRequestException("Server error", 500),
+      );
 
       await expect(
-        service.runTask("task-1", "org-1", undefined, { attempt: 1, maxAttempts: 3, backoffDelayMs: 1000 })
+        service.runTask("task-1", "org-1", undefined, {
+          attempt: 1,
+          maxAttempts: 3,
+          backoffDelayMs: 1000,
+        }),
       ).rejects.toThrow(Crawl4aiRequestException);
 
       expect(mockPrisma.crawlTask.update).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ status: "queued" })
-        })
+          data: expect.objectContaining({ status: "queued" }),
+        }),
       );
     });
 
@@ -1318,16 +1544,21 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockRejectedValue(new Crawl4aiRequestException("Bad request", 400));
+      mockCrawlClient.crawl.mockRejectedValue(
+        new Crawl4aiRequestException("Bad request", 400),
+      );
 
       await expect(
-        service.runTask("task-1", "org-1", undefined, { attempt: 1, maxAttempts: 3 })
+        service.runTask("task-1", "org-1", undefined, {
+          attempt: 1,
+          maxAttempts: 3,
+        }),
       ).rejects.toThrow(Crawl4aiRequestException);
 
       expect(mockPrisma.crawlTask.update).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ status: "failed" })
-        })
+          data: expect.objectContaining({ status: "failed" }),
+        }),
       );
     });
 
@@ -1335,16 +1566,21 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockRejectedValue(new Crawl4aiRequestException("Rate limited", 429));
+      mockCrawlClient.crawl.mockRejectedValue(
+        new Crawl4aiRequestException("Rate limited", 429),
+      );
 
       await expect(
-        service.runTask("task-1", "org-1", undefined, { attempt: 3, maxAttempts: 3 })
+        service.runTask("task-1", "org-1", undefined, {
+          attempt: 3,
+          maxAttempts: 3,
+        }),
       ).rejects.toThrow(Crawl4aiRequestException);
 
       expect(mockPrisma.crawlTask.update).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ status: "failed" })
-        })
+          data: expect.objectContaining({ status: "failed" }),
+        }),
       );
     });
 
@@ -1352,10 +1588,16 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockRejectedValue(new Crawl4aiRequestException("Rate limited", 429));
+      mockCrawlClient.crawl.mockRejectedValue(
+        new Crawl4aiRequestException("Rate limited", 429),
+      );
 
       await expect(
-        service.runTask("task-1", "org-1", "user-1", { attempt: 1, maxAttempts: 3, backoffDelayMs: 1000 })
+        service.runTask("task-1", "org-1", "user-1", {
+          attempt: 1,
+          maxAttempts: 3,
+          backoffDelayMs: 1000,
+        }),
       ).rejects.toThrow(Crawl4aiRequestException);
 
       expect(mockNotifications.notify).not.toHaveBeenCalled();
@@ -1365,17 +1607,22 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
-      mockCrawlClient.crawl.mockRejectedValue(new Crawl4aiRequestException("Bad request", 400));
+      mockCrawlClient.crawl.mockRejectedValue(
+        new Crawl4aiRequestException("Bad request", 400),
+      );
       mockNotifications.notify.mockResolvedValue(undefined);
 
       await expect(
-        service.runTask("task-1", "org-1", "user-1", { attempt: 1, maxAttempts: 3 })
+        service.runTask("task-1", "org-1", "user-1", {
+          attempt: 1,
+          maxAttempts: 3,
+        }),
       ).rejects.toThrow(Crawl4aiRequestException);
 
       expect(mockNotifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: NotificationType.crawl_failed
-        })
+          type: NotificationType.crawl_failed,
+        }),
       );
     });
   });
@@ -1397,12 +1644,31 @@ describe("CrawlExecutionService", () => {
       expect(result.useManagedBrowser).toBe(false);
       expect(result.simulateUser).toBe(false);
       expect(result.overrideNavigator).toBe(false);
+      expect(result.userAgentMode).toBe("random");
       expect(result.excludeExternalLinks).toBe(true);
       expect(result.removeOverlayElements).toBe(true);
       expect(result.processIframes).toBe(true);
       expect(result.textMode).toBe(false);
       expect(result.captureScreenshot).toBe(false);
       expect(result.wordCountThreshold).toBe(80);
+    });
+
+    it("disables random UA mode when custom userAgent is provided", () => {
+      const result = service.normalizeOptions({
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+        userAgentMode: "random",
+        userAgentGenerator: {
+          platform: "windows",
+          browser: "chrome",
+          deviceType: "desktop",
+          locale: "en-US",
+        },
+      });
+
+      expect(result.userAgent).toContain("Mozilla/5.0");
+      expect(result.userAgentMode).toBeUndefined();
+      expect(result.userAgentGenerator).toBeUndefined();
     });
 
     it("applies quality-first markdown defaults for RAG readiness", () => {
@@ -1412,46 +1678,66 @@ describe("CrawlExecutionService", () => {
       expect(result.markdownOptions).toEqual(
         expect.objectContaining({
           contentSource: "cleaned_html",
-          citations: true
-        })
+          citations: true,
+        }),
       );
       expect(result.cleanMarkdown).toEqual(
         expect.objectContaining({
           removeOverlayElements: true,
-          wordCountThreshold: 18
-        })
+          wordCountThreshold: 18,
+        }),
       );
       expect(result.cleanMarkdown?.excludedTags).toEqual(
-        expect.arrayContaining(["nav", "footer", "aside", "script", "style", "noscript", "form"])
+        expect.arrayContaining([
+          "nav",
+          "footer",
+          "aside",
+          "script",
+          "style",
+          "noscript",
+          "form",
+        ]),
       );
     });
 
     it("uses raw_html markdown source for speed_first profile", () => {
-      const result = service.normalizeOptions({ qualityProfile: "speed_first" });
+      const result = service.normalizeOptions({
+        qualityProfile: "speed_first",
+      });
 
       expect(result.markdownOptions).toEqual(
         expect.objectContaining({
           contentSource: "raw_html",
-          citations: true
-        })
+          citations: true,
+        }),
       );
       expect(result.cleanMarkdown).toEqual(
         expect.objectContaining({
           removeOverlayElements: true,
-          wordCountThreshold: 12
-        })
+          wordCountThreshold: 12,
+        }),
       );
     });
 
     it("keeps headless when provided", () => {
       expect(service.normalizeOptions({ headless: true }).headless).toBe(true);
-      expect(service.normalizeOptions({ headless: false }).headless).toBe(false);
+      expect(service.normalizeOptions({ headless: false }).headless).toBe(
+        false,
+      );
     });
 
     it("normalizes antiBotMode and defaults to auto for invalid values", () => {
-      expect(service.normalizeOptions({ antiBotMode: "enabled" as any }).antiBotMode).toBe("enabled");
-      expect(service.normalizeOptions({ antiBotMode: "disabled" as any }).antiBotMode).toBe("disabled");
-      expect(service.normalizeOptions({ antiBotMode: "unexpected" as any }).antiBotMode).toBe("auto");
+      expect(
+        service.normalizeOptions({ antiBotMode: "enabled" as any }).antiBotMode,
+      ).toBe("enabled");
+      expect(
+        service.normalizeOptions({ antiBotMode: "disabled" as any })
+          .antiBotMode,
+      ).toBe("disabled");
+      expect(
+        service.normalizeOptions({ antiBotMode: "unexpected" as any })
+          .antiBotMode,
+      ).toBe("auto");
     });
 
     it("sets includeImages to true when storeMedia is true", () => {
@@ -1469,13 +1755,25 @@ describe("CrawlExecutionService", () => {
     });
 
     it("clamps scrollDelayMs to 0-5000 range", () => {
-      expect(service.normalizeOptions({ scanFullPage: true, scrollDelayMs: -100 }).scrollDelayMs).toBe(0);
-      expect(service.normalizeOptions({ scanFullPage: true, scrollDelayMs: 10000 }).scrollDelayMs).toBe(5000);
-      expect(service.normalizeOptions({ scanFullPage: true, scrollDelayMs: 500 }).scrollDelayMs).toBe(500);
+      expect(
+        service.normalizeOptions({ scanFullPage: true, scrollDelayMs: -100 })
+          .scrollDelayMs,
+      ).toBe(0);
+      expect(
+        service.normalizeOptions({ scanFullPage: true, scrollDelayMs: 10000 })
+          .scrollDelayMs,
+      ).toBe(5000);
+      expect(
+        service.normalizeOptions({ scanFullPage: true, scrollDelayMs: 500 })
+          .scrollDelayMs,
+      ).toBe(500);
     });
 
     it("sets scrollDelayMs to 200 when NaN", () => {
-      const result = service.normalizeOptions({ scanFullPage: true, scrollDelayMs: NaN });
+      const result = service.normalizeOptions({
+        scanFullPage: true,
+        scrollDelayMs: NaN,
+      });
       expect(result.scrollDelayMs).toBe(200);
     });
 
@@ -1493,7 +1791,10 @@ describe("CrawlExecutionService", () => {
     });
 
     it("respects explicit adjustViewportToContent override", () => {
-      const result = service.normalizeOptions({ scanFullPage: true, adjustViewportToContent: false });
+      const result = service.normalizeOptions({
+        scanFullPage: true,
+        adjustViewportToContent: false,
+      });
 
       expect(result.scanFullPage).toBe(true);
       expect(result.adjustViewportToContent).toBe(false);
@@ -1506,6 +1807,18 @@ describe("CrawlExecutionService", () => {
       expect(result.overrideNavigator).toBe(true);
     });
 
+    it("rejects browser headers containing control characters", () => {
+      const result = service.normalizeOptions({
+        browserHeaders: [
+          { name: "X-Good", value: "ok" },
+          { name: "X-Bad\r\nInjected", value: "bad" },
+          { name: "X-Bad", value: "bad\r\nInjected" },
+        ],
+      });
+
+      expect(result.browserHeaders).toEqual([{ name: "X-Good", value: "ok" }]);
+    });
+
     it("sets useManagedBrowser to true when userDataDir is provided", () => {
       const result = service.normalizeOptions({ userDataDir: "/path/to/data" });
 
@@ -1516,16 +1829,18 @@ describe("CrawlExecutionService", () => {
     it("prefers proxyConfig over proxyUrl", () => {
       const result = service.normalizeOptions({
         proxyUrl: "http://proxy.example.com",
-        proxyConfig: { server: "http://other-proxy.example.com" }
+        proxyConfig: { server: "http://other-proxy.example.com" },
       });
 
-      expect(result.proxyConfig).toEqual({ server: "http://other-proxy.example.com" });
+      expect(result.proxyConfig).toEqual({
+        server: "http://other-proxy.example.com",
+      });
       expect(result.proxyUrl).toBeUndefined();
     });
 
     it("deduplicates additionalUrls", () => {
       const result = service.normalizeOptions({
-        additionalUrls: ["https://a.com", "https://b.com", "https://a.com"]
+        additionalUrls: ["https://a.com", "https://b.com", "https://a.com"],
       });
 
       expect(result.additionalUrls).toEqual(["https://a.com", "https://b.com"]);
@@ -1536,8 +1851,8 @@ describe("CrawlExecutionService", () => {
         markdownOptions: {
           contentSource: "cleaned_html",
           citations: true,
-          bodyWidth: 300
-        }
+          bodyWidth: 300,
+        },
       });
 
       expect(result.markdownOptions?.contentSource).toBe("cleaned_html");
@@ -1550,8 +1865,8 @@ describe("CrawlExecutionService", () => {
         markdownFilter: {
           type: "pruning",
           threshold: 0.5,
-          thresholdType: "dynamic"
-        }
+          thresholdType: "dynamic",
+        },
       });
 
       expect(result.markdownFilter?.type).toBe("pruning");
@@ -1565,8 +1880,8 @@ describe("CrawlExecutionService", () => {
           type: "bm25",
           userQuery: " machine learning ",
           bm25Threshold: 1.2,
-          language: " english "
-        } as any
+          language: " english ",
+        } as any,
       });
 
       expect(result.markdownFilter).toEqual(
@@ -1574,8 +1889,8 @@ describe("CrawlExecutionService", () => {
           type: "bm25",
           userQuery: "machine learning",
           bm25Threshold: 1.2,
-          language: "english"
-        })
+          language: "english",
+        }),
       );
     });
 
@@ -1584,8 +1899,8 @@ describe("CrawlExecutionService", () => {
         browserHeaders: [
           { name: "Authorization", value: "Bearer token1" },
           { name: "authorization", value: "Bearer token2" },
-          { name: "X-Custom", value: "value" }
-        ]
+          { name: "X-Custom", value: "value" },
+        ],
       });
 
       expect(result.browserHeaders).toHaveLength(2);
@@ -1597,8 +1912,8 @@ describe("CrawlExecutionService", () => {
         browserCookies: [
           { name: "session", value: "abc", domain: "example.com", path: "/" },
           { name: "session", value: "xyz", domain: "example.com", path: "/" },
-          { name: "session", value: "123", domain: "other.com", path: "/" }
-        ]
+          { name: "session", value: "123", domain: "other.com", path: "/" },
+        ],
       });
 
       expect(result.browserCookies).toHaveLength(2);
@@ -1610,8 +1925,8 @@ describe("CrawlExecutionService", () => {
           containerSelector: ".scroll-container",
           scrollCount: 10,
           scrollBy: "viewport",
-          waitAfterScrollMs: 500
-        }
+          waitAfterScrollMs: 500,
+        },
       });
 
       expect(result.virtualScroll?.containerSelector).toBe(".scroll-container");
@@ -1624,8 +1939,8 @@ describe("CrawlExecutionService", () => {
       const result = service.normalizeOptions({
         geolocation: {
           latitude: 100,
-          longitude: -200
-        }
+          longitude: -200,
+        },
       });
 
       expect(result.geolocation?.latitude).toBe(90);
@@ -1633,15 +1948,30 @@ describe("CrawlExecutionService", () => {
     });
 
     it("clamps wordCountThreshold to 0-5000 range", () => {
-      expect(service.normalizeOptions({ wordCountThreshold: -10 }).wordCountThreshold).toBe(0);
-      expect(service.normalizeOptions({ wordCountThreshold: 10000 }).wordCountThreshold).toBe(5000);
-      expect(service.normalizeOptions({ wordCountThreshold: 100 }).wordCountThreshold).toBe(100);
+      expect(
+        service.normalizeOptions({ wordCountThreshold: -10 })
+          .wordCountThreshold,
+      ).toBe(0);
+      expect(
+        service.normalizeOptions({ wordCountThreshold: 10000 })
+          .wordCountThreshold,
+      ).toBe(5000);
+      expect(
+        service.normalizeOptions({ wordCountThreshold: 100 })
+          .wordCountThreshold,
+      ).toBe(100);
     });
 
     it("clamps waitForTimeoutMs to 500-60000 range", () => {
-      expect(service.normalizeOptions({ waitForTimeoutMs: 100 }).waitForTimeoutMs).toBe(500);
-      expect(service.normalizeOptions({ waitForTimeoutMs: 100000 }).waitForTimeoutMs).toBe(60000);
-      expect(service.normalizeOptions({ waitForTimeoutMs: 5000 }).waitForTimeoutMs).toBe(5000);
+      expect(
+        service.normalizeOptions({ waitForTimeoutMs: 100 }).waitForTimeoutMs,
+      ).toBe(500);
+      expect(
+        service.normalizeOptions({ waitForTimeoutMs: 100000 }).waitForTimeoutMs,
+      ).toBe(60000);
+      expect(
+        service.normalizeOptions({ waitForTimeoutMs: 5000 }).waitForTimeoutMs,
+      ).toBe(5000);
     });
 
     it("normalizes waitUntil/pageTimeout and politeness controls", () => {
@@ -1653,7 +1983,7 @@ describe("CrawlExecutionService", () => {
         meanDelayMs: -100,
         maxDelayRangeMs: 13000,
         semaphoreCount: 999,
-        removeForms: true
+        removeForms: true,
       });
 
       expect(result.waitUntil).toBe("networkidle");
@@ -1670,7 +2000,10 @@ describe("CrawlExecutionService", () => {
       const result = service.normalizeOptions({
         multiUrlConfigs: [
           {
-            matcher: { patterns: ["https://example.com/world/*"], matchMode: "glob" },
+            matcher: {
+              patterns: ["https://example.com/world/*"],
+              matchMode: "glob",
+            },
             options: {
               waitUntil: "networkidle",
               waitForTimeoutMs: 800,
@@ -1679,10 +2012,10 @@ describe("CrawlExecutionService", () => {
               meanDelayMs: -100,
               maxDelayRangeMs: 13000,
               semaphoreCount: 999,
-              removeForms: true
-            }
-          }
-        ]
+              removeForms: true,
+            },
+          },
+        ],
       });
 
       const overrides = result.multiUrlConfigs?.[0]?.options;
@@ -1713,14 +2046,24 @@ describe("CrawlExecutionService", () => {
       const crawlResponse = createMockCrawlResponse({
         results: [
           { url: "https://a.com", markdown: "# Success", success: true },
-          { url: "https://b.com", markdown: "", success: false, error: "Failed to fetch" }
-        ]
+          {
+            url: "https://b.com",
+            markdown: "",
+            success: false,
+            error: "Failed to fetch",
+          },
+        ],
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Success" });
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Success",
+      });
 
       await service.runTask("task-1", "org-1");
 
@@ -1730,7 +2073,7 @@ describe("CrawlExecutionService", () => {
         expect.anything(),
         expect.anything(),
         expect.anything(),
-        undefined
+        undefined,
       );
     });
 
@@ -1738,29 +2081,48 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       const crawlResponse = createMockCrawlResponse({
         results: [
-          { url: "https://blocked.com", markdown: "Verification Required", success: true, statusCode: 401 },
-          { url: "https://ok.com", markdown: "# Usable content", success: true, statusCode: 200 }
-        ]
+          {
+            url: "https://blocked.com",
+            markdown: "Verification Required",
+            success: true,
+            statusCode: 401,
+          },
+          {
+            url: "https://ok.com",
+            markdown: "# Usable content",
+            success: true,
+            statusCode: 200,
+          },
+        ],
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockImplementation(
+        (markdown: unknown) => ({
+          primary: typeof markdown === "string" ? markdown : "",
+        }),
+      );
 
       await service.runTask("task-1", "org-1");
 
-      const persisted = (mockResultService.persistResults as jest.Mock).mock.calls[0]?.[1] as any[];
+      const persisted = (mockResultService.persistResults as jest.Mock).mock
+        .calls[0]?.[1] as any[];
       expect(persisted).toHaveLength(1);
       expect(persisted[0]?.url).toBe("https://ok.com");
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "crawler",
           message: "crawl4ai partial failures",
-          data: expect.objectContaining({ totalFailures: 1, retryableFailures: 0 })
-        })
+          data: expect.objectContaining({
+            totalFailures: 1,
+            retryableFailures: 0,
+          }),
+        }),
       );
     });
 
@@ -1772,31 +2134,38 @@ describe("CrawlExecutionService", () => {
             url: "https://example.com/world/",
             markdown: "# Partial content",
             success: true,
-            statusCode: 200
+            statusCode: 200,
           },
           {
             url: "https://example.com/world/failure",
             success: false,
             statusCode: 500,
-            error: "Upstream timeout"
-          }
-        ]
+            error: "Upstream timeout",
+          },
+        ],
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockImplementation(
+        (markdown: unknown) => ({
+          primary: typeof markdown === "string" ? markdown : "",
+        }),
+      );
 
       await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(1);
-      const hasAntiBotRetryLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
+      const hasAntiBotRetryLog = (
+        TaskLogModel.create as jest.Mock
+      ).mock.calls.some(
         ([entry]) =>
           Boolean(entry) &&
-          (entry as { stage?: string }).stage === "anti_bot_retry"
+          (entry as { stage?: string }).stage === "anti_bot_retry",
       );
       expect(hasAntiBotRetryLog).toBe(false);
     });
@@ -1805,8 +2174,8 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask({
         targetUrl: "https://example.com/world/",
         config: {
-          antiBotMode: "disabled"
-        }
+          antiBotMode: "disabled",
+        },
       });
       const crawlResponse = createMockCrawlResponse({
         results: [
@@ -1814,34 +2183,41 @@ describe("CrawlExecutionService", () => {
             url: "https://blocked.com",
             markdown: "Verification Required",
             success: true,
-            statusCode: 401
+            statusCode: 401,
           },
           {
             url: "https://ok.com/article",
             markdown: "# Valid content",
             success: true,
-            statusCode: 200
-          }
-        ]
+            statusCode: 200,
+          },
+        ],
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
-      mockResultService.isLikelyBotChallengeMarkdown.mockImplementation((markdown: string) =>
-        markdown.toLowerCase().includes("verification")
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockImplementation(
+        (markdown: unknown) => ({
+          primary: typeof markdown === "string" ? markdown : "",
+        }),
+      );
+      mockResultService.isLikelyBotChallengeMarkdown.mockImplementation(
+        (markdown: string) => markdown.toLowerCase().includes("verification"),
       );
 
       await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(1);
-      const hasAntiBotRetryLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
+      const hasAntiBotRetryLog = (
+        TaskLogModel.create as jest.Mock
+      ).mock.calls.some(
         ([entry]) =>
           Boolean(entry) &&
-          (entry as { stage?: string }).stage === "anti_bot_retry"
+          (entry as { stage?: string }).stage === "anti_bot_retry",
       );
       expect(hasAntiBotRetryLog).toBe(false);
     });
@@ -1850,8 +2226,8 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask({
         targetUrl: "https://example.com/world/",
         config: {
-          antiBotMode: "enabled"
-        }
+          antiBotMode: "enabled",
+        },
       });
       const initialResponse = createMockCrawlResponse({
         results: [
@@ -1859,19 +2235,26 @@ describe("CrawlExecutionService", () => {
             url: "https://example.com/world/",
             markdown: "# Partial content",
             success: true,
-            statusCode: 200
+            statusCode: 200,
           },
           {
             url: "https://example.com/world/failure",
             success: false,
             statusCode: 500,
-            error: "Upstream timeout"
-          }
-        ]
+            error: "Upstream timeout",
+          },
+        ],
       });
       const warmupResponse = createMockCrawlResponse({
         runId: "run-warmup-enabled",
-        results: [{ url: "https://example.com/", markdown: "# Home", success: true, statusCode: 200 }]
+        results: [
+          {
+            url: "https://example.com/",
+            markdown: "# Home",
+            success: true,
+            statusCode: 200,
+          },
+        ],
       });
       const retryResponse = createMockCrawlResponse({
         runId: "run-retry-enabled",
@@ -1880,9 +2263,9 @@ describe("CrawlExecutionService", () => {
             url: "https://example.com/world/article",
             markdown: "# Full article\n\nRecovered content after retry.",
             success: true,
-            statusCode: 200
-          }
-        ]
+            statusCode: 200,
+          },
+        ],
       });
 
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
@@ -1891,10 +2274,15 @@ describe("CrawlExecutionService", () => {
         .mockResolvedValueOnce(initialResponse)
         .mockResolvedValueOnce(warmupResponse)
         .mockResolvedValueOnce(retryResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockImplementation(
+        (markdown: unknown) => ({
+          primary: typeof markdown === "string" ? markdown : "",
+        }),
+      );
 
       await service.runTask("task-1", "org-1");
 
@@ -1903,9 +2291,10 @@ describe("CrawlExecutionService", () => {
         expect.objectContaining({
           stage: "anti_bot_retry",
           status: "processing",
-          message: "Anti-bot mode enabled; retrying with hardened stealth profile",
-          data: expect.objectContaining({ reason: "anti_bot_mode_enabled" })
-        })
+          message:
+            "Anti-bot mode enabled; retrying with hardened stealth profile",
+          data: expect.objectContaining({ reason: "anti_bot_mode_enabled" }),
+        }),
       );
     });
 
@@ -1915,20 +2304,40 @@ describe("CrawlExecutionService", () => {
         results: [
           {
             url: "https://blocked.com",
-            markdown: "Verification Required\nPlease enable JS and disable any ad blocker",
+            markdown:
+              "Verification Required\nPlease enable JS and disable any ad blocker",
             success: true,
-            statusCode: 200
+            statusCode: 200,
           },
-          { url: "https://ok.com", markdown: "# Usable content", success: true, statusCode: 200 }
-        ]
+          {
+            url: "https://ok.com",
+            markdown: "# Usable content",
+            success: true,
+            statusCode: 200,
+          },
+        ],
       });
       const warmupResponse = createMockCrawlResponse({
         runId: "run-warmup",
-        results: [{ url: "https://example.com/world/", markdown: "# World", success: true, statusCode: 200 }]
+        results: [
+          {
+            url: "https://example.com/world/",
+            markdown: "# World",
+            success: true,
+            statusCode: 200,
+          },
+        ],
       });
       const retryResponse = createMockCrawlResponse({
         runId: "run-retry",
-        results: [{ url: "https://ok.com", markdown: "# Usable content", success: true, statusCode: 200 }]
+        results: [
+          {
+            url: "https://ok.com",
+            markdown: "# Usable content",
+            success: true,
+            statusCode: 200,
+          },
+        ],
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
@@ -1936,31 +2345,45 @@ describe("CrawlExecutionService", () => {
         .mockResolvedValueOnce(crawlResponse)
         .mockResolvedValueOnce(warmupResponse)
         .mockResolvedValueOnce(retryResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
-      mockResultService.isLikelyBotChallengeMarkdown.mockImplementation((markdown: string) =>
-        markdown.toLowerCase().includes("verification required")
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockImplementation(
+        (markdown: unknown) => ({
+          primary: typeof markdown === "string" ? markdown : "",
+        }),
+      );
+      mockResultService.isLikelyBotChallengeMarkdown.mockImplementation(
+        (markdown: string) =>
+          markdown.toLowerCase().includes("verification required"),
       );
 
       await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(3);
 
-      const warmupPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[1]?.[0] as {
+      const warmupPayload = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[1]?.[0] as {
         urls?: string[];
         options?: Record<string, unknown>;
       };
-      expect(warmupPayload.urls).toEqual(expect.arrayContaining(["https://example.com/"]));
+      expect(warmupPayload.urls).toEqual(
+        expect.arrayContaining(["https://example.com/"]),
+      );
       expect(warmupPayload.options).toEqual(
         expect.objectContaining({
           pageTypeHint: "list",
-          waitForSelector: "main"
-        })
+          waitForSelector: "main",
+        }),
       );
 
-      const retryPayload = (mockCrawlClient.crawl as jest.Mock).mock.calls[2]?.[0] as {
+      const retryPayload = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[2]?.[0] as {
+        options?: Record<string, unknown>;
+      };
+      const initialPayload = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[0]?.[0] as {
         options?: Record<string, unknown>;
       };
       expect(retryPayload.options).toEqual(
@@ -1972,52 +2395,73 @@ describe("CrawlExecutionService", () => {
           overrideNavigator: true,
           userAgentMode: "random",
           waitUntil: "domcontentloaded",
-          waitForSelector: "main"
-        })
+          waitForSelector: "main",
+        }),
       );
       expect(typeof retryPayload.options?.sessionId).toBe("string");
+      expect(warmupPayload.options?.sessionId).toBe(
+        initialPayload.options?.sessionId,
+      );
+      expect(retryPayload.options?.sessionId).toBe(
+        initialPayload.options?.sessionId,
+      );
 
-      const persisted = (mockResultService.persistResults as jest.Mock).mock.calls[0]?.[1] as any[];
+      const persisted = (mockResultService.persistResults as jest.Mock).mock
+        .calls[0]?.[1] as any[];
       expect(persisted).toHaveLength(1);
       expect(persisted[0]?.url).toBe("https://ok.com");
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "anti_bot_retry",
           status: "processing",
-          message: "Detected anti-bot challenge; retrying with hardened stealth profile"
-        })
+          message:
+            "Detected anti-bot challenge; retrying with hardened stealth profile",
+        }),
       );
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "anti_bot_retry",
           status: "processing",
-          message: "Priming anti-bot session with warmup URLs"
-        })
+          message: "Priming anti-bot session with warmup URLs",
+        }),
       );
-      const hasPartialFailureLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
+      const hasPartialFailureLog = (
+        TaskLogModel.create as jest.Mock
+      ).mock.calls.some(
         ([entry]) =>
           Boolean(entry) &&
           (entry as { stage?: string }).stage === "crawler" &&
-          (entry as { message?: string }).message === "crawl4ai partial failures"
+          (entry as { message?: string }).message ===
+            "crawl4ai partial failures",
       );
       expect(hasPartialFailureLog).toBe(false);
     });
 
     it("retries multiple anti-bot attempts and falls back to the best successful candidate", async () => {
-      const task = createMockTask({ targetUrl: "https://example.com/world/some-article-2026-02-10/" });
+      const task = createMockTask({
+        targetUrl: "https://example.com/world/some-article-2026-02-10/",
+      });
       const crawlResponse = createMockCrawlResponse({
         results: [
           {
             url: "https://blocked.com",
-            markdown: "Verification Required\nPlease enable JS and disable any ad blocker",
+            markdown:
+              "Verification Required\nPlease enable JS and disable any ad blocker",
             success: true,
-            statusCode: 401
-          }
-        ]
+            statusCode: 401,
+          },
+        ],
       });
       const warmupResponse = createMockCrawlResponse({
         runId: "run-warmup",
-        results: [{ url: "https://example.com/world/", markdown: "# World", success: true, statusCode: 200 }]
+        results: [
+          {
+            url: "https://example.com/world/",
+            markdown: "# World",
+            success: true,
+            statusCode: 200,
+          },
+        ],
       });
       const retryResponseAttempt1 = createMockCrawlResponse({
         runId: "run-retry-1",
@@ -2026,20 +2470,21 @@ describe("CrawlExecutionService", () => {
             url: "https://blocked.com",
             markdown: "Verifying the device",
             success: true,
-            statusCode: 401
-          }
-        ]
+            statusCode: 401,
+          },
+        ],
       });
       const retryResponseAttempt2 = createMockCrawlResponse({
         runId: "run-retry-2",
         results: [
           {
             url: "https://ok.com/article",
-            markdown: "# Better\n\nThis is valid article body with enough text.",
+            markdown:
+              "# Better\n\nThis is valid article body with enough text.",
             success: true,
-            statusCode: 200
-          }
-        ]
+            statusCode: 200,
+          },
+        ],
       });
 
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
@@ -2049,43 +2494,57 @@ describe("CrawlExecutionService", () => {
         .mockResolvedValueOnce(warmupResponse)
         .mockResolvedValueOnce(retryResponseAttempt1)
         .mockResolvedValueOnce(retryResponseAttempt2);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockImplementation((markdown: unknown) => ({
-        primary: typeof markdown === "string" ? markdown : ""
-      }));
-      mockResultService.isLikelyBotChallengeMarkdown.mockImplementation((markdown: string) => {
-        const normalized = markdown.toLowerCase();
-        return normalized.includes("verification") || normalized.includes("verifying the device");
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
       });
+      mockResultService.extractMarkdownResult.mockImplementation(
+        (markdown: unknown) => ({
+          primary: typeof markdown === "string" ? markdown : "",
+        }),
+      );
+      mockResultService.isLikelyBotChallengeMarkdown.mockImplementation(
+        (markdown: string) => {
+          const normalized = markdown.toLowerCase();
+          return (
+            normalized.includes("verification") ||
+            normalized.includes("verifying the device")
+          );
+        },
+      );
 
       await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(4);
 
-      const retryPayloadAttempt1 = (mockCrawlClient.crawl as jest.Mock).mock.calls[2]?.[0] as {
+      const retryPayloadAttempt1 = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[2]?.[0] as {
         options?: Record<string, unknown>;
       };
-      const retryPayloadAttempt2 = (mockCrawlClient.crawl as jest.Mock).mock.calls[3]?.[0] as {
+      const retryPayloadAttempt2 = (mockCrawlClient.crawl as jest.Mock).mock
+        .calls[3]?.[0] as {
         options?: Record<string, unknown>;
       };
       expect(retryPayloadAttempt1.options).toEqual(
         expect.objectContaining({
           waitUntil: "domcontentloaded",
-          waitForSelector: "article"
-        })
+          waitForSelector: "article",
+        }),
       );
       expect(retryPayloadAttempt2.options).toEqual(
         expect.objectContaining({
           waitUntil: "load",
-          waitForSelector: "article"
-        })
+          waitForSelector: "article",
+        }),
       );
 
       const hasBackoffLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
         ([entry]) =>
           Boolean(entry) &&
           (entry as { stage?: string }).stage === "anti_bot_retry" &&
-          (entry as { message?: string }).message?.includes("backing off before retry 2/3")
+          (entry as { message?: string }).message?.includes(
+            "backing off before retry 2/3",
+          ),
       );
       expect(hasBackoffLog).toBe(true);
 
@@ -2093,11 +2552,12 @@ describe("CrawlExecutionService", () => {
         expect.objectContaining({
           stage: "anti_bot_retry",
           status: "completed",
-          message: "Selected anti-bot retry candidate"
-        })
+          message: "Selected anti-bot retry candidate",
+        }),
       );
 
-      const persisted = (mockResultService.persistResults as jest.Mock).mock.calls[0]?.[1] as any[];
+      const persisted = (mockResultService.persistResults as jest.Mock).mock
+        .calls[0]?.[1] as any[];
       expect(persisted).toHaveLength(1);
       expect(persisted[0]?.url).toBe("https://ok.com/article");
     });
@@ -2105,13 +2565,18 @@ describe("CrawlExecutionService", () => {
     it("logs warnings when present in response", async () => {
       const task = createMockTask();
       const crawlResponse = createMockCrawlResponse({
-        warnings: ["Warning 1", "Warning 2"]
+        warnings: ["Warning 1", "Warning 2"],
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
 
       await service.runTask("task-1", "org-1");
 
@@ -2119,8 +2584,10 @@ describe("CrawlExecutionService", () => {
         expect.objectContaining({
           stage: "crawler",
           message: "crawl4ai warnings",
-          data: expect.objectContaining({ warnings: ["Warning 1", "Warning 2"] })
-        })
+          data: expect.objectContaining({
+            warnings: ["Warning 1", "Warning 2"],
+          }),
+        }),
       );
     });
 
@@ -2129,22 +2596,32 @@ describe("CrawlExecutionService", () => {
       const crawlResponse = createMockCrawlResponse({
         results: [
           { url: "https://a.com", markdown: "# Success", success: true },
-          { url: "https://b.com", success: false, statusCode: 429, error: "Rate limited" }
-        ]
+          {
+            url: "https://b.com",
+            success: false,
+            statusCode: 429,
+            error: "Rate limited",
+          },
+        ],
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Success" });
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Success",
+      });
 
       await service.runTask("task-1", "org-1");
 
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "crawler",
-          message: "crawl4ai partial failures"
-        })
+          message: "crawl4ai partial failures",
+        }),
       );
     });
 
@@ -2152,18 +2629,40 @@ describe("CrawlExecutionService", () => {
       const task = createMockTask();
       const crawlResponse = createMockCrawlResponse({
         results: [
-          { url: "https://a.com", success: false, statusCode: 429, error: "Rate limited" },
-          { url: "https://b.com", success: false, statusCode: 500, error: "Server error" },
-          { url: "https://c.com", success: false, statusCode: 400, error: "Bad request" }
-        ]
+          {
+            url: "https://a.com",
+            success: false,
+            statusCode: 429,
+            error: "Rate limited",
+          },
+          {
+            url: "https://b.com",
+            success: false,
+            statusCode: 500,
+            error: "Server error",
+          },
+          {
+            url: "https://c.com",
+            success: false,
+            statusCode: 400,
+            error: "Bad request",
+          },
+        ],
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(crawlResponse);
-      mockResultService.persistResults.mockResolvedValue({ inserted: 0, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: undefined });
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 0,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: undefined,
+      });
 
-      await expect(service.runTask("task-1", "org-1")).rejects.toThrow("crawl task produced no results");
+      await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
+        "crawl task produced no results",
+      );
 
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -2171,9 +2670,9 @@ describe("CrawlExecutionService", () => {
           message: "crawl4ai partial failures",
           data: expect.objectContaining({
             totalFailures: 3,
-            retryableFailures: 2
-          })
-        })
+            retryableFailures: 2,
+          }),
+        }),
       );
     });
   });
@@ -2184,16 +2683,21 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
 
       await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl).toHaveBeenCalledWith(
         expect.objectContaining({
           url: "https://example.com",
-          urls: expect.arrayContaining(["https://example.com"])
-        })
+          urls: expect.arrayContaining(["https://example.com"]),
+        }),
       );
     });
 
@@ -2202,15 +2706,20 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
 
       await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl).toHaveBeenCalledWith(
         expect.objectContaining({
-          keywords: ["keyword1", "keyword2"]
-        })
+          keywords: ["keyword1", "keyword2"],
+        }),
       );
     });
 
@@ -2219,45 +2728,70 @@ describe("CrawlExecutionService", () => {
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
 
       await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl).toHaveBeenCalledWith(
         expect.objectContaining({
-          keywords: []
-        })
+          keywords: [],
+        }),
       );
     });
 
     it("includes additionalUrls in URL list", async () => {
-    const task = createMockTask({ config: { additionalUrls: ["https://extra1.com", "https://extra2.com"] } });
+      const task = createMockTask({
+        config: {
+          additionalUrls: ["https://extra1.com", "https://extra2.com"],
+        },
+      });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
 
       await service.runTask("task-1", "org-1");
 
       expect(mockCrawlClient.crawl).toHaveBeenCalledWith(
         expect.objectContaining({
-          urls: expect.arrayContaining(["https://example.com", "https://extra1.com", "https://extra2.com"])
-        })
+          urls: expect.arrayContaining([
+            "https://example.com",
+            "https://extra1.com",
+            "https://extra2.com",
+          ]),
+        }),
       );
     });
 
     it("deduplicates URLs in the final list", async () => {
       const task = createMockTask({
         targetUrl: "https://example.com",
-        config: { additionalUrls: ["https://example.com", "https://extra.com"] }
+        config: {
+          additionalUrls: ["https://example.com", "https://extra.com"],
+        },
       });
       mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
       mockPrisma.crawlTask.update.mockResolvedValue(task);
       mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
-      mockResultService.persistResults.mockResolvedValue({ inserted: 1, skipped: 0 });
-      mockResultService.extractMarkdownResult.mockReturnValue({ primary: "# Test" });
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
 
       await service.runTask("task-1", "org-1");
 

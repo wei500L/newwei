@@ -39,6 +39,10 @@ describe("crawl presets", () => {
     expect(values.ingestToItems).toBe(false);
     expect(values.antiBotMode).toBe("auto");
     expect(values.scanFullPage).toBe(false);
+    expect(values.userAgentMode).toBe("random");
+    expect(values.enableStealthMode).toBe(true);
+    expect(values.simulateUser).toBe(true);
+    expect(values.overrideNavigator).toBe(true);
     expect(values.qualityProfile).toBe("quality_first");
   });
 

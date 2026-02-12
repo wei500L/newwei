@@ -16,9 +16,6 @@
       "@/graphql/generated": [
         "./graphql/generated"
       ],
-      "@modular/utils": [
-        "../../packages/utils/src/index.ts"
-      ],
       "@/hooks/*": [
         "./hooks/*"
       ],
@@ -48,9 +45,10 @@
     "**/*.d.ts",
     "**/*.ts",
     "**/*.tsx",
+    ".next-docker/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-docker/types/**/*.ts"
+    ".next-check/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

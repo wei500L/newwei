@@ -7,6 +7,8 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { classifyHeadedIssue } from "@/lib/crawl-runtime";
+
 type HealthStatus = "loading" | "healthy" | "unreachable";
 
 interface Crawl4aiHealthSnapshot {
@@ -407,6 +409,9 @@ export function Crawl4aiHealthCard({ pollIntervalMs = 10_000, onOpenMonitor }: C
           time: dayjs(snapshot.receivedAt).format("HH:mm:ss")
         })
       : null;
+  const runtimeHeadedReason =
+    runtime && !runtime.headedOk ? runtime.xvfbReason ?? runtime.headedError ?? runtimeError : null;
+  const runtimeHeadedIssue = classifyHeadedIssue(runtimeHeadedReason ?? undefined);
 
   return (
     <Card
@@ -480,10 +485,41 @@ export function Crawl4aiHealthCard({ pollIntervalMs = 10_000, onOpenMonitor }: C
             })}
             {typeof runtime.headedDurationMs === "number" ? ` (${runtime.headedDurationMs}ms)` : null}
           </Typography.Text>
-          {!runtime.headedOk && (runtime.xvfbReason || runtime.headedError || runtimeError) ? (
-            <Typography.Text type="secondary" style={{ whiteSpace: "pre-wrap" }}>
-              {runtime.xvfbReason ?? runtime.headedError ?? runtimeError}
-            </Typography.Text>
+          {!runtime.headedOk && runtimeHeadedReason ? (
+            <Alert
+              type={runtimeHeadedIssue === "unknown" ? "info" : "warning"}
+              showIcon
+              message={
+                runtimeHeadedIssue === "display"
+                  ? t("crawl.runtimeGuide.displayIssueTitle", {
+                      defaultValue: "Detected DISPLAY/Xvfb dependency issue"
+                    })
+                  : runtimeHeadedIssue === "timeout"
+                    ? t("crawl.runtimeGuide.timeoutIssueTitle", { defaultValue: "Headed runtime timed out" })
+                    : t("crawl.monitor.runtime.headedFailed", { defaultValue: "Headed failed" })
+              }
+              description={
+                <Space direction="vertical" size={2}>
+                  <Typography.Text style={{ whiteSpace: "pre-wrap" }}>{runtimeHeadedReason}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    {runtimeHeadedIssue === "display"
+                      ? t("crawl.runtimeGuide.displayIssueHint", {
+                          defaultValue:
+                            "Headed runtime failed because DISPLAY/Xvfb is unavailable. Enable Xvfb in crawl4ai or switch this task to Headless."
+                        })
+                      : runtimeHeadedIssue === "timeout"
+                        ? t("crawl.runtimeGuide.timeoutIssueHint", {
+                            defaultValue:
+                              "Display may be ready, but browser startup/navigation timed out. Check crawl4ai load and timeout settings."
+                          })
+                        : t("crawl.runtimeGuide.noAutoBootstrap", {
+                            defaultValue:
+                              "This console only provides guidance and does not auto-start Xvfb for you."
+                          })}
+                  </Typography.Text>
+                </Space>
+              }
+            />
           ) : null}
         </Space>
       ) : status === "healthy" && runtimeError ? (

@@ -3828,6 +3828,19 @@
         "description": "用于排查问题的原始监控数据（尽力做兼容解析）。"
       }
     },
+    "runtimeGuide": {
+      "title": "Headed 模式与 Xvfb",
+      "noAutoBootstrap": "控制台仅提供引导，不会自动为你拉起 Xvfb。",
+      "principleBody": "当 headless=false 时，Chromium 需要显示服务。Xvfb 会提供一个虚拟 X11 显示（例如 :99），让有界面渲染在容器内无物理显示器也能运行。",
+      "stepsTitle": "建议检查项",
+      "step1": "常规任务优先使用 Headless，只有在反爬场景确实需要时再启用 Headed。",
+      "step2": "使用 Headed 时，请确认 crawl4ai 容器已经配置 Xvfb/DISPLAY。",
+      "step3": "若仍出现显示相关错误，先切回 Headless，再核对容器环境变量配置。",
+      "displayIssueTitle": "检测到 DISPLAY/Xvfb 依赖问题",
+      "displayIssueHint": "Headed 运行失败通常是 DISPLAY/Xvfb 不可用。请在 crawl4ai 中启用 Xvfb，或将任务切回 Headless。",
+      "timeoutIssueTitle": "Headed 运行超时",
+      "timeoutIssueHint": "显示服务可能已就绪，但浏览器启动或导航超时。请检查 crawl4ai 负载与任务超时设置。"
+    },
     "detail": {
       "media": {
         "title": "媒体",
@@ -4380,10 +4393,19 @@
     "browser": {
       "headless": "无头模式",
       "headlessHint": "关闭后将以有界面模式运行（headless=false）。有界面模式可能需要 crawl4ai 容器内启用 Xvfb/DISPLAY。",
+      "headlessModes": {
+        "auto": "自动",
+        "headless": "无头",
+        "headed": "有界面（Xvfb）"
+      },
+      "headedWarningTitle": "有界面模式依赖 Xvfb",
+      "headedWarning": "如果 crawl4ai 日志出现 “cannot open display”，请切回无头模式或在 crawl4ai 容器启用 Xvfb/DISPLAY。",
       "undetected": "反检测",
       "undetectedHint": "反检测提示",
       "stealth": "隐身",
       "stealthHint": "隐身提示",
+      "magicMode": "隐身（Magic）模式",
+      "magicModeHint": "映射为 crawl4ai 的 magic=true，用于增强反检测行为。",
       "managed": "托管",
       "managedHint": "托管提示",
       "managedLink": "托管链接",
@@ -4448,7 +4470,9 @@
           "name": "请输入名称",
           "value": "请输入值"
         },
-        "add": "添加"
+        "add": "添加",
+        "autoFillSecCh": "自动填充 Sec-CH 请求头",
+        "autoFillSecChHint": "如果缺失，将自动补齐 sec-fetch；当 User-Agent 为可确定的 Chromium 时，再补齐匹配的 sec-ch 请求头。"
       },
       "cookies": {
         "title": "Cookie",

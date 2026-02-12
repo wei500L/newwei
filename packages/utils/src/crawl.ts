@@ -1072,11 +1072,12 @@ export const sanitizeCrawlOptions = (
   const browserHeaders = sanitizeBrowserHeaders(values.browserHeaders);
   const browserCookies = sanitizeBrowserCookies(values.browserCookies);
   const userAgent = values.userAgent?.trim();
+  const hasCustomUserAgent = Boolean(userAgent && userAgent.length > 0);
   const userAgentMode =
-    values.userAgentMode === "random" ? "random" : undefined;
-  const userAgentGenerator = sanitizeUserAgentGenerator(
-    values.userAgentGenerator,
-  );
+    !hasCustomUserAgent && values.userAgentMode === "random" ? "random" : undefined;
+  const userAgentGenerator = hasCustomUserAgent
+    ? undefined
+    : sanitizeUserAgentGenerator(values.userAgentGenerator);
   const locale = values.locale?.trim();
   const timezoneId = values.timezoneId?.trim();
   const geolocation = sanitizeGeolocation(values.geolocation);
@@ -1179,7 +1180,7 @@ export const sanitizeCrawlOptions = (
     linkPreview: linkPreview ?? undefined,
     browserHeaders: browserHeaders ?? undefined,
     browserCookies: browserCookies ?? undefined,
-    userAgent: userAgent?.length ? userAgent : undefined,
+    userAgent: hasCustomUserAgent ? userAgent : undefined,
     userAgentMode: userAgentMode ?? undefined,
     userAgentGenerator: userAgentGenerator ?? undefined,
     locale: locale?.length ? locale : undefined,

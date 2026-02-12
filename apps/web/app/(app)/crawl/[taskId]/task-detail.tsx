@@ -19,12 +19,19 @@ import {
   Tabs,
   Tag,
   Typography,
-  Grid
+  Grid,
 } from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -32,9 +39,10 @@ import {
   useIngestCrawlTaskResultsToItemsMutation,
   useRetryCrawlTaskMutation,
   useUpdateCrawlTaskIngestToItemsMutation,
-  type CrawlTaskStatus
+  type CrawlTaskStatus,
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
+import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const statusColors: Record<CrawlTaskStatus, string> = {
@@ -43,7 +51,7 @@ const statusColors: Record<CrawlTaskStatus, string> = {
   running: "blue",
   completed: "green",
   failed: "red",
-  paused: "purple"
+  paused: "purple",
 };
 
 const itemStatusColors: Record<string, string> = {
@@ -52,7 +60,7 @@ const itemStatusColors: Record<string, string> = {
   processing: "blue",
   completed: "green",
   failed: "red",
-  duplicate: "purple"
+  duplicate: "purple",
 };
 
 type TaskLogStatus = "pending" | "processing" | "completed" | "failed";
@@ -87,13 +95,25 @@ const taskLogStatusColors: Record<TaskLogStatus, string> = {
   pending: "gold",
   processing: "blue",
   completed: "green",
-  failed: "red"
+  failed: "red",
 };
 
 const limitOptions = [
-  { value: 10, labelKey: "crawl.detail.results.latest10", defaultValue: "Latest 10" },
-  { value: 20, labelKey: "crawl.detail.results.latest20", defaultValue: "Latest 20" },
-  { value: 50, labelKey: "crawl.detail.results.latest50", defaultValue: "Latest 50" }
+  {
+    value: 10,
+    labelKey: "crawl.detail.results.latest10",
+    defaultValue: "Latest 10",
+  },
+  {
+    value: 20,
+    labelKey: "crawl.detail.results.latest20",
+    defaultValue: "Latest 20",
+  },
+  {
+    value: 50,
+    labelKey: "crawl.detail.results.latest50",
+    defaultValue: "Latest 50",
+  },
 ];
 
 const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -184,7 +204,8 @@ const mediaDocsUrl =
   "https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/link-media.md";
 const tableDocsUrl =
   "https://github.com/unclecode/crawl4ai/blob/main/docs/blog/release-v0.7.3.md";
-const shortenScript = (value: string) => (value.length > 160 ? `${value.slice(0, 157)}…` : value);
+const shortenScript = (value: string) =>
+  value.length > 160 ? `${value.slice(0, 157)}…` : value;
 
 const CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION = gql`
   mutation CreateItemFromCrawlResult($resultId: String!) {
@@ -213,7 +234,7 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
     return null;
   }
   const entries = Object.entries(media).filter(
-    ([, items]) => Array.isArray(items) && items.length > 0
+    ([, items]) => Array.isArray(items) && items.length > 0,
   );
   if (!entries.length) {
     return null;
@@ -245,7 +266,7 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
                 dataSource={preview}
                 renderItem={(item, index) => (
                   <List.Item key={`${kind}-${index}-${item.src ?? "media"}`}>
-                <Space align="start">
+                    <Space align="start">
                       {renderMediaPreview(kind, item, t)}
                       <Space direction="vertical" size={4}>
                         <Typography.Link href={item.src} target="_blank">
@@ -262,7 +283,12 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
                           </Typography.Paragraph>
                         ) : null}
                         <Typography.Text type="secondary">
-                          {[item.type, item.format, formatDimensions(item), formatScore(item, t)]
+                          {[
+                            item.type,
+                            item.format,
+                            formatDimensions(item),
+                            formatScore(item, t),
+                          ]
                             .filter(Boolean)
                             .join(" • ")}
                         </Typography.Text>
@@ -270,12 +296,12 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
                         {renderSourceList(
                           t("crawl.detail.media.sourceTypes.picture"),
                           item.pictureSources,
-                          t
+                          t,
                         )}
                         {renderSourceList(
                           t("crawl.detail.media.sourceTypes.responsive"),
                           item.responsiveSources,
-                          t
+                          t,
                         )}
                       </Space>
                     </Space>
@@ -295,13 +321,21 @@ function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
   );
 }
 
-function StoredMediaSection({ assets }: { assets: CrawlStoredMediaAsset[] | null }) {
+function StoredMediaSection({
+  assets,
+}: {
+  assets: CrawlStoredMediaAsset[] | null;
+}) {
   const { t } = useTranslation();
   if (!assets || assets.length === 0) {
     return null;
   }
   return (
-    <Card size="small" title={t("crawl.detail.media.storedTitle")} style={{ marginTop: 12 }}>
+    <Card
+      size="small"
+      title={t("crawl.detail.media.storedTitle")}
+      style={{ marginTop: 12 }}
+    >
       <List
         size="small"
         split={false}
@@ -311,15 +345,24 @@ function StoredMediaSection({ assets }: { assets: CrawlStoredMediaAsset[] | null
             <Space align="start">
               {renderStoredMediaPreview(asset)}
               <Space direction="vertical" size={4}>
-                <Typography.Text strong>{asset.title ?? asset.alt ?? asset.kind}</Typography.Text>
+                <Typography.Text strong>
+                  {asset.title ?? asset.alt ?? asset.kind}
+                </Typography.Text>
                 <Typography.Text type="secondary">
-                  {(asset.contentType ?? t("crawl.detail.media.unknownMime")).toUpperCase()} • {formatBytes(asset.bytes)}
+                  {(
+                    asset.contentType ?? t("crawl.detail.media.unknownMime")
+                  ).toUpperCase()}{" "}
+                  • {formatBytes(asset.bytes)}
                 </Typography.Text>
                 <Typography.Paragraph style={{ marginBottom: 4 }}>
                   {asset.desc ?? asset.sourceUrl}
                 </Typography.Paragraph>
                 <Space size="small">
-                  <Typography.Link href={asset.sourceUrl} target="_blank" rel="noreferrer">
+                  <Typography.Link
+                    href={asset.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     {t("common.source")}
                   </Typography.Link>
                   {asset.dataUri ? (
@@ -349,7 +392,7 @@ function buildTableRecords(table: CrawlResultTable): CrawlResultTableRecord[] {
     table.headers.reduce<CrawlResultTableRecord>((acc, header, index) => {
       acc[header] = row[index] ?? null;
       return acc;
-    }, {})
+    }, {}),
   );
 }
 
@@ -372,18 +415,20 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
     >
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
         {tables.map((table) => {
-          const columns = (table.dataFrame?.columns ?? table.headers).map((header) => ({
-            title: header,
-            dataIndex: header,
-            key: header,
-            ellipsis: true
-          }));
+          const columns = (table.dataFrame?.columns ?? table.headers).map(
+            (header) => ({
+              title: header,
+              dataIndex: header,
+              key: header,
+              ellipsis: true,
+            }),
+          );
           const records = buildTableRecords(table);
           const previewRows: CrawlResultTablePreviewRow[] = records
             .slice(0, 5)
             .map((record, index) => ({
               key: `${table.id}-${index}`,
-              ...record
+              ...record,
             }));
           const remaining = Math.max(0, table.rowCount - previewRows.length);
           return (
@@ -391,14 +436,17 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
               <Space direction="vertical" size={4} style={{ width: "100%" }}>
                 <Space wrap>
                   <Typography.Text strong>
-                    {table.caption || t("crawl.detail.tables.defaultTitle", { id: table.id })}
+                    {table.caption ||
+                      t("crawl.detail.tables.defaultTitle", { id: table.id })}
                   </Typography.Text>
                   <Tag>
                     {table.rowCount} × {table.columnCount}
                   </Tag>
                   {table.source && (
                     <Typography.Text type="secondary">
-                      {t("crawl.detail.tables.source", { source: table.source })}
+                      {t("crawl.detail.tables.source", {
+                        source: table.source,
+                      })}
                     </Typography.Text>
                   )}
                 </Space>
@@ -421,7 +469,10 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
                           <Space direction="vertical" size={0}>
                             {columns.slice(0, 3).map((col) => (
                               <div key={col.key}>
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                <Typography.Text
+                                  type="secondary"
+                                  style={{ fontSize: 12 }}
+                                >
                                   {col.title}:
                                 </Typography.Text>{" "}
                                 <Typography.Text style={{ fontSize: 12 }}>
@@ -449,7 +500,7 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
                 <Typography.Text type="secondary">
                   {t("crawl.detail.tables.remaining", {
                     preview: previewRows.length,
-                    remaining
+                    remaining,
                   })}
                 </Typography.Text>
               )}
@@ -464,7 +515,7 @@ function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
 function renderMediaPreview(
   kind: string,
   item: CrawlMediaItem,
-  t: (key: string, options?: Record<string, unknown>) => string
+  t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   if (!item.src) {
     return null;
@@ -481,7 +532,7 @@ function renderMediaPreview(
           height: 96,
           objectFit: "cover",
           borderRadius: 8,
-          border: "1px solid #f0f0f0"
+          border: "1px solid #f0f0f0",
         }}
         loading="lazy"
       />
@@ -515,7 +566,7 @@ function renderStoredMediaPreview(asset: CrawlStoredMediaAsset) {
           height: 96,
           objectFit: "cover",
           borderRadius: 8,
-          border: "1px solid #f0f0f0"
+          border: "1px solid #f0f0f0",
         }}
         loading="lazy"
       />
@@ -562,7 +613,7 @@ function formatDimensions(item: CrawlMediaItem) {
 
 function formatScore(
   item: CrawlMediaItem,
-  t: (key: string, options?: Record<string, unknown>) => string
+  t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   if (typeof item.score === "number") {
     return t("crawl.detail.media.score", { score: item.score.toFixed(2) });
@@ -572,18 +623,20 @@ function formatScore(
 
 function renderSrcset(
   srcset: string[],
-  t: (key: string, options?: Record<string, unknown>) => string
+  t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   return (
     <div>
-      <Typography.Text type="secondary">{t("crawl.detail.media.srcsetVariants")}</Typography.Text>
+      <Typography.Text type="secondary">
+        {t("crawl.detail.media.srcsetVariants")}
+      </Typography.Text>
       <pre
         style={{
           background: "#fafafa",
           padding: 8,
           borderRadius: 4,
           maxWidth: 520,
-          whiteSpace: "pre-wrap"
+          whiteSpace: "pre-wrap",
         }}
       >
         {srcset.join("\n")}
@@ -595,7 +648,7 @@ function renderSrcset(
 function renderSourceList(
   label: string,
   sources: CrawlMediaSource[] | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string
+  t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   if (!sources || sources.length === 0) {
     return null;
@@ -625,79 +678,90 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const router = useRouter();
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const canView =
+    permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
   const canViewTaskLogs = permissions.includes("settings.manage");
   const canCreateItem = canView && permissions.includes("items.write");
-  const canViewItems = permissions.includes("items.read") || permissions.includes("items.write");
+  const canViewItems =
+    permissions.includes("items.read") || permissions.includes("items.write");
   const [resultLimit, setResultLimit] = useState(20);
   const [resultSearch, setResultSearch] = useState<string>();
   const [resultSearchInput, setResultSearchInput] = useState("");
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
-    [session?.accessToken]
+    [session?.accessToken],
   );
   const taskLogsLoadingRef = useRef(false);
   const [taskLogs, setTaskLogs] = useState<TaskLogRecord[]>([]);
   const [taskLogsLoading, setTaskLogsLoading] = useState(false);
   const [taskLogsError, setTaskLogsError] = useState<string | null>(null);
 
-  const { data, loading, refetch, startPolling, stopPolling } = useCrawlTaskQuery({
-    variables: {
-      id: taskId,
-      resultLimit,
-      resultSearch: resultSearch ?? null
-    },
-    fetchPolicy: "network-only",
-    skip: !canView
-  });
+  const { data, loading, refetch, startPolling, stopPolling } =
+    useCrawlTaskQuery({
+      variables: {
+        id: taskId,
+        resultLimit,
+        resultSearch: resultSearch ?? null,
+      },
+      fetchPolicy: "network-only",
+      skip: !canView,
+    });
 
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
   const [updateIngestToItems, { loading: updatingIngest }] =
     useUpdateCrawlTaskIngestToItemsMutation();
   const [ingestCrawlTaskResultsToItems, { loading: backfilling }] =
     useIngestCrawlTaskResultsToItemsMutation();
-  const [ingestingResultId, setIngestingResultId] = useState<string | null>(null);
+  const [ingestingResultId, setIngestingResultId] = useState<string | null>(
+    null,
+  );
   const [createItemFromCrawlResult, { loading: ingesting }] = useMutation<{
     createItemFromCrawlResult: { id: string; title: string; status: string };
   }>(CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION);
 
-  const loadTaskLogs = useCallback(async (options?: { silent?: boolean }) => {
-    if (!canViewTaskLogs) {
-      return;
-    }
-    if (taskLogsLoadingRef.current) {
-      return;
-    }
-    const silent = options?.silent === true;
-    taskLogsLoadingRef.current = true;
-    if (!silent) {
-      setTaskLogsLoading(true);
-      setTaskLogsError(null);
-    }
-    try {
-      const res = await apiClient.get<TaskLogRecord[]>("admin/quality/task-logs", {
-        params: {
-          queue: "crawl4ai",
-          jobId: taskId,
-          limit: 100
+  const loadTaskLogs = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!canViewTaskLogs) {
+        return;
+      }
+      if (taskLogsLoadingRef.current) {
+        return;
+      }
+      const silent = options?.silent === true;
+      taskLogsLoadingRef.current = true;
+      if (!silent) {
+        setTaskLogsLoading(true);
+        setTaskLogsError(null);
+      }
+      try {
+        const res = await apiClient.get<TaskLogRecord[]>(
+          "admin/quality/task-logs",
+          {
+            params: {
+              queue: "crawl4ai",
+              jobId: taskId,
+              limit: 100,
+            },
+          },
+        );
+        setTaskLogs(Array.isArray(res.data) ? res.data : []);
+      } catch (error: unknown) {
+        const reason = error instanceof Error ? error.message : String(error);
+        setTaskLogsError(reason);
+        if (!silent) {
+          message.error(reason);
         }
-      });
-      setTaskLogs(Array.isArray(res.data) ? res.data : []);
-    } catch (error: unknown) {
-      const reason = error instanceof Error ? error.message : String(error);
-      setTaskLogsError(reason);
-      if (!silent) {
-        message.error(reason);
+      } finally {
+        if (!silent) {
+          setTaskLogsLoading(false);
+        }
+        taskLogsLoadingRef.current = false;
       }
-    } finally {
-      if (!silent) {
-        setTaskLogsLoading(false);
-      }
-      taskLogsLoadingRef.current = false;
-    }
-  }, [apiClient, canViewTaskLogs, message, taskId]);
+    },
+    [apiClient, canViewTaskLogs, message, taskId],
+  );
 
   useEffect(() => {
     if (!canView) {
@@ -706,7 +770,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     const taskStatus = data?.crawlTask?.status;
     const shouldPoll =
-      taskStatus === "pending" || taskStatus === "queued" || taskStatus === "running";
+      taskStatus === "pending" ||
+      taskStatus === "queued" ||
+      taskStatus === "running";
     if (shouldPoll) {
       startPolling(3000);
       return;
@@ -727,7 +793,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     const taskStatus = data?.crawlTask?.status;
     const shouldPoll =
-      taskStatus === "pending" || taskStatus === "queued" || taskStatus === "running";
+      taskStatus === "pending" ||
+      taskStatus === "queued" ||
+      taskStatus === "running";
     if (!shouldPoll) {
       return;
     }
@@ -748,22 +816,34 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return null;
     }
   }, [task?.config]);
+  const isHeadedTask = useMemo(() => config?.headless === false, [config]);
+  const lastErrorHeadedIssue = useMemo(
+    () => classifyHeadedIssue(task?.lastError ?? undefined),
+    [task?.lastError],
+  );
 
   const virtualScrollSummary = useMemo(() => {
-    if (!config || typeof config.virtualScroll !== "object" || !config.virtualScroll) {
+    if (
+      !config ||
+      typeof config.virtualScroll !== "object" ||
+      !config.virtualScroll
+    ) {
       return null;
     }
     const value = config.virtualScroll as Record<string, unknown>;
     const containerSelector =
-      typeof value.containerSelector === "string" && value.containerSelector.trim().length > 0
+      typeof value.containerSelector === "string" &&
+      value.containerSelector.trim().length > 0
         ? value.containerSelector.trim()
         : "body";
     const scrollCount =
-      typeof value.scrollCount === "number" && Number.isFinite(value.scrollCount)
+      typeof value.scrollCount === "number" &&
+      Number.isFinite(value.scrollCount)
         ? value.scrollCount
         : null;
     const waitAfterScrollMs =
-      typeof value.waitAfterScrollMs === "number" && Number.isFinite(value.waitAfterScrollMs)
+      typeof value.waitAfterScrollMs === "number" &&
+      Number.isFinite(value.waitAfterScrollMs)
         ? value.waitAfterScrollMs
         : null;
     const scrollByRaw = value.scrollBy;
@@ -779,7 +859,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       containerSelector,
       scrollCount,
       waitAfterScrollMs,
-      scrollBy
+      scrollBy,
     };
   }, [config]);
 
@@ -816,7 +896,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return null;
     }
     const normalized = config.pageTypeHint.trim().toLowerCase();
-    if (normalized === "auto" || normalized === "list" || normalized === "detail") {
+    if (
+      normalized === "auto" ||
+      normalized === "list" ||
+      normalized === "detail"
+    ) {
       return normalized;
     }
     return null;
@@ -836,25 +920,37 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   }, [pageTypeHintValue, t]);
 
   const autoExpandDetailsValue =
-    typeof config?.autoExpandDetails === "boolean" ? config.autoExpandDetails : null;
+    typeof config?.autoExpandDetails === "boolean"
+      ? config.autoExpandDetails
+      : null;
 
   const detailExpansionSummary = useMemo(() => {
-    if (!config || typeof config.detailExpansion !== "object" || !config.detailExpansion) {
+    if (
+      !config ||
+      typeof config.detailExpansion !== "object" ||
+      !config.detailExpansion
+    ) {
       return null;
     }
     const value = config.detailExpansion as Record<string, unknown>;
     const maxDetailUrls =
-      typeof value.maxDetailUrls === "number" && Number.isFinite(value.maxDetailUrls)
+      typeof value.maxDetailUrls === "number" &&
+      Number.isFinite(value.maxDetailUrls)
         ? value.maxDetailUrls
         : null;
     const minRelevanceScore =
-      typeof value.minRelevanceScore === "number" && Number.isFinite(value.minRelevanceScore)
+      typeof value.minRelevanceScore === "number" &&
+      Number.isFinite(value.minRelevanceScore)
         ? value.minRelevanceScore
         : null;
     const requireSameDomain =
-      typeof value.requireSameDomain === "boolean" ? value.requireSameDomain : null;
+      typeof value.requireSameDomain === "boolean"
+        ? value.requireSameDomain
+        : null;
     const allowExternalLinks =
-      typeof value.allowExternalLinks === "boolean" ? value.allowExternalLinks : null;
+      typeof value.allowExternalLinks === "boolean"
+        ? value.allowExternalLinks
+        : null;
     if (
       maxDetailUrls == null &&
       minRelevanceScore == null &&
@@ -867,7 +963,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       maxDetailUrls,
       minRelevanceScore,
       requireSameDomain,
-      allowExternalLinks
+      allowExternalLinks,
     };
   }, [config]);
 
@@ -915,7 +1011,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     pageTypeHintSummary,
     qualityProfileSummary,
     t,
-    virtualScrollSummary
+    virtualScrollSummary,
   ]);
 
   const taskLogColumns = useMemo(
@@ -930,8 +1026,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             month: "short",
             day: "numeric",
             hour: "2-digit",
-            minute: "2-digit"
-          })
+            minute: "2-digit",
+          }),
       },
       {
         title: t("quality.taskLogs.columns.stage"),
@@ -939,8 +1035,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         key: "stage",
         width: 140,
         render: (value: string) => (
-          <Typography.Text style={{ fontFamily: "monospace" }}>{value}</Typography.Text>
-        )
+          <Typography.Text style={{ fontFamily: "monospace" }}>
+            {value}
+          </Typography.Text>
+        ),
       },
       {
         title: t("quality.taskLogs.columns.status"),
@@ -951,7 +1049,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           <Tag color={taskLogStatusColors[value] ?? "default"}>
             {t(`quality.taskLogs.status.${value}`, { defaultValue: value })}
           </Tag>
-        )
+        ),
       },
       {
         title: t("quality.taskLogs.columns.message"),
@@ -959,10 +1057,14 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         key: "message",
         render: (value: string | null | undefined, record: TaskLogRecord) => {
           const errorMessage =
-            record.error && typeof record.error === "object" && !Array.isArray(record.error)
+            record.error &&
+            typeof record.error === "object" &&
+            !Array.isArray(record.error)
               ? (() => {
-                  const messageValue = (record.error as { message?: unknown }).message;
-                  return typeof messageValue === "string" && messageValue.trim().length > 0
+                  const messageValue = (record.error as { message?: unknown })
+                    .message;
+                  return typeof messageValue === "string" &&
+                    messageValue.trim().length > 0
                     ? messageValue.trim()
                     : null;
                 })()
@@ -972,10 +1074,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               {value ?? errorMessage ?? t("common.emptyValue")}
             </Typography.Text>
           );
-        }
-      }
+        },
+      },
     ],
-    [locale, t]
+    [locale, t],
   );
 
   const expansionSummary = useMemo<ExpansionQualitySummary | null>(() => {
@@ -983,13 +1085,18 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       if (log.stage !== "expansion") {
         continue;
       }
-      if (!log.data || typeof log.data !== "object" || Array.isArray(log.data)) {
+      if (
+        !log.data ||
+        typeof log.data !== "object" ||
+        Array.isArray(log.data)
+      ) {
         continue;
       }
 
       const data = log.data as Record<string, unknown>;
       const candidateCount =
-        typeof data.candidateCount === "number" && Number.isFinite(data.candidateCount)
+        typeof data.candidateCount === "number" &&
+        Number.isFinite(data.candidateCount)
           ? data.candidateCount
           : null;
       const batchCount =
@@ -997,17 +1104,24 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           ? data.batchCount
           : null;
       const improvedSuccesses =
-        typeof data.improvedSuccesses === "number" && Number.isFinite(data.improvedSuccesses)
+        typeof data.improvedSuccesses === "number" &&
+        Number.isFinite(data.improvedSuccesses)
           ? data.improvedSuccesses
           : null;
 
-      if (candidateCount == null || batchCount == null || improvedSuccesses == null) {
+      if (
+        candidateCount == null ||
+        batchCount == null ||
+        improvedSuccesses == null
+      ) {
         continue;
       }
 
       const getOptionalNumber = (key: string) => {
         const value = data[key];
-        return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+        return typeof value === "number" && Number.isFinite(value)
+          ? value
+          : undefined;
       };
 
       return {
@@ -1019,7 +1133,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         minimumCandidateCount: getOptionalNumber("minimumCandidateCount"),
         strictCandidateCount: getOptionalNumber("strictCandidateCount"),
         relaxedCandidateCount: getOptionalNumber("relaxedCandidateCount"),
-        linkFallbackCandidateCount: getOptionalNumber("linkFallbackCandidateCount")
+        linkFallbackCandidateCount: getOptionalNumber(
+          "linkFallbackCandidateCount",
+        ),
       };
     }
 
@@ -1031,7 +1147,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return t("crawl.detail.proxy.direct");
     }
     const proxyUrl =
-      typeof config.proxyUrl === "string" && config.proxyUrl.length > 0 ? config.proxyUrl : null;
+      typeof config.proxyUrl === "string" && config.proxyUrl.length > 0
+        ? config.proxyUrl
+        : null;
     const proxyConfig = config.proxyConfig as
       | { server?: string; username?: string; password?: string }
       | undefined;
@@ -1039,7 +1157,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (proxyConfig?.server) {
       const label = t("crawl.detail.proxy.dict", {
         server: proxyConfig.server,
-        user: proxyConfig.username ?? null
+        user: proxyConfig.username ?? null,
       });
       if (rawServer && isLocalhostProxyUrl(rawServer)) {
         return (
@@ -1048,7 +1166,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {t("crawl.detail.proxy.dockerHint", {
                 defaultValue:
-                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead."
+                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead.",
               })}
             </Typography.Text>
           </Space>
@@ -1065,7 +1183,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {t("crawl.detail.proxy.dockerHint", {
                 defaultValue:
-                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead."
+                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead.",
               })}
             </Typography.Text>
           </Space>
@@ -1091,14 +1209,22 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   }, [config]);
 
   const markdownStrategy = useMemo(() => {
-    if (!config || typeof config.markdownStrategy !== "object" || !config.markdownStrategy) {
+    if (
+      !config ||
+      typeof config.markdownStrategy !== "object" ||
+      !config.markdownStrategy
+    ) {
       return null;
     }
     return config.markdownStrategy as Record<string, unknown>;
   }, [config]);
 
   const cleanMarkdownOptions = useMemo(() => {
-    if (!config || typeof config.cleanMarkdown !== "object" || !config.cleanMarkdown) {
+    if (
+      !config ||
+      typeof config.cleanMarkdown !== "object" ||
+      !config.cleanMarkdown
+    ) {
       return null;
     }
     return config.cleanMarkdown as Record<string, unknown>;
@@ -1110,33 +1236,41 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     const parts: string[] = [];
     if (typeof markdownOptions.contentSource === "string") {
-      parts.push(t("crawl.detail.markdown.source", { source: markdownOptions.contentSource }));
+      parts.push(
+        t("crawl.detail.markdown.source", {
+          source: markdownOptions.contentSource,
+        }),
+      );
     }
     if (typeof markdownOptions.ignoreLinks === "boolean") {
       parts.push(
         markdownOptions.ignoreLinks
           ? t("crawl.detail.markdown.ignoreLinks")
-          : t("crawl.detail.markdown.keepLinks")
+          : t("crawl.detail.markdown.keepLinks"),
       );
     }
     if (typeof markdownOptions.escapeHtml === "boolean") {
       parts.push(
         markdownOptions.escapeHtml
           ? t("crawl.detail.markdown.escapeHtml")
-          : t("crawl.detail.markdown.renderHtml")
+          : t("crawl.detail.markdown.renderHtml"),
       );
     }
     if (typeof markdownOptions.citations === "boolean") {
       parts.push(
         markdownOptions.citations
           ? t("crawl.detail.markdown.citationsEnabled")
-          : t("crawl.detail.markdown.citationsDisabled")
+          : t("crawl.detail.markdown.citationsDisabled"),
       );
     }
     if (typeof markdownOptions.bodyWidth === "number") {
-      parts.push(t("crawl.detail.markdown.wrap", { width: markdownOptions.bodyWidth }));
+      parts.push(
+        t("crawl.detail.markdown.wrap", { width: markdownOptions.bodyWidth }),
+      );
     }
-    return parts.length ? parts.join(" • ") : t("crawl.detail.markdown.default");
+    return parts.length
+      ? parts.join(" • ")
+      : t("crawl.detail.markdown.default");
   }, [markdownOptions, t]);
 
   const markdownFilterSummary = useMemo(() => {
@@ -1152,7 +1286,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             ? (markdownFilter.user_query as string)
             : undefined;
       if (queryValue && queryValue.trim().length > 0) {
-        parts.push(t("crawl.detail.markdownFilter.query", { query: queryValue }));
+        parts.push(
+          t("crawl.detail.markdownFilter.query", { query: queryValue }),
+        );
       }
       const bm25ThresholdValue =
         typeof markdownFilter.bm25Threshold === "number"
@@ -1161,7 +1297,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             ? (markdownFilter.bm25_threshold as number)
             : undefined;
       if (typeof bm25ThresholdValue === "number") {
-        parts.push(t("crawl.detail.markdownFilter.bm25Threshold", { value: bm25ThresholdValue }));
+        parts.push(
+          t("crawl.detail.markdownFilter.bm25Threshold", {
+            value: bm25ThresholdValue,
+          }),
+        );
       }
       const languageValue =
         typeof markdownFilter.language === "string"
@@ -1170,12 +1310,20 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             ? (markdownFilter.lang as string)
             : undefined;
       if (languageValue && languageValue.trim().length > 0) {
-        parts.push(t("crawl.detail.markdownFilter.language", { language: languageValue }));
+        parts.push(
+          t("crawl.detail.markdownFilter.language", {
+            language: languageValue,
+          }),
+        );
       }
       return parts.join(" • ");
     }
     if (typeof markdownFilter.threshold === "number") {
-      parts.push(t("crawl.detail.markdownFilter.threshold", { value: markdownFilter.threshold }));
+      parts.push(
+        t("crawl.detail.markdownFilter.threshold", {
+          value: markdownFilter.threshold,
+        }),
+      );
     }
     const thresholdTypeValue =
       typeof markdownFilter.thresholdType === "string"
@@ -1184,7 +1332,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           ? (markdownFilter.threshold_type as string)
           : undefined;
     if (thresholdTypeValue) {
-      parts.push(t("crawl.detail.markdownFilter.mode", { mode: thresholdTypeValue }));
+      parts.push(
+        t("crawl.detail.markdownFilter.mode", { mode: thresholdTypeValue }),
+      );
     }
     const minWordValue =
       typeof markdownFilter.minWordThreshold === "number"
@@ -1193,7 +1343,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           ? (markdownFilter.min_word_threshold as number)
           : undefined;
     if (typeof minWordValue === "number") {
-      parts.push(t("crawl.detail.markdownFilter.minWords", { count: minWordValue }));
+      parts.push(
+        t("crawl.detail.markdownFilter.minWords", { count: minWordValue }),
+      );
     }
     return parts.join(" • ");
   }, [markdownFilter, t]);
@@ -1220,35 +1372,48 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return t("common.disabled");
     }
     const parts: string[] = [];
-    if (typeof cleanMarkdownOptions.cssSelector === "string" && cleanMarkdownOptions.cssSelector.trim().length) {
-      parts.push(t("crawl.detail.cleanMarkdown.scope", { selector: cleanMarkdownOptions.cssSelector }));
-    }
-    if (Array.isArray(cleanMarkdownOptions.targetElements) && cleanMarkdownOptions.targetElements.length) {
+    if (
+      typeof cleanMarkdownOptions.cssSelector === "string" &&
+      cleanMarkdownOptions.cssSelector.trim().length
+    ) {
       parts.push(
-        t("crawl.detail.cleanMarkdown.targets", {
-          targets: cleanMarkdownOptions.targetElements.join(", ")
-        })
+        t("crawl.detail.cleanMarkdown.scope", {
+          selector: cleanMarkdownOptions.cssSelector,
+        }),
       );
     }
-    if (Array.isArray(cleanMarkdownOptions.excludedTags) && cleanMarkdownOptions.excludedTags.length) {
+    if (
+      Array.isArray(cleanMarkdownOptions.targetElements) &&
+      cleanMarkdownOptions.targetElements.length
+    ) {
+      parts.push(
+        t("crawl.detail.cleanMarkdown.targets", {
+          targets: cleanMarkdownOptions.targetElements.join(", "),
+        }),
+      );
+    }
+    if (
+      Array.isArray(cleanMarkdownOptions.excludedTags) &&
+      cleanMarkdownOptions.excludedTags.length
+    ) {
       parts.push(
         t("crawl.detail.cleanMarkdown.excluded", {
-          tags: cleanMarkdownOptions.excludedTags.join(", ")
-        })
+          tags: cleanMarkdownOptions.excludedTags.join(", "),
+        }),
       );
     }
     if (typeof cleanMarkdownOptions.wordCountThreshold === "number") {
       parts.push(
         t("crawl.detail.cleanMarkdown.minWords", {
-          count: cleanMarkdownOptions.wordCountThreshold
-        })
+          count: cleanMarkdownOptions.wordCountThreshold,
+        }),
       );
     }
     if (typeof cleanMarkdownOptions.removeOverlayElements === "boolean") {
       parts.push(
         cleanMarkdownOptions.removeOverlayElements
           ? t("crawl.detail.cleanMarkdown.removeOverlays")
-          : t("crawl.detail.cleanMarkdown.keepOverlays")
+          : t("crawl.detail.cleanMarkdown.keepOverlays"),
       );
     }
     return parts.length ? parts.join(" • ") : t("common.enabled");
@@ -1274,7 +1439,14 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!Array.isArray(config?.browserCookies)) {
       return [] as string[];
     }
-    return (config?.browserCookies as { name?: string; value?: string; domain?: string; path?: string }[])
+    return (
+      config?.browserCookies as {
+        name?: string;
+        value?: string;
+        domain?: string;
+        path?: string;
+      }[]
+    )
       .map((cookie) => {
         const name = typeof cookie?.name === "string" ? cookie.name : "";
         const value = typeof cookie?.value === "string" ? cookie.value : "";
@@ -1311,26 +1483,42 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       : t("crawl.detail.userAgent.default");
 
   const userAgentGeneratorSummary = useMemo(() => {
-    if (!config || typeof config.userAgentGenerator !== "object" || !config.userAgentGenerator) {
+    if (
+      !config ||
+      typeof config.userAgentGenerator !== "object" ||
+      !config.userAgentGenerator
+    ) {
       return null;
     }
     const generator = config.userAgentGenerator as Record<string, unknown>;
     const parts: string[] = [];
-    const platform = typeof generator.platform === "string" ? generator.platform : null;
+    const platform =
+      typeof generator.platform === "string" ? generator.platform : null;
     if (platform) {
-      parts.push(t("crawl.detail.userAgentGenerator.platform", { value: platform }));
+      parts.push(
+        t("crawl.detail.userAgentGenerator.platform", { value: platform }),
+      );
     }
-    const browser = typeof generator.browser === "string" ? generator.browser : null;
+    const browser =
+      typeof generator.browser === "string" ? generator.browser : null;
     if (browser) {
-      parts.push(t("crawl.detail.userAgentGenerator.browser", { value: browser }));
+      parts.push(
+        t("crawl.detail.userAgentGenerator.browser", { value: browser }),
+      );
     }
-    const deviceType = typeof generator.deviceType === "string" ? generator.deviceType : null;
+    const deviceType =
+      typeof generator.deviceType === "string" ? generator.deviceType : null;
     if (deviceType) {
-      parts.push(t("crawl.detail.userAgentGenerator.device", { value: deviceType }));
+      parts.push(
+        t("crawl.detail.userAgentGenerator.device", { value: deviceType }),
+      );
     }
-    const locale = typeof generator.locale === "string" ? generator.locale : null;
+    const locale =
+      typeof generator.locale === "string" ? generator.locale : null;
     if (locale) {
-      parts.push(t("crawl.detail.userAgentGenerator.locale", { value: locale }));
+      parts.push(
+        t("crawl.detail.userAgentGenerator.locale", { value: locale }),
+      );
     }
     return parts.length ? parts.join(" • ") : null;
   }, [config, t]);
@@ -1352,7 +1540,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   }, [config]);
 
   const geolocationSummary = useMemo(() => {
-    if (!config || typeof config.geolocation !== "object" || !config.geolocation) {
+    if (
+      !config ||
+      typeof config.geolocation !== "object" ||
+      !config.geolocation
+    ) {
       return null;
     }
     const geo = config.geolocation as Record<string, unknown>;
@@ -1363,7 +1555,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     const accuracy = typeof geo.accuracy === "number" ? geo.accuracy : null;
     const location = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-    return accuracy != null ? `${location} (±${Math.round(accuracy)}m)` : location;
+    return accuracy != null
+      ? `${location} (±${Math.round(accuracy)}m)`
+      : location;
   }, [config]);
 
   const dynamicJsSteps = useMemo(() => {
@@ -1371,7 +1565,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return [] as string[];
     }
     if (Array.isArray(config.jsCode)) {
-      return (config.jsCode as string[]).filter((entry) => typeof entry === "string");
+      return (config.jsCode as string[]).filter(
+        (entry) => typeof entry === "string",
+      );
     }
     if (typeof config.jsCode === "string") {
       const trimmed = config.jsCode.trim();
@@ -1384,10 +1580,16 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!config) {
       return null;
     }
-    if (typeof config.waitForScript === "string" && config.waitForScript.trim().length) {
+    if (
+      typeof config.waitForScript === "string" &&
+      config.waitForScript.trim().length
+    ) {
       return `js:${config.waitForScript.trim()}`;
     }
-    if (typeof config.waitForSelector === "string" && config.waitForSelector.trim().length) {
+    if (
+      typeof config.waitForSelector === "string" &&
+      config.waitForSelector.trim().length
+    ) {
       return config.waitForSelector.trim();
     }
     return null;
@@ -1414,43 +1616,54 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     if (waitUntilValue === "domcontentloaded") {
       return t("crawl.dynamic.waitUntilOptions.domcontentloaded", {
-        defaultValue: "DOMContentLoaded"
+        defaultValue: "DOMContentLoaded",
       });
     }
     if (waitUntilValue === "networkidle") {
       return t("crawl.dynamic.waitUntilOptions.networkidle", {
-        defaultValue: "Network idle"
+        defaultValue: "Network idle",
       });
     }
     if (waitUntilValue === "commit") {
       return t("crawl.dynamic.waitUntilOptions.commit", {
-        defaultValue: "Commit"
+        defaultValue: "Commit",
       });
     }
     return t("crawl.dynamic.waitUntilOptions.load", { defaultValue: "Load" });
   }, [t, waitUntilValue]);
 
-  const waitTimeoutMs = typeof config?.waitForTimeoutMs === "number" ? config.waitForTimeoutMs : null;
-  const pageTimeoutMs = typeof config?.pageTimeoutMs === "number" ? config.pageTimeoutMs : null;
+  const waitTimeoutMs =
+    typeof config?.waitForTimeoutMs === "number"
+      ? config.waitForTimeoutMs
+      : null;
+  const pageTimeoutMs =
+    typeof config?.pageTimeoutMs === "number" ? config.pageTimeoutMs : null;
   const delayBeforeReturnHtmlMs =
-    typeof config?.delayBeforeReturnHtmlMs === "number" ? config.delayBeforeReturnHtmlMs : null;
-  const meanDelayMs = typeof config?.meanDelayMs === "number" ? config.meanDelayMs : null;
+    typeof config?.delayBeforeReturnHtmlMs === "number"
+      ? config.delayBeforeReturnHtmlMs
+      : null;
+  const meanDelayMs =
+    typeof config?.meanDelayMs === "number" ? config.meanDelayMs : null;
   const maxDelayRangeMs =
     typeof config?.maxDelayRangeMs === "number" ? config.maxDelayRangeMs : null;
-  const semaphoreCount = typeof config?.semaphoreCount === "number" ? config.semaphoreCount : null;
-  const removeFormsEnabled = typeof config?.removeForms === "boolean" ? config.removeForms : null;
+  const semaphoreCount =
+    typeof config?.semaphoreCount === "number" ? config.semaphoreCount : null;
+  const removeFormsEnabled =
+    typeof config?.removeForms === "boolean" ? config.removeForms : null;
   const sessionIdentifier = useMemo(() => {
     if (!config) {
       return null;
     }
-    const raw = typeof config.sessionId === "string" ? config.sessionId.trim() : "";
+    const raw =
+      typeof config.sessionId === "string" ? config.sessionId.trim() : "";
     return raw.length ? raw : null;
   }, [config]);
   const storageStatePreview = useMemo(() => {
     if (!config) {
       return null;
     }
-    const raw = typeof config.storageState === "string" ? config.storageState.trim() : "";
+    const raw =
+      typeof config.storageState === "string" ? config.storageState.trim() : "";
     return raw.length ? shortenScript(raw) : null;
   }, [config]);
   const jsOnlyMode = Boolean(config?.jsOnly);
@@ -1459,27 +1672,40 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     const analyses =
       task?.results
         ?.map((result) => result.linkAnalysis)
-        .filter((analysis): analysis is NonNullable<typeof analysis> => Boolean(analysis)) ?? [];
+        .filter((analysis): analysis is NonNullable<typeof analysis> =>
+          Boolean(analysis),
+        ) ?? [];
     if (!analyses.length) {
       return null;
     }
-    const totalLinks = analyses.reduce((sum, analysis) => sum + analysis.stats.totalLinks, 0);
-    const internalLinks = analyses.reduce((sum, analysis) => sum + analysis.stats.internalLinks, 0);
-    const externalLinks = analyses.reduce((sum, analysis) => sum + analysis.stats.externalLinks, 0);
+    const totalLinks = analyses.reduce(
+      (sum, analysis) => sum + analysis.stats.totalLinks,
+      0,
+    );
+    const internalLinks = analyses.reduce(
+      (sum, analysis) => sum + analysis.stats.internalLinks,
+      0,
+    );
+    const externalLinks = analyses.reduce(
+      (sum, analysis) => sum + analysis.stats.externalLinks,
+      0,
+    );
     const highQualityLinks = analyses.reduce(
       (sum, analysis) => sum + (analysis.stats.highQualityLinks ?? 0),
-      0
+      0,
     );
     const lowQualityLinks = analyses.reduce(
       (sum, analysis) => sum + (analysis.stats.lowQualityLinks ?? 0),
-      0
+      0,
     );
     const weightedIntrinsic = analyses.reduce((sum, analysis) => {
       const avg = analysis.stats.averageIntrinsicScore ?? 0;
       return sum + avg * analysis.stats.totalLinks;
     }, 0);
     const averageIntrinsic =
-      totalLinks > 0 ? Number((weightedIntrinsic / totalLinks).toFixed(2)) : null;
+      totalLinks > 0
+        ? Number((weightedIntrinsic / totalLinks).toFixed(2))
+        : null;
     const aggregateLinks = <T,>(items: T[]) => {
       const seen = new Set<string>();
       const ordered: T[] = [];
@@ -1499,22 +1725,25 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       intrinsicScore?: number | null;
     }) => link.totalScore ?? link.contextualScore ?? link.intrinsicScore ?? 0;
     const topLinks = aggregateLinks(
-      analyses.flatMap((analysis) => analysis.topLinks ?? [])
+      analyses.flatMap((analysis) => analysis.topLinks ?? []),
     )
       .sort((a, b) => scoreOf(b) - scoreOf(a))
       .slice(0, 5);
     const lowLinks = aggregateLinks(
-      analyses.flatMap((analysis) => analysis.lowQualityLinks ?? [])
+      analyses.flatMap((analysis) => analysis.lowQualityLinks ?? []),
     )
       .sort(
         (a, b) =>
           (a.intrinsicScore ?? Number.POSITIVE_INFINITY) -
-          (b.intrinsicScore ?? Number.POSITIVE_INFINITY)
+          (b.intrinsicScore ?? Number.POSITIVE_INFINITY),
       )
       .slice(0, 5);
     const bucketMap = new Map<
       string,
-      { count: number; links: NonNullable<(typeof analyses)[number]["topLinks"]> }
+      {
+        count: number;
+        links: NonNullable<(typeof analyses)[number]["topLinks"]>;
+      }
     >();
     analyses.forEach((analysis) => {
       analysis.buckets.forEach((bucket) => {
@@ -1523,14 +1752,17 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           existing.count += bucket.links.length;
           existing.links.push(...bucket.links);
         } else {
-          bucketMap.set(bucket.kind, { count: bucket.links.length, links: [...bucket.links] });
+          bucketMap.set(bucket.kind, {
+            count: bucket.links.length,
+            links: [...bucket.links],
+          });
         }
       });
     });
     const buckets = Array.from(bucketMap.entries()).map(([kind, value]) => ({
       kind,
       count: value.count,
-      samples: value.links.slice(0, 4)
+      samples: value.links.slice(0, 4),
     }));
     return {
       stats: {
@@ -1539,11 +1771,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         externalLinks,
         highQualityLinks,
         lowQualityLinks,
-        averageIntrinsic
+        averageIntrinsic,
       },
       topLinks,
       lowLinks,
-      buckets
+      buckets,
     };
   }, [task?.results]);
 
@@ -1577,7 +1809,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return [];
     }
     return config.multiUrlConfigs.filter(
-      (entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null
+      (entry): entry is Record<string, unknown> =>
+        typeof entry === "object" && entry !== null,
     );
   }, [config]);
 
@@ -1586,7 +1819,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       if (!options) {
         return null;
       }
-      const entries = Object.entries(options).filter(([, value]) => value !== undefined && value !== null);
+      const entries = Object.entries(options).filter(
+        ([, value]) => value !== undefined && value !== null,
+      );
       if (!entries.length) {
         return null;
       }
@@ -1602,7 +1837,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         "removeForms",
         "scanFullPage",
         "simulateUser",
-        "overrideNavigator"
+        "overrideNavigator",
       ];
       const formatValue = (value: unknown) => {
         if (typeof value === "string") {
@@ -1622,7 +1857,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         }
         if (value && typeof value === "object") {
           const serialized = JSON.stringify(value);
-          return serialized.length > 120 ? `${serialized.slice(0, 117)}…` : serialized;
+          return serialized.length > 120
+            ? `${serialized.slice(0, 117)}…`
+            : serialized;
         }
         return String(value);
       };
@@ -1630,18 +1867,20 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         .filter((key) => key in options)
         .map((key) => `${key}=${formatValue(options[key])}`);
       const preferredKeySet = new Set(preferredKeys);
-      const remainingCount = entries.filter(([key]) => !preferredKeySet.has(key)).length;
+      const remainingCount = entries.filter(
+        ([key]) => !preferredKeySet.has(key),
+      ).length;
       if (remainingCount > 0) {
         prioritized.push(
           t("crawl.detail.multiUrl.additionalOverrides", {
             defaultValue: "+{{count}} other overrides",
-            count: remainingCount
-          })
+            count: remainingCount,
+          }),
         );
       }
       return prioritized.join(" • ");
     },
-    [t]
+    [t],
   );
 
   const handleRetry = async () => {
@@ -1662,8 +1901,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (enabled && !permissions.includes("items.write")) {
       message.error(
         t("crawl.settings.ingestToItemsNoPermission", {
-          defaultValue: "Requires items.write permission."
-        })
+          defaultValue: "Requires items.write permission.",
+        }),
       );
       return;
     }
@@ -1672,8 +1911,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       await updateIngestToItems({
         variables: {
           id: task.id,
-          enabled
-        }
+          enabled,
+        },
       });
       message.success(t("common.updated", { defaultValue: "Updated." }));
       await refetch();
@@ -1681,7 +1920,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       message.error(
         error instanceof Error
           ? error.message
-          : t("common.operationFailed", { defaultValue: "Operation failed." })
+          : t("common.operationFailed", { defaultValue: "Operation failed." }),
       );
     }
   };
@@ -1702,7 +1941,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     message.loading({
       key: messageKey,
       duration: 0,
-      content: t("crawl.detail.backfill.running", { defaultValue: "Backfilling results..." })
+      content: t("crawl.detail.backfill.running", {
+        defaultValue: "Backfilling results...",
+      }),
     });
 
     try {
@@ -1712,8 +1953,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             taskId: task.id,
             after,
             limit: batchLimit,
-            onlyMissing: true
-          }
+            onlyMissing: true,
+          },
         });
         const summary = response.data?.ingestCrawlTaskResultsToItems;
         if (!summary) {
@@ -1728,11 +1969,12 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           key: messageKey,
           duration: 0,
           content: t("crawl.detail.backfill.progress", {
-            defaultValue: "Backfilling... ({{ingested}} ingested, {{skipped}} skipped, {{failed}} failed)",
+            defaultValue:
+              "Backfilling... ({{ingested}} ingested, {{skipped}} skipped, {{failed}} failed)",
             ingested: ingestedTotal,
             skipped: skippedTotal,
-            failed: failedTotal
-          })
+            failed: failedTotal,
+          }),
         });
 
         after = summary.nextCursor ?? null;
@@ -1744,8 +1986,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       message.success({
         key: messageKey,
         content: t("crawl.detail.backfill.done", {
-          defaultValue: "Queued for processing. Refreshing..."
-        })
+          defaultValue: "Queued for processing. Refreshing...",
+        }),
       });
       await refetch();
     } catch (error) {
@@ -1754,7 +1996,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         content:
           error instanceof Error
             ? error.message
-            : t("common.operationFailed", { defaultValue: "Operation failed." })
+            : t("common.operationFailed", {
+                defaultValue: "Operation failed.",
+              }),
       });
     }
   };
@@ -1766,15 +2010,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
     Modal.confirm({
       title: t("crawl.detail.backfill.confirmTitle", {
-        defaultValue: "Send missing results to Items?"
+        defaultValue: "Send missing results to Items?",
       }),
       content: t("crawl.detail.backfill.confirmDescription", {
         defaultValue:
-          "This will convert crawl results into Items and enqueue LLM processing for results that are not in Items yet."
+          "This will convert crawl results into Items and enqueue LLM processing for results that are not in Items yet.",
       }),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
-      onOk: runBackfillToItems
+      onOk: runBackfillToItems,
     });
   };
 
@@ -1785,20 +2029,22 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
     const normalizedId = resultId.trim();
     if (!normalizedId) {
-      message.error(t("common.invalidInput", { defaultValue: "Invalid input." }));
+      message.error(
+        t("common.invalidInput", { defaultValue: "Invalid input." }),
+      );
       return;
     }
 
     setIngestingResultId(normalizedId);
     try {
       const response = await createItemFromCrawlResult({
-        variables: { resultId: normalizedId }
+        variables: { resultId: normalizedId },
       });
       const createdId = response.data?.createItemFromCrawlResult?.id;
       message.success(
         t("crawl.detail.ingestQueued", {
-          defaultValue: "Queued for LLM processing and added to Items."
-        })
+          defaultValue: "Queued for LLM processing and added to Items.",
+        }),
       );
       if (createdId) {
         router.push(`/items/${createdId}`);
@@ -1807,7 +2053,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       message.error(
         error instanceof Error
           ? error.message
-          : t("common.operationFailed", { defaultValue: "Operation failed." })
+          : t("common.operationFailed", { defaultValue: "Operation failed." }),
       );
     } finally {
       setIngestingResultId(null);
@@ -1816,15 +2062,22 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
   if (status === "loading") {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
-        <Typography.Text type="secondary">{t("common.loading", { defaultValue: "Loading..." })}</Typography.Text>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+      >
+        <Typography.Text type="secondary">
+          {t("common.loading", { defaultValue: "Loading..." })}
+        </Typography.Text>
       </div>
     );
   }
 
   if (!canView) {
     return (
-      <Card className="content-card" title={t("crawl.detail.title", { defaultValue: "Crawl Task" })}>
+      <Card
+        className="content-card"
+        title={t("crawl.detail.title", { defaultValue: "Crawl Task" })}
+      >
         <Alert
           type="warning"
           message={t("settings.adminOnly.title")}
@@ -1845,7 +2098,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   if (!task) {
     return (
       <div className="content-card">
-        <Typography.Text type="secondary">{t("crawl.detail.notFound")}</Typography.Text>
+        <Typography.Text type="secondary">
+          {t("crawl.detail.notFound")}
+        </Typography.Text>
       </div>
     );
   }
@@ -1860,7 +2115,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   return (
     <div className="content-card">
       <Space style={{ marginBottom: 16 }} wrap>
-        <Link href="/admin/ops/crawl-tasks">{t("crawl.detail.backToTasks")}</Link>
+        <Link href="/admin/ops/crawl-tasks">
+          {t("crawl.detail.backToTasks")}
+        </Link>
         <Tag color={statusColors[task.status]}>
           {t(`crawl.status.${task.status}`, { defaultValue: task.status })}
         </Tag>
@@ -1871,7 +2128,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         ) : null}
         {canCreateItem ? (
           <Button onClick={handleBackfillToItems} loading={backfilling}>
-            {t("crawl.detail.backfill.button", { defaultValue: "Backfill to Items" })}
+            {t("crawl.detail.backfill.button", {
+              defaultValue: "Backfill to Items",
+            })}
           </Button>
         ) : null}
         <Typography.Link href={task.targetUrl} target="_blank" rel="noreferrer">
@@ -1880,10 +2139,18 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       </Space>
       {task.lastError ? (
         <Alert
-          type={task.status === "failed" ? "error" : task.status === "completed" ? "success" : "warning"}
+          type={
+            task.status === "failed"
+              ? "error"
+              : task.status === "completed"
+                ? "success"
+                : "warning"
+          }
           showIcon
           style={{ marginBottom: 16 }}
-          message={t("crawl.detail.latestError", { defaultValue: "Latest error" })}
+          message={t("crawl.detail.latestError", {
+            defaultValue: "Latest error",
+          })}
           description={
             <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
               {task.lastError}
@@ -1891,19 +2158,117 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           }
         />
       ) : null}
+      {isHeadedTask ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("crawl.runtimeGuide.title", {
+            defaultValue: "Headed mode and Xvfb",
+          })}
+          description={
+            <Space direction="vertical" size={2}>
+              <Typography.Text type="secondary">
+                {t("crawl.runtimeGuide.noAutoBootstrap", {
+                  defaultValue:
+                    "This console only provides guidance and does not auto-start Xvfb for you.",
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("crawl.runtimeGuide.principleBody", {
+                  defaultValue:
+                    "When headless=false, Chromium needs a display server. Xvfb provides a virtual X11 display (for example :99) so headed rendering can run in containers without a physical monitor.",
+                })}
+              </Typography.Text>
+              <details>
+                <summary>
+                  {t("crawl.runtimeGuide.stepsTitle", {
+                    defaultValue: "Recommended checks",
+                  })}
+                </summary>
+                <Space direction="vertical" size={2} style={{ marginTop: 6 }}>
+                  <Typography.Text type="secondary">
+                    {`1. ${t("crawl.runtimeGuide.step1", {
+                      defaultValue:
+                        "Prefer Headless for routine crawls, and use Headed only when anti-bot scenarios need it.",
+                    })}`}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {`2. ${t("crawl.runtimeGuide.step2", {
+                      defaultValue:
+                        "When using Headed, ensure Xvfb/DISPLAY are configured in the crawl4ai container.",
+                    })}`}
+                  </Typography.Text>
+                </Space>
+              </details>
+            </Space>
+          }
+        />
+      ) : null}
+      {isHeadedTask && task.lastError && lastErrorHeadedIssue === "display" ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("crawl.runtimeGuide.displayIssueTitle", {
+            defaultValue: "Detected DISPLAY/Xvfb dependency issue",
+          })}
+          description={
+            <Space direction="vertical" size={2}>
+              <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+                {task.lastError}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("crawl.runtimeGuide.displayIssueHint", {
+                  defaultValue:
+                    "Headed runtime failed because DISPLAY/Xvfb is unavailable. Enable Xvfb in crawl4ai or switch this task to Headless.",
+                })}
+              </Typography.Text>
+            </Space>
+          }
+        />
+      ) : null}
+      {isHeadedTask && task.lastError && lastErrorHeadedIssue === "timeout" ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("crawl.runtimeGuide.timeoutIssueTitle", {
+            defaultValue: "Headed runtime timed out",
+          })}
+          description={
+            <Space direction="vertical" size={2}>
+              <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+                {task.lastError}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("crawl.runtimeGuide.timeoutIssueHint", {
+                  defaultValue:
+                    "Display may be ready, but browser startup/navigation timed out. Check crawl4ai load and task timeout settings.",
+                })}
+              </Typography.Text>
+            </Space>
+          }
+        />
+      ) : null}
       {crawlStrategyTags.length ? (
         <Card
           size="small"
           style={{ marginBottom: 16 }}
-          title={t("crawl.detail.strategy.title", { defaultValue: "Crawl strategy" })}
+          title={t("crawl.detail.strategy.title", {
+            defaultValue: "Crawl strategy",
+          })}
         >
           <Space wrap size={[4, 6]}>
             {crawlStrategyTags}
           </Space>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 8 }}>
+          <Typography.Paragraph
+            type="secondary"
+            style={{ marginBottom: 0, marginTop: 8 }}
+          >
             {t("crawl.detail.strategy.noLlmHint", {
               defaultValue:
-                "Crawl stage is deterministic (fetch + clean markdown only). Run LLM summarization and analysis in downstream pipelines."
+                "Crawl stage is deterministic (fetch + clean markdown only). Run LLM summarization and analysis in downstream pipelines.",
             })}
           </Typography.Paragraph>
         </Card>
@@ -1933,7 +2298,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           {storeMediaEnabled ? t("common.enabled") : t("common.disabled")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.ingestToItems", { defaultValue: "Auto send to Items" })}
+          label={t("crawl.detail.fields.ingestToItems", {
+            defaultValue: "Auto send to Items",
+          })}
         >
           {canManage ? (
             <Space direction="vertical" size={4}>
@@ -1946,10 +2313,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                 {permissions.includes("items.write")
                   ? t("crawl.settings.ingestToItemsHint", {
                       defaultValue:
-                        "New crawl results will be converted into Items and queued for LLM processing."
+                        "New crawl results will be converted into Items and queued for LLM processing.",
                     })
                   : t("crawl.settings.ingestToItemsNoPermission", {
-                      defaultValue: "Requires items.write permission."
+                      defaultValue: "Requires items.write permission.",
                     })}
               </Typography.Text>
             </Space>
@@ -1959,336 +2326,458 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             t("common.disabled")
           )}
         </Descriptions.Item>
-        <Descriptions.Item label={t("crawl.detail.fields.lastRunItems", { defaultValue: "Last run → Items" })}>
-          {task.lastRunSummary ? (
-            t("crawl.detail.lastRunItemsValue", {
-              defaultValue: "{{queued}} queued, {{failed}} failed",
-              queued: task.lastRunSummary.itemsQueued ?? 0,
-              failed: task.lastRunSummary.itemsQueueFailed ?? 0
-            })
-          ) : (
-            t("common.emptyValue")
-          )}
+        <Descriptions.Item
+          label={t("crawl.detail.fields.lastRunItems", {
+            defaultValue: "Last run → Items",
+          })}
+        >
+          {task.lastRunSummary
+            ? t("crawl.detail.lastRunItemsValue", {
+                defaultValue: "{{queued}} queued, {{failed}} failed",
+                queued: task.lastRunSummary.itemsQueued ?? 0,
+                failed: task.lastRunSummary.itemsQueueFailed ?? 0,
+              })
+            : t("common.emptyValue")}
         </Descriptions.Item>
-        <Descriptions.Item label={t("crawl.detail.fields.lastRunResults", { defaultValue: "Last run results" })}>
-          {task.lastRunSummary ? (
-            t("crawl.detail.lastRunResultsValue", {
-              defaultValue: "{{inserted}} inserted, {{skipped}} skipped",
-              inserted: task.lastRunSummary.inserted,
-              skipped: task.lastRunSummary.skipped
-            })
-          ) : (
-            t("common.emptyValue")
-          )}
+        <Descriptions.Item
+          label={t("crawl.detail.fields.lastRunResults", {
+            defaultValue: "Last run results",
+          })}
+        >
+          {task.lastRunSummary
+            ? t("crawl.detail.lastRunResultsValue", {
+                defaultValue: "{{inserted}} inserted, {{skipped}} skipped",
+                inserted: task.lastRunSummary.inserted,
+                skipped: task.lastRunSummary.skipped,
+              })
+            : t("common.emptyValue")}
         </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.runCount")}>{task.runCount}</Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.runCount")}>
+          {task.runCount}
+        </Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.scanFullPage")}>
           {config?.scanFullPage
-            ? t("crawl.detail.scanFullPageEnabled", { delay: config?.scrollDelayMs ?? 200 })
+            ? t("crawl.detail.scanFullPageEnabled", {
+                delay: config?.scrollDelayMs ?? 200,
+              })
             : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.virtualScroll")}>
-        {virtualScrollSummary ? (
-          <Space direction="vertical" size={0}>
-            <Typography.Text style={{ fontFamily: "monospace" }}>
-              containerSelector={virtualScrollSummary.containerSelector}
-            </Typography.Text>
-            {virtualScrollSummary.scrollCount != null ? (
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.virtualScroll")}>
+          {virtualScrollSummary ? (
+            <Space direction="vertical" size={0}>
               <Typography.Text style={{ fontFamily: "monospace" }}>
-                scrollCount={virtualScrollSummary.scrollCount}
+                containerSelector={virtualScrollSummary.containerSelector}
               </Typography.Text>
-            ) : null}
-            {virtualScrollSummary.scrollBy ? (
+              {virtualScrollSummary.scrollCount != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  scrollCount={virtualScrollSummary.scrollCount}
+                </Typography.Text>
+              ) : null}
+              {virtualScrollSummary.scrollBy ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  scrollBy={virtualScrollSummary.scrollBy}
+                </Typography.Text>
+              ) : null}
+              {virtualScrollSummary.waitAfterScrollMs != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  waitAfterScrollMs={virtualScrollSummary.waitAfterScrollMs}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          ) : (
+            t("common.disabled")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.qualityProfile")}>
+          {qualityProfileSummary ?? t("crawl.detail.serverDefault")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.pageTypeHint")}>
+          {pageTypeHintSummary ?? t("crawl.detail.serverDefault")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.autoExpandDetails")}>
+          {typeof autoExpandDetailsValue === "boolean"
+            ? autoExpandDetailsValue
+              ? t("common.enabled")
+              : t("common.disabled")
+            : t("crawl.detail.serverDefault")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.detailExpansion")}>
+          {detailExpansionSummary ? (
+            <Space direction="vertical" size={0}>
+              {detailExpansionSummary.maxDetailUrls != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  maxDetailUrls={detailExpansionSummary.maxDetailUrls}
+                </Typography.Text>
+              ) : null}
+              {detailExpansionSummary.minRelevanceScore != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  minRelevanceScore={detailExpansionSummary.minRelevanceScore}
+                </Typography.Text>
+              ) : null}
+              {detailExpansionSummary.requireSameDomain != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  requireSameDomain=
+                  {detailExpansionSummary.requireSameDomain ? "true" : "false"}
+                </Typography.Text>
+              ) : null}
+              {detailExpansionSummary.allowExternalLinks != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  allowExternalLinks=
+                  {detailExpansionSummary.allowExternalLinks ? "true" : "false"}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          ) : (
+            t("common.emptyValue")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.expansionMetrics", {
+            defaultValue: "Expansion metrics",
+          })}
+        >
+          {expansionSummary ? (
+            <Space direction="vertical" size={0}>
               <Typography.Text style={{ fontFamily: "monospace" }}>
-                scrollBy={virtualScrollSummary.scrollBy}
+                candidateCount={expansionSummary.candidateCount}
               </Typography.Text>
-            ) : null}
-            {virtualScrollSummary.waitAfterScrollMs != null ? (
               <Typography.Text style={{ fontFamily: "monospace" }}>
-                waitAfterScrollMs={virtualScrollSummary.waitAfterScrollMs}
+                batchCount={expansionSummary.batchCount}
               </Typography.Text>
-            ) : null}
-          </Space>
-        ) : (
-          t("common.disabled")
-        )}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.qualityProfile")}>
-        {qualityProfileSummary ?? t("crawl.detail.serverDefault")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.pageTypeHint")}>
-        {pageTypeHintSummary ?? t("crawl.detail.serverDefault")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.autoExpandDetails")}>
-        {typeof autoExpandDetailsValue === "boolean"
-          ? autoExpandDetailsValue
-            ? t("common.enabled")
-            : t("common.disabled")
-          : t("crawl.detail.serverDefault")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.detailExpansion")}>
-        {detailExpansionSummary ? (
-          <Space direction="vertical" size={0}>
-            {detailExpansionSummary.maxDetailUrls != null ? (
               <Typography.Text style={{ fontFamily: "monospace" }}>
-                maxDetailUrls={detailExpansionSummary.maxDetailUrls}
+                improvedSuccesses={expansionSummary.improvedSuccesses}
               </Typography.Text>
-            ) : null}
-            {detailExpansionSummary.minRelevanceScore != null ? (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                minRelevanceScore={detailExpansionSummary.minRelevanceScore}
-              </Typography.Text>
-            ) : null}
-            {detailExpansionSummary.requireSameDomain != null ? (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                requireSameDomain={detailExpansionSummary.requireSameDomain ? "true" : "false"}
-              </Typography.Text>
-            ) : null}
-            {detailExpansionSummary.allowExternalLinks != null ? (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                allowExternalLinks={detailExpansionSummary.allowExternalLinks ? "true" : "false"}
-              </Typography.Text>
-            ) : null}
-          </Space>
-        ) : (
-          t("common.emptyValue")
-        )}
-      </Descriptions.Item>
-      <Descriptions.Item
-        label={t("crawl.detail.fields.expansionMetrics", { defaultValue: "Expansion metrics" })}
-      >
-        {expansionSummary ? (
-          <Space direction="vertical" size={0}>
-            <Typography.Text style={{ fontFamily: "monospace" }}>
-              candidateCount={expansionSummary.candidateCount}
-            </Typography.Text>
-            <Typography.Text style={{ fontFamily: "monospace" }}>
-              batchCount={expansionSummary.batchCount}
-            </Typography.Text>
-            <Typography.Text style={{ fontFamily: "monospace" }}>
-              improvedSuccesses={expansionSummary.improvedSuccesses}
-            </Typography.Text>
-            {expansionSummary.primaryCandidatePool != null ? (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                primaryCandidatePool={expansionSummary.primaryCandidatePool}
-              </Typography.Text>
-            ) : null}
-            {expansionSummary.fallbackCandidatePool != null ? (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                fallbackCandidatePool={expansionSummary.fallbackCandidatePool}
-              </Typography.Text>
-            ) : null}
-            {expansionSummary.minimumCandidateCount != null ? (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                minimumCandidateCount={expansionSummary.minimumCandidateCount}
-              </Typography.Text>
-            ) : null}
-            {expansionSummary.strictCandidateCount != null ? (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                strictCandidateCount={expansionSummary.strictCandidateCount}
-              </Typography.Text>
-            ) : null}
-            {expansionSummary.relaxedCandidateCount != null ? (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                relaxedCandidateCount={expansionSummary.relaxedCandidateCount}
-              </Typography.Text>
-            ) : null}
-            {expansionSummary.linkFallbackCandidateCount != null ? (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                linkFallbackCandidateCount={expansionSummary.linkFallbackCandidateCount}
-              </Typography.Text>
-            ) : null}
-          </Space>
-        ) : (
-          t("common.emptyValue")
-        )}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.adjustViewport")}>
-        {adjustViewportEnabled ? t("common.enabled") : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.headless", { defaultValue: "Headless mode" })}>
-        {typeof config?.headless === "boolean"
-          ? config.headless
-            ? t("crawl.detail.headless.headless", { defaultValue: "Headless" })
-            : t("crawl.detail.headless.headed", { defaultValue: "Headed (Xvfb)" })
-          : t("crawl.detail.serverDefault")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.undetectedBrowser")}>
-        {config?.enableUndetectedBrowser ? t("common.enabled") : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.stealthMode")}>
-        {config?.enableStealthMode ? t("common.enabled") : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.antiBotMode", { defaultValue: "Anti-bot retry" })}>
-        {config?.antiBotMode === "enabled"
-          ? t("crawl.detail.antiBotMode.enabled", { defaultValue: "Enabled" })
-          : config?.antiBotMode === "disabled"
-            ? t("crawl.detail.antiBotMode.disabled", { defaultValue: "Disabled" })
-            : t("crawl.detail.antiBotMode.auto", { defaultValue: "Auto" })}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.managedBrowser")}>
-        {managedBrowserEnabled ? t("common.enabled") : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.userDataDir")}>
-        {managedBrowserProfile ?? t("common.emptyValue")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.simulateUser")}>
-        {config?.simulateUser ? t("common.enabled") : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.overrideNavigator")}>
-        {config?.overrideNavigator ? t("common.enabled") : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.userAgent")}>
-        {userAgentValue ?? t("crawl.detail.userAgent.default")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.userAgentMode")}>{userAgentModeSummary}</Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.uaGenerator")}>
-        {userAgentGeneratorSummary ?? t("crawl.detail.userAgent.notConfigured")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.browserLocale")}>
-        {browserLocale ?? t("crawl.detail.serverDefault")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.timezone")}>
-        {timezonePreference ?? t("crawl.detail.serverDefault")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.geolocation")}>
-        {geolocationSummary ?? t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.customHeaders")}>
-        {browserHeaders.length ? (
-          <Space direction="vertical" size={0}>
-            {browserHeaders.map((header) => (
-              <Typography.Text key={header} style={{ fontFamily: "monospace" }}>
-                {header}
-              </Typography.Text>
-            ))}
-          </Space>
-        ) : (
-          t("common.emptyValue")
-        )}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.cookies")}>
-        {browserCookies.length ? (
-          <Space direction="vertical" size={0}>
-            {browserCookies.map((cookie) => (
-              <Typography.Text key={cookie} style={{ fontFamily: "monospace" }}>
-                {cookie}
-              </Typography.Text>
-            ))}
-          </Space>
-        ) : (
-          t("common.emptyValue")
-        )}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.sessionId")}>
-        {sessionIdentifier ?? t("common.emptyValue")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.storageState")}>
-        {storageStatePreview ? (
-          <Typography.Text code>{storageStatePreview}</Typography.Text>
-        ) : (
-          t("common.emptyValue")
-        )}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.jsOnly")}>
-        {jsOnlyMode ? t("common.enabled") : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.jsSteps")}>
-        {dynamicJsSteps.length ? (
-          <Space direction="vertical" size={0}>
-            {dynamicJsSteps.map((snippet, index) => (
-              <Typography.Text key={`js-${index}`} style={{ fontFamily: "monospace" }}>
-                {shortenScript(snippet)}
-              </Typography.Text>
-            ))}
-          </Space>
-        ) : (
-          t("common.emptyValue")
-        )}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.waitCondition")}>
-        {waitCondition ? shortenScript(waitCondition) : t("common.emptyValue")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.waitTimeout")}>
-        {waitTimeoutMs ? t("crawl.detail.waitTimeoutValue", { value: waitTimeoutMs }) : t("crawl.detail.default")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.waitUntil", { defaultValue: "Navigation wait" })}>
-        {waitUntilSummary ?? t("crawl.detail.default")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.pageTimeout", { defaultValue: "Page timeout" })}>
-        {pageTimeoutMs != null ? `${Math.round(pageTimeoutMs)} ms` : t("crawl.detail.default")}
-      </Descriptions.Item>
-      <Descriptions.Item
-        label={t("crawl.detail.fields.delayBeforeReturnHtml", { defaultValue: "Post-load delay" })}
-      >
-        {delayBeforeReturnHtmlMs != null
-          ? `${Math.round(delayBeforeReturnHtmlMs)} ms`
-          : t("crawl.detail.default")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.meanDelay", { defaultValue: "Mean delay" })}>
-        {meanDelayMs != null ? `${Math.round(meanDelayMs)} ms` : t("crawl.detail.default")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.maxDelayRange", { defaultValue: "Delay jitter" })}>
-        {maxDelayRangeMs != null ? `${Math.round(maxDelayRangeMs)} ms` : t("crawl.detail.default")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.semaphoreCount", { defaultValue: "Internal semaphore" })}>
-        {semaphoreCount != null ? semaphoreCount : t("crawl.detail.default")}
-      </Descriptions.Item>
-      <Descriptions.Item
-        label={t("crawl.detail.fields.robotsPolicy", { defaultValue: "robots.txt policy" })}
-      >
-        {t("crawl.detail.robotsPolicy.ignore", { defaultValue: "Ignore (always)" })}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.removeForms", { defaultValue: "Remove forms" })}>
-        {removeFormsEnabled == null
-          ? t("crawl.detail.default")
-          : removeFormsEnabled
+              {expansionSummary.primaryCandidatePool != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  primaryCandidatePool={expansionSummary.primaryCandidatePool}
+                </Typography.Text>
+              ) : null}
+              {expansionSummary.fallbackCandidatePool != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  fallbackCandidatePool={expansionSummary.fallbackCandidatePool}
+                </Typography.Text>
+              ) : null}
+              {expansionSummary.minimumCandidateCount != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  minimumCandidateCount={expansionSummary.minimumCandidateCount}
+                </Typography.Text>
+              ) : null}
+              {expansionSummary.strictCandidateCount != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  strictCandidateCount={expansionSummary.strictCandidateCount}
+                </Typography.Text>
+              ) : null}
+              {expansionSummary.relaxedCandidateCount != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  relaxedCandidateCount={expansionSummary.relaxedCandidateCount}
+                </Typography.Text>
+              ) : null}
+              {expansionSummary.linkFallbackCandidateCount != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  linkFallbackCandidateCount=
+                  {expansionSummary.linkFallbackCandidateCount}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          ) : (
+            t("common.emptyValue")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.adjustViewport")}>
+          {adjustViewportEnabled ? t("common.enabled") : t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.headless", {
+            defaultValue: "Headless mode",
+          })}
+        >
+          {typeof config?.headless === "boolean"
+            ? config.headless
+              ? t("crawl.detail.headless.headless", {
+                  defaultValue: "Headless",
+                })
+              : t("crawl.detail.headless.headed", {
+                  defaultValue: "Headed (Xvfb)",
+                })
+            : t("crawl.detail.serverDefault")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.undetectedBrowser")}>
+          {config?.enableUndetectedBrowser
             ? t("common.enabled")
             : t("common.disabled")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.proxyRoute")}>{proxySummary}</Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.additionalUrls")}>
-        {additionalUrls.length ? (
-          <Space wrap>
-            {additionalUrls.map((url) => (
-              <Typography.Link key={url} href={url} target="_blank" rel="noreferrer">
-                {url}
-              </Typography.Link>
-            ))}
-          </Space>
-        ) : (
-          t("common.emptyValue")
-        )}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.markdownGenerator")}>{markdownSummary}</Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.markdownStrategy")}>{markdownStrategySummary}</Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.markdownFilter")}>{markdownFilterSummary}</Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.cleanMarkdown")}>{cleanMarkdownSummary}</Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.lastServerMemory")}>
-        {task.lastServerMemoryMb != null ? t("crawl.detail.memoryValue", { value: task.lastServerMemoryMb }) : t("common.emptyValue")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.lastPeakMemory")}>
-        {task.lastPeakMemoryMb != null ? t("crawl.detail.memoryValue", { value: task.lastPeakMemoryMb }) : t("common.emptyValue")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.lastMemoryEfficiency")}>
-        {task.lastMemoryEfficiency != null ? t("crawl.detail.percentValue", { value: task.lastMemoryEfficiency }) : t("common.emptyValue")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.serverMemory")}>
-        {task.memoryStats?.serverMemoryMb != null ? t("crawl.detail.memoryValue", { value: task.memoryStats.serverMemoryMb }) : t("common.emptyValue")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.peakMemory")}>
-        {task.memoryStats?.peakMemoryMb != null ? t("crawl.detail.memoryValue", { value: task.memoryStats.peakMemoryMb }) : t("common.emptyValue")}
-      </Descriptions.Item>
-      <Descriptions.Item label={t("crawl.detail.fields.efficiency")}>
-        {task.memoryStats?.efficiencyPercent != null ? t("crawl.detail.percentValue", { value: task.memoryStats.efficiencyPercent }) : t("common.emptyValue")}
-      </Descriptions.Item>
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.stealthMode")}>
+          {config?.enableStealthMode
+            ? t("common.enabled")
+            : t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.antiBotMode", {
+            defaultValue: "Anti-bot retry",
+          })}
+        >
+          {config?.antiBotMode === "enabled"
+            ? t("crawl.detail.antiBotMode.enabled", { defaultValue: "Enabled" })
+            : config?.antiBotMode === "disabled"
+              ? t("crawl.detail.antiBotMode.disabled", {
+                  defaultValue: "Disabled",
+                })
+              : t("crawl.detail.antiBotMode.auto", { defaultValue: "Auto" })}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.managedBrowser")}>
+          {managedBrowserEnabled ? t("common.enabled") : t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.userDataDir")}>
+          {managedBrowserProfile ?? t("common.emptyValue")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.simulateUser")}>
+          {config?.simulateUser ? t("common.enabled") : t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.overrideNavigator")}>
+          {config?.overrideNavigator
+            ? t("common.enabled")
+            : t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.userAgent")}>
+          {userAgentValue ?? t("crawl.detail.userAgent.default")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.userAgentMode")}>
+          {userAgentModeSummary}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.uaGenerator")}>
+          {userAgentGeneratorSummary ??
+            t("crawl.detail.userAgent.notConfigured")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.browserLocale")}>
+          {browserLocale ?? t("crawl.detail.serverDefault")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.timezone")}>
+          {timezonePreference ?? t("crawl.detail.serverDefault")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.geolocation")}>
+          {geolocationSummary ?? t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.customHeaders")}>
+          {browserHeaders.length ? (
+            <Space direction="vertical" size={0}>
+              {browserHeaders.map((header) => (
+                <Typography.Text
+                  key={header}
+                  style={{ fontFamily: "monospace" }}
+                >
+                  {header}
+                </Typography.Text>
+              ))}
+            </Space>
+          ) : (
+            t("common.emptyValue")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.cookies")}>
+          {browserCookies.length ? (
+            <Space direction="vertical" size={0}>
+              {browserCookies.map((cookie) => (
+                <Typography.Text
+                  key={cookie}
+                  style={{ fontFamily: "monospace" }}
+                >
+                  {cookie}
+                </Typography.Text>
+              ))}
+            </Space>
+          ) : (
+            t("common.emptyValue")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.sessionId")}>
+          {sessionIdentifier ?? t("common.emptyValue")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.storageState")}>
+          {storageStatePreview ? (
+            <Typography.Text code>{storageStatePreview}</Typography.Text>
+          ) : (
+            t("common.emptyValue")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.jsOnly")}>
+          {jsOnlyMode ? t("common.enabled") : t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.jsSteps")}>
+          {dynamicJsSteps.length ? (
+            <Space direction="vertical" size={0}>
+              {dynamicJsSteps.map((snippet, index) => (
+                <Typography.Text
+                  key={`js-${index}`}
+                  style={{ fontFamily: "monospace" }}
+                >
+                  {shortenScript(snippet)}
+                </Typography.Text>
+              ))}
+            </Space>
+          ) : (
+            t("common.emptyValue")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.waitCondition")}>
+          {waitCondition
+            ? shortenScript(waitCondition)
+            : t("common.emptyValue")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.waitTimeout")}>
+          {waitTimeoutMs
+            ? t("crawl.detail.waitTimeoutValue", { value: waitTimeoutMs })
+            : t("crawl.detail.default")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.waitUntil", {
+            defaultValue: "Navigation wait",
+          })}
+        >
+          {waitUntilSummary ?? t("crawl.detail.default")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.pageTimeout", {
+            defaultValue: "Page timeout",
+          })}
+        >
+          {pageTimeoutMs != null
+            ? `${Math.round(pageTimeoutMs)} ms`
+            : t("crawl.detail.default")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.delayBeforeReturnHtml", {
+            defaultValue: "Post-load delay",
+          })}
+        >
+          {delayBeforeReturnHtmlMs != null
+            ? `${Math.round(delayBeforeReturnHtmlMs)} ms`
+            : t("crawl.detail.default")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.meanDelay", {
+            defaultValue: "Mean delay",
+          })}
+        >
+          {meanDelayMs != null
+            ? `${Math.round(meanDelayMs)} ms`
+            : t("crawl.detail.default")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.maxDelayRange", {
+            defaultValue: "Delay jitter",
+          })}
+        >
+          {maxDelayRangeMs != null
+            ? `${Math.round(maxDelayRangeMs)} ms`
+            : t("crawl.detail.default")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.semaphoreCount", {
+            defaultValue: "Internal semaphore",
+          })}
+        >
+          {semaphoreCount != null ? semaphoreCount : t("crawl.detail.default")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.robotsPolicy", {
+            defaultValue: "robots.txt policy",
+          })}
+        >
+          {t("crawl.detail.robotsPolicy.ignore", {
+            defaultValue: "Ignore (always)",
+          })}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.removeForms", {
+            defaultValue: "Remove forms",
+          })}
+        >
+          {removeFormsEnabled == null
+            ? t("crawl.detail.default")
+            : removeFormsEnabled
+              ? t("common.enabled")
+              : t("common.disabled")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.proxyRoute")}>
+          {proxySummary}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.additionalUrls")}>
+          {additionalUrls.length ? (
+            <Space wrap>
+              {additionalUrls.map((url) => (
+                <Typography.Link
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {url}
+                </Typography.Link>
+              ))}
+            </Space>
+          ) : (
+            t("common.emptyValue")
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.markdownGenerator")}>
+          {markdownSummary}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.markdownStrategy")}>
+          {markdownStrategySummary}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.markdownFilter")}>
+          {markdownFilterSummary}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.cleanMarkdown")}>
+          {cleanMarkdownSummary}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.lastServerMemory")}>
+          {task.lastServerMemoryMb != null
+            ? t("crawl.detail.memoryValue", { value: task.lastServerMemoryMb })
+            : t("common.emptyValue")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.lastPeakMemory")}>
+          {task.lastPeakMemoryMb != null
+            ? t("crawl.detail.memoryValue", { value: task.lastPeakMemoryMb })
+            : t("common.emptyValue")}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("crawl.detail.fields.lastMemoryEfficiency")}
+        >
+          {task.lastMemoryEfficiency != null
+            ? t("crawl.detail.percentValue", {
+                value: task.lastMemoryEfficiency,
+              })
+            : t("common.emptyValue")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.serverMemory")}>
+          {task.memoryStats?.serverMemoryMb != null
+            ? t("crawl.detail.memoryValue", {
+                value: task.memoryStats.serverMemoryMb,
+              })
+            : t("common.emptyValue")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.peakMemory")}>
+          {task.memoryStats?.peakMemoryMb != null
+            ? t("crawl.detail.memoryValue", {
+                value: task.memoryStats.peakMemoryMb,
+              })
+            : t("common.emptyValue")}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("crawl.detail.fields.efficiency")}>
+          {task.memoryStats?.efficiencyPercent != null
+            ? t("crawl.detail.percentValue", {
+                value: task.memoryStats.efficiencyPercent,
+              })
+            : t("common.emptyValue")}
+        </Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.lastSuccess")}>
           {task.lastSuccessAt
             ? formatDateTime(task.lastSuccessAt, locale, {
                 month: "short",
                 day: "numeric",
                 hour: "2-digit",
-                minute: "2-digit"
+                minute: "2-digit",
               })
             : t("common.never")}
         </Descriptions.Item>
@@ -2297,7 +2786,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         </Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.configuration")}>
           {config ? (
-            <pre className="markdown-preview">{JSON.stringify(config, null, 2)}</pre>
+            <pre className="markdown-preview">
+              {JSON.stringify(config, null, 2)}
+            </pre>
           ) : (
             t("crawl.detail.default")
           )}
@@ -2310,7 +2801,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           size="small"
           style={{ marginTop: 24 }}
           extra={
-            <Button size="small" onClick={() => void loadTaskLogs()} loading={taskLogsLoading}>
+            <Button
+              size="small"
+              onClick={() => void loadTaskLogs()}
+              loading={taskLogsLoading}
+            >
               {t("common.refresh")}
             </Button>
           }
@@ -2321,7 +2816,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               showIcon
               style={{ marginBottom: 12 }}
               message={t("common.error.unexpected")}
-              description={<Typography.Text style={{ whiteSpace: "pre-wrap" }}>{taskLogsError}</Typography.Text>}
+              description={
+                <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+                  {taskLogsError}
+                </Typography.Text>
+              }
             />
           ) : null}
           <Table
@@ -2342,10 +2841,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                   {JSON.stringify(
                     { data: record.data ?? null, error: record.error ?? null },
                     null,
-                    2
+                    2,
                   )}
                 </pre>
-              )
+              ),
             }}
           />
         </Card>
@@ -2364,20 +2863,26 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                 <List.Item key={item?.name ?? `strategy-${index}`}>
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>
-                      {item?.name ?? t("crawl.multiUrl.strategyTitle", { index: index + 1 })}
+                      {item?.name ??
+                        t("crawl.multiUrl.strategyTitle", { index: index + 1 })}
                     </Typography.Text>
                     {matcher?.patterns?.length ? (
                       <Typography.Text type="secondary">
                         {t("crawl.detail.multiUrl.patterns", {
                           mode: matcher.matchMode ?? "glob",
-                          patterns: matcher.patterns.join(", ")
+                          patterns: matcher.patterns.join(", "),
                         })}
                       </Typography.Text>
                     ) : null}
                     {urls.length ? (
                       <Space wrap>
                         {urls.map((url) => (
-                          <Typography.Link key={url} href={url} target="_blank" rel="noreferrer">
+                          <Typography.Link
+                            key={url}
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
                             {url}
                           </Typography.Link>
                         ))}
@@ -2386,7 +2891,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                     {Object.keys(options).length && overridesSummary ? (
                       <Typography.Text>
                         {t("crawl.detail.multiUrl.overrides", {
-                          overrides: overridesSummary
+                          overrides: overridesSummary,
                         })}
                       </Typography.Text>
                     ) : null}
@@ -2402,19 +2907,34 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         <Card title={t("crawl.links.title")} style={{ marginTop: 24 }}>
           <Space size="large" wrap>
             {[
-              { label: t("crawl.links.stats.total"), value: linkOverview.stats.totalLinks },
-              { label: t("crawl.links.stats.internal"), value: linkOverview.stats.internalLinks },
-              { label: t("crawl.links.stats.external"), value: linkOverview.stats.externalLinks },
-              { label: t("crawl.links.stats.highQuality"), value: linkOverview.stats.highQualityLinks },
-              { label: t("crawl.links.stats.needsReview"), value: linkOverview.stats.lowQualityLinks },
+              {
+                label: t("crawl.links.stats.total"),
+                value: linkOverview.stats.totalLinks,
+              },
+              {
+                label: t("crawl.links.stats.internal"),
+                value: linkOverview.stats.internalLinks,
+              },
+              {
+                label: t("crawl.links.stats.external"),
+                value: linkOverview.stats.externalLinks,
+              },
+              {
+                label: t("crawl.links.stats.highQuality"),
+                value: linkOverview.stats.highQualityLinks,
+              },
+              {
+                label: t("crawl.links.stats.needsReview"),
+                value: linkOverview.stats.lowQualityLinks,
+              },
               {
                 label: t("crawl.links.stats.avgIntrinsic"),
                 value:
                   linkOverview.stats.averageIntrinsic !== null &&
                   linkOverview.stats.averageIntrinsic !== undefined
                     ? linkOverview.stats.averageIntrinsic.toFixed(2)
-                    : t("common.emptyValue")
-              }
+                    : t("common.emptyValue"),
+              },
             ].map((item) => (
               <Space key={item.label} direction="vertical" size={0}>
                 <Typography.Text type="secondary">{item.label}</Typography.Text>
@@ -2426,13 +2946,19 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           </Space>
           {linkOverview.buckets.length ? (
             <>
-              <Typography.Text strong style={{ display: "block", marginTop: 16 }}>
+              <Typography.Text
+                strong
+                style={{ display: "block", marginTop: 16 }}
+              >
                 {t("crawl.links.buckets")}
               </Typography.Text>
               <Space wrap>
                 {linkOverview.buckets.map((bucket) => (
                   <Tag key={bucket.kind}>
-                    {t("crawl.links.bucketItem", { kind: bucket.kind, count: bucket.count })}
+                    {t("crawl.links.bucketItem", {
+                      kind: bucket.kind,
+                      count: bucket.count,
+                    })}
                   </Tag>
                 ))}
               </Space>
@@ -2440,7 +2966,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           ) : null}
           <Space align="start" size="large" style={{ marginTop: 16 }} wrap>
             <div style={{ minWidth: 280 }}>
-              <Typography.Text strong>{t("crawl.links.topLinks")}</Typography.Text>
+              <Typography.Text strong>
+                {t("crawl.links.topLinks")}
+              </Typography.Text>
               <List
                 size="small"
                 dataSource={linkOverview.topLinks}
@@ -2454,7 +2982,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                       <Typography.Text type="secondary">
                         {t("crawl.links.linkScore", {
                           domain: (link.baseDomain ?? "link").toString(),
-                          score: getLinkScore(link).toFixed(2)
+                          score: getLinkScore(link).toFixed(2),
                         })}
                       </Typography.Text>
                     </Space>
@@ -2463,7 +2991,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               />
             </div>
             <div style={{ minWidth: 280 }}>
-              <Typography.Text strong>{t("crawl.links.lowQuality")}</Typography.Text>
+              <Typography.Text strong>
+                {t("crawl.links.lowQuality")}
+              </Typography.Text>
               <List
                 size="small"
                 dataSource={linkOverview.lowLinks}
@@ -2477,7 +3007,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                       <Typography.Text type="secondary">
                         {t("crawl.links.intrinsicScore", {
                           domain: (link.baseDomain ?? "link").toString(),
-                          score: (link.intrinsicScore ?? 0).toFixed(2)
+                          score: (link.intrinsicScore ?? 0).toFixed(2),
                         })}
                       </Typography.Text>
                     </Space>
@@ -2493,7 +3023,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         title={t("crawl.detail.results.title")}
         style={{ marginTop: 24 }}
         extra={
-            <Space>
+          <Space>
             <Space.Compact style={{ width: 260 }}>
               <Input
                 id="crawl-task-result-search"
@@ -2530,7 +3060,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               onChange={setResultLimit}
               options={limitOptions.map((option) => ({
                 value: option.value,
-                label: t(option.labelKey, { defaultValue: option.defaultValue })
+                label: t(option.labelKey, {
+                  defaultValue: option.defaultValue,
+                }),
               }))}
             />
           </Space>
@@ -2544,27 +3076,42 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             locale={{ emptyText: t("crawl.detail.results.empty") }}
             renderItem={(result) => {
               const metadata = result.metadata;
-              const mediaPayload = safeParseJson<CrawlMediaCollection>(result.media);
-              const storedAssets = safeParseJson<CrawlStoredMediaAsset[]>(result.mediaAssets);
-              const tablesPayload = (result.tables ?? null) as CrawlResultTable[] | null;
-              const itemStatus = result.itemStatus?.toLowerCase?.() ?? result.itemStatus ?? null;
+              const mediaPayload = safeParseJson<CrawlMediaCollection>(
+                result.media,
+              );
+              const storedAssets = safeParseJson<CrawlStoredMediaAsset[]>(
+                result.mediaAssets,
+              );
+              const tablesPayload = (result.tables ?? null) as
+                | CrawlResultTable[]
+                | null;
+              const itemStatus =
+                result.itemStatus?.toLowerCase?.() ?? result.itemStatus ?? null;
               const itemTagColor =
                 itemStatus && typeof itemStatus === "string"
-                  ? itemStatusColors[itemStatus] ?? "default"
+                  ? (itemStatusColors[itemStatus] ?? "default")
                   : "default";
               const variantEntries = [
-                { key: "raw", label: t("crawl.detail.results.variants.raw"), content: result.markdown },
+                {
+                  key: "raw",
+                  label: t("crawl.detail.results.variants.raw"),
+                  content: result.markdown,
+                },
                 {
                   key: "citations",
                   label: t("crawl.detail.results.variants.citations"),
-                  content: result.markdownWithCitations
+                  content: result.markdownWithCitations,
                 },
                 {
                   key: "references",
                   label: t("crawl.detail.results.variants.references"),
-                  content: result.referencesMarkdown
+                  content: result.referencesMarkdown,
                 },
-                { key: "fit", label: t("crawl.detail.results.variants.cleanFit"), content: result.fitMarkdown }
+                {
+                  key: "fit",
+                  label: t("crawl.detail.results.variants.cleanFit"),
+                  content: result.fitMarkdown,
+                },
               ].filter((entry) => entry.content && entry.content.length > 0);
               const defaultContent = (
                 <pre className="markdown-preview" style={{ marginTop: 8 }}>
@@ -2580,10 +3127,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                       key: entry.key,
                       label: entry.label,
                       children: (
-                        <pre className="markdown-preview" style={{ marginTop: 8 }}>
+                        <pre
+                          className="markdown-preview"
+                          style={{ marginTop: 8 }}
+                        >
                           {entry.content}
                         </pre>
-                      )
+                      ),
                     }))}
                   />
                 ) : (
@@ -2594,7 +3144,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                   <List.Item.Meta
                     title={
                       <Space wrap>
-                        <Typography.Link href={result.sourceUrl} target="_blank">
+                        <Typography.Link
+                          href={result.sourceUrl}
+                          target="_blank"
+                        >
                           {result.sourceUrl}
                         </Typography.Link>
                         <Typography.Text type="secondary">
@@ -2602,29 +3155,42 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                             month: "short",
                             day: "numeric",
                             hour: "2-digit",
-                            minute: "2-digit"
+                            minute: "2-digit",
                           })}
                         </Typography.Text>
                         {result.itemId ? (
                           <>
                             {itemStatus ? (
                               <Tag color={itemTagColor}>
-                                {t(`items.status.${itemStatus}`, { defaultValue: itemStatus })}
+                                {t(`items.status.${itemStatus}`, {
+                                  defaultValue: itemStatus,
+                                })}
                               </Tag>
                             ) : null}
                             {canViewItems ? (
-                              <Button size="small" onClick={() => router.push(`/items/${result.itemId}`)}>
-                                {t("crawl.detail.openItem", { defaultValue: "Open Item" })}
+                              <Button
+                                size="small"
+                                onClick={() =>
+                                  router.push(`/items/${result.itemId}`)
+                                }
+                              >
+                                {t("crawl.detail.openItem", {
+                                  defaultValue: "Open Item",
+                                })}
                               </Button>
                             ) : null}
                           </>
                         ) : canCreateItem ? (
                           <Button
                             size="small"
-                            loading={ingesting && ingestingResultId === result.id}
+                            loading={
+                              ingesting && ingestingResultId === result.id
+                            }
                             onClick={() => handleCreateItem(result.id)}
                           >
-                            {t("crawl.detail.ingestToItems", { defaultValue: "Send to Items" })}
+                            {t("crawl.detail.ingestToItems", {
+                              defaultValue: "Send to Items",
+                            })}
                           </Button>
                         ) : null}
                       </Space>
@@ -2632,7 +3198,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                     description={
                       <>
                         {metadata && (
-                          <Typography.Text type="secondary">{metadata}</Typography.Text>
+                          <Typography.Text type="secondary">
+                            {metadata}
+                          </Typography.Text>
                         )}
                         {tabs}
                         <MediaSection media={mediaPayload} />
