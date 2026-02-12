@@ -2635,6 +2635,10 @@
         "sendMetadata": "关闭后，运行时请求将不再发送 metadata，以提高兼容性。",
         "responseFormatMode": "选择 response_format 的发送策略：json_schema、json_object 或 none。"
       },
+      "tooltips": {
+        "sendMetadata": "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
+        "responseFormatMode": "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。"
+      },
       "validation": {
         "nameRequired": "请填写名称",
         "apiBaseRequired": "请填写 API Base URL",

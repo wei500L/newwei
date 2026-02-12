@@ -2632,6 +2632,10 @@
         "sendMetadata": "When disabled, runtime requests omit metadata for better compatibility.",
         "responseFormatMode": "Select how response_format is sent upstream: json_schema, json_object, or none."
       },
+      "tooltips": {
+        "sendMetadata": "When enabled, requests include a metadata field for tracking (suitable for LiteLLM Proxy). When disabled, metadata is omitted for better compatibility with direct OpenAI/Gemini connections.",
+        "responseFormatMode": "json_schema: Sends full JSON Schema structure for structured outputs (OpenAI/Claude). json_object: Requests JSON without schema (Gemini). none: Does not send response_format (for legacy models)."
+      },
       "validation": {
         "nameRequired": "Name is required",
         "apiBaseRequired": "API base URL is required",

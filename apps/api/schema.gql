@@ -297,6 +297,12 @@ input CorrelationAnalysisInput {
   value: Float!
 }
 
+enum CrawlAntiBotMode {
+  AUTO
+  DISABLED
+  ENABLED
+}
+
 input CrawlBrowserCookieInput {
   domain: String!
   name: String!
@@ -479,6 +485,7 @@ input CrawlMultiUrlStrategyInput {
 input CrawlOptionsInput {
   additionalUrls: [String!]
   adjustViewportToContent: Boolean
+  antiBotMode: CrawlAntiBotMode
   autoExpandDetails: Boolean
   browserCookies: [CrawlBrowserCookieInput!]
   browserHeaders: [CrawlBrowserHeaderInput!]
@@ -487,7 +494,6 @@ input CrawlOptionsInput {
   detailExpansion: CrawlDetailExpansionOptionsInput
   enableStealthMode: Boolean
   enableUndetectedBrowser: Boolean
-  antiBotMode: CrawlAntiBotMode
   excludeExternalImages: Boolean
   extractLinks: Boolean
   geolocation: CrawlGeolocationInput
@@ -670,12 +676,6 @@ input CrawlVirtualScrollInput {
   scrollBy: String
   scrollCount: Int
   waitAfterScrollMs: Int
-}
-
-enum CrawlAntiBotMode {
-  AUTO
-  DISABLED
-  ENABLED
 }
 
 enum CrawlWaitUntil {

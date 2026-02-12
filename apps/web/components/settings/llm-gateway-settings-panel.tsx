@@ -15,9 +15,11 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
+import { QuestionCircleOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -3688,9 +3690,21 @@ export function LlmGatewaySettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.fields.responseFormatMode", {
-              defaultValue: "response_format mode",
-            })}
+            label={
+              <span>
+                {t("settings.llmGateway.fields.responseFormatMode", {
+                  defaultValue: "response_format mode",
+                })}
+                <Tooltip
+                  title={t("settings.llmGateway.tooltips.responseFormatMode", {
+                    defaultValue:
+                      "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。",
+                  })}
+                >
+                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                </Tooltip>
+              </span>
+            }
             name="responseFormatMode"
             extra={t("settings.llmGateway.hints.responseFormatMode", {
               defaultValue:
@@ -3709,9 +3723,21 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             name="sendMetadata"
             valuePropName="checked"
-            label={t("settings.llmGateway.fields.sendMetadata", {
-              defaultValue: "Send metadata",
-            })}
+            label={
+              <span>
+                {t("settings.llmGateway.fields.sendMetadata", {
+                  defaultValue: "Send metadata",
+                })}
+                <Tooltip
+                  title={t("settings.llmGateway.tooltips.sendMetadata", {
+                    defaultValue:
+                      "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
+                  })}
+                >
+                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                </Tooltip>
+              </span>
+            }
             extra={t("settings.llmGateway.hints.sendMetadata", {
               defaultValue:
                 "When disabled, metadata will be omitted from upstream requests.",
@@ -3978,9 +4004,21 @@ export function LlmGatewaySettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.fields.responseFormatMode", {
-              defaultValue: "response_format mode",
-            })}
+            label={
+              <span>
+                {t("settings.llmGateway.fields.responseFormatMode", {
+                  defaultValue: "response_format mode",
+                })}
+                <Tooltip
+                  title={t("settings.llmGateway.tooltips.responseFormatMode", {
+                    defaultValue:
+                      "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。",
+                  })}
+                >
+                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                </Tooltip>
+              </span>
+            }
             name="responseFormatMode"
             extra={t("settings.llmGateway.hints.responseFormatMode", {
               defaultValue:
@@ -3999,9 +4037,21 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             name="sendMetadata"
             valuePropName="checked"
-            label={t("settings.llmGateway.fields.sendMetadata", {
-              defaultValue: "Send metadata",
-            })}
+            label={
+              <span>
+                {t("settings.llmGateway.fields.sendMetadata", {
+                  defaultValue: "Send metadata",
+                })}
+                <Tooltip
+                  title={t("settings.llmGateway.tooltips.sendMetadata", {
+                    defaultValue:
+                      "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
+                  })}
+                >
+                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                </Tooltip>
+              </span>
+            }
             extra={t("settings.llmGateway.hints.sendMetadata", {
               defaultValue:
                 "When disabled, metadata will be omitted from upstream requests.",
@@ -4177,9 +4227,21 @@ export function LlmGatewaySettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.test.fields.responseFormatMode", {
-              defaultValue: "response_format probe",
-            })}
+            label={
+              <span>
+                {t("settings.llmGateway.test.fields.responseFormatMode", {
+                  defaultValue: "response_format probe",
+                })}
+                <Tooltip
+                  title={t("settings.llmGateway.tooltips.responseFormatMode", {
+                    defaultValue:
+                      "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。",
+                  })}
+                >
+                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                </Tooltip>
+              </span>
+            }
             name="responseFormatMode"
           >
             <Select
@@ -4193,9 +4255,21 @@ export function LlmGatewaySettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.test.fields.includeMetadataProbe", {
-              defaultValue: "Include metadata probe",
-            })}
+            label={
+              <span>
+                {t("settings.llmGateway.test.fields.includeMetadataProbe", {
+                  defaultValue: "Include metadata probe",
+                })}
+                <Tooltip
+                  title={t("settings.llmGateway.tooltips.sendMetadata", {
+                    defaultValue:
+                      "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
+                  })}
+                >
+                  <QuestionCircleOutlined style={{ marginLeft: 8, color: "#999" }} />
+                </Tooltip>
+              </span>
+            }
             name="includeMetadataProbe"
             valuePropName="checked"
           >
