@@ -13,6 +13,7 @@ import { ItemsService } from "../items/items.service";
 import { ModelServiceClient } from "../model-service/model-service.client";
 import { LiteLlmGuardrailViolationError, LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
 import { AssistantSafetySettingsService } from "../system-settings/assistant-safety-settings.service";
+import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
 import { OpenAiKeysSettingsService } from "../system-settings/openai-keys-settings.service";
 
 import {
@@ -107,6 +108,7 @@ export class AssistantService {
     private readonly llm: LiteLlmService,
     private readonly env: EnvService,
     private readonly assistantSafety: AssistantSafetySettingsService,
+    private readonly llmGatewaySettings: LlmGatewaySettingsService,
     private readonly openaiKeys: OpenAiKeysSettingsService,
     private readonly prisma: PrismaService,
     private readonly items: ItemsService,
@@ -184,6 +186,7 @@ export class AssistantService {
 
     const baseGuardrails = (await this.assistantSafety.getEffectiveConfig()).guardrails;
     const guardrails = await this.pickGuardrailsForRun(record.id, baseGuardrails);
+    const assistantModel = await this.resolveAssistantModelOverride();
 
     try {
       if (job.type === "query") {
@@ -192,7 +195,8 @@ export class AssistantService {
           record.id,
           createdAt,
           record.input as AssistantQueryInput,
-          guardrails
+          guardrails,
+          assistantModel
         );
         record.output = output;
         record.summary = output.summary;
@@ -202,7 +206,8 @@ export class AssistantService {
           record.id,
           createdAt,
           record.input as AssistantReportInput,
-          guardrails
+          guardrails,
+          assistantModel
         );
         record.output = output;
         record.summary = output.summary;
@@ -212,7 +217,8 @@ export class AssistantService {
           record.id,
           createdAt,
           record.input as AssistantForecastInput,
-          guardrails
+          guardrails,
+          assistantModel
         );
         record.output = output;
         record.summary = output.summary;
@@ -306,12 +312,23 @@ export class AssistantService {
     return name;
   }
 
+  private async resolveAssistantModelOverride(): Promise<string | undefined> {
+    const activeConfig = await this.llmGatewaySettings.getActiveConfig();
+    const override = activeConfig?.assistantModel;
+    if (typeof override !== "string") {
+      return undefined;
+    }
+    const normalized = override.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
   private async runQuery(
     orgId: string,
     runId: string,
     createdAt: Date,
     input: AssistantQueryInput,
-    guardrails?: string[]
+    guardrails?: string[],
+    assistantModel?: string
   ) {
     const message = typeof input?.message === "string" ? input.message.trim() : "";
     if (!message) {
@@ -320,6 +337,7 @@ export class AssistantService {
 
     const planner = this.prompts.buildQueryPlannerRequest(message);
     const planResponse = await this.llm.acompletion({
+      model: assistantModel,
       messages: planner.messages,
       response_format: planner.responseFormat,
       timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
@@ -355,7 +373,10 @@ export class AssistantService {
         items: renderedItems
       });
 
-      const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, { guardrails });
+      const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, {
+        guardrails,
+        assistantModel
+      });
       return {
         plan,
         items: renderedItems,
@@ -376,7 +397,8 @@ export class AssistantService {
           seriesA: "gold_futures_main",
           seriesB: "usd_index_history"
         },
-        guardrails
+        guardrails,
+        assistantModel
       );
     }
 
@@ -392,7 +414,8 @@ export class AssistantService {
           seriesA: plan.seriesA,
           seriesB: plan.seriesB
         },
-        guardrails
+        guardrails,
+        assistantModel
       );
     }
 
@@ -407,7 +430,10 @@ export class AssistantService {
       },
       { role: "user", content: `User request: ${message}` }
     ];
-    const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, { guardrails });
+    const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, {
+      guardrails,
+      assistantModel
+    });
     return { plan, summary: stream.summary, raw: stream.raw };
   }
 
@@ -416,7 +442,8 @@ export class AssistantService {
     runId: string,
     createdAt: Date,
     input: AssistantReportInput,
-    guardrails?: string[]
+    guardrails?: string[],
+    assistantModel?: string
   ) {
     const period = input?.period === "weekly" ? "weekly" : "daily";
     const lookbackDays = period === "weekly" ? 7 : 1;
@@ -467,7 +494,10 @@ export class AssistantService {
       }
     ];
 
-    const stream = await this.streamMessages(orgId, runId, "report", createdAt, messages, { guardrails });
+    const stream = await this.streamMessages(orgId, runId, "report", createdAt, messages, {
+      guardrails,
+      assistantModel
+    });
     return {
       period,
       topic: topic || null,
@@ -484,7 +514,8 @@ export class AssistantService {
     runId: string,
     createdAt: Date,
     input: AssistantForecastInput,
-    guardrails?: string[]
+    guardrails?: string[],
+    assistantModel?: string
   ) {
     const seriesInput = typeof input?.series === "string" ? input.series.trim() : "";
     if (!seriesInput) {
@@ -586,7 +617,10 @@ export class AssistantService {
       }
     ];
 
-    const stream = await this.streamMessages(orgId, runId, "forecast", createdAt, messages, { guardrails });
+    const stream = await this.streamMessages(orgId, runId, "forecast", createdAt, messages, {
+      guardrails,
+      assistantModel
+    });
     return {
       series: { slug: item.slug, displayName: item.displayName, field: sourceField, docUrl: item.sourceDocUrl ?? null },
       timeWindow: { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) },
@@ -608,7 +642,8 @@ export class AssistantService {
     createdAt: Date,
     question: string,
     input: { seriesA: string; seriesB: string; lookbackDays?: number; transform?: string | null },
-    guardrails?: string[]
+    guardrails?: string[],
+    assistantModel?: string
   ) {
     const lookbackDays = Math.min(3650, Math.max(7, input.lookbackDays ?? 365));
     const transform = input.transform === "level" ? "level" : "return";
@@ -619,7 +654,7 @@ export class AssistantService {
     const specA = parseSeriesSpecifier(input.seriesA);
     const specB = parseSeriesSpecifier(input.seriesB);
 
-    const resolved = await this.resolveCorrelationSeries(orgId, question, specA, specB, guardrails);
+    const resolved = await this.resolveCorrelationSeries(orgId, question, specA, specB, guardrails, assistantModel);
     const itemA = resolved.seriesA.item;
     const itemB = resolved.seriesB.item;
 
@@ -641,7 +676,7 @@ export class AssistantService {
       ? await this.pickCorrelationFieldsWithLlm(orgId, {
           seriesA: { slug: itemA.slug, displayName: itemA.displayName, fields: fieldsA },
           seriesB: { slug: itemB.slug, displayName: itemB.displayName, fields: fieldsB }
-        }, guardrails)
+        }, guardrails, assistantModel)
       : null;
 
     const fieldA = this.pickPreferredField(
@@ -712,7 +747,10 @@ export class AssistantService {
       references
     });
 
-    const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, { guardrails });
+    const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, {
+      guardrails,
+      assistantModel
+    });
     return {
       plan: {
         kind: "correlation_two_series",
@@ -774,10 +812,12 @@ export class AssistantService {
       seriesA: { slug: string; displayName?: string | null; fields: { name: string; count: number }[] };
       seriesB: { slug: string; displayName?: string | null; fields: { name: string; count: number }[] };
     },
-    guardrails?: string[]
+    guardrails?: string[],
+    assistantModel?: string
   ): Promise<{ fieldA: string; fieldB: string } | null> {
     const selector = this.prompts.buildCorrelationFieldSelectorRequest(input);
     const selectionResponse = await this.llm.acompletion({
+      model: assistantModel,
       messages: selector.messages,
       response_format: selector.responseFormat,
       timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
@@ -852,7 +892,8 @@ export class AssistantService {
     question: string,
     seriesA: ParsedSeriesSpecifier,
     seriesB: ParsedSeriesSpecifier,
-    guardrails?: string[]
+    guardrails?: string[],
+    assistantModel?: string
   ): Promise<{
     seriesA: {
       item: { id: string; slug: string; displayName: string; description?: string | null; sourceDocUrl?: string | null };
@@ -919,6 +960,7 @@ export class AssistantService {
       });
 
       const selectionResponse = await this.llm.acompletion({
+        model: assistantModel,
         messages: selector.messages,
         response_format: selector.responseFormat,
         timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
@@ -1151,12 +1193,13 @@ export class AssistantService {
     type: AssistantRunType,
     createdAt: Date,
     messages: LiteLlmMessage[],
-    options?: { initialChunk?: string; guardrails?: string[] }
+    options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string }
   ): Promise<{ summary: string; raw: Record<string, unknown> }> {
     const flushChars = Math.max(1, Number(this.env.assistantConfig.streamFlushChars ?? 80));
     const flushMs = Math.max(0, Number(this.env.assistantConfig.streamFlushMs ?? 250));
     const initialChunk = options?.initialChunk;
     const guardrails = options?.guardrails;
+    const assistantModel = options?.assistantModel;
 
     let buffer = "";
     let summary = "";
@@ -1181,6 +1224,7 @@ export class AssistantService {
       }
 
       for await (const chunk of this.llm.stream({
+        model: assistantModel,
         messages,
         timeoutMs: this.env.assistantConfig.llmTimeoutMs,
         guardrails

@@ -6,6 +6,7 @@ import type { ModelServiceClient } from "../model-service/model-service.client";
 import type { LiteLlmMessage, LiteLlmService, LiteLlmStreamChunk } from "../news-pipeline/litellm.service";
 import { LiteLlmGuardrailViolationError } from "../news-pipeline/litellm.service";
 import type { AssistantSafetySettingsService } from "../system-settings/assistant-safety-settings.service";
+import type { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
 import type { OpenAiKeysSettingsService } from "../system-settings/openai-keys-settings.service";
 
 import { AssistantPromptService } from "./assistant-prompt.service";
@@ -45,6 +46,9 @@ function createService(overrides?: { stream?: LiteLlmService["stream"] }) {
   } as unknown as EnvService;
 
   const assistantSafety = {} as unknown as AssistantSafetySettingsService;
+  const llmGatewaySettings = {
+    getActiveConfig: jest.fn(async () => null)
+  } as unknown as LlmGatewaySettingsService;
   const openaiKeys = { getKeyCount: jest.fn(async () => 0) } as unknown as OpenAiKeysSettingsService;
   const prisma = {} as unknown as PrismaService;
   const items = {} as never;
@@ -58,6 +62,7 @@ function createService(overrides?: { stream?: LiteLlmService["stream"] }) {
       llm,
       env,
       assistantSafety,
+      llmGatewaySettings,
       openaiKeys,
       prisma,
       items,
@@ -83,7 +88,7 @@ describe("AssistantService.streamMessages", () => {
         type: "query" | "report" | "forecast",
         createdAt: Date,
         messages: LiteLlmMessage[],
-        options?: { initialChunk?: string; guardrails?: string[] }
+        options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string }
       ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
       }
     ).streamMessages.bind(service);
@@ -118,7 +123,7 @@ describe("AssistantService.streamMessages", () => {
         type: "query" | "report" | "forecast",
         createdAt: Date,
         messages: LiteLlmMessage[],
-        options?: { initialChunk?: string; guardrails?: string[] }
+        options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string }
       ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
       }
     ).streamMessages.bind(service);
@@ -126,5 +131,36 @@ describe("AssistantService.streamMessages", () => {
     await expect(
       streamMessages("org", "run", "query", new Date(), [{ role: "user", content: "hi" }])
     ).rejects.toBeInstanceOf(LiteLlmGuardrailViolationError);
+  });
+
+  it("passes assistant model override to LiteLLM stream", async () => {
+    async function* successStream(): AsyncGenerator<LiteLlmStreamChunk> {
+      yield { model: "test-model", raw: {}, delta: "ok" };
+    }
+
+    const stream = jest.fn(() => successStream()) as unknown as LiteLlmService["stream"];
+    const { service, llm } = createService({ stream });
+
+    const streamMessages = (
+      service as unknown as {
+        streamMessages: (
+          orgId: string,
+          runId: string,
+          type: "query" | "report" | "forecast",
+          createdAt: Date,
+          messages: LiteLlmMessage[],
+          options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string }
+        ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
+      }
+    ).streamMessages.bind(service);
+
+    const result = await streamMessages("org", "run", "query", new Date(), [{ role: "user", content: "hi" }], {
+      assistantModel: "openai/gpt-4.1-mini",
+    });
+
+    expect(result.summary).toBe("ok");
+    expect((llm.stream as unknown as jest.Mock).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ model: "openai/gpt-4.1-mini" })
+    );
   });
 });
