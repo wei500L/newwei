@@ -2478,10 +2478,12 @@
         "modal": {
           "title": "LiteLLM Proxy load balancing"
         },
-        "hint": "Fill multiple keys and routing strategy, then paste the snippet into infra/docker/.env and restart the litellm service to enable multi-deployment load balancing.",
+        "hint": "Store load-balancing settings in MySQL. Restart the litellm service after saving to apply changes.",
         "fields": {
+          "enabled": "Enable DB load balancing",
           "openaiKeys": "OPENAI_API_KEYS",
           "anthropicKeys": "ANTHROPIC_API_KEYS",
+          "clearAnthropicKeys": "Clear stored Anthropic keys",
           "routingStrategy": "routing_strategy",
           "deploymentRpm": "LITELLM_DEPLOYMENT_RPM",
           "deploymentTpm": "LITELLM_DEPLOYMENT_TPM",
@@ -2490,7 +2492,48 @@
           "redisPassword": "LITELLM_REDIS_PASSWORD"
         },
         "hints": {
-          "keys": "Comma- or newline-separated; leave empty to disable multi-key."
+          "openaiKeys": "Comma/newline separated. Leave empty to keep existing OpenAI keys; providing values replaces the stored list.",
+          "anthropicKeys": "Comma/newline separated. Leave empty to keep current Anthropic keys."
+        },
+        "tooltips": {
+          "enabled": "When enabled, LiteLLM startup reads and applies load-balancing settings from MySQL.",
+          "openaiKeys": "OpenAI upstream keys are stored in MySQL. This input replaces the list only when values are provided.",
+          "anthropicKeys": "Anthropic upstream keys are stored in MySQL. Input values replace the list, or use clear switch to remove all.",
+          "routingStrategy": "simple-shuffle randomizes deployments. least-busy prefers lower in-flight load. usage-based-routing balances by token usage. latency-based-routing prefers lower-latency deployments.",
+          "deploymentRpm": "Default per-deployment RPM injected when deployment-level rpm is not explicitly set.",
+          "deploymentTpm": "Default per-deployment TPM injected when deployment-level tpm is not explicitly set.",
+          "redisHost": "Redis host used by LiteLLM router to share runtime state across instances.",
+          "redisPort": "Redis TCP port used by LiteLLM router.",
+          "redisPassword": "Redis password stored in MySQL. Providing a value updates it; leaving blank may clear/keep depending on current settings and save action."
+        },
+        "status": {
+          "enabled": "DB-managed load balancing enabled",
+          "disabled": "DB-managed load balancing disabled",
+          "openaiKeys": "OpenAI keys: {{count}}",
+          "anthropicKeys": "Anthropic keys: {{count}}",
+          "restartRequired": "Restart required"
+        },
+        "messages": {
+          "saved": "Load balancing settings saved"
+        },
+        "errors": {
+          "loadFailed": "Failed to load balancing settings",
+          "saveFailed": "Failed to save load balancing settings"
+        },
+        "validation": {
+          "redisHost": "Redis host is required"
+        },
+        "reset": {
+          "modal": {
+            "title": "Reset load balancing settings?",
+            "content": "This removes DB-managed load balancing config. LiteLLM startup will keep load balancing disabled until you save settings again."
+          },
+          "messages": {
+            "done": "Load balancing settings reset"
+          },
+          "errors": {
+            "failed": "Failed to reset load balancing settings"
+          }
         }
       },
       "proxyLbTest": {
@@ -2579,6 +2622,7 @@
       "columns": {
         "name": "Name",
         "model": "Model",
+        "assistantModel": "Assistant model",
         "embeddingModel": "Embedding model",
         "compatibility": "Compatibility",
         "metadataOn": "metadata:on",
@@ -2593,6 +2637,7 @@
         "apiBase": "API base URL",
         "apiKey": "API key",
         "model": "Default model",
+        "assistantModel": "Assistant-only model",
         "embeddingModel": "Embedding model",
         "timeoutMs": "Timeout (ms)",
         "temperature": "Temperature",
@@ -2629,6 +2674,7 @@
         "apiKeyEdit": "Provide a new key to rotate it. Use the toggle below to clear.",
         "fallbackModels": "Used when the primary model request fails.",
         "modelOptional": "Optional: used for chat completion requests. Leave empty when configuring embeddings-only gateway.",
+        "assistantModel": "Optional: used only by AI Assistant (/assistant) and excluded from news pipeline model routing.",
         "sendMetadata": "When disabled, runtime requests omit metadata for better compatibility.",
         "responseFormatMode": "Select how response_format is sent upstream: json_schema, json_object, or none."
       },
@@ -3360,23 +3406,72 @@
       }
     },
     "situationMonitor": {
-      "description": "Tune situation monitor LLM translation behavior (concurrency).",
+      "description": "Configure situation monitor translation behavior (concurrency + DeepLX primary API + fallback endpoint).",
+      "notice": {
+        "title": "Translation API (DeepLX)",
+        "body": "Translate to Simplified Chinese uses DeepLX as primary and can fall back to a backup translation endpoint. If both requests fail, the page keeps original text and shows a translation error tag."
+      },
       "status": {
         "label": "Status",
         "env": "Using env defaults",
-        "saved": "Saved override"
+        "saved": "Saved override",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "notConfigured": "Not configured",
+        "translationApiKeySource": "Translation API key source",
+        "translationFallbackApi": "Fallback translation API",
+        "finnhubApiKeySource": "Finnhub API key source",
+        "fredApiKeySource": "FRED API key source",
+        "apiKeySources": {
+          "stored": "System settings (stored)",
+          "env": "Environment variable",
+          "none": "Not configured"
+        }
+      },
+      "sections": {
+        "translationApi": "Translation API",
+        "externalApis": "External data APIs"
       },
       "fields": {
-        "translationMaxConcurrency": "Translation max concurrency"
+        "translationMaxConcurrency": "Translation max concurrency",
+        "translationApiEnabled": "Enable translation API",
+        "translationApiBaseUrl": "DeepLX base URL",
+        "translationApiKey": "DeepLX API key",
+        "translationFallbackApiEnabled": "Enable fallback translation API",
+        "translationFallbackApiBaseUrl": "Fallback translation endpoint",
+        "finnhubApiKey": "Finnhub API key",
+        "fredApiKey": "FRED API key",
+        "translationApiTimeoutMs": "Translation timeout (ms)",
+        "translationApiMaxRetries": "Translation max retries"
       },
       "hints": {
-        "translationMaxConcurrency": "Max concurrent LLM translation requests used by the situation monitor translator."
+        "translationMaxConcurrency": "Max concurrent DeepLX translation requests used by the situation monitor translator.",
+        "translationApiEnabled": "When disabled, Translate to Simplified Chinese will not call DeepLX.",
+        "translationApiBaseUrl": "Base URL such as https://api.deeplx.org. The API will append /<api-key>/translate automatically.",
+        "translationApiKey": "Leave empty to keep current key. Stored encrypted when secret encryption is enabled in system security settings.",
+        "translationFallbackApiEnabled": "When enabled, the system automatically retries translation with the fallback endpoint after DeepLX fails.",
+        "translationFallbackApiBaseUrl": "Fallback endpoint URL. The request body is POST JSON: source_lang, target_lang, text_list.",
+        "finnhubApiKey": "Used for indices/sectors/commodities. Leave empty to keep current key. Stored encrypted when secret encryption is enabled.",
+        "fredApiKey": "Used for Fed indicators and balance sheet data. Leave empty to keep current key. Stored encrypted when secret encryption is enabled.",
+        "translationApiTimeoutMs": "Timeout for each translation request.",
+        "translationApiMaxRetries": "Maximum retry count after translation request failures."
+      },
+      "placeholders": {
+        "translationApiBaseUrl": "https://api.deeplx.org",
+        "translationApiKey": "Leave empty to keep current key",
+        "translationFallbackApiBaseUrl": "https://translates.shisihua.dpdns.org/<token>/v1",
+        "finnhubApiKey": "Leave empty to keep current key",
+        "fredApiKey": "Leave empty to keep current key"
       },
       "actions": {
-        "reset": "Reset to env"
+        "reset": "Reset to env",
+        "clearApiKey": "Clear API key",
+        "keepApiKey": "Keep API key"
       },
       "validation": {
-        "translationMaxConcurrency": "Concurrency is required"
+        "translationMaxConcurrency": "Concurrency is required",
+        "translationApiTimeoutMs": "Translation timeout is required",
+        "translationApiMaxRetries": "Translation max retries is required"
       },
       "messages": {
         "saved": "Saved",
@@ -5083,7 +5178,7 @@
     "markets": {
       "title": "Markets",
       "missingKey": "API key needed",
-      "hint": "Set SITUATION_MONITOR_FINNHUB_API_KEY to enable indices/sectors/commodities.",
+      "hint": "Configure Finnhub API key in Admin Settings > System Settings > Situation Monitor.",
       "price": "Price",
       "changePct": "Change",
       "empty": "No markets data yet."
@@ -5097,7 +5192,7 @@
     "fed": {
       "title": "Federal Reserve",
       "empty": "No Federal Reserve data yet.",
-      "hint": "Set SITUATION_MONITOR_FRED_API_KEY to enable indicators and money printer.",
+      "hint": "Configure FRED API key in Admin Settings > System Settings > Situation Monitor.",
       "value": "Value",
       "delta": "Δ",
       "balanceSheet": "Balance sheet"

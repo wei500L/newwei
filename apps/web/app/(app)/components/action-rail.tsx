@@ -23,6 +23,8 @@ import type { TFunction } from "i18next";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { resolveActiveItemKey } from "./action-rail-routing";
+
 export interface ActionItem {
   key: string;
   icon: React.ReactNode;
@@ -162,34 +164,37 @@ export function ActionRail() {
   const { data: session } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
 
-
   const { mainNavItems, adminNavItems } = useMemo(
     () => buildActionRailNavConfig(t, permissions),
     [permissions, t]
   );
+  const allNavItems = useMemo(() => [...mainNavItems, ...adminNavItems], [adminNavItems, mainNavItems]);
+  const activeKey = useMemo(() => resolveActiveItemKey(pathname, allNavItems), [allNavItems, pathname]);
 
   return (
-    <aside className="hidden md:flex flex-col justify-center h-full pl-4 pr-2 z-40">
+    <aside className="hidden md:flex flex-col justify-center h-full px-3 shrink-0 relative z-20 pointer-events-auto">
       <div className="
-        flex flex-col items-center py-4 gap-2
+        flex flex-col items-center py-4 gap-2 w-[4.5rem]
         glass-panel rounded-2xl border border-[var(--border)]
         shadow-[0_10px_30px_rgba(15,23,42,0.08)]
       ">
         {/* Main Navigation */}
-        <div className="flex flex-col gap-2 w-full px-2 pb-4 border-b border-white/5">
+        <div className="flex flex-col gap-1.5 w-full px-2 pb-4 border-b border-white/5">
           {mainNavItems.map((item) => {
-             const isActive = item.path ? pathname.startsWith(item.path) : false;
-             return (
+            const isActive = item.key === activeKey;
+            return (
               <Tooltip key={item.key} title={item.label} placement="right">
                 <Link
                   href={item.path ?? "#"}
                   aria-label={item.label}
                   aria-current={isActive ? "page" : undefined}
                   className={`
-                    w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200
+                    w-full h-11 flex items-center justify-center rounded-xl transition-all duration-150 select-none
+                    cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                    active:scale-[0.97]
                     ${isActive
                       ? "bg-[var(--primary)] text-white shadow-sm"
-                      : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-50"
+                      : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 active:bg-slate-200"
                     }
                   `}
                 >
@@ -201,12 +206,12 @@ export function ActionRail() {
         </div>
 
         {adminNavItems.length > 0 ? (
-          <div className="flex flex-col gap-2 w-full px-2 pt-3">
+          <div className="flex flex-col gap-1.5 w-full px-2 pt-3">
             <span className="px-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
               {t("nav.adminGroup", { defaultValue: "Admin" })}
             </span>
             {adminNavItems.map((item) => {
-              const isActive = item.path ? pathname.startsWith(item.path) : false;
+              const isActive = item.key === activeKey;
               return (
                 <Tooltip key={item.key} title={item.label} placement="right">
                   <Link
@@ -214,10 +219,12 @@ export function ActionRail() {
                     aria-label={item.label}
                     aria-current={isActive ? "page" : undefined}
                     className={`
-                      w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200
+                      w-full h-11 flex items-center justify-center rounded-xl transition-all duration-150 select-none
+                      cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                      active:scale-[0.97]
                       ${isActive
                         ? "bg-[var(--primary)] text-white shadow-sm"
-                        : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-50"
+                        : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 active:bg-slate-200"
                       }
                     `}
                   >

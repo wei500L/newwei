@@ -2481,10 +2481,12 @@
         "modal": {
           "title": "LiteLLM Proxy 负载均衡配置"
         },
-        "hint": "填写多 Key 与路由策略后，将下方片段写入 infra/docker/.env，然后重启 litellm 服务即可启用同一模型多部署自动分流。",
+        "hint": "将负载均衡设置保存到 MySQL。保存后需重启 litellm 服务使配置生效。",
         "fields": {
+          "enabled": "启用 DB 负载均衡",
           "openaiKeys": "OPENAI_API_KEYS",
           "anthropicKeys": "ANTHROPIC_API_KEYS",
+          "clearAnthropicKeys": "清空已存储的 Anthropic Keys",
           "routingStrategy": "routing_strategy",
           "deploymentRpm": "LITELLM_DEPLOYMENT_RPM",
           "deploymentTpm": "LITELLM_DEPLOYMENT_TPM",
@@ -2493,7 +2495,48 @@
           "redisPassword": "LITELLM_REDIS_PASSWORD"
         },
         "hints": {
-          "keys": "逗号或换行分隔；为空则不启用多 Key。"
+          "openaiKeys": "逗号或换行分隔。留空表示保留现有 OpenAI keys；如填写则替换已存储列表。",
+          "anthropicKeys": "逗号或换行分隔。留空表示保留现有 Anthropic keys。"
+        },
+        "tooltips": {
+          "enabled": "开启后，LiteLLM 启动时会从 MySQL 读取并应用负载均衡配置。",
+          "openaiKeys": "OpenAI 上游 Key 存储在 MySQL。此输入框用于替换列表；若留空则不改动。",
+          "anthropicKeys": "Anthropic 上游 Key 存储在 MySQL。输入后会替换列表；也可使用下方开关清空。",
+          "routingStrategy": "simple-shuffle 为随机分流；least-busy 优先空闲部署；usage-based-routing 按使用量分配；latency-based-routing 优先低延迟部署。",
+          "deploymentRpm": "给每个 deployment 注入默认 RPM（仅在 deployment 未显式配置 rpm 时生效）。",
+          "deploymentTpm": "给每个 deployment 注入默认 TPM（仅在 deployment 未显式配置 tpm 时生效）。",
+          "redisHost": "LiteLLM Router 共享状态使用的 Redis 主机地址。",
+          "redisPort": "LiteLLM Router 连接 Redis 的端口。",
+          "redisPassword": "Redis 密码存储于 MySQL。输入内容后会更新；留空可清空或保持（取决于当前配置和保存动作）。"
+        },
+        "status": {
+          "enabled": "已启用 DB 负载均衡",
+          "disabled": "已禁用 DB 负载均衡",
+          "openaiKeys": "OpenAI keys：{{count}}",
+          "anthropicKeys": "Anthropic keys：{{count}}",
+          "restartRequired": "需要重启"
+        },
+        "messages": {
+          "saved": "已保存负载均衡配置"
+        },
+        "errors": {
+          "loadFailed": "加载负载均衡配置失败",
+          "saveFailed": "保存负载均衡配置失败"
+        },
+        "validation": {
+          "redisHost": "请填写 Redis Host"
+        },
+        "reset": {
+          "modal": {
+            "title": "重置负载均衡配置？",
+            "content": "该操作会删除 DB 中的负载均衡配置。在再次保存之前，LiteLLM 启动时不会启用负载均衡。"
+          },
+          "messages": {
+            "done": "已重置负载均衡配置"
+          },
+          "errors": {
+            "failed": "重置负载均衡配置失败"
+          }
         }
       },
       "proxyLbTest": {
@@ -2582,6 +2625,7 @@
       "columns": {
         "name": "名称",
         "model": "模型",
+        "assistantModel": "助手模型",
         "embeddingModel": "Embedding 模型",
         "compatibility": "兼容策略",
         "metadataOn": "metadata:开",
@@ -2596,6 +2640,7 @@
         "apiBase": "API Base 地址",
         "apiKey": "API Key",
         "model": "默认模型",
+        "assistantModel": "助手专用模型",
         "embeddingModel": "Embedding 模型",
         "timeoutMs": "超时 (ms)",
         "temperature": "温度",
@@ -2632,6 +2677,7 @@
         "apiKeyEdit": "输入新 Key 用于轮换；也可以用下方开关清空。",
         "fallbackModels": "主模型失败时会按顺序尝试。",
         "modelOptional": "可选：仅用于对话/补全请求；只配置 Embeddings 网关时可以留空。",
+        "assistantModel": "可选：仅用于 AI 助手（/assistant）调用，不参与新闻链路模型路由。",
         "sendMetadata": "关闭后，运行时请求将不再发送 metadata，以提高兼容性。",
         "responseFormatMode": "选择 response_format 的发送策略：json_schema、json_object 或 none。"
       },
@@ -3363,23 +3409,72 @@
       }
     },
     "situationMonitor": {
-      "description": "调整态势监控的大模型翻译行为（并发控制）。",
+      "description": "配置态势监控翻译能力（并发、DeepLX 主翻译与备用端点）。",
+      "notice": {
+        "title": "翻译 API（DeepLX）",
+        "body": "“翻译为简体中文”默认使用 DeepLX，并可在 DeepLX 失败后自动切换到备用翻译端点。若两者都失败，页面会保留原文并显示翻译错误标识。"
+      },
       "status": {
         "label": "状态",
         "env": "使用环境变量默认值",
-        "saved": "已保存覆盖配置"
+        "saved": "已保存覆盖配置",
+        "enabled": "已启用",
+        "disabled": "已禁用",
+        "notConfigured": "未配置",
+        "translationApiKeySource": "翻译 API Key 来源",
+        "translationFallbackApi": "备用翻译 API",
+        "finnhubApiKeySource": "Finnhub API Key 来源",
+        "fredApiKeySource": "FRED API Key 来源",
+        "apiKeySources": {
+          "stored": "系统设置（已保存）",
+          "env": "环境变量",
+          "none": "未配置"
+        }
+      },
+      "sections": {
+        "translationApi": "翻译 API",
+        "externalApis": "外部数据 API"
       },
       "fields": {
-        "translationMaxConcurrency": "翻译最大并发数"
+        "translationMaxConcurrency": "翻译最大并发数",
+        "translationApiEnabled": "启用翻译 API",
+        "translationApiBaseUrl": "DeepLX Base URL",
+        "translationApiKey": "DeepLX API Key",
+        "translationFallbackApiEnabled": "启用备用翻译 API",
+        "translationFallbackApiBaseUrl": "备用翻译 Endpoint",
+        "finnhubApiKey": "Finnhub API Key",
+        "fredApiKey": "FRED API Key",
+        "translationApiTimeoutMs": "翻译超时（毫秒）",
+        "translationApiMaxRetries": "翻译重试次数"
       },
       "hints": {
-        "translationMaxConcurrency": "态势监控翻译器并行请求大模型的最大数量。"
+        "translationMaxConcurrency": "态势监控翻译器并行请求 DeepLX API 的最大数量。",
+        "translationApiEnabled": "关闭后，“翻译为简体中文”将不再发起 DeepLX 请求。",
+        "translationApiBaseUrl": "请求地址前缀，例如 https://api.deeplx.org。系统会自动拼接 /<api-key>/translate。",
+        "translationApiKey": "留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
+        "translationFallbackApiEnabled": "启用后，当 DeepLX 失败时会自动调用备用翻译端点重试。",
+        "translationFallbackApiBaseUrl": "备用翻译端点 URL。请求体为 POST JSON：source_lang、target_lang、text_list。",
+        "finnhubApiKey": "用于指数/行业/大宗商品行情。留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
+        "fredApiKey": "用于美联储指标与资产负债表。留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
+        "translationApiTimeoutMs": "单次翻译请求超时时间。",
+        "translationApiMaxRetries": "翻译请求失败后的最大重试次数。"
+      },
+      "placeholders": {
+        "translationApiBaseUrl": "https://api.deeplx.org",
+        "translationApiKey": "留空表示保持当前 key",
+        "translationFallbackApiBaseUrl": "https://translates.shisihua.dpdns.org/<token>/v1",
+        "finnhubApiKey": "留空表示保持当前 key",
+        "fredApiKey": "留空表示保持当前 key"
       },
       "actions": {
-        "reset": "重置为环境变量"
+        "reset": "重置为环境变量",
+        "clearApiKey": "清空 API Key",
+        "keepApiKey": "保留 API Key"
       },
       "validation": {
-        "translationMaxConcurrency": "并发数必填"
+        "translationMaxConcurrency": "并发数必填",
+        "translationApiTimeoutMs": "翻译超时必填",
+        "translationApiMaxRetries": "翻译重试次数必填"
       },
       "messages": {
         "saved": "已保存",
@@ -5086,7 +5181,7 @@
     "markets": {
       "title": "市场",
       "missingKey": "需要 API Key",
-      "hint": "设置 SITUATION_MONITOR_FINNHUB_API_KEY 以启用指数/行业/大宗商品。",
+      "hint": "请在 管理员设置 > 系统设置 > 态势监控 中配置 Finnhub API Key。",
       "price": "价格",
       "changePct": "涨跌幅",
       "empty": "暂无市场数据。"
@@ -5100,7 +5195,7 @@
     "fed": {
       "title": "美联储",
       "empty": "暂无美联储数据。",
-      "hint": "设置 SITUATION_MONITOR_FRED_API_KEY 以启用指标与资产负债表。",
+      "hint": "请在 管理员设置 > 系统设置 > 态势监控 中配置 FRED API Key。",
       "value": "数值",
       "delta": "Δ",
       "balanceSheet": "资产负债表"

@@ -45,10 +45,10 @@ export function ShellLayout({ children }: PropsWithChildren) {
 
       <TopNav />
 
-      <div className="flex flex-1 overflow-hidden pt-[calc(var(--top-nav-height,4rem)+var(--ticker-height,0px))] relative">
+      <div className="flex flex-1 overflow-hidden pt-[calc(var(--top-nav-height,4rem)+var(--ticker-height,0px))] relative isolate">
         <ActionRail />
 
-        <main className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent">
+        <main className="relative z-0 flex-1 overflow-auto scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent">
           <div className={`${containerClass} p-4 md:p-6`}>
             {children}
           </div>

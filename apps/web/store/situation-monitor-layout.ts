@@ -146,7 +146,7 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] = 
     title: "Correlation Engine",
     titleKey: "situationMonitor.correlation.title",
     defaultVisible: true,
-    defaultLayout: { i: "correlation", x: 0, y: 49, w: 8, h: 12, minW: 6, minH: 8 },
+    defaultLayout: { i: "correlation", x: 0, y: 49, w: 8, h: 20, minW: 6, minH: 10 },
   },
   {
     id: "narrative",
