@@ -1,6 +1,7 @@
 import { DeleteObjectCommand, HeadBucketCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 import type { StorageConfig } from "../config/config.service";
+import type { PrismaService } from "../config/prisma.service";
 
 import type { StorageSettingsService } from "./storage-settings.service";
 import { StorageService } from "./storage.service";
@@ -30,22 +31,28 @@ describe("StorageService", () => {
     presignedUrlTtlSeconds: 300,
   };
 
-  let storageSettings: Pick<StorageSettingsService, "getStorageConfig">;
+  let storageSettings: Pick<StorageSettingsService, "getStorageConfig" | "getCrawlImageStorageProvider">;
+  let prisma: Pick<PrismaService, "$queryRaw">;
 
   beforeEach(() => {
     sendMock = jest.fn();
     storageSettings = {
       getStorageConfig: jest.fn().mockResolvedValue(storageConfig),
+      getCrawlImageStorageProvider: jest.fn().mockResolvedValue("s3")
+    };
+    prisma = {
+      $queryRaw: jest.fn()
     };
   });
 
   it("returns ok=true when bucket is reachable", async () => {
     sendMock.mockResolvedValue({});
-    const service = new StorageService(storageSettings as StorageSettingsService);
+    const service = new StorageService(storageSettings as StorageSettingsService, prisma as PrismaService);
 
     const result = await service.testConnection();
 
     expect(result.ok).toBe(true);
+    expect(result.mode).toBe("s3");
     expect(result.bucket).toBe(storageConfig.bucket);
     expect(result.publicBaseUrl).toBe(storageConfig.publicBaseUrl);
     expect(result.checks?.putObject.ok).toBe(true);
@@ -68,14 +75,29 @@ describe("StorageService", () => {
       .mockRejectedValueOnce(putError)
       .mockResolvedValueOnce({});
 
-    const service = new StorageService(storageSettings as StorageSettingsService);
+    const service = new StorageService(storageSettings as StorageSettingsService, prisma as PrismaService);
 
     const result = await service.testConnection();
 
     expect(result.ok).toBe(false);
+    expect(result.mode).toBe("s3");
     expect(result.checks?.putObject.ok).toBe(false);
     expect(result.checks?.putObject.httpStatusCode).toBe(404);
     expect(result.checks?.putObject.requestId).toBe("req-123");
     expect(result.checks?.putObject.error).toContain("NoSuchBucket");
+  });
+
+  it("short-circuits connection test when crawl image storage mode is mysql", async () => {
+    storageSettings.getCrawlImageStorageProvider = jest.fn().mockResolvedValue("mysql");
+    prisma.$queryRaw = jest.fn().mockResolvedValue([{ ok: 1 }]);
+    const service = new StorageService(storageSettings as StorageSettingsService, prisma as PrismaService);
+
+    const result = await service.testConnection();
+
+    expect(result.ok).toBe(true);
+    expect(result.mode).toBe("mysql");
+    expect(result.checks?.mysql?.ok).toBe(true);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(sendMock).not.toHaveBeenCalled();
   });
 });

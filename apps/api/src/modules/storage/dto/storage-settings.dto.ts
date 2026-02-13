@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import {
+  IsIn,
   IsBoolean,
   IsInt,
   IsOptional,
@@ -9,7 +10,14 @@ import {
   Min
 } from "class-validator";
 
+import { CRAWL_IMAGE_STORAGE_PROVIDERS } from "../storage.constants";
+
 export class UpdateStorageSettingsDto {
+  @ApiPropertyOptional({ enum: CRAWL_IMAGE_STORAGE_PROVIDERS })
+  @IsOptional()
+  @IsIn(CRAWL_IMAGE_STORAGE_PROVIDERS)
+  crawlImageStorage?: "mysql" | "s3";
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

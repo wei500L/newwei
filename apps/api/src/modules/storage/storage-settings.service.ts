@@ -13,8 +13,14 @@ import {
   isEncryptedStringValueV1,
   resolveSettingsKey
 } from "./storage-settings.crypto";
+import {
+  CRAWL_IMAGE_STORAGE_PROVIDERS,
+  DEFAULT_CRAWL_IMAGE_STORAGE_PROVIDER,
+  type CrawlImageStorageProvider
+} from "./storage.constants";
 
 export interface StorageSettingsInput {
+  crawlImageStorage?: CrawlImageStorageProvider;
   accessKeyId?: string;
   secretAccessKey?: string;
   region?: string;
@@ -26,6 +32,7 @@ export interface StorageSettingsInput {
 }
 
 export interface StorageSettingsResponse {
+  crawlImageStorage: CrawlImageStorageProvider;
   region: string;
   bucket: string;
   endpoint?: string;
@@ -39,6 +46,7 @@ export interface StorageSettingsResponse {
 const STORAGE_SETTINGS_CACHE_KEY = "storage:settings";
 
 const STORAGE_SETTING_KEYS = {
+  crawlImageStorage: "crawl_image_storage",
   accessKeyId: "storage_s3_access_key_id",
   secretAccessKey: "storage_s3_secret_access_key",
   region: "storage_s3_region",
@@ -50,6 +58,7 @@ const STORAGE_SETTING_KEYS = {
 } as const;
 
 const PUBLIC_SETTING_KEYS = new Set<string>([
+  STORAGE_SETTING_KEYS.crawlImageStorage,
   STORAGE_SETTING_KEYS.region,
   STORAGE_SETTING_KEYS.bucket,
   STORAGE_SETTING_KEYS.endpoint,
@@ -109,10 +118,20 @@ export class StorageSettingsService {
     };
   }
 
+  async getCrawlImageStorageProvider(): Promise<CrawlImageStorageProvider> {
+    const recordMap = await this.loadSettings();
+    const value = this.asProvider(recordMap.get(STORAGE_SETTING_KEYS.crawlImageStorage));
+    return value ?? DEFAULT_CRAWL_IMAGE_STORAGE_PROVIDER;
+  }
+
   async getAdminSettings(): Promise<StorageSettingsResponse> {
     const recordMap = await this.loadSettings();
     const fallback = this.env.storageConfig;
+    const crawlImageStorage =
+      this.asProvider(recordMap.get(STORAGE_SETTING_KEYS.crawlImageStorage)) ??
+      DEFAULT_CRAWL_IMAGE_STORAGE_PROVIDER;
     return {
+      crawlImageStorage,
       region:
         this.asString(recordMap.get(STORAGE_SETTING_KEYS.region)) ?? fallback.region,
       bucket:
@@ -232,6 +251,12 @@ export class StorageSettingsService {
 
   private normalizeUpdates(input: StorageSettingsInput): StorageSettingsInput {
     const updates: StorageSettingsInput = {};
+    if (input.crawlImageStorage !== undefined) {
+      const normalized = this.asProvider(input.crawlImageStorage);
+      if (normalized) {
+        updates.crawlImageStorage = normalized;
+      }
+    }
     if (input.accessKeyId !== undefined) {
       const normalized = this.normalizeString(input.accessKeyId);
       if (normalized) {
@@ -344,5 +369,15 @@ export class StorageSettingsService {
       return value;
     }
     return undefined;
+  }
+
+  private asProvider(value: unknown): CrawlImageStorageProvider | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    return CRAWL_IMAGE_STORAGE_PROVIDERS.includes(normalized as CrawlImageStorageProvider)
+      ? (normalized as CrawlImageStorageProvider)
+      : undefined;
   }
 }

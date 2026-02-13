@@ -1,9 +1,17 @@
-import { DeleteObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 
+import { PrismaService } from "../config/prisma.service";
 import { StorageSettingsService } from "./storage-settings.service";
+import { type CrawlImageStorageProvider } from "./storage.constants";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_CONTENT_TYPES = new Map<string, string>([
@@ -34,6 +42,7 @@ export interface StorageConnectionCheck {
 
 export interface StorageConnectionTestResult {
   ok: boolean;
+  mode?: CrawlImageStorageProvider;
   error?: string;
   bucket?: string;
   region?: string;
@@ -42,10 +51,18 @@ export interface StorageConnectionTestResult {
   forcePathStyle?: boolean;
   presignedUrlTtlSeconds?: number;
   checks?: {
-    headBucket: StorageConnectionCheck;
-    putObject: StorageConnectionCheck;
-    deleteObject: StorageConnectionCheck;
+    mysql?: StorageConnectionCheck;
+    headBucket?: StorageConnectionCheck;
+    putObject?: StorageConnectionCheck;
+    deleteObject?: StorageConnectionCheck;
   };
+}
+
+export interface ObjectReadUrlOptions {
+  expiresInSeconds?: number;
+  responseContentType?: string;
+  responseContentDisposition?: string;
+  responseCacheControl?: string;
 }
 
 @Injectable()
@@ -57,7 +74,8 @@ export class StorageService {
   private configFingerprint = "";
 
   constructor(
-    private readonly storageSettings: StorageSettingsService
+    private readonly storageSettings: StorageSettingsService,
+    private readonly prisma: PrismaService
   ) {}
 
   async createAvatarUploadUrl(request: AvatarUploadRequest): Promise<AvatarUploadResponse> {
@@ -98,11 +116,24 @@ export class StorageService {
   }
 
   async testConnection(): Promise<StorageConnectionTestResult> {
+    const mode = await this.storageSettings.getCrawlImageStorageProvider();
+    if (mode === "mysql") {
+      const mysql = await this.safeMySqlCall(async () => this.prisma.$queryRaw`SELECT 1`);
+      return {
+        ok: mysql.ok,
+        mode,
+        error: mysql.ok ? undefined : mysql.error,
+        checks: {
+          mysql
+        }
+      };
+    }
+
     try {
       await this.refreshClient();
     } catch (error) {
       const formatted = this.formatAwsError(error);
-      return { ok: false, error: formatted.error };
+      return { ok: false, mode, error: formatted.error };
     }
 
     const config = await this.storageSettings.getStorageConfig();
@@ -129,9 +160,13 @@ export class StorageService {
       s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: testKey }))
     );
 
-    const ok = putObject.ok;
+    const ok = headBucket.ok && putObject.ok && deleteObject.ok;
     return {
       ok,
+      mode,
+      error: ok
+        ? undefined
+        : headBucket.error ?? putObject.error ?? deleteObject.error ?? "Storage connection test failed",
       bucket: this.bucket,
       region: config.region,
       endpoint: config.endpoint,
@@ -144,6 +179,58 @@ export class StorageService {
         deleteObject
       }
     };
+  }
+
+  async uploadObject(params: {
+    objectKey: string;
+    body: Uint8Array | Buffer | string;
+    contentType?: string;
+    cacheControl?: string;
+  }) {
+    await this.refreshClient();
+    await (this.s3 as S3Client).send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: params.objectKey,
+        Body: params.body,
+        ContentType: params.contentType,
+        CacheControl: params.cacheControl
+      })
+    );
+    return {
+      objectKey: params.objectKey,
+      publicUrl: `${this.publicBaseUrl}/${params.objectKey}`
+    };
+  }
+
+  async deleteObject(objectKey: string): Promise<void> {
+    await this.refreshClient();
+    await (this.s3 as S3Client).send(
+      new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey
+      })
+    );
+  }
+
+  async createObjectReadUrl(objectKey: string, options?: ObjectReadUrlOptions): Promise<string> {
+    await this.refreshClient();
+    const expiresInSeconds = options?.expiresInSeconds;
+    const ttl =
+      typeof expiresInSeconds === "number" && Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+        ? Math.max(30, Math.floor(expiresInSeconds))
+        : this.presignedUrlTtlSeconds;
+    return getSignedUrl(
+      this.s3 as S3Client,
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+        ResponseContentType: options?.responseContentType,
+        ResponseContentDisposition: options?.responseContentDisposition,
+        ResponseCacheControl: options?.responseCacheControl
+      }),
+      { expiresIn: ttl }
+    );
   }
 
   private async refreshClient() {
@@ -191,6 +278,15 @@ export class StorageService {
     }
   }
 
+  private async safeMySqlCall(operation: () => Promise<unknown>): Promise<StorageConnectionCheck> {
+    try {
+      await operation();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, ...this.formatDatabaseError(error) };
+    }
+  }
+
   private formatAwsError(error: unknown): Omit<StorageConnectionCheck, "ok"> {
     if (!error || typeof error !== "object") {
       return { error: String(error) };
@@ -208,5 +304,14 @@ export class StorageService {
       httpStatusCode,
       requestId
     };
+  }
+
+  private formatDatabaseError(error: unknown): Omit<StorageConnectionCheck, "ok"> {
+    if (error instanceof Error) {
+      return {
+        error: `${error.name}: ${error.message}`
+      };
+    }
+    return { error: String(error) };
   }
 }

@@ -11,6 +11,7 @@ import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
 import { ItemsService } from "../items/items.service";
 
+import { CrawlMediaAssetService } from "./crawl-media-asset.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import type {
   CrawlExecutionSummary,
@@ -29,14 +30,36 @@ import type {
 import { coerceDate, hashMarkdown } from "./crawl.utils";
 import type { Crawl4aiArticle } from "./crawl4ai.client";
 import { buildLinkAnalysis } from "./link-analysis";
-
-
 const logger = createLogger({ name: "crawl-result-service" });
+const RESULT_PERSIST_CONCURRENCY_LIMIT = 6;
 
 interface CrawlMediaConfig {
   fetchTimeoutMs: number;
   maxBytes: number;
   maxPerResult: number;
+}
+
+interface DownloadedMediaAsset {
+  kind: string;
+  sourceUrl: string;
+  bytes: number;
+  contentType?: string;
+  data: Buffer;
+  width?: number;
+  height?: number;
+  alt?: string;
+  title?: string;
+  desc?: string;
+  poster?: string;
+  format?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface HashedCrawlResultItem {
+  item: Crawl4aiArticle;
+  markdown: string;
+  markdownResult: ReturnType<CrawlResultService["extractMarkdownResult"]>;
+  hash: string;
 }
 
 @Injectable()
@@ -72,6 +95,7 @@ export class CrawlResultService {
   ]);
   private readonly mediaConfig: CrawlMediaConfig;
   private itemsService?: ItemsService | null;
+  private crawlMediaAssetService?: CrawlMediaAssetService | null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -94,6 +118,19 @@ export class CrawlResultService {
       this.itemsService = null;
     }
     return this.itemsService;
+  }
+
+  private resolveCrawlMediaAssetService(): CrawlMediaAssetService | null {
+    if (this.crawlMediaAssetService !== undefined) {
+      return this.crawlMediaAssetService;
+    }
+    try {
+      this.crawlMediaAssetService = this.moduleRef.get(CrawlMediaAssetService, { strict: false });
+    } catch (error) {
+      logger.warn({ err: error }, "CrawlMediaAssetService unavailable; media persistence disabled");
+      this.crawlMediaAssetService = null;
+    }
+    return this.crawlMediaAssetService;
   }
 
   async persistResults(
@@ -122,13 +159,7 @@ export class CrawlResultService {
     const itemsService = ingestToItems ? this.resolveItemsService() : null;
     const shouldStoreMedia = options.storeMedia ?? false;
 
-    // Phase 1: Pre-compute all content hashes and extract markdown
-    const itemsWithHash: {
-      item: Crawl4aiArticle;
-      markdown: string;
-      markdownResult: ReturnType<CrawlResultService["extractMarkdownResult"]>;
-      hash: string;
-    }[] = [];
+    const itemsWithHash: HashedCrawlResultItem[] = [];
 
     for (const item of items) {
       const markdownResult = this.extractMarkdownResult(item.markdown);
@@ -150,7 +181,6 @@ export class CrawlResultService {
       };
     }
 
-    // Phase 2: Batch query existing records with findMany
     const allHashes = itemsWithHash.map((i) => i.hash);
     const existingRecords = await this.prisma.crawlResult.findMany({
       where: {
@@ -160,228 +190,64 @@ export class CrawlResultService {
     });
     const existingMap = new Map(existingRecords.map((r) => [r.contentHash, r]));
 
-    logger.debug(
-      { hashCount: allHashes.length, existingCount: existingRecords.length },
-      "persistResults batch hash lookup complete"
-    );
-
-    // Phase 3: Separate new items from existing ones
-    const newItems: typeof itemsWithHash = [];
+    const newItems: HashedCrawlResultItem[] = [];
     const existingItems: { item: Crawl4aiArticle; existing: CrawlResult }[] = [];
+    const seenNewHashes = new Set<string>();
 
     for (const entry of itemsWithHash) {
       const existing = existingMap.get(entry.hash);
       if (existing) {
         skipped += 1;
         existingItems.push({ item: entry.item, existing });
-      } else {
-        newItems.push(entry);
+        continue;
       }
+      if (seenNewHashes.has(entry.hash)) {
+        skipped += 1;
+        continue;
+      }
+      seenNewHashes.add(entry.hash);
+      newItems.push(entry);
     }
 
-    // Phase 4: Batch create new CrawlResult records
-    interface NewRecordData {
-      taskId: string;
-      sourceUrl: string;
-      fetchedAt: Date;
-      markdownRef: string;
-      contentHash: string;
-      metadata: ReturnType<typeof toPrismaJsonValue>;
-      entry: (typeof itemsWithHash)[0];
-    }
+    logger.debug(
+      {
+        hashCount: allHashes.length,
+        existingCount: existingRecords.length,
+        newCount: newItems.length
+      },
+      "persistResults hash classification complete"
+    );
 
-    const newRecordsData: NewRecordData[] = newItems.map((entry) => {
-      const fetchedAt = coerceDate(entry.item.publishedAt) ?? new Date();
-      if (!latestResultAt || fetchedAt > latestResultAt) {
-        latestResultAt = fetchedAt;
-      }
-      return {
-        taskId: task.id,
-        sourceUrl: entry.item.url ?? task.targetUrl,
-        fetchedAt,
-        markdownRef: "",
-        contentHash: entry.hash,
-        metadata: toPrismaJsonValue(entry.item.metadata ?? {}),
-        entry
-      };
-    });
-
-    if (newRecordsData.length > 0) {
-      // Batch create Prisma records
-      await this.prisma.crawlResult.createMany({
-        data: newRecordsData.map((r) => ({
-          taskId: r.taskId,
-          sourceUrl: r.sourceUrl,
-          fetchedAt: r.fetchedAt,
-          markdownRef: r.markdownRef,
-          contentHash: r.contentHash,
-          metadata: r.metadata
-        })),
-        skipDuplicates: true
-      });
-
-      // Query back created records for IDs
-      const createdRecords = await this.prisma.crawlResult.findMany({
-        where: {
-          taskId: task.id,
-          contentHash: { in: newRecordsData.map((r) => r.contentHash) }
+    const createdResultIds: string[] = [];
+    for (let i = 0; i < newItems.length; i += RESULT_PERSIST_CONCURRENCY_LIMIT) {
+      const batch = newItems.slice(i, i + RESULT_PERSIST_CONCURRENCY_LIMIT);
+      const batchResults = await Promise.allSettled(
+        batch.map((entry) => this.persistSingleResult(task, entry, shouldStoreMedia, runId))
+      );
+      for (const result of batchResults) {
+        if (result.status === "rejected") {
+          throw result.reason;
         }
-      });
-      const createdMap = new Map(createdRecords.map((r) => [r.contentHash, r]));
-
-      logger.debug({ newCount: newRecordsData.length, createdCount: createdRecords.length }, "persistResults batch create complete");
-
-      // Phase 5: Batch upsert MongoDB content documents (idempotent by resultId)
-      const contentDocsByResultId = new Map<
-        string,
-        {
-          taskId: string;
-          resultId: string;
-          markdown: string;
-          rawMarkdown: string;
-          markdownWithCitations?: string;
-          referencesMarkdown?: string;
-          fitMarkdown?: string;
-          metadata: Record<string, unknown>;
-          sourceUrl: string;
-          crawlRunId?: string;
-          linkAnalysis?: CrawlLinkAnalysis;
-          tables: CrawlResultTable[] | null;
-          media?: CrawlMediaCollection | null;
-          mediaAssets?: CrawlStoredMediaAsset[] | null;
-        }
-      >();
-
-      for (const recordData of newRecordsData) {
-        const created = createdMap.get(recordData.contentHash);
-        if (!created) {
+        const persisted = result.value;
+        createdResultIds.push(persisted.resultId);
+        if (!persisted.inserted) {
+          skipped += 1;
           continue;
         }
-
-        const { entry } = recordData;
-        const linkAnalysis = this.extractLinkAnalysisFromResult(entry.item);
-        const media = shouldStoreMedia ? this.normalizeMediaCollection(entry.item.media) : undefined;
-        const mediaAssets = shouldStoreMedia ? await this.collectMediaAssets(media) : undefined;
-        const tables = this.normalizeTablesFromResult(entry.item);
-
-        const nextDoc = {
-          taskId: task.id,
-          resultId: created.id,
-          markdown: entry.markdown,
-          rawMarkdown: entry.markdownResult.raw ?? entry.markdown,
-          markdownWithCitations: entry.markdownResult.citations,
-          referencesMarkdown: entry.markdownResult.references,
-          fitMarkdown: entry.markdownResult.fit,
-          metadata: entry.item.metadata ?? {},
-          sourceUrl: entry.item.url ?? task.targetUrl,
-          crawlRunId: runId,
-          linkAnalysis,
-          tables: tables ?? null,
-          ...(shouldStoreMedia
-            ? {
-                media: media ?? null,
-                mediaAssets: mediaAssets ?? null
-              }
-            : {})
-        };
-
-        const existingDoc = contentDocsByResultId.get(created.id);
-        if (!existingDoc || (nextDoc.markdown?.length ?? 0) > (existingDoc.markdown?.length ?? 0)) {
-          contentDocsByResultId.set(created.id, nextDoc);
+        inserted += 1;
+        if (!latestResultAt || persisted.fetchedAt > latestResultAt) {
+          latestResultAt = persisted.fetchedAt;
         }
       }
-
-      const contentDocsData = Array.from(contentDocsByResultId.values());
-      const markdownRefByResultId = new Map<string, string>();
-
-      if (contentDocsData.length > 0) {
-        await CrawlResultContentModel.bulkWrite(
-          contentDocsData.map((doc) => ({
-            updateOne: {
-              filter: { resultId: doc.resultId },
-              update: { $setOnInsert: doc },
-              upsert: true
-            }
-          })),
-          { ordered: false }
-        );
-
-        const persistedDocs = await CrawlResultContentModel.find(
-          { resultId: { $in: contentDocsData.map((entry) => entry.resultId) } },
-          { resultId: 1 }
-        )
-          .lean()
-          .exec();
-
-        for (const doc of persistedDocs) {
-          const resultId = typeof doc.resultId === "string" ? doc.resultId : undefined;
-          const markdownRef = doc._id ? String(doc._id) : "";
-          if (!resultId || !markdownRef) {
-            continue;
-          }
-          markdownRefByResultId.set(resultId, markdownRef);
-        }
-      }
-
-      logger.debug(
-        {
-          docCount: contentDocsData.length,
-          markdownRefs: markdownRefByResultId.size
-        },
-        "persistResults batch MongoDB upsert complete"
-      );
-
-      // Phase 6: Batch update markdownRef references
-      const markdownRefUpdates = contentDocsData
-        .map((doc) => ({
-          resultId: doc.resultId,
-          markdownRef: markdownRefByResultId.get(doc.resultId) ?? ""
-        }))
-        .filter((entry) => entry.markdownRef.length > 0);
-
-      if (markdownRefUpdates.length > 0) {
-        await this.prisma.$transaction(
-          markdownRefUpdates.map((u) =>
-            this.prisma.crawlResult.update({
-              where: { id: u.resultId },
-              data: { markdownRef: u.markdownRef }
-            })
-          )
-        );
-      }
-
-      inserted = createdRecords.length;
     }
 
-    // Phase 7: Batch items ingestion with concurrency limiting
     if (ingestToItems && itemsService) {
-      const allResultIds: string[] = [
-        ...existingItems.map((e) => e.existing.id),
-        ...newRecordsData
-          .map((r) => {
-            const created = existingMap.get(r.contentHash) ??
-              (newRecordsData.length > 0 ? undefined : undefined);
-            return created?.id;
-          })
-          .filter((id): id is string => Boolean(id))
+      const uniqueResultIds = [
+        ...new Set([
+          ...existingItems.map((entry) => entry.existing.id),
+          ...createdResultIds
+        ])
       ];
-
-      // Get IDs for newly created records
-      if (newRecordsData.length > 0) {
-        const createdRecords = await this.prisma.crawlResult.findMany({
-          where: {
-            taskId: task.id,
-            contentHash: { in: newRecordsData.map((r) => r.contentHash) }
-          },
-          select: { id: true }
-        });
-        allResultIds.push(...createdRecords.map((r) => r.id));
-      }
-
-      // Deduplicate IDs
-      const uniqueResultIds = [...new Set(allResultIds)];
-
-      // Process ingestion with concurrency limit of 10
       const CONCURRENCY_LIMIT = 10;
       for (let i = 0; i < uniqueResultIds.length; i += CONCURRENCY_LIMIT) {
         const batch = uniqueResultIds.slice(i, i + CONCURRENCY_LIMIT);
@@ -421,19 +287,221 @@ export class CrawlResultService {
     };
   }
 
-  async attachResultContent(results: CrawlResult[]): Promise<CrawlTaskResult[]> {
+  private async persistSingleResult(
+    task: CrawlTask,
+    entry: HashedCrawlResultItem,
+    shouldStoreMedia: boolean,
+    runId?: string
+  ): Promise<{ resultId: string; fetchedAt: Date; inserted: boolean }> {
+    const sourceUrl = entry.item.url ?? task.targetUrl;
+    const fetchedAt = coerceDate(entry.item.publishedAt) ?? new Date();
+    const metadata = toPrismaJsonValue(entry.item.metadata ?? {});
+    let stage = "create_result";
+    let resultId: string | undefined;
+    let created: CrawlResult | undefined;
+
+    try {
+      try {
+        created = await this.prisma.crawlResult.create({
+          data: {
+            taskId: task.id,
+            sourceUrl,
+            fetchedAt,
+            markdownRef: "",
+            contentHash: entry.hash,
+            metadata
+          }
+        });
+      } catch (error) {
+        if (this.isUniqueConstraintConflict(error)) {
+          const existing = await this.prisma.crawlResult.findUnique({
+            where: {
+              taskId_contentHash: {
+                taskId: task.id,
+                contentHash: entry.hash
+              }
+            }
+          });
+          if (existing) {
+            logger.warn(
+              {
+                taskId: task.id,
+                orgId: task.orgId,
+                resultId: existing.id,
+                sourceUrl,
+                contentHash: entry.hash
+              },
+              "Detected duplicate crawl result insert race; skipping entry"
+            );
+            return {
+              resultId: existing.id,
+              fetchedAt: existing.fetchedAt,
+              inserted: false
+            };
+          }
+        }
+        throw error;
+      }
+      resultId = created.id;
+
+      const linkAnalysis = this.extractLinkAnalysisFromResult(entry.item);
+      const media = shouldStoreMedia ? this.normalizeMediaCollection(entry.item.media) : undefined;
+      const tables = this.normalizeTablesFromResult(entry.item);
+
+      stage = "store_media";
+      if (shouldStoreMedia && media) {
+        await this.collectMediaAssets(task, created.id, media);
+      }
+
+      stage = "store_content";
+      await CrawlResultContentModel.updateOne(
+        { resultId: created.id },
+        {
+          $setOnInsert: {
+            taskId: task.id,
+            resultId: created.id,
+            markdown: entry.markdown,
+            rawMarkdown: entry.markdownResult.raw ?? entry.markdown,
+            markdownWithCitations: entry.markdownResult.citations,
+            referencesMarkdown: entry.markdownResult.references,
+            fitMarkdown: entry.markdownResult.fit,
+            metadata: entry.item.metadata ?? {},
+            sourceUrl,
+            crawlRunId: runId,
+            linkAnalysis,
+            tables: tables ?? null,
+            ...(shouldStoreMedia
+              ? {
+                  media: media ?? null
+                }
+              : {})
+          }
+        },
+        { upsert: true }
+      ).exec();
+
+      const persistedDoc = await CrawlResultContentModel.findOne(
+        { resultId: created.id },
+        { _id: 1 }
+      )
+        .lean()
+        .exec();
+      const markdownRef = persistedDoc?._id ? String(persistedDoc._id) : "";
+      if (!markdownRef) {
+        throw new Error("Missing markdownRef after crawl content persistence");
+      }
+
+      stage = "update_markdown_ref";
+      await this.prisma.crawlResult.update({
+        where: { id: created.id },
+        data: { markdownRef }
+      });
+
+      return { resultId: created.id, fetchedAt, inserted: true };
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          taskId: task.id,
+          orgId: task.orgId,
+          sourceUrl,
+          contentHash: entry.hash,
+          resultId,
+          stage
+        },
+        "Failed to persist crawl result entry"
+      );
+      if (resultId) {
+        await this.rollbackPersistedResult(task, resultId);
+      }
+      throw error;
+    }
+  }
+
+  private async rollbackPersistedResult(task: CrawlTask, resultId: string): Promise<void> {
+    const mediaAssetService = this.resolveCrawlMediaAssetService();
+    if (mediaAssetService) {
+      try {
+        await mediaAssetService.deleteAssetsByResultId(resultId);
+      } catch (error) {
+        logger.error(
+          {
+            err: error,
+            taskId: task.id,
+            orgId: task.orgId,
+            resultId
+          },
+          "Failed to cleanup crawl media assets during rollback"
+        );
+      }
+    }
+
+    try {
+      await CrawlResultContentModel.deleteOne({ resultId }).exec();
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          taskId: task.id,
+          orgId: task.orgId,
+          resultId
+        },
+        "Failed to cleanup crawl result content document during rollback"
+      );
+    }
+
+    try {
+      await this.prisma.crawlResult.delete({
+        where: { id: resultId }
+      });
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          taskId: task.id,
+          orgId: task.orgId,
+          resultId
+        },
+        "Failed to cleanup crawl result row during rollback"
+      );
+    }
+  }
+
+  private isUniqueConstraintConflict(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+    const record = error as { code?: unknown; meta?: unknown; message?: unknown };
+    if (record.code === "P2002") {
+      return true;
+    }
+    const message = typeof record.message === "string" ? record.message : "";
+    return message.includes("Unique constraint failed");
+  }
+
+  async attachResultContent(
+    results: CrawlResult[],
+    accessScope?: { orgId: string; userId: string }
+  ): Promise<CrawlTaskResult[]> {
     if (results.length === 0) {
       return [];
     }
 
     const ids = results.map((result) => result.id);
+    const mediaAssetService = this.resolveCrawlMediaAssetService();
     const docs = await CrawlResultContentModel.find({ resultId: { $in: ids } })
       .lean()
       .exec();
     const docMap = new Map(docs.map((doc) => [doc.resultId as string, doc]));
+    const mediaAssetsByResultId =
+      mediaAssetService && accessScope
+        ? await mediaAssetService.listAssetsByResultIds(ids, accessScope)
+        : new Map<string, CrawlStoredMediaAsset[]>();
 
     return results.map((result) => {
       const doc = docMap.get(result.id);
+      const storedAssets = mediaAssetsByResultId.get(result.id);
+      const legacyAssets = (doc?.mediaAssets as CrawlStoredMediaAsset[] | undefined) ?? null;
       return {
         id: result.id,
         sourceUrl: result.sourceUrl,
@@ -445,7 +513,7 @@ export class CrawlResultService {
         fitMarkdown: this.ensureString(doc?.fitMarkdown),
         linkAnalysis: (doc?.linkAnalysis as CrawlLinkAnalysis | undefined) ?? null,
         media: (doc?.media as CrawlMediaCollection | undefined) ?? null,
-        mediaAssets: (doc?.mediaAssets as CrawlStoredMediaAsset[] | undefined) ?? null,
+        mediaAssets: storedAssets ?? legacyAssets,
         tables: (doc?.tables as CrawlResultTable[] | undefined) ?? null
       };
     });
@@ -917,7 +985,8 @@ export class CrawlResultService {
 
     const withoutControlChars = value
       .replace(/\r\n?/g, "\n")
-      .replace(/[\u0000\u200B-\u200D\uFEFF]/g, "");
+      .replaceAll("\u0000", "")
+      .replace(/[\u200B-\u200D\uFEFF]/g, "");
 
     const lines = withoutControlChars.split("\n").map((line) => line.replace(/[ \t]+$/g, ""));
     const dedupedLines: string[] = [];
@@ -1283,42 +1352,95 @@ export class CrawlResultService {
   }
 
   private async collectMediaAssets(
+    task: CrawlTask,
+    resultId: string,
     media?: CrawlMediaCollection
-  ): Promise<CrawlStoredMediaAsset[] | undefined> {
+  ): Promise<void> {
     if (!media || this.mediaConfig.maxPerResult <= 0) {
-      return undefined;
+      return;
+    }
+    const mediaAssetService = this.resolveCrawlMediaAssetService();
+    if (!mediaAssetService) {
+      logger.warn({ taskId: task.id, orgId: task.orgId, resultId }, "CrawlMediaAssetService is unavailable");
+      return;
     }
     const entries = this.flattenMediaEntries(media);
     if (entries.length === 0) {
-      return undefined;
+      return;
     }
-    const assets: CrawlStoredMediaAsset[] = [];
+    let storedCount = 0;
+    let failedCount = 0;
     const seenSources = new Set<string>();
     for (const { kind, item } of entries) {
-      if (assets.length >= this.mediaConfig.maxPerResult) {
+      if (storedCount >= this.mediaConfig.maxPerResult) {
         break;
       }
       const candidate = this.pickMediaUrl(item);
       if (!candidate) {
         continue;
       }
+      let downloaded: DownloadedMediaAsset | undefined;
       if (candidate.startsWith("data:")) {
-        const inlineAsset = this.buildInlineMediaAsset(candidate, kind, item);
-        if (inlineAsset) {
-          assets.push(inlineAsset);
+        downloaded = this.buildInlineMediaAsset(candidate, kind, item);
+      } else {
+        if (!this.isHttpUrl(candidate) || seenSources.has(candidate)) {
+          continue;
         }
+        seenSources.add(candidate);
+        downloaded = await this.fetchMediaAsset(candidate, kind, item);
+      }
+
+      if (!downloaded) {
         continue;
       }
-      if (!this.isHttpUrl(candidate) || seenSources.has(candidate)) {
+      try {
+        await mediaAssetService.storeAsset({
+          orgId: task.orgId,
+          taskId: task.id,
+          resultId,
+          kind: downloaded.kind,
+          sourceUrl: downloaded.sourceUrl,
+          bytes: downloaded.bytes,
+          data: downloaded.data,
+          contentType: downloaded.contentType,
+          width: downloaded.width,
+          height: downloaded.height,
+          alt: downloaded.alt,
+          title: downloaded.title,
+          desc: downloaded.desc,
+          poster: downloaded.poster,
+          format: downloaded.format,
+          metadata: downloaded.metadata
+        });
+      } catch (error) {
+        failedCount += 1;
+        logger.error(
+          {
+            err: error,
+            taskId: task.id,
+            orgId: task.orgId,
+            resultId,
+            kind: downloaded.kind,
+            sourceUrl: downloaded.sourceUrl
+          },
+          "Failed to store crawl media asset"
+        );
         continue;
       }
-      seenSources.add(candidate);
-      const asset = await this.fetchMediaAsset(candidate, kind, item);
-      if (asset) {
-        assets.push(asset);
-      }
+      storedCount += 1;
     }
-    return assets.length > 0 ? assets : undefined;
+    if (failedCount > 0) {
+      logger.warn(
+        {
+          taskId: task.id,
+          orgId: task.orgId,
+          resultId,
+          storedCount,
+          failedCount
+        },
+        "Stored crawl media with partial failures"
+      );
+    }
   }
 
   private flattenMediaEntries(media: CrawlMediaCollection) {
@@ -1350,7 +1472,7 @@ export class CrawlResultService {
     dataUri: string,
     kind: string,
     item: CrawlMediaItem
-  ): CrawlStoredMediaAsset | undefined {
+  ): DownloadedMediaAsset | undefined {
     const maxBytes = this.mediaConfig.maxBytes;
     if (maxBytes <= 0) {
       return undefined;
@@ -1401,12 +1523,11 @@ export class CrawlResultService {
         return undefined;
       }
       return {
-        id: hashMarkdown(`${dataUri.slice(0, 64)}:${buffer.length}`),
         kind,
-        sourceUrl: dataUri,
+        sourceUrl: "data-uri:inline",
         bytes: buffer.length,
+        data: buffer,
         contentType: mime || undefined,
-        dataUri,
         width: item.width,
         height: item.height,
         alt: item.alt,
@@ -1479,7 +1600,7 @@ export class CrawlResultService {
     url: string,
     kind: string,
     item: CrawlMediaItem
-  ): Promise<CrawlStoredMediaAsset | undefined> {
+  ): Promise<DownloadedMediaAsset | undefined> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.mediaConfig.fetchTimeoutMs);
     try {
@@ -1505,14 +1626,12 @@ export class CrawlResultService {
         return undefined;
       }
       const contentType = response.headers.get("content-type") ?? item.format ?? undefined;
-      const dataUri = `data:${contentType ?? "application/octet-stream"};base64,${buffer.toString("base64")}`;
       return {
-        id: hashMarkdown(`${url}:${buffer.length}`),
         kind,
         sourceUrl: url,
         bytes: buffer.length,
+        data: buffer,
         contentType,
-        dataUri,
         width: item.width,
         height: item.height,
         alt: item.alt,

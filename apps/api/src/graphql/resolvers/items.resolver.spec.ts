@@ -174,8 +174,10 @@ describe("ItemsResolver preview fields", () => {
         status: "completed",
         tags: ["t1"],
         result: {
+          title: "LLM headline",
           source: "Example",
           published_at: "2024-01-01T00:00:00Z",
+          language: "zh-CN",
           summary: "Hello",
           sentiment_label: "Positive",
           topics: ["Topic A", "Topic A", "Topic B"],
@@ -192,6 +194,8 @@ describe("ItemsResolver preview fields", () => {
     );
 
     const preview = await resolver.processedPreview({ metaId: "meta-1" } as any, processedLoader as any);
+    expect(preview?.title).toBe("LLM headline");
+    expect(preview?.language).toBe("zh-CN");
     expect(preview?.summary).toBe("Hello");
     expect(preview?.sentiment).toBe("Positive");
     expect(preview?.source).toBe("Example");
@@ -212,8 +216,10 @@ describe("ItemsResolver preview fields", () => {
         status: "completed",
         tags: [],
         result: {
+          headline: "Fallback title",
           source_name: "Example",
           publishedAt: "2024-01-01T00:00:00Z",
+          lang: "en",
           abstract: "Hello",
           sentimentLabel: "Positive",
           topics: [{ name: "Topic A" }, { label: "Topic B" }, "Topic C"],
@@ -234,6 +240,8 @@ describe("ItemsResolver preview fields", () => {
       processedLoader as any
     );
 
+    expect(preview?.title).toBe("Fallback title");
+    expect(preview?.language).toBe("en");
     expect(preview?.summary).toBe("Hello");
     expect(preview?.sentiment).toBe("Positive");
     expect(preview?.source).toBe("Example");

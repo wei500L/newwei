@@ -5,6 +5,7 @@ import { Queue, QueueEvents } from "bullmq";
 
 import { EnvService } from "../config/config.service";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { StorageModule } from "../storage/storage.module";
 
 import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
@@ -21,11 +22,13 @@ import { CrawlTemplateController } from "./crawl-template.controller";
 import { CrawlTemplateService } from "./crawl-template.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { CrawlController } from "./crawl.controller";
+import { CrawlMediaAssetController } from "./crawl-media-asset.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
 import type { CrawlJobData } from "./crawl.types";
 import { Crawl4aiQualityController } from "./crawl4ai-quality.controller";
 import { Crawl4aiQueueController } from "./crawl4ai-queue.controller";
 import { Crawl4aiClient } from "./crawl4ai.client";
+import { CrawlMediaAssetService } from "./crawl-media-asset.service";
 import { NewsSourceController } from "./news-source.controller";
 import { NewsSourceService } from "./news-source.service";
 import { CrawlQualityMetricsService } from "./crawl-quality-metrics.service";
@@ -35,6 +38,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
 @Module({
   imports: [
     NotificationsModule,
+    StorageModule,
     HttpModule.registerAsync({
       inject: [EnvService],
       useFactory: (env: EnvService) => {
@@ -53,6 +57,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
   ],
   controllers: [
     CrawlController,
+    CrawlMediaAssetController,
     NewsSourceController,
     CrawlTemplateController,
     Crawl4aiQueueController,
@@ -65,6 +70,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlExecutionService,
     CrawlQueueService,
     CrawlResultService,
+    CrawlMediaAssetService,
     CrawlQualityMetricsService,
     CrawlQualityStrategyService,
     NewsSourceService,

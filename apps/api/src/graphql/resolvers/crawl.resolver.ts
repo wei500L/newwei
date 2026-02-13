@@ -136,6 +136,8 @@ export class CrawlResolver {
     const result = await this.crawlTaskService.getTask(requester.orgId, args.id, {
       resultLimit: args.resultLimit ?? undefined,
       resultSearch: args.resultSearch ?? undefined
+    }, {
+      userId: requester.id
     });
     return this.toGraphTask(result.task);
   }

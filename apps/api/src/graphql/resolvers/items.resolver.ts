@@ -46,7 +46,7 @@ import {
   ProcessedItemPreviewModelGraph,
   ItemFacets
 } from "../models/item.model";
-import { SearchSuggestionModel } from "../models/search-suggestion.model";
+import { SearchSuggestionModel, SearchSuggestionType } from "../models/search-suggestion.model";
 import { PageInfo } from "../models/page-info.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
 
@@ -356,7 +356,7 @@ export class ItemsResolver {
 
     const results = await this.itemsService.searchSuggestions(requester.orgId, prefix, limit);
     return results.map((r) => ({
-      type: r.type,
+      type: SearchSuggestionType[r.type],
       value: r.value
     }));
   }
@@ -573,12 +573,14 @@ export class ItemsResolver {
         : {};
 
     const summary = pickFirstNonEmptyString(result, ["summary", "abstract"]);
+    const title = pickFirstNonEmptyString(result, ["title", "headline", "title_zh", "titleZh"]);
     const sentiment = pickFirstNonEmptyString(result, [
       "sentiment_label",
       "sentimentLabel",
       "sentiment"
     ]);
     const source = pickFirstNonEmptyString(result, ["source", "sourceName", "source_name"]);
+    const language = pickFirstNonEmptyString(result, ["language", "lang"]);
     const publishedAt = normalizeIsoDateTimeString(result.published_at ?? result.publishedAt);
     const location =
       normalizeNonEmptyString(result.location) ?? normalizeNonEmptyString(result.region);
@@ -596,6 +598,8 @@ export class ItemsResolver {
         typeof processed.duplicateSimilarity === "number" ? processed.duplicateSimilarity : null,
       llm: processed.llm ?? null,
       source,
+      title,
+      language,
       publishedAt,
       summary,
       sentiment,

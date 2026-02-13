@@ -9,6 +9,7 @@ import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ItemsService } from "../items/items.service";
+
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
@@ -221,7 +222,12 @@ export class CrawlTaskService {
     };
   }
 
-  async getTask(orgId: string, id: string, query: CrawlTaskDetailQueryDto) {
+  async getTask(
+    orgId: string,
+    id: string,
+    query: CrawlTaskDetailQueryDto,
+    accessScope?: { userId: string }
+  ) {
     const task = await this.prisma.crawlTask.findFirst({
       where: { id, orgId },
       include: { _count: { select: { results: true } } }
@@ -244,7 +250,10 @@ export class CrawlTaskService {
       take: limit
     });
 
-    const hydrated = await this.resultService.attachResultContent(results);
+    const hydrated = await this.resultService.attachResultContent(
+      results,
+      accessScope ? { orgId, userId: accessScope.userId } : undefined
+    );
     const hydratedWithItems =
       hydrated.length === 0
         ? hydrated

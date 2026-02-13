@@ -175,6 +175,12 @@ export class ProcessedItemPreviewModelGraph {
   @Field(() => String, { nullable: true })
   source?: string | null;
 
+  @Field(() => String, { nullable: true })
+  title?: string | null;
+
+  @Field(() => String, { nullable: true })
+  language?: string | null;
+
   @Field(() => String, { nullable: true, description: "Content published time (ISO8601)" })
   publishedAt?: string | null;
 

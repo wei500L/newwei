@@ -35,7 +35,7 @@ export class CrawlController {
     @Param("id") id: string,
     @Query() query: CrawlTaskDetailQueryDto
   ) {
-    return this.crawlTaskService.getTask(user.orgId, id, query);
+    return this.crawlTaskService.getTask(user.orgId, id, query, { userId: user.id });
   }
 
   @Permissions("crawl.write")

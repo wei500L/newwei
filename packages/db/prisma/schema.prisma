@@ -235,10 +235,40 @@ model CrawlResult {
   contentHash String
   metadata    Json?
   createdAt   DateTime   @default(now())
+  mediaAssets CrawlMediaAsset[]
 
   @@index([sourceUrl])
   @@index([taskId, fetchedAt])
   @@unique([taskId, contentHash])
+}
+
+model CrawlMediaAsset {
+  id        String                    @id @default(cuid())
+  result    CrawlResult               @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  resultId  String
+  orgId     String
+  taskId    String
+  provider  CrawlImageStorageProvider @default(mysql)
+  kind      String
+  sourceUrl String
+  bytes     Int
+  contentType String?
+  blobData  Bytes?
+  storageKey String?
+  width     Int?
+  height    Int?
+  alt       String?
+  title     String?
+  desc      String?                   @db.Text
+  poster    String?
+  format    String?
+  metadata  Json?
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+
+  @@index([orgId, resultId])
+  @@index([orgId, taskId, createdAt])
+  @@index([resultId, createdAt])
 }
 
 model SystemSetting {
@@ -288,6 +318,11 @@ enum CrawlTaskStatus {
   completed
   failed
   paused
+}
+
+enum CrawlImageStorageProvider {
+  mysql
+  s3
 }
 
 model CrawlTemplate {

@@ -306,6 +306,10 @@ export class ItemsService {
       itemPayloadConfig?.metadata && typeof itemPayloadConfig.metadata === "object" && !Array.isArray(itemPayloadConfig.metadata)
         ? (itemPayloadConfig.metadata as Record<string, unknown>)
         : {};
+    const crawlResultMetadata =
+      crawlResult.metadata && typeof crawlResult.metadata === "object" && !Array.isArray(crawlResult.metadata)
+        ? (crawlResult.metadata as Record<string, unknown>)
+        : {};
 
     const sourceNameOverrideRaw = itemPayloadConfig?.sourceName;
     const sourceNameOverride =
@@ -314,8 +318,14 @@ export class ItemsService {
         : undefined;
     const sourceName = sourceNameOverride ?? crawlResult.task.displayName ?? undefined;
     const languageRaw = itemPayloadConfig?.language;
-    const language =
+    const languageFromPayload =
       typeof languageRaw === "string" && languageRaw.trim().length > 0 ? languageRaw.trim() : undefined;
+    const languageFromMetadataRaw = crawlResultMetadata.language ?? crawlResultMetadata.lang;
+    const languageFromMetadata =
+      typeof languageFromMetadataRaw === "string" && languageFromMetadataRaw.trim().length > 0
+        ? languageFromMetadataRaw.trim()
+        : undefined;
+    const language = languageFromPayload ?? languageFromMetadata;
     const tags = this.toStringArray(itemPayloadConfig?.tags);
     const summaryHints = this.toStringArray(itemPayloadConfig?.summaryHints);
     const forceRefresh = false;
@@ -332,11 +342,6 @@ export class ItemsService {
     const pipelinePriority =
       typeof priorityRaw === "number" && Number.isFinite(priorityRaw) ? Math.round(priorityRaw) : undefined;
 
-    const metadata =
-      crawlResult.metadata && typeof crawlResult.metadata === "object" && !Array.isArray(crawlResult.metadata)
-        ? (crawlResult.metadata as Record<string, unknown>)
-        : {};
-
     const crawlKeywords = this.toStringArray(crawlResult.task.keywords);
     const payload: Record<string, unknown> = {
       url: crawlResult.sourceUrl,
@@ -347,7 +352,7 @@ export class ItemsService {
       summaryHints,
       metadata: {
         ...itemPayloadMetadata,
-        ...metadata,
+        ...crawlResultMetadata,
         crawlTaskId: crawlResult.taskId,
         ...(crawlResult.task.displayName ? { crawlTaskDisplayName: crawlResult.task.displayName } : {}),
         ...(crawlResult.task.targetUrl ? { crawlTaskTargetUrl: crawlResult.task.targetUrl } : {}),
@@ -787,7 +792,7 @@ export class ItemsService {
     orgId: string,
     prefix: string,
     limit = 10
-  ): Promise<Array<{ type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string }>> {
+  ): Promise<{ type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string }[]> {
     const normalizedPrefix = prefix.trim().toLowerCase();
     if (!normalizedPrefix) {
       return [];
@@ -805,8 +810,11 @@ export class ItemsService {
         // Get facets (scan recent items)
         const facets = await this.getFacets(orgId);
 
-        const suggestions: Array<{ type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string; count: number }> =
-          [];
+        const suggestions: {
+          type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT";
+          value: string;
+          count: number;
+        }[] = [];
 
         // Add matching topics
         for (const topic of facets.topics) {

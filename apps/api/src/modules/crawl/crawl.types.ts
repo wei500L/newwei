@@ -278,6 +278,10 @@ export interface CrawlStoredMediaAsset {
   sourceUrl: string;
   bytes: number;
   contentType?: string;
+  storageProvider?: "mysql" | "s3";
+  storageKey?: string;
+  previewUrl?: string;
+  downloadUrl?: string;
   dataUri?: string;
   width?: number;
   height?: number;

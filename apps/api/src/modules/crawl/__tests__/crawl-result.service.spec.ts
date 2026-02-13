@@ -1,15 +1,22 @@
 import { CrawlResultService } from "../crawl-result.service";
 
 describe("CrawlResultService", () => {
-  const createService = (maxBytes: number) =>
+  const createService = (
+    maxBytes: number,
+    overrides?: {
+      prisma?: any;
+      moduleRef?: any;
+    }
+  ) =>
     new CrawlResultService(
-      {} as any,
+      (overrides?.prisma ?? {}) as any,
       {
         crawl4aiConfig: {
           media: { fetchTimeoutMs: 1000, maxBytes, maxPerResult: 10 }
         }
       } as any,
-      {} as any
+      {} as any,
+      (overrides?.moduleRef ?? { get: jest.fn() }) as any
     );
 
   it("skips inline assets when the Data URI is too long", () => {
@@ -49,8 +56,8 @@ describe("CrawlResultService", () => {
         kind: "image",
         bytes: 5,
         contentType: "image/png",
-        sourceUrl: dataUri,
-        dataUri
+        sourceUrl: "data-uri:inline",
+        data: Buffer.from("hello")
       })
     );
   });
@@ -231,6 +238,41 @@ describe("CrawlResultService", () => {
     const result = service.extractMarkdownResult(raw);
 
     expect(result.primary).toContain("Quick update on markets.");
+  });
+
+  it("continues crawl flow when media persistence fails", async () => {
+    const mediaService = {
+      storeAsset: jest.fn().mockRejectedValue(new Error("S3 unavailable"))
+    };
+    const moduleRef = {
+      get: jest.fn().mockReturnValue(mediaService)
+    };
+    const service = createService(1024, { moduleRef });
+    const task = {
+      id: "task-1",
+      orgId: "org-1",
+      targetUrl: "https://example.com"
+    } as any;
+    const mediaDataUri = `data:image/png;base64,${Buffer.from("hello").toString("base64")}`;
+    const media = {
+      images: [{ src: mediaDataUri }]
+    } as any;
+
+    await expect(
+      (service as any).collectMediaAssets(task, "result-1", media)
+    ).resolves.toBeUndefined();
+
+    expect(mediaService.storeAsset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        taskId: "task-1",
+        resultId: "result-1"
+      })
+    );
+    expect(mediaService.storeAsset).toHaveBeenCalledTimes(1);
+    expect(moduleRef.get).toHaveBeenCalledWith(expect.any(Function), {
+      strict: false
+    });
   });
 
 });
