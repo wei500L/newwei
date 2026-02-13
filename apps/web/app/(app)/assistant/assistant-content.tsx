@@ -1,10 +1,11 @@
 "use client";
 
 import { CloseCircleOutlined, RobotOutlined } from "@ant-design/icons";
-import { gql, useMutation, useQuery, useSubscription } from "@apollo/client";
-import { Alert, App, Button, Card, Descriptions, Divider, Drawer, Form, Input, InputNumber, List, Select, Space, Tabs, Tag, Typography } from "antd";
+import { gql, useLazyQuery, useMutation, useQuery, useSubscription } from "@apollo/client";
+import { Alert, App, AutoComplete, Button, Card, Descriptions, Divider, Drawer, Form, Input, InputNumber, List, Select, Space, Spin, Tabs, Tag, Typography } from "antd";
+import { debounce } from "lodash";
 import { useSession } from "next-auth/react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import dayjs from "@/lib/dayjs";
@@ -74,6 +75,12 @@ interface AssistantBlockedInfo {
   upstreamStatus: number | null;
 }
 
+interface SuggestionItem {
+  slug: string;
+  displayName: string;
+  description?: string;
+}
+
 const ASSISTANT_RUNS_QUERY = gql`
   query AssistantRuns($limit: Int) {
     assistantRuns(limit: $limit) {
@@ -131,6 +138,16 @@ const REQUEST_ASSISTANT_FORECAST_MUTATION = gql`
       type
       status
       createdAt
+    }
+  }
+`;
+
+const ASSISTANT_ECONOMIC_SERIES_SUGGESTIONS = gql`
+  query AssistantEconomicSeriesSuggestions($term: String!, $limit: Int) {
+    assistantEconomicSeriesSuggestions(term: $term, limit: $limit) {
+      slug
+      displayName
+      description
     }
   }
 `;
@@ -203,6 +220,38 @@ export function AssistantContent() {
   const completedRunsRef = useRef<Set<string>>(new Set());
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const [fetchSuggestions, { data: suggestionsData, loading: suggestionsLoading }] = useLazyQuery(
+    ASSISTANT_ECONOMIC_SERIES_SUGGESTIONS
+  );
+
+  const handleSearch = useMemo(
+    () =>
+      debounce((value: string) => {
+        if (value.length >= 2) {
+          fetchSuggestions({ variables: { term: value, limit: 8 } });
+        }
+      }, 300),
+    [fetchSuggestions]
+  );
+
+  useEffect(() => {
+    return () => handleSearch.cancel();
+  }, [handleSearch]);
+
+  const seriesOptions = useMemo(() => {
+    return (suggestionsData?.assistantEconomicSeriesSuggestions ?? []).map((item: SuggestionItem) => ({
+      value: item.slug,
+      label: (
+        <Space direction="vertical" size={0}>
+          <Typography.Text strong>{item.displayName}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {item.slug}
+          </Typography.Text>
+        </Space>
+      ),
+    }));
+  }, [suggestionsData]);
 
   const { data, loading, refetch, error } = useQuery<AssistantRunsQueryData, AssistantRunsQueryVariables>(
     ASSISTANT_RUNS_QUERY,
@@ -392,12 +441,16 @@ export function AssistantContent() {
       return (
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Descriptions size="small" bordered column={1}>
-            <Descriptions.Item label={t("assistant.preview.series", { defaultValue: "Series" })}>
+            <Descriptions.Item label={t("assistant.preview.series", { defaultValue: "Indicator" })}>
               {displayName || slug ? (
                 <Space direction="vertical" size={0}>
                   <Typography.Text strong>{displayName ?? slug}</Typography.Text>
-                  {slug ? <Typography.Text type="secondary">slug: {slug}</Typography.Text> : null}
-                  {field ? <Typography.Text type="secondary">field: {field}</Typography.Text> : null}
+                  {slug && slug !== (displayName ?? slug) ? (
+                    <Typography.Text type="secondary" copyable={{ text: slug }}>
+                      {slug}
+                    </Typography.Text>
+                  ) : null}
+                  {field ? <Typography.Text type="secondary">{field}</Typography.Text> : null}
                 </Space>
               ) : (
                 "-"
@@ -799,14 +852,26 @@ export function AssistantContent() {
                 >
                   <Form.Item
                     name="series"
-                    label={t("assistant.forecast.series", { defaultValue: "Economic series (slug or name)" })}
+                    label={t("assistant.forecast.series", { defaultValue: "Economic indicator" })}
                     rules={[{ required: true }]}
+                    extra={t("assistant.forecast.seriesHelp", {
+                      defaultValue:
+                        "Enter indicator name or identifier. Advanced formats like 'slug.field' or 'economic:slug:latest' are also supported.",
+                    })}
                   >
-                    <Input
-                      placeholder={t("assistant.forecast.seriesPlaceholder", {
-                        defaultValue: "e.g. usd_index_history or economic:usd_index_history:latest",
-                      })}
-                    />
+                    <AutoComplete
+                      options={seriesOptions}
+                      onSearch={handleSearch}
+                      dropdownMatchSelectWidth={false}
+                      notFoundContent={suggestionsLoading ? <Spin size="small" /> : null}
+                    >
+                      <Input
+                        placeholder={t("assistant.forecast.seriesPlaceholder", {
+                          defaultValue: "Enter indicator name or identifier, e.g. USD Index, GDP...",
+                        })}
+                        suffix={suggestionsLoading ? <Spin size="small" /> : null}
+                      />
+                    </AutoComplete>
                   </Form.Item>
                   <Form.Item name="lookbackDays" label={t("assistant.forecast.lookbackDays", { defaultValue: "Lookback days" })}>
                     <InputNumber min={7} max={3650} style={{ width: "100%" }} />

@@ -4927,7 +4927,7 @@
       }
     },
     "preview": {
-      "series": "序列",
+      "series": "指标",
       "model": "模型",
       "modelService": "模型服务",
       "actual": "实际值",
@@ -4962,9 +4962,10 @@
       "limit": "最多条数"
     },
     "forecast": {
-      "seriesRequired": "请输入序列。",
-      "series": "经济序列（slug 或名称）",
-      "seriesPlaceholder": "例如：usd_index_history 或 economic:usd_index_history:latest",
+      "seriesRequired": "请输入指标。",
+      "series": "经济指标",
+      "seriesPlaceholder": "输入指标名称或标识符，如：美元指数、GDP...",
+      "seriesHelp": "您可以输入指标名称（如'美元指数'）或标识符（如'usd_index_history'）。也支持'slug.field'或'economic:slug:latest'等高级格式。",
       "lookbackDays": "回溯天数",
       "modelKind": "模型",
       "model": {

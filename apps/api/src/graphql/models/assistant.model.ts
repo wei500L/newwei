@@ -44,3 +44,17 @@ export class AssistantRunModel {
   createdAt!: Date;
 }
 
+@ObjectType("EconomicSeriesSuggestion")
+export class EconomicSeriesSuggestionModel {
+  @Field()
+  slug!: string;
+
+  @Field()
+  displayName!: string;
+
+  @Field(() => String, { nullable: true })
+  description?: string | null;
+
+  @Field(() => String, { nullable: true })
+  docUrl?: string | null;
+}

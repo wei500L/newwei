@@ -4924,7 +4924,7 @@
       }
     },
     "preview": {
-      "series": "Series",
+      "series": "Indicator",
       "model": "Model",
       "modelService": "Model service",
       "actual": "Actual",
@@ -4959,9 +4959,10 @@
       "limit": "Max items"
     },
     "forecast": {
-      "seriesRequired": "Please enter a series.",
-      "series": "Economic series (slug or name)",
-      "seriesPlaceholder": "e.g. usd_index_history or economic:usd_index_history:latest",
+      "seriesRequired": "Please enter an indicator.",
+      "series": "Economic indicator",
+      "seriesPlaceholder": "Enter indicator name or identifier, e.g. USD Index, GDP...",
+      "seriesHelp": "Enter indicator name or identifier. Advanced formats like 'slug.field' or 'economic:slug:latest' are also supported.",
       "lookbackDays": "Lookback days",
       "modelKind": "Model",
       "model": {

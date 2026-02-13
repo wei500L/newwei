@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, UseGuards } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, UseGuards } from "@nestjs/common";
 import { Args, Context, Int, Mutation, Query, Resolver, Subscription } from "@nestjs/graphql";
 import { PubSubEngine, withFilter } from "graphql-subscriptions";
 
@@ -10,7 +10,7 @@ import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { AssistantForecastInput, AssistantQueryInput, AssistantReportInput } from "../dto/assistant.input";
 import type { GqlRequest } from "../graphql.types";
-import { AssistantRunModel, AssistantRunStatus, AssistantRunType } from "../models/assistant.model";
+import { AssistantRunModel, AssistantRunStatus, AssistantRunType, EconomicSeriesSuggestionModel } from "../models/assistant.model";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -40,6 +40,39 @@ export class AssistantResolver {
       input: (result.input as Record<string, unknown> | null | undefined) ?? null,
       output: (result.output as Record<string, unknown> | null | undefined) ?? null,
       createdAt: result.createdAt ?? new Date()
+    }));
+  }
+
+  @HasPermission("assistant.run")
+  @Query(() => [EconomicSeriesSuggestionModel])
+  async assistantEconomicSeriesSuggestions(
+    @Context("req") req: GqlRequest,
+    @Args("term") term: string,
+    @Args("limit", { type: () => Int, nullable: true, defaultValue: 8 }) limit = 8
+  ): Promise<EconomicSeriesSuggestionModel[]> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+
+    const normalizedTerm = term.trim();
+    if (normalizedTerm.length < 2) {
+      throw new BadRequestException("term must be at least 2 characters");
+    }
+    if (normalizedTerm.length > 100) {
+      throw new BadRequestException("term must be at most 100 characters");
+    }
+
+    const resolvedLimit = Math.min(Math.max(limit, 1), 20);
+
+    // NOTE: Add per-user/IP rate limiting at gateway or resolver level to prevent suggestion endpoint abuse.
+    const candidates = await this.assistantService.searchEconomicSeriesCandidates(normalizedTerm, resolvedLimit);
+
+    return candidates.map((candidate) => ({
+      slug: candidate.slug,
+      displayName: candidate.displayName,
+      description: candidate.description ?? null,
+      docUrl: candidate.sourceDocUrl ?? null
     }));
   }
 

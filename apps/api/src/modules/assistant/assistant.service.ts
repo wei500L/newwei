@@ -1002,7 +1002,7 @@ export class AssistantService {
     };
   }
 
-  private async searchEconomicSeriesCandidates(term: string, limit: number): Promise<
+  async searchEconomicSeriesCandidates(term: string, limit: number): Promise<
     {
       id: string;
       slug: string;
