@@ -22,8 +22,17 @@ const WIDE_LAYOUT_PATHS = [
   "/map",                // Full-screen map visualization
 ] as const;
 
+const FLUID_LAYOUT_PATHS = [
+  "/assistant",          // Chat layout benefits from using almost full width
+] as const;
+
 function useContainerClass(): string {
   const pathname = usePathname();
+  const isFluid = FLUID_LAYOUT_PATHS.some(path => pathname?.startsWith(path));
+  if (isFluid) {
+    return "w-full max-w-none mx-0";
+  }
+
   const isWide = WIDE_LAYOUT_PATHS.some(path => pathname?.startsWith(path));
   if (isWide) {
     return "w-full max-w-[1920px] mx-auto";
