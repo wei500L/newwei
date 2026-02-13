@@ -1168,7 +1168,11 @@
   "pages": {
     "today": {
       "title": "今日要闻",
-      "subtitle": "快速理解今日重要新闻。"
+      "subtitle": "快速理解今日重要新闻。",
+      "noAlerts": "暂无突发预警",
+      "marketsStable": "市场运行平稳",
+      "breakingAlert": "突发预警",
+      "alertsDisclaimer": "仅供参考 • AI 生成预警"
     },
     "map": {
       "title": "区域信号态势图",

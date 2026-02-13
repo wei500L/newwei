@@ -1165,7 +1165,11 @@
   "pages": {
     "today": {
       "title": "Today Brief",
-      "subtitle": "Get a quick read on today's most important news."
+      "subtitle": "Get a quick read on today's most important news.",
+      "noAlerts": "No breaking alerts",
+      "marketsStable": "Markets are stable",
+      "breakingAlert": "Breaking Alert",
+      "alertsDisclaimer": "For reference only • AI-generated alerts"
     },
     "map": {
       "title": "Regional Signals Map",

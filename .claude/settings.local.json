@@ -29,7 +29,8 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor\\(dashboard\\): 抽取 CSV 导出逻辑为可复用工具库\n\n将分散在各图表组件中的 CSV 导出逻辑抽取到统一的工具库：\n\n- 新增 lib/data-export.ts：提供 CSV 构建、文件名处理、下载等工具函数\n- 新增 hooks/use-csv-export.ts：封装导出状态管理和用户反馈\n- 新增 tests/data-export.spec.ts：单元测试覆盖核心导出功能\n- 重构 financial-candlestick.tsx 和 sector-heatmap.tsx 使用新 Hook\n- 更新 war-map.tsx 和 echart.client.tsx 使用新的文件名构建工具\n\n改进点：\n- 统一 CSV 转义逻辑，新增公式注入防护（=,+,-,@ 前缀）\n- 支持自动 BOM 检测（非 ASCII 内容自动添加 UTF-8 BOM）\n- 统一的文件名清理和构建工具\n- 消除代码重复，提升可维护性\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "mcp__ace-tool__search_context",
       "Bash(findstr:*)",
-      "Bash(C:/Users/weidu/.claude/bin/codeagent-wrapper.exe --backend codex - \"$PWD\" <<'EOF'\nROLE_FILE: C:/Users/weidu/.claude/.ccg/prompts/codex/reviewer.md\n简单测试\nEOF)"
+      "Bash(C:/Users/weidu/.claude/bin/codeagent-wrapper.exe --backend codex - \"$PWD\" <<'EOF'\nROLE_FILE: C:/Users/weidu/.claude/.ccg/prompts/codex/reviewer.md\n简单测试\nEOF)",
+      "mcp__contextweaver__codebase-retrieval"
     ]
   }
 }
