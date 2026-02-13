@@ -7,6 +7,7 @@ jest.mock("@modular/utils", () => {
 });
 
 import { gzipSync } from "node:zlib";
+import { BadRequestException } from "@nestjs/common";
 
 import { CrawlMetadataService } from "../crawl-metadata.service";
 
@@ -216,18 +217,9 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
       expect.objectContaining({
         extractLinks: true,
         prefetch: true,
-        headless: false,
-        enableUndetectedBrowser: true,
-        enableStealthMode: true,
-        simulateUser: true,
-        overrideNavigator: true,
-        userAgentMode: "random",
         waitUntil: "networkidle",
         waitForTimeoutMs: 5000,
         pageTimeoutMs: 180000,
-        delayBeforeReturnHtmlMs: 2000,
-        meanDelayMs: 1000,
-        maxDelayRangeMs: 2000
       })
     );
     expect(payload.options?.additionalUrls).toBeUndefined();
@@ -345,5 +337,257 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
 
     expect(urls).toEqual(["https://www.politico.eu/article/one/"]);
     expect(crawl).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to HTML parsing when crawl4ai is unavailable", async () => {
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async (url: string) => {
+      if (url === "https://www.politico.eu/latest/") {
+        const html = `
+          <html>
+            <body>
+              <a href="/article/fallback-one/">one</a>
+              <a href="/newsletter/daily/">newsletter</a>
+            </body>
+          </html>
+        `;
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => "text/html" },
+          text: async () => html,
+          arrayBuffer: async () => Buffer.from(html, "utf8"),
+        } as any;
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: { get: () => "text/html" },
+        text: async () => "",
+        arrayBuffer: async () => Buffer.from("", "utf8"),
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService();
+    try {
+      const urls = await service.discoverListUrls({
+        url: "https://www.politico.eu/latest/",
+        domain: "https://www.politico.eu",
+        pattern: "https://www.politico.eu/article/*",
+        maxUrls: 10,
+      });
+      expect(urls).toEqual(["https://www.politico.eu/article/fallback-one/"]);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+});
+
+describe("CrawlMetadataService deep discovery (crawl4ai)", () => {
+  it("discovers article URLs across paginated/secondary hubs and returns latest first", async () => {
+    const crawl = jest.fn(async ({ url }: { url: string }) => {
+      if (url === "https://www.politico.eu/latest/") {
+        return {
+          results: [
+            {
+              success: true,
+              url,
+              links: {
+                internal: [
+                  { href: "/2026/02/13/politics/story-one/", total_score: 0.4 },
+                  { href: "/latest/?page=2", text: "Next", total_score: 0.3 },
+                  { href: "/world/", text: "World", total_score: 0.35 },
+                  { href: "/newsletter/daily/" },
+                ],
+              },
+            },
+          ],
+        };
+      }
+      if (url === "https://www.politico.eu/latest/?page=2") {
+        return {
+          results: [
+            {
+              success: true,
+              url,
+              links: {
+                internal: [{ href: "/2026/02/11/economy/story-three/", total_score: 0.45 }],
+              },
+            },
+          ],
+        };
+      }
+      if (url === "https://www.politico.eu/world/") {
+        return {
+          results: [
+            {
+              success: true,
+              url,
+              links: {
+                internal: [{ href: "/2026/02/12/world/story-two/", total_score: 0.5 }],
+              },
+            },
+          ],
+        };
+      }
+      return { results: [] };
+    });
+
+    const service = new CrawlMetadataService({ crawl } as any);
+    const urls = await service.discoverDeepUrls({
+      url: "https://www.politico.eu/latest/",
+      domain: "https://www.politico.eu",
+      maxUrls: 20,
+      deep: {
+        maxPages: 12,
+        maxDepth: 2,
+        pageConcurrency: 1,
+        timeBudgetSeconds: 30,
+        enableSecondaryHubs: true,
+      },
+    });
+
+    expect(urls).toEqual([
+      "https://www.politico.eu/2026/02/13/politics/story-one/",
+      "https://www.politico.eu/2026/02/12/world/story-two/",
+      "https://www.politico.eu/2026/02/11/economy/story-three/",
+    ]);
+    expect(crawl).toHaveBeenCalledTimes(3);
+  });
+
+  it("prioritizes publish date over link score in deep ranking", async () => {
+    const crawl = jest.fn(async ({ url }: { url: string }) => ({
+      results: [
+        {
+          success: true,
+          url,
+          links: {
+            internal: [
+              { href: "/2026/02/10/world/newer-story/", total_score: 0.2 },
+              { href: "/2026/01/01/world/older-story/", total_score: 0.95 },
+            ],
+          },
+        },
+      ],
+    }));
+
+    const service = new CrawlMetadataService({ crawl } as any);
+    const urls = await service.discoverDeepUrls({
+      url: "https://www.politico.eu/latest/",
+      domain: "https://www.politico.eu",
+      maxUrls: 10,
+      deep: {
+        maxPages: 5,
+        maxDepth: 1,
+        pageConcurrency: 1,
+      },
+    });
+
+    expect(urls).toEqual([
+      "https://www.politico.eu/2026/02/10/world/newer-story/",
+      "https://www.politico.eu/2026/01/01/world/older-story/",
+    ]);
+  });
+
+  it("filters non-article links during deep discovery", async () => {
+    const crawl = jest.fn(async ({ url }: { url: string }) => ({
+      results: [
+        {
+          success: true,
+          url,
+          links: {
+            internal: [
+              { href: "/newsletter/daily/" },
+              { href: "/section/politics/" },
+              { href: "/topics/europe/" },
+              { href: "/article/2026-02-13-valid-story/" },
+            ],
+          },
+        },
+      ],
+    }));
+
+    const service = new CrawlMetadataService({ crawl } as any);
+    const urls = await service.discoverDeepUrls({
+      url: "https://www.politico.eu/latest/",
+      domain: "https://www.politico.eu",
+      pattern: "https://www.politico.eu/article/*",
+      maxUrls: 10,
+      deep: {
+        maxPages: 5,
+        maxDepth: 1,
+      },
+    });
+
+    expect(urls).toEqual(["https://www.politico.eu/article/2026-02-13-valid-story/"]);
+  });
+
+  it("throws explicit error when publish timestamps cannot be determined", async () => {
+    const crawl = jest.fn(async ({ url }: { url: string }) => ({
+      results: [
+        {
+          success: true,
+          url,
+          links: {
+            internal: [
+              { href: "/article/story-alpha-no-date/", total_score: 0.95 },
+              { href: "/article/story-bravo-no-date/", total_score: 0.9 },
+            ],
+          },
+        },
+      ],
+    }));
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => "text/html" },
+      text: async () => "<html><head></head><body></body></html>",
+      arrayBuffer: async () => Buffer.from("", "utf8"),
+    })) as any;
+
+    const service = new CrawlMetadataService({ crawl } as any);
+    try {
+      await expect(
+        service.discoverDeepUrls({
+          url: "https://www.politico.eu/latest/",
+          domain: "https://www.politico.eu",
+          pattern: "https://www.politico.eu/article/*",
+          maxUrls: 10,
+          deep: {
+            maxPages: 5,
+            maxDepth: 1,
+            pageConcurrency: 1,
+            headFetchTopK: 10,
+            timeBudgetSeconds: 30,
+          },
+        }),
+      ).rejects.toEqual(
+        expect.objectContaining({
+          name: BadRequestException.name,
+          message: expect.stringMatching(
+            /SEED_DEEP_NO_PUBLISHED_AT[\s\S]*could not determine publish time/i,
+          ),
+        }),
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("throws explicit error when crawl4ai client is unavailable", async () => {
+    const service = new CrawlMetadataService();
+    await expect(
+      service.discoverDeepUrls({
+        url: "https://www.politico.eu/latest/",
+        domain: "https://www.politico.eu",
+        pattern: "https://www.politico.eu/article/*",
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: BadRequestException.name,
+        message: expect.stringContaining("SEED_DEEP_CRAWL4AI_UNAVAILABLE"),
+      }),
+    );
   });
 });

@@ -11,6 +11,16 @@ import { PrismaService } from "../config/prisma.service";
 import { CrawlMetadataService } from "../crawl/crawl-metadata.service";
 import { CrawlQueueService } from "../crawl/crawl-queue.service";
 import { CrawlTaskService } from "../crawl/crawl-task.service";
+import {
+  DEEP_DISCOVERY_FAILURE_STATE_TTL_SECONDS,
+  DEEP_DISCOVERY_FAILURE_STATS_TTL_SECONDS,
+  deepDiscoveryFailureStateCacheKey,
+  deepDiscoveryFailureStatsCacheKey,
+  normalizeDeepDiscoveryError,
+  parseDeepDiscoveryError,
+  type DeepDiscoveryFailureState,
+  type DeepDiscoveryFailureStats24h,
+} from "../crawl/deep-discovery-failure";
 import { NotificationsService } from "../notifications/notifications.service";
 
 import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
@@ -24,12 +34,14 @@ const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
 ];
 
 type NewsSourceWithTemplate = Prisma.NewsSourceGetPayload<{
-  include: { crawlTemplate: { select: { id: true; isActive: true; crawlOptions: true } } };
+  include: {
+    crawlTemplate: { select: { id: true; isActive: true; crawlOptions: true } };
+  };
 }>;
 
 interface SeedConfig {
   enabled: boolean;
-  mode: "sitemap" | "rss" | "list";
+  mode: "sitemap" | "rss" | "list" | "deep";
   domain?: string;
   pattern?: string;
   feedUrl?: string;
@@ -42,6 +54,20 @@ interface SeedConfig {
   scoreThreshold: number;
   dedupeWindowHours: number;
   cacheTtlSeconds: number;
+  deep?: DeepSeedConfig;
+}
+
+interface DeepSeedConfig {
+  maxPages: number;
+  maxDepth: number;
+  timeBudgetSeconds: number;
+  pageConcurrency: number;
+  scoreThreshold: number;
+  candidatePoolSize: number;
+  headFetchTopK: number;
+  preferPathDate: boolean;
+  enableSecondaryHubs: boolean;
+  ignoreRobotsTxt: boolean;
 }
 
 interface CronWindowConfig {
@@ -69,13 +95,13 @@ export class NewsSourceSchedulerService {
     private readonly cache: CacheService,
     private readonly env: EnvService,
     private readonly crawlTaskService: CrawlTaskService,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
   ) {}
 
   private getEnvValue<T>(
     key: string,
     fallback: T,
-    normalize?: (value: unknown) => T | undefined
+    normalize?: (value: unknown) => T | undefined,
   ): T {
     if (typeof this.env.get === "function") {
       const value = this.env.get<unknown>(key, { infer: true });
@@ -115,9 +141,9 @@ export class NewsSourceSchedulerService {
           where: { id: sourceId },
           include: {
             crawlTemplate: {
-              select: { id: true, isActive: true, crawlOptions: true }
-            }
-          }
+              select: { id: true, isActive: true, crawlOptions: true },
+            },
+          },
         });
 
         if (!source || source.orgId !== orgId) {
@@ -128,7 +154,7 @@ export class NewsSourceSchedulerService {
         const dedupeAcquired = await this.cache.setIfAbsent(
           dedupe.key,
           { until: dedupe.until },
-          dedupe.ttlSeconds
+          dedupe.ttlSeconds,
         );
         if (!dedupeAcquired) {
           return {
@@ -144,306 +170,374 @@ export class NewsSourceSchedulerService {
             inFlightCount: undefined,
             inFlightLimit: undefined,
             reason: "deduped" as const,
-            dedupeUntil: dedupe.until
+            dedupeUntil: dedupe.until,
           };
         }
 
+        let seedConfig: SeedConfig | null = null;
         try {
-        await this.cache.del(`news-source:backpressure:${source.id}`).catch(() => undefined);
+          await this.cache
+            .del(`news-source:backpressure:${source.id}`)
+            .catch(() => undefined);
 
-        const activeCutoff = new Date(now.getTime() - schedulerConfig.inFlightLookbackMs);
-        const seedConfig = this.normalizeSeedConfig(source);
-        const inFlightLimit = seedConfig ? seedConfig.maxNewUrlsPerRun : 1;
-        const inFlightJobs = await this.prisma.pipelineJob.findMany({
-          where: {
-            sourceId: source.id,
-            status: { in: ACTIVE_PIPELINE_JOB_STATUSES },
-            createdAt: { gte: activeCutoff }
-          },
-          orderBy: { createdAt: "desc" },
-          select: { id: true, status: true, createdAt: true },
-          take: inFlightLimit
-        });
-
-        const inFlightCount = inFlightJobs.length;
-        const remainingCapacity = seedConfig ? seedConfig.maxNewUrlsPerRun - inFlightCount : 0;
-        const shouldBlock = seedConfig ? remainingCapacity <= 0 : inFlightCount > 0;
-
-        if (shouldBlock) {
-          const rescheduleAt = new Date(now.getTime() + schedulerConfig.inFlightRescheduleDelayMs);
-          await this.prisma.newsSource.updateMany({
-            where: { id: source.id, orgId },
-            data: { isActive: true, circuitOpenUntil: null, nextRunAt: rescheduleAt }
+          const activeCutoff = new Date(
+            now.getTime() - schedulerConfig.inFlightLookbackMs,
+          );
+          seedConfig = this.normalizeSeedConfig(source);
+          const inFlightLimit = seedConfig ? seedConfig.maxNewUrlsPerRun : 1;
+          const inFlightJobs = await this.prisma.pipelineJob.findMany({
+            where: {
+              sourceId: source.id,
+              status: { in: ACTIVE_PIPELINE_JOB_STATUSES },
+              createdAt: { gte: activeCutoff },
+            },
+            orderBy: { createdAt: "desc" },
+            select: { id: true, status: true, createdAt: true },
+            take: inFlightLimit,
           });
 
-          return {
-            sourceId: source.id,
-            mode: seedConfig ? seedConfig.mode : "single",
-            scheduledFor: now.toISOString(),
-            nextRunAt: rescheduleAt.toISOString(),
-            scheduledCount: 0,
-            skippedCount: 0,
-            enqueueFailures: 0,
-            pipelineJobIds: [] as string[],
-            crawlTaskIds: [] as string[],
-            inFlightCount,
-            inFlightLimit,
-            reason: "in_flight" as const
-          };
-        }
+          const inFlightCount = inFlightJobs.length;
+          const remainingCapacity = seedConfig
+            ? seedConfig.maxNewUrlsPerRun - inFlightCount
+            : 0;
+          const shouldBlock = seedConfig
+            ? remainingCapacity <= 0
+            : inFlightCount > 0;
 
-        const scheduledFor = now;
-        const nextRunAt = this.computeNextRunAt(source, scheduledFor, now);
-        const maxNewUrlsThisRun = seedConfig ? Math.max(0, remainingCapacity) : 1;
+          if (shouldBlock) {
+            const rescheduleAt = new Date(
+              now.getTime() + schedulerConfig.inFlightRescheduleDelayMs,
+            );
+            await this.prisma.newsSource.updateMany({
+              where: { id: source.id, orgId },
+              data: {
+                isActive: true,
+                circuitOpenUntil: null,
+                nextRunAt: rescheduleAt,
+              },
+            });
 
-        const jobsToSchedule = seedConfig
-          ? await this.resolveSeedCandidates(source, seedConfig)
-          : [{ url: source.url, relevanceScore: undefined }];
-
-        const candidateUrls = jobsToSchedule.map((job) => job.url);
-        const [recentArticles, activeUrls] = await Promise.all([
-          seedConfig
-            ? this.findRecentArticleUrls(source.orgId, candidateUrls, seedConfig.dedupeWindowHours)
-            : Promise.resolve(new Set<string>()),
-          seedConfig
-            ? this.findActivePipelineUrls(source.id, candidateUrls, activeCutoff)
-            : Promise.resolve(new Set<string>())
-        ]);
-
-        const newJobs = seedConfig
-          ? jobsToSchedule
-              .filter((job) => !recentArticles.has(job.url))
-              .filter((job) => !activeUrls.has(job.url))
-              .slice(0, maxNewUrlsThisRun)
-          : jobsToSchedule;
-        const skippedCount = Math.max(0, jobsToSchedule.length - newJobs.length);
-
-        await this.prisma.newsSource.update({
-          where: { id: source.id },
-          data: {
-            isActive: true,
-            circuitOpenUntil: null,
-            lastRunAt: scheduledFor,
-            nextRunAt
+            return {
+              sourceId: source.id,
+              mode: seedConfig ? seedConfig.mode : "single",
+              scheduledFor: now.toISOString(),
+              nextRunAt: rescheduleAt.toISOString(),
+              scheduledCount: 0,
+              skippedCount: 0,
+              enqueueFailures: 0,
+              pipelineJobIds: [] as string[],
+              crawlTaskIds: [] as string[],
+              inFlightCount,
+              inFlightLimit,
+              reason: "in_flight" as const,
+            };
           }
-        });
 
-        if (newJobs.length === 0) {
+          const scheduledFor = now;
+          const nextRunAt = this.computeNextRunAt(source, scheduledFor, now);
+          const maxNewUrlsThisRun = seedConfig
+            ? Math.max(0, remainingCapacity)
+            : 1;
+
+          const jobsToSchedule = seedConfig
+            ? await this.resolveSeedCandidates(source, seedConfig)
+            : [{ url: source.url, relevanceScore: undefined }];
+          if (seedConfig?.mode === "deep") {
+            await this.clearDeepDiscoveryFailureState(source.id);
+          }
+
+          const candidateUrls = jobsToSchedule.map((job) => job.url);
+          const [recentArticles, activeUrls] = await Promise.all([
+            seedConfig
+              ? this.findRecentArticleUrls(
+                  source.orgId,
+                  candidateUrls,
+                  seedConfig.dedupeWindowHours,
+                )
+              : Promise.resolve(new Set<string>()),
+            seedConfig
+              ? this.findActivePipelineUrls(
+                  source.id,
+                  candidateUrls,
+                  activeCutoff,
+                )
+              : Promise.resolve(new Set<string>()),
+          ]);
+
+          const newJobs = seedConfig
+            ? jobsToSchedule
+                .filter((job) => !recentArticles.has(job.url))
+                .filter((job) => !activeUrls.has(job.url))
+                .slice(0, maxNewUrlsThisRun)
+            : jobsToSchedule;
+          const skippedCount = Math.max(
+            0,
+            jobsToSchedule.length - newJobs.length,
+          );
+
+          await this.prisma.newsSource.update({
+            where: { id: source.id },
+            data: {
+              isActive: true,
+              circuitOpenUntil: null,
+              lastRunAt: scheduledFor,
+              nextRunAt,
+            },
+          });
+
+          if (newJobs.length === 0) {
+            return {
+              sourceId: source.id,
+              mode: seedConfig ? seedConfig.mode : "single",
+              scheduledFor: scheduledFor.toISOString(),
+              nextRunAt: nextRunAt.toISOString(),
+              scheduledCount: 0,
+              skippedCount,
+              enqueueFailures: 0,
+              pipelineJobIds: [] as string[],
+              crawlTaskIds: [] as string[],
+              inFlightCount,
+              inFlightLimit,
+              reason: "no_new_urls" as const,
+            };
+          }
+
+          const bullPriority = this.toBullmqPriority(source.priority);
+          const seedParentUrl = seedConfig
+            ? seedConfig.mode === "rss"
+              ? (seedConfig.feedUrl ?? source.url)
+              : source.url
+            : undefined;
+
+          const pipelineJobIds: string[] = [];
+          const crawlTaskIds: string[] = [];
+          let enqueueFailures = 0;
+
+          for (const job of newJobs) {
+            const payload = this.buildPayload(
+              source,
+              job.url,
+              seedConfig
+                ? {
+                    mode: seedConfig.mode,
+                    parentUrl: seedParentUrl ?? source.url,
+                    relevanceScore: job.relevanceScore,
+                  }
+                : undefined,
+            );
+
+            const displayNamePrefix = `NewsSource:${source.id}:`;
+            const displayName =
+              `${displayNamePrefix}${source.name ?? ""}`.slice(0, 80);
+
+            const itemPayloadConfig: Record<string, unknown> = {
+              sourceId: source.id,
+              sourceType: source.siteType,
+              crawlTemplateId: source.crawlTemplateId ?? undefined,
+              ...(seedConfig
+                ? {
+                    newsSourceSeed: {
+                      mode: seedConfig.mode,
+                      parentUrl: seedParentUrl ?? source.url,
+                      relevanceScore: job.relevanceScore,
+                    },
+                  }
+                : {}),
+            };
+
+            const crawlTaskConfig: Record<string, unknown> = {
+              ...(payload.crawlOptions ?? {}),
+              ingestToItems: true,
+              pipelineJobId: "",
+              pipelinePriority: bullPriority,
+              itemPayload: {
+                sourceName: payload.sourceName,
+                language: payload.language,
+                keywords: payload.keywords,
+                tags: payload.tags,
+                summaryHints: payload.summaryHints,
+                metadata: {
+                  ...itemPayloadConfig,
+                  ...(payload.metadata ?? {}),
+                },
+                forceRefresh: payload.forceRefresh,
+              },
+            };
+
+            const { pipelineJobId, crawlTaskId } =
+              await this.prisma.$transaction(async (tx) => {
+                const pipelineJob = await tx.pipelineJob.create({
+                  data: {
+                    orgId: source.orgId,
+                    sourceId: source.id,
+                    url: job.url,
+                    priority: source.priority,
+                    status: PipelineJobStatus.queued,
+                    queueName: ITEM_PIPELINE_QUEUE_NAME,
+                    scheduledFor,
+                    metadata: {
+                      sourceName: source.name,
+                      sourceType: source.siteType,
+                      seedMode: seedConfig ? seedConfig.mode : "single",
+                      seedParentUrl: seedConfig ? seedParentUrl : undefined,
+                      relevanceScore: seedConfig
+                        ? job.relevanceScore
+                        : undefined,
+                      triggeredById,
+                    },
+                  },
+                });
+
+                crawlTaskConfig.pipelineJobId = pipelineJob.id;
+                const crawlTaskConfigForStorage = crawlTaskConfig;
+
+                const existingTask = await tx.crawlTask.findFirst({
+                  where: {
+                    orgId: source.orgId,
+                    targetUrl: job.url,
+                    displayName: { startsWith: displayNamePrefix },
+                  },
+                  select: { id: true },
+                });
+
+                let taskId: string;
+                if (existingTask) {
+                  const updatedTask = await tx.crawlTask.update({
+                    where: { id: existingTask.id },
+                    data: {
+                      displayName,
+                      status: "pending",
+                      concurrency: 1,
+                      keywords: payload.keywords,
+                      config: toPrismaJsonValue(crawlTaskConfigForStorage),
+                      lastError: null,
+                    },
+                    select: { id: true },
+                  });
+                  taskId = updatedTask.id;
+                } else {
+                  const createdTask = await tx.crawlTask.create({
+                    data: {
+                      orgId: source.orgId,
+                      createdById: triggeredById,
+                      targetUrl: job.url,
+                      displayName,
+                      status: "pending",
+                      concurrency: 1,
+                      keywords: payload.keywords,
+                      config: toPrismaJsonValue(crawlTaskConfigForStorage),
+                    },
+                    select: { id: true },
+                  });
+                  taskId = createdTask.id;
+                }
+
+                await tx.pipelineJob.update({
+                  where: { id: pipelineJob.id },
+                  data: {
+                    metadata: {
+                      ...(pipelineJob.metadata as
+                        | Record<string, unknown>
+                        | null
+                        | undefined),
+                      crawlTaskId: taskId,
+                    },
+                  },
+                });
+
+                return {
+                  pipelineJobId: pipelineJob.id,
+                  crawlTaskId: taskId,
+                };
+              });
+
+            pipelineJobIds.push(pipelineJobId);
+            crawlTaskIds.push(crawlTaskId);
+
+            try {
+              await this.crawlQueue.enqueueTask(
+                crawlTaskId,
+                source.orgId,
+                triggeredById,
+              );
+              await this.prisma.crawlTask.updateMany({
+                where: { id: crawlTaskId },
+                data: { status: "queued" },
+              });
+            } catch (queueError) {
+              enqueueFailures += 1;
+              logger.error(
+                {
+                  error: queueError,
+                  pipelineJobId,
+                  orgId: source.orgId,
+                  sourceId: source.id,
+                  crawlTaskId,
+                },
+                "Failed to enqueue news source crawl task",
+              );
+              await Promise.allSettled([
+                this.prisma.pipelineJob.updateMany({
+                  where: { id: pipelineJobId },
+                  data: {
+                    status: PipelineJobStatus.failed,
+                    error:
+                      queueError instanceof Error
+                        ? queueError.message
+                        : String(queueError),
+                    completedAt: new Date(),
+                  },
+                }),
+                this.prisma.crawlTask.updateMany({
+                  where: { id: crawlTaskId },
+                  data: {
+                    status: "failed",
+                    lastError:
+                      queueError instanceof Error
+                        ? queueError.message
+                        : String(queueError),
+                  },
+                }),
+              ]);
+            }
+          }
+
           return {
             sourceId: source.id,
             mode: seedConfig ? seedConfig.mode : "single",
             scheduledFor: scheduledFor.toISOString(),
             nextRunAt: nextRunAt.toISOString(),
-            scheduledCount: 0,
+            scheduledCount: newJobs.length,
             skippedCount,
-            enqueueFailures: 0,
-            pipelineJobIds: [] as string[],
-            crawlTaskIds: [] as string[],
+            enqueueFailures,
+            pipelineJobIds,
+            crawlTaskIds,
             inFlightCount,
             inFlightLimit,
-            reason: "no_new_urls" as const
+            reason: "ok" as const,
           };
-        }
-
-        const bullPriority = this.toBullmqPriority(source.priority);
-        const seedParentUrl = seedConfig
-          ? seedConfig.mode === "rss"
-            ? (seedConfig.feedUrl ?? source.url)
-            : source.url
-          : undefined;
-
-        const pipelineJobIds: string[] = [];
-        const crawlTaskIds: string[] = [];
-        let enqueueFailures = 0;
-
-        for (const job of newJobs) {
-          const payload = this.buildPayload(
-            source,
-            job.url,
-            seedConfig
-              ? { mode: seedConfig.mode, parentUrl: seedParentUrl ?? source.url, relevanceScore: job.relevanceScore }
-              : undefined
-          );
-
-          const displayNamePrefix = `NewsSource:${source.id}:`;
-          const displayName = `${displayNamePrefix}${source.name ?? ""}`.slice(0, 80);
-
-          const itemPayloadConfig: Record<string, unknown> = {
-            sourceId: source.id,
-            sourceType: source.siteType,
-            crawlTemplateId: source.crawlTemplateId ?? undefined,
-            ...(seedConfig
-              ? {
-                  newsSourceSeed: {
-                    mode: seedConfig.mode,
-                    parentUrl: seedParentUrl ?? source.url,
-                    relevanceScore: job.relevanceScore,
-                  },
-                }
-              : {}),
-          };
-
-          const crawlTaskConfig: Record<string, unknown> = {
-            ...(payload.crawlOptions ?? {}),
-            ingestToItems: true,
-            pipelineJobId: "",
-            pipelinePriority: bullPriority,
-            itemPayload: {
-              sourceName: payload.sourceName,
-              language: payload.language,
-              keywords: payload.keywords,
-              tags: payload.tags,
-              summaryHints: payload.summaryHints,
-              metadata: {
-                ...itemPayloadConfig,
-                ...(payload.metadata ?? {}),
-              },
-              forceRefresh: payload.forceRefresh,
-            },
-          };
-
-          const { pipelineJobId, crawlTaskId } = await this.prisma.$transaction(async (tx) => {
-            const pipelineJob = await tx.pipelineJob.create({
-              data: {
-                orgId: source.orgId,
-                sourceId: source.id,
-                url: job.url,
-                priority: source.priority,
-                status: PipelineJobStatus.queued,
-                queueName: ITEM_PIPELINE_QUEUE_NAME,
-                scheduledFor,
-                metadata: {
-                  sourceName: source.name,
-                  sourceType: source.siteType,
-                  seedMode: seedConfig ? seedConfig.mode : "single",
-                  seedParentUrl: seedConfig ? seedParentUrl : undefined,
-                  relevanceScore: seedConfig ? job.relevanceScore : undefined,
-                  triggeredById
-                }
-              }
-            });
-
-            crawlTaskConfig.pipelineJobId = pipelineJob.id;
-            const crawlTaskConfigForStorage = crawlTaskConfig;
-
-            const existingTask = await tx.crawlTask.findFirst({
-              where: {
-                orgId: source.orgId,
-                targetUrl: job.url,
-                displayName: { startsWith: displayNamePrefix },
-              },
-              select: { id: true },
-            });
-
-            let taskId: string;
-            if (existingTask) {
-              const updatedTask = await tx.crawlTask.update({
-                where: { id: existingTask.id },
-                data: {
-                  displayName,
-                  status: "pending",
-                  concurrency: 1,
-                  keywords: payload.keywords,
-                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
-                  lastError: null,
-                },
-                select: { id: true },
-              });
-              taskId = updatedTask.id;
-            } else {
-              const createdTask = await tx.crawlTask.create({
-                data: {
-                  orgId: source.orgId,
-                  createdById: triggeredById,
-                  targetUrl: job.url,
-                  displayName,
-                  status: "pending",
-                  concurrency: 1,
-                  keywords: payload.keywords,
-                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
-                },
-                select: { id: true },
-              });
-              taskId = createdTask.id;
-            }
-
-            await tx.pipelineJob.update({
-              where: { id: pipelineJob.id },
-              data: {
-                metadata: {
-                  ...(pipelineJob.metadata as Record<string, unknown> | null | undefined),
-                  crawlTaskId: taskId,
-                },
-              },
-            });
-
-            return {
-              pipelineJobId: pipelineJob.id,
-              crawlTaskId: taskId,
-            };
-          });
-
-          pipelineJobIds.push(pipelineJobId);
-          crawlTaskIds.push(crawlTaskId);
-
-          try {
-            await this.crawlQueue.enqueueTask(crawlTaskId, source.orgId, triggeredById);
-            await this.prisma.crawlTask.updateMany({
-              where: { id: crawlTaskId },
-              data: { status: "queued" },
-            });
-          } catch (queueError) {
-            enqueueFailures += 1;
-            logger.error(
-              { error: queueError, pipelineJobId, orgId: source.orgId, sourceId: source.id, crawlTaskId },
-              "Failed to enqueue news source crawl task",
-            );
-            await Promise.allSettled([
-              this.prisma.pipelineJob.updateMany({
-                where: { id: pipelineJobId },
-                data: {
-                  status: PipelineJobStatus.failed,
-                  error: queueError instanceof Error ? queueError.message : String(queueError),
-                  completedAt: new Date(),
-                },
-              }),
-              this.prisma.crawlTask.updateMany({
-                where: { id: crawlTaskId },
-                data: {
-                  status: "failed",
-                  lastError: queueError instanceof Error ? queueError.message : String(queueError),
-                },
-              }),
-            ]);
-          }
-        }
-
-        return {
-          sourceId: source.id,
-          mode: seedConfig ? seedConfig.mode : "single",
-          scheduledFor: scheduledFor.toISOString(),
-          nextRunAt: nextRunAt.toISOString(),
-          scheduledCount: newJobs.length,
-          skippedCount,
-          enqueueFailures,
-          pipelineJobIds,
-          crawlTaskIds,
-          inFlightCount,
-          inFlightLimit,
-          reason: "ok" as const
-        };
         } catch (error) {
           await this.cache.del(dedupe.key).catch(() => undefined);
+          if (
+            seedConfig?.mode === "deep" &&
+            this.isDeepDiscoveryFailureError(error)
+          ) {
+            await this.markDeepDiscoveryFailureState(source, error, new Date());
+          }
           throw error;
         }
-      }
+      },
     );
   }
 
-  async cancelQueuedCrawls(orgId: string, sourceId: string, triggeredById: string) {
+  async cancelQueuedCrawls(
+    orgId: string,
+    sourceId: string,
+    triggeredById: string,
+  ) {
     const source = await this.prisma.newsSource.findUnique({
       where: { id: sourceId },
-      select: { id: true, orgId: true }
+      select: { id: true, orgId: true },
     });
     if (!source || source.orgId !== orgId) {
       throw new NotFoundException("News source not found");
@@ -456,7 +550,7 @@ export class NewsSourceSchedulerService {
         sourceId: source.id,
         removedJobs: 0,
         scannedJobs: 0,
-        canceledTaskIds: [] as string[]
+        canceledTaskIds: [] as string[],
       };
     }
 
@@ -464,23 +558,22 @@ export class NewsSourceSchedulerService {
       where: {
         orgId,
         id: { in: Array.from(queuedTaskIds) },
-        displayName: { startsWith: prefix }
+        displayName: { startsWith: prefix },
       },
-      select: { id: true }
+      select: { id: true },
     });
 
     const taskIdsToCancel = new Set(matchingTasks.map((task) => task.id));
-    const { scanned, removed, removedTaskIds } = await this.crawlQueue.removeQueuedJobsForTasks(
-      taskIdsToCancel
-    );
+    const { scanned, removed, removedTaskIds } =
+      await this.crawlQueue.removeQueuedJobsForTasks(taskIdsToCancel);
 
     if (removedTaskIds.length > 0) {
       await this.prisma.crawlTask.updateMany({
         where: { orgId, id: { in: removedTaskIds } },
         data: {
           status: "paused",
-          lastError: `Canceled by ${triggeredById}`
-        }
+          lastError: `Canceled by ${triggeredById}`,
+        },
       });
     }
 
@@ -488,21 +581,21 @@ export class NewsSourceSchedulerService {
       sourceId: source.id,
       removedJobs: removed,
       scannedJobs: scanned,
-      canceledTaskIds: removedTaskIds
+      canceledTaskIds: removedTaskIds,
     };
   }
 
   async clearInFlight(orgId: string, sourceId: string) {
     const source = await this.prisma.newsSource.findUnique({
       where: { id: sourceId },
-      select: { id: true, orgId: true }
+      select: { id: true, orgId: true },
     });
     if (!source || source.orgId !== orgId) {
       throw new NotFoundException("News source not found");
     }
 
     const activeCutoff = new Date(
-      Date.now() - this.env.newsSourceSchedulerConfig.inFlightLookbackMs
+      Date.now() - this.env.newsSourceSchedulerConfig.inFlightLookbackMs,
     );
 
     const cleared = await this.prisma.pipelineJob.updateMany({
@@ -510,19 +603,19 @@ export class NewsSourceSchedulerService {
         orgId,
         sourceId: source.id,
         status: { in: ACTIVE_PIPELINE_JOB_STATUSES },
-        createdAt: { gte: activeCutoff }
+        createdAt: { gte: activeCutoff },
       },
       data: {
         status: PipelineJobStatus.failed,
         error: "Cleared by admin",
-        completedAt: new Date()
-      }
+        completedAt: new Date(),
+      },
     });
 
     return {
       sourceId: source.id,
       cutoff: activeCutoff.toISOString(),
-      clearedJobs: cleared.count
+      clearedJobs: cleared.count,
     };
   }
 
@@ -531,11 +624,11 @@ export class NewsSourceSchedulerService {
     sourceId: string,
     userId: string,
     ip?: string,
-    actorPermissions?: string[]
+    actorPermissions?: string[],
   ) {
     const source = await this.prisma.newsSource.findUnique({
       where: { id: sourceId },
-      select: { id: true, orgId: true }
+      select: { id: true, orgId: true },
     });
     if (!source || source.orgId !== orgId) {
       throw new NotFoundException("News source not found");
@@ -544,19 +637,21 @@ export class NewsSourceSchedulerService {
     const latestJob = await this.prisma.pipelineJob.findFirst({
       where: { orgId, sourceId: source.id },
       orderBy: { createdAt: "desc" },
-      select: { metadata: true }
+      select: { metadata: true },
     });
 
     const isRecord = (value: unknown): value is Record<string, unknown> =>
       Boolean(value) && typeof value === "object" && !Array.isArray(value);
-    const crawlTaskId = isRecord(latestJob?.metadata) ? latestJob?.metadata.crawlTaskId : null;
+    const crawlTaskId = isRecord(latestJob?.metadata)
+      ? latestJob?.metadata.crawlTaskId
+      : null;
     if (typeof crawlTaskId !== "string" || crawlTaskId.length === 0) {
       throw new NotFoundException("No crawl task found for latest job");
     }
 
     const task = await this.prisma.crawlTask.findFirst({
       where: { orgId, id: crawlTaskId },
-      select: { status: true }
+      select: { status: true },
     });
     if (!task) {
       throw new NotFoundException("crawl task not found");
@@ -566,16 +661,22 @@ export class NewsSourceSchedulerService {
         sourceId: source.id,
         crawlTaskId,
         status: task.status,
-        retried: false
+        retried: false,
       };
     }
 
-    const retried = await this.crawlTaskService.retryTask(orgId, userId, crawlTaskId, ip, actorPermissions);
+    const retried = await this.crawlTaskService.retryTask(
+      orgId,
+      userId,
+      crawlTaskId,
+      ip,
+      actorPermissions,
+    );
     return {
       sourceId: source.id,
       crawlTaskId,
       status: retried.status,
-      retried: true
+      retried: true,
     };
   }
 
@@ -588,7 +689,9 @@ export class NewsSourceSchedulerService {
       .filter((entry) => entry.length > 0);
   }
 
-  private normalizeOptions(value: unknown): Record<string, unknown> | undefined {
+  private normalizeOptions(
+    value: unknown,
+  ): Record<string, unknown> | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return undefined;
     }
@@ -597,7 +700,7 @@ export class NewsSourceSchedulerService {
 
   private mergeOptions(
     base: Record<string, unknown> | undefined,
-    override: Record<string, unknown> | undefined
+    override: Record<string, unknown> | undefined,
   ) {
     if (!base && !override) {
       return undefined;
@@ -613,7 +716,7 @@ export class NewsSourceSchedulerService {
 
   private withAutoCrawlQualityDefaults(
     options: Record<string, unknown> | undefined,
-    seedMode?: SeedConfig["mode"]
+    seedMode?: SeedConfig["mode"],
   ): Record<string, unknown> {
     const current = options ? { ...options } : {};
 
@@ -638,7 +741,10 @@ export class NewsSourceSchedulerService {
     if (typeof current.waitUntil !== "string") {
       current.waitUntil = "networkidle";
     }
-    if (typeof current.waitForTimeoutMs !== "number" || !Number.isFinite(current.waitForTimeoutMs)) {
+    if (
+      typeof current.waitForTimeoutMs !== "number" ||
+      !Number.isFinite(current.waitForTimeoutMs)
+    ) {
       current.waitForTimeoutMs = 12_000;
     }
     if (
@@ -647,15 +753,23 @@ export class NewsSourceSchedulerService {
     ) {
       current.delayBeforeReturnHtmlMs = 2_000;
     }
-    if (typeof current.meanDelayMs !== "number" || !Number.isFinite(current.meanDelayMs)) {
+    if (
+      typeof current.meanDelayMs !== "number" ||
+      !Number.isFinite(current.meanDelayMs)
+    ) {
       current.meanDelayMs = 900;
     }
-    if (typeof current.maxDelayRangeMs !== "number" || !Number.isFinite(current.maxDelayRangeMs)) {
+    if (
+      typeof current.maxDelayRangeMs !== "number" ||
+      !Number.isFinite(current.maxDelayRangeMs)
+    ) {
       current.maxDelayRangeMs = 1_600;
     }
 
     const markdownOptions =
-      current.markdownOptions && typeof current.markdownOptions === "object" && !Array.isArray(current.markdownOptions)
+      current.markdownOptions &&
+      typeof current.markdownOptions === "object" &&
+      !Array.isArray(current.markdownOptions)
         ? ({ ...current.markdownOptions } as Record<string, unknown>)
         : {};
     if (typeof markdownOptions.contentSource !== "string") {
@@ -667,13 +781,18 @@ export class NewsSourceSchedulerService {
     current.markdownOptions = markdownOptions;
 
     const cleanMarkdown =
-      current.cleanMarkdown && typeof current.cleanMarkdown === "object" && !Array.isArray(current.cleanMarkdown)
+      current.cleanMarkdown &&
+      typeof current.cleanMarkdown === "object" &&
+      !Array.isArray(current.cleanMarkdown)
         ? ({ ...current.cleanMarkdown } as Record<string, unknown>)
         : {};
     if (typeof cleanMarkdown.removeOverlayElements !== "boolean") {
       cleanMarkdown.removeOverlayElements = true;
     }
-    if (typeof cleanMarkdown.wordCountThreshold !== "number" || !Number.isFinite(cleanMarkdown.wordCountThreshold)) {
+    if (
+      typeof cleanMarkdown.wordCountThreshold !== "number" ||
+      !Number.isFinite(cleanMarkdown.wordCountThreshold)
+    ) {
       cleanMarkdown.wordCountThreshold = 20;
     }
     const excludedTags = Array.isArray(cleanMarkdown.excludedTags)
@@ -682,7 +801,16 @@ export class NewsSourceSchedulerService {
           .filter((entry) => entry.length > 0)
       : [];
     cleanMarkdown.excludedTags = Array.from(
-      new Set(["nav", "footer", "aside", "script", "style", "noscript", "form", ...excludedTags])
+      new Set([
+        "nav",
+        "footer",
+        "aside",
+        "script",
+        "style",
+        "noscript",
+        "form",
+        ...excludedTags,
+      ]),
     ).slice(0, 12);
     if (!("cssSelector" in cleanMarkdown)) {
       cleanMarkdown.cssSelector = undefined;
@@ -696,19 +824,21 @@ export class NewsSourceSchedulerService {
       current.autoExpandDetails = this.getEnvValue(
         "NEWS_SOURCE_CRAWL_AUTO_EXPAND_DETAILS",
         true,
-        (value) => (typeof value === "boolean" ? value : undefined)
+        (value) => (typeof value === "boolean" ? value : undefined),
       );
     }
     if (typeof current.qualityProfile !== "string") {
       current.qualityProfile = this.getEnvValue(
         "NEWS_SOURCE_CRAWL_QUALITY_PROFILE",
         "quality_first",
-        (value) => (typeof value === "string" ? value : undefined)
+        (value) => (typeof value === "string" ? value : undefined),
       );
     }
 
     const currentDetailExpansion =
-      current.detailExpansion && typeof current.detailExpansion === "object" && !Array.isArray(current.detailExpansion)
+      current.detailExpansion &&
+      typeof current.detailExpansion === "object" &&
+      !Array.isArray(current.detailExpansion)
         ? (current.detailExpansion as Record<string, unknown>)
         : {};
     current.detailExpansion = {
@@ -718,7 +848,10 @@ export class NewsSourceSchedulerService {
           : this.getEnvValue(
               "NEWS_SOURCE_CRAWL_DETAIL_MAX_URLS",
               12,
-              (value) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
+              (value) =>
+                typeof value === "number" && Number.isFinite(value)
+                  ? value
+                  : undefined,
             ),
       minRelevanceScore:
         typeof currentDetailExpansion.minRelevanceScore === "number"
@@ -726,7 +859,10 @@ export class NewsSourceSchedulerService {
           : this.getEnvValue(
               "NEWS_SOURCE_CRAWL_DETAIL_MIN_RELEVANCE_SCORE",
               0.35,
-              (value) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
+              (value) =>
+                typeof value === "number" && Number.isFinite(value)
+                  ? value
+                  : undefined,
             ),
       requireSameDomain:
         typeof currentDetailExpansion.requireSameDomain === "boolean"
@@ -734,11 +870,11 @@ export class NewsSourceSchedulerService {
           : this.getEnvValue(
               "NEWS_SOURCE_CRAWL_DETAIL_REQUIRE_SAME_DOMAIN",
               true,
-              (value) => (typeof value === "boolean" ? value : undefined)
-            )
+              (value) => (typeof value === "boolean" ? value : undefined),
+            ),
     };
 
-    if (seedMode === "list") {
+    if (seedMode === "list" || seedMode === "deep") {
       if (typeof current.extractLinks !== "boolean") {
         current.extractLinks = true;
       }
@@ -748,12 +884,16 @@ export class NewsSourceSchedulerService {
       if (typeof current.scanFullPage !== "boolean") {
         current.scanFullPage = false;
       }
-      if (!current.virtualScroll || typeof current.virtualScroll !== "object" || Array.isArray(current.virtualScroll)) {
+      if (
+        !current.virtualScroll ||
+        typeof current.virtualScroll !== "object" ||
+        Array.isArray(current.virtualScroll)
+      ) {
         current.virtualScroll = {
           containerSelector: "body",
           scrollCount: 8,
           scrollBy: "page_height",
-          waitAfterScrollMs: 700
+          waitAfterScrollMs: 700,
         };
       }
     }
@@ -763,64 +903,97 @@ export class NewsSourceSchedulerService {
 
   private toBullmqPriority(priority: number) {
     const normalized = Number.isFinite(priority) ? Math.round(priority) : 0;
-    const clamped = Math.max(this.sourcePriorityMin, Math.min(this.sourcePriorityMax, normalized));
+    const clamped = Math.max(
+      this.sourcePriorityMin,
+      Math.min(this.sourcePriorityMax, normalized),
+    );
     return this.sourcePriorityMax + 1 - clamped;
   }
 
-  private computeNextIntervalRunAt(frequencySeconds: number, scheduledFor: Date, now: Date) {
-    const seconds = Number.isFinite(frequencySeconds) ? Math.max(0, Math.floor(frequencySeconds)) : 0;
+  private computeNextIntervalRunAt(
+    frequencySeconds: number,
+    scheduledFor: Date,
+    now: Date,
+  ) {
+    const seconds = Number.isFinite(frequencySeconds)
+      ? Math.max(0, Math.floor(frequencySeconds))
+      : 0;
     const anchor = Math.max(scheduledFor.getTime(), now.getTime());
     const baseMs = anchor + seconds * 1000;
 
     const jitterMaxMsRaw = this.env.newsSourceSchedulerConfig.jitterMaxMs;
-    const jitterMaxMs = Number.isFinite(jitterMaxMsRaw) ? Math.max(0, Math.floor(jitterMaxMsRaw)) : 0;
+    const jitterMaxMs = Number.isFinite(jitterMaxMsRaw)
+      ? Math.max(0, Math.floor(jitterMaxMsRaw))
+      : 0;
     if (jitterMaxMs <= 0 || seconds === 0) {
       return new Date(baseMs);
     }
 
     const cappedJitterMaxMs = Math.min(jitterMaxMs, seconds * 1000);
     const jitterMs =
-      cappedJitterMaxMs > 0 ? Math.floor(Math.random() * (cappedJitterMaxMs + 1)) : 0;
+      cappedJitterMaxMs > 0
+        ? Math.floor(Math.random() * (cappedJitterMaxMs + 1))
+        : 0;
     return new Date(baseMs + jitterMs);
   }
 
-  private normalizeCronSchedule(source: NewsSourceWithTemplate): CronScheduleConfig | null {
+  private normalizeCronSchedule(
+    source: NewsSourceWithTemplate,
+  ): CronScheduleConfig | null {
     const rawConfig =
-      source.config && typeof source.config === "object" && !Array.isArray(source.config)
+      source.config &&
+      typeof source.config === "object" &&
+      !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
         : null;
 
     const schedule =
-      rawConfig?.schedule && typeof rawConfig.schedule === "object" && !Array.isArray(rawConfig.schedule)
+      rawConfig?.schedule &&
+      typeof rawConfig.schedule === "object" &&
+      !Array.isArray(rawConfig.schedule)
         ? (rawConfig.schedule as Record<string, unknown>)
         : null;
 
-    const modeRaw = typeof schedule?.mode === "string" ? schedule.mode.trim().toLowerCase() : "";
+    const modeRaw =
+      typeof schedule?.mode === "string"
+        ? schedule.mode.trim().toLowerCase()
+        : "";
     if (modeRaw !== "cron") {
       return null;
     }
 
     const cron =
-      schedule?.cron && typeof schedule.cron === "object" && !Array.isArray(schedule.cron)
+      schedule?.cron &&
+      typeof schedule.cron === "object" &&
+      !Array.isArray(schedule.cron)
         ? (schedule.cron as Record<string, unknown>)
         : null;
 
-    const expression = typeof cron?.expression === "string" ? cron.expression.trim() : "";
+    const expression =
+      typeof cron?.expression === "string" ? cron.expression.trim() : "";
     if (!expression) {
       return null;
     }
 
-    const timezoneRaw = typeof cron?.timezone === "string" ? cron.timezone.trim() : "";
+    const timezoneRaw =
+      typeof cron?.timezone === "string" ? cron.timezone.trim() : "";
     const timezone = timezoneRaw.length > 0 ? timezoneRaw : undefined;
 
     const window =
-      schedule?.window && typeof schedule.window === "object" && !Array.isArray(schedule.window)
+      schedule?.window &&
+      typeof schedule.window === "object" &&
+      !Array.isArray(schedule.window)
         ? (schedule.window as Record<string, unknown>)
         : null;
 
-    const daysOfWeekRaw = Array.isArray(window?.daysOfWeek) ? window?.daysOfWeek : [];
+    const daysOfWeekRaw = Array.isArray(window?.daysOfWeek)
+      ? window?.daysOfWeek
+      : [];
     const daysOfWeek = daysOfWeekRaw
-      .filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry))
+      .filter(
+        (entry): entry is number =>
+          typeof entry === "number" && Number.isFinite(entry),
+      )
       .map((value) => Math.floor(value))
       .filter((value) => value >= 0 && value <= 6);
 
@@ -838,7 +1011,10 @@ export class NewsSourceSchedulerService {
     const cronWindow: CronWindowConfig | undefined =
       daysOfWeek.length > 0 || startHour !== undefined || endHour !== undefined
         ? {
-            daysOfWeek: daysOfWeek.length > 0 ? Array.from(new Set(daysOfWeek)) : undefined,
+            daysOfWeek:
+              daysOfWeek.length > 0
+                ? Array.from(new Set(daysOfWeek))
+                : undefined,
             startHour,
             endHour,
           }
@@ -847,7 +1023,7 @@ export class NewsSourceSchedulerService {
     return {
       expression,
       timezone,
-      window: cronWindow
+      window: cronWindow,
     };
   }
 
@@ -874,8 +1050,10 @@ export class NewsSourceSchedulerService {
       const weekdayLabel = parts.find((part) => part.type === "weekday")?.value;
       const hourLabel = parts.find((part) => part.type === "hour")?.value;
 
-      const weekday = typeof weekdayLabel === "string" ? weekdayMap[weekdayLabel] : undefined;
-      const hour = typeof hourLabel === "string" ? Number.parseInt(hourLabel, 10) : NaN;
+      const weekday =
+        typeof weekdayLabel === "string" ? weekdayMap[weekdayLabel] : undefined;
+      const hour =
+        typeof hourLabel === "string" ? Number.parseInt(hourLabel, 10) : NaN;
 
       if (typeof weekday !== "number" || !Number.isFinite(hour)) {
         return { weekday: null as number | null, hour: null as number | null };
@@ -886,7 +1064,11 @@ export class NewsSourceSchedulerService {
     }
   }
 
-  private isWithinCronWindow(date: Date, window: CronWindowConfig | undefined, timezone?: string) {
+  private isWithinCronWindow(
+    date: Date,
+    window: CronWindowConfig | undefined,
+    timezone?: string,
+  ) {
     if (!window) {
       return true;
     }
@@ -897,7 +1079,11 @@ export class NewsSourceSchedulerService {
     }
 
     const allowedDays = window.daysOfWeek;
-    if (Array.isArray(allowedDays) && allowedDays.length > 0 && !allowedDays.includes(weekday)) {
+    if (
+      Array.isArray(allowedDays) &&
+      allowedDays.length > 0 &&
+      !allowedDays.includes(weekday)
+    ) {
       return false;
     }
 
@@ -918,13 +1104,20 @@ export class NewsSourceSchedulerService {
     return true;
   }
 
-  private computeNextRunAt(source: NewsSourceWithTemplate, scheduledFor: Date, now: Date) {
+  private computeNextRunAt(
+    source: NewsSourceWithTemplate,
+    scheduledFor: Date,
+    now: Date,
+  ) {
     const cron = this.normalizeCronSchedule(source);
     if (cron) {
       const base = new Date(Math.max(scheduledFor.getTime(), now.getTime()));
       const tz = cron.timezone ?? "UTC";
       try {
-        const interval = parseExpression(cron.expression, { currentDate: base, tz });
+        const interval = parseExpression(cron.expression, {
+          currentDate: base,
+          tz,
+        });
         for (let i = 0; i < 200; i += 1) {
           const next = interval.next().toDate();
           if (this.isWithinCronWindow(next, cron.window, tz)) {
@@ -940,7 +1133,11 @@ export class NewsSourceSchedulerService {
       }
     }
 
-    return this.computeNextIntervalRunAt(source.frequencySeconds, scheduledFor, now);
+    return this.computeNextIntervalRunAt(
+      source.frequencySeconds,
+      scheduledFor,
+      now,
+    );
   }
 
   private computeMinuteDispatchDedupeKey(sourceId: string, now: Date) {
@@ -949,13 +1146,184 @@ export class NewsSourceSchedulerService {
     const bucketEnd = new Date(bucketStart.getTime() + 60_000);
     const ttlSeconds = Math.max(
       1,
-      Math.ceil((bucketEnd.getTime() - now.getTime()) / 1000) + 5
+      Math.ceil((bucketEnd.getTime() - now.getTime()) / 1000) + 5,
     );
     return {
       key: `news-source:dispatch-minute:${sourceId}:${bucketStart.toISOString()}`,
       until: bucketEnd.toISOString(),
-      ttlSeconds
+      ttlSeconds,
     };
+  }
+
+  private isDeepDiscoveryFailureError(error: unknown) {
+    return Boolean(parseDeepDiscoveryError(error));
+  }
+
+  private computeExponentialBackoffDelay(
+    baseDelayMs: number,
+    attempt: number,
+    maxDelayMs: number,
+  ) {
+    const normalizedAttempt = Math.max(1, Math.floor(attempt));
+    const normalizedBase = Math.max(1, Math.floor(baseDelayMs));
+    const normalizedMax = Math.max(normalizedBase, Math.floor(maxDelayMs));
+    const exponential =
+      normalizedBase * 2 ** Math.max(0, normalizedAttempt - 1);
+    const capped = Math.min(exponential, normalizedMax);
+    const jitterFactor = 0.75 + Math.random() * 0.5;
+    return Math.round(capped * jitterFactor);
+  }
+
+  private normalizeDeepFailureStats24h(
+    value: unknown,
+  ): DeepDiscoveryFailureStats24h {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {
+        total: 0,
+        byCode: {},
+        updatedAt: new Date(0).toISOString(),
+      };
+    }
+    const record = value as Record<string, unknown>;
+    const byCodeRecord =
+      record.byCode &&
+      typeof record.byCode === "object" &&
+      !Array.isArray(record.byCode)
+        ? (record.byCode as Record<string, unknown>)
+        : {};
+    const byCode: Record<string, number> = {};
+    for (const [code, countRaw] of Object.entries(byCodeRecord)) {
+      if (!code || !code.startsWith("SEED_DEEP_")) {
+        continue;
+      }
+      if (typeof countRaw !== "number" || !Number.isFinite(countRaw)) {
+        continue;
+      }
+      const count = Math.max(0, Math.floor(countRaw));
+      if (count <= 0) {
+        continue;
+      }
+      byCode[code] = count;
+    }
+
+    const totalRaw =
+      typeof record.total === "number" && Number.isFinite(record.total)
+        ? Math.max(0, Math.floor(record.total))
+        : Object.values(byCode).reduce((sum, count) => sum + count, 0);
+    const updatedAt =
+      typeof record.updatedAt === "string" && record.updatedAt.length > 0
+        ? record.updatedAt
+        : new Date().toISOString();
+    return {
+      total: totalRaw,
+      byCode,
+      updatedAt,
+    };
+  }
+
+  private async clearDeepDiscoveryFailureState(sourceId: string) {
+    await this.cache
+      .del(deepDiscoveryFailureStateCacheKey(sourceId))
+      .catch(() => undefined);
+  }
+
+  private async markDeepDiscoveryFailureState(
+    source: NewsSourceWithTemplate,
+    error: unknown,
+    failureAt: Date,
+  ) {
+    const normalizedError = normalizeDeepDiscoveryError(error);
+    const cfg = this.env.newsSourceSchedulerConfig;
+    const stateKey = deepDiscoveryFailureStateCacheKey(source.id);
+    const statsKey = deepDiscoveryFailureStatsCacheKey(source.id);
+    const existingState =
+      await this.cache.get<DeepDiscoveryFailureState>(stateKey);
+    const previousStreak =
+      typeof existingState?.streak === "number" &&
+      Number.isFinite(existingState.streak)
+        ? Math.max(0, Math.floor(existingState.streak))
+        : 0;
+    const streak = previousStreak + 1;
+
+    const retryDelayMs = this.computeExponentialBackoffDelay(
+      cfg.failureRecoveryDelayMs,
+      streak,
+      cfg.failureMaxDelayMs,
+    );
+    const retryAt = new Date(failureAt.getTime() + retryDelayMs);
+
+    const threshold = Math.max(0, Math.floor(cfg.circuitBreakerThreshold));
+    let circuitOpenUntil: Date | null = null;
+    if (threshold > 0 && streak >= threshold) {
+      const circuitAttempt = streak - threshold + 1;
+      const circuitDelayMs = this.computeExponentialBackoffDelay(
+        cfg.circuitBreakerBaseDelayMs,
+        circuitAttempt,
+        cfg.circuitBreakerMaxDelayMs,
+      );
+      circuitOpenUntil = new Date(failureAt.getTime() + circuitDelayMs);
+    }
+
+    const nextRunAt =
+      circuitOpenUntil && circuitOpenUntil.getTime() > retryAt.getTime()
+        ? circuitOpenUntil
+        : retryAt;
+
+    await this.prisma.newsSource.updateMany({
+      where: { id: source.id, isActive: true },
+      data: {
+        lastFailureAt: failureAt,
+        nextRunAt,
+        circuitOpenUntil,
+      },
+    });
+
+    const statePayload: DeepDiscoveryFailureState = {
+      streak,
+      lastFailureAt: failureAt.toISOString(),
+      lastCode: normalizedError.code,
+      lastMessage: normalizedError.message,
+      lastDetail: normalizedError.detail,
+      retryAt: retryAt.toISOString(),
+      nextRunAt: nextRunAt.toISOString(),
+      circuitOpenUntil: circuitOpenUntil
+        ? circuitOpenUntil.toISOString()
+        : null,
+    };
+    await this.cache.set(
+      stateKey,
+      statePayload,
+      DEEP_DISCOVERY_FAILURE_STATE_TTL_SECONDS,
+    );
+
+    const existingStatsRaw =
+      await this.cache.get<DeepDiscoveryFailureStats24h>(statsKey);
+    const existingStats = this.normalizeDeepFailureStats24h(existingStatsRaw);
+    const nextByCode = { ...existingStats.byCode };
+    nextByCode[normalizedError.code] =
+      (nextByCode[normalizedError.code] ?? 0) + 1;
+    const nextStats: DeepDiscoveryFailureStats24h = {
+      total: existingStats.total + 1,
+      byCode: nextByCode,
+      updatedAt: failureAt.toISOString(),
+    };
+    await this.cache.set(
+      statsKey,
+      nextStats,
+      DEEP_DISCOVERY_FAILURE_STATS_TTL_SECONDS,
+    );
+
+    logger.warn(
+      {
+        sourceId: source.id,
+        orgId: source.orgId,
+        code: normalizedError.code,
+        streak,
+        retryAt,
+        circuitOpenUntil,
+      },
+      "Deep seed discovery failed; applied scheduler backoff",
+    );
   }
 
   private async resolveCrawlActorId(orgId: string): Promise<string | null> {
@@ -970,7 +1338,8 @@ export class NewsSourceSchedulerService {
       orderBy: { createdAt: "asc" },
     });
 
-    const userId = typeof membership?.userId === "string" ? membership.userId : "";
+    const userId =
+      typeof membership?.userId === "string" ? membership.userId : "";
     if (!userId) {
       return null;
     }
@@ -982,14 +1351,22 @@ export class NewsSourceSchedulerService {
   private buildPayload(
     source: NewsSourceWithTemplate,
     url: string,
-    seed?: { mode: "single" | "sitemap" | "rss" | "list"; parentUrl: string; relevanceScore?: number }
+    seed?: {
+      mode: "single" | "sitemap" | "rss" | "list" | "deep";
+      parentUrl: string;
+      relevanceScore?: number;
+    },
   ) {
     const config =
-      source.config && typeof source.config === "object" && !Array.isArray(source.config)
+      source.config &&
+      typeof source.config === "object" &&
+      !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
         : {};
     const metadata =
-      config.metadata && typeof config.metadata === "object" && !Array.isArray(config.metadata)
+      config.metadata &&
+      typeof config.metadata === "object" &&
+      !Array.isArray(config.metadata)
         ? (config.metadata as Record<string, unknown>)
         : {};
     return {
@@ -1008,8 +1385,8 @@ export class NewsSourceSchedulerService {
               newsSourceSeed: {
                 mode: seed.mode,
                 parentUrl: seed.parentUrl,
-                relevanceScore: seed.relevanceScore
-              }
+                relevanceScore: seed.relevanceScore,
+              },
             }
           : {}),
         ...metadata,
@@ -1019,9 +1396,9 @@ export class NewsSourceSchedulerService {
           source.crawlTemplate?.isActive
             ? this.normalizeOptions(source.crawlTemplate.crawlOptions)
             : undefined,
-          this.normalizeOptions(config.crawlOptions)
+          this.normalizeOptions(config.crawlOptions),
         ),
-        seed?.mode
+        seed?.mode && seed.mode !== "single" ? seed.mode : undefined,
       ),
       forceRefresh: Boolean(config.forceRefresh),
     };
@@ -1029,20 +1406,38 @@ export class NewsSourceSchedulerService {
 
   private normalizeSeedConfig(source: NewsSourceWithTemplate) {
     const config =
-      source.config && typeof source.config === "object" && !Array.isArray(source.config)
+      source.config &&
+      typeof source.config === "object" &&
+      !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
         : null;
     const seed =
-      config?.seed && typeof config.seed === "object" && !Array.isArray(config.seed)
+      config?.seed &&
+      typeof config.seed === "object" &&
+      !Array.isArray(config.seed)
         ? (config.seed as Record<string, unknown>)
         : null;
     if (!seed || seed.enabled !== true) {
       return null;
     }
 
-    const modeRaw = typeof seed.mode === "string" ? seed.mode.trim().toLowerCase() : "";
+    const modeRaw =
+      typeof seed.mode === "string" ? seed.mode.trim().toLowerCase() : "";
     const mode: SeedConfig["mode"] =
-      modeRaw === "rss" ? "rss" : modeRaw === "list" ? "list" : "sitemap";
+      modeRaw === "rss"
+        ? "rss"
+        : modeRaw === "list"
+          ? "list"
+          : modeRaw === "deep"
+            ? "deep"
+            : "sitemap";
+    const deepConfig =
+      mode === "deep" &&
+      seed.deep &&
+      typeof seed.deep === "object" &&
+      !Array.isArray(seed.deep)
+        ? (seed.deep as Record<string, unknown>)
+        : null;
 
     const keywords = this.normalizeStringList(config?.keywords);
     const query =
@@ -1057,16 +1452,19 @@ export class NewsSourceSchedulerService {
       enabled: true,
       mode,
       domain:
-        mode === "sitemap" || mode === "list"
+        mode === "sitemap" || mode === "list" || mode === "deep"
           ? this.normalizeSeedDomain(seed.domain, source.url)
           : undefined,
       pattern:
-        (mode === "sitemap" || mode === "list") &&
+        (mode === "sitemap" || mode === "list" || mode === "deep") &&
         typeof seed.pattern === "string" &&
         seed.pattern.trim().length > 0
           ? seed.pattern.trim()
           : undefined,
-      feedUrl: mode === "rss" ? this.normalizeSeedFeedUrl(seed.feedUrl, source.url) : undefined,
+      feedUrl:
+        mode === "rss"
+          ? this.normalizeSeedFeedUrl(seed.feedUrl, source.url)
+          : undefined,
       maxUrls: this.clampInt(seed.maxUrls, 1, 2_000, 200),
       maxNewUrlsPerRun: this.clampInt(seed.maxNewUrlsPerRun, 1, 500, 80),
       listMaxPages: this.clampInt(seed.listMaxPages, 1, 20, 6),
@@ -1075,14 +1473,62 @@ export class NewsSourceSchedulerService {
       queryTokens,
       scoreThreshold: this.clampFloat(seed.scoreThreshold, 0, 1, 0),
       dedupeWindowHours: this.clampInt(seed.dedupeWindowHours, 0, 24 * 30, 24),
-      cacheTtlSeconds: this.clampInt(seed.cacheTtlSeconds, 10, 3600, 600)
+      cacheTtlSeconds: this.clampInt(seed.cacheTtlSeconds, 10, 3600, 600),
+      deep:
+        mode === "deep"
+          ? {
+              maxPages: this.clampInt(deepConfig?.maxPages, 5, 300, 80),
+              maxDepth: this.clampInt(deepConfig?.maxDepth, 1, 4, 2),
+              timeBudgetSeconds: this.clampInt(
+                deepConfig?.timeBudgetSeconds,
+                10,
+                180,
+                60,
+              ),
+              pageConcurrency: this.clampInt(
+                deepConfig?.pageConcurrency,
+                1,
+                6,
+                2,
+              ),
+              scoreThreshold: this.clampFloat(
+                deepConfig?.scoreThreshold,
+                0,
+                1,
+                0.2,
+              ),
+              candidatePoolSize: this.clampInt(
+                deepConfig?.candidatePoolSize,
+                20,
+                400,
+                120,
+              ),
+              headFetchTopK: this.clampInt(
+                deepConfig?.headFetchTopK,
+                10,
+                120,
+                40,
+              ),
+              preferPathDate:
+                typeof deepConfig?.preferPathDate === "boolean"
+                  ? deepConfig.preferPathDate
+                  : true,
+              enableSecondaryHubs:
+                typeof deepConfig?.enableSecondaryHubs === "boolean"
+                  ? deepConfig.enableSecondaryHubs
+                  : true,
+              ignoreRobotsTxt: true,
+            }
+          : undefined,
     } satisfies SeedConfig;
   }
 
   private normalizeSeedDomain(rawDomain: unknown, fallbackUrl: string) {
     const raw = typeof rawDomain === "string" ? rawDomain.trim() : "";
     const candidate = raw.length > 0 ? raw : fallbackUrl;
-    const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+    const withProtocol = /^https?:\/\//i.test(candidate)
+      ? candidate
+      : `https://${candidate}`;
     try {
       return new URL(withProtocol).origin.replace(/\/+$/, "");
     } catch {
@@ -1097,7 +1543,9 @@ export class NewsSourceSchedulerService {
   private normalizeSeedFeedUrl(rawFeedUrl: unknown, fallbackUrl: string) {
     const raw = typeof rawFeedUrl === "string" ? rawFeedUrl.trim() : "";
     const candidate = raw.length > 0 ? raw : fallbackUrl;
-    const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+    const withProtocol = /^https?:\/\//i.test(candidate)
+      ? candidate
+      : `https://${candidate}`;
     try {
       return new URL(withProtocol).toString();
     } catch {
@@ -1117,7 +1565,12 @@ export class NewsSourceSchedulerService {
     return Math.min(max, Math.max(min, rounded));
   }
 
-  private clampFloat(value: unknown, min: number, max: number, fallback: number) {
+  private clampFloat(
+    value: unknown,
+    min: number,
+    max: number,
+    fallback: number,
+  ) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
       return fallback;
     }
@@ -1141,7 +1594,10 @@ export class NewsSourceSchedulerService {
     return Number((hits / tokens.length).toFixed(3));
   }
 
-  private async resolveSeedCandidates(source: NewsSourceWithTemplate, seed: SeedConfig) {
+  private async resolveSeedCandidates(
+    source: NewsSourceWithTemplate,
+    seed: SeedConfig,
+  ) {
     if (seed.mode === "sitemap" && !seed.domain) {
       return [];
     }
@@ -1154,19 +1610,26 @@ export class NewsSourceSchedulerService {
         if (seed.mode === "rss") {
           return this.metadataService.discoverRssUrls({
             feedUrl: seed.feedUrl ?? source.url,
-            maxUrls: seed.maxUrls
+            maxUrls: seed.maxUrls,
           });
         }
         if (seed.mode === "list") {
           const config =
-            source.config && typeof source.config === "object" && !Array.isArray(source.config)
+            source.config &&
+            typeof source.config === "object" &&
+            !Array.isArray(source.config)
               ? (source.config as Record<string, unknown>)
               : {};
           const crawlOptions = this.mergeOptions(
-            source.crawlTemplate?.isActive ? this.normalizeOptions(source.crawlTemplate.crawlOptions) : undefined,
-            this.normalizeOptions(config.crawlOptions)
+            source.crawlTemplate?.isActive
+              ? this.normalizeOptions(source.crawlTemplate.crawlOptions)
+              : undefined,
+            this.normalizeOptions(config.crawlOptions),
           );
-          const crawlOptionsWithDefaults = this.withAutoCrawlQualityDefaults(crawlOptions, "list");
+          const crawlOptionsWithDefaults = this.withAutoCrawlQualityDefaults(
+            crawlOptions,
+            "list",
+          );
           return this.metadataService.discoverListUrls({
             url: source.url,
             domain: seed.domain,
@@ -1175,35 +1638,62 @@ export class NewsSourceSchedulerService {
             listMaxPages: seed.listMaxPages,
             listPageConcurrency: seed.listPageConcurrency,
             followPagination: seed.followPagination,
-            crawlOptions: crawlOptionsWithDefaults
+            crawlOptions: crawlOptionsWithDefaults,
+          });
+        }
+        if (seed.mode === "deep") {
+          const config =
+            source.config &&
+            typeof source.config === "object" &&
+            !Array.isArray(source.config)
+              ? (source.config as Record<string, unknown>)
+              : {};
+          const crawlOptions = this.mergeOptions(
+            source.crawlTemplate?.isActive
+              ? this.normalizeOptions(source.crawlTemplate.crawlOptions)
+              : undefined,
+            this.normalizeOptions(config.crawlOptions),
+          );
+          const crawlOptionsWithDefaults = this.withAutoCrawlQualityDefaults(
+            crawlOptions,
+            "deep",
+          );
+          return this.metadataService.discoverDeepUrls({
+            url: source.url,
+            domain: seed.domain,
+            pattern: seed.pattern,
+            maxUrls: seed.maxUrls,
+            deep: seed.deep,
+            query: seed.queryTokens?.join(" "),
+            crawlOptions: crawlOptionsWithDefaults,
           });
         }
         return this.metadataService.discoverSitemapUrls({
           domain: seed.domain,
           pattern: seed.pattern,
-          maxUrls: seed.maxUrls
+          maxUrls: seed.maxUrls,
         });
       },
-      { lockTtlMs: 15_000, maxWaitMs: 15_000, retryDelayMs: 100 }
+      { lockTtlMs: 15_000, maxWaitMs: 15_000, retryDelayMs: 100 },
     );
 
     const unique = Array.from(
       new Set(
         discovered
           .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-          .filter((entry) => entry.length > 0)
-      )
+          .filter((entry) => entry.length > 0),
+      ),
     );
 
     const scored = unique
       .map((url) => ({
         url,
-        relevanceScore: this.scoreUrl(url, seed.queryTokens)
+        relevanceScore: this.scoreUrl(url, seed.queryTokens),
       }))
       .filter((entry) =>
         seed.scoreThreshold > 0
           ? (entry.relevanceScore ?? 0) >= seed.scoreThreshold
-          : true
+          : true,
       );
 
     if (seed.queryTokens && seed.queryTokens.length > 0) {
@@ -1213,7 +1703,11 @@ export class NewsSourceSchedulerService {
     return scored.slice(0, seed.maxUrls);
   }
 
-  private async findRecentArticleUrls(orgId: string, urls: string[], windowHours: number) {
+  private async findRecentArticleUrls(
+    orgId: string,
+    urls: string[],
+    windowHours: number,
+  ) {
     const hours = Math.max(0, Math.min(24 * 30, Math.floor(windowHours)));
     if (hours === 0 || urls.length === 0) {
       return new Set<string>();
@@ -1221,12 +1715,16 @@ export class NewsSourceSchedulerService {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
     const records = await this.prisma.article.findMany({
       where: { orgId, url: { in: urls }, crawlAt: { gte: since } },
-      select: { url: true }
+      select: { url: true },
     });
     return new Set(records.map((record) => record.url));
   }
 
-  private async findActivePipelineUrls(sourceId: string, urls: string[], activeCutoff: Date) {
+  private async findActivePipelineUrls(
+    sourceId: string,
+    urls: string[],
+    activeCutoff: Date,
+  ) {
     if (urls.length === 0) {
       return new Set<string>();
     }
@@ -1235,9 +1733,9 @@ export class NewsSourceSchedulerService {
         sourceId,
         url: { in: urls },
         status: { in: ACTIVE_PIPELINE_JOB_STATUSES },
-        createdAt: { gte: activeCutoff }
+        createdAt: { gte: activeCutoff },
       },
-      select: { url: true }
+      select: { url: true },
     });
     return new Set(records.map((record) => record.url));
   }
@@ -1254,15 +1752,26 @@ export class NewsSourceSchedulerService {
               isActive: true,
               AND: [
                 { OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] },
-                { OR: [{ circuitOpenUntil: null }, { circuitOpenUntil: { lte: now } }] },
+                {
+                  OR: [
+                    { circuitOpenUntil: null },
+                    { circuitOpenUntil: { lte: now } },
+                  ],
+                },
               ],
             },
-            orderBy: [{ nextRunAt: "asc" }, { priority: "desc" }, { updatedAt: "asc" }],
+            orderBy: [
+              { nextRunAt: "asc" },
+              { priority: "desc" },
+              { updatedAt: "asc" },
+            ],
             take: batchSize,
           });
 
           if (sourcesToDelay.length > 0) {
-            const rescheduleAt = new Date(now.getTime() + schedulerConfig.backpressureDelayMs);
+            const rescheduleAt = new Date(
+              now.getTime() + schedulerConfig.backpressureDelayMs,
+            );
             await this.prisma.newsSource.updateMany({
               where: {
                 id: { in: sourcesToDelay.map((source) => source.id) },
@@ -1271,55 +1780,74 @@ export class NewsSourceSchedulerService {
               data: { nextRunAt: rescheduleAt },
             });
 
-            const ttlSeconds = Math.max(1, Math.ceil(schedulerConfig.backpressureDelayMs / 1000));
+            const ttlSeconds = Math.max(
+              1,
+              Math.ceil(schedulerConfig.backpressureDelayMs / 1000),
+            );
             await Promise.allSettled(
               sourcesToDelay.map((source) =>
                 this.cache.set(
                   `news-source:backpressure:${source.id}`,
-                  { until: rescheduleAt.toISOString(), pendingJobs, threshold: maxPending },
-                  ttlSeconds
-                )
-              )
+                  {
+                    until: rescheduleAt.toISOString(),
+                    pendingJobs,
+                    threshold: maxPending,
+                  },
+                  ttlSeconds,
+                ),
+              ),
             );
 
             const countTtlSeconds = 24 * 60 * 60;
             await Promise.allSettled(
               sourcesToDelay.map((source) =>
-                this.cache.incr(`news-source:backpressure-count:${source.id}`, countTtlSeconds)
-              )
+                this.cache.incr(
+                  `news-source:backpressure-count:${source.id}`,
+                  countTtlSeconds,
+                ),
+              ),
             );
 
             const sourcesByOrgId = new Map<string, number>();
             for (const source of sourcesToDelay) {
-              sourcesByOrgId.set(source.orgId, (sourcesByOrgId.get(source.orgId) ?? 0) + 1);
+              sourcesByOrgId.set(
+                source.orgId,
+                (sourcesByOrgId.get(source.orgId) ?? 0) + 1,
+              );
             }
 
             await Promise.allSettled(
-              Array.from(sourcesByOrgId.entries()).map(async ([orgId, delayedCount]) => {
-                const notifyKey = `news-source:backpressure-notify:${orgId}`;
-                const shouldNotify = await this.cache.setIfAbsent(
-                  notifyKey,
-                  { until: rescheduleAt.toISOString(), pendingJobs, threshold: maxPending },
-                  30 * 60
-                );
-                if (!shouldNotify) {
-                  return;
-                }
-
-                await this.notifications.notify({
-                  orgId,
-                  userId: null,
-                  type: NotificationType.system,
-                  title: "News source scheduler backpressure",
-                  body: `Delayed ${delayedCount} source(s) until ${rescheduleAt.toISOString()} (pending ${pendingJobs} > threshold ${maxPending}).`,
-                  data: {
-                    pendingJobs,
-                    threshold: maxPending,
-                    delayedCount,
-                    rescheduleAt: rescheduleAt.toISOString()
+              Array.from(sourcesByOrgId.entries()).map(
+                async ([orgId, delayedCount]) => {
+                  const notifyKey = `news-source:backpressure-notify:${orgId}`;
+                  const shouldNotify = await this.cache.setIfAbsent(
+                    notifyKey,
+                    {
+                      until: rescheduleAt.toISOString(),
+                      pendingJobs,
+                      threshold: maxPending,
+                    },
+                    30 * 60,
+                  );
+                  if (!shouldNotify) {
+                    return;
                   }
-                });
-              })
+
+                  await this.notifications.notify({
+                    orgId,
+                    userId: null,
+                    type: NotificationType.system,
+                    title: "News source scheduler backpressure",
+                    body: `Delayed ${delayedCount} source(s) until ${rescheduleAt.toISOString()} (pending ${pendingJobs} > threshold ${maxPending}).`,
+                    data: {
+                      pendingJobs,
+                      threshold: maxPending,
+                      delayedCount,
+                      rescheduleAt: rescheduleAt.toISOString(),
+                    },
+                  });
+                },
+              ),
             );
 
             logger.warn(
@@ -1347,19 +1875,31 @@ export class NewsSourceSchedulerService {
         isActive: true,
         AND: [
           { OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] },
-          { OR: [{ circuitOpenUntil: null }, { circuitOpenUntil: { lte: now } }] },
+          {
+            OR: [
+              { circuitOpenUntil: null },
+              { circuitOpenUntil: { lte: now } },
+            ],
+          },
         ],
       },
       include: {
         crawlTemplate: {
-          select: { id: true, isActive: true, crawlOptions: true }
-        }
+          select: { id: true, isActive: true, crawlOptions: true },
+        },
       },
-      orderBy: [{ nextRunAt: "asc" }, { priority: "desc" }, { updatedAt: "asc" }],
+      orderBy: [
+        { nextRunAt: "asc" },
+        { priority: "desc" },
+        { updatedAt: "asc" },
+      ],
       take: batchSize,
     });
 
-    const maxEnqueuePerTick = Math.max(0, Math.floor(schedulerConfig.maxEnqueuePerTick));
+    const maxEnqueuePerTick = Math.max(
+      0,
+      Math.floor(schedulerConfig.maxEnqueuePerTick),
+    );
     let enqueuedThisTick = 0;
 
     for (const source of sources) {
@@ -1375,15 +1915,19 @@ export class NewsSourceSchedulerService {
       const dedupeAcquired = await this.cache.setIfAbsent(
         dedupe.key,
         { until: dedupe.until },
-        dedupe.ttlSeconds
+        dedupe.ttlSeconds,
       );
       if (!dedupeAcquired) {
         continue;
       }
 
-      void this.cache.del(`news-source:backpressure:${source.id}`).catch(() => undefined);
+      void this.cache
+        .del(`news-source:backpressure:${source.id}`)
+        .catch(() => undefined);
 
-      const activeCutoff = new Date(now.getTime() - schedulerConfig.inFlightLookbackMs);
+      const activeCutoff = new Date(
+        now.getTime() - schedulerConfig.inFlightLookbackMs,
+      );
       const seedConfig = this.normalizeSeedConfig(source);
       const inFlightLimit = seedConfig ? seedConfig.maxNewUrlsPerRun : 1;
       const inFlightJobs = await this.prisma.pipelineJob.findMany({
@@ -1398,8 +1942,12 @@ export class NewsSourceSchedulerService {
       });
 
       const inFlightCount = inFlightJobs.length;
-      const remainingCapacity = seedConfig ? seedConfig.maxNewUrlsPerRun - inFlightCount : 0;
-      const shouldBlock = seedConfig ? remainingCapacity <= 0 : inFlightCount > 0;
+      const remainingCapacity = seedConfig
+        ? seedConfig.maxNewUrlsPerRun - inFlightCount
+        : 0;
+      const shouldBlock = seedConfig
+        ? remainingCapacity <= 0
+        : inFlightCount > 0;
 
       if (shouldBlock) {
         const newest = inFlightJobs[0];
@@ -1447,15 +1995,26 @@ export class NewsSourceSchedulerService {
         const jobsToSchedule = seedConfig
           ? await this.resolveSeedCandidates(source, seedConfig)
           : [{ url: source.url, relevanceScore: undefined }];
+        if (seedConfig?.mode === "deep") {
+          await this.clearDeepDiscoveryFailureState(source.id);
+        }
 
         const candidateUrls = jobsToSchedule.map((job) => job.url);
         const [recentArticles, activeUrls] = await Promise.all([
           seedConfig
-            ? this.findRecentArticleUrls(source.orgId, candidateUrls, seedConfig.dedupeWindowHours)
+            ? this.findRecentArticleUrls(
+                source.orgId,
+                candidateUrls,
+                seedConfig.dedupeWindowHours,
+              )
             : Promise.resolve(new Set<string>()),
           seedConfig
-            ? this.findActivePipelineUrls(source.id, candidateUrls, activeCutoff)
-            : Promise.resolve(new Set<string>())
+            ? this.findActivePipelineUrls(
+                source.id,
+                candidateUrls,
+                activeCutoff,
+              )
+            : Promise.resolve(new Set<string>()),
         ]);
 
         const newJobs = seedConfig
@@ -1467,23 +2026,40 @@ export class NewsSourceSchedulerService {
 
         await this.prisma.newsSource.update({
           where: { id: source.id },
-          data: { lastRunAt: scheduledFor, nextRunAt }
+          data: {
+            lastRunAt: scheduledFor,
+            nextRunAt,
+            ...(seedConfig?.mode === "deep" ? { circuitOpenUntil: null } : {}),
+          },
         });
 
         if (newJobs.length === 0) {
           logger.info(
-            { sourceId: source.id, orgId: source.orgId, mode: "seed", scheduledFor, nextRunAt },
+            {
+              sourceId: source.id,
+              orgId: source.orgId,
+              mode: "seed",
+              scheduledFor,
+              nextRunAt,
+            },
             "News source run scheduled no new URLs",
           );
           continue;
         }
 
         const remainingEnqueueCapacity =
-          maxEnqueuePerTick > 0 ? Math.max(0, maxEnqueuePerTick - enqueuedThisTick) : newJobs.length;
+          maxEnqueuePerTick > 0
+            ? Math.max(0, maxEnqueuePerTick - enqueuedThisTick)
+            : newJobs.length;
         const jobsToEnqueue = newJobs.slice(0, remainingEnqueueCapacity);
         if (jobsToEnqueue.length === 0) {
           logger.info(
-            { sourceId: source.id, orgId: source.orgId, enqueuedThisTick, maxEnqueuePerTick },
+            {
+              sourceId: source.id,
+              orgId: source.orgId,
+              enqueuedThisTick,
+              maxEnqueuePerTick,
+            },
             "Skipped scheduling due to global enqueue limit",
           );
           break;
@@ -1522,12 +2098,19 @@ export class NewsSourceSchedulerService {
             source,
             job.url,
             seedConfig
-              ? { mode: seedConfig.mode, parentUrl: seedParentUrl ?? source.url, relevanceScore: job.relevanceScore }
-              : undefined
+              ? {
+                  mode: seedConfig.mode,
+                  parentUrl: seedParentUrl ?? source.url,
+                  relevanceScore: job.relevanceScore,
+                }
+              : undefined,
           );
 
           const displayNamePrefix = `NewsSource:${source.id}:`;
-          const displayName = `${displayNamePrefix}${source.name ?? ""}`.slice(0, 80);
+          const displayName = `${displayNamePrefix}${source.name ?? ""}`.slice(
+            0,
+            80,
+          );
 
           const itemPayloadConfig: Record<string, unknown> = {
             sourceId: source.id,
@@ -1563,88 +2146,97 @@ export class NewsSourceSchedulerService {
             },
           };
 
-          const { pipelineJobId, crawlTaskId } = await this.prisma.$transaction(async (tx) => {
-            const pipelineJob = await tx.pipelineJob.create({
-              data: {
-                orgId: source.orgId,
-                sourceId: source.id,
-                url: job.url,
-                priority: source.priority,
-                status: PipelineJobStatus.queued,
-                queueName: ITEM_PIPELINE_QUEUE_NAME,
-                scheduledFor,
-                metadata: {
-                  sourceName: source.name,
-                  sourceType: source.siteType,
-                  seedMode: seedConfig ? seedConfig.mode : "single",
-                  seedParentUrl: seedConfig ? seedParentUrl : undefined,
-                  relevanceScore: seedConfig ? job.relevanceScore : undefined
-                }
-              }
-            });
-
-            crawlTaskConfig.pipelineJobId = pipelineJob.id;
-            const crawlTaskConfigForStorage = crawlTaskConfig;
-
-            const existingTask = await tx.crawlTask.findFirst({
-              where: {
-                orgId: source.orgId,
-                targetUrl: job.url,
-                displayName: { startsWith: displayNamePrefix },
-              },
-              select: { id: true },
-            });
-
-            let taskId: string;
-            if (existingTask) {
-              const updatedTask = await tx.crawlTask.update({
-                where: { id: existingTask.id },
-                data: {
-                  displayName,
-                  status: "pending",
-                  concurrency: 1,
-                  keywords: payload.keywords,
-                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
-                  lastError: null,
-                },
-                select: { id: true },
-              });
-              taskId = updatedTask.id;
-            } else {
-              const createdTask = await tx.crawlTask.create({
+          const { pipelineJobId, crawlTaskId } = await this.prisma.$transaction(
+            async (tx) => {
+              const pipelineJob = await tx.pipelineJob.create({
                 data: {
                   orgId: source.orgId,
-                  createdById: crawlActorId,
+                  sourceId: source.id,
+                  url: job.url,
+                  priority: source.priority,
+                  status: PipelineJobStatus.queued,
+                  queueName: ITEM_PIPELINE_QUEUE_NAME,
+                  scheduledFor,
+                  metadata: {
+                    sourceName: source.name,
+                    sourceType: source.siteType,
+                    seedMode: seedConfig ? seedConfig.mode : "single",
+                    seedParentUrl: seedConfig ? seedParentUrl : undefined,
+                    relevanceScore: seedConfig ? job.relevanceScore : undefined,
+                  },
+                },
+              });
+
+              crawlTaskConfig.pipelineJobId = pipelineJob.id;
+              const crawlTaskConfigForStorage = crawlTaskConfig;
+
+              const existingTask = await tx.crawlTask.findFirst({
+                where: {
+                  orgId: source.orgId,
                   targetUrl: job.url,
-                  displayName,
-                  status: "pending",
-                  concurrency: 1,
-                  keywords: payload.keywords,
-                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
+                  displayName: { startsWith: displayNamePrefix },
                 },
                 select: { id: true },
               });
-              taskId = createdTask.id;
-            }
 
-            await tx.pipelineJob.update({
-              where: { id: pipelineJob.id },
-              data: {
-                metadata: {
-                  ...(pipelineJob.metadata as Record<string, unknown> | null | undefined),
-                  crawlTaskId: taskId,
+              let taskId: string;
+              if (existingTask) {
+                const updatedTask = await tx.crawlTask.update({
+                  where: { id: existingTask.id },
+                  data: {
+                    displayName,
+                    status: "pending",
+                    concurrency: 1,
+                    keywords: payload.keywords,
+                    config: toPrismaJsonValue(crawlTaskConfigForStorage),
+                    lastError: null,
+                  },
+                  select: { id: true },
+                });
+                taskId = updatedTask.id;
+              } else {
+                const createdTask = await tx.crawlTask.create({
+                  data: {
+                    orgId: source.orgId,
+                    createdById: crawlActorId,
+                    targetUrl: job.url,
+                    displayName,
+                    status: "pending",
+                    concurrency: 1,
+                    keywords: payload.keywords,
+                    config: toPrismaJsonValue(crawlTaskConfigForStorage),
+                  },
+                  select: { id: true },
+                });
+                taskId = createdTask.id;
+              }
+
+              await tx.pipelineJob.update({
+                where: { id: pipelineJob.id },
+                data: {
+                  metadata: {
+                    ...(pipelineJob.metadata as
+                      | Record<string, unknown>
+                      | null
+                      | undefined),
+                    crawlTaskId: taskId,
+                  },
                 },
-              },
-            });
+              });
 
-            return {
-              pipelineJobId: pipelineJob.id,
-              crawlTaskId: taskId,
-            };
-          });
+              return {
+                pipelineJobId: pipelineJob.id,
+                crawlTaskId: taskId,
+              };
+            },
+          );
 
           try {
-            await this.crawlQueue.enqueueTask(crawlTaskId, source.orgId, crawlActorId);
+            await this.crawlQueue.enqueueTask(
+              crawlTaskId,
+              source.orgId,
+              crawlActorId,
+            );
             await this.prisma.crawlTask.updateMany({
               where: { id: crawlTaskId },
               data: { status: "queued" },
@@ -1652,7 +2244,13 @@ export class NewsSourceSchedulerService {
             enqueuedThisTick += 1;
           } catch (queueError) {
             logger.error(
-              { error: queueError, pipelineJobId, orgId: source.orgId, sourceId: source.id, crawlTaskId },
+              {
+                error: queueError,
+                pipelineJobId,
+                orgId: source.orgId,
+                sourceId: source.id,
+                crawlTaskId,
+              },
               "Failed to enqueue news source crawl task",
             );
             await Promise.allSettled([
@@ -1660,7 +2258,10 @@ export class NewsSourceSchedulerService {
                 where: { id: pipelineJobId },
                 data: {
                   status: PipelineJobStatus.failed,
-                  error: queueError instanceof Error ? queueError.message : String(queueError),
+                  error:
+                    queueError instanceof Error
+                      ? queueError.message
+                      : String(queueError),
                   completedAt: new Date(),
                 },
               }),
@@ -1668,7 +2269,10 @@ export class NewsSourceSchedulerService {
                 where: { id: crawlTaskId },
                 data: {
                   status: "failed",
-                  lastError: queueError instanceof Error ? queueError.message : String(queueError),
+                  lastError:
+                    queueError instanceof Error
+                      ? queueError.message
+                      : String(queueError),
                 },
               }),
             ]);
@@ -1683,8 +2287,16 @@ export class NewsSourceSchedulerService {
           break;
         }
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        if (
+          seedConfig?.mode === "deep" &&
+          this.isDeepDiscoveryFailureError(error)
+        ) {
+          await this.markDeepDiscoveryFailureState(source, error, new Date());
+        }
         logger.error(
-          { error, sourceId: source.id, orgId: source.orgId },
+          { error, errorMessage, sourceId: source.id, orgId: source.orgId },
           "Failed to schedule news source pipeline job",
         );
       }

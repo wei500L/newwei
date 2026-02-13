@@ -131,8 +131,26 @@ interface NewsSourcePreviewCandidate {
   error?: string;
 }
 
+interface NewsSourcePreviewDeepError {
+  code: string;
+  message: string;
+  detail?: string;
+}
+
+interface NewsSourcePreviewDeepFailureStats {
+  total24h: number;
+  streak: number;
+  byCode: Array<{ code: string; count: number }>;
+  lastFailureAt?: string | null;
+  lastCode?: string | null;
+  lastMessage?: string | null;
+  lastDetail?: string | null;
+  nextRetryAt?: string | null;
+  circuitOpenUntil?: string | null;
+}
+
 interface NewsSourcePreviewResponse {
-  mode: "single" | "sitemap" | "rss" | "list";
+  mode: "single" | "sitemap" | "rss" | "list" | "deep";
   sourceId: string;
   url: string;
   name: string;
@@ -143,6 +161,8 @@ interface NewsSourcePreviewResponse {
   inFlightLimit?: number;
   scheduleCount: number;
   skippedCount: number;
+  deepPreviewError?: NewsSourcePreviewDeepError;
+  deepFailureStats?: NewsSourcePreviewDeepFailureStats | null;
 }
 
 interface Crawl4aiQueueStats {
@@ -176,7 +196,7 @@ interface Crawl4aiQualitySnapshot {
 
 interface NewsSourceDispatchResponse {
   sourceId: string;
-  mode: "single" | "sitemap" | "rss" | "list";
+  mode: "single" | "sitemap" | "rss" | "list" | "deep";
   scheduledFor: string;
   nextRunAt: string;
   scheduledCount: number;
@@ -259,7 +279,7 @@ interface NewsSourceFormValues {
   crawlAntiBotMode?: "auto" | "enable" | "disable";
   forceRefresh?: boolean;
   seedEnabled?: boolean;
-  seedMode?: "sitemap" | "rss" | "list";
+  seedMode?: "sitemap" | "rss" | "list" | "deep";
   seedDomain?: string;
   seedPattern?: string;
   seedFeedUrl?: string;
@@ -273,6 +293,16 @@ interface NewsSourceFormValues {
   seedListMaxPages?: number;
   seedListPageConcurrency?: number;
   seedFollowPagination?: boolean;
+  seedDeepMaxPages?: number;
+  seedDeepMaxDepth?: number;
+  seedDeepTimeBudgetSeconds?: number;
+  seedDeepPageConcurrency?: number;
+  seedDeepScoreThreshold?: number;
+  seedDeepCandidatePoolSize?: number;
+  seedDeepHeadFetchTopK?: number;
+  seedDeepPreferPathDate?: boolean;
+  seedDeepEnableSecondaryHubs?: boolean;
+  seedDeepIgnoreRobotsTxt?: boolean;
 }
 
 const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
@@ -320,6 +350,17 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   seedListMaxPages: DEFAULT_SEED_FORM_VALUES.seedListMaxPages,
   seedListPageConcurrency: DEFAULT_SEED_FORM_VALUES.seedListPageConcurrency,
   seedFollowPagination: DEFAULT_SEED_FORM_VALUES.seedFollowPagination,
+  seedDeepMaxPages: DEFAULT_SEED_FORM_VALUES.seedDeepMaxPages,
+  seedDeepMaxDepth: DEFAULT_SEED_FORM_VALUES.seedDeepMaxDepth,
+  seedDeepTimeBudgetSeconds: DEFAULT_SEED_FORM_VALUES.seedDeepTimeBudgetSeconds,
+  seedDeepPageConcurrency: DEFAULT_SEED_FORM_VALUES.seedDeepPageConcurrency,
+  seedDeepScoreThreshold: DEFAULT_SEED_FORM_VALUES.seedDeepScoreThreshold,
+  seedDeepCandidatePoolSize: DEFAULT_SEED_FORM_VALUES.seedDeepCandidatePoolSize,
+  seedDeepHeadFetchTopK: DEFAULT_SEED_FORM_VALUES.seedDeepHeadFetchTopK,
+  seedDeepPreferPathDate: DEFAULT_SEED_FORM_VALUES.seedDeepPreferPathDate,
+  seedDeepEnableSecondaryHubs:
+    DEFAULT_SEED_FORM_VALUES.seedDeepEnableSecondaryHubs,
+  seedDeepIgnoreRobotsTxt: DEFAULT_SEED_FORM_VALUES.seedDeepIgnoreRobotsTxt,
 };
 
 const parseStringList = (value?: string) =>
@@ -501,7 +542,9 @@ const hasSeedConfig = (
   return isPlainObject((config as Record<string, unknown>).seed);
 };
 
-const getSeedMode = (config: unknown): "sitemap" | "rss" | "list" | null => {
+const getSeedMode = (
+  config: unknown,
+): "sitemap" | "rss" | "list" | "deep" | null => {
   if (!hasSeedConfig(config) || config.seed.enabled !== true) {
     return null;
   }
@@ -514,6 +557,9 @@ const getSeedMode = (config: unknown): "sitemap" | "rss" | "list" | null => {
   }
   if (rawMode === "list") {
     return "list";
+  }
+  if (rawMode === "deep") {
+    return "deep";
   }
   return "sitemap";
 };
@@ -1353,7 +1399,9 @@ export function NewsSourcesContent() {
         ? "rss"
         : seedConfig?.mode === "list"
           ? "list"
-          : "sitemap";
+          : seedConfig?.mode === "deep"
+            ? "deep"
+            : "sitemap";
     const crawlOptionsConfig =
       config?.crawlOptions &&
       typeof config.crawlOptions === "object" &&
@@ -2776,10 +2824,14 @@ export function NewsSourcesContent() {
       setPreviewData(response.data ?? null);
     } catch (error) {
       captureClientError("Failed to preview news source", error);
+      const detail =
+        extractApiErrorMessage(error) ??
+        (error instanceof Error ? error.message : null);
       messageApi.error(
-        t("newsSources.errors.previewFailed", {
-          defaultValue: "Failed to preview news source.",
-        }),
+        detail ??
+          t("newsSources.errors.previewFailed", {
+            defaultValue: "Failed to preview news source.",
+          }),
       );
       setPreviewOpen(false);
       setPreviewSource(null);
@@ -2861,7 +2913,13 @@ export function NewsSourcesContent() {
                 return null;
               }
               const color =
-                mode === "rss" ? "blue" : mode === "list" ? "gold" : "purple";
+                mode === "rss"
+                  ? "blue"
+                  : mode === "list"
+                    ? "gold"
+                    : mode === "deep"
+                      ? "geekblue"
+                      : "purple";
               const label =
                 mode === "rss"
                   ? t("newsSources.seedMode.rss", {
@@ -2871,9 +2929,13 @@ export function NewsSourcesContent() {
                     ? t("newsSources.seedMode.list", {
                         defaultValue: "List page",
                       })
-                    : t("newsSources.seedMode.sitemap", {
-                        defaultValue: "Sitemap",
-                      });
+                    : mode === "deep"
+                      ? t("newsSources.seedMode.deep", {
+                          defaultValue: "Deep discovery",
+                        })
+                      : t("newsSources.seedMode.sitemap", {
+                          defaultValue: "Sitemap",
+                        });
               return <Tag color={color}>{label}</Tag>;
             })()}
           </Space>
@@ -5237,7 +5299,7 @@ export function NewsSourcesContent() {
           <Typography.Text type="secondary">
             {t("newsSources.sections.seedHint", {
               defaultValue:
-                "Discover article URLs from a sitemap, RSS/Atom feed, or a list page, then schedule up to N fresh URLs per run.",
+                "Discover article URLs from a sitemap, RSS/Atom feed, list page, or deep discovery crawl, then schedule up to N fresh URLs per run.",
             })}
           </Typography.Text>
 
@@ -5266,7 +5328,9 @@ export function NewsSourcesContent() {
                   ? "rss"
                   : seedModeRaw === "list"
                     ? "list"
-                    : "sitemap";
+                    : seedModeRaw === "deep"
+                      ? "deep"
+                      : "sitemap";
 
               return (
                 <div style={{ display: seedEnabled ? "block" : "none" }}>
@@ -5277,7 +5341,7 @@ export function NewsSourcesContent() {
                     })}
                     tooltip={t("newsSources.fields.seedModeHint", {
                       defaultValue:
-                        "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL; List mode uses Crawl4AI to extract article links from the source URL (e.g. /latest/) and will crawl each discovered article.",
+                        "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL; List mode extracts links from a listing page; Deep mode performs bounded multi-page discovery and prioritizes latest publish time.",
                     })}
                   >
                     <Select
@@ -5299,6 +5363,12 @@ export function NewsSourcesContent() {
                             defaultValue: "List page",
                           }),
                           value: "list",
+                        },
+                        {
+                          label: t("newsSources.seedMode.deep", {
+                            defaultValue: "Deep discovery",
+                          }),
+                          value: "deep",
                         },
                       ]}
                     />
@@ -5487,6 +5557,208 @@ export function NewsSourcesContent() {
                         )}
                       >
                         <Switch />
+                      </Form.Item>
+                    </>
+                  ) : null}
+                  {seedMode === "deep" ? (
+                    <>
+                      <Typography.Text type="secondary">
+                        {t("newsSources.fields.seedDeepHint", {
+                          defaultValue:
+                            "Deep mode crawls section/list pages in bounded depth/time, then strictly keeps publish-time-ranked article links (no link-score fallback).",
+                        })}
+                      </Typography.Text>
+                      <Row gutter={[12, 0]}>
+                        <Col span={8}>
+                          <Form.Item
+                            name="seedDeepMaxPages"
+                            label={t("newsSources.fields.seedDeepMaxPages", {
+                              defaultValue: "Deep max pages",
+                            })}
+                            tooltip={t(
+                              "newsSources.fields.seedDeepMaxPagesHint",
+                              {
+                                defaultValue:
+                                  "Total number of pages that deep discovery may crawl.",
+                              },
+                            )}
+                          >
+                            <InputNumber
+                              min={5}
+                              max={300}
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item
+                            name="seedDeepMaxDepth"
+                            label={t("newsSources.fields.seedDeepMaxDepth", {
+                              defaultValue: "Deep max depth",
+                            })}
+                            tooltip={t(
+                              "newsSources.fields.seedDeepMaxDepthHint",
+                              {
+                                defaultValue:
+                                  "How many link hops from the seed URL are allowed.",
+                              },
+                            )}
+                          >
+                            <InputNumber
+                              min={1}
+                              max={4}
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item
+                            name="seedDeepTimeBudgetSeconds"
+                            label={t(
+                              "newsSources.fields.seedDeepTimeBudgetSeconds",
+                              {
+                                defaultValue: "Deep time budget (sec)",
+                              },
+                            )}
+                          >
+                            <InputNumber
+                              min={10}
+                              max={180}
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <Row gutter={[12, 0]}>
+                        <Col span={8}>
+                          <Form.Item
+                            name="seedDeepPageConcurrency"
+                            label={t(
+                              "newsSources.fields.seedDeepPageConcurrency",
+                              {
+                                defaultValue: "Deep page concurrency",
+                              },
+                            )}
+                          >
+                            <InputNumber
+                              min={1}
+                              max={6}
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item
+                            name="seedDeepScoreThreshold"
+                            label={t(
+                              "newsSources.fields.seedDeepScoreThreshold",
+                              {
+                                defaultValue: "Deep score threshold",
+                              },
+                            )}
+                            tooltip={t(
+                              "newsSources.fields.seedDeepScoreThresholdHint",
+                              {
+                                defaultValue:
+                                  "Optional pre-filter for raw link candidates before publish-time enrichment (0..1); final ranking does not fall back to link score.",
+                              },
+                            )}
+                          >
+                            <InputNumber
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item
+                            name="seedDeepCandidatePoolSize"
+                            label={t(
+                              "newsSources.fields.seedDeepCandidatePoolSize",
+                              {
+                                defaultValue: "Candidate pool size",
+                              },
+                            )}
+                          >
+                            <InputNumber
+                              min={20}
+                              max={400}
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <Form.Item
+                        name="seedDeepHeadFetchTopK"
+                        label={t("newsSources.fields.seedDeepHeadFetchTopK", {
+                          defaultValue: "Head fetch top K",
+                        })}
+                        tooltip={t(
+                          "newsSources.fields.seedDeepHeadFetchTopKHint",
+                          {
+                            defaultValue:
+                              "For top-K candidates without URL date, fetch head metadata to infer publish time.",
+                          },
+                        )}
+                      >
+                        <InputNumber
+                          min={10}
+                          max={120}
+                          style={{ width: "100%" }}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        name="seedDeepPreferPathDate"
+                        label={t("newsSources.fields.seedDeepPreferPathDate", {
+                          defaultValue: "Prefer URL path date",
+                        })}
+                        valuePropName="checked"
+                        tooltip={t(
+                          "newsSources.fields.seedDeepPreferPathDateHint",
+                          {
+                            defaultValue:
+                              "Use /YYYY/MM/DD/ style path date as a fast publish-time signal.",
+                          },
+                        )}
+                      >
+                        <Switch />
+                      </Form.Item>
+                      <Form.Item
+                        name="seedDeepEnableSecondaryHubs"
+                        label={t(
+                          "newsSources.fields.seedDeepEnableSecondaryHubs",
+                          {
+                            defaultValue: "Follow secondary hubs",
+                          },
+                        )}
+                        valuePropName="checked"
+                        tooltip={t(
+                          "newsSources.fields.seedDeepEnableSecondaryHubsHint",
+                          {
+                            defaultValue:
+                              "Allow exploration of section/topic pages during deep discovery.",
+                          },
+                        )}
+                      >
+                        <Switch />
+                      </Form.Item>
+                      <Form.Item
+                        name="seedDeepIgnoreRobotsTxt"
+                        label={t("newsSources.fields.seedDeepIgnoreRobotsTxt", {
+                          defaultValue: "Ignore robots.txt",
+                        })}
+                        valuePropName="checked"
+                        tooltip={t(
+                          "newsSources.fields.seedDeepIgnoreRobotsTxtHint",
+                          {
+                            defaultValue:
+                              "This mode is hard-locked to ignore robots.txt.",
+                          },
+                        )}
+                      >
+                        <Switch disabled />
                       </Form.Item>
                     </>
                   ) : null}
@@ -5794,7 +6066,9 @@ export function NewsSourcesContent() {
                       ? "blue"
                       : previewData.mode === "list"
                         ? "gold"
-                        : "default"
+                        : previewData.mode === "deep"
+                          ? "geekblue"
+                          : "default"
                 }
               >
                 {previewData.mode === "sitemap"
@@ -5807,9 +6081,13 @@ export function NewsSourcesContent() {
                       ? t("newsSources.preview.modeList", {
                           defaultValue: "List page",
                         })
-                      : t("newsSources.preview.modeSingle", {
-                          defaultValue: "Single",
-                        })}
+                      : previewData.mode === "deep"
+                        ? t("newsSources.preview.modeDeep", {
+                            defaultValue: "Deep discovery",
+                          })
+                        : t("newsSources.preview.modeSingle", {
+                            defaultValue: "Single",
+                          })}
               </Tag>
               <Typography.Text>
                 {t("newsSources.preview.scheduleCount", {
@@ -5842,6 +6120,90 @@ export function NewsSourcesContent() {
                 </Typography.Text>
               ) : null}
             </Space>
+
+            {previewData.mode === "deep" &&
+            (previewData.deepPreviewError || previewData.deepFailureStats) ? (
+              <Card
+                size="small"
+                title={t("newsSources.preview.deepFailure.title", {
+                  defaultValue: "Deep discovery failure stats",
+                })}
+              >
+                {previewData.deepPreviewError ? (
+                  <Alert
+                    type="error"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message={`${previewData.deepPreviewError.code}: ${previewData.deepPreviewError.message}`}
+                    description={previewData.deepPreviewError.detail}
+                  />
+                ) : null}
+                <Row gutter={[12, 12]}>
+                  <Col xs={24} sm={8}>
+                    <Statistic
+                      title={t("newsSources.preview.deepFailure.total24h", {
+                        defaultValue: "Failures (24h)",
+                      })}
+                      value={previewData.deepFailureStats?.total24h ?? 0}
+                    />
+                  </Col>
+                  <Col xs={24} sm={8}>
+                    <Statistic
+                      title={t("newsSources.preview.deepFailure.streak", {
+                        defaultValue: "Current streak",
+                      })}
+                      value={previewData.deepFailureStats?.streak ?? 0}
+                    />
+                  </Col>
+                  <Col xs={24} sm={8}>
+                    <Statistic
+                      title={t("newsSources.preview.deepFailure.nextRetryAt", {
+                        defaultValue: "Next retry",
+                      })}
+                      value={
+                        previewData.deepFailureStats?.nextRetryAt
+                          ? formatDateTime(
+                              previewData.deepFailureStats.nextRetryAt,
+                              locale,
+                              {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              },
+                            )
+                          : "-"
+                      }
+                    />
+                  </Col>
+                </Row>
+                {previewData.deepFailureStats?.byCode?.length ? (
+                  <Space wrap style={{ marginTop: 12 }}>
+                    {previewData.deepFailureStats.byCode.map((entry) => (
+                      <Tag color="red" key={`deep-failure-code-${entry.code}`}>
+                        {entry.code}: {entry.count}
+                      </Tag>
+                    ))}
+                  </Space>
+                ) : null}
+                {previewData.deepFailureStats?.lastFailureAt ? (
+                  <Typography.Text
+                    type="secondary"
+                    style={{ display: "block", marginTop: 8 }}
+                  >
+                    {t("newsSources.preview.deepFailure.lastFailureAt", {
+                      defaultValue: "Last failure: {{time}}",
+                      time: formatDateTime(
+                        previewData.deepFailureStats.lastFailureAt,
+                        locale,
+                        {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        },
+                      ),
+                    })}
+                  </Typography.Text>
+                ) : null}
+              </Card>
+            ) : null}
 
             <Table
               rowKey="url"

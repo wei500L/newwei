@@ -71,5 +71,91 @@ describe('news-source seed config mapping', () => {
       })
     );
   });
-});
 
+  it('reads deep seed defaults and deep settings from config', () => {
+    const values = readSeedFormValuesFromConfig({
+      seed: {
+        enabled: true,
+        mode: 'deep',
+        maxUrls: 300,
+        maxNewUrlsPerRun: 20,
+        deep: {
+          maxPages: 120,
+          maxDepth: 3,
+          timeBudgetSeconds: 90,
+          pageConcurrency: 4,
+          scoreThreshold: 0.35,
+          candidatePoolSize: 160,
+          headFetchTopK: 60,
+          preferPathDate: false,
+          enableSecondaryHubs: false,
+          ignoreRobotsTxt: false
+        }
+      }
+    });
+
+    expect(values.seedEnabled).toBe(true);
+    expect(values.seedMode).toBe('deep');
+    expect(values.seedMaxUrls).toBe(300);
+    expect(values.seedMaxNewUrlsPerRun).toBe(20);
+    expect(values.seedDeepMaxPages).toBe(120);
+    expect(values.seedDeepMaxDepth).toBe(3);
+    expect(values.seedDeepTimeBudgetSeconds).toBe(90);
+    expect(values.seedDeepPageConcurrency).toBe(4);
+    expect(values.seedDeepScoreThreshold).toBe(0.35);
+    expect(values.seedDeepCandidatePoolSize).toBe(160);
+    expect(values.seedDeepHeadFetchTopK).toBe(60);
+    expect(values.seedDeepPreferPathDate).toBe(false);
+    expect(values.seedDeepEnableSecondaryHubs).toBe(false);
+    expect(values.seedDeepIgnoreRobotsTxt).toBe(true);
+  });
+
+  it('builds deep seed config and forces ignoreRobotsTxt', () => {
+    const next = buildSeedConfigFromFormValues(
+      {
+        seedEnabled: true,
+        seedMode: 'deep',
+        seedDomain: 'https://example.com',
+        seedPattern: 'https://example.com/article/*',
+        seedMaxUrls: 200,
+        seedMaxNewUrlsPerRun: 20,
+        seedDeepMaxPages: 90,
+        seedDeepMaxDepth: 2,
+        seedDeepTimeBudgetSeconds: 75,
+        seedDeepPageConcurrency: 3,
+        seedDeepScoreThreshold: 0.25,
+        seedDeepCandidatePoolSize: 140,
+        seedDeepHeadFetchTopK: 45,
+        seedDeepPreferPathDate: true,
+        seedDeepEnableSecondaryHubs: true,
+        seedDeepIgnoreRobotsTxt: false
+      },
+      null
+    );
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        seed: expect.objectContaining({
+          enabled: true,
+          mode: 'deep',
+          domain: 'https://example.com',
+          pattern: 'https://example.com/article/*',
+          maxUrls: 200,
+          maxNewUrlsPerRun: 20,
+          deep: expect.objectContaining({
+            maxPages: 90,
+            maxDepth: 2,
+            timeBudgetSeconds: 75,
+            pageConcurrency: 3,
+            scoreThreshold: 0.25,
+            candidatePoolSize: 140,
+            headFetchTopK: 45,
+            preferPathDate: true,
+            enableSecondaryHubs: true,
+            ignoreRobotsTxt: true
+          })
+        })
+      })
+    );
+  });
+});

@@ -1,6 +1,6 @@
 export interface NewsSourceSeedFormValues {
   seedEnabled?: boolean;
-  seedMode?: 'sitemap' | 'rss' | 'list';
+  seedMode?: 'sitemap' | 'rss' | 'list' | 'deep';
   seedDomain?: string;
   seedPattern?: string;
   seedFeedUrl?: string;
@@ -14,6 +14,16 @@ export interface NewsSourceSeedFormValues {
   seedListMaxPages?: number;
   seedListPageConcurrency?: number;
   seedFollowPagination?: boolean;
+  seedDeepMaxPages?: number;
+  seedDeepMaxDepth?: number;
+  seedDeepTimeBudgetSeconds?: number;
+  seedDeepPageConcurrency?: number;
+  seedDeepScoreThreshold?: number;
+  seedDeepCandidatePoolSize?: number;
+  seedDeepHeadFetchTopK?: number;
+  seedDeepPreferPathDate?: boolean;
+  seedDeepEnableSecondaryHubs?: boolean;
+  seedDeepIgnoreRobotsTxt?: boolean;
 }
 
 export const DEFAULT_SEED_FORM_VALUES: Required<
@@ -29,6 +39,16 @@ export const DEFAULT_SEED_FORM_VALUES: Required<
     | 'seedListMaxPages'
     | 'seedListPageConcurrency'
     | 'seedFollowPagination'
+    | 'seedDeepMaxPages'
+    | 'seedDeepMaxDepth'
+    | 'seedDeepTimeBudgetSeconds'
+    | 'seedDeepPageConcurrency'
+    | 'seedDeepScoreThreshold'
+    | 'seedDeepCandidatePoolSize'
+    | 'seedDeepHeadFetchTopK'
+    | 'seedDeepPreferPathDate'
+    | 'seedDeepEnableSecondaryHubs'
+    | 'seedDeepIgnoreRobotsTxt'
   >
 > = {
   seedMode: 'sitemap',
@@ -40,7 +60,17 @@ export const DEFAULT_SEED_FORM_VALUES: Required<
   seedConcurrency: 5,
   seedListMaxPages: 6,
   seedListPageConcurrency: 2,
-  seedFollowPagination: true
+  seedFollowPagination: true,
+  seedDeepMaxPages: 80,
+  seedDeepMaxDepth: 2,
+  seedDeepTimeBudgetSeconds: 60,
+  seedDeepPageConcurrency: 2,
+  seedDeepScoreThreshold: 0.2,
+  seedDeepCandidatePoolSize: 120,
+  seedDeepHeadFetchTopK: 40,
+  seedDeepPreferPathDate: true,
+  seedDeepEnableSecondaryHubs: true,
+  seedDeepIgnoreRobotsTxt: true
 };
 
 const toFiniteNumber = (value: unknown): number | null =>
@@ -60,7 +90,13 @@ export const readSeedFormValuesFromConfig = (config: unknown): Partial<NewsSourc
       ? 'rss'
       : seedConfig?.mode === 'list'
         ? 'list'
+        : seedConfig?.mode === 'deep'
+          ? 'deep'
         : 'sitemap';
+  const deepConfig =
+    seedConfig?.deep && typeof seedConfig.deep === 'object' && !Array.isArray(seedConfig.deep)
+      ? (seedConfig.deep as Record<string, unknown>)
+      : null;
 
   return {
     seedEnabled: seedConfig?.enabled === true,
@@ -84,7 +120,36 @@ export const readSeedFormValuesFromConfig = (config: unknown): Partial<NewsSourc
     seedFollowPagination:
       typeof seedConfig?.followPagination === 'boolean'
         ? seedConfig.followPagination
-        : DEFAULT_SEED_FORM_VALUES.seedFollowPagination
+        : DEFAULT_SEED_FORM_VALUES.seedFollowPagination,
+    seedDeepMaxPages:
+      toFiniteNumber(deepConfig?.maxPages) ?? DEFAULT_SEED_FORM_VALUES.seedDeepMaxPages,
+    seedDeepMaxDepth:
+      toFiniteNumber(deepConfig?.maxDepth) ?? DEFAULT_SEED_FORM_VALUES.seedDeepMaxDepth,
+    seedDeepTimeBudgetSeconds:
+      toFiniteNumber(deepConfig?.timeBudgetSeconds) ??
+      DEFAULT_SEED_FORM_VALUES.seedDeepTimeBudgetSeconds,
+    seedDeepPageConcurrency:
+      toFiniteNumber(deepConfig?.pageConcurrency) ??
+      DEFAULT_SEED_FORM_VALUES.seedDeepPageConcurrency,
+    seedDeepScoreThreshold:
+      toFiniteNumber(deepConfig?.scoreThreshold) ??
+      DEFAULT_SEED_FORM_VALUES.seedDeepScoreThreshold,
+    seedDeepCandidatePoolSize:
+      toFiniteNumber(deepConfig?.candidatePoolSize) ??
+      DEFAULT_SEED_FORM_VALUES.seedDeepCandidatePoolSize,
+    seedDeepHeadFetchTopK:
+      toFiniteNumber(deepConfig?.headFetchTopK) ??
+      DEFAULT_SEED_FORM_VALUES.seedDeepHeadFetchTopK,
+    seedDeepPreferPathDate:
+      typeof deepConfig?.preferPathDate === 'boolean'
+        ? deepConfig.preferPathDate
+        : DEFAULT_SEED_FORM_VALUES.seedDeepPreferPathDate,
+    seedDeepEnableSecondaryHubs:
+      typeof deepConfig?.enableSecondaryHubs === 'boolean'
+        ? deepConfig.enableSecondaryHubs
+        : DEFAULT_SEED_FORM_VALUES.seedDeepEnableSecondaryHubs,
+    // Deep mode is hard-locked to ignore robots.txt, regardless of stored config.
+    seedDeepIgnoreRobotsTxt: DEFAULT_SEED_FORM_VALUES.seedDeepIgnoreRobotsTxt
   };
 };
 
@@ -97,7 +162,14 @@ export const buildSeedConfigFromFormValues = (
     return existingConfig;
   }
 
-  const seedMode = values.seedMode === 'rss' ? 'rss' : values.seedMode === 'list' ? 'list' : 'sitemap';
+  const seedMode =
+    values.seedMode === 'rss'
+      ? 'rss'
+      : values.seedMode === 'list'
+        ? 'list'
+        : values.seedMode === 'deep'
+          ? 'deep'
+          : 'sitemap';
   const seed: Record<string, unknown> = {
     enabled: values.seedEnabled === true,
     mode: seedMode
@@ -132,6 +204,55 @@ export const buildSeedConfigFromFormValues = (
     }
   }
 
+  if (seedMode === 'deep') {
+    const deep: Record<string, unknown> = {
+      ignoreRobotsTxt: true
+    };
+    if (typeof values.seedDeepMaxPages === 'number' && Number.isFinite(values.seedDeepMaxPages)) {
+      deep.maxPages = values.seedDeepMaxPages;
+    }
+    if (typeof values.seedDeepMaxDepth === 'number' && Number.isFinite(values.seedDeepMaxDepth)) {
+      deep.maxDepth = values.seedDeepMaxDepth;
+    }
+    if (
+      typeof values.seedDeepTimeBudgetSeconds === 'number' &&
+      Number.isFinite(values.seedDeepTimeBudgetSeconds)
+    ) {
+      deep.timeBudgetSeconds = values.seedDeepTimeBudgetSeconds;
+    }
+    if (
+      typeof values.seedDeepPageConcurrency === 'number' &&
+      Number.isFinite(values.seedDeepPageConcurrency)
+    ) {
+      deep.pageConcurrency = values.seedDeepPageConcurrency;
+    }
+    if (
+      typeof values.seedDeepScoreThreshold === 'number' &&
+      Number.isFinite(values.seedDeepScoreThreshold)
+    ) {
+      deep.scoreThreshold = values.seedDeepScoreThreshold;
+    }
+    if (
+      typeof values.seedDeepCandidatePoolSize === 'number' &&
+      Number.isFinite(values.seedDeepCandidatePoolSize)
+    ) {
+      deep.candidatePoolSize = values.seedDeepCandidatePoolSize;
+    }
+    if (
+      typeof values.seedDeepHeadFetchTopK === 'number' &&
+      Number.isFinite(values.seedDeepHeadFetchTopK)
+    ) {
+      deep.headFetchTopK = values.seedDeepHeadFetchTopK;
+    }
+    if (typeof values.seedDeepPreferPathDate === 'boolean') {
+      deep.preferPathDate = values.seedDeepPreferPathDate;
+    }
+    if (typeof values.seedDeepEnableSecondaryHubs === 'boolean') {
+      deep.enableSecondaryHubs = values.seedDeepEnableSecondaryHubs;
+    }
+    seed.deep = deep;
+  }
+
   const query = values.seedQuery?.trim();
   if (query) {
     seed.query = query;
@@ -161,4 +282,3 @@ export const buildSeedConfigFromFormValues = (
     seed
   };
 };
-

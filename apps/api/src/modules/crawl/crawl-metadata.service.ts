@@ -35,6 +35,34 @@ interface FetchResponse {
   body: string;
 }
 
+interface DeepDiscoveryOptions {
+  maxPages: number;
+  maxDepth: number;
+  timeBudgetSeconds: number;
+  pageConcurrency: number;
+  scoreThreshold: number;
+  candidatePoolSize: number;
+  headFetchTopK: number;
+  preferPathDate: boolean;
+  enableSecondaryHubs: boolean;
+  ignoreRobotsTxt: boolean;
+}
+
+interface DeepDiscoveryCandidate {
+  url: string;
+  linkScore: number;
+  relevanceScore?: number;
+  publishedAtTs?: number;
+}
+
+const DEEP_DISCOVERY_ERROR_CODES = {
+  crawl4aiUnavailable: "SEED_DEEP_CRAWL4AI_UNAVAILABLE",
+  crawlFailed: "SEED_DEEP_CRAWL_FAILED",
+  emptyResult: "SEED_DEEP_EMPTY_RESULT",
+  noCandidates: "SEED_DEEP_NO_CANDIDATE",
+  noPublishedAt: "SEED_DEEP_NO_PUBLISHED_AT",
+} as const;
+
 @Injectable()
 export class CrawlMetadataService {
   private static readonly MAX_PATTERN_LENGTH = 512;
@@ -256,6 +284,60 @@ export class CrawlMetadataService {
     });
 
     return urls.slice(0, maxUrls);
+  }
+
+  async discoverDeepUrls(input: {
+    url?: string;
+    domain?: string;
+    pattern?: string;
+    query?: string;
+    maxUrls?: number;
+    requestTimeoutMs?: number;
+    crawlOptions?: Record<string, unknown>;
+    deep?: Partial<DeepDiscoveryOptions> | null;
+  }): Promise<string[]> {
+    const seedUrl = this.normalizeUrl(input.url);
+    if (!seedUrl) {
+      return [];
+    }
+
+    const maxUrls = this.clampNumber(input.maxUrls, 1, 2_000, 200);
+    const requestTimeoutMs =
+      typeof input.requestTimeoutMs === "number" &&
+      Number.isFinite(input.requestTimeoutMs)
+        ? Math.max(1000, Math.round(input.requestTimeoutMs))
+        : 15_000;
+    const domain = this.normalizeDomain(input.domain);
+    const patternMatcher = this.normalizePattern(input.pattern);
+    const queryTokens = this.tokenizeQuery(input.query);
+    const crawlOptions = this.normalizeCrawlOptions(input.crawlOptions);
+    const deep = this.normalizeDeepDiscoveryOptions(input.deep);
+    if (!this.crawl4ai) {
+      this.throwDeepDiscoveryError(
+        DEEP_DISCOVERY_ERROR_CODES.crawl4aiUnavailable,
+        "Deep discovery requires crawl4ai service, but crawl4ai client is unavailable.",
+      );
+    }
+
+    const viaCrawl4ai = await this.discoverDeepUrlsViaCrawl4ai({
+      seedUrl,
+      domain,
+      maxUrls,
+      patternMatcher,
+      queryTokens,
+      requestTimeoutMs,
+      crawlOptions,
+      deep,
+    });
+    if (viaCrawl4ai.length > 0) {
+      return viaCrawl4ai;
+    }
+
+    this.throwDeepDiscoveryError(
+      DEEP_DISCOVERY_ERROR_CODES.emptyResult,
+      "Deep discovery did not produce publish-time-ranked article URLs.",
+      "Adjust seed.deep.pattern/maxPages/maxDepth/headFetchTopK and retry.",
+    );
   }
 
   private async discoverListUrlsViaCrawl4ai(input: {
@@ -514,6 +596,801 @@ export class CrawlMetadataService {
       );
       return [];
     }
+  }
+
+  private normalizeDeepDiscoveryOptions(
+    input?: Partial<DeepDiscoveryOptions> | null,
+  ): DeepDiscoveryOptions {
+    const value =
+      input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const scoreThresholdRaw =
+      typeof value.scoreThreshold === "number" &&
+      Number.isFinite(value.scoreThreshold)
+        ? value.scoreThreshold
+        : 0.2;
+    return {
+      maxPages: this.clampNumber(value.maxPages, 5, 300, 80),
+      maxDepth: this.clampNumber(value.maxDepth, 1, 4, 2),
+      timeBudgetSeconds: this.clampNumber(value.timeBudgetSeconds, 10, 180, 60),
+      pageConcurrency: this.clampNumber(value.pageConcurrency, 1, 6, 2),
+      scoreThreshold: Math.max(0, Math.min(1, Number(scoreThresholdRaw.toFixed(3)))),
+      candidatePoolSize: this.clampNumber(value.candidatePoolSize, 20, 400, 120),
+      headFetchTopK: this.clampNumber(value.headFetchTopK, 10, 120, 40),
+      preferPathDate:
+        typeof value.preferPathDate === "boolean" ? value.preferPathDate : true,
+      enableSecondaryHubs:
+        typeof value.enableSecondaryHubs === "boolean"
+          ? value.enableSecondaryHubs
+          : true,
+      // Crawl4AI client always sends check_robots_txt=false. Keep this hard-locked.
+      ignoreRobotsTxt: true,
+    };
+  }
+
+  private async discoverDeepUrlsViaCrawl4ai(input: {
+    seedUrl: string;
+    domain?: string;
+    patternMatcher?: (url: string) => boolean;
+    queryTokens?: string[];
+    requestTimeoutMs: number;
+    maxUrls: number;
+    crawlOptions?: CrawlTaskOptions;
+    deep: DeepDiscoveryOptions;
+  }): Promise<string[]> {
+    if (!this.crawl4ai) {
+      return [];
+    }
+
+    let allowedOrigin: string | undefined;
+    try {
+      allowedOrigin = (input.domain ?? new URL(input.seedUrl).origin).replace(
+        /\/+$/,
+        "",
+      );
+    } catch {
+      allowedOrigin = input.domain?.replace(/\/+$/, "") ?? undefined;
+    }
+
+    const normalizedSeedUrl =
+      this.normalizeUrlForComparison(input.seedUrl) ?? input.seedUrl;
+    const startedAtMs = Date.now();
+    const timeBudgetMs = input.deep.timeBudgetSeconds * 1000;
+    const pendingPages: Array<{ url: string; depth: number; priority: number }> =
+      [{ url: input.seedUrl, depth: 0, priority: 1 }];
+    const pendingPageSet = new Set<string>([normalizedSeedUrl]);
+    const visitedPages = new Set<string>();
+    const candidates = new Map<string, DeepDiscoveryCandidate>();
+    let pagesCrawled = 0;
+    let discoveredArticleCandidateCount = 0;
+    let discoveredCandidateWithPathDateCount = 0;
+
+    const crawlOptions: CrawlTaskOptions = {
+      ...(input.crawlOptions ?? {}),
+      extractLinks: true,
+      prefetch: true,
+      scoreLinks:
+        typeof input.crawlOptions?.scoreLinks === "boolean"
+          ? input.crawlOptions.scoreLinks
+          : true,
+    };
+
+    try {
+      while (
+        pendingPages.length > 0 &&
+        pagesCrawled < input.deep.maxPages &&
+        Date.now() - startedAtMs < timeBudgetMs
+      ) {
+        pendingPages.sort((a, b) => b.priority - a.priority);
+        const remainingPageBudget = input.deep.maxPages - pagesCrawled;
+        const batchSize = Math.max(
+          1,
+          Math.min(
+            input.deep.pageConcurrency,
+            pendingPages.length,
+            remainingPageBudget,
+          ),
+        );
+        const batch = pendingPages.splice(0, batchSize);
+        for (const item of batch) {
+          const normalized = this.normalizeUrlForComparison(item.url) ?? item.url;
+          pendingPageSet.delete(normalized);
+        }
+
+        const batchResults = await this.mapWithConcurrency(
+          batch,
+          batchSize,
+          async (current) => {
+            const normalizedCurrentUrl =
+              this.normalizeUrlForComparison(current.url) ?? current.url;
+            const response = await this.crawl4ai!.crawl({
+              url: current.url,
+              options: crawlOptions,
+            });
+            const article = this.selectDiscoveryResultArticle(
+              response.results,
+              normalizedCurrentUrl,
+            );
+            if (!article || article.success !== true) {
+              return {
+                normalizedCurrentUrl,
+                nextPages: [] as Array<{
+                  url: string;
+                  depth: number;
+                  priority: number;
+                }>,
+                discoveredCandidates: [] as DeepDiscoveryCandidate[],
+              };
+            }
+
+            const linksRecord = this.normalizeLinkRecord(article.links);
+            if (!linksRecord) {
+              return {
+                normalizedCurrentUrl,
+                nextPages: [] as Array<{
+                  url: string;
+                  depth: number;
+                  priority: number;
+                }>,
+                discoveredCandidates: [] as DeepDiscoveryCandidate[],
+              };
+            }
+
+            const nextPages: Array<{ url: string; depth: number; priority: number }> =
+              [];
+            const discoveredCandidates: DeepDiscoveryCandidate[] = [];
+            const seenNextPages = new Set<string>();
+            const seenCandidates = new Set<string>();
+            const values = Object.values(linksRecord).flatMap((value) =>
+              Array.isArray(value) ? value : [],
+            );
+
+            for (const value of values) {
+              if (!this.isPlainObject(value)) {
+                continue;
+              }
+              const normalized = this.normalizeDeepDiscoveryLink(
+                value,
+                current.url,
+              );
+              if (!normalized) {
+                continue;
+              }
+
+              const { url, anchorText, rel, linkScore } = normalized;
+              if (url === normalizedSeedUrl || url === normalizedCurrentUrl) {
+                continue;
+              }
+              if (
+                allowedOrigin &&
+                !url.startsWith(`${allowedOrigin}/`) &&
+                url !== allowedOrigin
+              ) {
+                continue;
+              }
+
+              const matchesPattern = input.patternMatcher
+                ? input.patternMatcher(url)
+                : undefined;
+              const isPagination = this.isLikelyPaginationLink({
+                candidateUrl: url,
+                currentPageUrl: current.url,
+                anchorText,
+                rel,
+              });
+              const isHub =
+                input.deep.enableSecondaryHubs &&
+                this.isLikelySecondaryHubLink(url, anchorText);
+              const articleLike =
+                typeof matchesPattern === "boolean"
+                  ? matchesPattern
+                  : this.isLikelyArticleUrl(url);
+              const relevanceScore = this.computeLinkRelevance(
+                url,
+                anchorText,
+                input.queryTokens,
+              );
+
+              if (articleLike && !seenCandidates.has(url)) {
+                seenCandidates.add(url);
+                const publishedAtTs = input.deep.preferPathDate
+                  ? this.parsePublishedAtFromUrl(url)
+                  : undefined;
+                discoveredArticleCandidateCount += 1;
+                if (typeof publishedAtTs === "number" && Number.isFinite(publishedAtTs)) {
+                  discoveredCandidateWithPathDateCount += 1;
+                }
+                discoveredCandidates.push({
+                  url,
+                  linkScore,
+                  relevanceScore,
+                  publishedAtTs,
+                });
+              }
+
+              if (
+                current.depth >= input.deep.maxDepth ||
+                (!isPagination && !isHub)
+              ) {
+                continue;
+              }
+
+              if (seenNextPages.has(url)) {
+                continue;
+              }
+              seenNextPages.add(url);
+              nextPages.push({
+                url,
+                depth: current.depth + 1,
+                priority: linkScore + (relevanceScore ?? 0),
+              });
+            }
+
+            return { normalizedCurrentUrl, nextPages, discoveredCandidates };
+          },
+        );
+
+        pagesCrawled += batch.length;
+        for (const result of batchResults) {
+          visitedPages.add(result.normalizedCurrentUrl);
+
+          for (const candidate of result.discoveredCandidates) {
+            const existing = candidates.get(candidate.url);
+            if (!existing) {
+              candidates.set(candidate.url, candidate);
+              continue;
+            }
+            candidates.set(candidate.url, {
+              url: candidate.url,
+              linkScore: Math.max(existing.linkScore, candidate.linkScore),
+              relevanceScore: Math.max(
+                existing.relevanceScore ?? 0,
+                candidate.relevanceScore ?? 0,
+              ),
+              publishedAtTs:
+                existing.publishedAtTs ?? candidate.publishedAtTs ?? undefined,
+            });
+          }
+
+          for (const nextPage of result.nextPages) {
+            if (visitedPages.size + pendingPages.length >= input.deep.maxPages) {
+              break;
+            }
+            const normalizedNext =
+              this.normalizeUrlForComparison(nextPage.url) ?? nextPage.url;
+            if (
+              visitedPages.has(normalizedNext) ||
+              pendingPageSet.has(normalizedNext)
+            ) {
+              continue;
+            }
+            pendingPageSet.add(normalizedNext);
+            pendingPages.push(nextPage);
+          }
+        }
+
+        if (candidates.size > input.deep.candidatePoolSize * 2) {
+          this.trimDeepCandidates(candidates, input.deep.candidatePoolSize);
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        { seedUrl: input.seedUrl, error },
+        "crawl4ai deep discovery failed",
+      );
+      const reason =
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message.trim()
+          : String(error);
+      this.throwDeepDiscoveryError(
+        DEEP_DISCOVERY_ERROR_CODES.crawlFailed,
+        `Deep discovery crawl failed: ${reason}`,
+      );
+    }
+
+    let ranked = Array.from(candidates.values())
+      .filter((candidate) =>
+        typeof candidate.publishedAtTs === "number"
+          ? true
+          : candidate.linkScore >= input.deep.scoreThreshold,
+      )
+      .sort((a, b) => this.compareDeepCandidates(a, b))
+      .slice(0, input.deep.candidatePoolSize);
+
+    if (ranked.length === 0) {
+      this.throwDeepDiscoveryError(
+        DEEP_DISCOVERY_ERROR_CODES.noCandidates,
+        "Deep discovery found no article candidates.",
+        "Refine seed URL/pattern or increase discovery limits.",
+      );
+    }
+
+    const headTargets = ranked
+      .filter((candidate) => candidate.publishedAtTs === undefined)
+      .slice(0, input.deep.headFetchTopK);
+    if (headTargets.length > 0) {
+      const publishTimestamps = await this.mapWithConcurrency(
+        headTargets,
+        Math.max(1, Math.min(input.deep.pageConcurrency, 5)),
+        async (candidate) =>
+          this.fetchPublishedAtTimestamp(candidate.url, input.requestTimeoutMs),
+      );
+
+      for (let index = 0; index < headTargets.length; index += 1) {
+        const target = headTargets[index];
+        const publishedAtTs = publishTimestamps[index];
+        if (!target || !publishedAtTs) {
+          continue;
+        }
+        const existing = candidates.get(target.url);
+        if (!existing) {
+          continue;
+        }
+        candidates.set(target.url, {
+          ...existing,
+          publishedAtTs,
+        });
+      }
+
+      ranked = Array.from(candidates.values())
+        .filter((candidate) =>
+          typeof candidate.publishedAtTs === "number"
+            ? true
+            : candidate.linkScore >= input.deep.scoreThreshold,
+        )
+        .sort((a, b) => this.compareDeepCandidates(a, b))
+        .slice(0, input.deep.candidatePoolSize);
+    }
+
+    const discoveredCandidateWithHeadDateCount = Array.from(candidates.values()).filter(
+      (candidate) =>
+        typeof candidate.publishedAtTs === "number" &&
+        Number.isFinite(candidate.publishedAtTs),
+    ).length;
+    const publishedRanked = ranked
+      .filter(
+        (candidate): candidate is DeepDiscoveryCandidate & { publishedAtTs: number } =>
+          typeof candidate.publishedAtTs === "number" &&
+          Number.isFinite(candidate.publishedAtTs),
+      )
+      .sort((a, b) => this.compareDeepCandidates(a, b));
+    if (publishedRanked.length === 0) {
+      const withoutPublishedAt = Math.max(
+        0,
+        discoveredArticleCandidateCount - discoveredCandidateWithHeadDateCount,
+      );
+      this.throwDeepDiscoveryError(
+        DEEP_DISCOVERY_ERROR_CODES.noPublishedAt,
+        "Deep discovery could not determine publish time for discovered links.",
+        `discovered=${discoveredArticleCandidateCount}, pathDate=${discoveredCandidateWithPathDateCount}, resolvedPublishedAt=${discoveredCandidateWithHeadDateCount}, unresolved=${withoutPublishedAt}. Tighten seed pattern to article URLs or increase headFetchTopK/timeBudget.`,
+      );
+    }
+
+    return publishedRanked.slice(0, input.maxUrls).map((candidate) => candidate.url);
+  }
+
+  private throwDeepDiscoveryError(
+    code: string,
+    message: string,
+    detail?: string,
+  ): never {
+    const suffix = detail && detail.trim().length > 0 ? ` ${detail.trim()}` : "";
+    throw new BadRequestException(`[${code}] ${message}${suffix}`);
+  }
+
+  private normalizeDeepDiscoveryLink(
+    entry: Record<string, unknown>,
+    baseUrl: string,
+  ) {
+    const hrefRaw =
+      typeof entry.href === "string"
+        ? entry.href
+        : typeof entry.url === "string"
+          ? entry.url
+          : "";
+    const href = hrefRaw.trim();
+    if (!href || href === "#" || href.toLowerCase().startsWith("javascript:")) {
+      return undefined;
+    }
+
+    let resolved: URL;
+    try {
+      resolved = new URL(href, baseUrl);
+    } catch {
+      return undefined;
+    }
+
+    if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+      return undefined;
+    }
+    resolved.hash = "";
+
+    const anchorText =
+      typeof entry.text === "string"
+        ? entry.text
+        : typeof entry.title === "string"
+          ? entry.title
+          : "";
+    const rel = typeof entry.rel === "string" ? entry.rel : "";
+    const linkScore = this.extractDeepLinkScore(entry);
+    return {
+      url: resolved.toString(),
+      anchorText,
+      rel,
+      linkScore,
+    };
+  }
+
+  private extractDeepLinkScore(entry: Record<string, unknown>) {
+    const raw =
+      (typeof entry.total_score === "number" && Number.isFinite(entry.total_score)
+        ? entry.total_score
+        : undefined) ??
+      (typeof entry.totalScore === "number" && Number.isFinite(entry.totalScore)
+        ? entry.totalScore
+        : undefined) ??
+      (typeof entry.contextual_score === "number" &&
+      Number.isFinite(entry.contextual_score)
+        ? entry.contextual_score
+        : undefined) ??
+      (typeof entry.contextualScore === "number" &&
+      Number.isFinite(entry.contextualScore)
+        ? entry.contextualScore
+        : undefined) ??
+      (typeof entry.intrinsic_score === "number" &&
+      Number.isFinite(entry.intrinsic_score)
+        ? entry.intrinsic_score
+        : undefined) ??
+      (typeof entry.intrinsicScore === "number" &&
+      Number.isFinite(entry.intrinsicScore)
+        ? entry.intrinsicScore
+        : undefined);
+    if (typeof raw !== "number") {
+      return 0;
+    }
+    if (raw <= 0) {
+      return 0;
+    }
+    if (raw <= 1) {
+      return Number(raw.toFixed(3));
+    }
+    if (raw <= 10) {
+      return Number((raw / 10).toFixed(3));
+    }
+    return 1;
+  }
+
+  private computeLinkRelevance(url: string, text: string, tokens?: string[]) {
+    if (!tokens || tokens.length === 0) {
+      return undefined;
+    }
+    const haystack = `${url} ${text}`.toLowerCase();
+    const hits = tokens.filter((token) => haystack.includes(token)).length;
+    return Number((hits / tokens.length).toFixed(3));
+  }
+
+  private trimDeepCandidates(
+    candidates: Map<string, DeepDiscoveryCandidate>,
+    limit: number,
+  ) {
+    if (candidates.size <= limit) {
+      return;
+    }
+    const top = Array.from(candidates.values())
+      .sort((a, b) => this.compareDeepCandidates(a, b))
+      .slice(0, limit);
+    candidates.clear();
+    for (const candidate of top) {
+      candidates.set(candidate.url, candidate);
+    }
+  }
+
+  private compareDeepCandidates(
+    a: DeepDiscoveryCandidate,
+    b: DeepDiscoveryCandidate,
+  ) {
+    const aTs = typeof a.publishedAtTs === "number" ? a.publishedAtTs : -1;
+    const bTs = typeof b.publishedAtTs === "number" ? b.publishedAtTs : -1;
+    if (aTs !== bTs) {
+      return bTs - aTs;
+    }
+    if (a.linkScore !== b.linkScore) {
+      return b.linkScore - a.linkScore;
+    }
+    const aRel = a.relevanceScore ?? 0;
+    const bRel = b.relevanceScore ?? 0;
+    if (aRel !== bRel) {
+      return bRel - aRel;
+    }
+    return a.url.localeCompare(b.url);
+  }
+
+  private isLikelySecondaryHubLink(url: string, anchorText?: string) {
+    if (this.isLikelyArticleUrl(url)) {
+      return false;
+    }
+    const normalizedText = (anchorText ?? "").trim().toLowerCase();
+    if (/^(latest|news|more|world|politics|business|economy)\b/.test(normalizedText)) {
+      return true;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
+
+    const path = parsed.pathname.toLowerCase();
+    const segments = path
+      .split("/")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (segments.length === 0 || segments.length > 3) {
+      return false;
+    }
+
+    const hubTokens = new Set([
+      "latest",
+      "news",
+      "world",
+      "politics",
+      "business",
+      "economy",
+      "markets",
+      "finance",
+      "technology",
+      "tech",
+      "science",
+      "opinion",
+      "analysis",
+      "europe",
+      "international",
+      "archive",
+      "section",
+      "sections",
+      "topic",
+      "topics",
+    ]);
+    return segments.some((segment) => hubTokens.has(segment));
+  }
+
+  private isLikelyArticleUrl(url: string) {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
+
+    const path = parsed.pathname.toLowerCase();
+    if (!path || path === "/") {
+      return false;
+    }
+    if (
+      /\.(?:jpg|jpeg|png|gif|webp|svg|pdf|xml|rss|atom|mp4|mp3|zip)$/i.test(
+        path,
+      )
+    ) {
+      return false;
+    }
+
+    const segments = path
+      .split("/")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (segments.length === 0) {
+      return false;
+    }
+
+    const leadSegments = new Set(["article", "articles", "news", "story", "stories"]);
+    if (segments.some((segment) => leadSegments.has(segment))) {
+      return true;
+    }
+    if (this.parsePublishedAtFromUrl(url)) {
+      return true;
+    }
+
+    const blockedSegments = new Set([
+      "video",
+      "videos",
+      "photo",
+      "photos",
+      "gallery",
+      "podcast",
+      "podcasts",
+      "tag",
+      "tags",
+      "topic",
+      "topics",
+      "section",
+      "sections",
+      "author",
+      "authors",
+      "newsletter",
+      "newsletters",
+      "live",
+      "latest",
+      "archive",
+      "category",
+      "categories",
+    ]);
+    if (segments.some((segment) => blockedSegments.has(segment))) {
+      return false;
+    }
+
+    const slug = segments[segments.length - 1] ?? "";
+    const slugParts = slug.split("-").filter((entry) => entry.length > 0);
+    return slug.length >= 18 && slugParts.length >= 3;
+  }
+
+  private parsePublishedAtFromUrl(url: string) {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return undefined;
+    }
+    const path = parsed.pathname;
+
+    const toUtcTimestamp = (year: number, month: number, day: number) => {
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+        return undefined;
+      }
+      if (month < 1 || month > 12) {
+        return undefined;
+      }
+      if (day < 1 || day > 31) {
+        return undefined;
+      }
+      const ts = Date.UTC(year, month - 1, day);
+      if (!Number.isFinite(ts)) {
+        return undefined;
+      }
+      // Reject rollover values (e.g. 2026-00-99).
+      const check = new Date(ts);
+      if (
+        check.getUTCFullYear() !== year ||
+        check.getUTCMonth() !== month - 1 ||
+        check.getUTCDate() !== day
+      ) {
+        return undefined;
+      }
+      return ts;
+    };
+
+    const slashDate = /\/(20\d{2})\/([01]\d)\/([0-3]\d)(?:\/|$)/.exec(path);
+    if (slashDate) {
+      const year = Number(slashDate[1]);
+      const month = Number(slashDate[2]);
+      const day = Number(slashDate[3]);
+      const ts = toUtcTimestamp(year, month, day);
+      if (ts) {
+        return ts;
+      }
+    }
+    const dashedDate = /(20\d{2})[-_/\.]([01]\d)[-_/\.]([0-3]\d)/.exec(path);
+    if (dashedDate) {
+      const year = Number(dashedDate[1]);
+      const month = Number(dashedDate[2]);
+      const day = Number(dashedDate[3]);
+      const ts = toUtcTimestamp(year, month, day);
+      if (ts) {
+        return ts;
+      }
+    }
+    return undefined;
+  }
+
+  private async fetchPublishedAtTimestamp(url: string, timeoutMs: number) {
+    try {
+      const response = await this.fetchWithStatus(url, timeoutMs);
+      return this.extractPublishedAtTimestampFromHtml(response.body);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private extractPublishedAtTimestampFromHtml(html: string) {
+    const $ = load(html);
+    const head = $("head");
+    const candidateStrings: string[] = [];
+    const pushMeta = (selector: string) => {
+      const value = head.find(selector).attr("content");
+      if (typeof value === "string" && value.trim().length > 0) {
+        candidateStrings.push(value.trim());
+      }
+    };
+
+    pushMeta('meta[property="article:published_time"]');
+    pushMeta('meta[property="og:published_time"]');
+    pushMeta('meta[name="pubdate"]');
+    pushMeta('meta[name="publishdate"]');
+    pushMeta('meta[name="date"]');
+    pushMeta('meta[itemprop="datePublished"]');
+
+    const timeTag = $("time[datetime]").first().attr("datetime");
+    if (typeof timeTag === "string" && timeTag.trim().length > 0) {
+      candidateStrings.push(timeTag.trim());
+    }
+
+    const parseTimestamp = (value: string) => {
+      const ts = Date.parse(value);
+      if (!Number.isFinite(ts) || ts <= 0) {
+        return undefined;
+      }
+      return ts;
+    };
+    for (const candidate of candidateStrings) {
+      const ts = parseTimestamp(candidate);
+      if (ts) {
+        return ts;
+      }
+    }
+
+    const scripts = head.find('script[type="application/ld+json"]');
+    for (let index = 0; index < scripts.length && index < 8; index += 1) {
+      const raw = scripts.eq(index).contents().text().trim();
+      if (!raw) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        const found = this.findJsonLdDate(parsed);
+        if (found) {
+          return found;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
+  }
+
+  private findJsonLdDate(value: unknown): number | undefined {
+    const parseTimestamp = (candidate: unknown) => {
+      if (typeof candidate !== "string") {
+        return undefined;
+      }
+      const ts = Date.parse(candidate);
+      if (!Number.isFinite(ts) || ts <= 0) {
+        return undefined;
+      }
+      return ts;
+    };
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = this.findJsonLdDate(item);
+        if (found) {
+          return found;
+        }
+      }
+      return undefined;
+    }
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const direct = parseTimestamp(record.datePublished);
+    if (direct) {
+      return direct;
+    }
+    const created = parseTimestamp(record.dateCreated);
+    if (created) {
+      return created;
+    }
+    const modified = parseTimestamp(record.dateModified);
+    if (modified) {
+      return modified;
+    }
+    for (const nested of Object.values(record)) {
+      const found = this.findJsonLdDate(nested);
+      if (found) {
+        return found;
+      }
+    }
+    return undefined;
   }
 
   private isLikelyPaginationLink(input: {

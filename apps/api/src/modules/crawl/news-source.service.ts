@@ -2,7 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException
+  NotFoundException,
 } from "@nestjs/common";
 import { NewsSourceType, PipelineJobStatus, Prisma } from "@prisma/client";
 
@@ -13,6 +13,13 @@ import { PrismaService } from "../config/prisma.service";
 
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import { CrawlMetadataService } from "./crawl-metadata.service";
+import {
+  deepDiscoveryFailureStateCacheKey,
+  deepDiscoveryFailureStatsCacheKey,
+  parseDeepDiscoveryError,
+  type DeepDiscoveryFailureState,
+  type DeepDiscoveryFailureStats24h,
+} from "./deep-discovery-failure";
 import {
   CreateNewsSourceDto,
   ListNewsSourceDto,
@@ -29,7 +36,7 @@ const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
 
 export interface NewsSourceSeedConfig {
   enabled: boolean;
-  mode: "sitemap" | "rss" | "list";
+  mode: "sitemap" | "rss" | "list" | "deep";
   domain?: string;
   pattern?: string;
   feedUrl?: string;
@@ -42,6 +49,20 @@ export interface NewsSourceSeedConfig {
   scoreThreshold: number;
   concurrency: number;
   dedupeWindowHours: number;
+  deep?: NewsSourceDeepSeedConfig;
+}
+
+export interface NewsSourceDeepSeedConfig {
+  maxPages: number;
+  maxDepth: number;
+  timeBudgetSeconds: number;
+  pageConcurrency: number;
+  scoreThreshold: number;
+  candidatePoolSize: number;
+  headFetchTopK: number;
+  preferPathDate: boolean;
+  enableSecondaryHubs: boolean;
+  ignoreRobotsTxt: boolean;
 }
 
 export interface NewsSourcePreviewCandidate {
@@ -58,13 +79,31 @@ export interface NewsSourcePreviewCandidate {
   error?: string;
 }
 
+export interface NewsSourcePreviewDeepError {
+  code: string;
+  message: string;
+  detail?: string;
+}
+
+export interface NewsSourcePreviewDeepFailureStats {
+  total24h: number;
+  streak: number;
+  byCode: Array<{ code: string; count: number }>;
+  lastFailureAt?: string | null;
+  lastCode?: string | null;
+  lastMessage?: string | null;
+  lastDetail?: string | null;
+  nextRetryAt?: string | null;
+  circuitOpenUntil?: string | null;
+}
+
 @Injectable()
 export class NewsSourceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metadataService: CrawlMetadataService,
     private readonly env: EnvService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
   ) {}
 
   async listSources(orgId: string, query?: ListNewsSourceDto) {
@@ -73,7 +112,7 @@ export class NewsSourceService {
     if (search) {
       where.OR = [
         { name: { contains: search } },
-        { url: { contains: search } }
+        { url: { contains: search } },
       ];
     }
 
@@ -92,15 +131,15 @@ export class NewsSourceService {
             startedAt: true,
             completedAt: true,
             error: true,
-            metadata: true
-          }
+            metadata: true,
+          },
         },
         articles: {
           orderBy: { crawlAt: "desc" },
           take: 1,
-          select: { id: true, url: true, crawlAt: true, titleGuess: true }
-        }
-      }
+          select: { id: true, url: true, crawlAt: true, titleGuess: true },
+        },
+      },
     });
 
     const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -111,8 +150,10 @@ export class NewsSourceService {
         sources
           .map((source) => source.jobs?.[0]?.metadata)
           .map((metadata) => (isRecord(metadata) ? metadata.crawlTaskId : null))
-          .filter((id): id is string => typeof id === "string" && id.length > 0)
-      )
+          .filter(
+            (id): id is string => typeof id === "string" && id.length > 0,
+          ),
+      ),
     );
 
     const crawlTasks =
@@ -125,8 +166,8 @@ export class NewsSourceService {
               lastError: true,
               lastRunAt: true,
               lastSuccessAt: true,
-              lastResultAt: true
-            }
+              lastResultAt: true,
+            },
           })
         : [];
 
@@ -137,12 +178,15 @@ export class NewsSourceService {
       where: {
         orgId,
         status: { in: ["queued", "running"] },
-        displayName: { startsWith: "NewsSource:" }
+        displayName: { startsWith: "NewsSource:" },
       },
-      select: { status: true, displayName: true }
+      select: { status: true, displayName: true },
     });
 
-    const queueCountsBySourceId = new Map<string, { queued: number; running: number }>();
+    const queueCountsBySourceId = new Map<
+      string,
+      { queued: number; running: number }
+    >();
     const extractSourceIdFromDisplayName = (displayName: string) => {
       const match = /^NewsSource:([^:]+):/.exec(displayName);
       return match?.[1] ?? null;
@@ -156,7 +200,10 @@ export class NewsSourceService {
       if (!sourceId || !sourceIdSet.has(sourceId)) {
         continue;
       }
-      const entry = queueCountsBySourceId.get(sourceId) ?? { queued: 0, running: 0 };
+      const entry = queueCountsBySourceId.get(sourceId) ?? {
+        queued: 0,
+        running: 0,
+      };
       if (task.status === "queued") {
         entry.queued += 1;
       } else if (task.status === "running") {
@@ -165,7 +212,9 @@ export class NewsSourceService {
       queueCountsBySourceId.set(sourceId, entry);
     }
 
-    const backpressureKeys = sources.map((source) => `news-source:backpressure:${source.id}`);
+    const backpressureKeys = sources.map(
+      (source) => `news-source:backpressure:${source.id}`,
+    );
     const backpressureEntries = await this.cache.getMany<{
       until?: unknown;
       pendingJobs?: unknown;
@@ -199,14 +248,19 @@ export class NewsSourceService {
     }
 
     const backpressureCountKeys = sources.map(
-      (source) => `news-source:backpressure-count:${source.id}`
+      (source) => `news-source:backpressure-count:${source.id}`,
     );
-    const backpressureCounts = await this.cache.getMany<number>(backpressureCountKeys);
+    const backpressureCounts = await this.cache.getMany<number>(
+      backpressureCountKeys,
+    );
     const backpressureCountBySourceId = new Map<string, number>();
     for (const [index, value] of backpressureCounts.entries()) {
       const id = sources[index]?.id;
       if (typeof id === "string" && id.length > 0) {
-        backpressureCountBySourceId.set(id, typeof value === "number" ? value : 0);
+        backpressureCountBySourceId.set(
+          id,
+          typeof value === "number" ? value : 0,
+        );
       }
     }
 
@@ -217,20 +271,25 @@ export class NewsSourceService {
             where: {
               orgId,
               sourceId: { in: sources.map((source) => source.id) },
-              createdAt: { gte: since }
+              createdAt: { gte: since },
             },
             select: {
               sourceId: true,
               status: true,
               startedAt: true,
-              completedAt: true
-            }
+              completedAt: true,
+            },
           })
         : [];
 
     const statsBySourceId = new Map<
       string,
-      { completed: number; failed: number; durationSumMs: number; durationCount: number }
+      {
+        completed: number;
+        failed: number;
+        durationSumMs: number;
+        durationCount: number;
+      }
     >();
     for (const job of pipelineJobs24h) {
       const sourceId = job.sourceId;
@@ -241,7 +300,7 @@ export class NewsSourceService {
         completed: 0,
         failed: 0,
         durationSumMs: 0,
-        durationCount: 0
+        durationCount: 0,
       };
       if (job.status === PipelineJobStatus.completed) {
         entry.completed += 1;
@@ -249,7 +308,8 @@ export class NewsSourceService {
         entry.failed += 1;
       }
       if (job.startedAt && job.completedAt) {
-        entry.durationSumMs += job.completedAt.getTime() - job.startedAt.getTime();
+        entry.durationSumMs +=
+          job.completedAt.getTime() - job.startedAt.getTime();
         entry.durationCount += 1;
       }
       statsBySourceId.set(sourceId, entry);
@@ -259,21 +319,33 @@ export class NewsSourceService {
       const { jobs, articles, ...rest } = source;
       const latestJob = jobs?.[0] ?? null;
       const latestArticle = articles?.[0] ?? null;
-      const crawlTaskId = isRecord(latestJob?.metadata) ? latestJob?.metadata.crawlTaskId : null;
+      const crawlTaskId = isRecord(latestJob?.metadata)
+        ? latestJob?.metadata.crawlTaskId
+        : null;
       const latestCrawlTask =
         typeof crawlTaskId === "string" && crawlTaskId.length > 0
-          ? crawlTaskById.get(crawlTaskId) ?? null
+          ? (crawlTaskById.get(crawlTaskId) ?? null)
           : null;
-      const crawlTaskQueueCounts = queueCountsBySourceId.get(source.id) ?? { queued: 0, running: 0 };
-      const backpressureUntil = backpressureUntilBySourceId.get(source.id) ?? null;
-      const backpressurePendingJobs = backpressurePendingJobsBySourceId.get(source.id) ?? null;
-      const backpressureThreshold = backpressureThresholdBySourceId.get(source.id) ?? null;
-      const backpressureCount24h = backpressureCountBySourceId.get(source.id) ?? 0;
+      const crawlTaskQueueCounts = queueCountsBySourceId.get(source.id) ?? {
+        queued: 0,
+        running: 0,
+      };
+      const backpressureUntil =
+        backpressureUntilBySourceId.get(source.id) ?? null;
+      const backpressurePendingJobs =
+        backpressurePendingJobsBySourceId.get(source.id) ?? null;
+      const backpressureThreshold =
+        backpressureThresholdBySourceId.get(source.id) ?? null;
+      const backpressureCount24h =
+        backpressureCountBySourceId.get(source.id) ?? 0;
       const stats = statsBySourceId.get(source.id) ?? null;
       const totalFinished = stats ? stats.completed + stats.failed : 0;
-      const successRate = totalFinished > 0 ? stats!.completed / totalFinished : null;
+      const successRate =
+        totalFinished > 0 ? stats!.completed / totalFinished : null;
       const avgDurationMs =
-        stats && stats.durationCount > 0 ? stats.durationSumMs / stats.durationCount : null;
+        stats && stats.durationCount > 0
+          ? stats.durationSumMs / stats.durationCount
+          : null;
 
       return {
         ...rest,
@@ -291,7 +363,7 @@ export class NewsSourceService {
           failed: stats?.failed ?? 0,
           successRate,
           avgDurationMs,
-        }
+        },
       };
     });
   }
@@ -306,7 +378,9 @@ export class NewsSourceService {
       throw new BadRequestException("url is required");
     }
     const language = this.normalizeOptionalString(input.language);
-    const crawlTemplateId = this.normalizeOptionalNullableString(input.crawlTemplateId);
+    const crawlTemplateId = this.normalizeOptionalNullableString(
+      input.crawlTemplateId,
+    );
     if (crawlTemplateId) {
       await this.assertTemplateInOrg(orgId, crawlTemplateId);
     }
@@ -327,8 +401,8 @@ export class NewsSourceService {
           priority: input.priority,
           isActive,
           config: config ? toPrismaJsonValue(config) : Prisma.DbNull,
-          nextRunAt
-        }
+          nextRunAt,
+        },
       });
     } catch (error) {
       const conflictMessage = this.resolveUniqueConflictMessage(error);
@@ -367,11 +441,15 @@ export class NewsSourceService {
       data.language = this.normalizeOptionalString(input.language);
     }
     if (input.crawlTemplateId !== undefined) {
-      const crawlTemplateId = this.normalizeOptionalNullableString(input.crawlTemplateId);
+      const crawlTemplateId = this.normalizeOptionalNullableString(
+        input.crawlTemplateId,
+      );
       if (crawlTemplateId) {
         await this.assertTemplateInOrg(orgId, crawlTemplateId);
       }
-      data.crawlTemplate = crawlTemplateId ? { connect: { id: crawlTemplateId } } : { disconnect: true };
+      data.crawlTemplate = crawlTemplateId
+        ? { connect: { id: crawlTemplateId } }
+        : { disconnect: true };
     }
     if (input.frequencySeconds !== undefined) {
       data.frequencySeconds = input.frequencySeconds;
@@ -392,7 +470,8 @@ export class NewsSourceService {
 
     const isActivating = input.isActive === true && !existing.isActive;
     const frequencyChanged =
-      input.frequencySeconds !== undefined && input.frequencySeconds !== existing.frequencySeconds;
+      input.frequencySeconds !== undefined &&
+      input.frequencySeconds !== existing.frequencySeconds;
 
     if (input.isActive === false) {
       data.nextRunAt = null;
@@ -434,8 +513,8 @@ export class NewsSourceService {
       data: {
         isActive: true,
         nextRunAt: new Date(),
-        circuitOpenUntil: null
-      }
+        circuitOpenUntil: null,
+      },
     });
   }
 
@@ -447,7 +526,9 @@ export class NewsSourceService {
 
     const nextRunAt = new Date(input.nextRunAt);
     if (Number.isNaN(nextRunAt.getTime())) {
-      throw new BadRequestException("nextRunAt must be a valid ISO date string");
+      throw new BadRequestException(
+        "nextRunAt must be a valid ISO date string",
+      );
     }
 
     return this.prisma.newsSource.update({
@@ -467,11 +548,13 @@ export class NewsSourceService {
     }
 
     const activeCutoff = new Date(
-      Date.now() - this.env.newsSourceSchedulerConfig.inFlightLookbackMs
+      Date.now() - this.env.newsSourceSchedulerConfig.inFlightLookbackMs,
     );
 
     const config =
-      source.config && typeof source.config === "object" && !Array.isArray(source.config)
+      source.config &&
+      typeof source.config === "object" &&
+      !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
         : null;
     const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -479,13 +562,12 @@ export class NewsSourceService {
     const sourceCrawlOptions = isPlainObject(config?.crawlOptions)
       ? (config!.crawlOptions as Record<string, unknown>)
       : undefined;
-    const template =
-      source.crawlTemplateId
-        ? await this.prisma.crawlTemplate.findUnique({
-            where: { id: source.crawlTemplateId },
-            select: { isActive: true, crawlOptions: true }
-          })
-        : null;
+    const template = source.crawlTemplateId
+      ? await this.prisma.crawlTemplate.findUnique({
+          where: { id: source.crawlTemplateId },
+          select: { isActive: true, crawlOptions: true },
+        })
+      : null;
     const templateCrawlOptions =
       template?.isActive && isPlainObject(template.crawlOptions)
         ? (template.crawlOptions as Record<string, unknown>)
@@ -497,10 +579,18 @@ export class NewsSourceService {
 
     const seedConfig = this.normalizeSeedConfig(config, source.url);
     const inFlightLimit = seedConfig?.enabled ? seedConfig.maxNewUrlsPerRun : 1;
-    const inFlightCount = await this.countActivePipelineJobs(source.id, activeCutoff, inFlightLimit);
+    const inFlightCount = await this.countActivePipelineJobs(
+      source.id,
+      activeCutoff,
+      inFlightLimit,
+    );
     const capacity = Math.max(0, inFlightLimit - inFlightCount);
     if (!seedConfig?.enabled) {
-      const inFlight = await this.findActivePipelineJobs(source.id, [source.url], activeCutoff);
+      const inFlight = await this.findActivePipelineJobs(
+        source.id,
+        [source.url],
+        activeCutoff,
+      );
       const inFlightStatus = inFlight.get(source.url) ?? null;
       return {
         mode: "single",
@@ -513,39 +603,69 @@ export class NewsSourceService {
             status: "success",
             alreadyCrawled: false,
             alreadyQueued: Boolean(inFlightStatus),
-            inFlightStatus
-          } satisfies NewsSourcePreviewCandidate
+            inFlightStatus,
+          } satisfies NewsSourcePreviewCandidate,
         ],
         inFlightCount,
         inFlightLimit,
         scheduleCount: capacity > 0 ? 1 : 0,
         skippedCount: capacity > 0 ? 0 : 1,
-        seed: seedConfig
+        seed: seedConfig,
       };
     }
 
-    const discovery =
-      seedConfig.mode === "rss"
-        ? await this.metadataService.discoverRssUrls({
-            feedUrl: seedConfig.feedUrl ?? source.url,
-            maxUrls: seedConfig.maxUrls
-          })
-        : seedConfig.mode === "list"
-          ? await this.metadataService.discoverListUrls({
-              url: source.url,
-              domain: seedConfig.domain,
-              pattern: seedConfig.pattern,
-              maxUrls: seedConfig.maxUrls,
-              listMaxPages: seedConfig.listMaxPages,
-              listPageConcurrency: seedConfig.listPageConcurrency,
-              followPagination: seedConfig.followPagination,
-              crawlOptions
-            })
-          : await this.metadataService.discoverSitemapUrls({
-              domain: seedConfig.domain,
-              pattern: seedConfig.pattern,
-              maxUrls: seedConfig.maxUrls
-            });
+    const deepFailureStats =
+      seedConfig.mode === "deep"
+        ? await this.readDeepDiscoveryFailureStats(source.id)
+        : undefined;
+    let deepPreviewError: NewsSourcePreviewDeepError | undefined;
+    let discovery: string[] = [];
+    if (seedConfig.mode === "rss") {
+      discovery = await this.metadataService.discoverRssUrls({
+        feedUrl: seedConfig.feedUrl ?? source.url,
+        maxUrls: seedConfig.maxUrls,
+      });
+    } else if (seedConfig.mode === "list") {
+      discovery = await this.metadataService.discoverListUrls({
+        url: source.url,
+        domain: seedConfig.domain,
+        pattern: seedConfig.pattern,
+        maxUrls: seedConfig.maxUrls,
+        listMaxPages: seedConfig.listMaxPages,
+        listPageConcurrency: seedConfig.listPageConcurrency,
+        followPagination: seedConfig.followPagination,
+        crawlOptions,
+      });
+    } else if (seedConfig.mode === "deep") {
+      try {
+        discovery = await this.metadataService.discoverDeepUrls({
+          url: source.url,
+          domain: seedConfig.domain,
+          pattern: seedConfig.pattern,
+          maxUrls: seedConfig.maxUrls,
+          deep: seedConfig.deep,
+          query: seedConfig.query,
+          crawlOptions,
+        });
+      } catch (error) {
+        const parsedDeepError = parseDeepDiscoveryError(error);
+        if (!parsedDeepError) {
+          throw error;
+        }
+        deepPreviewError = {
+          code: parsedDeepError.code,
+          message: parsedDeepError.message,
+          detail: parsedDeepError.detail,
+        };
+        discovery = [];
+      }
+    } else {
+      discovery = await this.metadataService.discoverSitemapUrls({
+        domain: seedConfig.domain,
+        pattern: seedConfig.pattern,
+        maxUrls: seedConfig.maxUrls,
+      });
+    }
 
     const metadataResults =
       discovery.length > 0
@@ -557,7 +677,7 @@ export class NewsSourceService {
             concurrency: seedConfig.concurrency,
             extractJsonLd: false,
             extractOpenGraph: false,
-            extractStandardMeta: false
+            extractStandardMeta: false,
           })
         : [];
 
@@ -567,26 +687,31 @@ export class NewsSourceService {
       this.findActivePipelineJobs(source.id, candidateUrls, activeCutoff),
     ]);
 
-    const candidates: NewsSourcePreviewCandidate[] = metadataResults.map((result) => {
-      const lastCrawlAt = crawlLookup.get(result.url)?.toISOString() ?? null;
-      const inFlightStatus = activeLookup.get(result.url) ?? null;
-      return {
-        url: result.url,
-        status: result.status,
-        title: result.title,
-        description: result.description,
-        author: result.author,
-        relevanceScore: result.relevanceScore,
-        alreadyCrawled: Boolean(lastCrawlAt),
-        lastCrawlAt,
-        alreadyQueued: Boolean(inFlightStatus),
-        inFlightStatus,
-        error: result.status === "failed" ? result.error : undefined
-      };
-    });
+    const candidates: NewsSourcePreviewCandidate[] = metadataResults.map(
+      (result) => {
+        const lastCrawlAt = crawlLookup.get(result.url)?.toISOString() ?? null;
+        const inFlightStatus = activeLookup.get(result.url) ?? null;
+        return {
+          url: result.url,
+          status: result.status,
+          title: result.title,
+          description: result.description,
+          author: result.author,
+          relevanceScore: result.relevanceScore,
+          alreadyCrawled: Boolean(lastCrawlAt),
+          lastCrawlAt,
+          alreadyQueued: Boolean(inFlightStatus),
+          inFlightStatus,
+          error: result.status === "failed" ? result.error : undefined,
+        };
+      },
+    );
 
     const availableToSchedule = candidates.filter(
-      (candidate) => candidate.status === "success" && !candidate.alreadyCrawled && !candidate.alreadyQueued
+      (candidate) =>
+        candidate.status === "success" &&
+        !candidate.alreadyCrawled &&
+        !candidate.alreadyQueued,
     ).length;
     const scheduleCount = Math.min(availableToSchedule, capacity);
     const skippedCount = candidates.length - scheduleCount;
@@ -602,8 +727,144 @@ export class NewsSourceService {
       inFlightCount,
       inFlightLimit,
       scheduleCount,
-      skippedCount
+      skippedCount,
+      deepPreviewError,
+      deepFailureStats,
     };
+  }
+
+  private async readDeepDiscoveryFailureStats(sourceId: string) {
+    const [stateRaw, statsRaw] = await Promise.all([
+      this.cache.get<DeepDiscoveryFailureState>(
+        deepDiscoveryFailureStateCacheKey(sourceId),
+      ),
+      this.cache.get<DeepDiscoveryFailureStats24h>(
+        deepDiscoveryFailureStatsCacheKey(sourceId),
+      ),
+    ]);
+    const state = this.normalizeDeepDiscoveryFailureState(stateRaw);
+    const stats = this.normalizeDeepDiscoveryFailureStats24h(statsRaw);
+
+    const hasState =
+      (state?.streak ?? 0) > 0 ||
+      Boolean(state?.lastCode) ||
+      Boolean(state?.lastFailureAt);
+    const hasStats = stats.total > 0 || Object.keys(stats.byCode).length > 0;
+    if (!hasState && !hasStats) {
+      return null;
+    }
+
+    return {
+      total24h: stats.total,
+      streak: state?.streak ?? 0,
+      byCode: Object.entries(stats.byCode)
+        .map(([code, count]) => ({ code, count }))
+        .sort((a, b) => b.count - a.count),
+      lastFailureAt: state?.lastFailureAt ?? null,
+      lastCode: state?.lastCode ?? null,
+      lastMessage: state?.lastMessage ?? null,
+      lastDetail: state?.lastDetail ?? null,
+      nextRetryAt: state?.retryAt ?? null,
+      circuitOpenUntil: state?.circuitOpenUntil ?? null,
+    } satisfies NewsSourcePreviewDeepFailureStats;
+  }
+
+  private normalizeDeepDiscoveryFailureState(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const streakRaw = record.streak;
+    const streak =
+      typeof streakRaw === "number" && Number.isFinite(streakRaw)
+        ? Math.max(0, Math.floor(streakRaw))
+        : 0;
+    const lastFailureAt =
+      typeof record.lastFailureAt === "string" &&
+      record.lastFailureAt.length > 0
+        ? record.lastFailureAt
+        : "";
+    const lastCode =
+      typeof record.lastCode === "string" && record.lastCode.length > 0
+        ? record.lastCode
+        : "";
+    const lastMessage =
+      typeof record.lastMessage === "string" && record.lastMessage.length > 0
+        ? record.lastMessage
+        : "";
+    const retryAt =
+      typeof record.retryAt === "string" && record.retryAt.length > 0
+        ? record.retryAt
+        : "";
+    const nextRunAt =
+      typeof record.nextRunAt === "string" && record.nextRunAt.length > 0
+        ? record.nextRunAt
+        : retryAt;
+    const circuitOpenUntil =
+      typeof record.circuitOpenUntil === "string" &&
+      record.circuitOpenUntil.length > 0
+        ? record.circuitOpenUntil
+        : null;
+    const lastDetail =
+      typeof record.lastDetail === "string" && record.lastDetail.length > 0
+        ? record.lastDetail
+        : undefined;
+
+    if (streak <= 0 && !lastCode && !lastFailureAt) {
+      return null;
+    }
+
+    return {
+      streak,
+      lastFailureAt: lastFailureAt || new Date(0).toISOString(),
+      lastCode: lastCode || "SEED_DEEP_UNKNOWN",
+      lastMessage: lastMessage || "Deep discovery failed",
+      lastDetail,
+      retryAt: retryAt || nextRunAt || new Date(0).toISOString(),
+      nextRunAt: nextRunAt || retryAt || new Date(0).toISOString(),
+      circuitOpenUntil,
+    } satisfies DeepDiscoveryFailureState;
+  }
+
+  private normalizeDeepDiscoveryFailureStats24h(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { total: 0, byCode: {}, updatedAt: new Date(0).toISOString() };
+    }
+
+    const record = value as Record<string, unknown>;
+    const byCodeRaw =
+      record.byCode &&
+      typeof record.byCode === "object" &&
+      !Array.isArray(record.byCode)
+        ? (record.byCode as Record<string, unknown>)
+        : {};
+    const byCode: Record<string, number> = {};
+    for (const [code, countRaw] of Object.entries(byCodeRaw)) {
+      if (!code || !code.startsWith("SEED_DEEP_")) {
+        continue;
+      }
+      if (typeof countRaw !== "number" || !Number.isFinite(countRaw)) {
+        continue;
+      }
+      const count = Math.max(0, Math.floor(countRaw));
+      if (count <= 0) {
+        continue;
+      }
+      byCode[code] = count;
+    }
+    const totalRaw =
+      typeof record.total === "number" && Number.isFinite(record.total)
+        ? Math.max(0, Math.floor(record.total))
+        : Object.values(byCode).reduce((sum, count) => sum + count, 0);
+    const updatedAt =
+      typeof record.updatedAt === "string" && record.updatedAt.length > 0
+        ? record.updatedAt
+        : new Date().toISOString();
+    return {
+      total: totalRaw,
+      byCode,
+      updatedAt,
+    } satisfies DeepDiscoveryFailureStats24h;
   }
 
   private normalizeOptionalString(value?: string | null) {
@@ -628,7 +889,7 @@ export class NewsSourceService {
   private async assertTemplateInOrg(orgId: string, templateId: string) {
     const template = await this.prisma.crawlTemplate.findUnique({
       where: { id: templateId },
-      select: { orgId: true }
+      select: { orgId: true },
     });
     if (!template || template.orgId !== orgId) {
       throw new BadRequestException("Invalid crawlTemplateId");
@@ -645,18 +906,30 @@ export class NewsSourceService {
 
     const crawlOptions = (config as Record<string, unknown>).crawlOptions;
     if (crawlOptions !== undefined) {
-      if (!crawlOptions || typeof crawlOptions !== "object" || Array.isArray(crawlOptions)) {
+      if (
+        !crawlOptions ||
+        typeof crawlOptions !== "object" ||
+        Array.isArray(crawlOptions)
+      ) {
         throw new BadRequestException("crawlOptions must be an object");
       }
-      assertNoCrawl4aiLlmOptions(crawlOptions as Record<string, unknown>, "crawlOptions");
+      assertNoCrawl4aiLlmOptions(
+        crawlOptions as Record<string, unknown>,
+        "crawlOptions",
+      );
     }
 
     return config;
   }
 
-  private normalizeSeedConfig(config: Record<string, unknown> | null, sourceUrl: string): NewsSourceSeedConfig | null {
+  private normalizeSeedConfig(
+    config: Record<string, unknown> | null,
+    sourceUrl: string,
+  ): NewsSourceSeedConfig | null {
     const rawSeed =
-      config?.seed && typeof config.seed === "object" && !Array.isArray(config.seed)
+      config?.seed &&
+      typeof config.seed === "object" &&
+      !Array.isArray(config.seed)
         ? (config.seed as Record<string, unknown>)
         : null;
     const enabled = rawSeed?.enabled === true;
@@ -664,26 +937,56 @@ export class NewsSourceService {
       return null;
     }
 
-    const modeRaw = typeof rawSeed?.mode === "string" ? rawSeed.mode.trim().toLowerCase() : "";
+    const modeRaw =
+      typeof rawSeed?.mode === "string"
+        ? rawSeed.mode.trim().toLowerCase()
+        : "";
     const mode: NewsSourceSeedConfig["mode"] =
-      modeRaw === "rss" ? "rss" : modeRaw === "list" ? "list" : "sitemap";
+      modeRaw === "rss"
+        ? "rss"
+        : modeRaw === "list"
+          ? "list"
+          : modeRaw === "deep"
+            ? "deep"
+            : "sitemap";
 
     const domain =
-      mode === "sitemap" || mode === "list"
+      mode === "sitemap" || mode === "list" || mode === "deep"
         ? this.normalizeSeedDomain(rawSeed?.domain, sourceUrl)
         : undefined;
-    const pattern = typeof rawSeed?.pattern === "string" ? rawSeed.pattern.trim() : "";
-    const feedUrl = mode === "rss" ? this.normalizeSeedFeedUrl(rawSeed?.feedUrl, sourceUrl) : undefined;
-    const query = typeof rawSeed?.query === "string" ? rawSeed.query.trim() : "";
+    const pattern =
+      typeof rawSeed?.pattern === "string" ? rawSeed.pattern.trim() : "";
+    const feedUrl =
+      mode === "rss"
+        ? this.normalizeSeedFeedUrl(rawSeed?.feedUrl, sourceUrl)
+        : undefined;
+    const deepConfig =
+      mode === "deep" &&
+      rawSeed?.deep &&
+      typeof rawSeed.deep === "object" &&
+      !Array.isArray(rawSeed.deep)
+        ? (rawSeed.deep as Record<string, unknown>)
+        : null;
+    const query =
+      typeof rawSeed?.query === "string" ? rawSeed.query.trim() : "";
 
     const keywords = this.normalizeStringList(config?.keywords);
-    const effectiveQuery = query.length > 0 ? query : keywords.length > 0 ? keywords.join(" ") : undefined;
+    const effectiveQuery =
+      query.length > 0
+        ? query
+        : keywords.length > 0
+          ? keywords.join(" ")
+          : undefined;
 
     return {
       enabled: true,
       mode,
       domain,
-      pattern: (mode === "sitemap" || mode === "list") && pattern.length > 0 ? pattern : undefined,
+      pattern:
+        (mode === "sitemap" || mode === "list" || mode === "deep") &&
+        pattern.length > 0
+          ? pattern
+          : undefined,
       feedUrl,
       maxUrls: this.clampInt(rawSeed?.maxUrls, 1, 2_000, 200),
       maxNewUrlsPerRun: this.clampInt(rawSeed?.maxNewUrlsPerRun, 1, 500, 80),
@@ -693,14 +996,67 @@ export class NewsSourceService {
       query: effectiveQuery,
       scoreThreshold: this.clampFloat(rawSeed?.scoreThreshold, 0, 1, 0),
       concurrency: this.clampInt(rawSeed?.concurrency, 1, 10, 5),
-      dedupeWindowHours: this.clampInt(rawSeed?.dedupeWindowHours, 0, 24 * 30, 24)
+      dedupeWindowHours: this.clampInt(
+        rawSeed?.dedupeWindowHours,
+        0,
+        24 * 30,
+        24,
+      ),
+      deep:
+        mode === "deep"
+          ? {
+              maxPages: this.clampInt(deepConfig?.maxPages, 5, 300, 80),
+              maxDepth: this.clampInt(deepConfig?.maxDepth, 1, 4, 2),
+              timeBudgetSeconds: this.clampInt(
+                deepConfig?.timeBudgetSeconds,
+                10,
+                180,
+                60,
+              ),
+              pageConcurrency: this.clampInt(
+                deepConfig?.pageConcurrency,
+                1,
+                6,
+                2,
+              ),
+              scoreThreshold: this.clampFloat(
+                deepConfig?.scoreThreshold,
+                0,
+                1,
+                0.2,
+              ),
+              candidatePoolSize: this.clampInt(
+                deepConfig?.candidatePoolSize,
+                20,
+                400,
+                120,
+              ),
+              headFetchTopK: this.clampInt(
+                deepConfig?.headFetchTopK,
+                10,
+                120,
+                40,
+              ),
+              preferPathDate:
+                typeof deepConfig?.preferPathDate === "boolean"
+                  ? deepConfig.preferPathDate
+                  : true,
+              enableSecondaryHubs:
+                typeof deepConfig?.enableSecondaryHubs === "boolean"
+                  ? deepConfig.enableSecondaryHubs
+                  : true,
+              ignoreRobotsTxt: true,
+            }
+          : undefined,
     };
   }
 
   private normalizeSeedDomain(domainOverride: unknown, sourceUrl: string) {
     const raw = typeof domainOverride === "string" ? domainOverride.trim() : "";
     const candidate = raw.length > 0 ? raw : sourceUrl;
-    const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+    const withProtocol = /^https?:\/\//i.test(candidate)
+      ? candidate
+      : `https://${candidate}`;
     try {
       return new URL(withProtocol).origin.replace(/\/+$/, "");
     } catch {
@@ -713,9 +1069,12 @@ export class NewsSourceService {
   }
 
   private normalizeSeedFeedUrl(feedUrlOverride: unknown, sourceUrl: string) {
-    const raw = typeof feedUrlOverride === "string" ? feedUrlOverride.trim() : "";
+    const raw =
+      typeof feedUrlOverride === "string" ? feedUrlOverride.trim() : "";
     const candidate = raw.length > 0 ? raw : sourceUrl;
-    const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+    const withProtocol = /^https?:\/\//i.test(candidate)
+      ? candidate
+      : `https://${candidate}`;
     try {
       return new URL(withProtocol).toString();
     } catch {
@@ -744,7 +1103,12 @@ export class NewsSourceService {
     return Math.min(max, Math.max(min, rounded));
   }
 
-  private clampFloat(value: unknown, min: number, max: number, fallback: number) {
+  private clampFloat(
+    value: unknown,
+    min: number,
+    max: number,
+    fallback: number,
+  ) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
       return fallback;
     }
@@ -752,7 +1116,10 @@ export class NewsSourceService {
   }
 
   private resolveUniqueConflictMessage(error: unknown): string | null {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    if (
+      !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+      error.code !== "P2002"
+    ) {
       return null;
     }
 
@@ -783,7 +1150,11 @@ export class NewsSourceService {
     return "News source already exists";
   }
 
-  private async findRecentCrawls(orgId: string, urls: string[], dedupeWindowHours: number) {
+  private async findRecentCrawls(
+    orgId: string,
+    urls: string[],
+    dedupeWindowHours: number,
+  ) {
     const hours = Math.max(0, Math.min(24 * 30, Math.floor(dedupeWindowHours)));
     if (hours === 0 || urls.length === 0) {
       return new Map<string, Date>();
@@ -791,7 +1162,7 @@ export class NewsSourceService {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
     const records = await this.prisma.article.findMany({
       where: { orgId, url: { in: urls }, crawlAt: { gte: since } },
-      select: { url: true, crawlAt: true }
+      select: { url: true, crawlAt: true },
     });
 
     const byUrl = new Map<string, Date>();
@@ -804,7 +1175,11 @@ export class NewsSourceService {
     return byUrl;
   }
 
-  private async findActivePipelineJobs(sourceId: string, urls: string[], activeCutoff: Date) {
+  private async findActivePipelineJobs(
+    sourceId: string,
+    urls: string[],
+    activeCutoff: Date,
+  ) {
     if (urls.length === 0) {
       return new Map<string, PipelineJobStatus>();
     }
@@ -818,18 +1193,30 @@ export class NewsSourceService {
       select: { url: true, status: true, createdAt: true },
     });
 
-    const byUrl = new Map<string, { status: PipelineJobStatus; createdAt: Date }>();
+    const byUrl = new Map<
+      string,
+      { status: PipelineJobStatus; createdAt: Date }
+    >();
     for (const record of records) {
       const existing = byUrl.get(record.url);
       if (!existing || record.createdAt > existing.createdAt) {
-        byUrl.set(record.url, { status: record.status, createdAt: record.createdAt });
+        byUrl.set(record.url, {
+          status: record.status,
+          createdAt: record.createdAt,
+        });
       }
     }
 
-    return new Map(Array.from(byUrl.entries()).map(([url, value]) => [url, value.status]));
+    return new Map(
+      Array.from(byUrl.entries()).map(([url, value]) => [url, value.status]),
+    );
   }
 
-  private async countActivePipelineJobs(sourceId: string, activeCutoff: Date, limit: number) {
+  private async countActivePipelineJobs(
+    sourceId: string,
+    activeCutoff: Date,
+    limit: number,
+  ) {
     const capped = Math.max(1, Math.min(50, Math.floor(limit)));
     const records = await this.prisma.pipelineJob.findMany({
       where: {
