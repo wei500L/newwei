@@ -3006,18 +3006,30 @@
   },
   "storageSettings": {
     "title": "Storage settings",
-    "description": "Manage S3 storage settings used for avatar uploads.",
+    "description": "Manage storage settings for avatar uploads and crawl media assets.",
     "loadFailed": "Failed to load storage settings",
     "saved": "Saved",
     "saveFailed": "Failed to save storage settings",
     "test": "Test connection",
     "testSuccess": "Storage connection OK",
     "testFailed": "Storage connection failed",
+    "testResult": {
+      "ok": "Connection test passed",
+      "failed": "Connection test failed",
+      "noError": "No error details returned."
+    },
     "fields": {
+      "crawlImageStorage": "Crawl image storage",
       "endpoint": "S3 endpoint",
       "region": "S3 region",
       "bucket": "S3 bucket",
       "publicBaseUrl": "Public base URL"
+    },
+    "options": {
+      "crawlImageStorage": {
+        "mysql": "MySQL database",
+        "s3": "S3 object storage"
+      }
     },
     "validation": {
       "endpoint": "Enter a valid URL",
@@ -3908,7 +3920,10 @@
         "thumbnailAlt": "Thumbnail alt",
         "score": "Score",
         "srcsetVariants": "Srcset variants",
-        "sources": "Sources"
+        "sources": "Sources",
+        "assetUnavailable": "Stored media access link is unavailable.",
+        "previewUnavailable": "Preview unavailable",
+        "previewLoadFailed": "Preview failed to load"
       },
       "tables": {
         "title": "Tables",
@@ -4945,6 +4960,53 @@
       "query": "Query",
       "report": "Report",
       "forecast": "Forecast"
+    },
+    "types": {
+      "query": "Query",
+      "report": "Report",
+      "forecast": "Forecast"
+    },
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "chat": {
+      "historyTitle": "History",
+      "conversationTitle": "Conversation",
+      "emptyHistory": "No assistant runs yet.",
+      "emptyConversation": "Start by sending a message. Your latest run will appear here.",
+      "assistantLabel": "Assistant",
+      "errorLabel": "Error details",
+      "placeholder": "Ask anything about your pipeline data…",
+      "enterHint": "Enter to send, Shift+Enter for newline.",
+      "send": "Send",
+      "quickReport": "Quick Report",
+      "quickForecast": "Quick Forecast",
+      "quickReportTitle": "Quick Report",
+      "quickForecastTitle": "Quick Forecast",
+      "thinking": "Thinking…",
+      "queued": "Queued…",
+      "modelInfoTitle": "Model info",
+      "modelInfoUnknown": "No model metadata returned.",
+      "forecastModelLabel": "Forecast model",
+      "modelServiceLabel": "Model service",
+      "modelServiceUsed": "Used",
+      "modelServiceNotUsed": "Not used",
+      "adminDetailsTitle": "Admin debug details (JSON)",
+      "inputJsonTitle": "Input JSON",
+      "outputJsonTitle": "Output JSON",
+      "queryFallback": "New query",
+      "reportLabel": "Report",
+      "forecastLabel": "Forecast",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "unknownIndicator": "Unknown indicator",
+      "topicLabel": "Topic",
+      "limitLabel": "Limit",
+      "lookbackLabel": "Lookback",
+      "modelLabel": "Model"
     },
     "messageRequired": "Please enter a question.",
     "requestFailed": "Request failed: {{error}}",

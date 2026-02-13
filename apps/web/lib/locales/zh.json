@@ -3009,18 +3009,30 @@
   },
   "storageSettings": {
     "title": "存储设置",
-    "description": "管理用于头像上传的 S3 存储配置。",
+    "description": "管理头像上传与抓取媒体资源的存储配置。",
     "loadFailed": "加载存储设置失败",
     "saved": "已保存",
     "saveFailed": "保存存储设置失败",
     "test": "测试连接",
     "testSuccess": "存储连接正常",
     "testFailed": "存储连接失败",
+    "testResult": {
+      "ok": "连接测试通过",
+      "failed": "连接测试失败",
+      "noError": "服务端未返回错误详情。"
+    },
     "fields": {
+      "crawlImageStorage": "抓取图片存储位置",
       "endpoint": "S3 端点",
       "region": "S3 区域",
       "bucket": "S3 存储桶",
       "publicBaseUrl": "公开基础地址"
+    },
+    "options": {
+      "crawlImageStorage": {
+        "mysql": "MySQL 数据库",
+        "s3": "S3 对象存储"
+      }
     },
     "validation": {
       "endpoint": "请输入有效的 URL",
@@ -3911,7 +3923,10 @@
         "thumbnailAlt": "缩略图替代文本",
         "score": "评分",
         "srcsetVariants": "srcset 变体",
-        "sources": "来源"
+        "sources": "来源",
+        "assetUnavailable": "存储媒体访问链接不可用。",
+        "previewUnavailable": "暂无预览",
+        "previewLoadFailed": "预览加载失败"
       },
       "tables": {
         "title": "表格",
@@ -4948,6 +4963,53 @@
       "query": "查询",
       "report": "报告",
       "forecast": "预测"
+    },
+    "types": {
+      "query": "查询",
+      "report": "报告",
+      "forecast": "预测"
+    },
+    "status": {
+      "pending": "等待中",
+      "running": "生成中",
+      "completed": "已完成",
+      "failed": "失败"
+    },
+    "chat": {
+      "historyTitle": "会话历史",
+      "conversationTitle": "当前对话",
+      "emptyHistory": "暂无助手运行记录。",
+      "emptyConversation": "发送一条消息开始对话，最新运行会显示在这里。",
+      "assistantLabel": "助手",
+      "errorLabel": "错误详情",
+      "placeholder": "输入你的问题…",
+      "enterHint": "Enter 发送，Shift+Enter 换行。",
+      "send": "发送",
+      "quickReport": "快捷报告",
+      "quickForecast": "快捷预测",
+      "quickReportTitle": "快捷报告",
+      "quickForecastTitle": "快捷预测",
+      "thinking": "正在思考…",
+      "queued": "任务已提交，正在排队…",
+      "modelInfoTitle": "模型信息",
+      "modelInfoUnknown": "未返回模型元数据。",
+      "forecastModelLabel": "预测模型",
+      "modelServiceLabel": "模型服务",
+      "modelServiceUsed": "已使用",
+      "modelServiceNotUsed": "未使用",
+      "adminDetailsTitle": "管理员调试详情（JSON）",
+      "inputJsonTitle": "输入 JSON",
+      "outputJsonTitle": "输出 JSON",
+      "queryFallback": "新查询",
+      "reportLabel": "报告",
+      "forecastLabel": "预测",
+      "daily": "按日",
+      "weekly": "按周",
+      "unknownIndicator": "未知指标",
+      "topicLabel": "主题",
+      "limitLabel": "条数",
+      "lookbackLabel": "回溯",
+      "modelLabel": "模型"
     },
     "messageRequired": "请输入问题。",
     "requestFailed": "请求失败：{{error}}",

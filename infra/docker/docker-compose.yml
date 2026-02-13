@@ -441,7 +441,7 @@ services:
         exit 1;
       fi;
       echo '[web] starting dev server...';
-      pnpm --filter @modular/web run dev:turbo
+      pnpm --filter @modular/web run dev
       "
     env_file:
       - ./.env

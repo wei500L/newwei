@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -1851,6 +1853,7 @@ export type ProcessedItemPreviewModelGraph = {
   eventId?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   itemMetaId: Scalars['String']['output'];
+  language?: Maybe<Scalars['String']['output']>;
   llm?: Maybe<ProcessedItemLlmModel>;
   location?: Maybe<Scalars['String']['output']>;
   /** Content published time (ISO8601) */
@@ -1861,6 +1864,7 @@ export type ProcessedItemPreviewModelGraph = {
   status: Scalars['String']['output'];
   summary?: Maybe<Scalars['String']['output']>;
   tags: Array<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
   topics: Array<Scalars['String']['output']>;
 };
 
@@ -2775,7 +2779,7 @@ export type ItemsQueryVariables = Exact<{
 }>;
 
 
-export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, publishedAt?: string | null, summary?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, eventId?: string | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
+export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, title?: string | null, language?: string | null, publishedAt?: string | null, summary?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, eventId?: string | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
 
 export type ItemFacetsQueryVariables = Exact<{
   search?: InputMaybe<Scalars['String']['input']>;
@@ -4730,6 +4734,8 @@ export const ItemsDocument = gql`
           duplicateOf
           duplicateSimilarity
           source
+          title
+          language
           publishedAt
           summary
           sentiment

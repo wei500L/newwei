@@ -1,6 +1,6 @@
 "use client";
 
-import { SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined, WarningOutlined } from "@ant-design/icons";
 import { gql, useMutation } from "@apollo/client";
 import {
   Alert,
@@ -42,7 +42,9 @@ import {
   type CrawlTaskStatus,
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
+import { captureClientError } from "@/lib/client-telemetry";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
+import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const statusColors: Record<CrawlTaskStatus, string> = {
@@ -172,7 +174,10 @@ interface CrawlStoredMediaAsset {
   sourceUrl: string;
   bytes: number;
   contentType?: string;
-  dataUri?: string;
+  storageProvider?: "mysql" | "s3";
+  storageKey?: string;
+  previewUrl?: string;
+  downloadUrl?: string;
   width?: number;
   height?: number;
   alt?: string;
@@ -226,6 +231,20 @@ function safeParseJson<T>(input?: string | null): T | null {
   } catch {
     return null;
   }
+}
+
+function resolveStoredMediaUrl(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+  if (/^(https?:\/\/|data:|blob:)/i.test(value)) {
+    return value;
+  }
+  const normalized = value.startsWith("/") ? value : `/${value}`;
+  if (normalized.startsWith("/api/")) {
+    return `${env.apiRoot}${normalized}`;
+  }
+  return `${env.apiBaseUrl}${normalized}`;
 }
 
 function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
@@ -340,45 +359,62 @@ function StoredMediaSection({
         size="small"
         split={false}
         dataSource={assets}
-        renderItem={(asset) => (
-          <List.Item key={`${asset.id}-${asset.sourceUrl}`}>
-            <Space align="start">
-              {renderStoredMediaPreview(asset)}
-              <Space direction="vertical" size={4}>
-                <Typography.Text strong>
-                  {asset.title ?? asset.alt ?? asset.kind}
-                </Typography.Text>
-                <Typography.Text type="secondary">
-                  {(
-                    asset.contentType ?? t("crawl.detail.media.unknownMime")
-                  ).toUpperCase()}{" "}
-                  • {formatBytes(asset.bytes)}
-                </Typography.Text>
-                <Typography.Paragraph style={{ marginBottom: 4 }}>
-                  {asset.desc ?? asset.sourceUrl}
-                </Typography.Paragraph>
-                <Space size="small">
-                  <Typography.Link
-                    href={asset.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {t("common.source")}
-                  </Typography.Link>
-                  {asset.dataUri ? (
-                    <Typography.Link
-                      href={asset.dataUri}
-                      download={`${asset.kind}-${asset.id}`}
-                      rel="noreferrer"
-                    >
-                      {t("common.download")}
-                    </Typography.Link>
+        renderItem={(asset) => {
+          const sourceHref = /^https?:\/\//i.test(asset.sourceUrl)
+            ? asset.sourceUrl
+            : undefined;
+          const previewHref = resolveStoredMediaUrl(asset.previewUrl);
+          const downloadHref = resolveStoredMediaUrl(
+            asset.downloadUrl ?? asset.previewUrl,
+          );
+          const missingStoredAccess = !previewHref && !downloadHref;
+          return (
+            <List.Item key={`${asset.id}-${asset.sourceUrl}`}>
+              <Space align="start">
+                <StoredMediaPreview asset={asset} previewUrl={previewHref} />
+                <Space direction="vertical" size={4}>
+                  <Typography.Text strong>
+                    {asset.title ?? asset.alt ?? asset.kind}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {(
+                      asset.contentType ?? t("crawl.detail.media.unknownMime")
+                    ).toUpperCase()}{" "}
+                    • {formatBytes(asset.bytes)}
+                  </Typography.Text>
+                  <Typography.Paragraph style={{ marginBottom: 4 }}>
+                    {asset.desc ?? asset.sourceUrl}
+                  </Typography.Paragraph>
+                  {missingStoredAccess ? (
+                    <Typography.Text type="danger">
+                      {t("crawl.detail.media.assetUnavailable")}
+                    </Typography.Text>
                   ) : null}
+                  <Space size="small">
+                    {sourceHref ? (
+                      <Typography.Link
+                        href={sourceHref}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {t("common.source")}
+                      </Typography.Link>
+                    ) : null}
+                    {downloadHref ? (
+                      <Typography.Link
+                        href={downloadHref}
+                        download={`${asset.kind}-${asset.id}`}
+                        rel="noreferrer"
+                      >
+                        {t("common.download")}
+                      </Typography.Link>
+                    ) : null}
+                  </Space>
                 </Space>
               </Space>
-            </Space>
-          </List.Item>
-        )}
+            </List.Item>
+          );
+        }}
       />
     </Card>
   );
@@ -532,7 +568,7 @@ function renderMediaPreview(
           height: 96,
           objectFit: "cover",
           borderRadius: 8,
-          border: "1px solid #f0f0f0",
+          border: "1px solid var(--ant-color-border-secondary)",
         }}
         loading="lazy"
       />
@@ -554,38 +590,76 @@ function renderMediaPreview(
   return null;
 }
 
-function renderStoredMediaPreview(asset: CrawlStoredMediaAsset) {
-  if (asset.dataUri && asset.contentType?.startsWith("image/")) {
+function StoredMediaPreview({
+  asset,
+  previewUrl,
+}: {
+  asset: CrawlStoredMediaAsset;
+  previewUrl?: string;
+}) {
+  const { t } = useTranslation();
+  const [previewFailed, setPreviewFailed] = useState(false);
+  if (previewUrl && !previewFailed && asset.contentType?.startsWith("image/")) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={asset.dataUri}
+        src={previewUrl}
         alt={asset.alt ?? asset.title ?? asset.kind}
         style={{
           width: 96,
           height: 96,
           objectFit: "cover",
           borderRadius: 8,
-          border: "1px solid #f0f0f0",
+          border: "1px solid var(--ant-color-border-secondary)",
         }}
         loading="lazy"
+        onError={() => {
+          setPreviewFailed(true);
+          captureClientError("Failed to load stored crawl image preview", {
+            assetId: asset.id,
+            sourceUrl: asset.sourceUrl,
+            storageProvider: asset.storageProvider,
+          });
+        }}
       />
     );
   }
-  if (asset.dataUri && asset.contentType?.startsWith("video/")) {
+  if (previewUrl && !previewFailed && asset.contentType?.startsWith("video/")) {
     return (
       <video
-        src={asset.dataUri}
+        src={previewUrl}
         controls
         style={{ width: 160, borderRadius: 8 }}
         preload="metadata"
+        onError={() => {
+          setPreviewFailed(true);
+          captureClientError("Failed to load stored crawl video preview", {
+            assetId: asset.id,
+            sourceUrl: asset.sourceUrl,
+            storageProvider: asset.storageProvider,
+          });
+        }}
       />
     );
   }
   return (
-    <div className="media-thumb" style={{ width: 80, height: 80 }}>
-      {asset.kind.slice(0, 2).toUpperCase()}
-    </div>
+    <Space direction="vertical" size={4} align="center">
+      <div className="media-thumb" style={{ width: 80, height: 80 }}>
+        {asset.kind.slice(0, 2).toUpperCase()}
+      </div>
+      {previewFailed ? (
+        <Space size={4} align="center">
+          <WarningOutlined style={{ color: "var(--ant-color-error)" }} />
+          <Typography.Text type="danger">
+            {t("crawl.detail.media.previewLoadFailed")}
+          </Typography.Text>
+        </Space>
+      ) : (
+        <Typography.Text type="secondary">
+          {t("crawl.detail.media.previewUnavailable")}
+        </Typography.Text>
+      )}
+    </Space>
   );
 }
 
@@ -632,7 +706,7 @@ function renderSrcset(
       </Typography.Text>
       <pre
         style={{
-          background: "#fafafa",
+          background: "var(--ant-color-fill-alter)",
           padding: 8,
           borderRadius: 4,
           maxWidth: 520,

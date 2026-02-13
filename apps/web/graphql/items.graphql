@@ -23,6 +23,8 @@ query Items(
           duplicateOf
           duplicateSimilarity
           source
+          title
+          language
           publishedAt
           summary
           sentiment
