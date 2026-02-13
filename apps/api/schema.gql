@@ -865,6 +865,13 @@ type EconomicSeriesInsightModel {
   zScore: Float
 }
 
+type EconomicSeriesSuggestion {
+  description: String
+  displayName: String!
+  docUrl: String
+  slug: String!
+}
+
 input EntityImpactGraphInput {
   """Restrict graph to categories (person, organization, stock, commodity)"""
   categories: [String!]
@@ -1606,6 +1613,7 @@ type Query {
   alertRules: [AlertRuleModel!]!
   analysisResults(limit: Int): [AnalysisResultModel!]!
   articleEntityLinks(articleId: String!, limit: Int): [ArticleEntityLinkModel!]!
+  assistantEconomicSeriesSuggestions(limit: Int = 8, term: String!): [EconomicSeriesSuggestion!]!
   assistantRuns(limit: Int): [AssistantRunModel!]!
   auditLogRetention: AuditLogRetentionModel!
   authCacheSettings: AuthCacheSettingsModel!

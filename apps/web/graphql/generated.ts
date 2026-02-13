@@ -897,6 +897,14 @@ export type EconomicSeriesInsightModel = {
   zScore?: Maybe<Scalars['Float']['output']>;
 };
 
+export type EconomicSeriesSuggestion = {
+  __typename?: 'EconomicSeriesSuggestion';
+  description?: Maybe<Scalars['String']['output']>;
+  displayName: Scalars['String']['output'];
+  docUrl?: Maybe<Scalars['String']['output']>;
+  slug: Scalars['String']['output'];
+};
+
 export type EntityImpactGraphInput = {
   /** Restrict graph to categories (person, organization, stock, commodity) */
   categories?: InputMaybe<Array<Scalars['String']['input']>>;
@@ -1865,6 +1873,7 @@ export type Query = {
   alertRules: Array<AlertRuleModel>;
   analysisResults: Array<AnalysisResultModel>;
   articleEntityLinks: Array<ArticleEntityLinkModel>;
+  assistantEconomicSeriesSuggestions: Array<EconomicSeriesSuggestion>;
   assistantRuns: Array<AssistantRunModel>;
   auditLogRetention: AuditLogRetentionModel;
   authCacheSettings: AuthCacheSettingsModel;
@@ -1945,6 +1954,12 @@ export type QueryAnalysisResultsArgs = {
 export type QueryArticleEntityLinksArgs = {
   articleId: Scalars['String']['input'];
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryAssistantEconomicSeriesSuggestionsArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  term: Scalars['String']['input'];
 };
 
 
