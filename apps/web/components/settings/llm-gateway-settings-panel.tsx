@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   Form,
-  type FormInstance,
   Grid,
   Input,
   InputNumber,
@@ -29,15 +28,9 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
-import {
-  buildAutoRecommendationPatch,
-  DEFAULT_LLM_GATEWAY_AUTO_RECOMMENDATION_CONFIG,
-  detectPresetRecommendationByApiBase,
-  type LlmGatewayAutoRecommendationConfig,
-  type LlmGatewayPresetKey,
-} from "@/lib/llm-gateway-profile-recommendation";
 
 type LlmGatewayResponseFormatMode = "json_schema" | "json_object" | "none";
+type LlmGatewayApiSurface = "chat_completions" | "responses";
 
 interface LlmGatewayProfile {
   id: string;
@@ -46,6 +39,7 @@ interface LlmGatewayProfile {
   model: string;
   assistantModel?: string | null;
   embeddingModel?: string | null;
+  apiSurface: LlmGatewayApiSurface;
   timeoutMs: number;
   temperature: number;
   topP: number;
@@ -205,13 +199,13 @@ interface LlmGatewayTestFormValues {
 }
 
 interface LlmGatewayFormValues {
-  preset?: LlmGatewayPresetKey;
   name: string;
   apiBase: string;
   apiKey?: string;
   model?: string;
   assistantModel?: string;
   embeddingModel?: string;
+  apiSurface: LlmGatewayApiSurface;
   timeoutMs: number;
   temperature: number;
   topP: number;
@@ -223,26 +217,6 @@ interface LlmGatewayFormValues {
   responseFormatMode: LlmGatewayResponseFormatMode;
   clearApiKey?: boolean;
   enabled: boolean;
-}
-
-interface LlmGatewayPresetOption {
-  key: LlmGatewayPresetKey;
-  label: string;
-  apiBase: string;
-  model: string;
-  embeddingModel?: string;
-  fallbackModels?: string[];
-  sendMetadata: boolean;
-  responseFormatMode: LlmGatewayResponseFormatMode;
-}
-
-interface LlmGatewayRecommendationConfigFormValues {
-  defaultPresetKey: LlmGatewayPresetKey;
-  localGatewayHosts: string[];
-  domainRules: Array<{
-    hostname: string;
-    presetKey: LlmGatewayPresetKey;
-  }>;
 }
 
 interface LiteLlmProxyLbFormValues {
@@ -298,39 +272,6 @@ const DEFAULT_LLM_GATEWAY_API_BASE =
   (process.env.NEXT_PUBLIC_LLM_GATEWAY_DEFAULT_API_BASE ?? "").trim() ||
   "http://localhost:4001";
 const MAX_LLM_GATEWAY_OUTPUT_TOKENS = 1_000_000;
-const LLM_GATEWAY_AUTO_RECOMMEND_ENABLED_STORAGE_KEY =
-  "llm_gateway_auto_recommend_enabled";
-const LLM_GATEWAY_AUTO_RECOMMEND_NOTICE_STORAGE_KEY =
-  "llm_gateway_auto_recommend_notice_enabled";
-
-function readBooleanPreferenceFromStorage(
-  storageKey: string,
-  fallbackValue: boolean,
-): boolean {
-  try {
-    const stored = localStorage.getItem(storageKey);
-    if (stored === "1" || stored === "true") {
-      return true;
-    }
-    if (stored === "0" || stored === "false") {
-      return false;
-    }
-  } catch {
-    return fallbackValue;
-  }
-  return fallbackValue;
-}
-
-function writeBooleanPreferenceToStorage(
-  storageKey: string,
-  value: boolean,
-): void {
-  try {
-    localStorage.setItem(storageKey, value ? "1" : "0");
-  } catch {
-    return;
-  }
-}
 
 function toFallbackModels(input: string | undefined) {
   if (!input) {
@@ -455,19 +396,6 @@ export function LlmGatewaySettingsPanel() {
   const [editing, setEditing] = useState<LlmGatewayProfile | null>(null);
   const [createForm] = Form.useForm<LlmGatewayFormValues>();
   const [editForm] = Form.useForm<LlmGatewayFormValues>();
-  const [autoRecommendationConfig, setAutoRecommendationConfig] =
-    useState<LlmGatewayAutoRecommendationConfig | null>(null);
-  const [recommendationConfigOpen, setRecommendationConfigOpen] =
-    useState(false);
-  const [recommendationConfigSaving, setRecommendationConfigSaving] =
-    useState(false);
-  const [recommendationConfigForm] =
-    Form.useForm<LlmGatewayRecommendationConfigFormValues>();
-  const [autoRecommendEnabled, setAutoRecommendEnabled] = useState(true);
-  const [autoRecommendNoticeEnabled, setAutoRecommendNoticeEnabled] =
-    useState(true);
-  const [createInitialApiBase, setCreateInitialApiBase] = useState("");
-  const [editInitialApiBase, setEditInitialApiBase] = useState("");
   const [testProfile, setTestProfile] = useState<LlmGatewayProfile | null>(
     null,
   );
@@ -517,107 +445,6 @@ export function LlmGatewaySettingsPanel() {
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
-  );
-
-  const handleAutoRecommendEnabledChange = useCallback((checked: boolean) => {
-    setAutoRecommendEnabled(checked);
-    writeBooleanPreferenceToStorage(
-      LLM_GATEWAY_AUTO_RECOMMEND_ENABLED_STORAGE_KEY,
-      checked,
-    );
-  }, []);
-
-  const handleAutoRecommendNoticeEnabledChange = useCallback(
-    (checked: boolean) => {
-      setAutoRecommendNoticeEnabled(checked);
-      writeBooleanPreferenceToStorage(
-        LLM_GATEWAY_AUTO_RECOMMEND_NOTICE_STORAGE_KEY,
-        checked,
-      );
-    },
-    [],
-  );
-
-  const openRecommendationConfigModal = useCallback(() => {
-    const config =
-      autoRecommendationConfig ??
-      DEFAULT_LLM_GATEWAY_AUTO_RECOMMENDATION_CONFIG;
-    recommendationConfigForm.setFieldsValue({
-      defaultPresetKey: config.defaultPresetKey,
-      localGatewayHosts: config.localGatewayHosts,
-      domainRules: config.domainRules.map((rule) => ({
-        hostname: rule.hostname,
-        presetKey: rule.presetKey,
-      })),
-    });
-    setRecommendationConfigOpen(true);
-  }, [autoRecommendationConfig, recommendationConfigForm]);
-
-  const handleSaveRecommendationConfig = useCallback(
-    async (values: LlmGatewayRecommendationConfigFormValues) => {
-      setRecommendationConfigSaving(true);
-      try {
-        const localGatewayHosts = Array.from(
-          new Set(
-            (values.localGatewayHosts ?? [])
-              .map((entry) => entry.trim().toLowerCase())
-              .filter((entry) => entry.length > 0 && !/\s/.test(entry)),
-          ),
-        );
-
-        const dedupedRules = new Map<string, LlmGatewayPresetKey>();
-        (values.domainRules ?? []).forEach((rule) => {
-          const hostname = rule.hostname?.trim().toLowerCase();
-          if (!hostname || /\s/.test(hostname)) {
-            return;
-          }
-          dedupedRules.set(hostname, rule.presetKey);
-        });
-
-        const domainRules = Array.from(dedupedRules.entries()).map(
-          ([hostname, presetKey]) => ({
-            hostname,
-            presetKey,
-          }),
-        );
-
-        const payload = {
-          defaultPresetKey: values.defaultPresetKey,
-          localGatewayHosts,
-          domainRules,
-        };
-
-        const response =
-          await apiClient.put<LlmGatewayAutoRecommendationConfig>(
-            "system-settings/llm-gateways/recommendation-config",
-            payload,
-          );
-
-        setAutoRecommendationConfig(response.data ?? null);
-        setRecommendationConfigOpen(false);
-        messageApi.success(
-          t("settings.llmGateway.messages.recommendationConfigUpdated", {
-            defaultValue: "Auto recommendation mapping saved",
-          }),
-        );
-      } catch (error) {
-        captureClientError(
-          "Failed to save LLM gateway recommendation config",
-          error,
-        );
-        const messageText = formatApiErrorMessage(error);
-        messageApi.error(
-          messageText
-            ? messageText
-            : t("settings.llmGateway.errors.recommendationConfigSaveFailed", {
-                defaultValue: "Failed to save recommendation mapping",
-              }),
-        );
-      } finally {
-        setRecommendationConfigSaving(false);
-      }
-    },
-    [apiClient, messageApi, t],
   );
 
   const statusProfile = useMemo(() => {
@@ -695,95 +522,6 @@ export function LlmGatewaySettingsPanel() {
     );
   }, [embeddingResolved, settings.profiles]);
 
-  const presets = useMemo<LlmGatewayPresetOption[]>(
-    () => [
-      {
-        key: "litellmDocker",
-        label: t("settings.llmGateway.presets.litellmDocker"),
-        apiBase: "http://litellm:4000",
-        model: "openai/gpt-4o-mini",
-        embeddingModel: "openai/text-embedding-3-small",
-        fallbackModels: ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"],
-        sendMetadata: true,
-        responseFormatMode: "json_schema",
-      },
-      {
-        key: "litellmLocal",
-        label: t("settings.llmGateway.presets.litellmLocal"),
-        apiBase: "http://localhost:4001",
-        model: "openai/gpt-4o-mini",
-        embeddingModel: "openai/text-embedding-3-small",
-        fallbackModels: ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"],
-        sendMetadata: true,
-        responseFormatMode: "json_schema",
-      },
-      {
-        key: "openaiOfficial",
-        label: t("settings.llmGateway.presets.openaiOfficial", {
-          defaultValue: "OpenAI (Official)",
-        }),
-        apiBase: "https://api.openai.com/v1",
-        model: "gpt-4o-mini",
-        embeddingModel: "text-embedding-3-small",
-        sendMetadata: true,
-        responseFormatMode: "json_schema",
-      },
-      {
-        key: "openrouter",
-        label: t("settings.llmGateway.presets.openrouter", {
-          defaultValue: "OpenRouter (Compatible)",
-        }),
-        apiBase: "https://openrouter.ai/api/v1",
-        model: "openai/gpt-4o-mini",
-        sendMetadata: false,
-        responseFormatMode: "json_object",
-      },
-      {
-        key: "externalConservative",
-        label: t("settings.llmGateway.presets.externalConservative", {
-          defaultValue: "External Gateway (Conservative)",
-        }),
-        apiBase: "https://your-openai-compatible-gateway.example.com/v1",
-        model: "openai/gpt-4o-mini",
-        sendMetadata: false,
-        responseFormatMode: "none",
-      },
-      {
-        key: "glm",
-        label: t("settings.llmGateway.presets.glm"),
-        apiBase: "https://open.bigmodel.cn/api/paas/v4",
-        model: "glm-4-plus",
-        sendMetadata: false,
-        responseFormatMode: "json_object",
-      },
-      {
-        key: "kimi",
-        label: t("settings.llmGateway.presets.kimi"),
-        apiBase: "https://api.moonshot.cn/v1",
-        model: "moonshot-v1-8k",
-        sendMetadata: false,
-        responseFormatMode: "json_object",
-      },
-      {
-        key: "deepseek",
-        label: t("settings.llmGateway.presets.deepseek"),
-        apiBase: "https://api.deepseek.com/v1",
-        model: "deepseek-chat",
-        sendMetadata: false,
-        responseFormatMode: "json_object",
-      },
-      {
-        key: "qwen",
-        label: t("settings.llmGateway.presets.qwen"),
-        apiBase: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        model: "qwen-turbo",
-        sendMetadata: false,
-        responseFormatMode: "json_object",
-      },
-    ],
-    [t],
-  );
-
   const apiBaseRules = useMemo(
     () => [
       {
@@ -812,24 +550,6 @@ export function LlmGatewaySettingsPanel() {
     [t],
   );
 
-  const testProfileRecommendation = useMemo(() => {
-    if (!testProfile) {
-      return null;
-    }
-    const detected = detectPresetRecommendationByApiBase(
-      testProfile.apiBase,
-      autoRecommendationConfig ?? undefined,
-    );
-    if (!detected) {
-      return null;
-    }
-    const preset = presets.find((entry) => entry.key === detected.presetKey);
-    if (!preset) {
-      return null;
-    }
-    return { detected, preset };
-  }, [autoRecommendationConfig, presets, testProfile]);
-
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setErrorMessage(null);
@@ -838,96 +558,13 @@ export function LlmGatewaySettingsPanel() {
         "system-settings/llm-gateways",
       );
       setSettings(response.data ?? EMPTY_SETTINGS);
-
-      try {
-        const recommendationResponse =
-          await apiClient.get<LlmGatewayAutoRecommendationConfig>(
-            "system-settings/llm-gateways/recommendation-config",
-          );
-        setAutoRecommendationConfig(recommendationResponse.data ?? null);
-      } catch (error) {
-        captureClientError(
-          "Failed to load LLM gateway recommendation config",
-          error,
-        );
-        setAutoRecommendationConfig(null);
-      }
     } catch (error) {
       captureClientError("Failed to load LLM gateway settings", error);
-      setAutoRecommendationConfig(null);
       setErrorMessage(t("settings.llmGateway.errors.loadFailed"));
     } finally {
       setLoading(false);
     }
   }, [apiClient, t]);
-
-  const applyApiBaseRecommendation = useCallback(
-    (form: FormInstance<LlmGatewayFormValues>, source: "create" | "edit") => {
-      if (!autoRecommendEnabled) {
-        return;
-      }
-
-      const baselineApiBase =
-        source === "create" ? createInitialApiBase : editInitialApiBase;
-      const recommendation = buildAutoRecommendationPatch({
-        apiBase: String(form.getFieldValue("apiBase") ?? ""),
-        baselineApiBase,
-        presets,
-        recommendationConfig: autoRecommendationConfig ?? undefined,
-        currentValues: {
-          preset: form.getFieldValue("preset"),
-          sendMetadata: form.getFieldValue("sendMetadata"),
-          responseFormatMode: form.getFieldValue("responseFormatMode"),
-        },
-        touchedFields: {
-          preset: form.isFieldTouched("preset"),
-          sendMetadata: form.isFieldTouched("sendMetadata"),
-          responseFormatMode: form.isFieldTouched("responseFormatMode"),
-        },
-      });
-
-      if (!recommendation.hasChanges || !recommendation.recommendedPreset) {
-        return;
-      }
-
-      form.setFieldsValue(recommendation.nextValues);
-      if (autoRecommendNoticeEnabled) {
-        messageApi.info(
-          t("settings.llmGateway.messages.autoRecommended", {
-            defaultValue:
-              "Detected API base domain {{domain}} and auto-applied compatibility template: {{name}}",
-            domain: recommendation.detected?.hostname ?? "-",
-            name: recommendation.recommendedPreset.label,
-          }),
-        );
-      }
-    },
-    [
-      autoRecommendationConfig,
-      autoRecommendEnabled,
-      autoRecommendNoticeEnabled,
-      createInitialApiBase,
-      editInitialApiBase,
-      messageApi,
-      presets,
-      t,
-    ],
-  );
-
-  useEffect(() => {
-    setAutoRecommendEnabled(
-      readBooleanPreferenceFromStorage(
-        LLM_GATEWAY_AUTO_RECOMMEND_ENABLED_STORAGE_KEY,
-        true,
-      ),
-    );
-    setAutoRecommendNoticeEnabled(
-      readBooleanPreferenceFromStorage(
-        LLM_GATEWAY_AUTO_RECOMMEND_NOTICE_STORAGE_KEY,
-        true,
-      ),
-    );
-  }, []);
 
   useEffect(() => {
     void loadSettings();
@@ -935,17 +572,15 @@ export function LlmGatewaySettingsPanel() {
 
   useEffect(() => {
     if (!editing) {
-      setEditInitialApiBase("");
       return;
     }
-    setEditInitialApiBase(editing.apiBase);
     editForm.setFieldsValue({
-      preset: undefined,
       name: editing.name,
       apiBase: editing.apiBase,
       model: editing.model,
       assistantModel: editing.assistantModel ?? undefined,
       embeddingModel: editing.embeddingModel ?? undefined,
+      apiSurface: editing.apiSurface ?? "chat_completions",
       timeoutMs: editing.timeoutMs,
       temperature: editing.temperature,
       topP: editing.topP,
@@ -962,34 +597,34 @@ export function LlmGatewaySettingsPanel() {
   }, [editing, editForm]);
 
   const openCreate = () => {
-    const template =
+    const baselineProfile =
       settings.profiles.find((profile) => profile.id === settings.activeId) ??
       settings.profiles[0] ??
       null;
-    const templateFallbackModels = template
-      ? toFallbackModelsText(template.fallbackModels)
+    const templateFallbackModels = baselineProfile
+      ? toFallbackModelsText(baselineProfile.fallbackModels)
       : "";
-    const initialApiBase = template?.apiBase ?? DEFAULT_LLM_GATEWAY_API_BASE;
+    const initialApiBase =
+      baselineProfile?.apiBase ?? DEFAULT_LLM_GATEWAY_API_BASE;
 
     createForm.setFieldsValue({
-      preset: undefined,
       name: "",
       apiBase: initialApiBase,
-      model: template?.model ?? "openai/gpt-4o-mini",
-      assistantModel: template?.assistantModel ?? "",
-      embeddingModel: template?.embeddingModel ?? "",
-      timeoutMs: template?.timeoutMs ?? 60_000,
-      temperature: template?.temperature ?? 0.2,
-      topP: template?.topP ?? 0.9,
-      maxOutputTokens: template?.maxOutputTokens ?? 1_200,
-      maxRetries: template?.maxRetries ?? 3,
-      requestsPerMinute: template?.requestsPerMinute ?? 60,
+      model: baselineProfile?.model ?? "openai/gpt-4o-mini",
+      assistantModel: baselineProfile?.assistantModel ?? "",
+      embeddingModel: baselineProfile?.embeddingModel ?? "",
+      apiSurface: baselineProfile?.apiSurface ?? "chat_completions",
+      timeoutMs: baselineProfile?.timeoutMs ?? 60_000,
+      temperature: baselineProfile?.temperature ?? 0.2,
+      topP: baselineProfile?.topP ?? 0.9,
+      maxOutputTokens: baselineProfile?.maxOutputTokens ?? 1_200,
+      maxRetries: baselineProfile?.maxRetries ?? 3,
+      requestsPerMinute: baselineProfile?.requestsPerMinute ?? 60,
       fallbackModels: templateFallbackModels,
-      sendMetadata: template?.sendMetadata ?? true,
-      responseFormatMode: template?.responseFormatMode ?? "json_schema",
+      sendMetadata: baselineProfile?.sendMetadata ?? true,
+      responseFormatMode: baselineProfile?.responseFormatMode ?? "json_schema",
       enabled: true,
     });
-    setCreateInitialApiBase(initialApiBase);
     setCreateOpen(true);
   };
 
@@ -1309,6 +944,7 @@ export function LlmGatewaySettingsPanel() {
         embeddingModel: values.embeddingModel?.trim()
           ? values.embeddingModel.trim()
           : null,
+        apiSurface: values.apiSurface ?? "chat_completions",
         timeoutMs: values.timeoutMs,
         temperature: values.temperature,
         topP: values.topP,
@@ -1323,7 +959,6 @@ export function LlmGatewaySettingsPanel() {
       await apiClient.post("system-settings/llm-gateways", payload);
       await loadSettings();
       setCreateOpen(false);
-      setCreateInitialApiBase("");
       createForm.resetFields();
       messageApi.success(t("settings.llmGateway.messages.created"));
     } catch (error) {
@@ -1366,6 +1001,7 @@ export function LlmGatewaySettingsPanel() {
         embeddingModel: values.embeddingModel?.trim()
           ? values.embeddingModel.trim()
           : null,
+        apiSurface: values.apiSurface ?? "chat_completions",
         timeoutMs: values.timeoutMs,
         temperature: values.temperature,
         topP: values.topP,
@@ -1390,7 +1026,6 @@ export function LlmGatewaySettingsPanel() {
       );
       await loadSettings();
       setEditing(null);
-      setEditInitialApiBase("");
       editForm.resetFields();
       messageApi.success(t("settings.llmGateway.messages.updated"));
     } catch (error) {
@@ -1602,34 +1237,6 @@ export function LlmGatewaySettingsPanel() {
       },
     });
   };
-
-  const applyPreset = useCallback(
-    (form: typeof createForm, presetKey: string | undefined) => {
-      if (!presetKey) {
-        return;
-      }
-      const preset = presets.find((entry) => entry.key === presetKey);
-      if (!preset) {
-        return;
-      }
-      const nextValues: Partial<LlmGatewayFormValues> = {
-        apiBase: preset.apiBase,
-        model: preset.model,
-        embeddingModel: preset.embeddingModel ?? "",
-        fallbackModels: preset.fallbackModels
-          ? toFallbackModelsText(preset.fallbackModels)
-          : "",
-        sendMetadata: preset.sendMetadata,
-        responseFormatMode: preset.responseFormatMode,
-      };
-      const currentName = form.getFieldValue("name");
-      if (!currentName) {
-        nextValues.name = preset.label;
-      }
-      form.setFieldsValue(nextValues);
-    },
-    [presets],
-  );
 
   const openModelsModal = useCallback(
     (title: string, apiBase: string, models: string[]) => {
@@ -2355,6 +1962,7 @@ export function LlmGatewaySettingsPanel() {
                 "clearApiKey",
                 "model",
                 "embeddingModel",
+                "apiSurface",
                 "timeoutMs",
                 "temperature",
                 "topP",
@@ -2368,6 +1976,7 @@ export function LlmGatewaySettingsPanel() {
                 "apiKey",
                 "model",
                 "embeddingModel",
+                "apiSurface",
                 "timeoutMs",
                 "temperature",
                 "topP",
@@ -2393,6 +2002,7 @@ export function LlmGatewaySettingsPanel() {
           apiBase: values.apiBase.trim(),
           ...(completionModel ? { model: completionModel } : {}),
           includeCompletion: hasCompletionModel,
+          apiSurface: values.apiSurface ?? "chat_completions",
           timeoutMs: values.timeoutMs,
           temperature: values.temperature,
           topP: values.topP,
@@ -2587,7 +2197,7 @@ export function LlmGatewaySettingsPanel() {
       includeCompletion: true,
       model: "",
       prompt: "",
-      apiSurface: "chat_completions",
+      apiSurface: profile.apiSurface ?? "chat_completions",
       responseFormatMode: profile.responseFormatMode ?? "json_schema",
       includeMetadataProbe: profile.sendMetadata ?? true,
       includeEmbeddings: Boolean(profile.embeddingModel),
@@ -2678,6 +2288,7 @@ export function LlmGatewaySettingsPanel() {
       responsive: ["xl"],
       render: (_: unknown, record) => (
         <Space wrap>
+          <Tag>{`api:${record.apiSurface}`}</Tag>
           <Tag>{`response_format:${record.responseFormatMode}`}</Tag>
           <Tag color={record.sendMetadata ? "green" : "default"}>
             {record.sendMetadata
@@ -3388,37 +2999,6 @@ export function LlmGatewaySettingsPanel() {
           </Button>
         </Space>
 
-        <Space wrap>
-          <Space size={8}>
-            <Switch
-              checked={autoRecommendEnabled}
-              onChange={handleAutoRecommendEnabledChange}
-            />
-            <Typography.Text>
-              {t("settings.llmGateway.autoRecommend.fields.enabled", {
-                defaultValue: "按场景自动推荐兼容模板",
-              })}
-            </Typography.Text>
-          </Space>
-          <Space size={8}>
-            <Switch
-              checked={autoRecommendNoticeEnabled}
-              onChange={handleAutoRecommendNoticeEnabledChange}
-              disabled={!autoRecommendEnabled}
-            />
-            <Typography.Text type="secondary">
-              {t("settings.llmGateway.autoRecommend.fields.noticeEnabled", {
-                defaultValue: "自动推荐后显示提示",
-              })}
-            </Typography.Text>
-          </Space>
-          <Button onClick={openRecommendationConfigModal}>
-            {t("settings.llmGateway.autoRecommend.actions.editConfig", {
-              defaultValue: "编辑推荐映射",
-            })}
-          </Button>
-        </Space>
-
         <Table<LlmGatewayProfile>
           rowKey="id"
           size={screens.lg ? "middle" : "small"}
@@ -3431,229 +3011,10 @@ export function LlmGatewaySettingsPanel() {
       </Space>
 
       <Modal
-        title={t("settings.llmGateway.autoRecommend.modal.title", {
-          defaultValue: "编辑自动推荐映射",
-        })}
-        open={recommendationConfigOpen}
-        onCancel={() => setRecommendationConfigOpen(false)}
-        width={screens.md ? 760 : "100%"}
-        footer={[
-          <Button
-            key="cancel"
-            onClick={() => setRecommendationConfigOpen(false)}
-          >
-            {t("common.cancel")}
-          </Button>,
-          <Button
-            key="save"
-            type="primary"
-            onClick={() => recommendationConfigForm.submit()}
-            loading={recommendationConfigSaving}
-          >
-            {t("common.save")}
-          </Button>,
-        ]}
-      >
-        <Form
-          form={recommendationConfigForm}
-          layout="vertical"
-          onFinish={(values) => {
-            void handleSaveRecommendationConfig(values);
-          }}
-        >
-          <Form.Item
-            label={t(
-              "settings.llmGateway.autoRecommend.fields.defaultPresetKey",
-              {
-                defaultValue: "默认模板",
-              },
-            )}
-            name="defaultPresetKey"
-            rules={[
-              {
-                required: true,
-                message: t(
-                  "settings.llmGateway.autoRecommend.validation.defaultPresetKey",
-                  {
-                    defaultValue: "请选择默认模板",
-                  },
-                ),
-              },
-            ]}
-          >
-            <Select
-              options={presets.map((preset) => ({
-                value: preset.key,
-                label: preset.label,
-              }))}
-            />
-          </Form.Item>
-
-          <Form.Item
-            label={t(
-              "settings.llmGateway.autoRecommend.fields.localGatewayHosts",
-              {
-                defaultValue: "本地网关域名",
-              },
-            )}
-            name="localGatewayHosts"
-            extra={t(
-              "settings.llmGateway.autoRecommend.hints.localGatewayHosts",
-              {
-                defaultValue:
-                  "这些域名会自动映射到 LiteLLM Local 模板（可输入多个）。",
-              },
-            )}
-          >
-            <Select
-              mode="tags"
-              open={false}
-              tokenSeparators={[",", "\n"]}
-              placeholder={t(
-                "settings.llmGateway.autoRecommend.placeholders.localGatewayHosts",
-                {
-                  defaultValue: "例如 localhost, host.docker.internal",
-                },
-              )}
-            />
-          </Form.Item>
-
-          <Typography.Text strong>
-            {t("settings.llmGateway.autoRecommend.fields.domainRules", {
-              defaultValue: "域名匹配规则",
-            })}
-          </Typography.Text>
-
-          <Form.List name="domainRules">
-            {(fields, { add, remove }) => (
-              <Space
-                direction="vertical"
-                size="small"
-                style={{ display: "flex", marginTop: 8 }}
-              >
-                {fields.map((field) => (
-                  <Space
-                    key={field.key}
-                    align="start"
-                    wrap
-                    style={{ display: "flex" }}
-                  >
-                    <Form.Item
-                      name={[field.name, "hostname"]}
-                      rules={[
-                        {
-                          required: true,
-                          message: t(
-                            "settings.llmGateway.autoRecommend.validation.hostnameRequired",
-                            {
-                              defaultValue: "请输入域名",
-                            },
-                          ),
-                        },
-                        {
-                          validator: (_: unknown, value: unknown) => {
-                            if (typeof value !== "string") {
-                              return Promise.reject(
-                                new Error(
-                                  t(
-                                    "settings.llmGateway.autoRecommend.validation.hostnameRequired",
-                                    {
-                                      defaultValue: "请输入域名",
-                                    },
-                                  ),
-                                ),
-                              );
-                            }
-                            const trimmed = value.trim();
-                            if (!trimmed || /\s/.test(trimmed)) {
-                              return Promise.reject(
-                                new Error(
-                                  t(
-                                    "settings.llmGateway.autoRecommend.validation.hostname",
-                                    {
-                                      defaultValue:
-                                        "域名不能为空且不能包含空格",
-                                    },
-                                  ),
-                                ),
-                              );
-                            }
-                            return Promise.resolve();
-                          },
-                        },
-                      ]}
-                      style={{ minWidth: 280, flex: 1 }}
-                    >
-                      <Input
-                        placeholder={t(
-                          "settings.llmGateway.autoRecommend.placeholders.ruleHostname",
-                          {
-                            defaultValue: "例如 api.openai.com",
-                          },
-                        )}
-                      />
-                    </Form.Item>
-                    <Form.Item
-                      name={[field.name, "presetKey"]}
-                      rules={[
-                        {
-                          required: true,
-                          message: t(
-                            "settings.llmGateway.autoRecommend.validation.presetKey",
-                            {
-                              defaultValue: "请选择模板",
-                            },
-                          ),
-                        },
-                      ]}
-                      style={{ minWidth: 240 }}
-                    >
-                      <Select
-                        options={presets.map((preset) => ({
-                          value: preset.key,
-                          label: preset.label,
-                        }))}
-                      />
-                    </Form.Item>
-                    <Button danger onClick={() => remove(field.name)}>
-                      {t("common.delete")}
-                    </Button>
-                  </Space>
-                ))}
-                <Button
-                  onClick={() =>
-                    add({
-                      hostname: "",
-                      presetKey: "externalConservative",
-                    })
-                  }
-                >
-                  {t("settings.llmGateway.autoRecommend.actions.addRule", {
-                    defaultValue: "新增规则",
-                  })}
-                </Button>
-              </Space>
-            )}
-          </Form.List>
-
-          <Typography.Paragraph
-            type="secondary"
-            style={{ marginTop: 12, marginBottom: 0 }}
-          >
-            {t("settings.llmGateway.autoRecommend.hints.domainRules", {
-              defaultValue:
-                "按顺序匹配 hostname；未命中规则时使用默认模板。保存后会即时生效。",
-            })}
-          </Typography.Paragraph>
-        </Form>
-      </Modal>
-
-      <Modal
         title={t("settings.llmGateway.modal.createTitle")}
         open={createOpen}
         onCancel={() => {
           setCreateOpen(false);
-          setCreateInitialApiBase("");
         }}
         width={screens.md ? 720 : "100%"}
         footer={[
@@ -3675,7 +3036,6 @@ export function LlmGatewaySettingsPanel() {
             key="cancel"
             onClick={() => {
               setCreateOpen(false);
-              setCreateInitialApiBase("");
             }}
           >
             {t("common.cancel")}
@@ -3692,31 +3052,12 @@ export function LlmGatewaySettingsPanel() {
       >
         <Form form={createForm} layout="vertical" onFinish={handleCreate}>
           <Form.Item
-            label={t("settings.llmGateway.fields.preset")}
-            name="preset"
-          >
-            <Select
-              allowClear
-              placeholder={t("settings.llmGateway.placeholders.preset")}
-              options={presets.map((preset) => ({
-                value: preset.key,
-                label: preset.label,
-              }))}
-              onChange={(value) => applyPreset(createForm, value)}
-            />
-          </Form.Item>
-          <Form.Item
             label={t("settings.llmGateway.fields.name")}
             name="name"
             rules={[
               {
                 required: true,
-                message: t(
-                  "settings.llmGateway.autoRecommend.validation.presetKey",
-                  {
-                    defaultValue: "请选择模板",
-                  },
-                ),
+                message: t("settings.llmGateway.validation.nameRequired"),
               },
             ]}
           >
@@ -3730,7 +3071,6 @@ export function LlmGatewaySettingsPanel() {
           >
             <Input
               placeholder={DEFAULT_LLM_GATEWAY_API_BASE}
-              onBlur={() => applyApiBaseRecommendation(createForm, "create")}
             />
           </Form.Item>
           <Form.Item
@@ -3769,6 +3109,23 @@ export function LlmGatewaySettingsPanel() {
             name="embeddingModel"
           >
             <Input placeholder="openai/text-embedding-3-small" />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.llmGateway.fields.apiSurface", {
+              defaultValue: "API surface",
+            })}
+            name="apiSurface"
+            extra={t("settings.llmGateway.hints.apiSurface", {
+              defaultValue:
+                "Select which completion endpoint runtime should call: /v1/chat/completions or /v1/responses.",
+            })}
+          >
+            <Select
+              options={[
+                { label: "chat_completions", value: "chat_completions" },
+                { label: "responses", value: "responses" },
+              ]}
+            />
           </Form.Item>
 
           <Space wrap style={{ display: "flex" }}>
@@ -3977,7 +3334,6 @@ export function LlmGatewaySettingsPanel() {
         open={Boolean(editing)}
         onCancel={() => {
           setEditing(null);
-          setEditInitialApiBase("");
         }}
         width={screens.md ? 720 : "100%"}
         footer={[
@@ -4001,7 +3357,6 @@ export function LlmGatewaySettingsPanel() {
             key="cancel"
             onClick={() => {
               setEditing(null);
-              setEditInitialApiBase("");
             }}
           >
             {t("common.cancel")}
@@ -4017,20 +3372,6 @@ export function LlmGatewaySettingsPanel() {
         ]}
       >
         <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
-          <Form.Item
-            label={t("settings.llmGateway.fields.preset")}
-            name="preset"
-          >
-            <Select
-              allowClear
-              placeholder={t("settings.llmGateway.placeholders.preset")}
-              options={presets.map((preset) => ({
-                value: preset.key,
-                label: preset.label,
-              }))}
-              onChange={(value) => applyPreset(editForm, value)}
-            />
-          </Form.Item>
           <Form.Item
             label={t("settings.llmGateway.fields.name")}
             name="name"
@@ -4049,9 +3390,7 @@ export function LlmGatewaySettingsPanel() {
             extra={t("settings.llmGateway.hints.apiBase")}
             rules={apiBaseRules}
           >
-            <Input
-              onBlur={() => applyApiBaseRecommendation(editForm, "edit")}
-            />
+            <Input />
           </Form.Item>
           <Form.Item
             label={t("settings.llmGateway.fields.apiKey")}
@@ -4101,6 +3440,23 @@ export function LlmGatewaySettingsPanel() {
             name="embeddingModel"
           >
             <Input allowClear />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.llmGateway.fields.apiSurface", {
+              defaultValue: "API surface",
+            })}
+            name="apiSurface"
+            extra={t("settings.llmGateway.hints.apiSurface", {
+              defaultValue:
+                "Select which completion endpoint runtime should call: /v1/chat/completions or /v1/responses.",
+            })}
+          >
+            <Select
+              options={[
+                { label: "chat_completions", value: "chat_completions" },
+                { label: "responses", value: "responses" },
+              ]}
+            />
           </Form.Item>
 
           <Space wrap style={{ display: "flex" }}>
@@ -4326,45 +3682,6 @@ export function LlmGatewaySettingsPanel() {
           >
             {t("settings.llmGateway.actions.models")}
           </Button>,
-          <Button
-            key="recommended-retest"
-            onClick={() => {
-              if (!testProfile || !testProfileRecommendation) {
-                return;
-              }
-              const nextValues: LlmGatewayTestFormValues = {
-                ...testForm.getFieldsValue(),
-                responseFormatMode:
-                  testProfileRecommendation.preset.responseFormatMode,
-                includeMetadataProbe:
-                  testProfileRecommendation.preset.sendMetadata,
-              };
-              testForm.setFieldsValue({
-                responseFormatMode:
-                  testProfileRecommendation.preset.responseFormatMode,
-                includeMetadataProbe:
-                  testProfileRecommendation.preset.sendMetadata,
-              });
-              messageApi.info(
-                t(
-                  "settings.llmGateway.messages.recommendedTestStrategyApplied",
-                  {
-                    defaultValue:
-                      "Applied recommended strategy for {{domain}}: {{name}}",
-                    domain: testProfileRecommendation.detected.hostname,
-                    name: testProfileRecommendation.preset.label,
-                  },
-                ),
-              );
-              void runTest(testProfile.id, nextValues);
-            }}
-            disabled={!testProfileRecommendation}
-            loading={testProfile ? testing === testProfile.id : false}
-          >
-            {t("settings.llmGateway.test.actions.applyRecommendedAndRun", {
-              defaultValue: "按推荐策略重测",
-            })}
-          </Button>,
           <Button key="close" onClick={closeTest}>
             {t("common.close")}
           </Button>,
@@ -4395,17 +3712,6 @@ export function LlmGatewaySettingsPanel() {
               {testProfile?.apiBase ?? "-"}
             </Typography.Text>
           </Typography.Paragraph>
-
-          {testProfileRecommendation ? (
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-              {t("settings.llmGateway.test.hints.recommendedStrategy", {
-                defaultValue:
-                  "Detected domain {{domain}}, recommended template: {{name}}",
-                domain: testProfileRecommendation.detected.hostname,
-                name: testProfileRecommendation.preset.label,
-              })}
-            </Typography.Paragraph>
-          ) : null}
 
           <Form.Item
             label={t("settings.llmGateway.test.fields.includeCompletion", {

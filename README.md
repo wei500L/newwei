@@ -311,6 +311,7 @@ infra/
 
    在 `Settings -> LLM gateway` 的 Profile 创建/编辑页可直接配置运行时兼容策略：
 
+   - `API surface`: `chat_completions` / `responses`
    - `response_format mode`: `json_schema` / `json_object` / `none`
    - `send metadata`: 开关（关闭后运行时不再发送 `metadata` 字段）
 
@@ -322,7 +323,7 @@ infra/
 
    网关参数兼容采用**配置化严格模式**：不会再静默删字段重试；若上游不支持会直接返回结构化兼容诊断（code / field / hint / upstream message），便于快速排障。
 
-   推荐 Profile 模板（外部 OpenAI-compatible）：
+   示例 Profile 配置（外部 OpenAI-compatible，手动填写）：
 
    - `OpenAI (Official)`
      - `apiBase`: `https://api.openai.com/v1`
@@ -336,17 +337,6 @@ infra/
      - `apiBase`: `https://your-openai-compatible-gateway.example.com/v1`
      - `response_format mode`: `none`
      - `send metadata`: `false`
-
-   `apiBase` 输入框支持按域名自动推荐模板：前端会从后端接口拉取“域名 → 模板”映射配置（含默认兜底策略），失焦时按该配置匹配并在未手动修改相关字段时自动填充 `preset`、`response_format mode`、`send metadata`。为避免误覆盖，只有当 `apiBase` 相比当前表单初始值发生变化时才会应用推荐。
-
-   你也可以在面板中开关：
-
-   - `按场景自动推荐兼容模板`
-   - `自动切换后显示提示`
-
-   并且可在 `编辑推荐映射` 中维护域名规则（默认模板 / 本地域名 / 域名规则），保存后会持久化到 system settings 并即时生效。
-
-   在 `Test` 弹窗里新增了 `按推荐策略重测`，可一键把 `response_format probe` + `include metadata probe` 切到推荐值并立即发起测试。
 
 5. **本机模式（可选）**
 

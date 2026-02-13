@@ -19,7 +19,6 @@ import {
   LlmGatewayTestConfigDto,
 } from "./dto/llm-gateway-test-config.dto";
 import { UpdateLlmGatewayProxyLoadBalancingSettingsDto } from "./dto/llm-gateway-proxy-lb-settings.dto";
-import { UpdateLlmGatewayRecommendationConfigDto } from "./dto/llm-gateway-recommendation-config.dto";
 import { LlmGatewayTestDto } from "./dto/llm-gateway-test.dto";
 import { LlmGatewayProxyLoadBalancingTestDto } from "./dto/llm-gateway-proxy-lb-test.dto";
 import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
@@ -46,25 +45,6 @@ export class LlmGatewaySettingsController {
   @Permissions("settings.manage")
   async list() {
     return this.settings.list();
-  }
-
-  @Get("recommendation-config")
-  @Permissions("settings.manage")
-  async getRecommendationConfig() {
-    return this.settings.getAutoRecommendationConfig();
-  }
-
-  @Put("recommendation-config")
-  @Permissions("settings.manage")
-  async updateRecommendationConfig(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() body: UpdateLlmGatewayRecommendationConfigDto,
-  ) {
-    return this.settings.updateAutoRecommendationConfig(
-      user.orgId,
-      user.id,
-      body,
-    );
   }
 
   @Post()

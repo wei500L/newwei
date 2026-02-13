@@ -1,5 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { AxiosError, AxiosHeaders, AxiosResponse } from "axios";
+import { Readable } from "node:stream";
 
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
@@ -301,6 +302,55 @@ describe("LiteLlmService", () => {
       );
     });
 
+    it("should call responses endpoint when apiSurface is responses", async () => {
+      llmGatewaySettings.getActiveConfig.mockResolvedValueOnce({
+        ...mockConfig.litellm,
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "responses",
+      });
+      mockAxiosPost.mockResolvedValueOnce({
+        data: {
+          id: "resp_123",
+          model: "gpt-4o-mini",
+          created_at: 1_740_000_000,
+          output_text: "Hello from responses",
+          usage: {
+            input_tokens: 12,
+            output_tokens: 8,
+            total_tokens: 20,
+          },
+        },
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "x-litellm-response-cost": "0.0002",
+          "x-litellm-key-spend": "0.07",
+        },
+        config: { headers: new AxiosHeaders() },
+      });
+
+      const result = await service.acompletion(completionParams);
+
+      expect(mockAxiosPost).toHaveBeenCalledWith(
+        "/v1/responses",
+        expect.objectContaining({
+          model: "gpt-4o-mini",
+          input: [{ role: "user", content: "Hello" }],
+        }),
+        expect.any(Object),
+      );
+      expect(result.id).toBe("resp_123");
+      expect(result.choices[0]?.message.content).toBe("Hello from responses");
+      expect(result.usage).toEqual({
+        prompt_tokens: 12,
+        completion_tokens: 8,
+        total_tokens: 20,
+      });
+      expect(result.costUsd).toBe(0.0002);
+      expect(result.keySpendUsd).toBe(0.07);
+    });
+
 
     it("should fail fast when gateway rejects metadata field", async () => {
       const error400 = new AxiosError(
@@ -423,6 +473,50 @@ describe("LiteLlmService", () => {
       }
 
       expect(mockAxiosPost).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("stream", () => {
+    it("streams responses SSE when apiSurface is responses", async () => {
+      llmGatewaySettings.getActiveConfig.mockResolvedValueOnce({
+        ...mockConfig.litellm,
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "responses",
+      });
+      mockAxiosPost.mockResolvedValueOnce({
+        data: Readable.from([
+          'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n',
+          'data: {"type":"response.output_text.delta","delta":"lo"}\n\n',
+          'data: {"type":"response.completed"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        status: 200,
+        statusText: "OK",
+        headers: { "content-type": "text/event-stream" },
+        config: { headers: new AxiosHeaders() },
+      });
+
+      const chunks: string[] = [];
+      for await (const chunk of service.stream({
+        messages: [{ role: "user", content: "Hello" }],
+      })) {
+        if (chunk.delta) {
+          chunks.push(chunk.delta);
+        } else if (chunk.finishReason) {
+          chunks.push(`<${chunk.finishReason}>`);
+        }
+      }
+
+      expect(mockAxiosPost).toHaveBeenCalledWith(
+        "/v1/responses",
+        expect.objectContaining({
+          stream: true,
+          input: [{ role: "user", content: "Hello" }],
+        }),
+        expect.any(Object),
+      );
+      expect(chunks).toEqual(["Hel", "lo", "<stop>"]);
     });
   });
 

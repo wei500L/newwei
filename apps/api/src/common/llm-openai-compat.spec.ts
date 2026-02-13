@@ -51,6 +51,17 @@ describe("llm-openai-compat", () => {
       expect(issue?.incompatibleField).toBe("apiSurface");
     });
 
+    it("detects unsupported responses api for 400 unknown route style errors", () => {
+      const issue = detectOpenAiCompatibilityIssue({
+        status: 400,
+        apiSurface: "responses",
+        errorText: "Unknown route: POST /v1/responses",
+      });
+
+      expect(issue?.code).toBe("RESPONSES_API_UNSUPPORTED");
+      expect(issue?.incompatibleField).toBe("apiSurface");
+    });
+
     it("does not classify non-responses 405 errors as responses api unsupported", () => {
       const issue = detectOpenAiCompatibilityIssue({
         status: 405,
@@ -59,6 +70,17 @@ describe("llm-openai-compat", () => {
       });
 
       expect(issue).toBeNull();
+    });
+
+    it("keeps metadata incompatibility classification for non-route responses 400 errors", () => {
+      const issue = detectOpenAiCompatibilityIssue({
+        status: 400,
+        apiSurface: "responses",
+        errorText: "Invalid parameter metadata on /v1/responses",
+      });
+
+      expect(issue?.code).toBe("UNSUPPORTED_METADATA");
+      expect(issue?.incompatibleField).toBe("metadata");
     });
 
     it("detects invalid message content shape hints", () => {

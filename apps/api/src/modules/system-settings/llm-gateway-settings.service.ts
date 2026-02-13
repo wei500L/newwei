@@ -20,32 +20,12 @@ export type LlmGatewayResponseFormatMode =
   | "json_schema"
   | "json_object"
   | "none";
+export type LlmGatewayApiSurface = "chat_completions" | "responses";
 
 export interface LlmGatewayCompatibilityOptions {
   sendMetadata: boolean;
   responseFormatMode: LlmGatewayResponseFormatMode;
-}
-
-export type LlmGatewayRecommendationPresetKey =
-  | "litellmDocker"
-  | "litellmLocal"
-  | "openaiOfficial"
-  | "openrouter"
-  | "externalConservative"
-  | "glm"
-  | "kimi"
-  | "deepseek"
-  | "qwen";
-
-export interface LlmGatewayApiBaseRecommendationRule {
-  hostname: string;
-  presetKey: LlmGatewayRecommendationPresetKey;
-}
-
-export interface LlmGatewayAutoRecommendationConfig {
-  defaultPresetKey: LlmGatewayRecommendationPresetKey;
-  localGatewayHosts: string[];
-  domainRules: LlmGatewayApiBaseRecommendationRule[];
+  apiSurface: LlmGatewayApiSurface;
 }
 
 export type LlmGatewayResolvedConfig = LiteLlmEnvConfig &
@@ -107,34 +87,9 @@ const SETTINGS_DESCRIPTION =
 const CACHE_KEY = "llm_gateway:profiles";
 const CACHE_TTL_SECONDS = 60;
 
-const RECOMMENDATION_SETTINGS_KEY = "llm_gateway_recommendation_config";
-const RECOMMENDATION_SETTINGS_DESCRIPTION =
-  "LLM gateway apiBase domain -> compatibility preset mapping for auto recommendations.";
-const RECOMMENDATION_CACHE_KEY = "llm_gateway:recommendation-config";
-
 const DEFAULT_SEND_METADATA = true;
 const DEFAULT_RESPONSE_FORMAT_MODE: LlmGatewayResponseFormatMode = "json_schema";
-
-const DEFAULT_LLM_GATEWAY_AUTO_RECOMMENDATION_CONFIG: LlmGatewayAutoRecommendationConfig = {
-  defaultPresetKey: "externalConservative",
-  localGatewayHosts: [
-    "localhost",
-    "127.0.0.1",
-    "0.0.0.0",
-    "::1",
-    "[::1]",
-    "host.docker.internal"
-  ],
-  domainRules: [
-    { hostname: "api.openai.com", presetKey: "openaiOfficial" },
-    { hostname: "openrouter.ai", presetKey: "openrouter" },
-    { hostname: "open.bigmodel.cn", presetKey: "glm" },
-    { hostname: "api.moonshot.cn", presetKey: "kimi" },
-    { hostname: "api.deepseek.com", presetKey: "deepseek" },
-    { hostname: "dashscope.aliyuncs.com", presetKey: "qwen" },
-    { hostname: "litellm", presetKey: "litellmDocker" }
-  ]
-};
+const DEFAULT_API_SURFACE: LlmGatewayApiSurface = "chat_completions";
 
 @Injectable()
 export class LlmGatewaySettingsService {
@@ -155,71 +110,6 @@ export class LlmGatewaySettingsService {
       embeddingMode: settings.embeddingMode,
       profiles: settings.profiles.map((profile) => this.toPublicProfile(profile))
     };
-  }
-
-  async getAutoRecommendationConfig(): Promise<LlmGatewayAutoRecommendationConfig> {
-    const config = await this.loadAutoRecommendationConfig();
-    return this.cloneRecommendationConfig(config);
-  }
-
-  async updateAutoRecommendationConfig(
-    orgId: string,
-    actorId: string,
-    input: {
-      defaultPresetKey: string;
-      localGatewayHosts: string[];
-      domainRules: Array<{ hostname: string; presetKey: string }>;
-    }
-  ): Promise<LlmGatewayAutoRecommendationConfig> {
-    const normalized = this.normalizeRecommendationConfig(input);
-
-    await this.prisma.systemSetting.upsert({
-      where: { key: RECOMMENDATION_SETTINGS_KEY },
-      update: {
-        value: this.toPrismaJson(normalized),
-        updatedById: actorId,
-        description: RECOMMENDATION_SETTINGS_DESCRIPTION,
-        isPublic: false
-      },
-      create: {
-        key: RECOMMENDATION_SETTINGS_KEY,
-        value: this.toPrismaJson(normalized),
-        updatedById: actorId,
-        description: RECOMMENDATION_SETTINGS_DESCRIPTION,
-        isPublic: false
-      }
-    });
-
-    await writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId,
-          actorId,
-          resource: "system_settings",
-          action: "llm_gateway_recommendation_config_update",
-          metadata: this.toPrismaJson({
-            defaultPresetKey: normalized.defaultPresetKey,
-            localGatewayHostsCount: normalized.localGatewayHosts.length,
-            domainRulesCount: normalized.domainRules.length
-          } satisfies Prisma.InputJsonObject)
-        }
-      },
-      {
-        orgId,
-        actorId,
-        resource: "system_settings",
-        action: "llm_gateway_recommendation_config_update"
-      }
-    );
-
-    try {
-      await this.cache.del(RECOMMENDATION_CACHE_KEY);
-    } catch (error) {
-      this.logger.warn({ err: error }, "Failed to invalidate LLM gateway recommendation config cache");
-    }
-
-    return this.cloneRecommendationConfig(normalized);
   }
 
   async createProfile(
@@ -254,7 +144,8 @@ export class LlmGatewaySettingsService {
       enabled: profile.enabled,
       hasApiKey: this.hasApiKey(profile),
       sendMetadata: profile.sendMetadata,
-      responseFormatMode: profile.responseFormatMode
+      responseFormatMode: profile.responseFormatMode,
+      apiSurface: profile.apiSurface
     });
 
     return this.toPublicProfile(profile);
@@ -297,7 +188,8 @@ export class LlmGatewaySettingsService {
       enabled: updated.enabled,
       hasApiKey: this.hasApiKey(updated),
       sendMetadata: updated.sendMetadata,
-      responseFormatMode: updated.responseFormatMode
+      responseFormatMode: updated.responseFormatMode,
+      apiSurface: updated.apiSurface
     });
 
     return this.toPublicProfile(updated);
@@ -403,7 +295,8 @@ export class LlmGatewaySettingsService {
       fallbackModels: profile.fallbackModels,
       requestsPerMinute: profile.requestsPerMinute,
       sendMetadata: profile.sendMetadata,
-      responseFormatMode: profile.responseFormatMode
+      responseFormatMode: profile.responseFormatMode,
+      apiSurface: profile.apiSurface
     };
   }
 
@@ -436,7 +329,8 @@ export class LlmGatewaySettingsService {
       fallbackModels: profile.fallbackModels,
       requestsPerMinute: profile.requestsPerMinute,
       sendMetadata: profile.sendMetadata,
-      responseFormatMode: profile.responseFormatMode
+      responseFormatMode: profile.responseFormatMode,
+      apiSurface: profile.apiSurface
     };
   }
 
@@ -462,7 +356,8 @@ export class LlmGatewaySettingsService {
       fallbackModels: profile.fallbackModels,
       requestsPerMinute: profile.requestsPerMinute,
       sendMetadata: profile.sendMetadata,
-      responseFormatMode: profile.responseFormatMode
+      responseFormatMode: profile.responseFormatMode,
+      apiSurface: profile.apiSurface
     };
   }
 
@@ -613,6 +508,7 @@ export class LlmGatewaySettingsService {
         record.responseFormatMode,
         DEFAULT_RESPONSE_FORMAT_MODE
       ),
+      apiSurface: this.normalizeApiSurface(record.apiSurface, DEFAULT_API_SURFACE),
       enabled: record.enabled ?? true,
       createdAt: this.normalizeString(record.createdAt) ?? new Date().toISOString(),
       updatedAt: this.normalizeString(record.updatedAt) ?? new Date().toISOString()
@@ -699,6 +595,14 @@ export class LlmGatewaySettingsService {
               (fallback as Partial<StoredProfile>).responseFormatMode,
               DEFAULT_RESPONSE_FORMAT_MODE
             ),
+      apiSurface:
+        input.apiSurface !== undefined
+          ? this.normalizeApiSurface(input.apiSurface, DEFAULT_API_SURFACE)
+          : base.apiSurface ??
+            this.normalizeApiSurface(
+              (fallback as Partial<StoredProfile>).apiSurface,
+              DEFAULT_API_SURFACE
+            ),
       enabled: input.enabled ?? base.enabled ?? true,
       createdAt: base.createdAt,
       updatedAt: base.updatedAt
@@ -765,6 +669,7 @@ export class LlmGatewaySettingsService {
       requestsPerMinute: profile.requestsPerMinute,
       sendMetadata: profile.sendMetadata,
       responseFormatMode: profile.responseFormatMode,
+      apiSurface: profile.apiSurface,
       enabled: profile.enabled,
       createdAt: profile.createdAt,
       updatedAt: profile.updatedAt,
@@ -772,129 +677,14 @@ export class LlmGatewaySettingsService {
     };
   }
 
-  private async loadAutoRecommendationConfig(): Promise<LlmGatewayAutoRecommendationConfig> {
-    let cached: LlmGatewayAutoRecommendationConfig | null = null;
-    try {
-      cached = await this.cache.get<LlmGatewayAutoRecommendationConfig>(RECOMMENDATION_CACHE_KEY);
-    } catch (error) {
-      this.logger.warn(
-        { err: error },
-        "Failed to read LLM gateway recommendation config cache; falling back to database"
-      );
+  private normalizeApiSurface(
+    value: unknown,
+    fallback: LlmGatewayApiSurface
+  ): LlmGatewayApiSurface {
+    if (value === "chat_completions" || value === "responses") {
+      return value;
     }
-
-    if (cached) {
-      return this.normalizeRecommendationConfig(cached);
-    }
-
-    const record = await this.prisma.systemSetting.findUnique({
-      where: { key: RECOMMENDATION_SETTINGS_KEY }
-    });
-    const normalized = this.normalizeRecommendationConfig((record?.value as unknown) ?? null);
-
-    try {
-      await this.cache.set(RECOMMENDATION_CACHE_KEY, normalized, CACHE_TTL_SECONDS);
-    } catch (error) {
-      this.logger.warn({ err: error }, "Failed to write LLM gateway recommendation config cache");
-    }
-
-    return normalized;
-  }
-
-  private cloneRecommendationConfig(
-    config: LlmGatewayAutoRecommendationConfig
-  ): LlmGatewayAutoRecommendationConfig {
-    return {
-      defaultPresetKey: config.defaultPresetKey,
-      localGatewayHosts: [...config.localGatewayHosts],
-      domainRules: config.domainRules.map((rule) => ({
-        hostname: rule.hostname,
-        presetKey: rule.presetKey
-      }))
-    };
-  }
-
-  private normalizeRecommendationConfig(raw: unknown): LlmGatewayAutoRecommendationConfig {
-    const record = raw && typeof raw === "object" ? (raw as Partial<LlmGatewayAutoRecommendationConfig>) : null;
-
-    const defaultPresetKey = this.isRecommendationPresetKey(record?.defaultPresetKey)
-      ? record.defaultPresetKey
-      : DEFAULT_LLM_GATEWAY_AUTO_RECOMMENDATION_CONFIG.defaultPresetKey;
-
-    const localGatewayHostsInput = Array.isArray(record?.localGatewayHosts)
-      ? record.localGatewayHosts
-      : [];
-    const normalizedLocalGatewayHosts = Array.from(
-      new Set(
-        localGatewayHostsInput
-          .map((entry) => this.normalizeRecommendationHostname(entry))
-          .filter((entry): entry is string => Boolean(entry))
-      )
-    );
-
-    const localGatewayHosts =
-      normalizedLocalGatewayHosts.length > 0
-        ? normalizedLocalGatewayHosts
-        : [...DEFAULT_LLM_GATEWAY_AUTO_RECOMMENDATION_CONFIG.localGatewayHosts];
-
-    const domainRulesInput = Array.isArray(record?.domainRules) ? record.domainRules : [];
-    const dedupedRules = new Map<string, LlmGatewayRecommendationPresetKey>();
-
-    domainRulesInput.forEach((rule) => {
-      if (!rule || typeof rule !== "object") {
-        return;
-      }
-      const candidate = rule as Partial<LlmGatewayApiBaseRecommendationRule>;
-      const hostname = this.normalizeRecommendationHostname(candidate.hostname);
-      if (!hostname || !this.isRecommendationPresetKey(candidate.presetKey)) {
-        return;
-      }
-      dedupedRules.set(hostname, candidate.presetKey);
-    });
-
-    const normalizedDomainRules = Array.from(dedupedRules.entries()).map(([hostname, presetKey]) => ({
-      hostname,
-      presetKey
-    }));
-
-    const domainRules =
-      normalizedDomainRules.length > 0
-        ? normalizedDomainRules
-        : DEFAULT_LLM_GATEWAY_AUTO_RECOMMENDATION_CONFIG.domainRules.map((rule) => ({
-            hostname: rule.hostname,
-            presetKey: rule.presetKey
-          }));
-
-    return {
-      defaultPresetKey,
-      localGatewayHosts,
-      domainRules
-    };
-  }
-
-  private normalizeRecommendationHostname(value: unknown): string | null {
-    if (typeof value !== "string") {
-      return null;
-    }
-    const normalized = value.trim().toLowerCase();
-    if (!normalized || /\s/.test(normalized)) {
-      return null;
-    }
-    return normalized;
-  }
-
-  private isRecommendationPresetKey(value: unknown): value is LlmGatewayRecommendationPresetKey {
-    return (
-      value === "litellmDocker" ||
-      value === "litellmLocal" ||
-      value === "openaiOfficial" ||
-      value === "openrouter" ||
-      value === "externalConservative" ||
-      value === "glm" ||
-      value === "kimi" ||
-      value === "deepseek" ||
-      value === "qwen"
-    );
+    return fallback;
   }
 
   private normalizeString(value: unknown): string | undefined {

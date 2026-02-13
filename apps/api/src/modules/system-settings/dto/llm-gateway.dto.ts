@@ -25,6 +25,7 @@ const MIN_RETRIES = 1;
 const MAX_RETRIES = 20;
 const MIN_RPM = 1;
 const MAX_RPM = 100_000;
+const LLM_GATEWAY_API_SURFACES = ["chat_completions", "responses"] as const;
 
 export class CreateLlmGatewayDto {
   @ApiProperty()
@@ -65,6 +66,14 @@ export class CreateLlmGatewayDto {
   @IsOptional()
   @IsString()
   assistantModel?: string | null;
+
+  @ApiPropertyOptional({
+    description: "Completion API surface: chat_completions (default) or responses.",
+    enum: LLM_GATEWAY_API_SURFACES
+  })
+  @IsOptional()
+  @IsIn(LLM_GATEWAY_API_SURFACES)
+  apiSurface?: "chat_completions" | "responses";
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -173,6 +182,14 @@ export class UpdateLlmGatewayDto {
   @IsOptional()
   @IsString()
   assistantModel?: string | null;
+
+  @ApiPropertyOptional({
+    description: "Completion API surface: chat_completions (default) or responses.",
+    enum: LLM_GATEWAY_API_SURFACES
+  })
+  @IsOptional()
+  @IsIn(LLM_GATEWAY_API_SURFACES)
+  apiSurface?: "chat_completions" | "responses";
 
   @ApiPropertyOptional()
   @IsOptional()

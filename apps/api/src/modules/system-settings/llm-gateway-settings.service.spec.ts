@@ -94,70 +94,6 @@ describe("LlmGatewaySettingsService", () => {
     expect(response.profiles).toEqual([]);
   });
 
-  it("returns backend recommendation config for apiBase -> preset mapping", async () => {
-    const config = await service.getAutoRecommendationConfig();
-
-    expect(config.defaultPresetKey).toBe("externalConservative");
-    expect(config.localGatewayHosts).toContain("localhost");
-    expect(config.localGatewayHosts).toContain("host.docker.internal");
-    expect(config.domainRules).toEqual(
-      expect.arrayContaining([
-        { hostname: "api.openai.com", presetKey: "openaiOfficial" },
-        { hostname: "openrouter.ai", presetKey: "openrouter" },
-        { hostname: "litellm", presetKey: "litellmDocker" }
-      ])
-    );
-  });
-
-  it("returns recommendation config as defensive copies", async () => {
-    const config = await service.getAutoRecommendationConfig();
-    config.localGatewayHosts.push("mutated.local");
-    config.domainRules.push({ hostname: "x.example.com", presetKey: "externalConservative" });
-
-    const secondRead = await service.getAutoRecommendationConfig();
-    expect(secondRead.localGatewayHosts).not.toContain("mutated.local");
-    expect(secondRead.domainRules).not.toContainEqual({
-      hostname: "x.example.com",
-      presetKey: "externalConservative"
-    });
-  });
-
-  it("updates recommendation config and normalizes hosts/rules", async () => {
-    const updated = await service.updateAutoRecommendationConfig("org-1", "actor-1", {
-      defaultPresetKey: "openrouter",
-      localGatewayHosts: [" LOCALHOST ", "api-gateway.internal", "api-gateway.internal", ""],
-      domainRules: [
-        { hostname: " API.OPENAI.COM ", presetKey: "openaiOfficial" },
-        { hostname: "api.openai.com", presetKey: "openrouter" },
-        { hostname: "openrouter.ai", presetKey: "openrouter" }
-      ]
-    });
-
-    expect(updated.defaultPresetKey).toBe("openrouter");
-    expect(updated.localGatewayHosts).toEqual(["localhost", "api-gateway.internal"]);
-    expect(updated.domainRules).toEqual([
-      { hostname: "api.openai.com", presetKey: "openrouter" },
-      { hostname: "openrouter.ai", presetKey: "openrouter" }
-    ]);
-
-    const reloaded = await service.getAutoRecommendationConfig();
-    expect(reloaded).toEqual(updated);
-  });
-
-  it("falls back to built-in mapping when updated config is empty", async () => {
-    const updated = await service.updateAutoRecommendationConfig("org-1", "actor-1", {
-      defaultPresetKey: "externalConservative",
-      localGatewayHosts: [],
-      domainRules: []
-    });
-
-    expect(updated.defaultPresetKey).toBe("externalConservative");
-    expect(updated.localGatewayHosts).toContain("localhost");
-    expect(updated.domainRules).toEqual(
-      expect.arrayContaining([{ hostname: "api.openai.com", presetKey: "openaiOfficial" }])
-    );
-  });
-
   it("creates a profile and auto-activates the first one", async () => {
     const created = await service.createProfile("org-1", "actor-1", {
       name: "LiteLLM Local",
@@ -418,10 +354,12 @@ describe("LlmGatewaySettingsService", () => {
 
     expect(created.sendMetadata).toBe(true);
     expect(created.responseFormatMode).toBe("json_schema");
+    expect(created.apiSurface).toBe("chat_completions");
 
     const active = await service.getActiveConfig();
     expect(active?.sendMetadata).toBe(true);
     expect(active?.responseFormatMode).toBe("json_schema");
+    expect(active?.apiSurface).toBe("chat_completions");
   });
 
   it("persists explicit compatibility options from input", async () => {
@@ -430,21 +368,25 @@ describe("LlmGatewaySettingsService", () => {
       apiBase: "http://localhost:4001",
       model: "openai/gpt-4o-mini",
       sendMetadata: false,
-      responseFormatMode: "none"
+      responseFormatMode: "none",
+      apiSurface: "responses"
     });
 
     expect(created.sendMetadata).toBe(false);
     expect(created.responseFormatMode).toBe("none");
+    expect(created.apiSurface).toBe("responses");
 
     const storedProfile = persistedValue?.profiles?.find(
       (profile: { id: string }) => profile.id === created.id
     );
     expect(storedProfile?.sendMetadata).toBe(false);
     expect(storedProfile?.responseFormatMode).toBe("none");
+    expect(storedProfile?.apiSurface).toBe("responses");
 
     const cfg = await service.getProfileConfig(created.id);
     expect(cfg?.sendMetadata).toBe(false);
     expect(cfg?.responseFormatMode).toBe("none");
+    expect(cfg?.apiSurface).toBe("responses");
   });
 
   it("normalizes legacy profiles without compatibility fields", async () => {
@@ -467,10 +409,12 @@ describe("LlmGatewaySettingsService", () => {
     const listed = await service.list();
     expect(listed.profiles[0]?.sendMetadata).toBe(true);
     expect(listed.profiles[0]?.responseFormatMode).toBe("json_schema");
+    expect(listed.profiles[0]?.apiSurface).toBe("chat_completions");
 
     const active = await service.getActiveConfig();
     expect(active?.sendMetadata).toBe(true);
     expect(active?.responseFormatMode).toBe("json_schema");
+    expect(active?.apiSurface).toBe("chat_completions");
   });
 
   it("returns a profile config by id with decrypted apiKey", async () => {

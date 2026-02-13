@@ -2589,36 +2589,6 @@
         "clearKey": "Clear key",
         "keepKey": "Keep key"
       },
-      "autoRecommend": {
-        "fields": {
-          "enabled": "Auto-recommend compatibility template by API base domain",
-          "noticeEnabled": "Show info message after auto-switch",
-          "defaultPresetKey": "Default preset",
-          "localGatewayHosts": "Local gateway hostnames",
-          "domainRules": "Domain mapping rules"
-        },
-        "actions": {
-          "editConfig": "Edit recommendation mapping",
-          "addRule": "Add rule"
-        },
-        "modal": {
-          "title": "Edit auto recommendation mapping"
-        },
-        "hints": {
-          "localGatewayHosts": "These hostnames are always mapped to LiteLLM Local preset.",
-          "domainRules": "Rules match by hostname; default preset is used when no rule matches."
-        },
-        "placeholders": {
-          "localGatewayHosts": "e.g. localhost, host.docker.internal",
-          "ruleHostname": "e.g. api.openai.com"
-        },
-        "validation": {
-          "hostname": "Hostname is required and cannot contain spaces",
-          "defaultPresetKey": "Select a default preset",
-          "hostnameRequired": "Hostname is required",
-          "presetKey": "Select a preset"
-        }
-      },
       "columns": {
         "name": "Name",
         "model": "Model",
@@ -2632,13 +2602,13 @@
         "apiKey": "API key"
       },
       "fields": {
-        "preset": "Vendor preset",
         "name": "Name",
         "apiBase": "API base URL",
         "apiKey": "API key",
         "model": "Default model",
         "assistantModel": "Assistant-only model",
         "embeddingModel": "Embedding model",
+        "apiSurface": "API surface",
         "timeoutMs": "Timeout (ms)",
         "temperature": "Temperature",
         "topP": "Top P",
@@ -2651,22 +2621,10 @@
         "enabled": "Enabled"
       },
       "placeholders": {
-        "preset": "Choose a preset (optional)",
         "name": "e.g. LiteLLM (prod)",
         "apiKey": "Optional",
         "apiKeyEdit": "Leave empty to keep unchanged",
         "fallbackModels": "comma-separated, e.g. openai/gpt-4o-mini,anthropic/claude-3-haiku"
-      },
-      "presets": {
-        "openaiOfficial": "OpenAI (Official)",
-        "openrouter": "OpenRouter (Compatible)",
-        "externalConservative": "External Gateway (Conservative)",
-        "litellmDocker": "LiteLLM (Docker Compose)",
-        "litellmLocal": "LiteLLM (Local)",
-        "glm": "GLM (Zhipu)",
-        "kimi": "Kimi K2 (Moonshot)",
-        "deepseek": "DeepSeek",
-        "qwen": "Qwen (DashScope)"
       },
       "hints": {
         "apiBase": "This base URL is used by the API server (not the browser). For Docker Compose, use http://litellm:4000; for local dev, use http://localhost:4001. Accepts either a base URL (e.g. https://api.openai.com) or a full endpoint URL (e.g. https://api.openai.com/v1/chat/completions). We normalize it automatically.",
@@ -2675,6 +2633,7 @@
         "fallbackModels": "Used when the primary model request fails.",
         "modelOptional": "Optional: used for chat completion requests. Leave empty when configuring embeddings-only gateway.",
         "assistantModel": "Optional: used only by AI Assistant (/assistant) and excluded from news pipeline model routing.",
+        "apiSurface": "Select which completion endpoint runtime should call: /v1/chat/completions or /v1/responses.",
         "sendMetadata": "When disabled, runtime requests omit metadata for better compatibility.",
         "responseFormatMode": "Select how response_format is sent upstream: json_schema, json_object, or none."
       },
@@ -2704,10 +2663,7 @@
         "created": "Created",
         "updated": "Updated",
         "deleted": "Deleted",
-        "activated": "Activated",
-        "autoRecommended": "Detected API base domain {{domain}} and auto-applied compatibility template: {{name}}",
-        "recommendedTestStrategyApplied": "Applied recommended strategy for {{domain}}: {{name}}",
-        "recommendationConfigUpdated": "Auto recommendation mapping saved"
+        "activated": "Activated"
       },
       "errors": {
         "loadFailed": "Failed to load LLM gateway profiles",
@@ -2716,16 +2672,14 @@
         "deleteFailed": "Failed to delete LLM gateway profile",
         "toggleFailed": "Failed to update profile status",
         "activateFailed": "Failed to activate profile",
-        "badRequest": "Invalid input",
-        "recommendationConfigSaveFailed": "Failed to save recommendation mapping"
+        "badRequest": "Invalid input"
       },
       "test": {
         "modal": {
           "title": "Test {{name}}"
         },
         "actions": {
-          "run": "Run test",
-          "applyRecommendedAndRun": "Apply recommended strategy and re-test"
+          "run": "Run test"
         },
         "fields": {
           "model": "Model override",
@@ -2745,8 +2699,7 @@
         "hints": {
           "model": "Leave empty to use the profile default + fallback models.",
           "embeddingModel": "Leave empty to use the profile embedding model.",
-          "includeCompletion": "When disabled, only embeddings are tested.",
-          "recommendedStrategy": "Detected domain {{domain}}, recommended template: {{name}}"
+          "includeCompletion": "When disabled, only embeddings are tested."
         },
         "sections": {
           "completion": "Chat completion",

@@ -21,6 +21,7 @@ import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import {
   LlmGatewaySettingsService,
+  type LlmGatewayApiSurface,
   type LlmGatewayResponseFormatMode,
 } from "../system-settings/llm-gateway-settings.service";
 
@@ -201,6 +202,9 @@ export class LiteLlmService {
   ): Promise<LiteLlmCompletionResponse> {
     const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("completion");
+    const apiSurface = this.resolveApiSurface(
+      (cfg as { apiSurface?: unknown }).apiSurface,
+    );
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
       new Set(
@@ -210,6 +214,16 @@ export class LiteLlmService {
     let lastError: unknown;
     for (const model of uniqueModels) {
       try {
+        if (apiSurface === "responses") {
+          return await this.executeResponsesCompletionWithRetry(
+            client,
+            cfg,
+            apiKeyConfigured,
+            model,
+            params,
+          );
+        }
+
         return await this.executeWithRetry(
           client,
           cfg,
@@ -262,6 +276,9 @@ export class LiteLlmService {
   ): AsyncGenerator<LiteLlmStreamChunk> {
     const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("completion");
+    const apiSurface = this.resolveApiSurface(
+      (cfg as { apiSurface?: unknown }).apiSurface,
+    );
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
       new Set(
@@ -273,13 +290,18 @@ export class LiteLlmService {
     for (const model of uniqueModels) {
       let started = false;
       try {
-        for await (const chunk of this.executeStream(
-          client,
-          cfg,
-          apiKeyConfigured,
-          model,
-          params,
-        )) {
+        const streamIterator =
+          apiSurface === "responses"
+            ? this.executeResponsesStream(
+                client,
+                cfg,
+                apiKeyConfigured,
+                model,
+                params,
+              )
+            : this.executeStream(client, cfg, apiKeyConfigured, model, params);
+
+        for await (const chunk of streamIterator) {
           started = true;
           yield chunk;
         }
@@ -388,6 +410,229 @@ export class LiteLlmService {
     throw lastError instanceof Error
       ? lastError
       : new Error("LiteLLM responses request failed");
+  }
+
+  private async executeResponsesCompletionWithRetry(
+    client: AxiosInstance,
+    cfg: {
+      timeoutMs: number;
+      temperature: number;
+      topP: number;
+      maxOutputTokens: number;
+      maxRetries: number;
+      sendMetadata: boolean;
+      responseFormatMode: LlmGatewayResponseFormatMode;
+    },
+    apiKeyConfigured: boolean,
+    model: string,
+    params: LiteLlmCompletionParams,
+  ): Promise<LiteLlmCompletionResponse> {
+    const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
+    let attempt = 0;
+    let delayMs = 1_000;
+    let lastError: unknown;
+
+    while (attempt < maxAttempts) {
+      try {
+        const guardrails = this.normalizeGuardrails(params.guardrails);
+        const textFormat = this.resolveResponsesTextFormat(
+          params.response_format,
+          cfg.responseFormatMode,
+        );
+        const payload = {
+          model,
+          input: this.toResponsesInput(params.messages),
+          temperature: params.temperature ?? cfg.temperature,
+          top_p: params.top_p ?? cfg.topP,
+          max_output_tokens: params.max_tokens ?? cfg.maxOutputTokens,
+          ...(textFormat ? { text: { format: textFormat } } : {}),
+          guardrails: guardrails.length > 0 ? guardrails : undefined,
+          metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
+        };
+        const start = Date.now();
+        const response = await this.postWithFallback<LiteLlmResponsesResponse>(
+          client,
+          "/v1/responses",
+          "/responses",
+          payload,
+          { timeout: params.timeoutMs ?? cfg.timeoutMs },
+        );
+        const latencyMs = Date.now() - start;
+        const headerCost = this.extractHeaderCost(
+          response.headers?.["x-litellm-response-cost"] ??
+            response.headers?.["x-litellm-cost"] ??
+            response.headers?.["litellm-cost"],
+        );
+        const keySpendUsd = this.extractHeaderCost(
+          response.headers?.["x-litellm-key-spend"],
+        );
+        const payloadCost = this.extractHeaderCost(
+          (response.data as Record<string, unknown>).response_cost,
+        );
+        const usageCost = this.extractHeaderCost(
+          (response.data as Record<string, unknown>).usage &&
+            typeof (response.data as Record<string, unknown>).usage === "object"
+            ? (
+                (response.data as Record<string, unknown>).usage as Record<
+                  string,
+                  unknown
+                >
+              ).response_cost
+            : undefined,
+        );
+        const costUsd = headerCost ?? payloadCost ?? usageCost;
+        const normalized = this.normalizeCompletionFromResponses(
+          response.data,
+          model,
+        );
+        return {
+          ...normalized,
+          costUsd: costUsd ?? undefined,
+          keySpendUsd: keySpendUsd ?? undefined,
+          latencyMs,
+        } satisfies LiteLlmCompletionResponse;
+      } catch (error) {
+        this.decorateAxiosError(error, {
+          apiKeyConfigured,
+          apiSurface: "responses",
+        });
+        lastError = error;
+        attempt += 1;
+        if (attempt >= maxAttempts || !this.isRetryable(error)) {
+          throw error;
+        }
+        await sleep(delayMs);
+        delayMs = Math.min(delayMs * 2, 10_000);
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("LiteLLM responses completion exhausted retries");
+  }
+
+  private async *executeResponsesStream(
+    client: AxiosInstance,
+    cfg: {
+      timeoutMs: number;
+      temperature: number;
+      topP: number;
+      maxOutputTokens: number;
+      sendMetadata: boolean;
+      responseFormatMode: LlmGatewayResponseFormatMode;
+    },
+    apiKeyConfigured: boolean,
+    model: string,
+    params: LiteLlmCompletionParams,
+  ): AsyncGenerator<LiteLlmStreamChunk> {
+    const guardrails = this.normalizeGuardrails(params.guardrails);
+    const textFormat = this.resolveResponsesTextFormat(
+      params.response_format,
+      cfg.responseFormatMode,
+    );
+    const payload = {
+      model,
+      input: this.toResponsesInput(params.messages),
+      temperature: params.temperature ?? cfg.temperature,
+      top_p: params.top_p ?? cfg.topP,
+      max_output_tokens: params.max_tokens ?? cfg.maxOutputTokens,
+      ...(textFormat ? { text: { format: textFormat } } : {}),
+      stream: true,
+      guardrails: guardrails.length > 0 ? guardrails : undefined,
+      metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
+    };
+
+    let response: AxiosResponse;
+    try {
+      response = await this.postWithFallback(
+        client,
+        "/v1/responses",
+        "/responses",
+        payload,
+        {
+          responseType: "stream",
+          timeout: params.timeoutMs ?? cfg.timeoutMs,
+          headers: { Accept: "text/event-stream" },
+        },
+      );
+    } catch (error) {
+      this.decorateAxiosError(error, {
+        apiKeyConfigured,
+        apiSurface: "responses",
+      });
+      throw error;
+    }
+
+    const stream = response.data as Readable;
+    const contentTypeRaw = response.headers?.["content-type"];
+    const contentType =
+      typeof contentTypeRaw === "string" ? contentTypeRaw.toLowerCase() : "";
+    if (contentType && !contentType.includes("text/event-stream")) {
+      const bodyText = await this.readReadableToString(stream, 128 * 1024);
+      this.logger.warn(
+        {
+          model,
+          contentType: contentTypeRaw,
+          bodyPreview: sanitizeUpstreamErrorText(bodyText, { maxLength: 500 }),
+        },
+        "LiteLLM responses stream returned non-SSE response",
+      );
+      throw new Error(
+        `LiteLLM responses stream returned non-SSE response (${typeof contentTypeRaw === "string" ? contentTypeRaw : "unknown content-type"})`,
+      );
+    }
+
+    for await (const data of this.iterateSseData(stream)) {
+      if (data.trim() === "[DONE]") {
+        return;
+      }
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(data) as unknown;
+      } catch {
+        continue;
+      }
+
+      const responsesChunk = this.extractResponsesStreamChunk(parsed);
+      if (responsesChunk?.error) {
+        throw new Error(responsesChunk.error);
+      }
+      if (responsesChunk?.delta || responsesChunk?.finishReason) {
+        yield {
+          model,
+          raw: parsed,
+          ...(responsesChunk.delta ? { delta: responsesChunk.delta } : {}),
+          ...(responsesChunk.finishReason
+            ? { finishReason: responsesChunk.finishReason }
+            : {}),
+        };
+        continue;
+      }
+
+      // Fallback for gateways that still stream chat-completions style chunks.
+      if (parsed && typeof parsed === "object") {
+        const parsedRecord = parsed as {
+          choices?: {
+            delta?: { content?: string | null };
+            finish_reason?: string | null;
+          }[];
+        };
+        const choice = parsedRecord.choices?.[0];
+        const delta = choice?.delta?.content;
+        const finishReason =
+          typeof choice?.finish_reason === "string"
+            ? choice.finish_reason
+            : undefined;
+        if (typeof delta === "string" && delta.length > 0) {
+          yield { model, raw: parsed, delta, finishReason };
+        } else if (
+          typeof finishReason === "string" &&
+          finishReason.length > 0
+        ) {
+          yield { model, raw: parsed, finishReason };
+        }
+      }
+    }
   }
 
   private async executeWithRetry(
@@ -655,6 +900,218 @@ export class LiteLlmService {
       ...data,
       choices: normalizedChoices,
     };
+  }
+
+  private normalizeCompletionFromResponses(
+    data: LiteLlmResponsesResponse,
+    model: string,
+  ): LiteLlmCompletionResponse {
+    const record = data as Record<string, unknown>;
+    const id =
+      typeof record.id === "string" && record.id.trim().length > 0
+        ? record.id
+        : `resp_${Date.now()}`;
+    const resolvedModel =
+      typeof record.model === "string" && record.model.trim().length > 0
+        ? record.model.trim()
+        : model;
+    const created = this.toUnixSeconds(record.created_at ?? record.created);
+    const content = this.extractResponsesOutputText(data);
+    const finishReasonRaw =
+      typeof record.finish_reason === "string"
+        ? record.finish_reason
+        : typeof record.status === "string"
+          ? record.status
+          : undefined;
+    const usage = this.normalizeCompletionUsageFromResponses(record.usage);
+    const responseCost = this.extractHeaderCost(record.response_cost);
+
+    return {
+      id,
+      model: resolvedModel,
+      created,
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content,
+          },
+          ...(finishReasonRaw ? { finish_reason: finishReasonRaw } : {}),
+        },
+      ],
+      ...(usage ? { usage } : {}),
+      ...(typeof responseCost === "number"
+        ? { response_cost: responseCost }
+        : {}),
+    };
+  }
+
+  private normalizeCompletionUsageFromResponses(
+    raw: unknown,
+  ): LiteLlmCompletionResponseUsage | undefined {
+    if (!raw || typeof raw !== "object") {
+      return undefined;
+    }
+    const record = raw as Record<string, unknown>;
+    const promptTokens = this.extractHeaderCost(
+      record.prompt_tokens ?? record.input_tokens,
+    );
+    const completionTokens = this.extractHeaderCost(
+      record.completion_tokens ?? record.output_tokens,
+    );
+    const totalTokens = this.extractHeaderCost(record.total_tokens);
+    if (
+      typeof promptTokens !== "number" ||
+      typeof completionTokens !== "number"
+    ) {
+      return undefined;
+    }
+    return {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens:
+        typeof totalTokens === "number"
+          ? totalTokens
+          : promptTokens + completionTokens,
+    };
+  }
+
+  private toResponsesInput(messages: LiteLlmMessage[]) {
+    return messages.map((message) => ({
+      role: message.role,
+      content: this.flattenMessageContent(message.content),
+    }));
+  }
+
+  private flattenMessageContent(content: LiteLlmMessage["content"]): string {
+    if (typeof content === "string") {
+      return content;
+    }
+    if (!Array.isArray(content)) {
+      return "";
+    }
+    return content
+      .map((part) => (typeof part?.text === "string" ? part.text : ""))
+      .join("");
+  }
+
+  private resolveResponsesTextFormat(
+    responseFormat: JsonSchemaResponseFormat | Record<string, unknown> | undefined,
+    mode: LlmGatewayResponseFormatMode,
+  ): Record<string, unknown> | undefined {
+    if (mode === "none") {
+      return undefined;
+    }
+    if (mode === "json_object") {
+      return { type: "json_object" };
+    }
+    if (!responseFormat || typeof responseFormat !== "object") {
+      return undefined;
+    }
+    const candidate = responseFormat as Record<string, unknown>;
+    if (
+      candidate.type === "json_schema" ||
+      candidate.type === "json_object" ||
+      candidate.type === "text"
+    ) {
+      return candidate;
+    }
+    return undefined;
+  }
+
+  private extractResponsesOutputText(response: LiteLlmResponsesResponse): string | null {
+    if (typeof response.output_text === "string") {
+      const trimmed = response.output_text.trim();
+      return trimmed.length > 0 ? response.output_text : null;
+    }
+
+    const record = response as Record<string, unknown>;
+    const output = record.output;
+    if (!Array.isArray(output)) {
+      return null;
+    }
+
+    const parts: string[] = [];
+    output.forEach((item) => {
+      if (!item || typeof item !== "object") {
+        return;
+      }
+      const content = (item as Record<string, unknown>).content;
+      if (!Array.isArray(content)) {
+        return;
+      }
+      content.forEach((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return;
+        }
+        const text = (entry as Record<string, unknown>).text;
+        if (typeof text === "string" && text.length > 0) {
+          parts.push(text);
+        }
+      });
+    });
+
+    if (parts.length === 0) {
+      return null;
+    }
+    return parts.join("");
+  }
+
+  private extractResponsesStreamChunk(raw: unknown): {
+    delta?: string;
+    finishReason?: string;
+    error?: string;
+  } | null {
+    if (!raw || typeof raw !== "object") {
+      return null;
+    }
+    const record = raw as Record<string, unknown>;
+    const type = typeof record.type === "string" ? record.type : "";
+
+    if (type === "response.error" || type === "error") {
+      const error = record.error;
+      if (error && typeof error === "object") {
+        const message = (error as Record<string, unknown>).message;
+        if (typeof message === "string" && message.trim().length > 0) {
+          return { error: message.trim() };
+        }
+      }
+      if (typeof record.message === "string" && record.message.trim().length > 0) {
+        return { error: record.message.trim() };
+      }
+      return { error: "Responses stream failed" };
+    }
+
+    if (type === "response.completed") {
+      return { finishReason: "stop" };
+    }
+
+    const delta =
+      typeof record.delta === "string"
+        ? record.delta
+        : typeof record.output_text === "string"
+          ? record.output_text
+          : undefined;
+    if (
+      typeof delta === "string" &&
+      delta.length > 0 &&
+      type.includes("output_text")
+    ) {
+      return { delta };
+    }
+
+    return null;
+  }
+
+  private toUnixSeconds(value: unknown): number {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      if (value > 10_000_000_000) {
+        return Math.floor(value / 1_000);
+      }
+      return Math.floor(value);
+    }
+    return Math.floor(Date.now() / 1_000);
   }
 
   private async executeEmbeddingWithRetry(
@@ -934,6 +1391,7 @@ export class LiteLlmService {
       responseFormatMode: this.resolveResponseFormatMode(
         overrides?.responseFormatMode,
       ),
+      apiSurface: this.resolveApiSurface(overrides?.apiSurface),
     };
   }
 
@@ -980,6 +1438,13 @@ export class LiteLlmService {
       return value;
     }
     return DEFAULT_RESPONSE_FORMAT_MODE;
+  }
+
+  private resolveApiSurface(value: unknown): LlmGatewayApiSurface {
+    if (value === "responses" || value === "chat_completions") {
+      return value;
+    }
+    return "chat_completions";
   }
 
   private resolveMetadata(

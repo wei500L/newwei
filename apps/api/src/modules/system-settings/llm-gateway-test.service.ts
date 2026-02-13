@@ -575,7 +575,8 @@ export class LlmGatewayTestService {
     });
 
     const shouldTestCompletion = input.includeCompletion ?? true;
-    const apiSurface = input.apiSurface ?? "chat_completions";
+    const apiSurface =
+      input.apiSurface ?? cfg.apiSurface ?? "chat_completions";
     const responseFormatMode =
       input.responseFormatMode ??
       cfg.responseFormatMode ??
@@ -678,7 +679,8 @@ export class LlmGatewayTestService {
     }
 
     const shouldTestCompletion = input.includeCompletion ?? true;
-    const apiSurface = input.apiSurface ?? "chat_completions";
+    const apiSurface =
+      input.apiSurface ?? stored?.apiSurface ?? "chat_completions";
     const responseFormatMode =
       input.responseFormatMode ??
       stored?.responseFormatMode ??

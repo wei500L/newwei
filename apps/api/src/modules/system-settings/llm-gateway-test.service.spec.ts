@@ -51,6 +51,7 @@ describe("LlmGatewayTestService", () => {
     requestsPerMinute: 60,
     sendMetadata: true,
     responseFormatMode: "json_schema",
+    apiSurface: "chat_completions",
   };
 
   const mockCompletionResponse: AxiosResponse = {
@@ -691,6 +692,36 @@ describe("LlmGatewayTestService", () => {
     expect(mockAxiosPost).toHaveBeenCalledWith(
       "/v1/responses",
       expect.objectContaining({ input: expect.any(String) }),
+      expect.any(Object),
+    );
+  });
+
+  it("uses profile apiSurface when request does not provide one", async () => {
+    settingsMock.getProfileConfig.mockResolvedValueOnce({
+      ...config,
+      apiSurface: "responses",
+    });
+    mockAxiosPost.mockResolvedValueOnce({
+      data: {
+        id: "resp_abc",
+        model: "openai/gpt-4o-mini",
+        output_text: "OK",
+      },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    });
+
+    const result = await service.testProfile("profile-1", {
+      includeCompletion: true,
+      includeEmbeddings: false,
+    });
+
+    expect(result.apiSurfaceUsed).toBe("responses");
+    expect(mockAxiosPost).toHaveBeenCalledWith(
+      "/v1/responses",
+      expect.any(Object),
       expect.any(Object),
     );
   });

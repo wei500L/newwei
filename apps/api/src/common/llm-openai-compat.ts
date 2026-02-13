@@ -175,19 +175,32 @@ export function detectOpenAiCompatibilityIssue(options: {
     "invalid parameter",
   ]);
 
-  const hasResponsesEndpointCue =
+  const hasResponsesEndpointReference = containsAny(lower, [
+    "/v1/responses",
+    "/responses",
+    "responses api",
+    "responses endpoint",
+  ]);
+  const hasResponsesRouteUnsupportedCue =
     status === 501 ||
     containsAny(lower, [
-      "/v1/responses",
-      "/responses",
-      "responses api",
-      "responses endpoint",
+      "method not allowed",
+      "not implemented",
+      "does not support responses",
+      "responses is not supported",
+      "route not found",
+      "unknown route",
+      "unknown path",
+      "no route",
+      "endpoint not found",
+      "not found",
     ]);
 
   if (
-    [404, 405, 501].includes(status ?? 0) &&
+    [400, 404, 405, 501].includes(status ?? 0) &&
     options.apiSurface === "responses" &&
-    hasResponsesEndpointCue
+    hasResponsesEndpointReference &&
+    hasResponsesRouteUnsupportedCue
   ) {
     return {
       code: "RESPONSES_API_UNSUPPORTED",

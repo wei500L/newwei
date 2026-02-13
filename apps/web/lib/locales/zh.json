@@ -2592,36 +2592,6 @@
         "clearKey": "清空 Key",
         "keepKey": "保留 Key"
       },
-      "autoRecommend": {
-        "fields": {
-          "enabled": "按 API Base 域名自动推荐兼容模板",
-          "noticeEnabled": "自动切换后显示提示",
-          "defaultPresetKey": "默认模板",
-          "localGatewayHosts": "本地网关域名",
-          "domainRules": "域名映射规则"
-        },
-        "actions": {
-          "editConfig": "编辑推荐映射",
-          "addRule": "新增规则"
-        },
-        "modal": {
-          "title": "编辑自动推荐映射"
-        },
-        "hints": {
-          "localGatewayHosts": "这些域名会固定映射到 LiteLLM Local 模板。",
-          "domainRules": "按 hostname 匹配规则；未命中时使用默认模板。"
-        },
-        "placeholders": {
-          "localGatewayHosts": "例如 localhost, host.docker.internal",
-          "ruleHostname": "例如 api.openai.com"
-        },
-        "validation": {
-          "hostname": "域名不能为空且不能包含空格",
-          "defaultPresetKey": "请选择默认模板",
-          "hostnameRequired": "请输入域名",
-          "presetKey": "请选择模板"
-        }
-      },
       "columns": {
         "name": "名称",
         "model": "模型",
@@ -2635,13 +2605,13 @@
         "apiKey": "API Key"
       },
       "fields": {
-        "preset": "供应商预设",
         "name": "名称",
         "apiBase": "API Base 地址",
         "apiKey": "API Key",
         "model": "默认模型",
         "assistantModel": "助手专用模型",
         "embeddingModel": "Embedding 模型",
+        "apiSurface": "API 接口面",
         "timeoutMs": "超时 (ms)",
         "temperature": "温度",
         "topP": "Top P",
@@ -2654,22 +2624,10 @@
         "enabled": "启用"
       },
       "placeholders": {
-        "preset": "选择预设（可选）",
         "name": "例如：LiteLLM（生产）",
         "apiKey": "可选",
         "apiKeyEdit": "留空表示不变",
         "fallbackModels": "逗号分隔，例如 openai/gpt-4o-mini,anthropic/claude-3-haiku"
-      },
-      "presets": {
-        "openaiOfficial": "OpenAI（官方）",
-        "openrouter": "OpenRouter（兼容）",
-        "externalConservative": "外部网关（保守兼容）",
-        "litellmDocker": "LiteLLM（Docker Compose）",
-        "litellmLocal": "LiteLLM（本机）",
-        "glm": "GLM（智谱）",
-        "kimi": "Kimi K2（月之暗面）",
-        "deepseek": "DeepSeek",
-        "qwen": "Qwen（DashScope）"
       },
       "hints": {
         "apiBase": "此地址由后端 API 进程访问（不是浏览器）。Docker Compose 部署推荐填 http://litellm:4000；本机开发一般为 http://localhost:4001。支持填写 Base URL（例如 https://api.openai.com），也支持直接粘贴完整接口地址（例如 https://api.openai.com/v1/chat/completions），系统会自动规范化。",
@@ -2678,6 +2636,7 @@
         "fallbackModels": "主模型失败时会按顺序尝试。",
         "modelOptional": "可选：仅用于对话/补全请求；只配置 Embeddings 网关时可以留空。",
         "assistantModel": "可选：仅用于 AI 助手（/assistant）调用，不参与新闻链路模型路由。",
+        "apiSurface": "选择运行时调用的补全端点：/v1/chat/completions 或 /v1/responses。",
         "sendMetadata": "关闭后，运行时请求将不再发送 metadata，以提高兼容性。",
         "responseFormatMode": "选择 response_format 的发送策略：json_schema、json_object 或 none。"
       },
@@ -2707,10 +2666,7 @@
         "created": "已创建",
         "updated": "已更新",
         "deleted": "已删除",
-        "activated": "已启用",
-        "autoRecommended": "已识别 API Base 域名 {{domain}}，自动应用兼容模板：{{name}}",
-        "recommendedTestStrategyApplied": "已按 {{domain}} 推荐策略应用模板：{{name}}",
-        "recommendationConfigUpdated": "已保存自动推荐映射"
+        "activated": "已启用"
       },
       "errors": {
         "loadFailed": "加载 LLM 网关失败",
@@ -2719,16 +2675,14 @@
         "deleteFailed": "删除 LLM 网关失败",
         "toggleFailed": "更新启用状态失败",
         "activateFailed": "启用失败",
-        "badRequest": "参数错误",
-        "recommendationConfigSaveFailed": "保存推荐映射失败"
+        "badRequest": "参数错误"
       },
       "test": {
         "modal": {
           "title": "测试 {{name}}"
         },
         "actions": {
-          "run": "运行测试",
-          "applyRecommendedAndRun": "按推荐策略重测"
+          "run": "运行测试"
         },
         "fields": {
           "model": "模型覆盖",
@@ -2748,8 +2702,7 @@
         "hints": {
           "model": "留空则使用网关配置的默认模型 + Fallback 模型。",
           "embeddingModel": "留空则使用网关配置的 Embedding 模型。",
-          "includeCompletion": "关闭后仅测试向量（Embeddings）。",
-          "recommendedStrategy": "检测到域名 {{domain}}，推荐模板：{{name}}"
+          "includeCompletion": "关闭后仅测试向量（Embeddings）。"
         },
         "sections": {
           "completion": "对话补全",
