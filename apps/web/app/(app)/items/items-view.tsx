@@ -15,6 +15,7 @@ import { RequestErrorBanner } from "@/components/request-error-banner";
 import type { ItemsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { resolveDisplaySummary, resolveDisplayTitle } from "@/lib/item-display";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import { safeHttpUrl } from "@/lib/url";
@@ -348,6 +349,8 @@ const ITEMS_QUERY = gql`
             duplicateOf
             duplicateSimilarity
             source
+            title
+            language
             publishedAt
             summary
             sentiment
@@ -472,6 +475,7 @@ interface ParsedItem {
   ticker?: string;
   region?: string;
   location?: string;
+  language?: string;
   topics?: string[];
   entities?: string[];
   qualityScore?: number;
@@ -845,8 +849,10 @@ export function ItemsView({
     return edges.map((edge) => {
       const processed = edge.node.processedPreview;
       const raw = edge.node.rawPreview;
-      const summary =
-        toNonEmptyString(processed?.summary) ?? toNonEmptyString(raw?.summary) ?? undefined;
+      const summary = resolveDisplaySummary({
+        processedSummary: processed?.summary,
+        rawSummary: raw?.summary
+      });
       const sentiment =
         toNonEmptyString(processed?.sentiment) ?? toNonEmptyString(raw?.sentiment) ?? undefined;
       const region = toNonEmptyString(raw?.region) ?? undefined;
@@ -896,12 +902,20 @@ export function ItemsView({
             .filter((entity) => entity.length > 0)
         )
       );
+      const source =
+        toNonEmptyString(processed?.source) ?? toNonEmptyString(raw?.sourceName) ?? undefined;
+      const displayTitle = resolveDisplayTitle({
+        processedTitle: processed?.title,
+        itemTitle: edge.node.title,
+        source,
+        originalUrl: raw?.url
+      });
 
       return {
         id: edge.node.id,
-        title: edge.node.title,
+        title: displayTitle,
         status: edge.node.status,
-        name: edge.node.title,
+        name: displayTitle,
         summary,
         thumbnail: thumbnail ?? undefined,
         sentiment,
@@ -912,7 +926,8 @@ export function ItemsView({
         publishedAt,
         ingestedAt,
         createdAt: ingestedAt,
-        source: toNonEmptyString(processed?.source) ?? toNonEmptyString(raw?.sourceName) ?? undefined,
+        source,
+        language: toNonEmptyString(processed?.language) ?? undefined,
         topics,
         entities,
         region,

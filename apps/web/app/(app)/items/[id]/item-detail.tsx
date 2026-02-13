@@ -8,8 +8,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ChartEmptyState } from '@/components/chart-empty-state';
+import { MarkdownViewer } from '@/components/markdown-viewer';
 import { useItemQuery } from '@/graphql/generated';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
+import {
+  isChineseLanguage,
+  resolveDisplayContent,
+  resolveDisplaySummary,
+  resolveDisplayTitle,
+  resolveLanguageLabel
+} from '@/lib/item-display';
 import { formatRatioAsPercent } from '@/lib/metrics-format';
 import { safeHttpUrl } from '@/lib/url';
 
@@ -107,7 +115,6 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const processedErrorMessage = toString(processedError?.message);
   const processedErrorName = toString(processedError?.name);
 
-  const summary = toString(processedResult?.summary);
   const keyPoints = toStringList(processedResult?.key_points);
   const topics = toStringList(processedResult?.topics);
   const entities = toEntityNames(processedResult?.entities);
@@ -123,8 +130,25 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const originalUrl = safeHttpUrl(rawPayload?.url);
   const cleanedMarkdown = toString(processedResult?.cleaned_markdown);
   const cleanedMarkdownSource = toString(processedResult?.cleaned_markdown_source);
+  const summary = resolveDisplaySummary({
+    processedSummary: processedResult?.summary,
+    rawSummary: rawPayload?.summary
+  });
+  const displayTitle = resolveDisplayTitle({
+    processedTitle: processedResult?.title,
+    itemTitle: item?.title,
+    source,
+    originalUrl,
+    fallbackTitle: t('common.notAvailable')
+  });
+  const articleContent = resolveDisplayContent({
+    cleanedMarkdown
+  });
+  const languageLabel = resolveLanguageLabel(processedResult?.language);
+  const hasNonChineseContent = Boolean(languageLabel && !isChineseLanguage(languageLabel));
   const markdownFallbackUsed = cleanedMarkdownSource === 'crawl_fallback';
   const hasSummaryContent = Boolean(summary) || keyPoints.length > 0;
+  const hasArticleContent = Boolean(articleContent);
   const summaryText = summary?.trim();
   const canExpandSummary = Boolean(summaryText && summaryText.length > 300);
   const displaySummary =
@@ -308,10 +332,18 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       ) : null}
       <Space direction="vertical" size={2}>
         <Typography.Title level={4} ellipsis={{ rows: 2 }} style={{ margin: 0 }}>
-          {item.title}
+          {displayTitle}
         </Typography.Title>
         <Space size={[8, 8]} wrap>
           <Tag color="blue">{item.status}</Tag>
+          {hasNonChineseContent ? (
+            <Tag color="orange">
+              {t('items.detail.originalLanguage', {
+                defaultValue: 'Original language: {{language}}',
+                language: languageLabel
+              })}
+            </Tag>
+          ) : null}
           {qualityScoreLabel ? (
             <Tooltip
               title={
@@ -467,6 +499,46 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           <ChartEmptyState
             className="h-auto py-6"
             description={t('items.detail.summaryEmpty', { defaultValue: 'No summary available.' })}
+          />
+        )}
+      </Card>
+
+      <Card className="content-card" title={t('items.detail.fullTextTitle', { defaultValue: 'Article text' })}>
+        {hasArticleContent ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {hasNonChineseContent ? (
+              <Alert
+                type="info"
+                showIcon
+                message={t('items.detail.languageNoticeTitle', {
+                  defaultValue: 'Language notice'
+                })}
+                description={t('items.detail.languageNoticeDescription', {
+                  defaultValue:
+                    'Detected language is {{language}}. This article may not have been translated to Chinese yet.',
+                  language: languageLabel
+                })}
+              />
+            ) : null}
+            {markdownFallbackUsed ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t('items.detail.markdownFallback', { defaultValue: 'Markdown fallback' })}
+                description={t('items.detail.markdownFallbackTooltip', {
+                  defaultValue:
+                    'LLM response omitted cleaned_markdown; showing crawled markdown as fallback.'
+                })}
+              />
+            ) : null}
+            <MarkdownViewer markdown={articleContent!} />
+          </Space>
+        ) : (
+          <ChartEmptyState
+            className="h-auto py-6"
+            description={t('items.detail.fullTextEmpty', {
+              defaultValue: 'No translated article text available.'
+            })}
           />
         )}
       </Card>

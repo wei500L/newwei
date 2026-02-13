@@ -10,6 +10,13 @@ import { useTranslation } from "react-i18next";
 
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import {
+  isChineseLanguage,
+  resolveDisplayContent,
+  resolveDisplaySummary,
+  resolveDisplayTitle,
+  resolveLanguageLabel
+} from "@/lib/item-display";
 import { safeHttpUrl } from "@/lib/url";
 
 const READER_ITEM_QUERY = gql`
@@ -23,7 +30,7 @@ const READER_ITEM_QUERY = gql`
       }
       processed {
         resultJson
-        source
+        result
       }
     }
   }
@@ -51,6 +58,35 @@ const themeClasses: Record<Theme, { bg: string; text: string }> = {
   dark: { bg: "bg-[#1a1a1a]", text: "text-gray-200" }
 };
 
+const parseJson = <T,>(value: unknown): T | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  try {
+    let parsed: unknown = value;
+    for (let depth = 0; depth < 3; depth += 1) {
+      if (typeof parsed !== "string") {
+        break;
+      }
+      parsed = JSON.parse(parsed);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as T;
+  } catch {
+    return null;
+  }
+};
+
+const toNonEmptyString = (value: unknown): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
 export default function ReaderPage() {
   const { id } = useParams<{ id: string }>();
   const { t, i18n } = useTranslation();
@@ -68,48 +104,46 @@ export default function ReaderPage() {
 
   const item = data?.item;
 
-  const processedResult = useMemo(() => {
-    const candidate = item?.processed?.resultJson;
-    if (!candidate) {
-      return null;
-    }
-    if (typeof candidate === "object") {
-      return candidate;
-    }
-    if (typeof candidate === "string") {
-      try {
-        return JSON.parse(candidate);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }, [item?.processed?.resultJson]);
-  const rawPayload = useMemo(() => {
-    const candidate = item?.raw?.payload;
-    if (!candidate) {
-      return null;
-    }
-    if (typeof candidate === "object") {
-      return candidate;
-    }
-    if (typeof candidate === "string") {
-      try {
-        return JSON.parse(candidate);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }, [item?.raw?.payload]);
+  const processedResult = useMemo(
+    () =>
+      parseJson<Record<string, unknown>>(item?.processed?.resultJson) ??
+      parseJson<Record<string, unknown>>(item?.processed?.result),
+    [item?.processed?.result, item?.processed?.resultJson]
+  );
+  const rawPayload = useMemo(
+    () => parseJson<Record<string, unknown>>(item?.raw?.payload),
+    [item?.raw?.payload]
+  );
 
   const originalUrl = safeHttpUrl(rawPayload?.url);
-  const cleanedMarkdown = processedResult?.cleaned_markdown;
-  const summary = processedResult?.summary;
-  const keyPoints = processedResult?.key_points ?? [];
-
-  // Content priority: cleaned_markdown > summary + key_points > raw payload
-  const hasContent = Boolean(cleanedMarkdown || summary);
+  const source =
+    toNonEmptyString(processedResult?.source) ??
+    toNonEmptyString(rawPayload?.sourceName) ??
+    toNonEmptyString(rawPayload?.source) ??
+    undefined;
+  const cleanedMarkdown =
+    typeof processedResult?.cleaned_markdown === "string" ? processedResult.cleaned_markdown : undefined;
+  const keyPoints = Array.isArray(processedResult?.key_points)
+    ? processedResult.key_points.filter(
+        (point: unknown): point is string => typeof point === "string" && point.trim().length > 0
+      )
+    : [];
+  const summary = resolveDisplaySummary({
+    processedSummary: processedResult?.summary,
+    rawSummary: rawPayload?.summary
+  });
+  const displayTitle = resolveDisplayTitle({
+    processedTitle: processedResult?.title,
+    itemTitle: item?.title,
+    source,
+    originalUrl
+  });
+  const articleContent = resolveDisplayContent({
+    cleanedMarkdown
+  });
+  const languageLabel = resolveLanguageLabel(processedResult?.language);
+  const hasNonChineseContent = Boolean(languageLabel && !isChineseLanguage(languageLabel));
+  const hasContent = Boolean(articleContent);
 
   const currentTheme = themeClasses[theme];
 
@@ -235,12 +269,12 @@ export default function ReaderPage() {
       >
         {/* Header */}
         <header className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-4">{item.title}</h1>
+          <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-4">{displayTitle}</h1>
 
           <div className="flex items-center gap-4 text-sm text-gray-500">
-            {item.processed?.source && (
+            {source && (
               <>
-                <span>{item.processed.source}</span>
+                <span>{source}</span>
                 <span>•</span>
               </>
             )}
@@ -252,12 +286,33 @@ export default function ReaderPage() {
                 })}
               </span>
             )}
+            {hasNonChineseContent && (
+              <>
+                <span>•</span>
+                <span>
+                  {t("reader.languageNotice", {
+                    defaultValue: "Original language: {{language}}",
+                    language: languageLabel
+                  })}
+                </span>
+              </>
+            )}
           </div>
         </header>
 
+        {/* Summary */}
+        {summary && (
+          <div className="bg-slate-100/70 dark:bg-slate-800/40 rounded-lg p-4 mb-6">
+            <h3 className="text-sm font-semibold mb-2">
+              {t("reader.summary", { defaultValue: "Summary" })}
+            </h3>
+            <Typography.Paragraph style={{ marginBottom: 0 }}>{summary}</Typography.Paragraph>
+          </div>
+        )}
+
         {/* Key Points */}
         {keyPoints.length > 0 && (
-          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-8">
+          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-6">
             <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">
               {t("reader.keyPoints", { defaultValue: "Key Points" })}
             </h3>
@@ -275,11 +330,7 @@ export default function ReaderPage() {
         {/* Main Content */}
         {hasContent ? (
           <div className="prose dark:prose-invert max-w-none leading-relaxed">
-            {cleanedMarkdown ? (
-              <MarkdownViewer markdown={cleanedMarkdown} />
-            ) : summary ? (
-              <Typography.Paragraph>{summary}</Typography.Paragraph>
-            ) : null}
+            <MarkdownViewer markdown={articleContent!} />
           </div>
         ) : (
           <div className="text-center py-10">
