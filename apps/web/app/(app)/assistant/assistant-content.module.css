@@ -54,6 +54,54 @@
   backdrop-filter: blur(18px);
 }
 
+.historyLayout {
+  --assistant-history-col: 0px;
+}
+
+@media (min-width: 1280px) {
+  .historyLayout {
+    grid-template-columns: var(--assistant-history-col) minmax(0, 1fr);
+    transition: grid-template-columns 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .historyLayoutCollapsed {
+    --assistant-history-col: 0px;
+  }
+
+  .historyLayoutExpanded {
+    --assistant-history-col: 280px;
+  }
+}
+
+@media (min-width: 1536px) {
+  .historyLayoutExpanded {
+    --assistant-history-col: 320px;
+  }
+}
+
+.historyPanel {
+  min-width: 0;
+  transform-origin: left center;
+  transition:
+    opacity 220ms ease,
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s linear 300ms;
+}
+
+.historyPanelExpanded {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+  visibility: visible;
+  transition-delay: 0s, 0s, 0s;
+}
+
+.historyPanelCollapsed {
+  opacity: 0;
+  transform: translateX(-16px) scale(0.96);
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .historyScroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.75) transparent;
@@ -118,10 +166,37 @@
   border: 1px solid rgba(148, 163, 184, 0.3);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.96));
-  padding: 12px;
   box-shadow:
     0 14px 28px rgba(15, 23, 42, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: padding 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.composerExpanded {
+  padding: 12px;
+}
+
+.composerCollapsed {
+  cursor: text;
+  padding: 8px 10px;
+}
+
+.composerDetails {
+  overflow: hidden;
+  transition: max-height 200ms ease, opacity 160ms ease, margin-top 180ms ease;
+}
+
+.composerDetailsExpanded {
+  margin-top: 8px;
+  max-height: 240px;
+  opacity: 1;
+}
+
+.composerDetailsCollapsed {
+  margin-top: 0;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 @keyframes messageEnter {
@@ -161,5 +236,10 @@
   .emptyOrb,
   .messageEnter {
     animation: none;
+  }
+
+  .historyLayout,
+  .historyPanel {
+    transition: none;
   }
 }

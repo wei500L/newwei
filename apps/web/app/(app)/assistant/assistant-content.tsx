@@ -3,7 +3,10 @@
 import {
   BarChartOutlined,
   CloseCircleOutlined,
+  DeleteOutlined,
   HistoryOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
@@ -26,6 +29,7 @@ import {
   Spin,
   Typography,
 } from 'antd';
+import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { debounce } from 'lodash';
 import { useSession } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -93,6 +97,14 @@ interface RequestAssistantForecastVariables {
     seasonalPeriod?: number | null;
     confidenceLevel?: number | null;
   };
+}
+
+interface DeleteAssistantRunData {
+  deleteAssistantRun: boolean;
+}
+
+interface DeleteAssistantRunVariables {
+  runId: string;
 }
 
 interface AssistantEventsSubscriptionData {
@@ -189,6 +201,12 @@ const REQUEST_ASSISTANT_FORECAST_MUTATION = gql`
   }
 `;
 
+const DELETE_ASSISTANT_RUN_MUTATION = gql`
+  mutation DeleteAssistantRun($runId: String!) {
+    deleteAssistantRun(runId: $runId)
+  }
+`;
+
 const ASSISTANT_ECONOMIC_SERIES_SUGGESTIONS = gql`
   query AssistantEconomicSeriesSuggestions($term: String!, $limit: Int) {
     assistantEconomicSeriesSuggestions(term: $term, limit: $limit) {
@@ -243,8 +261,12 @@ export function AssistantContent() {
   const [queryDraft, setQueryDraft] = useState('');
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  const [historyCollapsed, setHistoryCollapsed] = useState(true);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [forecastModalOpen, setForecastModalOpen] = useState(false);
+  const [composerExpanded, setComposerExpanded] = useState(false);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [deletedRuns, setDeletedRuns] = useState<Record<string, true>>({});
 
   const [reportForm] = Form.useForm<{ period: 'daily' | 'weekly'; topic?: string; limit?: number }>();
   const [forecastForm] = Form.useForm<{
@@ -258,6 +280,9 @@ export function AssistantContent() {
 
   const completedRunsRef = useRef<Set<string>>(new Set());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const composerInputRef = useRef<TextAreaRef | null>(null);
+  const composerCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldAutoScrollRef = useRef(true);
   const previousActiveRunIdRef = useRef<string | null>(null);
 
@@ -355,6 +380,37 @@ export function AssistantContent() {
     };
   }, []);
 
+  const clearComposerCollapseTimer = () => {
+    if (composerCollapseTimerRef.current) {
+      clearTimeout(composerCollapseTimerRef.current);
+      composerCollapseTimerRef.current = null;
+    }
+  };
+
+  const expandComposer = () => {
+    clearComposerCollapseTimer();
+    setComposerExpanded(true);
+  };
+
+  const scheduleComposerCollapse = () => {
+    clearComposerCollapseTimer();
+    composerCollapseTimerRef.current = setTimeout(() => {
+      composerCollapseTimerRef.current = null;
+      const hasDraft = queryDraft.trim().length > 0;
+      const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+      const focusInsideComposer = Boolean(activeElement && composerRef.current?.contains(activeElement));
+      if (!hasDraft && !focusInsideComposer) {
+        setComposerExpanded(false);
+      }
+    }, 140);
+  };
+
+  useEffect(() => {
+    return () => {
+      clearComposerCollapseTimer();
+    };
+  }, []);
+
   const seriesOptions = useMemo(() => {
     return (suggestionsData?.assistantEconomicSeriesSuggestions ?? []).map((item: SuggestionItem) => ({
       value: item.slug,
@@ -442,6 +498,11 @@ export function AssistantContent() {
     RequestAssistantForecastVariables
   >(REQUEST_ASSISTANT_FORECAST_MUTATION);
 
+  const [deleteAssistantRun, { loading: deleteRunSaving }] = useMutation<
+    DeleteAssistantRunData,
+    DeleteAssistantRunVariables
+  >(DELETE_ASSISTANT_RUN_MUTATION);
+
   const pushOptimisticRun = (
     run: Pick<AssistantRun, 'id' | 'type' | 'status' | 'createdAt'>,
     input: AssistantRun['input'],
@@ -488,16 +549,25 @@ export function AssistantContent() {
     const byId = new Map<string, AssistantRun>();
 
     for (const run of data?.assistantRuns ?? []) {
+      if (deletedRuns[run.id]) {
+        continue;
+      }
       byId.set(run.id, run);
     }
 
     for (const optimisticRun of Object.values(optimisticRuns)) {
+      if (deletedRuns[optimisticRun.id]) {
+        continue;
+      }
       if (!byId.has(optimisticRun.id)) {
         byId.set(optimisticRun.id, optimisticRun);
       }
     }
 
     for (const live of Object.values(liveUpdates)) {
+      if (deletedRuns[live.id]) {
+        continue;
+      }
       const existing = byId.get(live.id);
 
       if (!existing) {
@@ -529,7 +599,7 @@ export function AssistantContent() {
     }
 
     return Array.from(byId.values()).sort((a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf());
-  }, [data?.assistantRuns, optimisticRuns, liveUpdates]);
+  }, [data?.assistantRuns, optimisticRuns, liveUpdates, deletedRuns]);
 
   useEffect(() => {
     if (runs.length === 0) {
@@ -712,6 +782,90 @@ export function AssistantContent() {
     }
   };
 
+  const handleDeleteRun = async (run: AssistantRun) => {
+    if (!canRunAssistant) {
+      messageApi.warning(t('common.accessDenied', { defaultValue: 'Access denied' }));
+      return;
+    }
+
+    if (run.status === 'running') {
+      messageApi.warning(
+        t('assistant.chat.deleteRunningDenied', {
+          defaultValue: 'Cannot delete a running conversation. Please wait until it finishes.',
+        }),
+      );
+      return;
+    }
+
+    setDeletingRunId(run.id);
+    try {
+      const response = await deleteAssistantRun({ variables: { runId: run.id } });
+      if (response.data?.deleteAssistantRun) {
+        setDeletedRuns((prev) => ({ ...prev, [run.id]: true }));
+        setOptimisticRuns((prev) => {
+          if (!prev[run.id]) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[run.id];
+          return next;
+        });
+        setLiveUpdates((prev) => {
+          if (!prev[run.id]) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[run.id];
+          return next;
+        });
+        delete liveUpdatesRef.current[run.id];
+        delete pendingLiveUpdatesRef.current[run.id];
+        completedRunsRef.current.delete(run.id);
+
+        setActiveRunId((current) => (current === run.id ? null : current));
+        messageApi.success(
+          t('assistant.chat.deleteSuccess', {
+            defaultValue: 'Conversation deleted.',
+          }),
+        );
+        void refetch();
+        return;
+      }
+
+      messageApi.warning(
+        t('assistant.chat.deleteNotFound', {
+          defaultValue: 'Conversation no longer exists.',
+        }),
+      );
+      void refetch();
+    } catch (err) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      messageApi.error(
+        t('assistant.chat.deleteFailed', {
+          defaultValue: 'Failed to delete conversation: {{error}}',
+          error: errMessage,
+        }),
+      );
+    } finally {
+      setDeletingRunId((current) => (current === run.id ? null : current));
+    }
+  };
+
+  const confirmDeleteRun = (run: AssistantRun) => {
+    Modal.confirm({
+      title: t('assistant.chat.deleteConfirmTitle', { defaultValue: 'Delete this conversation?' }),
+      content: t('assistant.chat.deleteConfirmDescription', {
+        defaultValue: 'This action cannot be undone.',
+      }),
+      okText: t('common.delete', { defaultValue: 'Delete' }),
+      cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await handleDeleteRun(run);
+      },
+    });
+  };
+
   const runListEmpty = t('assistant.chat.emptyHistory', { defaultValue: 'No assistant runs yet.' });
   const designKicker = t('assistant.hero.kicker', { defaultValue: 'INTELLIGENCE CONSOLE' });
 
@@ -729,8 +883,9 @@ export function AssistantContent() {
 
           return (
             <List.Item className="!border-none !px-0 !py-0">
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 aria-pressed={selected}
                 className={`group relative mb-2 w-full overflow-hidden rounded-2xl border px-4 py-3 text-left transition-all last:mb-0 ${
                   selected
@@ -741,9 +896,32 @@ export function AssistantContent() {
                   setActiveRunId(run.id);
                   onRunSelect?.();
                 }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setActiveRunId(run.id);
+                    onRunSelect?.();
+                  }
+                }}
               >
                 <span
                   className={`absolute bottom-3 left-0 top-3 w-1 rounded-r-full ${getStatusRailClass(run.status)}`}
+                />
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  loading={deletingRunId === run.id && deleteRunSaving}
+                  disabled={!canRunAssistant}
+                  className="absolute right-2 top-2 text-slate-400 transition-colors hover:text-rose-600"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void confirmDeleteRun(run);
+                  }}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  aria-label={t('assistant.chat.deleteConversation', { defaultValue: 'Delete conversation' })}
                 />
                 <div className="ml-2 w-full">
                   <Space size={6} wrap style={{ marginBottom: 8 }}>
@@ -775,7 +953,7 @@ export function AssistantContent() {
                     })}
                   </span>
                 </div>
-              </button>
+              </div>
             </List.Item>
           );
         }}
@@ -795,8 +973,8 @@ export function AssistantContent() {
       ) : null}
 
       <section className={styles.pageFrame}>
-        <header className="relative z-[1] border-b border-white/70 px-5 pb-5 pt-6 sm:px-7 sm:pb-6 sm:pt-7">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <header className="relative z-[1] border-b border-white/70 px-5 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="space-y-2">
               <p className={styles.heroKicker}>{designKicker}</p>
               <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">{title}</h1>
@@ -821,7 +999,7 @@ export function AssistantContent() {
               </Button>
               <Button
                 icon={<HistoryOutlined />}
-                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md lg:hidden"
+                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden"
                 onClick={() => setHistoryDrawerOpen(true)}
               >
                 {t('assistant.chat.historyTitle', { defaultValue: 'History' })} ({runs.length})
@@ -830,8 +1008,16 @@ export function AssistantContent() {
           </div>
         </header>
 
-        <div className="relative z-[1] grid gap-4 p-4 lg:grid-cols-[340px_minmax(0,1fr)] lg:p-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-          <aside className={`${styles.panel} hidden min-h-[32rem] flex-col lg:flex lg:h-[min(66dvh,52rem)]`}>
+        <div
+          className={`relative z-[1] grid gap-4 p-4 lg:p-5 ${styles.historyLayout} ${
+            historyCollapsed ? styles.historyLayoutCollapsed : styles.historyLayoutExpanded
+          }`}
+        >
+          <aside
+            className={`${styles.panel} ${styles.historyPanel} ${
+              historyCollapsed ? styles.historyPanelCollapsed : styles.historyPanelExpanded
+            } hidden min-h-[40rem] flex-col xl:flex xl:h-[min(80dvh,68rem)]`}
+          >
             <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -841,18 +1027,42 @@ export function AssistantContent() {
                   {t('assistant.chat.recentConversations', { defaultValue: 'Recent conversations' })}
                 </p>
               </div>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-inset ring-slate-300/60">
-                {runs.length}
-              </span>
+              <Space size={8}>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-inset ring-slate-300/60">
+                  {runs.length}
+                </span>
+                <Button
+                  type="text"
+                  icon={<MenuFoldOutlined />}
+                  className={`hidden xl:inline-flex transition-transform duration-300 ${
+                    historyCollapsed ? '' : 'rotate-180'
+                  }`}
+                  onClick={() => setHistoryCollapsed(true)}
+                  aria-label={t('assistant.chat.hideHistory', { defaultValue: 'Hide history' })}
+                />
+              </Space>
             </div>
             <div className="min-h-0 flex-1 px-3 py-3">{renderRunHistory('h-full overflow-y-auto pr-1')}</div>
           </aside>
 
           <section className={`${styles.panel} overflow-hidden`}>
-            <div className="flex min-h-[32rem] flex-col lg:h-[min(66dvh,52rem)]">
+            <div className="flex min-h-[40rem] flex-col lg:h-[min(80dvh,68rem)]">
               <div className="border-b border-slate-200/70 px-4 py-4 sm:px-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <Space size={8} wrap>
+                    <Button
+                      type="text"
+                      icon={historyCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                      className={`hidden xl:inline-flex transition-transform duration-300 ${
+                        historyCollapsed ? '' : 'rotate-180'
+                      }`}
+                      onClick={() => setHistoryCollapsed((collapsed) => !collapsed)}
+                      aria-label={
+                        historyCollapsed
+                          ? t('assistant.chat.showHistory', { defaultValue: 'Show history' })
+                          : t('assistant.chat.hideHistory', { defaultValue: 'Hide history' })
+                      }
+                    />
                     <span className="text-base font-bold text-slate-900">
                       {t('assistant.chat.conversationTitle', { defaultValue: 'Conversation' })}
                     </span>
@@ -877,7 +1087,7 @@ export function AssistantContent() {
                   <Space size={8} wrap>
                     <Button
                       icon={<HistoryOutlined />}
-                      className="rounded-xl border-slate-200/80 bg-white/80 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md lg:hidden"
+                      className="rounded-xl border-slate-200/80 bg-white/80 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden"
                       onClick={() => setHistoryDrawerOpen(true)}
                     >
                       {t('assistant.chat.historyTitle', { defaultValue: 'History' })} ({runs.length})
@@ -915,7 +1125,7 @@ export function AssistantContent() {
                   </div>
                 ) : (
                   <>
-                    <div className={`${styles.messageEnter} ml-auto max-w-[92%] sm:max-w-[80%]`}>
+                    <div className={`${styles.messageEnter} ml-auto max-w-[95%] sm:max-w-[88%] xl:max-w-[84%]`}>
                       <div className={styles.userBubble}>
                         <div className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed text-white">
                           {activeUserPrompt}
@@ -923,7 +1133,7 @@ export function AssistantContent() {
                       </div>
                     </div>
 
-                    <div className={`${styles.messageEnter} mr-auto max-w-[95%] sm:max-w-[90%]`}>
+                    <div className={`${styles.messageEnter} mr-auto max-w-[98%] sm:max-w-[96%] xl:max-w-[93%]`}>
                       <div className={styles.assistantBubble}>
                         <Space size={8} align="center" style={{ marginBottom: 14 }}>
                           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs text-white">
@@ -1062,7 +1272,7 @@ export function AssistantContent() {
                 )}
               </div>
 
-              <div className="border-t border-slate-200/70 px-4 py-4 sm:px-6 sm:py-5">
+              <div className="border-t border-slate-200/70 px-4 py-3 sm:px-6 sm:py-3.5">
                 {!canRunAssistant ? (
                   <Alert
                     style={{ marginBottom: 16, borderRadius: 14 }}
@@ -1075,36 +1285,38 @@ export function AssistantContent() {
                   />
                 ) : null}
 
-                <div className="mb-3 flex flex-wrap gap-2">
-                  <Button
-                    icon={<BarChartOutlined />}
-                    className="rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md"
-                    onClick={() => setReportModalOpen(true)}
-                    disabled={!canRunAssistant}
-                  >
-                    {t('assistant.chat.quickReport', { defaultValue: 'Quick Report' })}
-                  </Button>
-                  <Button
-                    icon={<RobotOutlined />}
-                    className="rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-700 hover:shadow-md"
-                    onClick={() => setForecastModalOpen(true)}
-                    disabled={!canRunAssistant}
-                  >
-                    {t('assistant.chat.quickForecast', { defaultValue: 'Quick Forecast' })}
-                  </Button>
-                </div>
-
-                <div className={styles.composerSurface}>
+                <div
+                  ref={composerRef}
+                  className={`${styles.composerSurface} ${
+                    composerExpanded ? styles.composerExpanded : styles.composerCollapsed
+                  }`}
+                  onClick={() => {
+                    if (!composerExpanded) {
+                      expandComposer();
+                      setTimeout(() => composerInputRef.current?.focus(), 0);
+                    }
+                  }}
+                >
                   <Input.TextArea
+                    ref={composerInputRef}
                     value={queryDraft}
-                    onChange={(event) => setQueryDraft(event.target.value)}
-                    autoSize={{ minRows: 3, maxRows: 8 }}
+                    onChange={(event) => {
+                      setQueryDraft(event.target.value);
+                      if (event.target.value.trim().length > 0) {
+                        expandComposer();
+                      }
+                    }}
+                    onFocus={() => expandComposer()}
+                    onBlur={() => scheduleComposerCollapse()}
+                    autoSize={composerExpanded ? { minRows: 2, maxRows: 6 } : { minRows: 1, maxRows: 1 }}
                     placeholder={placeholder}
                     aria-label={t('assistant.chat.inputAriaLabel', {
                       defaultValue: 'Assistant message input',
                     })}
                     disabled={!canRunAssistant || querySaving}
-                    className="rounded-2xl border-slate-300/70 bg-white/90 px-5 py-4 text-[15px] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition-all placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-500/10"
+                    className={`rounded-2xl border-slate-300/70 bg-white/90 px-5 text-[15px] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition-all placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-500/10 ${
+                      composerExpanded ? 'py-4' : 'py-2.5'
+                    }`}
                     onPressEnter={(event) => {
                       if (event.shiftKey) {
                         return;
@@ -1114,20 +1326,44 @@ export function AssistantContent() {
                     }}
                   />
 
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="text-xs font-semibold text-slate-500">
-                      {t('assistant.chat.enterHint', { defaultValue: 'Enter to send, Shift+Enter for newline.' })}
-                    </span>
-                    <Button
-                      icon={<SendOutlined />}
-                      className="h-11 w-full rounded-xl border-none bg-sky-600 px-8 font-bold text-white shadow-[0_12px_24px_rgba(14,116,217,0.28)] transition-all hover:bg-sky-700 hover:shadow-[0_16px_26px_rgba(14,116,217,0.34)] active:scale-[0.98] disabled:opacity-50 sm:w-auto"
-                      type="primary"
-                      loading={querySaving}
-                      disabled={!canRunAssistant}
-                      onClick={() => void submitQuery()}
-                    >
-                      {t('assistant.chat.send', { defaultValue: 'Send' })}
-                    </Button>
+                  <div
+                    className={`${styles.composerDetails} ${
+                      composerExpanded ? styles.composerDetailsExpanded : styles.composerDetailsCollapsed
+                    }`}
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          icon={<BarChartOutlined />}
+                          className="rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md"
+                          onClick={() => setReportModalOpen(true)}
+                          disabled={!canRunAssistant}
+                        >
+                          {t('assistant.chat.quickReport', { defaultValue: 'Quick Report' })}
+                        </Button>
+                        <Button
+                          icon={<RobotOutlined />}
+                          className="rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-700 hover:shadow-md"
+                          onClick={() => setForecastModalOpen(true)}
+                          disabled={!canRunAssistant}
+                        >
+                          {t('assistant.chat.quickForecast', { defaultValue: 'Quick Forecast' })}
+                        </Button>
+                        <span className="text-xs font-semibold text-slate-500">
+                          {t('assistant.chat.enterHint', { defaultValue: 'Enter to send, Shift+Enter for newline.' })}
+                        </span>
+                      </div>
+                      <Button
+                        icon={<SendOutlined />}
+                        className="h-10 w-full rounded-xl border-none bg-sky-600 px-8 font-bold text-white shadow-[0_12px_24px_rgba(14,116,217,0.28)] transition-all hover:bg-sky-700 hover:shadow-[0_16px_26px_rgba(14,116,217,0.34)] active:scale-[0.98] disabled:opacity-50 sm:w-auto"
+                        type="primary"
+                        loading={querySaving}
+                        disabled={!canRunAssistant}
+                        onClick={() => void submitQuery()}
+                      >
+                        {t('assistant.chat.send', { defaultValue: 'Send' })}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -1,6 +1,6 @@
 import { AssistantRunModel, ProcessedItemModel, RawItemModel } from "@modular/mongo";
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
-import { Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { EconomicDataPoint } from "@prisma/client";
 import type { Queue } from "bullmq";
 import type { PubSubEngine } from "graphql-subscriptions";
@@ -171,6 +171,38 @@ export class AssistantService {
 
   async listRuns(orgId: string, limit = 50) {
     return AssistantRunModel.find({ orgId }).sort({ createdAt: -1 }).limit(limit).lean();
+  }
+
+  async deleteRun(orgId: string, runId: string): Promise<boolean> {
+    let record: { type: AssistantRunType; status: AssistantRunStatus } | null = null;
+    try {
+      record = await AssistantRunModel.findOne({ _id: runId, orgId }, { type: 1, status: 1 }).lean();
+    } catch {
+      return false;
+    }
+
+    if (!record) {
+      return false;
+    }
+
+    if (record.status === "running") {
+      throw new ConflictException("Assistant run is currently running and cannot be deleted");
+    }
+
+    if (record.status === "pending") {
+      const jobId = `assistant:${record.type}:${runId}`;
+      try {
+        const queuedJob = await this.queue.getJob(jobId);
+        if (queuedJob) {
+          await queuedJob.remove();
+        }
+      } catch (error) {
+        logger.warn({ runId, error }, "Failed to remove pending assistant job before deleting run");
+      }
+    }
+
+    const result = await AssistantRunModel.deleteOne({ _id: runId, orgId });
+    return result.deletedCount > 0;
   }
 
   async process(job: AssistantJobPayload) {

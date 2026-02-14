@@ -1207,6 +1207,7 @@ type Mutation {
   createOrg(input: CreateOrgInput!): OrgModel!
   deleteAlertChannel(channelId: String!): Boolean!
   deleteAlertRule(ruleId: String!): Boolean!
+  deleteAssistantRun(runId: String!): Boolean!
   deleteCrawlTask(id: String!): Boolean!
   deleteDashboard(id: String!): Boolean!
   ingestCrawlTaskResultsToItems(after: String, limit: Float, onlyMissing: Boolean, taskId: String!): CrawlIngestBatchModel!

@@ -145,6 +145,25 @@ export class AssistantResolver {
     };
   }
 
+  @HasPermission("assistant.run")
+  @Mutation(() => Boolean)
+  async deleteAssistantRun(
+    @Context("req") req: GqlRequest,
+    @Args("runId") runId: string
+  ): Promise<boolean> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+
+    const normalizedRunId = runId.trim();
+    if (!normalizedRunId) {
+      throw new BadRequestException("runId is required");
+    }
+
+    return this.assistantService.deleteRun(requester.orgId, normalizedRunId);
+  }
+
   @HasPermission("assistant.read")
   @Subscription(() => AssistantRunModel, {
     name: "assistantEvents",
