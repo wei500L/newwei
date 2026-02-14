@@ -84,6 +84,35 @@ describe("EntityImpactGraphService", () => {
     expect(service.calculateCorrelation).toHaveBeenCalled();
   });
 
+  it("returns an empty graph when data providers fail", async () => {
+    const prisma = {} as any;
+    const cache = { wrap: jest.fn() } as any;
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({
+        enabled: true,
+        minEntityConfidence: 0.5,
+        minCorrelation: 0.3,
+        minCoOccurrence: 2,
+        maxNodes: 100,
+        categories: ["person", "organization", "stock", "commodity"],
+        cacheTtlSeconds: 0
+      })
+    } as any;
+
+    const service = new EntityImpactGraphService(prisma, cache, settings);
+    jest.spyOn(service, "calculateCoOccurrence").mockRejectedValue(new Error("mongo unavailable"));
+    jest.spyOn(service, "calculateCorrelation").mockRejectedValue(new Error("prisma unavailable"));
+
+    const result = await service.getEntityImpactGraph({
+      orgId: "org-1",
+      startDate: new Date("2026-01-01T00:00:00.000Z"),
+      endDate: new Date("2026-01-02T00:00:00.000Z")
+    });
+
+    expect(result.nodes).toEqual([]);
+    expect(result.links).toEqual([]);
+  });
+
   it("calculates co-occurrence via Mongo aggregation", async () => {
     aggregateMock.mockReturnValue({
       allowDiskUse: jest.fn().mockResolvedValue([
@@ -120,5 +149,65 @@ describe("EntityImpactGraphService", () => {
       }
     ]);
   });
-});
 
+  it("builds links only when both endpoint nodes are retained", () => {
+    const service = new EntityImpactGraphService({} as any, {} as any, {} as any);
+
+    const result = service.buildGraphData(
+      [
+        {
+          entityA: "Alice",
+          entityB: "Acme",
+          typeA: "person",
+          typeB: "organization",
+          count: 3,
+          articleIds: []
+        },
+        {
+          entityA: "Alice",
+          entityB: "Gold",
+          typeA: "person",
+          typeB: "commodity",
+          count: 2,
+          articleIds: []
+        }
+      ],
+      [],
+      ["person", "organization"],
+      50
+    );
+
+    expect(result.nodes.map((node) => node.id).sort()).toEqual(["Acme", "Alice"]);
+    expect(result.links).toEqual([
+      {
+        source: "Alice",
+        target: "Acme",
+        value: 3,
+        linkType: "co-occurrence"
+      }
+    ]);
+  });
+
+  it("handles missing entity type values without throwing", () => {
+    const service = new EntityImpactGraphService({} as any, {} as any, {} as any);
+
+    const result = service.buildGraphData(
+      [
+        {
+          entityA: "Unknown Entity",
+          entityB: "Acme",
+          typeA: undefined as unknown as string,
+          typeB: "organization",
+          count: 1,
+          articleIds: []
+        }
+      ],
+      [],
+      ["organization"],
+      20
+    );
+
+    expect(result.nodes.map((node) => node.id).sort()).toEqual(["Acme", "Unknown Entity"]);
+    expect(result.links).toHaveLength(1);
+  });
+});

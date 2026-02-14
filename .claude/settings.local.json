@@ -30,7 +30,11 @@
       "mcp__ace-tool__search_context",
       "Bash(findstr:*)",
       "Bash(C:/Users/weidu/.claude/bin/codeagent-wrapper.exe --backend codex - \"$PWD\" <<'EOF'\nROLE_FILE: C:/Users/weidu/.claude/.ccg/prompts/codex/reviewer.md\n简单测试\nEOF)",
-      "mcp__contextweaver__codebase-retrieval"
+      "mcp__contextweaver__codebase-retrieval",
+      "Bash(pnpm next lint:*)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "ccw-tools"
+  ]
 }

@@ -201,7 +201,8 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     retryRef.current = 0;
     statusRef.current = 'offline';
     hasLiveRef.current = false;
-    const warEventsKey = ['dashboard', 'war-map', 'events', startIso, endIso] as const;
+    const warEventsKey = ['dashboard', 'war-map', 'events', startIso, endIso, null] as const;
+    const warEventsLegacyKey = ['dashboard', 'war-map', 'events', startIso, endIso] as const;
     const candlestickKey = ['dashboard', 'financial-candlestick', startIso, endIso] as const;
     const geoHeatmapKey = ['dashboard', 'spacetime', 'geo-heatmap', startIso, endIso] as const;
     const geoHeatmapEventPrefixKey = [
@@ -381,6 +382,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       const payload = parseStreamData(rawData);
       if (eventType === 'war-map-events' && isWarMapEventsResponse(payload)) {
         queryClient.setQueryData(warEventsKey, payload);
+        queryClient.setQueryData(warEventsLegacyKey, payload);
         markHealthy();
         return;
       }

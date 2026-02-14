@@ -119,28 +119,56 @@ export class EntityImpactGraphService {
     const loader = async () => {
       const totalStart = Date.now();
 
+      let coOccurrences: CoOccurrenceRecord[] = [];
       const coStart = Date.now();
-      const coOccurrences = await this.calculateCoOccurrence(
-        orgId,
-        startDate,
-        endDate,
-        minCoOccurrence,
-        minEntityConfidence
-      );
+      try {
+        coOccurrences = await this.calculateCoOccurrence(
+          orgId,
+          startDate,
+          endDate,
+          minCoOccurrence,
+          minEntityConfidence
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Failed to calculate entity co-occurrence for org ${orgId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
       const coMs = Date.now() - coStart;
 
+      let correlations: CorrelationResult[] = [];
       const correlationStart = Date.now();
-      const correlations = await this.calculateCorrelation(
-        orgId,
-        startDate,
-        endDate,
-        minCorrelation,
-        minEntityConfidence
-      );
+      try {
+        correlations = await this.calculateCorrelation(
+          orgId,
+          startDate,
+          endDate,
+          minCorrelation,
+          minEntityConfidence
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Failed to calculate entity/instrument correlations for org ${orgId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
       const correlationMs = Date.now() - correlationStart;
 
       const buildStart = Date.now();
-      const graphData = this.buildGraphData(coOccurrences, correlations, categories, maxNodes);
+      let graphData: EntityImpactGraphData;
+      try {
+        graphData = this.buildGraphData(coOccurrences, correlations, categories, maxNodes);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to build entity impact graph payload for org ${orgId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        graphData = this.buildGraphData([], [], categories, maxNodes);
+      }
       const buildMs = Date.now() - buildStart;
 
       const totalMs = Date.now() - totalStart;
@@ -395,8 +423,8 @@ export class EntityImpactGraphService {
     ].filter((cat) => allowedCategories.includes(cat.name));
 
     // Helper to normalize entity type to category
-    const normalizeCategory = (type: string): "person" | "organization" | "stock" | "commodity" => {
-      const lower = type.toLowerCase();
+    const normalizeCategory = (type: unknown): "person" | "organization" | "stock" | "commodity" => {
+      const lower = typeof type === "string" ? type.trim().toLowerCase() : "";
       if (lower.includes("person") || lower.includes("people")) return "person";
       if (lower.includes("org") || lower.includes("company") || lower.includes("institution"))
         return "organization";
@@ -407,33 +435,43 @@ export class EntityImpactGraphService {
     };
 
     // Helper to add or update node
-    const addNode = (name: string, type: string, weight: number) => {
+    const addNode = (name: string, type: unknown, weight: number): EntityNode | null => {
+      const normalizedName = typeof name === "string" ? name.trim() : "";
+      if (!normalizedName) {
+        return null;
+      }
       const category = normalizeCategory(type);
-      if (!allowedCategories.includes(category)) return;
+      if (!allowedCategories.includes(category)) return null;
 
-      const existing = nodeMap.get(name);
+      const existing = nodeMap.get(normalizedName);
       if (existing) {
         existing.value += weight;
         existing.symbolSize = Math.min(50, 10 + Math.sqrt(existing.value) * 3);
+        return existing;
       } else {
-        nodeMap.set(name, {
-          id: name,
-          name,
+        const createdNode: EntityNode = {
+          id: normalizedName,
+          name: normalizedName,
           category,
           value: weight,
           symbolSize: Math.min(50, 10 + Math.sqrt(weight) * 3)
-        });
+        };
+        nodeMap.set(normalizedName, createdNode);
+        return createdNode;
       }
     };
 
     // Process co-occurrence relationships
     for (const record of coOccurrences) {
-      addNode(record.entityA, record.typeA, record.count);
-      addNode(record.entityB, record.typeB, record.count);
+      const sourceNode = addNode(record.entityA, record.typeA, record.count);
+      const targetNode = addNode(record.entityB, record.typeB, record.count);
+      if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) {
+        continue;
+      }
 
       links.push({
-        source: record.entityA,
-        target: record.entityB,
+        source: sourceNode.id,
+        target: targetNode.id,
         value: record.count,
         linkType: "co-occurrence"
       });
@@ -441,32 +479,44 @@ export class EntityImpactGraphService {
 
     // Process correlation relationships
     for (const record of correlations) {
-      addNode(record.entity, record.entityType, Math.abs(record.correlation) * 10);
-      addNode(record.instrument, record.instrumentType, Math.abs(record.correlation) * 10);
+      const sourceNode = addNode(record.entity, record.entityType, Math.abs(record.correlation) * 10);
+      const targetNode = addNode(record.instrument, record.instrumentType, Math.abs(record.correlation) * 10);
+      if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) {
+        continue;
+      }
 
       links.push({
-        source: record.entity,
-        target: record.instrument,
+        source: sourceNode.id,
+        target: targetNode.id,
         value: Math.abs(record.correlation),
         linkType: "correlation"
       });
     }
 
-    // Limit nodes if exceeding maxNodes
     let nodes = Array.from(nodeMap.values());
+    let nodeIds = new Set(nodes.map((node) => node.id));
+    let filteredLinks = links.filter(
+      (link) =>
+        nodeIds.has(link.source) &&
+        nodeIds.has(link.target) &&
+        link.source !== link.target
+    );
+
+    // Limit nodes if exceeding maxNodes
     if (nodes.length > maxNodes) {
       nodes = nodes.sort((a, b) => b.value - a.value).slice(0, maxNodes);
-      const nodeIds = new Set(nodes.map((n) => n.id));
+      nodeIds = new Set(nodes.map((n) => n.id));
 
       // Filter links to only include nodes that are kept
-      const filteredLinks = links.filter(
-        (link) => nodeIds.has(link.source) && nodeIds.has(link.target)
+      filteredLinks = filteredLinks.filter(
+        (link) =>
+          nodeIds.has(link.source) &&
+          nodeIds.has(link.target) &&
+          link.source !== link.target
       );
-
-      return { nodes, links: filteredLinks, categories };
     }
 
-    return { nodes, links, categories };
+    return { nodes, links: filteredLinks, categories };
   }
 
   /**

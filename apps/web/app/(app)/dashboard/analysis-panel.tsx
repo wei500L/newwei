@@ -1,15 +1,19 @@
 "use client";
 
+import { MinusCircleOutlined, PlusOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
   Card,
+  DatePicker,
   Form,
   Input,
   InputNumber,
   List,
+  Select,
   Space,
   Skeleton,
+  Tooltip,
   Typography,
 } from "antd";
 import { useSession } from "next-auth/react";
@@ -20,7 +24,6 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   type AnomalyAnalysisInput,
   type CorrelationAnalysisInput,
-  type SeriesPointInput,
   useAnalysisResultsQuery,
   useRequestAnomalyMutation,
   useRequestCorrelationMutation,
@@ -31,6 +34,29 @@ import {
 import { dashboardNow } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+
+const { RangePicker } = DatePicker;
+const MAX_TAG_ITEMS = 50;
+const MAX_SERIES_POINTS = 200;
+
+function normalizeTags(values?: string[]): string[] {
+  return Array.from(
+    new Set((values ?? []).map((value) => value.trim()).filter(Boolean)),
+  ).slice(0, MAX_TAG_ITEMS);
+}
+
+function normalizeSeries(values?: SeriesRowForm[]): SeriesRowForm[] {
+  return (values ?? [])
+    .filter(
+      (point): point is SeriesRowForm =>
+        !!point &&
+        typeof point.value === "number" &&
+        !Number.isNaN(point.value) &&
+        point.timestamp?.isValid?.(),
+    )
+    .sort((a, b) => a.timestamp.valueOf() - b.timestamp.valueOf())
+    .slice(0, MAX_SERIES_POINTS);
+}
 
 export function AnalysisPanel() {
   const { t, i18n } = useTranslation();
@@ -255,55 +281,117 @@ interface CorrelationFormProps {
   disabled?: boolean;
 }
 
+interface CorrelationFormValues {
+  indicatorName: string;
+  value: number;
+  changePercent: number;
+  dateRange?: [dayjs.Dayjs, dayjs.Dayjs] | null;
+  newsSummaries?: string[];
+}
+
 function CorrelationForm({ onSubmit, loading, disabled }: CorrelationFormProps) {
   const { t } = useTranslation();
-  const [form] = Form.useForm<CorrelationAnalysisInput>();
+  const [form] = Form.useForm<CorrelationFormValues>();
+
+  const handleFinish = async (values: CorrelationFormValues) => {
+    const [start, end] = values.dateRange ?? [];
+    if (!start || !end) {
+      form.setFields([
+        {
+          name: "dateRange",
+          errors: [t("analysis.correlation.errors.dateRangeRequired")],
+        },
+      ]);
+      return;
+    }
+    const payload: CorrelationAnalysisInput = {
+      indicatorName: values.indicatorName.trim(),
+      value: values.value,
+      changePercent: values.changePercent,
+      startDate: start.format("YYYY-MM-DD"),
+      endDate: end.format("YYYY-MM-DD"),
+      newsSummaries: normalizeTags(values.newsSummaries),
+    };
+    await onSubmit(payload);
+  };
+
   return (
-    <Form<CorrelationAnalysisInput>
-      layout="inline"
+    <Form<CorrelationFormValues>
+      layout="vertical"
       form={form}
       disabled={disabled}
       initialValues={{
-        indicatorName: t("analysis.correlation.defaults.indicator"),
         changePercent: 0,
         value: 0,
-        startDate: dashboardNow().subtract(30, "day").format("YYYY-MM-DD"),
-        endDate: dashboardNow().format("YYYY-MM-DD"),
+        dateRange: [dashboardNow().subtract(30, "day"), dashboardNow()],
         newsSummaries: [],
       }}
-      onFinish={onSubmit}
+      onFinish={handleFinish}
     >
-      <Form.Item name="indicatorName" rules={[{ required: true }]}>
-        <Input placeholder={t("analysis.correlation.fields.indicator")} />
+      <Form.Item
+        label={t("analysis.correlation.fields.indicator")}
+        name="indicatorName"
+        rules={[{ required: true }]}
+      >
+        <Input placeholder={t("analysis.correlation.defaults.indicator")} />
       </Form.Item>
-      <Form.Item name="value" rules={[{ required: true }]}>
-        <InputNumber placeholder={t("analysis.correlation.fields.value")} />
-      </Form.Item>
-      <Form.Item name="changePercent" rules={[{ required: true }]}>
-        <InputNumber placeholder={t("analysis.correlation.fields.changePercent")} />
-      </Form.Item>
-      <Form.Item name="startDate" rules={[{ required: true }]}>
-        <Input placeholder={t("analysis.correlation.fields.startDate")} />
-      </Form.Item>
-      <Form.Item name="endDate" rules={[{ required: true }]}>
-        <Input placeholder={t("analysis.correlation.fields.endDate")} />
-      </Form.Item>
-      <Form.Item name="newsSummaries">
-        <Input
-          placeholder={t("analysis.correlation.fields.newsSummaries")}
-          onChange={(e) =>
-            form.setFieldValue(
-              "newsSummaries",
-              e.target.value
-                .split(",")
-                .map((s: string) => s.trim())
-                .filter(Boolean),
-            )
+      <Space style={{ display: "flex" }} align="baseline">
+        <Form.Item
+          label={t("analysis.correlation.fields.value")}
+          name="value"
+          rules={[{ required: true }]}
+        >
+          <InputNumber style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label={
+            <Space size="small">
+              {t("analysis.correlation.fields.changePercent")}
+              <Tooltip title={t("analysis.correlation.help.changePercent")}>
+                <QuestionCircleOutlined className="text-gray-400 cursor-help" />
+              </Tooltip>
+            </Space>
           }
+          name="changePercent"
+          rules={[{ required: true }]}
+        >
+          <InputNumber style={{ width: "100%" }} />
+        </Form.Item>
+      </Space>
+      <Form.Item
+        label={t("analysis.correlation.fields.dateRange")}
+        name="dateRange"
+        rules={[
+          {
+            validator: (_, value) =>
+              value?.[0] && value?.[1]
+                ? Promise.resolve()
+                : Promise.reject(
+                    new Error(t("analysis.correlation.errors.dateRangeRequired")),
+                  ),
+          },
+        ]}
+      >
+        <RangePicker style={{ width: "100%" }} />
+      </Form.Item>
+      <Form.Item
+        label={t("analysis.correlation.fields.newsSummaries")}
+        name="newsSummaries"
+      >
+        <Select
+          mode="tags"
+          style={{ width: "100%" }}
+          placeholder={t("analysis.correlation.placeholders.newsSummaries")}
         />
       </Form.Item>
       <Form.Item>
-        <Button type="primary" htmlType="submit" loading={loading} disabled={disabled}>
+        <Button
+          type="primary"
+          htmlType="submit"
+          loading={loading}
+          disabled={disabled}
+          block
+        >
           {t("common.submit")}
         </Button>
       </Form.Item>
@@ -311,8 +399,19 @@ function CorrelationForm({ onSubmit, loading, disabled }: CorrelationFormProps) 
   );
 }
 
-interface AnomalyFormValues extends AnomalyAnalysisInput {
-  seriesJson: string;
+interface SeriesRowForm {
+  timestamp: dayjs.Dayjs;
+  value: number;
+}
+
+interface AnomalyFormValues {
+  metric: string;
+  timestamp: dayjs.Dayjs;
+  value: number;
+  deviationPercent: number;
+  newsList?: string[];
+  policyList?: string[];
+  series?: SeriesRowForm[];
 }
 
 interface AnomalyFormProps {
@@ -323,122 +422,201 @@ interface AnomalyFormProps {
 
 function AnomalyForm({ onSubmit, loading, disabled }: AnomalyFormProps) {
   const { t } = useTranslation();
-  const { message } = App.useApp();
   const [form] = Form.useForm<AnomalyFormValues>();
-  const parseSeriesJson = (raw?: string) => {
-    if (!raw || !raw.trim()) return [];
-    try {
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        message.error(t("analysis.anomaly.errors.seriesArray"));
-        return null;
-      }
-      const normalized = parsed
-        .map((item) => {
-          if (!item) return null;
-          if (typeof item !== "object") {
-            return null;
-          }
-          const record = item as Record<string, unknown>;
-          const timestamp = record.timestamp ?? record.time ?? record.date;
-          if (timestamp === undefined || timestamp === null) {
-            return null;
-          }
-          const value = typeof record.value === "number" ? record.value : Number(record.value);
-          if (!timestamp || Number.isNaN(value)) return null;
-          return { timestamp: String(timestamp), value } satisfies SeriesPointInput;
-        })
-        .filter(
-          (point): point is SeriesPointInput =>
-            !!point,
-        );
-      if (!normalized.length) {
-        message.warning(t("analysis.anomaly.errors.seriesEmpty"));
-      }
-      return normalized;
-    } catch {
-      message.error(t("analysis.anomaly.errors.seriesInvalid"));
-      return null;
+
+  const handleFinish = async (values: AnomalyFormValues) => {
+    if (!values.timestamp?.isValid?.()) {
+      form.setFields([
+        {
+          name: "timestamp",
+          errors: [t("analysis.anomaly.errors.timestampInvalid")],
+        },
+      ]);
+      return;
     }
+
+    const normalizedSeries = normalizeSeries(values.series).map((point) => ({
+      timestamp: point.timestamp.toISOString(),
+      value: point.value,
+    }));
+
+    const payload: AnomalyAnalysisInput = {
+      metric: values.metric.trim(),
+      timestamp: values.timestamp.toISOString(),
+      value: values.value,
+      deviationPercent: values.deviationPercent,
+      newsList: normalizeTags(values.newsList),
+      policyList: normalizeTags(values.policyList),
+      series: normalizedSeries.length ? normalizedSeries : undefined,
+    };
+    await onSubmit(payload);
   };
 
   return (
     <Form<AnomalyFormValues>
-      layout="inline"
+      layout="vertical"
       form={form}
       disabled={disabled}
       initialValues={{
-        metric: t("analysis.anomaly.defaults.metric"),
-        timestamp: dayjs().toISOString(),
+        timestamp: dashboardNow(),
         value: 0,
         deviationPercent: 0,
         newsList: [],
         policyList: [],
-        seriesJson: "",
+        series: [],
       }}
-      onFinish={async (values) => {
-        const series = parseSeriesJson(values.seriesJson);
-        if (series === null) return;
-        const payload: AnomalyAnalysisInput = {
-          metric: values.metric,
-          timestamp: values.timestamp,
-          value: values.value,
-          deviationPercent: values.deviationPercent,
-          newsList: values.newsList ?? [],
-          policyList: values.policyList ?? [],
-          series: series.length ? series : undefined,
-        };
-        await onSubmit(payload);
-      }}
+      onFinish={handleFinish}
     >
-      <Form.Item name="metric" rules={[{ required: true }]}>
-        <Input placeholder={t("analysis.anomaly.fields.metric")} />
+      <Form.Item
+        label={
+          <Space size="small">
+            {t("analysis.anomaly.fields.metric")}
+            <Tooltip title={t("analysis.anomaly.help.metric")}>
+              <QuestionCircleOutlined className="text-gray-400 cursor-help" />
+            </Tooltip>
+          </Space>
+        }
+        name="metric"
+        rules={[{ required: true }]}
+      >
+        <Input placeholder={t("analysis.anomaly.defaults.metric")} />
       </Form.Item>
-      <Form.Item name="timestamp" rules={[{ required: true }]}>
-        <Input placeholder={t("analysis.anomaly.fields.timestamp")} />
+      <Space style={{ display: "flex" }} align="baseline">
+        <Form.Item
+          label={t("analysis.anomaly.fields.timestamp")}
+          name="timestamp"
+          rules={[{ required: true }]}
+        >
+          <DatePicker showTime style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label={t("analysis.anomaly.fields.value")}
+          name="value"
+          rules={[{ required: true }]}
+        >
+          <InputNumber style={{ width: "100%" }} />
+        </Form.Item>
+      </Space>
+      <Form.Item
+        label={
+          <Space size="small">
+            {t("analysis.anomaly.fields.deviationPercent")}
+            <Tooltip title={t("analysis.anomaly.help.deviationPercent")}>
+              <QuestionCircleOutlined className="text-gray-400 cursor-help" />
+            </Tooltip>
+          </Space>
+        }
+        name="deviationPercent"
+        rules={[{ required: true }]}
+      >
+        <InputNumber style={{ width: "100%" }} />
       </Form.Item>
-      <Form.Item name="value" rules={[{ required: true }]}>
-        <InputNumber placeholder={t("analysis.anomaly.fields.value")} />
-      </Form.Item>
-      <Form.Item name="deviationPercent" rules={[{ required: true }]}>
-        <InputNumber placeholder={t("analysis.anomaly.fields.deviationPercent")} />
-      </Form.Item>
-      <Form.Item name="newsList">
-        <Input
-          placeholder={t("analysis.anomaly.fields.newsList")}
-          onChange={(e) =>
-            form.setFieldValue(
-              "newsList",
-              e.target.value
-                .split(",")
-                .map((s: string) => s.trim())
-                .filter(Boolean),
-            )
-          }
+      <Form.Item
+        label={
+          <Space size="small">
+            {t("analysis.anomaly.fields.newsList")}
+            <Tooltip title={t("analysis.anomaly.help.newsList")}>
+              <QuestionCircleOutlined className="text-gray-400 cursor-help" />
+            </Tooltip>
+          </Space>
+        }
+        name="newsList"
+      >
+        <Select
+          mode="tags"
+          style={{ width: "100%" }}
+          placeholder={t("analysis.anomaly.placeholders.newsList")}
         />
       </Form.Item>
-      <Form.Item name="policyList">
-        <Input
-          placeholder={t("analysis.anomaly.fields.policyList")}
-          onChange={(e) =>
-            form.setFieldValue(
-              "policyList",
-              e.target.value
-                .split(",")
-                .map((s: string) => s.trim())
-                .filter(Boolean),
-            )
-          }
+      <Form.Item
+        label={
+          <Space size="small">
+            {t("analysis.anomaly.fields.policyList")}
+            <Tooltip title={t("analysis.anomaly.help.policyList")}>
+              <QuestionCircleOutlined className="text-gray-400 cursor-help" />
+            </Tooltip>
+          </Space>
+        }
+        name="policyList"
+      >
+        <Select
+          mode="tags"
+          style={{ width: "100%" }}
+          placeholder={t("analysis.anomaly.placeholders.policyList")}
         />
       </Form.Item>
-      <Form.Item name="seriesJson">
-        <Input.TextArea
-          placeholder={t("analysis.anomaly.fields.seriesJson")}
-          autoSize={{ minRows: 2, maxRows: 4 }}
-        />
+      <Form.Item
+        label={
+          <Space size="small">
+            {t("analysis.anomaly.fields.series")}
+            <Tooltip title={t("analysis.anomaly.help.series")}>
+              <QuestionCircleOutlined className="text-gray-400 cursor-help" />
+            </Tooltip>
+          </Space>
+        }
+      >
+        <Form.List name="series">
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map(({ key, name, ...restField }) => (
+                <Space
+                  key={key}
+                  style={{ display: "flex", marginBottom: 8 }}
+                  align="baseline"
+                >
+                  <Form.Item
+                    {...restField}
+                    name={[name, "timestamp"]}
+                    rules={[{ required: true }]}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <DatePicker
+                      showTime
+                      placeholder={t("analysis.anomaly.placeholders.timestamp")}
+                      size="small"
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    {...restField}
+                    name={[name, "value"]}
+                    rules={[{ required: true }]}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <InputNumber
+                      placeholder={t("analysis.anomaly.placeholders.value")}
+                      size="small"
+                    />
+                  </Form.Item>
+                  <Button
+                    type="text"
+                    danger
+                    size="small"
+                    icon={<MinusCircleOutlined />}
+                    onClick={() => remove(name)}
+                    aria-label={t("common.remove")}
+                  />
+                </Space>
+              ))}
+              <Button
+                type="dashed"
+                onClick={() => add()}
+                block
+                icon={<PlusOutlined />}
+              >
+                {t("analysis.anomaly.actions.addSeriesPoint")}
+              </Button>
+            </>
+          )}
+        </Form.List>
       </Form.Item>
       <Form.Item>
-        <Button type="primary" htmlType="submit" loading={loading} disabled={disabled}>
+        <Button
+          type="primary"
+          htmlType="submit"
+          loading={loading}
+          disabled={disabled}
+          block
+        >
           {t("common.submit")}
         </Button>
       </Form.Item>

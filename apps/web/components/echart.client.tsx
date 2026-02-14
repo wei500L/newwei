@@ -7,32 +7,58 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartSkeleton } from "@/components/chart-skeleton";
-import { downloadDataUrlFile, sanitizeFilename, yieldToMain } from "@/lib/data-export";
+import {
+  downloadDataUrlFile,
+  sanitizeFilename,
+  yieldToMain,
+} from "@/lib/data-export";
 
 type Installer = Parameters<typeof echarts.use>[0];
 
-const installed = new Set<string>();
-const installPromises = new Map<string, Promise<void>>();
-let themesRegistered = false;
+interface EchartsRuntimeState {
+  installed: Set<string>;
+  installPromises: Map<string, Promise<void>>;
+  themesRegistered: boolean;
+}
+
+const ECHARTS_RUNTIME_KEY = "__modular_echarts_runtime__";
+
+const getRuntimeState = (): EchartsRuntimeState => {
+  const target = globalThis as typeof globalThis & {
+    [ECHARTS_RUNTIME_KEY]?: EchartsRuntimeState;
+  };
+
+  if (!target[ECHARTS_RUNTIME_KEY]) {
+    target[ECHARTS_RUNTIME_KEY] = {
+      installed: new Set<string>(),
+      installPromises: new Map<string, Promise<void>>(),
+      themesRegistered: false,
+    };
+  }
+
+  return target[ECHARTS_RUNTIME_KEY];
+};
 
 const installOnce = (key: string, loader: () => Promise<Installer>) => {
-  if (installed.has(key)) {
+  const runtime = getRuntimeState();
+
+  if (runtime.installed.has(key)) {
     return Promise.resolve();
   }
-  const existing = installPromises.get(key);
+  const existing = runtime.installPromises.get(key);
   if (existing) {
     return existing;
   }
   const p = loader()
     .then((installer) => {
-      if (installed.has(key)) return;
+      if (runtime.installed.has(key)) return;
       echarts.use(installer);
-      installed.add(key);
+      runtime.installed.add(key);
     })
     .finally(() => {
-      installPromises.delete(key);
+      runtime.installPromises.delete(key);
     });
-  installPromises.set(key, p);
+  runtime.installPromises.set(key, p);
   return p;
 };
 
@@ -68,18 +94,30 @@ const inferSeriesTypes = (option: echarts.EChartsCoreOption): Set<string> => {
   return types;
 };
 
-const optionNeedsGrid = (option: echarts.EChartsCoreOption, seriesTypes: Set<string>) => {
+const optionNeedsGrid = (
+  option: echarts.EChartsCoreOption,
+  seriesTypes: Set<string>,
+) => {
   const o = option as Record<string, unknown>;
   if (o.grid || o.xAxis || o.yAxis) return true;
   for (const t of seriesTypes) {
-    if (t === "line" || t === "bar" || t === "candlestick" || t === "scatter" || t === "heatmap") {
+    if (
+      t === "line" ||
+      t === "bar" ||
+      t === "candlestick" ||
+      t === "scatter" ||
+      t === "heatmap"
+    ) {
       return true;
     }
   }
   return false;
 };
 
-const optionNeedsGeo = (option: echarts.EChartsCoreOption, seriesTypes: Set<string>) => {
+const optionNeedsGeo = (
+  option: echarts.EChartsCoreOption,
+  seriesTypes: Set<string>,
+) => {
   const o = option as Record<string, unknown>;
   if (o.geo) return true;
   if (seriesTypes.has("map")) return true;
@@ -229,7 +267,9 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
       case "effectScatter":
         promises.push(
           installOnce("chart:effectScatter", async () => {
-            const m = await import("echarts/lib/chart/effectScatter/install.js");
+            const m = await import(
+              "echarts/lib/chart/effectScatter/install.js"
+            );
             return m.install;
           }),
         );
@@ -332,7 +372,11 @@ const resolveExportBackground = (
   if (override) return override;
   if (theme && typeof theme === "object") {
     const candidate = (theme as Record<string, unknown>).backgroundColor;
-    if (typeof candidate === "string" && candidate.trim() && candidate !== "transparent") {
+    if (
+      typeof candidate === "string" &&
+      candidate.trim() &&
+      candidate !== "transparent"
+    ) {
       return candidate;
     }
   }
@@ -394,9 +438,9 @@ export function DashboardChart({
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.EChartsType | null>(null);
-  const initPromiseRef = useRef<Promise<echarts.EChartsType | undefined> | null>(
-    null,
-  );
+  const initPromiseRef = useRef<Promise<
+    echarts.EChartsType | undefined
+  > | null>(null);
   const [exporting, setExporting] = useState(false);
   const [supportsHover, setSupportsHover] = useState(true);
   const [isInView, setIsInView] = useState(!lazy);
@@ -441,10 +485,10 @@ export function DashboardChart({
           setShouldInit(true);
         }
       },
-      { rootMargin: lazyRootMargin }
+      { rootMargin: lazyRootMargin },
     );
 
-      observer.observe(dom);
+    observer.observe(dom);
 
     return () => observer.disconnect();
   }, [lazy, lazyRootMargin]);
@@ -453,9 +497,9 @@ export function DashboardChart({
     setReady(false);
   }, [renderer, group, theme, shouldInit]);
 
-	  useEffect(() => {
-	    const dom = ref.current;
-	    if (!dom || !shouldInit) return;
+  useEffect(() => {
+    const dom = ref.current;
+    if (!dom || !shouldInit) return;
 
     let cancelled = false;
     let handleResize: (() => void) | undefined;
@@ -463,160 +507,163 @@ export function DashboardChart({
       await ensureRenderer(renderer);
       if (cancelled) return;
 
-      if (!themesRegistered) {
+      const runtime = getRuntimeState();
+      if (!runtime.themesRegistered) {
         // Register Smart Light Theme
         echarts.registerTheme("smart-light", {
-        color: [
-          "#0050b3", // Primary (Deep Blue)
-          "#faad14", // Secondary (Tech Gold)
-          "#13c2c2", // Accent (Cyan)
-          "#eb2f96", // Magenta
-          "#722ed1", // Purple
-          "#52c41a", // Green
-          "#fadb14", // Yellow
-          "#fa8c16", // Orange
-        ],
-        backgroundColor: "transparent",
-        tooltip: {
-          backgroundColor: "rgba(255, 255, 255, 0.95)",
-          borderColor: "#e5e7eb",
-          textStyle: {
-            color: "#1f2937",
+          color: [
+            "#0050b3", // Primary (Deep Blue)
+            "#faad14", // Secondary (Tech Gold)
+            "#13c2c2", // Accent (Cyan)
+            "#eb2f96", // Magenta
+            "#722ed1", // Purple
+            "#52c41a", // Green
+            "#fadb14", // Yellow
+            "#fa8c16", // Orange
+          ],
+          backgroundColor: "transparent",
+          tooltip: {
+            backgroundColor: "rgba(255, 255, 255, 0.95)",
+            borderColor: "#e5e7eb",
+            textStyle: {
+              color: "#1f2937",
+            },
+            padding: [10, 14],
+            extraCssText:
+              "box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); border-radius: 8px;",
           },
-          padding: [10, 14],
-          extraCssText: "box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); border-radius: 8px;",
-        },
-        title: {
-          textStyle: {
-            color: "#111827",
-            fontWeight: 600,
-          },
-        },
-        legend: {
-          textStyle: {
-            color: "#4b5563",
-          },
-        },
-        grid: {
-          show: false,
-          top: 40,
-          bottom: 40,
-          left: 10,
-          right: 10,
-          containLabel: true
-        },
-        categoryAxis: {
-          axisLine: {
-            show: true,
-            lineStyle: {
-              color: "#e5e7eb",
+          title: {
+            textStyle: {
+              color: "#111827",
+              fontWeight: 600,
             },
           },
-          axisTick: {
-            show: false
+          legend: {
+            textStyle: {
+              color: "#4b5563",
+            },
           },
-          axisLabel: {
-            color: "#6b7280",
-            margin: 12
-          },
-          splitLine: {
+          grid: {
             show: false,
+            top: 40,
+            bottom: 40,
+            left: 10,
+            right: 10,
+            containLabel: true,
           },
-        },
-        valueAxis: {
-          axisLine: {
-            show: false,
+          categoryAxis: {
+            axisLine: {
+              show: true,
+              lineStyle: {
+                color: "#e5e7eb",
+              },
+            },
+            axisTick: {
+              show: false,
+            },
+            axisLabel: {
+              color: "#6b7280",
+              margin: 12,
+            },
+            splitLine: {
+              show: false,
+            },
           },
-          axisTick: {
-            show: false
+          valueAxis: {
+            axisLine: {
+              show: false,
+            },
+            axisTick: {
+              show: false,
+            },
+            axisLabel: {
+              color: "#6b7280",
+              margin: 12,
+            },
+            splitLine: {
+              show: false,
+            },
           },
-          axisLabel: {
-            color: "#6b7280",
-            margin: 12
-          },
-          splitLine: {
-            show: false
-          },
-        },
-      });
+        });
 
         // Register Smart Dark Theme
         echarts.registerTheme("smart-dark", {
-        color: [
-          "#2563eb", // Vibrant Blue (was #177ddc)
-          "#d48806", // Gold
-          "#13a8a8", // Cyan
-          "#cb2b83", // Magenta
-          "#642ab5", // Purple
-          "#49aa19", // Green
-          "#d8bd14", // Yellow
-          "#d87a16", // Orange
-        ],
-        backgroundColor: "transparent",
-        tooltip: {
-          backgroundColor: "rgba(15, 23, 42, 0.95)",
-          borderColor: "rgba(255, 255, 255, 0.1)",
-          textStyle: {
-            color: "#e2e8f0",
+          color: [
+            "#2563eb", // Vibrant Blue (was #177ddc)
+            "#d48806", // Gold
+            "#13a8a8", // Cyan
+            "#cb2b83", // Magenta
+            "#642ab5", // Purple
+            "#49aa19", // Green
+            "#d8bd14", // Yellow
+            "#d87a16", // Orange
+          ],
+          backgroundColor: "transparent",
+          tooltip: {
+            backgroundColor: "rgba(15, 23, 42, 0.95)",
+            borderColor: "rgba(255, 255, 255, 0.1)",
+            textStyle: {
+              color: "#e2e8f0",
+            },
+            padding: [10, 14],
+            extraCssText:
+              "box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); border-radius: 8px;",
           },
-          padding: [10, 14],
-          extraCssText: "box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); border-radius: 8px;",
-        },
-        title: {
-          textStyle: {
-            color: "#f3f4f6",
-            fontWeight: 700,
-          },
-        },
-        legend: {
-          textStyle: {
-            color: "#9ca3af",
-          },
-        },
-        grid: {
-          show: false,
-          top: 40,
-          bottom: 40,
-          left: 10,
-          right: 10,
-          containLabel: true
-        },
-        categoryAxis: {
-          axisLine: {
-            show: true,
-            lineStyle: {
-              color: "rgba(255, 255, 255, 0.1)",
+          title: {
+            textStyle: {
+              color: "#f3f4f6",
+              fontWeight: 700,
             },
           },
-          axisTick: {
-            show: false
+          legend: {
+            textStyle: {
+              color: "#9ca3af",
+            },
           },
-          axisLabel: {
-            color: "#cbd5e1",
-            margin: 12
-          },
-          splitLine: {
+          grid: {
             show: false,
+            top: 40,
+            bottom: 40,
+            left: 10,
+            right: 10,
+            containLabel: true,
           },
-        },
-        valueAxis: {
-          axisLine: {
-            show: false,
+          categoryAxis: {
+            axisLine: {
+              show: true,
+              lineStyle: {
+                color: "rgba(255, 255, 255, 0.1)",
+              },
+            },
+            axisTick: {
+              show: false,
+            },
+            axisLabel: {
+              color: "#cbd5e1",
+              margin: 12,
+            },
+            splitLine: {
+              show: false,
+            },
           },
-          axisTick: {
-            show: false
+          valueAxis: {
+            axisLine: {
+              show: false,
+            },
+            axisTick: {
+              show: false,
+            },
+            axisLabel: {
+              color: "#9ca3af",
+              margin: 12,
+            },
+            splitLine: {
+              show: false,
+            },
           },
-          axisLabel: {
-            color: "#9ca3af",
-            margin: 12
-          },
-          splitLine: {
-            show: false
-          },
-        },
-      });
+        });
 
-        themesRegistered = true;
+        runtime.themesRegistered = true;
       }
 
       const chart = echarts.init(dom, theme || "smart-light", { renderer });
@@ -626,7 +673,13 @@ export function DashboardChart({
         echarts.connect(group);
       }
 
-      handleResize = () => chart.resize();
+      handleResize = () => {
+        try {
+          chart.resize();
+        } catch {
+          // noop: avoid bubbling resize-time chart exceptions from other panels
+        }
+      };
       window.addEventListener("resize", handleResize);
 
       return chart;
@@ -647,12 +700,12 @@ export function DashboardChart({
         .catch(() => undefined);
       initPromiseRef.current = null;
     };
-	  }, [renderer, group, theme, shouldInit]);
+  }, [renderer, group, theme, shouldInit]);
 
-	  useEffect(() => {
-	    if (!shouldInit || !isInView) return;
-	    const p = initPromiseRef.current;
-	    if (!p) return;
+  useEffect(() => {
+    if (!shouldInit || !isInView) return;
+    const p = initPromiseRef.current;
+    if (!p) return;
 
     let cancelled = false;
     (async () => {
@@ -660,19 +713,25 @@ export function DashboardChart({
       if (!chart || cancelled) return;
       await ensureOptionModules(option);
       if (cancelled) return;
-      chart.setOption(option);
+      chart.clear();
+      try {
+        chart.setOption(option, { notMerge: true, lazyUpdate: true });
+      } catch {
+        chart.clear();
+        chart.setOption({}, { notMerge: true, lazyUpdate: true });
+      }
       setReady(true);
     })().catch(() => undefined);
 
     return () => {
       cancelled = true;
     };
-	  }, [option, renderer, group, theme, isInView, shouldInit]);
+  }, [option, renderer, group, theme, isInView, shouldInit]);
 
-	  useEffect(() => {
-	    if (!shouldInit) return;
-	    const p = initPromiseRef.current;
-	    if (!p || !onEvents?.length) return;
+  useEffect(() => {
+    if (!shouldInit) return;
+    const p = initPromiseRef.current;
+    if (!p || !onEvents?.length) return;
 
     let cancelled = false;
     let cleanup: (() => void) | undefined;
@@ -694,7 +753,7 @@ export function DashboardChart({
       cancelled = true;
       cleanup?.();
     };
-	  }, [onEvents, renderer, group, theme, shouldInit]);
+  }, [onEvents, renderer, group, theme, shouldInit]);
 
   const handleExport = async () => {
     if (exporting) return;
@@ -728,7 +787,9 @@ export function DashboardChart({
         `${sanitizeFilename(exportFilename ?? "chart", "chart")}.png`,
       );
       toast.success(
-        t("dashboard.charts.exportSuccess", { defaultValue: "Export completed" }),
+        t("dashboard.charts.exportSuccess", {
+          defaultValue: "Export completed",
+        }),
       );
     } catch {
       toast.error(

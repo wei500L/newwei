@@ -1239,6 +1239,7 @@ export type Mutation = {
   createOrg: OrgModel;
   deleteAlertChannel: Scalars['Boolean']['output'];
   deleteAlertRule: Scalars['Boolean']['output'];
+  deleteAssistantRun: Scalars['Boolean']['output'];
   deleteCrawlTask: Scalars['Boolean']['output'];
   deleteDashboard: Scalars['Boolean']['output'];
   ingestCrawlTaskResultsToItems: CrawlIngestBatchModel;
@@ -1314,6 +1315,11 @@ export type MutationDeleteAlertChannelArgs = {
 
 export type MutationDeleteAlertRuleArgs = {
   ruleId: Scalars['String']['input'];
+};
+
+
+export type MutationDeleteAssistantRunArgs = {
+  runId: Scalars['String']['input'];
 };
 
 

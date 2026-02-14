@@ -951,6 +951,9 @@
       "entityGraph": {
         "disabledTitle": "Disabled",
         "disabledDescription": "Disabled by admin",
+        "range": "Range",
+        "window": "Window",
+        "aggregation": "Aggregation: window graph",
         "person": "Person",
         "organization": "Organization",
         "stock": "Stock",
@@ -966,10 +969,23 @@
         "correlationValue": "Correlation",
         "coOccurrenceCount": "Count",
         "linkType": "Link Type",
+        "strength": "Strength",
         "title": "Entity Impact Graph",
         "nodeSelected": "Selected: {{node}}",
         "confidenceFilter": "Entity confidence",
+        "categoryFilter": "Categories",
+        "edgeFilter": "Edge Types",
+        "labels": "Labels",
+        "labelCompact": "Compact",
+        "labelStandard": "Standard",
+        "reflow": "Reflow",
+        "reflowed": "Graph layout refreshed",
         "stats": "{{nodes}} nodes, {{links}} links",
+        "visibleNodes": "Visible nodes",
+        "visibleLinks": "Visible links",
+        "totalNodes": "Total nodes",
+        "totalLinks": "Total links",
+        "filteredEmpty": "No nodes match the active filters. Reset filters or broaden categories to continue.",
         "openingSearch": "Opening search for \"{{query}}\"...",
         "openedSearch": "Search opened for \"{{query}}\" in a new tab",
         "openSearch": "Open search",
@@ -1187,17 +1203,30 @@
     },
     "topics": {
       "title": "Topics & Events",
+      "subtitle": "Track clustered events and topic momentum with a focused reading flow.",
+      "loadFailed": "Failed to load topics and events.",
       "empty": "Not enough items to build aggregations yet.",
       "eventsTitle": "Events",
       "eventsEmpty": "Not enough items to form event clusters.",
       "topicsTitle": "Topics",
       "topicsEmpty": "Not enough items to form topic clusters.",
+      "tabs": {
+        "events": "Events",
+        "topics": "Topics"
+      },
       "eventFallbackTitle": "Untitled Event",
       "filters": {
+        "title": "Filters",
         "windowLabel": "Window",
         "groupLabel": "Min group size",
         "windowOption": "{{days}} days",
         "groupOption": "{{count}}+ reports"
+      },
+      "list": {
+        "countLabel": "Reports",
+        "openDetails": "Details",
+        "openTopic": "Preview",
+        "moreTag": "+{{count}}"
       },
       "eventDetail": {
         "title": "Event Details",
@@ -1206,6 +1235,12 @@
         "openItem": "Open item",
         "timelineTitle": "Timeline",
         "timelineEmpty": "No related items."
+      },
+      "topicDetail": {
+        "title": "Topic Details",
+        "action": "Preview",
+        "relatedItemsTitle": "Related reports",
+        "empty": "No related reports."
       },
       "latestAtLabel": "Latest",
       "latestAtHelp": "Sorted by Published time when available; falls back to Ingested time."
@@ -3509,9 +3544,19 @@
         "indicator": "Indicator",
         "value": "Value",
         "changePercent": "Change percent",
+        "dateRange": "Date range",
         "startDate": "Start date",
         "endDate": "End date",
         "newsSummaries": "News summaries"
+      },
+      "placeholders": {
+        "newsSummaries": "Enter tags and press Enter"
+      },
+      "errors": {
+        "dateRangeRequired": "Please select a valid date range"
+      },
+      "help": {
+        "changePercent": "The percentage change of the indicator, e.g., enter 5 for a 5% increase, -3 for a 3% decrease"
       }
     },
     "anomaly": {
@@ -3521,7 +3566,8 @@
       "errors": {
         "seriesArray": "Series must be an array",
         "seriesEmpty": "Series is empty",
-        "seriesInvalid": "Series format is invalid"
+        "seriesInvalid": "Series format is invalid",
+        "timestampInvalid": "Please select a valid timestamp"
       },
       "defaults": {
         "metric": "Metric"
@@ -3533,7 +3579,23 @@
         "deviationPercent": "Deviation percent",
         "newsList": "News list",
         "policyList": "Policy list",
-        "seriesJson": "Series JSON"
+        "series": "Reference time series"
+      },
+      "placeholders": {
+        "newsList": "Enter tags and press Enter",
+        "policyList": "Enter tags and press Enter",
+        "timestamp": "Time",
+        "value": "Value"
+      },
+      "actions": {
+        "addSeriesPoint": "Add data point"
+      },
+      "help": {
+        "metric": "The name of the metric where the anomaly occurred, e.g., stock price, exchange rate, trading volume",
+        "deviationPercent": "The deviation percentage from the expected value, used to determine the severity of the anomaly",
+        "newsList": "Key news headlines or summaries related to the anomaly to help AI understand the context (optional)",
+        "policyList": "Relevant policies or regulations that may affect this metric (optional)",
+        "series": "Historical time series data for this metric to assist AI in analyzing anomaly trends (optional)"
       }
     },
     "results": {

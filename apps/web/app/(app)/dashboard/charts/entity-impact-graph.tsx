@@ -1,6 +1,16 @@
 "use client";
 
-import { App, Button, Drawer, Skeleton, Slider, Space, Tag, Typography } from "antd";
+import {
+  App,
+  Button,
+  Drawer,
+  Segmented,
+  Skeleton,
+  Slider,
+  Space,
+  Tag,
+  Typography,
+} from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -13,180 +23,56 @@ import { DashboardChart } from "@/components/echart";
 import { useEntityImpactGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import {
-  useEntityImpactGraph,
-  type EntityImpactNode,
-  type EntityImpactLink
-} from "@/hooks/useEntityImpactGraph";
+  buildEntityGraphConnectionMap,
+  ENTITY_GRAPH_DEFAULT_CATEGORIES,
+  filterEntityGraphData,
+  normalizeEntityGraphCategory,
+  normalizeEntityGraphEdgeType,
+  resolveEntityGraphForce,
+  resolveEntityGraphNodeSize,
+  sanitizeEntityGraphLinks,
+  selectEntityGraphLabelNodeIds,
+  type EntityGraphEdgeType,
+  type EntityGraphLabelDensity,
+} from "@/lib/entity-impact-graph";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
+import {
+  useEntityImpactGraph,
+  type EntityImpactLink,
+} from "@/hooks/useEntityImpactGraph";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 const { Text } = Typography;
 
-/**
- * Category configuration for node styling
- * Maps entity types to visual properties
- */
+const EDGE_TYPE_OPTIONS: EntityGraphEdgeType[] = [
+  "coOccurrence",
+  "correlation",
+];
+
 const CATEGORY_CONFIG: Record<
   string,
   { color: string; symbol: string; index: number }
 > = {
-  person: { color: "#3b82f6", symbol: "circle", index: 0 },
-  organization: { color: "#22c55e", symbol: "rect", index: 1 },
-  stock: { color: "#f97316", symbol: "diamond", index: 2 },
-  commodity: { color: "#a855f7", symbol: "triangle", index: 3 }
+  person: { color: "#2f6ce5", symbol: "circle", index: 0 },
+  organization: { color: "#10b981", symbol: "rect", index: 1 },
+  stock: { color: "#f59e0b", symbol: "diamond", index: 2 },
+  commodity: { color: "#8b5cf6", symbol: "triangle", index: 3 },
 };
 
-/**
- * Default category for unknown types
- */
 const DEFAULT_CATEGORY = { color: "#64748b", symbol: "circle", index: 4 };
 
-/**
- * Get category configuration for a node type
- */
-function getCategoryConfig(type: string) {
-  const normalizedType = type.toLowerCase();
-  return CATEGORY_CONFIG[normalizedType] ?? DEFAULT_CATEGORY;
-}
+const resolveCategoryList = (input: string[] | undefined) => {
+  const normalized = (input ?? []).map(normalizeEntityGraphCategory);
+  const allowed = new Set(ENTITY_GRAPH_DEFAULT_CATEGORIES);
+  const deduped = Array.from(new Set(normalized)).filter((entry) =>
+    allowed.has(entry),
+  );
+  return deduped.length > 0 ? deduped : [...ENTITY_GRAPH_DEFAULT_CATEGORIES];
+};
 
-/**
- * Build a map of node connections for tooltip display
- */
-function buildConnectionMap(links: EntityImpactLink[]): Map<string, string[]> {
-  const connectionMap = new Map<string, string[]>();
+const getCategoryConfig = (type: string) =>
+  CATEGORY_CONFIG[normalizeEntityGraphCategory(type)] ?? DEFAULT_CATEGORY;
 
-  for (const link of links) {
-    // Add target to source's connections
-    const sourceConnections = connectionMap.get(link.source) ?? [];
-    if (!sourceConnections.includes(link.target)) {
-      sourceConnections.push(link.target);
-    }
-    connectionMap.set(link.source, sourceConnections);
-
-    // Add source to target's connections
-    const targetConnections = connectionMap.get(link.target) ?? [];
-    if (!targetConnections.includes(link.source)) {
-      targetConnections.push(link.source);
-    }
-    connectionMap.set(link.target, targetConnections);
-  }
-
-  return connectionMap;
-}
-
-/**
- * Transform nodes to ECharts format
- */
-function transformNodes(
-  nodes: EntityImpactNode[],
-  links: EntityImpactLink[],
-  colors: Record<string, string> | undefined,
-  selectedNodeId: string | null
-) {
-  const connectionMap = buildConnectionMap(links);
-
-  // Get connected node IDs for highlighting
-  const connectedNodeIds = new Set<string>();
-  if (selectedNodeId) {
-    connectedNodeIds.add(selectedNodeId);
-    const connections = connectionMap.get(selectedNodeId) ?? [];
-    for (const conn of connections) {
-      connectedNodeIds.add(conn);
-    }
-  }
-
-  return nodes.map((node) => {
-    const categoryConfig = getCategoryConfig(node.category);
-    const symbolSize = Math.max(20, Math.min(60, 20 + node.value * 2));
-    const relatedEntities = connectionMap.get(node.id) ?? [];
-
-    // Determine if node should be highlighted or dimmed
-    const isSelected = selectedNodeId === node.id;
-    const isConnected = connectedNodeIds.has(node.id);
-    const shouldDim = selectedNodeId !== null && !isConnected;
-
-    return {
-      id: node.id,
-      name: node.name,
-      value: node.value,
-      category: categoryConfig.index,
-      symbol: categoryConfig.symbol,
-      symbolSize: isSelected ? symbolSize * 1.2 : symbolSize,
-      itemStyle: {
-        color: categoryConfig.color,
-        borderColor: isSelected
-          ? (colors?.primary ?? "#1f3b7b")
-          : (colors?.border ?? "#e2e8f0"),
-        borderWidth: isSelected ? 4 : 2,
-        opacity: shouldDim ? 0.3 : 1
-      },
-      label: {
-        show: symbolSize > 30 || isSelected,
-        position: "right" as const,
-        formatter: "{b}",
-        fontWeight: isSelected ? ("bold" as const) : ("normal" as const)
-      },
-      // Store original data for tooltip
-      originalData: {
-        type: node.type,
-        category: node.category,
-        connectionCount: relatedEntities.length,
-        relatedEntities: relatedEntities.slice(0, 5) // Limit to 5 for tooltip
-      }
-    };
-  });
-}
-
-/**
- * Transform links to ECharts format
- */
-function transformLinks(
-  links: EntityImpactLink[],
-  selectedNodeId: string | null
-) {
-  return links.map((link) => {
-    const isCorrelation = link.type === "correlation";
-    const lineWidth = Math.max(1, Math.min(5, link.value * 3));
-
-    // Determine if link should be highlighted or dimmed
-    const isConnected =
-      selectedNodeId !== null &&
-      (link.source === selectedNodeId || link.target === selectedNodeId);
-    const shouldDim = selectedNodeId !== null && !isConnected;
-
-    return {
-      source: link.source,
-      target: link.target,
-      value: link.value,
-      lineStyle: {
-        width: isConnected ? lineWidth * 1.5 : lineWidth,
-        type: isCorrelation ? ("dashed" as const) : ("solid" as const),
-        color: isCorrelation ? "#94a3b8" : "#64748b",
-        curveness: 0.2,
-        opacity: shouldDim ? 0.15 : isConnected ? 1 : 0.6
-      },
-      // Store original data for tooltip
-      originalData: {
-        type: link.type
-      }
-    };
-  });
-}
-
-/**
- * EntityImpactGraph component
- *
- * Displays a force-directed graph visualization showing relationships
- * between news entities (persons, organizations) and financial instruments
- * (stocks, commodities).
- *
- * Features:
- * - Force-directed layout with configurable physics
- * - 4 node categories with distinct styling
- * - 2 link types (co-occurrence: solid, correlation: dashed)
- * - Interactive tooltips and click events
- * - Loading, error, and empty states
- */
 export function EntityImpactGraph() {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -197,7 +83,9 @@ export function EntityImpactGraph() {
   const canReadDashboards = permissions.includes("dashboards.read");
   const { range, start, end } = useDashboardRangeStore();
   const windowLabel = formatDashboardWindowLabel(start, end);
+
   const containerRef = useRef<HTMLDivElement>(null);
+
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
@@ -206,21 +94,33 @@ export function EntityImpactGraph() {
     nodeId: string;
     nodeName: string;
   } | null>(null);
-  const [minConfidence, setMinConfidence] = useState<number>(0.5);
-  const [minCorrelation, setMinCorrelation] = useState<number>(0.3);
-  const [minCoOccurrence, setMinCoOccurrence] = useState<number>(2);
-  const [maxNodes, setMaxNodes] = useState<number>(100);
-  const [categories, setCategories] = useState<string[]>(["person", "organization", "stock", "commodity"]);
+
+  const [minConfidence, setMinConfidence] = useState(0.5);
+  const [minCorrelation, setMinCorrelation] = useState(0.3);
+  const [minCoOccurrence, setMinCoOccurrence] = useState(2);
+  const [maxNodes, setMaxNodes] = useState(100);
+  const [queryCategories, setQueryCategories] = useState<string[]>([
+    ...ENTITY_GRAPH_DEFAULT_CATEGORIES,
+  ]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([
+    ...ENTITY_GRAPH_DEFAULT_CATEGORIES,
+  ]);
+  const [selectedEdgeTypes, setSelectedEdgeTypes] =
+    useState<EntityGraphEdgeType[]>(EDGE_TYPE_OPTIONS);
+  const [labelDensity, setLabelDensity] =
+    useState<EntityGraphLabelDensity>("compact");
   const [settingsApplied, setSettingsApplied] = useState(false);
+  const [graphRenderSeed, setGraphRenderSeed] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
 
   const {
     data: settingsData,
     loading: settingsLoading,
     error: settingsError,
-    refetch: refetchSettings
+    refetch: refetchSettings,
   } = useEntityImpactGraphSettingsQuery({
     fetchPolicy: "cache-and-network",
-    skip: !authenticated || !canReadDashboards
+    skip: !authenticated || !canReadDashboards,
   });
 
   const settings = settingsData?.entityImpactGraphSettings;
@@ -231,11 +131,13 @@ export function EntityImpactGraph() {
       return;
     }
     if (settings) {
+      const categoriesFromSettings = resolveCategoryList(settings.categories);
       setMinConfidence(settings.minEntityConfidence);
       setMinCorrelation(settings.minCorrelation);
       setMinCoOccurrence(settings.minCoOccurrence);
       setMaxNodes(settings.maxNodes);
-      setCategories(settings.categories);
+      setQueryCategories(categoriesFromSettings);
+      setSelectedCategories(categoriesFromSettings);
       setSettingsApplied(true);
       return;
     }
@@ -244,35 +146,380 @@ export function EntityImpactGraph() {
     }
   }, [settings, settingsApplied, settingsError, settingsLoading]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const sync = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    return () => {
+      window.removeEventListener("resize", sync);
+    };
+  }, []);
+
   const { nodes, links, metadata, loading, error, refetch, hasData } =
     useEntityImpactGraph({
       minConfidence,
       minCorrelation,
       minCoOccurrence,
       maxNodes,
-      categories,
-      skip: !authenticated || !canReadDashboards || enabled === false || !settingsApplied
+      categories: queryCategories,
+      skip:
+        !authenticated ||
+        !canReadDashboards ||
+        enabled === false ||
+        !settingsApplied,
     });
 
   const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
 
-  const connectionMap = useMemo(() => buildConnectionMap(links), [links]);
-  const selectedNodeRecord = useMemo(
-    () => nodes.find((node) => node.id === selectedNode) ?? null,
-    [nodes, selectedNode]
+  const filteredGraph = useMemo(
+    () =>
+      filterEntityGraphData(
+        nodes,
+        links,
+        selectedCategories,
+        selectedEdgeTypes,
+      ),
+    [links, nodes, selectedCategories, selectedEdgeTypes],
   );
+
+  const visibleNodes = filteredGraph.nodes;
+  const visibleLinks = filteredGraph.links;
+
+  const visibleNodeIdSet = useMemo(
+    () => new Set(visibleNodes.map((node) => node.id)),
+    [visibleNodes],
+  );
+
+  const visibleNodeNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const node of visibleNodes) {
+      const normalizedId = node.id.trim().toLowerCase();
+      if (normalizedId && !map.has(normalizedId)) {
+        map.set(normalizedId, node.id);
+      }
+      const normalized = node.name.trim().toLowerCase();
+      if (normalized && !map.has(normalized)) {
+        map.set(normalized, node.id);
+      }
+    }
+    return map;
+  }, [visibleNodes]);
+
+  const safeLinks = useMemo(() => {
+    return sanitizeEntityGraphLinks<EntityImpactLink>(visibleLinks, {
+      nodeIds: visibleNodeIdSet,
+      nodeIdByNormalizedName: visibleNodeNameMap,
+    });
+  }, [visibleLinks, visibleNodeIdSet, visibleNodeNameMap]);
+
+  const connectionMap = useMemo(
+    () => buildEntityGraphConnectionMap(safeLinks),
+    [safeLinks],
+  );
+
+  useEffect(() => {
+    if (!selectedNode) {
+      return;
+    }
+    const stillVisible = visibleNodes.some((node) => node.id === selectedNode);
+    if (!stillVisible) {
+      setSelectedNode(null);
+      setDrawerOpen(false);
+      setContextMenu(null);
+    }
+  }, [selectedNode, visibleNodes]);
+
+  const selectedNodeRecord = useMemo(
+    () => visibleNodes.find((node) => node.id === selectedNode) ?? null,
+    [selectedNode, visibleNodes],
+  );
+
+  const labelNodeIds = useMemo(
+    () =>
+      selectEntityGraphLabelNodeIds(
+        visibleNodes,
+        labelDensity,
+        selectedNode,
+        connectionMap,
+      ),
+    [connectionMap, labelDensity, selectedNode, visibleNodes],
+  );
+
   const relatedEntities = useMemo(() => {
-    if (!selectedNode) return [];
+    if (!selectedNode) {
+      return [];
+    }
     const relatedIds = connectionMap.get(selectedNode) ?? [];
-    const byId = new Map(nodes.map((node) => [node.id, node.name] as const));
+    const byId = new Map(
+      visibleNodes.map((node) => [node.id, node.name] as const),
+    );
     return relatedIds
       .map((id) => ({ id, name: byId.get(id) }))
       .filter(
         (item): item is { id: string; name: string } =>
-          typeof item.name === "string" && item.name.trim().length > 0
+          typeof item.name === "string" && item.name.trim().length > 0,
       )
       .map((item) => ({ id: item.id, name: item.name.trim() }));
-  }, [connectionMap, nodes, selectedNode]);
+  }, [connectionMap, selectedNode, visibleNodes]);
+
+  const forceConfig = useMemo(
+    () => resolveEntityGraphForce(visibleNodes.length),
+    [visibleNodes.length],
+  );
+
+  const categoryLabels = useMemo(
+    () => ({
+      person: t("dashboard.charts.entityGraph.person", {
+        defaultValue: "Person",
+      }),
+      organization: t("dashboard.charts.entityGraph.organization", {
+        defaultValue: "Organization",
+      }),
+      stock: t("dashboard.charts.entityGraph.stock", { defaultValue: "Stock" }),
+      commodity: t("dashboard.charts.entityGraph.commodity", {
+        defaultValue: "Commodity",
+      }),
+      other: t("dashboard.charts.entityGraph.other", { defaultValue: "Other" }),
+    }),
+    [t],
+  );
+
+  const nodeNameById = useMemo(
+    () => new Map(visibleNodes.map((node) => [node.id, node.name] as const)),
+    [visibleNodes],
+  );
+
+  const option = useMemo<EChartsOption>(() => {
+    if (visibleNodes.length === 0) {
+      return {};
+    }
+
+    const connectedNodeIds = new Set<string>();
+    if (selectedNode) {
+      connectedNodeIds.add(selectedNode);
+      for (const id of connectionMap.get(selectedNode) ?? []) {
+        connectedNodeIds.add(id);
+      }
+    }
+
+    const chartCategories = [
+      { name: categoryLabels.person },
+      { name: categoryLabels.organization },
+      { name: categoryLabels.stock },
+      { name: categoryLabels.commodity },
+      { name: categoryLabels.other },
+    ];
+
+    const transformedNodes = visibleNodes.map((node) => {
+      const categoryConfig = getCategoryConfig(node.category);
+      const connectionCount = connectionMap.get(node.id)?.length ?? 0;
+      const relatedNodeNames = (connectionMap.get(node.id) ?? [])
+        .map((id) => nodeNameById.get(id))
+        .filter((value): value is string => typeof value === "string")
+        .slice(0, 5);
+
+      const isSelected = selectedNode === node.id;
+      const isConnected = connectedNodeIds.has(node.id);
+      const shouldDim = selectedNode !== null && !isConnected;
+
+      return {
+        id: node.id,
+        name: node.name,
+        value: node.value,
+        category: categoryConfig.index,
+        symbol: categoryConfig.symbol,
+        symbolSize: resolveEntityGraphNodeSize(node.value, isSelected),
+        itemStyle: {
+          color: categoryConfig.color,
+          opacity: shouldDim ? 0.2 : 0.94,
+          borderColor: isSelected
+            ? (colors?.primary ?? "#1f3b7b")
+            : (colors?.border ?? "#dbe3ee"),
+          borderWidth: isSelected ? 3 : 1.2,
+          shadowBlur: isSelected ? 18 : 8,
+          shadowColor: isSelected
+            ? "rgba(31, 59, 123, 0.34)"
+            : "rgba(15, 23, 42, 0.12)",
+        },
+        label: {
+          show: labelNodeIds.has(node.id),
+          position: "right" as const,
+          distance: 6,
+          color: colors?.foreground ?? "#334155",
+          fontFamily,
+          fontSize: isSelected ? 12 : 11,
+          fontWeight: isSelected ? (700 as const) : (500 as const),
+        },
+        originalData: {
+          type: node.type,
+          category: node.category,
+          connectionCount,
+          relatedEntities: relatedNodeNames,
+        },
+      };
+    });
+
+    const transformedLinks = safeLinks.map((link) => {
+      const normalizedType = normalizeEntityGraphEdgeType(link.type);
+      const isSelectedAdjacency =
+        selectedNode !== null &&
+        (link.source === selectedNode || link.target === selectedNode);
+      const shouldDim = selectedNode !== null && !isSelectedAdjacency;
+      const rawValue = Number(link.value ?? 0);
+      const baseWidth =
+        normalizedType === "correlation"
+          ? Math.max(1.1, Math.min(3.2, rawValue * 4.2))
+          : Math.max(0.9, Math.min(2.8, Math.sqrt(Math.max(rawValue, 0))));
+
+      return {
+        source: link.source,
+        target: link.target,
+        value: rawValue,
+        lineStyle: {
+          width: isSelectedAdjacency ? baseWidth + 1.2 : baseWidth,
+          type:
+            normalizedType === "correlation"
+              ? ("dashed" as const)
+              : ("solid" as const),
+          color: isSelectedAdjacency
+            ? (colors?.primary ?? "#1f3b7b")
+            : normalizedType === "correlation"
+              ? "rgba(217, 119, 6, 0.5)"
+              : "rgba(31, 59, 123, 0.34)",
+          opacity: shouldDim ? 0.08 : isSelectedAdjacency ? 0.78 : 0.24,
+          curveness: normalizedType === "correlation" ? 0.24 : 0.16,
+        },
+        originalData: {
+          type: link.type,
+          normalizedType,
+        },
+      };
+    });
+
+    return {
+      animation: false,
+      tooltip: {
+        trigger: "item",
+        confine: true,
+        backgroundColor: colors?.tooltipBg ?? "rgba(15, 23, 42, 0.92)",
+        borderColor: "rgba(255, 255, 255, 0.2)",
+        textStyle: {
+          color: colors?.tooltipText ?? "#f8fafc",
+          fontFamily,
+        },
+        formatter: (params: any) => {
+          if (params?.dataType === "node") {
+            const data = params.data;
+            const original = data.originalData ?? {};
+            const categoryKey = normalizeEntityGraphCategory(
+              String(original.category ?? ""),
+            );
+            const categoryName =
+              categoryLabels[categoryKey as keyof typeof categoryLabels] ??
+              categoryLabels.other;
+            const related = Array.isArray(original.relatedEntities)
+              ? original.relatedEntities.filter(
+                  (entry: unknown) => typeof entry === "string",
+                )
+              : [];
+            const relatedLabel =
+              related.length > 0
+                ? `${t("dashboard.charts.entityGraph.relatedEntities", { defaultValue: "Related" })}: ${related.join(", ")}`
+                : "";
+
+            return [
+              `<div style=\"font-weight:600;margin-bottom:6px;\">${data.name}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: ${original.type ?? "-"}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: ${categoryName}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.weight", { defaultValue: "Weight" })}: ${Number(data.value ?? 0).toFixed(1)}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}: ${original.connectionCount ?? 0}</div>`,
+              relatedLabel ? `<div>${relatedLabel}</div>` : "",
+              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${windowLabel}</div>`,
+            ].join("");
+          }
+
+          if (params?.dataType === "edge") {
+            const data = params.data;
+            const original = data.originalData ?? {};
+            const normalizedType =
+              original.normalizedType === "correlation"
+                ? "correlation"
+                : "coOccurrence";
+            const source = nodeNameById.get(data.source) ?? data.source;
+            const target = nodeNameById.get(data.target) ?? data.target;
+            const linkTypeLabel =
+              normalizedType === "correlation"
+                ? t("dashboard.charts.entityGraph.correlation", {
+                    defaultValue: "Correlation",
+                  })
+                : t("dashboard.charts.entityGraph.coOccurrence", {
+                    defaultValue: "Co-occurrence",
+                  });
+
+            return [
+              `<div style=\"font-weight:600;margin-bottom:6px;\">${source} -> ${target}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.linkType", { defaultValue: "Link Type" })}: ${linkTypeLabel}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.strength", { defaultValue: "Strength" })}: ${Number(data.value ?? 0).toFixed(normalizedType === "correlation" ? 2 : 0)}</div>`,
+              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${windowLabel}</div>`,
+            ].join("");
+          }
+
+          return "";
+        },
+      },
+      series: [
+        {
+          name: t("dashboard.charts.entityGraph.title", {
+            defaultValue: "Entity Impact Graph",
+          }),
+          type: "graph",
+          layout: "force",
+          data: transformedNodes,
+          links: transformedLinks,
+          categories: chartCategories,
+          roam: true,
+          draggable: true,
+          cursor: "pointer",
+          force: {
+            repulsion: forceConfig.repulsion,
+            gravity: forceConfig.gravity,
+            edgeLength: forceConfig.edgeLength,
+            layoutAnimation: false,
+          },
+          lineStyle: {
+            color: "source",
+            opacity: 0.42,
+            curveness: 0.18,
+          },
+          emphasis: {
+            focus: "adjacency",
+            scale: true,
+            lineStyle: {
+              opacity: 0.9,
+            },
+          },
+        },
+      ],
+    };
+  }, [
+    categoryLabels,
+    colors,
+    connectionMap,
+    fontFamily,
+    forceConfig,
+    labelNodeIds,
+    nodeNameById,
+    selectedNode,
+    t,
+    safeLinks,
+    visibleNodes,
+    windowLabel,
+  ]);
 
   const openSearchForEntity = useCallback(
     (query: string) => {
@@ -283,28 +530,34 @@ export function EntityImpactGraph() {
       const toastId = toast.loading(
         t("dashboard.charts.entityGraph.openingSearch", {
           query: normalized,
-          defaultValue: `Opening search for "${normalized}"...`
-        })
+          defaultValue: `Opening search for "${normalized}"...`,
+        }),
       );
-      const handle = window.open(`/search?q=${encodeURIComponent(normalized)}`, "_blank", "noopener,noreferrer");
+      const handle = window.open(
+        `/search?q=${encodeURIComponent(normalized)}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
       window.setTimeout(() => {
         if (handle) {
           toast.success(
             t("dashboard.charts.entityGraph.openedSearch", {
               query: normalized,
-              defaultValue: `Search opened for "${normalized}" in a new tab`
+              defaultValue: `Search opened for "${normalized}" in a new tab`,
             }),
-            { id: toastId }
+            { id: toastId },
           );
         } else {
           toast.error(
-            t("common.popupBlocked", { defaultValue: "Popup blocked. Please allow popups for this site." }),
-            { id: toastId }
+            t("common.popupBlocked", {
+              defaultValue: "Popup blocked. Please allow popups for this site.",
+            }),
+            { id: toastId },
           );
         }
       }, 200);
     },
-    [t]
+    [t],
   );
 
   const copyEntityName = useCallback(
@@ -316,174 +569,40 @@ export function EntityImpactGraph() {
         toast.error(t("common.copyFailed", { defaultValue: "Copy failed" }));
       }
     },
-    [t]
+    [t],
   );
 
-  /**
-   * Build ECharts option with graph series configuration
-   */
-  const option = useMemo<EChartsOption>(() => {
-    if (!hasData) return {};
-
-    const transformedNodes = transformNodes(nodes, links, colors, selectedNode);
-    const transformedLinks = transformLinks(links, selectedNode);
-
-    // Define categories for legend
-    const categories = [
-      { name: t("dashboard.charts.entityGraph.person", { defaultValue: "Person" }) },
-      { name: t("dashboard.charts.entityGraph.organization", { defaultValue: "Organization" }) },
-      { name: t("dashboard.charts.entityGraph.stock", { defaultValue: "Stock" }) },
-      { name: t("dashboard.charts.entityGraph.commodity", { defaultValue: "Commodity" }) },
-      { name: t("dashboard.charts.entityGraph.other", { defaultValue: "Other" }) }
-    ];
-
-    return {
-      tooltip: {
-        trigger: "item",
-        backgroundColor: colors?.tooltipBg ?? "#0f172a",
-        borderColor: colors?.primary ?? "#1f3b7b",
-        textStyle: {
-          color: colors?.tooltipText ?? "#f8fafc",
-          fontFamily
-        },
-        formatter: (params: any) => {
-          if (params.dataType === "node") {
-            const data = params.data;
-            const originalData = data.originalData ?? {};
-            const categoryName = categories[data.category]?.name ?? "Unknown";
-            const connectionCount = originalData.connectionCount ?? 0;
-            const relatedEntities: string[] = originalData.relatedEntities ?? [];
-
-            // Build tooltip with 5 data points: name, type, category, connections, related entities
-            const lines = [
-              `<b>${data.name}</b>`,
-              `${t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: ${originalData.type ?? "-"}`,
-              `${t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: ${categoryName}`,
-              `${t("dashboard.charts.entityGraph.weight", { defaultValue: "Weight" })}: ${Number(data.value ?? 0).toFixed(1)}`,
-              `${t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}: ${connectionCount}`,
-              `Window: ${windowLabel}`
-            ];
-
-            // Add related entities if available
-            if (relatedEntities.length > 0) {
-              const relatedLabel = t("dashboard.charts.entityGraph.relatedEntities", { defaultValue: "Related" });
-              const relatedList = relatedEntities.slice(0, 3).join(", ");
-              const moreCount = relatedEntities.length > 3 ? ` +${relatedEntities.length - 3}` : "";
-              lines.push(`${relatedLabel}: ${relatedList}${moreCount}`);
-            }
-
-            return lines.join("<br/>");
-          }
-          if (params.dataType === "edge") {
-            const data = params.data;
-            const originalData = data.originalData ?? {};
-            const isCorrelation = originalData.type === "correlation";
-            const linkType =
-              isCorrelation
-                ? t("dashboard.charts.entityGraph.correlation", { defaultValue: "Correlation" })
-                : t("dashboard.charts.entityGraph.coOccurrence", { defaultValue: "Co-occurrence" });
-            const strengthLabel = isCorrelation
-              ? t("dashboard.charts.entityGraph.correlationValue", { defaultValue: "Correlation" })
-              : t("dashboard.charts.entityGraph.coOccurrenceCount", { defaultValue: "Count" });
-            const strengthValue = isCorrelation
-              ? Number(data.value ?? 0).toFixed(2)
-              : `${Math.round(Number(data.value ?? 0))}`;
-            return [
-              `<b>${params.name}</b>`,
-              `${t("dashboard.charts.entityGraph.linkType", { defaultValue: "Link Type" })}: ${linkType}`,
-              `${strengthLabel}: ${strengthValue}`,
-              `Window: ${windowLabel}`
-            ].join("<br/>");
-          }
-          return "";
-        }
-      },
-      legend: {
-        data: categories.map((c) => c.name),
-        orient: "horizontal",
-        bottom: 10,
-        textStyle: {
-          color: colors?.foreground ?? "#64748b",
-          fontFamily
-        }
-      },
-      series: [
-        {
-          name: t("dashboard.charts.entityGraph.title", { defaultValue: "Entity Impact Graph" }),
-          type: "graph",
-          layout: "force",
-          data: transformedNodes,
-          links: transformedLinks,
-          categories,
-          roam: true,
-          draggable: true,
-          cursor: "pointer",
-          force: {
-            repulsion: 500,
-            gravity: 0.1,
-            edgeLength: [50, 200],
-            layoutAnimation: true
-          },
-          emphasis: {
-            focus: "adjacency",
-            lineStyle: {
-              width: 4
-            },
-            itemStyle: {
-              shadowBlur: 10,
-              shadowColor: "rgba(0, 0, 0, 0.3)"
-            }
-          },
-          label: {
-            show: true,
-            position: "right",
-            fontFamily,
-            fontSize: 10,
-            color: colors?.foreground ?? "#64748b"
-          },
-          edgeLabel: {
-            show: false
-          },
-          lineStyle: {
-            color: "source",
-            curveness: 0.2
-          }
-        }
-      ]
-    };
-  }, [colors, fontFamily, hasData, links, nodes, selectedNode, t, windowLabel]);
-
-  /**
-   * Handle node click event
-   */
   const handleNodeClick = useCallback(
     (params: any) => {
-      if (params.dataType === "node") {
-        const nodeId = params.data?.id;
-        const nodeName = params.data?.name;
-        if (nodeId) {
-          const newSelection = selectedNode === nodeId ? null : nodeId;
-          setSelectedNode(newSelection);
-          setContextMenu(null);
-          setDrawerOpen(Boolean(newSelection));
-          if (newSelection && nodeName) {
-            message.info(
-              t("dashboard.charts.entityGraph.nodeSelected", {
-                node: nodeName,
-                defaultValue: `Selected: ${nodeName}`
-              })
-            );
-          }
-        }
+      if (params.dataType !== "node") {
+        return;
+      }
+      const nodeId = params.data?.id;
+      const nodeName = params.data?.name;
+      if (!nodeId) {
+        return;
+      }
+      const newSelection = selectedNode === nodeId ? null : nodeId;
+      setSelectedNode(newSelection);
+      setContextMenu(null);
+      setDrawerOpen(Boolean(newSelection));
+      if (newSelection && nodeName) {
+        message.info(
+          t("dashboard.charts.entityGraph.nodeSelected", {
+            node: nodeName,
+            defaultValue: `Selected: ${nodeName}`,
+          }),
+        );
       }
     },
-    [message, selectedNode, t]
+    [message, selectedNode, t],
   );
 
   const handleNodeContextMenu = useCallback((params: any) => {
     if (params.dataType !== "node") {
       return;
     }
+
     const nodeId = params.data?.id;
     const nodeName = params.data?.name;
     if (typeof nodeId !== "string" || typeof nodeName !== "string") {
@@ -494,18 +613,28 @@ export function EntityImpactGraph() {
     nativeEvent?.preventDefault?.();
     nativeEvent?.stopPropagation?.();
 
-    let x = typeof params.event?.offsetX === "number" ? params.event.offsetX : Number.NaN;
-    let y = typeof params.event?.offsetY === "number" ? params.event.offsetY : Number.NaN;
+    let x =
+      typeof params.event?.offsetX === "number"
+        ? params.event.offsetX
+        : Number.NaN;
+    let y =
+      typeof params.event?.offsetY === "number"
+        ? params.event.offsetY
+        : Number.NaN;
 
-    if ((!Number.isFinite(x) || !Number.isFinite(y)) && nativeEvent && containerRef.current) {
+    if (
+      (!Number.isFinite(x) || !Number.isFinite(y)) &&
+      nativeEvent &&
+      containerRef.current
+    ) {
       const rect = containerRef.current.getBoundingClientRect();
       x = nativeEvent.clientX - rect.left;
       y = nativeEvent.clientY - rect.top;
     }
 
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      x = 8;
-      y = 8;
+      x = 10;
+      y = 10;
     }
 
     setSelectedNode(nodeId);
@@ -527,6 +656,7 @@ export function EntityImpactGraph() {
     window.addEventListener("mousedown", dismiss);
     window.addEventListener("resize", dismiss);
     window.addEventListener("keydown", dismissOnKey);
+
     return () => {
       window.removeEventListener("mousedown", dismiss);
       window.removeEventListener("resize", dismiss);
@@ -534,16 +664,65 @@ export function EntityImpactGraph() {
     };
   }, [contextMenu]);
 
-  /**
-   * Handle confidence filter change
-   */
-  const handleConfidenceChange = useCallback((value: number) => {
-    setMinConfidence(value);
-    // Clear selection when filter changes
+  const clearGraphFocus = useCallback(() => {
     setSelectedNode(null);
     setDrawerOpen(false);
     setContextMenu(null);
   }, []);
+
+  const handleConfidenceChange = useCallback((value: number) => {
+    setMinConfidence(value);
+    setSelectedNode(null);
+    setDrawerOpen(false);
+    setContextMenu(null);
+  }, []);
+
+  const toggleCategory = useCallback((category: string) => {
+    const normalized = normalizeEntityGraphCategory(category);
+    setSelectedCategories((previous) => {
+      if (previous.includes(normalized)) {
+        if (previous.length === 1) {
+          return previous;
+        }
+        return previous.filter((entry) => entry !== normalized);
+      }
+      return [...previous, normalized];
+    });
+    setSelectedNode(null);
+    setDrawerOpen(false);
+    setContextMenu(null);
+  }, []);
+
+  const toggleEdgeType = useCallback((edgeType: EntityGraphEdgeType) => {
+    setSelectedEdgeTypes((previous) => {
+      if (previous.includes(edgeType)) {
+        if (previous.length === 1) {
+          return previous;
+        }
+        return previous.filter((entry) => entry !== edgeType);
+      }
+      return [...previous, edgeType];
+    });
+    setSelectedNode(null);
+    setDrawerOpen(false);
+    setContextMenu(null);
+  }, []);
+
+  const handleReflow = useCallback(() => {
+    setGraphRenderSeed((seed) => seed + 1);
+    message.success(
+      t("dashboard.charts.entityGraph.reflowed", {
+        defaultValue: "Graph layout refreshed",
+      }),
+    );
+  }, [message, t]);
+
+  const handleResetFilters = useCallback(() => {
+    setSelectedCategories([...queryCategories]);
+    setSelectedEdgeTypes([...EDGE_TYPE_OPTIONS]);
+    setLabelDensity("compact");
+    clearGraphFocus();
+  }, [clearGraphFocus, queryCategories]);
 
   if (sessionStatus === "loading") {
     return (
@@ -561,7 +740,7 @@ export function EntityImpactGraph() {
           title={t("common.accessDenied", { defaultValue: "Access denied" })}
           description={t("common.accessDeniedDescription", {
             defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access."
+              "You don't have permission to view this data. Contact an administrator if you need access.",
           })}
         />
       </div>
@@ -587,8 +766,12 @@ export function EntityImpactGraph() {
       <div className="h-[400px]">
         <ChartEmptyState
           variant="offline"
-          title={t("dashboard.charts.entityGraph.disabledTitle", { defaultValue: "Disabled" })}
-          description={t("dashboard.charts.entityGraph.disabledDescription", { defaultValue: "Disabled by admin" })}
+          title={t("dashboard.charts.entityGraph.disabledTitle", {
+            defaultValue: "Disabled",
+          })}
+          description={t("dashboard.charts.entityGraph.disabledDescription", {
+            defaultValue: "Disabled by admin",
+          })}
         />
       </div>
     );
@@ -602,7 +785,6 @@ export function EntityImpactGraph() {
     );
   }
 
-  // Loading state
   if (loading && !hasData) {
     return (
       <div className="h-[400px] flex items-center">
@@ -611,7 +793,6 @@ export function EntityImpactGraph() {
     );
   }
 
-  // Error state
   if (error && !hasData) {
     return (
       <div className="h-[400px]">
@@ -626,7 +807,6 @@ export function EntityImpactGraph() {
     );
   }
 
-  // Empty state
   if (!hasData) {
     return (
       <div className="h-[400px]">
@@ -636,56 +816,149 @@ export function EntityImpactGraph() {
   }
 
   const showStaleDataErrorBanner = Boolean(error && hasData);
-  const showStaleSettingsErrorBanner = Boolean(settingsApplied && settingsError);
+  const showStaleSettingsErrorBanner = Boolean(
+    settingsApplied && settingsError,
+  );
+  const chartHeight = isMobile ? 320 : 400;
+  const drawerWidth = isMobile ? "100%" : 420;
 
   return (
-    <div ref={containerRef} className="relative h-[400px]">
-      {showStaleDataErrorBanner ? (
-        <div className="absolute left-2 right-2 top-2 z-20">
-          <RequestErrorBanner
-            error={error}
-            onRetry={() => void refetch()}
-            showCachedDataHint
-          />
+    <>
+      <div className="entity-graph-panel">
+        {showStaleDataErrorBanner ? (
+          <div className="mb-2">
+            <RequestErrorBanner
+              error={error}
+              onRetry={() => void refetch()}
+              showCachedDataHint
+            />
+          </div>
+        ) : showStaleSettingsErrorBanner ? (
+          <div className="mb-2">
+            <RequestErrorBanner
+              error={settingsError}
+              onRetry={() => void refetchSettings()}
+              showCachedDataHint
+            />
+          </div>
+        ) : null}
+
+        <div className="entity-graph-meta-row">
+          <Tag color="default" className="text-xs">
+            {t("dashboard.charts.entityGraph.range", { defaultValue: "Range" })}
+            : {range}
+          </Tag>
+          <Tag color="default" className="text-xs">
+            {t("dashboard.charts.entityGraph.window", {
+              defaultValue: "Window",
+            })}
+            : {windowLabel}
+          </Tag>
+          <Tag color="geekblue" className="text-xs">
+            {t("dashboard.charts.entityGraph.aggregation", {
+              defaultValue: "Aggregation: window graph",
+            })}
+          </Tag>
         </div>
-      ) : showStaleSettingsErrorBanner ? (
-        <div className="absolute left-2 right-2 top-2 z-20">
-          <RequestErrorBanner
-            error={settingsError}
-            onRetry={() => void refetchSettings()}
-            showCachedDataHint
-          />
-        </div>
-      ) : null}
-      <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
-        <Tag color="default" className="text-xs">
-          Range: {range}
-        </Tag>
-        <Tag color="default" className="text-xs">
-          Window: {windowLabel}
-        </Tag>
-        <Tag color="geekblue" className="text-xs">
-          Aggregation: window graph
-        </Tag>
-      </div>
-      <DashboardChart
-        option={option}
-        theme={echartsTheme}
-        height="100%"
-        onEvents={[
-          {
-            type: "click",
-            handler: handleNodeClick
-          },
-          {
-            type: "contextmenu",
-            handler: handleNodeContextMenu
-          }
-        ]}
-        actions={
-          <Space size="middle" align="center">
+
+        <div className="entity-graph-toolbar">
+          <div className="entity-graph-group">
+            <span className="entity-graph-group-label">
+              {t("dashboard.charts.entityGraph.categoryFilter", {
+                defaultValue: "Categories",
+              })}
+            </span>
+            <Space size={6} wrap>
+              {ENTITY_GRAPH_DEFAULT_CATEGORIES.map((category) => {
+                const categoryLabel =
+                  categoryLabels[category as keyof typeof categoryLabels] ??
+                  category;
+                const isActive = selectedCategories.includes(category);
+                return (
+                  <Button
+                    key={category}
+                    size="small"
+                    type={isActive ? "primary" : "default"}
+                    className={`entity-graph-chip entity-graph-chip-${category}`}
+                    disabled={isActive && selectedCategories.length === 1}
+                    onClick={() => toggleCategory(category)}
+                  >
+                    {categoryLabel}
+                  </Button>
+                );
+              })}
+            </Space>
+          </div>
+
+          <div className="entity-graph-group">
+            <span className="entity-graph-group-label">
+              {t("dashboard.charts.entityGraph.edgeFilter", {
+                defaultValue: "Edge Types",
+              })}
+            </span>
+            <Space size={6} wrap>
+              {EDGE_TYPE_OPTIONS.map((edgeType) => {
+                const edgeLabel =
+                  edgeType === "correlation"
+                    ? t("dashboard.charts.entityGraph.correlation", {
+                        defaultValue: "Correlation",
+                      })
+                    : t("dashboard.charts.entityGraph.coOccurrence", {
+                        defaultValue: "Co-occurrence",
+                      });
+                const isActive = selectedEdgeTypes.includes(edgeType);
+                return (
+                  <Button
+                    key={edgeType}
+                    size="small"
+                    type={isActive ? "primary" : "default"}
+                    className={`entity-graph-chip ${
+                      edgeType === "correlation"
+                        ? "entity-graph-chip-correlation"
+                        : "entity-graph-chip-cooccurrence"
+                    }`}
+                    disabled={isActive && selectedEdgeTypes.length === 1}
+                    onClick={() => toggleEdgeType(edgeType)}
+                  >
+                    {edgeLabel}
+                  </Button>
+                );
+              })}
+            </Space>
+          </div>
+
+          <div className="entity-graph-group">
+            <span className="entity-graph-group-label">
+              {t("dashboard.charts.entityGraph.labels", {
+                defaultValue: "Labels",
+              })}
+            </span>
+            <Segmented<EntityGraphLabelDensity>
+              size="small"
+              value={labelDensity}
+              onChange={(value) => setLabelDensity(value)}
+              options={[
+                {
+                  label: t("dashboard.charts.entityGraph.labelCompact", {
+                    defaultValue: "Compact",
+                  }),
+                  value: "compact",
+                },
+                {
+                  label: t("dashboard.charts.entityGraph.labelStandard", {
+                    defaultValue: "Standard",
+                  }),
+                  value: "standard",
+                },
+              ]}
+            />
+          </div>
+
+          <div className="entity-graph-group entity-graph-confidence">
             <Text type="secondary" className="text-xs whitespace-nowrap">
-              {t("dashboard.charts.entityGraph.confidenceFilter", { defaultValue: "Entity confidence" })}:
+              {t("dashboard.charts.entityGraph.confidenceFilter", {
+                defaultValue: "Entity confidence",
+              })}
             </Text>
             <Slider
               min={0}
@@ -693,85 +966,165 @@ export function EntityImpactGraph() {
               step={0.1}
               value={minConfidence}
               onChange={handleConfidenceChange}
-              style={{ width: 100 }}
+              style={{ width: 120 }}
               tooltip={{
-                formatter: (value) => `${((value ?? 0) * 100).toFixed(0)}%`
+                formatter: (value) => `${((value ?? 0) * 100).toFixed(0)}%`,
               }}
             />
-            <Text type="secondary" className="text-xs">
+            <Text type="secondary" className="text-xs min-w-[34px] text-right">
               {(minConfidence * 100).toFixed(0)}%
             </Text>
-          </Space>
-        }
-      />
-      {loading ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Skeleton active paragraph={{ rows: 6 }} />
-        </div>
-      ) : null}
-      {metadata ? (
-        <div className="absolute bottom-2 right-2 text-xs text-gray-500">
-          {t("dashboard.charts.entityGraph.stats", {
-            nodes: metadata.totalNodes,
-            links: metadata.totalLinks,
-            defaultValue: `${metadata.totalNodes} nodes, ${metadata.totalLinks} links`
-          })}
-        </div>
-      ) : null}
-      {contextMenu ? (
-        <div
-          className="absolute z-20"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onContextMenu={(evt) => evt.preventDefault()}
-          onMouseDown={(evt) => evt.stopPropagation()}
-        >
-          <div className="min-w-[200px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
-            <div className="px-3 py-2 text-xs text-slate-600">{contextMenu.nodeName}</div>
-            <div className="border-t border-slate-200" />
-            <div className="p-1">
-              <Button
-                type="text"
-                size="small"
-                block
-                onClick={() => {
-                  openSearchForEntity(contextMenu.nodeName);
-                  setContextMenu(null);
-                }}
-              >
-                {t("dashboard.charts.entityGraph.openSearch", { defaultValue: "Open search" })}
-              </Button>
-              <Button
-                type="text"
-                size="small"
-                block
-                onClick={() => {
-                  void copyEntityName(contextMenu.nodeName);
-                  setContextMenu(null);
-                }}
-              >
-                {t("common.copy", { defaultValue: "Copy" })}
-              </Button>
-              <Button
-                type="text"
-                size="small"
-                block
-                onClick={() => {
-                  setDrawerOpen(true);
-                  setContextMenu(null);
-                }}
-              >
-                {t("common.details", { defaultValue: "Details" })}
-              </Button>
-            </div>
+          </div>
+
+          <div className="entity-graph-group entity-graph-actions">
+            <Button size="small" onClick={handleReflow}>
+              {t("dashboard.charts.entityGraph.reflow", {
+                defaultValue: "Reflow",
+              })}
+            </Button>
+            <Button size="small" onClick={handleResetFilters}>
+              {t("common.reset", { defaultValue: "Reset" })}
+            </Button>
           </div>
         </div>
-      ) : null}
+
+        {visibleNodes.length > 0 ? (
+          <div ref={containerRef} className="entity-graph-canvas">
+            <DashboardChart
+              key={`entity-graph-${graphRenderSeed}`}
+              option={option}
+              theme={echartsTheme}
+              height={chartHeight}
+              onEvents={[
+                {
+                  type: "click",
+                  handler: handleNodeClick,
+                },
+                {
+                  type: "contextmenu",
+                  handler: handleNodeContextMenu,
+                },
+              ]}
+            />
+            {loading ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/40">
+                <Skeleton active paragraph={{ rows: 6 }} />
+              </div>
+            ) : null}
+
+            {contextMenu ? (
+              <div
+                className="absolute z-20"
+                style={{ left: contextMenu.x, top: contextMenu.y }}
+                onContextMenu={(evt) => evt.preventDefault()}
+                onMouseDown={(evt) => evt.stopPropagation()}
+              >
+                <div className="min-w-[220px] overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-xl backdrop-blur">
+                  <div className="px-3 py-2 text-xs text-slate-600">
+                    {contextMenu.nodeName}
+                  </div>
+                  <div className="border-t border-slate-200" />
+                  <div className="p-1.5">
+                    <Button
+                      type="text"
+                      size="small"
+                      block
+                      onClick={() => {
+                        openSearchForEntity(contextMenu.nodeName);
+                        setContextMenu(null);
+                      }}
+                    >
+                      {t("dashboard.charts.entityGraph.openSearch", {
+                        defaultValue: "Open search",
+                      })}
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      block
+                      onClick={() => {
+                        void copyEntityName(contextMenu.nodeName);
+                        setContextMenu(null);
+                      }}
+                    >
+                      {t("common.copy", { defaultValue: "Copy" })}
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      block
+                      onClick={() => {
+                        setDrawerOpen(true);
+                        setContextMenu(null);
+                      }}
+                    >
+                      {t("common.details", { defaultValue: "Details" })}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="entity-graph-canvas h-[320px] md:h-[400px] flex items-center justify-center">
+            <ChartEmptyState
+              title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+              description={t("dashboard.charts.entityGraph.filteredEmpty", {
+                defaultValue:
+                  "No nodes match the active filters. Reset filters or broaden categories to continue.",
+              })}
+              actionLabel={t("common.reset", { defaultValue: "Reset" })}
+              onAction={handleResetFilters}
+            />
+          </div>
+        )}
+
+        <div className="entity-graph-footer">
+          <div className="entity-graph-kpis">
+            <Tag>
+              {t("dashboard.charts.entityGraph.visibleNodes", {
+                defaultValue: "Visible nodes",
+              })}
+              : {visibleNodes.length}
+            </Tag>
+            <Tag>
+              {t("dashboard.charts.entityGraph.visibleLinks", {
+                defaultValue: "Visible links",
+              })}
+              : {safeLinks.length}
+            </Tag>
+            <Tag>
+              {t("dashboard.charts.entityGraph.totalNodes", {
+                defaultValue: "Total nodes",
+              })}
+              : {metadata?.totalNodes ?? nodes.length}
+            </Tag>
+            <Tag>
+              {t("dashboard.charts.entityGraph.totalLinks", {
+                defaultValue: "Total links",
+              })}
+              : {metadata?.totalLinks ?? links.length}
+            </Tag>
+          </div>
+          <Text type="secondary" className="text-xs">
+            {t("dashboard.charts.entityGraph.hint", {
+              defaultValue: "Tip: right-click a node for quick actions.",
+            })}
+          </Text>
+        </div>
+      </div>
+
       <Drawer
         open={drawerOpen && Boolean(selectedNodeRecord)}
         onClose={() => setDrawerOpen(false)}
         placement="right"
-        width={380}
-        title={selectedNodeRecord?.name ?? t("dashboard.charts.entityGraph.detailsTitle", { defaultValue: "Details" })}
+        width={drawerWidth}
+        title={
+          selectedNodeRecord?.name ??
+          t("dashboard.charts.entityGraph.detailsTitle", {
+            defaultValue: "Details",
+          })
+        }
         extra={
           <Button
             size="small"
@@ -786,39 +1139,57 @@ export function EntityImpactGraph() {
       >
         {selectedNodeRecord ? (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-            <div>
-              <Text type="secondary">
-                {t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: {selectedNodeRecord.type}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+              <Text type="secondary" className="block">
+                {t("dashboard.charts.entityGraph.type", {
+                  defaultValue: "Type",
+                })}
+                : {selectedNodeRecord.type}
               </Text>
-              <br />
-              <Text type="secondary">
-                {t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: {selectedNodeRecord.category}
+              <Text type="secondary" className="block">
+                {t("dashboard.charts.entityGraph.category", {
+                  defaultValue: "Category",
+                })}
+                : {selectedNodeRecord.category}
               </Text>
-              <br />
-              <Text type="secondary">
-                {t("dashboard.charts.entityGraph.weight", { defaultValue: "Weight" })}:{" "}
-                {Number(selectedNodeRecord.value ?? 0).toFixed(1)}
+              <Text type="secondary" className="block">
+                {t("dashboard.charts.entityGraph.weight", {
+                  defaultValue: "Weight",
+                })}
+                : {Number(selectedNodeRecord.value ?? 0).toFixed(1)}
               </Text>
-              <br />
-              <Text type="secondary">
-                {t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}:{" "}
-                {relatedEntities.length}
+              <Text type="secondary" className="block">
+                {t("dashboard.charts.entityGraph.connections", {
+                  defaultValue: "Connections",
+                })}
+                : {relatedEntities.length}
               </Text>
             </div>
+
             <Space wrap>
-              <Button type="primary" onClick={() => openSearchForEntity(selectedNodeRecord.name)}>
-                {t("dashboard.charts.entityGraph.openSearch", { defaultValue: "Open search" })}
+              <Button
+                type="primary"
+                onClick={() => openSearchForEntity(selectedNodeRecord.name)}
+              >
+                {t("dashboard.charts.entityGraph.openSearch", {
+                  defaultValue: "Open search",
+                })}
               </Button>
-              <Button onClick={() => void copyEntityName(selectedNodeRecord.name)}>
+              <Button
+                onClick={() => void copyEntityName(selectedNodeRecord.name)}
+              >
                 {t("common.copy", { defaultValue: "Copy" })}
               </Button>
             </Space>
+
             {relatedEntities.length > 0 ? (
               <div>
-                <Text type="secondary">
-                  {t("dashboard.charts.entityGraph.relatedEntities", { defaultValue: "Related" })}
+                <Text type="secondary" className="block mb-2">
+                  {t("dashboard.charts.entityGraph.relatedEntities", {
+                    defaultValue: "Related",
+                  })}
                 </Text>
-                <div className="mt-2 flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
                   {relatedEntities.slice(0, 18).map(({ id, name }) => (
                     <Tag
                       key={id}
@@ -835,18 +1206,13 @@ export function EntityImpactGraph() {
             ) : (
               <Text type="secondary">
                 {t("dashboard.charts.entityGraph.noRelatedEntities", {
-                  defaultValue: "No related entities found."
+                  defaultValue: "No related entities found.",
                 })}
               </Text>
             )}
-            <Text type="secondary" className="text-xs">
-              {t("dashboard.charts.entityGraph.hint", {
-                defaultValue: "Tip: right-click a node for quick actions."
-              })}
-            </Text>
           </Space>
         ) : null}
       </Drawer>
-    </div>
+    </>
   );
 }

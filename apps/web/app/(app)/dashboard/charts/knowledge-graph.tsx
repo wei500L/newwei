@@ -118,9 +118,15 @@ export function KnowledgeGraph() {
       return {};
     }
 
-    const degreeMap = buildDegreeMap(graph.edges);
-
     const categories = Object.keys(NODE_TYPE_CONFIG).map((key) => ({ name: key }));
+    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+    const safeEdges = graph.edges.filter(
+      (edge) =>
+        nodeIds.has(edge.from) &&
+        nodeIds.has(edge.to) &&
+        edge.from !== edge.to
+    );
+    const degreeMap = buildDegreeMap(safeEdges);
 
     const nodes = graph.nodes.map((node) => {
       const cfg = getNodeTypeConfig(node.type);
@@ -150,7 +156,7 @@ export function KnowledgeGraph() {
       };
     });
 
-    const links = graph.edges.map((edge) => ({
+    const links = safeEdges.map((edge) => ({
       source: edge.from,
       target: edge.to,
       value: edge.weight,

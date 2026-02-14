@@ -16,21 +16,26 @@ import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { buildExportBaseName, formatDateForFilename } from "@/lib/data-export";
 import dayjs from "@/lib/dayjs";
+import { ensureEchartsMapRegistered } from "@/lib/echarts-map";
 import { formatDateTime, formatUpdatedAt, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 import { useSituationMonitorMonitorsStore } from "@/store/situation-monitor-monitors";
 import { useDashboardRangeStore } from "@/store/time-range";
-import { type WarMapLayerId, useWarMapSettingsStore } from "@/store/war-map-settings";
+import {
+  type WarMapLayerId,
+  useWarMapSettingsStore,
+} from "@/store/war-map-settings";
 
 enum WarEventSeverity {
   Low = "low",
   Medium = "medium",
-  High = "high"
+  High = "high",
 }
 
 interface WarMapEvent {
   id: string;
   name: string;
+  nameZh?: string;
   lat: number;
   lng: number;
   severity: WarEventSeverity;
@@ -88,11 +93,13 @@ interface WarMapNewsMarker {
   titleZh?: string;
   url?: string | null;
   location: string;
+  locationZh?: string;
   lat: number;
   lng: number;
   publishedAt?: string;
   ingestedAt?: string;
   displayName?: string;
+  displayNameZh?: string;
   geoSource: WarMapNewsGeoSource;
 }
 
@@ -108,23 +115,28 @@ type WarMapThreatLevel = "critical" | "high" | "elevated" | "low";
 interface WarMapHotspot {
   id: string;
   name: string;
+  nameZh?: string;
   lat: number;
   lng: number;
   level: WarMapThreatLevel;
   description: string;
+  descriptionZh?: string;
 }
 
 interface WarMapStrategicPoint {
   id: string;
   name: string;
+  nameZh?: string;
   lat: number;
   lng: number;
   description: string;
+  descriptionZh?: string;
 }
 
 interface WarMapConflictZone {
   id: string;
   name: string;
+  nameZh?: string;
   coords: [number, number][];
   color: string;
 }
@@ -143,6 +155,7 @@ interface WarMapLayersResponse {
 interface WarMapScatterPoint {
   kind: WarMapPointKind;
   name: string;
+  nameZh?: string;
   value: [number, number, number];
   severity?: WarEventSeverity;
   alertScore?: number;
@@ -151,14 +164,17 @@ interface WarMapScatterPoint {
   title?: string;
   titleZh?: string;
   location?: string;
+  locationZh?: string;
   url?: string | null;
   publishedAt?: string;
   ingestedAt?: string;
   geoSource?: WarMapNewsGeoSource;
   displayName?: string;
+  displayNameZh?: string;
   monitorId?: string;
   keywords?: string[];
   description?: string;
+  descriptionZh?: string;
   layer?: string;
   itemStyle?: {
     color: string;
@@ -166,16 +182,29 @@ interface WarMapScatterPoint {
   };
 }
 
-const severityLabel = (severity: WarEventSeverity) => {
+const severityLabel = (
+  severity: WarEventSeverity,
+  labels: {
+    high: string;
+    medium: string;
+    low: string;
+    unknown: string;
+  } = {
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+    unknown: "Unknown",
+  },
+) => {
   switch (severity) {
     case WarEventSeverity.High:
-      return "High";
+      return labels.high;
     case WarEventSeverity.Medium:
-      return "Medium";
+      return labels.medium;
     case WarEventSeverity.Low:
-      return "Low";
+      return labels.low;
     default:
-      return "Unknown";
+      return labels.unknown;
   }
 };
 
@@ -220,14 +249,17 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [inView, setInView] = useState(false);
-  const registeredMapsRef = useRef(new Set<string>());
   const [mapReady, setMapReady] = useState(false);
-  const layerVisibility = useWarMapSettingsStore((state) => state.layerVisibility);
-  const setLayerVisible = useWarMapSettingsStore((state) => state.setLayerVisible);
+  const layerVisibility = useWarMapSettingsStore(
+    (state) => state.layerVisibility,
+  );
+  const setLayerVisible = useWarMapSettingsStore(
+    (state) => state.setLayerVisible,
+  );
   const resetLayers = useWarMapSettingsStore((state) => state.resetLayers);
   const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
   const emptyMessage = t("pages.map.empty", {
-    defaultValue: "No alerts or geo-tagged news signals in the selected range."
+    defaultValue: "No alerts or geo-tagged news signals in the selected range.",
   });
 
   useEffect(() => {
@@ -246,7 +278,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         const entry = entries[0];
         setInView(Boolean(entry?.isIntersecting));
       },
-      { rootMargin: "200px" }
+      { rootMargin: "200px" },
     );
 
     observer.observe(dom);
@@ -258,19 +290,19 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
-    [session?.accessToken]
+    [session?.accessToken],
   );
 
   const geoQuery = useQuery({
     queryKey: ["dashboard", "war-map", "geojson"],
     queryFn: async () => {
       const response = await apiClient.get<WarMapGeoJsonResponse>(
-        "dashboard/war-map/geojson"
+        "dashboard/war-map/geojson",
       );
       return response.data;
     },
     staleTime: 60 * 60 * 1000,
-    enabled
+    enabled,
   });
 
   const eventsQuery = useQuery({
@@ -279,7 +311,8 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       "war-map",
       "events",
       start.toISOString(),
-      end.toISOString()
+      end.toISOString(),
+      translateTarget ?? null,
     ],
     queryFn: async () => {
       const response = await apiClient.get<WarMapEventsResponse>(
@@ -287,15 +320,16 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         {
           params: {
             start: start.toISOString(),
-            end: end.toISOString()
-          }
-        }
+            end: end.toISOString(),
+            translate: translateTarget,
+          },
+        },
       );
       return response.data;
     },
     staleTime: 30_000,
     enabled,
-    placeholderData: (previous) => previous
+    placeholderData: (previous) => previous,
   });
 
   const newsMarkersQuery = useQuery({
@@ -305,7 +339,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       "news-markers",
       start.toISOString(),
       end.toISOString(),
-      translateTarget ?? null
+      translateTarget ?? null,
     ],
     queryFn: async () => {
       const response = await apiClient.get<WarMapNewsMarkersResponse>(
@@ -314,25 +348,32 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           params: {
             start: start.toISOString(),
             end: end.toISOString(),
-            translate: translateTarget
-          }
-        }
+            translate: translateTarget,
+          },
+        },
       );
       return response.data;
     },
     staleTime: 30_000,
     enabled,
-    placeholderData: (previous) => previous
+    placeholderData: (previous) => previous,
   });
 
   const layersQuery = useQuery({
-    queryKey: ["dashboard", "war-map", "layers"],
+    queryKey: ["dashboard", "war-map", "layers", translateTarget ?? null],
     queryFn: async () => {
-      const response = await apiClient.get<WarMapLayersResponse>("dashboard/war-map/layers");
+      const response = await apiClient.get<WarMapLayersResponse>(
+        "dashboard/war-map/layers",
+        {
+          params: {
+            translate: translateTarget,
+          },
+        },
+      );
       return response.data;
     },
-    staleTime: 24 * 60 * 60 * 1000,
-    enabled
+    staleTime: translateTarget === "zh-CN" ? 30_000 : 24 * 60 * 60 * 1000,
+    enabled,
   });
 
   useEffect(() => {
@@ -344,23 +385,11 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       setMapReady(false);
       return;
     }
-    if (registeredMapsRef.current.has(mapName)) {
-      setMapReady(true);
-      return;
-    }
 
     let cancelled = false;
     void (async () => {
-      const echartsModule = await import("echarts/core");
-      const [installGeo, installMap] = await Promise.all([
-        import("echarts/lib/component/geo/install.js").then((m) => m.install),
-        import("echarts/lib/chart/map/install.js").then((m) => m.install),
-      ]);
-
-      echartsModule.use([installGeo, installMap]);
+      await ensureEchartsMapRegistered(mapName, geoQuery.data.geoJson);
       if (cancelled) return;
-      echartsModule.registerMap(mapName, geoQuery.data.geoJson as any);
-      registeredMapsRef.current.add(mapName);
       setMapReady(true);
     })().catch(() => {
       if (!cancelled) {
@@ -378,6 +407,64 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     const events = eventsQuery.data?.events ?? [];
     const newsMarkers = newsMarkersQuery.data?.markers ?? [];
     const layers = layersQuery.data;
+    const useZhTranslation = translateTarget === "zh-CN";
+    const selectLocalizedText = (base: string, zh?: string) =>
+      useZhTranslation && typeof zh === "string" && zh.trim().length > 0
+        ? zh
+        : base;
+    const tooltipLabels = useZhTranslation
+      ? {
+          location: "位置",
+          published: "发布时间",
+          ingested: "入库时间",
+          geo: "地理来源",
+          clickOpenOriginal: "点击打开原文链接",
+          clickOpenSearch: "点击打开搜索结果",
+          severity: "严重程度",
+          alerts: "预警",
+          alertScore: "评分",
+          news: "新闻",
+          derivedScore: "综合分数",
+          window: "窗口",
+          datasetUpdated: "数据更新时间",
+          notAvailable: "暂无",
+          severityValues: {
+            high: "高",
+            medium: "中",
+            low: "低",
+            unknown: "未知",
+          },
+          geoSourceValues: {
+            geocoded: "已地理编码",
+            "fallback-country": "国家回退",
+          } as const,
+        }
+      : {
+          location: "Location",
+          published: "Published",
+          ingested: "Ingested",
+          geo: "Geo",
+          clickOpenOriginal: "Click to open original link",
+          clickOpenSearch: "Click to open search results",
+          severity: "Severity",
+          alerts: "Alerts",
+          alertScore: "score",
+          news: "News",
+          derivedScore: "Derived score",
+          window: "Window",
+          datasetUpdated: "Dataset updated",
+          notAvailable: "N/A",
+          severityValues: {
+            high: "High",
+            medium: "Medium",
+            low: "Low",
+            unknown: "Unknown",
+          },
+          geoSourceValues: {
+            geocoded: "geocoded",
+            "fallback-country": "fallback-country",
+          } as const,
+        };
     const monitorsWithLocation = monitors
       .filter((monitor) => monitor.enabled && monitor.location)
       .map((monitor) => ({
@@ -385,7 +472,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         name: monitor.name,
         color: monitor.color,
         keywords: monitor.keywords,
-        location: monitor.location!
+        location: monitor.location!,
       }))
       .filter((monitor) => {
         const lat = monitor.location.lat;
@@ -420,21 +507,28 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         );
       })
       .map((event) => {
-        const score = typeof event.derivedScore === "number" ? event.derivedScore : (event.value ?? 0);
-        const alertCount = typeof event.alertCount === "number" ? event.alertCount : undefined;
-        const alertScore = typeof event.alertScore === "number" ? event.alertScore : undefined;
-        const newsCount = typeof event.newsCount === "number" ? event.newsCount : undefined;
+        const score =
+          typeof event.derivedScore === "number"
+            ? event.derivedScore
+            : (event.value ?? 0);
+        const alertCount =
+          typeof event.alertCount === "number" ? event.alertCount : undefined;
+        const alertScore =
+          typeof event.alertScore === "number" ? event.alertScore : undefined;
+        const newsCount =
+          typeof event.newsCount === "number" ? event.newsCount : undefined;
         return {
           kind: "signal",
           name: event.name,
+          nameZh: event.nameZh,
           value: [event.lng, event.lat, score],
           severity: event.severity,
           alertCount,
           alertScore,
           newsCount,
           itemStyle: {
-            color: resolveSeverityColor(event.severity)
-          }
+            color: resolveSeverityColor(event.severity),
+          },
         };
       });
 
@@ -457,16 +551,18 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           title: marker.title,
           titleZh: marker.titleZh,
           location: marker.location,
+          locationZh: marker.locationZh,
           url: marker.url ?? null,
           publishedAt: marker.publishedAt,
           ingestedAt: marker.ingestedAt,
           geoSource: marker.geoSource,
           displayName: marker.displayName,
+          displayNameZh: marker.displayNameZh,
           value: [marker.lng, marker.lat, 1],
           itemStyle: {
             color: colors?.bullish ?? "#1b9e77",
-            opacity
-          }
+            opacity,
+          },
         };
       });
 
@@ -478,24 +574,36 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
     const series: any[] = [];
 
-    if (layers && layerVisibility.conflictZones && layers.conflictZones.length > 0) {
+    if (
+      layers &&
+      layerVisibility.conflictZones &&
+      layers.conflictZones.length > 0
+    ) {
       series.push({
-        name: t("dashboard.charts.warMap.conflictZones", { defaultValue: "Conflict zones" }),
+        name: t("dashboard.charts.warMap.conflictZones", {
+          defaultValue: "Conflict zones",
+        }),
         type: "custom",
         coordinateSystem: "geo",
         silent: true,
         z: 1,
         data: layers.conflictZones.map((zone) => ({
           name: zone.name,
+          nameZh: zone.nameZh,
           coords: zone.coords,
-          color: zone.color
+          color: zone.color,
         })),
         renderItem: (params: any, api: any) => {
-          const data = params.data as { coords?: [number, number][]; color?: string } | undefined;
+          const data = params.data as
+            | { coords?: [number, number][]; color?: string }
+            | undefined;
           const coords = Array.isArray(data?.coords) ? data.coords : [];
           if (coords.length < 3) return null;
           const points = coords.map((coord) => api.coord(coord));
-          const color = typeof data?.color === "string" ? data.color : "rgba(239, 68, 68, 0.6)";
+          const color =
+            typeof data?.color === "string"
+              ? data.color
+              : "rgba(239, 68, 68, 0.6)";
           return {
             type: "polygon",
             shape: { points },
@@ -503,32 +611,37 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
               fill: color,
               opacity: 0.12,
               stroke: color,
-              lineWidth: 1
-            }
+              lineWidth: 1,
+            },
           };
-        }
+        },
       });
     }
 
     if (layers && layerVisibility.hotspots && layers.hotspots.length > 0) {
       series.push({
-        name: t("dashboard.charts.warMap.hotspots", { defaultValue: "Hotspots" }),
+        name: t("dashboard.charts.warMap.hotspots", {
+          defaultValue: "Hotspots",
+        }),
         type: "effectScatter",
         coordinateSystem: "geo",
         z: 3,
         data: layers.hotspots.map((hotspot) => {
-          const color = layers.threatColors?.[hotspot.level] ?? colors?.accent ?? "#faad14";
+          const color =
+            layers.threatColors?.[hotspot.level] ?? colors?.accent ?? "#faad14";
           return {
             kind: "layer",
             layer: "hotspot",
             name: hotspot.name,
+            nameZh: hotspot.nameZh,
             description: hotspot.description,
+            descriptionZh: hotspot.descriptionZh,
             level: hotspot.level,
             value: [hotspot.lng, hotspot.lat, 1],
             itemStyle: {
               color,
-              opacity: 0.85
-            }
+              opacity: 0.85,
+            },
           };
         }),
         symbolSize: (value: unknown, params: any) => {
@@ -547,22 +660,30 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         },
         rippleEffect: {
           brushType: "stroke",
-          scale: 3
+          scale: 3,
         },
         label: {
           show: true,
           position: "right",
-          formatter: (params: any) => params?.data?.name ?? "",
+          formatter: (params: any) => {
+            const item = params?.data as
+              | { name?: string; nameZh?: string }
+              | undefined;
+            if (!item || typeof item.name !== "string") return "";
+            return selectLocalizedText(item.name, item.nameZh);
+          },
           color: colors?.foreground ?? "#475569",
           fontFamily,
-          fontSize: 10
-        }
+          fontSize: 10,
+        },
       });
     }
 
     if (layerVisibility.monitors && monitorsWithLocation.length > 0) {
       series.push({
-        name: t("dashboard.charts.warMap.monitors", { defaultValue: "Monitors" }),
+        name: t("dashboard.charts.warMap.monitors", {
+          defaultValue: "Monitors",
+        }),
         type: "scatter",
         coordinateSystem: "geo",
         cursor: "pointer",
@@ -576,15 +697,15 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           value: [monitor.location.lng, monitor.location.lat, 1],
           itemStyle: {
             color: monitor.color ?? colors?.primary ?? "#1f3b7b",
-            opacity: 0.9
-          }
+            opacity: 0.9,
+          },
         })),
         symbol: "circle",
         symbolSize: 10,
         emphasis: { scale: true },
         label: {
-          show: false
-        }
+          show: false,
+        },
       });
     }
 
@@ -592,9 +713,10 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       id: WarMapLayerId,
       name: string,
       points: WarMapStrategicPoint[] | undefined,
-      style: { color: string; symbol: string; size: number; opacity?: number }
+      style: { color: string; symbol: string; size: number; opacity?: number },
     ) => {
-      if (!layers || !layerVisibility[id] || !points || points.length === 0) return;
+      if (!layers || !layerVisibility[id] || !points || points.length === 0)
+        return;
       series.push({
         name,
         type: "scatter",
@@ -604,46 +726,56 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         symbolSize: style.size,
         itemStyle: {
           color: style.color,
-          opacity: style.opacity ?? 0.8
+          opacity: style.opacity ?? 0.8,
         },
         data: points.map((point) => ({
           kind: "layer",
           layer: id,
           name: point.name,
+          nameZh: point.nameZh,
           description: point.description,
+          descriptionZh: point.descriptionZh,
           value: [point.lng, point.lat, 1],
           itemStyle: {
             color: style.color,
-            opacity: style.opacity ?? 0.8
-          }
-        }))
+            opacity: style.opacity ?? 0.8,
+          },
+        })),
       });
     };
 
     if (layers) {
       buildStrategicSeries(
         "chokepoints",
-        t("dashboard.charts.warMap.chokepoints", { defaultValue: "Chokepoints" }),
+        t("dashboard.charts.warMap.chokepoints", {
+          defaultValue: "Chokepoints",
+        }),
         layers.chokepoints,
-        { color: colors?.primary ?? "#1f3b7b", symbol: "diamond", size: 9 }
+        { color: colors?.primary ?? "#1f3b7b", symbol: "diamond", size: 9 },
       );
       buildStrategicSeries(
         "cableLandings",
-        t("dashboard.charts.warMap.cableLandings", { defaultValue: "Cable landings" }),
+        t("dashboard.charts.warMap.cableLandings", {
+          defaultValue: "Cable landings",
+        }),
         layers.cableLandings,
-        { color: "#a855f7", symbol: "circle", size: 6, opacity: 0.65 }
+        { color: "#a855f7", symbol: "circle", size: 6, opacity: 0.65 },
       );
       buildStrategicSeries(
         "nuclearSites",
-        t("dashboard.charts.warMap.nuclearSites", { defaultValue: "Nuclear sites" }),
+        t("dashboard.charts.warMap.nuclearSites", {
+          defaultValue: "Nuclear sites",
+        }),
         layers.nuclearSites,
-        { color: "#eab308", symbol: "triangle", size: 7, opacity: 0.75 }
+        { color: "#eab308", symbol: "triangle", size: 7, opacity: 0.75 },
       );
       buildStrategicSeries(
         "militaryBases",
-        t("dashboard.charts.warMap.militaryBases", { defaultValue: "Military bases" }),
+        t("dashboard.charts.warMap.militaryBases", {
+          defaultValue: "Military bases",
+        }),
         layers.militaryBases,
-        { color: "#ec4899", symbol: "pin", size: 9, opacity: 0.75 }
+        { color: "#ec4899", symbol: "pin", size: 9, opacity: 0.75 },
       );
     }
 
@@ -666,9 +798,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       },
       itemStyle: {
         shadowBlur: 6,
-        shadowColor: "rgba(15, 23, 42, 0.2)"
+        shadowColor: "rgba(15, 23, 42, 0.2)",
       },
-      z: 10
+      z: 10,
     });
 
     series.push({
@@ -687,9 +819,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       symbolSize: () => 6,
       itemStyle: {
         shadowBlur: 3,
-        shadowColor: "rgba(15, 23, 42, 0.12)"
+        shadowColor: "rgba(15, 23, 42, 0.12)",
       },
-      z: 11
+      z: 11,
     });
 
     return {
@@ -700,56 +832,81 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         borderColor: colors?.primary ?? "#1f3b7b",
         textStyle: {
           color: colors?.tooltipText ?? "#f8fafc",
-          fontFamily
+          fontFamily,
         },
         formatter: (params: any) => {
           const payload = Array.isArray(params) ? params[0] : params;
           if (!payload) return "";
           const data = payload.data;
           if (!data) return payload.name ?? "";
-          const kind: WarMapPointKind | undefined = typeof data.kind === "string" ? data.kind : undefined;
+          const kind: WarMapPointKind | undefined =
+            typeof data.kind === "string" ? data.kind : undefined;
 
           if (kind === "news") {
             const publishedAt =
               typeof data.publishedAt === "string"
-                ? formatDateTime(data.publishedAt, locale, { dateStyle: "medium", timeStyle: "short" })
-                : "N/A";
+                ? formatDateTime(data.publishedAt, locale, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })
+                : tooltipLabels.notAvailable;
             const ingestedAt =
               typeof data.ingestedAt === "string"
-                ? formatDateTime(data.ingestedAt, locale, { dateStyle: "medium", timeStyle: "short" })
-                : "N/A";
+                ? formatDateTime(data.ingestedAt, locale, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })
+                : tooltipLabels.notAvailable;
             const title =
-              translateTarget === "zh-CN" &&
-              typeof data.titleZh === "string" &&
-              data.titleZh.trim().length > 0
-                ? data.titleZh
-                : typeof data.title === "string"
-                  ? data.title
-                  : payload.name ?? "News";
-            const location = typeof data.location === "string" ? data.location : payload.name ?? "N/A";
-            const geoLabel = typeof data.geoSource === "string" ? data.geoSource : undefined;
+              typeof data.title === "string"
+                ? selectLocalizedText(
+                    data.title,
+                    typeof data.titleZh === "string" ? data.titleZh : undefined,
+                  )
+                : (payload.name ?? tooltipLabels.news);
+            const location =
+              typeof data.location === "string"
+                ? selectLocalizedText(
+                    data.location,
+                    typeof data.locationZh === "string"
+                      ? data.locationZh
+                      : undefined,
+                  )
+                : (payload.name ?? tooltipLabels.notAvailable);
+            const geoLabel =
+              typeof data.geoSource === "string" ? data.geoSource : undefined;
+            const geoLabelText =
+              geoLabel === "geocoded"
+                ? tooltipLabels.geoSourceValues.geocoded
+                : geoLabel === "fallback-country"
+                  ? tooltipLabels.geoSourceValues["fallback-country"]
+                  : geoLabel;
 
             return `
               <div style="min-width: 220px;">
-                <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${colors?.bullish ?? '#1b9e77'};">${title}</div>
+                <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${colors?.bullish ?? "#1b9e77"};">${title}</div>
                 <div style="margin-bottom: 4px;">
-                  <span style="color: #94a3b8;">Location:</span>
+                  <span style="color: #94a3b8;">${tooltipLabels.location}:</span>
                   <span style="margin-left: 6px;">${location}</span>
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="color: #94a3b8;">Published:</span>
+                  <span style="color: #94a3b8;">${tooltipLabels.published}:</span>
                   <span>${publishedAt}</span>
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="color: #94a3b8;">Ingested:</span>
+                  <span style="color: #94a3b8;">${tooltipLabels.ingested}:</span>
                   <span>${ingestedAt}</span>
                 </div>
-                ${geoLabel ? `
+                ${
+                  geoLabelText
+                    ? `
                 <div style="margin-top: 6px; font-size: 0.85em; color: #64748b;">
-                  Geo: ${geoLabel}
-                </div>` : ""}
+                  ${tooltipLabels.geo}: ${geoLabelText}
+                </div>`
+                    : ""
+                }
                 <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
-                  Click to open original link
+                  ${tooltipLabels.clickOpenOriginal}
                 </div>
               </div>
             `;
@@ -757,7 +914,18 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
           if (kind === "layer") {
             const color = data.itemStyle?.color ?? colors?.accent ?? "#faad14";
-            const description = typeof data.description === "string" ? data.description : data.name;
+            const baseDescription =
+              typeof data.description === "string"
+                ? data.description
+                : typeof data.name === "string"
+                  ? data.name
+                  : (payload.name ?? "");
+            const description = selectLocalizedText(
+              baseDescription,
+              typeof data.descriptionZh === "string"
+                ? data.descriptionZh
+                : (data.nameZh as string | undefined),
+            );
             return `
               <div style="min-width: 200px;">
                 <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${color};">${description}</div>
@@ -767,15 +935,18 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
           if (kind === "monitor") {
             const color = data.itemStyle?.color ?? colors?.primary ?? "#1f3b7b";
-            const keywords = Array.isArray(data.keywords) ? data.keywords.slice(0, 6).join(", ") : "";
-            const location = typeof data.description === "string" ? data.description : "";
+            const keywords = Array.isArray(data.keywords)
+              ? data.keywords.slice(0, 6).join(", ")
+              : "";
+            const location =
+              typeof data.description === "string" ? data.description : "";
             return `
               <div style="min-width: 220px;">
                 <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${color};">${data.name}</div>
                 ${location ? `<div style="color: #94a3b8; margin-bottom: 4px;">${location}</div>` : ""}
                 ${keywords ? `<div style="color: #94a3b8;">${keywords}</div>` : ""}
                 <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
-                  Click to open search results
+                  ${tooltipLabels.clickOpenSearch}
                 </div>
               </div>
             `;
@@ -783,52 +954,70 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
           const derivedScore = data.value?.[2] ?? 0;
           const severityColor = data.itemStyle?.color ?? "#fff";
-          const alertCount = typeof data.alertCount === "number" ? data.alertCount : undefined;
-          const alertScore = typeof data.alertScore === "number" ? data.alertScore : undefined;
-          const newsCount = typeof data.newsCount === "number" ? data.newsCount : undefined;
+          const alertCount =
+            typeof data.alertCount === "number" ? data.alertCount : undefined;
+          const alertScore =
+            typeof data.alertScore === "number" ? data.alertScore : undefined;
+          const newsCount =
+            typeof data.newsCount === "number" ? data.newsCount : undefined;
           const hasBreakdown = Boolean(
             typeof alertCount === "number" ||
               typeof alertScore === "number" ||
-              typeof newsCount === "number"
+              typeof newsCount === "number",
           );
           const updatedStr = eventsQuery.data?.updatedAt
             ? formatUpdatedAt(eventsQuery.data.updatedAt, locale)
-            : "N/A";
-          const windowStr = `${formatDateTime(start, locale, { dateStyle: "medium" })} - ${formatDateTime(end, locale, {
-            dateStyle: "medium"
-          })}`;
+            : tooltipLabels.notAvailable;
+          const windowStr = `${formatDateTime(start, locale, { dateStyle: "medium" })} - ${formatDateTime(
+            end,
+            locale,
+            {
+              dateStyle: "medium",
+            },
+          )}`;
+          const signalName =
+            typeof data.name === "string"
+              ? selectLocalizedText(
+                  data.name,
+                  typeof data.nameZh === "string" ? data.nameZh : undefined,
+                )
+              : (payload.name ?? "");
 
           return `
             <div style="min-width: 200px;">
-              <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${colors?.primary ?? '#1f3b7b'};">${data.name}</div>
+              <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px; color: ${colors?.primary ?? "#1f3b7b"};">${signalName}</div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: #94a3b8;">Severity:</span>
-                <span style="color: ${severityColor}; font-weight: 600;">${severityLabel(data.severity)}</span>
+                <span style="color: #94a3b8;">${tooltipLabels.severity}:</span>
+                <span style="color: ${severityColor}; font-weight: 600;">${severityLabel(data.severity, tooltipLabels.severityValues)}</span>
               </div>
-              ${hasBreakdown ? `
+              ${
+                hasBreakdown
+                  ? `
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: #94a3b8;">Alerts:</span>
-                <span>${alertCount ?? 0}${typeof alertScore === "number" ? ` (score ${alertScore})` : ""}</span>
+                <span style="color: #94a3b8;">${tooltipLabels.alerts}:</span>
+                <span>${alertCount ?? 0}${typeof alertScore === "number" ? ` (${tooltipLabels.alertScore} ${alertScore})` : ""}</span>
               </div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: #94a3b8;">News:</span>
+                <span style="color: #94a3b8;">${tooltipLabels.news}:</span>
                 <span>${newsCount ?? 0}</span>
               </div>
-              ` : ""}
+              `
+                  : ""
+              }
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: #94a3b8;">Derived score:</span>
+                <span style="color: #94a3b8;">${tooltipLabels.derivedScore}:</span>
                 <span>${derivedScore}</span>
               </div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: #94a3b8;">Window:</span>
+                <span style="color: #94a3b8;">${tooltipLabels.window}:</span>
                 <span>${windowStr}</span>
               </div>
               <div style="margin-top: 8px; font-size: 0.85em; color: #64748b; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
-                Dataset updated: ${updatedStr}
+                ${tooltipLabels.datasetUpdated}: ${updatedStr}
               </div>
             </div>
           `;
-        }
+        },
       },
       geo: {
         map: geoQuery.data.name,
@@ -840,24 +1029,24 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           borderColor,
           borderWidth: 1,
           shadowColor: "rgba(15, 23, 42, 0.1)",
-          shadowBlur: 6
+          shadowBlur: 6,
         },
         emphasis: {
           itemStyle: {
             areaColor: "rgba(31, 59, 123, 0.18)",
-            borderColor: colors?.primary ?? "#1f3b7b"
+            borderColor: colors?.primary ?? "#1f3b7b",
           },
           label: {
             show: true,
-            color: colors?.primary ?? "#1f3b7b"
-          }
+            color: colors?.primary ?? "#1f3b7b",
+          },
         },
         label: {
-          show: false
-        }
+          show: false,
+        },
       },
-      backgroundColor: 'transparent',
-      series
+      backgroundColor: "transparent",
+      series,
     };
   }, [
     colors,
@@ -874,15 +1063,18 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     start,
     end,
     translateTarget,
-    t
+    t,
   ]);
 
   const chartEvents = useMemo(() => {
     const popupBlockedMessage = t("common.popupBlocked", {
-      defaultValue: "Popup blocked. Please allow popups for this site."
+      defaultValue: "Popup blocked. Please allow popups for this site.",
     });
 
-    const openInNewTab = (url: string, labels: { loading: string; success: string }) => {
+    const openInNewTab = (
+      url: string,
+      labels: { loading: string; success: string },
+    ) => {
       const toastId = toast.loading(labels.loading);
       const handle = window.open(url, "_blank", "noopener,noreferrer");
       window.setTimeout(() => {
@@ -905,49 +1097,57 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           }
           const record = data as Record<string, unknown>;
           if (record.kind === "news") {
-            const url = typeof record.url === "string" ? safeHttpUrl(record.url) : null;
+            const url =
+              typeof record.url === "string" ? safeHttpUrl(record.url) : null;
             if (!url) {
               toast.warning(
                 t("dashboard.charts.warMap.missingNewsUrl", {
-                  defaultValue: "No link available for this news marker."
-                })
+                  defaultValue: "No link available for this news marker.",
+                }),
               );
               return;
             }
             openInNewTab(url, {
-              loading: t("dashboard.charts.warMap.openingNews", { defaultValue: "Opening news link..." }),
-              success: t("dashboard.charts.warMap.openedNews", { defaultValue: "News opened in a new tab" })
+              loading: t("dashboard.charts.warMap.openingNews", {
+                defaultValue: "Opening news link...",
+              }),
+              success: t("dashboard.charts.warMap.openedNews", {
+                defaultValue: "News opened in a new tab",
+              }),
             });
             return;
           }
 
           if (record.kind === "monitor") {
             const keywords = Array.isArray(record.keywords)
-              ? record.keywords.filter((kw): kw is string => typeof kw === "string" && kw.trim().length > 0)
+              ? record.keywords.filter(
+                  (kw): kw is string =>
+                    typeof kw === "string" && kw.trim().length > 0,
+                )
               : [];
             const fallback = typeof record.name === "string" ? record.name : "";
             const query = (keywords[0] ?? fallback).trim();
             if (!query) {
               toast.warning(
                 t("dashboard.charts.warMap.missingMonitorQuery", {
-                  defaultValue: "No keywords available for this monitor."
-                })
+                  defaultValue: "No keywords available for this monitor.",
+                }),
               );
               return;
             }
             openInNewTab(`/search?q=${encodeURIComponent(query)}`, {
               loading: t("dashboard.charts.warMap.openingSearch", {
                 query,
-                defaultValue: `Opening search for "${query}"...`
+                defaultValue: `Opening search for "${query}"...`,
               }),
               success: t("dashboard.charts.warMap.openedSearch", {
                 query,
-                defaultValue: `Search opened for "${query}" in a new tab`
-              })
+                defaultValue: `Search opened for "${query}" in a new tab`,
+              }),
             });
           }
-        }
-      }
+        },
+      },
     ];
   }, [t]);
 
@@ -991,7 +1191,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     return {
       total: events.length,
       renderable,
-      bySeverity: { high, medium, low }
+      bySeverity: { high, medium, low },
     };
   }, [events]);
 
@@ -1018,12 +1218,14 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     return {
       total: newsMarkers.length,
       renderable,
-      byGeoSource: { geocoded, fallback }
+      byGeoSource: { geocoded, fallback },
     };
   }, [newsMarkers]);
 
   const monitorStats = useMemo(() => {
-    const withLocation = monitors.filter((monitor) => monitor.enabled && Boolean(monitor.location));
+    const withLocation = monitors.filter(
+      (monitor) => monitor.enabled && Boolean(monitor.location),
+    );
     const totalAvailable = withLocation.length;
     const totalVisible = layerVisibility.monitors ? totalAvailable : 0;
     return { totalAvailable, totalVisible };
@@ -1037,7 +1239,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       chokepoints: layers?.chokepoints.length ?? 0,
       cableLandings: layers?.cableLandings.length ?? 0,
       nuclearSites: layers?.nuclearSites.length ?? 0,
-      militaryBases: layers?.militaryBases.length ?? 0
+      militaryBases: layers?.militaryBases.length ?? 0,
     };
 
     const totalAvailable =
@@ -1090,7 +1292,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     if (hasInvalidSignalGeo) {
       return t("dashboard.charts.warMap.empty.invalidGeo", {
         defaultValue:
-          "Data was returned, but none of the records had valid coordinates. This looks like a data source issue."
+          "Data was returned, but none of the records had valid coordinates. This looks like a data source issue.",
       });
     }
 
@@ -1100,7 +1302,8 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           <span>{emptyMessage}</span>
           <span>
             {t("dashboard.charts.warMap.empty.hiddenLayers", {
-              defaultValue: "Some overlay layers are available but hidden by filters. Enable them from Layers."
+              defaultValue:
+                "Some overlay layers are available but hidden by filters. Enable them from Layers.",
             })}
           </span>
         </div>
@@ -1108,14 +1311,18 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     }
 
     if (
-      !hasHiddenOverlays && layersLoaded && layerStats.totalAvailable === 0 && monitorStats.totalAvailable === 0
+      !hasHiddenOverlays &&
+      layersLoaded &&
+      layerStats.totalAvailable === 0 &&
+      monitorStats.totalAvailable === 0
     ) {
       return (
         <div className="flex flex-col items-center gap-1">
           <span>{emptyMessage}</span>
           <span>
             {t("dashboard.charts.warMap.empty.noOverlays", {
-              defaultValue: "No static layers or monitor locations are configured."
+              defaultValue:
+                "No static layers or monitor locations are configured.",
             })}
           </span>
         </div>
@@ -1132,7 +1339,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     monitorStats.totalAvailable,
     t,
     totalAvailablePoints,
-    totalVisiblePoints
+    totalVisiblePoints,
   ]);
 
   if (!inView) {
@@ -1160,7 +1367,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           description={
             geoErrorMessage ??
             t("common.serviceUnavailable", {
-              defaultValue: "Service is unavailable. Please try again."
+              defaultValue: "Service is unavailable. Please try again.",
             })
           }
           actionLabel={t("common.retry")}
@@ -1205,7 +1412,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           }
           disabled={!layersQuery.data}
         >
-          {t("dashboard.charts.warMap.conflictZones", { defaultValue: "Conflict zones" })}
+          {t("dashboard.charts.warMap.conflictZones", {
+            defaultValue: "Conflict zones",
+          })}
         </Checkbox>
         <Checkbox
           checked={layerVisibility.chokepoints}
@@ -1214,7 +1423,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           }
           disabled={!layersQuery.data}
         >
-          {t("dashboard.charts.warMap.chokepoints", { defaultValue: "Chokepoints" })}
+          {t("dashboard.charts.warMap.chokepoints", {
+            defaultValue: "Chokepoints",
+          })}
         </Checkbox>
         <Checkbox
           checked={layerVisibility.cableLandings}
@@ -1223,7 +1434,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           }
           disabled={!layersQuery.data}
         >
-          {t("dashboard.charts.warMap.cableLandings", { defaultValue: "Cable landings" })}
+          {t("dashboard.charts.warMap.cableLandings", {
+            defaultValue: "Cable landings",
+          })}
         </Checkbox>
         <Checkbox
           checked={layerVisibility.nuclearSites}
@@ -1232,7 +1445,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           }
           disabled={!layersQuery.data}
         >
-          {t("dashboard.charts.warMap.nuclearSites", { defaultValue: "Nuclear sites" })}
+          {t("dashboard.charts.warMap.nuclearSites", {
+            defaultValue: "Nuclear sites",
+          })}
         </Checkbox>
         <Checkbox
           checked={layerVisibility.militaryBases}
@@ -1241,11 +1456,15 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           }
           disabled={!layersQuery.data}
         >
-          {t("dashboard.charts.warMap.militaryBases", { defaultValue: "Military bases" })}
+          {t("dashboard.charts.warMap.militaryBases", {
+            defaultValue: "Military bases",
+          })}
         </Checkbox>
         <Checkbox
           checked={layerVisibility.monitors}
-          onChange={(event) => setLayerVisible("monitors", event.target.checked)}
+          onChange={(event) =>
+            setLayerVisible("monitors", event.target.checked)
+          }
           disabled={!hasMonitorLocations}
         >
           {t("dashboard.charts.warMap.monitors", { defaultValue: "Monitors" })}
@@ -1262,10 +1481,16 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     </div>
   );
 
-  const containerClassName = ["relative", className ?? "h-[400px]"].filter(Boolean).join(" ");
-  const windowLabel = `${formatDateTime(start, locale, { dateStyle: "medium" })} - ${formatDateTime(end, locale, {
-    dateStyle: "medium"
-  })}`;
+  const containerClassName = ["relative", className ?? "h-[400px]"]
+    .filter(Boolean)
+    .join(" ");
+  const windowLabel = `${formatDateTime(start, locale, { dateStyle: "medium" })} - ${formatDateTime(
+    end,
+    locale,
+    {
+      dateStyle: "medium",
+    },
+  )}`;
   const signalsUpdatedLabel = eventsQuery.data?.updatedAt
     ? formatUpdatedAt(eventsQuery.data.updatedAt, locale)
     : null;
@@ -1278,22 +1503,26 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     <div className="text-xs">
       <div>
         {t("dashboard.charts.warMap.stats.signalsHint", {
-          defaultValue: "Aggregated over window"
+          defaultValue: "Aggregated over window",
         })}
       </div>
       <div>
-        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}: {formatCount(signalStats.total)}
+        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}:{" "}
+        {formatCount(signalStats.total)}
       </div>
       <div>
-        {t("dashboard.charts.warMap.stats.renderable", { defaultValue: "Renderable" })}:{" "}
-        {formatCount(signalStats.renderable)}
+        {t("dashboard.charts.warMap.stats.renderable", {
+          defaultValue: "Renderable",
+        })}
+        : {formatCount(signalStats.renderable)}
       </div>
       <div>
         {t("dashboard.charts.warMap.stats.high", { defaultValue: "High" })}:{" "}
         {formatCount(signalStats.bySeverity.high)} •{" "}
         {t("dashboard.charts.warMap.stats.medium", { defaultValue: "Medium" })}:{" "}
         {formatCount(signalStats.bySeverity.medium)} •{" "}
-        {t("dashboard.charts.warMap.stats.low", { defaultValue: "Low" })}: {formatCount(signalStats.bySeverity.low)}
+        {t("dashboard.charts.warMap.stats.low", { defaultValue: "Low" })}:{" "}
+        {formatCount(signalStats.bySeverity.low)}
       </div>
     </div>
   );
@@ -1302,20 +1531,28 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     <div className="text-xs">
       <div>
         {t("dashboard.charts.warMap.stats.newsHint", {
-          defaultValue: "Point-in-time (published/ingested)"
+          defaultValue: "Point-in-time (published/ingested)",
         })}
       </div>
       <div>
-        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}: {formatCount(newsStats.total)}
+        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}:{" "}
+        {formatCount(newsStats.total)}
       </div>
       <div>
-        {t("dashboard.charts.warMap.stats.renderable", { defaultValue: "Renderable" })}: {formatCount(newsStats.renderable)}
+        {t("dashboard.charts.warMap.stats.renderable", {
+          defaultValue: "Renderable",
+        })}
+        : {formatCount(newsStats.renderable)}
       </div>
       <div>
-        {t("dashboard.charts.warMap.stats.geocoded", { defaultValue: "Geocoded" })}:{" "}
-        {formatCount(newsStats.byGeoSource.geocoded)} •{" "}
-        {t("dashboard.charts.warMap.stats.fallbackCountry", { defaultValue: "Fallback country" })}:{" "}
-        {formatCount(newsStats.byGeoSource.fallback)}
+        {t("dashboard.charts.warMap.stats.geocoded", {
+          defaultValue: "Geocoded",
+        })}
+        : {formatCount(newsStats.byGeoSource.geocoded)} •{" "}
+        {t("dashboard.charts.warMap.stats.fallbackCountry", {
+          defaultValue: "Fallback country",
+        })}
+        : {formatCount(newsStats.byGeoSource.fallback)}
       </div>
     </div>
   );
@@ -1324,40 +1561,64 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     <div className="text-xs">
       <div>
         {t("dashboard.charts.warMap.stats.layersHint", {
-          defaultValue: "Static layers (not time-filtered)"
+          defaultValue: "Static layers (not time-filtered)",
         })}
       </div>
       <div>
-        {t("dashboard.charts.warMap.hotspots", { defaultValue: "Hotspots" })}: {formatCount(layerStats.counts.hotspots)}
-        {layerVisibility.hotspots ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+        {t("dashboard.charts.warMap.hotspots", { defaultValue: "Hotspots" })}:{" "}
+        {formatCount(layerStats.counts.hotspots)}
+        {layerVisibility.hotspots
+          ? ""
+          : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
       </div>
       <div>
-        {t("dashboard.charts.warMap.conflictZones", { defaultValue: "Conflict zones" })}:{" "}
-        {formatCount(layerStats.counts.conflictZones)}
-        {layerVisibility.conflictZones ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+        {t("dashboard.charts.warMap.conflictZones", {
+          defaultValue: "Conflict zones",
+        })}
+        : {formatCount(layerStats.counts.conflictZones)}
+        {layerVisibility.conflictZones
+          ? ""
+          : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
       </div>
       <div>
-        {t("dashboard.charts.warMap.chokepoints", { defaultValue: "Chokepoints" })}:{" "}
-        {formatCount(layerStats.counts.chokepoints)}
-        {layerVisibility.chokepoints ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+        {t("dashboard.charts.warMap.chokepoints", {
+          defaultValue: "Chokepoints",
+        })}
+        : {formatCount(layerStats.counts.chokepoints)}
+        {layerVisibility.chokepoints
+          ? ""
+          : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
       </div>
       <div>
-        {t("dashboard.charts.warMap.cableLandings", { defaultValue: "Cable landings" })}:{" "}
-        {formatCount(layerStats.counts.cableLandings)}
-        {layerVisibility.cableLandings ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+        {t("dashboard.charts.warMap.cableLandings", {
+          defaultValue: "Cable landings",
+        })}
+        : {formatCount(layerStats.counts.cableLandings)}
+        {layerVisibility.cableLandings
+          ? ""
+          : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
       </div>
       <div>
-        {t("dashboard.charts.warMap.nuclearSites", { defaultValue: "Nuclear sites" })}:{" "}
-        {formatCount(layerStats.counts.nuclearSites)}
-        {layerVisibility.nuclearSites ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+        {t("dashboard.charts.warMap.nuclearSites", {
+          defaultValue: "Nuclear sites",
+        })}
+        : {formatCount(layerStats.counts.nuclearSites)}
+        {layerVisibility.nuclearSites
+          ? ""
+          : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
       </div>
       <div>
-        {t("dashboard.charts.warMap.militaryBases", { defaultValue: "Military bases" })}:{" "}
-        {formatCount(layerStats.counts.militaryBases)}
-        {layerVisibility.militaryBases ? "" : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
+        {t("dashboard.charts.warMap.militaryBases", {
+          defaultValue: "Military bases",
+        })}
+        : {formatCount(layerStats.counts.militaryBases)}
+        {layerVisibility.militaryBases
+          ? ""
+          : ` (${t("dashboard.charts.warMap.stats.hidden", { defaultValue: "hidden" })})`}
       </div>
       <div>
-        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}: {formatCount(layerStats.totalVisible)} /{" "}
+        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}:{" "}
+        {formatCount(layerStats.totalVisible)} /{" "}
         {formatCount(layerStats.totalAvailable)}
       </div>
     </div>
@@ -1367,15 +1628,18 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     <div className="text-xs">
       <div>
         {t("dashboard.charts.warMap.stats.monitorsHint", {
-          defaultValue: "Custom monitors with saved locations"
+          defaultValue: "Custom monitors with saved locations",
         })}
       </div>
       <div>
-        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}: {formatCount(monitorStats.totalAvailable)}
+        {t("dashboard.charts.warMap.stats.total", { defaultValue: "Total" })}:{" "}
+        {formatCount(monitorStats.totalAvailable)}
       </div>
       <div>
-        {t("dashboard.charts.warMap.stats.showing", { defaultValue: "Showing" })}:{" "}
-        {formatCount(monitorStats.totalVisible)}
+        {t("dashboard.charts.warMap.stats.showing", {
+          defaultValue: "Showing",
+        })}
+        : {formatCount(monitorStats.totalVisible)}
       </div>
     </div>
   );
@@ -1399,44 +1663,66 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       <div className="absolute left-4 top-12 z-10 flex flex-col gap-1">
         <Space size={6} wrap>
           <Tag color="default" className="text-xs">
-            {t("dashboard.charts.warMap.stats.window", { defaultValue: "Window" })}: {windowLabel}
+            {t("dashboard.charts.warMap.stats.window", {
+              defaultValue: "Window",
+            })}
+            : {windowLabel}
           </Tag>
           <Tooltip title={signalsTooltip}>
             <Tag color="geekblue" className="text-xs">
-              {t("dashboard.charts.warMap.stats.signals", { defaultValue: "Signals" })}:{" "}
-              {formatCount(signalStats.renderable)}
+              {t("dashboard.charts.warMap.stats.signals", {
+                defaultValue: "Signals",
+              })}
+              : {formatCount(signalStats.renderable)}
             </Tag>
           </Tooltip>
           <Tooltip title={newsTooltip}>
             <Tag color="green" className="text-xs">
-              {t("dashboard.charts.warMap.stats.news", { defaultValue: "News" })}: {formatCount(newsStats.renderable)}
+              {t("dashboard.charts.warMap.stats.news", {
+                defaultValue: "News",
+              })}
+              : {formatCount(newsStats.renderable)}
             </Tag>
           </Tooltip>
           <Tooltip title={layersTooltip}>
             <Tag color="default" className="text-xs">
-              {t("dashboard.charts.warMap.stats.layers", { defaultValue: "Layers" })}:{" "}
-              {formatCount(layerStats.totalVisible)} / {formatCount(layerStats.totalAvailable)}
+              {t("dashboard.charts.warMap.stats.layers", {
+                defaultValue: "Layers",
+              })}
+              : {formatCount(layerStats.totalVisible)} /{" "}
+              {formatCount(layerStats.totalAvailable)}
             </Tag>
           </Tooltip>
           <Tooltip title={monitorsTooltip}>
             <Tag color="purple" className="text-xs">
-              {t("dashboard.charts.warMap.stats.monitors", { defaultValue: "Monitors" })}:{" "}
-              {formatCount(monitorStats.totalVisible)} / {formatCount(monitorStats.totalAvailable)}
+              {t("dashboard.charts.warMap.stats.monitors", {
+                defaultValue: "Monitors",
+              })}
+              : {formatCount(monitorStats.totalVisible)} /{" "}
+              {formatCount(monitorStats.totalAvailable)}
             </Tag>
           </Tooltip>
           <Tag color="default" className="text-xs">
-            {t("dashboard.charts.dataStats.showing", { defaultValue: "Showing" })}:{" "}
-            {formatCount(totalVisiblePoints)} / {formatCount(totalAvailablePoints)}
+            {t("dashboard.charts.dataStats.showing", {
+              defaultValue: "Showing",
+            })}
+            : {formatCount(totalVisiblePoints)} /{" "}
+            {formatCount(totalAvailablePoints)}
           </Tag>
           {signalsUpdatedLabel ? (
             <Tag color="default" className="text-xs">
-              {t("dashboard.charts.warMap.stats.signalsUpdated", { defaultValue: "Signals updated" })}:{" "}
-              {signalsUpdatedLabel}
+              {t("dashboard.charts.warMap.stats.signalsUpdated", {
+                defaultValue: "Signals updated",
+              })}
+              : {signalsUpdatedLabel}
             </Tag>
           ) : null}
           {newsUpdatedLabel ? (
             <Tag color="default" className="text-xs">
-              {t("dashboard.charts.warMap.stats.newsUpdated", { defaultValue: "News updated" })}: {newsUpdatedLabel}
+              {t("dashboard.charts.warMap.stats.newsUpdated", {
+                defaultValue: "News updated",
+              })}
+              : {newsUpdatedLabel}
             </Tag>
           ) : null}
         </Space>
@@ -1449,13 +1735,15 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           base: "war-map",
           start: formatDateForFilename(start),
           end: formatDateForFilename(end),
-          fallback: "chart"
+          fallback: "chart",
         })}
         showExportImage
         actions={
           <Popover
             content={layerSelector}
-            title={t("dashboard.charts.warMap.layers", { defaultValue: "Layers" })}
+            title={t("dashboard.charts.warMap.layers", {
+              defaultValue: "Layers",
+            })}
             trigger="click"
             placement="bottomRight"
           >
@@ -1464,7 +1752,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         }
         onEvents={chartEvents}
       />
-      {(eventsQuery.isLoading || newsMarkersQuery.isLoading) && !eventsQuery.data && !newsMarkersQuery.data ? (
+      {(eventsQuery.isLoading || newsMarkersQuery.isLoading) &&
+      !eventsQuery.data &&
+      !newsMarkersQuery.data ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <Skeleton active paragraph={{ rows: 4 }} />
         </div>
@@ -1481,7 +1771,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
               eventsErrorMessage ??
               newsMarkersErrorMessage ??
               t("common.serviceUnavailable", {
-                defaultValue: "Service is unavailable. Please try again."
+                defaultValue: "Service is unavailable. Please try again.",
               })
             }
             actionLabel={t("common.retry")}

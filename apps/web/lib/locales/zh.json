@@ -954,6 +954,9 @@
       "entityGraph": {
         "disabledTitle": "已禁用",
         "disabledDescription": "已被管理员禁用",
+        "range": "范围",
+        "window": "窗口",
+        "aggregation": "聚合：窗口图谱",
         "person": "人物",
         "organization": "组织",
         "stock": "股票",
@@ -969,10 +972,23 @@
         "correlationValue": "相关性",
         "coOccurrenceCount": "数量",
         "linkType": "关联类型",
+        "strength": "强度",
         "title": "实体影响图",
         "nodeSelected": "已选择：{{node}}",
         "confidenceFilter": "实体置信度",
+        "categoryFilter": "类别",
+        "edgeFilter": "连接类型",
+        "labels": "标签密度",
+        "labelCompact": "精简",
+        "labelStandard": "标准",
+        "reflow": "重新布局",
+        "reflowed": "图谱布局已刷新",
         "stats": "{{nodes}} 个节点，{{links}} 条连接",
+        "visibleNodes": "可见节点",
+        "visibleLinks": "可见连接",
+        "totalNodes": "总节点",
+        "totalLinks": "总连接",
+        "filteredEmpty": "当前筛选条件下没有可展示节点。请重置筛选或放宽条件。",
         "openingSearch": "正在打开搜索“{{query}}”...",
         "openedSearch": "已在新标签页打开“{{query}}”的搜索。",
         "openSearch": "打开搜索",
@@ -1190,17 +1206,30 @@
     },
     "topics": {
       "title": "专题/事件",
+      "subtitle": "聚焦查看事件聚类与专题脉络，减少干扰并提升阅读效率。",
+      "loadFailed": "加载专题与事件失败。",
       "empty": "聚合不足，暂无法形成专题/事件。",
       "eventsTitle": "事件聚合",
       "eventsEmpty": "聚合不足，暂无法形成事件。",
       "topicsTitle": "专题",
       "topicsEmpty": "聚合不足，暂无法形成专题。",
+      "tabs": {
+        "events": "事件",
+        "topics": "专题"
+      },
       "eventFallbackTitle": "未命名事件",
       "filters": {
+        "title": "筛选",
         "windowLabel": "时间窗口",
         "groupLabel": "最小事件量",
         "windowOption": "近{{days}}天",
         "groupOption": "{{count}}+ 报道"
+      },
+      "list": {
+        "countLabel": "报道",
+        "openDetails": "详情",
+        "openTopic": "预览",
+        "moreTag": "+{{count}}"
       },
       "eventDetail": {
         "title": "事件详情",
@@ -1209,6 +1238,12 @@
         "openItem": "打开条目",
         "timelineTitle": "时间线",
         "timelineEmpty": "暂无相关内容。"
+      },
+      "topicDetail": {
+        "title": "专题详情",
+        "action": "预览",
+        "relatedItemsTitle": "关联报道",
+        "empty": "暂无关联报道。"
       },
       "latestAtLabel": "最新",
       "latestAtHelp": "有发布时间则按发布时间排序；否则回退为入库时间。"
@@ -3513,9 +3548,19 @@
         "indicator": "指标",
         "value": "值",
         "changePercent": "变化百分比",
+        "dateRange": "时间范围",
         "startDate": "开始日期",
         "endDate": "结束日期",
         "newsSummaries": "新闻摘要"
+      },
+      "placeholders": {
+        "newsSummaries": "输入标签并按回车"
+      },
+      "errors": {
+        "dateRangeRequired": "请选择有效的时间范围"
+      },
+      "help": {
+        "changePercent": "指标变化的百分比，如上涨5%输入5，下跌3%输入-3"
       }
     },
     "anomaly": {
@@ -3525,7 +3570,8 @@
       "errors": {
         "seriesArray": "序列必须为数组",
         "seriesEmpty": "序列为空",
-        "seriesInvalid": "序列格式无效"
+        "seriesInvalid": "序列格式无效",
+        "timestampInvalid": "请选择有效的时间戳"
       },
       "defaults": {
         "metric": "指标"
@@ -3537,7 +3583,23 @@
         "deviationPercent": "偏差百分比",
         "newsList": "新闻列表",
         "policyList": "政策列表",
-        "seriesJson": "序列 JSON"
+        "series": "参考时序数据"
+      },
+      "placeholders": {
+        "newsList": "输入标签并按回车",
+        "policyList": "输入标签并按回车",
+        "timestamp": "时间",
+        "value": "数值"
+      },
+      "actions": {
+        "addSeriesPoint": "添加数据点"
+      },
+      "help": {
+        "metric": "发生异常的指标名称，如股价、汇率、成交量等",
+        "deviationPercent": "当前值与预期值的偏差百分比，用于判断异常程度",
+        "newsList": "与异常相关的关键新闻标题或摘要，帮助AI理解事件背景（可选）",
+        "policyList": "可能影响该指标的相关政策或法规（可选）",
+        "series": "该指标的历史时序数据，用于辅助AI分析异常趋势（可选）"
       }
     },
     "results": {

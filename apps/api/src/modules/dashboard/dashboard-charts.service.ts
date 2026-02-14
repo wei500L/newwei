@@ -3,9 +3,13 @@ import {
   extractCountryCodeFromText,
   getCountryAlpha2,
   getCountryName,
-  normalizeCountryCode
+  normalizeCountryCode,
 } from "@modular/utils";
-import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from "@nestjs/common";
 import { AlertSeverity, ProcessedArticleStatus } from "@prisma/client";
 import { createHash } from "node:crypto";
 
@@ -18,7 +22,7 @@ import worldGeoJson from "./assets/world.geo.json";
 import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
 import {
   buildWarMapLayersResponse,
-  type WarMapLayersResponse
+  type WarMapLayersResponse,
 } from "./war-map-layers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -48,14 +52,14 @@ const PREFERRED_SOURCE_FIELDS = [
   "现价",
   "current_price",
   "最新",
-  "美元"
+  "美元",
 ] as const;
 
 const OHLC_FIELD_ALIASES = {
   open: ["open", "开盘价"],
   high: ["high", "最高价"],
   low: ["low", "最低价"],
-  close: ["close", "收盘价"]
+  close: ["close", "收盘价"],
 } as const;
 
 type OhlcField = keyof typeof OHLC_FIELD_ALIASES;
@@ -148,11 +152,12 @@ const getDataVizConfig = (metadata: unknown): DataVizConfig => {
 
   return {
     heatmap: {
-      preferredSourceFields
+      preferredSourceFields,
     },
     candlestick: {
-      ohlc: Object.keys(ohlcFieldAliases).length > 0 ? ohlcFieldAliases : undefined
-    }
+      ohlc:
+        Object.keys(ohlcFieldAliases).length > 0 ? ohlcFieldAliases : undefined,
+    },
   };
 };
 
@@ -197,7 +202,7 @@ const buildLabelToSourceFieldMap = (metadata: unknown): Map<string, string> => {
 const resolvePreferredSourceField = (
   seriesByField: Map<string, unknown[]>,
   preferredKeys: string[],
-  labelToField: Map<string, string>
+  labelToField: Map<string, string>,
 ) => {
   const normalizedToActual = new Map<string, string>();
   for (const key of seriesByField.keys()) {
@@ -217,7 +222,9 @@ const resolvePreferredSourceField = (
       if (seriesByField.has(mapped)) {
         return mapped;
       }
-      const normalizedMapped = normalizedToActual.get(normalizeSourceFieldKey(mapped));
+      const normalizedMapped = normalizedToActual.get(
+        normalizeSourceFieldKey(mapped),
+      );
       if (normalizedMapped) {
         return normalizedMapped;
       }
@@ -269,6 +276,7 @@ export interface WarMapGeoJsonResponse {
 interface WarMapEvent {
   id: string;
   name: string;
+  nameZh?: string;
   lat: number;
   lng: number;
   severity: AlertSeverity;
@@ -296,11 +304,13 @@ interface WarMapNewsMarker {
   titleZh?: string;
   url?: string | null;
   location: string;
+  locationZh?: string;
   lat: number;
   lng: number;
   publishedAt?: string;
   ingestedAt?: string;
   displayName?: string;
+  displayNameZh?: string;
   geoSource: WarMapNewsGeoSource;
 }
 
@@ -313,7 +323,19 @@ interface WarMapNewsMarkersOptions {
   translateTarget?: "zh-CN";
 }
 
-export type SpacetimeSentimentLabel = "positive" | "neutral" | "negative" | "unknown";
+interface WarMapLayersOptions {
+  translateTarget?: "zh-CN";
+}
+
+interface WarMapEventsOptions {
+  translateTarget?: "zh-CN";
+}
+
+export type SpacetimeSentimentLabel =
+  | "positive"
+  | "neutral"
+  | "negative"
+  | "unknown";
 
 export interface SpacetimeGeoHeatPoint {
   id: string;
@@ -517,31 +539,36 @@ const normalizeSentimentLabel = (raw: unknown): SpacetimeSentimentLabel => {
 };
 
 const toUtcDayStartIso = (value: Date) => {
-  const d = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+  const d = new Date(
+    Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
+  );
   return d.toISOString();
 };
 
 const alertSeverityRank: Record<AlertSeverity, number> = {
   low: 1,
   medium: 2,
-  high: 3
+  high: 3,
 };
 
 const alertSeverityByRank: Record<number, AlertSeverity> = {
   1: AlertSeverity.low,
   2: AlertSeverity.medium,
-  3: AlertSeverity.high
+  3: AlertSeverity.high,
 };
 
 @Injectable()
 export class DashboardChartsService {
-  private geoIndex: Map<string, { name: string; lat: number; lng: number }> | null = null;
+  private geoIndex: Map<
+    string,
+    { name: string; lat: number; lng: number }
+  > | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly geocoding: GeocodingService,
     private readonly cache: CacheService,
-    private readonly translation?: SituationMonitorTranslationService
+    private readonly translation?: SituationMonitorTranslationService,
   ) {}
 
   private geoHeatmapSnapshotCacheKey(orgId: string, snapshotId: string) {
@@ -554,7 +581,7 @@ export class DashboardChartsService {
     }
     try {
       return await this.cache.get<SpacetimeGeoHeatmapSnapshot>(
-        this.geoHeatmapSnapshotCacheKey(orgId, snapshotId)
+        this.geoHeatmapSnapshotCacheKey(orgId, snapshotId),
       );
     } catch {
       return null;
@@ -564,7 +591,7 @@ export class DashboardChartsService {
   private async storeGeoHeatmapSnapshot(
     orgId: string,
     snapshotId: string,
-    snapshot: SpacetimeGeoHeatmapSnapshot
+    snapshot: SpacetimeGeoHeatmapSnapshot,
   ): Promise<boolean> {
     if (!snapshotId) {
       return false;
@@ -573,7 +600,7 @@ export class DashboardChartsService {
       await this.cache.set(
         this.geoHeatmapSnapshotCacheKey(orgId, snapshotId),
         snapshot,
-        SPACETIME_GEO_SNAPSHOT_TTL_SECONDS
+        SPACETIME_GEO_SNAPSHOT_TTL_SECONDS,
       );
       return true;
     } catch {
@@ -602,22 +629,116 @@ export class DashboardChartsService {
 
   getWarMapGeoJson(): WarMapGeoJsonResponse {
     const payload = worldGeoJson as { type?: string; features?: unknown };
-    if (payload?.type !== "FeatureCollection" || !Array.isArray(payload.features)) {
+    if (
+      payload?.type !== "FeatureCollection" ||
+      !Array.isArray(payload.features)
+    ) {
       throw new Error("Invalid GeoJSON payload");
     }
     return {
       name: "world",
       geoJson: worldGeoJson,
       center: [0, 20],
-      zoom: 1.1
+      zoom: 1.1,
     };
   }
 
-  getWarMapLayers(): WarMapLayersResponse {
-    return buildWarMapLayersResponse();
+  async getWarMapLayers(
+    options: WarMapLayersOptions = {},
+  ): Promise<WarMapLayersResponse> {
+    const response = buildWarMapLayersResponse();
+
+    if (options.translateTarget === "zh-CN" && this.translation) {
+      const targets = uniqStrings([
+        ...response.hotspots.flatMap((item) => [item.name, item.description]),
+        ...response.conflictZones.map((item) => item.name),
+        ...response.chokepoints.flatMap((item) => [
+          item.name,
+          item.description,
+        ]),
+        ...response.cableLandings.flatMap((item) => [
+          item.name,
+          item.description,
+        ]),
+        ...response.nuclearSites.flatMap((item) => [
+          item.name,
+          item.description,
+        ]),
+        ...response.militaryBases.flatMap((item) => [
+          item.name,
+          item.description,
+        ]),
+      ]);
+      const translatedByText =
+        await this.translation.translateTextsToZhBestEffort(targets);
+
+      const applyHotspot = (item: {
+        name: string;
+        nameZh?: string;
+        description: string;
+        descriptionZh?: string;
+      }) => {
+        const nameZh = translatedByText.get(item.name);
+        if (nameZh) {
+          item.nameZh = nameZh;
+        }
+        const descriptionZh = translatedByText.get(item.description);
+        if (descriptionZh) {
+          item.descriptionZh = descriptionZh;
+        }
+      };
+
+      const applyZone = (item: { name: string; nameZh?: string }) => {
+        const nameZh = translatedByText.get(item.name);
+        if (nameZh) {
+          item.nameZh = nameZh;
+        }
+      };
+
+      const applyStrategic = (item: {
+        name: string;
+        nameZh?: string;
+        description: string;
+        descriptionZh?: string;
+      }) => {
+        const nameZh = translatedByText.get(item.name);
+        if (nameZh) {
+          item.nameZh = nameZh;
+        }
+        const descriptionZh = translatedByText.get(item.description);
+        if (descriptionZh) {
+          item.descriptionZh = descriptionZh;
+        }
+      };
+
+      for (const item of response.hotspots) {
+        applyHotspot(item);
+      }
+      for (const item of response.conflictZones) {
+        applyZone(item);
+      }
+      for (const item of response.chokepoints) {
+        applyStrategic(item);
+      }
+      for (const item of response.cableLandings) {
+        applyStrategic(item);
+      }
+      for (const item of response.nuclearSites) {
+        applyStrategic(item);
+      }
+      for (const item of response.militaryBases) {
+        applyStrategic(item);
+      }
+    }
+
+    return response;
   }
 
-  async getWarMapEvents(range: DateRange, orgId: string): Promise<WarMapEventsResponse> {
+  async getWarMapEvents(
+    range: DateRange,
+    orgId: string,
+    options: WarMapEventsOptions = {},
+  ): Promise<WarMapEventsResponse> {
     const geoIndex = this.getGeoIndex();
     const signals = new Map<
       string,
@@ -638,18 +759,18 @@ export class DashboardChartsService {
         where: {
           triggeredAt: {
             gte: range.start,
-            lte: range.end
+            lte: range.end,
           },
           rule: {
-            orgId
-          }
+            orgId,
+          },
         },
         select: {
           triggeredAt: true,
           severity: true,
-          context: true
+          context: true,
         },
-        orderBy: { triggeredAt: "desc" }
+        orderBy: { triggeredAt: "desc" },
       }),
       this.prisma.processedArticle.findMany({
         where: {
@@ -659,9 +780,9 @@ export class DashboardChartsService {
             {
               publishedAt: {
                 gte: range.start,
-                lte: range.end
+                lte: range.end,
               },
-              article: { orgId }
+              article: { orgId },
             },
             {
               publishedAt: null,
@@ -669,11 +790,11 @@ export class DashboardChartsService {
                 orgId,
                 crawlAt: {
                   gte: range.start,
-                  lte: range.end
-                }
-              }
-            }
-          ]
+                  lte: range.end,
+                },
+              },
+            },
+          ],
         },
         select: {
           location: true,
@@ -681,18 +802,20 @@ export class DashboardChartsService {
           publishedAt: true,
           article: {
             select: {
-              crawlAt: true
-            }
-          }
+              crawlAt: true,
+            },
+          },
         },
         orderBy: { processedAt: "desc" },
-        take: 2500
-      })
+        take: 2500,
+      }),
     ]);
 
     for (const event of alertEvents) {
       const context =
-        event.context && typeof event.context === "object" && !Array.isArray(event.context)
+        event.context &&
+        typeof event.context === "object" &&
+        !Array.isArray(event.context)
           ? (event.context as Record<string, unknown>)
           : null;
       const rawCountry =
@@ -704,7 +827,8 @@ export class DashboardChartsService {
               ? context?.country
               : null;
       const resolvedCode =
-        normalizeGeoId(rawCountry) ?? extractCountryCodeFromText(rawCountry ?? null);
+        normalizeGeoId(rawCountry) ??
+        extractCountryCodeFromText(rawCountry ?? null);
       if (!resolvedCode) {
         continue;
       }
@@ -719,14 +843,19 @@ export class DashboardChartsService {
         alertCount: 0,
         alertScore: 0,
         maxAlertSeverityRank: 0,
-        newsCount: 0
+        newsCount: 0,
       };
       const severityValue = alertSeverityRank[event.severity] ?? 1;
       entry.alertScore += severityValue;
       entry.alertCount += 1;
-      entry.maxAlertSeverityRank = Math.max(entry.maxAlertSeverityRank, severityValue);
+      entry.maxAlertSeverityRank = Math.max(
+        entry.maxAlertSeverityRank,
+        severityValue,
+      );
       entry.latestAt =
-        !entry.latestAt || event.triggeredAt > entry.latestAt ? event.triggeredAt : entry.latestAt;
+        !entry.latestAt || event.triggeredAt > entry.latestAt
+          ? event.triggeredAt
+          : entry.latestAt;
       signals.set(resolvedCode, entry);
     }
 
@@ -735,7 +864,9 @@ export class DashboardChartsService {
       if (!location || typeof location !== "string") {
         continue;
       }
-      const resolvedCode = normalizeGeoId(extractCountryCodeFromText(location) ?? location);
+      const resolvedCode = normalizeGeoId(
+        extractCountryCodeFromText(location) ?? location,
+      );
       if (!resolvedCode) {
         continue;
       }
@@ -752,12 +883,15 @@ export class DashboardChartsService {
         alertScore: 0,
         maxAlertSeverityRank: 0,
         newsCount: 0,
-        latestAt: undefined
+        latestAt: undefined,
       };
       entry.newsCount += 1;
-      const latestAt = record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
+      const latestAt =
+        record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
       entry.latestAt =
-        !entry.latestAt || latestAt > entry.latestAt ? latestAt : entry.latestAt;
+        !entry.latestAt || latestAt > entry.latestAt
+          ? latestAt
+          : entry.latestAt;
       signals.set(resolvedCode, entry);
     }
 
@@ -772,8 +906,17 @@ export class DashboardChartsService {
       const derivedScoreRaw = alertScore + entry.newsCount;
       const derivedScore = Math.max(1, derivedScoreRaw);
       const newsSeverityRank =
-        entry.newsCount >= 8 ? 3 : entry.newsCount >= 4 ? 2 : entry.newsCount > 0 ? 1 : 0;
-      const maxSeverityRank = Math.max(entry.maxAlertSeverityRank, newsSeverityRank);
+        entry.newsCount >= 8
+          ? 3
+          : entry.newsCount >= 4
+            ? 2
+            : entry.newsCount > 0
+              ? 1
+              : 0;
+      const maxSeverityRank = Math.max(
+        entry.maxAlertSeverityRank,
+        newsSeverityRank,
+      );
       const severity =
         maxSeverityRank > 0
           ? (alertSeverityByRank[maxSeverityRank] ?? AlertSeverity.low)
@@ -788,23 +931,40 @@ export class DashboardChartsService {
         value: derivedScore,
         alertScore,
         alertCount: entry.alertCount,
-        newsCount: entry.newsCount
+        newsCount: entry.newsCount,
       });
       if (!updatedAt || entry.latestAt > updatedAt) {
         updatedAt = entry.latestAt;
       }
     }
 
+    if (
+      options.translateTarget === "zh-CN" &&
+      this.translation &&
+      events.length > 0
+    ) {
+      const translatedByText =
+        await this.translation.translateTextsToZhBestEffort(
+          events.map((event) => event.name),
+        );
+      for (const event of events) {
+        const nameZh = translatedByText.get(event.name);
+        if (nameZh) {
+          event.nameZh = nameZh;
+        }
+      }
+    }
+
     return {
       events,
-      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
     };
   }
 
   async getWarMapNewsMarkers(
     range: DateRange,
     orgId: string,
-    options: WarMapNewsMarkersOptions = {}
+    options: WarMapNewsMarkersOptions = {},
   ): Promise<WarMapNewsMarkersResponse> {
     const geoIndex = this.getGeoIndex();
     const records = await this.prisma.processedArticle.findMany({
@@ -815,9 +975,9 @@ export class DashboardChartsService {
           {
             publishedAt: {
               gte: range.start,
-              lte: range.end
+              lte: range.end,
             },
-            article: { orgId }
+            article: { orgId },
           },
           {
             publishedAt: null,
@@ -825,11 +985,11 @@ export class DashboardChartsService {
               orgId,
               crawlAt: {
                 gte: range.start,
-                lte: range.end
-              }
-            }
-          }
-        ]
+                lte: range.end,
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
@@ -842,12 +1002,12 @@ export class DashboardChartsService {
           select: {
             url: true,
             crawlAt: true,
-            titleGuess: true
-          }
-        }
+            titleGuess: true,
+          },
+        },
       },
       orderBy: { processedAt: "desc" },
-      take: MAX_WAR_MAP_NEWS_MARKERS
+      take: MAX_WAR_MAP_NEWS_MARKERS,
     });
 
     interface CleanedEntity {
@@ -903,13 +1063,19 @@ export class DashboardChartsService {
       );
     };
 
-    const resolveCountryAlpha3 = (location: string, entities: CleanedEntity[]): string | null => {
-      const fromLocation = extractCountryCodeFromText(location) ?? normalizeCountryCode(location);
+    const resolveCountryAlpha3 = (
+      location: string,
+      entities: CleanedEntity[],
+    ): string | null => {
+      const fromLocation =
+        extractCountryCodeFromText(location) ?? normalizeCountryCode(location);
       if (fromLocation) {
         return fromLocation;
       }
       for (const entity of entities) {
-        const code = normalizeCountryCode(entity.name) ?? extractCountryCodeFromText(entity.name);
+        const code =
+          normalizeCountryCode(entity.name) ??
+          extractCountryCodeFromText(entity.name);
         if (code) {
           return code;
         }
@@ -917,7 +1083,11 @@ export class DashboardChartsService {
       return null;
     };
 
-    const buildCandidates = (location: string, entities: CleanedEntity[], countryName?: string | null) => {
+    const buildCandidates = (
+      location: string,
+      entities: CleanedEntity[],
+      countryName?: string | null,
+    ) => {
       const candidates: string[] = [];
       const pushCandidate = (value: string) => {
         const normalized = value.trim();
@@ -926,29 +1096,41 @@ export class DashboardChartsService {
       };
 
       const locationEntities = entities
-        .filter((entity) => entity.confidence >= 0.5 && isLocationEntityType(entity.type))
+        .filter(
+          (entity) =>
+            entity.confidence >= 0.5 && isLocationEntityType(entity.type),
+        )
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, 3);
 
       for (const entity of locationEntities) {
-        if (countryName && !entity.name.toLowerCase().includes(countryName.toLowerCase())) {
+        if (
+          countryName &&
+          !entity.name.toLowerCase().includes(countryName.toLowerCase())
+        ) {
           pushCandidate(`${entity.name}, ${countryName}`);
         }
         pushCandidate(entity.name);
       }
 
-      const primaryLocationChunk = location.split(/[,，;；/|]/)[0]?.trim() ?? "";
+      const primaryLocationChunk =
+        location.split(/[,，;；/|]/)[0]?.trim() ?? "";
       if (primaryLocationChunk && primaryLocationChunk !== location) {
         if (
           countryName &&
-          !primaryLocationChunk.toLowerCase().includes(countryName.toLowerCase())
+          !primaryLocationChunk
+            .toLowerCase()
+            .includes(countryName.toLowerCase())
         ) {
           pushCandidate(`${primaryLocationChunk}, ${countryName}`);
         }
         pushCandidate(primaryLocationChunk);
       }
 
-      if (countryName && !location.toLowerCase().includes(countryName.toLowerCase())) {
+      if (
+        countryName &&
+        !location.toLowerCase().includes(countryName.toLowerCase())
+      ) {
         pushCandidate(`${location}, ${countryName}`);
       }
       pushCandidate(location);
@@ -965,7 +1147,8 @@ export class DashboardChartsService {
 
     for (const record of records) {
       const locationRaw = record.location;
-      const location = typeof locationRaw === "string" ? locationRaw.trim() : "";
+      const location =
+        typeof locationRaw === "string" ? locationRaw.trim() : "";
       if (!location) {
         continue;
       }
@@ -973,20 +1156,22 @@ export class DashboardChartsService {
       const entities = normalizeEntities(record.entities);
       const countryAlpha3 = resolveCountryAlpha3(location, entities);
       const directCountryAlpha3 = normalizeCountryCode(location);
-      const countryAlpha2 = countryAlpha3 ? getCountryAlpha2(countryAlpha3) ?? undefined : undefined;
+      const countryAlpha2 = countryAlpha3
+        ? (getCountryAlpha2(countryAlpha3) ?? undefined)
+        : undefined;
       const countryName = countryAlpha3 ? getCountryName(countryAlpha3) : null;
 
       const candidates = buildCandidates(location, entities, countryName);
 
       let geocode = await this.geocoding.resolveCandidates(candidates, {
         countryCodeAlpha2: countryAlpha2,
-        allowNetwork: false
+        allowNetwork: false,
       });
       if (!geocode && networkBudget > 0) {
         networkBudget -= 1;
         geocode = await this.geocoding.resolveCandidates(candidates, {
           countryCodeAlpha2: countryAlpha2,
-          allowNetwork: true
+          allowNetwork: true,
         });
       }
 
@@ -1017,9 +1202,17 @@ export class DashboardChartsService {
       }
 
       const title =
-        (record.title ?? record.article.titleGuess ?? record.article.url ?? "").trim() ||
-        location;
-      const latestAt = record.publishedAt ?? record.article.crawlAt ?? record.processedAt ?? undefined;
+        (
+          record.title ??
+          record.article.titleGuess ??
+          record.article.url ??
+          ""
+        ).trim() || location;
+      const latestAt =
+        record.publishedAt ??
+        record.article.crawlAt ??
+        record.processedAt ??
+        undefined;
 
       markers.push({
         id: record.id,
@@ -1028,10 +1221,14 @@ export class DashboardChartsService {
         location,
         lat,
         lng,
-        publishedAt: record.publishedAt ? record.publishedAt.toISOString() : undefined,
-        ingestedAt: record.article.crawlAt ? record.article.crawlAt.toISOString() : undefined,
+        publishedAt: record.publishedAt
+          ? record.publishedAt.toISOString()
+          : undefined,
+        ingestedAt: record.article.crawlAt
+          ? record.article.crawlAt.toISOString()
+          : undefined,
         displayName,
-        geoSource
+        geoSource,
       });
 
       if (latestAt && (!updatedAt || latestAt > updatedAt)) {
@@ -1039,31 +1236,53 @@ export class DashboardChartsService {
       }
     }
 
-    if (options.translateTarget === "zh-CN" && this.translation && markers.length > 0) {
-      const translatedByText = await this.translation.translateTextsToZhBestEffort(
-        markers.map((marker) => marker.title)
-      );
+    if (
+      options.translateTarget === "zh-CN" &&
+      this.translation &&
+      markers.length > 0
+    ) {
+      const translatedByText =
+        await this.translation.translateTextsToZhBestEffort(
+          uniqStrings(
+            markers.flatMap((marker) => [
+              marker.title,
+              marker.location,
+              marker.displayName ?? "",
+            ]),
+          ),
+        );
       for (const marker of markers) {
         const titleZh = translatedByText.get(marker.title);
         if (titleZh) {
           marker.titleZh = titleZh;
+        }
+        const locationZh = translatedByText.get(marker.location);
+        if (locationZh) {
+          marker.locationZh = locationZh;
+        }
+        if (marker.displayName) {
+          const displayNameZh = translatedByText.get(marker.displayName);
+          if (displayNameZh) {
+            marker.displayNameZh = displayNameZh;
+          }
         }
       }
     }
 
     return {
       markers,
-      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
     };
   }
 
   async getSpacetimeGeoHeatmap(
     range: DateRange,
     orgId: string,
-    options: { eventId?: string; includeBuckets?: boolean } = {}
+    options: { eventId?: string; includeBuckets?: boolean } = {},
   ): Promise<SpacetimeGeoHeatmapResponse> {
     const geoIndex = this.getGeoIndex();
-    const eventId = typeof options.eventId === "string" ? options.eventId.trim() : "";
+    const eventId =
+      typeof options.eventId === "string" ? options.eventId.trim() : "";
     const includeBuckets = options.includeBuckets === true;
     const records = await this.prisma.processedArticle.findMany({
       where: {
@@ -1074,18 +1293,18 @@ export class DashboardChartsService {
               newsEventItems: {
                 some: {
                   orgId,
-                  eventId
-                }
-              }
+                  eventId,
+                },
+              },
             }
           : {}),
         OR: [
           {
             publishedAt: {
               gte: range.start,
-              lte: range.end
+              lte: range.end,
             },
-            article: { orgId }
+            article: { orgId },
           },
           {
             publishedAt: null,
@@ -1093,11 +1312,11 @@ export class DashboardChartsService {
               orgId,
               crawlAt: {
                 gte: range.start,
-                lte: range.end
-              }
-            }
-          }
-        ]
+                lte: range.end,
+              },
+            },
+          },
+        ],
       },
       select: {
         location: true,
@@ -1106,12 +1325,12 @@ export class DashboardChartsService {
         processedAt: true,
         article: {
           select: {
-            crawlAt: true
-          }
-        }
+            crawlAt: true,
+          },
+        },
       },
       orderBy: { processedAt: "desc" },
-      take: MAX_SPACETIME_GEO_RECORDS
+      take: MAX_SPACETIME_GEO_RECORDS,
     });
 
     if (records.length === 0) {
@@ -1121,17 +1340,24 @@ export class DashboardChartsService {
     const processedItemIds = Array.from(
       new Set(
         records
-          .map((record) => (typeof record.cleanedMarkdownRef === "string" ? record.cleanedMarkdownRef.trim() : ""))
-          .filter((id) => id.length > 0)
-      )
+          .map((record) =>
+            typeof record.cleanedMarkdownRef === "string"
+              ? record.cleanedMarkdownRef.trim()
+              : "",
+          )
+          .filter((id) => id.length > 0),
+      ),
     );
 
-    const sentimentByProcessedItemId = new Map<string, SpacetimeSentimentLabel>();
+    const sentimentByProcessedItemId = new Map<
+      string,
+      SpacetimeSentimentLabel
+    >();
     if (processedItemIds.length > 0) {
       try {
         const docs = (await ProcessedItemModel.find(
           { _id: { $in: processedItemIds }, orgId, status: "completed" },
-          { _id: 1, result: 1 }
+          { _id: 1, result: 1 },
         )
           .lean()
           .exec()) as unknown;
@@ -1147,11 +1373,15 @@ export class DashboardChartsService {
               continue;
             }
             const result =
-              record.result && typeof record.result === "object" && !Array.isArray(record.result)
+              record.result &&
+              typeof record.result === "object" &&
+              !Array.isArray(record.result)
                 ? (record.result as Record<string, unknown>)
                 : null;
             const sentiment = normalizeSentimentLabel(
-              result?.sentiment_label ?? result?.sentimentLabel ?? result?.sentiment
+              result?.sentiment_label ??
+                result?.sentimentLabel ??
+                result?.sentiment,
             );
             sentimentByProcessedItemId.set(id, sentiment);
           }
@@ -1161,11 +1391,14 @@ export class DashboardChartsService {
       }
     }
 
-    const createSentimentCounts = (): Record<SpacetimeSentimentLabel, number> => ({
+    const createSentimentCounts = (): Record<
+      SpacetimeSentimentLabel,
+      number
+    > => ({
       positive: 0,
       neutral: 0,
       negative: 0,
-      unknown: 0
+      unknown: 0,
     });
 
     const halfLifeMs = Math.max(1, SPACETIME_GEO_HEAT_HALF_LIFE_DAYS) * DAY_MS;
@@ -1190,7 +1423,8 @@ export class DashboardChartsService {
     let updatedAt: Date | undefined;
 
     for (const record of records) {
-      const rawLocation = typeof record.location === "string" ? record.location.trim() : "";
+      const rawLocation =
+        typeof record.location === "string" ? record.location.trim() : "";
       if (!rawLocation) {
         continue;
       }
@@ -1199,12 +1433,18 @@ export class DashboardChartsService {
         continue;
       }
       const candidate = normalizeLocationCandidate(rawLocation);
-      const ts = record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
+      const ts =
+        record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
       const ageMs = Math.max(0, nowMs - ts.getTime());
       const weight = Math.exp(-ageMs / halfLifeMs);
 
-      const processedItemId = typeof record.cleanedMarkdownRef === "string" ? record.cleanedMarkdownRef.trim() : "";
-      const sentiment = processedItemId ? (sentimentByProcessedItemId.get(processedItemId) ?? "unknown") : "unknown";
+      const processedItemId =
+        typeof record.cleanedMarkdownRef === "string"
+          ? record.cleanedMarkdownRef.trim()
+          : "";
+      const sentiment = processedItemId
+        ? (sentimentByProcessedItemId.get(processedItemId) ?? "unknown")
+        : "unknown";
       const bucketStartIso = includeBuckets ? toUtcDayStartIso(ts) : null;
 
       const entry = byLocation.get(key) ?? {
@@ -1214,10 +1454,13 @@ export class DashboardChartsService {
         total: 0,
         sentiment: createSentimentCounts(),
         buckets: includeBuckets ? new Map() : undefined,
-        lastAt: undefined
+        lastAt: undefined,
       };
 
-      entry.candidates.set(candidate, (entry.candidates.get(candidate) ?? 0) + 1);
+      entry.candidates.set(
+        candidate,
+        (entry.candidates.get(candidate) ?? 0) + 1,
+      );
       entry.heat += weight;
       entry.total += 1;
       entry.sentiment[sentiment] = (entry.sentiment[sentiment] ?? 0) + 1;
@@ -1225,7 +1468,10 @@ export class DashboardChartsService {
 
       if (includeBuckets && bucketStartIso) {
         const buckets = entry.buckets ?? new Map<string, BucketAgg>();
-        const bucket = buckets.get(bucketStartIso) ?? { total: 0, sentiment: createSentimentCounts() };
+        const bucket = buckets.get(bucketStartIso) ?? {
+          total: 0,
+          sentiment: createSentimentCounts(),
+        };
         bucket.total += 1;
         bucket.sentiment[sentiment] = (bucket.sentiment[sentiment] ?? 0) + 1;
         buckets.set(bucketStartIso, bucket);
@@ -1271,12 +1517,16 @@ export class DashboardChartsService {
       }
       const trimmedCandidates = candidates.slice(0, 8);
       const resolvedCountry =
-        trimmedCandidates.map((candidate) => extractCountryCodeFromText(candidate)).find(Boolean) ?? null;
+        trimmedCandidates
+          .map((candidate) => extractCountryCodeFromText(candidate))
+          .find(Boolean) ?? null;
 
       const countryHintAlpha3 = normalizeGeoId(resolvedCountry);
       const directAlpha3 = normalizeGeoId(trimmedCandidates[0] ?? "");
       const countryAlpha3 = countryHintAlpha3 ?? directAlpha3;
-      const countryAlpha2 = countryAlpha3 ? getCountryAlpha2(countryAlpha3) ?? undefined : undefined;
+      const countryAlpha2 = countryAlpha3
+        ? (getCountryAlpha2(countryAlpha3) ?? undefined)
+        : undefined;
 
       let lat: number | undefined;
       let lng: number | undefined;
@@ -1292,15 +1542,18 @@ export class DashboardChartsService {
       }
 
       if (lat === undefined || lng === undefined) {
-        let geocode = await this.geocoding.resolveCandidates(trimmedCandidates, {
-          countryCodeAlpha2: countryAlpha2,
-          allowNetwork: false
-        });
+        let geocode = await this.geocoding.resolveCandidates(
+          trimmedCandidates,
+          {
+            countryCodeAlpha2: countryAlpha2,
+            allowNetwork: false,
+          },
+        );
         if (!geocode && networkBudget > 0) {
           networkBudget -= 1;
           geocode = await this.geocoding.resolveCandidates(trimmedCandidates, {
             countryCodeAlpha2: countryAlpha2,
-            allowNetwork: true
+            allowNetwork: true,
           });
         }
         lat = geocode?.lat;
@@ -1328,11 +1581,18 @@ export class DashboardChartsService {
         continue;
       }
 
-      const clusterLat = roundToStep(clampFinite(lat, -90, 90), SPACETIME_GEO_CLUSTER_STEP_DEG);
-      const clusterLng = roundToStep(clampFinite(lng, -180, 180), SPACETIME_GEO_CLUSTER_STEP_DEG);
+      const clusterLat = roundToStep(
+        clampFinite(lat, -90, 90),
+        SPACETIME_GEO_CLUSTER_STEP_DEG,
+      );
+      const clusterLng = roundToStep(
+        clampFinite(lng, -180, 180),
+        SPACETIME_GEO_CLUSTER_STEP_DEG,
+      );
       const clusterKey = `${clusterLat.toFixed(3)}:${clusterLng.toFixed(3)}`;
 
-      const locationKeys = locationKeysByClusterKey.get(clusterKey) ?? new Set<string>();
+      const locationKeys =
+        locationKeysByClusterKey.get(clusterKey) ?? new Set<string>();
       locationKeys.add(loc.key);
       locationKeysByClusterKey.set(clusterKey, locationKeys);
 
@@ -1344,21 +1604,28 @@ export class DashboardChartsService {
         heat: 0,
         total: 0,
         sentiment: createSentimentCounts(),
-        buckets: includeBuckets ? new Map<string, BucketAgg>() : undefined
+        buckets: includeBuckets ? new Map<string, BucketAgg>() : undefined,
       };
 
       existing.heat += loc.heat;
       existing.total += loc.total;
-      for (const label of Object.keys(existing.sentiment) as SpacetimeSentimentLabel[]) {
+      for (const label of Object.keys(
+        existing.sentiment,
+      ) as SpacetimeSentimentLabel[]) {
         existing.sentiment[label] += loc.sentiment[label] ?? 0;
       }
 
       if (includeBuckets && loc.buckets) {
         const bucketMap = existing.buckets ?? new Map<string, BucketAgg>();
         for (const [bucketStart, bucketAgg] of loc.buckets.entries()) {
-          const existingBucket = bucketMap.get(bucketStart) ?? { total: 0, sentiment: createSentimentCounts() };
+          const existingBucket = bucketMap.get(bucketStart) ?? {
+            total: 0,
+            sentiment: createSentimentCounts(),
+          };
           existingBucket.total += bucketAgg.total;
-          for (const label of Object.keys(existingBucket.sentiment) as SpacetimeSentimentLabel[]) {
+          for (const label of Object.keys(
+            existingBucket.sentiment,
+          ) as SpacetimeSentimentLabel[]) {
             existingBucket.sentiment[label] += bucketAgg.sentiment[label] ?? 0;
           }
           bucketMap.set(bucketStart, existingBucket);
@@ -1372,15 +1639,16 @@ export class DashboardChartsService {
       .sort((a, b) => b.heat - a.heat)
       .slice(0, MAX_SPACETIME_GEO_POINTS)
       .map((point) => {
-        const buckets = includeBuckets && point.buckets
-          ? Array.from(point.buckets.entries())
-              .sort((a, b) => a[0].localeCompare(b[0]))
-              .map(([bucketStart, agg]) => ({
-                bucketStart,
-                total: agg.total,
-                sentiment: agg.sentiment
-              }))
-          : undefined;
+        const buckets =
+          includeBuckets && point.buckets
+            ? Array.from(point.buckets.entries())
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([bucketStart, agg]) => ({
+                  bucketStart,
+                  total: agg.total,
+                  sentiment: agg.sentiment,
+                }))
+            : undefined;
 
         return {
           id: point.id,
@@ -1390,7 +1658,7 @@ export class DashboardChartsService {
           heat: Number(point.heat.toFixed(4)),
           total: point.total,
           sentiment: point.sentiment,
-          ...(buckets ? { buckets } : {})
+          ...(buckets ? { buckets } : {}),
         };
       });
 
@@ -1400,7 +1668,9 @@ export class DashboardChartsService {
       if (!keys || keys.size === 0) {
         continue;
       }
-      pointToLocationKeys[point.id] = Array.from(keys).sort((a, b) => a.localeCompare(b));
+      pointToLocationKeys[point.id] = Array.from(keys).sort((a, b) =>
+        a.localeCompare(b),
+      );
     }
 
     const snapshotBase: SpacetimeGeoHeatmapSnapshot | null =
@@ -1412,8 +1682,10 @@ export class DashboardChartsService {
             rangeStart: range.start.toISOString(),
             rangeEnd: range.end.toISOString(),
             pointToLocationKeys: Object.fromEntries(
-              Object.entries(pointToLocationKeys).sort(([a], [b]) => a.localeCompare(b))
-            )
+              Object.entries(pointToLocationKeys).sort(([a], [b]) =>
+                a.localeCompare(b),
+              ),
+            ),
           }
         : null;
 
@@ -1427,7 +1699,7 @@ export class DashboardChartsService {
     return {
       points,
       ...(snapshotStored ? { snapshotId } : {}),
-      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
     };
   }
 
@@ -1440,9 +1712,10 @@ export class DashboardChartsService {
       pointId: string;
       bucketStart?: string;
       limit?: string;
-    }
+    },
   ): Promise<SpacetimeGeoHeatmapArticlesResponse> {
-    const rawPointId = typeof options.pointId === "string" ? options.pointId.trim() : "";
+    const rawPointId =
+      typeof options.pointId === "string" ? options.pointId.trim() : "";
     const normalizePointId = (value: string): string => {
       const parts = value.split(":");
       if (parts.length !== 2) {
@@ -1453,8 +1726,14 @@ export class DashboardChartsService {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
         throw new BadRequestException("Invalid pointId");
       }
-      const clusterLat = roundToStep(clampFinite(lat, -90, 90), SPACETIME_GEO_CLUSTER_STEP_DEG);
-      const clusterLng = roundToStep(clampFinite(lng, -180, 180), SPACETIME_GEO_CLUSTER_STEP_DEG);
+      const clusterLat = roundToStep(
+        clampFinite(lat, -90, 90),
+        SPACETIME_GEO_CLUSTER_STEP_DEG,
+      );
+      const clusterLng = roundToStep(
+        clampFinite(lng, -180, 180),
+        SPACETIME_GEO_CLUSTER_STEP_DEG,
+      );
       return `${clusterLat.toFixed(3)}:${clusterLng.toFixed(3)}`;
     };
     if (!rawPointId) {
@@ -1462,12 +1741,18 @@ export class DashboardChartsService {
     }
     const pointId = normalizePointId(rawPointId);
 
-    const limitRaw = typeof options.limit === "string" ? options.limit.trim() : "";
+    const limitRaw =
+      typeof options.limit === "string" ? options.limit.trim() : "";
     const limitParsed = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
-    const limit = Number.isFinite(limitParsed) && limitParsed > 0 ? Math.min(80, limitParsed) : 30;
+    const limit =
+      Number.isFinite(limitParsed) && limitParsed > 0
+        ? Math.min(80, limitParsed)
+        : 30;
 
-    const eventId = typeof options.eventId === "string" ? options.eventId.trim() : "";
-    const snapshotId = typeof options.snapshotId === "string" ? options.snapshotId.trim() : "";
+    const eventId =
+      typeof options.eventId === "string" ? options.eventId.trim() : "";
+    const snapshotId =
+      typeof options.snapshotId === "string" ? options.snapshotId.trim() : "";
 
     let bucketStart: Date | null = null;
     let bucketEnd: Date | null = null;
@@ -1483,7 +1768,9 @@ export class DashboardChartsService {
     }
 
     const effectiveStart = bucketStart ?? range.start;
-    const effectiveEnd = bucketEnd ? new Date(bucketEnd.getTime() - 1) : range.end;
+    const effectiveEnd = bucketEnd
+      ? new Date(bucketEnd.getTime() - 1)
+      : range.end;
 
     const records = await this.prisma.processedArticle.findMany({
       where: {
@@ -1494,18 +1781,18 @@ export class DashboardChartsService {
               newsEventItems: {
                 some: {
                   orgId,
-                  eventId
-                }
-              }
+                  eventId,
+                },
+              },
             }
           : {}),
         OR: [
           {
             publishedAt: {
               gte: effectiveStart,
-              lte: effectiveEnd
+              lte: effectiveEnd,
             },
-            article: { orgId }
+            article: { orgId },
           },
           {
             publishedAt: null,
@@ -1513,11 +1800,11 @@ export class DashboardChartsService {
               orgId,
               crawlAt: {
                 gte: effectiveStart,
-                lte: effectiveEnd
-              }
-            }
-          }
-        ]
+                lte: effectiveEnd,
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
@@ -1530,12 +1817,12 @@ export class DashboardChartsService {
           select: {
             url: true,
             sourceLabel: true,
-            crawlAt: true
-          }
-        }
+            crawlAt: true,
+          },
+        },
       },
       orderBy: { processedAt: "desc" },
-      take: MAX_SPACETIME_GEO_RECORDS
+      take: MAX_SPACETIME_GEO_RECORDS,
     });
 
     if (records.length === 0) {
@@ -1543,14 +1830,16 @@ export class DashboardChartsService {
         pointId,
         bucketStart: bucketStartIso,
         hasMore: false,
-        articles: []
+        articles: [],
       };
     }
 
     const resolveTimestamp = (record: (typeof records)[number]) =>
       record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
 
-    const sortedRecords = [...records].sort((a, b) => resolveTimestamp(b).getTime() - resolveTimestamp(a).getTime());
+    const sortedRecords = [...records].sort(
+      (a, b) => resolveTimestamp(b).getTime() - resolveTimestamp(a).getTime(),
+    );
     const first = sortedRecords[0];
     const updatedAt = first ? resolveTimestamp(first) : undefined;
 
@@ -1567,13 +1856,18 @@ export class DashboardChartsService {
 
       const rangeStartIso = range.start.toISOString();
       const rangeEndIso = range.end.toISOString();
-      if (snapshot.rangeStart !== rangeStartIso || snapshot.rangeEnd !== rangeEndIso) {
+      if (
+        snapshot.rangeStart !== rangeStartIso ||
+        snapshot.rangeEnd !== rangeEndIso
+      ) {
         throw new BadRequestException("snapshotId does not match range");
       }
 
       const allowedLocationKeysRaw = snapshot.pointToLocationKeys?.[pointId];
       const allowedLocationKeys = Array.isArray(allowedLocationKeysRaw)
-        ? allowedLocationKeysRaw.filter((value) => typeof value === "string" && value.trim())
+        ? allowedLocationKeysRaw.filter(
+            (value) => typeof value === "string" && value.trim(),
+          )
         : [];
       if (allowedLocationKeys.length === 0) {
         return {
@@ -1581,7 +1875,7 @@ export class DashboardChartsService {
           bucketStart: bucketStartIso,
           hasMore: false,
           articles: [],
-          updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+          updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
         };
       }
 
@@ -1593,7 +1887,8 @@ export class DashboardChartsService {
       let hasMore = false;
 
       for (const record of sortedRecords) {
-        const rawLocation = typeof record.location === "string" ? record.location.trim() : "";
+        const rawLocation =
+          typeof record.location === "string" ? record.location.trim() : "";
         if (!rawLocation) {
           continue;
         }
@@ -1612,12 +1907,20 @@ export class DashboardChartsService {
 
         const url = record.article.url ?? null;
         const title = (record.title ?? "").trim() || url || groupKey;
-        const publishedAtIso = record.publishedAt ? record.publishedAt.toISOString() : undefined;
-        const ingestedAtIso = record.article.crawlAt ? record.article.crawlAt.toISOString() : undefined;
-        const processedAtIso = record.processedAt ? record.processedAt.toISOString() : undefined;
+        const publishedAtIso = record.publishedAt
+          ? record.publishedAt.toISOString()
+          : undefined;
+        const ingestedAtIso = record.article.crawlAt
+          ? record.article.crawlAt.toISOString()
+          : undefined;
+        const processedAtIso = record.processedAt
+          ? record.processedAt.toISOString()
+          : undefined;
 
         const cleanedMarkdownRef =
-          typeof record.cleanedMarkdownRef === "string" ? record.cleanedMarkdownRef.trim() : "";
+          typeof record.cleanedMarkdownRef === "string"
+            ? record.cleanedMarkdownRef.trim()
+            : "";
         const processedItemId = cleanedMarkdownRef || null;
         processedItemIdByIndex.push(processedItemId);
         if (processedItemId) {
@@ -1632,17 +1935,24 @@ export class DashboardChartsService {
           location: rawLocation,
           publishedAt: publishedAtIso,
           ingestedAt: ingestedAtIso,
-          processedAt: processedAtIso
+          processedAt: processedAtIso,
         });
       }
 
-      const sentimentByProcessedItemId = new Map<string, SpacetimeSentimentLabel>();
+      const sentimentByProcessedItemId = new Map<
+        string,
+        SpacetimeSentimentLabel
+      >();
       const uniqueProcessedItemIds = Array.from(new Set(processedItemIds));
       if (uniqueProcessedItemIds.length > 0) {
         try {
           const docs = (await ProcessedItemModel.find(
-            { _id: { $in: uniqueProcessedItemIds }, orgId, status: "completed" },
-            { _id: 1, result: 1 }
+            {
+              _id: { $in: uniqueProcessedItemIds },
+              orgId,
+              status: "completed",
+            },
+            { _id: 1, result: 1 },
           )
             .lean()
             .exec()) as unknown;
@@ -1658,11 +1968,15 @@ export class DashboardChartsService {
                 continue;
               }
               const result =
-                payload.result && typeof payload.result === "object" && !Array.isArray(payload.result)
+                payload.result &&
+                typeof payload.result === "object" &&
+                !Array.isArray(payload.result)
                   ? (payload.result as Record<string, unknown>)
                   : null;
               const sentiment = normalizeSentimentLabel(
-                result?.sentiment_label ?? result?.sentimentLabel ?? result?.sentiment
+                result?.sentiment_label ??
+                  result?.sentimentLabel ??
+                  result?.sentiment,
               );
               sentimentByProcessedItemId.set(id, sentiment);
             }
@@ -1688,7 +2002,7 @@ export class DashboardChartsService {
         bucketStart: bucketStartIso,
         hasMore,
         articles,
-        updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+        updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
       };
     }
 
@@ -1698,7 +2012,8 @@ export class DashboardChartsService {
     const candidatesByGroupKey = new Map<string, CandidateAgg>();
 
     for (const record of records) {
-      const rawLocation = typeof record.location === "string" ? record.location.trim() : "";
+      const rawLocation =
+        typeof record.location === "string" ? record.location.trim() : "";
       if (!rawLocation) {
         continue;
       }
@@ -1707,7 +2022,8 @@ export class DashboardChartsService {
         continue;
       }
       const candidate = normalizeLocationCandidate(rawLocation);
-      const agg = candidatesByGroupKey.get(groupKey) ?? new Map<string, number>();
+      const agg =
+        candidatesByGroupKey.get(groupKey) ?? new Map<string, number>();
       agg.set(candidate, (agg.get(candidate) ?? 0) + 1);
       candidatesByGroupKey.set(groupKey, agg);
     }
@@ -1717,7 +2033,7 @@ export class DashboardChartsService {
 
     const resolveClusterForGroupKey = async (
       groupKey: string,
-      candidatesAgg: CandidateAgg
+      candidatesAgg: CandidateAgg,
     ): Promise<string | null> => {
       const cached = clusterByGroupKey.get(groupKey);
       if (cached) {
@@ -1740,12 +2056,16 @@ export class DashboardChartsService {
 
       const trimmedCandidates = candidates.slice(0, 8);
       const resolvedCountry =
-        trimmedCandidates.map((candidate) => extractCountryCodeFromText(candidate)).find(Boolean) ?? null;
+        trimmedCandidates
+          .map((candidate) => extractCountryCodeFromText(candidate))
+          .find(Boolean) ?? null;
 
       const countryHintAlpha3 = normalizeGeoId(resolvedCountry);
       const directAlpha3 = normalizeGeoId(trimmedCandidates[0] ?? "");
       const countryAlpha3 = countryHintAlpha3 ?? directAlpha3;
-      const countryAlpha2 = countryAlpha3 ? getCountryAlpha2(countryAlpha3) ?? undefined : undefined;
+      const countryAlpha2 = countryAlpha3
+        ? (getCountryAlpha2(countryAlpha3) ?? undefined)
+        : undefined;
 
       let lat: number | undefined;
       let lng: number | undefined;
@@ -1759,15 +2079,18 @@ export class DashboardChartsService {
       }
 
       if (lat === undefined || lng === undefined) {
-        let geocode = await this.geocoding.resolveCandidates(trimmedCandidates, {
-          countryCodeAlpha2: countryAlpha2,
-          allowNetwork: false
-        });
+        let geocode = await this.geocoding.resolveCandidates(
+          trimmedCandidates,
+          {
+            countryCodeAlpha2: countryAlpha2,
+            allowNetwork: false,
+          },
+        );
         if (!geocode && networkBudget > 0) {
           networkBudget -= 1;
           geocode = await this.geocoding.resolveCandidates(trimmedCandidates, {
             countryCodeAlpha2: countryAlpha2,
-            allowNetwork: true
+            allowNetwork: true,
           });
         }
         lat = geocode?.lat;
@@ -1794,8 +2117,14 @@ export class DashboardChartsService {
         return null;
       }
 
-      const clusterLat = roundToStep(clampFinite(lat, -90, 90), SPACETIME_GEO_CLUSTER_STEP_DEG);
-      const clusterLng = roundToStep(clampFinite(lng, -180, 180), SPACETIME_GEO_CLUSTER_STEP_DEG);
+      const clusterLat = roundToStep(
+        clampFinite(lat, -90, 90),
+        SPACETIME_GEO_CLUSTER_STEP_DEG,
+      );
+      const clusterLng = roundToStep(
+        clampFinite(lng, -180, 180),
+        SPACETIME_GEO_CLUSTER_STEP_DEG,
+      );
       const clusterKey = `${clusterLat.toFixed(3)}:${clusterLng.toFixed(3)}`;
       clusterByGroupKey.set(groupKey, { clusterKey });
       return clusterKey;
@@ -1807,7 +2136,8 @@ export class DashboardChartsService {
     let hasMore = false;
 
     for (const record of sortedRecords) {
-      const rawLocation = typeof record.location === "string" ? record.location.trim() : "";
+      const rawLocation =
+        typeof record.location === "string" ? record.location.trim() : "";
       if (!rawLocation) {
         continue;
       }
@@ -1821,7 +2151,10 @@ export class DashboardChartsService {
         continue;
       }
 
-      const clusterKey = await resolveClusterForGroupKey(groupKey, candidatesAgg);
+      const clusterKey = await resolveClusterForGroupKey(
+        groupKey,
+        candidatesAgg,
+      );
       if (!clusterKey || clusterKey !== pointId) {
         continue;
       }
@@ -1833,12 +2166,20 @@ export class DashboardChartsService {
 
       const url = record.article.url ?? null;
       const title = (record.title ?? "").trim() || url || groupKey;
-      const publishedAtIso = record.publishedAt ? record.publishedAt.toISOString() : undefined;
-      const ingestedAtIso = record.article.crawlAt ? record.article.crawlAt.toISOString() : undefined;
-      const processedAtIso = record.processedAt ? record.processedAt.toISOString() : undefined;
+      const publishedAtIso = record.publishedAt
+        ? record.publishedAt.toISOString()
+        : undefined;
+      const ingestedAtIso = record.article.crawlAt
+        ? record.article.crawlAt.toISOString()
+        : undefined;
+      const processedAtIso = record.processedAt
+        ? record.processedAt.toISOString()
+        : undefined;
 
       const cleanedMarkdownRef =
-        typeof record.cleanedMarkdownRef === "string" ? record.cleanedMarkdownRef.trim() : "";
+        typeof record.cleanedMarkdownRef === "string"
+          ? record.cleanedMarkdownRef.trim()
+          : "";
       const processedItemId = cleanedMarkdownRef || null;
       processedItemIdByIndex.push(processedItemId);
       if (processedItemId) {
@@ -1853,17 +2194,20 @@ export class DashboardChartsService {
         location: rawLocation,
         publishedAt: publishedAtIso,
         ingestedAt: ingestedAtIso,
-        processedAt: processedAtIso
+        processedAt: processedAtIso,
       });
     }
 
-    const sentimentByProcessedItemId = new Map<string, SpacetimeSentimentLabel>();
+    const sentimentByProcessedItemId = new Map<
+      string,
+      SpacetimeSentimentLabel
+    >();
     const uniqueProcessedItemIds = Array.from(new Set(processedItemIds));
     if (uniqueProcessedItemIds.length > 0) {
       try {
         const docs = (await ProcessedItemModel.find(
           { _id: { $in: uniqueProcessedItemIds }, orgId, status: "completed" },
-          { _id: 1, result: 1 }
+          { _id: 1, result: 1 },
         )
           .lean()
           .exec()) as unknown;
@@ -1879,11 +2223,15 @@ export class DashboardChartsService {
               continue;
             }
             const result =
-              payload.result && typeof payload.result === "object" && !Array.isArray(payload.result)
+              payload.result &&
+              typeof payload.result === "object" &&
+              !Array.isArray(payload.result)
                 ? (payload.result as Record<string, unknown>)
                 : null;
             const sentiment = normalizeSentimentLabel(
-              result?.sentiment_label ?? result?.sentimentLabel ?? result?.sentiment
+              result?.sentiment_label ??
+                result?.sentimentLabel ??
+                result?.sentiment,
             );
             sentimentByProcessedItemId.set(id, sentiment);
           }
@@ -1909,7 +2257,7 @@ export class DashboardChartsService {
       bucketStart: bucketStartIso,
       hasMore,
       articles,
-      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
     };
   }
 
@@ -1921,14 +2269,20 @@ export class DashboardChartsService {
       windowHours?: string;
       maxNodes?: string;
       maxEdges?: string;
-    }
+    },
   ): Promise<SpacetimePropagationResponse> {
-    const eventId = typeof options.eventId === "string" ? options.eventId.trim() : "";
+    const eventId =
+      typeof options.eventId === "string" ? options.eventId.trim() : "";
     if (!eventId) {
       throw new BadRequestException("eventId is required");
     }
 
-    const parseBoundedInt = (raw: string | undefined, fallback: number, min: number, max: number) => {
+    const parseBoundedInt = (
+      raw: string | undefined,
+      fallback: number,
+      min: number,
+      max: number,
+    ) => {
       if (!raw) {
         return fallback;
       }
@@ -1973,9 +2327,9 @@ export class DashboardChartsService {
             {
               publishedAt: {
                 gte: range.start,
-                lte: range.end
+                lte: range.end,
               },
-              article: { orgId }
+              article: { orgId },
             },
             {
               publishedAt: null,
@@ -1983,12 +2337,12 @@ export class DashboardChartsService {
                 orgId,
                 crawlAt: {
                   gte: range.start,
-                  lte: range.end
-                }
-              }
-            }
-          ]
-        }
+                  lte: range.end,
+                },
+              },
+            },
+          ],
+        },
       },
       select: {
         processedItemId: true,
@@ -2004,14 +2358,14 @@ export class DashboardChartsService {
               select: {
                 url: true,
                 sourceLabel: true,
-                crawlAt: true
-              }
-            }
-          }
-        }
+                crawlAt: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [{ createdAt: "desc" }],
-      take: 2000
+      take: 2000,
     });
 
     interface Signal {
@@ -2022,7 +2376,10 @@ export class DashboardChartsService {
     }
 
     const signals: Signal[] = [];
-    const nodeAgg = new Map<string, { count: number; firstMs: number; lastMs: number }>();
+    const nodeAgg = new Map<
+      string,
+      { count: number; firstMs: number; lastMs: number }
+    >();
     const signalByProcessedItemId = new Map<string, Signal>();
     let updatedAt: Date | undefined;
 
@@ -2032,7 +2389,8 @@ export class DashboardChartsService {
         continue;
       }
       const article = processed.article;
-      const ts = processed.publishedAt ?? article?.crawlAt ?? processed.processedAt;
+      const ts =
+        processed.publishedAt ?? article?.crawlAt ?? processed.processedAt;
       if (!ts) {
         continue;
       }
@@ -2043,15 +2401,21 @@ export class DashboardChartsService {
 
       const source = resolveSourceKey(article?.sourceLabel, article?.url);
       const processedItemIdCandidate =
-        (typeof row.processedItemId === "string" ? row.processedItemId.trim() : "") ||
-        (typeof processed.cleanedMarkdownRef === "string" ? processed.cleanedMarkdownRef.trim() : "");
-      const processedItemId = processedItemIdCandidate ? processedItemIdCandidate : null;
+        (typeof row.processedItemId === "string"
+          ? row.processedItemId.trim()
+          : "") ||
+        (typeof processed.cleanedMarkdownRef === "string"
+          ? processed.cleanedMarkdownRef.trim()
+          : "");
+      const processedItemId = processedItemIdCandidate
+        ? processedItemIdCandidate
+        : null;
 
       const signal: Signal = {
         processedArticleId: processed.id,
         processedItemId,
         source,
-        timestampMs: tsMs
+        timestampMs: tsMs,
       };
       signals.push(signal);
 
@@ -2080,7 +2444,7 @@ export class DashboardChartsService {
         windowHours,
         nodes: [],
         edges: [],
-        updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+        updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
       };
     }
 
@@ -2105,7 +2469,7 @@ export class DashboardChartsService {
       target: string,
       lagMs: number,
       tsMs: number,
-      similarity?: number | null
+      similarity?: number | null,
     ) => {
       if (!source || !target || source === target) {
         return;
@@ -2122,9 +2486,11 @@ export class DashboardChartsService {
           lagCount: 1,
           firstMs: tsMs,
           lastMs: tsMs,
-          ...(kind === "duplicate" && typeof similarity === "number" && Number.isFinite(similarity)
+          ...(kind === "duplicate" &&
+          typeof similarity === "number" &&
+          Number.isFinite(similarity)
             ? { similaritySum: similarity, similarityCount: 1 }
-            : {})
+            : {}),
         });
         return;
       }
@@ -2133,7 +2499,11 @@ export class DashboardChartsService {
       existing.lagCount += 1;
       existing.firstMs = Math.min(existing.firstMs, tsMs);
       existing.lastMs = Math.max(existing.lastMs, tsMs);
-      if (kind === "duplicate" && typeof similarity === "number" && Number.isFinite(similarity)) {
+      if (
+        kind === "duplicate" &&
+        typeof similarity === "number" &&
+        Number.isFinite(similarity)
+      ) {
         existing.similaritySum = (existing.similaritySum ?? 0) + similarity;
         existing.similarityCount = (existing.similarityCount ?? 0) + 1;
       }
@@ -2145,15 +2515,15 @@ export class DashboardChartsService {
       new Set(
         signals
           .map((signal) => signal.processedItemId ?? "")
-          .filter((id) => id.length > 0)
-      )
+          .filter((id) => id.length > 0),
+      ),
     );
 
     if (processedItemIds.length > 0) {
       try {
         const docs = (await ProcessedItemModel.find(
           { _id: { $in: processedItemIds }, orgId, status: "completed" },
-          { _id: 1, duplicateOf: 1, duplicateSimilarity: 1 }
+          { _id: 1, duplicateOf: 1, duplicateSimilarity: 1 },
         )
           .lean()
           .exec()) as unknown;
@@ -2180,7 +2550,8 @@ export class DashboardChartsService {
             const lagMs = Math.abs(child.timestampMs - parent.timestampMs);
             const tsMs = Math.max(child.timestampMs, parent.timestampMs);
             const similarity =
-              typeof payload.duplicateSimilarity === "number" && Number.isFinite(payload.duplicateSimilarity)
+              typeof payload.duplicateSimilarity === "number" &&
+              Number.isFinite(payload.duplicateSimilarity)
                 ? payload.duplicateSimilarity
                 : null;
 
@@ -2200,7 +2571,10 @@ export class DashboardChartsService {
 
     for (let idx = 0; idx < signals.length; idx += 1) {
       const signal = signals[idx]!;
-      if (signal.processedItemId && handledDuplicateChildren.has(signal.processedItemId)) {
+      if (
+        signal.processedItemId &&
+        handledDuplicateChildren.has(signal.processedItemId)
+      ) {
         continue;
       }
       for (let prevIdx = idx - 1; prevIdx >= 0; prevIdx -= 1) {
@@ -2212,7 +2586,13 @@ export class DashboardChartsService {
         if (prev.source === signal.source) {
           continue;
         }
-        pushEdge("time", prev.source, signal.source, deltaMs, signal.timestampMs);
+        pushEdge(
+          "time",
+          prev.source,
+          signal.source,
+          deltaMs,
+          signal.timestampMs,
+        );
         break;
       }
     }
@@ -2225,7 +2605,7 @@ export class DashboardChartsService {
         name: source,
         count: agg.count,
         firstAt: new Date(agg.firstMs).toISOString(),
-        lastAt: new Date(agg.lastMs).toISOString()
+        lastAt: new Date(agg.lastMs).toISOString(),
       }));
 
     const allowed = new Set(sortedNodes.map((node) => node.id));
@@ -2237,7 +2617,9 @@ export class DashboardChartsService {
       .map((edge) => {
         const avgLagMs = edge.lagCount > 0 ? edge.lagSumMs / edge.lagCount : 0;
         const avgDuplicateSimilarity =
-          edge.kind === "duplicate" && edge.similarityCount && edge.similarityCount > 0
+          edge.kind === "duplicate" &&
+          edge.similarityCount &&
+          edge.similarityCount > 0
             ? (edge.similaritySum ?? 0) / edge.similarityCount
             : undefined;
         return {
@@ -2248,7 +2630,9 @@ export class DashboardChartsService {
           avgLagMs,
           firstAt: new Date(edge.firstMs).toISOString(),
           lastAt: new Date(edge.lastMs).toISOString(),
-          ...(avgDuplicateSimilarity !== undefined ? { avgDuplicateSimilarity } : {})
+          ...(avgDuplicateSimilarity !== undefined
+            ? { avgDuplicateSimilarity }
+            : {}),
         };
       });
 
@@ -2257,7 +2641,7 @@ export class DashboardChartsService {
       windowHours,
       nodes: sortedNodes,
       edges: sortedEdges,
-      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
     };
   }
 
@@ -2270,20 +2654,26 @@ export class DashboardChartsService {
       cursorStart?: string;
       cursorEnd?: string;
       limit?: string;
-    }
+    },
   ): Promise<SpacetimePropagationArticlesResponse> {
-    const eventId = typeof options.eventId === "string" ? options.eventId.trim() : "";
+    const eventId =
+      typeof options.eventId === "string" ? options.eventId.trim() : "";
     if (!eventId) {
       throw new BadRequestException("eventId is required");
     }
-    const source = typeof options.source === "string" ? options.source.trim() : "";
+    const source =
+      typeof options.source === "string" ? options.source.trim() : "";
     if (!source) {
       throw new BadRequestException("source is required");
     }
 
-    const limitRaw = typeof options.limit === "string" ? options.limit.trim() : "";
+    const limitRaw =
+      typeof options.limit === "string" ? options.limit.trim() : "";
     const limitParsed = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
-    const limit = Number.isFinite(limitParsed) && limitParsed > 0 ? Math.min(100, limitParsed) : 30;
+    const limit =
+      Number.isFinite(limitParsed) && limitParsed > 0
+        ? Math.min(100, limitParsed)
+        : 30;
 
     const parseIsoDate = (raw?: string): Date | null => {
       if (!raw || typeof raw !== "string") {
@@ -2334,9 +2724,9 @@ export class DashboardChartsService {
             {
               publishedAt: {
                 gte: range.start,
-                lte: range.end
+                lte: range.end,
               },
-              article: { orgId }
+              article: { orgId },
             },
             {
               publishedAt: null,
@@ -2344,12 +2734,12 @@ export class DashboardChartsService {
                 orgId,
                 crawlAt: {
                   gte: range.start,
-                  lte: range.end
-                }
-              }
-            }
-          ]
-        }
+                  lte: range.end,
+                },
+              },
+            },
+          ],
+        },
       },
       select: {
         processedItemId: true,
@@ -2365,14 +2755,14 @@ export class DashboardChartsService {
               select: {
                 url: true,
                 sourceLabel: true,
-                crawlAt: true
-              }
-            }
-          }
-        }
+                crawlAt: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [{ createdAt: "desc" }],
-      take: 2000
+      take: 2000,
     });
 
     const matches: {
@@ -2400,7 +2790,8 @@ export class DashboardChartsService {
         continue;
       }
 
-      const ts = processed.publishedAt ?? article?.crawlAt ?? processed.processedAt;
+      const ts =
+        processed.publishedAt ?? article?.crawlAt ?? processed.processedAt;
       if (!ts) {
         continue;
       }
@@ -2417,25 +2808,38 @@ export class DashboardChartsService {
 
       const url = article?.url ?? null;
       const title = (processed.title ?? "").trim() || url || sourceKey;
-      const publishedAtIso = processed.publishedAt ? processed.publishedAt.toISOString() : undefined;
-      const ingestedAtIso = article?.crawlAt ? article.crawlAt.toISOString() : undefined;
-      const processedAtIso = processed.processedAt ? processed.processedAt.toISOString() : undefined;
+      const publishedAtIso = processed.publishedAt
+        ? processed.publishedAt.toISOString()
+        : undefined;
+      const ingestedAtIso = article?.crawlAt
+        ? article.crawlAt.toISOString()
+        : undefined;
+      const processedAtIso = processed.processedAt
+        ? processed.processedAt.toISOString()
+        : undefined;
 
       const processedItemIdCandidate =
-        (typeof row.processedItemId === "string" ? row.processedItemId.trim() : "") ||
-        (typeof processed.cleanedMarkdownRef === "string" ? processed.cleanedMarkdownRef.trim() : "");
-      const processedItemId = processedItemIdCandidate ? processedItemIdCandidate : null;
+        (typeof row.processedItemId === "string"
+          ? row.processedItemId.trim()
+          : "") ||
+        (typeof processed.cleanedMarkdownRef === "string"
+          ? processed.cleanedMarkdownRef.trim()
+          : "");
+      const processedItemId = processedItemIdCandidate
+        ? processedItemIdCandidate
+        : null;
 
       matches.push({
         processedArticleId: processed.id,
         processedItemId,
         title,
         url,
-        sourceLabel: typeof article?.sourceLabel === "string" ? article.sourceLabel : null,
+        sourceLabel:
+          typeof article?.sourceLabel === "string" ? article.sourceLabel : null,
         publishedAt: publishedAtIso,
         ingestedAt: ingestedAtIso,
         processedAt: processedAtIso,
-        tsMs
+        tsMs,
       });
 
       updatedAt = !updatedAt || ts > updatedAt ? ts : updatedAt;
@@ -2450,16 +2854,19 @@ export class DashboardChartsService {
       new Set(
         selected
           .map((row) => row.processedItemId ?? "")
-          .filter((id) => id.length > 0)
-      )
+          .filter((id) => id.length > 0),
+      ),
     );
 
-    const sentimentByProcessedItemId = new Map<string, SpacetimeSentimentLabel>();
+    const sentimentByProcessedItemId = new Map<
+      string,
+      SpacetimeSentimentLabel
+    >();
     if (processedItemIds.length > 0) {
       try {
         const docs = (await ProcessedItemModel.find(
           { _id: { $in: processedItemIds }, orgId, status: "completed" },
-          { _id: 1, result: 1 }
+          { _id: 1, result: 1 },
         )
           .lean()
           .exec()) as unknown;
@@ -2475,11 +2882,15 @@ export class DashboardChartsService {
               continue;
             }
             const result =
-              payload.result && typeof payload.result === "object" && !Array.isArray(payload.result)
+              payload.result &&
+              typeof payload.result === "object" &&
+              !Array.isArray(payload.result)
                 ? (payload.result as Record<string, unknown>)
                 : null;
             const sentiment = normalizeSentimentLabel(
-              result?.sentiment_label ?? result?.sentimentLabel ?? result?.sentiment
+              result?.sentiment_label ??
+                result?.sentimentLabel ??
+                result?.sentiment,
             );
             sentimentByProcessedItemId.set(id, sentiment);
           }
@@ -2497,9 +2908,10 @@ export class DashboardChartsService {
       publishedAt: row.publishedAt,
       ingestedAt: row.ingestedAt,
       processedAt: row.processedAt,
-      ...(row.processedItemId && sentimentByProcessedItemId.has(row.processedItemId)
+      ...(row.processedItemId &&
+      sentimentByProcessedItemId.has(row.processedItemId)
         ? { sentiment: sentimentByProcessedItemId.get(row.processedItemId)! }
-        : {})
+        : {}),
     }));
 
     return {
@@ -2509,7 +2921,7 @@ export class DashboardChartsService {
       cursorEnd: cursorEndIso,
       hasMore,
       articles,
-      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
     };
   }
 
@@ -2520,7 +2932,10 @@ export class DashboardChartsService {
     const index = new Map<string, { name: string; lat: number; lng: number }>();
     const payload = worldGeoJson as GeoJsonFeatureCollection;
     for (const feature of payload.features) {
-      const name = typeof feature.properties?.name === "string" ? feature.properties?.name : null;
+      const name =
+        typeof feature.properties?.name === "string"
+          ? feature.properties?.name
+          : null;
       const id = typeof feature.id === "string" ? feature.id : null;
       const code = normalizeGeoId(id ?? name);
       if (!code || !name || !feature.geometry) {
@@ -2536,7 +2951,9 @@ export class DashboardChartsService {
     return index;
   }
 
-  private resolveCentroid(geometry: GeoJsonGeometry): { lat: number; lng: number } | null {
+  private resolveCentroid(
+    geometry: GeoJsonGeometry,
+  ): { lat: number; lng: number } | null {
     const positions: [number, number][] = [];
     const collectPositions = (input: unknown) => {
       if (!input) {
@@ -2555,8 +2972,13 @@ export class DashboardChartsService {
       }
     };
 
-    if (geometry.type === "GeometryCollection" && Array.isArray(geometry.geometries)) {
-      geometry.geometries.forEach((child) => collectPositions(child.coordinates));
+    if (
+      geometry.type === "GeometryCollection" &&
+      Array.isArray(geometry.geometries)
+    ) {
+      geometry.geometries.forEach((child) =>
+        collectPositions(child.coordinates),
+      );
     } else {
       collectPositions(geometry.coordinates);
     }
@@ -2586,7 +3008,7 @@ export class DashboardChartsService {
 
     return {
       lng: (minLng + maxLng) / 2,
-      lat: (minLat + maxLat) / 2
+      lat: (minLat + maxLat) / 2,
     };
   }
 
@@ -2597,25 +3019,29 @@ export class DashboardChartsService {
         categories: {
           some: {
             category: {
-              key: DEFAULT_SECTOR_CATEGORY
-            }
-          }
-        }
+              key: DEFAULT_SECTOR_CATEGORY,
+            },
+          },
+        },
       },
       select: {
         id: true,
         slug: true,
         displayName: true,
         defaultUnit: true,
-        metadata: true
+        metadata: true,
       },
       orderBy: { displayName: "asc" },
-      take: MAX_SECTOR_CELLS
+      take: MAX_SECTOR_CELLS,
     });
 
-    const xLabels = Array.from({ length: HEATMAP_COLUMNS }, (_, idx) => `Group ${String.fromCharCode(65 + idx)}`);
-    const yLabels = Array.from({ length: Math.max(1, Math.ceil(MAX_SECTOR_CELLS / HEATMAP_COLUMNS)) }, (_, idx) =>
-      `Row ${idx + 1}`
+    const xLabels = Array.from(
+      { length: HEATMAP_COLUMNS },
+      (_, idx) => `Group ${String.fromCharCode(65 + idx)}`,
+    );
+    const yLabels = Array.from(
+      { length: Math.max(1, Math.ceil(MAX_SECTOR_CELLS / HEATMAP_COLUMNS)) },
+      (_, idx) => `Row ${idx + 1}`,
     );
 
     if (items.length === 0) {
@@ -2626,14 +3052,14 @@ export class DashboardChartsService {
       by: ["itemId", "sourceField"],
       where: {
         itemId: {
-          in: items.map((item) => item.id)
+          in: items.map((item) => item.id),
         },
         recordedAt: {
           gte: range.start,
-          lte: range.end
-        }
+          lte: range.end,
+        },
       },
-      _count: { _all: true }
+      _count: { _all: true },
     });
 
     const availableFieldsByItemId = new Map<string, Set<string>>();
@@ -2666,7 +3092,8 @@ export class DashboardChartsService {
 
       const config = getDataVizConfig(item.metadata);
       const preferredKeys =
-        config.heatmap.preferredSourceFields && config.heatmap.preferredSourceFields.length > 0
+        config.heatmap.preferredSourceFields &&
+        config.heatmap.preferredSourceFields.length > 0
           ? uniqStrings(config.heatmap.preferredSourceFields)
           : [...PREFERRED_SOURCE_FIELDS];
       const labelToField = buildLabelToSourceFieldMap(item.metadata);
@@ -2675,7 +3102,7 @@ export class DashboardChartsService {
       const fieldKey = resolvePreferredSourceField(
         seriesByField,
         preferredKeys,
-        labelToField
+        labelToField,
       );
       if (!fieldKey) {
         mappingErrors.push({
@@ -2683,7 +3110,9 @@ export class DashboardChartsService {
           slug: item.slug,
           displayName: item.displayName,
           preferredSourceFields: preferredKeys,
-          availableSourceFields: Array.from(fields).sort((a, b) => a.localeCompare(b))
+          availableSourceFields: Array.from(fields).sort((a, b) =>
+            a.localeCompare(b),
+          ),
         });
         continue;
       }
@@ -2693,8 +3122,8 @@ export class DashboardChartsService {
         sourceField: fieldKey,
         recordedAt: {
           gte: range.start,
-          lte: range.end
-        }
+          lte: range.end,
+        },
       };
 
       const [firstPoint, lastPoint] = await Promise.all([
@@ -2703,19 +3132,19 @@ export class DashboardChartsService {
           select: {
             recordedAt: true,
             value: true,
-            unit: true
+            unit: true,
           },
-          orderBy: { recordedAt: "asc" }
+          orderBy: { recordedAt: "asc" },
         }),
         this.prisma.economicDataPoint.findFirst({
           where: pointWhere,
           select: {
             recordedAt: true,
             value: true,
-            unit: true
+            unit: true,
           },
-          orderBy: { recordedAt: "desc" }
-        })
+          orderBy: { recordedAt: "desc" },
+        }),
       ]);
 
       if (!firstPoint || !lastPoint) {
@@ -2724,9 +3153,14 @@ export class DashboardChartsService {
 
       const firstValue = Number(firstPoint.value ?? 0);
       const lastValue = Number(lastPoint.value ?? 0);
-      const unit = (lastPoint.unit as string | null | undefined) ?? item.defaultUnit ?? null;
+      const unit =
+        (lastPoint.unit as string | null | undefined) ??
+        item.defaultUnit ??
+        null;
       const change =
-        firstValue === 0 ? 0 : ((lastValue - firstValue) / Math.abs(firstValue)) * 100;
+        firstValue === 0
+          ? 0
+          : ((lastValue - firstValue) / Math.abs(firstValue)) * 100;
 
       const index = cells.length;
       const x = index % HEATMAP_COLUMNS;
@@ -2738,7 +3172,7 @@ export class DashboardChartsService {
         value: Number(lastValue.toFixed(2)),
         change: Number(change.toFixed(2)),
         unit,
-        sourceField: fieldKey
+        sourceField: fieldKey,
       });
 
       if (lastPoint && (!updatedAt || lastPoint.recordedAt > updatedAt)) {
@@ -2756,7 +3190,7 @@ export class DashboardChartsService {
         message: "Sector heatmap field mapping mismatch",
         detail:
           "No preferred sourceField matched for one or more items. Configure EconomicDataItem.metadata.dataViz.heatmap.preferredSourceFields.",
-        items: mappingErrors
+        items: mappingErrors,
       });
     }
 
@@ -2765,11 +3199,13 @@ export class DashboardChartsService {
       xLabels,
       yLabels: yLabels.slice(0, rowCount),
       cells,
-      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
     };
   }
 
-  async getFinancialCandlestick(range: DateRange): Promise<FinancialCandlestickResponse> {
+  async getFinancialCandlestick(
+    range: DateRange,
+  ): Promise<FinancialCandlestickResponse> {
     const item = await this.prisma.economicDataItem.findUnique({
       where: { slug: DEFAULT_CANDLESTICK_SLUG },
       select: {
@@ -2777,15 +3213,15 @@ export class DashboardChartsService {
         displayName: true,
         defaultFrequency: true,
         defaultUnit: true,
-        metadata: true
-      }
+        metadata: true,
+      },
     });
 
     if (!item) {
       return {
         symbol: DEFAULT_CANDLESTICK_SLUG,
         interval: "daily",
-        points: []
+        points: [],
       };
     }
 
@@ -2794,7 +3230,10 @@ export class DashboardChartsService {
     const ohlcAliases = (Object.keys(OHLC_FIELD_ALIASES) as OhlcField[]).reduce(
       (acc, field) => {
         const configured = config.candlestick.ohlc?.[field];
-        const merged = configured && configured.length > 0 ? configured : OHLC_FIELD_ALIASES[field];
+        const merged =
+          configured && configured.length > 0
+            ? configured
+            : OHLC_FIELD_ALIASES[field];
         const expanded: string[] = [];
         for (const alias of merged) {
           expanded.push(alias);
@@ -2806,16 +3245,18 @@ export class DashboardChartsService {
         acc[field] = uniqStrings(expanded);
         return acc;
       },
-      {} as Record<OhlcField, string[]>
+      {} as Record<OhlcField, string[]>,
     );
 
     const aliasToField = new Map<string, OhlcField>();
-    const aliasRankByField = (Object.keys(OHLC_FIELD_ALIASES) as OhlcField[]).reduce(
+    const aliasRankByField = (
+      Object.keys(OHLC_FIELD_ALIASES) as OhlcField[]
+    ).reduce(
       (acc, field) => {
         acc[field] = new Map<string, number>();
         return acc;
       },
-      {} as Record<OhlcField, Map<string, number>>
+      {} as Record<OhlcField, Map<string, number>>,
     );
 
     for (const field of Object.keys(ohlcAliases) as OhlcField[]) {
@@ -2836,13 +3277,13 @@ export class DashboardChartsService {
         itemId: item.id,
         recordedAt: {
           gte: range.start,
-          lte: range.end
+          lte: range.end,
         },
         sourceField: {
-          in: uniqStrings(Object.values(ohlcAliases).flat())
-        }
+          in: uniqStrings(Object.values(ohlcAliases).flat()),
+        },
       },
-      orderBy: { recordedAt: "asc" }
+      orderBy: { recordedAt: "asc" },
     });
 
     if (points.length === 0) {
@@ -2851,9 +3292,9 @@ export class DashboardChartsService {
           itemId: item.id,
           recordedAt: {
             gte: range.start,
-            lte: range.end
-          }
-        }
+            lte: range.end,
+          },
+        },
       });
       if (totalPoints > 0) {
         const available = await this.prisma.economicDataPoint.findMany({
@@ -2861,12 +3302,12 @@ export class DashboardChartsService {
             itemId: item.id,
             recordedAt: {
               gte: range.start,
-              lte: range.end
-            }
+              lte: range.end,
+            },
           },
           distinct: ["sourceField"],
           select: { sourceField: true },
-          take: 50
+          take: 50,
         });
 
         throw new InternalServerErrorException({
@@ -2877,10 +3318,12 @@ export class DashboardChartsService {
           item: {
             id: item.id,
             slug: DEFAULT_CANDLESTICK_SLUG,
-            displayName: item.displayName
+            displayName: item.displayName,
           },
           expectedAliases: ohlcAliases,
-          availableSourceFields: available.map((entry) => entry.sourceField).sort((a, b) => a.localeCompare(b))
+          availableSourceFields: available
+            .map((entry) => entry.sourceField)
+            .sort((a, b) => a.localeCompare(b)),
         });
       }
     }
@@ -2889,8 +3332,12 @@ export class DashboardChartsService {
       (points.find((point) => point.unit)?.unit as string | null | undefined) ??
       item.defaultUnit ??
       null;
-    const sourceFields: Partial<Record<keyof typeof OHLC_FIELD_ALIASES, string>> = {};
-    const sourceFieldRanks: Partial<Record<keyof typeof OHLC_FIELD_ALIASES, number>> = {};
+    const sourceFields: Partial<
+      Record<keyof typeof OHLC_FIELD_ALIASES, string>
+    > = {};
+    const sourceFieldRanks: Partial<
+      Record<keyof typeof OHLC_FIELD_ALIASES, number>
+    > = {};
     const grouped = new Map<
       string,
       {
@@ -2907,14 +3354,15 @@ export class DashboardChartsService {
       const normalizedSourceField = normalizeSourceFieldKey(point.sourceField);
       const field = aliasToField.get(normalizedSourceField);
       if (!field) continue;
-      const rank = aliasRankByField[field].get(normalizedSourceField) ?? Number.MAX_SAFE_INTEGER;
+      const rank =
+        aliasRankByField[field].get(normalizedSourceField) ??
+        Number.MAX_SAFE_INTEGER;
 
       const key = point.recordedAt.toISOString();
-      const entry =
-        grouped.get(key) ?? {
-          timestamp: point.recordedAt,
-          ranks: {}
-        };
+      const entry = grouped.get(key) ?? {
+        timestamp: point.recordedAt,
+        ranks: {},
+      };
       const existingRank = entry.ranks[field];
       if (existingRank === undefined || rank < existingRank) {
         entry[field] = Number(point.value);
@@ -2930,7 +3378,7 @@ export class DashboardChartsService {
     }
 
     const sorted = Array.from(grouped.values()).sort(
-      (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+      (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
     );
 
     const resultPoints: FinancialCandlestickPoint[] = [];
@@ -2949,8 +3397,8 @@ export class DashboardChartsService {
           item: {
             id: item.id,
             slug: DEFAULT_CANDLESTICK_SLUG,
-            displayName: item.displayName
-          }
+            displayName: item.displayName,
+          },
         });
       }
 
@@ -2964,7 +3412,7 @@ export class DashboardChartsService {
         open,
         close,
         high,
-        low
+        low,
       });
 
       updatedAt = entry.timestamp;
@@ -2975,8 +3423,11 @@ export class DashboardChartsService {
       interval: item.defaultFrequency,
       points: resultPoints,
       unit,
-      sourceFields: Object.keys(sourceFields).length > 0 ? (sourceFields as Record<string, string>) : undefined,
-      updatedAt: updatedAt ? updatedAt.toISOString() : undefined
+      sourceFields:
+        Object.keys(sourceFields).length > 0
+          ? (sourceFields as Record<string, string>)
+          : undefined,
+      updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
     };
   }
 }

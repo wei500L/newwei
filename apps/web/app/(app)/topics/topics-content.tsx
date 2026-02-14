@@ -1,9 +1,9 @@
 'use client';
 
 import { gql, useQuery } from '@apollo/client';
-import { Button, Card, Col, Drawer, Empty, Grid, List, Row, Select, Skeleton, Space, Tag, Tooltip, Typography } from 'antd';
+import { Button, Card, Col, Drawer, Empty, Grid, List, Row, Select, Skeleton, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { NewsCard } from '@/app/(app)/items/components/news-card';
@@ -108,6 +108,17 @@ const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_EVENT_LIMIT = 8;
 const DEFAULT_EVENT_ITEMS_PER_GROUP = 4;
 const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
+const DEFAULT_TAB = 'events' as const;
+
+const DATE_TIME_FORMAT = {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit'
+} as const;
+
+type TopicsTabKey = 'events' | 'topics';
 
 interface TopicsContentProps {
   initialData?: {
@@ -127,6 +138,23 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
   return parsed;
 };
 
+const uniqueLabels = (values: (string | null | undefined)[]) => {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim() ?? '')
+        .filter((value) => value.length > 0)
+    )
+  );
+};
+
+const splitPreview = <T,>(values: T[], max: number) => {
+  return {
+    visible: values.slice(0, max),
+    hiddenCount: Math.max(values.length - max, 0)
+  };
+};
+
 export function TopicsContent({ initialData = null }: TopicsContentProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -136,6 +164,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
   });
   const screens = Grid.useBreakpoint();
   const [selectedEvent, setSelectedEvent] = useState<EventGroup | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<TopicGroup | null>(null);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -147,11 +176,17 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
     () => parsePositiveInt(searchParams.get('minGroup'), DEFAULT_EVENT_MIN_GROUP_SIZE),
     [searchParams]
   );
+  const activeTab = useMemo<TopicsTabKey>(() => {
+    const value = searchParams.get('tab');
+    return value === 'topics' ? 'topics' : DEFAULT_TAB;
+  }, [searchParams]);
+
   const updateFilters = useCallback(
-    (updates: { windowDays?: number; minGroupSize?: number }) => {
+    (updates: { windowDays?: number; minGroupSize?: number; tab?: TopicsTabKey }) => {
       const next = new URLSearchParams(searchParams.toString());
       const nextWindow = updates.windowDays ?? windowDays;
       const nextMinGroup = updates.minGroupSize ?? minGroupSize;
+      const nextTab = updates.tab ?? activeTab;
       if (nextWindow === DEFAULT_WINDOW_DAYS) {
         next.delete('window');
       } else {
@@ -162,13 +197,18 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
       } else {
         next.set('minGroup', String(nextMinGroup));
       }
+      if (nextTab === DEFAULT_TAB) {
+        next.delete('tab');
+      } else {
+        next.set('tab', nextTab);
+      }
       const nextQuery = next.toString();
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
     },
-    [minGroupSize, pathname, router, searchParams, windowDays]
+    [activeTab, minGroupSize, pathname, router, searchParams, windowDays]
   );
 
-  const { data, loading, refetch } = useQuery<{
+  const { data, loading, error, refetch } = useQuery<{
     topicGroups: TopicGroup[];
     eventGroups: EventGroup[];
   }>(TOPIC_GROUPS_QUERY, {
@@ -185,18 +225,8 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
   });
 
   const resolvedData = data ?? initialData ?? undefined;
-  const groups = resolvedData?.topicGroups ?? [];
-  const eventGroups = resolvedData?.eventGroups ?? [];
   const sortedEventGroups = useMemo(() => {
-    return [...eventGroups].sort((a, b) => {
-      const timeDiff = dayjs(b.latestAt).valueOf() - dayjs(a.latestAt).valueOf();
-      if (timeDiff !== 0) {
-        return timeDiff;
-      }
-      return b.count - a.count;
-    });
-  }, [eventGroups]);
-  const sortedGroups = useMemo(() => {
+    const groups = resolvedData?.eventGroups ?? [];
     return [...groups].sort((a, b) => {
       const timeDiff = dayjs(b.latestAt).valueOf() - dayjs(a.latestAt).valueOf();
       if (timeDiff !== 0) {
@@ -204,9 +234,19 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
       }
       return b.count - a.count;
     });
-  }, [groups]);
-  const cardSpan = screens.xl ? 6 : screens.lg ? 8 : screens.md ? 12 : 24;
+  }, [resolvedData?.eventGroups]);
+  const sortedGroups = useMemo(() => {
+    const groups = resolvedData?.topicGroups ?? [];
+    return [...groups].sort((a, b) => {
+      const timeDiff = dayjs(b.latestAt).valueOf() - dayjs(a.latestAt).valueOf();
+      if (timeDiff !== 0) {
+        return timeDiff;
+      }
+      return b.count - a.count;
+    });
+  }, [resolvedData?.topicGroups]);
   const drawerWidth = screens.lg ? 720 : undefined;
+
   const windowOptions = useMemo(
     () =>
       [7, 14, 30, 90].map((days) => ({
@@ -218,6 +258,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
       })),
     [t]
   );
+
   const groupSizeOptions = useMemo(
     () =>
       [2, 3, 5].map((size) => ({
@@ -241,6 +282,23 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
     );
   };
 
+  const openEventDrawer = useCallback((group: EventGroup) => {
+    setSelectedTopic(null);
+    setSelectedEvent(group);
+  }, []);
+
+  const openTopicDrawer = useCallback((group: TopicGroup) => {
+    setSelectedEvent(null);
+    setSelectedTopic(group);
+  }, []);
+
+  const onRowKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>, action: () => void) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      action();
+    }
+  }, []);
+
   const selectedEventTitle = selectedEvent ? resolveEventTitle(selectedEvent) : '';
   const selectedEventTopics = selectedEvent?.topics ?? [];
   const selectedEventEntities = selectedEvent?.entities ?? [];
@@ -248,11 +306,9 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
     if (!selectedEvent) {
       return [];
     }
-    const sources = selectedEvent.items
-      .map((item) => item.source)
-      .filter((source): source is string => Boolean(source));
-    return Array.from(new Set(sources));
+    return uniqueLabels(selectedEvent.items.map((item) => item.source));
   }, [selectedEvent]);
+
   const selectedEventItems = useMemo(() => {
     if (!selectedEvent) {
       return [];
@@ -264,6 +320,24 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
     });
   }, [selectedEvent]);
 
+  const selectedTopicSources = useMemo(() => {
+    if (!selectedTopic) {
+      return [];
+    }
+    return uniqueLabels(selectedTopic.items.map((item) => item.source));
+  }, [selectedTopic]);
+
+  const selectedTopicItems = useMemo(() => {
+    if (!selectedTopic) {
+      return [];
+    }
+    return [...selectedTopic.items].sort((a, b) => {
+      const aTime = dayjs(a.publishedAt ?? a.createdAt).valueOf();
+      const bTime = dayjs(b.publishedAt ?? b.createdAt).valueOf();
+      return bTime - aTime;
+    });
+  }, [selectedTopic]);
+
   let content: ReactNode;
   if (loading && sortedGroups.length === 0 && sortedEventGroups.length === 0) {
     content = (
@@ -271,203 +345,275 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
         <Skeleton active paragraph={{ rows: 6 }} />
       </Card>
     );
-  } else if (!loading && sortedGroups.length === 0 && sortedEventGroups.length === 0) {
-    content = (
-      <Empty
-        description={t('pages.topics.empty', {
-          defaultValue: 'Aggregation not ready yet. Try widening the window.'
-        })}
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-      />
-    );
   } else {
     content = (
-      <div className="flex flex-col gap-6">
-        <Space align="center" size="middle" wrap>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t('pages.topics.title', { defaultValue: 'Topics & Events' })}
-          </Typography.Title>
-          <Button size="small" onClick={() => void refetch()}>
-            {t('common.refresh')}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <Space direction="vertical" size={2}>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {t('pages.topics.title', { defaultValue: 'Topics & Events' })}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              {t('pages.topics.subtitle', {
+                defaultValue: 'Track clustered events and topic momentum with a focused reading flow.'
+              })}
+            </Typography.Text>
+          </Space>
+          <Button size="small" onClick={() => void refetch()} loading={loading}>
+            {t('common.refresh', { defaultValue: 'Refresh' })}
           </Button>
-          <Space size="small" align="center">
-            <Typography.Text type="secondary">
-              {t('pages.topics.filters.windowLabel', { defaultValue: 'Window' })}
+        </div>
+
+        <Card className="content-card sticky top-2 z-10">
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {t('pages.topics.filters.title', { defaultValue: 'Filters' })}
             </Typography.Text>
-            <Select
-              size="small"
-              value={windowDays}
-              options={windowOptions}
-              onChange={(value) => updateFilters({ windowDays: value })}
-            />
+            <Space size={[16, 8]} wrap>
+              <Space size="small" align="center">
+                <Typography.Text type="secondary">
+                  {t('pages.topics.filters.windowLabel', { defaultValue: 'Window' })}
+                </Typography.Text>
+                <Select
+                  size="small"
+                  value={windowDays}
+                  options={windowOptions}
+                  onChange={(value) => updateFilters({ windowDays: value })}
+                  style={{ minWidth: 140 }}
+                />
+              </Space>
+
+              <Space size="small" align="center">
+                <Typography.Text type="secondary">
+                  {t('pages.topics.filters.groupLabel', { defaultValue: 'Min group size' })}
+                </Typography.Text>
+                <Select
+                  size="small"
+                  value={minGroupSize}
+                  options={groupSizeOptions}
+                  onChange={(value) => updateFilters({ minGroupSize: value })}
+                  style={{ minWidth: 160 }}
+                />
+              </Space>
+            </Space>
           </Space>
-          <Space size="small" align="center">
-            <Typography.Text type="secondary">
-              {t('pages.topics.filters.groupLabel', { defaultValue: 'Min group size' })}
+        </Card>
+
+        <Card className="content-card">
+          {error ? (
+            <Typography.Text type="danger">
+              {t('pages.topics.loadFailed', { defaultValue: 'Failed to load topics and events.' })}: {error.message}
             </Typography.Text>
-            <Select
-              size="small"
-              value={minGroupSize}
-              options={groupSizeOptions}
-              onChange={(value) => updateFilters({ minGroupSize: value })}
-            />
-          </Space>
-        </Space>
+          ) : null}
 
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <div className="flex flex-col gap-3">
-            <Typography.Title level={5} style={{ margin: 0 }}>
-              {t('pages.topics.eventsTitle', { defaultValue: 'Events' })}
-            </Typography.Title>
-            {sortedEventGroups.length === 0 ? (
-              <Empty
-                description={t('pages.topics.eventsEmpty', {
-                  defaultValue: 'Aggregation not ready for events yet.'
-                })}
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
-            ) : (
-              sortedEventGroups.map((group) => {
-                const topics = group.topics ?? [];
-                const entities = group.entities ?? [];
-                const eventTitle = resolveEventTitle(group);
+          <Tabs
+            activeKey={activeTab}
+            destroyOnHidden
+            onChange={(key) => updateFilters({ tab: key === 'topics' ? 'topics' : 'events' })}
+            items={[
+              {
+                key: 'events',
+                label: t('pages.topics.tabs.events', { defaultValue: 'Events' }),
+                children:
+                  sortedEventGroups.length === 0 ? (
+                    <Empty
+                      description={t('pages.topics.eventsEmpty', {
+                        defaultValue: 'Aggregation not ready for events yet.'
+                      })}
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    />
+                  ) : (
+                    <List
+                      dataSource={sortedEventGroups}
+                      rowKey="eventId"
+                      renderItem={(group) => {
+                        const eventTitle = resolveEventTitle(group);
+                        const topics = uniqueLabels(group.topics ?? []);
+                        const entities = uniqueLabels(group.entities ?? []);
+                        const sources = uniqueLabels(group.items.map((item) => item.source));
+                        const topicPreview = splitPreview(topics, 3);
+                        const entityPreview = splitPreview(entities, 3);
+                        const sourcePreview = splitPreview(sources, 3);
 
-                return (
-                  <Card
-                    key={group.eventId}
-                    className="content-card"
-                    title={
-                      <Space size="small" align="center">
-                        <Typography.Text strong>{eventTitle}</Typography.Text>
-                        <Tag>{group.count}</Tag>
-                      </Space>
-                    }
-                    extra={
-                      <Space size="small" align="center">
-                        <Tooltip title={latestAtHelp}>
-                          <Typography.Text type="secondary">
-                            {latestAtLabel}:{' '}
-                            {formatDateTime(group.latestAt, locale, {
-                              year: 'numeric',
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </Typography.Text>
-                        </Tooltip>
-                        <Button size="small" onClick={() => setSelectedEvent(group)}>
-                          {t('pages.topics.eventDetail.action', { defaultValue: 'Details' })}
-                        </Button>
-                      </Space>
-                    }
-                  >
-                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                      {group.summary ? (
-                        <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }}>
-                          {group.summary}
-                        </Typography.Paragraph>
-                      ) : null}
-                      {(topics.length > 0 || entities.length > 0) && (
-                        <Space wrap size={[6, 6]}>
-                          {topics.slice(0, 3).map((topic) => (
-                            <Tag key={`topic-${group.eventId}-${topic}`} color="blue">
-                              {topic}
-                            </Tag>
-                          ))}
-                          {entities.slice(0, 3).map((entity) => (
-                            <Tag key={`entity-${group.eventId}-${entity}`} color="purple">
-                              {entity}
-                            </Tag>
-                          ))}
-                        </Space>
-                      )}
-                      <Row gutter={[16, 16]}>
-                        {group.items.map((item) => (
-                          <Col key={item.id} xs={24} md={cardSpan}>
-                            <NewsCard
-                              item={{
-                                id: item.itemMetaId,
-                                title: item.title ?? eventTitle,
-                                summary: item.summary ?? undefined,
-                                source: item.source ?? undefined,
-                                createdAt: item.createdAt,
-                                publishedAt: item.publishedAt ?? undefined,
-                                ingestedAt: item.createdAt,
-                                topics,
-                                entities
-                              }}
-                            />
-                          </Col>
-                        ))}
-                      </Row>
-                    </Space>
-                  </Card>
-                );
-              })
-            )}
-          </div>
+                        return (
+                          <List.Item
+                            key={group.eventId}
+                            actions={[
+                              <Button
+                                key="details"
+                                size="small"
+                                onClick={() => openEventDrawer(group)}
+                              >
+                                {t('pages.topics.list.openDetails', { defaultValue: 'Details' })}
+                              </Button>
+                            ]}
+                          >
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              className="w-full cursor-pointer"
+                              onClick={() => openEventDrawer(group)}
+                              onKeyDown={(event) => onRowKeyDown(event, () => openEventDrawer(group))}
+                            >
+                              <List.Item.Meta
+                                title={
+                                  <Space size={[6, 6]} wrap>
+                                    <Typography.Text strong>{eventTitle}</Typography.Text>
+                                    <Tag>
+                                      {t('pages.topics.list.countLabel', { defaultValue: 'Reports' })}: {group.count}
+                                    </Tag>
+                                  </Space>
+                                }
+                                description={
+                                  <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                    {group.summary ? (
+                                      <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
+                                        {group.summary}
+                                      </Typography.Paragraph>
+                                    ) : null}
+                                    <Tooltip title={latestAtHelp}>
+                                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                        {latestAtLabel}: {formatDateTime(group.latestAt, locale, DATE_TIME_FORMAT)}
+                                      </Typography.Text>
+                                    </Tooltip>
+                                    <Space wrap size={[6, 6]}>
+                                      {topicPreview.visible.map((topic) => (
+                                        <Tag key={`event-topic-${group.eventId}-${topic}`} color="blue">
+                                          {topic}
+                                        </Tag>
+                                      ))}
+                                      {topicPreview.hiddenCount > 0 ? (
+                                        <Tag color="blue">
+                                          {t('pages.topics.list.moreTag', {
+                                            defaultValue: '+{{count}}',
+                                            count: topicPreview.hiddenCount
+                                          })}
+                                        </Tag>
+                                      ) : null}
 
-          <div className="flex flex-col gap-3">
-            <Typography.Title level={5} style={{ margin: 0 }}>
-              {t('pages.topics.topicsTitle', { defaultValue: 'Topics' })}
-            </Typography.Title>
-            {sortedGroups.length === 0 ? (
-              <Empty
-                description={t('pages.topics.topicsEmpty', {
-                  defaultValue: 'Aggregation not ready for topics yet.'
-                })}
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
-            ) : (
-              sortedGroups.map((group) => (
-                <Card
-                  key={group.topic}
-                  className="content-card"
-                  title={
-                    <Space size="small" align="center">
-                      <Typography.Text strong>{group.topic}</Typography.Text>
-                      <Tag>{group.count}</Tag>
-                    </Space>
-                  }
-                  extra={
-                    <Tooltip title={latestAtHelp}>
-                      <Typography.Text type="secondary">
-                        {latestAtLabel}:{' '}
-                        {formatDateTime(group.latestAt, locale, {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </Typography.Text>
-                    </Tooltip>
-                  }
-                >
-                  <Row gutter={[16, 16]}>
-                    {group.items.map((item) => (
-                      <Col key={item.id} xs={24} md={cardSpan}>
-                        <NewsCard
-                          item={{
-                            id: item.itemMetaId,
-                            title: item.title ?? group.topic,
-                            summary: item.summary ?? undefined,
-                            source: item.source ?? undefined,
-                            createdAt: item.createdAt,
-                            publishedAt: item.publishedAt ?? undefined,
-                            ingestedAt: item.createdAt,
-                            topics: [group.topic]
-                          }}
-                        />
-                      </Col>
-                    ))}
-                  </Row>
-                </Card>
-              ))
-            )}
-          </div>
-        </Space>
+                                      {entityPreview.visible.map((entity) => (
+                                        <Tag key={`event-entity-${group.eventId}-${entity}`} color="purple">
+                                          {entity}
+                                        </Tag>
+                                      ))}
+                                      {entityPreview.hiddenCount > 0 ? (
+                                        <Tag color="purple">
+                                          {t('pages.topics.list.moreTag', {
+                                            defaultValue: '+{{count}}',
+                                            count: entityPreview.hiddenCount
+                                          })}
+                                        </Tag>
+                                      ) : null}
+
+                                      {sourcePreview.visible.map((source) => (
+                                        <Tag key={`event-source-${group.eventId}-${source}`} color="geekblue">
+                                          {source}
+                                        </Tag>
+                                      ))}
+                                      {sourcePreview.hiddenCount > 0 ? (
+                                        <Tag color="geekblue">
+                                          {t('pages.topics.list.moreTag', {
+                                            defaultValue: '+{{count}}',
+                                            count: sourcePreview.hiddenCount
+                                          })}
+                                        </Tag>
+                                      ) : null}
+                                    </Space>
+                                  </Space>
+                                }
+                              />
+                            </div>
+                          </List.Item>
+                        );
+                      }}
+                    />
+                  )
+              },
+              {
+                key: 'topics',
+                label: t('pages.topics.tabs.topics', { defaultValue: 'Topics' }),
+                children:
+                  sortedGroups.length === 0 ? (
+                    <Empty
+                      description={t('pages.topics.topicsEmpty', {
+                        defaultValue: 'Aggregation not ready for topics yet.'
+                      })}
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    />
+                  ) : (
+                    <List
+                      dataSource={sortedGroups}
+                      rowKey="topic"
+                      renderItem={(group) => {
+                        const sources = uniqueLabels(group.items.map((item) => item.source));
+                        const sourcePreview = splitPreview(sources, 3);
+
+                        return (
+                          <List.Item
+                            key={group.topic}
+                            actions={[
+                              <Button
+                                key="preview"
+                                size="small"
+                                onClick={() => openTopicDrawer(group)}
+                              >
+                                {t('pages.topics.list.openTopic', { defaultValue: 'Preview' })}
+                              </Button>
+                            ]}
+                          >
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              className="w-full cursor-pointer"
+                              onClick={() => openTopicDrawer(group)}
+                              onKeyDown={(event) => onRowKeyDown(event, () => openTopicDrawer(group))}
+                            >
+                              <List.Item.Meta
+                                title={
+                                  <Space size={[6, 6]} wrap>
+                                    <Typography.Text strong>{group.topic}</Typography.Text>
+                                    <Tag>
+                                      {t('pages.topics.list.countLabel', { defaultValue: 'Reports' })}: {group.count}
+                                    </Tag>
+                                  </Space>
+                                }
+                                description={
+                                  <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                    <Tooltip title={latestAtHelp}>
+                                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                        {latestAtLabel}: {formatDateTime(group.latestAt, locale, DATE_TIME_FORMAT)}
+                                      </Typography.Text>
+                                    </Tooltip>
+                                    {sourcePreview.visible.length > 0 ? (
+                                      <Space wrap size={[6, 6]}>
+                                        {sourcePreview.visible.map((source) => (
+                                          <Tag key={`topic-source-${group.topic}-${source}`} color="geekblue">
+                                            {source}
+                                          </Tag>
+                                        ))}
+                                        {sourcePreview.hiddenCount > 0 ? (
+                                          <Tag color="geekblue">
+                                            {t('pages.topics.list.moreTag', {
+                                              defaultValue: '+{{count}}',
+                                              count: sourcePreview.hiddenCount
+                                            })}
+                                          </Tag>
+                                        ) : null}
+                                      </Space>
+                                    ) : null}
+                                  </Space>
+                                }
+                              />
+                            </div>
+                          </List.Item>
+                        );
+                      }}
+                    />
+                  )
+              }
+            ]}
+          />
+        </Card>
       </div>
     );
   }
@@ -490,22 +636,13 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               </Typography.Title>
               <Tooltip title={latestAtHelp}>
                 <Typography.Text type="secondary">
-                  {latestAtLabel}:{' '}
-                  {formatDateTime(selectedEvent.latestAt, locale, {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
+                  {latestAtLabel}: {formatDateTime(selectedEvent.latestAt, locale, DATE_TIME_FORMAT)}
                 </Typography.Text>
               </Tooltip>
             </Space>
 
             {selectedEvent.summary ? (
-              <Typography.Paragraph type="secondary">
-                {selectedEvent.summary}
-              </Typography.Paragraph>
+              <Typography.Paragraph type="secondary">{selectedEvent.summary}</Typography.Paragraph>
             ) : null}
 
             <Space direction="vertical" size="small">
@@ -556,13 +693,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                 const ingestedLabel = t('items.time.ingested', { defaultValue: 'Ingested' });
                 const publishedAt = item.publishedAt ?? null;
                 const ingestedAt = item.createdAt;
-                const formatOptions = {
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                } as const;
                 return (
                   <List.Item
                     key={item.id}
@@ -579,10 +709,8 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                     <List.Item.Meta
                       title={
                         <Space size="small">
-                          <Typography.Text strong>
-                            {item.title ?? selectedEventTitle}
-                          </Typography.Text>
-                          {item.source ? <Tag>{item.source}</Tag> : null}
+                          <Typography.Text strong>{item.title ?? selectedEventTitle}</Typography.Text>
+                          {item.source ? <Tag color="geekblue">{item.source}</Tag> : null}
                         </Space>
                       }
                       description={
@@ -590,11 +718,11 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                           <Typography.Text type="secondary">
                             {publishedLabel}:{' '}
                             {publishedAt
-                              ? formatDateTime(publishedAt, locale, formatOptions)
+                              ? formatDateTime(publishedAt, locale, DATE_TIME_FORMAT)
                               : t('common.notAvailable')}
                           </Typography.Text>
                           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                            {ingestedLabel}: {formatDateTime(ingestedAt, locale, formatOptions)}
+                            {ingestedLabel}: {formatDateTime(ingestedAt, locale, DATE_TIME_FORMAT)}
                           </Typography.Text>
                           {item.summary ? (
                             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }} ellipsis={{ rows: 2 }}>
@@ -608,6 +736,75 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                 );
               }}
             />
+          </Space>
+        ) : null}
+      </Drawer>
+
+      <Drawer
+        title={t('pages.topics.topicDetail.title', { defaultValue: 'Topic Details' })}
+        width={drawerWidth}
+        open={Boolean(selectedTopic)}
+        onClose={() => setSelectedTopic(null)}
+        destroyOnHidden
+      >
+        {selectedTopic ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Space direction="vertical" size={2}>
+              <Typography.Title level={5} style={{ margin: 0 }}>
+                {selectedTopic.topic}
+              </Typography.Title>
+              <Tooltip title={latestAtHelp}>
+                <Typography.Text type="secondary">
+                  {latestAtLabel}: {formatDateTime(selectedTopic.latestAt, locale, DATE_TIME_FORMAT)}
+                </Typography.Text>
+              </Tooltip>
+              <Typography.Text type="secondary">
+                {t('pages.topics.eventDetail.count', {
+                  defaultValue: '{{count}} reports',
+                  count: selectedTopic.count
+                })}
+              </Typography.Text>
+            </Space>
+
+            {selectedTopicSources.length > 0 ? (
+              <Space wrap size={[6, 6]}>
+                {selectedTopicSources.map((source) => (
+                  <Tag key={`topic-detail-source-${selectedTopic.topic}-${source}`} color="geekblue">
+                    {source}
+                  </Tag>
+                ))}
+              </Space>
+            ) : null}
+
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              {t('pages.topics.topicDetail.relatedItemsTitle', { defaultValue: 'Related reports' })}
+            </Typography.Title>
+
+            {selectedTopicItems.length === 0 ? (
+              <Empty
+                description={t('pages.topics.topicDetail.empty', { defaultValue: 'No related reports.' })}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            ) : (
+              <Row gutter={[16, 16]}>
+                {selectedTopicItems.map((item) => (
+                  <Col key={item.id} xs={24} lg={12}>
+                    <NewsCard
+                      item={{
+                        id: item.itemMetaId,
+                        title: item.title ?? selectedTopic.topic,
+                        summary: item.summary ?? undefined,
+                        source: item.source ?? undefined,
+                        createdAt: item.createdAt,
+                        publishedAt: item.publishedAt ?? undefined,
+                        ingestedAt: item.createdAt,
+                        topics: [selectedTopic.topic]
+                      }}
+                    />
+                  </Col>
+                ))}
+              </Row>
+            )}
           </Space>
         ) : null}
       </Drawer>

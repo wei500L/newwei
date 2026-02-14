@@ -5,24 +5,28 @@ import { DashboardChartsService } from "../dashboard-charts.service";
 
 const createCache = () => ({
   get: jest.fn(),
-  set: jest.fn()
+  set: jest.fn(),
 });
 
 describe("DashboardChartsService", () => {
   it("filters war map news markers by publishedAt priority (falls back to crawlAt when publishedAt is null)", async () => {
     const prisma = {
       processedArticle: {
-        findMany: jest.fn().mockResolvedValue([])
-      }
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
     const geocoding = {
-      resolveCandidates: jest.fn()
+      resolveCandidates: jest.fn(),
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
-      end: new Date("2026-01-02T00:00:00.000Z")
+      end: new Date("2026-01-02T00:00:00.000Z"),
     };
 
     await service.getWarMapNewsMarkers(range, "org-1");
@@ -36,9 +40,9 @@ describe("DashboardChartsService", () => {
             expect.objectContaining({
               publishedAt: expect.objectContaining({
                 gte: range.start,
-                lte: range.end
+                lte: range.end,
               }),
-              article: { orgId: "org-1" }
+              article: { orgId: "org-1" },
             }),
             expect.objectContaining({
               publishedAt: null,
@@ -46,33 +50,37 @@ describe("DashboardChartsService", () => {
                 orgId: "org-1",
                 crawlAt: expect.objectContaining({
                   gte: range.start,
-                  lte: range.end
-                })
-              })
-            })
-          ])
-        })
-      })
+                  lte: range.end,
+                }),
+              }),
+            }),
+          ]),
+        }),
+      }),
     );
   });
 
   it("filters war map events by publishedAt priority (falls back to crawlAt when publishedAt is null)", async () => {
     const prisma = {
       alertEvent: {
-        findMany: jest.fn().mockResolvedValue([])
+        findMany: jest.fn().mockResolvedValue([]),
       },
       processedArticle: {
-        findMany: jest.fn().mockResolvedValue([])
-      }
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
     const geocoding = {
-      resolveCandidates: jest.fn()
+      resolveCandidates: jest.fn(),
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
-      end: new Date("2026-01-02T00:00:00.000Z")
+      end: new Date("2026-01-02T00:00:00.000Z"),
     };
 
     await service.getWarMapEvents(range, "org-1");
@@ -86,9 +94,9 @@ describe("DashboardChartsService", () => {
             expect.objectContaining({
               publishedAt: expect.objectContaining({
                 gte: range.start,
-                lte: range.end
+                lte: range.end,
               }),
-              article: { orgId: "org-1" }
+              article: { orgId: "org-1" },
             }),
             expect.objectContaining({
               publishedAt: null,
@@ -96,13 +104,13 @@ describe("DashboardChartsService", () => {
                 orgId: "org-1",
                 crawlAt: expect.objectContaining({
                   gte: range.start,
-                  lte: range.end
-                })
-              })
-            })
-          ])
-        })
-      })
+                  lte: range.end,
+                }),
+              }),
+            }),
+          ]),
+        }),
+      }),
     );
   });
 
@@ -120,38 +128,42 @@ describe("DashboardChartsService", () => {
             article: {
               url: "https://example.com/news/1",
               crawlAt: new Date("2026-01-01T12:01:00.000Z"),
-              titleGuess: null
-            }
-          }
-        ])
-      }
+              titleGuess: null,
+            },
+          },
+        ]),
+      },
     };
     const geocoding = {
       resolveCandidates: jest.fn().mockResolvedValue({
         lat: 37.7749,
         lng: -122.4194,
-        displayName: "San Francisco, United States"
-      })
+        displayName: "San Francisco, United States",
+      }),
     };
     const translation = {
-      translateTextsToZhBestEffort: jest
-        .fn()
-        .mockResolvedValue(new Map([["Example headline", "示例标题"]]))
+      translateTextsToZhBestEffort: jest.fn().mockResolvedValue(
+        new Map([
+          ["Example headline", "示例标题"],
+          ["San Francisco", "旧金山"],
+          ["San Francisco, United States", "旧金山，美国"],
+        ]),
+      ),
     };
     const service = new DashboardChartsService(
       prisma as any,
       geocoding as any,
       createCache() as any,
-      translation as any
+      translation as any,
     );
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
-      end: new Date("2026-01-02T00:00:00.000Z")
+      end: new Date("2026-01-02T00:00:00.000Z"),
     };
 
     const result = await service.getWarMapNewsMarkers(range, "org-1", {
-      translateTarget: "zh-CN"
+      translateTarget: "zh-CN",
     });
 
     expect(translation.translateTextsToZhBestEffort).toHaveBeenCalledTimes(1);
@@ -159,9 +171,109 @@ describe("DashboardChartsService", () => {
       expect.objectContaining({
         id: "marker-1",
         title: "Example headline",
-        titleZh: "示例标题"
-      })
+        titleZh: "示例标题",
+        locationZh: "旧金山",
+        displayNameZh: "旧金山，美国",
+      }),
     );
+  });
+
+  it("uses situation monitor translation service for war map event names when zh-CN translation is requested", async () => {
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            triggeredAt: new Date("2026-01-01T12:00:00.000Z"),
+            severity: "high",
+            context: {
+              countryCode: "USA",
+            },
+          },
+        ]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const geocoding = {
+      resolveCandidates: jest.fn(),
+    };
+    const translation = {
+      translateTextsToZhBestEffort: jest
+        .fn()
+        .mockImplementation(async (texts: Iterable<string>) => {
+          const entries = Array.from(
+            texts,
+            (text) => [text, `中文-${text}`] as const,
+          );
+          return new Map(entries);
+        }),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+      translation as any,
+    );
+
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    const result = await service.getWarMapEvents(range, "org-1", {
+      translateTarget: "zh-CN",
+    });
+
+    expect(translation.translateTextsToZhBestEffort).toHaveBeenCalledTimes(1);
+    expect(result.events[0]).toEqual(
+      expect.objectContaining({
+        nameZh: `中文-${result.events[0].name}`,
+      }),
+    );
+  });
+
+  it("uses situation monitor translation service for war map static layers when zh-CN translation is requested", async () => {
+    const prisma = {};
+    const geocoding = {
+      resolveCandidates: jest.fn(),
+    };
+    const translation = {
+      translateTextsToZhBestEffort: jest
+        .fn()
+        .mockImplementation(async (texts: Iterable<string>) => {
+          const entries = Array.from(
+            texts,
+            (text) => [text, `中文-${text}`] as const,
+          );
+          return new Map(entries);
+        }),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+      translation as any,
+    );
+
+    const translated = await service.getWarMapLayers({
+      translateTarget: "zh-CN",
+    });
+    const plain = await service.getWarMapLayers();
+
+    expect(translation.translateTextsToZhBestEffort).toHaveBeenCalledTimes(1);
+    expect(translated.hotspots[0]).toEqual(
+      expect.objectContaining({
+        nameZh: `中文-${translated.hotspots[0].name}`,
+        descriptionZh: `中文-${translated.hotspots[0].description}`,
+      }),
+    );
+    expect(plain.hotspots.some((item) => typeof item.nameZh === "string")).toBe(
+      false,
+    );
+    expect(
+      plain.hotspots.some((item) => typeof item.descriptionZh === "string"),
+    ).toBe(false);
   });
 
   it("selects sector heatmap sourceField from item metadata preference (supports label->field mapping)", async () => {
@@ -180,51 +292,55 @@ describe("DashboardChartsService", () => {
                   {
                     field: "最近报价",
                     label: "latest_price",
-                    unit: "USD"
-                  }
-                ]
+                    unit: "USD",
+                  },
+                ],
               },
               dataViz: {
                 heatmap: {
-                  preferredSourceFields: ["latest_price"]
-                }
-              }
-            }
-          }
-        ])
+                  preferredSourceFields: ["latest_price"],
+                },
+              },
+            },
+          },
+        ]),
       },
       economicDataPoint: {
         groupBy: jest.fn().mockResolvedValue([
           {
             itemId: "item-1",
             sourceField: "最近报价",
-            _count: { _all: 2 }
-          }
+            _count: { _all: 2 },
+          },
         ]),
         findFirst: jest.fn().mockImplementation(({ orderBy }) => {
           if (orderBy?.recordedAt === "asc") {
             return {
               recordedAt: new Date("2026-01-01T00:00:00.000Z"),
               value: 100,
-              unit: "USD"
+              unit: "USD",
             };
           }
           return {
             recordedAt: new Date("2026-01-02T00:00:00.000Z"),
             value: 110,
-            unit: "USD"
+            unit: "USD",
           };
-        })
-      }
+        }),
+      },
     };
     const geocoding = {
-      resolveCandidates: jest.fn()
+      resolveCandidates: jest.fn(),
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
-      end: new Date("2026-01-02T23:59:59.999Z")
+      end: new Date("2026-01-02T23:59:59.999Z"),
     };
 
     const response = await service.getSectorHeatmap(range);
@@ -235,8 +351,8 @@ describe("DashboardChartsService", () => {
         sourceField: "最近报价",
         value: 110,
         change: 10,
-        unit: "USD"
-      })
+        unit: "USD",
+      }),
     ]);
   });
 
@@ -249,42 +365,46 @@ describe("DashboardChartsService", () => {
             slug: "macro_metric",
             displayName: "Macro Metric",
             defaultUnit: "pts",
-            metadata: {}
-          }
-        ])
+            metadata: {},
+          },
+        ]),
       },
       economicDataPoint: {
         groupBy: jest.fn().mockResolvedValue([
           {
             itemId: "item-1",
             sourceField: "今值",
-            _count: { _all: 2 }
-          }
+            _count: { _all: 2 },
+          },
         ]),
         findFirst: jest.fn().mockImplementation(({ orderBy }) => {
           if (orderBy?.recordedAt === "asc") {
             return {
               recordedAt: new Date("2026-01-01T00:00:00.000Z"),
               value: 4200,
-              unit: "pts"
+              unit: "pts",
             };
           }
           return {
             recordedAt: new Date("2026-01-02T00:00:00.000Z"),
             value: 4300,
-            unit: "pts"
+            unit: "pts",
           };
-        })
-      }
+        }),
+      },
     };
     const geocoding = {
-      resolveCandidates: jest.fn()
+      resolveCandidates: jest.fn(),
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
-      end: new Date("2026-01-02T23:59:59.999Z")
+      end: new Date("2026-01-02T23:59:59.999Z"),
     };
 
     const response = await service.getSectorHeatmap(range);
@@ -294,9 +414,9 @@ describe("DashboardChartsService", () => {
         name: "Macro Metric",
         sourceField: "今值",
         value: 4300,
-        change: Number(((4300 - 4200) / 4200 * 100).toFixed(2)),
-        unit: "pts"
-      })
+        change: Number((((4300 - 4200) / 4200) * 100).toFixed(2)),
+        unit: "pts",
+      }),
     ]);
   });
 
@@ -312,32 +432,36 @@ describe("DashboardChartsService", () => {
             metadata: {
               dataViz: {
                 heatmap: {
-                  preferredSourceFields: ["does_not_exist"]
-                }
-              }
-            }
-          }
-        ])
+                  preferredSourceFields: ["does_not_exist"],
+                },
+              },
+            },
+          },
+        ]),
       },
       economicDataPoint: {
         groupBy: jest.fn().mockResolvedValue([
           {
             itemId: "item-2",
             sourceField: "weird_field",
-            _count: { _all: 1 }
-          }
+            _count: { _all: 1 },
+          },
         ]),
-        findFirst: jest.fn()
-      }
+        findFirst: jest.fn(),
+      },
     };
     const geocoding = {
-      resolveCandidates: jest.fn()
+      resolveCandidates: jest.fn(),
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
-      end: new Date("2026-01-02T23:59:59.999Z")
+      end: new Date("2026-01-02T23:59:59.999Z"),
     };
 
     try {
@@ -347,8 +471,8 @@ describe("DashboardChartsService", () => {
       expect(error).toBeInstanceOf(InternalServerErrorException);
       expect((error as any).getResponse?.()).toEqual(
         expect.objectContaining({
-          code: "DASHBOARD_SECTOR_HEATMAP_FIELD_MAPPING_MISMATCH"
-        })
+          code: "DASHBOARD_SECTOR_HEATMAP_FIELD_MAPPING_MISMATCH",
+        }),
       );
     }
   });
@@ -368,12 +492,12 @@ describe("DashboardChartsService", () => {
                   open: ["o"],
                   high: ["h"],
                   low: ["l"],
-                  close: ["c"]
-                }
-              }
-            }
-          }
-        })
+                  close: ["c"],
+                },
+              },
+            },
+          },
+        }),
       },
       economicDataPoint: {
         findMany: jest.fn().mockResolvedValue([
@@ -382,69 +506,73 @@ describe("DashboardChartsService", () => {
             recordedAt: new Date("2026-01-01T00:00:00.000Z"),
             value: 10,
             unit: "pts",
-            sourceField: "o"
+            sourceField: "o",
           },
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-01T00:00:00.000Z"),
             value: 15,
             unit: "pts",
-            sourceField: "h"
+            sourceField: "h",
           },
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-01T00:00:00.000Z"),
             value: 8,
             unit: "pts",
-            sourceField: "l"
+            sourceField: "l",
           },
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-01T00:00:00.000Z"),
             value: 12,
             unit: "pts",
-            sourceField: "c"
+            sourceField: "c",
           },
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-02T00:00:00.000Z"),
             value: 12,
             unit: "pts",
-            sourceField: "o"
+            sourceField: "o",
           },
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-02T00:00:00.000Z"),
             value: 20,
             unit: "pts",
-            sourceField: "h"
+            sourceField: "h",
           },
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-02T00:00:00.000Z"),
             value: 11,
             unit: "pts",
-            sourceField: "l"
+            sourceField: "l",
           },
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-02T00:00:00.000Z"),
             value: 18,
             unit: "pts",
-            sourceField: "c"
-          }
+            sourceField: "c",
+          },
         ]),
-        count: jest.fn().mockResolvedValue(0)
-      }
+        count: jest.fn().mockResolvedValue(0),
+      },
     };
     const geocoding = {
-      resolveCandidates: jest.fn()
+      resolveCandidates: jest.fn(),
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
-      end: new Date("2026-01-02T23:59:59.999Z")
+      end: new Date("2026-01-02T23:59:59.999Z"),
     };
 
     const response = await service.getFinancialCandlestick(range);
@@ -458,9 +586,9 @@ describe("DashboardChartsService", () => {
           open: "o",
           high: "h",
           low: "l",
-          close: "c"
-        }
-      })
+          close: "c",
+        },
+      }),
     );
     expect(response.points).toEqual([
       {
@@ -468,15 +596,15 @@ describe("DashboardChartsService", () => {
         open: 10,
         close: 12,
         high: 15,
-        low: 8
+        low: 8,
       },
       {
         timestamp: "2026-01-02T00:00:00.000Z",
         open: 12,
         close: 18,
         high: 20,
-        low: 11
-      }
+        low: 11,
+      },
     ]);
   });
 
@@ -495,12 +623,12 @@ describe("DashboardChartsService", () => {
                   open: ["o"],
                   high: ["h"],
                   low: ["l"],
-                  close: ["c"]
-                }
-              }
-            }
-          }
-        })
+                  close: ["c"],
+                },
+              },
+            },
+          },
+        }),
       },
       economicDataPoint: {
         findMany: jest.fn().mockResolvedValue([
@@ -509,34 +637,38 @@ describe("DashboardChartsService", () => {
             recordedAt: new Date("2026-01-01T00:00:00.000Z"),
             value: 10,
             unit: "pts",
-            sourceField: "o"
+            sourceField: "o",
           },
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-01T00:00:00.000Z"),
             value: 8,
             unit: "pts",
-            sourceField: "l"
+            sourceField: "l",
           },
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-01T00:00:00.000Z"),
             value: 12,
             unit: "pts",
-            sourceField: "c"
-          }
+            sourceField: "c",
+          },
         ]),
-        count: jest.fn().mockResolvedValue(0)
-      }
+        count: jest.fn().mockResolvedValue(0),
+      },
     };
     const geocoding = {
-      resolveCandidates: jest.fn()
+      resolveCandidates: jest.fn(),
     };
-    const service = new DashboardChartsService(prisma as any, geocoding as any, createCache() as any);
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
 
     const range = {
       start: new Date("2026-01-01T00:00:00.000Z"),
-      end: new Date("2026-01-02T23:59:59.999Z")
+      end: new Date("2026-01-02T23:59:59.999Z"),
     };
 
     try {
@@ -546,8 +678,8 @@ describe("DashboardChartsService", () => {
       expect(error).toBeInstanceOf(InternalServerErrorException);
       expect((error as any).getResponse?.()).toEqual(
         expect.objectContaining({
-          code: "DASHBOARD_CANDLESTICK_OHLC_INCOMPLETE"
-        })
+          code: "DASHBOARD_CANDLESTICK_OHLC_INCOMPLETE",
+        }),
       );
     }
   });

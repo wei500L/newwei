@@ -12,6 +12,7 @@ import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
+import { ensureEchartsMapRegistered } from "@/lib/echarts-map";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -175,7 +176,6 @@ export function SpacetimeGeoHeatmap({
   const { range, start, end } = useDashboardRangeStore();
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const registeredMapsRef = useRef(new Set<string>());
   const [inView, setInView] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -322,23 +322,11 @@ export function SpacetimeGeoHeatmap({
       setMapReady(false);
       return;
     }
-    if (registeredMapsRef.current.has(mapName)) {
-      setMapReady(true);
-      return;
-    }
 
     let cancelled = false;
     void (async () => {
-      const echartsModule = await import("echarts/core");
-      const [installGeo, installMap] = await Promise.all([
-        import("echarts/lib/component/geo/install.js").then((m) => m.install),
-        import("echarts/lib/chart/map/install.js").then((m) => m.install),
-      ]);
-
-      echartsModule.use([installGeo, installMap]);
+      await ensureEchartsMapRegistered(mapName, geoQuery.data.geoJson);
       if (cancelled) return;
-      echartsModule.registerMap(mapName, geoQuery.data.geoJson as any);
-      registeredMapsRef.current.add(mapName);
       setMapReady(true);
     })().catch(() => {
       if (!cancelled) {

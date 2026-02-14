@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
   MessageEvent,
   Query,
-  Sse
+  Sse,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Observable } from "rxjs";
@@ -18,12 +18,13 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardService } from "./dashboard.service";
 import {
+  DashboardWarMapQueryDto,
   DashboardWarMapNewsMarkersQueryDto,
   DashboardSpacetimeGeoHeatmapArticlesQueryDto,
   DashboardSpacetimeGeoHeatmapQueryDto,
   DashboardSpacetimePropagationArticlesQueryDto,
   DashboardSpacetimePropagationQueryDto,
-  DashboardTimeRangeQueryDto
+  DashboardTimeRangeQueryDto,
 } from "./dto/dashboard-charts.dto";
 
 function readEnvInt(key: string, fallback: number): number {
@@ -39,7 +40,9 @@ function clampInt(value: number, min: number, max: number): number {
 
 type DashboardTranslateTarget = "zh-CN";
 
-function parseTranslateTarget(value: unknown): DashboardTranslateTarget | undefined {
+function parseTranslateTarget(
+  value: unknown,
+): DashboardTranslateTarget | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -56,7 +59,7 @@ function parseTranslateTarget(value: unknown): DashboardTranslateTarget | undefi
 export class DashboardController {
   constructor(
     private readonly service: DashboardService,
-    private readonly chartsService: DashboardChartsService
+    private readonly chartsService: DashboardChartsService,
   ) {}
 
   @Permissions("items.read")
@@ -76,7 +79,7 @@ export class DashboardController {
       throw new InternalServerErrorException({
         code: "GEOJSON_LOAD_FAILED",
         message: "GeoJSON map could not be loaded",
-        detail: error instanceof Error ? error.message : "Unknown error"
+        detail: error instanceof Error ? error.message : "Unknown error",
       });
     }
   }
@@ -84,29 +87,33 @@ export class DashboardController {
   @Permissions("dashboards.read")
   @Get("war-map/layers")
   @Header("Cache-Control", "no-store")
-  async warMapLayers() {
-    return this.chartsService.getWarMapLayers();
+  async warMapLayers(@Query() query: DashboardWarMapQueryDto) {
+    return this.chartsService.getWarMapLayers({
+      translateTarget: parseTranslateTarget(query.translate),
+    });
   }
 
   @Permissions("dashboards.read")
   @Get("war-map/events")
   async warMapEvents(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardTimeRangeQueryDto
+    @Query() query: DashboardWarMapQueryDto,
   ) {
     const range = this.chartsService.resolveRange(query);
-    return this.chartsService.getWarMapEvents(range, user.orgId);
+    return this.chartsService.getWarMapEvents(range, user.orgId, {
+      translateTarget: parseTranslateTarget(query.translate),
+    });
   }
 
   @Permissions("dashboards.read")
   @Get("war-map/news-markers")
   async warMapNewsMarkers(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardWarMapNewsMarkersQueryDto
+    @Query() query: DashboardWarMapNewsMarkersQueryDto,
   ) {
     const range = this.chartsService.resolveRange(query);
     return this.chartsService.getWarMapNewsMarkers(range, user.orgId, {
-      translateTarget: parseTranslateTarget(query.translate)
+      translateTarget: parseTranslateTarget(query.translate),
     });
   }
 
@@ -114,13 +121,14 @@ export class DashboardController {
   @Get("spacetime/geo-heatmap")
   async spacetimeGeoHeatmap(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardSpacetimeGeoHeatmapQueryDto
+    @Query() query: DashboardSpacetimeGeoHeatmapQueryDto,
   ) {
     const range = this.chartsService.resolveRange(query);
-    const includeBuckets = query.includeBuckets === "1" || query.includeBuckets === "true";
+    const includeBuckets =
+      query.includeBuckets === "1" || query.includeBuckets === "true";
     return this.chartsService.getSpacetimeGeoHeatmap(range, user.orgId, {
       eventId: query.eventId,
-      includeBuckets
+      includeBuckets,
     });
   }
 
@@ -128,30 +136,34 @@ export class DashboardController {
   @Get("spacetime/geo-heatmap/articles")
   async spacetimeGeoHeatmapArticles(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardSpacetimeGeoHeatmapArticlesQueryDto
+    @Query() query: DashboardSpacetimeGeoHeatmapArticlesQueryDto,
   ) {
     const range = this.chartsService.resolveRange(query);
-    return this.chartsService.getSpacetimeGeoHeatmapArticles(range, user.orgId, {
-      eventId: query.eventId,
-      snapshotId: query.snapshotId,
-      pointId: query.pointId,
-      bucketStart: query.bucketStart,
-      limit: query.limit
-    });
+    return this.chartsService.getSpacetimeGeoHeatmapArticles(
+      range,
+      user.orgId,
+      {
+        eventId: query.eventId,
+        snapshotId: query.snapshotId,
+        pointId: query.pointId,
+        bucketStart: query.bucketStart,
+        limit: query.limit,
+      },
+    );
   }
 
   @Permissions("dashboards.read")
   @Get("spacetime/propagation")
   async spacetimePropagation(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardSpacetimePropagationQueryDto
+    @Query() query: DashboardSpacetimePropagationQueryDto,
   ) {
     const range = this.chartsService.resolveRange(query);
     return this.chartsService.getSpacetimePropagation(range, user.orgId, {
       eventId: query.eventId,
       windowHours: query.windowHours,
       maxNodes: query.maxNodes,
-      maxEdges: query.maxEdges
+      maxEdges: query.maxEdges,
     });
   }
 
@@ -159,16 +171,20 @@ export class DashboardController {
   @Get("spacetime/propagation/articles")
   async spacetimePropagationArticles(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardSpacetimePropagationArticlesQueryDto
+    @Query() query: DashboardSpacetimePropagationArticlesQueryDto,
   ) {
     const range = this.chartsService.resolveRange(query);
-    return this.chartsService.getSpacetimePropagationArticles(range, user.orgId, {
-      eventId: query.eventId,
-      source: query.source,
-      cursorStart: query.cursorStart,
-      cursorEnd: query.cursorEnd,
-      limit: query.limit
-    });
+    return this.chartsService.getSpacetimePropagationArticles(
+      range,
+      user.orgId,
+      {
+        eventId: query.eventId,
+        source: query.source,
+        cursorStart: query.cursorStart,
+        cursorEnd: query.cursorEnd,
+        limit: query.limit,
+      },
+    );
   }
 
   @Permissions("dashboards.read")
@@ -189,16 +205,21 @@ export class DashboardController {
   @Sse("stream")
   dashboardStream(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardTimeRangeQueryDto
+    @Query() query: DashboardTimeRangeQueryDto,
   ): Observable<MessageEvent> {
     const range = this.chartsService.resolveRange(query);
-    const defaultIntervalMs = process.env.NODE_ENV === "development" ? 2_000 : 10_000;
+    const defaultIntervalMs =
+      process.env.NODE_ENV === "development" ? 2_000 : 10_000;
     const intervalMs = clampInt(
       readEnvInt("DASHBOARD_STREAM_INTERVAL_MS", defaultIntervalMs),
       1_000,
-      60_000
+      60_000,
     );
-    const pingMs = clampInt(readEnvInt("DASHBOARD_STREAM_PING_MS", 25_000), 5_000, 120_000);
+    const pingMs = clampInt(
+      readEnvInt("DASHBOARD_STREAM_PING_MS", 25_000),
+      5_000,
+      120_000,
+    );
 
     return new Observable<MessageEvent>((subscriber) => {
       let closed = false;
@@ -217,7 +238,7 @@ export class DashboardController {
 
           const [warEvents, candlestick] = await Promise.all([
             this.chartsService.getWarMapEvents(range, user.orgId),
-            this.chartsService.getFinancialCandlestick(range)
+            this.chartsService.getFinancialCandlestick(range),
           ]);
           const geoHeatmap = await geoHeatmapPromise;
 
@@ -229,14 +250,20 @@ export class DashboardController {
 
           const candleFingerprint = `${candlestick.updatedAt ?? "none"}:${candlestick.points.length}`;
           if (force || candleFingerprint !== lastCandleFingerprint) {
-            subscriber.next({ type: "financial-candlestick", data: candlestick });
+            subscriber.next({
+              type: "financial-candlestick",
+              data: candlestick,
+            });
             lastCandleFingerprint = candleFingerprint;
           }
 
           if (geoHeatmap) {
             const geoHeatmapFingerprint = `${geoHeatmap.updatedAt ?? "none"}:${geoHeatmap.points.length}`;
             if (force || geoHeatmapFingerprint !== lastGeoHeatmapFingerprint) {
-              subscriber.next({ type: "spacetime-geo-heatmap", data: geoHeatmap });
+              subscriber.next({
+                type: "spacetime-geo-heatmap",
+                data: geoHeatmap,
+              });
               lastGeoHeatmapFingerprint = geoHeatmapFingerprint;
             }
           }
@@ -252,7 +279,10 @@ export class DashboardController {
               }
               if (typeof payload.detail === "string" && payload.detail.trim()) {
                 detail = payload.detail;
-              } else if (typeof payload.message === "string" && payload.message.trim()) {
+              } else if (
+                typeof payload.message === "string" &&
+                payload.message.trim()
+              ) {
                 detail = payload.message;
               }
             } else if (typeof response === "string" && response.trim()) {
@@ -264,8 +294,8 @@ export class DashboardController {
             data: {
               code,
               message: "Dashboard stream update failed",
-              detail
-            }
+              detail,
+            },
           });
         } finally {
           inflight = false;
@@ -279,7 +309,10 @@ export class DashboardController {
       }, intervalMs);
 
       const pingId = setInterval(() => {
-        subscriber.next({ type: "ping", data: { ts: new Date().toISOString() } });
+        subscriber.next({
+          type: "ping",
+          data: { ts: new Date().toISOString() },
+        });
       }, pingMs);
 
       return () => {
@@ -289,5 +322,4 @@ export class DashboardController {
       };
     });
   }
-
 }
