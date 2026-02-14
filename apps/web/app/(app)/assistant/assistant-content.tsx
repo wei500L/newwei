@@ -1,13 +1,20 @@
 'use client';
 
-import { CloseCircleOutlined, RobotOutlined } from '@ant-design/icons';
+import {
+  BarChartOutlined,
+  CloseCircleOutlined,
+  HistoryOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RobotOutlined,
+  SendOutlined,
+} from '@ant-design/icons';
 import { gql, useLazyQuery, useMutation, useQuery, useSubscription } from '@apollo/client';
 import {
   Alert,
   App,
   AutoComplete,
   Button,
-  Card,
   Drawer,
   Form,
   Input,
@@ -17,7 +24,6 @@ import {
   Select,
   Space,
   Spin,
-  Tag,
   Typography,
 } from 'antd';
 import { debounce } from 'lodash';
@@ -37,6 +43,8 @@ import {
 } from '@/lib/assistant-chat';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
+
+import styles from './assistant-content.module.css';
 
 type AssistantRunType = AssistantRunLike['type'];
 type AssistantRunStatus = AssistantRunLike['status'];
@@ -191,18 +199,33 @@ const ASSISTANT_ECONOMIC_SERIES_SUGGESTIONS = gql`
   }
 `;
 
-const statusColor = (status: AssistantRunStatus): string => {
+const getStatusChipClass = (status: AssistantRunStatus): string => {
   switch (status) {
     case 'pending':
-      return 'default';
+      return 'bg-slate-100 text-slate-600 ring-slate-300/60';
     case 'running':
-      return 'processing';
+      return 'bg-sky-100 text-sky-700 ring-sky-300/60';
     case 'completed':
-      return 'success';
+      return 'bg-emerald-100 text-emerald-700 ring-emerald-300/60';
     case 'failed':
-      return 'error';
+      return 'bg-rose-100 text-rose-700 ring-rose-300/60';
     default:
-      return 'default';
+      return 'bg-slate-100 text-slate-600 ring-slate-300/60';
+  }
+};
+
+const getStatusRailClass = (status: AssistantRunStatus): string => {
+  switch (status) {
+    case 'pending':
+      return 'bg-slate-400/70';
+    case 'running':
+      return 'bg-sky-500';
+    case 'completed':
+      return 'bg-emerald-500';
+    case 'failed':
+      return 'bg-rose-500';
+    default:
+      return 'bg-slate-400/70';
   }
 };
 
@@ -633,6 +656,11 @@ export function AssistantContent() {
     previousActiveRunIdRef.current = activeRunId;
   }, [activeRunId, activeAssistantText, activeRun?.status]);
 
+  const handleNewConversation = () => {
+    setActiveRunId(null);
+    setQueryDraft('');
+  };
+
   const title = t('pages.assistant.title', { defaultValue: 'AI Assistant' });
   const subtitle = t('pages.assistant.subtitle', {
     defaultValue: 'Natural language analysis powered by your data pipeline.',
@@ -640,8 +668,6 @@ export function AssistantContent() {
   const placeholder = t('assistant.chat.placeholder', {
     defaultValue: 'Ask anything about your pipeline data…',
   });
-  const chatMetaPanelClassName =
-    'mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/40';
 
   const getStatusLabel = (statusValue: AssistantRunStatus): string => {
     return t(`assistant.status.${statusValue}`, { defaultValue: statusValue });
@@ -687,10 +713,12 @@ export function AssistantContent() {
   };
 
   const runListEmpty = t('assistant.chat.emptyHistory', { defaultValue: 'No assistant runs yet.' });
+  const designKicker = t('assistant.hero.kicker', { defaultValue: 'INTELLIGENCE CONSOLE' });
 
   const renderRunHistory = (containerClassName: string, onRunSelect?: () => void) => (
-    <div className={containerClassName}>
+    <div className={`${styles.historyScroll} ${containerClassName}`}>
       <List<AssistantRun>
+        split={false}
         dataSource={runs}
         locale={{ emptyText: runListEmpty }}
         renderItem={(run) => {
@@ -700,42 +728,54 @@ export function AssistantContent() {
           const preview = resolveAssistantReply(run, replyStrings);
 
           return (
-            <List.Item
-              className={`cursor-pointer rounded-xl border px-3 py-2 transition ${
-                selected
-                  ? 'border-blue-300 bg-blue-50 dark:border-blue-500/60 dark:bg-blue-500/10'
-                  : 'border-transparent hover:border-slate-200 hover:bg-slate-50 dark:hover:border-slate-700 dark:hover:bg-slate-800/60'
-              }`}
-              onClick={() => {
-                setActiveRunId(run.id);
-                onRunSelect?.();
-              }}
-            >
-              <div className="w-full">
-                <Space size={6} wrap style={{ marginBottom: 6 }}>
-                  <Tag color={statusColor(run.status)}>{getStatusLabel(run.status)}</Tag>
-                  <Tag>{getTypeLabel(run.type)}</Tag>
-                  {blocked ? <Tag color="volcano">{t('assistant.blocked.tag', { defaultValue: 'Blocked' })}</Tag> : null}
-                </Space>
+            <List.Item className="!border-none !px-0 !py-0">
+              <button
+                type="button"
+                aria-pressed={selected}
+                className={`group relative mb-2 w-full overflow-hidden rounded-2xl border px-4 py-3 text-left transition-all last:mb-0 ${
+                  selected
+                    ? 'border-sky-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.12)]'
+                    : 'border-transparent bg-white/55 hover:border-slate-200/80 hover:bg-white/80'
+                }`}
+                onClick={() => {
+                  setActiveRunId(run.id);
+                  onRunSelect?.();
+                }}
+              >
+                <span
+                  className={`absolute bottom-3 left-0 top-3 w-1 rounded-r-full ${getStatusRailClass(run.status)}`}
+                />
+                <div className="ml-2 w-full">
+                  <Space size={6} wrap style={{ marginBottom: 8 }}>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${getStatusChipClass(run.status)}`}
+                    >
+                      {getStatusLabel(run.status)}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-300/60">
+                      {getTypeLabel(run.type)}
+                    </span>
+                    {blocked ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60">
+                        {t('assistant.blocked.tag', { defaultValue: 'Blocked' })}
+                      </span>
+                    ) : null}
+                  </Space>
 
-                <Typography.Paragraph ellipsis={{ rows: 1 }} style={{ marginBottom: 4 }}>
-                  <Typography.Text strong>{userPrompt}</Typography.Text>
-                </Typography.Paragraph>
+                  <div className="mb-1 truncate text-sm font-semibold text-slate-900">{userPrompt}</div>
+                  <div className="mb-2 line-clamp-2 text-sm text-slate-600">{preview}</div>
 
-                <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
-                  {preview}
-                </Typography.Paragraph>
-
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {formatDateTime(new Date(run.createdAt), locale, {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Typography.Text>
-              </div>
+                  <span className="text-xs font-medium text-slate-400">
+                    {formatDateTime(new Date(run.createdAt), locale, {
+                      year: 'numeric',
+                      month: 'short',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+              </button>
             </List.Item>
           );
         }}
@@ -744,14 +784,7 @@ export function AssistantContent() {
   );
 
   return (
-    <div className="flex w-full flex-col gap-4">
-      <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {title}
-        </Typography.Title>
-        <Typography.Text type="secondary">{subtitle}</Typography.Text>
-      </Space>
-
+    <div className="flex w-full flex-col gap-5">
       {error ? (
         <Alert
           type="error"
@@ -761,263 +794,383 @@ export function AssistantContent() {
         />
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
-        <Card
-          className="order-2 hidden lg:order-1 lg:block"
-          title={t('assistant.chat.historyTitle', { defaultValue: 'History' })}
-          extra={
-            <Button onClick={() => refetch()} loading={loading}>
-              {t('common.refresh', { defaultValue: 'Refresh' })}
-            </Button>
-          }
-        >
-          {renderRunHistory(
-            'max-h-[42svh] overflow-y-auto pr-1 sm:max-h-[48svh] lg:h-[min(68dvh,52rem)] lg:max-h-none',
-          )}
-        </Card>
-
-        <Card className="order-1 lg:order-2">
-          <div className="flex min-h-[30rem] flex-col lg:h-[min(68dvh,52rem)]">
-            <div className="flex flex-col gap-2 border-b border-slate-200 px-2 pb-3 dark:border-slate-700 sm:flex-row sm:items-center sm:justify-between">
-              <Space size={8} wrap>
-                <Typography.Text strong>{t('assistant.chat.conversationTitle', { defaultValue: 'Conversation' })}</Typography.Text>
-                {activeRun ? <Tag>{getTypeLabel(activeRun.type)}</Tag> : null}
-                {activeRun ? <Tag color={statusColor(activeRun.status)}>{getStatusLabel(activeRun.status)}</Tag> : null}
-                {activeBlocked ? <Tag color="volcano">{t('assistant.blocked.tag', { defaultValue: 'Blocked' })}</Tag> : null}
-              </Space>
-              <Space size={8} wrap>
-                <Button className="lg:hidden" onClick={() => setHistoryDrawerOpen(true)}>
-                  {t('assistant.chat.historyTitle', { defaultValue: 'History' })} ({runs.length})
-                </Button>
-                {activeRun ? (
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {formatDateTime(new Date(activeRun.createdAt), locale, {
-                      year: 'numeric',
-                      month: '2-digit',
-                      day: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Typography.Text>
-                ) : null}
-              </Space>
+      <section className={styles.pageFrame}>
+        <header className="relative z-[1] border-b border-white/70 px-5 pb-5 pt-6 sm:px-7 sm:pb-6 sm:pt-7">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="space-y-2">
+              <p className={styles.heroKicker}>{designKicker}</p>
+              <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">{title}</h1>
+              <p className="max-w-3xl text-sm font-medium text-slate-600 sm:text-[15px]">{subtitle}</p>
             </div>
+            <Space size={8} wrap>
+              <Button
+                icon={<PlusOutlined />}
+                onClick={handleNewConversation}
+                disabled={!activeRun}
+                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:bg-white hover:text-sky-700 hover:shadow-md"
+              >
+                {t('assistant.chat.newConversation', { defaultValue: 'New' })}
+              </Button>
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={() => refetch()}
+                loading={loading}
+                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md"
+              >
+                {t('common.refresh', { defaultValue: 'Refresh' })}
+              </Button>
+              <Button
+                icon={<HistoryOutlined />}
+                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md lg:hidden"
+                onClick={() => setHistoryDrawerOpen(true)}
+              >
+                {t('assistant.chat.historyTitle', { defaultValue: 'History' })} ({runs.length})
+              </Button>
+            </Space>
+          </div>
+        </header>
 
-            <div
-              ref={chatScrollRef}
-              onScroll={handleChatScroll}
-              className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-slate-50/60 px-2 py-4 dark:bg-slate-900/30"
-            >
-              {!activeRun ? (
-                <div className="flex h-full items-center justify-center px-6 text-center">
-                  <Typography.Text type="secondary">
-                    {t('assistant.chat.emptyConversation', {
-                      defaultValue: 'Start by sending a message. Your latest run will appear here.',
-                    })}
-                  </Typography.Text>
+        <div className="relative z-[1] grid gap-4 p-4 lg:grid-cols-[340px_minmax(0,1fr)] lg:p-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className={`${styles.panel} hidden min-h-[32rem] flex-col lg:flex lg:h-[min(66dvh,52rem)]`}>
+            <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  {t('assistant.chat.historyTitle', { defaultValue: 'History' })}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {t('assistant.chat.recentConversations', { defaultValue: 'Recent conversations' })}
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-inset ring-slate-300/60">
+                {runs.length}
+              </span>
+            </div>
+            <div className="min-h-0 flex-1 px-3 py-3">{renderRunHistory('h-full overflow-y-auto pr-1')}</div>
+          </aside>
+
+          <section className={`${styles.panel} overflow-hidden`}>
+            <div className="flex min-h-[32rem] flex-col lg:h-[min(66dvh,52rem)]">
+              <div className="border-b border-slate-200/70 px-4 py-4 sm:px-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <Space size={8} wrap>
+                    <span className="text-base font-bold text-slate-900">
+                      {t('assistant.chat.conversationTitle', { defaultValue: 'Conversation' })}
+                    </span>
+                    {activeRun ? (
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-inset ring-slate-300/60">
+                        {getTypeLabel(activeRun.type)}
+                      </span>
+                    ) : null}
+                    {activeRun ? (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${getStatusChipClass(activeRun.status)}`}
+                      >
+                        {getStatusLabel(activeRun.status)}
+                      </span>
+                    ) : null}
+                    {activeBlocked ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60">
+                        {t('assistant.blocked.tag', { defaultValue: 'Blocked' })}
+                      </span>
+                    ) : null}
+                  </Space>
+                  <Space size={8} wrap>
+                    <Button
+                      icon={<HistoryOutlined />}
+                      className="rounded-xl border-slate-200/80 bg-white/80 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md lg:hidden"
+                      onClick={() => setHistoryDrawerOpen(true)}
+                    >
+                      {t('assistant.chat.historyTitle', { defaultValue: 'History' })} ({runs.length})
+                    </Button>
+                    {activeRun ? (
+                      <span className="text-xs font-semibold text-slate-500">
+                        {formatDateTime(new Date(activeRun.createdAt), locale, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    ) : null}
+                  </Space>
                 </div>
-              ) : (
-                <>
-                  <div className="ml-auto max-w-[92%] rounded-2xl bg-slate-900 px-4 py-3 text-white shadow-sm dark:bg-slate-700 sm:max-w-[85%]">
-                    <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'inherit' }}>
-                      {activeUserPrompt}
-                    </Typography.Paragraph>
+              </div>
+
+              <div
+                ref={chatScrollRef}
+                onScroll={handleChatScroll}
+                className={`${styles.chatStage} min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-6 sm:px-6`}
+              >
+                {!activeRun ? (
+                  <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                    <div className={styles.emptyOrb}>
+                      <RobotOutlined className="text-3xl text-slate-400" />
+                    </div>
+                    <p className="mt-4 max-w-sm text-sm font-semibold text-slate-500">
+                      {t('assistant.chat.emptyConversation', {
+                        defaultValue: 'Start by sending a message. Your latest run will appear here.',
+                      })}
+                    </p>
                   </div>
-
-                  <div className="mr-auto max-w-[95%] rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700 sm:max-w-[90%]">
-                    <Space size={6} align="center" style={{ marginBottom: 8 }}>
-                      <RobotOutlined />
-                      <Typography.Text strong>{t('assistant.chat.assistantLabel', { defaultValue: 'Assistant' })}</Typography.Text>
-                      {activeIsStreaming ? <Spin size="small" /> : null}
-                    </Space>
-
-                    <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>
-                      {activeAssistantText}
-                    </Typography.Paragraph>
-
-                    <div className={chatMetaPanelClassName}>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {t('assistant.chat.modelInfoTitle', { defaultValue: 'Model info' })}
-                      </Typography.Text>
-                      <Space wrap style={{ marginTop: 6 }}>
-                        {activeModelInfo?.llmModel ? (
-                          <Tag color="geekblue">
-                            {t('assistant.chat.modelLabel', { defaultValue: 'Model' })}: {activeModelInfo.llmModel}
-                          </Tag>
-                        ) : null}
-                        {activeModelInfo?.forecastModel ? (
-                          <Tag color="purple">
-                            {t('assistant.chat.forecastModelLabel', { defaultValue: 'Forecast model' })}:{' '}
-                            {activeModelInfo.forecastModel}
-                          </Tag>
-                        ) : null}
-                        {activeModelInfo?.modelServiceUsed !== null ? (
-                          <Tag color={activeModelInfo?.modelServiceUsed ? 'success' : 'default'}>
-                            {t('assistant.chat.modelServiceLabel', { defaultValue: 'Model service' })}:{' '}
-                            {activeModelInfo?.modelServiceUsed
-                              ? t('assistant.chat.modelServiceUsed', { defaultValue: 'Used' })
-                              : t('assistant.chat.modelServiceNotUsed', { defaultValue: 'Not used' })}
-                          </Tag>
-                        ) : null}
-                        {!hasActiveModelInfo ? (
-                          <Typography.Text type="secondary">
-                            {t('assistant.chat.modelInfoUnknown', { defaultValue: 'No model metadata returned.' })}
-                          </Typography.Text>
-                        ) : null}
-                      </Space>
+                ) : (
+                  <>
+                    <div className={`${styles.messageEnter} ml-auto max-w-[92%] sm:max-w-[80%]`}>
+                      <div className={styles.userBubble}>
+                        <div className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed text-white">
+                          {activeUserPrompt}
+                        </div>
+                      </div>
                     </div>
 
-                    {activeRun.error ? (
-                      <Alert
-                        style={{ marginTop: 12 }}
-                        type="error"
-                        showIcon
-                        icon={<CloseCircleOutlined />}
-                        message={t('assistant.chat.errorLabel', { defaultValue: 'Error details' })}
-                        description={activeRun.error}
-                      />
-                    ) : null}
-
-                    {activeBlocked ? (
-                      <Alert
-                        style={{ marginTop: 12 }}
-                        type="warning"
-                        showIcon
-                        message={t('assistant.blocked.title', { defaultValue: 'Blocked by safety checks' })}
-                        description={
-                          <Space direction="vertical" size={4}>
-                            <Typography.Text>{activeBlocked.message}</Typography.Text>
-                            {activeBlocked.code ? (
-                              <Typography.Text type="secondary">
-                                {t('assistant.blocked.details.code', { defaultValue: 'Reason code' })}: {activeBlocked.code}
-                              </Typography.Text>
-                            ) : null}
-                            {activeBlocked.appliedGuardrails.length > 0 ? (
-                              <Space wrap>
-                                <Typography.Text type="secondary">
-                                  {t('assistant.blocked.details.guardrails', { defaultValue: 'Applied guardrails' })}:
-                                </Typography.Text>
-                                {activeBlocked.appliedGuardrails.map((name) => (
-                                  <Tag key={name} color="geekblue">
-                                    {name}
-                                  </Tag>
-                                ))}
-                              </Space>
-                            ) : null}
-                            {activeBlocked.upstreamStatus ? (
-                              <Typography.Text type="secondary">
-                                {t('assistant.blocked.details.upstreamStatus', { defaultValue: 'Upstream status' })}:{' '}
-                                {activeBlocked.upstreamStatus}
-                              </Typography.Text>
-                            ) : null}
-                          </Space>
-                        }
-                      />
-                    ) : null}
-
-                    {canViewAssistantJson ? (
-                      <details className={chatMetaPanelClassName}>
-                        <summary className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300">
-                          {t('assistant.chat.adminDetailsTitle', { defaultValue: 'Admin debug details (JSON)' })}
-                        </summary>
-                        <div className="mt-2 space-y-2">
-                          <div>
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {t('assistant.chat.inputJsonTitle', { defaultValue: 'Input JSON' })}
-                            </Typography.Text>
-                            <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-white p-2 text-xs whitespace-pre-wrap dark:bg-slate-800">
-                              {JSON.stringify(activeRun.input ?? null, null, 2)}
-                            </pre>
+                    <div className={`${styles.messageEnter} mr-auto max-w-[95%] sm:max-w-[90%]`}>
+                      <div className={styles.assistantBubble}>
+                        <Space size={8} align="center" style={{ marginBottom: 14 }}>
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs text-white">
+                            <RobotOutlined />
                           </div>
-                          <div>
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {t('assistant.chat.outputJsonTitle', { defaultValue: 'Output JSON' })}
-                            </Typography.Text>
-                            <pre className="mt-1 max-h-64 overflow-auto rounded-md bg-white p-2 text-xs whitespace-pre-wrap dark:bg-slate-800">
-                              {JSON.stringify(activeRun.output ?? null, null, 2)}
-                            </pre>
-                          </div>
+                          <span className="text-[15px] font-bold text-slate-900">
+                            {t('assistant.chat.assistantLabel', { defaultValue: 'Assistant' })}
+                          </span>
+                          {activeIsStreaming ? <Spin size="small" className="text-sky-600" /> : null}
+                        </Space>
+
+                        <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">
+                          {activeAssistantText}
                         </div>
-                      </details>
-                    ) : null}
+
+                        {hasActiveModelInfo ? (
+                          <div className={styles.modelInfoCard}>
+                            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                              {t('assistant.chat.modelInfoTitle', { defaultValue: 'Model info' })}
+                            </span>
+                            <Space wrap style={{ marginTop: 10 }}>
+                              {activeModelInfo?.llmModel ? (
+                                <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70">
+                                  {t('assistant.chat.modelLabel', { defaultValue: 'Model' })}: {activeModelInfo.llmModel}
+                                </span>
+                              ) : null}
+                              {activeModelInfo?.forecastModel ? (
+                                <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200/70">
+                                  {t('assistant.chat.forecastModelLabel', { defaultValue: 'Forecast model' })}:{' '}
+                                  {activeModelInfo.forecastModel}
+                                </span>
+                              ) : null}
+                              {activeModelInfo?.modelServiceUsed !== null ? (
+                                <span
+                                  className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold ring-1 ${
+                                    activeModelInfo?.modelServiceUsed
+                                      ? 'bg-white text-emerald-700 ring-emerald-200/70'
+                                      : 'bg-white text-slate-600 ring-slate-200/70'
+                                  }`}
+                                >
+                                  {t('assistant.chat.modelServiceLabel', { defaultValue: 'Model service' })}:{' '}
+                                  {activeModelInfo?.modelServiceUsed
+                                    ? t('assistant.chat.modelServiceUsed', { defaultValue: 'Used' })
+                                    : t('assistant.chat.modelServiceNotUsed', { defaultValue: 'Not used' })}
+                                </span>
+                              ) : null}
+                            </Space>
+                          </div>
+                        ) : null}
+
+                        {activeRun.error ? (
+                          <Alert
+                            style={{ marginTop: 16, borderRadius: 14 }}
+                            type="error"
+                            showIcon
+                            icon={<CloseCircleOutlined />}
+                            message={t('assistant.chat.errorLabel', { defaultValue: 'Error details' })}
+                            description={activeRun.error}
+                          />
+                        ) : null}
+
+                        {activeBlocked ? (
+                          <Alert
+                            style={{ marginTop: 16, borderRadius: 14 }}
+                            type="warning"
+                            showIcon
+                            message={t('assistant.blocked.title', { defaultValue: 'Blocked by safety checks' })}
+                            description={
+                              <Space direction="vertical" size={4}>
+                                <span className="font-semibold text-slate-900">{activeBlocked.message}</span>
+                                {activeBlocked.code ? (
+                                  <span className="text-slate-600">
+                                    {t('assistant.blocked.details.code', { defaultValue: 'Reason code' })}:{' '}
+                                    {activeBlocked.code}
+                                  </span>
+                                ) : null}
+                                {activeBlocked.upstreamStatus !== null ? (
+                                  <span className="text-slate-600">
+                                    {t('assistant.blocked.details.upstreamStatus', {
+                                      defaultValue: 'Upstream status',
+                                    })}
+                                    : {activeBlocked.upstreamStatus}
+                                  </span>
+                                ) : null}
+                                {activeBlocked.appliedGuardrails.length > 0 ? (
+                                  <Space wrap>
+                                    <span className="text-slate-600">
+                                      {t('assistant.blocked.details.guardrails', {
+                                        defaultValue: 'Applied guardrails',
+                                      })}
+                                      :
+                                    </span>
+                                    {activeBlocked.appliedGuardrails.map((name) => (
+                                      <span
+                                        key={name}
+                                        className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700 ring-1 ring-inset ring-sky-300/50"
+                                      >
+                                        {name}
+                                      </span>
+                                    ))}
+                                  </Space>
+                                ) : null}
+                              </Space>
+                            }
+                          />
+                        ) : null}
+
+                        {canViewAssistantJson ? (
+                          <details className="mt-4 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-1">
+                            <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-700 hover:text-slate-900">
+                              {t('assistant.chat.adminDetailsTitle', { defaultValue: 'Admin debug details (JSON)' })}
+                            </summary>
+                            <div className="space-y-4 px-4 pb-4 pt-2">
+                              <div>
+                                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                  {t('assistant.chat.inputJsonTitle', { defaultValue: 'Input JSON' })}
+                                </span>
+                                <pre className="mt-2 max-h-48 overflow-auto rounded-xl border border-slate-200 bg-white p-4 text-xs font-mono text-slate-600 whitespace-pre-wrap">
+                                  {JSON.stringify(activeRun.input ?? null, null, 2)}
+                                </pre>
+                              </div>
+                              <div>
+                                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                  {t('assistant.chat.outputJsonTitle', { defaultValue: 'Output JSON' })}
+                                </span>
+                                <pre className="mt-2 max-h-64 overflow-auto rounded-xl border border-slate-200 bg-white p-4 text-xs font-mono text-slate-600 whitespace-pre-wrap">
+                                  {JSON.stringify(activeRun.output ?? null, null, 2)}
+                                </pre>
+                              </div>
+                            </div>
+                          </details>
+                        ) : null}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="border-t border-slate-200/70 px-4 py-4 sm:px-6 sm:py-5">
+                {!canRunAssistant ? (
+                  <Alert
+                    style={{ marginBottom: 16, borderRadius: 14 }}
+                    type="warning"
+                    showIcon
+                    message={t('common.accessDenied', { defaultValue: 'Access denied' })}
+                    description={t('assistant.runPermissionRequired', {
+                      defaultValue: 'You do not have permission to run assistant tasks.',
+                    })}
+                  />
+                ) : null}
+
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <Button
+                    icon={<BarChartOutlined />}
+                    className="rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md"
+                    onClick={() => setReportModalOpen(true)}
+                    disabled={!canRunAssistant}
+                  >
+                    {t('assistant.chat.quickReport', { defaultValue: 'Quick Report' })}
+                  </Button>
+                  <Button
+                    icon={<RobotOutlined />}
+                    className="rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-700 hover:shadow-md"
+                    onClick={() => setForecastModalOpen(true)}
+                    disabled={!canRunAssistant}
+                  >
+                    {t('assistant.chat.quickForecast', { defaultValue: 'Quick Forecast' })}
+                  </Button>
+                </div>
+
+                <div className={styles.composerSurface}>
+                  <Input.TextArea
+                    value={queryDraft}
+                    onChange={(event) => setQueryDraft(event.target.value)}
+                    autoSize={{ minRows: 3, maxRows: 8 }}
+                    placeholder={placeholder}
+                    aria-label={t('assistant.chat.inputAriaLabel', {
+                      defaultValue: 'Assistant message input',
+                    })}
+                    disabled={!canRunAssistant || querySaving}
+                    className="rounded-2xl border-slate-300/70 bg-white/90 px-5 py-4 text-[15px] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition-all placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-500/10"
+                    onPressEnter={(event) => {
+                      if (event.shiftKey) {
+                        return;
+                      }
+                      event.preventDefault();
+                      void submitQuery();
+                    }}
+                  />
+
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-xs font-semibold text-slate-500">
+                      {t('assistant.chat.enterHint', { defaultValue: 'Enter to send, Shift+Enter for newline.' })}
+                    </span>
+                    <Button
+                      icon={<SendOutlined />}
+                      className="h-11 w-full rounded-xl border-none bg-sky-600 px-8 font-bold text-white shadow-[0_12px_24px_rgba(14,116,217,0.28)] transition-all hover:bg-sky-700 hover:shadow-[0_16px_26px_rgba(14,116,217,0.34)] active:scale-[0.98] disabled:opacity-50 sm:w-auto"
+                      type="primary"
+                      loading={querySaving}
+                      disabled={!canRunAssistant}
+                      onClick={() => void submitQuery()}
+                    >
+                      {t('assistant.chat.send', { defaultValue: 'Send' })}
+                    </Button>
                   </div>
-                </>
-              )}
-            </div>
-
-            <div className="border-t border-slate-200 px-2 pt-3 dark:border-slate-700">
-              {!canRunAssistant ? (
-                <Alert
-                  style={{ marginBottom: 12 }}
-                  type="warning"
-                  showIcon
-                  message={t('common.accessDenied', { defaultValue: 'Access denied' })}
-                  description={t('assistant.runPermissionRequired', {
-                    defaultValue: 'You do not have permission to run assistant tasks.',
-                  })}
-                />
-              ) : null}
-
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                <Button className="w-full sm:w-auto" onClick={() => setReportModalOpen(true)} disabled={!canRunAssistant}>
-                  {t('assistant.chat.quickReport', { defaultValue: 'Quick Report' })}
-                </Button>
-                <Button className="w-full sm:w-auto" onClick={() => setForecastModalOpen(true)} disabled={!canRunAssistant}>
-                  {t('assistant.chat.quickForecast', { defaultValue: 'Quick Forecast' })}
-                </Button>
-              </div>
-
-              <Input.TextArea
-                value={queryDraft}
-                onChange={(event) => setQueryDraft(event.target.value)}
-                autoSize={{ minRows: 3, maxRows: 8 }}
-                placeholder={placeholder}
-                aria-label={t('assistant.chat.inputAriaLabel', {
-                  defaultValue: 'Assistant message input',
-                })}
-                disabled={!canRunAssistant || querySaving}
-                onPressEnter={(event) => {
-                  if (event.shiftKey) {
-                    return;
-                  }
-                  event.preventDefault();
-                  void submitQuery();
-                }}
-              />
-
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('assistant.chat.enterHint', { defaultValue: 'Enter to send, Shift+Enter for newline.' })}
-                </Typography.Text>
-                <Button
-                  className="w-full sm:w-auto"
-                  type="primary"
-                  loading={querySaving}
-                  disabled={!canRunAssistant}
-                  onClick={() => void submitQuery()}
-                >
-                  {t('assistant.chat.send', { defaultValue: 'Send' })}
-                </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </Card>
-      </div>
+          </section>
+        </div>
+      </section>
 
       <Drawer
-        title={t('assistant.chat.historyTitle', { defaultValue: 'History' })}
+        title={
+          <span className="text-base font-semibold text-slate-900">
+            {t('assistant.chat.historyTitle', { defaultValue: 'History' })}
+          </span>
+        }
         placement="left"
         width="min(92vw, 360px)"
         open={historyDrawerOpen}
         destroyOnClose
         onClose={() => setHistoryDrawerOpen(false)}
         extra={
-          <Button onClick={() => refetch()} loading={loading}>
-            {t('common.refresh', { defaultValue: 'Refresh' })}
-          </Button>
+          <Space size={8}>
+            <Button
+              icon={<PlusOutlined />}
+              onClick={handleNewConversation}
+              disabled={!activeRun}
+              className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md"
+            >
+              {t('assistant.chat.newConversation', { defaultValue: 'New' })}
+            </Button>
+            <Button
+              onClick={() => refetch()}
+              loading={loading}
+              className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:shadow-md"
+            >
+              {t('common.refresh', { defaultValue: 'Refresh' })}
+            </Button>
+          </Space>
         }
       >
-        {renderRunHistory('max-h-[calc(100svh-180px)] overflow-y-auto pr-1', () => setHistoryDrawerOpen(false))}
+        {renderRunHistory(
+          'scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent hover:scrollbar-thumb-slate-400 max-h-[calc(100svh-180px)] overflow-y-auto pr-1',
+          () => setHistoryDrawerOpen(false),
+        )}
       </Drawer>
 
       <Modal
